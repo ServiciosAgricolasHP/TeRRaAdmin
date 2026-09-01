@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "../contexts/ToastContext";
 import { faenasService, cyclesService, workdaysService, harvestWeightsService, qrPrefixesService } from "../services";
+import { findWorkerByRut } from "../services/workersService";
 import { comboKey, getDayCombos, workdayDocId } from "../utils/cosechaCombos";
 import Modal from "../Components/Modal";
 import Select from "../Components/Select";
@@ -377,16 +378,32 @@ function SyncModal({ prefix, cycle, onClose }) {
         groups.set(gKey, g);
       }
 
+      // Fase 2 de "rut editable": resolvemos workerId (id estable del doc de
+      // worker) por rut una sola vez por trabajador distinto en el batch, no
+      // por cada grupo — el scan QR sigue matcheando por rut como siempre
+      // (eso no cambia acá, es un tema aparte), esto solo agrega el campo
+      // para que estos workdays también queden buscables por workerId.
+      const workerIdByRut = new Map();
+      const resolveWorkerId = async (rut) => {
+        if (workerIdByRut.has(rut)) return workerIdByRut.get(rut);
+        const w = await findWorkerByRut(rut);
+        const workerId = w?.id || rut;
+        workerIdByRut.set(rut, workerId);
+        return workerId;
+      };
+
       let written = 0;
       for (const g of groups.values()) {
         const combos = getDayCombos(cycle.dayPrices, labor.id, g.dateKey, "unit");
         const combo = combos.find((c) => c.key === g.ck) || { price: 0, mode: "unit" };
         const amount = combo.mode === "flat" ? combo.price : g.qty * combo.price;
         const docId = workdayDocId(cycle.id, labor.id, g.rut, g.dateKey, g.ck);
+        const workerId = await resolveWorkerId(g.rut);
         await workdaysService.upsert(docId, {
           cycleId: cycle.id,
           laborId: labor.id,
           workerRut: g.rut,
+          workerId,
           date: g.dateKey,
           qualityX: g.x,
           containerY: g.y,

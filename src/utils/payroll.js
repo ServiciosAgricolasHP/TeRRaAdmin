@@ -31,7 +31,7 @@ export function bchileAccountTypeCode(accountTypeValue) {
 }
 
 // Aggregate amount per worker, per cycle, respecting labor type.
-// Returns: [{ rut, total, byCycle: { [cycleId]: amount }, workdayIds: [] }]
+// Returns: [{ rut, workerId, total, byCycle: { [cycleId]: amount }, workdayIds: [] }]
 export function aggregateWorkerAmounts(workdays, laborTypeById) {
   const byWorker = new Map();
   for (const wd of workdays) {
@@ -45,7 +45,10 @@ export function aggregateWorkerAmounts(workdays, laborTypeById) {
     }
     if (amount === 0) continue;
     if (!byWorker.has(wd.workerRut)) {
-      byWorker.set(wd.workerRut, { rut: wd.workerRut, total: 0, byCycle: {}, workdayIds: [] });
+      // Fase 2 de "rut editable" (ver workersService.js): workerId es el id
+      // estable del worker; fallback al rut para workdays viejos que todavía
+      // no lo tienen (hoy son el mismo valor).
+      byWorker.set(wd.workerRut, { rut: wd.workerRut, workerId: wd.workerId || wd.workerRut, total: 0, byCycle: {}, workdayIds: [] });
     }
     const e = byWorker.get(wd.workerRut);
     e.total += amount;

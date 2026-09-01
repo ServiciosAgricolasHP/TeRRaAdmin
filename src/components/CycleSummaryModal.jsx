@@ -241,7 +241,7 @@ function buildDailyRows(labor, wdMap, dayPrices = {}) {
     if (wd.pisoOnly) {
       const pa = Number(wd.amount) || 0;
       g.pisoAmount += pa;
-      if (wd.workerRut) g.pisoWorkersSet.add(wd.workerRut);
+      if (wd.workerRut) g.pisoWorkersSet.add(wd.workerId || wd.workerRut);
     } else if (labor.type === "cosecha") {
       g.qty += Number(wd.qty) || 0;
       g.amount += Number(wd.amount) || 0;
@@ -264,7 +264,7 @@ function buildDailyRows(labor, wdMap, dayPrices = {}) {
       g.qty += 1;
       g.amount += Number(wd.amount) || 0;
     }
-    if (wd.workerRut) g.workersSet.add(wd.workerRut);
+    if (wd.workerRut) g.workersSet.add(wd.workerId || wd.workerRut);
   }
   // Tarifa HE del ciclo — leemos el override de labor o caemos al default.
   // Solo se usa para derivar `bonosTotal` y `heTotal` en tratoHE; los demás
@@ -444,12 +444,20 @@ function buildExpandedRows(labor, wdMap, dayPrices = {}) {
 // Los nombres de trabajadores salen de `labor.workers[].name` (denormalizado
 // al asignarlos a la labor). Si un workday queda huérfano, cae al RUT.
 function buildWorkerLaborGrid(labor, wdMap) {
-  const nameByRut = new Map();
+  // Un trabajador puede tener workdays con distinto `workerRut` si corrigió
+  // su rut a mitad de ciclo (el rut queda congelado en cada workday al
+  // crearse). Agrupamos por `workerId` — la referencia que no cambia — y
+  // reservamos `workerRut` solo para mostrar/etiquetar.
+  const nameById = new Map();
+  const rutById = new Map();
   for (const w of labor?.workers || []) {
-    if (w?.rut) nameByRut.set(w.rut, w.name || w.rut);
+    const wid = w?.id || w?.rut;
+    if (!wid) continue;
+    nameById.set(wid, w.name || w.rut || wid);
+    rutById.set(wid, w.rut || wid);
   }
 
-  const byWorker = new Map(); // rut -> { rut, name, byDate, totals }
+  const byWorker = new Map(); // workerId -> { rut, name, byDate, totals }
   const datesSet = new Set();
   const containers = new Set();
   let anyPiso = false;
@@ -464,16 +472,17 @@ function buildWorkerLaborGrid(labor, wdMap) {
     const wd = wdMap[k];
     if (!wd?.workerRut || !wd?.date) continue;
     datesSet.add(wd.date);
+    const workerId = wd.workerId || wd.workerRut;
 
-    if (!byWorker.has(wd.workerRut)) {
-      byWorker.set(wd.workerRut, {
-        rut: wd.workerRut,
-        name: nameByRut.get(wd.workerRut) || wd.workerName || wd.workerRut,
+    if (!byWorker.has(workerId)) {
+      byWorker.set(workerId, {
+        rut: rutById.get(workerId) || wd.workerRut,
+        name: nameById.get(workerId) || wd.workerName || wd.workerRut,
         byDate: new Map(),
         totals: { qty: 0, amount: 0, kilos: 0, jornadas: 0, overtimeHours: 0, pisoAmount: 0, base: 0, extras: 0 },
       });
     }
-    const wEntry = byWorker.get(wd.workerRut);
+    const wEntry = byWorker.get(workerId);
     if (!wEntry.byDate.has(wd.date)) {
       wEntry.byDate.set(wd.date, {
         date: wd.date,

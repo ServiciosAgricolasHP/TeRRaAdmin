@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { collection, query, where, getCountFromServer, doc, getDoc } from "firebase/firestore";
+import { collection, query, where, getCountFromServer, getDocs, doc, getDoc, writeBatch } from "firebase/firestore";
 import { db } from "../firebase";
 import { faenasService, cyclesService, workersService } from "../services";
 import { toProperName } from "../utils/nameUtils";
@@ -77,6 +77,8 @@ export default function AdminConsole() {
       <WorkdaysByRangeSection />
       <WorkdaysByCycleSection />
       <NormalizeWorkerNamesSection />
+      <BackfillWorkerRutFieldSection />
+      <BackfillWorkdayLogMetaSection />
     </div>
   );
 }
@@ -838,6 +840,328 @@ function NormalizeWorkerNamesSection() {
                   </li>
                 ))}
                 {result.errors.length > 20 && <li>… y {result.errors.length - 20} más</li>}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// Backfill: los logs de auditoría de "workday" escritos ANTES de que
+// firestoreBase.js empezara a denormalizar `meta.workerRut`/`meta.cycleId`
+// quedaron con `meta: null` — no aparecen en el buscador "por registro" de
+// Audit.jsx cuando buscás por trabajador. El entityId de un workday ya trae
+// el rut codificado (`cycleId__laborId__rut__fecha[__combo]`, ver
+// utils/cosechaCombos.js → workdayDocId), así que se puede reconstruir sin
+// tocar nada más del log. Aditivo y re-ejecutable: solo toca logs con
+// `meta == null`, así que correrlo dos veces no hace nada la segunda vez.
+function BackfillWorkdayLogMetaSection() {
+  const [loading, setLoading] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [candidates, setCandidates] = useState(null); // [{ id, entityId, workerRut, cycleId }]
+  const [skipped, setSkipped] = useState(0);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const [result, setResult] = useState(null);
+
+  const preview = async () => {
+    setLoading(true);
+    setResult(null);
+    setCandidates(null);
+    try {
+      const q = query(collection(db, "logs"), where("entity", "==", "workday"), where("meta", "==", null));
+      const snap = await getDocs(q);
+      const rows = [];
+      let bad = 0;
+      for (const docSnap of snap.docs) {
+        const entityId = docSnap.data().entityId || "";
+        const parts = String(entityId).split("__");
+        const [cycleId, , workerRut] = parts;
+        if (parts.length < 4 || !workerRut) {
+          bad++;
+          continue;
+        }
+        rows.push({ id: docSnap.id, entityId, workerRut, cycleId });
+      }
+      setCandidates(rows);
+      setSkipped(bad);
+    } catch (err) {
+      alert("Error al buscar logs de workday: " + (err.message || String(err)));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const CHUNK = 400; // margen bajo el límite de 500 ops por writeBatch
+  const apply = async () => {
+    if (!candidates || candidates.length === 0) return;
+    if (!confirm(
+      `¿Backfillear meta.workerRut/cycleId en ${candidates.length} log(s) viejos de workdays?\n\n` +
+      `Es aditivo — solo agrega el campo meta, no toca nada más del log. Se puede re-ejecutar sin problema.`,
+    )) return;
+    setRunning(true);
+    setProgress({ done: 0, total: candidates.length });
+    let updated = 0;
+    const errors = [];
+    for (let i = 0; i < candidates.length; i += CHUNK) {
+      const chunk = candidates.slice(i, i + CHUNK);
+      const batch = writeBatch(db);
+      for (const c of chunk) {
+        batch.update(doc(db, "logs", c.id), { meta: { workerRut: c.workerRut, cycleId: c.cycleId || null } });
+      }
+      try {
+        await batch.commit();
+        updated += chunk.length;
+      } catch (err) {
+        errors.push({ range: `${i + 1}-${i + chunk.length}`, error: err.message || String(err) });
+      }
+      setProgress({ done: Math.min(i + CHUNK, candidates.length), total: candidates.length });
+    }
+    setResult({ updated, errors });
+    setCandidates(null);
+    setRunning(false);
+  };
+
+  return (
+    <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-semibold">Backfill: auditoría de workdays por trabajador</h2>
+          <p className="text-xs text-[var(--color-muted)]">
+            Completa <code>meta.workerRut</code>/<code>meta.cycleId</code> en logs viejos de workday
+            (parseados del entityId) para que el buscador de Auditoría los encuentre por trabajador.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={preview}
+            disabled={loading || running}
+            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+          >
+            {loading ? "Buscando…" : "🔎 Preview"}
+          </button>
+          <button
+            type="button"
+            onClick={apply}
+            disabled={running || !candidates || candidates.length === 0}
+            className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
+          >
+            {running
+              ? `Aplicando… ${progress.done}/${progress.total}`
+              : `✔ Aplicar ${candidates?.length || ""} log${candidates?.length === 1 ? "" : "s"}`}
+          </button>
+        </div>
+      </div>
+
+      {candidates !== null && !loading && (
+        <p className="mb-3 text-xs text-[var(--color-muted)]">
+          Logs viejos sin meta:{" "}
+          <span className={`font-semibold tabular-nums ${candidates.length > 0 ? "text-[var(--color-accent)]" : "text-[var(--color-muted)]"}`}>
+            {fmtNumber(candidates.length)}
+          </span>
+          {skipped > 0 && <> · {fmtNumber(skipped)} con entityId no parseable (se dejan como están)</>}
+        </p>
+      )}
+
+      {candidates && candidates.length > 0 && (
+        <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
+          <table className="w-full text-xs">
+            <thead className="bg-[var(--color-surface-2)] text-left text-[var(--color-muted)]">
+              <tr>
+                <th className="px-3 py-1.5">RUT</th>
+                <th className="px-3 py-1.5">Ciclo</th>
+                <th className="px-3 py-1.5">entityId</th>
+              </tr>
+            </thead>
+            <tbody>
+              {candidates.slice(0, 10).map((c) => (
+                <tr key={c.id} className="border-t border-[var(--color-border)]">
+                  <td className="px-3 py-1 font-mono text-[10px]">{c.workerRut}</td>
+                  <td className="px-3 py-1 font-mono text-[10px] text-[var(--color-muted)]">{c.cycleId}</td>
+                  <td className="px-3 py-1 font-mono text-[10px] text-[var(--color-muted)]">{c.entityId}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {candidates.length > 10 && (
+            <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-center text-xs text-[var(--color-muted)]">
+              … y {fmtNumber(candidates.length - 10)} más (muestra acotada a 10)
+            </div>
+          )}
+        </div>
+      )}
+
+      {result && (
+        <div className="mt-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm">
+          <div>
+            ✔ Actualizados:{" "}
+            <span className="font-semibold tabular-nums text-[var(--color-success)]">
+              {result.updated}
+            </span>
+          </div>
+          {result.errors.length > 0 && (
+            <>
+              <div className="mt-1 text-[var(--color-danger)]">
+                ✖ Errores: {result.errors.length}
+              </div>
+              <ul className="mt-1 max-h-40 overflow-y-auto text-xs text-[var(--color-muted)]">
+                {result.errors.map((e, i) => (
+                  <li key={i}>
+                    lote {e.range}: {e.error}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// Fase 1 de la migración "rut editable" (ver workersService.js): el campo
+// `rut` recién se empezó a grabar en workers nuevos/editados. Los workers
+// viejos solo tienen el rut como doc id, sin campo — este backfill lo
+// completa (`rut: doc.id`) para que sean auto-descriptivos y el doc id pueda
+// tratarse de acá en más como un `workerId` estable, independiente de si el
+// rut legal cambia después. Aditivo y re-ejecutable: solo toca workers sin
+// campo `rut`.
+function BackfillWorkerRutFieldSection() {
+  const [loading, setLoading] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [candidates, setCandidates] = useState(null); // [{ id, name }]
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
+  const [result, setResult] = useState(null);
+
+  const preview = async () => {
+    setLoading(true);
+    setResult(null);
+    setCandidates(null);
+    try {
+      const all = await workersService.list();
+      const rows = all.filter((w) => !w.rut).map((w) => ({ id: w.id, name: w.name || "" }));
+      rows.sort((a, b) => a.id.localeCompare(b.id));
+      setCandidates(rows);
+    } catch (err) {
+      alert("Error al leer trabajadores: " + (err.message || String(err)));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const apply = async () => {
+    if (!candidates || candidates.length === 0) return;
+    if (!confirm(
+      `¿Completar el campo rut en ${candidates.length} trabajador(es) (rut = id actual)?\n\n` +
+      `Es aditivo — no toca ningún otro campo. Se puede re-ejecutar sin problema.`,
+    )) return;
+    setRunning(true);
+    setProgress({ done: 0, total: candidates.length });
+    let updated = 0;
+    const errors = [];
+    for (let i = 0; i < candidates.length; i++) {
+      const c = candidates[i];
+      try {
+        await workersService.update(c.id, { rut: c.id });
+        updated++;
+      } catch (err) {
+        errors.push({ id: c.id, error: err.message || String(err) });
+      }
+      setProgress({ done: i + 1, total: candidates.length });
+    }
+    setResult({ updated, errors });
+    setCandidates(null);
+    setRunning(false);
+  };
+
+  return (
+    <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-semibold">Backfill: campo rut en trabajadores</h2>
+          <p className="text-xs text-[var(--color-muted)]">
+            Completa <code>worker.rut</code> (= doc id actual) en trabajadores viejos que todavía
+            no lo tienen. Paso previo para poder editar el rut más adelante sin perder identidad.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={preview}
+            disabled={loading || running}
+            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+          >
+            {loading ? "Buscando…" : "🔎 Preview"}
+          </button>
+          <button
+            type="button"
+            onClick={apply}
+            disabled={running || !candidates || candidates.length === 0}
+            className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
+          >
+            {running
+              ? `Aplicando… ${progress.done}/${progress.total}`
+              : `✔ Aplicar ${candidates?.length || ""} trabajador${candidates?.length === 1 ? "" : "es"}`}
+          </button>
+        </div>
+      </div>
+
+      {candidates !== null && !loading && (
+        <p className="mb-3 text-xs text-[var(--color-muted)]">
+          Sin campo rut:{" "}
+          <span className={`font-semibold tabular-nums ${candidates.length > 0 ? "text-[var(--color-accent)]" : "text-[var(--color-muted)]"}`}>
+            {fmtNumber(candidates.length)}
+          </span>
+        </p>
+      )}
+
+      {candidates && candidates.length > 0 && (
+        <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
+          <table className="w-full text-xs">
+            <thead className="bg-[var(--color-surface-2)] text-left text-[var(--color-muted)]">
+              <tr>
+                <th className="px-3 py-1.5">RUT (= id)</th>
+                <th className="px-3 py-1.5">Nombre</th>
+              </tr>
+            </thead>
+            <tbody>
+              {candidates.slice(0, 10).map((c) => (
+                <tr key={c.id} className="border-t border-[var(--color-border)]">
+                  <td className="px-3 py-1 font-mono text-[10px]">{c.id}</td>
+                  <td className="px-3 py-1">{c.name}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {candidates.length > 10 && (
+            <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-center text-xs text-[var(--color-muted)]">
+              … y {fmtNumber(candidates.length - 10)} más (muestra acotada a 10)
+            </div>
+          )}
+        </div>
+      )}
+
+      {result && (
+        <div className="mt-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm">
+          <div>
+            ✔ Actualizados:{" "}
+            <span className="font-semibold tabular-nums text-[var(--color-success)]">
+              {result.updated}
+            </span>
+          </div>
+          {result.errors.length > 0 && (
+            <>
+              <div className="mt-1 text-[var(--color-danger)]">
+                ✖ Errores: {result.errors.length}
+              </div>
+              <ul className="mt-1 max-h-40 overflow-y-auto text-xs text-[var(--color-muted)]">
+                {result.errors.map((e, i) => (
+                  <li key={i}>
+                    <span className="font-mono">{e.id}</span>: {e.error}
+                  </li>
+                ))}
               </ul>
             </>
           )}

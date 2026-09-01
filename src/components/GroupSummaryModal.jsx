@@ -345,7 +345,7 @@ function BuilderUI({ query, setQuery, searchResults, searching, selected, addWor
               >
                 <span className="font-medium">{w.name}</span>
                 <span className="font-mono text-[10px] text-[var(--color-muted)]">
-                  {formatRutForDisplay(w.id)}
+                  {formatRutForDisplay(w.rut || w.id)}
                 </span>
                 <button
                   onClick={() => removeWorker(w.id)}
@@ -398,7 +398,7 @@ function BuilderUI({ query, setQuery, searchResults, searching, selected, addWor
                   <div>
                     <div className="font-medium">{w.name}</div>
                     <div className="font-mono text-[10px] text-[var(--color-muted)]">
-                      {formatRutForDisplay(w.id)}
+                      {formatRutForDisplay(w.rut || w.id)}
                     </div>
                   </div>
                   <span className="text-xs text-[var(--color-accent)]">
@@ -510,7 +510,7 @@ function ResultUI({
                   <div className="text-xs font-medium">
                     {w.name}{" "}
                     <span className="font-mono text-[10px] text-[var(--color-muted)]">
-                      {formatRutForDisplay(w.id)}
+                      {formatRutForDisplay(w.rut || w.id)}
                     </span>
                   </div>
                   <div className="flex gap-1">
@@ -619,7 +619,7 @@ const MatrixTable = forwardRef(function MatrixTable(
                 <td style={{ ...cell, textAlign: "center" }}>{r.index}</td>
                 <td style={cell}>{r.worker.name}</td>
                 <td style={{ ...cell, fontFamily: "ui-monospace, monospace" }}>
-                  {formatRutForDisplay(r.worker.id)}
+                  {formatRutForDisplay(r.worker.rut || r.worker.id)}
                 </td>
                 {showCycleCols &&
                   cycles.map((c) => (

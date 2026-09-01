@@ -125,7 +125,8 @@ export default function Workers() {
         arr = arr.filter((w) => {
           const name = stripAccents(w.name);
           const id = stripAccents(String(w.id || "").replace(/[.\s-]/g, ""));
-          return name.includes(needle) || id.includes(needle);
+          const rut = stripAccents(String(w.rut || "").replace(/[.\s-]/g, ""));
+          return name.includes(needle) || id.includes(needle) || rut.includes(needle);
         });
       }
     }
@@ -186,7 +187,10 @@ export default function Workers() {
     () => [
       {
         headerName: "RUT",
-        field: "id",
+        // Fase 3 de "rut editable": mostramos el rut ACTUAL (campo `rut`),
+        // no el id (workerId estable, congelado desde la creación) —
+        // fallback al id para workers viejos sin backfill todavía.
+        valueGetter: (p) => p.data.rut || p.data.id,
         width: 140,
         valueFormatter: (p) => formatRutForDisplay(p.value),
         pinned: "left",
@@ -392,7 +396,7 @@ export default function Workers() {
                   <div>
                     <div className="text-base font-semibold leading-tight">{w.name}</div>
                     <div className="font-mono text-xs text-[var(--color-muted)]">
-                      {formatRutForDisplay(w.id)}
+                      {formatRutForDisplay(w.rut || w.id)}
                     </div>
                   </div>
                   <div className="text-xs">

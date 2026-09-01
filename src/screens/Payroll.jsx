@@ -341,17 +341,21 @@ export default function Payroll() {
 
       const aggregates = aggregateWorkerAmounts(allWorkdays, laborTypeById);
 
-      // Pull pending advances for everyone in this preview.
+      // Pull pending advances for everyone in this preview. Buscamos tanto
+      // por rut como por workerId (fase 3 de "rut editable") para no perder
+      // anticipos creados antes de que el trabajador corrigiera su rut.
       const candidateRuts = aggregates.filter((a) => a.total > 0).map((a) => a.rut);
-      const pendingAdvances = await listPendingForWorkers(candidateRuts);
+      const candidateWorkerIds = aggregates.filter((a) => a.total > 0).map((a) => a.workerId || a.rut);
+      const pendingAdvances = await listPendingForWorkers(candidateRuts, candidateWorkerIds);
       previewWorkdaysRef.current = allWorkdays;
       previewAdvancesRef.current = pendingAdvances;
       const advancesByRut = new Map();
       for (const adv of pendingAdvances) {
-        const e = advancesByRut.get(adv.workerRut) || { anticipos: [], bonos: [] };
+        const key = adv.workerId || adv.workerRut;
+        const e = advancesByRut.get(key) || { anticipos: [], bonos: [] };
         if (advanceSign(adv) > 0) e.bonos.push(adv);
         else e.anticipos.push(adv);
-        advancesByRut.set(adv.workerRut, e);
+        advancesByRut.set(key, e);
       }
 
       const items = aggregates
@@ -366,7 +370,7 @@ export default function Payroll() {
             byCycle[cid] = Math.round(a.byCycle[cid] || 0);
           }
           const accountIssue = validateAccountNumber(bd[1] || "", bankCode);
-          const adv = advancesByRut.get(a.rut) || { anticipos: [], bonos: [] };
+          const adv = advancesByRut.get(a.workerId || a.rut) || { anticipos: [], bonos: [] };
 
           // Anticipos: oldest-first, descuentan, capados por el bruto.
           const sortedAnticipos = [...adv.anticipos].sort((x, y) => {
@@ -405,6 +409,7 @@ export default function Payroll() {
           if (bonosTotal) advanceNoteParts.push(`Bonos ${bonoApplications.length}`);
           return {
             rut: a.rut,
+            workerId: a.workerId || a.rut,
             name: w?.name || "(sin nombre)",
             paymentRut: bd[0] || a.rut,
             accountNumber: bd[1] || "",
@@ -576,6 +581,7 @@ export default function Payroll() {
         const advanceApplications = [...anticipoApps, ...bonoApps];
         return {
           rut: p.rut,
+          workerId: p.workerId || p.rut,
           paymentRut: p.paymentRut || p.rut,
           name: p.name,
           accountNumber: p.accountNumber,
@@ -2468,6 +2474,37 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
   const summaries = options.summaries || [];
   const subfaenaSummary = options.subfaenaSummary || null;
   const laborSummary = options.laborSummary || null;
+  const bonusAdvanceSummary = options.bonusAdvanceSummary || null;
+  // Filas de ajuste (Bonos / Anticipos) + TOTAL final ya cuadrado, comunes a
+  // "Resumen por subfaena" y "Resumen por labor". `labelColspan` = cantidad
+  // de columnas de etiqueta antes de las 3 columnas de plata (bank/cash/total).
+  const buildAdjustmentRowsHtml = (labelColspan) => {
+    const rows = [];
+    if (bonusAdvanceSummary?.bonus.total > 0) {
+      rows.push(`
+        <tr class="adj-row">
+          <td colspan="${labelColspan}" style="text-align:right">Bonos</td>
+          <td style="text-align:right">${fmt(bonusAdvanceSummary.bonus.bank)}</td>
+          <td style="text-align:right">${fmt(bonusAdvanceSummary.bonus.cash)}</td>
+          <td style="text-align:right">${fmt(bonusAdvanceSummary.bonus.total)}</td>
+        </tr>`);
+    }
+    if (bonusAdvanceSummary?.advance.total > 0) {
+      rows.push(`
+        <tr class="adj-row">
+          <td colspan="${labelColspan}" style="text-align:right">Anticipos</td>
+          <td style="text-align:right">− ${fmt(bonusAdvanceSummary.advance.bank)}</td>
+          <td style="text-align:right">− ${fmt(bonusAdvanceSummary.advance.cash)}</td>
+          <td style="text-align:right">− ${fmt(bonusAdvanceSummary.advance.total)}</td>
+        </tr>`);
+    }
+    return rows.join("");
+  };
+  const adjustedTotals = (base) => ({
+    bank: base.bank + (bonusAdvanceSummary?.bonus.bank || 0) - (bonusAdvanceSummary?.advance.bank || 0),
+    cash: base.cash + (bonusAdvanceSummary?.bonus.cash || 0) - (bonusAdvanceSummary?.advance.cash || 0),
+    total: base.total + (bonusAdvanceSummary?.bonus.total || 0) - (bonusAdvanceSummary?.advance.total || 0),
+  });
   const overviewTitle = isDetail ? "Detalle de pago" : "Comprobante de pago en efectivo";
   const docTitle = isDetail ? `${payroll.name} — Detalle pago` : `${payroll.name} — Efectivo`;
   const cycleLabel = (cycleId) => titleOverrides[cycleId] || cyclesById[cycleId]?.label || cycleDetails.find((c) => c.id === cycleId)?.label || cycleId;
@@ -2944,11 +2981,12 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
             </thead>
             <tbody>${rowsHtml}</tbody>
             <tfoot>
+              ${buildAdjustmentRowsHtml(3)}
               <tr class="summary-total">
                 <td colspan="3"><b>TOTAL</b></td>
-                <td style="text-align:right"><b>${fmt(subfaenaSummary.totals.bank)}</b></td>
-                <td style="text-align:right"><b>${fmt(subfaenaSummary.totals.cash)}</b></td>
-                <td style="text-align:right"><b>${fmt(subfaenaSummary.totals.total)}</b></td>
+                <td style="text-align:right"><b>${fmt(adjustedTotals(subfaenaSummary.totals).bank)}</b></td>
+                <td style="text-align:right"><b>${fmt(adjustedTotals(subfaenaSummary.totals).cash)}</b></td>
+                <td style="text-align:right"><b>${fmt(adjustedTotals(subfaenaSummary.totals).total)}</b></td>
               </tr>
             </tfoot>
           </table>
@@ -3012,11 +3050,12 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
             </thead>
             <tbody>${rowsHtml}</tbody>
             <tfoot>
+              ${buildAdjustmentRowsHtml(4)}
               <tr class="summary-total">
                 <td colspan="4"><b>TOTAL</b></td>
-                <td style="text-align:right"><b>${fmt(laborSummary.totals.bank)}</b></td>
-                <td style="text-align:right"><b>${fmt(laborSummary.totals.cash)}</b></td>
-                <td style="text-align:right"><b>${fmt(laborSummary.totals.total)}</b></td>
+                <td style="text-align:right"><b>${fmt(adjustedTotals(laborSummary.totals).bank)}</b></td>
+                <td style="text-align:right"><b>${fmt(adjustedTotals(laborSummary.totals).cash)}</b></td>
+                <td style="text-align:right"><b>${fmt(adjustedTotals(laborSummary.totals).total)}</b></td>
               </tr>
             </tfoot>
           </table>
@@ -3128,6 +3167,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
   table.subfaena-summary { width: 100%; margin-top: 8px; }
   table.subfaena-summary .summary-total td { background: #FFE699; }
   table.subfaena-summary .subtotal-faena td { background: #F2F2F2; font-style: italic; }
+  table.subfaena-summary .adj-row td { background: #EAF3FA; }
   table.prod .prod-total { text-align: right; min-width: 70px; }
   @media print { @page { margin: 14mm landscape; } .receipt { padding: 0; } }
 </style>
@@ -3210,6 +3250,26 @@ async function printPaymentDetails(payroll, allGroups, titleOverrides = {}, summ
     return { rows, totals };
   })();
 
+  // Bonos y anticipos no están ligados a ninguna subfaena/labor en particular
+  // (son un ajuste por trabajador, no por producción), así que no se pueden
+  // repartir entre las filas de subfaenaSummary/laborSummary. Se calculan acá
+  // aparte y se agregan como filas de ajuste al final de esas tablas para que
+  // el TOTAL impreso cuadre exactamente con lo que hay que pagar (bank/cash).
+  const bonusAdvanceSummary = (() => {
+    let bankBonus = 0, cashBonus = 0, bankAdvance = 0, cashAdvance = 0;
+    for (const it of allItems) {
+      const isCash = isCashBank(it.bankCode);
+      const bonus = Number(it.bonus) || 0;
+      const advance = Number(it.advance) || 0;
+      if (isCash) { cashBonus += bonus; cashAdvance += advance; }
+      else { bankBonus += bonus; bankAdvance += advance; }
+    }
+    return {
+      bonus: { bank: bankBonus, cash: cashBonus, total: bankBonus + cashBonus },
+      advance: { bank: bankAdvance, cash: cashAdvance, total: bankAdvance + cashAdvance },
+    };
+  })();
+
   const html = buildCashReceiptHtml(payroll, allGroups, {
     titleOverrides,
     workdaysByGroup,
@@ -3219,6 +3279,7 @@ async function printPaymentDetails(payroll, allGroups, titleOverrides = {}, summ
     summaries,
     subfaenaSummary,
     laborSummary,
+    bonusAdvanceSummary,
   });
   const w = window.open("", "_blank", "width=900,height=700");
   if (!w) {

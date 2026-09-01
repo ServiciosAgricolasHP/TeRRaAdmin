@@ -29,6 +29,21 @@ const stamp = () => ({
   updatedBy: auth.currentUser?.uid || null,
 });
 
+// Campos de referencia cruzada que, cuando el doc los tiene, se denormalizan
+// al `meta` del log de auditoría — sirven para buscar "todo lo que le pasó a
+// este trabajador/ciclo" sin depender de que el log tenga el snapshot
+// completo (los updates solo guardan el diff, ver logger.js). Es opt-in por
+// campo presente, no por entidad: cualquier colección con `workerRut` o
+// `cycleId` (workdays, etc.) queda buscable por esos campos automáticamente.
+// Ver Audit.jsx → EntitySearchPanel.
+const REF_META_FIELDS = ["workerRut", "cycleId"];
+function extractRefMeta(obj) {
+  if (!obj) return null;
+  const meta = {};
+  for (const f of REF_META_FIELDS) if (obj[f] != null) meta[f] = obj[f];
+  return Object.keys(meta).length ? meta : null;
+}
+
 export function createService(entityName, collectionName = entityName) {
   const col = () => collection(db, collectionName);
   const ref = (id) => doc(db, collectionName, id);
@@ -89,7 +104,7 @@ export function createService(entityName, collectionName = entityName) {
     const result = { id: docId, ...data };
     if (additive) mergeListItem(scope, result);
     else invalidate();
-    await logAction({ action: "create", entity: entityName, entityId: docId, after: data });
+    await logAction({ action: "create", entity: entityName, entityId: docId, after: data, meta: extractRefMeta(data) });
     return result;
   }
 
@@ -101,7 +116,7 @@ export function createService(entityName, collectionName = entityName) {
     const result = { id, ...after };
     if (additive) mergeListItem(scope, result);
     else invalidate();
-    await logAction({ action: "update", entity: entityName, entityId: id, before, after });
+    await logAction({ action: "update", entity: entityName, entityId: id, before, after, meta: extractRefMeta(after) });
     return result;
   }
 
@@ -121,6 +136,7 @@ export function createService(entityName, collectionName = entityName) {
       entityId: id,
       before: before || null,
       after,
+      meta: extractRefMeta(after),
     });
     return result;
   }
@@ -130,7 +146,7 @@ export function createService(entityName, collectionName = entityName) {
     await deleteDoc(ref(id));
     if (additive) removeListItem(scope, id);
     else invalidate();
-    await logAction({ action: "delete", entity: entityName, entityId: id, before });
+    await logAction({ action: "delete", entity: entityName, entityId: id, before, meta: extractRefMeta(before) });
   }
 
   return {

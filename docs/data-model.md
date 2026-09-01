@@ -45,6 +45,7 @@ Período de trabajo en una subfaena. Contiene labores anidadas y la matriz de pr
 
 `Labor` (embebido en `cycles.labors`):
 - `id`, `name`, `type` (`cosecha` \| `trato` \| `tratoHE` \| `main` \| `supervision` \| `extra`)
+- `laborGroupId?: ref→laborGroups` — hila esta labor con las de mismo tipo en otros ciclos de la misma subfaena (ej. "Poda" del ciclo pasado con "Poda" del actual). Opcional, aditivo — `workdays`/`payroll` siguen usando `cycleId`+`laborId` (el id local del ciclo) igual que siempre; esto no lo reemplaza.
 - `workers: WorkerEntry[]` — referencias al trabajador, no solo RUT:
   - `rut`, `name`
   - `isTemp?: bool` — trabajador temporal (sin RUT real); convertirlo via "Asignar RUT"
@@ -52,11 +53,28 @@ Período de trabajo en una subfaena. Contiene labores anidadas y la matriz de pr
   - `monthly?: bool` — sueldo mensual: las celdas pasan a checkbox de asistencia, workdays con `amount: 0` y `attendanceOnly: true`, excluidos de la nómina, badge "M"
 - `baseDayDefault?`, `bonusManejo?`, `bonusSupervision?`, `overtimeRate?`
 
-### `worker` (singular en Firestore)
-Trabajador. **DocId = RUT** (ej. `12345678-9`, `12345678-B`).
+### `laborGroups`
+Agrupación de labores a través de ciclos, scoped a una subfaena (puede haber varias por subfaena: Poda, Riego, etc.). Renombrar el grupo no reescribe retroactivamente el `name` de las labores ya vinculadas — cada ciclo conserva el nombre que tenía al crearse.
 | Campo | Tipo | Notas |
 |---|---|---|
-| `id` (docId) | string | RUT |
+| `id` (docId) | string | autoId |
+| `subfaenaId` | ref→`subfaenas` | |
+| `name` | string | |
+| `active` | bool | |
+
+### `worker` (singular en Firestore)
+Trabajador. **DocId = rut con el que se creó** (ej. `12345678-9`, `12345678-B`) — pero
+desde la migración "rut editable" (fase 1) ese id se trata como un **`workerId`
+estable**: nunca se vuelve a tocar aunque el rut legal cambie después (Firestore
+no soporta rename de doc id). El rut ACTUAL vive en el campo `rut`, editable —
+arranca igual al id pero puede divergir (típico: trabajador con cédula de
+extranjería provisoria `-B`/`-H` que después obtiene rut definitivo). Todo lo
+que necesite identidad estable (agrupar workdays, nóminas, auditoría) debe usar
+el id/workerId, nunca el campo `rut`.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | `workerId` estable — rut de creación, no cambia nunca |
+| `rut` | string | rut legal ACTUAL, editable (campo agregado en fase 1; workers viejos necesitan backfill, ver AdminConsole → "Backfill: campo rut en trabajadores") |
 | `name` | string | UPPERCASE típicamente |
 | `email` | string? | |
 | `bankDetails` | `[paymentRut, accountNumber, accountType, bankCode]` | tupla. accountType: 0 cta corriente, 1 cta vista, 3 cuenta RUT. bankCode `EFE` = efectivo. |
@@ -67,10 +85,11 @@ Trabajador. **DocId = RUT** (ej. `12345678-9`, `12345678-B`).
 Una fila por (cycleId × laborId × workerRut × date). Es la tabla "transaccional" de producción.
 | Campo | Tipo | Notas |
 |---|---|---|
-| `id` (docId) | string | autoId |
+| `id` (docId) | string | compuesto: `${cycleId}__${laborId}__${rut}__${date}[__${comboKey}]` (ver `utils/cosechaCombos.js` → `workdayDocId`). El segmento de rut queda congelado con el valor que tenía el worker AL CREAR el workday — no se reescribe si el trabajador edita su rut después. |
 | `cycleId` | ref→`cycles` | |
 | `laborId` | string | id dentro de `cycles.labors` |
-| `workerRut` | ref→`worker` | |
+| `workerRut` | string | rut del trabajador AL MOMENTO de crear/editar este workday — puede quedar desactualizado si el trabajador edita su rut después |
+| `workerId` | ref→`worker` (por id, estable) | agregado en fase 2 de la migración "rut editable"; es la forma correcta de unir con el worker, no `workerRut`. Workdays viejos (pre-migración) no lo tienen — fallback a `workerRut` en ese caso |
 | `date` | string (YYYY-MM-DD) | |
 | `qty` | number? | kilos / cantidad |
 | `qualityX`, `containerY` | number? | ejes del combo (cosecha) |
@@ -102,7 +121,7 @@ Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
 | `advanceTotal` | number | |
 
 `PayrollItem` (embebido):
-- `workerRut`, `workerName`, `bankDetails`
+- `rut` (el campo real en código es `rut`, no `workerRut` a pesar de lo que sugiere el nombre del doc — mismatch histórico), `workerId` (agregado en fase 2, ref estable al worker), `workerName`, `bankDetails`
 - `amount`, `advance`, `anticiposTotal`, `adelantosTotal`
 - `byCycle: { [cycleId]: {...} }`
 - `workdayIds: string[]`, `advanceIds: string[]`
@@ -137,7 +156,8 @@ Anticipos / adelantos. Se aplican contra una nómina.
 |---|---|---|
 | `id` (docId) | string | autoId |
 | `type` | `"anticipo"` \| `"adelanto"` | |
-| `workerRut` | ref→`worker` | |
+| `workerRut` | string | rut al momento de crear el anticipo |
+| `workerId` | ref→`worker` (por id, estable) | agregado en fase 2; fallback a `workerRut` en anticipos viejos |
 | `workerName` | string | snapshot |
 | `amount` | number | |
 | `date` | string (YYYY-MM-DD) | |
@@ -166,6 +186,7 @@ Transportistas (propios o contratados).
 | `vehicleAlias` | string | |
 | `cycleId` | ref→`cycles` | |
 | `faenaId`, `subfaenaId` | ref \| null | |
+| `laborId` | string? | id de labor dentro de `cycle.labors[]`. Opcional — solo se pide en el form cuando el ciclo tiene más de una labor simultánea; sin valor, el viaje aplica al ciclo completo (comportamiento de siempre). El `laborGroupId` (cross-ciclo) se deriva de ahí, no se duplica en el viaje. |
 | `date` | string (YYYY-MM-DD) | |
 | `kind` | `"regular"` \| `"approach"` | |
 | `qty`, `rate`, `amount` | number | `amount = qty * rate` |

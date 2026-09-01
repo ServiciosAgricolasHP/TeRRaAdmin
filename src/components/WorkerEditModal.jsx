@@ -51,7 +51,10 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
       });
     } else {
       const bd = worker?.bankDetails || [];
-      const rut = worker?.id || "";
+      // Fase 3 de "rut editable": mostramos el rut ACTUAL (campo `rut`), no
+      // el id (workerId estable, congelado desde la creación) — fallback al
+      // id para workers viejos sin backfill todavía.
+      const rut = worker?.rut || worker?.id || "";
       setForm({
         rut,
         name: worker?.name || "",
@@ -167,9 +170,17 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
       return setError("Confirma que es un trabajador distinto antes de continuar.");
     }
 
-    if (isCreate) {
+    const rutChanged = !isCreate && rut !== (worker?.rut || worker?.id || "");
+    if (isCreate || rutChanged) {
+      // Chequeamos colisión por id (rut de creación de otro worker) Y por el
+      // campo `rut` actual de otro worker — un rut nuevo no puede coincidir
+      // con ninguno de los dos.
       const dup = await findWorkerByRut(rut);
-      if (dup) return setError("Ya existe un trabajador con ese RUT");
+      if (dup && dup.id !== worker?.id) return setError("Ya existe un trabajador con ese RUT");
+      if (rutChanged) {
+        const byField = await workersService.list({ wheres: [["rut", "==", rut]] });
+        if (byField.some((w) => w.id !== worker.id)) return setError("Ya existe un trabajador con ese RUT");
+      }
     }
 
     const payRut = normalizeRut(form.bd_paymentRut || rut);
@@ -210,6 +221,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
         await workersService.update(rut, { groupLeader, idQr, bankDetails });
       } else {
         await workersService.update(worker.id, {
+          ...(rutChanged ? { rut } : {}),
           name: toProperName(form.name),
           groupLeader,
           idQr,
@@ -228,7 +240,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
     <Modal
       open={open}
       onClose={() => !busy && onClose()}
-      title={isCreate ? "Nuevo trabajador" : `Editar ${formatRutForDisplay(worker?.id)}`}
+      title={isCreate ? "Nuevo trabajador" : `Editar ${formatRutForDisplay(worker?.rut || worker?.id)}`}
       size="lg"
     >
       <form onSubmit={submit} className="space-y-5">
@@ -239,12 +251,15 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
               required
               placeholder="12345678-K o 12345678-B"
               value={form.rut}
-              onChange={(v) => isCreate && setForm((f) => ({ ...f, rut: v }))}
+              onChange={(v) => setForm((f) => ({ ...f, rut: v }))}
             />
             {!isCreate && (
-              <p className="mt-1 text-xs text-[var(--color-muted)]">El RUT no se puede modificar.</p>
+              <p className="mt-1 text-xs text-[var(--color-muted)]">
+                Se puede corregir (ej. de cédula extranjera provisoria a RUT definitivo).
+                No afecta el historial ya registrado con el RUT anterior.
+              </p>
             )}
-            {isCreate && isForeign && (
+            {isForeign && (
               <p className="mt-1 text-xs text-[var(--color-warning)]">
                 RUT extranjero — no se valida con dígito verificador. Verifica datos manualmente.
               </p>
@@ -271,7 +286,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
                 <li key={m.worker.id} className="flex items-center justify-between text-xs">
                   <span className="font-medium text-[var(--color-text)]">{m.worker.name}</span>
                   <span className="text-[var(--color-muted)]">
-                    {formatRutForDisplay(m.worker.id)} · {Math.round(m.score * 100)}%
+                    {formatRutForDisplay(m.worker.rut || m.worker.id)} · {Math.round(m.score * 100)}%
                   </span>
                 </li>
               ))}

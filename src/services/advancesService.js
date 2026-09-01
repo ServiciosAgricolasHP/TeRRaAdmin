@@ -46,29 +46,35 @@ export function advanceTypeMeta(type) {
 
 export const advancesService = createService("advance", "advances");
 
-export async function listPendingForWorkers(workerRuts) {
+// Fase 3 de "rut editable": un anticipo puede estar marcado por `workerRut`
+// (rut al crearlo) o por `workerId` (id estable, agregado en fase 2).
+// Aceptamos ambas listas y mezclamos — así no se pierde un anticipo pendiente
+// si el rut del trabajador cambió después de crearlo.
+export async function listPendingForWorkers(workerRuts, workerIds = []) {
   // Firestore caps disjunctive normal form at 30. Two compound `in` filters
-  // multiply: 30 ruts × 2 statuses = 60 → too many disjunctions. We keep the
-  // workerRut chunk at 15 and filter status client-side to stay under the
-  // limit even if the status set grows in the future.
+  // multiply: 30 ruts × 2 statuses = 60 → too many disjunctions. We keep each
+  // chunk at 15 and filter status client-side to stay under the limit even
+  // if the status set grows in the future.
   const out = [];
   const seen = new Set();
-  const ruts = [...new Set(workerRuts)].filter(Boolean);
   const PENDING_STATUSES = new Set(["pending", "partial"]);
-  for (let i = 0; i < ruts.length; i += 15) {
-    const chunk = ruts.slice(i, i + 15);
-    const list = await advancesService.list({
-      wheres: [["workerRut", "in", chunk]],
-    });
-    for (const a of list) {
-      if (seen.has(a.id)) continue;
-      // Legacy docs without a `status` field are treated as pending.
-      const st = a.status || "pending";
-      if (!PENDING_STATUSES.has(st)) continue;
-      seen.add(a.id);
-      out.push(a);
+  const collect = async (field, values) => {
+    const uniq = [...new Set(values)].filter(Boolean);
+    for (let i = 0; i < uniq.length; i += 15) {
+      const chunk = uniq.slice(i, i + 15);
+      const list = await advancesService.list({ wheres: [[field, "in", chunk]] });
+      for (const a of list) {
+        if (seen.has(a.id)) continue;
+        // Legacy docs without a `status` field are treated as pending.
+        const st = a.status || "pending";
+        if (!PENDING_STATUSES.has(st)) continue;
+        seen.add(a.id);
+        out.push(a);
+      }
     }
-  }
+  };
+  await collect("workerRut", workerRuts);
+  await collect("workerId", workerIds);
   return out;
 }
 

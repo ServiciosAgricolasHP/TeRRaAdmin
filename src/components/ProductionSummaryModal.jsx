@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { captureFullWidthBlob } from "../utils/imageCapture";
 import Modal from "./Modal";
-import { workdaysService } from "../services";
+import { workdaysService, laborGroupsService } from "../services";
 import { tripsService } from "../services/transportsService";
 import { useCatalogs } from "../contexts/CatalogsContext";
 import { useToast } from "../contexts/ToastContext";
@@ -196,6 +196,41 @@ export default function ProductionSummaryModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, cycles.map((c) => c.id).join(",")]);
 
+  // Agrupaciones de labor (laborGroups) de las subfaenas involucradas — para
+  // resolver el nombre del grupo al totalizar por laborGroupId más abajo.
+  // Se busca por subfaenaId (no por cycleId): varios ciclos comparten la
+  // misma subfaena, así que se evita refetchear el mismo grupo N veces.
+  const [laborGroupsBySubfaena, setLaborGroupsBySubfaena] = useState({});
+  useEffect(() => {
+    if (!open) return;
+    const subIds = [...new Set(cycles.map((c) => c.subfaenaId).filter(Boolean))];
+    const missing = subIds.filter((sid) => !laborGroupsBySubfaena[sid]);
+    if (missing.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const fetched = await Promise.all(
+          missing.map(async (sid) => [sid, await laborGroupsService.list({ wheres: [["subfaenaId", "==", sid]] })]),
+        );
+        if (cancelled) return;
+        setLaborGroupsBySubfaena((prev) => {
+          const next = { ...prev };
+          for (const [sid, list] of fetched) next[sid] = list;
+          return next;
+        });
+      } catch { /* noop */ }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, cycles.map((c) => c.id).join(",")]);
+  const laborGroupsById = useMemo(() => {
+    const m = new Map();
+    for (const list of Object.values(laborGroupsBySubfaena)) {
+      for (const g of list) m.set(g.id, g);
+    }
+    return m;
+  }, [laborGroupsBySubfaena]);
+
   // Orden de columnas/chips: agrupadas por subfaena (para que los ciclos de
   // una misma subfaena queden uno al lado del otro) y, dentro de cada grupo,
   // en orden cronológico ascendente (más viejo primero) por el primer día
@@ -374,6 +409,28 @@ export default function ProductionSummaryModal({
     return sum;
   }, [dataByColumn, transportByCycle]);
 
+  // Totales por grupo de labor: suma el monto de producción (bruto, sin
+  // % de ganancia/IVA — esos viven en CombinedSummaryCard) de todas las
+  // columnas (ciclo × labor) que comparten el mismo laborGroupId. Así se ve
+  // "todo lo de Poda" a través de varios ciclos sin tener que sumarlo a
+  // mano. Columnas sin grupo asignado no entran acá (siguen visibles en las
+  // otras tablas igual).
+  const groupTotals = useMemo(() => {
+    const m = new Map();
+    for (const d of dataByColumn) {
+      const gid = d.col.labor.laborGroupId;
+      if (!gid) continue;
+      if (!m.has(gid)) {
+        const g = laborGroupsById.get(gid);
+        m.set(gid, { id: gid, name: g?.name || "(grupo eliminado)", amount: 0, cycleIds: new Set() });
+      }
+      const entry = m.get(gid);
+      entry.amount += d.totalAmount || 0;
+      entry.cycleIds.add(d.col.cycleId);
+    }
+    return [...m.values()].sort((a, b) => b.amount - a.amount);
+  }, [dataByColumn, laborGroupsById]);
+
   return (
     <Modal open={open} onClose={onClose} title={title} size="2xl">
       <div className="mb-3 flex flex-wrap items-center gap-3 text-xs">
@@ -549,12 +606,46 @@ export default function ProductionSummaryModal({
               includeTransport={includeTransport}
             />
           )}
+          {groupTotals.length > 0 && <LaborGroupTotalsCard groupTotals={groupTotals} />}
           {dataByColumn.map((d) => (
             <LaborSummaryCard key={d.col.key} data={d} catalogs={catalogs} allClosedCollapsed={allClosedCollapsed} />
           ))}
         </div>
       )}
     </Modal>
+  );
+}
+
+// Totales por grupo de labor (cross-ciclo): una fila por laborGroupId con el
+// monto de producción sumado de todas sus columnas (ciclo × labor). Monto
+// bruto de producción — no toca % de ganancia/IVA, eso vive aparte en
+// CombinedSummaryCard. Solo aparece si al menos una labor tiene grupo
+// asignado; las que no tienen grupo simplemente no entran acá.
+function LaborGroupTotalsCard({ groupTotals }) {
+  return (
+    <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
+      <div className="bg-[var(--color-surface-2)] px-3 py-1.5 text-xs font-semibold text-[var(--color-muted)]">
+        Totales por grupo de labor (todos los ciclos)
+      </div>
+      <table className="w-full text-sm">
+        <thead className="bg-[var(--color-surface-2)] text-left text-[10px] uppercase tracking-wide text-[var(--color-muted)]">
+          <tr>
+            <th className="px-3 py-1.5">Grupo</th>
+            <th className="px-3 py-1.5 text-right">Ciclos</th>
+            <th className="px-3 py-1.5 text-right">Monto</th>
+          </tr>
+        </thead>
+        <tbody>
+          {groupTotals.map((g) => (
+            <tr key={g.id} className="border-t border-[var(--color-border)]">
+              <td className="px-3 py-1.5 font-medium">{g.name}</td>
+              <td className="px-3 py-1.5 text-right tabular-nums text-[var(--color-muted)]">{g.cycleIds.size}</td>
+              <td className="px-3 py-1.5 text-right font-semibold tabular-nums">{fmtCLP(g.amount)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

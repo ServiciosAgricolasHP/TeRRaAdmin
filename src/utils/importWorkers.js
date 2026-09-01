@@ -112,7 +112,7 @@ export function buildWorkerPatch(row, existing) {
   return {
     rut,
     mode: "create",
-    payload: { name: fullName, email, bankDetails, groupLeader: [], idQr: [] },
+    payload: { rut, name: fullName, email, bankDetails, groupLeader: [], idQr: [] },
   };
 }
 

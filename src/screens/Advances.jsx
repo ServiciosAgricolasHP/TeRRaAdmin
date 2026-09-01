@@ -409,6 +409,7 @@ function AdvanceFormModal({ open, item, onClose, onSaved }) {
   const [form, setForm] = useState({
     type: "anticipo",
     workerRut: "",
+    workerId: "",
     workerName: "",
     amount: 0,
     date: todayStr(),
@@ -423,6 +424,10 @@ function AdvanceFormModal({ open, item, onClose, onSaved }) {
       setForm({
         type: normalizeAdvanceType(item?.type) || "anticipo",
         workerRut: item?.workerRut || "",
+        // Fase 2 de "rut editable": `workerId` es el id estable del worker;
+        // fallback a `workerRut` para anticipos viejos (pre-migración) donde
+        // todavía no existía este campo — hoy son el mismo valor.
+        workerId: item?.workerId || item?.workerRut || "",
         workerName: item?.workerName || "",
         amount: item?.amount || 0,
         date: item?.date || todayStr(),
@@ -460,6 +465,7 @@ function AdvanceFormModal({ open, item, onClose, onSaved }) {
       const data = {
         type: form.type,
         workerRut: form.workerRut,
+        workerId: form.workerId || form.workerRut,
         workerName: form.workerName,
         amount: newAmount,
         date: form.date,
@@ -564,13 +570,13 @@ function AdvanceFormModal({ open, item, onClose, onSaved }) {
                     <button
                       key={w.id}
                       onClick={() =>
-                        setForm((f) => ({ ...f, workerRut: w.id, workerName: w.name })) ||
+                        setForm((f) => ({ ...f, workerRut: w.id, workerId: w.id, workerName: w.name })) ||
                         setPicker({ q: "", results: [], open: false })
                       }
                       className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-[var(--color-accent-soft)]"
                     >
                       <span>{w.name}</span>
-                      <span className="font-mono text-xs text-[var(--color-muted)]">{formatRutForDisplay(w.id)}</span>
+                      <span className="font-mono text-xs text-[var(--color-muted)]">{formatRutForDisplay(w.rut || w.id)}</span>
                     </button>
                   ))}
                 </div>

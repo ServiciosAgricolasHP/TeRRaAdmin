@@ -82,4 +82,11 @@ export const costCentersService = createService("costCenter", "costCenters");
 // muestran dentro de la vista de un centro de costo en Facturacion.jsx.
 export const informalExpensesService = createService("informalExpense", "informalExpenses");
 
+// Agrupación de labores a través de ciclos, scoped a una subfaena (puede
+// haber varias por subfaena: Poda, Riego, etc.). `cycle.labors[].laborGroupId`
+// referencia acá — es aditivo, no reemplaza el id local de la labor dentro
+// del ciclo (workdays/payroll siguen usando cycleId+laborId igual que
+// siempre). Ver CycleDetail.jsx (alta/edición de labor).
+export const laborGroupsService = createService("laborGroup", "laborGroups");
+
 export { logAction } from "./logger";

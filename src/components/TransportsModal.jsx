@@ -267,6 +267,7 @@ export default function TransportsModal({ open, onClose, cycle, faena, subfaena,
         days={days}
         defaultDate={editing?.mode === "new" ? editing.date : selectedDate}
         cycleId={cycle?.id}
+        labors={cycle?.labors || []}
         onSave={handleSave}
       />
 
@@ -510,11 +511,15 @@ function CarrierCombobox({ value, onChange, carriers, recentIds, onCreateNew, au
   );
 }
 
-export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate, cycleId, onSave }) {
+export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate, cycleId, labors = [], onSave }) {
   const [carrierId, setCarrierId] = useState("");
   const [vehicleAlias, setVehicleAlias] = useState("");
   const [date, setDate] = useState(defaultDate || "");
   const [kind, setKind] = useState("regular");
+  // A qué labor del ciclo se imputa el viaje. Opcional — solo tiene sentido
+  // elegirlo cuando el ciclo tiene más de una labor simultánea; con una sola
+  // no hay ambigüedad y el viaje sigue aplicando al ciclo completo.
+  const [laborId, setLaborId] = useState("");
   const [qty, setQty] = useState(1);
   const [rate, setRate] = useState(0);
   const [lugar, setLugar] = useState("");
@@ -538,6 +543,7 @@ export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate
       setVehicleAlias(trip.vehicleAlias || "");
       setDate(trip.date || defaultDate || "");
       setKind(trip.kind || "regular");
+      setLaborId(trip.laborId || "");
       setQty(trip.qty || 1);
       setRate(trip.rate || 0);
       setLugar(trip.lugar || "");
@@ -549,6 +555,7 @@ export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate
       setVehicleAlias("");
       setDate(defaultDate || "");
       setKind("regular");
+      setLaborId("");
       setQty(1);
       setRate(0);
       setLugar("");
@@ -594,6 +601,7 @@ export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate
         vehicleAlias,
         date,
         kind,
+        laborId: laborId || null,
         qty: Number(qty) || 1,
         rate: isOwn ? 0 : Number(rate) || 0,
         lugar,
@@ -612,6 +620,7 @@ export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate
   const vehicleOptions = (carrier?.vehicles || []).map((v) => ({ value: v.alias, label: v.alias }));
   const dayOptions = (days || []).map((d) => ({ value: d, label: d }));
   const kindOptions = TRIP_KINDS.map((k) => ({ value: k.value, label: k.label }));
+  const laborOptions = labors.map((l) => ({ value: l.id, label: l.name }));
   const amount = (Number(qty) || 0) * (Number(rate) || 0);
 
   return (
@@ -658,6 +667,15 @@ export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate
           <TextField label="Fecha" type="date" value={date} onChange={setDate} required />
         )}
         <Select label="Tipo" value={kind} onChange={setKind} options={kindOptions} />
+        {labors.length > 1 && (
+          <Select
+            label="Labor (opcional)"
+            value={laborId}
+            onChange={setLaborId}
+            options={laborOptions}
+            placeholder="Todo el ciclo"
+          />
+        )}
         <TextField label="Lugar (origen)" value={lugar} onChange={setLugar} placeholder="ej: C.ALTO/PURRANQUE" />
         <TextField label="Destino" value={destino} onChange={setDestino} placeholder="ej: FRESIA" />
         <TextField label="N° personas" type="number" value={personCount} onChange={setPersonCount} />

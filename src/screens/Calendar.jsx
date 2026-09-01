@@ -389,7 +389,7 @@ export default function Calendar() {
         };
       }
       const e = idx[date][subfaenaId];
-      e.workers.add(wd.workerRut);
+      e.workers.add(wd.workerId || wd.workerRut);
       e.kilos += Number(wd.qty) || 0;
       e.amount += Number(wd.amount) || 0;
       // jornadas: 1 por workday no-cosecha-no-trato (simplificación para vista mensual)
@@ -886,7 +886,7 @@ function DayDetailDrawer({ date, subfaenaId, workdays, trips, cycleById, subfaen
     const tratoTypes = new Set();
     const cosechaContainers = new Set();
     for (const wd of filteredWorkdays) {
-      workers.add(wd.workerRut);
+      workers.add(wd.workerId || wd.workerRut);
       amount += Number(wd.amount) || 0;
       if (wd.pisoOnly) {
         pisoAmount += Number(wd.amount) || 0;
@@ -968,12 +968,17 @@ function DayDetailDrawer({ date, subfaenaId, workdays, trips, cycleById, subfaen
         });
       }
       const e = map.get(key);
-      e.workers.add(wd.workerRut);
+      // Un workday guarda el rut que el trabajador tenía al crearse — si lo
+      // corrige después, sus workdays viejos y nuevos quedan con valores
+      // distintos ahí. `workerId` no cambia, así que agrupamos por eso.
+      const workerId = wd.workerId || wd.workerRut;
+      e.workers.add(workerId);
       e.amount += Number(wd.amount) || 0;
 
       // Inicializar entrada de trabajador en el breakdown.
-      if (!e.workersMap.has(wd.workerRut)) {
-        e.workersMap.set(wd.workerRut, {
+      if (!e.workersMap.has(workerId)) {
+        e.workersMap.set(workerId, {
+          id: workerId,
           rut: wd.workerRut,
           kilos: 0,
           tratoQty: 0,
@@ -983,7 +988,7 @@ function DayDetailDrawer({ date, subfaenaId, workdays, trips, cycleById, subfaen
           pisoAmount: 0,
         });
       }
-      const wEntry = e.workersMap.get(wd.workerRut);
+      const wEntry = e.workersMap.get(workerId);
       const wdAmount = Number(wd.amount) || 0;
       wEntry.amount += wdAmount;
 
@@ -1039,7 +1044,10 @@ function DayDetailDrawer({ date, subfaenaId, workdays, trips, cycleById, subfaen
     return [...map.values()]
       .map((e) => {
         const workersBreakdown = [...e.workersMap.values()]
-          .map((w) => ({ ...w, name: workerById?.get?.(w.rut)?.name || w.rut }))
+          .map((w) => {
+            const found = workerById?.get?.(w.id);
+            return { ...w, rut: found?.rut || w.rut, name: found?.name || w.rut };
+          })
           .sort((a, b) => b.amount - a.amount);
         const qualityDist = [...e.qualityMap.values()].sort(
           (a, b) => b.kilos - a.kilos || b.amount - a.amount,

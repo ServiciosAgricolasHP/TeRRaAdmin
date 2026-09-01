@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { logsService } from "../services";
+import {
+  ENTITY_META,
+  entityLabelEs,
+  searchableEntityTypes,
+  snapshotLabel,
+  diffLabelHint,
+  resolveEntityLabel,
+} from "../utils/auditLabels";
 
 // Auditoría con sesionizado idle-based. Fetcheamos los logs del rango elegido,
 // los agrupamos por usuario y armamos "sesiones" cerrando cada vez que el gap
@@ -69,6 +77,145 @@ function actionPill(action) {
     >
       {s.label}
     </span>
+  );
+}
+
+// Muestra el registro afectado por un log ("Juan Pérez (Trabajador)") en vez
+// del entityId crudo. Intenta resolver el label sin red primero (snapshot del
+// propio log, o el diff si el update justo tocó el nombre); si no hay nada,
+// dispara un fetch en vivo cacheado (ver utils/auditLabels).
+function EntityLabel({ entity, entityId, snapshot, changes }) {
+  const initial = snapshotLabel(entity, snapshot) || diffLabelHint(entity, changes);
+  const [label, setLabel] = useState(initial);
+  useEffect(() => {
+    if (initial || !entityId) return;
+    let cancelled = false;
+    resolveEntityLabel(entity, entityId).then((l) => {
+      if (!cancelled && l) setLabel(l);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entity, entityId]);
+  const idFallback = ENTITY_META[entity]?.idLabel?.(entityId) || entityId;
+  const shown = label || idFallback;
+  return (
+    <span className="inline-flex min-w-0 flex-col">
+      <span className="truncate font-medium">{shown || "—"}</span>
+      <span className="text-[9px] text-[var(--color-muted)]">
+        {entityLabelEs(entity)}
+        {shown && entityId && shown !== entityId ? ` · ${entityId}` : ""}
+      </span>
+    </span>
+  );
+}
+
+// Diccionario de campos comunes a español. Fallback: separa camelCase en
+// palabras ("groupLeader" → "Group Leader") — no es perfecto pero es mejor
+// que mostrar la key cruda.
+const FIELD_LABELS = {
+  name: "Nombre", label: "Etiqueta", rut: "RUT", amount: "Monto", total: "Total",
+  bonus: "Bono", advance: "Anticipo", status: "Estado", active: "Activo",
+  bankCode: "Banco", accountNumber: "N° cuenta", accountType: "Tipo de cuenta",
+  email: "Email", phone: "Teléfono", date: "Fecha", price: "Precio", qty: "Cantidad",
+  notes: "Notas", detail: "Detalle", razonSocial: "Razón social", alias: "Alias",
+  subfaenaId: "Subfaena", faenaId: "Faena", cycleId: "Ciclo", laborId: "Labor",
+  laborGroupId: "Grupo de labor", workerRut: "Trabajador", costCenterId: "Centro de costo",
+  companyId: "Empresa", groupLeader: "Líder de grupo", type: "Tipo", emoji: "Emoji",
+  paidAt: "Fecha de pago", createdAt: "Creado", updatedAt: "Editado",
+};
+const humanizeField = (f) =>
+  FIELD_LABELS[f] || String(f).replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
+
+const MONEY_HINTS = ["amount", "total", "bonus", "advance", "monto", "neto", "iva", "price", "precio", "subtotal", "rate", "tarifa"];
+function formatValue(field, value) {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "boolean") return value ? "Sí" : "No";
+  if (typeof value === "number") {
+    const key = String(field).toLowerCase();
+    if (MONEY_HINTS.some((m) => key.includes(m))) {
+      return new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(value);
+    }
+    return new Intl.NumberFormat("es-CL").format(value);
+  }
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return `[${value.length} elemento${value.length === 1 ? "" : "s"}]`;
+  if (typeof value === "object") return "{…}";
+  return String(value);
+}
+
+// Diff de un update: Campo | Antes | Después.
+function ChangesTable({ changes }) {
+  const entries = Object.entries(changes);
+  return (
+    <table className="w-full text-[11px]">
+      <thead className="text-[var(--color-muted)]">
+        <tr>
+          <th className="px-1 py-0.5 text-left">Campo</th>
+          <th className="px-1 py-0.5 text-left">Antes</th>
+          <th className="px-1 py-0.5 text-left">Después</th>
+        </tr>
+      </thead>
+      <tbody>
+        {entries.map(([f, chg]) => (
+          <tr key={f} className="border-t border-[var(--color-border)]">
+            <td className="px-1 py-0.5 align-top font-medium">{humanizeField(f)}</td>
+            <td className="px-1 py-0.5 align-top text-[var(--color-danger)]">{formatValue(f, chg?.from)}</td>
+            <td className="px-1 py-0.5 align-top text-[var(--color-success)]">{formatValue(f, chg?.to)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// Snapshot completo (before de un delete, after de un create): Campo | Valor.
+function SnapshotTable({ data }) {
+  const entries = Object.entries(data).filter(([k]) => !k.startsWith("_"));
+  return (
+    <table className="w-full text-[11px]">
+      <tbody>
+        {entries.map(([f, v]) => (
+          <tr key={f} className="border-t border-[var(--color-border)]">
+            <td className="w-1/3 px-1 py-0.5 align-top font-medium text-[var(--color-muted)]">{humanizeField(f)}</td>
+            <td className="px-1 py-0.5 align-top">{formatValue(f, v)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// Bloque colapsable de un log (Cambios/Antes/Después/Meta), con toggle a JSON
+// crudo por si la tabla resumida esconde algo que hace falta ver entero
+// (arrays/objetos anidados se muestran como "[N elementos]"/"{…}" en la
+// tabla).
+function FieldBlock({ title, data, kind }) {
+  const [raw, setRaw] = useState(kind === "raw");
+  const canToggle = kind !== "raw";
+  return (
+    <div className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">{title}</span>
+        {canToggle && (
+          <button
+            type="button"
+            onClick={() => setRaw((v) => !v)}
+            className="text-[10px] text-[var(--color-muted)] underline hover:text-[var(--color-text)]"
+          >
+            {raw ? "ver tabla" : "ver JSON"}
+          </button>
+        )}
+      </div>
+      {raw ? (
+        <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all text-[10px]">{JSON.stringify(data, null, 2)}</pre>
+      ) : kind === "changes" ? (
+        <ChangesTable changes={data} />
+      ) : (
+        <SnapshotTable data={data} />
+      )}
+    </div>
   );
 }
 
@@ -144,6 +291,198 @@ function sessionize(logs, gapMinutes) {
   });
 }
 
+// Buscador dedicado: elegí un tipo de registro (Trabajador, Ciclo, Faena…),
+// buscá el específico por nombre/rut y traé TODO su historial de auditoría
+// sin importar el rango de fechas — es una query acotada a ese entityId
+// puntual (entity + entityId, sin orderBy para no pedir índice compuesto; se
+// ordena en el cliente), así que no hace falta el hard cap ni el filtro de
+// fecha de la vista sesionizada de más abajo.
+function EntitySearchPanel() {
+  const types = useMemo(() => searchableEntityTypes(), []);
+  const [entityType, setEntityType] = useState(types[0]?.value || "worker");
+  const [query, setQuery] = useState("");
+  const [allRecords, setAllRecords] = useState([]);
+  const [loadingRecords, setLoadingRecords] = useState(false);
+  const [selected, setSelected] = useState(null); // { id, label }
+  const [recordLogs, setRecordLogs] = useState(null);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  const meta = ENTITY_META[entityType];
+
+  // Trae el catálogo completo del tipo elegido (cacheado 10 min — son listas
+  // chicas: trabajadores, ciclos, faenas, etc.) para buscar/filtrar en el
+  // cliente a medida que se escribe.
+  useEffect(() => {
+    setSelected(null);
+    setRecordLogs(null);
+    setQuery("");
+    if (!meta?.service) {
+      setAllRecords([]);
+      return;
+    }
+    let cancelled = false;
+    setLoadingRecords(true);
+    meta.service
+      .list({ cache: true, ttl: 600_000 })
+      .then((rows) => {
+        if (!cancelled) setAllRecords(rows);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingRecords(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entityType]);
+
+  const matches = useMemo(() => {
+    if (!meta) return [];
+    const q = query.trim().toLowerCase();
+    const fields = meta.searchFields || ["name"];
+    const pool = !q
+      ? allRecords
+      : allRecords.filter((d) => fields.some((f) => String(d[f] || "").toLowerCase().includes(q)));
+    return pool.slice(0, 25);
+  }, [allRecords, query, meta]);
+
+  const pickRecord = async (doc) => {
+    const label = meta.labelOf ? meta.labelOf(doc) : doc.name || doc.id;
+    setSelected({ id: doc.id, label });
+    setRecordLogs(null);
+    setLoadingLogs(true);
+    try {
+      const rows = await logsService.list({
+        wheres: [
+          ["entity", "==", entityType],
+          ["entityId", "==", doc.id],
+        ],
+      });
+      // Los workdays no tienen catálogo propio para buscarlos por nombre (un
+      // trabajador tiene N por día/labor), así que cuando el registro elegido
+      // es un trabajador sumamos también sus logs de "workday" — quedan
+      // buscables porque firestoreBase.js denormaliza `workerRut` al `meta`
+      // del log en cada create/update/delete (ver extractRefMeta).
+      let workdayRows = [];
+      if (entityType === "worker") {
+        workdayRows = await logsService.list({
+          wheres: [
+            ["entity", "==", "workday"],
+            ["meta.workerRut", "==", doc.id],
+          ],
+        });
+      }
+      const merged = [...rows, ...workdayRows];
+      merged.sort((a, b) => toDate(b.timestamp) - toDate(a.timestamp));
+      setRecordLogs(merged);
+    } catch (err) {
+      setRecordLogs([]);
+      console.error("No se pudo cargar el historial:", err);
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
+
+  return (
+    <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between text-left"
+      >
+        <div>
+          <h2 className="text-sm font-semibold">🔍 Buscar por registro</h2>
+          <p className="text-xs text-[var(--color-muted)]">
+            Ver todo el historial de un trabajador, ciclo, faena, etc. en particular — sin límite de fecha.
+            Al buscar un trabajador se incluyen también los cambios en sus jornadas (workdays).
+          </p>
+        </div>
+        <span className="text-[var(--color-muted)]">{open ? "▾" : "▸"}</span>
+      </button>
+
+      {open && (
+        <div className="mt-3 space-y-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-[var(--color-muted)]">Tipo de registro</span>
+              <select
+                value={entityType}
+                onChange={(e) => setEntityType(e.target.value)}
+                className="w-48 rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 text-sm"
+              >
+                {types.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs">
+              <span className="text-[var(--color-muted)]">Buscar</span>
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={loadingRecords ? "Cargando…" : "nombre, rut…"}
+                className="w-56 rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 text-sm"
+              />
+            </label>
+          </div>
+
+          {!selected && (
+            <div className="max-h-48 overflow-y-auto rounded-md border border-[var(--color-border)]">
+              {matches.length === 0 ? (
+                <div className="px-3 py-4 text-center text-xs text-[var(--color-muted)]">
+                  {loadingRecords ? "Cargando…" : "Sin resultados."}
+                </div>
+              ) : (
+                matches.map((d) => (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => pickRecord(d)}
+                    className="block w-full border-t border-[var(--color-border)] px-3 py-1.5 text-left text-sm first:border-t-0 hover:bg-[var(--color-surface-2)]"
+                  >
+                    {meta.labelOf ? meta.labelOf(d) : d.name || d.id}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+
+          {selected && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2 rounded-md bg-[var(--color-accent-soft)] px-3 py-2 text-sm">
+                <span>
+                  <b>{selected.label}</b>{" "}
+                  <span className="text-xs text-[var(--color-muted)]">({meta.labelEs})</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { setSelected(null); setRecordLogs(null); }}
+                  className="text-xs text-[var(--color-muted)] underline hover:text-[var(--color-text)]"
+                >
+                  cambiar
+                </button>
+              </div>
+              {loadingLogs ? (
+                <div className="py-6 text-center text-sm text-[var(--color-muted)]">Cargando historial…</div>
+              ) : recordLogs && recordLogs.length === 0 ? (
+                <div className="rounded-md border border-dashed border-[var(--color-border)] py-6 text-center text-sm text-[var(--color-muted)]">
+                  Sin acciones registradas para este registro.
+                </div>
+              ) : recordLogs ? (
+                <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
+                  <LogsTable logs={recordLogs} />
+                </div>
+              ) : null}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function Audit() {
   const [fromDate, setFromDate] = useState(daysAgoISO(7));
   const [toDate, setToDateStr] = useState(todayISO());
@@ -213,6 +552,8 @@ export default function Audit() {
           gap configurado.
         </p>
       </div>
+
+      <EntitySearchPanel />
 
       {/* Filtros */}
       <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
@@ -360,11 +701,9 @@ export default function Audit() {
   );
 }
 
-// Detalle de una sesión — tabla de acciones ordenadas cronológicamente. Al
-// hacer click en un row se muestra el JSON completo del log (changes/before/
-// after/meta) para debuggear qué pasó.
+// Detalle de una sesión — tabla de acciones ordenadas cronológicamente,
+// envolviendo LogsTable con el borde/fondo propio de una sesión expandida.
 function SessionDetail({ logs }) {
-  const [openIdx, setOpenIdx] = useState(null);
   const sorted = useMemo(
     () => [...logs].sort((a, b) => toDate(a.timestamp) - toDate(b.timestamp)),
     [logs],
@@ -372,78 +711,68 @@ function SessionDetail({ logs }) {
   return (
     <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
       <div className="overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]">
-        <table className="w-full text-xs">
-          <thead className="bg-[var(--color-surface-2)] text-left text-[var(--color-muted)]">
-            <tr>
-              <th className="px-2 py-1.5 w-24">Hora</th>
-              <th className="px-2 py-1.5 w-20">Acción</th>
-              <th className="px-2 py-1.5">Entidad</th>
-              <th className="px-2 py-1.5">ID</th>
-              <th className="px-2 py-1.5"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((l, idx) => {
-              const isOpen = openIdx === idx;
-              const hasDetails = l.changes || l.before || l.after || l.meta;
-              return (
-                <>
-                  <tr
-                    key={l.id || idx}
-                    className="cursor-pointer border-t border-[var(--color-border)] hover:bg-[var(--color-surface-2)]"
-                    onClick={() => hasDetails && setOpenIdx(isOpen ? null : idx)}
-                  >
-                    <td className="px-2 py-1 font-mono text-[10px] text-[var(--color-muted)]">
-                      {fmtTime(toDate(l.timestamp))}
-                    </td>
-                    <td className="px-2 py-1">{actionPill(l.action)}</td>
-                    <td className="px-2 py-1 font-medium">{l.entity || "—"}</td>
-                    <td className="px-2 py-1 font-mono text-[10px] text-[var(--color-muted)]">
-                      {l.entityId || "—"}
-                    </td>
-                    <td className="px-2 py-1 text-right text-[var(--color-muted)]">
-                      {hasDetails ? (isOpen ? "▾" : "▸") : ""}
-                    </td>
-                  </tr>
-                  {isOpen && hasDetails && (
-                    <tr key={`d_${idx}`} className="border-t border-[var(--color-border)]">
-                      <td colSpan={5} className="bg-[var(--color-surface-2)] px-3 py-2">
-                        <div className="grid gap-2 md:grid-cols-2">
-                          {l.changes && (
-                            <DetailBlock title="Cambios" data={l.changes} />
-                          )}
-                          {l.before && (
-                            <DetailBlock title="Antes" data={l.before} />
-                          )}
-                          {l.after && (
-                            <DetailBlock title="Después" data={l.after} />
-                          )}
-                          {l.meta && (
-                            <DetailBlock title="Meta" data={l.meta} />
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </>
-              );
-            })}
-          </tbody>
-        </table>
+        <LogsTable logs={sorted} />
       </div>
     </div>
   );
 }
 
-function DetailBlock({ title, data }) {
+// Tabla de logs reusable — la usa tanto SessionDetail (dentro de una sesión
+// ya sesionizada) como EntitySearchPanel (historial completo de un registro
+// puntual, sin sesionizar). Al hacer click en un row se expande el detalle
+// (changes/before/after/meta) ya traducido a tablas legibles.
+function LogsTable({ logs }) {
+  const [openIdx, setOpenIdx] = useState(null);
   return (
-    <div className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-2">
-      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-        {title}
-      </div>
-      <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all text-[10px]">
-        {JSON.stringify(data, null, 2)}
-      </pre>
-    </div>
+    <table className="w-full text-xs">
+      <thead className="bg-[var(--color-surface-2)] text-left text-[var(--color-muted)]">
+        <tr>
+          <th className="px-2 py-1.5 w-32">Fecha</th>
+          <th className="px-2 py-1.5 w-20">Acción</th>
+          <th className="px-2 py-1.5">Registro</th>
+          <th className="px-2 py-1.5">Usuario</th>
+          <th className="px-2 py-1.5"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {logs.map((l, idx) => {
+          const isOpen = openIdx === idx;
+          const hasDetails = l.changes || l.before || l.after || l.meta;
+          return (
+            <>
+              <tr
+                key={l.id || idx}
+                className="cursor-pointer border-t border-[var(--color-border)] hover:bg-[var(--color-surface-2)]"
+                onClick={() => hasDetails && setOpenIdx(isOpen ? null : idx)}
+              >
+                <td className="px-2 py-1 font-mono text-[10px] text-[var(--color-muted)]">
+                  {fmtDateTime(toDate(l.timestamp))}
+                </td>
+                <td className="px-2 py-1">{actionPill(l.action)}</td>
+                <td className="px-2 py-1">
+                  <EntityLabel entity={l.entity} entityId={l.entityId} snapshot={l.after || l.before} changes={l.changes} />
+                </td>
+                <td className="px-2 py-1 text-[var(--color-muted)]">{l.email || l.uid || "—"}</td>
+                <td className="px-2 py-1 text-right text-[var(--color-muted)]">
+                  {hasDetails ? (isOpen ? "▾" : "▸") : ""}
+                </td>
+              </tr>
+              {isOpen && hasDetails && (
+                <tr key={`d_${idx}`} className="border-t border-[var(--color-border)]">
+                  <td colSpan={5} className="bg-[var(--color-surface-2)] px-3 py-2">
+                    <div className="grid gap-2 md:grid-cols-2">
+                      {l.changes && <FieldBlock title="Cambios" data={l.changes} kind="changes" />}
+                      {l.before && <FieldBlock title="Antes" data={l.before} kind="snapshot" />}
+                      {l.after && <FieldBlock title="Después" data={l.after} kind="snapshot" />}
+                      {l.meta && <FieldBlock title="Meta" data={l.meta} kind="raw" />}
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }

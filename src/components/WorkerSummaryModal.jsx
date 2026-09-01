@@ -626,10 +626,18 @@ const advanceTypeIcon = (type) => advanceTypeMeta(type).icon;
 export async function loadWorkerSummaryData(workerId, catalogs, options = {}) {
   const { includeClosed = false, closedFrom = null, closedTo = null } = options;
   if (!workerId) return { data: [], advances: [], grandTotal: 0, advancesSaldo: 0 };
-  const [wds, pendingAdvances] = await Promise.all([
+  // Fase 3 de "rut editable": `workerId` puede venir como el id estable o
+  // como un rut (según el caller) — buscamos workdays/anticipos por ambos
+  // campos y mezclamos, para no perder producción/anticipos si el rut del
+  // trabajador cambió después de que se crearon.
+  const [wdsByRut, wdsById, pendingAdvances] = await Promise.all([
     workdaysService.list({ wheres: [["workerRut", "==", workerId]] }),
-    listPendingForWorkers([workerId]).catch(() => []),
+    workdaysService.list({ wheres: [["workerId", "==", workerId]] }),
+    listPendingForWorkers([workerId], [workerId]).catch(() => []),
   ]);
+  const wdSeen = new Map();
+  for (const w of [...wdsByRut, ...wdsById]) wdSeen.set(w.id, w);
+  const wds = [...wdSeen.values()];
   const advances = [...pendingAdvances].sort((a, b) =>
     String(a.date || "").localeCompare(String(b.date || "")),
   );
@@ -785,7 +793,7 @@ export const PrintableWorkerSummary = forwardRef(function PrintableWorkerSummary
           {titles?.subtitle && <div style={{ marginTop: 6, fontSize: 14 }}>{titles.subtitle}</div>}
           {worker?.id && (
             <div style={{ marginTop: 2, fontSize: 12, color: "#444", fontFamily: "ui-monospace, monospace" }}>
-              RUT {formatRutForDisplay(worker.id)}
+              RUT {formatRutForDisplay(worker.rut || worker.id)}
             </div>
           )}
           <div style={{ marginTop: 4, fontSize: 11, color: "#666" }}>

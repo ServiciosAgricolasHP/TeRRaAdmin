@@ -4,7 +4,7 @@ import { AgGridReact } from "ag-grid-react";
 import { ModuleRegistry, AllCommunityModule } from "ag-grid-community";
 import "ag-grid-community/styles/ag-grid.css";
 import { toPng, toBlob } from "html-to-image";
-import { cyclesService, faenasService, subfaenasService, workdaysService, workersService, groupLeadersService } from "../services";
+import { cyclesService, faenasService, subfaenasService, workdaysService, workersService, groupLeadersService, laborGroupsService } from "../services";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import { parseAmount } from "../utils/formula";
 import { AG_GRID_LOCALE_ES } from "../utils/agGridLocale";
@@ -552,6 +552,9 @@ export default function CycleDetail() {
   const [cycle, setCycle] = useState(null);
   const [faena, setFaena] = useState(null);
   const [subfaena, setSubfaena] = useState(null);
+  // Agrupaciones de labor de esta subfaena (Poda, Riego, etc.), para hilar
+  // labores del mismo tipo a través de ciclos. Ver laborGroupsService.
+  const [laborGroups, setLaborGroups] = useState([]);
   const [workdaysByLabor, setWorkdaysByLabor] = useState({});
   const [loading, setLoading] = useState(true);
   const [activeLaborId, setActiveLaborId] = useState(null);
@@ -699,7 +702,14 @@ export default function CycleDetail() {
       if (dpChanged) await cyclesService.update(id, { dayPrices: normalizedDP });
 
       if (normalized.faenaId) setFaena(await faenasService.getById(normalized.faenaId));
-      if (normalized.subfaenaId) setSubfaena(await subfaenasService.getById(normalized.subfaenaId));
+      if (normalized.subfaenaId) {
+        setSubfaena(await subfaenasService.getById(normalized.subfaenaId));
+        // Sin `order` a propósito: combinar where(subfaenaId) + orderBy(name)
+        // pide un índice compuesto en Firestore. La lista es chica — se
+        // ordena en el cliente y no hace falta crear ningún índice.
+        const groups = await laborGroupsService.list({ wheres: [["subfaenaId", "==", normalized.subfaenaId]] });
+        setLaborGroups([...groups].sort((a, b) => a.name.localeCompare(b.name)));
+      }
 
       const wds = await workdaysService.list({ wheres: [["cycleId", "==", id]] });
       const byLabor = {};
@@ -888,6 +898,18 @@ export default function CycleDetail() {
   const workers = activeLabor?.workers || [];
   const wdMap = (activeLabor && workdaysByLabor[activeLabor.id]) || {};
   const defaultMode = activeLabor?.cosechaMode || activeLabor?.tratoMode || "unit";
+
+  // Fase 2 de la migración "rut editable" (ver workersService.js /
+  // docs/data-model.md): cada workday nuevo/editado graba `workerId` además
+  // de `workerRut`, para que en el futuro (fase 4) las lecturas puedan dejar
+  // de depender del rut actual del trabajador. Se resuelve buscando la
+  // entrada del roster de la labor por rut y usando su `id` — con fallback al
+  // propio rut si el roster todavía no tiene `id` (entradas viejas,
+  // pre-migración; seguro mientras nadie haya editado su rut, ver fase 3).
+  const workerIdFor = (laborId, rut) => {
+    const labor = cycle?.labors?.find((l) => l.id === laborId);
+    return labor?.workers?.find((w) => w.rut === rut)?.id || rut;
+  };
 
   // Días de la labor activa que muestran la columna "P" en la grilla. Para
   // no agregar ruido, la columna solo aparece en días que ya tienen piso
@@ -1394,8 +1416,8 @@ export default function CycleDetail() {
       // `getTratoTierTotals` prioriza al calcular totales. Si no se actualiza
       // queda stale tras cambiar el precio del día. Ver onCellValueChanged.
       const patch = isTrato
-        ? { ...wd, amount, tiers: { "0": { qty, amount } }, totalAmount: amount }
-        : { ...wd, qualityX: x, containerY: y, amount };
+        ? { ...wd, amount, tiers: { "0": { qty, amount } }, totalAmount: amount, workerId: w.id || w.rut }
+        : { ...wd, qualityX: x, containerY: y, amount, workerId: w.id || w.rut };
       await workdaysService.upsert(docId, patch);
       updates[mapKey] = patch;
     }
@@ -1435,7 +1457,7 @@ export default function CycleDetail() {
       const amount = computeStageDayAmount(mode, price, qty);
       if (amount === wd.amount) continue;
       const docId = workdayDocId(id, laborId, w.rut, date, stageId);
-      const patch = { ...wd, amount };
+      const patch = { ...wd, amount, workerId: w.id || w.rut };
       await workdaysService.upsert(docId, patch);
       updates[mapKey] = patch;
     }
@@ -1500,6 +1522,7 @@ export default function CycleDetail() {
       cycleId: id, laborId, workerRut, date,
       qty: 0, amount,
       pisoOnly: true,
+      workerId: workerIdFor(laborId, workerRut),
     };
     await workdaysService.upsert(docId, next);
     setWorkdaysByLabor((prev) => {
@@ -1554,10 +1577,11 @@ export default function CycleDetail() {
     if (!amount) return;
     const docId = workdayDocId(id, laborId, workerRut, date, SINGLE_COMBO);
     const mapKey = workdayMapKey(workerRut, date, SINGLE_COMBO);
-    await workdaysService.upsert(docId, { cycleId: id, laborId, workerRut, date, amount });
+    const workerId = workerIdFor(laborId, workerRut);
+    await workdaysService.upsert(docId, { cycleId: id, laborId, workerRut, date, amount, workerId });
     setWorkdaysByLabor((prev) => {
       const lab = { ...(prev[laborId] || {}) };
-      lab[mapKey] = { ...lab[mapKey], cycleId: id, laborId, workerRut, date, amount };
+      lab[mapKey] = { ...lab[mapKey], cycleId: id, laborId, workerRut, date, amount, workerId };
       return { ...prev, [laborId]: lab };
     });
   };
@@ -1587,7 +1611,7 @@ export default function CycleDetail() {
     const merged = { ...seed, ...patch };
     const dayCfg = getDaySingle(dayPrices, laborId, date, "normal");
     const amount = computeTratoHEAmount(labor, dayCfg, merged);
-    const wd = { cycleId: id, laborId, workerRut, date, ...merged, amount };
+    const wd = { cycleId: id, laborId, workerRut, date, ...merged, amount, workerId: workerIdFor(laborId, workerRut) };
 
     if (!workdayHasData(wd)) {
       if (existing) {
@@ -1622,7 +1646,7 @@ export default function CycleDetail() {
       const amount = computeTratoHEAmount(labor, dayCfg, wd);
       if (amount === wd.amount) continue;
       const docId = workdayDocId(id, laborId, w.rut, date, SINGLE_COMBO);
-      const next = { ...wd, amount };
+      const next = { ...wd, amount, workerId: w.id || w.rut };
       await workdaysService.upsert(docId, next);
       updates[mapKey] = next;
     }
@@ -1645,7 +1669,7 @@ export default function CycleDetail() {
       const amount = computeTratoHEAmount(labor, dayCfg, wd);
       if (amount === wd.amount) continue;
       const docId = workdayDocId(id, laborId, wd.workerRut, wd.date, SINGLE_COMBO);
-      const next = { ...wd, amount };
+      const next = { ...wd, amount, workerId: workerIdFor(laborId, wd.workerRut) };
       await workdaysService.upsert(docId, next);
       updates[k] = next;
     }
@@ -1939,13 +1963,14 @@ export default function CycleDetail() {
         params.node.setDataValue(field, 0);
         params.node.setDataValue(`${field}__amt`, 0);
       } else {
+        const workerId = workerIdFor(activeLabor.id, workerRut);
         await workdaysService.upsert(docId, {
           cycleId: id, laborId: activeLabor.id, workerRut, date,
-          qualityX: x, containerY: y, qty, amount,
+          qualityX: x, containerY: y, qty, amount, workerId,
         });
         setWorkdaysByLabor((prev) => {
           const lab = { ...(prev[activeLabor.id] || {}) };
-          lab[mapKey] = { ...lab[mapKey], cycleId: id, laborId: activeLabor.id, workerRut, date, qualityX: x, containerY: y, qty, amount };
+          lab[mapKey] = { ...lab[mapKey], cycleId: id, laborId: activeLabor.id, workerRut, date, qualityX: x, containerY: y, qty, amount, workerId };
           return { ...prev, [activeLabor.id]: lab };
         });
         params.node.setDataValue(field, qty);
@@ -2014,16 +2039,17 @@ export default function CycleDetail() {
         // hay que sincronizarlo con `qty/amount` o el labor total queda
         // contando el valor viejo hasta que se recargue la página.
         const tiersField = { "0": { qty, amount } };
+        const workerId = workerIdFor(activeLabor.id, workerRut);
         await workdaysService.upsert(docId, {
           cycleId: id, laborId: activeLabor.id, workerRut, date, qty, amount,
-          tiers: tiersField, totalAmount: amount,
+          tiers: tiersField, totalAmount: amount, workerId,
         });
         setWorkdaysByLabor((prev) => {
           const lab = { ...(prev[activeLabor.id] || {}) };
           lab[mapKey] = {
             ...lab[mapKey],
             cycleId: id, laborId: activeLabor.id, workerRut, date, qty, amount,
-            tiers: tiersField, totalAmount: amount,
+            tiers: tiersField, totalAmount: amount, workerId,
           };
           return { ...prev, [activeLabor.id]: lab };
         });
@@ -2070,14 +2096,15 @@ export default function CycleDetail() {
       } else {
         // `stageId` explícito en el doc: lo consumen el conteo (getEtapasTotals),
         // los resúmenes y la nómina sin tener que re-parsear el docId.
+        const workerId = workerIdFor(activeLabor.id, workerRut);
         await workdaysService.upsert(docId, {
-          cycleId: id, laborId: activeLabor.id, workerRut, date, qty, amount, stageId,
+          cycleId: id, laborId: activeLabor.id, workerRut, date, qty, amount, stageId, workerId,
         });
         setWorkdaysByLabor((prev) => {
           const lab = { ...(prev[activeLabor.id] || {}) };
           lab[mapKey] = {
             ...lab[mapKey],
-            cycleId: id, laborId: activeLabor.id, workerRut, date, qty, amount, stageId,
+            cycleId: id, laborId: activeLabor.id, workerRut, date, qty, amount, stageId, workerId,
           };
           return { ...prev, [activeLabor.id]: lab };
         });
@@ -2114,10 +2141,11 @@ export default function CycleDetail() {
         });
       }
     } else {
-      await workdaysService.upsert(docId, { cycleId: id, laborId: activeLabor.id, workerRut, date, amount });
+      const workerId = workerIdFor(activeLabor.id, workerRut);
+      await workdaysService.upsert(docId, { cycleId: id, laborId: activeLabor.id, workerRut, date, amount, workerId });
       setWorkdaysByLabor((prev) => {
         const lab = { ...(prev[activeLabor.id] || {}) };
-        lab[mapKey] = { ...lab[mapKey], cycleId: id, laborId: activeLabor.id, workerRut, date, amount };
+        lab[mapKey] = { ...lab[mapKey], cycleId: id, laborId: activeLabor.id, workerRut, date, amount, workerId };
         return { ...prev, [activeLabor.id]: lab };
       });
     }
@@ -2171,8 +2199,9 @@ export default function CycleDetail() {
   // ============================================================
 
   const pickWorker = async (worker) => {
-    if (workers.find((w) => w.rut === worker.rut)) { setPickerOpen(false); return; }
-    const entry = { rut: worker.rut, name: worker.name };
+    const pickedId = worker.id || worker.rut;
+    if (workers.find((w) => (w.id || w.rut) === pickedId)) { setPickerOpen(false); return; }
+    const entry = { id: pickedId, rut: worker.rut, name: worker.name };
     if (worker.isTemp) {
       entry.isTemp = true;
       // Temp workers don't have a row in the `worker` collection, so their
@@ -2214,13 +2243,14 @@ export default function CycleDetail() {
         return { ...prev, [activeLabor.id]: lab };
       });
     } else {
+      const workerId = workerIdFor(activeLabor.id, rut);
       await workdaysService.upsert(docId, {
         cycleId: id, laborId: activeLabor.id, workerRut: rut, date,
-        amount: 0, attendanceOnly: true,
+        amount: 0, attendanceOnly: true, workerId,
       });
       setWorkdaysByLabor((prev) => {
         const lab = { ...(prev[activeLabor.id] || {}) };
-        lab[mapKey] = { cycleId: id, laborId: activeLabor.id, workerRut: rut, date, amount: 0, attendanceOnly: true };
+        lab[mapKey] = { cycleId: id, laborId: activeLabor.id, workerRut: rut, date, amount: 0, attendanceOnly: true, workerId };
         return { ...prev, [activeLabor.id]: lab };
       });
     }
@@ -2297,12 +2327,12 @@ export default function CycleDetail() {
         parts[2] = real.rut;
         const newDocId = parts.join("__");
         const { id: _omit, ...rest } = wd;
-        await workdaysService.upsert(newDocId, { ...rest, workerRut: real.rut });
+        await workdaysService.upsert(newDocId, { ...rest, workerRut: real.rut, workerId: real.id || real.rut });
         await workdaysService.remove(wd.id);
       }
       // Update labor.workers in place — preserve order.
       const nextWorkers = workers.map((w) =>
-        w.rut === tempRut ? { rut: real.rut, name: real.name } : w,
+        w.rut === tempRut ? { id: real.id || real.rut, rut: real.rut, name: real.name } : w,
       );
       await persistLabor({ ...activeLabor, workers: nextWorkers });
       // Rebuild local wdMap for this labor: re-key entries that pointed at temp.
@@ -2340,6 +2370,8 @@ export default function CycleDetail() {
       mode: "create",
       data: {
         name: "", type: "extra",
+        laborGroupId: "",
+        newGroupName: "",
         cosechaMode: "unit",
         tratoMode: "unit",
         tratoType: catalogs.tratoTypes?.[0]?.value ?? 0,
@@ -2358,6 +2390,8 @@ export default function CycleDetail() {
         id: activeLabor.id,
         name: activeLabor.name,
         type: activeLabor.type,
+        laborGroupId: activeLabor.laborGroupId || "",
+        newGroupName: "",
         cosechaMode: activeLabor.cosechaMode || "unit",
         tratoMode: activeLabor.tratoMode || "unit",
         tratoType: activeLabor.tratoType ?? (catalogs.tratoTypes?.[0]?.value ?? 0),
@@ -2374,11 +2408,28 @@ export default function CycleDetail() {
   const submitLabor = async (e) => {
     e.preventDefault();
     if (!laborForm.data.name.trim()) return;
+    // "__new__" = el usuario está creando una agrupación nueva desde acá
+    // mismo — se crea el doc en laborGroups antes de armar la labor.
+    let laborGroupId = laborForm.data.laborGroupId || null;
+    if (laborGroupId === "__new__") {
+      if (!laborForm.data.newGroupName.trim()) {
+        toast.warning("Ponele un nombre a la agrupación nueva.");
+        return;
+      }
+      const created = await laborGroupsService.create({
+        subfaenaId: cycle.subfaenaId,
+        name: laborForm.data.newGroupName.trim(),
+        active: true,
+      });
+      laborGroupId = created.id;
+      setLaborGroups((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+    }
     const buildLabor = (existing = {}) => {
       const base = {
         ...existing,
         name: laborForm.data.name.trim(),
         type: laborForm.data.type,
+        laborGroupId: laborGroupId || null,
       };
       if (laborForm.data.type === "cosecha") {
         base.cosechaMode = laborForm.data.cosechaMode;
@@ -2423,7 +2474,7 @@ export default function CycleDetail() {
           const amount = computeTratoHEAmount(updatedLabor, dayCfg, wd);
           if (amount === wd.amount) continue;
           const docId = workdayDocId(id, updatedLabor.id, wd.workerRut, wd.date, SINGLE_COMBO);
-          const next = { ...wd, amount };
+          const next = { ...wd, amount, workerId: workerIdFor(updatedLabor.id, wd.workerRut) };
           await workdaysService.upsert(docId, next);
           updates[k] = next;
         }
@@ -4510,6 +4561,31 @@ export default function CycleDetail() {
               onChange={(v) => setLaborForm((s) => ({ ...s, data: { ...s.data, type: v } }))}
               options={LABOR_TYPES}
             />
+            <div>
+              <Select
+                label="Grupo de labor (opcional)"
+                value={laborForm.data.laborGroupId}
+                onChange={(v) => setLaborForm((s) => ({ ...s, data: { ...s.data, laborGroupId: v } }))}
+                placeholder="Sin grupo"
+                options={[
+                  ...laborGroups.map((g) => ({ value: g.id, label: g.name })),
+                  { value: "__new__", label: "+ Crear grupo nuevo…" },
+                ]}
+              />
+              <p className="mt-1 text-xs text-[var(--color-muted)]">
+                Hila esta labor con las de mismo nombre en otros ciclos de esta subfaena (ej. "Poda" del ciclo pasado
+                con "Poda" del actual), para poder ver su historial junto.
+              </p>
+              {laborForm.data.laborGroupId === "__new__" && (
+                <div className="mt-2">
+                  <TextField
+                    label="Nombre del grupo nuevo" required autoFocus
+                    value={laborForm.data.newGroupName}
+                    onChange={(v) => setLaborForm((s) => ({ ...s, data: { ...s.data, newGroupName: v } }))}
+                  />
+                </div>
+              )}
+            </div>
             {laborForm.data.type === "cosecha" && (
               <Select
                 label="Modo por defecto al agregar tipos"
@@ -4583,7 +4659,7 @@ export default function CycleDetail() {
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
         onPick={pickWorker}
-        excludeRuts={workers.map((w) => w.rut)}
+        excludeRuts={workers.map((w) => w.id || w.rut)}
         allowTemp
         availableLeaders={enabledLeaders}
       />
@@ -4592,7 +4668,7 @@ export default function CycleDetail() {
         open={!!assignTempRut}
         onClose={() => !assignBusy && setAssignTempRut(null)}
         onPick={convertTempToReal}
-        excludeRuts={workers.filter((w) => w.rut !== assignTempRut).map((w) => w.rut)}
+        excludeRuts={workers.filter((w) => w.rut !== assignTempRut).map((w) => w.id || w.rut)}
         allowTemp={false}
         title="Asignar RUT al trabajador temporal"
         availableLeaders={enabledLeaders}

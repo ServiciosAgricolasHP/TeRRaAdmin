@@ -115,7 +115,7 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
     const out = [];
     for (const w of allWorkers) {
       const nameMatch = norm(w.name).includes(q);
-      const rutMatch = isDigits && String(w.id).toLowerCase().includes(qDigits);
+      const rutMatch = isDigits && (String(w.id).toLowerCase().includes(qDigits) || String(w.rut || "").toLowerCase().includes(qDigits));
       if (nameMatch || rutMatch) out.push(w);
       if (out.length >= 50) break;
     }
@@ -211,7 +211,7 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
     try {
       const existing = await findWorkerByRut(rut);
       if (existing) {
-        onPick({ rut: existing.id, name: existing.name });
+        onPick({ id: existing.id, rut: existing.id, name: existing.name });
         return;
       }
       const created = await createWorker({ rut, name: newWorker.name });
@@ -219,7 +219,7 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
       const leaderChoice = String(newWorker.leader || "").trim().toUpperCase() || defaultLeaderForRut(rut);
       const groupLeader = [leaderChoice];
       await workersService.update(created.id, { bankDetails, groupLeader, idQr: [] });
-      onPick({ rut: created.id, name: created.name });
+      onPick({ id: created.id, rut: created.id, name: created.name });
     } catch (err) {
       setError(err.message || "Error");
     } finally {
@@ -234,7 +234,7 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
     if (!name) return setError("Ingresa el nombre");
     const leader = String(tempLeader || "").trim().toUpperCase() || LEADER_LOCAL;
     const tempRut = `TEMP-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-    onPick({ rut: tempRut, name, isTemp: true, groupLeader: leader });
+    onPick({ id: tempRut, rut: tempRut, name, isTemp: true, groupLeader: leader });
   };
 
   return (
@@ -291,7 +291,7 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
                   return (
                     <li key={w.id}>
                       <button
-                        onClick={() => !isExcluded && onPick({ rut: w.id, name: w.name })}
+                        onClick={() => !isExcluded && onPick({ id: w.id, rut: w.id, name: w.name })}
                         disabled={isExcluded}
                         title={isExcluded ? resolvedExcludedLabel : ""}
                         className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left ${
@@ -308,7 +308,7 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
                             </span>
                           )}
                         </span>
-                        <span className="text-xs text-[var(--color-muted)] whitespace-nowrap">{formatRutForDisplay(w.id)}</span>
+                        <span className="text-xs text-[var(--color-muted)] whitespace-nowrap">{formatRutForDisplay(w.rut || w.id)}</span>
                       </button>
                     </li>
                   );
