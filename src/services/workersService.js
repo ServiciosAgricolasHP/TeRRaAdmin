@@ -19,15 +19,15 @@ export async function searchWorkers(q, { take = 50 } = {}) {
   const col = collection(db, "worker");
 
   if (kind === "rut") {
-    // Fase 3 de "rut editable": el doc id sigue siendo el rut de creación
-    // (workerId estable) pero el rut ACTUAL vive en el campo `rut`, que
-    // puede haber cambiado. Buscamos por ambos y mezclamos — así encontramos
+    // El doc id sigue siendo el rut de creación (workerId estable) pero el
+    // rut ACTUAL vive en el campo `rut`, que puede haber cambiado. Buscamos
+    // por ambos y mezclamos — así encontramos
     // tanto a los que nunca editaron su rut (matchean por id) como a los que
     // sí (matchean por el campo `rut` actual aunque su id sea otro).
     const prefix = raw.replace(/[.\s]/g, "").toUpperCase();
     const [byId, byField] = await Promise.all([
-      getDocs(query(col, where(documentId(), ">=", prefix), where(documentId(), "<", prefix + ""), limit(take))),
-      getDocs(query(col, where("rut", ">=", prefix), where("rut", "<", prefix + ""), limit(take))),
+      getDocs(query(col, where(documentId(), ">=", prefix), where(documentId(), "<", prefix + ""), limit(take))),
+      getDocs(query(col, where("rut", ">=", prefix), where("rut", "<", prefix + ""), limit(take))),
     ]);
     const seenRut = new Map();
     for (const d of [...byId.docs, ...byField.docs]) {
@@ -44,7 +44,7 @@ export async function searchWorkers(q, { take = 50 } = {}) {
       col,
       orderBy("name"),
       where("name", ">=", v),
-      where("name", "<", v + ""),
+      where("name", "<", v + ""),
       limit(take),
     );
     const snap = await getDocs(qy);
@@ -64,9 +64,8 @@ export async function searchWorkers(q, { take = 50 } = {}) {
 // extranjera -B/-H) a uno definitivo. Todo lo que necesite identidad estable
 // (agrupar workdays, nóminas, auditoría) debe usar el id/workerId, no `rut`.
 //
-// Fase 1 de la migración: los workers viejos (creados antes de este cambio)
-// no tienen el campo `rut` todavía — ver AdminConsole.jsx →
-// BackfillWorkerRutFieldSection para completarlo.
+// Workers creados antes de que existiera el campo `rut` pueden no tenerlo
+// todavía — ver AdminConsole.jsx → BackfillWorkerRutFieldSection para completarlo.
 
 export async function findWorkerByRut(rut) {
   const normalized = normalizeRut(rut);
@@ -86,11 +85,10 @@ export async function createWorker({ rut, name }) {
   );
 }
 
-// Fase 3 de "rut editable": los workdays de un trabajador pueden estar
-// marcados por `workerRut` (rut al momento de crear el workday) o por
-// `workerId` (id estable, agregado en fase 2) — dependiendo de cuándo se
-// escribieron. Chequeamos ambos para no dejar borrar a alguien que sí tiene
-// producción, solo porque su rut cambió después de esos workdays.
+// Los workdays de un trabajador pueden estar marcados por `workerRut` (rut al
+// momento de crear el workday) o por `workerId` (id estable), dependiendo de
+// cuándo se escribieron. Chequeamos ambos para no dejar borrar a alguien que
+// sí tiene producción, solo porque su rut cambió después de esos workdays.
 export async function deleteWorkerSafe(workerId) {
   const [byRut, byId] = await Promise.all([
     workdaysService.list({ wheres: [["workerRut", "==", workerId]], take: 1 }),
