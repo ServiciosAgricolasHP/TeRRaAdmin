@@ -251,10 +251,21 @@ function LeaderPickerModal({ open, onClose, leaders, workerName, busy, onPick })
 // 📝 indicator that highlights when an annotation exists for that day. Click
 // anywhere on the header opens the day-note modal. When a note exists, the
 // browser tooltip shows the note text itself (so the user can read it on
-// hover without opening the modal).
+// hover without opening the modal). `clickable=false` (day with no
+// production and no existing note for this labor) drops the icon and the
+// click handler — nothing to annotate there.
 function DayHeader(props) {
-  const { date, note, onClickNote, displayName } = props;
+  const { date, note, onClickNote, displayName, clickable = true } = props;
   const hasNote = !!String(note || "").trim();
+  if (!clickable) {
+    return (
+      <span style={{
+        display: "inline-flex", alignItems: "center", width: "100%", height: "100%", padding: "0 4px",
+      }}>
+        <span>{displayName || date}</span>
+      </span>
+    );
+  }
   return (
     <span
       onClick={(e) => { e.stopPropagation(); onClickNote?.(date); }}
@@ -902,6 +913,13 @@ export default function CycleDetail() {
   const days = cycle?.days || [];
   const workers = activeLabor?.workers || [];
   const wdMap = (activeLabor && workdaysByLabor[activeLabor.id]) || {};
+  // Fechas con al menos un workday de esta labor — usado para no mostrar la
+  // anotación del día en fechas donde esta labor no tuvo actividad (el ciclo
+  // comparte `days` entre todas sus labores, así que no todas tienen algo que
+  // anotar en cada fecha).
+  const activeLaborDatesWithProduction = new Set(
+    Object.keys(wdMap).map((k) => k.split("__")[1]),
+  );
   const defaultMode = activeLabor?.cosechaMode || activeLabor?.tratoMode || "unit";
 
   // Fase 2 de la migración "rut editable" (ver workersService.js /
@@ -1015,9 +1033,12 @@ export default function CycleDetail() {
   // Per-labor note wins; falls back to the legacy shared note when this
   // labor hasn't been given its own annotation for that day yet.
   const noteForDay = (d) => activeLaborDayNotes[d] ?? legacyDayNotes[d] ?? "";
+  // Solo tiene sentido anotar un día donde esta labor tuvo producción, o que
+  // ya tenga una anotación (para no esconder una nota existente).
+  const dayHasContent = (d) => activeLaborDatesWithProduction.has(d) || !!noteForDay(d);
 
   const openDayNote = (date) => {
-    if (!activeLabor) return;
+    if (!activeLabor || !dayHasContent(date)) return;
     setEditingDayNote({ laborId: activeLabor.id, date });
     setEditingDayNoteText(String(noteForDay(date) || ""));
   };
@@ -1026,6 +1047,22 @@ export default function CycleDetail() {
     if (dayNoteBusy) return;
     setEditingDayNote(null);
     setEditingDayNoteText("");
+  };
+
+  const editingDayNoteIdx = editingDayNote ? days.indexOf(editingDayNote.date) : -1;
+  const hasPrevDayNote = editingDayNoteIdx > 0 && days.slice(0, editingDayNoteIdx).some(dayHasContent);
+  const hasNextDayNote = editingDayNoteIdx >= 0 && days.slice(editingDayNoteIdx + 1).some(dayHasContent);
+  const goToDayNote = (delta) => {
+    if (!editingDayNote) return;
+    let idx = editingDayNoteIdx;
+    while (true) {
+      idx += delta;
+      if (idx < 0 || idx >= days.length) return;
+      if (dayHasContent(days[idx])) break;
+    }
+    const nextDate = days[idx];
+    setEditingDayNote({ ...editingDayNote, date: nextDate });
+    setEditingDayNoteText(String(noteForDay(nextDate) || ""));
   };
 
   const saveDayNote = async () => {
@@ -2461,6 +2498,9 @@ export default function CycleDetail() {
         base.bonusSupervision = Number(laborForm.data.bonusSupervision) || DEFAULT_BONUS_SUPERVISION;
         base.overtimeRate = Number(laborForm.data.overtimeRate) || DEFAULT_OVERTIME_RATE;
       }
+      if (["main", "supervision", "extra"].includes(laborForm.data.type)) {
+        base.baseDayDefault = Number(laborForm.data.baseDayDefault) || DEFAULT_BASE_DAY;
+      }
       return base;
     };
     if (laborForm.mode === "create") {
@@ -2792,7 +2832,7 @@ export default function CycleDetail() {
     // column groups. Each day either gets `headerComponent` (single column)
     // or `headerGroupComponent` (group with children).
     const dayHdrParams = (d) => ({
-      date: d, note: noteForDay(d), onClickNote: openDayNote,
+      date: d, note: noteForDay(d), onClickNote: openDayNote, clickable: dayHasContent(d),
     });
     const dayCellHdr = (d) => ({
       headerComponent: DayHeader,
@@ -3207,7 +3247,7 @@ export default function CycleDetail() {
     });
     return [...baseLeft, ...dayCols, totalCol, ...actionsCol];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [days, readOnly, photoMode, isCosechaLabor, isTratoLabor, isTratoEtapasLabor, isTratoHELabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, catalogs, dayPrices, activeLabor, tratoHEView, cosechaView, tratoView, activeLaborDayNotes, legacyDayNotes, daysWithPiso, isMobile]);
+  }, [days, readOnly, photoMode, isCosechaLabor, isTratoLabor, isTratoEtapasLabor, isTratoHELabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, catalogs, dayPrices, activeLabor, tratoHEView, cosechaView, tratoView, activeLaborDayNotes, legacyDayNotes, activeLaborDatesWithProduction, daysWithPiso, isMobile]);
 
   if (loading) return <div className="text-[var(--color-muted)]">Cargando...</div>;
   if (!cycle) return <div className="text-[var(--color-muted)]">Ciclo no encontrado.</div>;
@@ -4395,9 +4435,32 @@ export default function CycleDetail() {
       <Modal
         open={!!editingDayNote}
         onClose={closeDayNote}
-        title={editingDayNote
-          ? `Anotación del ${editingDayNote.date} · ${cycle?.labors?.find((l) => l.id === editingDayNote.laborId)?.name || ""}`
-          : "Anotación"}
+        size="lg"
+        title={editingDayNote ? (
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => goToDayNote(-1)}
+              disabled={!hasPrevDayNote}
+              title="Día anterior"
+              className="rounded px-1.5 py-0.5 text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              ◀
+            </button>
+            <span>
+              Anotación del {editingDayNote.date} · {cycle?.labors?.find((l) => l.id === editingDayNote.laborId)?.name || ""}
+            </span>
+            <button
+              type="button"
+              onClick={() => goToDayNote(1)}
+              disabled={!hasNextDayNote}
+              title="Día siguiente"
+              className="rounded px-1.5 py-0.5 text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] disabled:opacity-30 disabled:hover:bg-transparent"
+            >
+              ▶
+            </button>
+          </div>
+        ) : "Anotación"}
         footer={(
           <>
             <button
@@ -4429,7 +4492,7 @@ export default function CycleDetail() {
           className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)] disabled:opacity-70"
         />
         <p className="mt-1 text-[11px] text-[var(--color-muted)]">
-          La anotación es compartida entre todas las labores de este día. Dejar el campo vacío y guardar la elimina.
+          La anotación es propia de esta labor — otras labores del mismo día no la ven. Dejar el campo vacío y guardar la elimina.
         </p>
       </Modal>
 
@@ -4633,6 +4696,13 @@ export default function CycleDetail() {
               <StagesEditor
                 stages={laborForm.data.stages || []}
                 onChange={(next) => setLaborForm((s) => ({ ...s, data: { ...s.data, stages: next } }))}
+              />
+            )}
+            {["main", "supervision", "extra"].includes(laborForm.data.type) && (
+              <TextField
+                label="Precio diario default ($)" type="number"
+                value={laborForm.data.baseDayDefault}
+                onChange={(v) => setLaborForm((s) => ({ ...s, data: { ...s.data, baseDayDefault: v } }))}
               />
             )}
             {laborForm.data.type === "tratoHE" && (

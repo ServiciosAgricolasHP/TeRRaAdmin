@@ -17,8 +17,10 @@ import {
   removeWorkerFromPayroll,
   removeCycleFromPayroll,
   addCyclesToPayroll,
+  recalculatePayrollItems,
 } from "../services/payrollsService";
 import {
+  advancesService,
   listPendingForWorkers,
   applyAdvancesToPayroll,
   restoreAdvancesFromPayroll,
@@ -27,7 +29,7 @@ import {
   advanceTypeMeta,
 } from "../services/advancesService";
 import { formatRutForDisplay } from "../utils/rutUtils";
-import { bankName, ACCOUNT_TYPES, isCashBank, CASH_BANK_CODE } from "../utils/banks";
+import { bankName, accountTypeLabel, ACCOUNT_TYPES, isCashBank, CASH_BANK_CODE } from "../utils/banks";
 import { getTratoTierTotals, getDayCombos, getDaySingle, getTratoTiers, tratoTypeLabel, tratoUnitLabel, cosechaUnit, comboLabel, containerLabel, formatLaborDayPrice } from "../utils/cosechaCombos";
 import { countingStageIds } from "../utils/tratoEtapas";
 import { useCatalogs } from "../contexts/CatalogsContext";
@@ -3889,6 +3891,350 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
     }
   };
 
+  // Recalcular: vuelve a traer TODOS los workdays vigentes de los ciclos ya
+  // incluidos en la nómina (no solo los que quedaron etiquetados al crearla)
+  // y compara contra lo guardado. Detecta 3 cosas — ediciones a días
+  // existentes o días nuevos agregados a un ciclo ya nominado (el pago es
+  // por ciclo, así que un día nuevo ahí corresponde a esta nómina),
+  // trabajadores nuevos con producción en esos ciclos (mismo tratamiento que
+  // "+ Agregar ciclo" para uno nuevo), y datos de cuenta/grupo del
+  // trabajador que cambiaron desde que se generó. No toca anticipos/bonos ya
+  // aplicados — si el bruto recalculado queda por debajo de lo ya
+  // descontado, el neto se capea en 0 y se crea un anticipo nuevo pendiente
+  // por la diferencia no saldada, a recuperar en una nómina futura. Muestra
+  // todo en un modal de revisión antes de escribir nada.
+  const [recalcPreview, setRecalcPreview] = useState(null);
+  const [recalcBusy, setRecalcBusy] = useState(false);
+
+  const workerByKey = (key) => workers.find((w) => w.id === key) || workers.find((w) => w.rut === key);
+  const liveProfileFor = (w) => {
+    const bd = w?.bankDetails || [];
+    return {
+      name: w?.name || "",
+      paymentRut: bd[0] || w?.rut || "",
+      accountNumber: bd[1] || "",
+      bankCode: bd[3] || "",
+      accountType: bd[2] != null ? Number(bd[2]) : 3,
+      email: w?.email || "",
+      groupLeader: normalizeLeader(w?.groupLeader?.[0]) || "",
+    };
+  };
+
+  const computeRecalc = async () => {
+    setRecalcBusy(true);
+    try {
+      const recalcCycleIds = payroll.cycleIds || cycleDetails.map((c) => c.id);
+      const selectedCycles = cycles.filter((c) => recalcCycleIds.includes(c.id));
+      const laborTypeById = new Map();
+      for (const cycle of selectedCycles) {
+        for (const labor of cycle.labors || []) laborTypeById.set(labor.id, labor.type);
+      }
+
+      const allCurrentWorkdays = [];
+      for (let i = 0; i < recalcCycleIds.length; i += 10) {
+        const chunk = recalcCycleIds.slice(i, i + 10);
+        const wds = await workdaysService.list({ wheres: [["cycleId", "in", chunk]] });
+        for (const wd of wds) {
+          if (wd.payrollId && wd.payrollId !== payroll.id) continue;
+          if (String(wd.workerRut || "").startsWith("TEMP-")) continue;
+          allCurrentWorkdays.push(wd);
+        }
+      }
+
+      const aggregates = aggregateWorkerAmounts(allCurrentWorkdays, laborTypeById);
+      const freshByKey = new Map(aggregates.map((a) => [a.workerId || a.rut, a]));
+      const existingByKey = new Map(items.map((it) => [it.workerId || it.rut, it]));
+
+      // Trabajadores con producción en estos ciclos que todavía no están en
+      // la nómina — mismo criterio que "+ Agregar ciclo" para uno nuevo.
+      const newWorkerAggs = aggregates.filter((a) => a.total > 0 && !existingByKey.has(a.workerId || a.rut));
+
+      // Anticipos/bonos pendientes de CUALQUIER trabajador relevante (ya
+      // incluido o nuevo) — un anticipo creado después de generar la nómina
+      // nunca se aplica solo, así que acá lo detectamos y aplicamos igual
+      // que se haría al crear la nómina de nuevo.
+      const allRuts = [...items.map((it) => it.rut), ...newWorkerAggs.map((a) => a.rut)];
+      const allWorkerIds = [...items.map((it) => it.workerId || it.rut), ...newWorkerAggs.map((a) => a.workerId || a.rut)];
+      const pendingAdvances = allRuts.length ? await listPendingForWorkers(allRuts, allWorkerIds) : [];
+      const advancesByKey = new Map();
+      for (const adv of pendingAdvances) {
+        const key = adv.workerId || adv.workerRut;
+        const e = advancesByKey.get(key) || { anticipos: [], bonos: [] };
+        if (advanceSign(adv) > 0) e.bonos.push(adv); else e.anticipos.push(adv);
+        advancesByKey.set(key, e);
+      }
+      const byDateAsc = (x, y) => ((x.date || "") < (y.date || "") ? -1 : (x.date || "") > (y.date || "") ? 1 : 0);
+      const newAdvanceApplications = [];
+
+      const PROFILE_FIELDS = [
+        { key: "name", label: "Nombre" },
+        { key: "paymentRut", label: "RUT de pago" },
+        { key: "accountNumber", label: "N° de cuenta" },
+        { key: "bankCode", label: "Banco" },
+        { key: "accountType", label: "Tipo de cuenta" },
+        { key: "email", label: "Email" },
+        { key: "groupLeader", label: "Grupo" },
+      ];
+
+      const amountChanges = [];
+      const profileChanges = [];
+      const advanceChanges = [];
+      const shortfallAnticipos = [];
+      const updatedByKey = new Map();
+
+      for (const it of items) {
+        const key = it.workerId || it.rut;
+        const fresh = freshByKey.get(key);
+        const newGross = Math.round(fresh?.total || 0);
+        const oldGross = Math.round(Number(it.grossAmount || it.amount || 0));
+        const newWorkdayIds = fresh?.workdayIds || [];
+        const idsChanged = [...newWorkdayIds].sort().join(",") !== [...(it.workdayIds || [])].sort().join(",");
+        let patch = null;
+
+        if (newGross !== oldGross || idsChanged) {
+          const newByCycle = {};
+          for (const [cid, amt] of Object.entries(fresh?.byCycle || {})) newByCycle[cid] = Math.round(amt);
+          const rawNet = newGross - (Number(it.advance) || 0) + (Number(it.bonus) || 0);
+          const newAmount = Math.max(0, rawNet);
+          const shortfall = rawNet < 0 ? Math.round(-rawNet) : 0;
+          amountChanges.push({
+            key, rut: it.rut, name: it.name,
+            oldGross, newGross,
+            oldNet: Math.round(Number(it.amount) || 0), newNet: newAmount,
+            shortfall,
+          });
+          patch = { ...it, grossAmount: newGross, byCycle: newByCycle, workdayIds: newWorkdayIds, amount: newAmount };
+          if (shortfall > 0) {
+            shortfallAnticipos.push({ workerId: it.workerId, rut: it.rut, name: it.name, amount: shortfall });
+          }
+        }
+
+        // Anticipos/bonos nuevos para un trabajador que YA está en la
+        // nómina (ej. se le cargó un anticipo después de generarla). Nunca
+        // se tocan los que ya estaban aplicados acá — solo los que faltan.
+        const advForWorker = advancesByKey.get(key) || { anticipos: [], bonos: [] };
+        const existingAdvIds = new Set(it.advanceIds || []);
+        const newAnticipos = advForWorker.anticipos.filter((a) => !existingAdvIds.has(a.id) && advanceRemaining(a) > 0);
+        const newBonos = advForWorker.bonos.filter((a) => !existingAdvIds.has(a.id) && advanceRemaining(a) > 0);
+        if (newAnticipos.length || newBonos.length) {
+          const currentAdvance = Number(it.advance) || 0;
+          const currentBonus = Number(it.bonus) || 0;
+          let remainingGross = Math.max(0, newGross - currentAdvance);
+          const appliedAnticipos = [];
+          for (const advItem of [...newAnticipos].sort(byDateAsc)) {
+            if (remainingGross <= 0) break;
+            const advRem = Math.round(advanceRemaining(advItem));
+            if (advRem <= 0) continue;
+            const apply = Math.min(remainingGross, advRem);
+            if (apply <= 0) continue;
+            appliedAnticipos.push({ advanceId: advItem.id, amount: apply });
+            remainingGross -= apply;
+          }
+          const appliedBonos = [];
+          for (const advItem of [...newBonos].sort(byDateAsc)) {
+            const advRem = Math.round(advanceRemaining(advItem));
+            if (advRem <= 0) continue;
+            appliedBonos.push({ advanceId: advItem.id, amount: advRem });
+          }
+          const addedAnticipoTotal = appliedAnticipos.reduce((s, x) => s + x.amount, 0);
+          const addedBonoTotal = appliedBonos.reduce((s, x) => s + x.amount, 0);
+          if (addedAnticipoTotal > 0 || addedBonoTotal > 0) {
+            const base = patch || it;
+            const newAdvanceTotal = currentAdvance + addedAnticipoTotal;
+            const newBonusTotal = currentBonus + addedBonoTotal;
+            const newAmount = Math.max(0, newGross - newAdvanceTotal + newBonusTotal);
+            const appliedNow = [...appliedAnticipos, ...appliedBonos];
+            patch = {
+              ...base,
+              advance: newAdvanceTotal,
+              bonus: newBonusTotal,
+              amount: newAmount,
+              advanceIds: [...(base.advanceIds || []), ...appliedNow.map((x) => x.advanceId)],
+              advanceApplications: [...(base.advanceApplications || []), ...appliedNow],
+              anticipoApplications: [...(base.anticipoApplications || []), ...appliedAnticipos],
+              bonoApplications: [...(base.bonoApplications || []), ...appliedBonos],
+              anticiposTotal: (Number(base.anticiposTotal ?? currentAdvance) || 0) + addedAnticipoTotal,
+              bonosTotal: (Number(base.bonosTotal ?? currentBonus) || 0) + addedBonoTotal,
+            };
+            newAdvanceApplications.push(...appliedNow);
+            advanceChanges.push({
+              key, rut: it.rut, name: it.name,
+              addedAnticipoTotal, addedBonoTotal,
+              oldNet: Math.round(Number(base.amount) || 0),
+              newNet: newAmount,
+            });
+          }
+        }
+
+        const w = workerByKey(key);
+        if (w) {
+          const live = liveProfileFor(w);
+          const changedFields = PROFILE_FIELDS
+            .filter(({ key: f }) => String(it[f] ?? "") !== String(live[f] ?? ""))
+            .map(({ key: f, label }) => ({ field: f, label, old: it[f], new: live[f] }));
+          if (changedFields.length) {
+            profileChanges.push({ key, rut: it.rut, name: it.name, fields: changedFields });
+            patch = { ...(patch || it), ...live };
+          }
+        }
+
+        if (patch) updatedByKey.set(key, patch);
+      }
+
+      const newWorkerItems = [];
+      const newWorkers = [];
+      for (const a of newWorkerAggs) {
+        const key = a.workerId || a.rut;
+        const w = workerByKey(key) || workers.find((x) => x.id === a.rut);
+        const bd = w?.bankDetails || [];
+        const bankCode = bd[3] || "";
+        const grossInt = Math.round(a.total);
+        const byCycle = {};
+        for (const [cid, amt] of Object.entries(a.byCycle)) byCycle[cid] = Math.round(amt);
+        const adv = advancesByKey.get(key) || { anticipos: [], bonos: [] };
+
+        let remainingGross = grossInt;
+        const anticipoApplications = [];
+        for (const advItem of [...adv.anticipos].sort(byDateAsc)) {
+          if (remainingGross <= 0) break;
+          const advRem = Math.round(advanceRemaining(advItem));
+          if (advRem <= 0) continue;
+          const apply = Math.min(remainingGross, advRem);
+          if (apply <= 0) continue;
+          anticipoApplications.push({ advanceId: advItem.id, amount: apply });
+          remainingGross -= apply;
+        }
+        const bonoApplications = [];
+        for (const advItem of [...adv.bonos].sort(byDateAsc)) {
+          const advRem = Math.round(advanceRemaining(advItem));
+          if (advRem <= 0) continue;
+          bonoApplications.push({ advanceId: advItem.id, amount: advRem });
+        }
+        const anticiposTotal = anticipoApplications.reduce((s, x) => s + x.amount, 0);
+        const bonosTotal = bonoApplications.reduce((s, x) => s + x.amount, 0);
+        const advanceNoteParts = [];
+        if (anticiposTotal) advanceNoteParts.push(`Anticipos ${anticipoApplications.length}`);
+        if (bonosTotal) advanceNoteParts.push(`Bonos ${bonoApplications.length}`);
+        const advanceApplications = [...anticipoApplications, ...bonoApplications];
+        newAdvanceApplications.push(...advanceApplications);
+
+        const item = {
+          rut: a.rut,
+          workerId: a.workerId || a.rut,
+          paymentRut: bd[0] || a.rut,
+          name: w?.name || "(sin nombre)",
+          accountNumber: bd[1] || "",
+          bankCode,
+          accountType: bd[2] != null ? Number(bd[2]) : 3,
+          email: w?.email || "",
+          groupLeader: normalizeLeader(w?.groupLeader?.[0]),
+          grossAmount: grossInt,
+          advance: anticiposTotal,
+          bonus: bonosTotal,
+          advanceNote: advanceNoteParts.join(" · "),
+          advanceIds: advanceApplications.map((x) => x.advanceId),
+          advanceApplications,
+          anticipoApplications,
+          bonoApplications,
+          anticiposTotal,
+          bonosTotal,
+          adelantosTotal: 0,
+          amount: Math.max(0, grossInt - anticiposTotal + bonosTotal),
+          byCycle,
+          workdayIds: a.workdayIds || [],
+        };
+        newWorkerItems.push(item);
+        newWorkers.push({ key, rut: a.rut, name: item.name, gross: grossInt, net: item.amount });
+      }
+
+      const mergedItems = [
+        ...items.map((it) => updatedByKey.get(it.workerId || it.rut) || it),
+        ...newWorkerItems,
+      ];
+
+      if (!amountChanges.length && !profileChanges.length && !newWorkers.length && !advanceChanges.length) {
+        toast.success("Sin cambios — la nómina ya está al día.");
+        return;
+      }
+
+      setRecalcPreview({
+        amountChanges, profileChanges, advanceChanges, newWorkers, shortfallAnticipos,
+        mergedItems, allCurrentWorkdays, newAdvanceApplications, pendingAdvances,
+      });
+    } catch (err) {
+      toast.error(`Error al recalcular: ${err?.message || err}`);
+    } finally {
+      setRecalcBusy(false);
+    }
+  };
+
+  const applyRecalc = async () => {
+    if (!recalcPreview) return;
+    setRecalcBusy(true);
+    try {
+      const { mergedItems, allCurrentWorkdays, newAdvanceApplications, shortfallAnticipos, pendingAdvances } = recalcPreview;
+
+      await recalculatePayrollItems(payroll.id, { items: mergedItems });
+      await tagWorkdaysWithPayroll(allCurrentWorkdays.map((wd) => wd.id), payroll.id);
+      if (newAdvanceApplications.length) {
+        await applyAdvancesToPayroll(newAdvanceApplications, payroll.id);
+      }
+      for (const s of shortfallAnticipos) {
+        await advancesService.create({
+          type: "anticipo",
+          workerRut: s.rut,
+          workerId: s.workerId || s.rut,
+          workerName: s.name,
+          amount: s.amount,
+          date: todayISO(),
+          note: `Saldo pendiente por recálculo de "${payroll.name}" — la producción bajó después de aplicar el anticipo original.`,
+          status: "pending",
+        });
+      }
+
+      try {
+        const snap = await payrollSnapshotsService.getById(payroll.id);
+        if (snap) {
+          const newAdvIdSet = new Set(newAdvanceApplications.map((x) => x.advanceId));
+          const newAdvancesForSnapshot = pendingAdvances
+            .filter((adv) => newAdvIdSet.has(adv.id))
+            .map((adv) => ({
+              id: adv.id, workerRut: adv.workerRut,
+              type: adv.type, amount: Number(adv.amount) || 0,
+              amountPaid: Number(adv.amountPaid) || 0,
+              date: adv.date || null, note: adv.note || "",
+              status: adv.status || null,
+            }));
+          await payrollSnapshotsService.update(payroll.id, {
+            workers: mergedItems,
+            workdays: allCurrentWorkdays.map((wd) => ({
+              id: wd.id, cycleId: wd.cycleId, laborId: wd.laborId,
+              workerRut: wd.workerRut, date: wd.date,
+              qty: wd.qty ?? null, amount: wd.amount ?? 0,
+              qualityX: wd.qualityX ?? null, containerY: wd.containerY ?? null,
+              tierKey: wd.tierKey ?? null, tiers: wd.tiers ?? null,
+              stageId: wd.stageId ?? null,
+              overtimeHours: wd.overtimeHours ?? null,
+              hasManejo: !!wd.hasManejo, hasSupervision: !!wd.hasSupervision,
+              extras: wd.extras ?? null, isHoliday: !!wd.isHoliday,
+            })),
+            advances: [...(snap.advances || []), ...newAdvancesForSnapshot],
+          });
+        }
+      } catch (err) {
+        console.warn("No se pudo actualizar el snapshot al recalcular:", err);
+      }
+
+      setRecalcPreview(null);
+      await onChanged?.();
+      toast.success("Nómina recalculada.");
+    } catch (err) {
+      toast.error(`Error al aplicar el recálculo: ${err?.message || err}`);
+    } finally {
+      setRecalcBusy(false);
+    }
+  };
+
   // Resumen ejecutivo por subfaena (primera hoja del "Detalle de pago"
   // imprimible). Filas: subfaenas con monto > 0, ordenadas por faena y
   // subfaena. Columnas: "Con cuenta RUT" (todas las transferencias) vs
@@ -4368,6 +4714,17 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
                   title="Sacar trabajadores o ciclos enteros de esta nómina"
                 >
                   {editMode ? "✕ Cerrar edición" : "✂ Editar contenido"}
+                </button>
+              )}
+              {isPending && (
+                <button
+                  type="button"
+                  disabled={recalcBusy}
+                  onClick={computeRecalc}
+                  className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+                  title="Volver a comparar contra la producción y los datos actuales de los trabajadores"
+                >
+                  {recalcBusy ? "Comparando..." : "🔄 Recalcular"}
                 </button>
               )}
             </div>
@@ -5068,6 +5425,12 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
         onConfirm={handleAddCycles}
         busy={editBusy}
       />
+      <RecalcModal
+        preview={recalcPreview}
+        busy={recalcBusy}
+        onClose={() => setRecalcPreview(null)}
+        onConfirm={applyRecalc}
+      />
     </div>
   );
 }
@@ -5181,6 +5544,165 @@ function AddCyclesModal({ open, onClose, cycles, faenas, subfaenas, excludeCycle
           ))}
         </div>
       )}
+    </Modal>
+  );
+}
+
+const formatProfileValue = (field, value) => {
+  if (field === "bankCode") return bankName(value);
+  if (field === "accountType") return accountTypeLabel(value);
+  const s = String(value ?? "").trim();
+  return s || "—";
+};
+
+// Modal de revisión del recálculo — muestra montos/trabajadores/datos que
+// cambiaron desde que se generó la nómina, antes de escribir nada.
+function RecalcModal({ preview, busy, onClose, onConfirm }) {
+  if (!preview) return null;
+  const { amountChanges, profileChanges, advanceChanges, newWorkers } = preview;
+  return (
+    <Modal
+      open={!!preview}
+      onClose={onClose}
+      title="Recalcular nómina"
+      size="lg"
+      footer={
+        <>
+          <button onClick={onClose} disabled={busy} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm disabled:opacity-60">
+            Cancelar
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={busy}
+            className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
+          >
+            {busy ? "Aplicando..." : "Aplicar cambios"}
+          </button>
+        </>
+      }
+    >
+      <div className="max-h-[60vh] space-y-4 overflow-y-auto text-sm">
+        {amountChanges.length > 0 && (
+          <div>
+            <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+              Montos actualizados ({amountChanges.length})
+            </h4>
+            <div className="overflow-x-auto rounded-md border border-[var(--color-border)]">
+              <table className="w-full text-xs">
+                <thead className="bg-[var(--color-surface-2)] text-left">
+                  <tr>
+                    <th className="px-2 py-1.5">Trabajador</th>
+                    <th className="px-2 py-1.5 text-right">Bruto antes</th>
+                    <th className="px-2 py-1.5 text-right">Bruto ahora</th>
+                    <th className="px-2 py-1.5 text-right">Neto antes</th>
+                    <th className="px-2 py-1.5 text-right">Neto ahora</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {amountChanges.map((c) => (
+                    <tr key={c.key} className="border-t border-[var(--color-border)] align-top">
+                      <td className="px-2 py-1.5">
+                        {c.name}
+                        {c.shortfall > 0 && (
+                          <div className="mt-0.5 text-[10px] text-[var(--color-warning)]">
+                            ⚠ Saldo sin cubrir {fmtCurrency(c.shortfall)} — se crea un anticipo pendiente nuevo.
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(c.oldGross)}</td>
+                      <td className={`px-2 py-1.5 text-right tabular-nums font-medium ${c.newGross < c.oldGross ? "text-[var(--color-danger)]" : c.newGross > c.oldGross ? "text-[var(--color-success)]" : ""}`}>
+                        {fmtCurrency(c.newGross)}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(c.oldNet)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmtCurrency(c.newNet)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {newWorkers.length > 0 && (
+          <div>
+            <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+              Trabajadores nuevos ({newWorkers.length})
+            </h4>
+            <div className="overflow-x-auto rounded-md border border-[var(--color-border)]">
+              <table className="w-full text-xs">
+                <thead className="bg-[var(--color-surface-2)] text-left">
+                  <tr>
+                    <th className="px-2 py-1.5">Trabajador</th>
+                    <th className="px-2 py-1.5 text-right">Bruto</th>
+                    <th className="px-2 py-1.5 text-right">Neto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {newWorkers.map((w) => (
+                    <tr key={w.key} className="border-t border-[var(--color-border)]">
+                      <td className="px-2 py-1.5">{w.name}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(w.gross)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmtCurrency(w.net)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {advanceChanges.length > 0 && (
+          <div>
+            <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+              Anticipos/bonos nuevos aplicados ({advanceChanges.length})
+            </h4>
+            <div className="overflow-x-auto rounded-md border border-[var(--color-border)]">
+              <table className="w-full text-xs">
+                <thead className="bg-[var(--color-surface-2)] text-left">
+                  <tr>
+                    <th className="px-2 py-1.5">Trabajador</th>
+                    <th className="px-2 py-1.5 text-right">Anticipo nuevo</th>
+                    <th className="px-2 py-1.5 text-right">Bono nuevo</th>
+                    <th className="px-2 py-1.5 text-right">Neto antes</th>
+                    <th className="px-2 py-1.5 text-right">Neto ahora</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {advanceChanges.map((c) => (
+                    <tr key={c.key} className="border-t border-[var(--color-border)]">
+                      <td className="px-2 py-1.5">{c.name}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{c.addedAnticipoTotal > 0 ? `− ${fmtCurrency(c.addedAnticipoTotal)}` : "—"}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{c.addedBonoTotal > 0 ? `+ ${fmtCurrency(c.addedBonoTotal)}` : "—"}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(c.oldNet)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmtCurrency(c.newNet)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {profileChanges.length > 0 && (
+          <div>
+            <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+              Datos actualizados ({profileChanges.length})
+            </h4>
+            <div className="space-y-1.5">
+              {profileChanges.map((p) => (
+                <div key={p.key} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1.5 text-xs">
+                  <div className="font-medium">{p.name}</div>
+                  {p.fields.map((f) => (
+                    <div key={f.field} className="text-[var(--color-muted)]">
+                      {f.label}: {formatProfileValue(f.field, f.old)} → <span className="text-[var(--color-fg)]">{formatProfileValue(f.field, f.new)}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
     </Modal>
   );
 }

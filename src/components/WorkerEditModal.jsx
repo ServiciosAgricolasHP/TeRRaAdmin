@@ -41,6 +41,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
       setForm({
         rut: "",
         name: "",
+        email: "",
         groupLeader: "",
         groupLeaderHistory: [],
         idQrText: "",
@@ -58,6 +59,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
       setForm({
         rut,
         name: worker?.name || "",
+        email: worker?.email || "",
         groupLeader: worker?.groupLeader?.[0] || "",
         groupLeaderHistory: worker?.groupLeader || [],
         idQrText: (worker?.idQr || []).join(", "),
@@ -213,16 +215,18 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
 
     const idQr = normalizeIdQrInput(form.idQrText);
     const bankDetails = [payRut, accNumber, accType, bankCode];
+    const email = form.email.trim();
 
     setBusy(true);
     try {
       if (isCreate) {
         await createWorker({ rut, name: form.name });
-        await workersService.update(rut, { groupLeader, idQr, bankDetails });
+        await workersService.update(rut, { groupLeader, idQr, bankDetails, email });
       } else {
         await workersService.update(worker.id, {
           ...(rutChanged ? { rut } : {}),
           name: toProperName(form.name),
+          email,
           groupLeader,
           idQr,
           bankDetails,
@@ -348,6 +352,13 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
             value={form.idQrText}
             onChange={(v) => setForm((f) => ({ ...f, idQrText: v }))}
             placeholder="QR1, QR2..."
+          />
+          <TextField
+            label="Email"
+            type="email"
+            value={form.email}
+            onChange={(v) => setForm((f) => ({ ...f, email: v }))}
+            placeholder="ejemplo@correo.com"
           />
         </div>
 

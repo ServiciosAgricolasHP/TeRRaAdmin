@@ -267,6 +267,22 @@ export async function addCyclesToPayroll(payrollId, { items, cycleDetailsToAdd }
   await payrollsService.update(payrollId, { ...aggregates, cycleIds, cycleLabels, cycleDetails });
 }
 
+// Recalcula los items de una nómina pendiente contra la producción actual —
+// inverso de "confiar ciegamente" en lo que se guardó al crearla. El caller
+// (Payroll.jsx) ya trae `items` recalculado desde los workdays vigentes de
+// los mismos ciclos (ediciones, días nuevos, trabajadores nuevos, datos de
+// cuenta/grupo actualizados). Acá solo persiste los totales agregados; no
+// toca `cycleIds`/`cycleDetails` porque el set de ciclos no cambia.
+export async function recalculatePayrollItems(payrollId, { items }) {
+  const p = await payrollsService.getById(payrollId);
+  if (!p) throw new Error("Nómina no encontrada");
+  if (p.status === "paid") {
+    throw new Error("La nómina está pagada — revertí el pago antes de recalcular.");
+  }
+  const aggregates = recalcPayrollAggregates(items);
+  await payrollsService.update(payrollId, aggregates);
+}
+
 export async function markPending(id, workdayIds = []) {
   await unmarkWorkdaysPaid(workdayIds);
   return payrollsService.update(id, { status: "pending", paidAt: null });
