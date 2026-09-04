@@ -80,6 +80,12 @@ const ROW_TOTAL_GENERAL = "#38761d";  // verde bosque — fila TOTAL GENERAL
 const ROW_IVA = "#d9ead3";            // verde muy pálido — fila IVA (informativa, texto oscuro)
 const ROW_BRUTO = "#274e13";          // verde más oscuro — fila BRUTO (el total final)
 
+// Reusa la misma paleta hex de arriba como fill de ExcelJS, así el XLSX
+// exportado queda visualmente alineado con la tabla en pantalla/impresión.
+const toArgbFill = (hex) => ({ type: "pattern", pattern: "solid", fgColor: { argb: "FF" + hex.replace("#", "").toUpperCase() } });
+const XLSX_BORDER = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+const XLSX_MONEY_FMT = '"$"#,##0';
+
 // Modal de resumen de producción para una o varias faenas/ciclos. Muestra
 // una tabla pivot: filas = días, columnas = (ciclo, labor) que sea trato o
 // cosecha. Cada celda lleva qty + unidad + precio + monto + rendimiento
@@ -886,6 +892,148 @@ function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firstColKey
     } finally { setBusy(""); }
   };
 
+  // XLSX de la tabla general: cada labor ocupa 2 columnas (Cant./Monto) bajo
+  // un header combinado con su nombre — mismo layout que la tabla en pantalla,
+  // trasladado a hoja de cálculo. `writeTotalRow` cubre las filas de cierre
+  // (TOTAL A PAGAR, GANANCIAS, TRANSPORTE, etc.), que comparten estructura
+  // pero difieren en qué columnas llenan y con qué color.
+  const handleXlsx = async () => {
+    setBusy("xlsx");
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet("Tabla general");
+      ws.getColumn(1).width = 6; // restricción de layout: col A vacía
+
+      const COL_DAY = 2;
+      const COL_FIRST_LABOR = 3;
+      const COL_TOTAL = COL_FIRST_LABOR + dataByColumn.length * 2;
+
+      let r = 2; // fila 1 vacía
+      ws.getCell(r, 2).value = "Tabla general — resumen consolidado";
+      ws.getCell(r, 2).font = { bold: true, size: 13 };
+      r++;
+      ws.getCell(r, 2).value = `${dataByColumn.length} labores · ${activeDays.length} días · gran total ${fmtCLP(grandTotal)}`;
+      ws.getCell(r, 2).font = { size: 10, color: { argb: "FF666666" } };
+      r += 2;
+
+      const headerRow1 = r;
+      const headerRow2 = r + 1;
+      ws.mergeCells(headerRow1, COL_DAY, headerRow2, COL_DAY);
+      ws.getCell(headerRow1, COL_DAY).value = "Día";
+      ws.mergeCells(headerRow1, COL_TOTAL, headerRow2, COL_TOTAL);
+      ws.getCell(headerRow1, COL_TOTAL).value = "Total día";
+      dataByColumn.forEach((d, i) => {
+        const c0 = COL_FIRST_LABOR + i * 2;
+        ws.mergeCells(headerRow1, c0, headerRow1, c0 + 1);
+        ws.getCell(headerRow1, c0).value = `${d.col.labor.name} (${d.col.cycleLabel})`;
+        ws.getCell(headerRow2, c0).value = "Cant.";
+        ws.getCell(headerRow2, c0 + 1).value = "Monto";
+      });
+      for (let c = COL_DAY; c <= COL_TOTAL; c++) {
+        for (const rr of [headerRow1, headerRow2]) {
+          const cell = ws.getCell(rr, c);
+          cell.font = { bold: true };
+          cell.fill = toArgbFill(HDR_GREEN);
+          cell.border = XLSX_BORDER;
+          cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+        }
+      }
+      r += 2;
+
+      for (const day of activeDays) {
+        ws.getCell(r, COL_DAY).value = day;
+        dataByColumn.forEach((d, i) => {
+          const c0 = COL_FIRST_LABOR + i * 2;
+          const cellData = byLaborDay.get(d.col.key)?.get(day);
+          if (!cellData) return;
+          ws.getCell(r, c0).value = `${fmtNum(cellData.qty)}${cellData.unit ? " " + cellData.unit : ""}`;
+          ws.getCell(r, c0 + 1).value = cellData.amount;
+          ws.getCell(r, c0 + 1).numFmt = XLSX_MONEY_FMT;
+        });
+        ws.getCell(r, COL_TOTAL).value = totalsByDay.get(day) || 0;
+        ws.getCell(r, COL_TOTAL).numFmt = XLSX_MONEY_FMT;
+        for (let c = COL_DAY; c <= COL_TOTAL; c++) ws.getCell(r, c).border = XLSX_BORDER;
+        r++;
+      }
+
+      const writeTotalRow = (label, fill, fontArgb, montoForCol, totalValue, { qtyToo = false } = {}) => {
+        ws.getCell(r, COL_DAY).value = label;
+        dataByColumn.forEach((d, i) => {
+          const c0 = COL_FIRST_LABOR + i * 2;
+          if (qtyToo) ws.getCell(r, c0).value = `${fmtNum(d.totalQty)}${d.unit ? " " + d.unit : ""}`;
+          const v = montoForCol(d);
+          if (v != null) {
+            ws.getCell(r, c0 + 1).value = v;
+            ws.getCell(r, c0 + 1).numFmt = XLSX_MONEY_FMT;
+          }
+        });
+        ws.getCell(r, COL_TOTAL).value = totalValue;
+        ws.getCell(r, COL_TOTAL).numFmt = XLSX_MONEY_FMT;
+        for (let c = COL_DAY; c <= COL_TOTAL; c++) {
+          const cell = ws.getCell(r, c);
+          cell.font = { bold: true, color: { argb: fontArgb } };
+          cell.fill = toArgbFill(fill);
+          cell.border = XLSX_BORDER;
+        }
+        r++;
+      };
+
+      writeTotalRow("TOTAL A PAGAR", ROW_TOTAL_DARK, "FFFFFFFF", (d) => d.totalAmount, grandTotal, { qtyToo: true });
+      writeTotalRow(
+        "GANANCIAS", ROW_GANANCIAS, "FF1A2E0F",
+        (d) => (isSupervisionCol(d.col) ? null : gananciaFor(d.col, d.totalAmount)),
+        totalGananciaBillable,
+      );
+      if (includeTransport) {
+        writeTotalRow(
+          "TRANSPORTE", ROW_TOTAL_DARK, "FFFFFFFF",
+          (d) => (firstColKeyForCycle.get(d.col.cycleId) === d.col.key ? (transportByCycle.get(d.col.cycleId)?.total || 0) : null),
+          grandTotalTransport,
+        );
+      }
+      if (hasSupervisionCols) {
+        writeTotalRow(
+          "MONTO LIBRE", ROW_IVA, "FF274E13",
+          (d) => (isSupervisionCol(d.col) ? gananciaFor(d.col, d.totalAmount) : null),
+          totalGanancia,
+        );
+      }
+      if (includeTransport && grandTotalTransport !== 0) {
+        writeTotalRow("MONTO LIBRE NETO", ROW_IVA, "FF274E13", () => null, totalGanancia - grandTotalTransport);
+      }
+      writeTotalRow(
+        "TOTAL GENERAL", ROW_TOTAL_GENERAL, "FFFFFFFF",
+        (d) => totalGeneralFor(d.col, d.totalAmount),
+        grandTotalGeneral,
+      );
+      if (ivaEnabled) {
+        writeTotalRow("IVA (19%)", ROW_IVA, "FF274E13", () => null, grandTotalIva);
+        writeTotalRow("BRUTO", ROW_BRUTO, "FFFFFFFF", () => null, grandTotalBruto);
+      }
+
+      ws.getColumn(COL_DAY).width = 12;
+      for (let i = 0; i < dataByColumn.length; i++) {
+        ws.getColumn(COL_FIRST_LABOR + i * 2).width = 14;
+        ws.getColumn(COL_FIRST_LABOR + i * 2 + 1).width = 14;
+      }
+      ws.getColumn(COL_TOTAL).width = 16;
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "tabla_general_produccion.xlsx";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error("Error al generar Excel: " + (err.message || err));
+    } finally {
+      setBusy("");
+    }
+  };
+
   const handlePrint = () => {
     if (!captureRef.current) return;
     const html = captureRef.current.outerHTML;
@@ -931,6 +1079,10 @@ function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firstColKey
           <button onClick={handleCopyImage} disabled={busy === "image"} title="Copiar como imagen"
             className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[10px] hover:bg-[var(--color-accent-soft)] disabled:opacity-50">
             {busy === "image" ? "..." : "📋 Imagen"}
+          </button>
+          <button onClick={handleXlsx} disabled={busy === "xlsx"} title="Descargar como Excel"
+            className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[10px] hover:bg-[var(--color-accent-soft)] disabled:opacity-50">
+            {busy === "xlsx" ? "..." : "📊 Excel"}
           </button>
           <button onClick={handlePrint} title="Imprimir"
             className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[10px] hover:bg-[var(--color-accent-soft)]">
@@ -1320,6 +1472,73 @@ function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
     }
   };
 
+  const handleXlsx = async () => {
+    setBusy("xlsx");
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet((col.labor.name || "Resumen").slice(0, 31));
+      ws.getColumn(1).width = 6; // restricción de layout: col A vacía
+
+      let r = 2; // fila 1 vacía
+      ws.getCell(r, 2).value = col.labor.name;
+      ws.getCell(r, 2).font = { bold: true, size: 13 };
+      r++;
+      ws.getCell(r, 2).value = `${col.cycleLabel} · ${typeLabel}${col.cycleStatus === "closed" ? " · cerrado" : ""}`;
+      ws.getCell(r, 2).font = { size: 10, color: { argb: "FF666666" } };
+      r += 2;
+
+      const headerRow = r;
+      ["Día", "Producción", "Precio", "Monto", "Rendimiento"].forEach((h, i) => {
+        const c = ws.getCell(headerRow, 2 + i);
+        c.value = h;
+        c.font = { bold: true };
+        c.fill = toArgbFill(HDR_BLUE);
+        c.border = XLSX_BORDER;
+      });
+      r++;
+
+      for (const { day, cell: cd } of rows) {
+        ws.getCell(r, 2).value = day;
+        ws.getCell(r, 3).value = `${fmtNum(cd.qty)}${cd.unit ? " " + cd.unit : ""}`;
+        ws.getCell(r, 4).value = cd.priceLabel || "—";
+        ws.getCell(r, 5).value = cd.amount;
+        ws.getCell(r, 5).numFmt = XLSX_MONEY_FMT;
+        ws.getCell(r, 6).value = cd.persons > 0 ? `${cd.persons} pers · prom ${fmtNum(cd.avg)}` : "—";
+        for (let c = 2; c <= 6; c++) ws.getCell(r, c).border = XLSX_BORDER;
+        r++;
+      }
+
+      const totalRow = r;
+      ws.getCell(totalRow, 2).value = "TOTAL";
+      ws.getCell(totalRow, 3).value = `${fmtNum(totalQty)}${unit ? " " + unit : ""}`;
+      ws.getCell(totalRow, 4).value = `${persons} personas únicas`;
+      ws.getCell(totalRow, 5).value = totalAmount;
+      ws.getCell(totalRow, 5).numFmt = XLSX_MONEY_FMT;
+      for (let c = 2; c <= 6; c++) {
+        const cell = ws.getCell(totalRow, c);
+        cell.font = { bold: true };
+        cell.fill = toArgbFill(ROW_TOTAL_LIGHT);
+        cell.border = XLSX_BORDER;
+      }
+
+      [2, 3, 4, 5, 6].forEach((c) => { ws.getColumn(c).width = 18; });
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `resumen_${col.labor.name}_${col.cycleLabel}`.replace(/[/\s]+/g, "_") + ".xlsx";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error("Error al generar Excel: " + (err.message || err));
+    } finally {
+      setBusy("");
+    }
+  };
+
   const handlePrint = () => {
     if (!captureRef.current) return;
     const html = captureRef.current.outerHTML;
@@ -1381,6 +1600,14 @@ function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
             className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[10px] hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
           >
             {busy === "image" ? "..." : "📋 Imagen"}
+          </button>
+          <button
+            onClick={handleXlsx}
+            disabled={busy === "xlsx"}
+            title="Descargar como Excel"
+            className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[10px] hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+          >
+            {busy === "xlsx" ? "..." : "📊 Excel"}
           </button>
           <button
             onClick={handlePrint}

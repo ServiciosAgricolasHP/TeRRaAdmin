@@ -248,6 +248,25 @@ export async function removeCycleFromPayroll(payrollId, cycleId) {
   });
 }
 
+// Agrega ciclos a una nómina pendiente ya creada — inverso de
+// `removeCycleFromPayroll`. El caller (Payroll.jsx) ya trae `items` recalculado
+// (trabajadores existentes con su byCycle/grossAmount ampliado + trabajadores
+// nuevos con su anticipo/bono aplicado) porque esa lógica depende de datos ya
+// cargados en pantalla (ciclos, trabajadores, catálogo). Acá solo persiste:
+// recalcula los totales agregados y agrega los ciclos nuevos a la metadata.
+export async function addCyclesToPayroll(payrollId, { items, cycleDetailsToAdd }) {
+  const p = await payrollsService.getById(payrollId);
+  if (!p) throw new Error("Nómina no encontrada");
+  if (p.status === "paid") {
+    throw new Error("La nómina está pagada — revertí el pago antes de editar.");
+  }
+  const aggregates = recalcPayrollAggregates(items);
+  const cycleIds = [...(p.cycleIds || []), ...cycleDetailsToAdd.map((c) => c.id)];
+  const cycleLabels = [...(p.cycleLabels || []), ...cycleDetailsToAdd.map((c) => c.label)];
+  const cycleDetails = [...(p.cycleDetails || []), ...cycleDetailsToAdd];
+  await payrollsService.update(payrollId, { ...aggregates, cycleIds, cycleLabels, cycleDetails });
+}
+
 export async function markPending(id, workdayIds = []) {
   await unmarkWorkdaysPaid(workdayIds);
   return payrollsService.update(id, { status: "pending", paidAt: null });
