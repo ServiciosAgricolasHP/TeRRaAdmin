@@ -974,7 +974,7 @@ export default function Payroll() {
           <h1 className="text-2xl font-semibold tracking-tight">Nómina</h1>
           <p className="text-sm text-[var(--color-muted)]">Generar nóminas Banco de Chile a partir de ciclos activos</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={refresh}
             disabled={refreshing || loading}
@@ -982,9 +982,9 @@ export default function Payroll() {
             className="flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm text-[var(--color-fg)] hover:bg-[var(--color-surface-3)] disabled:opacity-50"
           >
             <span className={refreshing ? "inline-block animate-spin" : "inline-block"}>↻</span>
-            <span>{refreshing ? "Recargando…" : "Recargar datos"}</span>
+            <span className="hidden sm:inline">{refreshing ? "Recargando…" : "Recargar datos"}</span>
           </button>
-          <div className="flex gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1 text-sm">
+          <div className="flex flex-wrap gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1 text-sm">
             <button
               onClick={() => setTab("create")}
               className={`rounded px-3 py-1 ${
@@ -2979,7 +2979,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
                 <th>Faena</th>
                 <th>Subfaena</th>
                 <th style="width:130px">Período</th>
-                <th style="text-align:right">Con cuenta RUT</th>
+                <th style="text-align:right">Transferencia</th>
                 <th style="text-align:right">Efectivo</th>
                 <th style="text-align:right">TOTAL</th>
               </tr>
@@ -3048,7 +3048,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
                 <th>Subfaena</th>
                 <th>Labor</th>
                 <th style="width:130px">Período</th>
-                <th style="text-align:right">Con cuenta RUT</th>
+                <th style="text-align:right">Transferencia</th>
                 <th style="text-align:right">Efectivo</th>
                 <th style="text-align:right">TOTAL</th>
               </tr>
@@ -3181,8 +3181,10 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
 </body></html>`;
 }
 
-async function printPaymentDetails(payroll, allGroups, titleOverrides = {}, summaries = [], catalogs = {}, subfaenaSummary = null) {
-  if (allGroups.length === 0) return;
+// Fetch de ciclos + workdays y armado de snapshots por (grupo, ciclo) —
+// compartido por el PDF de "Detalle de pago" y por el toggle "con labores"
+// del Resumen en pantalla, que necesitan el mismo desglose costoso por labor.
+async function loadWorkdaysByGroup(payroll, allGroups, catalogs = {}) {
   const cycleIds = payroll.cycleIds || (payroll.cycleDetails || []).map((c) => c.id);
   const cycles = await Promise.all(cycleIds.map((id) => cyclesService.getById(id)));
   const cyclesById = {};
@@ -3210,70 +3212,83 @@ async function printPaymentDetails(payroll, allGroups, titleOverrides = {}, summ
     }
     workdaysByGroup[g.leader] = byCycle;
   }
+  return { cyclesById, workdaysByGroup };
+}
 
-  // Resumen por labor (segunda hoja del "Detalle de pago" imprimible).
-  // Mismo criterio que subfaenaSummary (bank vs cash por fila), pero
-  // desglosado también por labor dentro de cada subfaena, sumando a TODOS
-  // los trabajadores de la nómina (no solo a los de un grupo/líder).
-  const laborSummary = (() => {
-    const cashByRut = new Map(allItems.map((it) => [it.rut, isCashBank(it.bankCode)]));
-    const cycleDetails = payroll.cycleDetails || [];
-    const acc = new Map(); // key: subfaenaName||laborName
-    for (const g of allGroups) {
-      const byCycle = workdaysByGroup[g.leader] || {};
-      for (const [cid, snapshots] of Object.entries(byCycle)) {
-        const cd = cycleDetails.find((c) => c.id === cid);
-        const subfaenaName = cd?.subfaenaName || cd?.label || cid;
-        const faenaName = cd?.faenaName || "—";
-        for (const snap of snapshots) {
-          for (const row of snap.rows) {
-            if (!(row.totalAmount > 0)) continue;
-            const key = `${subfaenaName}||${snap.laborName}`;
-            if (!acc.has(key)) {
-              acc.set(key, { faenaName, subfaenaName, laborName: snap.laborName, bank: 0, cash: 0, total: 0, cycleIds: new Set() });
-            }
-            const entry = acc.get(key);
-            if (cashByRut.get(row.rut)) entry.cash += row.totalAmount;
-            else entry.bank += row.totalAmount;
-            entry.total += row.totalAmount;
-            entry.cycleIds.add(cid);
+// Resumen por labor (segunda hoja del "Detalle de pago" imprimible, y vista
+// "con labores" del Resumen en pantalla). Mismo criterio que subfaenaSummary
+// (bank vs cash por fila), pero desglosado también por labor dentro de cada
+// subfaena, sumando a TODOS los trabajadores de la nómina (no solo a los de
+// un grupo/líder). Requiere `workdaysByGroup` (ver loadWorkdaysByGroup)
+// porque ese desglose no vive en payroll.items — solo el total por ciclo.
+function computeLaborSummary(payroll, allGroups, workdaysByGroup) {
+  const allItems = allGroups.flatMap((g) => g.items);
+  const cashByRut = new Map(allItems.map((it) => [it.rut, isCashBank(it.bankCode)]));
+  const cycleDetails = payroll.cycleDetails || [];
+  const acc = new Map(); // key: subfaenaName||laborName
+  for (const g of allGroups) {
+    const byCycle = workdaysByGroup[g.leader] || {};
+    for (const [cid, snapshots] of Object.entries(byCycle)) {
+      const cd = cycleDetails.find((c) => c.id === cid);
+      const subfaenaName = cd?.subfaenaName || cd?.label || cid;
+      const faenaName = cd?.faenaName || "—";
+      for (const snap of snapshots) {
+        for (const row of snap.rows) {
+          if (!(row.totalAmount > 0)) continue;
+          const key = `${subfaenaName}||${snap.laborName}`;
+          if (!acc.has(key)) {
+            acc.set(key, { faenaName, subfaenaName, laborName: snap.laborName, bank: 0, cash: 0, total: 0, cycleIds: new Set() });
           }
+          const entry = acc.get(key);
+          if (cashByRut.get(row.rut)) entry.cash += row.totalAmount;
+          else entry.bank += row.totalAmount;
+          entry.total += row.totalAmount;
+          entry.cycleIds.add(cid);
         }
       }
     }
-    const rows = [...acc.values()].sort((a, b) => {
-      const f = a.faenaName.localeCompare(b.faenaName, "es");
-      if (f !== 0) return f;
-      const s = a.subfaenaName.localeCompare(b.subfaenaName, "es");
-      if (s !== 0) return s;
-      return a.laborName.localeCompare(b.laborName, "es");
-    });
-    const totals = rows.reduce(
-      (acc2, r) => ({ bank: acc2.bank + r.bank, cash: acc2.cash + r.cash, total: acc2.total + r.total }),
-      { bank: 0, cash: 0, total: 0 },
-    );
-    return { rows, totals };
-  })();
+  }
+  const rows = [...acc.values()].sort((a, b) => {
+    const f = a.faenaName.localeCompare(b.faenaName, "es");
+    if (f !== 0) return f;
+    const s = a.subfaenaName.localeCompare(b.subfaenaName, "es");
+    if (s !== 0) return s;
+    return a.laborName.localeCompare(b.laborName, "es");
+  });
+  const totals = rows.reduce(
+    (acc2, r) => ({ bank: acc2.bank + r.bank, cash: acc2.cash + r.cash, total: acc2.total + r.total }),
+    { bank: 0, cash: 0, total: 0 },
+  );
+  return { rows, totals };
+}
 
-  // Bonos y anticipos no están ligados a ninguna subfaena/labor en particular
-  // (son un ajuste por trabajador, no por producción), así que no se pueden
-  // repartir entre las filas de subfaenaSummary/laborSummary. Se calculan acá
-  // aparte y se agregan como filas de ajuste al final de esas tablas para que
-  // el TOTAL impreso cuadre exactamente con lo que hay que pagar (bank/cash).
-  const bonusAdvanceSummary = (() => {
-    let bankBonus = 0, cashBonus = 0, bankAdvance = 0, cashAdvance = 0;
-    for (const it of allItems) {
-      const isCash = isCashBank(it.bankCode);
-      const bonus = Number(it.bonus) || 0;
-      const advance = Number(it.advance) || 0;
-      if (isCash) { cashBonus += bonus; cashAdvance += advance; }
-      else { bankBonus += bonus; bankAdvance += advance; }
-    }
-    return {
-      bonus: { bank: bankBonus, cash: cashBonus, total: bankBonus + cashBonus },
-      advance: { bank: bankAdvance, cash: cashAdvance, total: bankAdvance + cashAdvance },
-    };
-  })();
+// Bonos y anticipos no están ligados a ninguna subfaena/labor en particular
+// (son un ajuste por trabajador, no por producción), así que no se pueden
+// repartir entre las filas de subfaenaSummary/laborSummary. Se calculan
+// aparte y se agregan como filas de ajuste al final de esas tablas para que
+// el TOTAL impreso/mostrado cuadre exactamente con lo que hay que pagar
+// (bank/cash).
+function computeBonusAdvanceSummary(items) {
+  let bankBonus = 0, cashBonus = 0, bankAdvance = 0, cashAdvance = 0;
+  for (const it of items) {
+    const isCash = isCashBank(it.bankCode);
+    const bonus = Number(it.bonus) || 0;
+    const advance = Number(it.advance) || 0;
+    if (isCash) { cashBonus += bonus; cashAdvance += advance; }
+    else { bankBonus += bonus; bankAdvance += advance; }
+  }
+  return {
+    bonus: { bank: bankBonus, cash: cashBonus, total: bankBonus + cashBonus },
+    advance: { bank: bankAdvance, cash: cashAdvance, total: bankAdvance + cashAdvance },
+  };
+}
+
+async function printPaymentDetails(payroll, allGroups, titleOverrides = {}, summaries = [], catalogs = {}, subfaenaSummary = null) {
+  if (allGroups.length === 0) return;
+  const allItems = allGroups.flatMap((g) => g.items);
+  const { cyclesById, workdaysByGroup } = await loadWorkdaysByGroup(payroll, allGroups, catalogs);
+  const laborSummary = computeLaborSummary(payroll, allGroups, workdaysByGroup);
+  const bonusAdvanceSummary = computeBonusAdvanceSummary(allItems);
 
   const html = buildCashReceiptHtml(payroll, allGroups, {
     titleOverrides,
@@ -3290,6 +3305,131 @@ async function printPaymentDetails(payroll, allGroups, titleOverrides = {}, summ
   if (!w) {
     throw new Error("Permite las ventanas emergentes para imprimir.");
   }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
+// Imprime solo la tabla de resumen (por subfaena o por labor, según el toggle
+// del Resumen en pantalla) — versión standalone de "Resumen por subfaena"/
+// "Resumen por labor" que ya usa el PDF completo de "Detalle de pago", para
+// cuando el usuario solo quiere esa tabla sin los comprobantes individuales.
+function printResumenTable(payroll, { showLabor, subfaenaSummary, laborSummary, bonusAdvanceSummary }) {
+  const fmt = (v) =>
+    new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(Number(v) || 0);
+  const fmtDayShort = (d) => {
+    if (!d || typeof d !== "string") return "";
+    const m = d.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? `${m[3]}/${m[2]}` : d;
+  };
+  const cycleDetails = payroll.cycleDetails || [];
+  const cyclesPeriod = (cycleIds) => {
+    let minFirst = null, maxLast = null;
+    for (const cid of cycleIds) {
+      const cd = cycleDetails.find((c) => c.id === cid);
+      const first = cd?.firstDay || "";
+      const last = cd?.lastDay || "";
+      if (first && (!minFirst || first < minFirst)) minFirst = first;
+      if (last && (!maxLast || last > maxLast)) maxLast = last;
+    }
+    const a = fmtDayShort(minFirst), b = fmtDayShort(maxLast);
+    if (a && b && a !== b) return `${a} → ${b}`;
+    return a || b || "—";
+  };
+  const buildAdjustmentRowsHtml = (labelColspan) => {
+    const rows = [];
+    if (bonusAdvanceSummary?.bonus.total > 0) {
+      rows.push(`<tr class="adj-row"><td colspan="${labelColspan}" style="text-align:right">Bonos</td><td style="text-align:right">${fmt(bonusAdvanceSummary.bonus.bank)}</td><td style="text-align:right">${fmt(bonusAdvanceSummary.bonus.cash)}</td><td style="text-align:right">${fmt(bonusAdvanceSummary.bonus.total)}</td></tr>`);
+    }
+    if (bonusAdvanceSummary?.advance.total > 0) {
+      rows.push(`<tr class="adj-row"><td colspan="${labelColspan}" style="text-align:right">Anticipos</td><td style="text-align:right">− ${fmt(bonusAdvanceSummary.advance.bank)}</td><td style="text-align:right">− ${fmt(bonusAdvanceSummary.advance.cash)}</td><td style="text-align:right">− ${fmt(bonusAdvanceSummary.advance.total)}</td></tr>`);
+    }
+    return rows.join("");
+  };
+  const adjustedTotals = (base) => ({
+    bank: base.bank + (bonusAdvanceSummary?.bonus.bank || 0) - (bonusAdvanceSummary?.advance.bank || 0),
+    cash: base.cash + (bonusAdvanceSummary?.bonus.cash || 0) - (bonusAdvanceSummary?.advance.cash || 0),
+    total: base.total + (bonusAdvanceSummary?.bonus.total || 0) - (bonusAdvanceSummary?.advance.total || 0),
+  });
+  const today = new Date().toLocaleDateString("es-CL");
+  const cyclesLine = cycleDetails.map((c) => c.label).join(" · ");
+
+  let bodyHtml;
+  if (!showLabor) {
+    let prevFaena = null;
+    const rowsHtml = subfaenaSummary.rows.map((r, i, arr) => {
+      const showFaena = r.faenaName !== prevFaena;
+      prevFaena = r.faenaName;
+      const row = `<tr><td>${showFaena ? r.faenaName : ""}</td><td>${r.subfaenaName}</td><td style="font-size:11px;color:#444">${cyclesPeriod([...r.cycleIds])}</td><td style="text-align:right">${fmt(r.bank)}</td><td style="text-align:right">${fmt(r.cash)}</td><td style="text-align:right"><b>${fmt(r.total)}</b></td></tr>`;
+      const isLastOfFaena = i === arr.length - 1 || arr[i + 1].faenaName !== r.faenaName;
+      if (!isLastOfFaena) return row;
+      const faenaRows = arr.filter((x) => x.faenaName === r.faenaName);
+      const subBank = faenaRows.reduce((s, x) => s + x.bank, 0);
+      const subCash = faenaRows.reduce((s, x) => s + x.cash, 0);
+      const subTotal = faenaRows.reduce((s, x) => s + x.total, 0);
+      return `${row}<tr class="subtotal-faena"><td colspan="3" style="text-align:right"><b>Sub total por faena</b></td><td style="text-align:right"><b>${fmt(subBank)}</b></td><td style="text-align:right"><b>${fmt(subCash)}</b></td><td style="text-align:right"><b>${fmt(subTotal)}</b></td></tr>`;
+    }).join("");
+    bodyHtml = `<table class="subfaena-summary">
+      <thead><tr><th>Faena</th><th>Subfaena</th><th style="width:130px">Período</th><th style="text-align:right">Transferencia</th><th style="text-align:right">Efectivo</th><th style="text-align:right">TOTAL</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+      <tfoot>
+        ${buildAdjustmentRowsHtml(3)}
+        <tr class="summary-total"><td colspan="3"><b>TOTAL</b></td><td style="text-align:right"><b>${fmt(adjustedTotals(subfaenaSummary.totals).bank)}</b></td><td style="text-align:right"><b>${fmt(adjustedTotals(subfaenaSummary.totals).cash)}</b></td><td style="text-align:right"><b>${fmt(adjustedTotals(subfaenaSummary.totals).total)}</b></td></tr>
+      </tfoot>
+    </table>`;
+  } else {
+    let prevSubfaena = null;
+    const rowsHtml = laborSummary.rows.map((r, i, arr) => {
+      const showSubfaena = r.subfaenaName !== prevSubfaena;
+      prevSubfaena = r.subfaenaName;
+      const row = `<tr><td>${showSubfaena ? r.faenaName : ""}</td><td>${showSubfaena ? r.subfaenaName : ""}</td><td>${r.laborName}</td><td style="font-size:11px;color:#444">${cyclesPeriod([...r.cycleIds])}</td><td style="text-align:right">${fmt(r.bank)}</td><td style="text-align:right">${fmt(r.cash)}</td><td style="text-align:right"><b>${fmt(r.total)}</b></td></tr>`;
+      const isLastOfFaena = i === arr.length - 1 || arr[i + 1].faenaName !== r.faenaName;
+      if (!isLastOfFaena) return row;
+      const faenaRows = arr.filter((x) => x.faenaName === r.faenaName);
+      const subBank = faenaRows.reduce((s, x) => s + x.bank, 0);
+      const subCash = faenaRows.reduce((s, x) => s + x.cash, 0);
+      const subTotal = faenaRows.reduce((s, x) => s + x.total, 0);
+      return `${row}<tr class="subtotal-faena"><td colspan="4" style="text-align:right"><b>Sub total por faena</b></td><td style="text-align:right"><b>${fmt(subBank)}</b></td><td style="text-align:right"><b>${fmt(subCash)}</b></td><td style="text-align:right"><b>${fmt(subTotal)}</b></td></tr>`;
+    }).join("");
+    bodyHtml = `<table class="subfaena-summary">
+      <thead><tr><th>Faena</th><th>Subfaena</th><th>Labor</th><th style="width:130px">Período</th><th style="text-align:right">Transferencia</th><th style="text-align:right">Efectivo</th><th style="text-align:right">TOTAL</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+      <tfoot>
+        ${buildAdjustmentRowsHtml(4)}
+        <tr class="summary-total"><td colspan="4"><b>TOTAL</b></td><td style="text-align:right"><b>${fmt(adjustedTotals(laborSummary.totals).bank)}</b></td><td style="text-align:right"><b>${fmt(adjustedTotals(laborSummary.totals).cash)}</b></td><td style="text-align:right"><b>${fmt(adjustedTotals(laborSummary.totals).total)}</b></td></tr>
+      </tfoot>
+    </table>`;
+  }
+
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${payroll.name} — Resumen</title>
+<style>
+  * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; color: #222; padding: 22px 28px; }
+  .hd { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; border-bottom: 2px solid #555; padding-bottom: 10px; margin-bottom: 12px; }
+  h1 { margin: 0 0 4px; font-size: 18px; }
+  .sub { color: #666; font-size: 12px; }
+  .meta { font-size: 12px; text-align: right; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  th { background: #B7DEE8; }
+  th, td { border: 1px solid #999; padding: 5px 7px; }
+  table.subfaena-summary .summary-total td { background: #FFE699; }
+  table.subfaena-summary .subtotal-faena td { background: #F2F2F2; font-style: italic; }
+  table.subfaena-summary .adj-row td { background: #EAF3FA; }
+  @media print { @page { margin: 14mm landscape; } }
+</style>
+</head><body>
+  <div class="hd">
+    <div>
+      <h1>Resumen ${showLabor ? "por labor" : "por subfaena"}</h1>
+      <div class="sub">${payroll.name} · ${cyclesLine}</div>
+    </div>
+    <div class="meta"><div><b>Fecha:</b> ${today}</div></div>
+  </div>
+  ${bodyHtml}
+<script>window.onload = () => { window.focus(); window.print(); };</script>
+</body></html>`;
+  const w = window.open("", "_blank", "width=900,height=700");
+  if (!w) throw new Error("Permite las ventanas emergentes para imprimir.");
   w.document.open();
   w.document.write(html);
   w.document.close();
@@ -3347,6 +3487,7 @@ async function printCashReceipts(payroll, cashGroups, titleOverrides = {}, catal
 function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClose, onRedownload, onDownloadNominaOnly, onDownloadSnapshot, onChanged }) {
   const { catalogs } = useCatalogs();
   const toast = useToast();
+  const isMobile = useIsMobile();
   const items = payroll.items || [];
   const { bank, cash } = splitBankAndCash(items);
   const cashGroups = groupCashByLeader(cash);
@@ -3358,7 +3499,19 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
   const [leaderFilter, setLeaderFilter] = useState(() => new Set());
   const [cycleFilter, setCycleFilter] = useState(() => new Set());
   const [expandedRut, setExpandedRut] = useState(null);
-  const [collapsedSections, setCollapsedSections] = useState(() => new Set());
+  // Una nómina histórica (pagada) acumula mucha info arriba (resumen, ciclos)
+  // que ya no hace falta revisar de entrada — arranca colapsada. Una pendiente
+  // sigue arrancando expandida porque el usuario típicamente la está revisando,
+  // salvo el Resumen, que por su tamaño (tablas, toggles, acciones) arranca
+  // colapsado en ambos casos. Incluye también cada grupo por líder (banco y
+  // efectivo), que es donde vive el grueso del detalle trabajador-por-trabajador.
+  const [collapsedSections, setCollapsedSections] = useState(() => {
+    if (payroll.status !== "paid") return new Set(["summary"]);
+    const set = new Set(["summary", "cycles", "filters"]);
+    for (const g of groupCashByLeader(bank)) set.add(`bank_${g.leader}`);
+    for (const g of cashGroups) set.add(`cash_${g.leader}`);
+    return set;
+  });
   const [printingGroupLeader, setPrintingGroupLeader] = useState(null);
   const [workerSummaryFor, setWorkerSummaryFor] = useState(null);
 
@@ -3790,11 +3943,246 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
   const grossTotal = items.reduce((s, x) => s + (Number(x.grossAmount) || Number(x.amount) || 0), 0);
   const advanceTotal = items.reduce((s, x) => s + (Number(x.advance) || 0), 0);
   const bonusTotal = items.reduce((s, x) => s + (Number(x.bonus) || 0), 0);
-  const totalsByCycle = (cycleDetails || []).map((c) => {
-    const bankSum = bank.reduce((s, x) => s + (x.byCycle?.[c.id] || 0), 0);
-    const cashSum = cash.reduce((s, x) => s + (x.byCycle?.[c.id] || 0), 0);
-    return { cycle: c, bank: bankSum, cash: cashSum, total: bankSum + cashSum };
+  const bonusAdvanceSummary = computeBonusAdvanceSummary(items);
+  const adjustedTotals = (base) => ({
+    bank: base.bank + (bonusAdvanceSummary.bonus.bank || 0) - (bonusAdvanceSummary.advance.bank || 0),
+    cash: base.cash + (bonusAdvanceSummary.bonus.cash || 0) - (bonusAdvanceSummary.advance.cash || 0),
+    total: base.total + (bonusAdvanceSummary.bonus.total || 0) - (bonusAdvanceSummary.advance.total || 0),
   });
+  const cyclesPeriod = (cycleIdsIn) => {
+    const fmtDayShort = (d) => {
+      if (!d || typeof d !== "string") return "";
+      const m = d.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      return m ? `${m[3]}/${m[2]}` : d;
+    };
+    let minFirst = null, maxLast = null;
+    for (const cid of cycleIdsIn) {
+      const cd = cycleDetails.find((c) => c.id === cid);
+      const first = cd?.firstDay || "";
+      const last = cd?.lastDay || "";
+      if (first && (!minFirst || first < minFirst)) minFirst = first;
+      if (last && (!maxLast || last > maxLast)) maxLast = last;
+    }
+    const a = fmtDayShort(minFirst), b = fmtDayShort(maxLast);
+    if (a && b && a !== b) return `${a} → ${b}`;
+    return a || b || "—";
+  };
+
+  // Resumen en pantalla: mismas tablas que "Detalle de pago" (por subfaena /
+  // por labor), con sus propias acciones de imprimir/copiar/descargar. La
+  // vista "con labores" necesita el mismo fetch costoso (ciclos + workdays)
+  // que ya paga "Detalle de pago" — se carga solo al activar el toggle, y se
+  // cachea mientras el modal siga abierto.
+  const [summaryShowLabor, setSummaryShowLabor] = useState(false);
+  const [laborSummaryData, setLaborSummaryData] = useState(null);
+  const [laborSummaryLoading, setLaborSummaryLoading] = useState(false);
+  useEffect(() => {
+    if (!summaryShowLabor || laborSummaryData || laborSummaryLoading) return;
+    let cancelled = false;
+    setLaborSummaryLoading(true);
+    (async () => {
+      try {
+        const { workdaysByGroup } = await loadWorkdaysByGroup(payroll, allGroups, catalogs);
+        if (cancelled) return;
+        setLaborSummaryData(computeLaborSummary(payroll, allGroups, workdaysByGroup));
+      } catch (err) {
+        if (!cancelled) toast.error("No se pudo cargar el resumen por labor: " + (err?.message || err));
+      } finally {
+        if (!cancelled) setLaborSummaryLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [summaryShowLabor]);
+  const activeSummary = summaryShowLabor ? laborSummaryData : subfaenaSummary;
+  // Aplana filas + subtotales por faena en una sola lista para que el render
+  // sea un simple .map() — evita mirar "la fila siguiente" adentro del JSX.
+  const summaryDisplayRows = useMemo(() => {
+    if (!activeSummary) return [];
+    const rows = activeSummary.rows;
+    const out = [];
+    rows.forEach((r, i, arr) => {
+      const prev = arr[i - 1];
+      const showLabel = summaryShowLabor ? r.subfaenaName !== prev?.subfaenaName : r.faenaName !== prev?.faenaName;
+      out.push({ row: r, showLabel });
+      const isLastOfFaena = i === arr.length - 1 || arr[i + 1].faenaName !== r.faenaName;
+      if (isLastOfFaena) {
+        const faenaRows = arr.filter((x) => x.faenaName === r.faenaName);
+        out.push({
+          subtotal: {
+            bank: faenaRows.reduce((s, x) => s + x.bank, 0),
+            cash: faenaRows.reduce((s, x) => s + x.cash, 0),
+            total: faenaRows.reduce((s, x) => s + x.total, 0),
+          },
+        });
+      }
+    });
+    return out;
+  }, [activeSummary, summaryShowLabor]);
+
+  const resumenCaptureRef = useRef(null);
+  const [resumenBusy, setResumenBusy] = useState("");
+  const handlePrintResumen = () => {
+    if (!activeSummary) return;
+    try {
+      printResumenTable(payroll, {
+        showLabor: summaryShowLabor,
+        subfaenaSummary,
+        laborSummary: laborSummaryData,
+        bonusAdvanceSummary,
+      });
+    } catch (err) {
+      toast.error(err?.message || String(err));
+    }
+  };
+  const handleCopyResumenImage = async () => {
+    if (!resumenCaptureRef.current) return;
+    setResumenBusy("image");
+    try {
+      const blob = await captureFullWidthBlob(resumenCaptureRef.current);
+      if (!blob) throw new Error("No se pudo generar la imagen");
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      toast.success("Imagen copiada");
+    } catch (err) {
+      toast.error("Error al copiar: " + (err.message || err));
+    } finally {
+      setResumenBusy("");
+    }
+  };
+  const handleDownloadResumenXlsx = async () => {
+    if (!activeSummary) return;
+    setResumenBusy("xlsx");
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet(summaryShowLabor ? "Resumen por labor" : "Resumen por subfaena");
+      ws.getColumn(1).width = 6; // restricción de layout: col A vacía
+
+      const HEADER_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFB7DEE8" } };
+      const TOTAL_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFE699" } };
+      const SUBTOTAL_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2F2F2" } };
+      const ADJ_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEAF3FA" } };
+      const thinBorder = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
+      const moneyFmt = '"$"#,##0';
+      const labelCols = summaryShowLabor ? 4 : 3; // Faena..Período (labor) o Faena..Período (subfaena)
+      const totalCols = summaryShowLabor ? 7 : 6;
+
+      let r = 2; // fila 1 vacía
+      ws.getCell(r, 2).value = `Resumen ${summaryShowLabor ? "por labor" : "por subfaena"}`;
+      ws.getCell(r, 2).font = { bold: true, size: 13 };
+      r++;
+      ws.getCell(r, 2).value = payroll.name;
+      ws.getCell(r, 2).font = { size: 10, color: { argb: "FF666666" } };
+      r += 2;
+
+      const headers = summaryShowLabor
+        ? ["Faena", "Subfaena", "Labor", "Período", "Transferencia", "Efectivo", "TOTAL"]
+        : ["Faena", "Subfaena", "Período", "Transferencia", "Efectivo", "TOTAL"];
+      headers.forEach((h, i) => {
+        const c = ws.getCell(r, 2 + i);
+        c.value = h;
+        c.font = { bold: true };
+        c.fill = HEADER_FILL;
+        c.border = thinBorder;
+      });
+      r++;
+
+      for (const entry of summaryDisplayRows) {
+        if (entry.subtotal) {
+          ws.getCell(r, 2).value = "Sub total por faena";
+          ws.mergeCells(r, 2, r, 1 + labelCols);
+          ws.getCell(r, 2 + labelCols).value = entry.subtotal.bank;
+          ws.getCell(r, 3 + labelCols).value = entry.subtotal.cash;
+          ws.getCell(r, 4 + labelCols).value = entry.subtotal.total;
+          for (let c = 2; c <= 1 + totalCols; c++) {
+            const cell = ws.getCell(r, c);
+            if (c > 1 + labelCols) cell.numFmt = moneyFmt;
+            cell.fill = SUBTOTAL_FILL;
+            cell.font = { italic: true, bold: true };
+            cell.border = thinBorder;
+          }
+          r++;
+          continue;
+        }
+        const row = entry.row;
+        let col = 2;
+        ws.getCell(r, col++).value = entry.showLabel ? row.faenaName : "";
+        if (summaryShowLabor) {
+          ws.getCell(r, col++).value = entry.showLabel ? row.subfaenaName : "";
+          ws.getCell(r, col++).value = row.laborName;
+        } else {
+          ws.getCell(r, col++).value = row.subfaenaName;
+        }
+        ws.getCell(r, col++).value = cyclesPeriod([...row.cycleIds]);
+        ws.getCell(r, col).value = row.bank; ws.getCell(r, col++).numFmt = moneyFmt;
+        ws.getCell(r, col).value = row.cash; ws.getCell(r, col++).numFmt = moneyFmt;
+        ws.getCell(r, col).value = row.total; ws.getCell(r, col++).numFmt = moneyFmt;
+        for (let c = 2; c <= 1 + totalCols; c++) ws.getCell(r, c).border = thinBorder;
+        r++;
+      }
+
+      const writeAdjRow = (label, values) => {
+        ws.getCell(r, 2).value = label;
+        ws.mergeCells(r, 2, r, 1 + labelCols);
+        ws.getCell(r, 2 + labelCols).value = values.bank;
+        ws.getCell(r, 3 + labelCols).value = values.cash;
+        ws.getCell(r, 4 + labelCols).value = values.total;
+        for (let c = 2; c <= 1 + totalCols; c++) {
+          const cell = ws.getCell(r, c);
+          if (c > 1 + labelCols) cell.numFmt = moneyFmt;
+          cell.fill = ADJ_FILL;
+          cell.border = thinBorder;
+        }
+        r++;
+      };
+      if (bonusAdvanceSummary.bonus.total > 0) writeAdjRow("Bonos", bonusAdvanceSummary.bonus);
+      if (bonusAdvanceSummary.advance.total > 0) {
+        writeAdjRow("Anticipos", {
+          bank: -bonusAdvanceSummary.advance.bank,
+          cash: -bonusAdvanceSummary.advance.cash,
+          total: -bonusAdvanceSummary.advance.total,
+        });
+      }
+      const at = adjustedTotals(activeSummary.totals);
+      ws.getCell(r, 2).value = "TOTAL";
+      ws.mergeCells(r, 2, r, 1 + labelCols);
+      ws.getCell(r, 2 + labelCols).value = at.bank;
+      ws.getCell(r, 3 + labelCols).value = at.cash;
+      ws.getCell(r, 4 + labelCols).value = at.total;
+      for (let c = 2; c <= 1 + totalCols; c++) {
+        const cell = ws.getCell(r, c);
+        if (c > 1 + labelCols) cell.numFmt = moneyFmt;
+        cell.fill = TOTAL_FILL;
+        cell.font = { bold: true };
+        cell.border = thinBorder;
+      }
+
+      ws.getColumn(2).width = 20; // Faena
+      ws.getColumn(3).width = 20; // Subfaena
+      if (summaryShowLabor) {
+        ws.getColumn(4).width = 22; // Labor
+        ws.getColumn(5).width = 14; // Período
+      } else {
+        ws.getColumn(4).width = 14; // Período
+      }
+      ws.getColumn(2 + labelCols).width = 14; // Transferencia
+      ws.getColumn(3 + labelCols).width = 16; // Efectivo
+      ws.getColumn(4 + labelCols).width = 16; // TOTAL
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `resumen_${summaryShowLabor ? "por_labor" : "por_subfaena"}_${payroll.name}`.replace(/[/\s]+/g, "_") + ".xlsx";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error("Error al generar Excel: " + (err.message || err));
+    } finally {
+      setResumenBusy("");
+    }
+  };
 
   // Encabezados editables por ciclo. Se guardan en el doc de la nómina
   // (`payroll.cycleLabelOverrides`) para que persistan entre dispositivos y
@@ -3917,7 +4305,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-2 py-3 sm:px-4 sm:py-6" onClick={onClose}>
       <div
-        className="flex max-h-[94vh] w-full max-w-4xl flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl sm:max-h-[90vh]"
+        className="flex max-h-[94vh] w-full max-w-4xl flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl sm:max-h-[90vh] lg:max-w-6xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="shrink-0 border-b border-[var(--color-border)] px-3 py-3 sm:px-5">
@@ -4026,54 +4414,68 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
               {hasActiveFilter && ` · ${fmtCurrency(filteredItems.reduce((s, x) => s + (Number(x.amount) || 0), 0))}`}
             </span>
           </div>
-          {allLeaders.length > 1 && (
-            <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px]">
-              <span className="text-[var(--color-muted)] mr-1">Grupo:</span>
-              {allLeaders.map((g) => {
-                const active = leaderFilter.has(g.leader);
-                return (
-                  <button
-                    key={g.leader}
-                    onClick={() => toggleSetItem(setLeaderFilter, g.leader)}
-                    className={`rounded-full px-2 py-0.5 ${
-                      active
-                        ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]"
-                        : "bg-[var(--color-surface-2)] border border-[var(--color-border)] hover:bg-[var(--color-accent-soft)]"
-                    }`}
-                  >
-                    {g.leader} <span className="opacity-60">({g.count})</span>
-                  </button>
-                );
-              })}
-              {leaderFilter.size > 0 && (
-                <button onClick={() => setLeaderFilter(new Set())} className="text-[var(--color-muted)] hover:text-[var(--color-danger)]">✕</button>
-              )}
-            </div>
+          {(allLeaders.length > 1 || cycleDetails.length > 1) && (
+            <button
+              type="button"
+              onClick={() => toggleSection("filters")}
+              className="mt-1.5 flex items-center gap-1 text-[11px] text-[var(--color-muted)] hover:text-[var(--color-fg)]"
+            >
+              <span>{isCollapsed("filters") ? "▸" : "▾"}</span>
+              Filtros
+            </button>
           )}
-          {cycleDetails.length > 1 && (
-            <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px]">
-              <span className="text-[var(--color-muted)] mr-1">Ciclo:</span>
-              {cycleDetails.map((c) => {
-                const active = cycleFilter.has(c.id);
-                return (
-                  <button
-                    key={c.id}
-                    onClick={() => toggleSetItem(setCycleFilter, c.id)}
-                    className={`rounded-full px-2 py-0.5 ${
-                      active
-                        ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]"
-                        : "bg-[var(--color-surface-2)] border border-[var(--color-border)] hover:bg-[var(--color-accent-soft)]"
-                    }`}
-                    title={c.faenaName ? `${c.faenaName}${c.subfaenaName ? " / " + c.subfaenaName : ""}` : c.label}
-                  >
-                    {displayCycleLabel(c)}
-                  </button>
-                );
-              })}
-              {cycleFilter.size > 0 && (
-                <button onClick={() => setCycleFilter(new Set())} className="text-[var(--color-muted)] hover:text-[var(--color-danger)]">✕</button>
+          {!isCollapsed("filters") && (
+            <>
+              {allLeaders.length > 1 && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px]">
+                  <span className="text-[var(--color-muted)] mr-1">Grupo:</span>
+                  {allLeaders.map((g) => {
+                    const active = leaderFilter.has(g.leader);
+                    return (
+                      <button
+                        key={g.leader}
+                        onClick={() => toggleSetItem(setLeaderFilter, g.leader)}
+                        className={`rounded-full px-2 py-0.5 ${
+                          active
+                            ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]"
+                            : "bg-[var(--color-surface-2)] border border-[var(--color-border)] hover:bg-[var(--color-accent-soft)]"
+                        }`}
+                      >
+                        {g.leader} <span className="opacity-60">({g.count})</span>
+                      </button>
+                    );
+                  })}
+                  {leaderFilter.size > 0 && (
+                    <button onClick={() => setLeaderFilter(new Set())} className="text-[var(--color-muted)] hover:text-[var(--color-danger)]">✕</button>
+                  )}
+                </div>
               )}
-            </div>
+              {cycleDetails.length > 1 && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px]">
+                  <span className="text-[var(--color-muted)] mr-1">Ciclo:</span>
+                  {cycleDetails.map((c) => {
+                    const active = cycleFilter.has(c.id);
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => toggleSetItem(setCycleFilter, c.id)}
+                        className={`rounded-full px-2 py-0.5 ${
+                          active
+                            ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]"
+                            : "bg-[var(--color-surface-2)] border border-[var(--color-border)] hover:bg-[var(--color-accent-soft)]"
+                        }`}
+                        title={c.faenaName ? `${c.faenaName}${c.subfaenaName ? " / " + c.subfaenaName : ""}` : c.label}
+                      >
+                        {displayCycleLabel(c)}
+                      </button>
+                    );
+                  })}
+                  {cycleFilter.size > 0 && (
+                    <button onClick={() => setCycleFilter(new Set())} className="text-[var(--color-muted)] hover:text-[var(--color-danger)]">✕</button>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
 
@@ -4129,80 +4531,201 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
 
           {/* Resumen — desglose general */}
           <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4">
-            <h3 className="mb-3 text-sm font-semibold">Resumen</h3>
-            <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-              <div>
-                <div className="text-xs text-[var(--color-muted)]">🏦 Transferencias</div>
-                <div className="text-lg font-semibold">{fmtCurrency(bankTotal)}</div>
-                <div className="text-[10px] text-[var(--color-muted)]">{bank.length} persona(s)</div>
-              </div>
-              <div>
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-xs text-[var(--color-muted)]">💵 Efectivo</div>
-                  {cash.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setShowCashEstimation(true)}
-                      title="Estimar cuántos billetes y monedas se necesitan para pagar el efectivo de esta nómina"
-                      className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-0.5 text-[10px] hover:bg-[var(--color-accent-soft)]"
-                    >
-                      💵 Estimar
-                    </button>
+            <button
+              type="button"
+              onClick={() => toggleSection("summary")}
+              className="flex w-full items-center justify-between gap-2 text-left"
+            >
+              <span className="flex items-center gap-2 text-sm font-semibold">
+                <span className="text-[var(--color-muted)]">{isCollapsed("summary") ? "▸" : "▾"}</span>
+                <span>Resumen</span>
+              </span>
+              <span className="shrink-0 tabular-nums text-sm font-semibold text-[var(--color-accent)]">
+                {fmtCurrency(payroll.total || 0)}
+              </span>
+            </button>
+            {!isCollapsed("summary") && (
+              <>
+                <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                  <div>
+                    <div className="text-xs text-[var(--color-muted)]">🏦 Transferencias</div>
+                    <div className="text-lg font-semibold">{fmtCurrency(bankTotal)}</div>
+                    <div className="text-[10px] text-[var(--color-muted)]">{bank.length} persona(s)</div>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-xs text-[var(--color-muted)]">💵 Efectivo</div>
+                      {cash.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setShowCashEstimation(true)}
+                          title="Estimar cuántos billetes y monedas se necesitan para pagar el efectivo de esta nómina"
+                          className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-0.5 text-[10px] hover:bg-[var(--color-accent-soft)]"
+                        >
+                          💵 Estimar
+                        </button>
+                      )}
+                    </div>
+                    <div className="text-lg font-semibold">{fmtCurrency(cashTotal)}</div>
+                    <div className="text-[10px] text-[var(--color-muted)]">{cash.length} persona(s) · {cashGroups.length} grupo(s)</div>
+                  </div>
+                  {advanceTotal > 0 && (
+                    <div>
+                      <div className="text-xs text-[var(--color-muted)]">↩ Anticipos aplicados</div>
+                      <div className="text-lg font-semibold text-[var(--color-warning)]">− {fmtCurrency(advanceTotal)}</div>
+                      <div className="text-[10px] text-[var(--color-muted)]">Bruto: {fmtCurrency(grossTotal)}</div>
+                    </div>
                   )}
+                  {bonusTotal > 0 && (
+                    <div>
+                      <div className="text-xs text-[var(--color-muted)]">🎁 Bonos aplicados</div>
+                      <div className="text-lg font-semibold text-[var(--color-success)]">+ {fmtCurrency(bonusTotal)}</div>
+                    </div>
+                  )}
+                  <div>
+                    <div className="text-xs text-[var(--color-muted)]">Total a pagar</div>
+                    <div className="text-lg font-semibold text-[var(--color-accent)]">{fmtCurrency(payroll.total || 0)}</div>
+                    <div className="text-[10px] text-[var(--color-muted)]">{items.length} trabajador(es)</div>
+                  </div>
                 </div>
-                <div className="text-lg font-semibold">{fmtCurrency(cashTotal)}</div>
-                <div className="text-[10px] text-[var(--color-muted)]">{cash.length} persona(s) · {cashGroups.length} grupo(s)</div>
-              </div>
-              {advanceTotal > 0 && (
-                <div>
-                  <div className="text-xs text-[var(--color-muted)]">↩ Anticipos aplicados</div>
-                  <div className="text-lg font-semibold text-[var(--color-warning)]">− {fmtCurrency(advanceTotal)}</div>
-                  <div className="text-[10px] text-[var(--color-muted)]">Bruto: {fmtCurrency(grossTotal)}</div>
-                </div>
-              )}
-              {bonusTotal > 0 && (
-                <div>
-                  <div className="text-xs text-[var(--color-muted)]">🎁 Bonos aplicados</div>
-                  <div className="text-lg font-semibold text-[var(--color-success)]">+ {fmtCurrency(bonusTotal)}</div>
-                </div>
-              )}
-              <div>
-                <div className="text-xs text-[var(--color-muted)]">Total a pagar</div>
-                <div className="text-lg font-semibold text-[var(--color-accent)]">{fmtCurrency(payroll.total || 0)}</div>
-                <div className="text-[10px] text-[var(--color-muted)]">{items.length} trabajador(es)</div>
-              </div>
-            </div>
 
-            {totalsByCycle.length > 1 && (
-              <div className="mt-4 overflow-x-auto rounded-md border border-[var(--color-border)]">
-                <table className="w-full text-xs">
-                  <thead className="bg-[var(--color-surface-2)] text-left text-[var(--color-muted)]">
-                    <tr>
-                      <th className="px-2 py-1.5">Ciclo</th>
-                      <th className="px-2 py-1.5 text-right">🏦 Banco</th>
-                      <th className="px-2 py-1.5 text-right">💵 Efectivo</th>
-                      <th className="px-2 py-1.5 text-right">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {totalsByCycle.map(({ cycle, bank: b, cash: c, total }) => (
-                      <tr key={cycle.id} className="border-t border-[var(--color-border)]">
-                        <td className="px-2 py-1">
-                          <span className="font-medium">{displayCycleLabel(cycle)}</span>
-                          {cycle.faenaName && (
-                            <span className="ml-1 text-[10px] text-[var(--color-muted)]">
-                              · {cycle.faenaName}{cycle.subfaenaName ? `/${cycle.subfaenaName}` : ""}
-                            </span>
+                {subfaenaSummary.rows.length > 0 && (
+                  <div className="mt-4">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <div className="inline-flex overflow-hidden rounded-md border border-[var(--color-border)] text-xs">
+                        <button
+                          type="button"
+                          onClick={() => setSummaryShowLabor(false)}
+                          className={`px-2.5 py-1.5 ${!summaryShowLabor ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
+                        >
+                          Sin labores
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSummaryShowLabor(true)}
+                          className={`border-l border-[var(--color-border)] px-2.5 py-1.5 ${summaryShowLabor ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
+                        >
+                          Con labores
+                        </button>
+                      </div>
+                      <div className="flex gap-1">
+                        <button
+                          onClick={handleCopyResumenImage}
+                          disabled={resumenBusy === "image" || !activeSummary}
+                          title="Copiar como imagen"
+                          className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-[10px] hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+                        >
+                          {resumenBusy === "image" ? "..." : "📋 Copiar"}
+                        </button>
+                        <button
+                          onClick={handleDownloadResumenXlsx}
+                          disabled={resumenBusy === "xlsx" || !activeSummary}
+                          title="Descargar como Excel"
+                          className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-[10px] hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+                        >
+                          {resumenBusy === "xlsx" ? "..." : "📥 Descargar"}
+                        </button>
+                        <button
+                          onClick={handlePrintResumen}
+                          disabled={!activeSummary}
+                          title="Imprimir"
+                          className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-[10px] hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+                        >
+                          🖨 Imprimir
+                        </button>
+                      </div>
+                    </div>
+
+                    {summaryShowLabor && laborSummaryLoading ? (
+                      <div className="rounded-md border border-dashed border-[var(--color-border)] px-3 py-4 text-center text-xs text-[var(--color-muted)]">
+                        Cargando desglose por labor…
+                      </div>
+                    ) : (
+                      <div ref={resumenCaptureRef} className="rounded-md border border-[var(--color-border)]" style={{ background: "#fff" }}>
+                      <div className="px-3 pt-2.5" style={{ color: "#222" }}>
+                        <div className="text-sm font-semibold">{payroll.name}</div>
+                        <div className="text-[11px]" style={{ color: "#666" }}>
+                          Resumen {summaryShowLabor ? "por labor" : "por subfaena"}
+                        </div>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs" style={{ color: "#222", borderCollapse: "collapse" }}>
+                          <thead style={{ background: "#B7DEE8" }}>
+                            <tr>
+                              <th className="px-2 py-1.5 text-left">Faena</th>
+                              <th className="px-2 py-1.5 text-left">Subfaena</th>
+                              {summaryShowLabor && <th className="px-2 py-1.5 text-left">Labor</th>}
+                              <th className="px-2 py-1.5 text-left">Período</th>
+                              <th className="px-2 py-1.5 text-right">Transferencia</th>
+                              <th className="px-2 py-1.5 text-right">Efectivo</th>
+                              <th className="px-2 py-1.5 text-right">TOTAL</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {summaryDisplayRows.map((entry, i) => {
+                              if (entry.subtotal) {
+                                return (
+                                  <tr key={`sub_${i}`} style={{ background: "#F2F2F2", fontStyle: "italic", fontWeight: 700 }}>
+                                    <td className="px-2 py-1 text-right" colSpan={summaryShowLabor ? 4 : 3} style={{ border: "1px solid #999" }}>Sub total por faena</td>
+                                    <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(entry.subtotal.bank)}</td>
+                                    <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(entry.subtotal.cash)}</td>
+                                    <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(entry.subtotal.total)}</td>
+                                  </tr>
+                                );
+                              }
+                              const r = entry.row;
+                              return (
+                                <tr key={`row_${i}`}>
+                                  <td className="px-2 py-1" style={{ border: "1px solid #999" }}>{entry.showLabel ? r.faenaName : ""}</td>
+                                  {summaryShowLabor ? (
+                                    <>
+                                      <td className="px-2 py-1" style={{ border: "1px solid #999" }}>{entry.showLabel ? r.subfaenaName : ""}</td>
+                                      <td className="px-2 py-1" style={{ border: "1px solid #999" }}>{r.laborName}</td>
+                                    </>
+                                  ) : (
+                                    <td className="px-2 py-1" style={{ border: "1px solid #999" }}>{r.subfaenaName}</td>
+                                  )}
+                                  <td className="px-2 py-1" style={{ border: "1px solid #999", fontSize: 11, color: "#444" }}>{cyclesPeriod([...r.cycleIds])}</td>
+                                  <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(r.bank)}</td>
+                                  <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(r.cash)}</td>
+                                  <td className="px-2 py-1 text-right font-semibold tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(r.total)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                          {activeSummary && (
+                            <tfoot>
+                              {bonusAdvanceSummary.bonus.total > 0 && (
+                                <tr style={{ background: "#EAF3FA" }}>
+                                  <td colSpan={summaryShowLabor ? 4 : 3} className="px-2 py-1 text-right" style={{ border: "1px solid #999" }}>Bonos</td>
+                                  <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(bonusAdvanceSummary.bonus.bank)}</td>
+                                  <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(bonusAdvanceSummary.bonus.cash)}</td>
+                                  <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(bonusAdvanceSummary.bonus.total)}</td>
+                                </tr>
+                              )}
+                              {bonusAdvanceSummary.advance.total > 0 && (
+                                <tr style={{ background: "#EAF3FA" }}>
+                                  <td colSpan={summaryShowLabor ? 4 : 3} className="px-2 py-1 text-right" style={{ border: "1px solid #999" }}>Anticipos</td>
+                                  <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>− {fmtCurrency(bonusAdvanceSummary.advance.bank)}</td>
+                                  <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>− {fmtCurrency(bonusAdvanceSummary.advance.cash)}</td>
+                                  <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>− {fmtCurrency(bonusAdvanceSummary.advance.total)}</td>
+                                </tr>
+                              )}
+                              <tr style={{ background: "#FFE699", fontWeight: 700 }}>
+                                <td colSpan={summaryShowLabor ? 4 : 3} className="px-2 py-1" style={{ border: "1px solid #999" }}>TOTAL</td>
+                                <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(adjustedTotals(activeSummary.totals).bank)}</td>
+                                <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(adjustedTotals(activeSummary.totals).cash)}</td>
+                                <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(adjustedTotals(activeSummary.totals).total)}</td>
+                              </tr>
+                            </tfoot>
                           )}
-                        </td>
-                        <td className="px-2 py-1 text-right tabular-nums">{fmtCurrency(b)}</td>
-                        <td className="px-2 py-1 text-right tabular-nums">{fmtCurrency(c)}</td>
-                        <td className="px-2 py-1 text-right font-semibold tabular-nums">{fmtCurrency(total)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                        </table>
+                      </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </section>
 
@@ -4233,7 +4756,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
                 <>
                   <ul className="space-y-1 text-sm">
                     {cycleDetails.map((c) => (
-                      <li key={c.id} className="flex items-center justify-between gap-2 rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5">
+                      <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5">
                         <div className="min-w-0">
                           <span className="font-medium">{c.label}</span>
                           {c.faenaName && (
@@ -4308,21 +4831,8 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
                         </button>
                       </div>
                       {!collapsed && (
-                        <div className="overflow-x-auto">
-                        <table className="w-full min-w-[640px] text-sm sm:min-w-0">
-                          <thead className="bg-[var(--color-surface-2)] text-left text-[var(--color-muted)]">
-                            <tr>
-                              <th className="px-2 py-1 w-4"></th>
-                              <th className="px-2 py-1">RUT</th>
-                              <th className="px-2 py-1">Nombre</th>
-                              <th className="px-2 py-1">Banco</th>
-                              <th className="px-2 py-1">Cuenta</th>
-                              <th className="px-2 py-1">Tipo</th>
-                              <th className="px-2 py-1 text-right">Monto</th>
-                              {editMode && <th className="px-2 py-1"></th>}
-                            </tr>
-                          </thead>
-                          <tbody>
+                        isMobile ? (
+                          <div className="divide-y divide-[var(--color-border)]">
                             {g.items.map((it) => (
                               <WorkerDetailRow
                                 key={it.rut}
@@ -4339,11 +4849,48 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
                                 snapshot={snapshot}
                                 snapshotLoading={snapshotLoading}
                                 catalogs={catalogs}
+                                isMobile
                               />
                             ))}
-                          </tbody>
-                        </table>
-                        </div>
+                          </div>
+                        ) : (
+                          <div className="overflow-x-auto">
+                          <table className="w-full min-w-[640px] text-sm sm:min-w-0">
+                            <thead className="bg-[var(--color-surface-2)] text-left text-[var(--color-muted)]">
+                              <tr>
+                                <th className="px-2 py-1 w-4"></th>
+                                <th className="px-2 py-1">RUT</th>
+                                <th className="px-2 py-1">Nombre</th>
+                                <th className="px-2 py-1">Banco</th>
+                                <th className="px-2 py-1">Cuenta</th>
+                                <th className="px-2 py-1">Tipo</th>
+                                <th className="px-2 py-1 text-right">Monto</th>
+                                {editMode && <th className="px-2 py-1"></th>}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {g.items.map((it) => (
+                                <WorkerDetailRow
+                                  key={it.rut}
+                                  item={it}
+                                  expanded={expandedRut === it.rut}
+                                  onToggle={() => setExpandedRut((cur) => cur === it.rut ? null : it.rut)}
+                                  onShowSummary={() => setWorkerSummaryFor(it)}
+                                  cycleDetails={cycleDetails}
+                                  displayCycleLabel={displayCycleLabel}
+                                  editMode={editMode}
+                                  editBusy={editBusy}
+                                  onRemoveWorker={handleRemoveWorker}
+                                  cols="bank"
+                                  snapshot={snapshot}
+                                  snapshotLoading={snapshotLoading}
+                                  catalogs={catalogs}
+                                />
+                              ))}
+                            </tbody>
+                          </table>
+                          </div>
+                        )
                       )}
                     </div>
                   );
@@ -4389,8 +4936,8 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
                         </button>
                       </div>
                       {!collapsed && (
-                        <table className="w-full text-sm">
-                          <tbody>
+                        isMobile ? (
+                          <div className="divide-y divide-[var(--color-border)]">
                             {g.items.map((it) => (
                               <WorkerDetailRow
                                 key={it.rut}
@@ -4407,10 +4954,34 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
                                 snapshot={snapshot}
                                 snapshotLoading={snapshotLoading}
                                 catalogs={catalogs}
+                                isMobile
                               />
                             ))}
-                          </tbody>
-                        </table>
+                          </div>
+                        ) : (
+                          <table className="w-full text-sm">
+                            <tbody>
+                              {g.items.map((it) => (
+                                <WorkerDetailRow
+                                  key={it.rut}
+                                  item={it}
+                                  expanded={expandedRut === it.rut}
+                                  onToggle={() => setExpandedRut((cur) => cur === it.rut ? null : it.rut)}
+                                  onShowSummary={() => setWorkerSummaryFor(it)}
+                                  cycleDetails={cycleDetails}
+                                  displayCycleLabel={displayCycleLabel}
+                                  editMode={editMode}
+                                  editBusy={editBusy}
+                                  onRemoveWorker={handleRemoveWorker}
+                                  cols="cash"
+                                  snapshot={snapshot}
+                                  snapshotLoading={snapshotLoading}
+                                  catalogs={catalogs}
+                                />
+                              ))}
+                            </tbody>
+                          </table>
+                        )
                       )}
                     </div>
                   );
@@ -4836,10 +5407,89 @@ function CashEstimationModal({ cashItems, payrollName, onClose }) {
 // descuentos/neto). Botón "📅 Ver días" abre el WorkerSummaryModal completo.
 function WorkerDetailRow({
   item, expanded, onToggle, onShowSummary, cycleDetails, displayCycleLabel,
-  editMode, editBusy, onRemoveWorker, cols, snapshot, snapshotLoading, catalogs,
+  editMode, editBusy, onRemoveWorker, cols, snapshot, snapshotLoading, catalogs, isMobile,
 }) {
   const isBank = cols === "bank";
   const colSpan = isBank ? (editMode ? 8 : 7) : (editMode ? 4 : 3);
+
+  const expandedDetail = (
+    <div className="space-y-3">
+      {/* Header chico con líder/email + atajo al detalle completo */}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          {item.groupLeader && (
+            <span className="rounded bg-[var(--color-surface)] px-1.5 py-0.5 text-[10px]">
+              👥 <b>{item.groupLeader}</b>
+            </span>
+          )}
+          {item.email && (
+            <span className="text-[10px] text-[var(--color-muted)]">✉ {item.email}</span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onShowSummary}
+          className="rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-accent)] hover:bg-[var(--color-accent)] hover:text-[var(--color-accent-fg)]"
+          title="Abrir el detalle completo del trabajador con todos sus ciclos"
+        >
+          📅 Ver historial completo
+        </button>
+      </div>
+
+      {/* Detalle por ciclo estilo Workers: tabla por ciclo con
+          encabezado faena · subfaena · ciclo y filas labor × día. */}
+      <WorkerPaidDetailTables
+        item={item}
+        snapshot={snapshot}
+        snapshotLoading={snapshotLoading}
+        cycleDetails={cycleDetails}
+        displayCycleLabel={displayCycleLabel}
+        catalogs={catalogs}
+      />
+
+      <WorkerPaySummaryCards item={item} />
+    </div>
+  );
+
+  if (isMobile) {
+    return (
+      <div>
+        <div
+          className="flex min-h-[44px] cursor-pointer items-center gap-2 px-3 py-2 active:bg-[var(--color-accent-soft)]"
+          onClick={onToggle}
+        >
+          <span className="shrink-0 text-[var(--color-muted)]">{expanded ? "▾" : "▸"}</span>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium">{item.name}</div>
+            <div className="flex flex-wrap items-center gap-x-2 font-mono text-[11px] text-[var(--color-muted)]">
+              <span>{formatRutForDisplay(item.rut)}</span>
+              {isBank && (
+                <span className="truncate">{bankName(item.bankCode)} · {item.accountNumber} · {accountTypeShort(item.accountType)}</span>
+              )}
+            </div>
+          </div>
+          <span className="shrink-0 font-semibold tabular-nums">{fmtCurrency(item.amount)}</span>
+          {editMode && (
+            <button
+              type="button"
+              disabled={editBusy}
+              onClick={(e) => { e.stopPropagation(); onRemoveWorker(item); }}
+              className="shrink-0 rounded border border-[var(--color-danger)] bg-[var(--color-danger-soft)] px-2 py-1.5 text-[10px] text-[var(--color-danger)] hover:opacity-80 disabled:opacity-50"
+              title="Sacar trabajador de la nómina"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+        {expanded && (
+          <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-2)]/40 px-3 py-3">
+            {expandedDetail}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <>
       <tr
@@ -4881,42 +5531,7 @@ function WorkerDetailRow({
       {expanded && (
         <tr className="border-t border-[var(--color-border)] bg-[var(--color-surface-2)]/40">
           <td colSpan={colSpan} className="px-3 py-3">
-            <div className="space-y-3">
-              {/* Header chico con líder/email + atajo al detalle completo */}
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                <div className="flex flex-wrap items-center gap-2">
-                  {item.groupLeader && (
-                    <span className="rounded bg-[var(--color-surface)] px-1.5 py-0.5 text-[10px]">
-                      👥 <b>{item.groupLeader}</b>
-                    </span>
-                  )}
-                  {item.email && (
-                    <span className="text-[10px] text-[var(--color-muted)]">✉ {item.email}</span>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={onShowSummary}
-                  className="rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-accent)] hover:bg-[var(--color-accent)] hover:text-[var(--color-accent-fg)]"
-                  title="Abrir el detalle completo del trabajador con todos sus ciclos"
-                >
-                  📅 Ver historial completo
-                </button>
-              </div>
-
-              {/* Detalle por ciclo estilo Workers: tabla por ciclo con
-                  encabezado faena · subfaena · ciclo y filas labor × día. */}
-              <WorkerPaidDetailTables
-                item={item}
-                snapshot={snapshot}
-                snapshotLoading={snapshotLoading}
-                cycleDetails={cycleDetails}
-                displayCycleLabel={displayCycleLabel}
-                catalogs={catalogs}
-              />
-
-              <WorkerPaySummaryCards item={item} />
-            </div>
+            {expandedDetail}
           </td>
         </tr>
       )}
