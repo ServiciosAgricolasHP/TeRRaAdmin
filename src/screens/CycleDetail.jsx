@@ -566,10 +566,15 @@ export default function CycleDetail() {
     const d = new Date();
     return { year: d.getFullYear(), month: d.getMonth() };
   });
-  // Day notes: one annotation per day, shared across all labors of the cycle.
-  // Stored at cycle.dayNotes = { "YYYY-MM-DD": "text" }. Edited via a modal
-  // that opens when the user clicks the date header (DayHeader component).
-  const [editingDayNote, setEditingDayNote] = useState(null); // date string or null
+  // Day notes: one annotation per (labor, day). Used to live at
+  // cycle.dayNotes = { "YYYY-MM-DD": "text" }, shared across every labor of
+  // the cycle — wrong when a cycle bundles unrelated labors. New notes are
+  // written per labor at cycle.dayNotesByLabor = { [laborId]: { "YYYY-MM-DD":
+  // "text" } }; the old flat dayNotes field is kept read-only as a fallback
+  // (never written again) so pre-existing annotations stay visible. Edited
+  // via a modal that opens when the user clicks the date header (DayHeader
+  // component).
+  const [editingDayNote, setEditingDayNote] = useState(null); // { laborId, date } or null
   const [editingDayNoteText, setEditingDayNoteText] = useState("");
   const [dayNoteBusy, setDayNoteBusy] = useState(false);
 
@@ -1004,11 +1009,17 @@ export default function CycleDetail() {
     return out;
   }, [isTratoEtapasLabor, activeLabor, days, dayPrices, workdaysByLabor]);
 
-  const dayNotes = cycle?.dayNotes || {};
+  const legacyDayNotes = cycle?.dayNotes || {};
+  const dayNotesByLabor = cycle?.dayNotesByLabor || {};
+  const activeLaborDayNotes = (activeLabor && dayNotesByLabor[activeLabor.id]) || {};
+  // Per-labor note wins; falls back to the legacy shared note when this
+  // labor hasn't been given its own annotation for that day yet.
+  const noteForDay = (d) => activeLaborDayNotes[d] ?? legacyDayNotes[d] ?? "";
 
   const openDayNote = (date) => {
-    setEditingDayNote(date);
-    setEditingDayNoteText(String(dayNotes?.[date] || ""));
+    if (!activeLabor) return;
+    setEditingDayNote({ laborId: activeLabor.id, date });
+    setEditingDayNoteText(String(noteForDay(date) || ""));
   };
 
   const closeDayNote = () => {
@@ -1019,14 +1030,17 @@ export default function CycleDetail() {
 
   const saveDayNote = async () => {
     if (!editingDayNote) return;
+    const { laborId, date } = editingDayNote;
     setDayNoteBusy(true);
     try {
       const text = String(editingDayNoteText || "").trim();
-      const nextNotes = { ...(cycle?.dayNotes || {}) };
-      if (text) nextNotes[editingDayNote] = text;
-      else delete nextNotes[editingDayNote];
-      await cyclesService.update(id, { dayNotes: nextNotes });
-      setCycle((c) => (c ? { ...c, dayNotes: nextNotes } : c));
+      const nextByLabor = { ...(cycle?.dayNotesByLabor || {}) };
+      const nextForLabor = { ...(nextByLabor[laborId] || {}) };
+      if (text) nextForLabor[date] = text;
+      else delete nextForLabor[date];
+      nextByLabor[laborId] = nextForLabor;
+      await cyclesService.update(id, { dayNotesByLabor: nextByLabor });
+      setCycle((c) => (c ? { ...c, dayNotesByLabor: nextByLabor } : c));
       setEditingDayNote(null);
       setEditingDayNoteText("");
     } finally {
@@ -2778,7 +2792,7 @@ export default function CycleDetail() {
     // column groups. Each day either gets `headerComponent` (single column)
     // or `headerGroupComponent` (group with children).
     const dayHdrParams = (d) => ({
-      date: d, note: dayNotes[d] || "", onClickNote: openDayNote,
+      date: d, note: noteForDay(d), onClickNote: openDayNote,
     });
     const dayCellHdr = (d) => ({
       headerComponent: DayHeader,
@@ -3193,7 +3207,7 @@ export default function CycleDetail() {
     });
     return [...baseLeft, ...dayCols, totalCol, ...actionsCol];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [days, readOnly, photoMode, isCosechaLabor, isTratoLabor, isTratoEtapasLabor, isTratoHELabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, catalogs, dayPrices, activeLabor, tratoHEView, cosechaView, tratoView, dayNotes, daysWithPiso, isMobile]);
+  }, [days, readOnly, photoMode, isCosechaLabor, isTratoLabor, isTratoEtapasLabor, isTratoHELabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, catalogs, dayPrices, activeLabor, tratoHEView, cosechaView, tratoView, activeLaborDayNotes, legacyDayNotes, daysWithPiso, isMobile]);
 
   if (loading) return <div className="text-[var(--color-muted)]">Cargando...</div>;
   if (!cycle) return <div className="text-[var(--color-muted)]">Ciclo no encontrado.</div>;
@@ -4381,7 +4395,9 @@ export default function CycleDetail() {
       <Modal
         open={!!editingDayNote}
         onClose={closeDayNote}
-        title={editingDayNote ? `Anotación del ${editingDayNote}` : "Anotación"}
+        title={editingDayNote
+          ? `Anotación del ${editingDayNote.date} · ${cycle?.labors?.find((l) => l.id === editingDayNote.laborId)?.name || ""}`
+          : "Anotación"}
         footer={(
           <>
             <button
