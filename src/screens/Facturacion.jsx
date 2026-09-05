@@ -13,7 +13,9 @@ import { companiesService, dteDocumentsService, costCentersService, informalExpe
 import { parseSiiRcvCsv, dteTypeLabel, buildDteDocId, normalizeRut, extractRutFromFilename, otroImpuestoLabel, otroImpuestoCategory, OTRO_IMP_CATEGORIES } from "../utils/siiCsvParser";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import Modal from "../components/Modal";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { useToast } from "../contexts/ToastContext";
+import { useIsMobile } from "../hooks/useIsMobile";
 
 const fmtCurrency = (v) =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
@@ -185,6 +187,7 @@ const PAGE_SIZE = 20;
 
 export default function Facturacion() {
   const toast = useToast();
+  const isMobile = useIsMobile();
   const [companies, setCompanies] = useState([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState(() => {
     try { return localStorage.getItem(LS_SELECTED_COMPANY) || ""; } catch { return ""; }
@@ -1649,7 +1652,7 @@ export default function Facturacion() {
           {noCompany && <option value="">Sin empresas</option>}
         </select>
 
-        <div className="flex gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1 text-sm">
+        <div className="flex flex-wrap gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1 text-sm">
           {[
             { v: "venta", label: "📤 Facturas" },
             { v: "compra", label: "📥 Compras" },
@@ -1659,7 +1662,7 @@ export default function Facturacion() {
             <button
               key={t.v}
               onClick={() => setKindTab(t.v)}
-              className={`rounded px-3 py-1 ${
+              className={`min-h-[32px] rounded px-3 py-1 ${
                 kindTab === t.v
                   ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]"
                   : "text-[var(--color-muted)]"
@@ -1717,7 +1720,7 @@ export default function Facturacion() {
           ))}
         </select>
         {!isRetencionesView && kindTab === "venta" && (
-          <div className="flex gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-0.5 text-xs">
+          <div className="flex flex-wrap gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-0.5 text-xs">
             {[
               { v: "", label: "Todos" },
               { v: "unpaid", label: "No pagado" },
@@ -1728,7 +1731,7 @@ export default function Facturacion() {
               <button
                 key={s.v}
                 onClick={() => setPaymentFilter(s.v)}
-                className={`rounded px-2 py-1 ${
+                className={`min-h-[32px] rounded px-2 py-1 ${
                   paymentFilter === s.v
                     ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]"
                     : "text-[var(--color-muted)]"
@@ -1808,7 +1811,7 @@ export default function Facturacion() {
           const ivaAnual = total.ivaDebito - total.ivaCredito;
           const exportDisabled = total.ventasCount === 0 && total.comprasCount === 0;
           return (
-            <div className="flex flex-1 flex-col gap-3 overflow-auto">
+            <div className="flex flex-col gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <label className="text-xs text-[var(--color-muted)]">Año</label>
                 <select
@@ -1821,16 +1824,16 @@ export default function Facturacion() {
                   ))}
                 </select>
                 <div className="ml-auto flex flex-wrap gap-1">
-                  <button onClick={handleResumenCopy} disabled={resumenBusy === "copy" || exportDisabled} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Copiar como imagen">
+                  <button onClick={handleResumenCopy} disabled={resumenBusy === "copy" || exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Copiar como imagen">
                     {resumenBusy === "copy" ? "Copiando..." : "📋 Copiar"}
                   </button>
-                  <button onClick={handleResumenPng} disabled={resumenBusy === "png" || exportDisabled} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Descargar PNG">
+                  <button onClick={handleResumenPng} disabled={resumenBusy === "png" || exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Descargar PNG">
                     {resumenBusy === "png" ? "..." : "📥 PNG"}
                   </button>
-                  <button onClick={handleResumenPrint} disabled={exportDisabled} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Imprimir">
+                  <button onClick={handleResumenPrint} disabled={exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Imprimir">
                     🖨 Imprimir
                   </button>
-                  <button onClick={handleResumenXlsx} disabled={resumenBusy === "xlsx" || exportDisabled} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Exportar XLSX">
+                  <button onClick={handleResumenXlsx} disabled={resumenBusy === "xlsx" || exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Exportar XLSX">
                     {resumenBusy === "xlsx" ? "..." : "📊 XLSX"}
                   </button>
                 </div>
@@ -1986,7 +1989,7 @@ export default function Facturacion() {
             <button
               onClick={handleDocListCopy}
               disabled={docListBusy === "copy" || sortedFiltered.length === 0}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
+              className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
               title="Copiar tabla como imagen"
             >
               {docListBusy === "copy" ? "Copiando..." : "📋 Copiar"}
@@ -1994,7 +1997,7 @@ export default function Facturacion() {
             <button
               onClick={handleDocListPng}
               disabled={docListBusy === "png" || sortedFiltered.length === 0}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
+              className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
               title="Descargar como PNG"
             >
               {docListBusy === "png" ? "..." : "📥 PNG"}
@@ -2002,7 +2005,7 @@ export default function Facturacion() {
             <button
               onClick={handleDocListPrint}
               disabled={sortedFiltered.length === 0}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
+              className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
               title="Imprimir"
             >
               🖨 Imprimir
@@ -2010,14 +2013,14 @@ export default function Facturacion() {
             <button
               onClick={handleDocListXlsx}
               disabled={docListBusy === "xlsx" || sortedFiltered.length === 0}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
+              className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
               title="Exportar XLSX"
             >
               {docListBusy === "xlsx" ? "..." : "📊 XLSX"}
             </button>
             <button
               onClick={() => setGroupByCostCenter((v) => !v)}
-              className={`rounded-md border px-2 py-1 text-xs ${
+              className={`min-h-[32px] rounded-md border px-2 py-1 text-xs ${
                 groupByCostCenter
                   ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
                   : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
@@ -2030,7 +2033,7 @@ export default function Facturacion() {
             </button>
             <button
               onClick={() => setCostCentersModalOpen(true)}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+              className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
               title="Abrir el panel de centros de costo: crear/editar/eliminar categorías y ver todos sus documentos, de todas las empresas y períodos"
             >
               🏷 Gestionar centros de costo
@@ -2052,6 +2055,128 @@ export default function Facturacion() {
             />
           </div>
 
+        {isMobile ? (
+          <div className="divide-y divide-[var(--color-border)] rounded-md border border-[var(--color-border)]">
+            {(() => {
+              const renderDocCard = (d) => {
+                const razon = kindTab === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
+                const rut = kindTab === "venta" ? d.rutReceptor : d.rutEmisor;
+                const isNC = CREDIT_NOTE_TYPES.has(Number(d.tipo));
+                const isFuel = d.otroImpuestoCategory === "combustible";
+                const st = d.paymentStatus || "unpaid";
+                const hasNotes = !!(d.notes && d.notes.trim());
+                const pays = Array.isArray(d.payments) ? d.payments : [];
+                const paid = Number(d.amountPaid) || pays.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+                const bal = (Number(d.total) || 0) - paid;
+                const fullyPaid = bal <= 0.01;
+                return (
+                  <div key={d.id} className="px-3 py-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-muted)]">
+                          <span className="font-mono">{d.fechaEmision}</span>
+                          <span className={isNC ? "rounded px-1.5 py-0.5 bg-[var(--color-danger-soft)] text-[var(--color-danger)]" : ""}>
+                            {d.tipoLabel || dteTypeLabel(d.tipo)}
+                          </span>
+                          <OtroImpChip code={d.otroImpuestoCodigo} />
+                          <span className="font-mono">· Folio {d.folio}</span>
+                        </div>
+                        <div className="mt-0.5 truncate text-sm font-medium">{razon || "—"}</div>
+                        <div className="font-mono text-[10px] text-[var(--color-muted)]">{formatRutForDisplay(rut)}</div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div className={`text-sm font-semibold tabular-nums ${isNC ? "text-[var(--color-danger)]" : ""}`}>
+                          {isNC ? "−" : ""}{fmtCurrency(d.total)}
+                        </div>
+                        <div className="text-[10px] tabular-nums text-[var(--color-muted)]">
+                          N {isNC ? "−" : ""}{fmtCurrency(d.neto)} · IVA {isNC ? "−" : ""}{fmtCurrency(d.iva)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      {!isNC && paid > 0 && (
+                        <span className={`text-[10px] ${fullyPaid ? "text-[var(--color-success)]" : "text-[var(--color-warning)]"}`}>
+                          {fullyPaid ? `✓ Pagado (${pays.length})` : `Abono ${fmtCurrency(paid)} · Saldo ${fmtCurrency(bal)}`}
+                        </span>
+                      )}
+                      {isFuel ? (
+                        <span
+                          title="Ya agrupado automático como Combustible (código SII de otro impuesto)"
+                          className="rounded-full bg-[var(--color-warning-soft)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-warning)]"
+                        >
+                          ⛽ auto
+                        </span>
+                      ) : (
+                        <CostCenterSelect
+                          value={d.costCenterId || ""}
+                          costCenters={costCenters}
+                          onChange={(next) => saveDocCostCenter(d, next)}
+                        />
+                      )}
+                      {kindTab === "venta" && (
+                        isNC ? (
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${NC_STATE.chip}`}>
+                            {NC_STATE.label}
+                          </span>
+                        ) : (
+                          <>
+                            <PaymentStatusSelect value={st} onChange={(next) => setPaymentStatus(d, next)} />
+                            {cancellingByDocId.has(d.id) && st !== "cancelled" && (
+                              <button
+                                onClick={() => setDetailDoc(d)}
+                                title={`Posible NC anula esta factura (${cancellingByDocId.get(d.id).length} candidata${cancellingByDocId.get(d.id).length === 1 ? "" : "s"}). Click para revisar.`}
+                                className="rounded-full bg-[var(--color-danger-soft)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-danger)] hover:opacity-80"
+                              >
+                                ⚠ NC?
+                              </button>
+                            )}
+                          </>
+                        )
+                      )}
+                      <button
+                        onClick={() => setDetailDoc(d)}
+                        title={hasNotes ? "Ver detalle (tiene notas)" : "Ver detalle / agregar notas"}
+                        className="ml-auto min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+                      >
+                        {hasNotes ? "📝 Detalle" : "ℹ Detalle"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              };
+
+              if (!groupByCostCenter) return pagedDocs.map(renderDocCard);
+
+              const groups = groupDocsByCostCenter(sortedFiltered, kindTab, costCentersById);
+              return groups.map((g) => (
+                <div key={`g_${g.key}`}>
+                  <div
+                    className={`px-3 py-1.5 text-xs font-semibold ${
+                      g.isFuel
+                        ? "bg-[var(--color-warning-soft)]"
+                        : g.isManual
+                          ? "bg-[var(--color-success-soft)]"
+                          : "bg-[var(--color-accent-soft)]"
+                    }`}
+                  >
+                    {g.isFuel ? "⛽ COMBUSTIBLES" : (g.razon || "—")}
+                    {!g.isFuel && g.rut && (
+                      <span className="ml-2 font-normal text-[var(--color-muted)]">· {formatRutForDisplay(g.rut)}</span>
+                    )}
+                    <span className="ml-2 font-normal text-[var(--color-muted)]">· {g.docs.length} doc{g.docs.length === 1 ? "" : "s"}</span>
+                  </div>
+                  <div className="divide-y divide-[var(--color-border)]">
+                    {g.docs.map(renderDocCard)}
+                  </div>
+                  <div className="flex flex-wrap justify-between gap-2 bg-[var(--color-surface-2)] px-3 py-1.5 text-xs font-semibold">
+                    <span>Subtotal</span>
+                    <span className="tabular-nums">Neto {fmtCurrency(g.neto)} · IVA {fmtCurrency(g.iva)} · Total {fmtCurrency(g.total)}</span>
+                  </div>
+                </div>
+              ));
+            })()}
+          </div>
+        ) : (
         <div className="flex-1 overflow-auto rounded-md border border-[var(--color-border)]">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-[var(--color-surface-2)] text-xs uppercase tracking-wide text-[var(--color-muted)]">
@@ -2211,6 +2336,7 @@ export default function Facturacion() {
             </tbody>
           </table>
         </div>
+        )}
 
         {/* Paginación — solo en la tabla plana. En modo "por centro de costo"
             se muestra todo (los subtotales por grupo no se pueden cortar). */}
@@ -2220,7 +2346,7 @@ export default function Facturacion() {
               Mostrando {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, sortedFiltered.length)} de {fmtNumber(sortedFiltered.length)}
             </span>
             {pageCount > 1 && (
-              <div className="flex items-center gap-1">
+              <div className="flex flex-wrap items-center gap-1">
                 <button
                   type="button"
                   onClick={() => setPage(Math.max(1, currentPage - 1))}
@@ -2377,6 +2503,7 @@ function CostCentersModal({ costCenters, docs, informalExpenses, companiesById, 
   // --- CRUD del catálogo ---
   const [editing, setEditing] = useState(null); // { id?, label, emoji }
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null); // centro de costo a borrar, o null
 
   const startNew = () => setEditing({ id: null, label: "", emoji: "" });
   const startEdit = (c) => setEditing({ id: c.id, label: c.label, emoji: c.emoji || "" });
@@ -2401,13 +2528,15 @@ function CostCentersModal({ costCenters, docs, informalExpenses, companiesById, 
     }
   };
 
-  const remove = async (c) => {
-    if (!confirm(`¿Eliminar el centro de costo "${c.label}"?\n\nLos documentos que ya tenían este centro asignado quedarán sin etiqueta.`)) return;
+  const remove = (c) => setConfirmDelete(c);
+  const doRemove = async () => {
+    if (!confirmDelete) return;
     setBusy(true);
     try {
-      await costCentersService.remove(c.id);
-      if (selectedId === c.id) setSelectedId("");
+      await costCentersService.remove(confirmDelete.id);
+      if (selectedId === confirmDelete.id) setSelectedId("");
       await onChanged();
+      setConfirmDelete(null);
     } finally {
       setBusy(false);
     }
@@ -2935,17 +3064,17 @@ function CostCentersModal({ costCenters, docs, informalExpenses, companiesById, 
                     + Gasto informal
                   </button>
                 </div>
-                <div className="flex gap-1">
-                  <button onClick={handleCopy} disabled={!!exportBusy || sorted.length === 0} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Copiar como imagen">
+                <div className="flex flex-wrap gap-1">
+                  <button onClick={handleCopy} disabled={!!exportBusy || sorted.length === 0} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Copiar como imagen">
                     {exportBusy === "copy" ? "..." : "📋 Copiar"}
                   </button>
-                  <button onClick={handlePng} disabled={!!exportBusy || sorted.length === 0} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Descargar PNG">
+                  <button onClick={handlePng} disabled={!!exportBusy || sorted.length === 0} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Descargar PNG">
                     {exportBusy === "png" ? "..." : "📥 PNG"}
                   </button>
-                  <button onClick={handlePrint} disabled={!!exportBusy || sorted.length === 0} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Imprimir">
+                  <button onClick={handlePrint} disabled={!!exportBusy || sorted.length === 0} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Imprimir">
                     🖨 Imprimir
                   </button>
-                  <button onClick={handleXlsx} disabled={!!exportBusy || sorted.length === 0} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Exportar XLSX">
+                  <button onClick={handleXlsx} disabled={!!exportBusy || sorted.length === 0} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Exportar XLSX">
                     {exportBusy === "xlsx" ? "..." : "📊 XLSX"}
                   </button>
                 </div>
@@ -3066,6 +3195,17 @@ function CostCentersModal({ costCenters, docs, informalExpenses, companiesById, 
             />
           )}
 
+          <ConfirmDialog
+            open={!!confirmDelete}
+            title="Eliminar centro de costo"
+            message={confirmDelete ? `¿Eliminar el centro de costo "${confirmDelete.label}"? Los documentos que ya tenían este centro asignado quedarán sin etiqueta.` : ""}
+            confirmLabel="Eliminar"
+            danger
+            busy={busy}
+            onConfirm={doRemove}
+            onCancel={() => !busy && setConfirmDelete(null)}
+          />
+
           <div className="flex justify-end pt-2">
             <button onClick={onClose} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm">
               Cerrar
@@ -3184,6 +3324,7 @@ function InformalExpenseFormModal({ expense, costCenterId, companiesList, onClos
   const [detail, setDetail] = useState(expense?.detail || "");
   const [companyId, setCompanyId] = useState(expense?.companyId || "");
   const [busy, setBusy] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   const save = async () => {
     if (!date) { toast.warning("Falta la fecha."); return; }
@@ -3207,8 +3348,8 @@ function InformalExpenseFormModal({ expense, costCenterId, companiesList, onClos
     }
   };
 
-  const remove = async () => {
-    if (!confirm("¿Eliminar este gasto informal?")) return;
+  const remove = () => setConfirmDeleteOpen(true);
+  const doRemove = async () => {
     setBusy(true);
     try {
       await informalExpensesService.remove(expense.id);
@@ -3218,10 +3359,12 @@ function InformalExpenseFormModal({ expense, costCenterId, companiesList, onClos
       toast.error("Error al eliminar: " + (err.message || err));
     } finally {
       setBusy(false);
+      setConfirmDeleteOpen(false);
     }
   };
 
   return (
+    <>
     <Modal
       open
       onClose={onClose}
@@ -3306,6 +3449,17 @@ function InformalExpenseFormModal({ expense, costCenterId, companiesList, onClos
         </div>
       </div>
     </Modal>
+    <ConfirmDialog
+      open={confirmDeleteOpen}
+      title="Eliminar gasto informal"
+      message="¿Eliminar este gasto informal?"
+      confirmLabel="Eliminar"
+      danger
+      busy={busy}
+      onConfirm={doRemove}
+      onCancel={() => !busy && setConfirmDeleteOpen(false)}
+    />
+    </>
   );
 }
 
@@ -3873,6 +4027,7 @@ const PrintableRetencionesGroup = forwardRef(function PrintableRetencionesGroup(
 // Cada grupo tiene su propia toolbar de export (📋📥🖨📊) para que se pueda
 // compartir el resumen de una sola contraparte sin armar uno general.
 function RetencionesView({ groups, onSelectDoc, onSetStatus, onGroupExport, groupBusy = {}, groupKeyOf = (g) => g?.rut || "__sin_rut__" }) {
+  const isMobile = useIsMobile();
   const [expanded, setExpanded] = useState(() => new Set());
   const toggle = (rut) => {
     setExpanded((prev) => {
@@ -3885,6 +4040,108 @@ function RetencionesView({ groups, onSelectDoc, onSetStatus, onGroupExport, grou
     return (
       <div className="flex h-40 items-center justify-center rounded-md border border-dashed border-[var(--color-border)] text-sm text-[var(--color-muted)]">
         No hay facturas marcadas como "Solo neto" en este período.
+      </div>
+    );
+  }
+  if (isMobile) {
+    return (
+      <div className="divide-y divide-[var(--color-border)] rounded-md border border-[var(--color-border)]">
+        {groups.map((g) => {
+          const isOpen = expanded.has(g.rut);
+          const gk = groupKeyOf(g);
+          const busy = groupBusy[gk];
+          const fireExport = (action) => onGroupExport && onGroupExport(action, g);
+          return (
+            <div key={g.rut || "_sinrut_"}>
+              <div
+                className="cursor-pointer px-3 py-2.5 hover:bg-[var(--color-surface-2)]"
+                onClick={() => toggle(g.rut)}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 text-sm font-medium">
+                      <span className="shrink-0 text-[var(--color-muted)]">{isOpen ? "▾" : "▸"}</span>
+                      <span className="truncate">{g.razon || "—"}</span>
+                    </div>
+                    <div className="pl-4 font-mono text-[10px] text-[var(--color-muted)]">
+                      {formatRutForDisplay(g.rut)} · {g.count} factura{g.count === 1 ? "" : "s"}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className="text-sm font-semibold tabular-nums">{fmtCurrency(g.total)}</div>
+                    <div className="text-[10px] tabular-nums text-[var(--color-muted)]">
+                      Neto {fmtCurrency(g.neto)} · <span className="text-[var(--color-accent)]">IVA {fmtCurrency(g.iva)}</span>
+                    </div>
+                  </div>
+                </div>
+                {onGroupExport && (
+                  <div onClick={(e) => e.stopPropagation()} className="mt-2 flex flex-wrap gap-1 pl-4">
+                    <button
+                      onClick={() => fireExport("copy")}
+                      disabled={!!busy}
+                      title="Copiar resumen de esta contraparte"
+                      className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+                    >
+                      {busy === "copy" ? "…" : "📋 Copiar"}
+                    </button>
+                    <button
+                      onClick={() => fireExport("png")}
+                      disabled={!!busy}
+                      title="Descargar PNG"
+                      className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+                    >
+                      {busy === "png" ? "…" : "📥 PNG"}
+                    </button>
+                    <button
+                      onClick={() => fireExport("print")}
+                      disabled={!!busy}
+                      title="Imprimir"
+                      className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+                    >
+                      🖨 Imprimir
+                    </button>
+                    <button
+                      onClick={() => fireExport("xlsx")}
+                      disabled={!!busy}
+                      title="Exportar XLSX"
+                      className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+                    >
+                      {busy === "xlsx" ? "…" : "📊 XLSX"}
+                    </button>
+                  </div>
+                )}
+              </div>
+              {isOpen && (
+                <div className="divide-y divide-[var(--color-border)] bg-[var(--color-surface-2)]/40">
+                  {g.docs.map((d) => (
+                    <div key={d.id} className="px-3 py-2 pl-7 text-xs">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-mono">{d.fechaEmision}</span>
+                        <span className="rounded bg-[var(--color-surface-2)] px-1.5 py-0.5">{d.tipo}</span>
+                        <span className="text-[var(--color-muted)]">{d.tipoLabel}</span>
+                        <span className="font-mono tabular-nums">· Folio {d.folio}</span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+                        <div className="tabular-nums">
+                          Neto {fmtCurrency(d.neto)} · <span className="text-[var(--color-accent)]">IVA {fmtCurrency(d.iva)}</span> · <span className="font-semibold">{fmtCurrency(d.total)}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <PaymentStatusSelect value={d.paymentStatus || "unpaid"} onChange={(next) => onSetStatus(d, next)} />
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onSelectDoc(d); }}
+                            className="min-h-[32px] rounded-md border border-[var(--color-border)] px-1.5 py-1 text-[10px] hover:bg-[var(--color-accent-soft)]"
+                          >
+                            {d.notes ? "📝" : "ℹ"}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     );
   }
@@ -4005,6 +4262,7 @@ function PaymentsSection({ dteDoc, payments, amountPaid, balance, onSavePayments
   const total = Number(dteDoc?.total) || 0;
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   // Sugerir el monto en función del kind elegido — UX rápida para los casos
   // típicos (saldo completo, neto, IVA). El usuario puede sobreescribir.
   const suggestAmount = (kind) => {
@@ -4056,13 +4314,15 @@ function PaymentsSection({ dteDoc, payments, amountPaid, balance, onSavePayments
     }
   };
 
-  const remove = async (id) => {
-    if (!confirm("¿Eliminar este pago del registro?")) return;
+  const remove = (id) => setConfirmDeleteId(id);
+  const doRemove = async () => {
+    if (!confirmDeleteId) return;
     setBusy(true);
     try {
-      await onSavePayments(payments.filter((p) => p.id !== id));
+      await onSavePayments(payments.filter((p) => p.id !== confirmDeleteId));
     } finally {
       setBusy(false);
+      setConfirmDeleteId(null);
     }
   };
 
@@ -4210,6 +4470,16 @@ function PaymentsSection({ dteDoc, payments, amountPaid, balance, onSavePayments
           </button>
         </div>
       )}
+      <ConfirmDialog
+        open={!!confirmDeleteId}
+        title="Eliminar pago"
+        message="¿Eliminar este pago del registro?"
+        confirmLabel="Eliminar"
+        danger
+        busy={busy}
+        onConfirm={doRemove}
+        onCancel={() => !busy && setConfirmDeleteId(null)}
+      />
     </div>
   );
 }
@@ -4782,6 +5052,7 @@ function CompaniesModal({ companies, onClose, onChanged }) {
   const toast = useToast();
   const [editing, setEditing] = useState(null); // { id?, rut, razonSocial, alias }
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null); // empresa a borrar, o null
 
   const startNew = () => setEditing({ id: null, rut: "", razonSocial: "", alias: "" });
   const startEdit = (c) => setEditing({ id: c.id, rut: c.rut, razonSocial: c.razonSocial, alias: c.alias || "" });
@@ -4811,18 +5082,21 @@ function CompaniesModal({ companies, onClose, onChanged }) {
     }
   };
 
-  const remove = async (c) => {
-    if (!confirm(`¿Eliminar la empresa "${c.alias || c.razonSocial}"?\n\nAtención: los documentos importados con esta empresa quedarán huérfanos.`)) return;
+  const remove = (c) => setConfirmDelete(c);
+  const doRemove = async () => {
+    if (!confirmDelete) return;
     setBusy(true);
     try {
-      await companiesService.remove(c.id);
+      await companiesService.remove(confirmDelete.id);
       await onChanged();
+      setConfirmDelete(null);
     } finally {
       setBusy(false);
     }
   };
 
   return (
+    <>
     <Modal open onClose={onClose} size="lg" title="Empresas">
       {editing ? (
         <div className="space-y-3">
@@ -4929,6 +5203,17 @@ function CompaniesModal({ companies, onClose, onChanged }) {
         </div>
       )}
     </Modal>
+    <ConfirmDialog
+      open={!!confirmDelete}
+      title="Eliminar empresa"
+      message={confirmDelete ? `¿Eliminar la empresa "${confirmDelete.alias || confirmDelete.razonSocial}"? Los documentos importados con esta empresa quedarán huérfanos.` : ""}
+      confirmLabel="Eliminar"
+      danger
+      busy={busy}
+      onConfirm={doRemove}
+      onCancel={() => !busy && setConfirmDelete(null)}
+    />
+    </>
   );
 }
 
@@ -5146,11 +5431,11 @@ function PendientesModal({ items, totals, company, onClose, onSelectDoc }) {
               <span className="text-[var(--color-muted)]">Total pendiente: </span>
               <span className="font-semibold text-[var(--color-warning)] tabular-nums">{fmtCurrency(totals.total)}</span>
             </div>
-            <div className="flex gap-1">
+            <div className="flex flex-wrap gap-1">
               <button
                 onClick={handleCopy}
                 disabled={!!busy}
-                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
+                className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
                 title="Copiar como imagen"
               >
                 {busy === "copy" ? "..." : "📋 Copiar"}
@@ -5158,7 +5443,7 @@ function PendientesModal({ items, totals, company, onClose, onSelectDoc }) {
               <button
                 onClick={handlePng}
                 disabled={!!busy}
-                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
+                className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
                 title="Descargar PNG"
               >
                 {busy === "png" ? "..." : "📥 PNG"}
@@ -5166,7 +5451,7 @@ function PendientesModal({ items, totals, company, onClose, onSelectDoc }) {
               <button
                 onClick={handlePrint}
                 disabled={!!busy}
-                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
+                className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
                 title="Imprimir"
               >
                 🖨 Imprimir
@@ -5174,7 +5459,7 @@ function PendientesModal({ items, totals, company, onClose, onSelectDoc }) {
               <button
                 onClick={handleXlsx}
                 disabled={!!busy}
-                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
+                className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
                 title="Exportar XLSX"
               >
                 {busy === "xlsx" ? "..." : "📊 XLSX"}

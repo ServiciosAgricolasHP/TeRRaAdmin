@@ -113,6 +113,15 @@ export default function Layout() {
   // montar; se editan manualmente vía modal y quedan en el doc `indicators/main`.
   const [indicators, setIndicators] = useState(null);
   const [indicatorsModalOpen, setIndicatorsModalOpen] = useState(false);
+  // Barra de indicadores en mobile/tablet (IndicatorsBar): colapsable porque
+  // ocupa una fila entera en cada pantalla y la mayoría de las veces no hace
+  // falta mirarla. Arranca cerrada; se recuerda entre sesiones.
+  const [indicatorsBarOpen, setIndicatorsBarOpen] = useState(() => {
+    try { return localStorage.getItem("layout.indicatorsBarOpen") === "true"; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("layout.indicatorsBarOpen", String(indicatorsBarOpen)); } catch { /* noop */ }
+  }, [indicatorsBarOpen]);
   useEffect(() => {
     (async () => {
       try {
@@ -262,17 +271,22 @@ export default function Layout() {
             </div>
             <EditIndicatorsButton onEdit={() => setIndicatorsModalOpen(true)} />
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-1 sm:gap-2">
+          <div className="flex shrink-0 flex-nowrap items-center justify-end gap-1 sm:gap-2">
             <ThemePicker />
             <button
               onClick={handleLogout}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] sm:px-3"
+              className="shrink-0 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] sm:px-3"
             >
               Salir
             </button>
           </div>
         </header>
-        <IndicatorsBar indicators={indicators} onEdit={() => setIndicatorsModalOpen(true)} />
+        <IndicatorsBar
+          indicators={indicators}
+          onEdit={() => setIndicatorsModalOpen(true)}
+          open={indicatorsBarOpen}
+          onToggle={() => setIndicatorsBarOpen((v) => !v)}
+        />
         <main className="flex-1 overflow-auto p-3 sm:p-6">
           <Outlet />
         </main>
@@ -319,14 +333,38 @@ function EditIndicatorsButton({ onEdit }) {
 }
 
 // Barra tipo ticker — solo en mobile/tablet angosto, donde el header no tiene
-// espacio para los indicadores en el centro. Scroll horizontal por si acaso.
-function IndicatorsBar({ indicators, onEdit }) {
+// espacio para los indicadores en el centro. Colapsada (default) es solo una
+// tira angosta con una flecha, casi sin altura, para no robarle espacio
+// permanente a la pantalla. Al abrirla baja la fila completa de chips con
+// scroll horizontal por si no entran todos, y la flecha para volver a
+// cerrarla queda al final de esa fila.
+function IndicatorsBar({ indicators, onEdit, open, onToggle }) {
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={onToggle}
+        title="Mostrar indicadores"
+        className="flex w-full shrink-0 items-center justify-center border-b border-[var(--color-border)] bg-[var(--color-surface-2)] py-0.5 leading-none text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)] lg:hidden"
+      >
+        <span className="text-[10px]">▾</span>
+      </button>
+    );
+  }
   return (
     <div className="flex shrink-0 items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 sm:px-4 lg:hidden">
       <div className="flex flex-1 items-center gap-2 overflow-x-auto">
         <IndicatorChips indicators={indicators} />
       </div>
       <EditIndicatorsButton onEdit={onEdit} />
+      <button
+        type="button"
+        onClick={onToggle}
+        title="Ocultar indicadores"
+        className="shrink-0 rounded-md px-1.5 py-1 text-xs text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)]"
+      >
+        ▴
+      </button>
     </div>
   );
 }

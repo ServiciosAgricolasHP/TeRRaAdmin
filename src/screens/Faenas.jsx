@@ -1548,7 +1548,7 @@ function CycleRow({ cycle, subName, onEdit, onOpenCloseFlow, onReopen, onDelete 
     (l) => l.type === "cosecha" || l.type === "trato" || l.type === "tratoEtapas" || l.type === "main",
   );
   return (
-    <li className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+    <li className="flex flex-col gap-2 px-3 py-2.5 md:flex-row md:flex-wrap md:items-center md:justify-between md:py-2">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
           {cycle.label}
@@ -1569,19 +1569,19 @@ function CycleRow({ cycle, subName, onEdit, onOpenCloseFlow, onReopen, onDelete 
           {` · ${(cycle.labors || []).length} labores`}
         </div>
       </div>
-      <div className="ml-auto flex shrink-0 flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-1.5 md:ml-auto md:shrink-0">
         {hasProdLabor && (
           <button
             onClick={() => setResumenOpen(true)}
             title="Ver producción día por día con precios, unidades y rendimiento"
-            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+            className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
           >
             📊 Resumen
           </button>
         )}
         <Link
           to={`/cycles/${cycle.id}`}
-          className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+          className="flex min-h-[32px] items-center rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
         >
           Abrir
         </Link>
@@ -1589,7 +1589,7 @@ function CycleRow({ cycle, subName, onEdit, onOpenCloseFlow, onReopen, onDelete 
           <button
             onClick={() => onEdit(cycle)}
             title="Renombrar / editar"
-            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+            className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
           >
             ✏ Renombrar
           </button>
@@ -1597,7 +1597,7 @@ function CycleRow({ cycle, subName, onEdit, onOpenCloseFlow, onReopen, onDelete 
         {cycle.status !== "closed" ? (
           <button
             onClick={() => onOpenCloseFlow(cycle)}
-            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+            className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
           >
             Cerrar
           </button>
@@ -1606,7 +1606,7 @@ function CycleRow({ cycle, subName, onEdit, onOpenCloseFlow, onReopen, onDelete 
             <button
               onClick={() => onReopen(cycle)}
               title="Reabrir ciclo cerrado"
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+              className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
             >
               ↻ Reabrir
             </button>
@@ -1614,7 +1614,7 @@ function CycleRow({ cycle, subName, onEdit, onOpenCloseFlow, onReopen, onDelete 
         )}
         <button
           onClick={() => onDelete(cycle)}
-          className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
+          className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
         >
           Eliminar
         </button>
@@ -1868,7 +1868,7 @@ function SubfaenaListBody({
               <div className="truncate text-xs text-[var(--color-muted)]">{s.notes}</div>
             )}
           </div>
-          <div className="ml-auto flex shrink-0 flex-wrap gap-1">
+          <div className="flex w-full shrink-0 flex-wrap gap-1.5 md:w-auto md:ml-auto">
             {/* Botón Ocultar / Mostrar: aparece sólo cuando todos los
                 ciclos están cerrados (para marcar oculta) o cuando la
                 sub ya está oculta (para des-ocultar) — sino marcar
@@ -1879,26 +1879,26 @@ function SubfaenaListBody({
                 title={s.hidden
                   ? "Desmarcar como oculta (volverá a aparecer expandida arriba)"
                   : "Marcar como oculta (se mueve al grupo Ocultas al final)"}
-                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+                className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
               >
                 {s.hidden ? "Mostrar" : "Ocultar"}
               </button>
             )}
             <button
               onClick={() => onCreateCycle(s.id)}
-              className="rounded-md bg-[var(--color-accent)] px-2.5 py-1 text-xs font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]"
+              className="min-h-[32px] rounded-md bg-[var(--color-accent)] px-2.5 py-1 text-xs font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]"
             >
               + Ciclo
             </button>
             <button
               onClick={() => onEditSub(s)}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+              className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
             >
               Editar
             </button>
             <button
               onClick={() => onDeleteSub(s)}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
+              className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
             >
               Eliminar
             </button>
@@ -1964,13 +1964,13 @@ function SubfaenaListBody({
           <button
             onClick={allCollapsed ? onExpandAllSubs : onCollapseAllSubs}
             title={allCollapsed ? "Expandir todas las subfaenas" : "Colapsar todas las subfaenas"}
-            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[10px] normal-case tracking-normal hover:bg-[var(--color-accent-soft)]"
+            className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[10px] normal-case tracking-normal hover:bg-[var(--color-accent-soft)]"
           >
             {allCollapsed ? "▾ Expandir todo" : "▸ Colapsar todo"}
           </button>
           <button
             onClick={onCreateSub}
-            className="rounded-md bg-[var(--color-accent)] px-3 py-1 text-xs font-medium normal-case text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]"
+            className="min-h-[32px] rounded-md bg-[var(--color-accent)] px-3 py-1 text-xs font-medium normal-case text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]"
           >
             + Subfaena
           </button>
