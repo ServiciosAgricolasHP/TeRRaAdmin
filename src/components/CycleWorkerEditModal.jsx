@@ -4,18 +4,13 @@ import DayConfigContent from "./DayConfigContent";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import { parseAmount } from "../utils/formula";
 import { containerLabel, comboLabel, getDaySingle, effectivePiso, tratoUnitLabel } from "../utils/cosechaCombos";
-import { DEFAULT_BASE_DAY, DEFAULT_BONUS_MANEJO, DEFAULT_BONUS_SUPERVISION } from "../utils/tratoHE";
+import { DEFAULT_BASE_DAY, DEFAULT_BONUS_MANEJO, DEFAULT_BONUS_SUPERVISION, DEFAULT_OVERTIME_RATE } from "../utils/tratoHE";
 import { matchesSearchQuery } from "../utils/textSearch";
+import { initials } from "../utils/nameUtils";
+import { dayHasData } from "../utils/cycleRowUtils";
 
 function effectiveDayPrice(labor, dayCfg) {
   return Number(dayCfg?.price) || Number(labor?.baseDayDefault) || DEFAULT_BASE_DAY;
-}
-
-function initials(name) {
-  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
 const WEEKDAYS_SHORT = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
@@ -86,6 +81,9 @@ export default function CycleWorkerEditModal({
   leaderBusy,
   assignLeaderToWorker,
   LEADER_LOCAL,
+  onNavigate,
+  canGoPrev,
+  canGoNext,
 }) {
   const [drafts, setDrafts] = useState({});
   const [configuringDate, setConfiguringDate] = useState(null);
@@ -97,17 +95,24 @@ export default function CycleWorkerEditModal({
   const [bonusManejoChecked, setBonusManejoChecked] = useState(false);
   const [bonusSupervisionChecked, setBonusSupervisionChecked] = useState(false);
   const [bonusExtras, setBonusExtras] = useState("");
+  const [onlyWithData, setOnlyWithData] = useState(false);
+  const [savingFields, setSavingFields] = useState({});
 
   // El modal queda montado siempre (solo cambia `workerRut`), así que si no
   // se resetea acá, cambiar de trabajador podía reabrir directo en la vista
   // de configuración del día anterior (o dejar colgado un estado de
-  // confirmación/búsqueda que ya no aplica al trabajador nuevo).
+  // confirmación/búsqueda que ya no aplica al trabajador nuevo). `drafts`
+  // también se resetea acá: navegar con ‹/› cambia `workerRut` sin pasar por
+  // cerrar el modal (a diferencia de tocar otro trabajador en la lista), así
+  // que sin este reset un texto tipeado y no confirmado del trabajador
+  // anterior podía quedar pisando el campo del mismo nombre en el siguiente.
   useEffect(() => {
     setConfiguringDate(null);
     setPickingLeader(false);
     setLeaderFilter("");
     setConfirmingRemove(false);
     setBonusDate(null);
+    setDrafts({});
   }, [workerRut]);
 
   // Precarga el formulario de bonos al abrirlo: usa el valor real del día si
@@ -141,6 +146,33 @@ export default function CycleWorkerEditModal({
       return next;
     });
   const displayValue = (field) => (drafts[field] !== undefined ? drafts[field] : row?.[field] || "");
+  // Feedback de guardado: distinto de `drafts` (que es el texto en edición)
+  // porque acá lo que importa es la ventana entre soltar el input y que la
+  // escritura a Firestore confirme, no el contenido tipeado.
+  const setSaving = (field, value) =>
+    setSavingFields((prev) => {
+      if (value) return { ...prev, [field]: true };
+      if (!(field in prev)) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  // Con buena conexión, commitX()/upsertTratoHEWorkday() resuelven en pocos
+  // ms — sin este piso el "guardando…" alcanza a renderizar un solo frame y
+  // en la práctica es invisible. Se fuerza un mínimo visible en vez de sacar
+  // el indicador, para que siempre se note que la escritura ocurrió.
+  const MIN_SAVING_MS = 350;
+  const runWithSaving = async (field, task) => {
+    setSaving(field, true);
+    const started = Date.now();
+    try {
+      return await task();
+    } finally {
+      const elapsed = Date.now() - started;
+      if (elapsed < MIN_SAVING_MS) await new Promise((r) => setTimeout(r, MIN_SAVING_MS - elapsed));
+      setSaving(field, false);
+    }
+  };
 
   if (!open) return null;
 
@@ -273,7 +305,7 @@ export default function CycleWorkerEditModal({
         onChange={(e) => setLeaderFilter(e.target.value)}
         className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
       />
-      <div className="max-h-[60vh] overflow-y-auto rounded-md border border-[var(--color-border)]">
+      <div className="max-h-[60vh] overflow-y-auto rounded-lg border border-[var(--color-border)]">
         {enabledLeaders.length === 0 ? (
           <div className="p-3 text-sm text-[var(--color-muted)]">
             No hay líderes habilitados. Habilita líderes en la colección <code>groupLeader</code>.
@@ -322,7 +354,7 @@ export default function CycleWorkerEditModal({
         >
           ‹ Volver
         </button>
-        <label className="flex items-center justify-between gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
+        <label className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
           <div>
             <div className="text-sm font-medium">Bono manejo</div>
             <div className="text-xs text-[var(--color-muted)]">{fmtCurrency(bonusManejo)}</div>
@@ -335,7 +367,7 @@ export default function CycleWorkerEditModal({
             className="h-5 w-5 accent-[var(--color-accent)]"
           />
         </label>
-        <label className="flex items-center justify-between gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
+        <label className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
           <div>
             <div className="text-sm font-medium">Bono supervisión / líder</div>
             <div className="text-xs text-[var(--color-muted)]">{fmtCurrency(bonusSupervision)}</div>
@@ -496,13 +528,17 @@ export default function CycleWorkerEditModal({
                     onBlur={async () => {
                       if (!(field in drafts)) return;
                       const v = drafts[field];
-                      await commitCosechaCombo(d, c.key, workerRut, v);
+                      await runWithSaving(field, () => commitCosechaCombo(d, c.key, workerRut, v));
                       clearDraft(field);
                     }}
                     className={inputCls}
                   />
-                  <span className="w-16 text-right text-[10px] tabular-nums text-[var(--color-muted)]">
-                    {amt > 0 ? fmtCurrency(amt) : ""}
+                  <span
+                    className={`w-16 text-right text-[10px] tabular-nums ${
+                      savingFields[field] ? "font-semibold text-[var(--color-accent)] animate-pulse" : "text-[var(--color-muted)]"
+                    }`}
+                  >
+                    {savingFields[field] ? "guardando…" : amt > 0 ? fmtCurrency(amt) : ""}
                   </span>
                 </div>
               </div>
@@ -554,13 +590,17 @@ export default function CycleWorkerEditModal({
                     onBlur={async () => {
                       if (!(field in drafts)) return;
                       const v = drafts[field];
-                      await commitTratoTier(d, t.key, workerRut, v);
+                      await runWithSaving(field, () => commitTratoTier(d, t.key, workerRut, v));
                       clearDraft(field);
                     }}
                     className={inputCls}
                   />
-                  <span className="w-16 text-right text-[10px] tabular-nums text-[var(--color-muted)]">
-                    {amt > 0 ? fmtCurrency(amt) : ""}
+                  <span
+                    className={`w-16 text-right text-[10px] tabular-nums ${
+                      savingFields[field] ? "font-semibold text-[var(--color-accent)] animate-pulse" : "text-[var(--color-muted)]"
+                    }`}
+                  >
+                    {savingFields[field] ? "guardando…" : amt > 0 ? fmtCurrency(amt) : ""}
                   </span>
                 </div>
               </div>
@@ -611,13 +651,17 @@ export default function CycleWorkerEditModal({
                     onBlur={async () => {
                       if (!(field in drafts)) return;
                       const v = drafts[field];
-                      await commitEtapaQty(d, st.id, workerRut, v);
+                      await runWithSaving(field, () => commitEtapaQty(d, st.id, workerRut, v));
                       clearDraft(field);
                     }}
                     className={inputCls}
                   />
-                  <span className="w-16 text-right text-[10px] tabular-nums text-[var(--color-muted)]">
-                    {amt > 0 ? fmtCurrency(amt) : ""}
+                  <span
+                    className={`w-16 text-right text-[10px] tabular-nums ${
+                      savingFields[field] ? "font-semibold text-[var(--color-accent)] animate-pulse" : "text-[var(--color-muted)]"
+                    }`}
+                  >
+                    {savingFields[field] ? "guardando…" : amt > 0 ? fmtCurrency(amt) : ""}
                   </span>
                 </div>
               </div>
@@ -628,14 +672,40 @@ export default function CycleWorkerEditModal({
     );
   };
 
+  // Desglose visible del monto de tratoHE (base/HE/bonos/extras) — en
+  // desktop esto es un tooltip al pasar el mouse sobre el $ (`buildBreakdown`
+  // en CycleDetail.jsx); acá no hay hover, así que va como texto siempre
+  // visible. Se recalcula acá en vez de compartir la función de escritorio
+  // porque esa vive en un closure del useMemo de columnas del grid.
+  const tratoHEBreakdown = (d, cfg, m, s, x) => {
+    const qty = Number(row[`${d}__qty`]) || 0;
+    const he = Number(row[`${d}__he`]) || 0;
+    const overtimeRate = activeLabor.overtimeRate ?? DEFAULT_OVERTIME_RATE;
+    const bonusManejo = activeLabor.bonusManejo ?? DEFAULT_BONUS_MANEJO;
+    const bonusSupervision = activeLabor.bonusSupervision ?? DEFAULT_BONUS_SUPERVISION;
+    const parts = [];
+    if (cfg.mode === "overtimeOnly") {
+      parts.push("Solo HE");
+    } else if (qty > 0) {
+      parts.push(`Base ${fmtCurrency(qty)}`);
+    }
+    if (he > 0) parts.push(`HE ${he}h (${fmtCurrency(he * overtimeRate)})`);
+    if (m) parts.push(`Manejo ${fmtCurrency(bonusManejo)}`);
+    if (s) parts.push(`Supervisión ${fmtCurrency(bonusSupervision)}`);
+    if (x !== 0) parts.push(`Extras ${fmtCurrency(x)}`);
+    return parts;
+  };
+
   const renderTratoHEDay = (d) => {
     const cfg = getDaySingle(dayPrices, activeLabor.id, d, "normal");
     const suggested = effectiveDayPrice(activeLabor, cfg);
     const qtyField = `${d}__qty`;
+    const qty = Number(row[qtyField]) || 0;
     const heField = `${d}__he`;
     const m = !!row[`${d}__m`];
     const s = !!row[`${d}__s`];
     const x = Number(row[`${d}__x`]) || 0;
+    const breakdownParts = tratoHEBreakdown(d, cfg, m, s, x);
     return (
       <div key={d} className={cardAccentCls(Number(row[`${d}__amt`]) > 0)}>
         {dayHeader(d, `${d}__amt`)}
@@ -652,11 +722,23 @@ export default function CycleWorkerEditModal({
               onBlur={async () => {
                 if (!(qtyField in drafts)) return;
                 const v = parseAmount(drafts[qtyField]) || 0;
-                await upsertTratoHEWorkday(activeLabor.id, d, workerRut, { qty: v });
+                await runWithSaving(qtyField, () => upsertTratoHEWorkday(activeLabor.id, d, workerRut, { qty: v }));
                 clearDraft(qtyField);
               }}
               className={inputCls}
             />
+            {!readOnly && cfg.mode !== "overtimeOnly" && !qty && !!suggested && drafts[qtyField] === undefined && (
+              <button
+                type="button"
+                onClick={() => runWithSaving(qtyField, () => upsertTratoHEWorkday(activeLabor.id, d, workerRut, { qty: suggested }))}
+                className="text-[10px] italic text-[var(--color-muted)] hover:text-[var(--color-accent)]"
+              >
+                usar {fmtCurrency(suggested)}
+              </button>
+            )}
+            {savingFields[qtyField] && (
+              <span className="text-[10px] font-semibold text-[var(--color-accent)] animate-pulse">guardando…</span>
+            )}
           </label>
           <label className="flex items-center gap-1.5 text-xs">
             HE
@@ -669,12 +751,15 @@ export default function CycleWorkerEditModal({
               onBlur={async () => {
                 if (!(heField in drafts)) return;
                 const v = parseAmount(drafts[heField]) || 0;
-                await upsertTratoHEWorkday(activeLabor.id, d, workerRut, { overtimeHours: v });
+                await runWithSaving(heField, () => upsertTratoHEWorkday(activeLabor.id, d, workerRut, { overtimeHours: v }));
                 clearDraft(heField);
               }}
               className="w-16 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-right text-sm outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
             />
             h
+            {savingFields[heField] && (
+              <span className="text-[10px] font-semibold text-[var(--color-accent)] animate-pulse">guardando…</span>
+            )}
           </label>
           <button
             type="button"
@@ -696,6 +781,11 @@ export default function CycleWorkerEditModal({
             {!m && !s && !x && <span className="text-[var(--color-muted)]">Bonos</span>}
           </button>
         </div>
+        {breakdownParts.length > 0 && (
+          <div className="mt-2 border-t border-[var(--color-border)] pt-2 text-[10px] tabular-nums text-[var(--color-muted)]">
+            {breakdownParts.join(" · ")} = {fmtCurrency(Number(row[`${d}__amt`]) || 0)}
+          </div>
+        )}
       </div>
     );
   };
@@ -735,6 +825,9 @@ export default function CycleWorkerEditModal({
           {configureBtn(d)}
         </div>
         <div className="flex items-center gap-2">
+          {savingFields[field] && (
+            <span className="text-[10px] font-semibold text-[var(--color-accent)] animate-pulse">guardando…</span>
+          )}
           {!readOnly && !amt && !!suggested && drafts[field] === undefined && (
             <button
               type="button"
@@ -754,7 +847,7 @@ export default function CycleWorkerEditModal({
             onBlur={async () => {
               if (!(field in drafts)) return;
               const v = drafts[field];
-              await commitNormalAmount(d, workerRut, v);
+              await runWithSaving(field, () => commitNormalAmount(d, workerRut, v));
               clearDraft(field);
             }}
             className={inputCls}
@@ -763,6 +856,8 @@ export default function CycleWorkerEditModal({
       </div>
     );
   };
+
+  const visibleDays = onlyWithData ? days.filter((d) => dayHasData(row, d)) : days;
 
   return (
     <Modal
@@ -786,35 +881,59 @@ export default function CycleWorkerEditModal({
             <div className="text-xs font-normal text-[var(--color-muted)]">{row.name}</div>
           </div>
         ) : (
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-accent-soft)] text-sm font-semibold text-[var(--color-accent)]">
-              {initials(row.name)}
-            </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-1.5">
-                <span className="truncate font-semibold">{row.name}</span>
-                {isTemp && (
-                  <span className="rounded bg-[var(--color-warning-soft)] px-1.5 py-0.5 text-[10px] font-normal text-[var(--color-warning)]">
-                    Temporal
-                  </span>
-                )}
-                {row._isOrphan && (
-                  <span className="rounded bg-[var(--color-danger-soft)] px-1.5 py-0.5 text-[10px] font-normal text-[var(--color-danger)]">
-                    Fuera del listado
-                  </span>
-                )}
-                {row._monthly && (
-                  <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-normal text-emerald-700 dark:text-emerald-300">
-                    Mensual
-                  </span>
-                )}
+          <div className="flex min-w-0 items-center gap-2">
+            {onNavigate && (
+              <button
+                type="button"
+                onClick={() => onNavigate(-1)}
+                disabled={!canGoPrev}
+                title="Trabajador anterior"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] text-sm text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:opacity-30 disabled:pointer-events-none"
+              >
+                ‹
+              </button>
+            )}
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-accent-soft)] text-sm font-semibold text-[var(--color-accent)]">
+                {initials(row.name)}
               </div>
-              <div className="flex flex-wrap items-center gap-1.5 text-xs font-normal text-[var(--color-muted)]">
-                <span className="font-mono">{formatRutForDisplay(workerRut)}</span>
-                <span>·</span>
-                <span className="font-semibold text-[var(--color-accent)]">{fmtCurrency(row.total || 0)}</span>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="truncate font-semibold">{row.name}</span>
+                  {isTemp && (
+                    <span className="rounded bg-[var(--color-warning-soft)] px-1.5 py-0.5 text-[10px] font-normal text-[var(--color-warning)]">
+                      Temporal
+                    </span>
+                  )}
+                  {row._isOrphan && (
+                    <span className="rounded bg-[var(--color-danger-soft)] px-1.5 py-0.5 text-[10px] font-normal text-[var(--color-danger)]">
+                      Fuera del listado
+                    </span>
+                  )}
+                  {row._monthly && (
+                    <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-normal text-emerald-700 dark:text-emerald-300">
+                      Mensual
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 text-xs font-normal text-[var(--color-muted)]">
+                  <span className="font-mono">{formatRutForDisplay(workerRut)}</span>
+                  <span>·</span>
+                  <span className="font-semibold text-[var(--color-accent)]">{fmtCurrency(row.total || 0)}</span>
+                </div>
               </div>
             </div>
+            {onNavigate && (
+              <button
+                type="button"
+                onClick={() => onNavigate(1)}
+                disabled={!canGoNext}
+                title="Trabajador siguiente"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] text-sm text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:opacity-30 disabled:pointer-events-none"
+              >
+                ›
+              </button>
+            )}
           </div>
         )
       }
@@ -846,13 +965,43 @@ export default function CycleWorkerEditModal({
       ) : (
         <div className="space-y-3 pb-2">
           {renderTopActions()}
-          {days.map((d) => {
-            if (isCosecha) return renderCosechaDay(d);
-            if (isTrato) return renderTratoDay(d);
-            if (isTratoEtapas) return renderEtapasDay(d);
-            if (isTratoHE) return renderTratoHEDay(d);
-            return renderNormalDay(d);
-          })}
+          <div className="inline-flex overflow-hidden rounded-md border border-[var(--color-border)] text-xs">
+            <button
+              type="button"
+              onClick={() => setOnlyWithData(false)}
+              className={`px-3 py-1.5 transition-colors ${
+                !onlyWithData
+                  ? "bg-[var(--color-accent)] font-medium text-[var(--color-accent-fg)]"
+                  : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
+              }`}
+            >
+              Todos · {days.length}
+            </button>
+            <button
+              type="button"
+              onClick={() => setOnlyWithData(true)}
+              className={`border-l border-[var(--color-border)] px-3 py-1.5 transition-colors ${
+                onlyWithData
+                  ? "bg-[var(--color-accent)] font-medium text-[var(--color-accent-fg)]"
+                  : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
+              }`}
+            >
+              Con datos
+            </button>
+          </div>
+          {visibleDays.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-[var(--color-border)] p-4 text-center text-sm text-[var(--color-muted)]">
+              Sin días con datos.
+            </div>
+          ) : (
+            visibleDays.map((d) => {
+              if (isCosecha) return renderCosechaDay(d);
+              if (isTrato) return renderTratoDay(d);
+              if (isTratoEtapas) return renderEtapasDay(d);
+              if (isTratoHE) return renderTratoHEDay(d);
+              return renderNormalDay(d);
+            })
+          )}
         </div>
       )}
     </Modal>

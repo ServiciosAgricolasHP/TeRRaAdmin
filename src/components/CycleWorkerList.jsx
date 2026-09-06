@@ -1,25 +1,13 @@
 import { useMemo, useState } from "react";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import { matchesSearchQuery } from "../utils/textSearch";
+import { initials } from "../utils/nameUtils";
+import { dayHasData } from "../utils/cycleRowUtils";
 
-// Cuenta en cuántos días de `days` este trabajador tiene algo cargado en
-// esta labor. El nombre de los campos varía por tipo de labor (combo/tier/
-// etapa vs. monto directo), así que en vez de conocer la forma exacta,
-// buscamos cualquier campo del día con `__amt` (cosecha/trato/tratoEtapas/
-// tratoHE) o el campo plano del día mismo (normal) con valor > 0.
 function countDaysWithData(row, days) {
   let count = 0;
   for (const d of days) {
-    let has = Number(row[d]) > 0;
-    if (!has) {
-      for (const k in row) {
-        if (k.startsWith(`${d}__`) && k.endsWith("__amt") && Number(row[k]) > 0) {
-          has = true;
-          break;
-        }
-      }
-    }
-    if (has) count++;
+    if (dayHasData(row, d)) count++;
   }
   return count;
 }
@@ -27,17 +15,21 @@ function countDaysWithData(row, days) {
 // Vista mobile de CycleDetail: reemplaza el AG-Grid (columnas = días) por
 // una lista informativa de trabajadores con su total del ciclo. Evita el
 // scroll horizontal infinito de decenas de columnas-día en pantallas chicas.
-export default function CycleWorkerList({ rows, days, fmtCurrency, onSelectWorker }) {
+export default function CycleWorkerList({ rows, days, fmtCurrency, onSelectWorker, onlyWithProduction }) {
   const [query, setQuery] = useState("");
 
   const sorted = useMemo(
     () => [...(rows || [])].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))),
     [rows],
   );
-  const filtered = useMemo(
-    () => sorted.filter((row) => matchesSearchQuery(row.name, query)),
-    [sorted, query],
-  );
+  // Igual que en el grid de escritorio: el toggle "solo con producción" se
+  // pausa solo mientras el usuario está buscando algo puntual acá abajo, para
+  // que encontrar a alguien no dependa de que tenga plata este ciclo.
+  const filtered = useMemo(() => {
+    const byName = sorted.filter((row) => matchesSearchQuery(row.name, query));
+    if (!onlyWithProduction || query.trim()) return byName;
+    return byName.filter((row) => Number(row.total) > 0);
+  }, [sorted, query, onlyWithProduction]);
 
   if (sorted.length === 0) {
     return (
@@ -78,11 +70,14 @@ export default function CycleWorkerList({ rows, days, fmtCurrency, onSelectWorke
               <div
                 key={row.rut}
                 onClick={clickable ? () => onSelectWorker(row.rut) : undefined}
-                className={`flex items-center justify-between gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3 ${
+                className={`flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3.5 ${
                   clickable ? "cursor-pointer hover:bg-[var(--color-accent-soft)]" : ""
                 }`}
               >
-                <div className="min-w-0">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-accent-soft)] text-sm font-semibold text-[var(--color-accent)]">
+                  {initials(row.name)}
+                </div>
+                <div className="min-w-0 flex-1">
                   <div className="truncate font-medium">{row.name}</div>
                   <div className="font-mono text-xs text-[var(--color-muted)]">
                     {formatRutForDisplay(row.rut) || row.rut}
@@ -108,7 +103,7 @@ export default function CycleWorkerList({ rows, days, fmtCurrency, onSelectWorke
                   )}
                 </div>
                 <div className="shrink-0 text-right">
-                  <div className="text-base font-semibold tabular-nums">
+                  <div className="text-base font-semibold tabular-nums text-[var(--color-accent)]">
                     {fmtCurrency(row.total || 0)}
                   </div>
                   {daysWithData !== null && (

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AgGridReact } from "ag-grid-react";
 import { ModuleRegistry, AllCommunityModule } from "ag-grid-community";
 import "ag-grid-community/styles/ag-grid.css";
+import "ag-grid-community/styles/ag-theme-quartz.css";
 import { AG_GRID_LOCALE_ES } from "../utils/agGridLocale";
 import { workersService } from "../services";
 import { deleteWorkerSafe, detectQueryKind } from "../services/workersService";
@@ -456,6 +457,7 @@ export default function Workers() {
           </div>
         ) : (
           <AgGridReact
+            theme="legacy"
             rowData={displayedResults}
             columnDefs={columnDefs}
             defaultColDef={{ resizable: true, sortable: true, filter: true }}

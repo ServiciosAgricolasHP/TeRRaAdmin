@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { AgGridReact } from "ag-grid-react";
 import { ModuleRegistry, AllCommunityModule } from "ag-grid-community";
 import "ag-grid-community/styles/ag-grid.css";
+import "ag-grid-community/styles/ag-theme-quartz.css";
 import { toPng, toBlob } from "html-to-image";
 import { cyclesService, faenasService, subfaenasService, workdaysService, workersService, groupLeadersService, laborGroupsService } from "../services";
 import { formatRutForDisplay } from "../utils/rutUtils";
@@ -135,7 +136,7 @@ function FormulaCellEditor({ initialValue, onValueChange, eventKey }) {
         fontSize: "inherit",
         textAlign: "right",
         background: "transparent",
-        color: "#000",
+        color: "var(--color-text)",
       }}
     />
   );
@@ -323,26 +324,33 @@ function GroupHeaderRowRenderer(props) {
 // piso del trabajador en ese día: click crea/borra el workday `_piso`. Solo
 // es clickable si ya existe alguna producción del día (sin workday previo
 // el botón queda deshabilitado).
+// El monto del piso solo se veía en el tooltip (hover) — el resto de la fila
+// (montos de combos/tiers) sí se ve siempre, así que sumando a ojo lo visible
+// en la fila no daba lo mismo que el TOTAL($) de la derecha, que sí incluye
+// el piso. Ahora la celda muestra el piso Y la suma lista del día (producción
+// + piso), y el tooltip desglosa el cálculo — sin agregar una columna nueva.
 function buildPisoChildCol(date, labor, dayPrices, disabled, togglePiso) {
   const eff = effectivePiso(labor, dayPrices, date);
   return {
-    headerName: "P",
-    headerTooltip: eff > 0 ? `Piso del día: $${eff.toLocaleString("es-CL")}` : "Sin piso configurado",
+    headerName: "Piso",
+    headerTooltip: eff > 0 ? `Piso del día: ${fmtCurrency(eff)}` : "Sin piso configurado",
     field: `${date}__piso`,
     editable: false,
-    width: 56,
+    width: 80,
     cellStyle: { textAlign: "center", padding: 0 },
     cellRenderer: (p) => {
-      const checked = (Number(p.value) || 0) > 0;
+      const amt = Number(p.value) || 0;
+      const checked = amt > 0;
+      const dayTotal = Number(p.data?.[`${date}__total`]) || 0;
+      const production = dayTotal - amt;
       const hasWd = !!p.data?.[`${date}__piso_has_wd`];
       const canToggle = !disabled && hasWd && eff > 0;
+      const breakdown = dayTotal > 0 ? `\n${fmtCurrency(production)} producción + ${fmtCurrency(amt)} piso = ${fmtCurrency(dayTotal)}` : "";
       const title = !hasWd
         ? "Asigna primero producción este día"
         : eff === 0
           ? "Configura el piso del día o el default de la labor"
-          : checked
-            ? `Quitar piso ($${eff.toLocaleString("es-CL")})`
-            : `Asignar piso ($${eff.toLocaleString("es-CL")})`;
+          : `${checked ? "Quitar piso" : "Asignar piso"} (${fmtCurrency(eff)})${breakdown}`;
       return (
         <button
           onClick={(e) => {
@@ -351,7 +359,7 @@ function buildPisoChildCol(date, labor, dayPrices, disabled, togglePiso) {
           }}
           disabled={!canToggle}
           title={title}
-          className={`flex h-full w-full items-center justify-center text-base transition-colors ${
+          className={`flex h-full w-full flex-col items-center justify-center gap-0 leading-tight transition-colors ${
             checked
               ? "bg-amber-500/20 text-amber-700 hover:bg-amber-500/30 dark:text-amber-300"
               : canToggle
@@ -359,7 +367,13 @@ function buildPisoChildCol(date, labor, dayPrices, disabled, togglePiso) {
                 : "cursor-not-allowed text-[var(--color-muted)] opacity-30"
           }`}
         >
-          {checked ? "🪙" : "·"}
+          <div className="flex items-center gap-1">
+            <span className="text-sm">{checked ? "🪙" : "·"}</span>
+            {checked && <span className="text-[10px] tabular-nums">{fmtCurrency(amt)}</span>}
+          </div>
+          {dayTotal > 0 && (
+            <span className="text-[10px] font-semibold tabular-nums text-[var(--color-accent)]">{fmtCurrency(dayTotal)}</span>
+          )}
         </button>
       );
     },
@@ -681,6 +695,14 @@ export default function CycleDetail() {
   const [allWorkers, setAllWorkers] = useState([]);
   const [enabledLeaders, setEnabledLeaders] = useState([]);
   const [groupBusy, setGroupBusy] = useState(false);
+  // Oculta en el grid a los trabajadores con $0 en esta labor+ciclo — el
+  // listado de trabajadores se arrastra desde el ciclo 1, así que para el
+  // ciclo 12 puede haber 200+ personas que ya no trabajan acá. Se ignora
+  // mientras haya un filtro de columna activo (ver isExternalFilterPresent/
+  // doesExternalFilterPass más abajo) para que buscar a alguien puntual
+  // siga mostrando resultados aunque tenga $0 ese ciclo.
+  const [onlyWithProduction, setOnlyWithProduction] = useState(false);
+  const [columnFilterActive, setColumnFilterActive] = useState(false);
 
   const gridRef = useRef(null);
   const photoRef = useRef(null);
@@ -688,6 +710,11 @@ export default function CycleDetail() {
   // que entre la mayor cantidad posible de días en pantalla sin scroll
   // horizontal infinito. La edición sigue funcionando igual (touch).
   const isMobile = useIsMobile();
+  // El toggle Detalle/Resumen solo afecta columnas del AG-Grid — en mobile,
+  // mientras se muestra CycleWorkerList (grid oculto), no tiene ningún
+  // efecto visible, así que se esconde para no ensuciar la barra. Reaparece
+  // si el usuario cae al grid completo vía "Ver grid completo".
+  const gridVisible = !isMobile || showDesktopGrid;
   // Undo stack: each entry is a batch (array) of { rut, field, oldValue }.
   // Ctrl+Z pops one batch and replays the old values. Single edits push a
   // 1-item batch; fillDown/paste push N-item batches so they undo in one step.
@@ -1148,6 +1175,21 @@ export default function CycleDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gridWorkers, days, wdMap, isCosechaLabor, isTratoLabor, isTratoEtapasLabor, isTratoHELabor, dayCombosByDate, dayTiersByDate, dayStagesByDate]);
 
+  // Orden alfabético — mismo criterio que CycleWorkerList.jsx — para que el
+  // modal mobile pueda navegar "‹ Anterior/Siguiente ›" entre trabajadores
+  // sin cerrar y reabrir.
+  const sortedWorkerRuts = useMemo(
+    () => [...rowDataRaw].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""))).map((r) => r.rut),
+    [rowDataRaw],
+  );
+  const editingWorkerIndex = editingCycleWorkerRut ? sortedWorkerRuts.indexOf(editingCycleWorkerRut) : -1;
+  const navigateCycleWorker = (dir) => {
+    if (editingWorkerIndex === -1) return;
+    const nextIndex = editingWorkerIndex + dir;
+    if (nextIndex < 0 || nextIndex >= sortedWorkerRuts.length) return;
+    setEditingCycleWorkerRut(sortedWorkerRuts[nextIndex]);
+  };
+
   const groupBuckets = useMemo(() => {
     const buckets = new Map();
     for (const row of rowDataRaw) {
@@ -1188,6 +1230,25 @@ export default function CycleDetail() {
     }
     return out;
   }, [useGrouped, rowDataRaw, orderedGroups]);
+
+  // El toggle "Solo con producción" se implementa como filtro externo de
+  // AG-Grid (no recortando `rowData` a mano) para que conviva bien con el
+  // resto de la grilla — orden, selección, etc. Mientras haya un filtro de
+  // columna activo (el usuario está buscando algo puntual por Nombre/RUT/lo
+  // que sea), este filtro se desactiva solo: se quiere ver a quien calce con
+  // la búsqueda tenga o no producción, no solo a los que además tengan plata.
+  const isExternalFilterPresent = () => onlyWithProduction;
+  const doesExternalFilterPass = (node) => {
+    if (node.data?._isHeader) return true;
+    if (gridRef.current?.api?.isColumnFilterPresent()) return true;
+    return Number(node.data?.total) > 0;
+  };
+  useEffect(() => {
+    gridRef.current?.api?.onFilterChanged();
+  }, [onlyWithProduction]);
+  const handleGridFilterChanged = () => {
+    setColumnFilterActive(!!gridRef.current?.api?.isColumnFilterPresent());
+  };
 
   const scrollToGroup = (key) => {
     const api = gridRef.current?.api;
@@ -2719,7 +2780,6 @@ export default function CycleDetail() {
         // Mobile <768px: RUT se esconde para que quepan más días en pantalla.
         // El RUT sigue accesible doble-clickeando la celda de Nombre.
         hide: isMobile,
-        checkboxSelection: !photoMode, headerCheckboxSelection: !photoMode,
         onCellDoubleClicked: (p) => {
           if (p.data?._isHeader || p.data?._isTemp) return;
           const rut = p.data?.rut;
@@ -2809,12 +2869,12 @@ export default function CycleDetail() {
     const isNormalLaborForCol = !isCosechaLabor && !isTratoLabor && !isTratoHELabor;
     const actionsCol = photoMode ? [] : [{
       headerName: "", field: "_actions", editable: false,
-      // En mobile usamos los mismos anchos que desktop default (no el inflado
-      // de useGrouped a 240px que come demasiado viewport). Los botones igual
-      // se pueden tocar; lo que se evita es el espacio muerto.
-      width: isMobile
-        ? (useGrouped ? 130 : 90)
-        : (useGrouped ? 240 : (isNormalLaborForCol ? 130 : 90)),
+      // Ancho ajustado al contenido real de la celda: el botón "Quitar" ahora
+      // es un ícono circular (no texto), así que ya no hace falta el ancho
+      // inflado de antes ni una versión aparte más angosta para mobile.
+      width: useGrouped
+        ? (isNormalLaborForCol ? 160 : 130)
+        : (isNormalLaborForCol ? 70 : 50),
       pinned: "right",
       cellRenderer: (p) => {
         const rut = p.data?.rut;
@@ -2864,11 +2924,13 @@ export default function CycleDetail() {
               </>
             )}
             <button
+              type="button"
               onClick={() => askRemoveWorker(rut)}
               disabled={readOnly}
-              className="text-xs text-[var(--color-danger)] hover:underline disabled:opacity-40"
+              title="Quitar trabajador"
+              className="flex h-5 w-5 items-center justify-center rounded-full border border-[var(--color-danger)]/40 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:opacity-40"
             >
-              Quitar
+              ✕
             </button>
           </div>
         );
@@ -3127,41 +3189,61 @@ export default function CycleDetail() {
               // "use suggested price" button rendered below; once they have
               // a value, normal editing kicks back in.
               editable: (p) => !readOnly && !photoMode && Number(p.data?.[`${d}__qty`] || 0) > 0,
-              width: isMobile ? 70 : 110,
+              width: isMobile ? 85 : 130,
               type: "numericColumn",
               valueParser: (p) => parseAmount(p.newValue),
               cellEditor: FormulaCellEditor,
               valueFormatter: (p) => (p.value ? fmtCurrency(p.value) : ""),
-              headerTooltip: `Base del día (monto). Sugerido: ${fmtCurrency(effectiveDayPrice(labor, cfg))}. Click para usar el sugerido si está vacío.`,
-              cellStyle: { textAlign: "right" },
+              headerTooltip: `Base del día (monto). Sugerido: ${fmtCurrency(effectiveDayPrice(labor, cfg))}. Abajo: bonos (M/S/+) y total del día — click para editar.`,
+              cellStyle: { padding: 0 },
               cellRenderer: (p) => {
                 const v = Number(p.value) || 0;
-                if (v) {
-                  // Negro hardcoded: el grid es blanco en ambos temas, y
-                  // var(--color-text) en dark deja el monto casi invisible.
-                  return (
-                    <span className="font-bold tabular-nums" style={{ color: "#000" }}>
-                      {fmtCurrency(v)}
-                    </span>
-                  );
-                }
-                if (readOnly || photoMode || cfg.mode === "overtimeOnly") return "";
+                const m = p.data?.[`${d}__m`];
+                const s = p.data?.[`${d}__s`];
+                const x = Number(p.data?.[`${d}__x`]) || 0;
+                const amt = Number(p.data?.[`${d}__amt`]) || 0;
                 const suggested = effectiveDayPrice(labor, cfg);
                 return (
-                  <button
-                    onClick={async (e) => {
-                      e.stopPropagation();
-                      await upsertTratoHEWorkday(activeLabor.id, d, p.data.rut, { qty: suggested });
-                    }}
-                    className="flex h-full w-full items-center justify-end gap-1 text-[10px] italic hover:not-italic"
-                    style={{ color: "#9ca3af" }}
-                    onMouseEnter={(e) => { e.currentTarget.style.color = "#16a34a"; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.color = "#9ca3af"; }}
-                    title={`Click: usar base sugerida ${fmtCurrency(suggested)}. Doble click después para modificar.`}
-                  >
-                    <span className="text-[8px]">+</span>
-                    <span className="tabular-nums">{fmtCurrency(suggested)}</span>
-                  </button>
+                  <div className="flex h-full w-full flex-col">
+                    <div className="flex flex-1 items-center justify-end px-1">
+                      {v > 0 ? (
+                        <span className="font-bold tabular-nums text-[var(--color-text)]">
+                          {fmtCurrency(v)}
+                        </span>
+                      ) : (
+                        !readOnly && !photoMode && cfg.mode !== "overtimeOnly" && (
+                          <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              await upsertTratoHEWorkday(activeLabor.id, d, p.data.rut, { qty: suggested });
+                            }}
+                            className="flex h-full w-full items-center justify-end gap-1 text-[10px] italic text-[var(--color-muted)] hover:not-italic hover:text-[var(--color-accent)]"
+                            title={`Click: usar base sugerida ${fmtCurrency(suggested)}. Doble click después para modificar.`}
+                          >
+                            <span className="text-[8px]">+</span>
+                            <span className="tabular-nums">{fmtCurrency(suggested)}</span>
+                          </button>
+                        )
+                      )}
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setBonusEdit({ laborId: activeLabor.id, date: d, workerRut: p.data.rut });
+                      }}
+                      disabled={readOnly}
+                      title={buildBreakdown(p.data, d, cfg)}
+                      className="flex shrink-0 items-center justify-center gap-1 border-t border-[var(--color-border)] px-1 py-0.5 text-[9px] leading-none hover:bg-[var(--color-accent-soft)]"
+                    >
+                      {m && <span className="rounded bg-blue-100 px-1 font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">M</span>}
+                      {s && <span className="rounded bg-purple-100 px-1 font-medium text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">S</span>}
+                      {x !== 0 && <span className="rounded bg-amber-100 px-1 font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">+</span>}
+                      {!m && !s && !x && <span className="text-[var(--color-muted)] opacity-40">···</span>}
+                      {amt > 0 && (
+                        <span className="ml-1 font-semibold tabular-nums text-[var(--color-accent)]">{fmtCurrency(amt)}</span>
+                      )}
+                    </button>
+                  </div>
                 );
               },
             },
@@ -3175,39 +3257,6 @@ export default function CycleDetail() {
               cellEditor: FormulaCellEditor,
               valueFormatter: (p) => (p.value ? `${p.value}h` : ""),
               headerTooltip: "Horas extras",
-            },
-            {
-              headerName: "$",
-              field: `${d}__b`,
-              editable: false,
-              width: isMobile ? 85 : 130,
-              headerTooltip: "Bonos (M/S/+) y total del día",
-              cellRenderer: (p) => {
-                const m = p.data?.[`${d}__m`];
-                const s = p.data?.[`${d}__s`];
-                const x = Number(p.data?.[`${d}__x`]) || 0;
-                const amt = Number(p.data?.[`${d}__amt`]) || 0;
-                return (
-                  <button
-                    onClick={() => setBonusEdit({ laborId: activeLabor.id, date: d, workerRut: p.data.rut })}
-                    disabled={readOnly}
-                    title={buildBreakdown(p.data, d, cfg)}
-                    className="flex h-full w-full items-center gap-1 rounded px-1 text-xs hover:bg-[var(--color-accent-soft)]"
-                  >
-                    <div className="flex gap-0.5">
-                      {m && <span className="rounded bg-blue-100 px-1 text-[9px] font-medium text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">M</span>}
-                      {s && <span className="rounded bg-purple-100 px-1 text-[9px] font-medium text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">S</span>}
-                      {x !== 0 && <span className="rounded bg-amber-100 px-1 text-[9px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">+</span>}
-                      {!m && !s && !x && <span className="text-[var(--color-muted)] opacity-40">···</span>}
-                    </div>
-                    {amt > 0 && (
-                      <span className="ml-auto text-xs font-semibold tabular-nums text-[var(--color-accent)]">
-                        {fmtCurrency(amt)}
-                      </span>
-                    )}
-                  </button>
-                );
-              },
             },
           ],
         };
@@ -3260,11 +3309,8 @@ export default function CycleDetail() {
           }
           const amt = Number(p.value) || 0;
           if (amt) {
-            // Color hardcoded a negro: ag-grid sirve fondo blanco en ambos
-            // temas (claro y oscuro) y `var(--color-text)` en dark es claro,
-            // lo que dejaba el monto casi invisible en el grid.
             return (
-              <span className="font-bold tabular-nums" style={{ color: "#000" }}>
+              <span className="font-bold tabular-nums text-[var(--color-text)]">
                 {fmtCurrency(amt)}
               </span>
             );
@@ -3276,10 +3322,7 @@ export default function CycleDetail() {
                 e.stopPropagation();
                 await commitNormalAmount(d, p.data.rut, suggested);
               }}
-              className="flex h-full w-full items-center justify-end gap-1 text-[10px] italic hover:not-italic"
-              style={{ color: "#9ca3af" }}
-              onMouseEnter={(e) => { e.currentTarget.style.color = "#16a34a"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.color = "#9ca3af"; }}
+              className="flex h-full w-full items-center justify-end gap-1 text-[10px] italic text-[var(--color-muted)] hover:not-italic hover:text-[var(--color-accent)]"
               title={`Click: usar precio sugerido ${fmtCurrency(suggested)}. Doble click después para modificar.`}
             >
               <span className="text-[8px]">+</span>
@@ -3308,22 +3351,24 @@ export default function CycleDetail() {
       ) : (
         <AgGridReact
           ref={gridRef}
+          theme="legacy"
           rowData={rowData}
           columnDefs={columnDefs}
           onCellValueChanged={onCellValueChanged}
           onCellKeyDown={onCellKeyDown}
+          isExternalFilterPresent={isExternalFilterPresent}
+          doesExternalFilterPass={doesExternalFilterPass}
+          onFilterChanged={handleGridFilterChanged}
           singleClickEdit={false}
           enterNavigatesVertically
           enterNavigatesVerticallyAfterEdit
           stopEditingWhenCellsLoseFocus
           getRowId={(p) => p.data.rut}
-          rowSelection={photoMode ? undefined : "multiple"}
-          suppressRowClickSelection
           enableCellTextSelection
           ensureDomOrder
           localeText={AG_GRID_LOCALE_ES}
           defaultColDef={{ resizable: true, sortable: true, filter: true }}
-          rowHeight={isQtyLabor ? 44 : undefined}
+          rowHeight={isTratoHELabor ? 58 : (isQtyLabor ? 44 : undefined)}
           isFullWidthRow={(p) => !!p.rowNode.data?._isHeader}
           fullWidthCellRenderer={GroupHeaderRowRenderer}
           getRowClass={(p) => (p.data?._isHeader ? "ag-group-header-row" : "")}
@@ -3482,7 +3527,7 @@ export default function CycleDetail() {
             🚐 Transportes
           </button>
           <button onClick={() => setSummaryOpen(true)} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]">
-            📊 Resumen
+            📊 Resumen ciclo
           </button>
           {!closed && (
             <button onClick={() => setCloseFlow(true)} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]">
@@ -3494,9 +3539,6 @@ export default function CycleDetail() {
               Reabrir ciclo
             </button>
           )}
-          <button onClick={() => setPhotoMode(true)} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]">
-            📷 Modo foto
-          </button>
           <span
             className="hidden sm:inline-flex items-center gap-1 rounded-md border border-dashed border-[var(--color-border)] px-2 py-1 text-[10px] text-[var(--color-muted)]"
             title={
@@ -3759,34 +3801,36 @@ export default function CycleDetail() {
             <div className="flex flex-wrap gap-2">
               {isTratoHELabor && (
                 <>
-                  <div className="flex rounded-md overflow-hidden border border-[var(--color-border)] text-xs">
-                    <button
-                      onClick={() => setTratoHEView("detalle")}
-                      className={`px-3 py-1.5 transition-colors ${
-                        tratoHEView === "detalle"
-                          ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
-                          : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
-                      }`}
-                    >
-                      Detalle
-                    </button>
-                    <button
-                      onClick={() => setTratoHEView("resumen")}
-                      className={`px-3 py-1.5 transition-colors ${
-                        tratoHEView === "resumen"
-                          ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
-                          : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
-                      }`}
-                    >
-                      Resumen
-                    </button>
-                  </div>
+                  {gridVisible && (
+                    <div className="flex rounded-md overflow-hidden border border-[var(--color-border)] text-xs">
+                      <button
+                        onClick={() => setTratoHEView("detalle")}
+                        className={`px-3 py-1.5 transition-colors ${
+                          tratoHEView === "detalle"
+                            ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
+                            : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
+                        }`}
+                      >
+                        Detalle
+                      </button>
+                      <button
+                        onClick={() => setTratoHEView("resumen")}
+                        className={`px-3 py-1.5 transition-colors ${
+                          tratoHEView === "resumen"
+                            ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
+                            : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
+                        }`}
+                      >
+                        Resumen
+                      </button>
+                    </div>
+                  )}
                   <button onClick={() => setDefaultLeadersOpen(true)} disabled={readOnly} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-40">
                     ⚑ Líderes / Manejo
                   </button>
                 </>
               )}
-              {isCosechaLabor && (
+              {isCosechaLabor && gridVisible && (
                 <div className="flex rounded-md overflow-hidden border border-[var(--color-border)] text-xs">
                   <button
                     onClick={() => setCosechaView("detalle")}
@@ -3810,7 +3854,7 @@ export default function CycleDetail() {
                   </button>
                 </div>
               )}
-              {isTratoLabor && (
+              {isTratoLabor && gridVisible && (
                 <div className="flex rounded-md overflow-hidden border border-[var(--color-border)] text-xs">
                   <button
                     onClick={() => setTratoView("detalle")}
@@ -4442,21 +4486,43 @@ export default function CycleDetail() {
 
           {!photoMode && workers.length > 0 && (
             <div className="mb-2 flex flex-wrap items-center gap-2">
-              <div className="inline-flex overflow-hidden rounded-md border border-[var(--color-border)] text-xs">
+              {gridVisible && (
+                <div className="inline-flex overflow-hidden rounded-md border border-[var(--color-border)] text-xs">
+                  <button
+                    onClick={() => setGroupView("all")}
+                    className={`px-3 py-1.5 ${groupView === "all" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
+                  >
+                    Todos
+                  </button>
+                  <button
+                    onClick={() => setGroupView("group")}
+                    className={`px-3 py-1.5 ${groupView === "group" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
+                  >
+                    Por grupo
+                  </button>
+                </div>
+              )}
+              <div
+                className="inline-flex overflow-hidden rounded-md border border-[var(--color-border)] text-xs"
+                title="Oculta a los trabajadores con $0 en esta labor este ciclo. Se pausa solo mientras haya una búsqueda/filtro de nombre activo, para que encontrar a alguien puntual siga mostrando resultados."
+              >
                 <button
-                  onClick={() => setGroupView("all")}
-                  className={`px-3 py-1.5 ${groupView === "all" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
+                  type="button"
+                  onClick={() => setOnlyWithProduction(false)}
+                  className={`px-3 py-1.5 ${!onlyWithProduction ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
                 >
                   Todos
                 </button>
                 <button
-                  onClick={() => setGroupView("group")}
-                  className={`px-3 py-1.5 ${groupView === "group" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
+                  type="button"
+                  onClick={() => setOnlyWithProduction(true)}
+                  className={`border-l border-[var(--color-border)] px-3 py-1.5 ${onlyWithProduction ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
                 >
-                  Por grupo
+                  Con producción
+                  {onlyWithProduction && columnFilterActive && <span className="ml-1 opacity-70">(pausado)</span>}
                 </button>
               </div>
-              {useGrouped && orderedGroups.length > 0 && (
+              {gridVisible && useGrouped && orderedGroups.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5">
                   {orderedGroups.map((g) => {
                     const isNone = g.key === LEADER_NONE;
@@ -4493,6 +4559,7 @@ export default function CycleDetail() {
                 days={days}
                 fmtCurrency={fmtCurrency}
                 onSelectWorker={setEditingCycleWorkerRut}
+                onlyWithProduction={onlyWithProduction}
               />
             ) : (
               grid
@@ -4976,6 +5043,9 @@ export default function CycleDetail() {
         leaderBusy={groupBusy}
         assignLeaderToWorker={assignLeaderToWorker}
         LEADER_LOCAL={LEADER_LOCAL}
+        onNavigate={navigateCycleWorker}
+        canGoPrev={editingWorkerIndex > 0}
+        canGoNext={editingWorkerIndex !== -1 && editingWorkerIndex < sortedWorkerRuts.length - 1}
       />
 
       <DayModeModal

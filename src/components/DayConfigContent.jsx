@@ -56,7 +56,7 @@ function PriceInput({ value, disabled, onCommit }) {
 function RemovableRow({ label, disabled, onRemove, children }) {
   const [confirming, setConfirming] = useState(false);
   return (
-    <div className="rounded-md border border-[var(--color-border)] p-3">
+    <div className="rounded-lg border border-[var(--color-border)] p-3.5">
       {confirming ? (
         <div className="flex items-center justify-between gap-2">
           <span className="text-sm text-[var(--color-danger)]">¿Quitar {label}?</span>
@@ -64,7 +64,7 @@ function RemovableRow({ label, disabled, onRemove, children }) {
             <button
               type="button"
               onClick={() => setConfirming(false)}
-              className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs"
+              className="rounded-md border border-[var(--color-border)] px-2.5 py-1.5 text-xs"
             >
               Cancelar
             </button>
@@ -74,7 +74,7 @@ function RemovableRow({ label, disabled, onRemove, children }) {
                 await onRemove();
                 setConfirming(false);
               }}
-              className="rounded-md bg-[var(--color-danger)] px-2 py-1 text-xs text-white"
+              className="rounded-md bg-[var(--color-danger)] px-2.5 py-1.5 text-xs text-white"
             >
               Confirmar
             </button>
@@ -119,7 +119,7 @@ function AddComboInline({ catalogs, existingCombos, disabled, onAdd }) {
   const key = `${x}_${y}`;
   const duplicate = existingCombos.some((c) => c.key === key);
   return (
-    <div className="space-y-2 rounded-md border border-[var(--color-border)] p-3">
+    <div className="space-y-2 rounded-lg border border-[var(--color-border)] p-3.5">
       <Select label="Calidad" value={x} onChange={(v) => setX(Number(v))} options={qualities.map((q) => ({ value: q.value, label: q.label }))} />
       <Select label="Envase / unidad" value={y} onChange={(v) => setY(Number(v))} options={containers.map((c) => ({ value: c.value, label: c.label }))} />
       {duplicate && <div className="text-xs text-[var(--color-warning)]">Este tipo ya existe este día.</div>}
@@ -146,7 +146,7 @@ function AddComboInline({ catalogs, existingCombos, disabled, onAdd }) {
 function PisoConfig({ date, activeLabor, dayPrices, readOnly, fmtCurrency, persistDayPiso }) {
   const current = getDayPiso(dayPrices, activeLabor.id, date) || 0;
   return (
-    <div className="rounded-md border border-[var(--color-border)] p-3">
+    <div className="rounded-lg border border-[var(--color-border)] p-3.5">
       <div className="mb-2 flex items-center justify-between">
         <span className="text-sm font-medium">🪙 Piso del día</span>
         {current > 0 && <span className="text-xs text-[var(--color-muted)]">{fmtCurrency(current)}</span>}
@@ -275,7 +275,7 @@ export default function DayConfigContent({
         {backBtn}
         {stages.length === 0 && <div className="text-sm text-[var(--color-muted)]">Esta labor no tiene etapas definidas.</div>}
         {stages.map((st) => (
-          <div key={st.id} className="rounded-md border border-[var(--color-border)] p-3">
+          <div key={st.id} className="rounded-lg border border-[var(--color-border)] p-3.5">
             <div className="mb-2 text-sm font-medium">
               {st.name}
               {st.counts ? " ✓" : ""}
@@ -295,7 +295,7 @@ export default function DayConfigContent({
     return (
       <div className="space-y-3">
         {backBtn}
-        <div className="rounded-md border border-[var(--color-border)] p-3">
+        <div className="rounded-lg border border-[var(--color-border)] p-3.5">
           <div className="mb-2 text-sm font-medium">Base del día</div>
           <div className="flex flex-wrap items-center gap-2">
             <PriceInput value={cfg.price} disabled={readOnly} onCommit={(v) => persistTratoHEDay(laborId, date, { price: v })} />
@@ -329,7 +329,7 @@ export default function DayConfigContent({
   return (
     <div className="space-y-3">
       {backBtn}
-      <div className="rounded-md border border-[var(--color-border)] p-3">
+      <div className="rounded-lg border border-[var(--color-border)] p-3.5">
         <div className="mb-2 text-sm font-medium">Precio sugerido del día</div>
         <PriceInput value={cfg.price} disabled={readOnly} onCommit={(v) => persistNormalDayPrice(laborId, date, v)} />
         <div className="mt-1 text-xs text-[var(--color-muted)]">
