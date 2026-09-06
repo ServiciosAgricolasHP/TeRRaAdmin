@@ -334,7 +334,7 @@ export default function Layout() {
       )}
 
       <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="relative z-0 flex h-14 items-center justify-between gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 sm:px-4">
+        <header className="relative z-20 flex h-14 items-center justify-between gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 sm:px-4">
           <div className="flex items-center gap-2 min-w-0">
             <button
               onClick={onMenuClick}
