@@ -1,6 +1,6 @@
 {
   "name": "functions",
-  "description": "Cloud Functions for adminAgrofrutos",
+  "description": "Cloud Functions for TeRRaAdmin",
   "type": "module",
   "engines": {
     "node": "20"

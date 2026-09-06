@@ -1,4 +1,4 @@
-// Cloud Functions for adminAgrofrutos.
+// Cloud Functions for TeRRaAdmin.
 //
 // Backend mínimo, listo para crecer. Por ahora solo expone un `ping` callable
 // que sirve para verificar el setup end-to-end (auth + región).

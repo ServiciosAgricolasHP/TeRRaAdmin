@@ -1,9 +1,9 @@
 {
-  "name": "adminagrofrutos",
+  "name": "terraadmin",
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "homepage": "https://serviciosagricolashp.github.io/adminagrofrutos",
+  "homepage": "https://serviciosagricolashp.github.io/TeRRaAdmin",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

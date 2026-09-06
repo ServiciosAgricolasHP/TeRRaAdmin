@@ -26,11 +26,11 @@ Panel de administración para la gestión de operaciones agrícolas de Agrofruto
 
 ## Despliegue
 
-GitHub Pages → `https://serviciosagricolashp.github.io/adminAgrofrutos/`
+GitHub Pages → `https://serviciosagricolashp.github.io/TeRRaAdmin/`
 
-> El path base `/adminAgrofrutos/` debe coincidir en dos archivos:
+> El path base `/TeRRaAdmin/` debe coincidir en dos archivos:
 > - `vite.config.js` → `base`
-> - `src/App.jsx` → `<BrowserRouter basename="/adminAgrofrutos">`
+> - `src/App.jsx` → `<BrowserRouter basename="/TeRRaAdmin">`
 
 ## Configuración del entorno
 
@@ -156,7 +156,7 @@ GitHub Pages no resuelve rutas client-side; usamos el truco de [rafgraph/spa-git
 - `public/404.html` redirige cualquier ruta desconocida a `index.html?/<path>`.
 - `index.html` lee ese query, hace `history.replaceState` para devolver la URL correcta, y React Router toma el control.
 
-Resultado: `https://serviciosagricolashp.github.io/adminAgrofrutos/cycles/abc123` recargado en navegador navega bien en vez de devolver 404.
+Resultado: `https://serviciosagricolashp.github.io/TeRRaAdmin/cycles/abc123` recargado en navegador navega bien en vez de devolver 404.
 
 ### PWA (instalable en mobile/desktop)
 

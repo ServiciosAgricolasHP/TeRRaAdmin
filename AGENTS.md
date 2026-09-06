@@ -15,10 +15,10 @@
 
 ## Despliegue / Deploy
 
-- Desplegado en GitHub Pages en: `https://serviciosagricolashp.github.io/adminAgrofrutos/`
-- El path base `/adminAgrofrutos/` está en **dos archivos** — ambos deben coincidir:
+- Desplegado en GitHub Pages en: `https://serviciosagricolashp.github.io/TeRRaAdmin/`
+- El path base `/TeRRaAdmin/` está en **dos archivos** — ambos deben coincidir:
   - `vite.config.js` → `base`
-  - `src/App.jsx` → `<BrowserRouter basename="/adminAgrofrutos">`
+  - `src/App.jsx` → `<BrowserRouter basename="/TeRRaAdmin">`
 
 ## Stack
 
