@@ -1,4 +1,4 @@
-# Cloud Functions — adminAgrofrutos
+# Cloud Functions — TeRRaAdmin
 
 Backend mínimo para `arandanos-hp`. Hoy solo expone un callable `ping` de prueba; sirve como base para agregar funciones cuando hagan falta (ej. proxies a APIs de terceros, jobs, integraciones).
 

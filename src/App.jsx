@@ -33,7 +33,7 @@ export default function App() {
       <AuthProvider>
         <CatalogsProvider>
           <CarriersProvider>
-            <BrowserRouter basename="/adminAgrofrutos">
+            <BrowserRouter basename="/TeRRaAdmin">
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route

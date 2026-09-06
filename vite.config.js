@@ -22,7 +22,7 @@ const commitCount = (() => {
 const APP_VERSION = `v1.1.${commitCount}`
 
 export default defineConfig({
-  base: '/adminAgrofrutos/',   // ← ESTO ES CLAVE
+  base: '/TeRRaAdmin/',   // ← ESTO ES CLAVE
   define: {
     __APP_VERSION__: JSON.stringify(APP_VERSION),
   },
@@ -51,8 +51,8 @@ export default defineConfig({
         // lo ignora. iOS Safari ignora esto siempre; ver el lock en runtime
         // (src/main.jsx) que apunta al mismo objetivo con screen.orientation.
         orientation: 'landscape',
-        scope: '/adminAgrofrutos/',
-        start_url: '/adminAgrofrutos/',
+        scope: '/TeRRaAdmin/',
+        start_url: '/TeRRaAdmin/',
         icons: [
           { src: 'terra.png', sizes: '192x192', type: 'image/png' },
           { src: 'terra.png', sizes: '512x512', type: 'image/png' },
