@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import { toBlob, toPng } from "html-to-image";
-import Modal from "../Components/Modal";
+import Modal from "../components/Modal";
 import { contactCardsService } from "../services";
 import { useToast } from "../contexts/ToastContext";
 import {
