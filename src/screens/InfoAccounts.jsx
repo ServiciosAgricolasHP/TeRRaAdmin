@@ -583,7 +583,7 @@ const ContactCardImage = forwardRef(function ContactCardImage({ card }, ref) {
 
       {/* Footer marca */}
       <div style={{ borderTop: "1px solid #f3f4f6", padding: "8px 22px", fontSize: 10, color: "#9ca3af", textAlign: "right" }}>
-        🌾 Agrofrutos
+        🌾 TeRRA
       </div>
     </div>
   );

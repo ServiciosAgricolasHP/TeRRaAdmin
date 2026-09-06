@@ -4,19 +4,22 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { execSync } from 'node:child_process'
 
-// Auto-bump del patch a partir del count de commits en HEAD. Cada commit que
-// llega a main suma uno. Si la build corre fuera de un repo git (ej: CI con
-// shallow clone), caemos a "0" para que el build no falle.
+// Auto-bump del patch a partir del count de commits desde VERSION_RESET_COMMIT
+// (el HEAD al momento de reiniciar el versionado a 1.1.0). Cada commit nuevo
+// sobre esa base suma uno al patch. Si la build corre fuera de un repo git
+// (ej: CI con shallow clone) o ese commit no existe en el historial
+// disponible, caemos a "0" para que el build no falle.
+const VERSION_RESET_COMMIT = 'e3c61c818e237c7edc2c8ef13ada2adac0c8713d'
 const commitCount = (() => {
   try {
-    return execSync('git rev-list --count HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+    return execSync(`git rev-list --count ${VERSION_RESET_COMMIT}..HEAD`, { stdio: ['ignore', 'pipe', 'ignore'] })
       .toString()
       .trim() || '0'
   } catch {
     return '0'
   }
 })()
-const APP_VERSION = `v1.0.${commitCount}`
+const APP_VERSION = `v1.1.${commitCount}`
 
 export default defineConfig({
   base: '/adminAgrofrutos/',   // ← ESTO ES CLAVE
@@ -34,11 +37,11 @@ export default defineConfig({
       // autoUpdate: el service worker se actualiza solo cuando se hace deploy
       // de una version nueva. Sin prompt al usuario.
       registerType: 'autoUpdate',
-      includeAssets: ['logo.png', '404.html'],
+      includeAssets: ['logo.png', 'terra.png', 'terra.svg', '404.html'],
       manifest: {
-        name: 'Agrofrutos',
-        short_name: 'Agrofrutos',
-        description: 'Admin Agrofrutos — faenas, calendario, nomina',
+        name: 'TeRRA',
+        short_name: 'TeRRA',
+        description: 'TeRRA — faenas, calendario, nomina',
         theme_color: '#16a34a',
         background_color: '#ffffff',
         display: 'standalone',
@@ -51,9 +54,9 @@ export default defineConfig({
         scope: '/adminAgrofrutos/',
         start_url: '/adminAgrofrutos/',
         icons: [
-          { src: 'logo.png', sizes: '192x192', type: 'image/png' },
-          { src: 'logo.png', sizes: '512x512', type: 'image/png' },
-          { src: 'logo.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+          { src: 'terra.png', sizes: '192x192', type: 'image/png' },
+          { src: 'terra.png', sizes: '512x512', type: 'image/png' },
+          { src: 'terra.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
         ],
       },
       workbox: {

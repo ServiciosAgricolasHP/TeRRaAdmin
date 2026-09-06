@@ -35,7 +35,7 @@ export default function Login() {
       <div className="w-full max-w-sm rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-6 shadow-lg">
         <div className="mb-6 text-center">
           <div className="text-3xl">🌾</div>
-          <h1 className="mt-2 text-xl font-semibold">Agrofrutos</h1>
+          <h1 className="mt-2 text-xl font-semibold">TeRRA</h1>
           <p className="text-sm text-[var(--color-muted)]">Gestión de faenas</p>
         </div>
 
