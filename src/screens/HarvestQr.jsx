@@ -3,8 +3,8 @@ import { useToast } from "../contexts/ToastContext";
 import { faenasService, cyclesService, workdaysService, harvestWeightsService, qrPrefixesService } from "../services";
 import { findWorkerByRut } from "../services/workersService";
 import { comboKey, getDayCombos, workdayDocId } from "../utils/cosechaCombos";
-import Modal from "../Components/Modal";
-import Select from "../Components/Select";
+import Modal from "../components/Modal";
+import Select from "../components/Select";
 import ConfirmDialog from "../components/ConfirmDialog";
 
 // Puente entre los prefijos QR físicos (impresos de antemano, app scan_IS) y

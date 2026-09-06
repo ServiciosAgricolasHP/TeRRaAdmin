@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [develop, main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Hay deuda tecnica preexistente (errores de lint no relacionados a
+      # cambios nuevos) que todavia no bloquea merges - queda visible en el
+      # log del check pero no lo hace fallar hasta que se limpie el backlog.
+      - run: npm run lint
+        continue-on-error: true
+
+      - run: npm run build

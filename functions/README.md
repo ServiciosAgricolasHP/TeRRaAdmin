@@ -25,6 +25,8 @@ npm install
 
 ## Deploy
 
+Deploy manual, fuera del pipeline de GitHub Actions (el CI/CD del repo solo cubre el frontend — ver `.github/workflows/`). Automatizarlo requeriría guardar credenciales de Firebase como secret en GitHub, así que por ahora se deploya a mano cuando haga falta.
+
 Desde la raíz del repo:
 
 ```bash
