@@ -107,6 +107,11 @@ export default function Faenas() {
   const [cycleForm, setCycleForm] = useState(null);
   const [closeFlow, setCloseFlow] = useState(null);
   const [confirm, setConfirm] = useState(null);
+  // Segunda confirmación (cascada) dentro de doDelete — reemplaza los
+  // window.confirm nativos bloqueantes por un dialog async esperable.
+  const [cascadeConfirm, setCascadeConfirm] = useState(null);
+  const askCascadeConfirm = (message) =>
+    new Promise((resolve) => setCascadeConfirm({ message, resolve }));
   const [busy, setBusy] = useState(false);
 
   const [dragId, setDragId] = useState(null);
@@ -779,7 +784,7 @@ export default function Faenas() {
             return;
           }
 
-          const ok = window.confirm(
+          const ok = await askCascadeConfirm(
             `Bloqueado por:\n - ${blockers.join("\n - ")}\n\n¿Eliminar TODO en cascada (subfaenas + ciclos + producción)?\nRevisa la consola del navegador para ver los IDs.\nEsta acción no se puede deshacer.`,
           );
           if (!ok) { setConfirm(null); return; }
@@ -842,7 +847,7 @@ export default function Faenas() {
               return;
             }
             if (isAdmin) {
-              const ok = window.confirm(
+              const ok = await askCascadeConfirm(
                 `El ciclo "${confirm.item.label}" tiene ${wds.length} registro(s) de producción.\n\n¿Eliminar TODO en cascada (producción + ciclo)?\nEsta acción no se puede deshacer.`,
               );
               if (!ok) {
@@ -1356,6 +1361,16 @@ export default function Faenas() {
         busy={confirm?.busy}
         onCancel={() => !confirm?.busy && setConfirm(null)}
         onConfirm={doDelete}
+      />
+
+      <ConfirmDialog
+        open={!!cascadeConfirm}
+        title="Eliminar en cascada"
+        confirmLabel="Eliminar todo"
+        danger
+        message={cascadeConfirm?.message || ""}
+        onCancel={() => { cascadeConfirm?.resolve(false); setCascadeConfirm(null); }}
+        onConfirm={() => { cascadeConfirm?.resolve(true); setCascadeConfirm(null); }}
       />
     </div>
   );
@@ -2017,6 +2032,7 @@ function GroupHeader({ group, count, editable, isUngrouped, collapsed, onToggleC
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(group.name);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
 
   useEffect(() => setName(group.name), [group.name]);
 
@@ -2097,8 +2113,8 @@ function GroupHeader({ group, count, editable, isUngrouped, collapsed, onToggleC
           {!isUngrouped && (
             <button
               onClick={() => {
-                if (count > 0 && !confirm(`Quitar el grupo "${group.name}"? Las ${count} faena(s) volverán a "Sin grupo".`)) return;
-                onRemove();
+                if (count > 0) setConfirmRemoveOpen(true);
+                else onRemove();
               }}
               className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
             >
@@ -2107,6 +2123,15 @@ function GroupHeader({ group, count, editable, isUngrouped, collapsed, onToggleC
           )}
         </div>
       )}
+      <ConfirmDialog
+        open={confirmRemoveOpen}
+        title="Quitar grupo"
+        confirmLabel="Quitar"
+        danger
+        message={`Quitar el grupo "${group.name}"? Las ${count} faena(s) volverán a "Sin grupo".`}
+        onCancel={() => setConfirmRemoveOpen(false)}
+        onConfirm={() => { setConfirmRemoveOpen(false); onRemove(); }}
+      />
     </div>
   );
 }

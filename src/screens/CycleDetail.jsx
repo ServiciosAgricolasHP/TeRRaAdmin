@@ -61,6 +61,9 @@ import { useIsMobile } from "../hooks/useIsMobile";
 import WorkerPickerModal from "../components/WorkerPickerModal";
 import WorkerEditModal from "../components/WorkerEditModal";
 import TransportsModal from "../components/TransportsModal";
+import CycleWorkerList from "../components/CycleWorkerList";
+import CycleWorkerEditModal from "../components/CycleWorkerEditModal";
+import { matchesSearchQuery } from "../utils/textSearch";
 import CycleSummaryModal from "../components/CycleSummaryModal";
 import { tripsService } from "../services/transportsService";
 
@@ -203,9 +206,8 @@ function LeaderPickerModal({ open, onClose, leaders, workerName, busy, onPick })
   }, [open]);
 
   const filtered = useMemo(() => {
-    const q = filter.trim().toUpperCase();
-    if (!q) return leaders;
-    return leaders.filter((l) => l.includes(q));
+    if (!filter.trim()) return leaders;
+    return leaders.filter((l) => matchesSearchQuery(l, filter));
   }, [leaders, filter]);
 
   return (
@@ -640,6 +642,15 @@ export default function CycleDetail() {
   const [removeLabor, setRemoveLabor] = useState(null);
 
   const [photoMode, setPhotoMode] = useState(false);
+  // Mobile: por defecto se muestra la lista de trabajadores (CycleWorkerList)
+  // en vez del AG-Grid, que en pantallas chicas obliga a scrollear por
+  // decenas de columnas-día. Este toggle deja ver el grid completo igual,
+  // como escape hatch — no se le sacó ninguna capacidad a nadie.
+  const [showDesktopGrid, setShowDesktopGrid] = useState(false);
+  // Modal mobile: edita un trabajador a la vez (una fila por día). Se
+  // resetea si cambia la labor activa para no dejarlo abierto apuntando a
+  // un rut que puede ni existir en la nueva labor.
+  const [editingCycleWorkerRut, setEditingCycleWorkerRut] = useState(null);
   const [copyToast, setCopyToast] = useState("");
   const [closeFlow, setCloseFlow] = useState(false);
   const [closeBusy, setCloseBusy] = useState(false);
@@ -650,6 +661,8 @@ export default function CycleDetail() {
 
   const [addComboFor, setAddComboFor] = useState(null);
   const [removeCombo, setRemoveCombo] = useState(null);
+  const [confirmRemoveDay, setConfirmRemoveDay] = useState(null); // fecha (string) o null
+  const [confirmReopen, setConfirmReopen] = useState(false);
   const [catalogsOpen, setCatalogsOpen] = useState(false);
   // tratoHE-specific modals
   const [bonusEdit, setBonusEdit] = useState(null);   // { laborId, date, workerRut }
@@ -895,6 +908,10 @@ export default function CycleDetail() {
     () => cycle?.labors?.find((l) => l.id === activeLaborId) || cycle?.labors?.[0] || null,
     [cycle, activeLaborId],
   );
+
+  useEffect(() => {
+    setEditingCycleWorkerRut(null);
+  }, [activeLabor?.id]);
 
   const isCosechaLabor = activeLabor?.type === "cosecha";
   const isTratoLabor = activeLabor?.type === "trato";
@@ -1621,20 +1638,35 @@ export default function CycleDetail() {
     await cyclesService.update(id, { dayPrices: next });
   };
 
-  // Para labores tipo main/supervision/extra: llena rápido el monto del día
-  // del trabajador con el precio sugerido (un click sobre la celda vacía).
-  // El doble click siguiente sigue funcionando para editar a otro valor.
-  const upsertNormalWorkdayAmount = async (laborId, date, workerRut, amount) => {
-    if (!amount) return;
+  // Confirma el monto del día para un trabajador (labores main/supervision/
+  // extra). Único punto de escritura para este tipo — lo usa tanto el grid
+  // (onCellValueChanged) como el botón de "usar precio sugerido". amount=0
+  // borra el workday existente en vez de dejar (o ignorar) un doc en 0, para
+  // que ambos caminos de edición se comporten igual.
+  const commitNormalAmount = async (date, workerRut, rawAmount) => {
+    const laborId = activeLabor.id;
+    const amount = parseAmount(rawAmount) || 0;
     const docId = workdayDocId(id, laborId, workerRut, date, SINGLE_COMBO);
     const mapKey = workdayMapKey(workerRut, date, SINGLE_COMBO);
-    const workerId = workerIdFor(laborId, workerRut);
-    await workdaysService.upsert(docId, { cycleId: id, laborId, workerRut, date, amount, workerId });
-    setWorkdaysByLabor((prev) => {
-      const lab = { ...(prev[laborId] || {}) };
-      lab[mapKey] = { ...lab[mapKey], cycleId: id, laborId, workerRut, date, amount, workerId };
-      return { ...prev, [laborId]: lab };
-    });
+    if (amount === 0) {
+      if (wdMap[mapKey]) {
+        await workdaysService.remove(docId);
+        setWorkdaysByLabor((prev) => {
+          const lab = { ...(prev[laborId] || {}) };
+          delete lab[mapKey];
+          return { ...prev, [laborId]: lab };
+        });
+      }
+    } else {
+      const workerId = workerIdFor(laborId, workerRut);
+      await workdaysService.upsert(docId, { cycleId: id, laborId, workerRut, date, amount, workerId });
+      setWorkdaysByLabor((prev) => {
+        const lab = { ...(prev[laborId] || {}) };
+        lab[mapKey] = { ...lab[mapKey], cycleId: id, laborId, workerRut, date, amount, workerId };
+        return { ...prev, [laborId]: lab };
+      });
+    }
+    return { amount };
   };
 
   const computeTratoHEAmount = (labor, dayCfg, wd) =>
@@ -1682,6 +1714,126 @@ export default function CycleDetail() {
       return { ...prev, [laborId]: lab };
     });
     return { amount };
+  };
+
+  // Confirma la cantidad de un combo (calidad×envase) para un trabajador en
+  // un día de cosecha. qty=0 borra el workday. Único punto de escritura —
+  // lo usa el grid (onCellValueChanged) y, más adelante, el modal de edición
+  // por trabajador.
+  const commitCosechaCombo = async (date, comboKey, workerRut, rawQty) => {
+    const laborId = activeLabor.id;
+    const { x, y } = parseComboKey(comboKey);
+    const docId = workdayDocId(id, laborId, workerRut, date, comboKey);
+    const mapKey = workdayMapKey(workerRut, date, comboKey);
+    const qty = parseAmount(rawQty) || 0;
+    const combo = getCombo(laborId, date, comboKey);
+    const amount = combo.mode === "flat" ? combo.price : qty * combo.price;
+
+    if (qty === 0) {
+      if (wdMap[mapKey]) {
+        await workdaysService.remove(docId);
+        setWorkdaysByLabor((prev) => {
+          const lab = { ...(prev[laborId] || {}) };
+          delete lab[mapKey];
+          return { ...prev, [laborId]: lab };
+        });
+      }
+    } else {
+      const workerId = workerIdFor(laborId, workerRut);
+      await workdaysService.upsert(docId, {
+        cycleId: id, laborId, workerRut, date,
+        qualityX: x, containerY: y, qty, amount, workerId,
+      });
+      setWorkdaysByLabor((prev) => {
+        const lab = { ...(prev[laborId] || {}) };
+        lab[mapKey] = { ...lab[mapKey], cycleId: id, laborId, workerRut, date, qualityX: x, containerY: y, qty, amount, workerId };
+        return { ...prev, [laborId]: lab };
+      });
+    }
+    return { qty, amount };
+  };
+
+  // Confirma la cantidad de un tier de precio para un trabajador en un día
+  // de trato. qty=0 borra el workday. Único punto de escritura.
+  const commitTratoTier = async (date, tierKey, workerRut, rawQty) => {
+    const laborId = activeLabor.id;
+    const docId = workdayDocId(id, laborId, workerRut, date, tierKey);
+    const mapKey = workdayMapKey(workerRut, date, tierKey);
+    const qty = parseAmount(rawQty) || 0;
+
+    const tiers = dayTiersByDate[date] || [];
+    const tier = tiers.find((t) => t.key === tierKey);
+    const amount = tier && tier.mode === "flat" ? (qty > 0 ? tier.price : 0) : qty * (tier?.price || 0);
+
+    if (qty === 0) {
+      if (wdMap[mapKey]) {
+        await workdaysService.remove(docId);
+        setWorkdaysByLabor((prev) => {
+          const lab = { ...(prev[laborId] || {}) };
+          delete lab[mapKey];
+          return { ...prev, [laborId]: lab };
+        });
+      }
+    } else {
+      // `tiers` (single-key "0") es el campo legacy que `normalizeTratoWorkday`
+      // agrega al cargar. `getTratoTierTotals` prioriza ese campo, así que hay
+      // que sincronizarlo con `qty/amount` o el labor total queda contando el
+      // valor viejo hasta que se recargue la página.
+      const tiersField = { "0": { qty, amount } };
+      const workerId = workerIdFor(laborId, workerRut);
+      await workdaysService.upsert(docId, {
+        cycleId: id, laborId, workerRut, date, qty, amount,
+        tiers: tiersField, totalAmount: amount, workerId,
+      });
+      setWorkdaysByLabor((prev) => {
+        const lab = { ...(prev[laborId] || {}) };
+        lab[mapKey] = {
+          ...lab[mapKey],
+          cycleId: id, laborId, workerRut, date, qty, amount,
+          tiers: tiersField, totalAmount: amount, workerId,
+        };
+        return { ...prev, [laborId]: lab };
+      });
+    }
+    return { qty, amount };
+  };
+
+  // Confirma la cantidad de una etapa para un trabajador en un día de
+  // tratoEtapas. qty=0 borra el workday. Único punto de escritura.
+  const commitEtapaQty = async (date, stageId, workerRut, rawQty) => {
+    const laborId = activeLabor.id;
+    const docId = workdayDocId(id, laborId, workerRut, date, stageId);
+    const mapKey = workdayMapKey(workerRut, date, stageId);
+    const qty = parseAmount(rawQty) || 0;
+    const { price, mode } = getStageDayPrice(dayPrices, laborId, date, stageId);
+    const amount = computeStageDayAmount(mode, price, qty);
+
+    if (qty === 0) {
+      if (wdMap[mapKey]) {
+        await workdaysService.remove(docId);
+        setWorkdaysByLabor((prev) => {
+          const lab = { ...(prev[laborId] || {}) };
+          delete lab[mapKey];
+          return { ...prev, [laborId]: lab };
+        });
+      }
+    } else {
+      // `stageId` explícito en el doc: lo consumen el conteo (getEtapasTotals),
+      // los resúmenes y la nómina sin tener que re-parsear el docId.
+      const workerId = workerIdFor(laborId, workerRut);
+      await workdaysService.upsert(docId, {
+        cycleId: id, laborId, workerRut, date, qty, amount, stageId, workerId,
+      });
+      setWorkdaysByLabor((prev) => {
+        const lab = { ...(prev[laborId] || {}) };
+        lab[mapKey] = {
+          ...lab[mapKey],
+          cycleId: id, laborId, workerRut, date, qty, amount, stageId, workerId,
+        };
+        return { ...prev, [laborId]: lab };
+      });
+    }
+    return { qty, amount };
   };
 
   const recalcDayTratoHE = async (laborId, date) => {
@@ -1994,39 +2146,10 @@ export default function CycleDetail() {
     if (isCosechaLabor) {
       const [date, ...rest] = field.split("__");
       const ck = rest.join("_");
-      const { x, y } = parseComboKey(ck);
       const workerRut = params.data.rut;
-      const docId = workdayDocId(id, activeLabor.id, workerRut, date, ck);
-      const mapKey = workdayMapKey(workerRut, date, ck);
-      const qty = parseAmount(params.newValue) || 0;
-      const combo = getCombo(activeLabor.id, date, ck);
-      const amount = combo.mode === "flat" ? combo.price : qty * combo.price;
-
-      if (qty === 0) {
-        if (wdMap[mapKey]) {
-          await workdaysService.remove(docId);
-          setWorkdaysByLabor((prev) => {
-            const lab = { ...(prev[activeLabor.id] || {}) };
-            delete lab[mapKey];
-            return { ...prev, [activeLabor.id]: lab };
-          });
-        }
-        params.node.setDataValue(field, 0);
-        params.node.setDataValue(`${field}__amt`, 0);
-      } else {
-        const workerId = workerIdFor(activeLabor.id, workerRut);
-        await workdaysService.upsert(docId, {
-          cycleId: id, laborId: activeLabor.id, workerRut, date,
-          qualityX: x, containerY: y, qty, amount, workerId,
-        });
-        setWorkdaysByLabor((prev) => {
-          const lab = { ...(prev[activeLabor.id] || {}) };
-          lab[mapKey] = { ...lab[mapKey], cycleId: id, laborId: activeLabor.id, workerRut, date, qualityX: x, containerY: y, qty, amount, workerId };
-          return { ...prev, [activeLabor.id]: lab };
-        });
-        params.node.setDataValue(field, qty);
-        params.node.setDataValue(`${field}__amt`, amount);
-      }
+      const { qty, amount } = await commitCosechaCombo(date, ck, workerRut, params.newValue);
+      params.node.setDataValue(field, qty);
+      params.node.setDataValue(`${field}__amt`, amount);
 
       let newTotal = 0;
       for (const d of days) {
@@ -2064,49 +2187,9 @@ export default function CycleDetail() {
       const [date, ...rest] = field.split("__");
       const tierKey = rest.join("_"); // e.g., "t0", "t1"
       const workerRut = params.data.rut;
-      const docId = workdayDocId(id, activeLabor.id, workerRut, date, tierKey);
-      const mapKey = workdayMapKey(workerRut, date, tierKey);
-      const qty = parseAmount(params.newValue) || 0;
-
-      // Find the tier config to calculate amount
-      const tiers = dayTiersByDate[date] || [];
-      const tier = tiers.find((t) => t.key === tierKey);
-      const amount = tier && tier.mode === "flat" ? (qty > 0 ? tier.price : 0) : qty * (tier?.price || 0);
-
-      if (qty === 0) {
-        if (wdMap[mapKey]) {
-          await workdaysService.remove(docId);
-          setWorkdaysByLabor((prev) => {
-            const lab = { ...(prev[activeLabor.id] || {}) };
-            delete lab[mapKey];
-            return { ...prev, [activeLabor.id]: lab };
-          });
-        }
-        params.node.setDataValue(field, 0);
-        params.node.setDataValue(`${field}__amt`, 0);
-      } else {
-        // `tiers` (single-key "0") es el campo legacy que `normalizeTratoWorkday`
-        // agrega al cargar. `getTratoTierTotals` prioriza ese campo, así que
-        // hay que sincronizarlo con `qty/amount` o el labor total queda
-        // contando el valor viejo hasta que se recargue la página.
-        const tiersField = { "0": { qty, amount } };
-        const workerId = workerIdFor(activeLabor.id, workerRut);
-        await workdaysService.upsert(docId, {
-          cycleId: id, laborId: activeLabor.id, workerRut, date, qty, amount,
-          tiers: tiersField, totalAmount: amount, workerId,
-        });
-        setWorkdaysByLabor((prev) => {
-          const lab = { ...(prev[activeLabor.id] || {}) };
-          lab[mapKey] = {
-            ...lab[mapKey],
-            cycleId: id, laborId: activeLabor.id, workerRut, date, qty, amount,
-            tiers: tiersField, totalAmount: amount, workerId,
-          };
-          return { ...prev, [activeLabor.id]: lab };
-        });
-        params.node.setDataValue(field, qty);
-        params.node.setDataValue(`${field}__amt`, amount);
-      }
+      const { qty, amount } = await commitTratoTier(date, tierKey, workerRut, params.newValue);
+      params.node.setDataValue(field, qty);
+      params.node.setDataValue(`${field}__amt`, amount);
 
       // Recalc total from grid row data
       let rowTotal = 0;
@@ -2126,42 +2209,9 @@ export default function CycleDetail() {
       const [date, ...rest] = field.split("__");
       const stageId = rest.join("_");
       const workerRut = params.data.rut;
-      const docId = workdayDocId(id, activeLabor.id, workerRut, date, stageId);
-      const mapKey = workdayMapKey(workerRut, date, stageId);
-      const qty = parseAmount(params.newValue) || 0;
-      // Precio del día para esa etapa → amount = qty × precio (o fijo si flat).
-      const { price, mode } = getStageDayPrice(dayPrices, activeLabor.id, date, stageId);
-      const amount = computeStageDayAmount(mode, price, qty);
-
-      if (qty === 0) {
-        if (wdMap[mapKey]) {
-          await workdaysService.remove(docId);
-          setWorkdaysByLabor((prev) => {
-            const lab = { ...(prev[activeLabor.id] || {}) };
-            delete lab[mapKey];
-            return { ...prev, [activeLabor.id]: lab };
-          });
-        }
-        params.node.setDataValue(field, 0);
-        params.node.setDataValue(`${field}__amt`, 0);
-      } else {
-        // `stageId` explícito en el doc: lo consumen el conteo (getEtapasTotals),
-        // los resúmenes y la nómina sin tener que re-parsear el docId.
-        const workerId = workerIdFor(activeLabor.id, workerRut);
-        await workdaysService.upsert(docId, {
-          cycleId: id, laborId: activeLabor.id, workerRut, date, qty, amount, stageId, workerId,
-        });
-        setWorkdaysByLabor((prev) => {
-          const lab = { ...(prev[activeLabor.id] || {}) };
-          lab[mapKey] = {
-            ...lab[mapKey],
-            cycleId: id, laborId: activeLabor.id, workerRut, date, qty, amount, stageId, workerId,
-          };
-          return { ...prev, [activeLabor.id]: lab };
-        });
-        params.node.setDataValue(field, qty);
-        params.node.setDataValue(`${field}__amt`, amount);
-      }
+      const { qty, amount } = await commitEtapaQty(date, stageId, workerRut, params.newValue);
+      params.node.setDataValue(field, qty);
+      params.node.setDataValue(`${field}__amt`, amount);
 
       let rowTotal = 0;
       for (const d of days) {
@@ -2178,28 +2228,7 @@ export default function CycleDetail() {
     // Normal labor
     const date = field;
     const workerRut = params.data.rut;
-    const docId = workdayDocId(id, activeLabor.id, workerRut, date, SINGLE_COMBO);
-    const mapKey = workdayMapKey(workerRut, date, SINGLE_COMBO);
-    const amount = parseAmount(params.newValue);
-
-    if (amount === 0) {
-      if (wdMap[mapKey]) {
-        await workdaysService.remove(docId);
-        setWorkdaysByLabor((prev) => {
-          const lab = { ...(prev[activeLabor.id] || {}) };
-          delete lab[mapKey];
-          return { ...prev, [activeLabor.id]: lab };
-        });
-      }
-    } else {
-      const workerId = workerIdFor(activeLabor.id, workerRut);
-      await workdaysService.upsert(docId, { cycleId: id, laborId: activeLabor.id, workerRut, date, amount, workerId });
-      setWorkdaysByLabor((prev) => {
-        const lab = { ...(prev[activeLabor.id] || {}) };
-        lab[mapKey] = { ...lab[mapKey], cycleId: id, laborId: activeLabor.id, workerRut, date, amount, workerId };
-        return { ...prev, [activeLabor.id]: lab };
-      });
-    }
+    const { amount } = await commitNormalAmount(date, workerRut, params.newValue);
     params.node.setDataValue(date, amount);
     const total = days.reduce((acc, d) => acc + (d === date ? amount : Number(params.data[d]) || 0), 0);
     params.node.setDataValue("total", total);
@@ -2241,7 +2270,9 @@ export default function CycleDetail() {
       toast.warning(`No se puede quitar ${date}: hay producción registrada en alguna labor para ese día.`);
       return;
     }
-    if (!confirm(`¿Quitar la columna ${date}?`)) return;
+    setConfirmRemoveDay(date);
+  };
+  const doRemoveDay = async (date) => {
     await persistDays(days.filter((d) => d !== date));
   };
 
@@ -2312,46 +2343,62 @@ export default function CycleDetail() {
     if (w) setRemoveWorker(w);
   };
 
+  // Lógica pura de "quitar trabajador", separada del state del ConfirmDialog
+  // de escritorio para que el modal mobile (que hace su propia confirmación
+  // inline, sin ConfirmDialog, por la regla de no anidar Modals) pueda llamar
+  // exactamente el mismo camino. Retorna true si efectivamente lo quitó.
+  const removeWorkerNow = async (worker) => {
+    if (!worker || !activeLabor) return false;
+    // Temp workers: borrar también todas sus workdays en este ciclo. Son
+    // datos descartables y no deben quedar huérfanos en Firestore.
+    if (worker.isTemp) {
+      const all = await workdaysService.list({
+        wheres: [["cycleId", "==", id], ["workerRut", "==", worker.rut]],
+      });
+      for (const wd of all) await workdaysService.remove(wd.id);
+      setWorkdaysByLabor((prev) => {
+        const next = {};
+        for (const [lid, m] of Object.entries(prev)) {
+          const filtered = {};
+          for (const [k, v] of Object.entries(m)) {
+            if (v?.workerRut !== worker.rut) filtered[k] = v;
+          }
+          next[lid] = filtered;
+        }
+        return next;
+      });
+      await persistLabor({ ...activeLabor, workers: workers.filter((w) => w.rut !== worker.rut) });
+      return true;
+    }
+    const existing = await workdaysService.list({
+      wheres: [["cycleId", "==", id], ["laborId", "==", activeLabor.id], ["workerRut", "==", worker.rut]],
+      take: 1,
+    });
+    if (existing.length) {
+      toast.warning("No se puede quitar: el trabajador tiene producción registrada en esta labor.");
+      return false;
+    }
+    await persistLabor({ ...activeLabor, workers: workers.filter((w) => w.rut !== worker.rut) });
+    return true;
+  };
+
   const confirmRemoveWorker = async () => {
     if (!removeWorker) return;
     setRemoveBusy(true);
     try {
-      // Temp workers: borrar también todas sus workdays en este ciclo. Son
-      // datos descartables y no deben quedar huérfanos en Firestore.
-      if (removeWorker.isTemp) {
-        const all = await workdaysService.list({
-          wheres: [["cycleId", "==", id], ["workerRut", "==", removeWorker.rut]],
-        });
-        for (const wd of all) await workdaysService.remove(wd.id);
-        setWorkdaysByLabor((prev) => {
-          const next = {};
-          for (const [lid, m] of Object.entries(prev)) {
-            const filtered = {};
-            for (const [k, v] of Object.entries(m)) {
-              if (v?.workerRut !== removeWorker.rut) filtered[k] = v;
-            }
-            next[lid] = filtered;
-          }
-          return next;
-        });
-        await persistLabor({ ...activeLabor, workers: workers.filter((w) => w.rut !== removeWorker.rut) });
-        setRemoveWorker(null);
-        return;
-      }
-      const existing = await workdaysService.list({
-        wheres: [["cycleId", "==", id], ["laborId", "==", activeLabor.id], ["workerRut", "==", removeWorker.rut]],
-        take: 1,
-      });
-      if (existing.length) {
-        toast.warning("No se puede quitar: el trabajador tiene producción registrada en esta labor.");
-        setRemoveWorker(null);
-        return;
-      }
-      await persistLabor({ ...activeLabor, workers: workers.filter((w) => w.rut !== removeWorker.rut) });
-      setRemoveWorker(null);
+      await removeWorkerNow(removeWorker);
     } finally {
       setRemoveBusy(false);
+      setRemoveWorker(null);
     }
+  };
+
+  // Wrapper por rut para el modal mobile, que solo conoce el rut (viene de
+  // rowDataRaw) y no la entrada cruda de activeLabor.workers.
+  const removeWorkerByRut = async (rut) => {
+    const w = workers.find((x) => x.rut === rut);
+    if (!w) return false;
+    return await removeWorkerNow(w);
   };
 
   // Convert a temporary worker (TEMP-...) into a real one. Replaces the entry
@@ -2591,8 +2638,8 @@ export default function CycleDetail() {
     }
   };
 
-  const handleReopenCycle = async () => {
-    if (!confirm("¿Reabrir el ciclo?")) return;
+  const handleReopenCycle = () => setConfirmReopen(true);
+  const doReopenCycle = async () => {
     await cyclesService.update(id, { status: "open", endDate: null });
     setCycle((c) => ({ ...c, status: "open", endDate: null }));
     showToast("Ciclo reabierto");
@@ -3227,7 +3274,7 @@ export default function CycleDetail() {
             <button
               onClick={async (e) => {
                 e.stopPropagation();
-                await upsertNormalWorkdayAmount(activeLabor.id, d, p.data.rut, suggested);
+                await commitNormalAmount(d, p.data.rut, suggested);
               }}
               className="flex h-full w-full items-center justify-end gap-1 text-[10px] italic hover:not-italic"
               style={{ color: "#9ca3af" }}
@@ -4381,6 +4428,18 @@ export default function CycleDetail() {
           </>
           )}
 
+          {!photoMode && isMobile && workers.length > 0 && (
+            <div className="mb-2">
+              <button
+                type="button"
+                onClick={() => setShowDesktopGrid((v) => !v)}
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-xs hover:bg-[var(--color-accent-soft)]"
+              >
+                {showDesktopGrid ? "📋 Ver por trabajador" : "🗂 Ver grid completo"}
+              </button>
+            </div>
+          )}
+
           {!photoMode && workers.length > 0 && (
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <div className="inline-flex overflow-hidden rounded-md border border-[var(--color-border)] text-xs">
@@ -4424,9 +4483,20 @@ export default function CycleDetail() {
           {/* La grilla ocupa exactamente el alto libre del <main> (flex-1) y
               scrollea internamente cuando hay más filas de las que caben. Sin
               alto fijo ni piso: así nunca se fuerza más alta que el viewport,
-              que era lo que dejaba el área vacía ("footer") abajo. */}
+              que era lo que dejaba el área vacía ("footer") abajo.
+              En mobile, por defecto se muestra CycleWorkerList en su lugar
+              (ver toggle "Ver grid completo" arriba). */}
           <div className="flex min-h-0 flex-1 flex-col">
-            {grid}
+            {isMobile && !showDesktopGrid && !photoMode ? (
+              <CycleWorkerList
+                rows={rowDataRaw}
+                days={days}
+                fmtCurrency={fmtCurrency}
+                onSelectWorker={setEditingCycleWorkerRut}
+              />
+            ) : (
+              grid
+            )}
           </div>
         </>
       )}
@@ -4797,6 +4867,29 @@ export default function CycleDetail() {
       />
 
       <ConfirmDialog
+        open={!!confirmRemoveDay}
+        title="Quitar día"
+        message={confirmRemoveDay ? `¿Quitar la columna ${confirmRemoveDay}?` : ""}
+        confirmLabel="Quitar"
+        danger
+        onCancel={() => setConfirmRemoveDay(null)}
+        onConfirm={() => {
+          const d = confirmRemoveDay;
+          setConfirmRemoveDay(null);
+          doRemoveDay(d);
+        }}
+      />
+
+      <ConfirmDialog
+        open={confirmReopen}
+        title="Reabrir ciclo"
+        message="¿Reabrir el ciclo?"
+        confirmLabel="Reabrir"
+        onCancel={() => setConfirmReopen(false)}
+        onConfirm={() => { setConfirmReopen(false); doReopenCycle(); }}
+      />
+
+      <ConfirmDialog
         open={!!removeCombo}
         title="Quitar tipo de cosecha"
         message={removeCombo ? `¿Quitar "${removeCombo.label}" del día ${removeCombo.date}?` : ""}
@@ -4845,6 +4938,44 @@ export default function CycleDetail() {
           await upsertTratoHEWorkday(bonusEdit.laborId, bonusEdit.date, bonusEdit.workerRut, patch);
           setBonusEdit(null);
         }}
+      />
+
+      <CycleWorkerEditModal
+        workerRut={editingCycleWorkerRut}
+        onClose={() => setEditingCycleWorkerRut(null)}
+        activeLabor={activeLabor}
+        row={editingCycleWorkerRut ? rowDataRaw.find((r) => r.rut === editingCycleWorkerRut) : null}
+        days={days}
+        dayPrices={dayPrices}
+        dayCombosByDate={dayCombosByDate}
+        dayTiersByDate={dayTiersByDate}
+        dayStagesByDate={dayStagesByDate}
+        daysWithPiso={daysWithPiso}
+        catalogs={catalogs}
+        readOnly={readOnly}
+        fmtCurrency={fmtCurrency}
+        commitCosechaCombo={commitCosechaCombo}
+        commitTratoTier={commitTratoTier}
+        commitEtapaQty={commitEtapaQty}
+        commitNormalAmount={commitNormalAmount}
+        upsertTratoHEWorkday={upsertTratoHEWorkday}
+        toggleAttendance={toggleAttendance}
+        togglePiso={togglePiso}
+        persistComboConfig={persistComboConfig}
+        addComboToDay={addComboToDay}
+        removeComboFromDay={removeComboFromDay}
+        persistStagePrice={persistStagePrice}
+        persistDayPiso={persistDayPiso}
+        persistNormalDayPrice={persistNormalDayPrice}
+        persistTratoHEDay={persistTratoHEDay}
+        toggleMonthly={toggleMonthly}
+        onRemoveWorker={removeWorkerByRut}
+        useGrouped={useGrouped}
+        currentLeader={editingCycleWorkerRut ? rutToLeader.get(editingCycleWorkerRut) || null : null}
+        enabledLeaders={enabledLeaders}
+        leaderBusy={groupBusy}
+        assignLeaderToWorker={assignLeaderToWorker}
+        LEADER_LOCAL={LEADER_LOCAL}
       />
 
       <DayModeModal

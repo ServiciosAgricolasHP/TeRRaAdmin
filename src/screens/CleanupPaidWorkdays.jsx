@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
 import { doc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import { workdaysService, cyclesService, workersService } from "../services";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 const fmtCurrency = (v) =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
@@ -31,6 +32,7 @@ export default function CleanupPaidWorkdays() {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [confirmRelease, setConfirmRelease] = useState(false);
 
   const load = async () => {
     if (!cycleId.trim()) return;
@@ -113,9 +115,13 @@ export default function CleanupPaidWorkdays() {
     }
   };
 
-  const releaseSelected = async () => {
+  const releaseSelected = () => {
     if (selected.size === 0) return;
-    if (!confirm(`Liberar (poner payrollId/paidAt en null) ${selected.size} workday(s)? No se puede deshacer fácilmente.`)) return;
+    setConfirmRelease(true);
+  };
+
+  const doReleaseSelected = async () => {
+    setConfirmRelease(false);
     setBusy(true);
     setMessage("");
     try {
@@ -226,7 +232,7 @@ export default function CleanupPaidWorkdays() {
             {rows.length === 0 ? "Sin workdays pagados en este ciclo." : "Sin coincidencias con el filtro."}
           </div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[860px] text-sm">
             <thead className="sticky top-0 bg-[var(--color-surface-2)] text-left text-xs">
               <tr>
                 <th className="px-2 py-1.5">
@@ -277,6 +283,16 @@ export default function CleanupPaidWorkdays() {
           </table>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmRelease}
+        title="Liberar workdays"
+        message={`Liberar (poner payrollId/paidAt en null) ${selected.size} workday(s)? No se puede deshacer fácilmente.`}
+        confirmLabel="Liberar"
+        danger
+        onConfirm={doReleaseSelected}
+        onCancel={() => setConfirmRelease(false)}
+      />
     </div>
   );
 }

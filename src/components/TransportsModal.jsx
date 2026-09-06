@@ -130,9 +130,9 @@ export default function TransportsModal({ open, onClose, cycle, faena, subfaena,
           </span>
         </div>
 
-        <div className="grid grid-cols-12 gap-3" style={{ minHeight: 360 }}>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-12" style={{ minHeight: 360 }}>
           {/* Day list */}
-          <div className="col-span-4 max-h-[60vh] overflow-auto rounded-md border border-[var(--color-border)]">
+          <div className="max-h-[40vh] overflow-auto rounded-md border border-[var(--color-border)] sm:col-span-4 sm:max-h-[60vh]">
             {days.map((d) => {
               const isActive = d === selectedDate;
               const dt = totalsByDate[d] || 0;
@@ -158,7 +158,7 @@ export default function TransportsModal({ open, onClose, cycle, faena, subfaena,
           </div>
 
           {/* Day detail */}
-          <div className="col-span-8">
+          <div className="sm:col-span-8">
             {selectedDate ? (
               <>
                 <div className="mb-2 flex items-center justify-between">
@@ -180,8 +180,8 @@ export default function TransportsModal({ open, onClose, cycle, faena, subfaena,
                     Sin vueltas este día
                   </div>
                 ) : (
-                  <div className="overflow-auto rounded-md border border-[var(--color-border)]">
-                    <table className="w-full text-xs">
+                  <div className="overflow-x-auto rounded-md border border-[var(--color-border)]" style={{ WebkitOverflowScrolling: "touch" }}>
+                    <table className="w-full min-w-[640px] text-xs">
                       <thead className="bg-[var(--color-surface-2)] text-left text-[var(--color-muted)]">
                         <tr>
                           <th className="px-2 py-1.5">Transp.</th>

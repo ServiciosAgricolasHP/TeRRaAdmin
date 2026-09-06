@@ -34,7 +34,12 @@
       "Bash(npx eslint *)",
       "Bash(git check-ignore *)",
       "Bash(rm -f .git/index.lock && git status 2>&1 | tail -10)",
-      "Bash(npx gh-pages-clean *)"
+      "Bash(npx gh-pages-clean *)",
+      "Bash(touch dist/.nojekyll)",
+      "Bash(npx gh-pages *)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(powershell -c \"\\(Get-Content -Raw 'src/services/workersService.js'\\) -match \\\\\"\\\\`r\\\\`n\\\\\"\")",
+      "Bash(python3 -c ' *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\bruno\\OneDrive\\Documentos\\git",

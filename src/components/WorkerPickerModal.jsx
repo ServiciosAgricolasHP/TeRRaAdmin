@@ -14,17 +14,12 @@ import {
   DEFAULT_BANK_CODE,
   rutWithoutDv,
 } from "../utils/banks";
+import { matchesSearchQuery } from "../utils/textSearch";
 
 const MIN_SEARCH = 3;
 const WORKERS_TTL_MS = 2 * 60 * 60 * 1000;
 const LEADER_LOCAL = "CHILENOS";
 const LEADER_FOREIGN = "EXTRANJEROS";
-
-// Strip accents + lowercase for accent-insensitive substring matching.
-const norm = (s) => String(s || "")
-  .toLowerCase()
-  .normalize("NFD")
-  .replace(/\p{Diacritic}/gu, "");
 
 function defaultLeaderForRut(rut) {
   return isForeignRut(rut) ? LEADER_FOREIGN : LEADER_LOCAL;
@@ -98,10 +93,10 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
   const queryRaw = search.trim();
   const queryReady = queryRaw.replace(/[.\s-]/g, "").length >= MIN_SEARCH;
 
-  // Client-side substring search over the cached list. Accent-insensitive,
-  // case-insensitive. Matches against name OR rut so the user can type either
-  // "Perez" (matches any worker whose name contains "Perez", including those
-  // with it as a last name) or partial RUT digits.
+  // Búsqueda "like" sobre la lista cacheada: cada palabra tipeada tiene que
+  // aparecer en el nombre en cualquier orden (accent-insensitive), así
+  // "bruno silva" encuentra a "Bruno Ignacio Silva". También matchea contra
+  // RUT (dígitos parciales).
   //
   // Los trabajadores en `excluded` (ya en la labor/ciclo) **sí** aparecen en
   // los resultados, marcados como excluidos. Así el usuario que escribe el
@@ -109,12 +104,11 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
   // el tag "Ya en la labor".
   const filtered = useMemo(() => {
     if (!queryReady) return [];
-    const q = norm(queryRaw);
     const isDigits = /^[\d.\s-]+$/.test(queryRaw);
     const qDigits = queryRaw.replace(/[.\s-]/g, "").toLowerCase();
     const out = [];
     for (const w of allWorkers) {
-      const nameMatch = norm(w.name).includes(q);
+      const nameMatch = matchesSearchQuery(w.name, queryRaw);
       const rutMatch = isDigits && (String(w.id).toLowerCase().includes(qDigits) || String(w.rut || "").toLowerCase().includes(qDigits));
       if (nameMatch || rutMatch) out.push(w);
       if (out.length >= 50) break;

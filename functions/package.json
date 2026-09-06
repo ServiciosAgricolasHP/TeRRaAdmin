@@ -1,0 +1,18 @@
+{
+  "name": "functions",
+  "description": "Cloud Functions for adminAgrofrutos",
+  "type": "module",
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "scripts": {
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.0.0"
+  },
+  "private": true
+}

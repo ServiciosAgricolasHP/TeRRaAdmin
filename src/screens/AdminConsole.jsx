@@ -4,6 +4,8 @@ import { db } from "../firebase";
 import { faenasService, cyclesService, workersService } from "../services";
 import { toProperName } from "../utils/nameUtils";
 import { useAuth } from "../contexts/AuthContext";
+import { useToast } from "../contexts/ToastContext";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 // Módulo de consola admin. Sirve para inspeccionar la escala de los datos
 // antes de tomar decisiones de costo (snapshots, paginación, etc.). Todas
@@ -680,6 +682,7 @@ function WorkdaysByCycleSection() {
 // El costo es 1 read por worker (list completo — no cacheado) + 1 write por
 // nombre cambiado. Los que ya están bien no se tocan.
 function NormalizeWorkerNamesSection() {
+  const toast = useToast();
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [scanned, setScanned] = useState(0);
@@ -687,6 +690,7 @@ function NormalizeWorkerNamesSection() {
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [result, setResult] = useState(null); // { updated, errors }
   const [showAll, setShowAll] = useState(false);
+  const [confirmApply, setConfirmApply] = useState(false);
 
   const preview = async () => {
     setLoading(true);
@@ -709,19 +713,18 @@ function NormalizeWorkerNamesSection() {
       changes.sort((a, b) => a.newName.localeCompare(b.newName));
       setDiffs(changes);
     } catch (err) {
-      alert("Error al leer trabajadores: " + (err.message || String(err)));
+      toast.error("Error al leer trabajadores: " + (err.message || String(err)));
     } finally {
       setLoading(false);
     }
   };
 
-  const apply = async () => {
+  const apply = () => {
     if (diffs.length === 0) return;
-    if (!confirm(
-      `¿Aplicar ${diffs.length} cambio(s) de nombre?\n\n` +
-      `Esta operación no se puede deshacer automáticamente. ` +
-      `Revisá el preview antes de continuar.`,
-    )) return;
+    setConfirmApply(true);
+  };
+
+  const doApply = async () => {
     setRunning(true);
     setProgress({ done: 0, total: diffs.length });
     let updated = 0;
@@ -845,6 +848,16 @@ function NormalizeWorkerNamesSection() {
           )}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmApply}
+        title="Aplicar cambios de nombre"
+        message={`¿Aplicar ${diffs.length} cambio(s) de nombre?\n\nEsta operación no se puede deshacer automáticamente. Revisá el preview antes de continuar.`}
+        confirmLabel="Aplicar"
+        danger
+        onCancel={() => setConfirmApply(false)}
+        onConfirm={() => { setConfirmApply(false); doApply(); }}
+      />
     </section>
   );
 }
@@ -858,12 +871,14 @@ function NormalizeWorkerNamesSection() {
 // tocar nada más del log. Aditivo y re-ejecutable: solo toca logs con
 // `meta == null`, así que correrlo dos veces no hace nada la segunda vez.
 function BackfillWorkdayLogMetaSection() {
+  const toast = useToast();
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [candidates, setCandidates] = useState(null); // [{ id, entityId, workerRut, cycleId }]
   const [skipped, setSkipped] = useState(0);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [result, setResult] = useState(null);
+  const [confirmApply, setConfirmApply] = useState(false);
 
   const preview = async () => {
     setLoading(true);
@@ -887,19 +902,19 @@ function BackfillWorkdayLogMetaSection() {
       setCandidates(rows);
       setSkipped(bad);
     } catch (err) {
-      alert("Error al buscar logs de workday: " + (err.message || String(err)));
+      toast.error("Error al buscar logs de workday: " + (err.message || String(err)));
     } finally {
       setLoading(false);
     }
   };
 
   const CHUNK = 400; // margen bajo el límite de 500 ops por writeBatch
-  const apply = async () => {
+  const apply = () => {
     if (!candidates || candidates.length === 0) return;
-    if (!confirm(
-      `¿Backfillear meta.workerRut/cycleId en ${candidates.length} log(s) viejos de workdays?\n\n` +
-      `Es aditivo — solo agrega el campo meta, no toca nada más del log. Se puede re-ejecutar sin problema.`,
-    )) return;
+    setConfirmApply(true);
+  };
+
+  const doApply = async () => {
     setRunning(true);
     setProgress({ done: 0, total: candidates.length });
     let updated = 0;
@@ -1017,6 +1032,16 @@ function BackfillWorkdayLogMetaSection() {
           )}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmApply}
+        title="Backfill de logs"
+        message={`¿Backfillear meta.workerRut/cycleId en ${candidates?.length || 0} log(s) viejos de workdays?\n\nEs aditivo — solo agrega el campo meta, no toca nada más del log. Se puede re-ejecutar sin problema.`}
+        confirmLabel="Aplicar"
+        danger
+        onCancel={() => setConfirmApply(false)}
+        onConfirm={() => { setConfirmApply(false); doApply(); }}
+      />
     </section>
   );
 }
@@ -1029,11 +1054,13 @@ function BackfillWorkdayLogMetaSection() {
 // rut legal cambia después. Aditivo y re-ejecutable: solo toca workers sin
 // campo `rut`.
 function BackfillWorkerRutFieldSection() {
+  const toast = useToast();
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [candidates, setCandidates] = useState(null); // [{ id, name }]
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [result, setResult] = useState(null);
+  const [confirmApply, setConfirmApply] = useState(false);
 
   const preview = async () => {
     setLoading(true);
@@ -1045,18 +1072,18 @@ function BackfillWorkerRutFieldSection() {
       rows.sort((a, b) => a.id.localeCompare(b.id));
       setCandidates(rows);
     } catch (err) {
-      alert("Error al leer trabajadores: " + (err.message || String(err)));
+      toast.error("Error al leer trabajadores: " + (err.message || String(err)));
     } finally {
       setLoading(false);
     }
   };
 
-  const apply = async () => {
+  const apply = () => {
     if (!candidates || candidates.length === 0) return;
-    if (!confirm(
-      `¿Completar el campo rut en ${candidates.length} trabajador(es) (rut = id actual)?\n\n` +
-      `Es aditivo — no toca ningún otro campo. Se puede re-ejecutar sin problema.`,
-    )) return;
+    setConfirmApply(true);
+  };
+
+  const doApply = async () => {
     setRunning(true);
     setProgress({ done: 0, total: candidates.length });
     let updated = 0;
@@ -1167,6 +1194,16 @@ function BackfillWorkerRutFieldSection() {
           )}
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmApply}
+        title="Completar campo rut"
+        message={`¿Completar el campo rut en ${candidates?.length || 0} trabajador(es) (rut = id actual)?\n\nEs aditivo — no toca ningún otro campo. Se puede re-ejecutar sin problema.`}
+        confirmLabel="Aplicar"
+        danger
+        onCancel={() => setConfirmApply(false)}
+        onConfirm={() => { setConfirmApply(false); doApply(); }}
+      />
     </section>
   );
 }

@@ -17,6 +17,7 @@ import {
 import { useCatalogs } from "../contexts/CatalogsContext";
 import { useToast } from "../contexts/ToastContext";
 import { formatRutForDisplay } from "../utils/rutUtils";
+import { useIsMobile } from "../hooks/useIsMobile";
 
 const fmtCurrency = (v) =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
@@ -784,6 +785,7 @@ export const PrintableWorkerSummary = forwardRef(function PrintableWorkerSummary
   const bonSaldo = bonosSaldo != null ? bonosSaldo : 0;
   const neto = grandTotal - antSaldo + bonSaldo;
   const isLinear = viewMode === "lineal";
+  const isMobile = useIsMobile();
   return (
     <div ref={ref} style={{ background: "#ffffff", color: "#000", padding: 20, fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 24, marginBottom: 16 }}>
@@ -877,6 +879,7 @@ export const PrintableWorkerSummary = forwardRef(function PrintableWorkerSummary
                 </span>
               )}
             </div>
+            <div style={{ overflowX: "auto" }}>
             <table style={{ borderCollapse: "collapse", width: "100%" }}>
               <thead>
                 <tr style={{ background: "#9dc3e6" }}>
@@ -1022,6 +1025,7 @@ export const PrintableWorkerSummary = forwardRef(function PrintableWorkerSummary
                 )}
               </tbody>
             </table>
+            </div>
           </div>
         );
       })}
@@ -1031,6 +1035,44 @@ export const PrintableWorkerSummary = forwardRef(function PrintableWorkerSummary
           <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
             Anticipos y Bonos pendientes
           </div>
+          {isMobile ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {advances.map((a) => {
+                const amount = Number(a.amount) || 0;
+                const paid = Number(a.amountPaid) || 0;
+                const saldo = advanceRemaining(a);
+                const sign = advanceSign(a);
+                const color = sign > 0 ? "#166534" : "#b45309";
+                const signLabel = sign > 0 ? "+" : "−";
+                return (
+                  <div key={a.id} style={{ border: "1px solid #999", borderRadius: 6, padding: "6px 8px", fontSize: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700 }}>
+                      <span>{advanceTypeIcon(a.type)} {advanceTypeLabel(a.type)}</span>
+                      <span style={{ color }}>{signLabel} {fmtCurrency(saldo)}</span>
+                    </div>
+                    <div style={{ color: "#666", marginTop: 2 }}>{dateLabel(a.date)}</div>
+                    <div style={{ marginTop: 2 }}>
+                      Monto: <span style={{ color }}>{signLabel} {fmtCurrency(amount)}</span>
+                      {paid > 0 && <> · Aplicado: {fmtCurrency(paid)}</>}
+                    </div>
+                    {a.note && <div style={{ fontSize: 11, color: "#444", marginTop: 2 }}>{a.note}</div>}
+                  </div>
+                );
+              })}
+              {antSaldo > 0 && (
+                <div style={{ background: "#fce4d6", borderRadius: 6, padding: "6px 8px", display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 12 }}>
+                  <span>Saldo anticipos pendientes</span>
+                  <span style={{ color: "#b45309" }}>− {fmtCurrency(antSaldo)}</span>
+                </div>
+              )}
+              {bonSaldo > 0 && (
+                <div style={{ background: "#dcfce7", borderRadius: 6, padding: "6px 8px", display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 12 }}>
+                  <span>Saldo bonos pendientes</span>
+                  <span style={{ color: "#166534" }}>+ {fmtCurrency(bonSaldo)}</span>
+                </div>
+              )}
+            </div>
+          ) : (
           <table style={{ borderCollapse: "collapse", width: "100%" }}>
             <thead>
               <tr style={{ background: "#f8cbad" }}>
@@ -1093,6 +1135,7 @@ export const PrintableWorkerSummary = forwardRef(function PrintableWorkerSummary
               )}
             </tbody>
           </table>
+          )}
         </div>
       )}
 
@@ -1378,6 +1421,7 @@ function LinearTable({ data, catalogs, titles, onUpdateLinearTitles, onToggleHid
           <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: 1 }}>{main}</div>
           {subtitle && <div style={{ marginTop: 4, fontSize: 12 }}>{subtitle}</div>}
         </div>
+        <div style={{ overflowX: "auto" }}>
         <table style={{ borderCollapse: "collapse", width: "100%" }}>
           <thead>
             <tr style={{ background: "#9dc3e6" }}>
@@ -1534,6 +1578,7 @@ function LinearTable({ data, catalogs, titles, onUpdateLinearTitles, onToggleHid
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

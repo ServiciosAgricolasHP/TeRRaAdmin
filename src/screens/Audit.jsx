@@ -471,7 +471,7 @@ function EntitySearchPanel() {
                   Sin acciones registradas para este registro.
                 </div>
               ) : recordLogs ? (
-                <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
+                <div className="overflow-x-auto rounded-md border border-[var(--color-border)]" style={{ WebkitOverflowScrolling: "touch" }}>
                   <LogsTable logs={recordLogs} />
                 </div>
               ) : null}
@@ -710,7 +710,7 @@ function SessionDetail({ logs }) {
   );
   return (
     <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
-      <div className="overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]">
+      <div className="overflow-x-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)]" style={{ WebkitOverflowScrolling: "touch" }}>
         <LogsTable logs={sorted} />
       </div>
     </div>
@@ -724,7 +724,7 @@ function SessionDetail({ logs }) {
 function LogsTable({ logs }) {
   const [openIdx, setOpenIdx] = useState(null);
   return (
-    <table className="w-full text-xs">
+    <table className="w-full min-w-[560px] text-xs">
       <thead className="bg-[var(--color-surface-2)] text-left text-[var(--color-muted)]">
         <tr>
           <th className="px-2 py-1.5 w-32">Fecha</th>

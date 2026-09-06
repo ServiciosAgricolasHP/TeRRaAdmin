@@ -49,6 +49,7 @@ import Modal from "../components/Modal";
 import ResizableArea from "../components/ResizableArea";
 import WorkerSummaryModal from "../components/WorkerSummaryModal";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { matchesSearchQuery } from "../utils/textSearch";
 
 const fmtCurrency = (v) =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
@@ -165,6 +166,12 @@ export default function Payroll() {
   const [payrollClassification, setPayrollClassification] = useState("nomina");
 
   const [confirmDelete, setConfirmDelete] = useState(null);
+  // Confirm genérico para flujos async que necesitan pausar a mitad de una
+  // función (ej. generateAndSave) y esperar la respuesta del usuario antes de
+  // seguir — reemplaza los `confirm()` nativos bloqueantes del navegador.
+  const [confirmState, setConfirmState] = useState(null);
+  const askConfirm = (message, opts = {}) =>
+    new Promise((resolve) => setConfirmState({ message, resolve, ...opts }));
   const [detailPayroll, setDetailPayroll] = useState(null);
   // Renombrar nómina: `renaming` = la nómina en edición (o null). El nombre es
   // solo un label — no es clave de nada — así que se puede cambiar en cualquier
@@ -532,7 +539,7 @@ export default function Payroll() {
     const payableItems = items.filter((p) => Number(p.amount) > 0);
     const missing = payableItems.filter((p) => !isCashBank(p.bankCode) && (!p.accountNumber || !p.bankCode));
     if (missing.length > 0) {
-      const proceed = confirm(
+      const proceed = await askConfirm(
         `${missing.length} trabajador(es) bancarizados tienen datos incompletos. ¿Generar de todos modos?`,
       );
       if (!proceed) return;
@@ -542,7 +549,7 @@ export default function Payroll() {
       .filter((x) => x.issue);
     if (suspicious.length > 0) {
       const sample = suspicious.slice(0, 5).map((x) => `• ${x.p.name}: ${x.issue}`).join("\n");
-      const proceed = confirm(
+      const proceed = await askConfirm(
         `${suspicious.length} cuenta(s) sospechosa(s):\n${sample}${suspicious.length > 5 ? "\n…" : ""}\n\n¿Generar de todos modos?`,
       );
       if (!proceed) return;
@@ -1080,6 +1087,22 @@ export default function Payroll() {
         onConfirm={onDelete}
       />
 
+      <ConfirmDialog
+        open={!!confirmState}
+        title={confirmState?.title || "Confirmar"}
+        message={confirmState?.message || ""}
+        confirmLabel={confirmState?.confirmLabel || "Generar de todos modos"}
+        danger={confirmState?.danger}
+        onCancel={() => {
+          confirmState?.resolve(false);
+          setConfirmState(null);
+        }}
+        onConfirm={() => {
+          confirmState?.resolve(true);
+          setConfirmState(null);
+        }}
+      />
+
       {renaming && (
         <RenamePayrollModal
           payroll={renaming}
@@ -1303,7 +1326,7 @@ function PreviewTable({
   }, [items]);
 
   const filteredItems = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     return items.filter((p) => {
       if (filter === "bank" && isCashBank(p.bankCode)) return false;
       if (filter === "cash" && !isCashBank(p.bankCode)) return false;
@@ -1311,7 +1334,7 @@ function PreviewTable({
       if (filter === "suspicious" && !p._accountIssue) return false;
       if (filter.startsWith("leader:") && normalizeLeader(p.groupLeader) !== filter.slice(7)) return false;
       if (cycleFilter !== "all" && !((p.byCycle?.[cycleFilter] || 0) > 0)) return false;
-      if (q && !p.name.toLowerCase().includes(q) && !p.rut.toLowerCase().includes(q)) return false;
+      if (q && !matchesSearchQuery(p.name, q) && !p.rut.toLowerCase().includes(q.toLowerCase())) return false;
       return true;
     });
   }, [items, search, filter, cycleFilter]);
@@ -3545,11 +3568,11 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
 
   // Filtrado de items aplicando todos los criterios juntos.
   const filteredItems = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     return items.filter((it) => {
       if (q) {
-        const hay = `${it.rut || ""} ${it.name || ""} ${it.groupLeader || ""}`.toLowerCase();
-        if (!hay.includes(q)) return false;
+        const hay = `${it.rut || ""} ${it.name || ""} ${it.groupLeader || ""}`;
+        if (!matchesSearchQuery(hay, q)) return false;
       }
       const isCash = isCashBank(it.bankCode);
       if (paymentMethod === "bank" && isCash) return false;
@@ -3632,10 +3655,17 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
   const isPending = payroll.status !== "paid";
   const [editMode, setEditMode] = useState(false);
   const [editBusy, setEditBusy] = useState(false);
-  const handleRemoveWorker = async (item) => {
+  const [confirmRemove, setConfirmRemove] = useState(null); // { type: "worker"|"cycle", target, message }
+  const handleRemoveWorker = (item) => {
     if (!isPending || editBusy) return;
     const label = `${item.name || item.rut} (${fmtCurrency(item.amount || 0)})`;
-    if (!window.confirm(`¿Sacar a ${label} de esta nómina?\n\nSe liberan sus workdays y se restauran sus anticipos aplicados. No se puede deshacer (pero podés re-incluirlo generando otra nómina).`)) return;
+    setConfirmRemove({
+      type: "worker",
+      target: item,
+      message: `¿Sacar a ${label} de esta nómina?\n\nSe liberan sus workdays y se restauran sus anticipos aplicados. No se puede deshacer (pero podés re-incluirlo generando otra nómina).`,
+    });
+  };
+  const doRemoveWorker = async (item) => {
     setEditBusy(true);
     try {
       await removeWorkerFromPayroll(payroll.id, item.rut);
@@ -3646,13 +3676,19 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
       setEditBusy(false);
     }
   };
-  const handleRemoveCycle = async (cycle) => {
+  const handleRemoveCycle = (cycle) => {
     if (!isPending || editBusy) return;
     const cycleAmount = (payroll.items || []).reduce(
       (s, it) => s + (Number(it.byCycle?.[cycle.id]) || 0),
       0,
     );
-    if (!window.confirm(`¿Sacar el ciclo "${cycle.label}" (${fmtCurrency(cycleAmount)}) de esta nómina?\n\nSe liberan los workdays del ciclo. Los trabajadores que SOLO tenían producción en este ciclo salen también; los que tenían producción en otros ciclos quedan con su monto reducido. No se puede deshacer.`)) return;
+    setConfirmRemove({
+      type: "cycle",
+      target: cycle,
+      message: `¿Sacar el ciclo "${cycle.label}" (${fmtCurrency(cycleAmount)}) de esta nómina?\n\nSe liberan los workdays del ciclo. Los trabajadores que SOLO tenían producción en este ciclo salen también; los que tenían producción en otros ciclos quedan con su monto reducido. No se puede deshacer.`,
+    });
+  };
+  const doRemoveCycle = async (cycle) => {
     setEditBusy(true);
     try {
       await removeCycleFromPayroll(payroll.id, cycle.id);
@@ -3662,6 +3698,13 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
     } finally {
       setEditBusy(false);
     }
+  };
+  const confirmRemoveAction = () => {
+    const cr = confirmRemove;
+    setConfirmRemove(null);
+    if (!cr) return;
+    if (cr.type === "worker") doRemoveWorker(cr.target);
+    else doRemoveCycle(cr.target);
   };
 
   // Agregar ciclos (de la misma u otra subfaena) a una nómina ya creada.
@@ -5431,6 +5474,15 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
         onClose={() => setRecalcPreview(null)}
         onConfirm={applyRecalc}
       />
+      <ConfirmDialog
+        open={!!confirmRemove}
+        title={confirmRemove?.type === "cycle" ? "Sacar ciclo de la nómina" : "Sacar trabajador de la nómina"}
+        message={confirmRemove?.message || ""}
+        confirmLabel="Sacar"
+        danger
+        onCancel={() => setConfirmRemove(null)}
+        onConfirm={confirmRemoveAction}
+      />
     </div>
   );
 }
@@ -6569,7 +6621,7 @@ function WorkerPaidDetailTables({ item, snapshot, snapshotLoading, cycleDetails,
                 mandar la foto por WhatsApp y el trabajador debe entender de
                 dónde salió el neto. */}
             {(anticipoRows.length > 0 || bonoRows.length > 0) && (
-              <div>
+              <div className="overflow-x-auto">
                 <div style={{ fontSize: 12, fontWeight: 700, color: "#000", marginBottom: 4 }}>Ajustes aplicados</div>
                 <table style={{ borderCollapse: "collapse", width: "100%" }}>
                   <thead>
@@ -6704,6 +6756,96 @@ const payrollDateISO = (p) => {
 
 const normRut = (r) => String(r || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
 
+// Popover flotante para el filtro de faena — reemplaza la fila de chips
+// siempre visible (ocupaba varias líneas con muchas faenas) por un botón
+// colapsado por default, con buscador adentro para no tener que escanear
+// toda la lista. Mismo patrón de click-afuera/Escape que ColorPalette
+// (Faenas.jsx).
+function FaenaFilterPopover({ faenas, faenaFilter, setFaenaFilter, onClose }) {
+  const ref = useRef(null);
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    const onClick = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    setTimeout(() => document.addEventListener("mousedown", onClick), 0);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+
+  const filtered = faenas.filter((f) => f.name.toLowerCase().includes(q.trim().toLowerCase()));
+
+  return (
+    <div
+      ref={ref}
+      className="absolute right-0 top-full z-30 mt-2 w-[min(320px,90vw)] rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-xl ring-1 ring-black/5"
+    >
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">
+          Filtrar por faena
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded p-0.5 text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+          aria-label="Cerrar"
+        >
+          ✕
+        </button>
+      </div>
+      <input
+        type="text"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Buscar faena…"
+        autoFocus
+        className="mb-2 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs outline-none focus:border-[var(--color-accent)]"
+      />
+      <div className="flex max-h-52 flex-wrap gap-1 overflow-y-auto">
+        {filtered.length === 0 ? (
+          <span className="text-xs text-[var(--color-muted)]">Sin resultados</span>
+        ) : (
+          filtered.map((f) => {
+            const active = faenaFilter.has(f.id);
+            return (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => {
+                  setFaenaFilter((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(f.id)) next.delete(f.id);
+                    else next.add(f.id);
+                    return next;
+                  });
+                }}
+                className={`min-h-[28px] rounded-full px-2 py-0.5 text-xs ${
+                  active
+                    ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]"
+                    : "border border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
+                }`}
+              >
+                {f.name}
+              </button>
+            );
+          })
+        )}
+      </div>
+      {faenaFilter.size > 0 && (
+        <button
+          type="button"
+          onClick={() => setFaenaFilter(new Set())}
+          className="mt-2 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-[11px] text-[var(--color-muted)] hover:text-[var(--color-danger)]"
+        >
+          Limpiar selección ({faenaFilter.size})
+        </button>
+      )}
+    </div>
+  );
+}
+
 function WorkersHistory({ faenas }) {
   const toast = useToast();
   const [loading, setLoading] = useState(true);
@@ -6713,6 +6855,7 @@ function WorkersHistory({ faenas }) {
   const [dateTo, setDateTo] = useState(todayISO());
   const [classification, setClassification] = useState("all"); // all|nomina|diferencia
   const [faenaFilter, setFaenaFilter] = useState(() => new Set());
+  const [faenaPickerOpen, setFaenaPickerOpen] = useState(false);
   const [selectedRut, setSelectedRut] = useState(null);
   const [exporting, setExporting] = useState(false);
 
@@ -6831,16 +6974,17 @@ function WorkersHistory({ faenas }) {
     return out;
   }, [workersIndex, faenaFilter]);
 
-  // 4) Filtro por búsqueda (rut o nombre) y orden por total desc.
+  // 4) Filtro por búsqueda (rut o nombre) y orden por total desc. El nombre
+  // usa matchesSearchQuery ("like": cada palabra en cualquier orden) para que
+  // "bruno silva" encuentre a "Bruno Ignacio Silva".
   const filteredWorkers = useMemo(() => {
     const list = [...workersAfterFaena].sort((a, b) => b.totalAmount - a.totalAmount);
     const q = search.trim();
     if (!q) return list;
     const qNorm = normRut(q);
-    const qLow = q.toLowerCase();
     return list.filter((w) =>
       normRut(w.rut).includes(qNorm) ||
-      String(w.name || "").toLowerCase().includes(qLow),
+      matchesSearchQuery(w.name, q),
     );
   }, [workersAfterFaena, search]);
 
@@ -7022,43 +7166,31 @@ function WorkersHistory({ faenas }) {
           >
             ⟲ Reset
           </button>
-        </div>
-        {faenasInPayrolls.length > 0 && (
-          <div className="mt-2 flex flex-wrap items-center gap-1 text-xs">
-            <span className="text-[var(--color-muted)] mr-1">Faena:</span>
-            {faenasInPayrolls.map((f) => {
-              const active = faenaFilter.has(f.id);
-              return (
-                <button
-                  key={f.id}
-                  onClick={() => {
-                    setFaenaFilter((prev) => {
-                      const next = new Set(prev);
-                      if (next.has(f.id)) next.delete(f.id);
-                      else next.add(f.id);
-                      return next;
-                    });
-                  }}
-                  className={`rounded-full px-2 py-0.5 ${
-                    active
-                      ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]"
-                      : "bg-[var(--color-surface)] border border-[var(--color-border)] hover:bg-[var(--color-accent-soft)]"
-                  }`}
-                >
-                  {f.name}
-                </button>
-              );
-            })}
-            {faenaFilter.size > 0 && (
+          {faenasInPayrolls.length > 0 && (
+            <div className="relative">
               <button
-                onClick={() => setFaenaFilter(new Set())}
-                className="ml-1 text-[var(--color-muted)] hover:text-[var(--color-danger)]"
+                type="button"
+                onClick={() => setFaenaPickerOpen((v) => !v)}
+                className={`flex items-center gap-1 rounded-md border px-2 py-1 text-xs ${
+                  faenaFilter.size > 0
+                    ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                    : "border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"
+                }`}
               >
-                ✕
+                🏭 Faena{faenaFilter.size > 0 ? ` (${faenaFilter.size})` : ""}
+                <span className="text-[9px]">{faenaPickerOpen ? "▴" : "▾"}</span>
               </button>
-            )}
-          </div>
-        )}
+              {faenaPickerOpen && (
+                <FaenaFilterPopover
+                  faenas={faenasInPayrolls}
+                  faenaFilter={faenaFilter}
+                  setFaenaFilter={setFaenaFilter}
+                  onClose={() => setFaenaPickerOpen(false)}
+                />
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Contenido principal */}

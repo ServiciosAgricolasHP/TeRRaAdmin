@@ -25,3 +25,10 @@ dist-ssr
 
 .env
 workers.csv
+
+# Firebase Functions
+functions/node_modules
+functions/.runtimeconfig.json
+firebase-debug.log
+firebase-debug.*.log
+.firebase/

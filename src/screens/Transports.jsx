@@ -2339,6 +2339,7 @@ function BalanceSummary({ carriers, reloadVersion }) {
               Sin saldos pendientes en este rango.
             </div>
           ) : (
+            <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
             <div
               ref={printRef}
               style={{
@@ -2442,6 +2443,7 @@ function BalanceSummary({ carriers, reloadVersion }) {
                   </tr>
                 </tbody>
               </table>
+            </div>
             </div>
           )}
         </div>
@@ -2961,20 +2963,22 @@ function UnifiedSummaryModal({ open, onClose, group, faenaById, subfaenaById, cy
           Sin vueltas en el rango seleccionado
         </div>
       ) : (
-        <PrintableSummary
-          ref={printRef}
-          payment={null}
-          carrier={carrier}
-          trips={filteredTrips}
-          periodLabel={periodLabel}
-          faenaById={faenaById}
-          subfaenaById={subfaenaById}
-          cycleById={cycleById}
-          editable={editMode}
-          onEditTrip={editMode ? (t) => setEditingTrip(t) : null}
-          onRemoveTrip={editMode ? (t) => setConfirmRemoveTrip(t) : null}
-          isTripLocked={(t) => t.status === "paid"}
-        />
+        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+          <PrintableSummary
+            ref={printRef}
+            payment={null}
+            carrier={carrier}
+            trips={filteredTrips}
+            periodLabel={periodLabel}
+            faenaById={faenaById}
+            subfaenaById={subfaenaById}
+            cycleById={cycleById}
+            editable={editMode}
+            onEditTrip={editMode ? (t) => setEditingTrip(t) : null}
+            onRemoveTrip={editMode ? (t) => setConfirmRemoveTrip(t) : null}
+            isTripLocked={(t) => t.status === "paid"}
+          />
+        </div>
       )}
 
       <TripEditModal
@@ -3345,6 +3349,11 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
   const [abonos, setAbonos] = useState(payment?.abonos || []);
   const [newAbono, setNewAbono] = useState({ amount: "", date: "", notes: "" });
   const [abonoBusy, setAbonoBusy] = useState(false);
+  const [confirmRemoveAbono, setConfirmRemoveAbono] = useState(null); // abonoId o null
+  // Confirm genérico para el caso "abono supera el monto pendiente" — pausa
+  // handleAddAbono a mitad de camino en vez de un window.confirm bloqueante.
+  const [confirmState, setConfirmState] = useState(null);
+  const askConfirm = (message) => new Promise((resolve) => setConfirmState({ message, resolve }));
   useEffect(() => {
     setAbonos(payment?.abonos || []);
   }, [payment?.id, payment?.abonos]);
@@ -3419,7 +3428,7 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
       return;
     }
     if (amt > pendingAmount) {
-      const ok = window.confirm(
+      const ok = await askConfirm(
         `El abono (${fmtCurrency(amt)}) supera el monto pendiente (${fmtCurrency(pendingAmount)}). ¿Continuar igual?`,
       );
       if (!ok) return;
@@ -3441,8 +3450,8 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
     }
   };
 
-  const handleRemoveAbono = async (abonoId) => {
-    if (!window.confirm("¿Eliminar este abono?")) return;
+  const handleRemoveAbono = (abonoId) => setConfirmRemoveAbono(abonoId);
+  const doRemoveAbono = async (abonoId) => {
     setAbonoBusy(true);
     try {
       const updated = await paymentsService.removeAbono(payment.id, abonoId);
@@ -3764,19 +3773,21 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
       {loading ? (
         <div className="py-6 text-center text-sm text-[var(--color-muted)]">Cargando...</div>
       ) : (
-        <PrintableSummary
-          ref={printRef}
-          payment={payment}
-          carrier={carrier}
-          trips={trips}
-          editable={editMode && !isPaid}
-          onEditTrip={editMode && !isPaid ? (t) => setEditingTrip(t) : null}
-          onRemoveTrip={editMode && !isPaid ? (t) => setConfirmRemoveTrip(t) : null}
-          periodLabel={periodLabel}
-          faenaById={faenaById}
-          subfaenaById={subfaenaById}
-          cycleById={cycleById}
-        />
+        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+          <PrintableSummary
+            ref={printRef}
+            payment={payment}
+            carrier={carrier}
+            trips={trips}
+            editable={editMode && !isPaid}
+            onEditTrip={editMode && !isPaid ? (t) => setEditingTrip(t) : null}
+            onRemoveTrip={editMode && !isPaid ? (t) => setConfirmRemoveTrip(t) : null}
+            periodLabel={periodLabel}
+            faenaById={faenaById}
+            subfaenaById={subfaenaById}
+            cycleById={cycleById}
+          />
+        </div>
       )}
 
       {payment.notes && (
@@ -3807,6 +3818,29 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
         danger
         onCancel={() => setConfirmRemoveTrip(null)}
         onConfirm={handleRemoveTripFromPayment}
+      />
+
+      <ConfirmDialog
+        open={!!confirmRemoveAbono}
+        title="Eliminar abono"
+        message="¿Eliminar este abono?"
+        confirmLabel="Eliminar"
+        danger
+        onCancel={() => setConfirmRemoveAbono(null)}
+        onConfirm={() => {
+          const id = confirmRemoveAbono;
+          setConfirmRemoveAbono(null);
+          doRemoveAbono(id);
+        }}
+      />
+
+      <ConfirmDialog
+        open={!!confirmState}
+        title="Confirmar"
+        message={confirmState?.message || ""}
+        confirmLabel="Continuar"
+        onCancel={() => { confirmState?.resolve(false); setConfirmState(null); }}
+        onConfirm={() => { confirmState?.resolve(true); setConfirmState(null); }}
       />
 
       <Modal
@@ -4608,6 +4642,7 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
               Sin quincenas pendientes.
             </div>
           ) : (
+            <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
             <div
               ref={printRef}
               style={{
@@ -4615,7 +4650,6 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
                 color: "#000",
                 padding: 16,
                 fontFamily: "ui-sans-serif, system-ui, sans-serif",
-                overflowX: "auto",
               }}
             >
               <div style={{ marginBottom: 10 }}>
@@ -4752,6 +4786,7 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
                   </tr>
                 </tbody>
               </table>
+            </div>
             </div>
           )}
         </div>

@@ -1125,8 +1125,8 @@ function DayDetailDrawer({ date, subfaenaId, workdays, trips, cycleById, subfaen
             {byLabor.length === 0 ? (
               <p className="text-sm text-[var(--color-muted)]">Sin actividad registrada.</p>
             ) : (
-              <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
-                <table className="w-full text-sm">
+              <div className="overflow-x-auto rounded-md border border-[var(--color-border)]" style={{ WebkitOverflowScrolling: "touch" }}>
+                <table className="w-full min-w-[420px] text-sm">
                   <thead className="bg-[var(--color-surface-2)] text-left text-xs text-[var(--color-muted)]">
                     <tr>
                       <th className="px-2 py-1.5">Ciclo / Labor</th>
@@ -1340,8 +1340,8 @@ function DayDetailDrawer({ date, subfaenaId, workdays, trips, cycleById, subfaen
             {byCarrier.length === 0 ? (
               <p className="text-sm text-[var(--color-muted)]">Sin transportes.</p>
             ) : (
-              <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
-                <table className="w-full text-sm">
+              <div className="overflow-x-auto rounded-md border border-[var(--color-border)]" style={{ WebkitOverflowScrolling: "touch" }}>
+                <table className="w-full min-w-[420px] text-sm">
                   <thead className="bg-[var(--color-surface-2)] text-left text-xs text-[var(--color-muted)]">
                     <tr>
                       <th className="px-2 py-1.5">Transportista</th>

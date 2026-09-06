@@ -12,6 +12,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import Modal from "../components/Modal";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useToast } from "../contexts/ToastContext";
+import { matchesSearchQuery } from "../utils/textSearch";
 
 const fmtCurrency = (v) =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
@@ -79,7 +80,7 @@ export default function Advances() {
   useEffect(() => { load(); }, []);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     const showApplied = statusFilter === "applied" || statusFilter === "all";
     return items.filter((a) => {
       const normType = normalizeAdvanceType(a.type);
@@ -89,8 +90,8 @@ export default function Advances() {
       // For applied/all view, allow user to bound the historical range by date.
       if (showApplied && status === "applied" && appliedSince && (a.date || "") < appliedSince) return false;
       if (q) {
-        const hay = `${a.workerName || ""} ${a.workerRut || ""} ${a.note || ""}`.toLowerCase();
-        if (!hay.includes(q)) return false;
+        const hay = `${a.workerName || ""} ${a.workerRut || ""} ${a.note || ""}`;
+        if (!matchesSearchQuery(hay, q)) return false;
       }
       return true;
     });

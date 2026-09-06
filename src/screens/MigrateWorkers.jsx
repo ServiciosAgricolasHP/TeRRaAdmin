@@ -3,6 +3,7 @@ import { workersService } from "../services";
 import { findWorkerByRut } from "../services/workersService";
 import { parseCsv, buildWorkerPatch } from "../utils/importWorkers";
 import { formatRutForDisplay } from "../utils/rutUtils";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 export default function MigrateWorkers() {
   const [rawText, setRawText] = useState("");
@@ -11,6 +12,7 @@ export default function MigrateWorkers() {
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [results, setResults] = useState({ created: 0, updated: 0, skipped: 0, errors: [] });
   const [filter, setFilter] = useState("");
+  const [confirmRun, setConfirmRun] = useState(false);
   const fileRef = useRef(null);
 
   const onFile = async (file) => {
@@ -30,9 +32,13 @@ export default function MigrateWorkers() {
     );
   }, [parsed.rows, filter]);
 
-  const run = async () => {
+  const run = () => {
     if (!parsed.rows.length) return;
-    if (!confirm(`¿Migrar ${parsed.rows.length} trabajador(es)? Se actualizarán los existentes (nombre + correo) y crearán los nuevos.`)) return;
+    setConfirmRun(true);
+  };
+
+  const doRun = async () => {
+    setConfirmRun(false);
     setRunning(true);
     setProgress({ done: 0, total: parsed.rows.length });
     const results = { created: 0, updated: 0, skipped: 0, errors: [] };
@@ -148,7 +154,7 @@ export default function MigrateWorkers() {
             </span>
           </div>
           <div className="flex-1 overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
-            <table className="w-full text-sm">
+            <table className="w-full min-w-[760px] text-sm">
               <thead className="sticky top-0 bg-[var(--color-surface-2)] text-left text-xs">
                 <tr>
                   <th className="px-2 py-1.5">RUT</th>
@@ -186,6 +192,15 @@ export default function MigrateWorkers() {
           </div>
         </>
       )}
+
+      <ConfirmDialog
+        open={confirmRun}
+        title="Migrar trabajadores"
+        message={`¿Migrar ${parsed.rows.length} trabajador(es)? Se actualizarán los existentes (nombre + correo) y crearán los nuevos.`}
+        confirmLabel="Migrar"
+        onConfirm={doRun}
+        onCancel={() => setConfirmRun(false)}
+      />
     </div>
   );
 }

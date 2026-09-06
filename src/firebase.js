@@ -1,6 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
+import { getFunctions } from "firebase/functions";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -16,4 +17,6 @@ const app = initializeApp(firebaseConfig);
 
 export const db = getFirestore(app, "hpdatabase");
 export const auth = getAuth(app);
+// Cloud Functions client — apuntado a la misma región del deploy.
+export const functions = getFunctions(app, "southamerica-west1");
 export default app;

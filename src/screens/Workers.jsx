@@ -18,6 +18,7 @@ import WorkerSummaryModal from "../components/WorkerSummaryModal";
 import GroupSummaryModal from "../components/GroupSummaryModal";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ResizableArea from "../components/ResizableArea";
+import { matchesSearchQuery } from "../utils/textSearch";
 import { useIsMobile } from "../hooks/useIsMobile";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -100,8 +101,9 @@ export default function Workers() {
   // Filtrado client-side sobre `allWorkers` (única fuente de datos):
   //   1. Filtro de líder (si está set).
   //   2. Filtro de pago (efectivo/transferencia).
-  //   3. Búsqueda libre por substring (gated por MIN_SEARCH) — match acentos-
-  //      insensitive sobre nombre y RUT (sin puntos/guiones).
+  //   3. Búsqueda libre (gated por MIN_SEARCH) — "like" sobre el nombre
+  //      (cada palabra tipeada en cualquier orden, accent-insensitive; ver
+  //      matchesSearchQuery) y substring acentos-insensitive sobre RUT/id.
   // Si no hay query ni filtros, devuelve [] para mantener el empty state y
   // no abrumar con 2000 filas de entrada.
   const displayedResults = useMemo(() => {
@@ -123,10 +125,10 @@ export default function Workers() {
       const needle = stripAccents(queryRaw.replace(/[.\s-]/g, ""));
       if (needle) {
         arr = arr.filter((w) => {
-          const name = stripAccents(w.name);
+          if (matchesSearchQuery(w.name, queryRaw)) return true;
           const id = stripAccents(String(w.id || "").replace(/[.\s-]/g, ""));
           const rut = stripAccents(String(w.rut || "").replace(/[.\s-]/g, ""));
-          return name.includes(needle) || id.includes(needle) || rut.includes(needle);
+          return id.includes(needle) || rut.includes(needle);
         });
       }
     }

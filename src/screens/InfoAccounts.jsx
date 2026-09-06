@@ -479,7 +479,7 @@ function AccountBlock({ acc, index, multi, onCopy }) {
           type="button"
           onClick={() => onCopy(accountToText(acc), "Cuenta")}
           title="Copiar toda la cuenta"
-          className="ml-auto rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-0.5 text-[10px] hover:bg-[var(--color-accent-soft)]"
+          className="ml-auto rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-[11px] hover:bg-[var(--color-accent-soft)]"
         >
           📋 Copiar cuenta
         </button>

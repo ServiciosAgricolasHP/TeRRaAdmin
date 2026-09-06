@@ -1380,11 +1380,20 @@ export default function CycleSummaryModal({
   // Image / print actions
   // ============================================================
   const filename = `resumen_${mode}_${(cycle?.label || "ciclo").replace(/[/\s]+/g, "_")}.png`;
+  // `scrollWidth`/`scrollHeight` en vez de dejar que html-to-image use el
+  // `offsetWidth` del nodo — con tablas anchas (muchas columnas/extras) el
+  // contenedor scrollable de arriba corta el offsetWidth al ancho visible.
+  const fullCaptureOpts = () => ({
+    backgroundColor: "#ffffff",
+    pixelRatio: 2,
+    width: printRef.current?.scrollWidth || undefined,
+    height: printRef.current?.scrollHeight || undefined,
+  });
   const handleDownload = async () => {
     if (!printRef.current) return;
     setBusy("download");
     try {
-      const dataUrl = await toPng(printRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const dataUrl = await toPng(printRef.current, fullCaptureOpts());
       const link = document.createElement("a");
       link.download = filename;
       link.href = dataUrl;
@@ -1395,7 +1404,7 @@ export default function CycleSummaryModal({
     if (!printRef.current) return;
     setBusy("copy");
     try {
-      const blob = await toBlob(printRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const blob = await toBlob(printRef.current, fullCaptureOpts());
       if (!blob) throw new Error("No se pudo generar la imagen");
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       toast.success("Imagen copiada al portapapeles");
@@ -2197,6 +2206,7 @@ export default function CycleSummaryModal({
         />
       )}
 
+      <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
       <div ref={printRef}>
         <PrintableSummary
           mode={mode}
@@ -2242,6 +2252,7 @@ export default function CycleSummaryModal({
             dayPrices={dayPrices}
           />
         ))}
+      </div>
       </div>
 
       {importOpen && (

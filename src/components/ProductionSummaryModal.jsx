@@ -16,6 +16,7 @@ import {
   containerLabel,
 } from "../utils/cosechaCombos";
 import { countingStageIds, normalizeStages } from "../utils/tratoEtapas";
+import { useIsMobile } from "../hooks/useIsMobile";
 
 const fmtCLP = (v) =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 })
@@ -104,6 +105,7 @@ export default function ProductionSummaryModal({
   initialEnabledCycleIds,
 }) {
   const { catalogs } = useCatalogs();
+  const isMobile = useIsMobile();
   const [wdByCycle, setWdByCycle] = useState(workdaysByCycleProp || {});
   const [tripsByCycle, setTripsByCycle] = useState({});
   const [loading, setLoading] = useState(false);
@@ -513,7 +515,46 @@ export default function ProductionSummaryModal({
               {allClosedCollapsed ? "▸ Expandir cerrados" : "▾ Colapsar cerrados"}
             </button>
           </div>
-          <div className="max-h-44 overflow-y-auto">
+          <div className="max-h-60 overflow-y-auto">
+            {isMobile ? (
+              <div className="divide-y divide-[var(--color-border)]">
+                {orderedCycles.map((c) => {
+                  if (allClosedCollapsed && c.status === "closed") return null;
+                  const on = enabledCycles.has(c.id);
+                  const days = Array.isArray(c.days) ? c.days : [];
+                  const dayCount = days.length;
+                  const range = dayCount > 0
+                    ? [...days].sort().reduce((r, d) => ({ from: r.from < d ? r.from : d, to: r.to > d ? r.to : d }), { from: days[0], to: days[0] })
+                    : null;
+                  return (
+                    <div
+                      key={c.id}
+                      onClick={() => setEnabledCycles((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(c.id)) next.delete(c.id);
+                        else next.add(c.id);
+                        return next;
+                      })}
+                      className={`flex cursor-pointer items-center gap-2 px-2 py-2 text-xs ${on ? "bg-[var(--color-accent-soft)]" : ""}`}
+                    >
+                      <input type="checkbox" checked={on} readOnly className="pointer-events-none shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-medium">{c.label || c.id}</div>
+                        <div className="text-[10px] text-[var(--color-muted)]">
+                          {dayCount} día{dayCount === 1 ? "" : "s"}
+                          {range && ` · ${shortDate(range.from)} → ${shortDate(range.to)}`}
+                        </div>
+                      </div>
+                      {c.status === "closed" ? (
+                        <span className="shrink-0 rounded-full bg-[var(--color-surface-2)] px-1.5 py-0.5 text-[10px] text-[var(--color-muted)]">🔒 cerrado</span>
+                      ) : (
+                        <span className="shrink-0 rounded-full bg-[var(--color-success-soft)] px-1.5 py-0.5 text-[10px] text-[var(--color-success)]">abierto</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-[var(--color-surface)] text-left text-[10px] uppercase tracking-wide text-[var(--color-muted)]">
                 <tr>
@@ -568,6 +609,7 @@ export default function ProductionSummaryModal({
                 })}
               </tbody>
             </table>
+            )}
           </div>
           {allClosedCollapsed && (() => {
             const closedCount = orderedCycles.filter((c) => c.status === "closed").length;
@@ -628,11 +670,25 @@ export default function ProductionSummaryModal({
 // CombinedSummaryCard. Solo aparece si al menos una labor tiene grupo
 // asignado; las que no tienen grupo simplemente no entran acá.
 function LaborGroupTotalsCard({ groupTotals }) {
+  const isMobile = useIsMobile();
   return (
     <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
       <div className="bg-[var(--color-surface-2)] px-3 py-1.5 text-xs font-semibold text-[var(--color-muted)]">
         Totales por grupo de labor (todos los ciclos)
       </div>
+      {isMobile ? (
+        <div className="divide-y divide-[var(--color-border)]">
+          {groupTotals.map((g) => (
+            <div key={g.id} className="flex items-center justify-between gap-2 px-3 py-1.5 text-sm">
+              <div className="min-w-0">
+                <div className="truncate font-medium">{g.name}</div>
+                <div className="text-[10px] text-[var(--color-muted)]">{g.cycleIds.size} ciclo{g.cycleIds.size === 1 ? "" : "s"}</div>
+              </div>
+              <span className="shrink-0 font-semibold tabular-nums">{fmtCLP(g.amount)}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
       <table className="w-full text-sm">
         <thead className="bg-[var(--color-surface-2)] text-left text-[10px] uppercase tracking-wide text-[var(--color-muted)]">
           <tr>
@@ -651,6 +707,7 @@ function LaborGroupTotalsCard({ groupTotals }) {
           ))}
         </tbody>
       </table>
+      )}
     </div>
   );
 }
@@ -661,6 +718,7 @@ function LaborGroupTotalsCard({ groupTotals }) {
 // fila TOTAL al pie con los acumulados por labor y el gran total.
 function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firstColKeyForCycle, grandTotalTransport, includeTransport }) {
   const toast = useToast();
+  const isMobile = useIsMobile();
   const [collapsed, setCollapsed] = useState(false);
   const [busy, setBusy] = useState("");
   const captureRef = useRef(null);
@@ -1099,7 +1157,7 @@ function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firstColKey
               {dataByColumn.length} labores · {activeDays.length} días · gran total {fmtCLP(grandTotal)}
             </div>
           </div>
-          <div style={{ overflowX: "auto" }}>
+          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
             <table style={{ borderCollapse: "collapse", width: "100%" }}>
               <thead>
                 <tr style={{ background: HDR_GREEN }}>
@@ -1297,7 +1355,89 @@ function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firstColKey
                 Resumen con IVA (19%)
               </label>
             </div>
-            <div style={{ overflowX: "auto" }}>
+            {isMobile ? (
+              <div className="space-y-2">
+                {dataByColumn.map((d) => (
+                  <div key={d.col.key} style={{ border: "1px solid #999", borderRadius: 6, padding: 8, fontSize: 12 }}>
+                    <div style={{ fontWeight: 700 }}>
+                      {d.col.labor.name}
+                      <span style={{ marginLeft: 4, fontSize: 9, fontWeight: 400, color: "#888" }}>· {d.col.cycleLabel}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+                      <span style={{ color: "#666" }}>Monto</span>
+                      <span>{fmtCLP(d.totalAmount)}</span>
+                    </div>
+                    {isJornadaCol(d.col) && workersPaid[d.col.key] && (
+                      <div style={{ fontSize: 9, fontWeight: 700, color: "#2e7d32", marginTop: 2 }}>
+                        ✅ ya pagado <span style={{ fontWeight: 400, color: "#666" }}>(solo informativo)</span>
+                      </div>
+                    )}
+                    {isSupervisionCol(d.col) && (
+                      <div style={{ fontSize: 9, fontWeight: 700, color: "#b91c1c", marginTop: 2 }}>
+                        ➖ descuento <span style={{ fontWeight: 400, color: "#666" }}>(cubierto por el % general)</span>
+                      </div>
+                    )}
+                    <div style={{ marginTop: 6 }}>
+                      {isSupervisionCol(d.col) ? (
+                        <span style={{ fontSize: 10, color: "#666", fontStyle: "italic" }}>
+                          % / pagan: −100% (automático)
+                        </span>
+                      ) : isJornadaCol(d.col) ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                            <span style={{ color: "#666" }}>Nos pagan</span>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                              $
+                              <input
+                                type="number"
+                                min="0"
+                                value={paidToUs[d.col.key] ?? ""}
+                                onChange={(e) => setPaidToUs((p) => ({ ...p, [d.col.key]: e.target.value }))}
+                                placeholder="0"
+                                title="Lo que nos van a pagar por esta labor"
+                                style={{ width: 90, padding: "3px 5px", border: "1px solid #999", borderRadius: 4, textAlign: "right" }}
+                              />
+                            </span>
+                          </label>
+                          <label style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, color: "#444" }}>
+                            <input
+                              type="checkbox"
+                              checked={!!workersPaid[d.col.key]}
+                              onChange={(e) => setWorkersPaid((p) => ({ ...p, [d.col.key]: e.target.checked }))}
+                            />
+                            ya pagamos a los trabajadores
+                          </label>
+                        </div>
+                      ) : (
+                        <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                          <span style={{ color: "#666" }}>% ganancia</span>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+                            <input
+                              type="number"
+                              min="0"
+                              value={effectivePct(d.col.key)}
+                              onChange={(e) => setPctOverrides((p) => ({ ...p, [d.col.key]: Math.max(0, Number(e.target.value) || 0) }))}
+                              title="% propio de esta labor — edítalo para separarlo del % general"
+                              style={{ width: 60, padding: "3px 5px", border: "1px solid #999", borderRadius: 4, textAlign: "right" }}
+                            />
+                            %
+                          </span>
+                        </label>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontWeight: 700, borderTop: "1px solid #ddd", paddingTop: 4 }}>
+                      <span>Ganancia</span>
+                      <span>{fmtCLP(gananciaFor(d.col, d.totalAmount))}</span>
+                    </div>
+                  </div>
+                ))}
+                <div style={{ background: ROW_TOTAL_DARK, color: "#fff", fontWeight: 700, borderRadius: 6, padding: 8, display: "flex", justifyContent: "space-between", fontSize: 13 }}>
+                  <span>TOTAL — {fmtCLP(grandTotal)}</span>
+                  <span>{fmtCLP(totalGanancia)}</span>
+                </div>
+              </div>
+            ) : (
+            <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
               <table style={{ borderCollapse: "collapse", width: "100%" }}>
                 <thead>
                   <tr style={{ background: HDR_GREEN }}>
@@ -1385,6 +1525,7 @@ function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firstColKey
                 </tbody>
               </table>
             </div>
+            )}
           </div>
         </>
       )}
@@ -1397,6 +1538,7 @@ function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firstColKey
 // colapsado para labores de ciclos cerrados; abierto para ciclos en curso.
 function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
   const toast = useToast();
+  const isMobile = useIsMobile();
   const { col, rows, totalQty, totalAmount, unit, persons } = data;
   const isClosed = col.cycleStatus === "closed";
   const [collapsed, setCollapsed] = useState(isClosed);
@@ -1629,7 +1771,38 @@ function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
               {col.cycleStatus === "closed" && " · 🔒 cerrado"}
             </div>
           </div>
-          <div style={{ overflowX: "auto" }}>
+          {isMobile ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {rows.map(({ day, cell: c }) => (
+                <div key={day} style={{ border: "1px solid #999", borderRadius: 6, padding: "6px 8px", fontSize: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}>
+                    <span style={{ fontFamily: "ui-monospace, monospace", fontWeight: 700 }}>{day}</span>
+                    <span style={{ fontWeight: 600 }}>{fmtCLP(c.amount)}</span>
+                  </div>
+                  <div style={{ marginTop: 2 }}>
+                    <span style={{ fontWeight: 600 }}>{fmtNum(c.qty)}</span>
+                    {c.unit && <span style={{ marginLeft: 4, color: "#666" }}>{c.unit}</span>}
+                    {c.priceLabel && <span style={{ marginLeft: 6, color: "#444" }}>· {c.priceLabel}</span>}
+                  </div>
+                  {c.persons > 0 && (
+                    <div style={{ marginTop: 2, color: "#666", fontSize: 11 }}>
+                      {c.persons} pers · prom {fmtNum(c.avg)}
+                    </div>
+                  )}
+                </div>
+              ))}
+              <div style={{ background: ROW_TOTAL_LIGHT, fontWeight: 700, borderRadius: 6, padding: "6px 8px", fontSize: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>TOTAL</span>
+                  <span>{fmtCLP(totalAmount)}</span>
+                </div>
+                <div style={{ marginTop: 2, fontWeight: 400 }}>
+                  {fmtNum(totalQty)}{unit && ` ${unit}`} · {persons} personas únicas
+                </div>
+              </div>
+            </div>
+          ) : (
+          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
             <table style={{ borderCollapse: "collapse", width: "100%" }}>
               <thead>
                 <tr style={{ background: HDR_BLUE }}>
@@ -1670,6 +1843,7 @@ function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       )}
     </div>
