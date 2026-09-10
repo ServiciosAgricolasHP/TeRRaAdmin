@@ -8,7 +8,7 @@
 | `npm run build` | Compilar para producción → `dist/` / Production build → `dist/` |
 | `npm run lint` | ESLint (flat config, `.jsx` only) |
 | `npm run preview` | Vista previa del build / Preview production build locally |
-| `npm run deploy` | Compilar y desplegar en GitHub Pages / Build + push to GitHub Pages |
+| `npm run deploy` | Deploy manual a GitHub Pages (`gh-pages -d dist -t`). **Escape hatch** — el camino normal es mergear a `main` y dejar que Actions deploye / Manual fallback; normal path is merge to `main` |
 
 **No hay framework de tests configurado.** No inventes uno sin preguntar.
 **No test framework is configured.** Do not invent one without asking.
@@ -19,6 +19,16 @@
 - El path base `/TeRRaAdmin/` está en **dos archivos** — ambos deben coincidir:
   - `vite.config.js` → `base`
   - `src/App.jsx` → `<BrowserRouter basename="/TeRRaAdmin">`
+- La URL vieja (`/adminAgrofrutos/`) sirve un stub de redirect desde un repo aparte con ese nombre bajo la misma organización. **GitHub no redirige URLs de Pages al renombrar un repo** (solo las URLs de git/web), por eso el stub existe.
+
+### Flujo de trabajo Git / Git workflow
+
+- **Día a día en `develop`.** `main` es producción y solo recibe merges vía Pull Request.
+- `.github/workflows/ci.yml` — corre en push/PR: `npm run lint` (**no bloqueante**, `continue-on-error`, por deuda previa de ~65 errores) y `npm run build` (**sí bloqueante**). Este build en Linux es lo que caza los imports con casing incorrecto que Windows esconde.
+- `.github/workflows/deploy.yml` — push a `main` → build → publica `dist/` en la rama `gh-pages`.
+- **Los secrets son obligatorios para el build de deploy**: las 6 `VITE_FIREBASE_*` viven en *Settings → Secrets and variables → Actions* del repo y se inyectan como `env` del paso de build. `.env` está gitignoreado, así que sin ellas el bundle sale con la config vacía y producción cae con `auth/invalid-api-key`.
+- **`fetch-depth: 0`** en el checkout del deploy: sin el historial completo, el `git rev-list --count` de `vite.config.js` devuelve 0 y la versión del header queda pegada en `.0`.
+- **Cloud Functions quedan fuera del pipeline** — se deployan a mano (ver `functions/README.md`).
 
 ## Stack
 
@@ -153,8 +163,13 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
 
 - **Undo (Ctrl+Z)**: stack en memoria (`undoStackRef`), pushea cada edición de celda, revierte y re-graba en Firestore.
 - **Navegación tipo Excel**: `singleClickEdit: false`. Flechas mueven el foco entre celdas; **Enter** entra a editar; al confirmar, salta a la fila siguiente (`enterNavigatesVertically*: true`).
-- **Resize del grid**: barra arrastrable (`useResizableHeight` + `<ResizeHandle>`) persistida en `localStorage`. Implementado con **Pointer Events + `setPointerCapture`** sobre el handle (no listeners en window — sino ag-grid se traga los eventos). Hijos decorativos usan `pointer-events-none`.
 - **Secciones colapsables** persistidas en `localStorage` para liberar espacio vertical: métricas (`cycleDetail.metricsCollapsed`), precios (`cycleDetail.pricesCollapsed`), sidebar global (`layout.sidebarOpen`).
+
+### Alto de las listas / grids
+
+- **Regla**: si la lista es el **último** elemento de la pantalla, va `min-h-0 flex-1` dentro del `flex h-full flex-col` de la raíz y listo (Advances, Workers). No poner un alto fijo ni un resize ahí: no hay nada debajo a lo que cederle espacio, así que el control no hace nada y deja un hueco.
+- `components/ResizableArea.jsx` (`ResizableArea`, o `useResizableHeight` + `<ResizeHandle>` si el handle va en otro lado, ej. una toolbar) es **solo para bloques que tienen contenido debajo** — hoy únicamente `Payroll.jsx` (preview con el panel de efectivo abajo, e historial con el pager abajo). El alto se persiste en `localStorage` bajo `af.gridHeight.<storageKey>`.
+- El drag usa **Pointer Events + `setPointerCapture`** sobre el handle, no listeners en `window` — si no, ag-grid se traga los eventos. Los hijos decorativos del handle van con `pointer-events-none`.
 - **Anotación por día**: click sobre el header de la fecha → modal que edita `cycle.dayNotes[date]`. Hover sobre el header muestra el texto. Compartida entre todas las labores del ciclo.
 - **Trabajadores temporales**: alta sin RUT (`isTemp: true` dentro de `labor.workers`). Aparecen con badge "T" y botón "Asignar RUT" que los reemplaza por el RUT real preservando los workdays.
 - **Sueldo mensual por trabajador-ciclo**: toggle "M" en la fila de la labor → guarda `monthly: true` en `labor.workers[i]`. Las celdas pasan a checkbox de asistencia (`amount: 0`, `attendanceOnly: true`); excluidos de la nómina; badge verde "M".
@@ -170,12 +185,14 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
   1. **Transportistas** — gestión de carriers. Click en una tarjeta abre `CarrierTripsModal` con todas las vueltas del transportista (cualquier ciclo) y permite editarlas/eliminarlas via `TripEditModal` reutilizado (con input de fecha libre cuando se invoca sin lista `days`). Filtros: estado (pendiente/pagada) y rango de fechas. Las vueltas pagadas no permiten editar/eliminar (consistente con `tripsService.update`/`remove`).
   2. **Vueltas** — listado y CRUD.
   3. **Pago por faena** — selecciona ciclos activos + rango de fechas → genera un `paymentSummary` por transportista con sus vueltas pendientes.
-  4. **Resúmenes / Pagos** — historial; marcar pagado, revertir, imprimir uno a uno **y también imprimir varios en lote** (botón `🖨 Imprimir varios` → modal `PrintMultipleModal` con filtros estado/fechas/transportistas/faena-subfaena y dos acciones: 🖨 imprimir todos en una ventana con `page-break-after`, o 📦 descargar ZIP con un PNG por resumen vía `jszip` + `html-to-image`). En `PaymentDetailModal` el botón **✏️ Editar precios** activa edición inline del `amount` por vuelta (optimista: actualiza state, escribe `tripsService.update` + `paymentsService.updateTotal`, rollback re-fetch en caso de error). La columna **Vehículo** está incluida en el `PrintableSummary`.
+  4. **Resúmenes / Pagos** — historial; marcar pagado, revertir, imprimir uno a uno **y también imprimir varios en lote** (botón `🖨 Imprimir varios` → modal `PrintMultipleModal` con filtros estado/fechas/transportistas/faena-subfaena y dos acciones: 🖨 imprimir todos en una ventana con `page-break-after`, o 📦 descargar ZIP con un PNG por resumen vía `jszip` + `html-to-image`). En `PaymentDetailModal` el `Valor` **no** se edita inline: se edita la vuelta completa (qty/tarifa) con el lápiz, que abre `TripEditModal` — así el monto nunca queda desincronizado de N° vueltas × tarifa. La columna **Vehículo** está incluida en el `PrintableSummary`.
   5. **Quincenas** — agrupan varios resúmenes (`transportPayments`) en un payroll (`transportPayrolls`) para pagar en bloque. Modal **+ Nueva quincena** (`PayrollCreateModal`): elegís fechas + chips de faenas, auto-lista los transportistas que tienen vueltas sueltas (sin `paymentId`, status `pending`) en el rango — todos vienen tildados por default y se puede destildar individualmente; sección aparte para **importar resúmenes existentes sueltos** (status no pagado, sin `payrollId`) que se superpongan con el rango. Al confirmar crea un `payment` por cada carrier nuevo y llama a `transportPayrollsService.create({ paymentIds: [...nuevos, ...importados] })` que tagea cada resumen con `payrollId`. **Vista tabla** en `PayrollDetailModal`: `PrintablePayrollTable` (off-screen) renderiza `# | Transportista | Vueltas | Período | Estado | Total` + fila de totales en verde estilo Excel — capturada por `html-to-image` para los botones 📋 Copiar / 📥 PNG / 🖨 Imprimir. La tabla visible incluye columna `Acciones` (💰 Pagar / ✕ Quitar / ↶ Revertir) ocultable según el estado de la quincena.
 - **Balance general** — sección en la cabecera de la pantalla: rango de fechas + filas por transportista (viajes − pagos). Bumpea `balanceVersion` al pagar/revertir para refrescar. Botón **🖨 Imprimir balance** abre ventana de impresión.
 - Modal: `src/Components/TransportsModal.jsx` — usado en `CycleDetail` para asignar viajes rápidos. Incluye un sub-modal **+ Nuevo transportista** que crea un carrier inline y lo auto-selecciona junto con su primer vehículo (sin salir del modal de viajes). El selector de transportista del `TripEditModal` es un **combobox searchable** (`CarrierCombobox`) con typeahead sobre alias/nombre/aliases-de-vehículo, sección "RECIENTES" arriba (últimos 6 carriers usados en este ciclo, persistido en `localStorage` `transports.recentCarriers.{cycleId}`), navegación con flechas + Enter, y auto-select del primer (o único) vehículo del carrier elegido.
 - Servicios: `services/transportsService.js` exporta `tripsService` (alias `transportsService`) y `paymentsService` (alias `transportPaymentsService`).
+- **Totales derivados (invariante)**: `transportPayments.total` y `transportPayrolls.total` son denormalizaciones. El detalle imprimible (`PrintableSummary`) suma las vueltas **en vivo**, mientras que el **Balance de quincenas** (`QuincenasBalanceSummary`) y la tarjeta de la quincena leen el campo guardado — si el `amount` de una vuelta cambia y nadie refresca el campo, las dos vistas muestran montos distintos para el mismo transportista. La propagación vive en el servicio, **no en las pantallas**: `tripsService.create/update/remove` llaman `recalcPaymentTotal()` (que además saca del `tripIds` los IDs de vueltas borradas) y este llama `recalcPayrollTotal()`. `editSummaryTrips`, `updateTotal` y `deleteSummary` también propagan hacia la quincena. Los documentos con `status: "paid"` están congelados y no se recalculan. **No agregar recálculos manuales en las pantallas** — antes cada pantalla tenía que acordarse de llamar `updateTotal` y las que editan una vuelta fuera del modal del resumen (pestaña Vueltas, modal del ciclo) no lo hacían, lo que descuadraba el balance en silencio.
 - Contexto: `CarriersContext` precarga transportistas; expone CRUD con soft-delete.
+- **Auditoría por transportista**: los logs de `transport` / `transportPayment` llevan `meta.carrierId` denormalizado (helper `carrierMeta()` en `transportsService.js`) — sin eso no se puede preguntar "qué le pasó a las vueltas de este transportista", porque un log de `update` solo guarda el diff y el `entityId` es el de la vuelta. Mismo patrón que `extractRefMeta` (workerRut/cycleId) en `firestoreBase.js`. Lo consume `Audit.jsx → fetchSatelliteLogs`: al elegir un transportista en "Buscar por registro" se suman sus vueltas y resúmenes al historial de la ficha. Los recálculos automáticos de total quedan logueados con `meta.auto = "recalcTotal"`. **Los logs anteriores a este cambio no tienen `meta.carrierId` y no aparecen** en esa vista.
 - Tipos de viaje: `regular` (Vuelta), `approach` (Acercamiento) — definidos en `TRIP_KINDS`.
 - Tipos de transportista: `own` (Propio), `contracted` (Contratado) — definidos en `CARRIER_TYPES`.
 - Trips: `{carrierId, vehicleAlias, cycleId, faenaId, subfaenaId, date, kind, qty, rate, amount, lugar, destino, personCount, notes, status, paymentId}`.
@@ -299,7 +316,7 @@ Botones de descarga:
   - **Modo Cobrar editable inline**: cada fila de `LaborTable`/`TransportTable` muestra inputs editables (`<input type=number>`) en las celdas de Cantidad/HE/Valor/Valor total. El `Total HE` y `Bonos` no son editables (son derivados). Los overrides se persisten por ciclo en `cobrar.labors[laborId].rowOverrides[date] = { qty?, overtimeHours?, rate?, amount? }`. Vaciar un input vuelve al valor base. También se pueden **agregar filas manuales** ("+ Agregar día / ajuste manual") que se guardan en `cobrar.labors[laborId].extraRows[]` con un `id` único; arrancan con `qty/rate/amount = ""` (no `0`) para que el `computedAmount = qty × rate` se aplique en cuanto el usuario tipea — si arrancaran en `0`, el override `amount=0` bloquea la multiplicación y la fila queda en `$0`. Aparecen mezcladas en la tabla con badge `(ajuste)` y botón `✕` para eliminar. Para labores `trato`, las filas extra **heredan la `unit` dominante** del labor (la más frecuente entre las filas regulares) para que `formatRowMetric` muestre "X saco" en vez de solo "X". Mismo modelo para transportistas (`cobrar.carriers[carrierId].rowOverrides/extraRows`). El `grandTotalCobrar` usa `chargedTotals.amount` (overrides aplicados) en lugar del `qty × chargeRate` viejo.
   - **Total a facturar + IVA**: en el printable de cobrar el grand total se rotula **TOTAL A FACTURAR** y debajo se muestran dos filas: **Valor IVA (19%)** = `round(total × 0.19)` e **IVA incluido** = `round(total × 1.19)`. La hoja `Total` del XLSX las reproduce con fórmulas vivas (`ROUND(C*0.19,0)` y `=C+C`).
   - **XLSX consolidado** (botón **📊 Excel** del footer): genera un workbook con **una hoja por labor** (cosecha/trato con desglose multi-combo, tratoHE con tarifa HE editable + fórmulas, main/sup/extra plano) + **una hoja por transportista** + una hoja **`Total`** que referencia los subtotales con fórmulas `='<sheet>'!$X$N`. Layout obligatorio: col A vacía width 6, fila 1 vacía, datos desde B2 (ver `memory/project_xlsx_layout_constraints.md`). En modo cobrar refleja los overrides (escribe valores literales en lugar de fórmulas que apuntan a una tarifa única).
-- `Components/WorkerSummaryModal.jsx` — multi-ciclo activo, day-by-day, títulos editables (`worker_summary_titles_${rut}`). Carga **anticipos pendientes** via `listPendingForWorkers([rut])` y renderiza una sección "Anticipos / Adelantos pendientes" con tipo, fecha, monto, aplicado, saldo y nota. Cuando hay saldo, el bloque de totales muestra `Total producción − Saldo anticipos = NETO ESTIMADO` (en lugar del simple `TOTAL GENERAL`). Toggle de vista **📂 Por ciclo / 📜 Lineal**: el modo Lineal aplana todos los días de todos los ciclos en una sola tabla cronológica con columna `Ciclo`, con sus propios botones 📋 Copiar / 📥 PNG / 🖨 Imprimir y título editable (`linear: { main, subtitle }` dentro del localStorage de títulos). Soporta rango de fechas e incluye ciclos cerrados en el filtro.
+- `Components/WorkerSummaryModal.jsx` — multi-ciclo activo, day-by-day, títulos editables (`worker_summary_titles_${rut}`). Carga **anticipos pendientes** via `listPendingForWorkers([rut])` y renderiza una sección **"Anticipos y Bonos pendientes"** con tipo, fecha, monto, aplicado, saldo y nota. Cuando hay saldo, el bloque de totales lo desglosa en `Saldo anticipos pendientes` (resta) y `Saldo bonos pendientes` (suma) para llegar al `NETO ESTIMADO`, en lugar del simple `TOTAL GENERAL`. Toggle de vista **📂 Por ciclo / 📜 Lineal**: el modo Lineal aplana todos los días de todos los ciclos en una sola tabla cronológica con columna `Ciclo`, con sus propios botones 📋 Copiar / 📥 PNG / 🖨 Imprimir y título editable (`linear: { main, subtitle }` dentro del localStorage de títulos). Soporta rango de fechas e incluye ciclos cerrados en el filtro.
 - Ambos: logo desde `${import.meta.env.BASE_URL}logo.png`, modo foto (copiar imagen, descargar PNG, imprimir con `print-color-adjust: exact`).
 - **Headers/totales reflejan el catálogo, no literales**: la columna principal y los "Total" se etiquetan con `cosechaUnit(catalogs, containersDelCiclo)` para cosecha y `tratoTypeLabel(catalogs, labor.tratoType)` para trato. Si un ciclo mezcla varios tipos cae al genérico ("Trato", "Unid.").
 
@@ -466,6 +483,29 @@ Tab **📊 Resumen**: vista que **cruza los 12 meses** de un año para la empres
 - **Tabla mensual** (Ene–Dic + TOTAL): Ventas Neto · IVA Débito · Compras Neto · IVA Crédito · **IVA a pagar del mes**. Meses sin actividad atenuados.
 - Exports: misma toolbar 📋📥🖨📊. `PrintableResumen` (forwardRef) off-screen. XLSX respeta la convención col A vacía width 6 + fila 1 vacía, con el balance de IVA en el encabezado. Filename `Resumen_{empresa}_{año}`.
 
+## Libro de Precios / PriceBook
+
+- Pantalla: `src/screens/PriceBook.jsx`. Ruta `/price-book`. Colecciones `priceBookEntries` + `priceBookConfig/main`.
+- **Registro contable independiente**: no alimenta ni lee `cycles`/`workdays`/`faenas` para calcular nada. Es el histórico de "qué se pagó y qué se cobró por tal labor en tal faena, en tal período".
+- Una entrada puede colgar de una **faena real** (`faenaId`) o de una **faena dummy** (`faenaId: null` + `faenaLabel` como texto libre) — hay faenas históricas que nunca existieron en la app.
+- Cada entrada lleva N líneas de precio: `unit` (texto libre), `payPrice` (pago) vs `chargePrice` (cobro), y para unidades de jornada opcionalmente el par de hora extra. Las unidades nuevas se acumulan solas en el catálogo compartido `priceBookConfig/main.units`.
+- `priceBookConfig/main.hiddenFaenaIds` esconde del selector faenas reales cuyo nombre no es legible.
+
+## Información y Cuentas / InfoAccounts
+
+- Pantalla: `src/screens/InfoAccounts.jsx`. Ruta `/info-cuentas`. Colección `contactCards`.
+- Libreta compartida de contactos (persona o empresa) con datos bancarios listos para copiar/pegar. **Modelo independiente**: no se vincula a `worker` ni a `companies` — el usuario crea sus propias fichas, aunque dupliquen a alguien que ya existe en otra colección.
+- Cada ficha tiene N cuentas (`accounts[]`), con la misma convención de `bankCode`/`accountType` que `worker.bankDetails`.
+- `favorite` fija la ficha arriba; `includeRut` decide si el RUT viaja junto con los datos copiados (siempre `true` en empresas).
+
+## Pesajes QR / HarvestQr
+
+- Pantalla: `src/screens/HarvestQr.jsx`. Ruta `/admin/harvest-qr` (solo admin). Colecciones `harvestWeights` (lectura) + `qrPrefixes` (CRUD).
+- `harvestWeights` la escribe una **app externa de scan**, no esta app. Es fuente de verdad y acá **nunca se edita**: solo se lee para sincronizar hacia `workdays`.
+- `qrPrefixes` (docId = el prefijo, ej. `"HP"`) es el puente entre un QR físico y el (faena, ciclo, labor) vigente al que hay que mandar sus pesajes. **Se reapunta a mano cada vez que se abre un ciclo nuevo** — semi-manual a propósito, no hay forma segura de adivinar el ciclo destino.
+- La sincronización agrupa los pesajes del rango por (trabajador, día, combo calidad/envase) sumando kilos, y escribe los `workdays` resultantes. Los ejes del combo se mapean con `qualityMap`/`containerMap` del prefijo; sin ellos el mapeo es identidad (los catálogos se diseñaron preservando la convención numérica de la app de scan).
+- `healthOf()` marca un prefijo como roto si su ciclo/labor apuntado ya no existe o dejó de ser de cosecha — es el chequeo de "me olvidé de reapuntarlo".
+
 ## Links útiles
 
 - Pantalla: `src/screens/InterestLinks.jsx`. Ruta `/links`.
@@ -477,7 +517,7 @@ Tab **📊 Resumen**: vista que **cruza los 12 meses** de un año para la empres
 
 - **Sidebar colapsable** (`layout.sidebarOpen` en `localStorage`): un solo botón ☰ funciona como toggle en desktop y abre drawer en mobile (decidido por `matchMedia("(min-width: 768px)")`).
 - Nav incluye: Dashboard, Faenas, Calendario, Trabajadores, Transportes, Anticipos / Bonos, Nómina, Facturación, Links útiles. Items admin (Auditoría, Migrar CSV, Limpiar pagados, Consola) se ven solo con `isAdmin`.
-- **Versión en el header** — `Agrofrutos v1.0.{commitCount}` autogenerado en build-time por `vite.config.js` (via `git rev-list --count HEAD` inyectado como `__APP_VERSION__`). Sirve para diagnosticar caché PWA viejo de un vistazo: si el header sigue mostrando una versión anterior tras un deploy, el SW tiene un bundle stale.
+- **Versión en el header** — `TeRRA v1.1.{commitCount}` autogenerado en build-time por `vite.config.js` (via `git rev-list --count ${VERSION_RESET_COMMIT}..HEAD`, inyectado como `__APP_VERSION__`). El conteo arranca desde un commit de reset, no desde el inicio del repo. Sirve para diagnosticar caché PWA viejo de un vistazo: si el header sigue mostrando una versión anterior tras un deploy, el SW tiene un bundle stale. Ojo en CI: sin `fetch-depth: 0` el conteo da 0.
 
 ## Env
 
@@ -493,15 +533,18 @@ Tab **📊 Resumen**: vista que **cruza los 12 meses** de un año para la empres
 /cycles/:id                    CycleDetail
 /workers                       Trabajadores
 /transports                    Transportes
-/advances                      Anticipos / Adelantos
+/advances                      Anticipos / Bonos
 /payroll                       Nómina
 /facturacion                   Facturación (import RCV del SII)
+/price-book                    Libro de Precios
+/info-cuentas                  Información y Cuentas (libreta de contactos)
 /links                         Links útiles
 /calendar                      Calendario mensual
 /audit                         Auditoría (admin only)
 /admin/migrate-workers         Importar trabajadores desde CSV (admin)
 /admin/cleanup-paid-workdays   Limpieza de workdays ya pagados (admin)
 /admin/console                 Consola admin: Firestore counts (admin only)
+/admin/harvest-qr              Sincronizar pesajes QR → workdays (admin)
 *                              NotFound (catch-all dentro y fuera del Layout)
 ```
 
@@ -516,5 +559,5 @@ Tab **📊 Resumen**: vista que **cruza los 12 meses** de un año para la empres
 - **Precache**: precachea todos los assets del build con `globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}']`. Límite subido a 5MB porque el chunk de exceljs excede el default de 2MB.
 - **Cache de datos**: NO interceptamos las llamadas a Firestore — el SDK de Firebase ya maneja su propio cache offline en IndexedDB. Habilitar `enableIndexedDbPersistence` si queremos offline-first más agresivo.
 - **navigateFallback: null** intencional. No queremos que el SW devuelva `index.html` para rutas desconocidas porque romperíamos el truco 404.html → `?/path` de GitHub Pages.
-- **Auto-update**: cuando se hace `npm run deploy` de una versión nueva, el SW detecta el cambio en `sw.js` en la próxima navegación y se actualiza sin prompt al usuario (próximo reload toma la versión nueva).
+- **Auto-update**: cuando se publica una versión nueva (merge a `main` → Actions, o `npm run deploy` a mano), el SW detecta el cambio en `sw.js` en la próxima navegación y se actualiza sin prompt al usuario (el reload siguiente toma la versión nueva).
 - **Dev**: `devOptions.enabled: false` — el SW no corre en `npm run dev` para no pelearse con HMR.

@@ -122,7 +122,7 @@ Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
 
 `PayrollItem` (embebido):
 - `rut` (el campo real en código es `rut`, no `workerRut` a pesar de lo que sugiere el nombre del doc — mismatch histórico), `workerId` (agregado en fase 2, ref estable al worker), `workerName`, `bankDetails`
-- `amount`, `advance`, `anticiposTotal`, `adelantosTotal`
+- `amount`, `advance`, `anticiposTotal`, `adelantosTotal` (**legacy: siempre 0** de acá en adelante; se sigue escribiendo solo para que los snapshots viejos se lean igual)
 - `byCycle: { [cycleId]: {...} }`
 - `workdayIds: string[]`, `advanceIds: string[]`
 
@@ -151,20 +151,25 @@ Atajos a herramientas externas mostrados en `/links`. CRUD con reordenamiento dr
 | `order` | number? | índice ascendente; sin valor → ordena al final alfabéticamente |
 
 ### `advances`
-Anticipos / adelantos. Se aplican contra una nómina.
+Anticipos (descuento) y bonos (suma) sobre la próxima nómina. El signo lo da `type`, no el monto: `amount` siempre es positivo.
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | string | autoId |
-| `type` | `"anticipo"` \| `"adelanto"` | |
+| `type` | `"anticipo"` \| `"bono"` | `anticipo` descuenta (sign −1), `bono` suma (+1). El legacy `"adelanto"` se normaliza a `"anticipo"` **al leer** (`normalizeAdvanceType`) — los docs viejos conservan ese valor en Firestore, no hubo backfill |
 | `workerRut` | string | rut al momento de crear el anticipo |
 | `workerId` | ref→`worker` (por id, estable) | agregado en fase 2; fallback a `workerRut` en anticipos viejos |
 | `workerName` | string | snapshot |
-| `amount` | number | |
+| `amount` | number | total comprometido |
+| `amountPaid` | number | denormalizado = Σ `payments[].amount`; el saldo es `advanceRemaining() = amount − amountPaid` |
+| `payments` | `[{ payrollId, amount, paidAt }]` | append-only. **No queda ordenado por fecha**: revertir una nómina filtra entradas del medio (`restoreAdvancesFromPayroll`), así que para "última cuota" hay que tomar el MÁXIMO `paidAt`, nunca el último elemento |
 | `date` | string (YYYY-MM-DD) | |
 | `note` | string? | |
-| `status` | `"pending"` \| `"applied"` | |
-| `appliedPayrollId` | ref→`payrolls` \| null | |
+| `status` | `"pending"` \| `"partial"` \| `"applied"` \| `"cancelled"` | `partial` = `amountPaid > 0` pero menor a `amount`; sigue siendo cobrable. Los docs legacy sin `status` se tratan como `pending` |
+| `installments` | `{ count, amount, cadence }` \| null | plan de cuotas, **solo para `anticipo`**. Se fija al crear y no se edita después (para cambiarlo hay que borrar y recrear). `amount = Math.ceil(total/count)` — ceil a propósito: `count` cuotas siempre cubren el total y la última queda más chica sola, sin llevar la cuenta de en qué cuota va. `cadence` (`porPago` \| `quincenal` \| `mensual`) es una **etiqueta informativa, no un gate por fecha**: no hay cron en la app, el admin confirma a mano qué cuotas entran al generar cada nómina |
+| `appliedPayrollId` | ref→`payrolls` \| null | última nómina que lo tocó (legacy — el detalle real vive en `payments[]`) |
 | `appliedAt`, `appliedBy` | ts?, string? | |
+
+> **Ojo con los filtros**: `pending` y `partial` van juntos en el bucket "Pendientes" (`Advances.jsx` → `STATUS_BUCKET`, y `listPendingForWorkers()`). Un parcial que quede fuera de ese bucket desaparece de la vista sin que su saldo deje de existir.
 
 ### `carriers`
 Transportistas (propios o contratados).
@@ -186,15 +191,15 @@ Transportistas (propios o contratados).
 | `vehicleAlias` | string | |
 | `cycleId` | ref→`cycles` | |
 | `faenaId`, `subfaenaId` | ref \| null | |
-| `laborId` | string? | id de labor dentro de `cycle.labors[]`. Opcional — solo se pide en el form cuando el ciclo tiene más de una labor simultánea; sin valor, el viaje aplica al ciclo completo (comportamiento de siempre). El `laborGroupId` (cross-ciclo) se deriva de ahí, no se duplica en el viaje. |
+| ~~`laborId`~~ | — | **No llega a Firestore.** `TripEditModal` lo pide y lo manda en el payload, pero `normalizeTrip()` (transportsService.js) no lo copia al doc, así que nunca se escribe ni lo lee nadie. Hoy es una entrada de usuario que se descarta en silencio: o se saca del form, o se agrega a `normalizeTrip`. |
 | `date` | string (YYYY-MM-DD) | |
 | `kind` | `"regular"` \| `"approach"` | |
 | `qty`, `rate`, `amount` | number | `amount = qty * rate` |
 | `lugar`, `destino` | string? | |
 | `personCount` | number? | |
 | `notes` | string? | |
-| `status` | `"pending"` \| `"paid"` | |
-| `paymentId` | ref→`transportPayments` \| null | |
+| `status` | `"pending"` \| `"paid"` | una vuelta `paid` queda congelada: `tripsService.update`/`remove` la rechazan |
+| `paymentId` | ref→`transportPayments` \| null | null = "vuelta suelta", disponible para entrar a un resumen nuevo |
 
 ### `transportPayments`
 Resumen de pago a un transportista (lote de `transports`).
@@ -202,13 +207,30 @@ Resumen de pago a un transportista (lote de `transports`).
 |---|---|---|
 | `id` (docId) | string | autoId |
 | `carrierId` | ref→`carriers` | |
-| `periodFrom`, `periodTo` | string (YYYY-MM-DD) \| null | |
+| `periodFrom`, `periodTo` | string (YYYY-MM-DD) \| null | **snapshot del rango con que se creó el resumen**; no se recalcula al agregarle vueltas después, así que puede quedar más angosto que las fechas reales de `tripIds` |
 | `groupBy` | `"day"` \| ... | |
 | `tripIds` | ref→`transports`[] | |
-| `total` | number | |
+| `total` | number | **denormalizado** = Σ `amount` de las vueltas vivas. Lo mantiene el servicio (`recalcPaymentTotal`), no las pantallas — ver "Totales denormalizados" abajo |
+| `abonos` | `[{ id, amount, date, notes, createdAt, createdBy }]` | pagos parciales antes de marcar el resumen 100% pagado. El pendiente se calcula en cliente (`total − Σ abonos`); **no** descuenta de `total` |
+| `payrollId` | ref→`transportPayrolls` \| null | null = resumen "suelto", disponible para entrar a una quincena |
+| `status` | `"pending"` \| `"paid"` | `paid` congela el doc: no se recalcula ni se edita |
+| `paidAt`, `paidBy` | ts?, string? | |
+| `notes` | string? | |
+
+### `transportPayrolls` (quincenas)
+Agrupa N `transportPayments` de **varios** transportistas para pagar en bloque. Relación 1:N estricta: un resumen pertenece a una quincena o a ninguna.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | autoId |
+| `name` | string | obligatorio (ej. "Primera Quincena Agosto") |
+| `periodFrom`, `periodTo` | string (YYYY-MM-DD) \| null | referencial: el agrupamiento es lógico, no un filtro estricto por fecha |
+| `paymentIds` | ref→`transportPayments`[] | |
+| `total` | number | **denormalizado** = Σ `total` de sus resúmenes (`recalcPayrollTotal`) |
 | `status` | `"pending"` \| `"paid"` | |
 | `paidAt`, `paidBy` | ts?, string? | |
 | `notes` | string? | |
+
+> **Cascada de pago**: marcar la quincena pagada marca cada resumen y cada vuelta de cada resumen. Marcar un item suelto marca solo ese resumen y sus vueltas — la quincena sigue `pending` hasta que se marque explícitamente. Revertir hace la cascada inversa.
 
 ### `companies`
 Empresas (emisoras/receptoras) del módulo de Facturación. Multi-empresa: el usuario elige cuál opera y se persiste en `localStorage`.
@@ -253,6 +275,25 @@ Documento tributario electrónico (factura / boleta / NC / etc.) importado del *
 - `id` (local), `date` (YYYY-MM-DD), `kind` (`abono` \| `neto` \| `iva` \| `total`), `amount: number`, `notes: string`
 - **Invariante**: `Σ amount ≤ total` (validado al guardar).
 
+### `costCenters`
+Centros de costo **ficticios** del Libro de Facturación — catálogo global (compartido entre empresas) para etiquetar a mano documentos que no calzan con la agrupación por proveedor (ej. "Arriendo", "Mantención"). "Combustibles" no vive acá: se deriva 100% del código de otro impuesto del SII.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | autoId |
+| `label` | string | |
+| `emoji` | string \| null | |
+
+### `informalExpenses`
+Gastos sin respaldo tributario (sin factura/boleta, o con boleta nunca ingresada al SII). **Puramente informativos**: no son `dteDocuments`, no se mezclan con la data fiscal y solo se muestran dentro de la vista de un centro de costo.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | autoId |
+| `costCenterId` | ref→`costCenters` | |
+| `companyId` | ref→`companies` \| null | opcional: gasto sin empresa asignada |
+| `date` | string (YYYY-MM-DD) | |
+| `amount` | number | |
+| `detail` | string | |
+
 ### `groupLeader`
 Listado curado de líderes de grupo disponibles para asignación. La idea es que la lista no crezca con valores ad-hoc.
 | Campo | Tipo | Notas |
@@ -267,6 +308,85 @@ Listas configurables. **DocId = nombre del catálogo** (`qualities`, `containers
 |---|---|---|
 | `id` (docId) | string | nombre |
 | `entries` | `[{ value, label }]` | |
+
+### `contactCards`
+Libreta compartida de contactos (persona o empresa) con datos bancarios listos para copiar — pantalla "Información y Cuentas". Modelo **independiente**: no se vincula a `worker` ni a `companies`.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | autoId |
+| `type` | `"persona"` \| `"empresa"` | |
+| `name` | string | |
+| `rut` | string | normalizado |
+| `includeRut` | bool | si el RUT se muestra/copia junto con los datos (siempre `true` en empresas) |
+| `phone`, `email`, `address` | string | |
+| `giro` | string | solo `empresa` |
+| `note` | string | |
+| `favorite` | bool | fija la ficha arriba |
+| `accounts` | `Account[]` | N cuentas por ficha (ver abajo) |
+
+`Account` (embebido en `contactCards.accounts`):
+- `id` (local), `label`, `titular`, `rutTitular`
+- `bankCode`, `accountType` (number, misma convención que `worker.bankDetails`), `accountNumber`, `email`
+
+### `indicators`
+Valores del ticker del header (sueldo base, valor día, valor hora extra). **Un único doc `indicators/main`**, editado a mano desde el header.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | siempre `"main"` |
+| `sueldoBase`, `dia`, `hora` | number | |
+
+### `priceBookEntries`
+Libro de precios: registro contable **independiente** de faenas/labores/ciclos (histórico, incluye faenas "dummy" que no existen en `faenas`). No alimenta ni depende de `cycles`/`workdays`.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | autoId |
+| `faenaId` | ref→`faenas` \| null | null cuando la faena es dummy (solo texto) |
+| `faenaLabel` | string | snapshot del nombre, real o dummy |
+| `labor` | string | texto libre, no ref |
+| `prices` | `PriceLine[]` | ver abajo |
+| `transportIncluded` | bool | |
+| `transportWhere` | string \| null | solo si el transporte **no** está incluido |
+| `transportCost` | number \| null | ídem |
+| `dateFrom` | string (YYYY-MM-DD) | |
+| `dateTo` | string (YYYY-MM-DD) \| null | null = vigente |
+| `periodNote`, `notes` | string \| null | |
+
+`PriceLine` (embebido en `priceBookEntries.prices`):
+- `unit` (texto libre; el catálogo de unidades se acumula en `priceBookConfig/main`), `label`
+- `payPrice` (lo que se paga), `chargePrice` (lo que se cobra)
+- `hasOvertime`, `overtimePayPrice`, `overtimeChargePrice` — solo para unidades de jornada
+
+### `priceBookConfig`
+Config chica y compartida del libro de precios. **Un único doc `priceBookConfig/main`**, mismo patrón que `indicators/main`.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | siempre `"main"` |
+| `units` | string[] | catálogo de unidades; crece solo al escribir una unidad nueva en una entrada |
+| `hiddenFaenaIds` | string[] | faenas reales que se esconden del selector (nombre no legible) |
+
+### `harvestWeights`
+Pesajes de cosecha escaneados por QR, escritos por la **app externa de scan**. Colección plana tipo log de eventos (N por trabajador por día). Es fuente de verdad: la app admin **nunca la edita**, solo la lee para sincronizar hacia `workdays`.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | autoId (lo pone la app de scan) |
+| `prefix` | ref→`qrPrefixes` | prefijo del QR físico que originó el pesaje |
+| `rut` | string | trabajador |
+| `dateKey` | string (YYYY-MM-DD) | clave de agrupación y de filtro por rango |
+| `amount` | number | kilos del pesaje |
+| `weightProcess` | number | eje "calidad" en la convención numérica del scan; se mapea vía `qrPrefixes.qualityMap` |
+| `weightType` | number | eje "envase"; se mapea vía `qrPrefixes.containerMap` |
+
+### `qrPrefixes`
+Puente entre un prefijo de QR físico y el (faena, ciclo, labor) al que hay que sincronizar sus pesajes. **DocId = el prefijo** (ej. `"HP"`). El ciclo/labor vigente se reapunta a mano cada vez que se abre un ciclo nuevo — deliberadamente semi-manual.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | el prefijo, UPPERCASE |
+| `label` | string | |
+| `faenaId` | ref→`faenas` | |
+| `cycleId` | ref→`cycles` \| null | ciclo vigente al que se sincroniza |
+| `laborId` | string \| null | labor (de tipo cosecha) dentro de ese ciclo |
+| `qualityMap`, `containerMap` | `{ [codigoScan]: valorCatalogo }`? | remapeo opcional; sin ellos el mapeo es identidad |
+| `active` | bool | |
 
 ### `users`
 Preferencias de UI por usuario. **DocId = uid de Auth.**
@@ -284,8 +404,21 @@ Auditoría — una fila por mutación.
 | `uid`, `email` | string? | quién |
 | `action` | `"create"` \| `"update"` \| `"delete"` | |
 | `entity`, `entityId` | string | qué |
-| `before`, `after`, `changes`, `meta` | objeto? | según action |
+| `before` | objeto? | solo en `delete` (snapshot completo) |
+| `after` | objeto? | solo en `create` (snapshot completo) |
+| `changes` | `{ [campo]: { from, to } }`? | solo en `update` — **es el diff, no el doc entero** |
+| `meta` | objeto? | referencias cruzadas denormalizadas + contexto extra (ver abajo) |
 | `timestamp` | ts | |
+
+`meta` es lo que hace buscable un log de `update`: como esos logs guardan solo el diff, sin denormalizar el "dueño" no hay forma de preguntar "qué le pasó a las cosas de este trabajador/transportista".
+| Clave | La escribe | Para |
+|---|---|---|
+| `workerRut`, `cycleId` | `firestoreBase.js` → `extractRefMeta` (automático en cualquier colección que tenga esos campos) | ligar `workdays` y demás a su trabajador/ciclo |
+| `carrierId` | `transportsService.js` → `carrierMeta()` (a mano: ese servicio no usa `createService`) | ligar `transport` y `transportPayment` a su transportista |
+| `auto: "recalcTotal"` | `recalcPaymentTotal` / `recalcPayrollTotal` | distinguir un recálculo automático de total de una edición hecha por una persona |
+| `addedAbono`, `removedAbonoId` | `paymentsService` | detalle del abono tocado |
+
+> Consumidor: `Audit.jsx` → `fetchSatelliteLogs`. Al elegir un registro en "Buscar por registro" suma los logs satélite (trabajador → sus jornadas; transportista → sus vueltas y resúmenes). **La atribución por `meta.carrierId` es reciente: los logs de transporte anteriores no la tienen y no aparecen ahí.**
 
 ---
 
@@ -304,7 +437,11 @@ erDiagram
     CARRIERS ||--o{ TRANSPORTS : "ejecuta"
     CARRIERS ||--o{ TRANSPORT_PAYMENTS : "cobra"
     TRANSPORT_PAYMENTS ||--o{ TRANSPORTS : "agrupa (paymentId)"
+    TRANSPORT_PAYROLLS ||--o{ TRANSPORT_PAYMENTS : "agrupa (payrollId)"
     COMPANIES ||--o{ DTE_DOCUMENTS : "tiene (companyId)"
+    COST_CENTERS ||--o{ INFORMAL_EXPENSES : "agrupa (costCenterId)"
+    QR_PREFIXES ||--o{ HARVEST_WEIGHTS : "origina (prefix)"
+    HARVEST_WEIGHTS }o--|| WORKDAYS : "sincroniza hacia"
     USERS ||--o| FAENAS : "layout pref"
     LOGS }o--|| WORKER : "audita"
     LOGS }o--|| CYCLES : "audita"
@@ -355,10 +492,13 @@ erDiagram
     }
     ADVANCES {
         string id PK
-        string type
+        string type "anticipo|bono"
         string workerRut FK
         number amount
-        string status
+        number amountPaid
+        array  payments
+        map    installments
+        string status "pending|partial|applied|cancelled"
         string appliedPayrollId FK
     }
     CARRIERS {
@@ -381,9 +521,45 @@ erDiagram
     TRANSPORT_PAYMENTS {
         string id PK
         string carrierId FK
+        string payrollId FK
         array  tripIds
-        number total
+        array  abonos
+        number total "denormalizado"
         string status
+    }
+    TRANSPORT_PAYROLLS {
+        string id PK
+        string name
+        array  paymentIds
+        number total "denormalizado"
+        string status
+    }
+    COST_CENTERS {
+        string id PK
+        string label
+        string emoji
+    }
+    INFORMAL_EXPENSES {
+        string id PK
+        string costCenterId FK
+        string companyId FK
+        string date
+        number amount
+        string detail
+    }
+    QR_PREFIXES {
+        string id PK "el prefijo"
+        string faenaId FK
+        string cycleId FK
+        string laborId
+        bool   active
+    }
+    HARVEST_WEIGHTS {
+        string id PK
+        string prefix FK
+        string rut FK
+        string dateKey
+        number amount
     }
     COMPANIES {
         string id PK
@@ -427,6 +603,10 @@ erDiagram
 - **cycle.labors[].workers[]**: array de RUTs (no es FK formal, pero apunta a `worker.id`).
 - **workday.payrollId**: tag inverso. Una nómina "reclama" sus workdays vía `workdayIds[]` y a la vez cada workday queda apuntando a la nómina.
 - **advance.status / appliedPayrollId**: paralelo al de workdays — se "aplican" a una nómina y se "restauran" a `pending` si la nómina se borra.
-- **transport.paymentId ↔ transportPayment.tripIds**: misma idea de tag bidireccional para transportistas.
+- **transport.paymentId ↔ transportPayment.tripIds**: misma idea de tag bidireccional para transportistas. Lo mismo un nivel más arriba con **transportPayment.payrollId ↔ transportPayroll.paymentIds**.
+- **Totales denormalizados (transporte)**: `transportPayments.total` y `transportPayrolls.total` son sumas guardadas, no calculadas al leer. El detalle imprimible suma las vueltas **en vivo**, mientras que el Balance de quincenas y la tarjeta de la quincena leen el campo — si divergen, es que algo escribió una vuelta sin propagar hacia arriba. La propagación vive en `transportsService.js` (`recalcPaymentTotal` → `recalcPayrollTotal`), disparada desde `tripsService.create/update/remove`, **no en las pantallas**. Los docs con `status: "paid"` quedan congelados y no se recalculan.
+- **advance.amountPaid ↔ advance.payments[]**: `amountPaid` es la suma de `payments[]` y el `status` se deriva de comparar contra `amount`. Revertir una nómina filtra de `payments[]` las entradas de esa nómina y recalcula ambos — por eso el array no queda ordenado por fecha.
+- **qrPrefix → harvestWeights → workdays**: los pesajes los escribe una app externa contra un prefijo de QR; el prefijo dice a qué (ciclo, labor) sincronizarlos. La sincronización agrupa por (trabajador, día, combo) y escribe/actualiza `workdays` — es un flujo de una sola dirección, la app admin nunca escribe `harvestWeights`.
+- **costCenter → informalExpenses**: gastos sin respaldo tributario, deliberadamente separados de `dteDocuments` para no contaminar la data fiscal.
 - **company → dteDocuments** (`companyId`): los DTE cuelgan de una empresa. El docId es **determinístico** (no autoId) → reimportar el mismo período es idempotente; el "replace por período" borra huérfanos y preserva `paymentStatus`/`payments` existentes.
 - **catalogs / users**: docIds estables (nombre / uid), no autoId.
