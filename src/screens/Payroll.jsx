@@ -27,6 +27,10 @@ import {
   advanceRemaining,
   advanceSign,
   advanceTypeMeta,
+  advanceDueNow,
+  hasInstallmentPlan,
+  installmentProgress,
+  cadenceMeta,
 } from "../services/advancesService";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import { bankName, accountTypeLabel, ACCOUNT_TYPES, isCashBank, CASH_BANK_CODE } from "../utils/banks";
@@ -172,6 +176,51 @@ export default function Payroll() {
   const [confirmState, setConfirmState] = useState(null);
   const askConfirm = (message, opts = {}) =>
     new Promise((resolve) => setConfirmState({ message, resolve, ...opts }));
+  // Mismo patrón que askConfirm, pero para el checklist de cuotas de
+  // InstallmentConfirmModal — resuelve con la lista de advanceIds que el
+  // admin destildó, o null si canceló.
+  const [installmentConfirmState, setInstallmentConfirmState] = useState(null);
+  // Si hay anticipos-con-plan entre `items`, pausa y espera que el admin
+  // confirme cuáles se aplican esta corrida; si no hay ninguno, sigue de
+  // largo. Devuelve `items` (ajustado) o `null` si el admin canceló.
+  const confirmInstallments = async (items) => {
+    const advanceById = new Map((previewAdvancesRef.current || []).map((a) => [a.id, a]));
+    const candidates = [];
+    for (const p of items) {
+      for (const app of p.anticipoApplications || []) {
+        const adv = advanceById.get(app.advanceId);
+        if (adv && hasInstallmentPlan(adv)) {
+          candidates.push({
+            advanceId: app.advanceId,
+            workerName: p.name,
+            amount: app.amount,
+            progress: installmentProgress(adv),
+          });
+        }
+      }
+    }
+    if (candidates.length === 0) return items;
+
+    const excludedIds = await new Promise((resolve) => setInstallmentConfirmState({ candidates, resolve }));
+    setInstallmentConfirmState(null);
+    if (excludedIds === null) return null;
+    if (excludedIds.length === 0) return items;
+
+    const excluded = new Set(excludedIds);
+    return items.map((p) => {
+      const apps = p.anticipoApplications || [];
+      if (!apps.some((a) => excluded.has(a.advanceId))) return p;
+      const kept = apps.filter((a) => !excluded.has(a.advanceId));
+      const anticiposTotal = kept.reduce((s, x) => s + x.amount, 0);
+      return {
+        ...p,
+        anticipoApplications: kept,
+        advance: anticiposTotal,
+        anticiposTotal,
+        amount: Math.max(0, Math.round((Number(p.grossAmount) || 0) - anticiposTotal + (Number(p.bonus) || 0))),
+      };
+    });
+  };
   const [detailPayroll, setDetailPayroll] = useState(null);
   // Renombrar nómina: `renaming` = la nómina en edición (o null). El nombre es
   // solo un label — no es clave de nada — así que se puede cambiar en cualquier
@@ -392,11 +441,14 @@ export default function Payroll() {
           const anticipoApplications = [];
           for (const advItem of sortedAnticipos) {
             if (remainingGross <= 0) break;
-            const advRem = Math.round(advanceRemaining(advItem));
-            if (advRem <= 0) continue;
-            const apply = Math.min(remainingGross, advRem);
+            const advDue = Math.round(advanceDueNow(advItem));
+            if (advDue <= 0) continue;
+            const apply = Math.min(remainingGross, advDue);
             if (apply <= 0) continue;
-            anticipoApplications.push({ advanceId: advItem.id, amount: apply });
+            // maxAmount = saldo real (sin el tope de la cuota) — permite que
+            // updatePreview deje subir el override manual por encima de la
+            // cuota sugerida sin descuadrar lo descontado vs. lo acreditado.
+            anticipoApplications.push({ advanceId: advItem.id, amount: apply, maxAmount: Math.round(advanceRemaining(advItem)) });
             remainingGross -= apply;
           }
 
@@ -486,13 +538,19 @@ export default function Payroll() {
           if (touchesAdvance) {
             // Re-clip anticipoApplications oldest-first so per-advance
             // breakdown stays consistent with the (possibly reduced) total.
+            // Tope = maxAmount (saldo real del anticipo) cuando existe, no
+            // ap.amount — si no, subir el override manual por encima de la
+            // cuota sugerida no podía crecer y quedaba descontando al
+            // trabajador más de lo que se acreditaba al anticipo (bug
+            // preexistente que las cuotas dispararían seguido).
             const apps = (p.anticipoApplications || []).map((x) => ({ ...x }));
             let remaining = adv;
             const out = [];
             for (const ap of apps) {
               if (remaining <= 0) break;
-              const take = Math.min(ap.amount, remaining);
-              if (take > 0) out.push({ advanceId: ap.advanceId, amount: take });
+              const cap = Math.max(Number(ap.maxAmount) || 0, ap.amount);
+              const take = Math.min(cap, remaining);
+              if (take > 0) out.push({ advanceId: ap.advanceId, amount: take, maxAmount: ap.maxAmount });
               remaining -= take;
             }
             next.anticipoApplications = out;
@@ -527,13 +585,19 @@ export default function Payroll() {
     // (caso: el anticipo cubrió todo el bruto). Si no, sus workdays no se
     // taggean ni los anticipos se marcan como aplicados — quedan huérfanos.
     // El XLSX del banco los filtra después (no se hacen transferencias de $0).
-    const items = previewItems.filter(
+    const rawItems = previewItems.filter(
       (p) => p.include && (Number(p.amount) > 0 || Number(p.advance) > 0),
     );
-    if (items.length === 0) {
+    if (rawItems.length === 0) {
       toast.warning("No hay trabajadores seleccionados con monto > 0 ni anticipos por aplicar.");
       return;
     }
+    // Cuotas: si hay anticipos-con-plan entre los incluidos, pausa acá y
+    // espera que el admin confirme cuáles se aplican esta corrida — antes de
+    // las validaciones de cuenta, porque excluir una cuota puede cambiar el
+    // `amount` neto de un trabajador (y por lo tanto si entra a payableItems).
+    const items = await confirmInstallments(rawItems);
+    if (!items) return; // el admin canceló en el modal de cuotas
     // Para validaciones de cuenta solo consideramos los que realmente reciben
     // pago (amount > 0). Los cero-neto no van al banco.
     const payableItems = items.filter((p) => Number(p.amount) > 0);
@@ -1100,6 +1164,17 @@ export default function Payroll() {
         onConfirm={() => {
           confirmState?.resolve(true);
           setConfirmState(null);
+        }}
+      />
+
+      <InstallmentConfirmModal
+        state={installmentConfirmState}
+        onCancel={() => {
+          installmentConfirmState?.resolve(null);
+          setInstallmentConfirmState(null);
+        }}
+        onConfirm={(excludedIds) => {
+          installmentConfirmState?.resolve(excludedIds);
         }}
       />
 
@@ -1692,6 +1767,90 @@ function PayConfirmModal({ info, onCancel, onConfirm }) {
             placeholder={keyword}
             className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm focus:border-[var(--color-accent)] outline-none"
           />
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// Confirmación manual de cuotas antes de generar una nómina. La cadencia
+// (Por pago/Quincenal/Mensual) guardada en el anticipo es solo una etiqueta
+// de referencia para el admin — acá es donde realmente se decide si una
+// cuota entra en esta corrida o no; nada se aplica automáticamente por fecha.
+// Todas vienen tildadas por defecto (se aplican salvo que el admin las saque).
+function InstallmentConfirmModal({ state, onCancel, onConfirm }) {
+  const [checked, setChecked] = useState(() => new Set());
+  useEffect(() => {
+    setChecked(new Set((state?.candidates || []).map((c) => c.advanceId)));
+  }, [state]);
+  if (!state) return null;
+
+  const toggle = (id) => {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onCancel}
+      title="Confirmar cuotas de anticipos"
+      size="md"
+      footer={
+        <>
+          <button
+            onClick={onCancel}
+            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => onConfirm(state.candidates.filter((c) => !checked.has(c.advanceId)).map((c) => c.advanceId))}
+            className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]"
+          >
+            Confirmar y generar
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-3 text-sm">
+        <p className="text-[var(--color-muted)]">
+          Estos anticipos tienen plan de cuotas. Revisá cuáles se descuentan en esta nómina — vienen todas marcadas por defecto.
+        </p>
+        <div className="space-y-2">
+          {state.candidates.map((c) => {
+            const p = c.progress;
+            const cadence = cadenceMeta(p?.cadence);
+            return (
+              <label
+                key={c.advanceId}
+                className="flex items-start gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2.5"
+              >
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 shrink-0"
+                  checked={checked.has(c.advanceId)}
+                  onChange={() => toggle(c.advanceId)}
+                />
+                <span className="flex-1">
+                  <span className="flex items-baseline justify-between gap-2">
+                    <span className="font-medium">{c.workerName}</span>
+                    <span className="font-semibold">{fmtCurrency(c.amount)}</span>
+                  </span>
+                  <span className="mt-0.5 block text-xs text-[var(--color-muted)]">
+                    Cuota {(p?.paidCount || 0) + 1}/{p?.count || "?"} · {cadence.label}
+                    {p?.daysSinceLastCuota != null
+                      ? ` · última hace ${p.daysSinceLastCuota} día${p.daysSinceLastCuota === 1 ? "" : "s"}`
+                      : " · primera cuota"}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
         </div>
       </div>
     </Modal>
@@ -3789,9 +3948,9 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
         const anticipoApplications = [];
         for (const advItem of [...adv.anticipos].sort(byDateAsc)) {
           if (remainingGross <= 0) break;
-          const advRem = Math.round(advanceRemaining(advItem));
-          if (advRem <= 0) continue;
-          const apply = Math.min(remainingGross, advRem);
+          const advDue = Math.round(advanceDueNow(advItem));
+          if (advDue <= 0) continue;
+          const apply = Math.min(remainingGross, advDue);
           if (apply <= 0) continue;
           anticipoApplications.push({ advanceId: advItem.id, amount: apply });
           remainingGross -= apply;
@@ -4066,9 +4225,9 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
           const appliedAnticipos = [];
           for (const advItem of [...newAnticipos].sort(byDateAsc)) {
             if (remainingGross <= 0) break;
-            const advRem = Math.round(advanceRemaining(advItem));
-            if (advRem <= 0) continue;
-            const apply = Math.min(remainingGross, advRem);
+            const advDue = Math.round(advanceDueNow(advItem));
+            if (advDue <= 0) continue;
+            const apply = Math.min(remainingGross, advDue);
             if (apply <= 0) continue;
             appliedAnticipos.push({ advanceId: advItem.id, amount: apply });
             remainingGross -= apply;
@@ -4140,9 +4299,9 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
         const anticipoApplications = [];
         for (const advItem of [...adv.anticipos].sort(byDateAsc)) {
           if (remainingGross <= 0) break;
-          const advRem = Math.round(advanceRemaining(advItem));
-          if (advRem <= 0) continue;
-          const apply = Math.min(remainingGross, advRem);
+          const advDue = Math.round(advanceDueNow(advItem));
+          if (advDue <= 0) continue;
+          const apply = Math.min(remainingGross, advDue);
           if (apply <= 0) continue;
           anticipoApplications.push({ advanceId: advItem.id, amount: apply });
           remainingGross -= apply;
