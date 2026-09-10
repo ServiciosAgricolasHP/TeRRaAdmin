@@ -90,6 +90,7 @@ export default function Transports() {
 // ============================================================
 
 function CarriersTab({ onViewTrips }) {
+  const toast = useToast();
   const { carriers, addCarrier, updateCarrier, softDeleteCarrier, restoreCarrier } = useCarriers();
   const [edit, setEdit] = useState(null); // null | "new" | carrier
   const [showInactive, setShowInactive] = useState(false);
@@ -115,12 +116,14 @@ function CarriersTab({ onViewTrips }) {
         if (cancelled) return;
         setPendingPayments(payments.filter((p) => p.status === "pending"));
         setPendingTrips(trips);
+      } catch (err) {
+        if (!cancelled) toast.error("No se pudieron cargar las métricas de transportistas: " + (err.message || err));
       } finally {
         if (!cancelled) setMetricsLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [toast]);
 
   const metricsByCarrier = useMemo(() => {
     const map = new Map();
@@ -572,6 +575,8 @@ function TripsTab({ initialCarrierId = null }) {
       setCycles(cyc);
       setFaenas(fa);
       setSubfaenas(sub);
+    } catch (err) {
+      toast.error("No se pudieron cargar las vueltas: " + (err.message || err));
     } finally {
       setLoading(false);
     }
@@ -2739,7 +2744,6 @@ function UnifiedSummaryModal({ open, onClose, group, faenaById, subfaenaById, cy
 
   const handleSaveTrip = async (form) => {
     if (!editingTrip) return;
-    const owningPayment = paymentByTripId.get(editingTrip.id);
     try {
       // Preservar metadata de origen (ciclo/faena/subfaena) como hace
       // TripsTab — el resumen no decide eso.
@@ -2749,17 +2753,11 @@ function UnifiedSummaryModal({ open, onClose, group, faenaById, subfaenaById, cy
         faenaId: editingTrip.faenaId || null,
         subfaenaId: editingTrip.subfaenaId || null,
       };
+      // tripsService.update propaga el total al resumen (y a su quincena),
+      // así que acá solo hace falta refrescar la vista.
       await tripsService.update(editingTrip.id, payload);
       setEditingTrip(null);
       await refreshTrips();
-      // El total del resumen de origen depende del amount: recalcular y
-      // persistir solo en ESE resumen (los demás items no se tocan).
-      if (owningPayment) {
-        const newTotal = (await tripsService.listByCarrier(group.carrierId))
-          .filter((t) => (owningPayment.tripIds || []).includes(t.id))
-          .reduce((s, t) => s + (Number(t.amount) || 0), 0);
-        await paymentsService.updateTotal(owningPayment.id, newTotal);
-      }
       if (onChanged) await onChanged();
       toast.success("Vuelta actualizada");
     } catch (err) {
@@ -3368,11 +3366,13 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
           .filter((t) => (payment.tripIds || []).includes(t.id))
           .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
         setTrips(filtered);
+      } catch (err) {
+        toast.error("No se pudieron cargar las vueltas del resumen: " + (err.message || err));
       } finally {
         setLoading(false);
       }
     })();
-  }, [open, payment]);
+  }, [open, payment, toast]);
 
   if (!payment) return null;
   const isPaid = payment.status === "paid";
@@ -3496,14 +3496,11 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
         faenaId: editingTrip.faenaId || null,
         subfaenaId: editingTrip.subfaenaId || null,
       };
+      // tripsService.update propaga el total al resumen (y a su quincena),
+      // así que acá solo hace falta refrescar la vista.
       await tripsService.update(editingTrip.id, payload);
       setEditingTrip(null);
       await refreshTrips();
-      // El total del resumen depende del amount: recalcular y persistir.
-      const newTotal = (await tripsService.listByCarrier(payment.carrierId))
-        .filter((t) => (payment.tripIds || []).includes(t.id))
-        .reduce((s, t) => s + (Number(t.amount) || 0), 0);
-      await paymentsService.updateTotal(payment.id, newTotal);
       if (onChanged) await onChanged();
       toast.success("Vuelta actualizada");
     } catch (err) {
@@ -4430,6 +4427,22 @@ function FaenaBatchTab() {
   );
 }
 
+// Ordena quincenas por el período real (periodFrom), no por cuándo se creó
+// el documento en Firestore. Una quincena cargada después de las otras para
+// tapar un hueco de meses atrás (ej. armar recién en septiembre la
+// "Quincena Abril" que quedó suelta) tiene que aparecer en su lugar
+// cronológico, no saltar arriba de todo por ser la más nueva como doc. Cae a
+// createdAt solo si a alguna de las dos le falta período (dato opcional).
+function comparePayrollPeriod(a, b) {
+  if (a.periodFrom && b.periodFrom && a.periodFrom !== b.periodFrom) {
+    return a.periodFrom < b.periodFrom ? 1 : -1; // desc: más reciente primero
+  }
+  if (!!a.periodFrom !== !!b.periodFrom) return a.periodFrom ? -1 : 1;
+  const ta = a.createdAt?.toMillis?.() ?? a.createdAt?.seconds ?? 0;
+  const tb = b.createdAt?.toMillis?.() ?? b.createdAt?.seconds ?? 0;
+  return tb - ta;
+}
+
 // Balance general SOLO de quincenas pendientes. Por cada quincena pending,
 // suma los items NO pagados agrupados por transportista. Excluye:
 //   - Quincenas marcadas como pagadas (status === "paid").
@@ -4495,13 +4508,13 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
         paidMap.get(cid).set(q.id, amt);
       }
     }
-    qList.sort((a, b) => {
-      const ta = a.createdAt?.toMillis?.() ?? a.createdAt?.seconds ?? 0;
-      const tb = b.createdAt?.toMillis?.() ?? b.createdAt?.seconds ?? 0;
-      return tb - ta;
-    });
-    // Carriers en las filas: cualquiera con monto (pending o paid) en alguna
-    // quincena incluida.
+    qList.sort(comparePayrollPeriod);
+    // Carriers en las filas: solo los que todavía deben algo. Un carrier con
+    // pendingTotal=0 (todas sus cuotas/quincenas quedaron pagadas, aunque la
+    // quincena en sí siga sin cerrarse porque otro carrier del grupo sigue
+    // debiendo) no tiene nada que hacer en un balance de "pendientes" — antes
+    // se filtraba solo cuando pending+paid daba $0, dejando filas fantasma en
+    // $0 con puro "pagado" en verde.
     const carrierIds = new Set([...pendMap.keys(), ...paidMap.keys()]);
     const carrierRows = [];
     for (const cid of carrierIds) {
@@ -4509,7 +4522,7 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
       const pd = paidMap.get(cid) || new Map();
       const pendingTotal = [...pm.values()].reduce((s, v) => s + v, 0);
       const paidTotal = [...pd.values()].reduce((s, v) => s + v, 0);
-      if (pendingTotal + paidTotal <= 0) continue;
+      if (pendingTotal <= 0) continue;
       const c = carriers.find((x) => x.id === cid);
       carrierRows.push({
         carrierId: cid,
@@ -4840,12 +4853,7 @@ function PayrollsTab() {
         cyclesService.list({ cache: true, persist: true, ttl: 5 * 60 * 1000 }),
         tripsService.listPendingUnlinked(),
       ]);
-      const sortDesc = (a, b) => {
-        const ta = a.createdAt?.toMillis?.() ?? a.createdAt?.seconds ?? 0;
-        const tb = b.createdAt?.toMillis?.() ?? b.createdAt?.seconds ?? 0;
-        return tb - ta;
-      };
-      setPayrolls(pr.sort(sortDesc));
+      setPayrolls(pr.sort(comparePayrollPeriod));
       setPayments(py);
       setFaenas(fa.filter((f) => !f.deleted));
       setSubfaenas(sub);

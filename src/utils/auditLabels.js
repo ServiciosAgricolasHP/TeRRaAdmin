@@ -28,6 +28,14 @@ import {
 } from "../services";
 import { payrollsService } from "../services/payrollsService";
 import { carriersService } from "../services/carriersService";
+import { tripsService, paymentsService, transportPayrollsService } from "../services/transportsService";
+
+// Fecha corta para los labels de vueltas/resúmenes ("2026-08-12" → "12-ago").
+const MONTHS_ABBR = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const shortDate = (iso) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
+  return m ? `${m[3]}-${MONTHS_ABBR[Number(m[2]) - 1] || m[2]}` : null;
+};
 
 // Campos candidatos genéricos, en orden de preferencia, para entidades sin
 // entrada explícita en ENTITY_META o cuyo labelOf no encontró nada.
@@ -60,9 +68,33 @@ export const ENTITY_META = {
       return `${rut} · ${date}`;
     },
   },
-  transport: { labelEs: "Viaje/transporte" },
-  transportPayment: { labelEs: "Pago transporte" },
-  transportPayroll: { labelEs: "Nómina transporte" },
+  // Transporte: el `entityId` es el id de la vuelta/resumen, no del
+  // transportista — la atribución al carrier viaja en `meta.carrierId`
+  // (ver transportsService.js → carrierMeta) y la consume Audit.jsx. Acá solo
+  // resolvemos el label legible. Ninguno es `searchable`: sus services no
+  // exponen `list()`, y el punto de entrada natural es el transportista.
+  transport: {
+    labelEs: "Vuelta",
+    service: tripsService,
+    labelOf: (d) => {
+      if (!d) return null;
+      const head = [shortDate(d.date), d.vehicleAlias].filter(Boolean).join(" · ");
+      return [head, d.destino].filter(Boolean).join(" → ") || null;
+    },
+  },
+  transportPayment: {
+    labelEs: "Resumen de pago",
+    service: paymentsService,
+    labelOf: (d) => {
+      if (!d) return null;
+      const period = [shortDate(d.periodFrom), shortDate(d.periodTo)].filter(Boolean).join(" → ");
+      const count = (d.tripIds || []).length;
+      return [period || null, count ? `${count} vuelta${count === 1 ? "" : "s"}` : null]
+        .filter(Boolean)
+        .join(" · ") || null;
+    },
+  },
+  transportPayroll: { labelEs: "Quincena de transporte", service: transportPayrollsService, labelOf: (d) => d?.name },
   informalExpense: { labelEs: "Gasto informal", labelOf: (d) => d?.detail },
   contactCard: { labelEs: "Ficha de contacto" },
   dteDocument: { labelEs: "Documento SII" },

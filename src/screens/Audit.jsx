@@ -123,7 +123,13 @@ const FIELD_LABELS = {
   subfaenaId: "Subfaena", faenaId: "Faena", cycleId: "Ciclo", laborId: "Labor",
   laborGroupId: "Grupo de labor", workerRut: "Trabajador", costCenterId: "Centro de costo",
   companyId: "Empresa", groupLeader: "Líder de grupo", type: "Tipo", emoji: "Emoji",
-  paidAt: "Fecha de pago", createdAt: "Creado", updatedAt: "Editado",
+  paidAt: "Fecha de pago", paidBy: "Pagado por", createdAt: "Creado", updatedAt: "Editado",
+  // Transporte
+  carrierId: "Transportista", vehicleAlias: "Vehículo", kind: "Tipo de viaje",
+  rate: "Tarifa", lugar: "Lugar", destino: "Destino", personCount: "Personas",
+  paymentId: "Resumen", payrollId: "Quincena", tripIds: "Vueltas", paymentIds: "Resúmenes",
+  periodFrom: "Desde", periodTo: "Hasta", groupBy: "Agrupado por", abonos: "Abonos",
+  amountPaid: "Monto pagado",
 };
 const humanizeField = (f) =>
   FIELD_LABELS[f] || String(f).replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
@@ -291,6 +297,38 @@ function sessionize(logs, gapMinutes) {
   });
 }
 
+// Historial "satélite": logs que pertenecen conceptualmente a un registro pero
+// se guardan bajo otra entidad, atribuidos vía `meta`. Sin esto, elegir un
+// transportista en la auditoría solo muestra los cambios a su ficha (alias,
+// vehículos) y no lo que de verdad importa: sus vueltas y sus resúmenes.
+//
+// Limitación conocida: la atribución por `meta.carrierId` se agregó junto con
+// esta pantalla, así que los logs de transporte anteriores a ese cambio no la
+// tienen y no aparecen acá (los de la ficha del transportista sí, siempre).
+const SATELLITE_ENTITIES = {
+  worker: [{ entity: "workday", field: "meta.workerRut" }],
+  carrier: [
+    { entity: "transport", field: "meta.carrierId" },
+    { entity: "transportPayment", field: "meta.carrierId" },
+  ],
+};
+
+async function fetchSatelliteLogs(entityType, recordId) {
+  const specs = SATELLITE_ENTITIES[entityType];
+  if (!specs || !recordId) return [];
+  const results = await Promise.all(
+    specs.map((spec) =>
+      logsService
+        .list({ wheres: [["entity", "==", spec.entity], [spec.field, "==", recordId]] })
+        .catch((err) => {
+          console.error(`No se pudieron cargar los logs de ${spec.entity}:`, err);
+          return [];
+        }),
+    ),
+  );
+  return results.flat();
+}
+
 // Buscador dedicado: elegí un tipo de registro (Trabajador, Ciclo, Faena…),
 // buscá el específico por nombre/rut y traé TODO su historial de auditoría
 // sin importar el rango de fechas — es una query acotada a ese entityId
@@ -359,21 +397,16 @@ function EntitySearchPanel() {
           ["entityId", "==", doc.id],
         ],
       });
-      // Los workdays no tienen catálogo propio para buscarlos por nombre (un
-      // trabajador tiene N por día/labor), así que cuando el registro elegido
-      // es un trabajador sumamos también sus logs de "workday" — quedan
-      // buscables porque firestoreBase.js denormaliza `workerRut` al `meta`
-      // del log en cada create/update/delete (ver extractRefMeta).
-      let workdayRows = [];
-      if (entityType === "worker") {
-        workdayRows = await logsService.list({
-          wheres: [
-            ["entity", "==", "workday"],
-            ["meta.workerRut", "==", doc.id],
-          ],
-        });
-      }
-      const merged = [...rows, ...workdayRows];
+      // Algunas entidades no tienen catálogo propio para buscarlas por nombre
+      // (un trabajador tiene N jornadas; un transportista N vueltas y N
+      // resúmenes). Para esas, el log guarda el "dueño" denormalizado en
+      // `meta` y lo levantamos acá como historial satélite del registro
+      // elegido:
+      //   - worker    → workday        vía meta.workerRut (firestoreBase.js)
+      //   - carrier   → transport,     vía meta.carrierId (transportsService.js)
+      //                 transportPayment
+      const satelliteRows = await fetchSatelliteLogs(entityType, doc.id);
+      const merged = [...rows, ...satelliteRows];
       merged.sort((a, b) => toDate(b.timestamp) - toDate(a.timestamp));
       setRecordLogs(merged);
     } catch (err) {
@@ -394,8 +427,8 @@ function EntitySearchPanel() {
         <div>
           <h2 className="text-sm font-semibold">🔍 Buscar por registro</h2>
           <p className="text-xs text-[var(--color-muted)]">
-            Ver todo el historial de un trabajador, ciclo, faena, etc. en particular — sin límite de fecha.
-            Al buscar un trabajador se incluyen también los cambios en sus jornadas (workdays).
+            Ver todo el historial de un registro (trabajador, ciclo, faena, transportista…) — sin límite de fecha.
+            Al buscar un trabajador se suman los cambios en sus jornadas (workdays); al buscar un transportista, los cambios en sus vueltas y en sus resúmenes de pago.
           </p>
         </div>
         <span className="text-[var(--color-muted)]">{open ? "▾" : "▸"}</span>
