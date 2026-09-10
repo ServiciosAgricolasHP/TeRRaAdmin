@@ -3,6 +3,7 @@ import { interestLinksService } from "../services";
 import Modal from "../components/Modal";
 import TextField from "../components/TextField";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { useToast } from "../contexts/ToastContext";
 
 const SEED = { text: "De PDF a Word", url: "https://www.ilovepdf.com/es/pdf_a_word" };
 
@@ -18,6 +19,7 @@ function safeHost(url) {
 }
 
 export default function InterestLinks() {
+  const toast = useToast();
   const [links, setLinks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(null); // null | { mode: "create"|"edit", data }
@@ -38,11 +40,16 @@ export default function InterestLinks() {
         return String(a.text || "").localeCompare(String(b.text || ""));
       });
       setLinks(list);
+    } catch (err) {
+      toast.error("No se pudieron cargar los links: " + (err.message || err));
     } finally {
       setLoading(false);
     }
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [dragIndex, setDragIndex] = useState(null);
   const [dragOverIndex, setDragOverIndex] = useState(null);

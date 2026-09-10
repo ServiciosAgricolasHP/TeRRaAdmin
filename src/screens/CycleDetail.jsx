@@ -1505,15 +1505,32 @@ export default function CycleDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
+  // Único punto de escritura para días/labores del ciclo — agregar/quitar día,
+  // agregar/quitar trabajador y toggle de mensual pasan todos por acá. Sin
+  // try/catch un fallo de red/permisos quedaba 100% silencioso: el modal se
+  // cerraba igual y el usuario creía que había guardado. Devuelven true/false
+  // para que el caller sepa si además vale la pena mostrar un toast de éxito.
   const persistDays = async (nextDays) => {
-    await cyclesService.update(id, { days: nextDays });
-    setCycle((c) => ({ ...c, days: nextDays }));
+    try {
+      await cyclesService.update(id, { days: nextDays });
+      setCycle((c) => ({ ...c, days: nextDays }));
+      return true;
+    } catch (err) {
+      toast.error("No se pudo guardar el cambio de días: " + (err.message || err));
+      return false;
+    }
   };
 
   const persistLabor = async (next) => {
-    const nextLabors = cycle.labors.map((l) => (l.id === next.id ? next : l));
-    await cyclesService.update(id, { labors: nextLabors });
-    setCycle((c) => ({ ...c, labors: nextLabors }));
+    try {
+      const nextLabors = cycle.labors.map((l) => (l.id === next.id ? next : l));
+      await cyclesService.update(id, { labors: nextLabors });
+      setCycle((c) => ({ ...c, labors: nextLabors }));
+      return true;
+    } catch (err) {
+      toast.error("No se pudo guardar el cambio: " + (err.message || err));
+      return false;
+    }
   };
 
   // ============================================================
@@ -1709,25 +1726,35 @@ export default function CycleDetail() {
     const amount = parseAmount(rawAmount) || 0;
     const docId = workdayDocId(id, laborId, workerRut, date, SINGLE_COMBO);
     const mapKey = workdayMapKey(workerRut, date, SINGLE_COMBO);
-    if (amount === 0) {
-      if (wdMap[mapKey]) {
-        await workdaysService.remove(docId);
+    // Si el write falla, devolvemos el último monto conocido (no lo que se
+    // tipeó) — el caller en onCellValueChanged usa exactamente este valor de
+    // retorno para pintar la celda, así que la celda se revierte sola sin
+    // tener que tocar ese código. Sin esto, un fallo de red/permisos dejaba
+    // la celda mostrando un valor que nunca se guardó, sin ningún aviso.
+    try {
+      if (amount === 0) {
+        if (wdMap[mapKey]) {
+          await workdaysService.remove(docId);
+          setWorkdaysByLabor((prev) => {
+            const lab = { ...(prev[laborId] || {}) };
+            delete lab[mapKey];
+            return { ...prev, [laborId]: lab };
+          });
+        }
+      } else {
+        const workerId = workerIdFor(laborId, workerRut);
+        await workdaysService.upsert(docId, { cycleId: id, laborId, workerRut, date, amount, workerId });
         setWorkdaysByLabor((prev) => {
           const lab = { ...(prev[laborId] || {}) };
-          delete lab[mapKey];
+          lab[mapKey] = { ...lab[mapKey], cycleId: id, laborId, workerRut, date, amount, workerId };
           return { ...prev, [laborId]: lab };
         });
       }
-    } else {
-      const workerId = workerIdFor(laborId, workerRut);
-      await workdaysService.upsert(docId, { cycleId: id, laborId, workerRut, date, amount, workerId });
-      setWorkdaysByLabor((prev) => {
-        const lab = { ...(prev[laborId] || {}) };
-        lab[mapKey] = { ...lab[mapKey], cycleId: id, laborId, workerRut, date, amount, workerId };
-        return { ...prev, [laborId]: lab };
-      });
+      return { amount };
+    } catch (err) {
+      toast.error("No se pudo guardar el cambio: " + (err.message || err));
+      return { amount: wdMap[mapKey]?.amount || 0 };
     }
-    return { amount };
   };
 
   const computeTratoHEAmount = (labor, dayCfg, wd) =>
@@ -1757,24 +1784,34 @@ export default function CycleDetail() {
     const amount = computeTratoHEAmount(labor, dayCfg, merged);
     const wd = { cycleId: id, laborId, workerRut, date, ...merged, amount, workerId: workerIdFor(laborId, workerRut) };
 
-    if (!workdayHasData(wd)) {
-      if (existing) {
-        await workdaysService.remove(docId);
-        setWorkdaysByLabor((prev) => {
-          const lab = { ...(prev[laborId] || {}) };
-          delete lab[mapKey];
-          return { ...prev, [laborId]: lab };
-        });
+    // `ok: false` en el fallo: a diferencia de los otros commit*, la rama
+    // isTratoHELabor de onCellValueChanged pinta el campo qty/HE con una
+    // variable local (`newVal`), no con lo que devuelve esta función — así
+    // que necesita esta bandera explícita para saber que tiene que revertir
+    // el campo a mano (ver onCellValueChanged).
+    try {
+      if (!workdayHasData(wd)) {
+        if (existing) {
+          await workdaysService.remove(docId);
+          setWorkdaysByLabor((prev) => {
+            const lab = { ...(prev[laborId] || {}) };
+            delete lab[mapKey];
+            return { ...prev, [laborId]: lab };
+          });
+        }
+        return { amount: 0 };
       }
-      return { amount: 0 };
+      await workdaysService.upsert(docId, wd);
+      setWorkdaysByLabor((prev) => {
+        const lab = { ...(prev[laborId] || {}) };
+        lab[mapKey] = wd;
+        return { ...prev, [laborId]: lab };
+      });
+      return { amount };
+    } catch (err) {
+      toast.error("No se pudo guardar el cambio: " + (err.message || err));
+      return { amount: existing?.amount || 0, ok: false };
     }
-    await workdaysService.upsert(docId, wd);
-    setWorkdaysByLabor((prev) => {
-      const lab = { ...(prev[laborId] || {}) };
-      lab[mapKey] = wd;
-      return { ...prev, [laborId]: lab };
-    });
-    return { amount };
   };
 
   // Confirma la cantidad de un combo (calidad×envase) para un trabajador en
@@ -1790,28 +1827,33 @@ export default function CycleDetail() {
     const combo = getCombo(laborId, date, comboKey);
     const amount = combo.mode === "flat" ? combo.price : qty * combo.price;
 
-    if (qty === 0) {
-      if (wdMap[mapKey]) {
-        await workdaysService.remove(docId);
+    try {
+      if (qty === 0) {
+        if (wdMap[mapKey]) {
+          await workdaysService.remove(docId);
+          setWorkdaysByLabor((prev) => {
+            const lab = { ...(prev[laborId] || {}) };
+            delete lab[mapKey];
+            return { ...prev, [laborId]: lab };
+          });
+        }
+      } else {
+        const workerId = workerIdFor(laborId, workerRut);
+        await workdaysService.upsert(docId, {
+          cycleId: id, laborId, workerRut, date,
+          qualityX: x, containerY: y, qty, amount, workerId,
+        });
         setWorkdaysByLabor((prev) => {
           const lab = { ...(prev[laborId] || {}) };
-          delete lab[mapKey];
+          lab[mapKey] = { ...lab[mapKey], cycleId: id, laborId, workerRut, date, qualityX: x, containerY: y, qty, amount, workerId };
           return { ...prev, [laborId]: lab };
         });
       }
-    } else {
-      const workerId = workerIdFor(laborId, workerRut);
-      await workdaysService.upsert(docId, {
-        cycleId: id, laborId, workerRut, date,
-        qualityX: x, containerY: y, qty, amount, workerId,
-      });
-      setWorkdaysByLabor((prev) => {
-        const lab = { ...(prev[laborId] || {}) };
-        lab[mapKey] = { ...lab[mapKey], cycleId: id, laborId, workerRut, date, qualityX: x, containerY: y, qty, amount, workerId };
-        return { ...prev, [laborId]: lab };
-      });
+      return { qty, amount };
+    } catch (err) {
+      toast.error("No se pudo guardar el cambio: " + (err.message || err));
+      return { qty: wdMap[mapKey]?.qty || 0, amount: wdMap[mapKey]?.amount || 0 };
     }
-    return { qty, amount };
   };
 
   // Confirma la cantidad de un tier de precio para un trabajador en un día
@@ -1826,37 +1868,42 @@ export default function CycleDetail() {
     const tier = tiers.find((t) => t.key === tierKey);
     const amount = tier && tier.mode === "flat" ? (qty > 0 ? tier.price : 0) : qty * (tier?.price || 0);
 
-    if (qty === 0) {
-      if (wdMap[mapKey]) {
-        await workdaysService.remove(docId);
+    try {
+      if (qty === 0) {
+        if (wdMap[mapKey]) {
+          await workdaysService.remove(docId);
+          setWorkdaysByLabor((prev) => {
+            const lab = { ...(prev[laborId] || {}) };
+            delete lab[mapKey];
+            return { ...prev, [laborId]: lab };
+          });
+        }
+      } else {
+        // `tiers` (single-key "0") es el campo legacy que `normalizeTratoWorkday`
+        // agrega al cargar. `getTratoTierTotals` prioriza ese campo, así que hay
+        // que sincronizarlo con `qty/amount` o el labor total queda contando el
+        // valor viejo hasta que se recargue la página.
+        const tiersField = { "0": { qty, amount } };
+        const workerId = workerIdFor(laborId, workerRut);
+        await workdaysService.upsert(docId, {
+          cycleId: id, laborId, workerRut, date, qty, amount,
+          tiers: tiersField, totalAmount: amount, workerId,
+        });
         setWorkdaysByLabor((prev) => {
           const lab = { ...(prev[laborId] || {}) };
-          delete lab[mapKey];
+          lab[mapKey] = {
+            ...lab[mapKey],
+            cycleId: id, laborId, workerRut, date, qty, amount,
+            tiers: tiersField, totalAmount: amount, workerId,
+          };
           return { ...prev, [laborId]: lab };
         });
       }
-    } else {
-      // `tiers` (single-key "0") es el campo legacy que `normalizeTratoWorkday`
-      // agrega al cargar. `getTratoTierTotals` prioriza ese campo, así que hay
-      // que sincronizarlo con `qty/amount` o el labor total queda contando el
-      // valor viejo hasta que se recargue la página.
-      const tiersField = { "0": { qty, amount } };
-      const workerId = workerIdFor(laborId, workerRut);
-      await workdaysService.upsert(docId, {
-        cycleId: id, laborId, workerRut, date, qty, amount,
-        tiers: tiersField, totalAmount: amount, workerId,
-      });
-      setWorkdaysByLabor((prev) => {
-        const lab = { ...(prev[laborId] || {}) };
-        lab[mapKey] = {
-          ...lab[mapKey],
-          cycleId: id, laborId, workerRut, date, qty, amount,
-          tiers: tiersField, totalAmount: amount, workerId,
-        };
-        return { ...prev, [laborId]: lab };
-      });
+      return { qty, amount };
+    } catch (err) {
+      toast.error("No se pudo guardar el cambio: " + (err.message || err));
+      return { qty: wdMap[mapKey]?.qty || 0, amount: wdMap[mapKey]?.amount || 0 };
     }
-    return { qty, amount };
   };
 
   // Confirma la cantidad de una etapa para un trabajador en un día de
@@ -1869,32 +1916,37 @@ export default function CycleDetail() {
     const { price, mode } = getStageDayPrice(dayPrices, laborId, date, stageId);
     const amount = computeStageDayAmount(mode, price, qty);
 
-    if (qty === 0) {
-      if (wdMap[mapKey]) {
-        await workdaysService.remove(docId);
+    try {
+      if (qty === 0) {
+        if (wdMap[mapKey]) {
+          await workdaysService.remove(docId);
+          setWorkdaysByLabor((prev) => {
+            const lab = { ...(prev[laborId] || {}) };
+            delete lab[mapKey];
+            return { ...prev, [laborId]: lab };
+          });
+        }
+      } else {
+        // `stageId` explícito en el doc: lo consumen el conteo (getEtapasTotals),
+        // los resúmenes y la nómina sin tener que re-parsear el docId.
+        const workerId = workerIdFor(laborId, workerRut);
+        await workdaysService.upsert(docId, {
+          cycleId: id, laborId, workerRut, date, qty, amount, stageId, workerId,
+        });
         setWorkdaysByLabor((prev) => {
           const lab = { ...(prev[laborId] || {}) };
-          delete lab[mapKey];
+          lab[mapKey] = {
+            ...lab[mapKey],
+            cycleId: id, laborId, workerRut, date, qty, amount, stageId, workerId,
+          };
           return { ...prev, [laborId]: lab };
         });
       }
-    } else {
-      // `stageId` explícito en el doc: lo consumen el conteo (getEtapasTotals),
-      // los resúmenes y la nómina sin tener que re-parsear el docId.
-      const workerId = workerIdFor(laborId, workerRut);
-      await workdaysService.upsert(docId, {
-        cycleId: id, laborId, workerRut, date, qty, amount, stageId, workerId,
-      });
-      setWorkdaysByLabor((prev) => {
-        const lab = { ...(prev[laborId] || {}) };
-        lab[mapKey] = {
-          ...lab[mapKey],
-          cycleId: id, laborId, workerRut, date, qty, amount, stageId, workerId,
-        };
-        return { ...prev, [laborId]: lab };
-      });
+      return { qty, amount };
+    } catch (err) {
+      toast.error("No se pudo guardar el cambio: " + (err.message || err));
+      return { qty: wdMap[mapKey]?.qty || 0, amount: wdMap[mapKey]?.amount || 0 };
     }
-    return { qty, amount };
   };
 
   const recalcDayTratoHE = async (laborId, date) => {
@@ -2192,9 +2244,13 @@ export default function CycleDetail() {
     const field = params.colDef.field;
     if (!field || field === "total" || field === "rut" || field === "name" || field.endsWith("__amt") || field.endsWith("__total")) return;
 
+    // Sacado del if de abajo (antes solo se calculaba para el undo stack)
+    // porque la rama isTratoHELabor también lo necesita para revertir la
+    // celda si falla el guardado — ver ahí.
+    const oldValue = params.oldValue !== undefined ? params.oldValue : params.data?.[field];
+
     // Push to undo stack before mutating. Skip when we are replaying an undo.
     if (!isUndoingRef.current) {
-      const oldValue = params.oldValue !== undefined ? params.oldValue : params.data?.[field];
       const entry = { rut: params.data?.rut, field, oldValue };
       if (pendingBatchRef.current) {
         pendingBatchRef.current.push(entry);
@@ -2233,7 +2289,12 @@ export default function CycleDetail() {
       const newVal = parseAmount(params.newValue) || 0;
       const patch = kind === "qty" ? { qty: newVal } : { overtimeHours: newVal };
       const result = await upsertTratoHEWorkday(activeLabor.id, date, workerRut, patch);
-      params.node.setDataValue(field, newVal);
+      // A diferencia de las otras 3 ramas, acá el campo se pinta con `newVal`
+      // (variable local), no con lo que devuelve la función — si el guardado
+      // falló (`ok: false`) hay que revertir a mano al `oldValue` que ya
+      // teníamos calculado arriba, o la celda queda mostrando un valor que
+      // nunca se guardó.
+      params.node.setDataValue(field, result.ok === false ? oldValue : newVal);
       params.node.setDataValue(`${date}__amt`, result.amount);
       let newTotal = 0;
       for (const d of days) {
@@ -2302,16 +2363,18 @@ export default function CycleDetail() {
   const addDay = async () => {
     if (!newDay) return;
     if (days.includes(newDay)) { setAddDayOpen(false); return; }
-    await persistDays([...days, newDay].sort());
+    const ok = await persistDays([...days, newDay].sort());
     setAddDayOpen(false);
+    if (ok) showToast(`Día ${newDay} agregado`);
   };
 
   const addSelectedDays = async () => {
     const toAdd = [...selectedDays].filter((d) => !days.includes(d));
     if (toAdd.length === 0) { setAddDayOpen(false); return; }
-    await persistDays([...days, ...toAdd].sort());
+    const ok = await persistDays([...days, ...toAdd].sort());
     setSelectedDays(new Set());
     setAddDayOpen(false);
+    if (ok) showToast(`${toAdd.length} día${toAdd.length === 1 ? "" : "s"} agregado${toAdd.length === 1 ? "" : "s"}`);
   };
 
   const toggleSelectedDay = (date) => {
@@ -2334,7 +2397,8 @@ export default function CycleDetail() {
     setConfirmRemoveDay(date);
   };
   const doRemoveDay = async (date) => {
-    await persistDays(days.filter((d) => d !== date));
+    const ok = await persistDays(days.filter((d) => d !== date));
+    if (ok) showToast(`Día ${date} quitado`);
   };
 
   // ============================================================
@@ -2352,8 +2416,9 @@ export default function CycleDetail() {
       // back when building the per-leader group view.
       if (worker.groupLeader) entry.groupLeader = String(worker.groupLeader).toUpperCase();
     }
-    await persistLabor({ ...activeLabor, workers: [...workers, entry] });
+    const ok = await persistLabor({ ...activeLabor, workers: [...workers, entry] });
     setPickerOpen(false);
+    if (ok) showToast(`${worker.name || "Trabajador"} agregado`);
   };
 
   // Toggle the "pago mensual" flag for a worker inside the current labor.
@@ -2428,8 +2493,9 @@ export default function CycleDetail() {
         }
         return next;
       });
-      await persistLabor({ ...activeLabor, workers: workers.filter((w) => w.rut !== worker.rut) });
-      return true;
+      const ok = await persistLabor({ ...activeLabor, workers: workers.filter((w) => w.rut !== worker.rut) });
+      if (ok) showToast(`${worker.name || "Trabajador"} quitado`);
+      return ok;
     }
     const existing = await workdaysService.list({
       wheres: [["cycleId", "==", id], ["laborId", "==", activeLabor.id], ["workerRut", "==", worker.rut]],
@@ -2439,8 +2505,9 @@ export default function CycleDetail() {
       toast.warning("No se puede quitar: el trabajador tiene producción registrada en esta labor.");
       return false;
     }
-    await persistLabor({ ...activeLabor, workers: workers.filter((w) => w.rut !== worker.rut) });
-    return true;
+    const ok = await persistLabor({ ...activeLabor, workers: workers.filter((w) => w.rut !== worker.rut) });
+    if (ok) showToast(`${worker.name || "Trabajador"} quitado`);
+    return ok;
   };
 
   const confirmRemoveWorker = async () => {

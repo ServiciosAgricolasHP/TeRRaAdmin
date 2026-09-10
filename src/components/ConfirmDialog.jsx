@@ -1,6 +1,21 @@
+import { useEffect } from "react";
 import Modal from "./Modal";
 
 export default function ConfirmDialog({ open, title = "Confirmar", message, onConfirm, onCancel, confirmLabel = "Confirmar", danger = false, busy = false }) {
+  // Enter confirma — este diálogo nunca tiene campos de texto (solo el
+  // mensaje + los dos botones), así que no hay riesgo de robarle el Enter a
+  // un input/textarea como pasaría si esto viviera en el Modal genérico.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => {
+      if (e.key !== "Enter" || busy) return;
+      e.preventDefault();
+      onConfirm?.();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, busy, onConfirm]);
+
   return (
     <Modal
       open={open}

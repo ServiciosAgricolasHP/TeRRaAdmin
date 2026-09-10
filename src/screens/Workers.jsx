@@ -18,7 +18,6 @@ import { useToast } from "../contexts/ToastContext";
 import WorkerSummaryModal from "../components/WorkerSummaryModal";
 import GroupSummaryModal from "../components/GroupSummaryModal";
 import ConfirmDialog from "../components/ConfirmDialog";
-import ResizableArea from "../components/ResizableArea";
 import { matchesSearchQuery } from "../utils/textSearch";
 import { useIsMobile } from "../hooks/useIsMobile";
 
@@ -73,6 +72,9 @@ export default function Workers() {
       });
       setAllWorkers(list);
       return list;
+    } catch (err) {
+      toast.error("No se pudo cargar la lista de trabajadores: " + (err.message || err));
+      return [];
     } finally {
       setCacheLoading(false);
     }
@@ -372,9 +374,11 @@ export default function Workers() {
         )}
       </div>
 
-      <ResizableArea storageKey="workers-grid" defaultHeight={460} minHeight={280}>
+      {/* Ocupa el alto restante en vez de un alto fijo: la lista es el último
+          elemento de la pantalla, así que no hay nada debajo a lo que cederle
+          espacio. Mismo patrón que Advances.jsx. */}
       <div
-        className={`h-full ${isMobile ? "" : "ag-theme-quartz ag-theme-app"}`}
+        className={`min-h-0 flex-1 ${isMobile ? "overflow-y-auto" : "ag-theme-quartz ag-theme-app"}`}
       >
         {cacheLoading && allWorkers.length === 0 ? (
           <div className="flex h-full items-center justify-center text-[var(--color-muted)]">Cargando trabajadores...</div>
@@ -466,7 +470,6 @@ export default function Workers() {
           />
         )}
       </div>
-      </ResizableArea>
 
       <WorkerEditModal
         open={!!edit}

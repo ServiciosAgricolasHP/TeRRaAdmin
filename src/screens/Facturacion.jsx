@@ -2879,7 +2879,7 @@ function CostCentersModal({ costCenters, docs, informalExpenses, companiesById, 
   return (
     <Modal open onClose={onClose} size="full" title="Centros de costo">
       {editing ? (
-        <div className="space-y-3">
+        <form onSubmit={(e) => { e.preventDefault(); save(); }} className="space-y-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">Nombre</label>
             <input
@@ -2901,6 +2901,7 @@ function CostCentersModal({ costCenters, docs, informalExpenses, companiesById, 
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button
+              type="button"
               onClick={() => setEditing(null)}
               disabled={busy}
               className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm"
@@ -2908,14 +2909,14 @@ function CostCentersModal({ costCenters, docs, informalExpenses, companiesById, 
               Cancelar
             </button>
             <button
-              onClick={save}
+              type="submit"
               disabled={busy}
               className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
             >
               {busy ? "Guardando..." : "Guardar"}
             </button>
           </div>
-        </div>
+        </form>
       ) : (
         <div className="space-y-4">
           <p className="text-xs text-[var(--color-muted)]">
@@ -3374,6 +3375,7 @@ function InformalExpenseFormModal({ expense, costCenterId, companiesList, onClos
         <>
           {expense && (
             <button
+              type="button"
               onClick={remove}
               disabled={busy}
               className="mr-auto rounded-md border border-[var(--color-danger)] px-3 py-1.5 text-sm text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:opacity-50"
@@ -3382,6 +3384,7 @@ function InformalExpenseFormModal({ expense, costCenterId, companiesList, onClos
             </button>
           )}
           <button
+            type="button"
             onClick={onClose}
             disabled={busy}
             className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm"
@@ -3389,7 +3392,8 @@ function InformalExpenseFormModal({ expense, costCenterId, companiesList, onClos
             Cancelar
           </button>
           <button
-            onClick={save}
+            type="submit"
+            form="informal-expense-form"
             disabled={busy}
             className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
           >
@@ -3398,7 +3402,7 @@ function InformalExpenseFormModal({ expense, costCenterId, companiesList, onClos
         </>
       }
     >
-      <div className="space-y-3">
+      <form id="informal-expense-form" onSubmit={(e) => { e.preventDefault(); save(); }} className="space-y-3">
         <p className="text-xs text-[var(--color-muted)]">
           Plata sin factura/boleta formal (o boleta pedida pero nunca ingresada). Puramente informativo — no afecta la data fiscal real.
         </p>
@@ -3447,7 +3451,7 @@ function InformalExpenseFormModal({ expense, costCenterId, companiesList, onClos
             ))}
           </select>
         </div>
-      </div>
+      </form>
     </Modal>
     <ConfirmDialog
       open={confirmDeleteOpen}
@@ -5099,7 +5103,7 @@ function CompaniesModal({ companies, onClose, onChanged }) {
     <>
     <Modal open onClose={onClose} size="lg" title="Empresas">
       {editing ? (
-        <div className="space-y-3">
+        <form onSubmit={(e) => { e.preventDefault(); save(); }} className="space-y-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">RUT</label>
             <input
@@ -5131,6 +5135,7 @@ function CompaniesModal({ companies, onClose, onChanged }) {
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button
+              type="button"
               onClick={() => setEditing(null)}
               disabled={busy}
               className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm"
@@ -5138,14 +5143,14 @@ function CompaniesModal({ companies, onClose, onChanged }) {
               Cancelar
             </button>
             <button
-              onClick={save}
+              type="submit"
               disabled={busy}
               className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
             >
               {busy ? "Guardando..." : "Guardar"}
             </button>
           </div>
-        </div>
+        </form>
       ) : (
         <div>
           <div className="mb-3 flex justify-end">

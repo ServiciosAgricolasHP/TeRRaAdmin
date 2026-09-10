@@ -55,6 +55,7 @@ export default function HarvestQr() {
   const [loading, setLoading] = useState(true);
   const [formState, setFormState] = useState(null); // null | { mode: "create" | "edit", data }
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [syncFor, setSyncFor] = useState(null); // prefix doc mientras se elige rango
 
   const reload = async () => {
@@ -84,10 +85,17 @@ export default function HarvestQr() {
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
-    await qrPrefixesService.remove(confirmDelete.id);
-    setConfirmDelete(null);
-    toast.success(`Prefijo ${confirmDelete.id} eliminado`);
-    reload();
+    setDeleteBusy(true);
+    try {
+      await qrPrefixesService.remove(confirmDelete.id);
+      setConfirmDelete(null);
+      toast.success(`Prefijo ${confirmDelete.id} eliminado`);
+      await reload();
+    } catch (err) {
+      toast.error("No se pudo eliminar: " + (err.message || err));
+    } finally {
+      setDeleteBusy(false);
+    }
   };
 
   return (
@@ -203,6 +211,7 @@ export default function HarvestQr() {
         message={confirmDelete ? `¿Eliminar el prefijo "${confirmDelete.id}"? Esto no borra los pesajes ya registrados, solo el mapeo hacia la faena/ciclo.` : ""}
         confirmLabel="Eliminar"
         danger
+        busy={deleteBusy}
         onConfirm={handleDelete}
         onCancel={() => setConfirmDelete(null)}
       />
@@ -271,7 +280,8 @@ function PrefixFormModal({ mode, initial, faenas, onClose, onSaved }) {
             Cancelar
           </button>
           <button
-            onClick={submit}
+            type="submit"
+            form="harvestqr-prefix-form"
             disabled={busy}
             className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
           >
@@ -280,7 +290,7 @@ function PrefixFormModal({ mode, initial, faenas, onClose, onSaved }) {
         </>
       }
     >
-      <div className="space-y-3">
+      <form id="harvestqr-prefix-form" onSubmit={(e) => { e.preventDefault(); submit(); }} className="space-y-3">
         <label className="block">
           <span className="mb-1 block text-sm text-[var(--color-muted)]">
             Prefijo <span className="text-[var(--color-danger)]">*</span>
@@ -336,7 +346,7 @@ function PrefixFormModal({ mode, initial, faenas, onClose, onSaved }) {
           <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
           Activo (visible como opción en el scan app)
         </label>
-      </div>
+      </form>
     </Modal>
   );
 }

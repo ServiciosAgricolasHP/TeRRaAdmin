@@ -285,6 +285,8 @@ export default function Payroll() {
         }
       }
       setCycleStats(stats);
+    } catch (err) {
+      toast.error("No se pudo cargar la nómina: " + (err.message || err));
     } finally {
       setLoading(false);
     }
@@ -292,6 +294,7 @@ export default function Payroll() {
 
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Forzar lectura desde Firestore ignorando la cache local (mem + localStorage).

@@ -85,13 +85,17 @@ export default function Advances() {
       setItems(list);
     } catch (err) {
       console.error("Advances load failed:", err);
+      toast.error("No se pudieron cargar los anticipos: " + (err.message || err));
       setItems([]);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filtered = useMemo(() => {
     const q = search.trim();

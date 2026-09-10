@@ -5,6 +5,7 @@ import { faenasService, subfaenasService, cyclesService, workersService } from "
 import { tripsService } from "../services/transportsService";
 import { useCarriers } from "../contexts/CarriersContext";
 import { useCatalogs } from "../contexts/CatalogsContext";
+import { useAuth } from "../contexts/AuthContext";
 import { tratoTypeLabel, tratoUnitLabel, cosechaUnit, qualityLabel, containerLabel, getTratoTierTotals, getTratoTiers } from "../utils/cosechaCombos";
 import { useIsMobile } from "../hooks/useIsMobile";
 
@@ -209,6 +210,7 @@ async function fetchTripsInRange(start, end) {
 // ============================================================================
 
 export default function Calendar() {
+  const { isAdmin } = useAuth();
   const { carriers } = useCarriers();
   const { catalogs } = useCatalogs();
   const today = useMemo(() => new Date(), []);
@@ -544,7 +546,8 @@ export default function Calendar() {
           <h1 className="text-2xl font-semibold tracking-tight">Calendario</h1>
           <p className="text-sm text-[var(--color-muted)]">
             Producción diaria por subfaena.
-            {fromCache ? " · resultado de caché" : ` · ${readCount} reads`}
+            {/* Métrica de costo de Firestore — solo tiene sentido para diagnosticar, no para un admin de campo. */}
+            {isAdmin && (fromCache ? " · resultado de caché" : ` · ${readCount} reads`)}
           </p>
         </div>
         <div className="flex items-center gap-1">

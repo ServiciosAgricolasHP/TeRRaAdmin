@@ -199,7 +199,10 @@ export default function Faenas() {
     if (!user?.uid) return;
     if (layoutSaveTimer.current) clearTimeout(layoutSaveTimer.current);
     layoutSaveTimer.current = setTimeout(() => {
-      userPrefsService.saveLayout(user.uid, next).catch((err) => console.error("[layout] save:", err));
+      userPrefsService.saveLayout(user.uid, next).catch((err) => {
+        console.error("[layout] save:", err);
+        toast.error("No se pudo guardar la distribución.");
+      });
     }, 400);
   };
 
@@ -457,6 +460,9 @@ export default function Faenas() {
       }
       setFaenaForm(null);
       await loadFaenas();
+      toast.success(faenaForm.mode === "create" ? "Faena creada" : "Faena actualizada");
+    } catch (err) {
+      toast.error("Error al guardar la faena: " + (err.message || err));
     } finally {
       setBusy(false);
     }
@@ -471,6 +477,9 @@ export default function Faenas() {
       else await subfaenasService.update(data.id, { name: data.name, notes: data.notes || "" });
       setSubForm(null);
       await loadSubs(faenaId);
+      toast.success(mode === "create" ? "Subfaena creada" : "Subfaena actualizada");
+    } catch (err) {
+      toast.error("Error al guardar la subfaena: " + (err.message || err));
     } finally {
       setBusy(false);
     }
@@ -607,11 +616,17 @@ export default function Faenas() {
         }
         if (skippedPaid > 0) {
           toast.success(`Se movieron ${moved} workday(s). ${skippedPaid} ya estaban en una nómina y quedaron en el ciclo origen.`);
+        } else {
+          toast.success(mode === "create" ? "Ciclo creado" : "Ciclo actualizado");
         }
+      } else {
+        toast.success(mode === "create" ? "Ciclo creado" : "Ciclo actualizado");
       }
 
       setCycleForm(null);
       await loadCycles(faenaId);
+    } catch (err) {
+      toast.error("Error al guardar el ciclo: " + (err.message || err));
     } finally {
       setBusy(false);
     }
