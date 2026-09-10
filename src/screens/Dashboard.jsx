@@ -3,10 +3,12 @@ import { Link } from "react-router-dom";
 import { httpsCallable } from "firebase/functions";
 import { faenasService, cyclesService, workersService } from "../services";
 import { functions } from "../firebase";
+import { useAuth } from "../contexts/AuthContext";
 
 const card = "rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm";
 
 export default function Dashboard() {
+  const { isAdmin } = useAuth();
   const [faenas, setFaenas] = useState([]);
   const [cycles, setCycles] = useState([]);
   const [workers, setWorkers] = useState([]);
@@ -131,15 +133,20 @@ export default function Dashboard() {
           <p className="text-sm text-[var(--color-muted)]">Resumen general del sistema.</p>
         </div>
         <div className="flex items-center gap-2">
-          {/* TEMP: botón de prueba de Cloud Functions — eliminar después de verificar */}
-          <button
-            onClick={runPing}
-            disabled={pingBusy}
-            className="rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-3 py-1.5 text-sm text-[var(--color-warning)] hover:opacity-80 disabled:opacity-60"
-            title="Llama a la Cloud Function `ping` para verificar el plomo (auth + región)"
-          >
-            {pingBusy ? "Llamando..." : "🧪 Probar ping"}
-          </button>
+          {/* TEMP: botón de prueba de Cloud Functions — eliminar después de verificar.
+              Restringido a admin: mientras el deploy de `ping` sigue pendiente
+              (ver AGENTS.md / functions/README.md), un usuario operativo no
+              tiene forma de saber qué es esto ni por qué está ahí. */}
+          {isAdmin && (
+            <button
+              onClick={runPing}
+              disabled={pingBusy}
+              className="rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-3 py-1.5 text-sm text-[var(--color-warning)] hover:opacity-80 disabled:opacity-60"
+              title="Llama a la Cloud Function `ping` para verificar el plomo (auth + región)"
+            >
+              {pingBusy ? "Llamando..." : "🧪 Probar ping"}
+            </button>
+          )}
           <Link
             to="/faenas"
             className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]"
@@ -150,7 +157,7 @@ export default function Dashboard() {
       </div>
 
       {/* TEMP: resultado del ping. Eliminar junto con el botón. */}
-      {pingResult && (
+      {isAdmin && pingResult && (
         <div
           className={`mb-4 rounded-md border p-3 text-xs font-mono ${
             pingResult.ok

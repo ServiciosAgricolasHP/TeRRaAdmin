@@ -77,6 +77,95 @@ function normalizeTrip(data) {
   };
 }
 
+// Denormaliza el transportista al `meta` del log de auditoría. Un log de
+// `update` solo guarda el diff (ver logger.js), así que sin esto no hay forma
+// de preguntar "qué le pasó a las vueltas/resúmenes de este transportista" —
+// el `entityId` es el id de la vuelta, no del carrier. Mismo patrón que
+// `extractRefMeta` en firestoreBase.js (workerRut/cycleId). Lo consume
+// Audit.jsx → EntitySearchPanel al elegir un transportista.
+const carrierMeta = (carrierId, extra = null) =>
+  carrierId ? { carrierId, ...(extra || {}) } : extra;
+
+// ============================================================
+// TOTALES DERIVADOS (resumen ← vueltas, quincena ← resúmenes)
+// ============================================================
+//
+// `transportPayments.total` y `transportPayrolls.total` son denormalizaciones:
+// el detalle imprimible suma las vueltas en vivo, pero el balance de quincenas
+// y la tarjeta de la quincena leen estos campos. Si cambia el `amount` de una
+// vuelta (o la vuelta se borra) y nadie los refresca, las dos vistas muestran
+// montos distintos para el mismo transportista.
+//
+// Por eso el recálculo vive acá abajo y no en cada pantalla: antes cada
+// pantalla tenía que acordarse de llamar `updateTotal` a mano, y las que
+// editan una vuelta fuera del modal del resumen (pestaña Vueltas, módulo
+// Ciclo) no lo hacían.
+
+// Suma los amounts reales de las vueltas del resumen y persiste el total.
+// `pruneMissingTrips` además saca del array los IDs que ya no existen (vueltas
+// borradas por separado). Un resumen pagado está congelado: no se toca.
+// Propaga siempre hacia la quincena que lo contenga.
+async function recalcPaymentTotal(paymentId, { pruneMissingTrips = false } = {}) {
+  if (!paymentId) return null;
+  const snap = await getDoc(doc(db, PAYMENTS, paymentId));
+  if (!snap.exists()) return null;
+  const data = snap.data();
+  if (data.status === "paid") return null;
+  const tripIds = data.tripIds || [];
+  const tripSnaps = await Promise.all(tripIds.map((id) => getDoc(doc(db, TRIPS, id))));
+  let total = 0;
+  const alive = [];
+  tripSnaps.forEach((t, i) => {
+    if (!t.exists()) return;
+    total += Number(t.data().amount) || 0;
+    alive.push(tripIds[i]);
+  });
+  const prunes = pruneMissingTrips && alive.length !== tripIds.length;
+  // Sin cambio real no escribimos: ahorra el write y evita ensuciar la
+  // auditoría con updates que no movieron nada.
+  if (total === (Number(data.total) || 0) && !prunes) return total;
+  const patch = { total, ...stamp() };
+  if (prunes) patch.tripIds = alive;
+  await updateDoc(doc(db, PAYMENTS, paymentId), patch);
+  // El recálculo mueve plata sin que nadie lo haya pedido explícitamente:
+  // queda registrado como update automático para poder rastrearlo después.
+  await logAction({
+    action: "update",
+    entity: "transportPayment",
+    entityId: paymentId,
+    before: { total: Number(data.total) || 0, tripIds },
+    after: { total, tripIds: prunes ? alive : tripIds },
+    meta: carrierMeta(data.carrierId, { auto: "recalcTotal" }),
+  });
+  await recalcPayrollTotal(data.payrollId);
+  return total;
+}
+
+// Suma los totales de los resúmenes de la quincena y persiste el total. Se
+// llama después de cada recalcPaymentTotal: sin esto la tarjeta de la quincena
+// queda con el monto viejo aunque el resumen ya esté corregido.
+async function recalcPayrollTotal(payrollId) {
+  if (!payrollId) return null;
+  const snap = await getDoc(doc(db, PAYROLLS, payrollId));
+  if (!snap.exists()) return null;
+  const data = snap.data();
+  if (data.status === "paid") return null;
+  const paymentIds = data.paymentIds || [];
+  const paySnaps = await Promise.all(paymentIds.map((id) => getDoc(doc(db, PAYMENTS, id))));
+  const total = paySnaps.reduce((acc, d) => acc + (d.exists() ? Number(d.data().total) || 0 : 0), 0);
+  if (total === (Number(data.total) || 0)) return total;
+  await updateDoc(doc(db, PAYROLLS, payrollId), { total, ...stamp() });
+  await logAction({
+    action: "update",
+    entity: "transportPayroll",
+    entityId: payrollId,
+    before: { total: Number(data.total) || 0 },
+    after: { total },
+    meta: { auto: "recalcTotal" },
+  });
+  return total;
+}
+
 export const tripsService = {
   async listByCycle(cycleId) {
     const q = query(collection(db, TRIPS), where("cycleId", "==", cycleId));
@@ -117,10 +206,17 @@ export const tripsService = {
     return snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((t) => !t.paymentId);
   },
 
+  async getById(id) {
+    const snap = await getDoc(doc(db, TRIPS, id));
+    return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  },
+
   async create(data) {
     const payload = { ...normalizeTrip(data), ...withCreate() };
     const ref = await addDoc(collection(db, TRIPS), payload);
-    await logAction({ action: "create", entity: "transport", entityId: ref.id, after: payload });
+    // Normalmente nace suelta (paymentId null) y esto es un no-op.
+    await recalcPaymentTotal(payload.paymentId);
+    await logAction({ action: "create", entity: "transport", entityId: ref.id, after: payload, meta: carrierMeta(payload.carrierId) });
     return { id: ref.id, ...payload };
   },
 
@@ -129,7 +225,13 @@ export const tripsService = {
     if (before?.status === "paid") throw new Error("No se puede editar una vuelta pagada");
     const payload = { ...normalizeTrip({ ...before, ...data }), ...stamp() };
     await updateDoc(doc(db, TRIPS, id), payload);
-    await logAction({ action: "update", entity: "transport", entityId: id, before, after: payload });
+    // qty/rate cambian el amount: el resumen que la contiene queda con un total
+    // viejo si no se refresca acá. Los dos IDs cubren el caso de que la vuelta
+    // haya cambiado de resumen en el mismo guardado.
+    for (const pid of new Set([before?.paymentId, payload.paymentId].filter(Boolean))) {
+      await recalcPaymentTotal(pid);
+    }
+    await logAction({ action: "update", entity: "transport", entityId: id, before, after: payload, meta: carrierMeta(payload.carrierId) });
     return { id, ...payload };
   },
 
@@ -137,7 +239,11 @@ export const tripsService = {
     const before = (await getDoc(doc(db, TRIPS, id))).data();
     if (before?.status === "paid") throw new Error("No se puede eliminar una vuelta pagada");
     await deleteDoc(doc(db, TRIPS, id));
-    await logAction({ action: "delete", entity: "transport", entityId: id, before });
+    // Además del total hay que sacar el ID del array: si queda colgado, el
+    // conteo de vueltas del resumen miente y markPaid/deleteSummary tienen que
+    // filtrarlo a mano (ver filterExistingTripIds).
+    await recalcPaymentTotal(before?.paymentId, { pruneMissingTrips: true });
+    await logAction({ action: "delete", entity: "transport", entityId: id, before, meta: carrierMeta(before?.carrierId) });
   },
 };
 
@@ -214,7 +320,7 @@ export const paymentsService = {
       batch.update(doc(db, TRIPS, tid), { paymentId: ref.id, ...stamp() });
     }
     await batch.commit();
-    await logAction({ action: "create", entity: "transportPayment", entityId: ref.id, after: payload });
+    await logAction({ action: "create", entity: "transportPayment", entityId: ref.id, after: payload, meta: carrierMeta(carrierId) });
     return { id: ref.id, ...payload };
   },
 
@@ -240,12 +346,14 @@ export const paymentsService = {
     for (const id of addTripIds) batch.update(doc(db, TRIPS, id), { paymentId, ...stamp() });
     for (const id of removeTripIds) batch.update(doc(db, TRIPS, id), { paymentId: null, ...stamp() });
     await batch.commit();
+    await recalcPayrollTotal(before.payrollId);
     await logAction({
       action: "update",
       entity: "transportPayment",
       entityId: paymentId,
       before,
       after: { ...before, tripIds, total },
+      meta: carrierMeta(before.carrierId),
     });
   },
 
@@ -278,7 +386,7 @@ export const paymentsService = {
       entityId: paymentId,
       before,
       after: { ...before, abonos },
-      meta: { addedAbono: abono },
+      meta: carrierMeta(before.carrierId, { addedAbono: abono }),
     });
     return { ...before, abonos };
   },
@@ -298,7 +406,7 @@ export const paymentsService = {
       entityId: paymentId,
       before,
       after: { ...before, abonos },
-      meta: { removedAbonoId: abonoId },
+      meta: carrierMeta(before.carrierId, { removedAbonoId: abonoId }),
     });
     return { ...before, abonos };
   },
@@ -314,6 +422,15 @@ export const paymentsService = {
       total: Number(total) || 0,
       ...stamp(),
     });
+    await logAction({
+      action: "update",
+      entity: "transportPayment",
+      entityId: paymentId,
+      before,
+      after: { ...before, total: Number(total) || 0 },
+      meta: carrierMeta(before.carrierId),
+    });
+    await recalcPayrollTotal(before.payrollId);
   },
 
   // Delete a pending summary; trips are unlinked (status remains pending).
@@ -332,7 +449,8 @@ export const paymentsService = {
     }
     batch.delete(doc(db, PAYMENTS, paymentId));
     await batch.commit();
-    await logAction({ action: "delete", entity: "transportPayment", entityId: paymentId, before });
+    await recalcPayrollTotal(before.payrollId);
+    await logAction({ action: "delete", entity: "transportPayment", entityId: paymentId, before, meta: carrierMeta(before.carrierId) });
   },
 
   // Mark summary as paid: all linked trips → status=paid.
@@ -359,6 +477,7 @@ export const paymentsService = {
       entityId: paymentId,
       before,
       after: { ...before, status: "paid" },
+      meta: carrierMeta(before.carrierId),
     });
   },
 
@@ -386,6 +505,7 @@ export const paymentsService = {
       entityId: paymentId,
       before,
       after: { ...before, status: "pending" },
+      meta: carrierMeta(before.carrierId),
     });
   },
 };

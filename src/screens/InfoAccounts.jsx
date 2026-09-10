@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import { toBlob, toPng } from "html-to-image";
 import Modal from "../components/Modal";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { contactCardsService } from "../services";
 import { useToast } from "../contexts/ToastContext";
 import {
@@ -99,6 +100,7 @@ export default function InfoAccounts() {
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState(null); // card en edición/creación
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   // Captura de imagen on-demand: seteamos la tarjeta a renderizar off-screen,
   // el effect la captura y limpia. Evita mantener N nodos ocultos montados.
   const [imageJob, setImageJob] = useState(null); // { card }
@@ -219,10 +221,17 @@ export default function InfoAccounts() {
   const doDelete = async () => {
     if (!confirmDelete) return;
     const c = confirmDelete;
-    setConfirmDelete(null);
-    await contactCardsService.remove(c.id);
-    await load();
-    toast.success("Ficha eliminada");
+    setDeleteBusy(true);
+    try {
+      await contactCardsService.remove(c.id);
+      setConfirmDelete(null);
+      await load();
+      toast.success("Ficha eliminada");
+    } catch (err) {
+      toast.error("No se pudo eliminar: " + (err.message || err));
+    } finally {
+      setDeleteBusy(false);
+    }
   };
 
   const favorites = useMemo(() => cards.filter((c) => c.favorite), [cards]);
@@ -332,28 +341,16 @@ export default function InfoAccounts() {
         />
       )}
 
-      {confirmDelete && (
-        <Modal
-          open
-          onClose={() => setConfirmDelete(null)}
-          title="Eliminar ficha"
-          size="sm"
-          footer={
-            <>
-              <button onClick={() => setConfirmDelete(null)} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
-                Cancelar
-              </button>
-              <button onClick={doDelete} className="rounded-md bg-[var(--color-danger)] px-3 py-1.5 text-sm font-medium text-white">
-                Eliminar
-              </button>
-            </>
-          }
-        >
-          <p className="text-sm">
-            ¿Eliminar la ficha <span className="font-semibold">{confirmDelete.name || "(sin nombre)"}</span>? Esta acción no se puede deshacer.
-          </p>
-        </Modal>
-      )}
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title="Eliminar ficha"
+        message={confirmDelete ? `¿Eliminar la ficha "${confirmDelete.name || "(sin nombre)"}"? Esta acción no se puede deshacer.` : ""}
+        confirmLabel="Eliminar"
+        danger
+        busy={deleteBusy}
+        onConfirm={doDelete}
+        onCancel={() => setConfirmDelete(null)}
+      />
     </div>
   );
 }
@@ -648,13 +645,13 @@ function ContactCardModal({ initial, onCancel, onSave }) {
           <button onClick={onCancel} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
             Cancelar
           </button>
-          <button onClick={submit} disabled={busy} className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-60">
+          <button type="submit" form="contact-card-form" disabled={busy} className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-60">
             {busy ? "Guardando…" : "Guardar"}
           </button>
         </>
       }
     >
-      <div className="space-y-4">
+      <form id="contact-card-form" onSubmit={(e) => { e.preventDefault(); submit(); }} className="space-y-4">
         {/* Tipo */}
         <div className="flex gap-2">
           {Object.entries(TYPE_META).map(([key, m]) => (
@@ -780,7 +777,7 @@ function ContactCardModal({ initial, onCancel, onSave }) {
             </div>
           ))}
         </div>
-      </div>
+      </form>
     </Modal>
   );
 }

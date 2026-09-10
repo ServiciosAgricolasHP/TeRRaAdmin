@@ -5,6 +5,12 @@ import {
   normalizeAdvanceType,
   advanceTypeMeta,
   advanceSign,
+  advanceRemaining,
+  hasInstallmentPlan,
+  installmentProgress,
+  computeCuotaAmount,
+  cadenceMeta,
+  INSTALLMENT_CADENCES,
 } from "../services/advancesService";
 import { searchWorkers } from "../services/workersService";
 import { formatRutForDisplay } from "../utils/rutUtils";
@@ -34,6 +40,14 @@ const STATUS_CLASS = {
   applied: "bg-[var(--color-success-soft)] text-[var(--color-success)]",
   cancelled: "bg-[var(--color-surface-2)] text-[var(--color-muted)]",
 };
+
+// "pending" agrupa pending + partial en el filtro — un parcial sigue
+// debiendo saldo y listPendingForWorkers() ya los trata igual en el resto de
+// la app. El badge "Parcial" (STATUS_LABEL/STATUS_CLASS de arriba) los sigue
+// distinguiendo visualmente dentro del mismo bucket.
+const STATUS_BUCKET = { pending: ["pending", "partial"], applied: ["applied"], cancelled: ["cancelled"] };
+const matchesStatusFilter = (status, filter) =>
+  filter === "all" || (STATUS_BUCKET[filter] || [filter]).includes(status);
 
 const isoDateNDaysAgo = (n) => {
   const d = new Date();
@@ -71,13 +85,17 @@ export default function Advances() {
       setItems(list);
     } catch (err) {
       console.error("Advances load failed:", err);
+      toast.error("No se pudieron cargar los anticipos: " + (err.message || err));
       setItems([]);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filtered = useMemo(() => {
     const q = search.trim();
@@ -86,7 +104,7 @@ export default function Advances() {
       const normType = normalizeAdvanceType(a.type);
       if (typeFilter !== "all" && normType !== typeFilter) return false;
       const status = a.status || "pending";
-      if (statusFilter !== "all" && status !== statusFilter) return false;
+      if (!matchesStatusFilter(status, statusFilter)) return false;
       // For applied/all view, allow user to bound the historical range by date.
       if (showApplied && status === "applied" && appliedSince && (a.date || "") < appliedSince) return false;
       if (q) {
@@ -102,13 +120,16 @@ export default function Advances() {
     let pendingAnticipos = 0, pendingBonos = 0;
     let appliedAnticipos = 0, appliedBonos = 0;
     for (const a of filtered) {
-      const amount = Number(a.amount) || 0;
       const status = a.status || "pending";
       const isBonus = advanceSign(a) > 0;
       if (status === "applied") {
+        const amount = Number(a.amount) || 0;
         if (isBonus) appliedBonos += amount; else appliedAnticipos += amount;
-      } else if (status === "pending") {
-        if (isBonus) pendingBonos += amount; else pendingAnticipos += amount;
+      } else if (status === "pending" || status === "partial") {
+        // Saldo real (no el monto original) — un parcial ya cobrado en parte
+        // solo debería sumar lo que efectivamente resta.
+        const rem = advanceRemaining(a);
+        if (isBonus) pendingBonos += rem; else pendingAnticipos += rem;
       }
     }
     return { pendingAnticipos, pendingBonos, appliedAnticipos, appliedBonos };
@@ -276,6 +297,14 @@ export default function Advances() {
                   {a.note && (
                     <div className="text-xs text-[var(--color-muted)]">{a.note}</div>
                   )}
+                  {hasInstallmentPlan(a) && (() => {
+                    const prog = installmentProgress(a);
+                    return (
+                      <div className="text-xs text-[var(--color-accent)]">
+                        ⏳ Cuota {prog.paidCount}/{prog.count} · {cadenceMeta(prog.cadence).label}
+                      </div>
+                    );
+                  })()}
                   <div className="flex flex-wrap justify-end gap-1 pt-1">
                     <button
                       onClick={() => setEditing({ ...a, mode: "edit" })}
@@ -335,6 +364,14 @@ export default function Advances() {
                         Pagado: {fmtCurrency(a.amountPaid)} · Resta: {fmtCurrency(Math.max(0, (Number(a.amount) || 0) - (Number(a.amountPaid) || 0)))}
                       </div>
                     )}
+                    {hasInstallmentPlan(a) && (() => {
+                      const prog = installmentProgress(a);
+                      return (
+                        <div className="text-[10px] font-normal text-[var(--color-accent)]">
+                          ⏳ {prog.paidCount}/{prog.count} · {cadenceMeta(prog.cadence).label}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td className="px-3 py-2 text-xs text-[var(--color-muted)]">{a.note || "—"}</td>
                   <td className="px-3 py-2">
@@ -415,6 +452,9 @@ function AdvanceFormModal({ open, item, onClose, onSaved }) {
     amount: 0,
     date: todayStr(),
     note: "",
+    useInstallments: false,
+    installmentCount: 2,
+    installmentCadence: "porPago",
   });
   const [busy, setBusy] = useState(false);
   const [picker, setPicker] = useState({ q: "", results: [], open: false });
@@ -433,6 +473,9 @@ function AdvanceFormModal({ open, item, onClose, onSaved }) {
         amount: item?.amount || 0,
         date: item?.date || todayStr(),
         note: item?.note || "",
+        useInstallments: !!item?.installments?.count,
+        installmentCount: Number(item?.installments?.count) || 2,
+        installmentCadence: item?.installments?.cadence || "porPago",
       });
       setPicker({ q: "", results: [], open: false });
     }
@@ -455,6 +498,11 @@ function AdvanceFormModal({ open, item, onClose, onSaved }) {
     if (isPartial && newAmount < amountPaid) {
       { toast.warning(`El monto no puede ser menor a lo ya pagado (${fmtCurrency(amountPaid)}). Si querés cerrar el saldo, ponelo igual a ${fmtCurrency(amountPaid)}.`); return; }
     }
+    if (!isEdit && form.type === "anticipo" && form.useInstallments) {
+      const n = Math.floor(Number(form.installmentCount) || 0);
+      if (n < 2) { toast.warning("El plan de cuotas necesita al menos 2 cuotas."); return; }
+      if (n > 60) { toast.warning("Máximo 60 cuotas."); return; }
+    }
     setBusy(true);
     try {
       // Recompute status si hay pagos aplicados: si amount queda en o por debajo
@@ -473,6 +521,17 @@ function AdvanceFormModal({ open, item, onClose, onSaved }) {
         note: form.note,
         status,
       };
+      if (!isEdit) {
+        // Plan de cuotas: se fija solo al crear, nunca en edición.
+        data.installments = (form.type === "anticipo" && form.useInstallments)
+          ? { count: Math.floor(form.installmentCount), amount: computeCuotaAmount(newAmount, form.installmentCount), cadence: form.installmentCadence }
+          : null;
+      } else if (item?.installments && !isPartial && newAmount !== (Number(item.amount) || 0)) {
+        // El plan en sí no se edita, pero si el monto total cambia (todavía
+        // pendiente, sin pagos) hay que re-derivar el monto de cuota — si no,
+        // count*cuota queda desalineado del nuevo total.
+        data.installments = { ...item.installments, amount: computeCuotaAmount(newAmount, item.installments.count) };
+      }
       if (isEdit) await advancesService.update(item.id, data);
       else await advancesService.create(data);
       onSaved();
@@ -528,7 +587,11 @@ function AdvanceFormModal({ open, item, onClose, onSaved }) {
                 key={t.value}
                 type="button"
                 disabled={isPartial}
-                onClick={() => !isPartial && setForm((f) => ({ ...f, type: t.value }))}
+                onClick={() => !isPartial && setForm((f) => ({
+                  ...f,
+                  type: t.value,
+                  useInstallments: t.value === "anticipo" && f.useInstallments,
+                }))}
                 className={`flex-1 rounded px-3 py-1 ${
                   form.type === t.value ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "text-[var(--color-muted)]"
                 } disabled:cursor-not-allowed`}
@@ -607,6 +670,65 @@ function AdvanceFormModal({ open, item, onClose, onSaved }) {
             />
           </div>
         </div>
+
+        {form.type === "anticipo" && !isEdit && (
+          <div className="rounded-md border border-[var(--color-border)] p-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.useInstallments}
+                onChange={(e) => setForm((f) => ({ ...f, useInstallments: e.target.checked }))}
+              />
+              <span className="font-medium">Descontar en cuotas</span>
+            </label>
+            {form.useInstallments && (
+              <div className="mt-2 grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">N° de cuotas</label>
+                  <input
+                    type="number"
+                    min={2}
+                    max={60}
+                    value={form.installmentCount}
+                    onChange={(e) => setForm((f) => ({ ...f, installmentCount: Number(e.target.value) || 2 }))}
+                    className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">Frecuencia</label>
+                  <select
+                    value={form.installmentCadence}
+                    onChange={(e) => setForm((f) => ({ ...f, installmentCadence: e.target.value }))}
+                    className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
+                  >
+                    {INSTALLMENT_CADENCES.map((c) => (
+                      <option key={c.value} value={c.value}>{c.label}</option>
+                    ))}
+                  </select>
+                </div>
+                {form.amount > 0 && form.installmentCount >= 2 && (
+                  <div className="col-span-2 text-xs text-[var(--color-muted)]">
+                    {form.installmentCount} cuotas de {fmtCurrency(computeCuotaAmount(form.amount, form.installmentCount))}
+                    {computeCuotaAmount(form.amount, form.installmentCount) * form.installmentCount !== Math.round(Number(form.amount) || 0)
+                      ? " · la última cuota se ajusta al saldo"
+                      : ""}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {form.type === "anticipo" && isEdit && item?.installments && (
+          <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-xs">
+            <div className="font-medium text-[var(--color-text)]">
+              Plan de cuotas: {item.installments.count} de {fmtCurrency(item.installments.amount)} · {cadenceMeta(item.installments.cadence).label}
+            </div>
+            <div className="mt-1 text-[var(--color-muted)]">
+              El plan no se edita. Para cambiarlo, eliminá y volvé a crear el anticipo (solo mientras sigue pendiente).
+            </div>
+          </div>
+        )}
 
         <div>
           <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">Nota (opcional)</label>

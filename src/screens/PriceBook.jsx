@@ -44,6 +44,7 @@ export default function PriceBook() {
   const [expanded, setExpanded] = useState(new Set());
   const [formEntry, setFormEntry] = useState(null); // null | {} (nueva) | entry existente
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const [hiddenModalOpen, setHiddenModalOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -112,10 +113,17 @@ export default function PriceBook() {
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
-    await priceBookService.remove(confirmDelete.id);
-    setConfirmDelete(null);
-    toast.success("Entrada eliminada");
-    reload();
+    setDeleteBusy(true);
+    try {
+      await priceBookService.remove(confirmDelete.id);
+      setConfirmDelete(null);
+      toast.success("Entrada eliminada");
+      await reload();
+    } catch (err) {
+      toast.error("No se pudo eliminar: " + (err.message || err));
+    } finally {
+      setDeleteBusy(false);
+    }
   };
 
   const handleExport = async () => {
@@ -366,6 +374,7 @@ export default function PriceBook() {
         message={confirmDelete ? `¿Eliminar el precio de "${confirmDelete.labor}" del período ${fmtRange(confirmDelete.dateFrom, confirmDelete.dateTo)}?` : ""}
         confirmLabel="Eliminar"
         danger
+        busy={deleteBusy}
         onConfirm={handleDelete}
         onCancel={() => setConfirmDelete(null)}
       />
@@ -491,7 +500,8 @@ function EntryFormModal({ initial, faenas, hiddenFaenaIds, units, onClose, onSav
             Cancelar
           </button>
           <button
-            onClick={submit}
+            type="submit"
+            form="pricebook-entry-form"
             disabled={busy}
             className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
           >
@@ -500,7 +510,10 @@ function EntryFormModal({ initial, faenas, hiddenFaenaIds, units, onClose, onSav
         </>
       }
     >
-      <div className="space-y-4">
+      {/* `id` + el atributo `form` del botón "Guardar" (en el footer, que
+          Modal.jsx renderiza como hermano de este div, no como hijo) es lo
+          que hace que Enter en un input de acá dispare el submit. */}
+      <form id="pricebook-entry-form" onSubmit={(e) => { e.preventDefault(); submit(); }} className="space-y-4">
         <Section title="Faena">
           <div className="flex gap-2 text-sm">
             <button
@@ -668,7 +681,7 @@ function EntryFormModal({ initial, faenas, hiddenFaenaIds, units, onClose, onSav
           <span className="mb-1 block text-sm text-[var(--color-muted)]">Notas (opcional)</span>
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} className={inputCls} />
         </label>
-      </div>
+      </form>
     </Modal>
   );
 }
@@ -711,7 +724,8 @@ function HiddenFaenasModal({ faenas, hiddenFaenaIds, onClose, onSaved }) {
             Cancelar
           </button>
           <button
-            onClick={submit}
+            type="submit"
+            form="pricebook-hidden-faenas-form"
             disabled={busy}
             className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
           >
@@ -720,17 +734,19 @@ function HiddenFaenasModal({ faenas, hiddenFaenaIds, onClose, onSaved }) {
         </>
       }
     >
-      <p className="mb-3 text-sm text-[var(--color-muted)]">
-        Desmarca las faenas que no quieres ver en el selector "Faena existente" del libro de precios (ej. nombres poco legibles o de prueba). No afecta a Faenas, Calendario ni el resto de la app.
-      </p>
-      <div className="max-h-80 space-y-1 overflow-y-auto">
-        {faenas.map((f) => (
-          <label key={f.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-[var(--color-surface-2)]">
-            <input type="checkbox" checked={!hidden.has(f.id)} onChange={() => toggle(f.id)} />
-            <span>{f.name || "(sin nombre)"}</span>
-          </label>
-        ))}
-      </div>
+      <form id="pricebook-hidden-faenas-form" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+        <p className="mb-3 text-sm text-[var(--color-muted)]">
+          Desmarca las faenas que no quieres ver en el selector "Faena existente" del libro de precios (ej. nombres poco legibles o de prueba). No afecta a Faenas, Calendario ni el resto de la app.
+        </p>
+        <div className="max-h-80 space-y-1 overflow-y-auto">
+          {faenas.map((f) => (
+            <label key={f.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-[var(--color-surface-2)]">
+              <input type="checkbox" checked={!hidden.has(f.id)} onChange={() => toggle(f.id)} />
+              <span>{f.name || "(sin nombre)"}</span>
+            </label>
+          ))}
+        </div>
+      </form>
     </Modal>
   );
 }

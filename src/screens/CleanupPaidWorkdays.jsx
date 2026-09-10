@@ -23,7 +23,8 @@ const fmtTimestamp = (ts) => {
 };
 
 export default function CleanupPaidWorkdays() {
-  const [cycleId, setCycleId] = useState("9HFfcheRD29nR72NT5mG");
+  const [cycleId, setCycleId] = useState("");
+  const [cycles, setCycles] = useState([]);
   const [payrollFilter, setPayrollFilter] = useState("");
   const [rows, setRows] = useState([]);
   const [labors, setLabors] = useState({}); // laborId → { name, type }
@@ -72,10 +73,17 @@ export default function CleanupPaidWorkdays() {
   };
 
   useEffect(() => {
-    // Auto-load on first render if cycleId is prefilled.
+    // Antes había un cycleId de Firestore pegado a mano acá — reemplazado
+    // por un selector poblado desde la colección real (mismo patrón que
+    // HarvestQr.jsx para elegir ciclo), para no tener que copiar/pegar un
+    // ID crudo en una pantalla que hace writes destructivos en batch.
+    cyclesService.list({ order: ["label", "asc"] }).then(setCycles);
+  }, []);
+
+  useEffect(() => {
     if (cycleId) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [cycleId]);
 
   const filtered = useMemo(() => {
     if (!payrollFilter.trim()) return rows;
@@ -161,12 +169,19 @@ export default function CleanupPaidWorkdays() {
 
       <div className="mb-3 flex flex-wrap items-end gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
         <div>
-          <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">cycleId</label>
-          <input
+          <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">Ciclo</label>
+          <select
             value={cycleId}
             onChange={(e) => setCycleId(e.target.value)}
-            className="w-72 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 font-mono text-xs"
-          />
+            className="w-72 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs"
+          >
+            <option value="">Elegí un ciclo…</option>
+            {cycles.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.label || c.id} {c.status === "closed" ? "(cerrado)" : "(abierto)"}
+              </option>
+            ))}
+          </select>
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">filtrar por payrollId (opcional)</label>

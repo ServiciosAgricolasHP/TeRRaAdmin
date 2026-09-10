@@ -11,10 +11,19 @@
 //   payments: [{ payrollId, amount, paidAt }],
 //   appliedPayrollId: string | null  (last payroll that touched it; legacy)
 //   appliedAt, appliedBy
+//   installments: { count, amount, cadence } | null  (anticipo-only; see below)
 //
 // "pending"  → no amount applied yet (or amountPaid == 0).
 // "partial"  → amountPaid > 0 but < amount; can keep being applied.
 // "applied"  → amountPaid >= amount.
+//
+// installments: optional repayment plan set at creation, only for type
+// "anticipo" (never bono), locked afterward (create a new advance instead of
+// editing a plan mid-repayment). `cadence` is a label/hint for the admin —
+// NOT a date-based gate — deduction still only happens when a payroll is
+// generated, and the admin explicitly confirms which cuotas apply in
+// InstallmentConfirmModal (Payroll.jsx). See advanceDueNow()/
+// installmentProgress() below.
 import { writeBatch, doc, getDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { createService } from "./firestoreBase";
@@ -83,6 +92,83 @@ export function advanceRemaining(adv) {
   const amount = Number(adv?.amount) || 0;
   const paid = Number(adv?.amountPaid) || 0;
   return Math.max(0, amount - paid);
+}
+
+export const INSTALLMENT_CADENCES = [
+  { value: "porPago", label: "Por pago", minDays: 0 },
+  { value: "quincenal", label: "Quincenal", minDays: 15 },
+  { value: "mensual", label: "Mensual", minDays: 30 },
+];
+
+export function cadenceMeta(cadence) {
+  return INSTALLMENT_CADENCES.find((c) => c.value === cadence) || INSTALLMENT_CADENCES[0];
+}
+
+// Math.ceil (no Math.round): count cuotas siempre alcanzan para cubrir el
+// total, y la última queda naturalmente más chica (clippeada por
+// advanceRemaining() al aplicarla) — sin tener que llevar la cuenta de "en
+// qué cuota vamos".
+export function computeCuotaAmount(amount, count) {
+  const n = Math.max(1, Math.floor(Number(count) || 1));
+  return Math.ceil((Number(amount) || 0) / n);
+}
+
+export function hasInstallmentPlan(adv) {
+  return Number(adv?.installments?.count) > 1 && !isBono(adv);
+}
+
+// Fecha base para "última cuota hace N días": el MÁXIMO entre los payments[]
+// con amount>0 (nunca el último elemento del array — restoreAdvancesFromPayroll
+// filtra entradas del medio al revertir una nómina, así que el array no queda
+// necesariamente ordenado por fecha), o la fecha del anticipo si aún no hay pagos.
+export function lastCuotaDate(adv) {
+  const payments = Array.isArray(adv?.payments) ? adv.payments : [];
+  let best = null;
+  for (const p of payments) {
+    if (!(Number(p?.amount) > 0)) continue;
+    const d = String(p?.paidAt || "").slice(0, 10);
+    if (d && (!best || d > best)) best = d;
+  }
+  return best || String(adv?.date || "").slice(0, 10) || null;
+}
+
+export function daysSinceLastCuota(adv, asOf = new Date()) {
+  const last = lastCuotaDate(adv);
+  if (!last) return null;
+  const dayMs = 86400000;
+  const lastMs = Date.parse(`${last}T00:00:00Z`);
+  const asOfMs = Date.parse(`${asOf.toISOString().slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(lastMs) || Number.isNaN(asOfMs)) return null;
+  return Math.max(0, Math.round((asOfMs - lastMs) / dayMs));
+}
+
+// Resumen del plan de cuotas de un anticipo, para badges y el modal de
+// confirmación al generar nómina. Puramente informativo — no gatea nada.
+export function installmentProgress(adv) {
+  if (!hasInstallmentPlan(adv)) return null;
+  const plan = adv.installments;
+  const cuotaAmount = Number(plan.amount) || computeCuotaAmount(adv.amount, plan.count);
+  const paidCount = Math.min(plan.count, Math.round((Number(adv.amountPaid) || 0) / (cuotaAmount || 1)));
+  return {
+    count: plan.count,
+    paidCount,
+    cuotaAmount,
+    cadence: plan.cadence,
+    remaining: advanceRemaining(adv),
+    daysSinceLastCuota: daysSinceLastCuota(adv),
+  };
+}
+
+// Monto SUGERIDO si esta cuota se llegara a aplicar en una nómina. La
+// decisión de aplicarla o no la toma el admin a mano (InstallmentConfirmModal
+// en Payroll.jsx) — esta función nunca devuelve $0 por fecha/cadencia, solo
+// por saldo agotado.
+export function advanceDueNow(adv) {
+  const remaining = advanceRemaining(adv);
+  if (remaining <= 0) return 0;
+  if (!hasInstallmentPlan(adv)) return remaining;
+  const cuotaAmount = Number(adv.installments.amount) || computeCuotaAmount(adv.amount, adv.installments.count);
+  return Math.min(remaining, cuotaAmount);
 }
 
 export async function listAllPending() {
