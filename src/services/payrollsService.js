@@ -117,8 +117,89 @@ async function batchUpdateWorkdays(ids, patch, onProgress) {
 }
 
 export async function markPaid(id, workdayIds = []) {
-  await markWorkdaysPaid(workdayIds);
+  // Si las transferencias ya se sellaron aparte (ver "pago en dos tiempos"),
+  // solo falta sellar los workdays de efectivo: re-estampar los de banco les
+  // pisaría la fecha real en que salió la transferencia.
+  const p = await payrollsService.getById(id);
+  const ids = p?.bankPaidAt ? cashWorkdayIdsOf(p) : workdayIds;
+  await markWorkdaysPaid(ids);
+  // `bankPaidAt` NO se limpia: queda como registro de cuándo salió el banco.
+  // `pendingCashOf` ya devuelve 0 para las nóminas pagadas, así que no estorba.
   return payrollsService.update(id, { status: "paid", paidAt: new Date().toISOString() });
+}
+
+// ───────────────── Pago en dos tiempos (banco / efectivo) ─────────────────
+// El caso real: salen las transferencias pero el efectivo no se alcanza a
+// entregar y queda debiéndose para la vuelta siguiente. `bankPaidAt` es el
+// flag que marca eso. La nómina sigue en `pending` — no está pagada entera —
+// así que ninguna de las ~11 comparaciones `status === "paid"` de la app
+// cambia de significado.
+//
+// La deuda de efectivo NO se guarda como campo: se deriva siempre con
+// `pendingCashOf`, para que no exista un booleano que pueda quedar
+// desincronizado de los items.
+
+const bankWorkdayIdsOf = (p) =>
+  (p?.items || []).filter((it) => !isCashBank(it.bankCode)).flatMap((it) => it.workdayIds || []);
+
+const cashWorkdayIdsOf = (p) =>
+  (p?.items || []).filter((it) => isCashBank(it.bankCode)).flatMap((it) => it.workdayIds || []);
+
+// Items de efectivo que esta nómina todavía debe entregar.
+export function pendingCashItemsOf(payroll) {
+  if (!payroll?.bankPaidAt || payroll.status === "paid") return [];
+  const alreadyPaid = new Set(payroll.cashPaidRuts || []);
+  return (payroll.items || []).filter((it) => isCashBank(it.bankCode) && !alreadyPaid.has(it.rut));
+}
+
+// Plata de efectivo que esta nómina todavía debe entregar. Es 0 si ya está
+// pagada entera, y también si las transferencias no se pagaron: ahí no hay
+// deuda vencida, simplemente la nómina no se pagó todavía. Esa distinción es
+// justamente para lo que sirve el flag.
+export function pendingCashOf(payroll) {
+  return pendingCashItemsOf(payroll).reduce((s, it) => s + (Number(it.amount) || 0), 0);
+}
+
+export async function markBankPaid(payrollId, onProgress) {
+  const p = await payrollsService.getById(payrollId);
+  if (!p) throw new Error("Nómina no encontrada");
+  if (p.status === "paid") throw new Error("La nómina ya está pagada entera.");
+  await markWorkdaysPaid(bankWorkdayIdsOf(p), onProgress);
+  return payrollsService.update(payrollId, {
+    bankPaidAt: new Date().toISOString(),
+    bankPaidBy: auth.currentUser?.uid || null,
+  });
+}
+
+export async function revertBankPaid(payrollId, onProgress) {
+  const p = await payrollsService.getById(payrollId);
+  if (!p) throw new Error("Nómina no encontrada");
+  if (p.status === "paid") {
+    throw new Error("La nómina está pagada entera — revertí el pago completo.");
+  }
+  await unmarkWorkdaysPaid(bankWorkdayIdsOf(p), onProgress);
+  return payrollsService.update(payrollId, { bankPaidAt: null, bankPaidBy: null });
+}
+
+// Personas de efectivo que cobraron sueltas, antes que el resto de su grupo.
+// Solo se registra el rut: NO se estampa `paidAt` en sus workdays, porque hoy
+// ese campo significa "la nómina se marcó pagada" y darle un segundo
+// significado por persona obliga a un camino de des-estampado. `markPaid` los
+// sella a todos al final, igual que siempre.
+export async function setCashPaidRuts(payrollId, ruts) {
+  return payrollsService.update(payrollId, { cashPaidRuts: [...new Set(ruts || [])] });
+}
+
+// Una nómina con las transferencias ya pagadas no se puede editar: sacar un
+// trabajador de banco liberaría sus días y le restauraría los anticipos a
+// alguien que ya tiene la plata en la cuenta.
+function assertEditable(p, verb = "editar") {
+  if (p.status === "paid") {
+    throw new Error(`La nómina está pagada — revertí el pago antes de ${verb}.`);
+  }
+  if (p.bankPaidAt) {
+    throw new Error(`Las transferencias de esta nómina ya se pagaron — revertilas antes de ${verb}.`);
+  }
 }
 
 // ───────────────────────── Edición parcial ─────────────────────────
@@ -157,9 +238,7 @@ function recalcPayrollAggregates(items) {
 export async function removeWorkerFromPayroll(payrollId, workerRut) {
   const p = await payrollsService.getById(payrollId);
   if (!p) throw new Error("Nómina no encontrada");
-  if (p.status === "paid") {
-    throw new Error("La nómina está pagada — revertí el pago antes de editar.");
-  }
+  assertEditable(p);
   const items = Array.isArray(p.items) ? p.items : [];
   const item = items.find((it) => it.rut === workerRut);
   if (!item) throw new Error(`Trabajador ${workerRut} no está en esta nómina`);
@@ -177,9 +256,7 @@ export async function removeWorkerFromPayroll(payrollId, workerRut) {
 export async function removeCycleFromPayroll(payrollId, cycleId) {
   const p = await payrollsService.getById(payrollId);
   if (!p) throw new Error("Nómina no encontrada");
-  if (p.status === "paid") {
-    throw new Error("La nómina está pagada — revertí el pago antes de editar.");
-  }
+  assertEditable(p);
   const items = Array.isArray(p.items) ? p.items : [];
   // Los workday docIds llevan el cycleId como prefijo
   // (`{cycleId}__{laborId}__{rut}__{date}[__{ck}]`), así que podemos
@@ -257,9 +334,7 @@ export async function removeCycleFromPayroll(payrollId, cycleId) {
 export async function addCyclesToPayroll(payrollId, { items, cycleDetailsToAdd }) {
   const p = await payrollsService.getById(payrollId);
   if (!p) throw new Error("Nómina no encontrada");
-  if (p.status === "paid") {
-    throw new Error("La nómina está pagada — revertí el pago antes de editar.");
-  }
+  assertEditable(p);
   const aggregates = recalcPayrollAggregates(items);
   const cycleIds = [...(p.cycleIds || []), ...cycleDetailsToAdd.map((c) => c.id)];
   const cycleLabels = [...(p.cycleLabels || []), ...cycleDetailsToAdd.map((c) => c.label)];
@@ -276,14 +351,20 @@ export async function addCyclesToPayroll(payrollId, { items, cycleDetailsToAdd }
 export async function recalculatePayrollItems(payrollId, { items }) {
   const p = await payrollsService.getById(payrollId);
   if (!p) throw new Error("Nómina no encontrada");
-  if (p.status === "paid") {
-    throw new Error("La nómina está pagada — revertí el pago antes de recalcular.");
-  }
+  assertEditable(p, "recalcular");
   const aggregates = recalcPayrollAggregates(items);
   await payrollsService.update(payrollId, aggregates);
 }
 
 export async function markPending(id, workdayIds = []) {
   await unmarkWorkdaysPaid(workdayIds);
-  return payrollsService.update(id, { status: "pending", paidAt: null });
+  // Revierte el pago entero, así que también borra el sello de las
+  // transferencias y las personas que habían cobrado sueltas.
+  return payrollsService.update(id, {
+    status: "pending",
+    paidAt: null,
+    bankPaidAt: null,
+    bankPaidBy: null,
+    cashPaidRuts: [],
+  });
 }

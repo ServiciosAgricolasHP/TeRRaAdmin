@@ -18,6 +18,11 @@ import {
   removeCycleFromPayroll,
   addCyclesToPayroll,
   recalculatePayrollItems,
+  markBankPaid,
+  revertBankPaid,
+  setCashPaidRuts,
+  pendingCashOf,
+  pendingCashItemsOf,
 } from "../services/payrollsService";
 import {
   advancesService,
@@ -95,6 +100,12 @@ function estimateCashBreakdown(cashItems) {
   }
   return { totalNeeded, totalOriginal, counts, perWorker };
 }
+
+// "2026-08-31" -> "31/08". Etiqueta de día corta para las tablas de resumen.
+const fmtDayShortEs = (d) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(d || ""));
+  return m ? `${m[3]}/${m[2]}` : (d || "");
+};
 
 const fmtDate = (v) => {
   if (!v) return "—";
@@ -345,6 +356,24 @@ export default function Payroll() {
       setRefreshing(false);
     }
   };
+
+  // Nóminas cuyas transferencias ya se pagaron pero cuyo efectivo sigue
+  // debiéndose. Sale de `payrolls`, que ya está cargado y cacheado — cero
+  // lecturas extra. Es informativo: no se anexa a la nómina nueva.
+  const pendingCashPayrolls = useMemo(() => {
+    const out = [];
+    for (const p of payrolls) {
+      const items = pendingCashItemsOf(p);
+      if (items.length === 0) continue;
+      out.push({
+        id: p.id,
+        name: p.name || p.id,
+        count: items.length,
+        amount: items.reduce((s, it) => s + (Number(it.amount) || 0), 0),
+      });
+    }
+    return out;
+  }, [payrolls]);
 
   // Group active cycles by faena (and subfaena).
   const activeByFaena = useMemo(() => {
@@ -920,9 +949,14 @@ export default function Payroll() {
     await load();
     toast.success("Nómina renombrada");
   };
-  const [payConfirm, setPayConfirm] = useState(null); // { payroll, mode: "pay" | "revert" }
+  // mode: "pay" | "revert" | "bank" | "revertBank". Los dos últimos son el
+  // pago en dos tiempos: salen las transferencias pero el efectivo queda
+  // debiéndose.
+  const [payConfirm, setPayConfirm] = useState(null); // { payroll, mode }
   const onAskMarkPaid = (p) => setPayConfirm({ payroll: p, mode: "pay" });
   const onAskRevert = (p) => setPayConfirm({ payroll: p, mode: "revert" });
+  const onAskMarkBankPaid = (p) => setPayConfirm({ payroll: p, mode: "bank" });
+  const onAskRevertBank = (p) => setPayConfirm({ payroll: p, mode: "revertBank" });
   const onConfirmPay = async () => {
     if (!payConfirm) return;
     const { payroll: p, mode } = payConfirm;
@@ -930,6 +964,10 @@ export default function Payroll() {
       await markPayrollPaid(p.id, p.workdayIds || []);
     } else if (mode === "revert") {
       await markPayrollPending(p.id, p.workdayIds || []);
+    } else if (mode === "bank") {
+      await markBankPaid(p.id);
+    } else if (mode === "revertBank") {
+      await revertBankPaid(p.id);
     }
     setPayConfirm(null);
     await load();
@@ -942,6 +980,14 @@ export default function Payroll() {
     if (confirmDelete.status === "paid") {
       setConfirmDelete(null);
       toast.error("No se puede eliminar una nómina pagada. Revertí primero a No pagado.");
+      return;
+    }
+    // Misma protección para el pago en dos tiempos: si las transferencias ya
+    // salieron, borrar la nómina liberaría los días y restauraría anticipos de
+    // gente que ya tiene la plata en la cuenta.
+    if (confirmDelete.bankPaidAt) {
+      setConfirmDelete(null);
+      toast.error("Las transferencias de esta nómina ya se pagaron. Revertilas antes de eliminarla.");
       return;
     }
     const id = confirmDelete.id;
@@ -1127,6 +1173,7 @@ export default function Payroll() {
             toggleLaborInCycle={toggleLaborInCycle}
             subfaenaName={subfaenaName}
             cycleStats={cycleStats}
+            pendingCashPayrolls={pendingCashPayrolls}
             onNext={buildPreview}
             busy={busy}
           />
@@ -1156,6 +1203,8 @@ export default function Payroll() {
           payrolls={payrolls}
           onMarkPaid={onAskMarkPaid}
           onMarkPending={onAskRevert}
+          onMarkBankPaid={onAskMarkBankPaid}
+          onRevertBank={onAskRevertBank}
           onAskDelete={setConfirmDelete}
           onRedownload={onRedownload}
           onDownloadNominaOnly={onDownloadNominaOnly}
@@ -1224,6 +1273,7 @@ export default function Payroll() {
       {detailPayroll && (
         <PayrollDetailModal
           payroll={detailPayroll}
+          allPayrolls={payrolls}
           cycles={cycles}
           faenas={faenas}
           subfaenas={subfaenas}
@@ -1289,9 +1339,23 @@ const PAY_UNKNOWN_HINT =
 // sin nada pendiente es ruido acá, no una opción. Quedan detrás del toggle
 // "Sin pendientes" (y siempre visibles si están seleccionados, para que nunca
 // desaparezca algo que el usuario ya marcó).
-function CycleSelector({ groups, selected, toggle, selectedLaborsByCycle, toggleLaborInCycle, subfaenaName, cycleStats, onNext, busy }) {
+function CycleSelector({ groups, selected, toggle, selectedLaborsByCycle, toggleLaborInCycle, subfaenaName, cycleStats, pendingCashPayrolls = [], onNext, busy }) {
   const [search, setSearch] = useState("");
   const [showEmpty, setShowEmpty] = useState(false);
+  const [showPendingCash, setShowPendingCash] = useState(false);
+
+  // Efectivo que quedó debiéndose de nóminas anteriores. No entra a esta
+  // nómina ni se suma a nada: se entrega aparte, con su propio sobre. Está acá
+  // porque es plata que hay que ir a sacar al banco el mismo día.
+  const owedCash = useMemo(() => {
+    let total = 0;
+    let people = 0;
+    for (const p of pendingCashPayrolls) {
+      total += p.amount;
+      people += p.count;
+    }
+    return { total, people, rows: pendingCashPayrolls };
+  }, [pendingCashPayrolls]);
 
   const {
     visibleGroups, emptyCount, totalPending, pendingCount,
@@ -1425,6 +1489,40 @@ function CycleSelector({ groups, selected, toggle, selectedLaborsByCycle, toggle
           </span>
         </div>
       </div>
+
+      {owedCash.total > 0 && (
+        <div className="rounded-lg border border-[var(--color-warning)] bg-[var(--color-warning-soft)]/40 px-3 py-2">
+          <button
+            type="button"
+            onClick={() => setShowPendingCash((v) => !v)}
+            className="flex w-full flex-wrap items-center gap-x-2 gap-y-1 text-left text-xs"
+          >
+            <span className="text-[var(--color-muted)]">{showPendingCash ? "▾" : "▸"}</span>
+            <span className="font-semibold">💵 Efectivo pendiente de antes:</span>
+            <span className="font-semibold tabular-nums text-[var(--color-warning)]">
+              {fmtCurrency(owedCash.total)}
+            </span>
+            <span className="text-[var(--color-muted)]">
+              · {owedCash.rows.length} nómina{owedCash.rows.length === 1 ? "" : "s"} ·{" "}
+              {owedCash.people} persona{owedCash.people === 1 ? "" : "s"}
+            </span>
+            <span className="ml-auto text-[10px] italic text-[var(--color-muted)]">
+              se entrega aparte, con su propio sobre
+            </span>
+          </button>
+          {showPendingCash && (
+            <div className="mt-2 space-y-1 border-t border-[var(--color-warning)]/40 pt-2">
+              {owedCash.rows.map((r) => (
+                <div key={r.id} className="flex flex-wrap items-center gap-x-2 text-xs">
+                  <span className="font-medium">{r.name}</span>
+                  <span className="text-[var(--color-muted)]">· {r.count} pers.</span>
+                  <span className="ml-auto font-semibold tabular-nums">{fmtCurrency(r.amount)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex-1 space-y-3 overflow-auto">
         {visibleGroups.length === 0 ? (
@@ -1986,13 +2084,37 @@ function PayConfirmModal({ info, onCancel, onConfirm }) {
   useEffect(() => { if (info) { setText(""); setBusy(false); } }, [info]);
   if (!info) return null;
   const { payroll: p, mode } = info;
-  const isRevert = mode === "revert";
-  const keyword = isRevert ? "No pagado" : "Pagado";
+  const isRevert = mode === "revert" || mode === "revertBank";
+  const owedCash = pendingCashOf(p);
+  const COPY = {
+    pay: {
+      keyword: "Pagado",
+      title: "Marcar como pagada",
+      intro: p.bankPaidAt
+        ? "Las transferencias ya estaban selladas, así que esto cierra el efectivo que faltaba. Los días de efectivo quedan sellados con la fecha de hoy."
+        : "Vas a marcar esta nómina como pagada. Los días asociados quedan sellados con la fecha de pago.",
+    },
+    revert: {
+      keyword: "No pagado",
+      title: "Marcar como NO pagada",
+      intro:
+        "Vas a revertir esta nómina: el estado vuelve a pendiente y se liberan los días asociados (quedan disponibles para una nueva nómina). También se borra el sello de las transferencias y quiénes habían cobrado sueltos.",
+    },
+    bank: {
+      keyword: "Transferencias",
+      title: "Marcar solo las transferencias como pagadas",
+      intro:
+        "Vas a registrar que salieron las transferencias pero el efectivo todavía no. La nómina sigue PENDIENTE (porque no está pagada entera), pero su efectivo pasa a contarse como deuda y aparece al armar la nómina siguiente.",
+    },
+    revertBank: {
+      keyword: "Revertir",
+      title: "Revertir el pago de las transferencias",
+      intro:
+        "Vas a deshacer el sello de las transferencias: los días de los trabajadores de banco vuelven a quedar sin fecha de pago y el efectivo deja de contarse como deuda.",
+    },
+  };
+  const { keyword, title, intro } = COPY[mode] || COPY.pay;
   const ok = text.trim().toLowerCase() === keyword.toLowerCase();
-  const title = isRevert ? "Marcar como NO pagada" : "Marcar como pagada";
-  const intro = isRevert
-    ? "Vas a revertir esta nómina: el estado vuelve a pendiente y se liberan los días asociados (quedan disponibles para una nueva nómina)."
-    : "Vas a marcar esta nómina como pagada. Los días asociados quedan sellados con la fecha de pago.";
   return (
     <Modal
       open
@@ -2031,6 +2153,15 @@ function PayConfirmModal({ info, onCancel, onConfirm }) {
           <div className="font-medium">{p.name}</div>
           <div className="text-xs text-[var(--color-muted)] mt-1">
             {p.workerCount || 0} trab. · {fmtCurrency(p.total || 0)}
+          </div>
+          <div className="mt-1 flex flex-wrap gap-x-3 text-xs tabular-nums text-[var(--color-muted)]">
+            <span>🏦 {fmtCurrency(p.bankTotal || 0)}</span>
+            <span>💵 {fmtCurrency(p.cashTotal || 0)}</span>
+            {owedCash > 0 && (
+              <span className="font-semibold text-[var(--color-warning)]">
+                Efectivo debiendo: {fmtCurrency(owedCash)}
+              </span>
+            )}
           </div>
         </div>
         <p className="text-[var(--color-muted)]">{intro}</p>
@@ -2182,9 +2313,28 @@ function RenamePayrollModal({ payroll, onCancel, onConfirm }) {
   );
 }
 
-function HistoryList({ payrolls, onMarkPaid, onMarkPending, onAskDelete, onRedownload, onDownloadNominaOnly, onDownloadSnapshot, onChangeClassification, onOpen, onRename }) {
+// El campo `status` sigue siendo binario en Firestore; lo que tiene tres caras
+// es el estado VISIBLE, porque una nómina con las transferencias ya pagadas y
+// el efectivo debiendo no es lo mismo que una sin pagar nada.
+function payStateOf(p) {
+  if (p.status === "paid") return "paid";
+  if (p.bankPaidAt) return "bankPaid";
+  return "pending";
+}
+
+const PAY_STATE_PILL = {
+  paid: { label: "Pagada", short: "✓ Pagada", cls: "bg-[var(--color-success-soft)] text-[var(--color-success)]" },
+  bankPaid: {
+    label: "🏦 Transferencias pagadas",
+    short: "🏦 Transf. pagadas",
+    cls: "bg-[var(--color-accent-soft)] text-[var(--color-accent)]",
+  },
+  pending: { label: "Pendiente", short: "⏳ Pendiente", cls: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]" },
+};
+
+function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRevertBank, onAskDelete, onRedownload, onDownloadNominaOnly, onDownloadSnapshot, onChangeClassification, onOpen, onRename }) {
   const isMobile = useIsMobile();
-  const [statusFilter, setStatusFilter] = useState("all"); // all | pending | paid
+  const [statusFilter, setStatusFilter] = useState("all"); // all | pending | paid | cashPending
   const [monthFilter, setMonthFilter] = useState("all"); // all | YYYY-MM
   const [search, setSearch] = useState("");
   // "nomina" (default) | "diferencia". Las diferencias son nóminas chicas de
@@ -2220,20 +2370,32 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onAskDelete, onRedow
     const q = search.trim().toLowerCase();
     return payrolls.filter((p) => {
       if (classify(p) !== classificationTab) return false;
-      if (statusFilter !== "all" && (p.status || "pending") !== statusFilter) return false;
+      if (statusFilter === "cashPending") {
+        if (pendingCashOf(p) <= 0) return false;
+      } else if (statusFilter !== "all" && (p.status || "pending") !== statusFilter) {
+        return false;
+      }
       if (monthFilter !== "all" && monthKey(p.createdAt) !== monthFilter) return false;
       if (q && !(p.name || "").toLowerCase().includes(q)) return false;
       return true;
     });
   }, [payrolls, classificationTab, statusFilter, monthFilter, search]);
 
+  // "Pendiente" es lo que realmente se debe. Una nómina con las transferencias
+  // ya pagadas solo debe su efectivo: contar su `total` entero inflaría la
+  // deuda con plata que ya salió del banco.
   const totals = useMemo(() => {
-    let pending = 0, paid = 0;
+    let pending = 0, paid = 0, cashOwed = 0;
     for (const p of filtered) {
-      if ((p.status || "pending") === "paid") paid += Number(p.total) || 0;
-      else pending += Number(p.total) || 0;
+      const total = Number(p.total) || 0;
+      let owed;
+      if ((p.status || "pending") === "paid") owed = 0;
+      else if (p.bankPaidAt) { owed = pendingCashOf(p); cashOwed += owed; }
+      else owed = total;
+      pending += owed;
+      paid += total - owed;
     }
-    return { pending, paid, total: pending + paid };
+    return { pending, paid, cashOwed, total: pending + paid };
   }, [filtered]);
 
   // Paginación de a 15 para que el historial no crezca sin fin. Los totales y
@@ -2351,6 +2513,7 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onAskDelete, onRedow
         >
           <option value="all">Todos</option>
           <option value="pending">Pendientes</option>
+          <option value="cashPending">💵 Efectivo pendiente</option>
           <option value="paid">Pagadas</option>
         </select>
         <select
@@ -2367,6 +2530,12 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onAskDelete, onRedow
           <span><span className="text-[var(--color-muted)]">Pendiente:</span> <span className="font-semibold text-[var(--color-warning)]">{fmtCurrency(totals.pending)}</span></span>
           <span><span className="text-[var(--color-muted)]">Pagado:</span> <span className="font-semibold text-[var(--color-success)]">{fmtCurrency(totals.paid)}</span></span>
           <span><span className="text-[var(--color-muted)]">Total:</span> <span className="font-semibold">{fmtCurrency(totals.total)}</span></span>
+          {totals.cashOwed > 0 && (
+            <span title="Efectivo de nóminas cuyas transferencias ya se pagaron. Es la deuda que hay que entregar en mano.">
+              <span className="text-[var(--color-muted)]">💵 Debiendo:</span>{" "}
+              <span className="font-semibold text-[var(--color-warning)]">{fmtCurrency(totals.cashOwed)}</span>
+            </span>
+          )}
         </div>
       </div>
 
@@ -2403,13 +2572,10 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onAskDelete, onRedow
                   <div className="text-xs text-[var(--color-muted)]">{fmtDate(p.createdAt)}</div>
                 </div>
                 <span
-                  className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${
-                    p.status === "paid"
-                      ? "bg-[var(--color-success-soft)] text-[var(--color-success)]"
-                      : "bg-[var(--color-warning-soft)] text-[var(--color-warning)]"
-                  }`}
+                  title={pendingCashOf(p) > 0 ? `Falta entregar ${fmtCurrency(pendingCashOf(p))} en efectivo` : undefined}
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${PAY_STATE_PILL[payStateOf(p)].cls}`}
                 >
-                  {p.status === "paid" ? "Pagada" : "Pendiente"}
+                  {PAY_STATE_PILL[payStateOf(p)].short}
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-2 text-xs">
@@ -2442,12 +2608,34 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onAskDelete, onRedow
                     ↩ No pagado
                   </button>
                 ) : (
-                  <button
-                    onClick={() => onMarkPaid(p)}
-                    className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
-                  >
-                    ✓ Pagada
-                  </button>
+                  <>
+                    <button
+                      onClick={() => onMarkPaid(p)}
+                      title={p.bankPaidAt ? "Cerrar la nómina: sella el efectivo que faltaba entregar" : "Marcar la nómina entera como pagada"}
+                      className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+                    >
+                      {p.bankPaidAt ? "✓ Pagada (efectivo)" : "✓ Pagada"}
+                    </button>
+                    {p.bankPaidAt ? (
+                      <button
+                        onClick={() => onRevertBank(p)}
+                        title="Deshacer el sello de las transferencias"
+                        className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+                      >
+                        ↩ Transferencias
+                      </button>
+                    ) : (
+                      (p.cashTotal || 0) > 0 && (
+                        <button
+                          onClick={() => onMarkBankPaid(p)}
+                          title="Salieron las transferencias pero el efectivo no. La nómina sigue pendiente y su efectivo pasa a contarse como deuda."
+                          className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+                        >
+                          🏦 Solo transferencias
+                        </button>
+                      )
+                    )}
+                  </>
                 )}
                 <button
                   onClick={() => onChangeClassification(p)}
@@ -2458,10 +2646,12 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onAskDelete, onRedow
                 </button>
                 <button
                   onClick={() => onAskDelete(p)}
-                  disabled={p.status === "paid"}
+                  disabled={p.status === "paid" || !!p.bankPaidAt}
                   title={p.status === "paid"
                     ? "No se puede eliminar una nómina pagada. Revertí primero a No pagado."
-                    : "Eliminar esta nómina"}
+                    : p.bankPaidAt
+                      ? "Las transferencias ya se pagaron. Revertilas antes de eliminar."
+                      : "Eliminar esta nómina"}
                   className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[var(--color-surface-2)]"
                 >
                   Eliminar
@@ -2515,14 +2705,16 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onAskDelete, onRedow
               </td>
               <td className="px-3 py-2">
                 <span
-                  className={`rounded-full px-2 py-0.5 text-xs ${
-                    p.status === "paid"
-                      ? "bg-[var(--color-success-soft)] text-[var(--color-success)]"
-                      : "bg-[var(--color-warning-soft)] text-[var(--color-warning)]"
-                  }`}
+                  title={pendingCashOf(p) > 0 ? `Falta entregar ${fmtCurrency(pendingCashOf(p))} en efectivo` : undefined}
+                  className={`inline-block rounded-full px-2 py-0.5 text-xs ${PAY_STATE_PILL[payStateOf(p)].cls}`}
                 >
-                  {p.status === "paid" ? "Pagada" : "Pendiente"}
+                  {PAY_STATE_PILL[payStateOf(p)].label}
                 </span>
+                {pendingCashOf(p) > 0 && (
+                  <div className="mt-0.5 text-[10px] tabular-nums text-[var(--color-warning)]">
+                    💵 debe {fmtCurrency(pendingCashOf(p))}
+                  </div>
+                )}
               </td>
               <td className="px-3 py-2 text-right tabular-nums">{p.workerCount || (p.items?.length ?? 0)}</td>
               <td className="px-3 py-2 text-right text-xs tabular-nums">
@@ -2546,12 +2738,34 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onAskDelete, onRedow
                       ↩ No pagado
                     </button>
                   ) : (
-                    <button
-                      onClick={() => onMarkPaid(p)}
-                      className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
-                    >
-                      ✓ Pagada
-                    </button>
+                    <>
+                      <button
+                        onClick={() => onMarkPaid(p)}
+                        title={p.bankPaidAt ? "Cerrar la nómina: sella el efectivo que faltaba entregar" : "Marcar la nómina entera como pagada"}
+                        className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+                      >
+                        {p.bankPaidAt ? "✓ Pagada (efectivo)" : "✓ Pagada"}
+                      </button>
+                      {p.bankPaidAt ? (
+                        <button
+                          onClick={() => onRevertBank(p)}
+                          title="Deshacer el sello de las transferencias"
+                          className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+                        >
+                          ↩ Transferencias
+                        </button>
+                      ) : (
+                        (p.cashTotal || 0) > 0 && (
+                          <button
+                            onClick={() => onMarkBankPaid(p)}
+                            title="Salieron las transferencias pero el efectivo no. La nómina sigue pendiente y su efectivo pasa a contarse como deuda."
+                            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+                          >
+                            🏦 Solo transferencias
+                          </button>
+                        )
+                      )}
+                    </>
                   )}
                   <button
                     onClick={() => onChangeClassification(p)}
@@ -2562,10 +2776,12 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onAskDelete, onRedow
                   </button>
                   <button
                     onClick={() => onAskDelete(p)}
-                    disabled={p.status === "paid"}
+                    disabled={p.status === "paid" || !!p.bankPaidAt}
                     title={p.status === "paid"
                       ? "No se puede eliminar una nómina pagada. Revertí primero a No pagado."
-                      : "Eliminar esta nómina"}
+                      : p.bankPaidAt
+                        ? "Las transferencias ya se pagaron. Revertilas antes de eliminar."
+                        : "Eliminar esta nómina"}
                     className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[var(--color-surface-2)]"
                   >
                     Eliminar
@@ -3633,6 +3849,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
   table.subfaena-summary .summary-total td { background: #FFE699; }
   table.subfaena-summary .subtotal-faena td { background: #F2F2F2; font-style: italic; }
   table.subfaena-summary .adj-row td { background: #EAF3FA; }
+  table.subfaena-summary .pending-row td { background: #FFF4E5; }
   table.prod .prod-total { text-align: right; min-width: 70px; }
   @media print { @page { margin: 14mm landscape; } .receipt { padding: 0; } }
 </style>
@@ -3774,7 +3991,10 @@ async function printPaymentDetails(payroll, allGroups, titleOverrides = {}, summ
 // del Resumen en pantalla) — versión standalone de "Resumen por subfaena"/
 // "Resumen por labor" que ya usa el PDF completo de "Detalle de pago", para
 // cuando el usuario solo quiere esa tabla sin los comprobantes individuales.
-function printResumenTable(payroll, { showLabor, subfaenaSummary, laborSummary, bonusAdvanceSummary }) {
+function printResumenTable(payroll, {
+  showLabor, subfaenaSummary, laborSummary, bonusAdvanceSummary,
+  pendingRows = [], pendingMode = "none",
+}) {
   const fmt = (v) =>
     new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(Number(v) || 0);
   const fmtDayShort = (d) => {
@@ -3811,6 +4031,34 @@ function printResumenTable(payroll, { showLabor, subfaenaSummary, laborSummary, 
     cash: base.cash + (bonusAdvanceSummary?.bonus.cash || 0) - (bonusAdvanceSummary?.advance.cash || 0),
     total: base.total + (bonusAdvanceSummary?.bonus.total || 0) - (bonusAdvanceSummary?.advance.total || 0),
   });
+  // Filas del efectivo adeudado de nóminas anteriores. `nameColspan` = cuántas
+  // columnas ocupa el nombre (2 en la vista por labor, que tiene una columna
+  // más antes del período).
+  const pendingRowsHtml = (nameColspan) => (pendingMode === "none" ? "" : pendingRows.map((r) => `
+    <tr class="pending-row">
+      <td>—</td>
+      <td colspan="${nameColspan}">💵 Efectivo pendiente — ${r.name} <span style="color:#666;font-size:11px">· ${r.count} pers.</span></td>
+      <td style="font-size:11px;color:#444">${r.period ? `${fmtDayShort(r.period.first)} → ${fmtDayShort(r.period.last)}` : "—"}</td>
+      <td style="text-align:right">${fmt(0)}</td>
+      <td style="text-align:right">${fmt(r.cash)}</td>
+      <td style="text-align:right"><b>${fmt(r.total)}</b></td>
+    </tr>`).join(""));
+  const pendingSum = pendingRows.reduce((s, r) => s + r.total, 0);
+  // En "onlyPending" el efectivo de esta nómina no sale: se difiere a la vuelta
+  // siguiente, así que se resta con una fila propia.
+  const deferredOf = (base) => (pendingMode === "onlyPending" ? adjustedTotals(base).cash : 0);
+  const deferRowHtml = (labelColspan, base) => {
+    const d = deferredOf(base);
+    if (d <= 0) return "";
+    return `<tr class="adj-row"><td colspan="${labelColspan}" style="text-align:right">Efectivo que queda pendiente</td><td style="text-align:right">${fmt(0)}</td><td style="text-align:right">− ${fmt(d)}</td><td style="text-align:right">− ${fmt(d)}</td></tr>`;
+  };
+  const grand = (base) => {
+    const b = adjustedTotals(base);
+    const d = deferredOf(base);
+    const add = pendingMode === "none" ? 0 : pendingSum;
+    return { bank: b.bank, cash: b.cash - d + add, total: b.total - d + add };
+  };
+
   const today = new Date().toLocaleDateString("es-CL");
   const cyclesLine = cycleDetails.map((c) => c.label).join(" · ");
 
@@ -3831,10 +4079,10 @@ function printResumenTable(payroll, { showLabor, subfaenaSummary, laborSummary, 
     }).join("");
     bodyHtml = `<table class="subfaena-summary">
       <thead><tr><th>Faena</th><th>Subfaena</th><th style="width:130px">Período</th><th style="text-align:right">Transferencia</th><th style="text-align:right">Efectivo</th><th style="text-align:right">TOTAL</th></tr></thead>
-      <tbody>${rowsHtml}</tbody>
+      <tbody>${rowsHtml}${pendingRowsHtml(1)}</tbody>
       <tfoot>
-        ${buildAdjustmentRowsHtml(3)}
-        <tr class="summary-total"><td colspan="3"><b>TOTAL</b></td><td style="text-align:right"><b>${fmt(adjustedTotals(subfaenaSummary.totals).bank)}</b></td><td style="text-align:right"><b>${fmt(adjustedTotals(subfaenaSummary.totals).cash)}</b></td><td style="text-align:right"><b>${fmt(adjustedTotals(subfaenaSummary.totals).total)}</b></td></tr>
+        ${buildAdjustmentRowsHtml(3)}${deferRowHtml(3, subfaenaSummary.totals)}
+        <tr class="summary-total"><td colspan="3"><b>${pendingMode === "onlyPending" ? "TOTAL A PAGAR" : "TOTAL"}</b></td><td style="text-align:right"><b>${fmt(grand(subfaenaSummary.totals).bank)}</b></td><td style="text-align:right"><b>${fmt(grand(subfaenaSummary.totals).cash)}</b></td><td style="text-align:right"><b>${fmt(grand(subfaenaSummary.totals).total)}</b></td></tr>
       </tfoot>
     </table>`;
   } else {
@@ -3853,9 +4101,9 @@ function printResumenTable(payroll, { showLabor, subfaenaSummary, laborSummary, 
     }).join("");
     bodyHtml = `<table class="subfaena-summary">
       <thead><tr><th>Faena</th><th>Subfaena</th><th>Labor</th><th style="width:130px">Período</th><th style="text-align:right">Transferencia</th><th style="text-align:right">Efectivo</th><th style="text-align:right">TOTAL</th></tr></thead>
-      <tbody>${rowsHtml}</tbody>
+      <tbody>${rowsHtml}${pendingRowsHtml(2)}</tbody>
       <tfoot>
-        ${buildAdjustmentRowsHtml(4)}
+        ${buildAdjustmentRowsHtml(4)}${deferRowHtml(4, laborSummary.totals)}
         <tr class="summary-total"><td colspan="4"><b>TOTAL</b></td><td style="text-align:right"><b>${fmt(adjustedTotals(laborSummary.totals).bank)}</b></td><td style="text-align:right"><b>${fmt(adjustedTotals(laborSummary.totals).cash)}</b></td><td style="text-align:right"><b>${fmt(adjustedTotals(laborSummary.totals).total)}</b></td></tr>
       </tfoot>
     </table>`;
@@ -3875,6 +4123,7 @@ function printResumenTable(payroll, { showLabor, subfaenaSummary, laborSummary, 
   table.subfaena-summary .summary-total td { background: #FFE699; }
   table.subfaena-summary .subtotal-faena td { background: #F2F2F2; font-style: italic; }
   table.subfaena-summary .adj-row td { background: #EAF3FA; }
+  table.subfaena-summary .pending-row td { background: #FFF4E5; }
   @media print { @page { margin: 14mm landscape; } }
 </style>
 </head><body>
@@ -3944,7 +4193,7 @@ async function printCashReceipts(payroll, cashGroups, titleOverrides = {}, catal
   w.document.close();
 }
 
-function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClose, onRedownload, onDownloadNominaOnly, onDownloadSnapshot, onChanged }) {
+function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPayrolls = [], onClose, onRedownload, onDownloadNominaOnly, onDownloadSnapshot, onChanged }) {
   const { catalogs } = useCatalogs();
   const toast = useToast();
   const isMobile = useIsMobile();
@@ -4032,6 +4281,76 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
   // (ej. solo CHILENOS) igual que en efectivo. groupCashByLeader sirve para
   // cualquier conjunto de items, no solo cash.
   const filteredBankGroups = useMemo(() => groupCashByLeader(filteredBank), [filteredBank]);
+
+  // Entrega del efectivo persona por persona. Solo tiene sentido cuando las
+  // transferencias ya se pagaron y el efectivo quedó debiéndose: antes de eso
+  // no hay deuda que descontar, y después de pagar la nómina ya no importa.
+  const cashPaidMode = !!payroll.bankPaidAt && payroll.status !== "paid";
+  const [cashPaidSet, setCashPaidSet] = useState(() => new Set(payroll.cashPaidRuts || []));
+  // Guardado diferido: marcar 20 personas seguidas no puede ser 20 escrituras.
+  const cashSaveRef = useRef(null);
+  const flushCashPaid = useRef(() => {});
+  const toggleCashPaid = (rut) => {
+    setCashPaidSet((prev) => {
+      const next = new Set(prev);
+      if (next.has(rut)) next.delete(rut); else next.add(rut);
+      const ruts = [...next];
+      flushCashPaid.current = () => setCashPaidRuts(payroll.id, ruts).catch((err) => {
+        console.error("[nómina] no se pudo guardar quién cobró:", err);
+        toast.error("No se pudo guardar quién cobró el efectivo.");
+      });
+      if (cashSaveRef.current) clearTimeout(cashSaveRef.current);
+      cashSaveRef.current = setTimeout(() => { cashSaveRef.current = null; flushCashPaid.current(); }, 700);
+      return next;
+    });
+  };
+  const setGroupCashPaid = (groupItems, paid) => {
+    setCashPaidSet((prev) => {
+      const next = new Set(prev);
+      for (const it of groupItems) {
+        if (paid) next.add(it.rut); else next.delete(it.rut);
+      }
+      const ruts = [...next];
+      flushCashPaid.current = () => setCashPaidRuts(payroll.id, ruts).catch((err) => {
+        console.error("[nómina] no se pudo guardar quién cobró:", err);
+        toast.error("No se pudo guardar quién cobró el efectivo.");
+      });
+      if (cashSaveRef.current) clearTimeout(cashSaveRef.current);
+      cashSaveRef.current = setTimeout(() => { cashSaveRef.current = null; flushCashPaid.current(); }, 700);
+      return next;
+    });
+  };
+  // Si el modal se cierra antes de que corra el debounce, igual se guarda.
+  useEffect(() => () => {
+    if (cashSaveRef.current) { clearTimeout(cashSaveRef.current); flushCashPaid.current(); }
+  }, []);
+  // Efectivo que todavía se debe, en vivo (sin esperar el refetch del doc).
+  const owedCash = cashPaidMode
+    ? cash.reduce((s, it) => s + (cashPaidSet.has(it.rut) ? 0 : Number(it.amount) || 0), 0)
+    : 0;
+
+  // Deuda de efectivo de OTRAS nóminas. No se mezcla con esta —son entregas
+  // aparte, con su propio sobre— pero sí tiene que entrar al estimador: los
+  // billetes y el sencillo se sacan del banco una sola vez.
+  const otherPendingCash = useMemo(() => {
+    const out = [];
+    for (const other of allPayrolls) {
+      if (!other || other.id === payroll.id) continue;
+      const pendItems = pendingCashItemsOf(other);
+      if (pendItems.length === 0) continue;
+      // Período de la nómina vieja, sacado de su propio `cycleDetails` — no
+      // del de esta nómina, que es de otras fechas.
+      const days = (other.cycleDetails || []).flatMap((c) => [c.firstDay, c.lastDay]).filter(Boolean).sort();
+      out.push({
+        payrollId: other.id,
+        name: other.name || other.id,
+        items: pendItems,
+        amount: pendItems.reduce((s, it) => s + (Number(it.amount) || 0), 0),
+        period: days.length ? { first: days[0], last: days[days.length - 1] } : null,
+      });
+    }
+    return out;
+  }, [allPayrolls, payroll.id]);
 
   const hasActiveFilter = !!(search || paymentMethod !== "all" || leaderFilter.size > 0 || cycleFilter.size > 0);
   const clearFilters = () => {
@@ -4821,6 +5140,53 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
   const activeSummary = summaryShowLabor ? laborSummaryData : subfaenaSummary;
   // Aplana filas + subtotales por faena en una sola lista para que el render
   // sea un simple .map() — evita mirar "la fila siguiente" adentro del JSX.
+  // El efectivo que quedó debiendo de nóminas anteriores se puede sumar a esta
+  // tabla. No se mezcla con las filas por subfaena —es plata de otro período,
+  // con su propio sobre— así que va como fila aparte, una por nómina, con el
+  // monto NETO adeudado (el que cuadra con la deuda del resto de la app).
+  //
+  // Modos:
+  //   none  → esta nómina sola, como siempre.
+  //   with  → esta nómina + lo que se debe de antes (foto completa).
+  //   onlyPending → de todo el efectivo, hoy sale SOLO el pendiente: las
+  //           transferencias de esta nómina + el efectivo que se debía de
+  //           antes. El efectivo de ESTA nómina se difiere y pasa a ser el
+  //           pendiente de la vuelta siguiente. Es el ciclo real de la empresa.
+  const [summaryPending, setSummaryPending] = useState("none"); // none | with | onlyPending
+  const pendingSummaryRows = useMemo(
+    () => otherPendingCash.map((p) => ({
+      pendingId: p.payrollId,
+      name: p.name,
+      count: p.items.length,
+      period: p.period,
+      bank: 0,
+      cash: p.amount,
+      total: p.amount,
+    })),
+    [otherPendingCash],
+  );
+  const pendingTotals = useMemo(
+    () => pendingSummaryRows.reduce(
+      (acc, r) => ({ bank: 0, cash: acc.cash + r.cash, total: acc.total + r.total }),
+      { bank: 0, cash: 0, total: 0 },
+    ),
+    [pendingSummaryRows],
+  );
+  // Si no hay nada pendiente el selector no se muestra y el modo queda en
+  // "none" solo, sin efecto.
+  const pendingMode = pendingSummaryRows.length > 0 ? summaryPending : "none";
+  const ownAdjusted = activeSummary
+    ? adjustedTotals(activeSummary.totals)
+    : { bank: 0, cash: 0, total: 0 };
+  // En modo "onlyPending" el efectivo de esta nómina no se entrega: se difiere.
+  const deferredCash = pendingMode === "onlyPending" ? ownAdjusted.cash : 0;
+  const addedPending = pendingMode === "none" ? 0 : pendingTotals.cash;
+  const grandTotals = {
+    bank: ownAdjusted.bank,
+    cash: ownAdjusted.cash - deferredCash + addedPending,
+    total: ownAdjusted.total - deferredCash + addedPending,
+  };
+
   const summaryDisplayRows = useMemo(() => {
     if (!activeSummary) return [];
     const rows = activeSummary.rows;
@@ -4854,6 +5220,8 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
         subfaenaSummary,
         laborSummary: laborSummaryData,
         bonusAdvanceSummary,
+        pendingRows: pendingSummaryRows,
+        pendingMode,
       });
     } catch (err) {
       toast.error(err?.message || String(err));
@@ -4886,13 +5254,16 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
       const TOTAL_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFE699" } };
       const SUBTOTAL_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2F2F2" } };
       const ADJ_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEAF3FA" } };
+      const PENDING_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF4E5" } };
       const thinBorder = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
       const moneyFmt = '"$"#,##0';
       const labelCols = summaryShowLabor ? 4 : 3; // Faena..Período (labor) o Faena..Período (subfaena)
       const totalCols = summaryShowLabor ? 7 : 6;
 
       let r = 2; // fila 1 vacía
-      ws.getCell(r, 2).value = `Resumen ${summaryShowLabor ? "por labor" : "por subfaena"}`;
+      ws.getCell(r, 2).value = `Resumen ${summaryShowLabor ? "por labor" : "por subfaena"}`
+        + (pendingMode === "with" ? " · incluye efectivo pendiente de nóminas anteriores" : "")
+        + (pendingMode === "onlyPending" ? " · transferencias + solo el efectivo pendiente de antes" : "");
       ws.getCell(r, 2).font = { bold: true, size: 13 };
       r++;
       ws.getCell(r, 2).value = payroll.name;
@@ -4945,6 +5316,29 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
         r++;
       }
 
+      // Efectivo adeudado de nóminas anteriores: una fila por nómina, con el
+      // monto neto. Va en el cuerpo, antes de los ajustes de esta nómina.
+      if (pendingMode !== "none") {
+        for (const pr of pendingSummaryRows) {
+          const label = `💵 Efectivo pendiente — ${pr.name} · ${pr.count} pers.`;
+          ws.getCell(r, 2).value = label;
+          ws.mergeCells(r, 2, r, labelCols); // deja libre la columna de Período
+          ws.getCell(r, 1 + labelCols).value = pr.period
+            ? `${fmtDayShortEs(pr.period.first)} → ${fmtDayShortEs(pr.period.last)}`
+            : "—";
+          ws.getCell(r, 2 + labelCols).value = 0;
+          ws.getCell(r, 3 + labelCols).value = pr.cash;
+          ws.getCell(r, 4 + labelCols).value = pr.total;
+          for (let c = 2; c <= 1 + totalCols; c++) {
+            const cell = ws.getCell(r, c);
+            if (c > 1 + labelCols) cell.numFmt = moneyFmt;
+            cell.fill = PENDING_FILL;
+            cell.border = thinBorder;
+          }
+          r++;
+        }
+      }
+
       const writeAdjRow = (label, values) => {
         ws.getCell(r, 2).value = label;
         ws.mergeCells(r, 2, r, 1 + labelCols);
@@ -4967,8 +5361,11 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
           total: -bonusAdvanceSummary.advance.total,
         });
       }
-      const at = adjustedTotals(activeSummary.totals);
-      ws.getCell(r, 2).value = "TOTAL";
+      if (deferredCash > 0) {
+        writeAdjRow("Efectivo que queda pendiente", { bank: 0, cash: -deferredCash, total: -deferredCash });
+      }
+      const at = grandTotals;
+      ws.getCell(r, 2).value = pendingMode === "onlyPending" ? "TOTAL A PAGAR" : "TOTAL";
       ws.mergeCells(r, 2, r, 1 + labelCols);
       ws.getCell(r, 2 + labelCols).value = at.bank;
       ws.getCell(r, 3 + labelCols).value = at.cash;
@@ -5403,6 +5800,14 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
                     </div>
                     <div className="text-lg font-semibold">{fmtCurrency(cashTotal)}</div>
                     <div className="text-[10px] text-[var(--color-muted)]">{cash.length} persona(s) · {cashGroups.length} grupo(s)</div>
+                    {cashPaidMode && (
+                      <div
+                        className="mt-0.5 text-[11px] font-semibold tabular-nums text-[var(--color-warning)]"
+                        title="Efectivo que todavía falta entregar. Las transferencias de esta nómina ya se pagaron."
+                      >
+                        Falta entregar: {fmtCurrency(owedCash)}
+                      </div>
+                    )}
                   </div>
                   {advanceTotal > 0 && (
                     <div>
@@ -5443,6 +5848,32 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
                           Con labores
                         </button>
                       </div>
+                      {pendingSummaryRows.length > 0 && (
+                        <div
+                          className="inline-flex overflow-hidden rounded-md border border-[var(--color-warning)] text-xs"
+                          title="Efectivo que quedó debiendo de nóminas anteriores. Se entrega aparte, con su propio sobre."
+                        >
+                          {[
+                            { v: "none", l: "Esta nómina", t: "Solo esta nómina, como siempre." },
+                            { v: "with", l: "Con efectivo pendiente", t: "Esta nómina más el efectivo que se debe de antes." },
+                            { v: "onlyPending", l: "Solo efectivo pendiente", t: "De todo el efectivo, hoy sale solo el pendiente: las transferencias de esta nómina más el efectivo que se debía de antes. El efectivo de esta nómina queda para la vuelta siguiente." },
+                          ].map((o, i) => (
+                            <button
+                              key={o.v}
+                              type="button"
+                              onClick={() => setSummaryPending(o.v)}
+                              title={o.t}
+                              className={`px-2.5 py-1.5 ${i > 0 ? "border-l border-[var(--color-warning)]" : ""} ${
+                                summaryPending === o.v
+                                  ? "bg-[var(--color-warning)] text-white"
+                                  : "bg-[var(--color-surface)] hover:bg-[var(--color-warning-soft)]"
+                              }`}
+                            >
+                              {o.l}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       <div className="flex gap-1">
                         <button
                           onClick={handleCopyResumenImage}
@@ -5481,6 +5912,8 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
                         <div className="text-sm font-semibold">{payroll.name}</div>
                         <div className="text-[11px]" style={{ color: "#666" }}>
                           Resumen {summaryShowLabor ? "por labor" : "por subfaena"}
+                          {pendingMode === "with" && " · incluye efectivo pendiente de nóminas anteriores"}
+                          {pendingMode === "onlyPending" && " · transferencias + solo el efectivo pendiente de antes"}
                         </div>
                       </div>
                       <div className="overflow-x-auto">
@@ -5527,6 +5960,25 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
                                 </tr>
                               );
                             })}
+                            {pendingMode !== "none" && pendingSummaryRows.map((r) => (
+                              <tr key={`pend_${r.pendingId}`} style={{ background: "#FFF4E5" }}>
+                                <td className="px-2 py-1" style={{ border: "1px solid #999" }}>—</td>
+                                <td
+                                  className="px-2 py-1"
+                                  colSpan={summaryShowLabor ? 2 : 1}
+                                  style={{ border: "1px solid #999" }}
+                                >
+                                  💵 Efectivo pendiente — {r.name}
+                                  <span style={{ color: "#666", fontSize: 11 }}> · {r.count} pers.</span>
+                                </td>
+                                <td className="px-2 py-1" style={{ border: "1px solid #999", fontSize: 11, color: "#444" }}>
+                                  {r.period ? `${fmtDayShortEs(r.period.first)} → ${fmtDayShortEs(r.period.last)}` : "—"}
+                                </td>
+                                <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(0)}</td>
+                                <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(r.cash)}</td>
+                                <td className="px-2 py-1 text-right font-semibold tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(r.total)}</td>
+                              </tr>
+                            ))}
                           </tbody>
                           {activeSummary && (
                             <tfoot>
@@ -5546,11 +5998,23 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
                                   <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>− {fmtCurrency(bonusAdvanceSummary.advance.total)}</td>
                                 </tr>
                               )}
+                              {deferredCash > 0 && (
+                                <tr style={{ background: "#EAF3FA" }}>
+                                  <td colSpan={summaryShowLabor ? 4 : 3} className="px-2 py-1 text-right" style={{ border: "1px solid #999" }}>
+                                    Efectivo que queda pendiente
+                                  </td>
+                                  <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(0)}</td>
+                                  <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>− {fmtCurrency(deferredCash)}</td>
+                                  <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>− {fmtCurrency(deferredCash)}</td>
+                                </tr>
+                              )}
                               <tr style={{ background: "#FFE699", fontWeight: 700 }}>
-                                <td colSpan={summaryShowLabor ? 4 : 3} className="px-2 py-1" style={{ border: "1px solid #999" }}>TOTAL</td>
-                                <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(adjustedTotals(activeSummary.totals).bank)}</td>
-                                <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(adjustedTotals(activeSummary.totals).cash)}</td>
-                                <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(adjustedTotals(activeSummary.totals).total)}</td>
+                                <td colSpan={summaryShowLabor ? 4 : 3} className="px-2 py-1" style={{ border: "1px solid #999" }}>
+                                  {pendingMode === "onlyPending" ? "TOTAL A PAGAR" : "TOTAL"}
+                                </td>
+                                <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(grandTotals.bank)}</td>
+                                <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(grandTotals.cash)}</td>
+                                <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(grandTotals.total)}</td>
                               </tr>
                             </tfoot>
                           )}
@@ -5760,6 +6224,25 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
                           <span className="text-[10px] text-[var(--color-muted)]">· {g.items.length} pers.</span>
                         </button>
                         <span className="font-semibold tabular-nums">{fmtCurrency(g.total)}</span>
+                        {cashPaidMode && (() => {
+                          const allPaid = g.items.every((it) => cashPaidSet.has(it.rut));
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setGroupCashPaid(g.items, !allPaid)}
+                              title={allPaid
+                                ? "Desmarcar a todo el grupo"
+                                : "Marcar que todo el grupo ya cobró su efectivo"}
+                              className={`rounded-md border px-2 py-0.5 text-[10px] ${
+                                allPaid
+                                  ? "border-[var(--color-success)] bg-[var(--color-success-soft)] text-[var(--color-success)]"
+                                  : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
+                              }`}
+                            >
+                              {allPaid ? "✓ cobró todo" : "○ marcar grupo"}
+                            </button>
+                          );
+                        })()}
                         <button
                           type="button"
                           disabled={printingGroupLeader === groupKey}
@@ -5786,6 +6269,9 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
                                 editBusy={editBusy}
                                 onRemoveWorker={handleRemoveWorker}
                                 cols="cash"
+                                cashPaidMode={cashPaidMode}
+                                cashPaid={cashPaidSet.has(it.rut)}
+                                onToggleCashPaid={toggleCashPaid}
                                 snapshot={snapshot}
                                 snapshotLoading={snapshotLoading}
                                 catalogs={catalogs}
@@ -5809,6 +6295,9 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
                                   editBusy={editBusy}
                                   onRemoveWorker={handleRemoveWorker}
                                   cols="cash"
+                                  cashPaidMode={cashPaidMode}
+                                  cashPaid={cashPaidSet.has(it.rut)}
+                                  onToggleCashPaid={toggleCashPaid}
                                   snapshot={snapshot}
                                   snapshotLoading={snapshotLoading}
                                   catalogs={catalogs}
@@ -5888,8 +6377,9 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, onClo
       />
       {showCashEstimation && (
         <CashEstimationModal
-          cashItems={cash}
+          cashItems={cashPaidMode ? cash.filter((it) => !cashPaidSet.has(it.rut)) : cash}
           payrollName={payroll.name}
+          pendingExtra={otherPendingCash}
           onClose={() => setShowCashEstimation(false)}
         />
       )}
@@ -6199,9 +6689,23 @@ function RecalcModal({ preview, busy, onClose, onConfirm }) {
 // redondea HACIA ARRIBA al múltiplo de $100 más cercano para garantizar que
 // sea descomponible exactamente con denominaciones de [10000, 5000, 1000,
 // 500, 100].
-function CashEstimationModal({ cashItems, payrollName, onClose }) {
+function CashEstimationModal({ cashItems, payrollName, pendingExtra = [], onClose }) {
   const toast = useToast();
-  const est = useMemo(() => estimateCashBreakdown(cashItems), [cashItems]);
+  // El efectivo pendiente de otras nóminas se entrega aparte, pero la plata se
+  // saca del banco de una sola vez — así que el desglose de billetes y sencillo
+  // tiene que poder cubrir todo junto.
+  const extraItems = useMemo(() => pendingExtra.flatMap((x) => x.items), [pendingExtra]);
+  const extraTotal = useMemo(
+    () => extraItems.reduce((s, it) => s + (Number(it.amount) || 0), 0),
+    [extraItems],
+  );
+  const [includePending, setIncludePending] = useState(true);
+  const usePending = includePending && extraItems.length > 0;
+  const allItems = useMemo(
+    () => (usePending ? [...cashItems, ...extraItems] : cashItems),
+    [cashItems, extraItems, usePending],
+  );
+  const est = useMemo(() => estimateCashBreakdown(allItems), [allItems]);
   const [showDetail, setShowDetail] = useState(false);
   const [busy, setBusy] = useState("");
   const captureRef = useRef(null);
@@ -6213,7 +6717,10 @@ function CashEstimationModal({ cashItems, payrollName, onClose }) {
   const buildPlainText = () => {
     const lines = [];
     lines.push(`💵 Estimación de efectivo — ${payrollName}`);
-    lines.push(`${cashItems.length} trabajador(es) · Total: ${fmtCurrency(est.totalNeeded)}`);
+    lines.push(`${allItems.length} trabajador(es) · Total: ${fmtCurrency(est.totalNeeded)}`);
+    if (usePending) {
+      lines.push(`(incluye ${fmtCurrency(extraTotal)} de efectivo pendiente de nóminas anteriores)`);
+    }
     if (diff > 0) {
       lines.push(`(Original ${fmtCurrency(est.totalOriginal)} + redondeo ${fmtCurrency(diff)})`);
     }
@@ -6288,6 +6795,29 @@ function CashEstimationModal({ cashItems, payrollName, onClose }) {
             </button>
           </div>
         </div>
+        {extraItems.length > 0 && (
+          <label
+            className="flex cursor-pointer items-start gap-2 rounded-md border border-dashed border-[var(--color-warning)] bg-[var(--color-warning-soft)]/40 px-3 py-2 text-xs"
+            title="Se entrega en sobres aparte, pero la plata se saca del banco de una sola vez."
+          >
+            <input
+              type="checkbox"
+              checked={includePending}
+              onChange={(e) => setIncludePending(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--color-accent)]"
+            />
+            <span>
+              <span className="font-medium">
+                Incluir efectivo pendiente de nóminas anteriores ({fmtCurrency(extraTotal)})
+              </span>
+              <span className="mt-0.5 block text-[var(--color-muted)]">
+                {extraItems.length} persona(s) en {pendingExtra.length} nómina(s):{" "}
+                {pendingExtra.map((x) => x.name).join(" · ")}. Se entrega aparte, con su propio
+                sobre — se suma acá solo para que el conteo de billetes y sencillo cuadre.
+              </span>
+            </span>
+          </label>
+        )}
         <div ref={captureRef} className="space-y-4" style={{ background: "var(--color-surface)" }}>
 
         {/* Total destacado */}
@@ -6417,9 +6947,14 @@ function CashEstimationModal({ cashItems, payrollName, onClose }) {
 function WorkerDetailRow({
   item, expanded, onToggle, onShowSummary, cycleDetails, displayCycleLabel,
   editMode, editBusy, onRemoveWorker, cols, snapshot, snapshotLoading, catalogs, isMobile,
+  cashPaidMode = false, cashPaid = false, onToggleCashPaid,
 }) {
   const isBank = cols === "bank";
-  const colSpan = isBank ? (editMode ? 8 : 7) : (editMode ? 4 : 3);
+  // Columnas base: 7 en banco, 4 en efectivo. Cada modo opcional suma una.
+  const colSpan = (isBank ? 7 : 4) + (editMode ? 1 : 0) + (cashPaidMode ? 1 : 0);
+  const cashPaidBtnTitle = cashPaid
+    ? "Ya cobró su efectivo. Click para desmarcar."
+    : "Marcar que esta persona ya cobró su efectivo (se descuenta de la deuda).";
 
   const expandedDetail = (
     <div className="space-y-3">
@@ -6477,7 +7012,23 @@ function WorkerDetailRow({
               )}
             </div>
           </div>
-          <span className="shrink-0 font-semibold tabular-nums">{fmtCurrency(item.amount)}</span>
+          <span className={`shrink-0 font-semibold tabular-nums ${cashPaid ? "text-[var(--color-muted)] line-through" : ""}`}>
+            {fmtCurrency(item.amount)}
+          </span>
+          {cashPaidMode && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onToggleCashPaid?.(item.rut); }}
+              title={cashPaidBtnTitle}
+              className={`min-h-[32px] shrink-0 rounded border px-2 text-[11px] ${
+                cashPaid
+                  ? "border-[var(--color-success)] bg-[var(--color-success-soft)] text-[var(--color-success)]"
+                  : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-muted)]"
+              }`}
+            >
+              {cashPaid ? "✓ cobró" : "○ debe"}
+            </button>
+          )}
           {editMode && (
             <button
               type="button"
@@ -6522,6 +7073,22 @@ function WorkerDetailRow({
             <td className="px-2 py-1">{item.name}</td>
             <td className="px-2 py-1 text-right tabular-nums">{fmtCurrency(item.amount)}</td>
           </>
+        )}
+        {cashPaidMode && (
+          <td className="px-2 py-1 text-right" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => onToggleCashPaid?.(item.rut)}
+              title={cashPaidBtnTitle}
+              className={`rounded border px-1.5 py-0.5 text-[10px] ${
+                cashPaid
+                  ? "border-[var(--color-success)] bg-[var(--color-success-soft)] text-[var(--color-success)]"
+                  : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-muted)]"
+              }`}
+            >
+              {cashPaid ? "✓ cobró" : "○ debe"}
+            </button>
+          </td>
         )}
         {editMode && (
           <td className="px-2 py-1 text-right" onClick={(e) => e.stopPropagation()}>

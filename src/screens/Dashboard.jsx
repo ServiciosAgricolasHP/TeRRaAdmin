@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { collection, getCountFromServer, query, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { faenasService, cyclesService, transportPaymentsService, companiesService, dteDocumentsService } from "../services";
-import { payrollsService } from "../services/payrollsService";
+import { payrollsService, pendingCashOf } from "../services/payrollsService";
 import { transportPayrollsService } from "../services/transportsService";
 import { cacheKey, getCache } from "../services/cache";
 import { useAuth } from "../contexts/AuthContext";
@@ -343,7 +343,10 @@ export default function Dashboard() {
     for (const p of payrolls) {
       if (p.status !== "paid") {
         pendingCount += 1;
-        pendingTotal += Number(p.total) || 0;
+        // Si las transferencias ya salieron, lo único que se debe es el
+        // efectivo — contar el total entero inflaría el pendiente con plata
+        // que ya está en las cuentas.
+        pendingTotal += p.bankPaidAt ? pendingCashOf(p) : Number(p.total) || 0;
       }
       const mk = payrollMonthKey(p);
       if (!mk || !keySet.has(mk)) continue;
