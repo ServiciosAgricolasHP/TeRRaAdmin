@@ -251,6 +251,15 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
 ### Anti doble pago
 
 - Workday lleva `payrollId`, `payrollTaggedAt`, `payrollTaggedBy`, `paidAt`, `paidBy`.
+
+### Pago en dos tiempos (transferencias / efectivo)
+Caso real: salen las transferencias pero el efectivo no se alcanza a entregar y queda debiéndose para la vuelta siguiente.
+- **🏦 Solo transferencias** (`markBankPaid`) sella `paidAt` **solo en los workdays de banco** y escribe `bankPaidAt`/`bankPaidBy`. La nómina **sigue `pending`** — no está pagada entera — así que ninguna comparación `status === "paid"` de la app cambia de significado. Revertible con `revertBankPaid`.
+- **La deuda no se guarda**: se deriva siempre con `pendingCashOf(payroll)` / `pendingCashItemsOf(payroll)` (exportadas por `payrollsService`). Devuelven 0/[] si la nómina está pagada entera **o si no tiene el flag** — una nómina recién generada tiene `cashTotal > 0` pero eso no es deuda vencida. **No agregar un booleano `cashPending`**: sería derivable y podría quedar desincronizado de los items.
+- **`cashPaidRuts`** registra a las personas de efectivo que cobraron sueltas (toggle por persona y por líder en `PayrollDetailModal`). Se descuentan de la deuda pero **no** estampan `paidAt` en sus workdays: ese campo significa "la nómina se marcó pagada" y darle un segundo significado obliga a un camino de des-estampado. `markPaid` los sella a todos al final.
+- **`markPaid` sobre una nómina con el flag** sella solo los workdays de efectivo (re-estampar los de banco les pisaría la fecha real de la transferencia). `bankPaidAt` **no se borra** al pagar: queda como registro. `markPending` sí lo borra, junto con `cashPaidRuts`.
+- **Guards**: con `bankPaidAt` puesto la nómina no se puede editar ni eliminar (`assertEditable` en el servicio + chequeo en `onDelete`). Sacar un trabajador de banco liberaría sus días y le restauraría anticipos a alguien que ya tiene la plata en la cuenta.
+- **Dónde se ve**: pill de 3 caras y filtro "💵 Efectivo pendiente" en el Historial (la barra de totales cuenta como pendiente solo lo realmente adeudado); "Falta entregar" en el tile 💵 del detalle; línea informativa en **Generar → paso 1**; y el `CashEstimationModal` puede sumar el efectivo pendiente de otras nóminas para que el conteo de billetes y sencillo cuadre. **Los sobres y detalles NO se fusionan** — cada nómina imprime lo suyo.
 - Workdays con `payrollId` se filtran del preview (ya no entran a otra nómina).
 - Eliminar nómina → `untagWorkdaysFromPayroll` + `restoreAdvancesFromPayroll`. Workdays vuelven a estar disponibles.
 - Marcar pagada → sello `paidAt` en los workdays. Revertir → quita `paidAt`.

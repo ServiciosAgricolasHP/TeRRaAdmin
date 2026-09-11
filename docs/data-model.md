@@ -110,8 +110,10 @@ Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
 | `id` (docId) | string | autoId |
 | `name` | string | |
 | `format` | `"bchile"` | |
-| `status` | `"pending"` \| `"paid"` | |
+| `status` | `"pending"` \| `"paid"` | binario. Una nómina con las transferencias pagadas y el efectivo debiendo sigue siendo `pending` |
 | `paidAt` | string (ISO) \| null | |
+| `bankPaidAt`, `bankPaidBy` | string (ISO)? / string? | **pago en dos tiempos**: salieron las transferencias pero el efectivo no. Es el flag que convierte el efectivo de esta nómina en *deuda* |
+| `cashPaidRuts` | string[] | ruts de efectivo que ya cobraron sueltos; se descuentan de la deuda. NO estampan `paidAt` en sus workdays |
 | `cycleIds` | string[] | refs a `cycles` |
 | `cycleLabels`, `cycleDetails` | snapshot | |
 | `items` | `PayrollItem[]` | snapshot por trabajador |
