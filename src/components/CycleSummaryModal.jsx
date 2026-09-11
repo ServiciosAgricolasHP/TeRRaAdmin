@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { toPng, toBlob } from "html-to-image";
 import Modal from "./Modal";
+import ConfirmDialog from "./ConfirmDialog";
 import {
   containerLabel,
   qualityLabel,
@@ -19,9 +20,10 @@ import {
 import { isRedDay } from "../utils/tratoHE";
 import { stageById, countingStageIds } from "../utils/tratoEtapas";
 import { tripsService } from "../services/transportsService";
-import { cyclesService, workdaysService } from "../services";
+import { cyclesService, workdaysService, cycleSummariesService } from "../services";
 import { useCarriers } from "../contexts/CarriersContext";
 import { useToast } from "../contexts/ToastContext";
+import { useAuth } from "../contexts/AuthContext";
 
 const fmtCurrency = (v) =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
@@ -582,6 +584,11 @@ function buildWorkerLaborGrid(labor, wdMap) {
 
 // ============================================================
 // LocalStorage helpers
+//
+// La fuente de verdad del estado editable del resumen es Firestore
+// (`cycleSummariesService`) — compartido entre usuarios y navegadores.
+// localStorage queda como espejo local: sirve de respaldo si falla la red y
+// como origen de la migración para los ciclos configurados antes del cambio.
 // ============================================================
 
 const cobrarStorageKey = (cycleId) => `cobrar_${cycleId}`;
@@ -611,6 +618,7 @@ export default function CycleSummaryModal({
   // mostrar el UUID crudo.
   const { carriers } = useCarriers();
   const toast = useToast();
+  const { user } = useAuth();
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState("");
@@ -623,9 +631,27 @@ export default function CycleSummaryModal({
   const [titles, setTitles] = useState({ main: "DETALLE DE JORNADA", subtitle: "", laborNames: {}, carrierNames: {} });
   const [showTitleEditor, setShowTitleEditor] = useState(false);
   const [showCobrarEditor, setShowCobrarEditor] = useState(true);
-  // Toggle de edición — cuando es false, oculta inputs/+filas/✕ en cobrar
-  // mode. El resumen queda "limpio" para copiar/imprimir/exportar.
-  const [editMode, setEditMode] = useState(true);
+  // Toggle de edición — cuando es false, oculta inputs/+filas/✕ y los paneles
+  // de edición en cobrar mode. El resumen queda "limpio" para
+  // copiar/imprimir/exportar. Arranca bloqueado: ahora que las tarifas quedan
+  // guardadas y compartidas, lo normal al abrir es querer copiar un resumen ya
+  // configurado, no venir a editarlo — y así no se copia sin querer la vista
+  // con los inputs y la marca de agua.
+  const [editMode, setEditMode] = useState(false);
+  // Captura pedida mientras el resumen estaba en edición. `captureAsk` abre el
+  // diálogo de confirmación; `pendingCapture` es la acción que corre después
+  // de bloquear (ver el efecto más abajo — hay que esperar el repintado).
+  const [captureAsk, setCaptureAsk] = useState(null);
+  const [pendingCapture, setPendingCapture] = useState(null);
+  // Metadata de la última edición del resumen compartido (quién y cuándo).
+  const [summaryMeta, setSummaryMeta] = useState(null);
+  // Solo después de hidratar el estado desde Firestore se habilitan los
+  // guardados debounced. Sin esto, abrir el modal reescribiría el doc con lo
+  // que acaba de leer.
+  const hydratedRef = useRef(false);
+  // Última versión persistida (serializada) para no reescribir el doc con lo
+  // mismo que acabamos de leer ni en cada render.
+  const lastSavedRef = useRef({ cobrar: null, titles: null });
   // Popover de visibilidad de columnas (cobrar mode). El botón ancla se pasa
   // como ref para posicionar el popover via portal sin que el overflow del
   // Modal padre lo recorte.
@@ -637,32 +663,108 @@ export default function CycleSummaryModal({
   const [availableCycles, setAvailableCycles] = useState([]);
   const [selectedImportIds, setSelectedImportIds] = useState(new Set());
   const printRef = useRef(null);
+  const cycleId = cycle?.id;
 
   useEffect(() => {
-    if (!open || !cycle?.id) return;
-    setCobrar(() => {
-      const loaded = loadJSON(cobrarStorageKey(cycle.id), { labors: {}, carriers: {}, withIva: true, discount: 0, discountNote: "", pendingBalance: 0, pendingBalanceNote: "" });
-      // Backfill para ciclos guardados antes de que existieran los campos
-      // (withIva, discount, discountNote — todos defaults seguros).
-      return { withIva: true, discount: 0, discountNote: "", pendingBalance: 0, pendingBalanceNote: "", ...loaded };
-    });
-    const defaultSubtitle = [faena?.name, subfaena?.name, cycle.label].filter(Boolean).join(" · ");
-    setTitles(loadJSON(titlesStorageKey(cycle.id), {
+    if (!open || !cycleId) return;
+    hydratedRef.current = false;
+    let cancelled = false;
+    // Backfill para resúmenes guardados antes de que existieran los campos
+    // (withIva, discount, discountNote — todos defaults seguros).
+    const cobrarDefaults = { labors: {}, carriers: {}, withIva: true, discount: 0, discountNote: "", pendingBalance: 0, pendingBalanceNote: "" };
+    const titlesDefaults = {
       main: "DETALLE DE JORNADA",
-      subtitle: defaultSubtitle,
+      subtitle: [faena?.name, subfaena?.name, cycle.label].filter(Boolean).join(" · "),
       laborNames: {},
       carrierNames: {},
-    }));
+    };
     (async () => {
       setLoading(true);
       try {
-        const list = await tripsService.listByCycle(cycle.id);
+        const [remote, list] = await Promise.all([
+          cycleSummariesService.get(cycleId).catch((err) => {
+            console.error("[resumen] carga:", err);
+            toast.error("No se pudo leer el resumen guardado; se usa la copia local.");
+            return null;
+          }),
+          tripsService.listByCycle(cycleId),
+        ]);
+        if (cancelled) return;
         setTrips(list);
+        const localCobrar = loadJSON(cobrarStorageKey(cycleId), null);
+        const localTitles = loadJSON(titlesStorageKey(cycleId), null);
+        const nextCobrar = { ...cobrarDefaults, ...(remote?.cobrar || localCobrar || {}) };
+        const nextTitles = { ...titlesDefaults, ...(remote?.titles || localTitles || {}) };
+        setCobrar(nextCobrar);
+        setTitles(nextTitles);
+        lastSavedRef.current = { cobrar: JSON.stringify(nextCobrar), titles: JSON.stringify(nextTitles) };
+        setSummaryMeta(remote?.updatedAt ? { email: remote.updatedByEmail, at: remote.updatedAt.toDate?.() || null } : null);
+        // Migración: el ciclo se configuró en este navegador antes de que el
+        // resumen fuera compartido y todavía no existe el doc → se sube tal
+        // cual, una sola vez, sin molestar al usuario.
+        if (!remote && (localCobrar || localTitles)) {
+          cycleSummariesService
+            .save(cycleId, { cobrar: nextCobrar, titles: nextTitles })
+            .catch((err) => console.error("[resumen] migración:", err));
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error("[resumen] carga:", err);
+          toast.error("No se pudo cargar el resumen: " + (err.message || err));
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          hydratedRef.current = true;
+        }
       }
     })();
-  }, [open, cycle?.id, cycle?.label, faena?.name, subfaena?.name]);
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, cycleId, cycle?.label, faena?.name, subfaena?.name]);
+
+  // Persistencia debounced en Firestore — el estado se toca tecla por tecla,
+  // así que se espera a que pare. localStorage sigue escribiéndose en cada
+  // cambio (espejo local inmediato, ver `saveJSON`).
+  useEffect(() => {
+    if (!open || !cycleId || !hydratedRef.current) return;
+    const serialized = JSON.stringify(cobrar);
+    if (serialized === lastSavedRef.current.cobrar) return;
+    const t = setTimeout(() => {
+      lastSavedRef.current.cobrar = serialized;
+      cycleSummariesService
+        .save(cycleId, { cobrar })
+        .then(() => setSummaryMeta({ email: user?.email || null, at: new Date() }))
+        .catch((err) => {
+          // Que el próximo cambio (o el flush al cerrar) reintente en vez de
+          // darlo por guardado.
+          lastSavedRef.current.cobrar = null;
+          console.error("[resumen] guardar cobrar:", err);
+          toast.error("No se pudieron guardar las tarifas del resumen.");
+        });
+    }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cobrar, open, cycleId]);
+
+  useEffect(() => {
+    if (!open || !cycleId || !hydratedRef.current) return;
+    const serialized = JSON.stringify(titles);
+    if (serialized === lastSavedRef.current.titles) return;
+    const t = setTimeout(() => {
+      lastSavedRef.current.titles = serialized;
+      cycleSummariesService
+        .save(cycleId, { titles })
+        .then(() => setSummaryMeta({ email: user?.email || null, at: new Date() }))
+        .catch((err) => {
+          lastSavedRef.current.titles = null;
+          console.error("[resumen] guardar títulos:", err);
+          toast.error("No se pudieron guardar los títulos del resumen.");
+        });
+    }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [titles, open, cycleId]);
 
   const updateTitles = (patch) => {
     setTitles((prev) => {
@@ -1376,6 +1478,31 @@ export default function CycleSummaryModal({
     else updateCobrarCarrierRow(carrierId, row.date, finalPatch);
   };
 
+  // Si el modal se cierra con un guardado debounced en vuelo, el timer se
+  // cancela y esa última edición no llegaría nunca a Firestore. Al cerrar (o
+  // al desmontar) se fuerza lo que haya quedado sin persistir.
+  const flushRef = useRef(null);
+  useEffect(() => {
+    flushRef.current = () => {
+      if (!cycleId || !hydratedRef.current) return;
+      const c = JSON.stringify(cobrar);
+      const t = JSON.stringify(titles);
+      const patch = {};
+      if (c !== lastSavedRef.current.cobrar) { patch.cobrar = cobrar; lastSavedRef.current.cobrar = c; }
+      if (t !== lastSavedRef.current.titles) { patch.titles = titles; lastSavedRef.current.titles = t; }
+      if (!Object.keys(patch).length) return;
+      cycleSummariesService.save(cycleId, patch).catch((err) => {
+        lastSavedRef.current = { cobrar: null, titles: null };
+        console.error("[resumen] guardar al cerrar:", err);
+      });
+    };
+  });
+  useEffect(() => {
+    if (open) return;
+    flushRef.current?.();
+  }, [open]);
+  useEffect(() => () => flushRef.current?.(), []);
+
   // ============================================================
   // Image / print actions
   // ============================================================
@@ -1389,7 +1516,7 @@ export default function CycleSummaryModal({
     width: printRef.current?.scrollWidth || undefined,
     height: printRef.current?.scrollHeight || undefined,
   });
-  const handleDownload = async () => {
+  const runDownload = async () => {
     if (!printRef.current) return;
     setBusy("download");
     try {
@@ -1400,7 +1527,7 @@ export default function CycleSummaryModal({
       link.click();
     } finally { setBusy(""); }
   };
-  const handleCopy = async () => {
+  const runCopy = async () => {
     if (!printRef.current) return;
     setBusy("copy");
     try {
@@ -2047,7 +2174,7 @@ export default function CycleSummaryModal({
     }
   };
 
-  const handlePrint = () => {
+  const runPrint = () => {
     if (!printRef.current) return;
     const html = printRef.current.outerHTML;
     const win = window.open("", "_blank", "width=900,height=700");
@@ -2071,6 +2198,60 @@ export default function CycleSummaryModal({
     setTimeout(() => { win.print(); }, 350);
   };
 
+  // Copiar / PNG / Imprimir rasterizan o imprimen el nodo `printRef` tal como
+  // está, así que en modo edición saldrían con los inputs, los botones +/✕ y
+  // la marca de agua. El Excel no pasa por acá: se arma desde los datos, sale
+  // limpio esté como esté la pantalla.
+  const CAPTURE_LABELS = {
+    copy: { verb: "copiar la imagen", confirm: "Bloquear y copiar" },
+    download: { verb: "descargar el PNG", confirm: "Bloquear y descargar" },
+    print: { verb: "imprimir", confirm: "Bloquear e imprimir" },
+  };
+  const runCapture = (kind) => {
+    if (kind === "copy") return runCopy();
+    if (kind === "download") return runDownload();
+    return runPrint();
+  };
+  // El resumen es compartido: conviene ver quién lo dejó como está.
+  const lastEditLabel = summaryMeta?.at
+    ? [
+        summaryMeta.email,
+        summaryMeta.at.toLocaleString("es-CL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }),
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "";
+
+  const captureLocked = mode === "cobrar" && editMode;
+  const lockedHint = "El resumen está en modo edición — se va a pedir bloquearlo antes de generar la imagen.";
+  const requestCapture = (kind) => {
+    if (captureLocked) {
+      setCaptureAsk(kind);
+      return;
+    }
+    runCapture(kind);
+  };
+
+  // Tras confirmar "Bloquear y …" hay que esperar a que React repinte sin los
+  // controles de edición antes de rasterizar; capturar en el mismo handler
+  // sacaría justo lo que se quería esconder.
+  useEffect(() => {
+    if (!pendingCapture || editMode) return;
+    let cancelled = false;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(async () => {
+        if (cancelled) return;
+        try {
+          await runCapture(pendingCapture);
+        } finally {
+          setPendingCapture(null);
+        }
+      });
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingCapture, editMode]);
+
   return (
     <Modal
       open={open}
@@ -2082,16 +2263,16 @@ export default function CycleSummaryModal({
           <button onClick={onClose} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
             Cerrar
           </button>
-          <button onClick={handleCopy} disabled={busy === "copy"} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
+          <button onClick={() => requestCapture("copy")} disabled={busy === "copy"} title={captureLocked ? lockedHint : undefined} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
             {busy === "copy" ? "Copiando..." : "📋 Copiar imagen"}
           </button>
-          <button onClick={handleDownload} disabled={busy === "download"} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
+          <button onClick={() => requestCapture("download")} disabled={busy === "download"} title={captureLocked ? lockedHint : undefined} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
             {busy === "download" ? "Descargando..." : "📥 Descargar PNG"}
           </button>
-          <button onClick={handleXlsxSummary} disabled={busy === "xlsx"} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
+          <button onClick={handleXlsxSummary} disabled={busy === "xlsx"} title="El Excel se arma desde los datos — sale limpio aunque estés editando." className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
             {busy === "xlsx" ? "Generando..." : "📊 Excel"}
           </button>
-          <button onClick={handlePrint} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]">
+          <button onClick={() => requestCapture("print")} title={captureLocked ? lockedHint : undefined} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]">
             🖨 Imprimir
           </button>
         </>
@@ -2112,13 +2293,36 @@ export default function CycleSummaryModal({
             Para cobrar
           </button>
         </div>
-        <button
-          onClick={() => setShowTitleEditor((v) => !v)}
-          className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
-        >
-          {showTitleEditor ? "▾" : "▸"} Personalizar títulos
-        </button>
         {mode === "cobrar" && (
+          <div className="flex rounded-md overflow-hidden border border-[var(--color-border)] text-xs">
+            <button
+              onClick={() => setEditMode(false)}
+              title="Resumen listo para entregar: sin inputs, sin marca de agua, se puede copiar/imprimir."
+              className={`px-3 py-1.5 ${!editMode ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium" : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"}`}
+            >
+              🔒 Bloqueado
+            </button>
+            <button
+              onClick={() => setEditMode(true)}
+              title="Editar tarifas, cantidades y títulos. Mientras esté en edición no se puede copiar ni imprimir el resumen."
+              className={`px-3 py-1.5 ${editMode ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium" : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"}`}
+            >
+              ✏️ Editando
+            </button>
+          </div>
+        )}
+        {/* Las superficies de edición siguen al candado: con el resumen
+            bloqueado no hay forma de tocarlo, ni por las filas ni por los
+            paneles. En modo pagar no existe el candado. */}
+        {(mode !== "cobrar" || editMode) && (
+          <button
+            onClick={() => setShowTitleEditor((v) => !v)}
+            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+          >
+            {showTitleEditor ? "▾" : "▸"} Personalizar títulos
+          </button>
+        )}
+        {mode === "cobrar" && editMode && (
           <button
             onClick={() => setShowCobrarEditor((v) => !v)}
             className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
@@ -2126,22 +2330,13 @@ export default function CycleSummaryModal({
             {showCobrarEditor ? "▾" : "▸"} Editar tarifas cobro
           </button>
         )}
-        {mode === "cobrar" && (
+        {mode === "cobrar" && editMode && (
           <button
             onClick={openImportModal}
             className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
             title="Agregar días de otros ciclos de la misma faena/subfaena"
           >
             📥 Importar ciclos anteriores
-          </button>
-        )}
-        {mode === "cobrar" && (
-          <button
-            onClick={() => setEditMode((v) => !v)}
-            className={`rounded-md border px-2 py-1 text-xs ${editMode ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)]" : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"}`}
-            title={editMode ? "Ocultar controles de edición para copiar/imprimir limpio" : "Mostrar inputs y botones de edición"}
-          >
-            {editMode ? "✏️ Editando" : "🔒 Bloqueado"}
           </button>
         )}
         {mode === "cobrar" && (
@@ -2177,15 +2372,22 @@ export default function CycleSummaryModal({
           </>
         )}
         {loading && <span className="text-xs text-[var(--color-muted)]">Cargando...</span>}
-        <span className="ml-auto text-sm">
-          <span className="text-[var(--color-muted)]">Total: </span>
-          <span className="font-semibold tabular-nums">
-            {fmtCurrency(mode === "cobrar" ? grandTotalCobrar : grandTotalPagar)}
+        <span className="ml-auto flex items-center gap-3 text-sm">
+          {lastEditLabel && (
+            <span className="text-xs text-[var(--color-muted)]" title="El resumen se guarda para todo el equipo.">
+              Última edición: {lastEditLabel}
+            </span>
+          )}
+          <span>
+            <span className="text-[var(--color-muted)]">Total: </span>
+            <span className="font-semibold tabular-nums">
+              {fmtCurrency(mode === "cobrar" ? grandTotalCobrar : grandTotalPagar)}
+            </span>
           </span>
         </span>
       </div>
 
-      {showTitleEditor && (
+      {(mode !== "cobrar" || editMode) && showTitleEditor && (
         <TitlesEditor
           titles={titles}
           labors={cycle?.labors || []}
@@ -2196,7 +2398,7 @@ export default function CycleSummaryModal({
         />
       )}
 
-      {mode === "cobrar" && showCobrarEditor && (
+      {mode === "cobrar" && editMode && showCobrarEditor && (
         <CobrarEditor
           labors={cobrarLabors}
           carriers={cobrarCarriers}
@@ -2207,7 +2409,12 @@ export default function CycleSummaryModal({
       )}
 
       <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-      <div ref={printRef}>
+      <div ref={printRef} style={{ position: "relative" }}>
+        {/* Marca de agua mientras se edita. Va DENTRO del nodo capturable a
+            propósito: copiar/descargar/imprimir quedan bloqueados en modo
+            edición, así que su única función es que un screenshot manual (o un
+            recorte de pantalla) quede marcado como borrador. */}
+        {captureLocked && <EditingWatermark />}
         <PrintableSummary
           mode={mode}
           editMode={editMode}
@@ -2254,6 +2461,19 @@ export default function CycleSummaryModal({
         ))}
       </div>
       </div>
+
+      <ConfirmDialog
+        open={!!captureAsk}
+        title="El resumen está en modo edición"
+        message={`Así como está, la imagen saldría con los cuadros de edición y la marca de agua "EDITANDO — NO ENVIAR".\n\n¿Bloqueás el resumen y seguimos con ${CAPTURE_LABELS[captureAsk]?.verb || "la copia"}?`}
+        confirmLabel={CAPTURE_LABELS[captureAsk]?.confirm || "Bloquear y continuar"}
+        onConfirm={() => {
+          setEditMode(false);
+          setPendingCapture(captureAsk);
+          setCaptureAsk(null);
+        }}
+        onCancel={() => setCaptureAsk(null)}
+      />
 
       {importOpen && (
         <ImportCyclesModal
@@ -2464,7 +2684,7 @@ function TitlesEditor({ titles, labors, carriers, onChange, onLaborNameChange, o
   return (
     <div className="mb-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
       <div className="mb-2 text-xs font-medium uppercase tracking-wider text-[var(--color-muted)]">
-        Títulos del resumen (se guardan localmente)
+        Títulos del resumen (compartidos con el equipo)
       </div>
       <div className="grid gap-2 md:grid-cols-2">
         <label className="block">
@@ -2528,7 +2748,7 @@ function CobrarEditor({ labors, carriers, carrierById, onLaborChange, onCarrierC
   return (
     <div className="mb-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
       <div className="mb-2 text-xs font-medium uppercase tracking-wider text-[var(--color-muted)]">
-        Tarifas para cobrar (se guardan localmente)
+        Tarifas para cobrar (compartidas con el equipo)
       </div>
       <div className="overflow-auto">
         <table className="w-full text-xs">
@@ -2572,7 +2792,7 @@ function CobrarEditor({ labors, carriers, carrierById, onLaborChange, onCarrierC
                     <span className="ml-1 text-[var(--color-muted)]">({l.unit.toLowerCase()})</span>
                   </div>
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{fmtNumber(l.totals.qty)}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">{fmtNumber(l.chargedTotals.qty)}</td>
                 <td className="px-2 py-1.5 text-right text-[var(--color-muted)] tabular-nums">
                   <div>{fmtCurrency(l.defaultRate)}</div>
                   {showMeanHint && (
@@ -2594,7 +2814,9 @@ function CobrarEditor({ labors, carriers, carrierById, onLaborChange, onCarrierC
                   />
                 </td>
                 <td className="px-2 py-1.5 text-right font-medium tabular-nums">
-                  {l.include ? fmtCurrency(l.totals.qty * l.rate) : <span className="text-[var(--color-muted)]">—</span>}
+                  {l.include
+                    ? fmtCurrency((l.chargedTotals.amount || 0) + (l.chargedTotals.transport || 0))
+                    : <span className="text-[var(--color-muted)]">—</span>}
                 </td>
               </tr>
               );
@@ -2614,7 +2836,7 @@ function CobrarEditor({ labors, carriers, carrierById, onLaborChange, onCarrierC
                     🚐 <span className="font-medium">{ci ? ci.alias : c.carrierId}</span>
                     <span className="ml-1 text-[var(--color-muted)]">(vueltas)</span>
                   </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{c.totalCount}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{c.chargedTotalCount}</td>
                   <td className="px-2 py-1.5 text-right text-[var(--color-muted)] tabular-nums">{fmtCurrency(c.defaultRate)}</td>
                   <td className="px-2 py-1.5 text-right">
                     <input
@@ -2626,13 +2848,63 @@ function CobrarEditor({ labors, carriers, carrierById, onLaborChange, onCarrierC
                     />
                   </td>
                   <td className="px-2 py-1.5 text-right font-medium tabular-nums">
-                    {c.include ? fmtCurrency(c.totalCount * c.rate) : <span className="text-[var(--color-muted)]">—</span>}
+                    {c.include ? fmtCurrency(c.chargedTotalAmount || 0) : <span className="text-[var(--color-muted)]">—</span>}
                   </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+// Marca de agua de borrador. Translúcida a propósito: tiene que dejar leer los
+// números mientras se edita, y solo pretende delatar un screenshot sacado a
+// mano de un resumen a medio armar.
+function EditingWatermark() {
+  return (
+    <div
+      aria-hidden="true"
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: 5,
+        pointerEvents: "none",
+        userSelect: "none",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          top: "-25%",
+          left: "-25%",
+          width: "150%",
+          height: "150%",
+          display: "flex",
+          flexWrap: "wrap",
+          alignContent: "center",
+          justifyContent: "center",
+          gap: "40px 56px",
+          transform: "rotate(-30deg)",
+        }}
+      >
+        {Array.from({ length: 40 }, (_, i) => (
+          <span
+            key={i}
+            style={{
+              color: "rgba(220, 38, 38, 0.13)",
+              fontSize: 26,
+              fontWeight: 800,
+              letterSpacing: "0.12em",
+              whiteSpace: "nowrap",
+            }}
+          >
+            EDITANDO — NO ENVIAR
+          </span>
+        ))}
       </div>
     </div>
   );
@@ -2992,14 +3264,28 @@ function LaborTable({
                 {showCol("he") && <th style={{ ...cellH, textAlign: "right" }}>HE (hrs)</th>}
               </>
             ) : (
-              showCol("qty") && <th style={{ ...cellH, textAlign: "right" }}>{unit}</th>
+              showCol("qty") && (
+                <th
+                  style={{ ...cellH, textAlign: "right" }}
+                  title="La cantidad que se paga en esta labor. En pago al día es una jornada por trabajador (coincide con Personas); en cosecha son kilos y en trato unidades (sacos, metros, árboles), que no tienen relación con cuánta gente trabajó."
+                >
+                  {unit}
+                </th>
+              )
             )}
             {showCol("rate") && <th style={{ ...cellH, textAlign: "right" }}>{isHE ? "Total HE" : "Valor"}</th>}
             {showCol("valorTotal") && <th style={{ ...cellH, textAlign: "right" }}>Valor total</th>}
             {showPiso && showCol("piso") && <th style={{ ...cellH, textAlign: "right" }}>Piso</th>}
             {showCol("transport") && <th style={{ ...cellH, textAlign: "right" }}>Transporte</th>}
             {showCol("total") && <th style={{ ...cellH, textAlign: "right" }}>Total</th>}
-            {showCol("personas") && <th style={{ ...cellH, textAlign: "right" }}>Personas</th>}
+            {showCol("personas") && (
+              <th
+                style={{ ...cellH, textAlign: "right" }}
+                title="Cuántos trabajadores distintos tuvieron jornada ese día. Es informativo: no entra en ningún cálculo de montos."
+              >
+                Personas
+              </th>
+            )}
             {isHE && showCol("bonos") && <th style={{ ...cellH, textAlign: "right" }}>Bonos</th>}
             {editable && <th style={{ ...cellH, width: 24 }}></th>}
           </tr>

@@ -388,6 +388,21 @@ Puente entre un prefijo de QR físico y el (faena, ciclo, labor) al que hay que 
 | `qualityMap`, `containerMap` | `{ [codigoScan]: valorCatalogo }`? | remapeo opcional; sin ellos el mapeo es identidad |
 | `active` | bool | |
 
+### `cycleSummaries`
+Estado editable del "Resumen ciclo" en modo **Cobrar**: tarifas de cobro, overrides por fila, filas manuales, descuento/saldo, columnas ocultas y títulos personalizados. **DocId = cycleId.** Antes vivía en `localStorage` por navegador (`cobrar_${cycleId}` / `summary_titles_${cycleId}`); ahora es compartido entre usuarios, y localStorage quedó como espejo local y origen de la migración automática al abrir un ciclo que se configuró antes del cambio.
+
+Colección aparte y no un campo en `cycles` porque los docs de `cycles` se traen enteros en los listados y este blob (overrides por labor × fecha) pesa varios KB por ciclo.
+
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | ref→`cycles` | el cycleId |
+| `cobrar` | object | `{ labors, carriers, withIva, discount, discountNote, pendingBalance, pendingBalanceNote, hiddenColumns }` — ver `labors[laborId].rowOverrides/extraRows` en AGENTS.md |
+| `titles` | object | `{ main, subtitle, laborNames, carrierNames }` |
+| `updatedAt` | timestamp | escrito con `serverTimestamp()` en cada guardado debounced |
+| `updatedBy`, `updatedByEmail` | string \| null | quién lo tocó al final; se muestra en el header del modal |
+
+> Sin `logs` de auditoría: el guardado es debounced mientras se tipea, así que registrar cada escritura llenaría el log de diffs anidados. La trazabilidad acá es `updatedBy`/`updatedAt`. Por eso el servicio (`src/services/cycleSummariesService.js`) está escrito a mano y no con `createService()`.
+
 ### `users`
 Preferencias de UI por usuario. **DocId = uid de Auth.**
 | Campo | Tipo | Notas |
@@ -433,6 +448,7 @@ erDiagram
     WORKER ||--o{ ADVANCES : "recibe"
     PAYROLLS ||--o{ WORKDAYS : "tag (payrollId)"
     PAYROLLS ||--o{ ADVANCES : "aplica (appliedPayrollId)"
+    CYCLES ||--o| CYCLE_SUMMARIES : "configura cobro"
     CYCLES ||--o{ TRANSPORTS : "registra"
     CARRIERS ||--o{ TRANSPORTS : "ejecuta"
     CARRIERS ||--o{ TRANSPORT_PAYMENTS : "cobra"
@@ -464,6 +480,12 @@ erDiagram
         array  days
         array  labors
         map    dayPrices
+    }
+    CYCLE_SUMMARIES {
+        string id PK "= cycleId"
+        map    cobrar
+        map    titles
+        string updatedBy
     }
     WORKER {
         string id PK "RUT"
