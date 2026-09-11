@@ -89,4 +89,9 @@ export const informalExpensesService = createService("informalExpense", "informa
 // siempre). Ver CycleDetail.jsx (alta/edición de labor).
 export const laborGroupsService = createService("laborGroup", "laborGroups");
 
+// Estado editable del resumen de ciclo (tarifas de cobro, overrides por fila,
+// títulos). Antes vivía en localStorage por navegador; ahora es compartido.
+// Servicio propio, no `createService` — ver el comentario del archivo.
+export { cycleSummariesService } from "./cycleSummariesService";
+
 export { logAction } from "./logger";
