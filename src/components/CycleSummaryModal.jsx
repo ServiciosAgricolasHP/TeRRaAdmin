@@ -652,6 +652,10 @@ export default function CycleSummaryModal({
   // Última versión persistida (serializada) para no reescribir el doc con lo
   // mismo que acabamos de leer ni en cada render.
   const lastSavedRef = useRef({ cobrar: null, titles: null });
+  // Últimos totales (pagar/cobrar) escritos en el doc del ciclo. El prop
+  // `cycle` queda viejo después de nuestra propia escritura, así que la
+  // comparación va contra este ref y no contra el prop.
+  const lastTotalsRef = useRef(null);
   // Popover de visibilidad de columnas (cobrar mode). El botón ancla se pasa
   // como ref para posicionar el popover via portal sin que el overflow del
   // Modal padre lo recorte.
@@ -698,6 +702,9 @@ export default function CycleSummaryModal({
         setCobrar(nextCobrar);
         setTitles(nextTitles);
         lastSavedRef.current = { cobrar: JSON.stringify(nextCobrar), titles: JSON.stringify(nextTitles) };
+        lastTotalsRef.current = cycle.summaryTotals
+          ? { pagar: Number(cycle.summaryTotals.pagar) || 0, cobrar: Number(cycle.summaryTotals.cobrar) || 0 }
+          : null;
         setSummaryMeta(remote?.updatedAt ? { email: remote.updatedByEmail, at: remote.updatedAt.toDate?.() || null } : null);
         // Migración: el ciclo se configuró en este navegador antes de que el
         // resumen fuera compartido y todavía no existe el doc → se sube tal
@@ -1478,6 +1485,31 @@ export default function CycleSummaryModal({
     else updateCobrarCarrierRow(carrierId, row.date, finalPatch);
   };
 
+  // El Dashboard muestra margen por ciclo (cobrar − pagar). Los dos totales ya
+  // se calculan acá en cada apertura del modal (son memos incondicionales, no
+  // dependen de la pestaña), así que se guardan en el propio doc del ciclo:
+  // son tres números y el Dashboard ya carga la lista de ciclos, o sea que le
+  // salen gratis — leer los docs de `cycleSummaries` costaría una lectura por
+  // ciclo. Solo escribe cuando el valor cambió, así que en la práctica es una
+  // escritura por sesión de edición.
+  //
+  // `additive: true` es importante: sin eso `update` invalida el caché entero
+  // de `cycles` y obliga a todas las demás pantallas a releer.
+  const saveCycleTotals = () => {
+    const pagar = Math.round(grandTotalPagar);
+    const cobrar = Math.round(grandTotalCobrar);
+    if (pagar <= 0 && cobrar <= 0) return; // modal cerrado antes de cargar
+    const prev = lastTotalsRef.current;
+    if (prev && prev.pagar === pagar && prev.cobrar === cobrar) return;
+    lastTotalsRef.current = { pagar, cobrar };
+    cyclesService
+      .update(cycleId, { summaryTotals: { pagar, cobrar, at: new Date().toISOString() } }, { additive: true })
+      .catch((err) => {
+        lastTotalsRef.current = prev;
+        console.error("[resumen] totales del ciclo:", err);
+      });
+  };
+
   // Si el modal se cierra con un guardado debounced en vuelo, el timer se
   // cancela y esa última edición no llegaría nunca a Firestore. Al cerrar (o
   // al desmontar) se fuerza lo que haya quedado sin persistir.
@@ -1490,11 +1522,13 @@ export default function CycleSummaryModal({
       const patch = {};
       if (c !== lastSavedRef.current.cobrar) { patch.cobrar = cobrar; lastSavedRef.current.cobrar = c; }
       if (t !== lastSavedRef.current.titles) { patch.titles = titles; lastSavedRef.current.titles = t; }
-      if (!Object.keys(patch).length) return;
-      cycleSummariesService.save(cycleId, patch).catch((err) => {
-        lastSavedRef.current = { cobrar: null, titles: null };
-        console.error("[resumen] guardar al cerrar:", err);
-      });
+      if (Object.keys(patch).length) {
+        cycleSummariesService.save(cycleId, patch).catch((err) => {
+          lastSavedRef.current = { cobrar: null, titles: null };
+          console.error("[resumen] guardar al cerrar:", err);
+        });
+      }
+      saveCycleTotals();
     };
   });
   useEffect(() => {

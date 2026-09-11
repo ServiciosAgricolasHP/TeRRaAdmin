@@ -32,12 +32,13 @@
 
 ## Stack
 
-React 19 · Vite 7 · Tailwind CSS 4 · Firebase (Firestore + Auth) · ag-grid · React Router 7 · ExcelJS (lazy) · html-to-image · ESLint flat config
+React 19 · Vite 7 · Tailwind CSS 4 · Firebase (Firestore + Auth) · ag-grid · React Router 7 · ExcelJS (lazy) · Recharts (lazy) · html-to-image · ESLint flat config
 
 - **Solo JavaScript** (no TypeScript).
 - **React Compiler** habilitado via `babel-plugin-react-compiler`.
 - Variables de entorno con prefijo `VITE_`.
 - `exceljs` se importa **lazy** (`await import("exceljs")`) solo al exportar — chunk separado de ~937 KB.
+- `recharts` idem, vía `React.lazy` sobre `components/DashboardCharts.jsx` — chunk separado de ~372 KB. El chunk principal ya está sobre el límite de Vite, así que toda librería pesada nueva va lazy.
 
 ## Arquitectura / Architecture
 
@@ -337,10 +338,34 @@ Botones de descarga:
 - **Métricas tratoHE separadas**: en la tabla "Por labor" del drawer y en el breakdown de trabajadores, jornadas y HE se renderizan apilados (`{n} jorn.` arriba, `{h} HE` abajo) en lugar del string mezclado `"100 j + 17,5 HE"`. Misma convención que `LaborTable` y `LaborWorkerGrid`.
 - **Sat/Dom en rojo**: el número del día en la grilla del mes y el título de la fecha en `DayDetailDrawer` / `DayExpandedModal` se muestran en `#dc2626` cuando es finde. El título usa formato humano `"vie 16-may-2026"` (helpers `humanDate`, `isWeekendDate` en el mismo archivo). Feriados a nivel labor no se cubren acá — están en `dayPrices` y el calendar no los carga.
 
+## Dashboard
+
+- Pantalla: `src/screens/Dashboard.jsx`, ruta índice `/`. Tres bloques de KPIs (plata pagada a trabajadores, operación, transporte) + gráficos + dos tablas accionables. Selector de período global: mes actual / 3 meses / 12 meses.
+- **La restricción de diseño es el costo de lecturas.** Nada acá escanea `workdays`, `logs`, `transports` ni `dteDocuments`. El truco es que casi todo ya viene pre-agregado:
+  - Los docs de `payrolls` traen `total`/`bankTotal`/`cashTotal`/`workerCount`/`advanceTotal` ya sumados → toda la serie de "pagado por mes" sale de ahí.
+  - `transportPayments.total` y `transportPayrolls.total` están denormalizados por el servicio.
+  - `cycles.summaryTotals` (ver `docs/data-model.md`) da el margen por ciclo.
+  - La actividad por mes sale de `getCountFromServer`: 12 consultas de recuento = 12 lecturas para el año entero, contra decenas de miles si se trajeran las filas. Se piden una vez por sesión (no dependen del selector de período) y alimentan tanto la tarjeta de jornadas como su gráfico.
+- **Las opciones de `list()` están copiadas literal de otras pantallas a propósito**: la clave de caché es `collection::{wheres,order,take}`, así que `faenas` comparte clave con Faenas/Nómina, `cycles` con Transportes y `payrolls` con Nómina. Si tocás el `order` o el `take` de acá, dejan de compartir caché y el Dashboard empieza a pagar lecturas de nuevo.
+- Contador de lecturas visible solo para admin en el subtítulo (`· N lecturas` / `· desde caché`), mismo criterio que el de Calendario. Es lo que hace verificable la restricción.
+- **Tabla "ciclos abiertos sin movimiento"**: ciclos `open` cuyo último día en `cycle.days[]` quedó a más de 14 días. Sale gratis de la lista de ciclos y es lo más accionable del tablero.
+- Gráficos en `src/components/DashboardCharts.jsx` (Recharts, lazy). Ocho, en este orden: pagado por mes (barras apiladas banco/efectivo, el tooltip suma el total), deuda con transportistas en el tiempo, actividad por mes (área, 12 meses fijos), ciclos abiertos por faena, composición de lo devengado (dona con la leyenda al costado, con monto y porcentaje por categoría), gasto por transportista, gasto de transporte por mes (ventana fija de 6 meses) y compras vs ventas por empresa.
+  - **Compras vs ventas**: barras agrupadas mes a mes (6 meses) de una empresa a la vez, elegida en un selector de la propia tarjeta. Carga sola con la primera empresa y se rehace al cambiar. Suma el campo `total` (IVA incluido) y **resta las notas de crédito** (tipos 61/112, mismo `CREDIT_NOTE_TYPES` que Facturación) para que los números calcen con esa pantalla. Va por `dteDocumentsService` con `cache+persist` a 10 min.
+    - Acotar a una empresa no es cosmético: `dteDocuments` es la colección más grande del sistema y mezcla todas las empresas y todos los períodos. **El costo no se le muestra al usuario** — eso es información de desarrollo y vive en el contador admin del encabezado.
+    - La query cruza `companyId` (igualdad) con `periodo` (`in`), o sea **dos campos**: puede requerir un índice compuesto. No hay `firestore.indexes.json` en el repo (los índices se manejan en la consola), así que si falta, falla en runtime con `failed-precondition`. Está contemplado: la tarjeta muestra un mensaje corto y el link para crear el índice queda en la consola del navegador.
+  - **Deuda con transportistas**: la unidad de deuda es el **resumen** (`transportPayments`), no la quincena — la quincena solo agrupa resúmenes, así que sumar las dos cosas duplicaría los montos. La deuda nace con `createdAt` del resumen y baja por dos vías: cada abono parcial en su propia fecha (`abonos[].date`) y el remanente cuando el resumen se marca pagado (`paidAt`). Lo anterior a la ventana de 12 meses se acumula en un saldo inicial para que la línea sea el saldo vigente y no solo el flujo. El tooltip muestra cuántos resúmenes se generaron y cuántos se saldaron ese mes, y dice explícitamente si se pagó más o menos de lo generado.
+  - Los resúmenes de transporte se traen **siempre por 12 meses** y todo lo que depende del selector de período se filtra en cliente, así cambiar de período cuesta 0 lecturas y la curva de deuda tiene el histórico que necesita.
+  - **Atribución de mes**: un resumen se cuenta en el mes del **período que cubre**, no en el de `createdAt` — el resumen de la segunda semana de agosto suele armarse recién en septiembre, y fecharlo por creación corre el gasto de mes. `paymentPeriodDate()` toma el punto medio de `[periodFrom, periodTo]`, que cuando el período cruza el cambio de mes cae en el mes con la mayoría de los días (28-ago a 3-sep → 31-ago → agosto); si el resumen no trae período, cae a `createdAt`. Los pagos y abonos **no** se reatribuyen: van por su fecha real, que es cuando la plata se movió.
+  - Limitación conocida: los resúmenes se piden por `createdAt` de los últimos 12 meses, así que una deuda más vieja que eso y todavía impaga no entra en el saldo inicial de la curva.
+  - Los colores salen de `var(--color-*)`; **no hardcodear verde como "bueno"** — el accent es naranja en donDiego y violeta en sheridan/aetiskPastel. Gradientes y sombras se declaran en `<defs>` con id prefijado por gráfico (los ids de SVG son globales al documento).
+- `src/components/MetricCard.jsx` es la tarjeta de KPI compartida. Las versiones locales de Facturación (`SummaryCard`), Payroll (`MetricCard`) y Calendar (`Stat`) siguen existiendo; migrarlas es limpieza pendiente.
+- `src/utils/format.js` centraliza `fmtCurrency`/`fmtNumber`/`fmtPercent`/`fmtMonthKey`. Las ~11 copias locales siguen ahí; el código nuevo usa el módulo.
+
 ## Consola admin / AdminConsole
 
 - Pantalla: `src/screens/AdminConsole.jsx`. Ruta `/admin/console` (solo admin).
-- Cuatro secciones para inspección barata: conteos por colección, workdays por mes (12 reads para todo un año), workdays por rango, workdays por ciclo.
+- Secciones para inspección barata: conteos por colección, workdays por mes (12 reads para todo un año), workdays por rango, workdays por ciclo, más los backfills y el debug de rol admin.
+- **🧪 Ping a Cloud Functions**: verifica el plomo (auth + región) llamando al callable `ping`. Vivía como bloque TEMP en el Dashboard; se movió acá al rehacerlo. El deploy de esa función sigue pendiente (ver `functions/README.md`), así que por ahora responde `not-found`.
 - Usa `getCountFromServer` de Firestore — 1 read por cada 1000 docs vs N con `getDocs`. Permite estimar costos sin descargar la colección.
 
 ## Facturación / Billing

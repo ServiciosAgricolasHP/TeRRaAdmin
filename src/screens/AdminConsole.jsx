@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { collection, query, where, getCountFromServer, getDocs, doc, getDoc, writeBatch } from "firebase/firestore";
-import { db } from "../firebase";
+import { httpsCallable } from "firebase/functions";
+import { db, functions } from "../firebase";
 import { faenasService, cyclesService, workersService } from "../services";
 import { toProperName } from "../utils/nameUtils";
 import { useAuth } from "../contexts/AuthContext";
@@ -74,6 +75,7 @@ export default function AdminConsole() {
       </div>
 
       <AuthDebugSection />
+      <PingSection />
       <CollectionCountsSection />
       <WorkdaysByMonthSection />
       <WorkdaysByRangeSection />
@@ -82,6 +84,61 @@ export default function AdminConsole() {
       <BackfillWorkerRutFieldSection />
       <BackfillWorkdayLogMetaSection />
     </div>
+  );
+}
+
+// ============================================================
+// Sección Debug: ping a Cloud Functions
+// ============================================================
+// Verifica el plomo de Firebase Functions (auth + región) llamando al callable
+// `ping`. Vivía en el Dashboard como bloque temporal; se movió acá, que es
+// donde viven las herramientas de diagnóstico. El deploy de esa función sigue
+// pendiente (ver functions/README.md), así que mientras tanto va a fallar con
+// `not-found` — eso también es información útil.
+function PingSection() {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const runPing = async () => {
+    setBusy(true);
+    setResult(null);
+    try {
+      const { data } = await httpsCallable(functions, "ping")();
+      setResult({ ok: true, data });
+    } catch (err) {
+      setResult({ ok: false, code: err.code, message: err.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+      <h2 className="mb-2 text-sm font-semibold">🧪 Ping a Cloud Functions</h2>
+      <p className="mb-3 text-xs text-[var(--color-muted)]">
+        Llama al callable <code>ping</code> para verificar auth y región.
+      </p>
+      <button
+        onClick={runPing}
+        disabled={busy}
+        className="rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-3 py-1.5 text-sm text-[var(--color-warning)] hover:opacity-80 disabled:opacity-60"
+      >
+        {busy ? "Llamando..." : "Probar ping"}
+      </button>
+      {result && (
+        <div
+          className={`mt-3 rounded-md border p-3 font-mono text-xs ${
+            result.ok
+              ? "border-[var(--color-success)] bg-[var(--color-success-soft)] text-[var(--color-success)]"
+              : "border-[var(--color-danger)] bg-[var(--color-danger-soft)] text-[var(--color-danger)]"
+          }`}
+        >
+          {result.ok
+            ? `✓ OK — ${JSON.stringify(result.data)}`
+            : `✗ ${result.code || "error"}: ${result.message}`}
+        </div>
+      )}
+    </section>
   );
 }
 
