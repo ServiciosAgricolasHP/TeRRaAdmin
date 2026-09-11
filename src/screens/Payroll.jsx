@@ -254,8 +254,24 @@ export default function Payroll() {
       // only). firstDay/lastDay alimentan el CycleSelector para mostrar el
       // período de cada subfaena en pantalla cuando se arma una nómina.
       const activeIds = c.filter((x) => x.status !== "closed").map((x) => x.id);
+      // Medio de pago por rut. Permite estimar cuánto de lo pendiente sale en
+      // efectivo y cuánto por transferencia sin ninguna lectura extra: los
+      // workdays ya se recorren acá abajo y el catálogo de workers ya está en
+      // `w`. Es un estimado en BRUTO — el monto real por medio de pago sale
+      // recién en el preview, con anticipos/bonos aplicados y con los cambios
+      // de bolsa que haga el usuario.
+      const payKindByRut = new Map();
+      for (const wk of w) {
+        const code = wk.bankDetails?.[3] || "";
+        payKindByRut.set(wk.id, !code ? "unknown" : isCashBank(code) ? "cash" : "bank");
+      }
       const stats = {};
-      for (const id of activeIds) stats[id] = { unpaid: 0, paid: 0, total: 0, firstDay: "", lastDay: "" };
+      for (const id of activeIds) {
+        stats[id] = {
+          unpaid: 0, paid: 0, total: 0, firstDay: "", lastDay: "",
+          unpaidBank: 0, unpaidCash: 0, unpaidUnknown: 0,
+        };
+      }
       for (let i = 0; i < activeIds.length; i += 10) {
         const chunk = activeIds.slice(i, i + 10);
         const wds = await workdaysService.list({ wheres: [["cycleId", "in", chunk]] });
@@ -276,8 +292,18 @@ export default function Payroll() {
             amount = Number(wd.amount) || 0;
           }
           stats[cid].total += amount;
-          if (wd.payrollId) stats[cid].paid += amount;
-          else stats[cid].unpaid += amount;
+          if (wd.payrollId) {
+            stats[cid].paid += amount;
+          } else {
+            stats[cid].unpaid += amount;
+            // Un rut que no está en el catálogo (o sin banco cargado) no se
+            // asume transferencia: queda aparte como "por definir" para no
+            // inflar el monto del banco en silencio.
+            const kind = payKindByRut.get(wd.workerRut) || "unknown";
+            if (kind === "cash") stats[cid].unpaidCash += amount;
+            else if (kind === "bank") stats[cid].unpaidBank += amount;
+            else stats[cid].unpaidUnknown += amount;
+          }
           if (wd.date) {
             if (!stats[cid].firstDay || wd.date < stats[cid].firstDay) stats[cid].firstDay = wd.date;
             if (!stats[cid].lastDay || wd.date > stats[cid].lastDay) stats[cid].lastDay = wd.date;
@@ -1253,7 +1279,98 @@ function ProgressOverlay({ info }) {
   );
 }
 
+const PAY_SPLIT_HINT =
+  "Estimado en bruto, según el banco que tiene cargado cada trabajador. El monto definitivo por medio de pago sale en el preview, después de anticipos/bonos y de los cambios que hagas ahí.";
+const PAY_UNKNOWN_HINT =
+  "Trabajadores sin banco cargado o que no están en el catálogo. Se define su medio de pago en el preview.";
+
+// Paso 1 de "Generar": elegir qué ciclos entran a la nómina. Por defecto solo
+// se listan los ciclos que tienen plata pendiente de pagar — un ciclo abierto
+// sin nada pendiente es ruido acá, no una opción. Quedan detrás del toggle
+// "Sin pendientes" (y siempre visibles si están seleccionados, para que nunca
+// desaparezca algo que el usuario ya marcó).
 function CycleSelector({ groups, selected, toggle, selectedLaborsByCycle, toggleLaborInCycle, subfaenaName, cycleStats, onNext, busy }) {
+  const [search, setSearch] = useState("");
+  const [showEmpty, setShowEmpty] = useState(false);
+
+  const {
+    visibleGroups, emptyCount, totalPending, pendingCount,
+    pendingBank, pendingCash, pendingUnknown,
+    selectedTotal, selectedBank, selectedCash, selectedUnknown,
+  } = useMemo(() => {
+    const statOf = (id) =>
+      cycleStats?.[id] || {
+        unpaid: 0, paid: 0, total: 0, firstDay: "", lastDay: "",
+        unpaidBank: 0, unpaidCash: 0, unpaidUnknown: 0,
+      };
+    let empty = 0;
+    let pendingSum = 0;
+    let withPending = 0;
+    let bankSum = 0, cashSum = 0, unknownSum = 0;
+    let selSum = 0, selBank = 0, selCash = 0, selUnknown = 0;
+    const out = [];
+    for (const { faena, cycles } of groups) {
+      const rows = [];
+      let groupPending = 0;
+      let groupBank = 0;
+      let groupCash = 0;
+      for (const c of cycles) {
+        const stat = statOf(c.id);
+        const isSelected = selected.has(c.id);
+        const hasPending = stat.unpaid > 0;
+        if (hasPending) {
+          withPending += 1;
+          pendingSum += stat.unpaid;
+          bankSum += stat.unpaidBank || 0;
+          cashSum += stat.unpaidCash || 0;
+          unknownSum += stat.unpaidUnknown || 0;
+        } else {
+          empty += 1;
+        }
+        if (isSelected) {
+          selSum += stat.unpaid;
+          selBank += stat.unpaidBank || 0;
+          selCash += stat.unpaidCash || 0;
+          selUnknown += stat.unpaidUnknown || 0;
+        }
+        if (!hasPending && !showEmpty && !isSelected) continue;
+        const sub = subfaenaName(c.subfaenaId);
+        if (!matchesSearchQuery(`${c.label || c.id} ${sub} ${faena.name || ""}`, search)) continue;
+        if (hasPending) {
+          groupPending += stat.unpaid;
+          groupBank += stat.unpaidBank || 0;
+          groupCash += stat.unpaidCash || 0;
+        }
+        rows.push({ cycle: c, stat, sub, isSelected, hasPending });
+      }
+      if (rows.length > 0) out.push({ faena, rows, groupPending, groupBank, groupCash });
+    }
+    return {
+      visibleGroups: out,
+      emptyCount: empty,
+      totalPending: pendingSum,
+      pendingCount: withPending,
+      pendingBank: bankSum,
+      pendingCash: cashSum,
+      pendingUnknown: unknownSum,
+      selectedTotal: selSum,
+      selectedBank: selBank,
+      selectedCash: selCash,
+      selectedUnknown: selUnknown,
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups, cycleStats, selected, search, showEmpty]);
+
+  // "Todos / ninguno" por faena: solo opera sobre los ciclos que están a la
+  // vista, así el botón nunca marca algo que el usuario no ve.
+  const toggleGroup = (rows) => {
+    const selectable = rows.filter((r) => r.hasPending || r.isSelected);
+    const allOn = selectable.length > 0 && selectable.every((r) => r.isSelected);
+    for (const r of selectable) {
+      if (allOn === r.isSelected) toggle(r.cycle.id);
+    }
+  };
+
   if (groups.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--color-border)] text-[var(--color-muted)]">
@@ -1261,106 +1378,240 @@ function CycleSelector({ groups, selected, toggle, selectedLaborsByCycle, toggle
       </div>
     );
   }
+
   return (
-    <div className="flex flex-1 flex-col gap-4 overflow-auto">
-      <div className="space-y-3">
-        {groups.map(({ faena, cycles }) => (
-          <div key={faena.id} className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
-            <div className="border-b border-[var(--color-border)] px-4 py-2 text-sm font-semibold">
-              {faena.name}
-            </div>
-            <div className="divide-y divide-[var(--color-border)]">
-              {cycles.map((c) => {
-                const sub = subfaenaName(c.subfaenaId);
-                const isSelected = selected.has(c.id);
-                const stat = cycleStats?.[c.id] || { unpaid: 0, paid: 0, total: 0, firstDay: "", lastDay: "" };
-                const periodLabel = (stat.firstDay || stat.lastDay)
-                  ? (stat.firstDay === stat.lastDay
-                      ? stat.firstDay
-                      : `${stat.firstDay || "?"} → ${stat.lastDay || "?"}`)
-                  : "";
-                const noUnpaid = stat.unpaid <= 0;
-                const labors = c.labors || [];
-                const selectedLabors = selectedLaborsByCycle?.get(c.id) || new Set();
-                const allLaborsOn = labors.length > 0 && labors.every((l) => selectedLabors.has(l.id));
-                const noneOn = isSelected && labors.length > 0 && selectedLabors.size === 0;
-                return (
-                  <div key={c.id} className={noUnpaid ? "opacity-60" : ""}>
-                    <label className="flex cursor-pointer items-center gap-3 px-4 py-2 hover:bg-[var(--color-accent-soft)]">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggle(c.id)}
-                        disabled={noUnpaid && !isSelected}
-                        className="h-4 w-4"
-                      />
-                      <div className="flex-1 text-sm">
-                        <div className="font-medium">{c.label || c.id}</div>
-                        {(sub || periodLabel) && (
-                          <div className="flex flex-wrap items-center gap-x-2 text-xs text-[var(--color-muted)]">
-                            {sub && <span>{sub}</span>}
-                            {periodLabel && (
-                              <span className="tabular-nums" title="Primer y último día con producción del ciclo">
-                                📅 {periodLabel}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                        {isSelected && labors.length > 0 && !allLaborsOn && (
-                          <div className="text-xs text-amber-700 dark:text-amber-400">
-                            {noneOn
-                              ? "⚠ Sin labores seleccionadas — no entra al preview"
-                              : `Pagar ${selectedLabors.size} de ${labors.length} labores`}
-                          </div>
-                        )}
-                      </div>
-                      <div className="text-right text-xs">
-                        <div className={noUnpaid ? "text-[var(--color-muted)]" : "font-semibold text-[var(--color-accent)]"}>
-                          Pendiente: {fmtCurrency(stat.unpaid)}
-                        </div>
-                        {stat.paid > 0 && (
-                          <div className="text-[var(--color-muted)]">Pagado: {fmtCurrency(stat.paid)}</div>
-                        )}
-                      </div>
-                    </label>
-                    {isSelected && labors.length > 1 && (
-                      <div className="flex flex-wrap gap-1.5 border-t border-[var(--color-border)] bg-[var(--color-surface-2)]/40 px-4 py-2">
-                        {labors.map((l) => {
-                          const on = selectedLabors.has(l.id);
-                          return (
-                            <button
-                              type="button"
-                              key={l.id}
-                              onClick={() => toggleLaborInCycle(c.id, l.id)}
-                              className={`rounded-full border px-2 py-0.5 text-[11px] transition-opacity ${
-                                on
-                                  ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-                                  : "border-dashed border-[var(--color-border)] bg-transparent text-[var(--color-muted)] opacity-60"
-                              }`}
-                              title={on ? "Excluir esta labor de la nómina" : "Incluir esta labor"}
-                            >
-                              {on ? "✓" : "○"} {l.name}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+    <div className="flex flex-1 flex-col gap-3 overflow-hidden">
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar ciclo o faena..."
+          className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm outline-none focus:border-[var(--color-accent)] sm:w-56"
+        />
+        <button
+          type="button"
+          onClick={() => setShowEmpty((v) => !v)}
+          disabled={emptyCount === 0}
+          title="Los ciclos sin plata pendiente están ocultos porque no hay nada que pagar en ellos."
+          className={`min-h-[32px] rounded-md border px-3 py-1 text-xs ${
+            showEmpty
+              ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+              : "border-[var(--color-border)] bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
+          } disabled:opacity-40 disabled:hover:bg-[var(--color-surface-2)]`}
+        >
+          {showEmpty ? "✓ " : ""}Sin pendientes ({emptyCount})
+        </button>
+        <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+          <span>
+            <span className="text-[var(--color-muted)]">Ciclos con pendiente:</span>{" "}
+            <span className="font-semibold tabular-nums">{pendingCount}</span>
+          </span>
+          <span>
+            <span className="text-[var(--color-muted)]">Pendiente total:</span>{" "}
+            <span className="font-semibold tabular-nums text-[var(--color-warning)]">{fmtCurrency(totalPending)}</span>
+          </span>
+          <span
+            className="flex flex-wrap items-center gap-x-2 rounded-md border border-dashed border-[var(--color-border)] px-2 py-1"
+            title={PAY_SPLIT_HINT}
+          >
+            <span className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">Estimado</span>
+            <span className="tabular-nums">🏦 {fmtCurrency(pendingBank)}</span>
+            <span className="tabular-nums">💵 {fmtCurrency(pendingCash)}</span>
+            {pendingUnknown > 0 && (
+              <span className="tabular-nums text-[var(--color-muted)]" title={PAY_UNKNOWN_HINT}>
+                ❓ {fmtCurrency(pendingUnknown)}
+              </span>
+            )}
+          </span>
+        </div>
       </div>
 
-      <div className="sticky bottom-0 mt-auto flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
-        <div className="text-sm text-[var(--color-muted)]">
-          {selected.size} ciclo(s) seleccionado(s)
+      <div className="flex-1 space-y-3 overflow-auto">
+        {visibleGroups.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-[var(--color-border)] py-10 text-center text-sm text-[var(--color-muted)]">
+            {search ? "Ningún ciclo coincide con la búsqueda." : "No hay ciclos con pendientes por pagar."}
+            {!search && emptyCount > 0 && (
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEmpty(true)}
+                  className="text-[var(--color-accent)] hover:underline"
+                >
+                  Mostrar los {emptyCount} ciclo(s) sin pendientes
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          visibleGroups.map(({ faena, rows, groupPending, groupBank, groupCash }) => {
+            const selectable = rows.filter((r) => r.hasPending || r.isSelected);
+            const allOn = selectable.length > 0 && selectable.every((r) => r.isSelected);
+            return (
+              <div
+                key={faena.id}
+                className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm"
+              >
+                <div className="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 sm:px-4">
+                  <span className="text-sm font-semibold">{faena.name}</span>
+                  <span className="rounded-full bg-[var(--color-surface)] px-2 py-0.5 text-[11px] tabular-nums text-[var(--color-muted)]">
+                    {rows.length} ciclo{rows.length === 1 ? "" : "s"}
+                  </span>
+                  <div className="ml-auto flex flex-wrap items-center gap-2">
+                    {groupPending > 0 && (
+                      <span className="text-[11px] tabular-nums text-[var(--color-muted)]" title={PAY_SPLIT_HINT}>
+                        🏦 {fmtCurrency(groupBank)} · 💵 {fmtCurrency(groupCash)}
+                      </span>
+                    )}
+                    {groupPending > 0 && (
+                      <span className="text-xs font-semibold tabular-nums text-[var(--color-warning)]">
+                        {fmtCurrency(groupPending)}
+                      </span>
+                    )}
+                    {selectable.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => toggleGroup(rows)}
+                        className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[11px] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)]"
+                      >
+                        {allOn ? "Ninguno" : "Todos"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="divide-y divide-[var(--color-border)]">
+                  {rows.map(({ cycle: c, stat, sub, isSelected, hasPending }) => {
+                    const periodLabel = (stat.firstDay || stat.lastDay)
+                      ? (stat.firstDay === stat.lastDay
+                          ? stat.firstDay
+                          : `${stat.firstDay || "?"} → ${stat.lastDay || "?"}`)
+                      : "";
+                    const labors = c.labors || [];
+                    const selectedLabors = selectedLaborsByCycle?.get(c.id) || new Set();
+                    const allLaborsOn = labors.length > 0 && labors.every((l) => selectedLabors.has(l.id));
+                    const noneOn = isSelected && labors.length > 0 && selectedLabors.size === 0;
+                    const splitTitle = hasPending
+                      ? [
+                          `Estimado — 🏦 Transferencia ${fmtCurrency(stat.unpaidBank || 0)} · 💵 Efectivo ${fmtCurrency(stat.unpaidCash || 0)}`,
+                          (stat.unpaidUnknown || 0) > 0
+                            ? `❓ Sin banco cargado ${fmtCurrency(stat.unpaidUnknown)}`
+                            : "",
+                          PAY_SPLIT_HINT,
+                        ].filter(Boolean).join("\n")
+                      : undefined;
+                    return (
+                      <div
+                        key={c.id}
+                        className={`relative ${isSelected ? "bg-[var(--color-accent-soft)]/40" : ""} ${
+                          hasPending ? "" : "opacity-60"
+                        }`}
+                      >
+                        {isSelected && (
+                          <span className="pointer-events-none absolute inset-y-0 left-0 w-1 bg-[var(--color-accent)]" />
+                        )}
+                        <label className="flex cursor-pointer items-start gap-3 px-3 py-2.5 hover:bg-[var(--color-accent-soft)] sm:px-4">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggle(c.id)}
+                            disabled={!hasPending && !isSelected}
+                            className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--color-accent)]"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium">{c.label || c.id}</div>
+                            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-[var(--color-muted)]">
+                              {sub && <span>{sub}</span>}
+                              {periodLabel && (
+                                <span className="tabular-nums" title="Primer y último día con producción del ciclo">
+                                  📅 {periodLabel}
+                                </span>
+                              )}
+                              {stat.paid > 0 && (
+                                <span className="tabular-nums" title="Ya pagado en nóminas anteriores">
+                                  ✓ {fmtCurrency(stat.paid)} pagado
+                                </span>
+                              )}
+                            </div>
+                            {isSelected && labors.length > 0 && !allLaborsOn && (
+                              <div className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">
+                                {noneOn
+                                  ? "⚠ Sin labores seleccionadas — no entra al preview"
+                                  : `Pagar ${selectedLabors.size} de ${labors.length} labores`}
+                              </div>
+                            )}
+                          </div>
+                          <div className="shrink-0 text-right" title={splitTitle}>
+                            {hasPending ? (
+                              <>
+                                <div className="text-sm font-semibold tabular-nums text-[var(--color-warning)]">
+                                  {fmtCurrency(stat.unpaid)}
+                                </div>
+                                <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">
+                                  pendiente
+                                </div>
+                              </>
+                            ) : (
+                              <span className="text-xs text-[var(--color-muted)]">Sin pendientes</span>
+                            )}
+                          </div>
+                        </label>
+                        {isSelected && labors.length > 1 && (
+                          <div className="flex flex-wrap gap-1.5 border-t border-[var(--color-border)] bg-[var(--color-surface-2)]/40 px-3 py-2 sm:px-4">
+                            {labors.map((l) => {
+                              const on = selectedLabors.has(l.id);
+                              return (
+                                <button
+                                  type="button"
+                                  key={l.id}
+                                  onClick={() => toggleLaborInCycle(c.id, l.id)}
+                                  className={`rounded-full border px-2 py-1 text-[11px] transition-opacity ${
+                                    on
+                                      ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                                      : "border-dashed border-[var(--color-border)] bg-transparent text-[var(--color-muted)] opacity-60"
+                                  }`}
+                                  title={on ? "Excluir esta labor de la nómina" : "Incluir esta labor"}
+                                >
+                                  {on ? "✓" : "○"} {l.name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-sm">
+        <div className="text-sm">
+          <span className="font-semibold tabular-nums">{selected.size}</span>{" "}
+          <span className="text-[var(--color-muted)]">
+            ciclo{selected.size === 1 ? "" : "s"} seleccionado{selected.size === 1 ? "" : "s"}
+          </span>
+          {selected.size > 0 && (
+            <span className="ml-2 tabular-nums">
+              · <span className="font-semibold text-[var(--color-warning)]">{fmtCurrency(selectedTotal)}</span>
+            </span>
+          )}
+          {selected.size > 0 && (
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-[var(--color-muted)]" title={PAY_SPLIT_HINT}>
+              <span>Estimado:</span>
+              <span className="tabular-nums">🏦 {fmtCurrency(selectedBank)}</span>
+              <span className="tabular-nums">💵 {fmtCurrency(selectedCash)}</span>
+              {selectedUnknown > 0 && (
+                <span className="tabular-nums" title={PAY_UNKNOWN_HINT}>❓ {fmtCurrency(selectedUnknown)}</span>
+              )}
+            </div>
+          )}
         </div>
         <button
           onClick={onNext}
           disabled={selected.size === 0 || busy}
-          className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
+          className="min-h-[36px] rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
         >
           {busy ? "Calculando..." : "Continuar →"}
         </button>
@@ -1392,6 +1643,11 @@ function PreviewTable({
 
   const bankTotal = bankItems.reduce((s, p) => s + (Number(p.amount) || 0), 0);
   const cashTotal = cashGroups.reduce((s, g) => s + g.total, 0);
+  const bankCount = bankItems.length;
+  // Cuánta gente y en cuántos sobres va el efectivo: para repartirlo hay que
+  // armar un sobre por jefe de grupo, así que el conteo de grupos es tan
+  // operativo como el monto.
+  const cashCount = cashGroups.reduce((s, g) => s + g.items.length, 0);
   const totalAdvance = items.reduce((s, p) => s + (p.include ? Number(p.advance) || 0 : 0), 0);
 
   const leaders = useMemo(() => {
@@ -1465,15 +1721,34 @@ function PreviewTable({
             <option value="diferencia">Diferencia</option>
           </select>
         </div>
-        <div className="text-sm">
-          <div className="text-right">
-            <span className="text-[var(--color-muted)]">{countSelected} trab.</span>
-            <span className="mx-2">·</span>
-            <span className="font-semibold">{fmtCurrency(totalSelected)}</span>
+        <div className="flex flex-wrap items-stretch gap-2">
+          <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-right">
+            <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">Total</div>
+            <div className="text-sm font-semibold tabular-nums">{fmtCurrency(totalSelected)}</div>
+            <div className="text-[10px] tabular-nums text-[var(--color-muted)]">
+              {countSelected} trab.
+              {totalAdvance > 0 && (
+                <span title="Anticipos descontados en esta nómina"> · ↩ {fmtCurrency(totalAdvance)}</span>
+              )}
+            </div>
           </div>
-          <div className="text-right text-xs text-[var(--color-muted)]">
-            🏦 {fmtCurrency(bankTotal)} · 💵 {fmtCurrency(cashTotal)}
-            {totalAdvance > 0 && <span> · ↩ Anticipos {fmtCurrency(totalAdvance)}</span>}
+          <div
+            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-right"
+            title="Va en el archivo Banco de Chile, por transferencia"
+          >
+            <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">🏦 Transferencia</div>
+            <div className="text-sm font-semibold tabular-nums">{fmtCurrency(bankTotal)}</div>
+            <div className="text-[10px] tabular-nums text-[var(--color-muted)]">{bankCount} trab.</div>
+          </div>
+          <div
+            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-right"
+            title="Plata que hay que sacar en efectivo y repartir: un sobre por jefe de grupo"
+          >
+            <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">💵 Efectivo</div>
+            <div className="text-sm font-semibold tabular-nums text-[var(--color-warning)]">{fmtCurrency(cashTotal)}</div>
+            <div className="text-[10px] tabular-nums text-[var(--color-muted)]">
+              {cashCount} trab. · {cashGroups.length} sobre{cashGroups.length === 1 ? "" : "s"}
+            </div>
           </div>
         </div>
         <button
@@ -2200,8 +2475,7 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onAskDelete, onRedow
       </>
     ) : (
     <>
-    <ResizableArea storageKey="payroll-history" defaultHeight={440} minHeight={240}>
-    <div className="h-full overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+    <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
       <table className="w-full text-sm">
         <thead className="sticky top-0 bg-[var(--color-surface-2)] text-left">
           <tr>
@@ -2303,7 +2577,6 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onAskDelete, onRedow
         </tbody>
       </table>
     </div>
-    </ResizableArea>
     {pager}
     </>
     )}
