@@ -489,13 +489,31 @@ export default function Payroll() {
           const accountIssue = validateAccountNumber(bd[1] || "", bankCode);
           const adv = advancesByRut.get(a.workerId || a.rut) || { anticipos: [], bonos: [] };
 
-          // Anticipos: oldest-first, descuentan, capados por el bruto.
+          const grossInt = Math.round(a.total);
+
+          // Bonos PRIMERO: se aplican completos y engrosan la base contra la
+          // que después se descuenta el anticipo. Al revés (que era como
+          // estaba), un bono deja el anticipo sin liquidar por exactamente su
+          // monto: al trabajador se le entrega el bono en la mano y la deuda
+          // arrastra a la nómina siguiente en vez de cerrarse.
+          const sortedBonos = [...adv.bonos].sort((x, y) => {
+            const da = (x.date || ""), dbb = (y.date || "");
+            return da < dbb ? -1 : da > dbb ? 1 : 0;
+          });
+          const bonoApplications = [];
+          for (const advItem of sortedBonos) {
+            const advRem = Math.round(advanceRemaining(advItem));
+            if (advRem <= 0) continue;
+            bonoApplications.push({ advanceId: advItem.id, amount: advRem });
+          }
+          const bonosTotal = bonoApplications.reduce((s, x) => s + x.amount, 0);
+
+          // Anticipos: oldest-first, capados por bruto + bonos.
           const sortedAnticipos = [...adv.anticipos].sort((x, y) => {
             const da = (x.date || ""), dbb = (y.date || "");
             return da < dbb ? -1 : da > dbb ? 1 : 0;
           });
-          const grossInt = Math.round(a.total);
-          let remainingGross = grossInt;
+          let remainingGross = grossInt + bonosTotal;
           const anticipoApplications = [];
           for (const advItem of sortedAnticipos) {
             if (remainingGross <= 0) break;
@@ -510,20 +528,7 @@ export default function Payroll() {
             remainingGross -= apply;
           }
 
-          // Bonos: se aplican completos (suman, sin tope contra el bruto).
-          const sortedBonos = [...adv.bonos].sort((x, y) => {
-            const da = (x.date || ""), dbb = (y.date || "");
-            return da < dbb ? -1 : da > dbb ? 1 : 0;
-          });
-          const bonoApplications = [];
-          for (const advItem of sortedBonos) {
-            const advRem = Math.round(advanceRemaining(advItem));
-            if (advRem <= 0) continue;
-            bonoApplications.push({ advanceId: advItem.id, amount: advRem });
-          }
-
           const anticiposTotal = anticipoApplications.reduce((s, x) => s + x.amount, 0);
-          const bonosTotal = bonoApplications.reduce((s, x) => s + x.amount, 0);
           const advanceNoteParts = [];
           if (anticiposTotal) advanceNoteParts.push(`Anticipos ${anticipoApplications.length}`);
           if (bonosTotal) advanceNoteParts.push(`Bonos ${bonoApplications.length}`);
@@ -4539,7 +4544,18 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
         for (const [cid, amt] of Object.entries(a.byCycle)) byCycle[cid] = Math.round(amt);
         const adv = advancesByKey.get(key) || { anticipos: [], bonos: [] };
 
-        let remainingGross = grossInt;
+        // Bonos primero: engrosan la base contra la que se descuenta el
+        // anticipo, para que un bono no deje la deuda sin liquidar por
+        // exactamente su monto. Ver el comentario largo en buildPreview.
+        const bonoApplications = [];
+        for (const advItem of [...adv.bonos].sort(byDateAsc)) {
+          const advRem = Math.round(advanceRemaining(advItem));
+          if (advRem <= 0) continue;
+          bonoApplications.push({ advanceId: advItem.id, amount: advRem });
+        }
+        const bonosTotal = bonoApplications.reduce((s, x) => s + x.amount, 0);
+
+        let remainingGross = grossInt + bonosTotal;
         const anticipoApplications = [];
         for (const advItem of [...adv.anticipos].sort(byDateAsc)) {
           if (remainingGross <= 0) break;
@@ -4550,14 +4566,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
           anticipoApplications.push({ advanceId: advItem.id, amount: apply });
           remainingGross -= apply;
         }
-        const bonoApplications = [];
-        for (const advItem of [...adv.bonos].sort(byDateAsc)) {
-          const advRem = Math.round(advanceRemaining(advItem));
-          if (advRem <= 0) continue;
-          bonoApplications.push({ advanceId: advItem.id, amount: advRem });
-        }
         const anticiposTotal = anticipoApplications.reduce((s, x) => s + x.amount, 0);
-        const bonosTotal = bonoApplications.reduce((s, x) => s + x.amount, 0);
         const advanceNoteParts = [];
         if (anticiposTotal) advanceNoteParts.push(`Anticipos ${anticipoApplications.length}`);
         if (bonosTotal) advanceNoteParts.push(`Bonos ${bonoApplications.length}`);
@@ -4816,7 +4825,17 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
         if (newAnticipos.length || newBonos.length) {
           const currentAdvance = Number(it.advance) || 0;
           const currentBonus = Number(it.bonus) || 0;
-          let remainingGross = Math.max(0, newGross - currentAdvance);
+          // Bonos primero, igual que al armar la nómina: la base incluye los
+          // bonos (los que ya tenía y los nuevos) antes de descontar.
+          const appliedBonos = [];
+          for (const advItem of [...newBonos].sort(byDateAsc)) {
+            const advRem = Math.round(advanceRemaining(advItem));
+            if (advRem <= 0) continue;
+            appliedBonos.push({ advanceId: advItem.id, amount: advRem });
+          }
+          const addedBonoTotal = appliedBonos.reduce((s, x) => s + x.amount, 0);
+
+          let remainingGross = Math.max(0, newGross + currentBonus + addedBonoTotal - currentAdvance);
           const appliedAnticipos = [];
           for (const advItem of [...newAnticipos].sort(byDateAsc)) {
             if (remainingGross <= 0) break;
@@ -4827,14 +4846,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
             appliedAnticipos.push({ advanceId: advItem.id, amount: apply });
             remainingGross -= apply;
           }
-          const appliedBonos = [];
-          for (const advItem of [...newBonos].sort(byDateAsc)) {
-            const advRem = Math.round(advanceRemaining(advItem));
-            if (advRem <= 0) continue;
-            appliedBonos.push({ advanceId: advItem.id, amount: advRem });
-          }
           const addedAnticipoTotal = appliedAnticipos.reduce((s, x) => s + x.amount, 0);
-          const addedBonoTotal = appliedBonos.reduce((s, x) => s + x.amount, 0);
           if (addedAnticipoTotal > 0 || addedBonoTotal > 0) {
             const base = patch || it;
             const newAdvanceTotal = currentAdvance + addedAnticipoTotal;
@@ -4890,7 +4902,18 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
         for (const [cid, amt] of Object.entries(a.byCycle)) byCycle[cid] = Math.round(amt);
         const adv = advancesByKey.get(key) || { anticipos: [], bonos: [] };
 
-        let remainingGross = grossInt;
+        // Bonos primero: engrosan la base contra la que se descuenta el
+        // anticipo, para que un bono no deje la deuda sin liquidar por
+        // exactamente su monto. Ver el comentario largo en buildPreview.
+        const bonoApplications = [];
+        for (const advItem of [...adv.bonos].sort(byDateAsc)) {
+          const advRem = Math.round(advanceRemaining(advItem));
+          if (advRem <= 0) continue;
+          bonoApplications.push({ advanceId: advItem.id, amount: advRem });
+        }
+        const bonosTotal = bonoApplications.reduce((s, x) => s + x.amount, 0);
+
+        let remainingGross = grossInt + bonosTotal;
         const anticipoApplications = [];
         for (const advItem of [...adv.anticipos].sort(byDateAsc)) {
           if (remainingGross <= 0) break;
@@ -4901,14 +4924,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
           anticipoApplications.push({ advanceId: advItem.id, amount: apply });
           remainingGross -= apply;
         }
-        const bonoApplications = [];
-        for (const advItem of [...adv.bonos].sort(byDateAsc)) {
-          const advRem = Math.round(advanceRemaining(advItem));
-          if (advRem <= 0) continue;
-          bonoApplications.push({ advanceId: advItem.id, amount: advRem });
-        }
         const anticiposTotal = anticipoApplications.reduce((s, x) => s + x.amount, 0);
-        const bonosTotal = bonoApplications.reduce((s, x) => s + x.amount, 0);
         const advanceNoteParts = [];
         if (anticiposTotal) advanceNoteParts.push(`Anticipos ${anticipoApplications.length}`);
         if (bonosTotal) advanceNoteParts.push(`Bonos ${bonoApplications.length}`);
