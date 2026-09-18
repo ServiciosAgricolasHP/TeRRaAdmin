@@ -27,6 +27,7 @@ import {
   companiesService,
 } from "../services";
 import { payrollsService } from "../services/payrollsService";
+import { advancesService, normalizeAdvanceType } from "../services/advancesService";
 import { carriersService } from "../services/carriersService";
 import { tripsService, paymentsService, transportPayrollsService } from "../services/transportsService";
 
@@ -51,6 +52,19 @@ export const ENTITY_META = {
   company: { labelEs: "Empresa", service: companiesService, searchFields: ["alias", "razonSocial", "rut"], labelOf: (d) => d?.alias || d?.razonSocial, searchable: true },
   costCenter: { labelEs: "Centro de costo", service: costCentersService, searchFields: ["label"], labelOf: (d) => (d?.emoji ? `${d.emoji} ${d.label}` : d?.label), searchable: true },
   laborGroup: { labelEs: "Grupo de labor", service: laborGroupsService, searchFields: ["name"], labelOf: (d) => d?.name, searchable: true },
+  advance: {
+    labelEs: "Anticipo / bono",
+    service: advancesService,
+    searchFields: ["workerName", "workerRut"],
+    labelOf: (d) => {
+      if (!d) return null;
+      const tipo = normalizeAdvanceType(d.type) === "bono" ? "Bono" : "Anticipo";
+      const monto = Number(d.amount) || 0;
+      const quien = d.workerName || d.workerRut || "";
+      return `${tipo} ${monto.toLocaleString("es-CL")}${quien ? " · " + quien : ""}`;
+    },
+    searchable: true,
+  },
 
   // El resto tiene entrada solo para el badge/label del tipo (vista general
   // de Auditoría) — no aparecen en el buscador dedicado por registro porque

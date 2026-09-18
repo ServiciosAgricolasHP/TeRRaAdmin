@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { logsService } from "../services";
+import { advancesService } from "../services/advancesService";
+import WorkerAdvancesModal from "../components/WorkerAdvancesModal";
 import {
   ENTITY_META,
   entityLabelEs,
@@ -306,7 +308,10 @@ function sessionize(logs, gapMinutes) {
 // esta pantalla, así que los logs de transporte anteriores a ese cambio no la
 // tienen y no aparecen acá (los de la ficha del transportista sí, siempre).
 const SATELLITE_ENTITIES = {
-  worker: [{ entity: "workday", field: "meta.workerRut" }],
+  worker: [
+    { entity: "workday", field: "meta.workerRut" },
+    { entity: "advance", field: "meta.workerRut" },
+  ],
   carrier: [
     { entity: "transport", field: "meta.carrierId" },
     { entity: "transportPayment", field: "meta.carrierId" },
@@ -336,6 +341,9 @@ async function fetchSatelliteLogs(entityType, recordId) {
 // ordena en el cliente), así que no hace falta el hard cap ni el filtro de
 // fecha de la vista sesionizada de más abajo.
 function EntitySearchPanel() {
+  const [advancesFor, setAdvancesFor] = useState(null);
+  const [advanceItems, setAdvanceItems] = useState([]);
+  const [loadingAdvances, setLoadingAdvances] = useState(false);
   const types = useMemo(() => searchableEntityTypes(), []);
   const [entityType, setEntityType] = useState(types[0]?.value || "worker");
   const [query, setQuery] = useState("");
@@ -387,7 +395,7 @@ function EntitySearchPanel() {
 
   const pickRecord = async (doc) => {
     const label = meta.labelOf ? meta.labelOf(doc) : doc.name || doc.id;
-    setSelected({ id: doc.id, label });
+    setSelected({ id: doc.id, label, doc });
     setRecordLogs(null);
     setLoadingLogs(true);
     try {
@@ -482,6 +490,16 @@ function EntitySearchPanel() {
             </div>
           )}
 
+          {advancesFor && (
+            <WorkerAdvancesModal
+              workerKeys={[advancesFor.id, advancesFor.doc?.rut]}
+              name={advancesFor.doc?.name}
+              rut={advancesFor.doc?.rut || advancesFor.id}
+              items={advanceItems}
+              onClose={() => setAdvancesFor(null)}
+            />
+          )}
+
           {selected && (
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2 rounded-md bg-[var(--color-accent-soft)] px-3 py-2 text-sm">
@@ -489,13 +507,43 @@ function EntitySearchPanel() {
                   <b>{selected.label}</b>{" "}
                   <span className="text-xs text-[var(--color-muted)]">({meta.labelEs})</span>
                 </span>
-                <button
-                  type="button"
-                  onClick={() => { setSelected(null); setRecordLogs(null); }}
-                  className="text-xs text-[var(--color-muted)] underline hover:text-[var(--color-text)]"
-                >
-                  cambiar
-                </button>
+                <span className="flex items-center gap-3">
+                  {entityType === "worker" && (
+                    <button
+                      type="button"
+                      disabled={loadingAdvances}
+                      onClick={async () => {
+                        setLoadingAdvances(true);
+                        try {
+                          // Mismos parámetros que la pantalla de Anticipos para
+                          // compartir la entrada de caché en vez de releer.
+                          const rows = await advancesService.list({
+                            order: ["date", "desc"],
+                            cache: true,
+                            persist: true,
+                            ttl: 5 * 60 * 1000,
+                          });
+                          setAdvanceItems(rows);
+                          setAdvancesFor(selected);
+                        } catch (err) {
+                          console.error("No se pudieron cargar los anticipos:", err);
+                        } finally {
+                          setLoadingAdvances(false);
+                        }
+                      }}
+                      className="text-xs text-[var(--color-muted)] underline hover:text-[var(--color-text)] disabled:opacity-60"
+                    >
+                      {loadingAdvances ? "cargando…" : "🪙 anticipos y bonos"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => { setSelected(null); setRecordLogs(null); }}
+                    className="text-xs text-[var(--color-muted)] underline hover:text-[var(--color-text)]"
+                  >
+                    cambiar
+                  </button>
+                </span>
               </div>
               {loadingLogs ? (
                 <div className="py-6 text-center text-sm text-[var(--color-muted)]">Cargando historial…</div>
