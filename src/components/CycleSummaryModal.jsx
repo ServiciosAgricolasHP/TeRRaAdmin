@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { toPng, toBlob } from "html-to-image";
+import { captureFullWidthBlob, captureFullWidthDataUrl } from "../utils/imageCapture";
 import Modal from "./Modal";
 import ConfirmDialog from "./ConfirmDialog";
 import {
@@ -1554,7 +1554,7 @@ export default function CycleSummaryModal({
     if (!printRef.current) return;
     setBusy("download");
     try {
-      const dataUrl = await toPng(printRef.current, fullCaptureOpts());
+      const dataUrl = await captureFullWidthDataUrl(printRef.current, fullCaptureOpts());
       const link = document.createElement("a");
       link.download = filename;
       link.href = dataUrl;
@@ -1565,7 +1565,7 @@ export default function CycleSummaryModal({
     if (!printRef.current) return;
     setBusy("copy");
     try {
-      const blob = await toBlob(printRef.current, fullCaptureOpts());
+      const blob = await captureFullWidthBlob(printRef.current, fullCaptureOpts());
       if (!blob) throw new Error("No se pudo generar la imagen");
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       toast.success("Imagen copiada al portapapeles");
@@ -3853,7 +3853,7 @@ function LaborWorkerGrid({
     if (!ref.current) return;
     setBusy("copy");
     try {
-      const blob = await toBlob(ref.current, fullCaptureOpts());
+      const blob = await captureFullWidthBlob(ref.current, fullCaptureOpts());
       if (!blob) throw new Error("No se pudo generar la imagen");
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       toast.success("Imagen copiada al portapapeles");
@@ -3867,7 +3867,7 @@ function LaborWorkerGrid({
     if (!ref.current) return;
     setBusy("download");
     try {
-      const dataUrl = await toPng(ref.current, fullCaptureOpts());
+      const dataUrl = await captureFullWidthDataUrl(ref.current, fullCaptureOpts());
       const link = document.createElement("a");
       link.download = filename;
       link.href = dataUrl;
