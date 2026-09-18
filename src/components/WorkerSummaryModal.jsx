@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
-import { toPng, toBlob } from "html-to-image";
+import { captureFullWidthBlob, captureFullWidthDataUrl } from "../utils/imageCapture";
 import Modal from "./Modal";
 import { workdayMapKey, getTratoTierTotals, getTratoTiers, containerLabel, tratoTypeLabel, tratoUnitLabel, cosechaUnit } from "../utils/cosechaCombos";
 import { DEFAULT_OVERTIME_RATE } from "../utils/tratoHE";
@@ -245,7 +245,7 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
   // Vista: "por-ciclo" (default) o "lineal" (una sola tabla con columna Ciclo).
   // El modo lineal es útil cuando el trabajador anduvo en varios ciclos chicos
   // y querés ver la secuencia cronológica completa.
-  const [viewMode, setViewMode] = useState("por-ciclo");
+  const [viewMode, setViewMode] = useState("lineal");
   // Filtro por status de pago. Default: mostrar todos. El toggle deja al
   // usuario esconder pagados / en nómina / sin pagar. Los ocultos NO cuentan
   // en los totales de las tablas.
@@ -347,7 +347,7 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
     if (!printRef.current) return;
     setBusy("download");
     try {
-      const dataUrl = await toPng(printRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const dataUrl = await captureFullWidthDataUrl(printRef.current);
       const link = document.createElement("a");
       link.download = `resumen_${(worker?.name || "trabajador").replace(/\s+/g, "_")}.png`;
       link.href = dataUrl;
@@ -361,7 +361,7 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
     if (!printRef.current) return;
     setBusy("copy");
     try {
-      const blob = await toBlob(printRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const blob = await captureFullWidthBlob(printRef.current);
       if (!blob) throw new Error("No se pudo generar la imagen");
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       toast.success("Imagen copiada al portapapeles");
@@ -376,7 +376,10 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
     if (!printRef.current) return;
     const html = printRef.current.outerHTML;
     const win = window.open("", "_blank", "width=900,height=700");
-    if (!win) return;
+    if (!win) {
+      toast.warning("Permite las ventanas emergentes para imprimir.");
+      return;
+    }
     win.document.write(`<!DOCTYPE html><html><head><title>Resumen — ${worker?.name || ""}</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
@@ -402,12 +405,16 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
           <button onClick={onClose} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
             Cerrar
           </button>
-          <button onClick={handleCopy} disabled={busy === "copy" || loading} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
-            {busy === "copy" ? "Copiando..." : "📋 Copiar imagen"}
-          </button>
-          <button onClick={handleDownload} disabled={busy === "download" || loading} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
-            {busy === "download" ? "Descargando..." : "📥 Descargar PNG"}
-          </button>
+          {viewMode !== "lineal" && (
+            <>
+              <button onClick={handleCopy} disabled={busy === "copy" || loading} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
+                {busy === "copy" ? "Copiando..." : "📋 Copiar imagen"}
+              </button>
+              <button onClick={handleDownload} disabled={busy === "download" || loading} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
+                {busy === "download" ? "Descargando..." : "📥 Descargar PNG"}
+              </button>
+            </>
+          )}
           <button onClick={handlePrint} disabled={loading} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
             🖨 Imprimir
           </button>
@@ -1322,17 +1329,11 @@ function LinearTable({ data, catalogs, titles, onUpdateLinearTitles, onToggleHid
   // Captura local solo del bloque (sin el resto del modal). Usa el mismo
   // truco que `LaborWorkerGrid`: la ref envuelve el contenedor visible,
   // los botones de acción quedan FUERA del ref.
-  const fullCaptureOpts = () => ({
-    backgroundColor: "#ffffff",
-    pixelRatio: 2,
-    width: localRef.current?.scrollWidth || undefined,
-    height: localRef.current?.scrollHeight || undefined,
-  });
   const handleCopy = async () => {
     if (!localRef.current) return;
     setBusy("copy");
     try {
-      const blob = await toBlob(localRef.current, fullCaptureOpts());
+      const blob = await captureFullWidthBlob(localRef.current);
       if (!blob) throw new Error("No se pudo generar la imagen");
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       toast.success("Imagen copiada al portapapeles");
@@ -1346,7 +1347,7 @@ function LinearTable({ data, catalogs, titles, onUpdateLinearTitles, onToggleHid
     if (!localRef.current) return;
     setBusy("download");
     try {
-      const dataUrl = await toPng(localRef.current, fullCaptureOpts());
+      const dataUrl = await captureFullWidthDataUrl(localRef.current);
       const a = document.createElement("a");
       a.download = "resumen_cronologico.png";
       a.href = dataUrl;
@@ -1357,7 +1358,10 @@ function LinearTable({ data, catalogs, titles, onUpdateLinearTitles, onToggleHid
     if (!localRef.current) return;
     const html = localRef.current.outerHTML;
     const win = window.open("", "_blank", "width=1100,height=800");
-    if (!win) return;
+    if (!win) {
+      toast.warning("Permite las ventanas emergentes para imprimir.");
+      return;
+    }
     win.document.write(`<!DOCTYPE html><html><head><title>Resumen cronológico</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }

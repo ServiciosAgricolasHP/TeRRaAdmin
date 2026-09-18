@@ -415,7 +415,7 @@ export default function Layout() {
                 type="button"
                 onClick={() => setProfileOpen(true)}
                 title="Mi perfil"
-                className="truncate underline decoration-dotted underline-offset-2 hover:text-[var(--color-text)]"
+                className="inline-flex min-h-[32px] max-w-[9rem] items-center truncate underline decoration-dotted underline-offset-2 hover:text-[var(--color-text)] sm:max-w-none"
               >
                 {displayName}
               </button>

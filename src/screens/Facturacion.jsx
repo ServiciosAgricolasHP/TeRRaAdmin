@@ -6,7 +6,7 @@
 // mensual y se gestiona el estado de pago de cada factura.
 
 import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
-import { toPng, toBlob } from "html-to-image";
+import { captureFullWidthBlob, captureFullWidthDataUrl } from "../utils/imageCapture";
 import { writeBatch, doc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { companiesService, dteDocumentsService, costCentersService, informalExpensesService } from "../services";
@@ -862,7 +862,7 @@ export default function Facturacion() {
     if (!retencionesPrintRef.current) return;
     setExportBusy("copy");
     try {
-      const blob = await toBlob(retencionesPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const blob = await captureFullWidthBlob(retencionesPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
       if (!blob) throw new Error("No se pudo generar la imagen");
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       toast.success("Imagen copiada al portapapeles");
@@ -877,7 +877,7 @@ export default function Facturacion() {
     if (!retencionesPrintRef.current) return;
     setExportBusy("png");
     try {
-      const dataUrl = await toPng(retencionesPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const dataUrl = await captureFullWidthDataUrl(retencionesPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
       const link = document.createElement("a");
       link.download = `${exportFileBase}.png`;
       link.href = dataUrl;
@@ -893,7 +893,10 @@ export default function Facturacion() {
     if (!retencionesPrintRef.current) return;
     const html = retencionesPrintRef.current.outerHTML;
     const win = window.open("", "_blank", "width=1000,height=700");
-    if (!win) return;
+    if (!win) {
+      toast.warning("Permite las ventanas emergentes para imprimir.");
+      return;
+    }
     win.document.write(`<!DOCTYPE html><html><head><title>Retenciones</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
@@ -1077,7 +1080,7 @@ export default function Facturacion() {
     if (!el) return;
     setBusyFor(key, "copy");
     try {
-      const blob = await toBlob(el, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const blob = await captureFullWidthBlob(el, { backgroundColor: "#ffffff", pixelRatio: 2 });
       if (!blob) throw new Error("No se pudo generar la imagen");
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       toast.success(`Copiado: ${g.razon || "contraparte"}`);
@@ -1094,7 +1097,7 @@ export default function Facturacion() {
     if (!el) return;
     setBusyFor(key, "png");
     try {
-      const dataUrl = await toPng(el, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const dataUrl = await captureFullWidthDataUrl(el, { backgroundColor: "#ffffff", pixelRatio: 2 });
       const link = document.createElement("a");
       link.download = `${groupFileBase(g)}.png`;
       link.href = dataUrl;
@@ -1112,7 +1115,10 @@ export default function Facturacion() {
     if (!el) return;
     const html = el.outerHTML;
     const win = window.open("", "_blank", "width=1000,height=700");
-    if (!win) return;
+    if (!win) {
+      toast.warning("Permite las ventanas emergentes para imprimir.");
+      return;
+    }
     win.document.write(`<!DOCTYPE html><html><head><title>Retención ${g.razon || ""}</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
@@ -1257,7 +1263,7 @@ export default function Facturacion() {
     if (!docListPrintRef.current) return;
     setDocListBusy("copy");
     try {
-      const blob = await toBlob(docListPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const blob = await captureFullWidthBlob(docListPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
       if (!blob) throw new Error("No se pudo generar la imagen");
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       toast.success("Imagen copiada al portapapeles");
@@ -1272,7 +1278,7 @@ export default function Facturacion() {
     if (!docListPrintRef.current) return;
     setDocListBusy("png");
     try {
-      const dataUrl = await toPng(docListPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const dataUrl = await captureFullWidthDataUrl(docListPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
       const link = document.createElement("a");
       link.download = `${docListFileBase}.png`;
       link.href = dataUrl;
@@ -1483,7 +1489,7 @@ export default function Facturacion() {
     if (!resumenPrintRef.current) return;
     setResumenBusy("copy");
     try {
-      const blob = await toBlob(resumenPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const blob = await captureFullWidthBlob(resumenPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
       if (!blob) throw new Error("No se pudo generar la imagen");
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       toast.success("Imagen copiada al portapapeles");
@@ -1498,7 +1504,7 @@ export default function Facturacion() {
     if (!resumenPrintRef.current) return;
     setResumenBusy("png");
     try {
-      const dataUrl = await toPng(resumenPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const dataUrl = await captureFullWidthDataUrl(resumenPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
       const link = document.createElement("a");
       link.download = `${resumenFileBase}.png`;
       link.href = dataUrl;
@@ -2689,7 +2695,7 @@ function CostCentersModal({ costCenters, docs, informalExpenses, companiesById, 
     if (!printRef.current) return;
     setExportBusy("copy");
     try {
-      const blob = await toBlob(printRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const blob = await captureFullWidthBlob(printRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
       if (!blob) throw new Error("No se pudo generar la imagen");
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       toast.success("Imagen copiada al portapapeles");
@@ -2704,7 +2710,7 @@ function CostCentersModal({ costCenters, docs, informalExpenses, companiesById, 
     if (!printRef.current) return;
     setExportBusy("png");
     try {
-      const dataUrl = await toPng(printRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const dataUrl = await captureFullWidthDataUrl(printRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
       const link = document.createElement("a");
       link.download = `${fileBase}.png`;
       link.href = dataUrl;
@@ -5246,7 +5252,7 @@ function PendientesModal({ items, totals, company, onClose, onSelectDoc }) {
     if (!printRef.current) return;
     setBusy("copy");
     try {
-      const blob = await toBlob(printRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const blob = await captureFullWidthBlob(printRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
       if (!blob) throw new Error("No se pudo generar la imagen");
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       toast.success("Imagen copiada al portapapeles");
@@ -5261,7 +5267,7 @@ function PendientesModal({ items, totals, company, onClose, onSelectDoc }) {
     if (!printRef.current) return;
     setBusy("png");
     try {
-      const dataUrl = await toPng(printRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const dataUrl = await captureFullWidthDataUrl(printRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
       const link = document.createElement("a");
       link.download = `${fileBase}.png`;
       link.href = dataUrl;
@@ -5277,7 +5283,10 @@ function PendientesModal({ items, totals, company, onClose, onSelectDoc }) {
     if (!printRef.current) return;
     const html = printRef.current.outerHTML;
     const win = window.open("", "_blank", "width=1000,height=700");
-    if (!win) return;
+    if (!win) {
+      toast.warning("Permite las ventanas emergentes para imprimir.");
+      return;
+    }
     win.document.write(`<!DOCTYPE html><html><head><title>Pendientes</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }

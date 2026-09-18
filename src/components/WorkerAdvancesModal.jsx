@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Modal from "./Modal";
 import { logsService } from "../services";
+import { useIsMobile } from "../hooks/useIsMobile";
 import { advanceSign, advanceRemaining, advanceTypeMeta, advanceMatchesWorker } from "../services/advancesService";
 import { formatRutForDisplay } from "../utils/rutUtils";
 
@@ -58,6 +59,8 @@ export default function WorkerAdvancesModal({ workerKeys, name, rut, items, onCl
       .filter((a) => advanceMatchesWorker(a, keys))
       .sort((x, y) => String(y.date || "").localeCompare(String(x.date || "")));
   }, [items, workerKeys]);
+
+  const isMobile = useIsMobile();
 
   // `workerKeys` llega como literal desde el padre, así que la dependencia es
   // su contenido y no la identidad del array.
@@ -134,6 +137,50 @@ export default function WorkerAdvancesModal({ workerKeys, name, rut, items, onCl
           <p className="rounded-md border border-dashed border-[var(--color-border)] p-6 text-center text-sm text-[var(--color-muted)]">
             Sin anticipos ni bonos registrados.
           </p>
+        ) : isMobile ? (
+          <div className="space-y-2">
+            {mine.map((a) => {
+              const status = a.status || "pending";
+              const meta = advanceTypeMeta(a.type);
+              const sign = advanceSign(a);
+              const paid = Number(a.amountPaid) || 0;
+              const who = attribution.map.get(a.id);
+              return (
+                <div key={a.id} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm">{meta.icon} <span className="font-medium">{meta.label}</span></div>
+                      <div className="font-mono text-xs text-[var(--color-muted)]">{a.date}</div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className={`font-semibold tabular-nums ${sign > 0 ? "text-[var(--color-success)]" : "text-[var(--color-warning)]"}`}>
+                        {sign > 0 ? "+" : "−"} {fmtCurrency(a.amount)}
+                      </div>
+                      <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs ${STATUS_CLASS[status]}`}>
+                        {STATUS_LABEL[status]}
+                      </span>
+                    </div>
+                  </div>
+                  {a.note && <div className="mt-1 text-xs text-[var(--color-muted)]">{a.note}</div>}
+                  <div className="mt-2 space-y-0.5 text-xs text-[var(--color-muted)]">
+                    {paid > 0 && <div>Liquidado: {fmtCurrency(paid)}</div>}
+                    {who?.created ? (
+                      <div className="break-all">
+                        Puesto por {whoLabel(who.created)} · {shortWhen(who.created.at)}
+                      </div>
+                    ) : (
+                      <div>{loadingWho ? "Buscando quién lo puso…" : "Sin registro de quién lo puso"}</div>
+                    )}
+                    {who?.lastEdit && (
+                      <div className="break-all">
+                        Editado por {whoLabel(who.lastEdit)} · {shortWhen(who.lastEdit.at)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ) : (
           <div className="overflow-x-auto rounded-md border border-[var(--color-border)]">
             <table className="w-full min-w-[520px] text-sm">

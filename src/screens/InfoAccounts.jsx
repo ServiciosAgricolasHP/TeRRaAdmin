@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
-import { toBlob, toPng } from "html-to-image";
+import { captureFullWidthBlob, captureFullWidthDataUrl } from "../utils/imageCapture";
 import Modal from "../components/Modal";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { contactCardsService } from "../services";
@@ -142,12 +142,12 @@ export default function InfoAccounts() {
           navigator.clipboard &&
           typeof navigator.clipboard.write === "function";
         if (canCopyImage) {
-          const blob = await toBlob(imageRef.current, { pixelRatio: 2, cacheBust: true });
+          const blob = await captureFullWidthBlob(imageRef.current, { pixelRatio: 2, cacheBust: true });
           if (!blob) throw new Error("blob vacío");
           await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
           toast.success("Imagen copiada al portapapeles");
         } else {
-          const dataUrl = await toPng(imageRef.current, { pixelRatio: 2, cacheBust: true });
+          const dataUrl = await captureFullWidthDataUrl(imageRef.current, { pixelRatio: 2, cacheBust: true });
           const a = document.createElement("a");
           a.download = `ficha_${(imageJob.card.name || "ficha").replace(/\s+/g, "_")}.png`;
           a.href = dataUrl;
@@ -157,7 +157,7 @@ export default function InfoAccounts() {
       } catch {
         // Fallback final: intentar descarga si el copy falló.
         try {
-          const dataUrl = await toPng(imageRef.current, { pixelRatio: 2, cacheBust: true });
+          const dataUrl = await captureFullWidthDataUrl(imageRef.current, { pixelRatio: 2, cacheBust: true });
           const a = document.createElement("a");
           a.download = `ficha_${(imageJob.card.name || "ficha").replace(/\s+/g, "_")}.png`;
           a.href = dataUrl;

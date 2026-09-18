@@ -4,7 +4,7 @@ import { AgGridReact } from "ag-grid-react";
 import { ModuleRegistry, AllCommunityModule } from "ag-grid-community";
 import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-quartz.css";
-import { toPng, toBlob } from "html-to-image";
+import { captureFullWidthBlob, captureFullWidthDataUrl } from "../utils/imageCapture";
 import { cyclesService, faenasService, subfaenasService, workdaysService, workersService, groupLeadersService, laborGroupsService } from "../services";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import { parseAmount } from "../utils/formula";
@@ -2778,7 +2778,7 @@ export default function CycleDetail() {
     setExporting(true);
     try {
       const bg = getComputedStyle(document.body).backgroundColor || "#ffffff";
-      const dataUrl = await toPng(photoRef.current, { backgroundColor: bg, pixelRatio: 2, cacheBust: true });
+      const dataUrl = await captureFullWidthDataUrl(photoRef.current, { backgroundColor: bg, pixelRatio: 2, cacheBust: true });
       const link = document.createElement("a");
       link.download = `${cycle.label}_${activeLabor?.name || "labor"}_${todayStr()}.png`.replace(/\s+/g, "_");
       link.href = dataUrl;
@@ -2797,7 +2797,7 @@ export default function CycleDetail() {
     setExporting(true);
     try {
       const bg = getComputedStyle(document.body).backgroundColor || "#ffffff";
-      const blob = await toBlob(photoRef.current, { backgroundColor: bg, pixelRatio: 2, cacheBust: true });
+      const blob = await captureFullWidthBlob(photoRef.current, { backgroundColor: bg, pixelRatio: 2, cacheBust: true });
       if (!blob) throw new Error("No se pudo generar la imagen");
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       showToast("Imagen copiada");
@@ -2814,9 +2814,12 @@ export default function CycleDetail() {
     setExporting(true);
     try {
       const bg = getComputedStyle(document.body).backgroundColor || "#ffffff";
-      const dataUrl = await toPng(photoRef.current, { backgroundColor: bg, pixelRatio: 2, cacheBust: true });
+      const dataUrl = await captureFullWidthDataUrl(photoRef.current, { backgroundColor: bg, pixelRatio: 2, cacheBust: true });
       const win = window.open("", "_blank", "width=1100,height=800");
-      if (!win) return;
+      if (!win) {
+        toast.warning("Permite las ventanas emergentes para imprimir.");
+        return;
+      }
       win.document.write(`<!DOCTYPE html><html><head><title>${cycle.label} · ${activeLabor?.name || ""}</title>
         <style>
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }

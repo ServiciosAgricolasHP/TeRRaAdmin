@@ -366,7 +366,15 @@ export default function Advances() {
                     </span>
                   </td>
                   <td className="px-3 py-2 font-mono text-xs">{a.date}</td>
-                  <td className="px-3 py-2">{a.workerName}</td>
+                  <td className="px-3 py-2">
+                    <button
+                      onClick={() => setWorkerView({ keys: [advanceWorkerKey(a), a.workerRut], name: a.workerName, rut: a.workerRut })}
+                      className="text-left underline decoration-dotted underline-offset-2 hover:text-[var(--color-accent)]"
+                      title="Ver todos los anticipos y bonos de esta persona"
+                    >
+                      {a.workerName}
+                    </button>
+                  </td>
                   <td className="px-3 py-2 font-mono text-xs">{formatRutForDisplay(a.workerRut)}</td>
                   <td className={`px-3 py-2 text-right font-medium tabular-nums ${amountColor}`}>
                     <div>{signLabel} {fmtCurrency(a.amount)}</div>
@@ -613,15 +621,6 @@ function AdvanceFormModal({ open, item, items = [], onClose, onSaved }) {
 
   return (
     <>
-    <ConfirmDialog
-      open={!!dupConfirm}
-      title="Puede estar duplicado"
-      message={dupConfirm?.message || ""}
-      confirmLabel="Crear igual"
-      busy={busy}
-      onConfirm={() => doSave(dupConfirm.amount)}
-      onCancel={() => setDupConfirm(null)}
-    />
     <Modal
       open={open}
       onClose={onClose}
@@ -820,6 +819,20 @@ function AdvanceFormModal({ open, item, items = [], onClose, onSaved }) {
         </div>
       </div>
     </Modal>
+
+    {/* Va DESPUÉS del formulario a propósito: los dos son `Modal`, que se
+        monta en su lugar del árbol con `z-50` fijo y sin portal. Con el mismo
+        z-index gana el último del DOM, así que puesto antes queda tapado por
+        el formulario — abierto, pero invisible. */}
+    <ConfirmDialog
+      open={!!dupConfirm}
+      title="Puede estar duplicado"
+      message={dupConfirm?.message || ""}
+      confirmLabel="Crear igual"
+      busy={busy}
+      onConfirm={() => doSave(dupConfirm.amount)}
+      onCancel={() => setDupConfirm(null)}
+    />
     </>
   );
 }

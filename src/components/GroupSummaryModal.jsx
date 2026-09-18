@@ -11,7 +11,7 @@
 // unión de ciclos con producción de cualquier integrante.
 
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
-import { toPng, toBlob } from "html-to-image";
+import { captureFullWidthBlob, captureFullWidthDataUrl } from "../utils/imageCapture";
 import Modal from "./Modal";
 import { useCatalogs } from "../contexts/CatalogsContext";
 import { useToast } from "../contexts/ToastContext";
@@ -177,12 +177,12 @@ export default function GroupSummaryModal({ open, onClose }) {
     setBusy(action);
     try {
       if (action === "copy") {
-        const blob = await toBlob(matrixRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+        const blob = await captureFullWidthBlob(matrixRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
         if (!blob) throw new Error("No se pudo generar la imagen");
         await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
         toast.success("Imagen copiada al portapapeles");
       } else if (action === "download") {
-        const dataUrl = await toPng(matrixRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+        const dataUrl = await captureFullWidthDataUrl(matrixRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
         const link = document.createElement("a");
         link.download = `grupo_matriz_${new Date().toISOString().slice(0, 10)}.png`;
         link.href = dataUrl;
@@ -202,12 +202,12 @@ export default function GroupSummaryModal({ open, onClose }) {
     try {
       const worker = selected.find((s) => s.id === rut);
       if (action === "copy") {
-        const blob = await toBlob(refEl, { backgroundColor: "#ffffff", pixelRatio: 2 });
+        const blob = await captureFullWidthBlob(refEl, { backgroundColor: "#ffffff", pixelRatio: 2 });
         if (!blob) throw new Error("No se pudo generar la imagen");
         await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
         toast.success("Imagen copiada al portapapeles");
       } else {
-        const dataUrl = await toPng(refEl, { backgroundColor: "#ffffff", pixelRatio: 2 });
+        const dataUrl = await captureFullWidthDataUrl(refEl, { backgroundColor: "#ffffff", pixelRatio: 2 });
         const link = document.createElement("a");
         link.download = `resumen_${(worker?.name || "trabajador").replace(/\s+/g, "_")}.png`;
         link.href = dataUrl;
@@ -229,7 +229,7 @@ export default function GroupSummaryModal({ open, onClose }) {
     setBusy(`all_${action}`);
     try {
       if (action === "copy") {
-        const blob = await toBlob(everythingRef.current, {
+        const blob = await captureFullWidthBlob(everythingRef.current, {
           backgroundColor: "#ffffff",
           pixelRatio: 2,
         });
@@ -237,7 +237,7 @@ export default function GroupSummaryModal({ open, onClose }) {
         await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
         toast.success("Imagen completa copiada al portapapeles");
       } else {
-        const dataUrl = await toPng(everythingRef.current, {
+        const dataUrl = await captureFullWidthDataUrl(everythingRef.current, {
           backgroundColor: "#ffffff",
           pixelRatio: 2,
         });

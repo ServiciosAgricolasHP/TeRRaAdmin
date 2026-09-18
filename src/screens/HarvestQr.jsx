@@ -1,9 +1,11 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { serverTimestamp } from "firebase/firestore";
 import { Link } from "react-router-dom";
 import { useToast } from "../contexts/ToastContext";
 import { faenasService, cyclesService, workdaysService, harvestWeightsService, qrPrefixesService } from "../services";
 import { findWorkerByRut, workersService } from "../services/workersService";
 import { useCatalogs } from "../contexts/CatalogsContext";
+import { useIsMobile } from "../hooks/useIsMobile";
 import { useAuth } from "../contexts/AuthContext";
 import { comboKey, getDayCombos, workdayDocId, qualityLabel, containerLabel, mapHarvestCodes, invertHarvestCodes } from "../utils/cosechaCombos";
 import Modal from "../components/Modal";
@@ -34,6 +36,89 @@ const codesToRelease = (codes, incoming) => {
   if (!pfx) return [];
   return codes.filter((c) => c !== incoming && prefixOfCode(c) === pfx);
 };
+
+// Alto mínimo de toque del proyecto. Se usa en los botones que viven dentro
+// de celdas y filas: llega a 32px sin agrandar la fuente ni ensanchar la
+// columna, que es lo que un `py-` más grande sí haría.
+const TAP = "min-h-[32px] inline-flex items-center justify-center";
+
+const codesOfWorker = (w) => (w?.idQr || []).map((c) => String(c || "").trim().toUpperCase()).filter(Boolean);
+
+// Deja `code` en manos de `toWorker`: se lo quita a quien lo tuviera y suelta
+// el que esa persona ya tenía de la misma cosecha. Devuelve los códigos que
+// quedaron libres, para poder decirlo.
+async function assignQrCode(code, toWorker, fromWorker) {
+  const clean = String(code || "").trim().toUpperCase();
+  if (!clean) throw new Error("El código es obligatorio");
+  if (fromWorker && fromWorker.id === toWorker.id) return { released: [], code: clean };
+
+  if (fromWorker) {
+    await workersService.update(fromWorker.id, {
+      idQr: codesOfWorker(fromWorker).filter((c) => c !== clean),
+    });
+  }
+  const already = codesOfWorker(toWorker);
+  const released = codesToRelease(already, clean);
+  if (!already.includes(clean) || released.length) {
+    await workersService.update(toWorker.id, {
+      idQr: [...already.filter((c) => !released.includes(c)), ...(already.includes(clean) ? [] : [clean])],
+    });
+  }
+  return { released, code: clean };
+}
+
+// Quién tiene hoy ese código, si alguien lo tiene.
+const ownerOfCode = (workers, code) => {
+  const clean = String(code || "").trim().toUpperCase();
+  if (!clean) return null;
+  return workers.find((w) => codesOfWorker(w).includes(clean)) || null;
+};
+
+const numberOfCode = (code) => {
+  const m = /^.+-(\d+)$/.exec(String(code || ""));
+  return m ? { n: Number(m[1]), pad: m[1].length } : null;
+};
+
+// Códigos del prefijo que hoy no tiene nadie, para no tener que sacarle el
+// suyo a otra persona. No hay catálogo de QRs impresos, así que "libre" se
+// deduce de dos fuentes: los números que faltan en la serie que sí está
+// asignada, y los que aparecen en pesajes viejos (esos existen físicamente
+// seguro, alguien los escaneó). Un hueco marcado `impreso` es la mejor
+// sugerencia posible; el `fueraDeRango` es un número que quizá nunca se
+// imprimió, y solo se ofrece cuando no quedan huecos.
+function suggestFreeCodes(workers, prefixId, knownCodes, max = 3) {
+  if (!prefixId) return [];
+  const taken = new Set();
+  const pads = new Map();
+  let top = 0;
+  const contar = (code) => {
+    if (prefixOfCode(code) !== prefixId) return null;
+    const parsed = numberOfCode(code);
+    if (!parsed) return null;
+    pads.set(parsed.pad, (pads.get(parsed.pad) || 0) + 1);
+    if (parsed.n > top) top = parsed.n;
+    return parsed;
+  };
+  for (const w of workers) {
+    for (const c of codesOfWorker(w)) {
+      const parsed = contar(c);
+      if (parsed) taken.add(parsed.n);
+    }
+  }
+  for (const c of knownCodes) contar(c);
+
+  const pad = [...pads.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]?.[0] || 1;
+  const fmt = (n) => `${prefixId}-${String(n).padStart(pad, "0")}`;
+
+  const out = [];
+  for (let i = 1; i <= top && out.length < max; i++) {
+    if (taken.has(i)) continue;
+    const code = fmt(i);
+    out.push({ code, impreso: knownCodes.has(code) });
+  }
+  if (out.length === 0) out.push({ code: fmt(top + 1), impreso: false, fueraDeRango: true });
+  return out;
+}
 
 const todayKey = () => new Date().toLocaleDateString("sv-SE");
 const daysAgoKey = (n) => {
@@ -210,19 +295,19 @@ export default function HarvestQr() {
           <div className="flex flex-wrap gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1 text-sm">
             <button
               onClick={() => setTab("sync")}
-              className={`rounded px-3 py-1 ${tab === "sync" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "text-[var(--color-muted)]"}`}
+              className={`${TAP} flex-1 rounded px-3 ${tab === "sync" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "text-[var(--color-muted)]"}`}
             >
               🔄 Sincronizar cosechas
             </button>
             <button
               onClick={() => setTab("weights")}
-              className={`rounded px-3 py-1 ${tab === "weights" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "text-[var(--color-muted)]"}`}
+              className={`${TAP} flex-1 rounded px-3 ${tab === "weights" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "text-[var(--color-muted)]"}`}
             >
               ⚖️ Pesajes
             </button>
             <button
               onClick={() => setTab("qr")}
-              className={`rounded px-3 py-1 ${tab === "qr" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "text-[var(--color-muted)]"}`}
+              className={`${TAP} flex-1 rounded px-3 ${tab === "qr" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "text-[var(--color-muted)]"}`}
             >
               📱 Gestión QRs
             </button>
@@ -597,15 +682,41 @@ function SyncModal({ prefix, cycle, onClose, onSynced }) {
         await cyclesService.update(fresh.id, { days: nextDays, labors: nextLabors });
       }
 
+      // Una jornada ya liquidada no se toca por detrás. Si se recalcula, queda
+      // con monto nuevo y `payrollId` viejo (el upsert hace merge y no manda
+      // ese campo): sigue contando como pagada, se sigue filtrando de las
+      // nóminas futuras, y la diferencia no se cobra nunca.
+      //
+      // Se leen de a tandas y en paralelo — son lecturas, no escrituras, así
+      // que no hay nada que ordenar. Una query de rango sobre `date` sería una
+      // sola lectura pero exige un índice compuesto que el proyecto no tiene.
+      setProgress({ label: "Revisando jornadas ya liquidadas…", done: 0, total: groups.size });
+      const claves = [...groups.values()].map((g) => ({
+        g,
+        docId: workdayDocId(fresh.id, labor.id, g.rut, g.dateKey, g.ck),
+      }));
+      const bloqueadas = new Set();
+      const blocked = [];
+      for (let i = 0; i < claves.length; i += 25) {
+        const tanda = claves.slice(i, i + 25);
+        const docs = await Promise.all(tanda.map((k) => workdaysService.getById(k.docId)));
+        docs.forEach((doc, j) => {
+          if (!doc?.payrollId) return;
+          bloqueadas.add(tanda[j].docId);
+          blocked.push(`${tanda[j].g.rut} · ${tanda[j].g.dateKey}`);
+        });
+        setProgress({ label: "Revisando jornadas ya liquidadas…", done: Math.min(i + 25, claves.length), total: claves.length });
+      }
+
       let written = 0;
       const zeroPriceDays = new Set();
       setProgress({ label: "Escribiendo jornadas…", done: 0, total: groups.size });
-      for (const g of groups.values()) {
+      for (const { g, docId } of claves) {
+        if (bloqueadas.has(docId)) continue;
         const combos = getDayCombos(fresh.dayPrices, labor.id, g.dateKey, "unit");
         const combo = combos.find((c) => c.key === g.ck) || { price: 0, mode: "unit" };
         const amount = combo.mode === "flat" ? combo.price : g.qty * combo.price;
         if (g.qty > 0 && amount === 0) zeroPriceDays.add(g.dateKey);
-        const docId = workdayDocId(fresh.id, labor.id, g.rut, g.dateKey, g.ck);
         const worker = workerByRut.get(g.rut);
         await workdaysService.upsert(docId, {
           cycleId: fresh.id,
@@ -621,7 +732,7 @@ function SyncModal({ prefix, cycle, onClose, onSynced }) {
           harvestPrefix: prefix.id,
         });
         written++;
-        setProgress({ label: "Escribiendo jornadas…", done: written, total: groups.size });
+        setProgress({ label: "Escribiendo jornadas…", done: written, total: claves.length });
       }
 
       setProgress({ label: "Guardando el resultado…" });
@@ -636,6 +747,7 @@ function SyncModal({ prefix, cycle, onClose, onSynced }) {
         daysAdded,
         workersAdded: workersToAdd.length,
         unknownRuts,
+        blocked,
         zeroPriceDays: [...zeroPriceDays].sort(),
       });
       toast.success(`Sincronizado: ${written} jornada(s) actualizadas desde ${weights.length} pesaje(s)`);
@@ -693,6 +805,11 @@ function SyncModal({ prefix, cycle, onClose, onSynced }) {
             {result.unknownRuts.length > 0 && (
               <div className="text-[var(--color-danger)]">
                 ⚠ Sin ficha en Trabajadores: {result.unknownRuts.join(", ")} — sus jornadas quedan invisibles hasta que los crees y vuelvas a sincronizar.
+              </div>
+            )}
+            {result.blocked.length > 0 && (
+              <div className="text-[var(--color-warning,#d97706)]">
+                ⚠ No se tocaron {result.blocked.length} jornada(s) ya liquidadas: {result.blocked.join(", ")}. Si el pesaje cambió, la diferencia hay que corregirla desde la nómina que las pagó.
               </div>
             )}
             {result.zeroPriceDays.length > 0 && (
@@ -897,7 +1014,17 @@ function WeightsExplorer({ prefixes, faenaById }) {
   const [editing, setEditing] = useState(null); // null | { mode, data }
   const [reloadKey, setReloadKey] = useState(0);
 
+  const isMobile = useIsMobile();
   const prefixById = useMemo(() => new Map(prefixes.map((p) => [p.id, p])), [prefixes]);
+
+  const knownCodes = useMemo(() => {
+    const set = new Set();
+    for (const w of weights) {
+      const c = String(w.idQr || "").trim().toUpperCase();
+      if (c) set.add(c);
+    }
+    return set;
+  }, [weights]);
 
   // Se indexa por las dos llaves porque el pesaje guarda el rut que escaneó la
   // app, que puede ser el docId (id estable) o el rut legal actual si el
@@ -940,13 +1067,17 @@ function WeightsExplorer({ prefixes, faenaById }) {
     return { code: needle, owners, keys, freed: true };
   }, [workers, weights, search]);
 
-  useEffect(() => {
-    let cancelled = false;
+  // Con `cache: true`: tras asignar un QR el servicio invalida la entrada, así
+  // que esta llamada trae la lista fresca; el resto de las veces no cuesta
+  // lecturas.
+  const loadWorkers = () =>
     workersService
       .list({ order: ["name", "asc"], cache: true, persist: true, ttl: 2 * 60 * 60 * 1000 })
-      .then((list) => { if (!cancelled) setWorkers(list); })
+      .then(setWorkers)
       .catch(() => { /* sin nombres se muestra el rut, no vale la pena molestar */ });
-    return () => { cancelled = true; };
+
+  useEffect(() => {
+    loadWorkers();
   }, []);
 
   useEffect(() => {
@@ -1142,6 +1273,39 @@ function WeightsExplorer({ prefixes, faenaById }) {
         <p className="rounded-md border border-dashed border-[var(--color-border)] p-6 text-center text-sm text-[var(--color-muted)]">
           No hay pesajes en este rango{prefixFilter || search ? " con los filtros aplicados" : ""}.
         </p>
+      ) : groupBy === "detail" && isMobile ? (
+        <div className="space-y-2">
+          {view.detail.slice(0, DETAIL_CAP).map((d) => (
+            <div key={d.id} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{d.name || d.rut}</div>
+                  {d.name && <div className="font-mono text-xs text-[var(--color-muted)]">{d.rut}</div>}
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="text-lg font-semibold leading-none">{fmt(d.qty)}</div>
+                  <div className="text-xs text-[var(--color-muted)]">{d.date}</div>
+                </div>
+              </div>
+              <div className="mt-2 space-y-0.5 text-xs text-[var(--color-muted)]">
+                <div>{d.comboLabel}</div>
+                <div className="font-mono">{d.idQr || d.prefixId}</div>
+                {d.supervisor && <div className="break-all">Supervisor: {d.supervisor}</div>}
+              </div>
+              <button
+                onClick={() => setEditing({ mode: "edit", data: { id: d.id, rut: d.rut, dateKey: d.date, prefix: d.prefixId, x: d.x, y: d.y, amount: d.qty, idQr: d.idQr } })}
+                className={`${TAP} mt-2 w-full rounded-md border border-[var(--color-border)] px-2.5 text-xs hover:bg-[var(--color-accent-soft)]`}
+              >
+                Editar
+              </button>
+            </div>
+          ))}
+          {view.detail.length > DETAIL_CAP && (
+            <p className="rounded-md border border-dashed border-[var(--color-border)] p-3 text-center text-xs text-[var(--color-muted)]">
+              Mostrando {DETAIL_CAP} de {fmt(view.detail.length)} pesajes — achicá el rango o filtrá por prefijo para ver el resto.
+            </p>
+          )}
+        </div>
       ) : groupBy === "detail" ? (
         <div className="overflow-x-auto rounded-md border border-[var(--color-border)]">
           <table className="w-full min-w-[640px] text-sm">
@@ -1171,13 +1335,13 @@ function WeightsExplorer({ prefixes, faenaById }) {
                   </td>
                   <td className="px-3 py-2 text-xs">{d.comboLabel}</td>
                   <td className="px-3 py-2 text-right font-medium">{fmt(d.qty)}</td>
-                  <td className="px-3 py-2 text-xs">
+                  <td className="max-w-[10rem] break-all px-3 py-2 text-xs">
                     {d.supervisor || <span className="text-[var(--color-muted)]">—</span>}
                   </td>
                   <td className="px-3 py-2 text-right">
                     <button
                       onClick={() => setEditing({ mode: "edit", data: { id: d.id, rut: d.rut, dateKey: d.date, prefix: d.prefixId, x: d.x, y: d.y, amount: d.qty, idQr: d.idQr } })}
-                      className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+                      className={`${TAP} rounded-md border border-[var(--color-border)] px-2.5 text-xs hover:bg-[var(--color-accent-soft)]`}
                     >
                       Editar
                     </button>
@@ -1217,7 +1381,7 @@ function WeightsExplorer({ prefixes, faenaById }) {
                         {g.name && <div className="font-mono text-xs text-[var(--color-muted)]">{g.rut}</div>}
                         <button
                           onClick={() => { setSearch(g.rut); setGroupBy("detail"); }}
-                          className="mt-1 rounded-md border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+                          className={`${TAP} mt-1 rounded-md border border-[var(--color-border)] px-2.5 text-xs hover:bg-[var(--color-accent-soft)]`}
                         >
                           Ver / editar pesajes
                         </button>
@@ -1264,24 +1428,25 @@ function WeightsExplorer({ prefixes, faenaById }) {
                           {groupDayByWorker(g.entries).map((w) => (
                             <Fragment key={w.rut}>
                               <tr className="border-t border-[var(--color-border)]">
-                                <td className="py-1 pr-3" colSpan={3}>
-                                  <span className="font-medium">{w.name || w.rut}</span>
-                                  {w.name && <span className="ml-2 font-mono text-[11px] text-[var(--color-muted)]">{w.rut}</span>}
-                                  <span className="ml-2 text-[11px] text-[var(--color-muted)]">{w.entries.length} pesaje(s)</span>
-                                </td>
-                                <td className="py-1 pr-3 text-right font-semibold">{w.total == null ? "" : fmt(w.total)}</td>
-                                <td className="py-1 text-right">
+                                <td className="py-1 pr-3 align-top">
                                   <button
                                     onClick={() => setEditing({
                                       mode: "create",
                                       data: { rut: w.rut, dateKey: g.date, prefix: w.entries[0]?.prefixId || prefixFilter },
                                     })}
                                     title={`Agregar pesajes a ${w.name || w.rut} el ${g.date}`}
-                                    className="rounded-md border border-[var(--color-border)] px-2 py-1 hover:bg-[var(--color-accent-soft)]"
+                                    className={`${TAP} rounded-md border border-[var(--color-border)] px-2.5 hover:bg-[var(--color-accent-soft)]`}
                                   >
                                     + pesaje
                                   </button>
                                 </td>
+                                <td className="py-1 pr-3" colSpan={2}>
+                                  <span className="font-medium">{w.name || w.rut}</span>
+                                  {w.name && <span className="ml-2 font-mono text-[11px] text-[var(--color-muted)]">{w.rut}</span>}
+                                  <span className="ml-2 text-[11px] text-[var(--color-muted)]">{w.entries.length} pesaje(s)</span>
+                                </td>
+                                <td className="py-1 pr-3 text-right font-semibold">{w.total == null ? "" : fmt(w.total)}</td>
+                                <td />
                               </tr>
                               {w.entries.map((e) => (
                                 <tr key={e.id}>
@@ -1294,7 +1459,7 @@ function WeightsExplorer({ prefixes, faenaById }) {
                                   <td className="py-1 text-right">
                                     <button
                                       onClick={() => setEditing({ mode: "edit", data: { id: e.id, rut: e.rut, dateKey: e.date, prefix: e.prefixId, x: e.x, y: e.y, amount: e.qty, idQr: e.idQr } })}
-                                      className="rounded-md border border-[var(--color-border)] px-2 py-1 hover:bg-[var(--color-accent-soft)]"
+                                      className={`${TAP} rounded-md border border-[var(--color-border)] px-2.5 hover:bg-[var(--color-accent-soft)]`}
                                     >
                                       Editar
                                     </button>
@@ -1322,6 +1487,8 @@ function WeightsExplorer({ prefixes, faenaById }) {
           prefixes={prefixes}
           workers={workers}
           catalogs={catalogs}
+          knownCodes={knownCodes}
+          onWorkersChanged={loadWorkers}
           onClose={() => setEditing(null)}
           onSaved={(savedDate) => {
             setEditing(null);
@@ -1350,7 +1517,7 @@ function WeightsExplorer({ prefixes, faenaById }) {
 // 2. El `rut` que se guarda es el docId del trabajador (el id estable), que es
 //    contra el que resuelve la sincronización. Guardar el rut legal actual
 //    haría que un trabajador que cambió de cédula no matchee.
-function WeightFormModal({ mode, initial, prefixes, workers, catalogs, onClose, onSaved }) {
+function WeightFormModal({ mode, initial, prefixes, workers, catalogs, knownCodes, onClose, onSaved, onWorkersChanged }) {
   const toast = useToast();
   const { displayName } = useAuth();
   const isEdit = mode === "edit";
@@ -1359,6 +1526,14 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, onClose, 
   const [prefixId, setPrefixId] = useState(initial?.prefix || prefixes[0]?.id || "");
   const [qrPick, setQrPick] = useState(initial?.idQr || "");
   const [busy, setBusy] = useState(false);
+
+  // Asignar un QR desde acá evita salir a Gestión QRs cuando la persona
+  // recién llega y todavía no tiene código. Lo que NO evita es la validación:
+  // los códigos se reciclan, así que asignar uno puede estar quitándoselo a
+  // otra persona, y eso se pregunta.
+  const [nuevoQr, setNuevoQr] = useState(null); // null | { code }
+  const [confirmarRobo, setConfirmarRobo] = useState(null); // null | { code, from }
+  const [recienAsignado, setRecienAsignado] = useState("");
 
   // Una persona en la pesa descarga varios envases seguidos: mismo trabajador,
   // mismo día, mismo QR, y lo que cambia es el combo y los kilos. Por eso el
@@ -1398,12 +1573,18 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, onClose, 
     const original = isEdit && initial?.idQr && rut === initial.rut && prefixId === initial.prefix
       ? [String(initial.idQr).trim().toUpperCase()]
       : [];
-    return [...new Set([...original, ...workerCodes])];
-  }, [isEdit, initial, rut, prefixId, workerCodes]);
+    const extra = recienAsignado && prefixOfCode(recienAsignado) === prefixId ? [recienAsignado] : [];
+    return [...new Set([...original, ...workerCodes, ...extra])];
+  }, [isEdit, initial, rut, prefixId, workerCodes, recienAsignado]);
 
   // Derivado y no un efecto: cambiar de trabajador o de prefijo invalida la
   // selección anterior sin que haya que sincronizarla a mano.
   const qrCode = qrOptions.includes(qrPick) ? qrPick : qrOptions.length === 1 ? qrOptions[0] : "";
+
+  const sugerencias = useMemo(
+    () => (nuevoQr ? suggestFreeCodes(workers, prefixId, knownCodes || new Set()) : []),
+    [nuevoQr, workers, prefixId, knownCodes],
+  );
 
   // Verificación de ida y vuelta: si el prefijo tiene un remapeo que no permite
   // representar este combo, guardarlo escribiría un pesaje que se lee como otra
@@ -1419,6 +1600,40 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, onClose, 
   );
 
   const totalQty = checked.reduce((s, r) => s + (Number.isFinite(r.qty) && r.qty > 0 ? r.qty : 0), 0);
+
+  const asignarQr = async (code, fromWorker) => {
+    setBusy(true);
+    try {
+      const { released } = await assignQrCode(code, worker, fromWorker);
+      setRecienAsignado(code);
+      setQrPick(code);
+      setNuevoQr(null);
+      setConfirmarRobo(null);
+      toast.success(
+        released.length
+          ? `${code} → ${worker.name || worker.id} · ${released.join(", ")} liberado(s)`
+          : `${code} → ${worker.name || worker.id}`,
+      );
+      onWorkersChanged?.();
+    } catch (err) {
+      toast.error("No se pudo asignar: " + (err.message || err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const pedirAsignacion = () => {
+    const code = String(nuevoQr?.code || "").trim().toUpperCase();
+    if (!code) { toast.error("Escribí el código del QR"); return; }
+    if (prefixOfCode(code) !== prefixId) {
+      toast.error(`Ese código no es del prefijo ${prefixId}. Un QR pertenece a la cosecha que dice su prefijo.`);
+      return;
+    }
+    const duenio = ownerOfCode(workers, code);
+    if (duenio && duenio.id === worker.id) { toast.info("Esa persona ya tiene ese QR"); setNuevoQr(null); return; }
+    if (duenio) { setConfirmarRobo({ code, from: duenio }); return; }
+    asignarQr(code, null);
+  };
 
   const submit = async () => {
     if (!worker) { toast.error("Elegí un trabajador de la lista"); return; }
@@ -1448,11 +1663,16 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, onClose, 
           amount: r.qty,
           idQr: qrCode,
         };
-        // `supervisor` es quién estuvo en el pesaje, y en una carga a mano ese
-        // es quien la carga. Al editar no se toca: sobrescribirlo borraría al
-        // supervisor real de un pesaje escaneado. Quién editó está en el log.
+        // Solo al crear, y nunca al editar:
+        //  - `supervisor` es quién estuvo en el pesaje; en una carga a mano ese
+        //    es quien la carga. Sobrescribirlo borraría al supervisor real de
+        //    un pesaje escaneado; quién editó está en el log.
+        //  - `dateInsert` es cuándo se creó el registro, no cuándo se cosechó
+        //    (eso es `dateKey`, que puede ser un día pasado). Es con lo que la
+        //    app de scan ordena los pesajes dentro del día, así que sin esto
+        //    los cargados a mano se le irían todos al principio.
         if (isEdit) await harvestWeightsService.update(initial.id, payload);
-        else await harvestWeightsService.create({ ...payload, supervisor: displayName });
+        else await harvestWeightsService.create({ ...payload, supervisor: displayName, dateInsert: serverTimestamp() });
       }
       toast.success(isEdit ? "Pesaje actualizado" : `${checked.length} pesaje(s) agregado(s)`);
 
@@ -1499,7 +1719,7 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, onClose, 
   };
 
   const numSelect = (label, value, onChange, entries) => (
-    <label className="block flex-1">
+    <label className="block min-w-[9rem] flex-1">
       <span className="mb-1 block text-xs text-[var(--color-muted)]">{label}</span>
       <select
         value={value}
@@ -1514,11 +1734,12 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, onClose, 
   );
 
   return (
+    <>
     <Modal
       open
       onClose={onClose}
       title={isEdit ? "Editar pesaje" : "Nuevos pesajes"}
-      size="sm"
+      size="lg"
       footer={
         <>
           <button onClick={onClose} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
@@ -1602,12 +1823,77 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, onClose, 
           </select>
           {worker && prefixId && qrOptions.length === 0 ? (
             <span className="mt-1 block text-xs text-[var(--color-warning,#d97706)]">
-              {worker.name || worker.id} no tiene ningún QR del prefijo {prefixId} asignado. El pesaje se guarda igual, pero sin rastro del QR físico — se asigna en Gestión QRs.
+              {worker.name || worker.id} no tiene ningún QR del prefijo {prefixId}. El pesaje se guarda igual, pero sin rastro del QR físico.
             </span>
           ) : (
             <span className="mt-1 block text-xs text-[var(--color-muted)]">
               Los códigos se reciclan entre temporadas, así que esto queda como rastro de lo que se escaneó, no como identidad del trabajador.
             </span>
+          )}
+
+          {worker && prefixId && (
+            nuevoQr ? (
+              <span className="mt-2 flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  autoFocus
+                  value={nuevoQr.code}
+                  onChange={(e) => setNuevoQr({ code: e.target.value.toUpperCase() })}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); pedirAsignacion(); } }}
+                  placeholder={`${prefixId}-0123`}
+                  className="w-36 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 font-mono text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={pedirAsignacion}
+                  disabled={busy}
+                  className={`${TAP} rounded-md bg-[var(--color-accent)] px-2.5 text-xs font-medium text-[var(--color-accent-fg)] disabled:opacity-60`}
+                >
+                  Asignar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNuevoQr(null)}
+                  className={`${TAP} rounded-md border border-[var(--color-border)] px-2.5 text-xs`}
+                >
+                  Cancelar
+                </button>
+                {sugerencias.length > 0 && (
+                  <span className="flex w-full flex-wrap items-center gap-1 text-xs text-[var(--color-muted)]">
+                    <span>Libres:</span>
+                    {sugerencias.map((s) => (
+                      <button
+                        key={s.code}
+                        type="button"
+                        onClick={() => setNuevoQr({ code: s.code })}
+                        title={
+                          s.fueraDeRango
+                            ? "Nadie usó nunca este número en este prefijo — puede que el QR no esté impreso"
+                            : s.impreso
+                              ? "Se usó antes y hoy no es de nadie"
+                              : "Nadie lo tiene asignado"
+                        }
+                        className={`${TAP} rounded-md border px-2 font-mono ${
+                          s.impreso
+                            ? "border-[var(--color-success,#16a34a)] text-[var(--color-success,#16a34a)]"
+                            : "border-[var(--color-border)]"
+                        }`}
+                      >
+                        {s.code}{s.fueraDeRango ? " ?" : ""}
+                      </button>
+                    ))}
+                  </span>
+                )}
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setNuevoQr({ code: `${prefixId}-` })}
+                className="mt-2 text-xs underline decoration-dotted underline-offset-2 hover:text-[var(--color-accent)]"
+              >
+                {qrOptions.length === 0 ? `Asignarle un QR de ${prefixId}` : "Asignarle otro QR"}
+              </button>
+            )
           )}
         </label>
 
@@ -1621,17 +1907,17 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, onClose, 
                     <button
                       type="button"
                       onClick={() => dropRow(r.uid)}
-                      className="rounded px-2 py-0.5 text-[var(--color-danger)] hover:bg-[var(--color-danger-soft,rgba(220,38,38,0.12))]"
+                      className={`${TAP} rounded px-2 text-[var(--color-danger)] hover:bg-[var(--color-danger-soft,rgba(220,38,38,0.12))]`}
                     >
                       Quitar
                     </button>
                   )}
                 </div>
               )}
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {numSelect("Calidad", r.x, (v) => patchRow(r.uid, { x: v }), catalogs.qualities || [])}
                 {numSelect("Envase", r.y, (v) => patchRow(r.uid, { y: v }), catalogs.containers || [])}
-                <label className="block w-24">
+                <label className="block w-24 flex-none">
                   <span className="mb-1 block text-xs text-[var(--color-muted)]">
                     Cantidad <span className="text-[var(--color-danger)]">*</span>
                   </span>
@@ -1659,7 +1945,7 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, onClose, 
               <button
                 type="button"
                 onClick={addRow}
-                className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+                className={`${TAP} rounded-md border border-[var(--color-border)] px-2.5 text-xs hover:bg-[var(--color-accent-soft)]`}
               >
                 + Otro pesaje
               </button>
@@ -1677,6 +1963,23 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, onClose, 
         </p>
       </form>
     </Modal>
+
+    {/* Va DESPUÉS del formulario a propósito: los dos son `Modal` con `z-50`
+        fijo y sin portal, así que puesto antes queda tapado por él. */}
+    <ConfirmDialog
+      open={!!confirmarRobo}
+      title="Ese QR ya tiene dueño"
+      message={
+        confirmarRobo
+          ? `${confirmarRobo.code} es de ${confirmarRobo.from.name || confirmarRobo.from.id}.\n\nSi se lo asignás a ${worker?.name || worker?.id}, esa persona se queda sin ese código. Los pesajes que ya lo anotaron no se tocan: siguen siendo de su dueño de entonces, porque se resuelven por RUT.\n\n¿Pasárselo igual?`
+          : ""
+      }
+      confirmLabel="Pasárselo"
+      busy={busy}
+      onConfirm={() => asignarQr(confirmarRobo.code, confirmarRobo.from)}
+      onCancel={() => setConfirmarRobo(null)}
+    />
+    </>
   );
 }
 
@@ -1839,16 +2142,7 @@ function QrManager({ prefixes }) {
     if (fromWorker && fromWorker.id === toWorker.id) return true;
     setBusy(true);
     try {
-      if (fromWorker) {
-        await workersService.update(fromWorker.id, { idQr: codesOf(fromWorker).filter((c) => c !== clean) });
-      }
-      const already = codesOf(toWorker);
-      const released = codesToRelease(already, clean);
-      if (!already.includes(clean) || released.length) {
-        await workersService.update(toWorker.id, {
-          idQr: [...already.filter((c) => !released.includes(c)), ...(already.includes(clean) ? [] : [clean])],
-        });
-      }
+      const { released } = await assignQrCode(clean, toWorker, fromWorker);
       toast.success(
         released.length
           ? `${clean} → ${toWorker.name || toWorker.id} · ${released.join(", ")} liberado(s)`
@@ -1954,10 +2248,10 @@ function QrManager({ prefixes }) {
         view.groups.map((g) => (
           <div key={g.id} className="overflow-hidden rounded-md border border-[var(--color-border)]">
             <div className="flex flex-wrap items-center justify-between gap-2 bg-[var(--color-surface-2)] px-3 py-2">
-              <button onClick={() => toggle(g.id)} className="flex items-center gap-2 text-left text-sm">
+              <button onClick={() => toggle(g.id)} className="flex min-h-[32px] min-w-0 flex-wrap items-center gap-2 text-left text-sm">
                 <span className="text-[var(--color-muted)]">{open.has(g.id) ? "▾" : "▸"}</span>
                 <span className="font-mono font-semibold">{g.id}</span>
-                {g.label && <span className="text-xs text-[var(--color-muted)]">{g.label}</span>}
+                {g.label && <span className="truncate text-xs text-[var(--color-muted)]">{g.label}</span>}
                 {!g.known && (
                   <span className="rounded-full border border-[var(--color-warning,#d97706)] px-2 py-0.5 text-[11px] text-[var(--color-warning,#d97706)]">
                     sin prefijo configurado
@@ -1967,7 +2261,7 @@ function QrManager({ prefixes }) {
               </button>
               <button
                 onClick={() => setClearing({ scope: "prefix", prefixId: g.id, codes: g.items.map((i) => i.code) })}
-                className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft,rgba(220,38,38,0.12))]"
+                className={`${TAP} rounded-md border border-[var(--color-border)] px-2.5 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft,rgba(220,38,38,0.12))]`}
               >
                 Limpiar {g.id}
               </button>
@@ -1998,14 +2292,14 @@ function QrManager({ prefixes }) {
                           <div className="flex justify-end gap-1.5">
                             <button
                               onClick={() => setAssigning({ code: it.code, from: it.worker })}
-                              className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+                              className={`${TAP} rounded-md border border-[var(--color-border)] px-2.5 text-xs hover:bg-[var(--color-accent-soft)]`}
                             >
                               Reasignar
                             </button>
                             <button
                               onClick={() => unassign(it.code, it.worker)}
                               disabled={busy}
-                              className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft,rgba(220,38,38,0.12))] disabled:opacity-40"
+                              className={`${TAP} rounded-md border border-[var(--color-border)] px-2.5 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft,rgba(220,38,38,0.12))] disabled:opacity-40`}
                             >
                               Quitar
                             </button>
