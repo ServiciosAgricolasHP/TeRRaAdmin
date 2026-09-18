@@ -376,7 +376,9 @@ La app admin la lee para sincronizar hacia `workdays` y, desde **Cosecha QR → 
 
 Cargar a mano acepta **varios pesajes de una**: el trabajador, la fecha, el prefijo y el QR van una sola vez y cada envase es una fila, que es como se descarga en la pesa. Se escribe un documento por fila; dos filas del mismo combo colapsan a una sola jornada al espejarse, porque la jornada suma por (trabajador × día × combo).
 
-**No hay timestamp.** El día de cosecha es `dateKey` y nada más — un día de trabajo, no un instante de reloj, y por eso una carga a mano del día anterior cae donde corresponde. `createdAt`/`updatedAt` los pone el servicio base pero nadie los lee, y el docId es autoId (aleatorio, no cronológico): **el orden de llegada de los pesajes dentro de un día es irrecuperable**. No importa para la sincronización, que suma por (trabajador × día × combo).
+**El día de cosecha y el momento de creación son dos campos distintos.** `dateKey` es el día de TRABAJO (`YYYY-MM-DD`, horario chileno) y es lo único que define a qué día pertenece la producción — por eso una carga a mano de ayer cae donde corresponde. `dateInsert` es cuándo se creó el registro, y sirve solo para **ordenar los pesajes dentro de un día**: la app de scan deriva de ahí el "N° de pesaje del día" al leer, en vez de guardarlo al escribir (un correlativo asignado al escribir necesitaría conocer los pesajes que otro teléfono creó offline y todavía no subió).
+
+Los dos pueden no coincidir, y está bien: un pesaje cargado a mano el jueves para el martes tiene `dateKey` del martes y `dateInsert` del jueves. El docId es autoId aleatorio, así que **sin `dateInsert` no hay orden posible** — por eso la carga manual de TeRRa también lo escribe. `createdAt`/`updatedAt` los pone el servicio base y son auditoría, no contrato con el scan.
 
 Esta colección también la lee el visor externo **cosechasAgrofrutos** (junto con `qrPrefixes` y `catalogs`): es contrato público, no se cambia su forma sin migrar a ese consumidor.
 | Campo | Tipo | Notas |
@@ -395,8 +397,10 @@ Esta colección también la lee el visor externo **cosechasAgrofrutos** (junto c
 > Asignar un QR en **Gestión QRs** ofrece además anotar ese código en los pesajes de esa persona y ese prefijo que no tienen ninguno (manuales, o escaneados antes de que existiera el campo). Es cosmético: ningún pesaje cambia de dueño.
 >
 > **Un QR por cosecha por persona.** El prefijo *es* la cosecha, así que asignarle `XX-21` a quien tiene `XX-19` le suelta el 19 y lo devuelve al pozo — en el mismo `update`, no en dos pasos. Códigos de prefijos distintos conviven sin problema. Los pesajes que ya anotaron el código viejo **no se tocan**: siguen siendo de esa persona por `rut`, y buscar el código liberado los encuentra igual.
-| `supervisor` | string? | quién estuvo en el pesaje. En una carga a mano es el alias (o correo) de quien la cargó, y **no se sobrescribe al editar** — un pesaje escaneado conserva su supervisor real; quién editó está en `logs` |
+| `supervisor` | string? | quién estuvo en el pesaje, como **texto libre**: la app de scan lo hace tipear y lo capitaliza, así que dos personas pueden escribirlo distinto. En una carga a mano es el alias (o correo) de quien la cargó. **No se sobrescribe al editar** — un pesaje escaneado conserva su supervisor real; quién editó está en `logs`. Para atribuir de verdad, cruzar con `deviceId` |
 | `paid` | bool? | lo escribe el scan; la app admin no lo lee ni lo escribe |
+| `dateInsert` | ts | cuándo se creó el registro. **No es el día de cosecha** (eso es `dateKey`). Única forma de ordenar los pesajes de un día entre sí |
+| `deviceId` | string? | identifica el **teléfono**, no a la persona: se genera al primer uso y vive en AsyncStorage, así que una reinstalación lo cambia. Sirve para responder "¿todos estos pesajes salieron del mismo aparato?" cuando `supervisor` no alcanza |
 
 ### `qrPrefixes`
 Puente entre un prefijo de QR físico y el (faena, ciclo, labor) al que hay que sincronizar sus pesajes. **DocId = el prefijo** (ej. `"HP"`). El ciclo/labor vigente se reapunta a mano cada vez que se abre un ciclo nuevo — deliberadamente semi-manual.
