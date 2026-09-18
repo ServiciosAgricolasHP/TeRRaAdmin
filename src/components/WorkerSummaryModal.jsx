@@ -376,7 +376,10 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
     if (!printRef.current) return;
     const html = printRef.current.outerHTML;
     const win = window.open("", "_blank", "width=900,height=700");
-    if (!win) return;
+    if (!win) {
+      toast.warning("Permite las ventanas emergentes para imprimir.");
+      return;
+    }
     win.document.write(`<!DOCTYPE html><html><head><title>Resumen — ${worker?.name || ""}</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
@@ -1357,7 +1360,10 @@ function LinearTable({ data, catalogs, titles, onUpdateLinearTitles, onToggleHid
     if (!localRef.current) return;
     const html = localRef.current.outerHTML;
     const win = window.open("", "_blank", "width=1100,height=800");
-    if (!win) return;
+    if (!win) {
+      toast.warning("Permite las ventanas emergentes para imprimir.");
+      return;
+    }
     win.document.write(`<!DOCTYPE html><html><head><title>Resumen cronológico</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }

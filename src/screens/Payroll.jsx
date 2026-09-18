@@ -962,20 +962,45 @@ export default function Payroll() {
   const onAskRevert = (p) => setPayConfirm({ payroll: p, mode: "revert" });
   const onAskMarkBankPaid = (p) => setPayConfirm({ payroll: p, mode: "bank" });
   const onAskRevertBank = (p) => setPayConfirm({ payroll: p, mode: "revertBank" });
+  const PAY_DONE = {
+    pay: "Nómina marcada como pagada",
+    revert: "Nómina vuelta a pendiente",
+    bank: "Transferencias marcadas como pagadas — el efectivo queda debiéndose",
+    revertBank: "Transferencias revertidas",
+  };
   const onConfirmPay = async () => {
     if (!payConfirm) return;
     const { payroll: p, mode } = payConfirm;
-    if (mode === "pay") {
-      await markPayrollPaid(p.id, p.workdayIds || []);
-    } else if (mode === "revert") {
-      await markPayrollPending(p.id, p.workdayIds || []);
-    } else if (mode === "bank") {
-      await markBankPaid(p.id);
-    } else if (mode === "revertBank") {
-      await revertBankPaid(p.id);
+    const paso = (step) => (done, total) =>
+      setProgress({
+        step,
+        detail: total ? `${done} de ${total} jornadas` : "",
+        percent: total ? (done / total) * 90 : 0,
+      });
+    setProgress({ step: "Sellando jornadas...", detail: "", percent: 2 });
+    try {
+      if (mode === "pay") {
+        await markPayrollPaid(p.id, p.workdayIds || [], paso("Sellando jornadas pagadas..."));
+      } else if (mode === "revert") {
+        await markPayrollPending(p.id, p.workdayIds || [], paso("Quitando el sello de pago..."));
+      } else if (mode === "bank") {
+        await markBankPaid(p.id, paso("Sellando las jornadas de banco..."));
+      } else if (mode === "revertBank") {
+        await revertBankPaid(p.id, paso("Revirtiendo las transferencias..."));
+      }
+      setProgress({ step: "Actualizando lista...", detail: "", percent: 95 });
+      setPayConfirm(null);
+      await load();
+      toast.success(PAY_DONE[mode] || "Listo");
+    } catch (err) {
+      // El servicio lanza mensajes ya redactados para el usuario ("La nómina
+      // ya está pagada entera."). Sin este catch el throw sube al botón del
+      // modal, que solo tiene `finally`: el diálogo queda abierto, el motivo
+      // nunca llega a pantalla y parece que el click no hizo nada.
+      toast.error(err.message || "No se pudo completar la operación.");
+    } finally {
+      setProgress(null);
     }
-    setPayConfirm(null);
-    await load();
   };
   const onDelete = async () => {
     if (!confirmDelete) return;

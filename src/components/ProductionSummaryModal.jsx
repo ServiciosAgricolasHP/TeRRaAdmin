@@ -1096,7 +1096,10 @@ function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firstColKey
     if (!captureRef.current) return;
     const html = captureRef.current.outerHTML;
     const win = window.open("", "_blank", "width=1100,height=700");
-    if (!win) return;
+    if (!win) {
+      toast.warning("Permite las ventanas emergentes para imprimir.");
+      return;
+    }
     win.document.write(`<!DOCTYPE html><html><head><title>Tabla general</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
@@ -1685,7 +1688,10 @@ function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
     if (!captureRef.current) return;
     const html = captureRef.current.outerHTML;
     const win = window.open("", "_blank", "width=900,height=700");
-    if (!win) return;
+    if (!win) {
+      toast.warning("Permite las ventanas emergentes para imprimir.");
+      return;
+    }
     win.document.write(`<!DOCTYPE html><html><head><title>Resumen ${col.labor.name}</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }

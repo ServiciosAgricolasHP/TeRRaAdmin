@@ -893,7 +893,10 @@ export default function Facturacion() {
     if (!retencionesPrintRef.current) return;
     const html = retencionesPrintRef.current.outerHTML;
     const win = window.open("", "_blank", "width=1000,height=700");
-    if (!win) return;
+    if (!win) {
+      toast.warning("Permite las ventanas emergentes para imprimir.");
+      return;
+    }
     win.document.write(`<!DOCTYPE html><html><head><title>Retenciones</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
@@ -1112,7 +1115,10 @@ export default function Facturacion() {
     if (!el) return;
     const html = el.outerHTML;
     const win = window.open("", "_blank", "width=1000,height=700");
-    if (!win) return;
+    if (!win) {
+      toast.warning("Permite las ventanas emergentes para imprimir.");
+      return;
+    }
     win.document.write(`<!DOCTYPE html><html><head><title>Retención ${g.razon || ""}</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
@@ -5277,7 +5283,10 @@ function PendientesModal({ items, totals, company, onClose, onSelectDoc }) {
     if (!printRef.current) return;
     const html = printRef.current.outerHTML;
     const win = window.open("", "_blank", "width=1000,height=700");
-    if (!win) return;
+    if (!win) {
+      toast.warning("Permite las ventanas emergentes para imprimir.");
+      return;
+    }
     win.document.write(`<!DOCTYPE html><html><head><title>Pendientes</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }

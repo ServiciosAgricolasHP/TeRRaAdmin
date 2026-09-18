@@ -2236,7 +2236,10 @@ function BalanceSummary({ carriers, reloadVersion }) {
     if (!printRef.current) return;
     const html = printRef.current.outerHTML;
     const win = window.open("", "_blank", "width=900,height=700");
-    if (!win) return;
+    if (!win) {
+      toast.warning("Permite las ventanas emergentes para imprimir.");
+      return;
+    }
     win.document.write(`<!DOCTYPE html><html><head><title>Balance de transportes</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
@@ -2845,7 +2848,10 @@ function UnifiedSummaryModal({ open, onClose, group, faenaById, subfaenaById, cy
     if (!printRef.current) return;
     const html = printRef.current.outerHTML;
     const win = window.open("", "_blank", "width=900,height=700");
-    if (!win) return;
+    if (!win) {
+      toast.warning("Permite las ventanas emergentes para imprimir.");
+      return;
+    }
     win.document.write(`<!DOCTYPE html><html><head><title>Resumen Transporte Unificado</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
@@ -3572,7 +3578,10 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
     if (!printRef.current) return;
     const html = printRef.current.outerHTML;
     const win = window.open("", "_blank", "width=900,height=700");
-    if (!win) return;
+    if (!win) {
+      toast.warning("Permite las ventanas emergentes para imprimir.");
+      return;
+    }
     win.document.write(`<!DOCTYPE html><html><head><title>Resumen Transporte</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
@@ -4590,7 +4599,10 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
     if (!printRef.current) return;
     const html = printRef.current.outerHTML;
     const win = window.open("", "_blank", "width=900,height=700");
-    if (!win) return;
+    if (!win) {
+      toast.warning("Permite las ventanas emergentes para imprimir.");
+      return;
+    }
     win.document.write(`<!DOCTYPE html><html><head><title>Balance de quincenas</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
@@ -5743,7 +5755,10 @@ function PayrollDetailModal({
     if (!printRef.current) return;
     const html = printRef.current.outerHTML;
     const win = window.open("", "_blank", "width=900,height=700");
-    if (!win) return;
+    if (!win) {
+      toast.warning("Permite las ventanas emergentes para imprimir.");
+      return;
+    }
     win.document.write(`<!DOCTYPE html><html><head><title>Quincena ${payroll.name}</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }

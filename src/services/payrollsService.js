@@ -116,13 +116,13 @@ async function batchUpdateWorkdays(ids, patch, onProgress) {
   workdaysService.invalidate();
 }
 
-export async function markPaid(id, workdayIds = []) {
+export async function markPaid(id, workdayIds = [], onProgress) {
   // Si las transferencias ya se sellaron aparte (ver "pago en dos tiempos"),
   // solo falta sellar los workdays de efectivo: re-estampar los de banco les
   // pisaría la fecha real en que salió la transferencia.
   const p = await payrollsService.getById(id);
   const ids = p?.bankPaidAt ? cashWorkdayIdsOf(p) : workdayIds;
-  await markWorkdaysPaid(ids);
+  await markWorkdaysPaid(ids, onProgress);
   // `bankPaidAt` NO se limpia: queda como registro de cuándo salió el banco.
   // `pendingCashOf` ya devuelve 0 para las nóminas pagadas, así que no estorba.
   return payrollsService.update(id, { status: "paid", paidAt: new Date().toISOString() });
@@ -356,8 +356,8 @@ export async function recalculatePayrollItems(payrollId, { items }) {
   await payrollsService.update(payrollId, aggregates);
 }
 
-export async function markPending(id, workdayIds = []) {
-  await unmarkWorkdaysPaid(workdayIds);
+export async function markPending(id, workdayIds = [], onProgress) {
+  await unmarkWorkdaysPaid(workdayIds, onProgress);
   // Revierte el pago entero, así que también borra el sello de las
   // transferencias y las personas que habían cobrado sueltas.
   return payrollsService.update(id, {

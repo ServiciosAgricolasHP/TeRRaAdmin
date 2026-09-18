@@ -2816,7 +2816,10 @@ export default function CycleDetail() {
       const bg = getComputedStyle(document.body).backgroundColor || "#ffffff";
       const dataUrl = await toPng(photoRef.current, { backgroundColor: bg, pixelRatio: 2, cacheBust: true });
       const win = window.open("", "_blank", "width=1100,height=800");
-      if (!win) return;
+      if (!win) {
+        toast.warning("Permite las ventanas emergentes para imprimir.");
+        return;
+      }
       win.document.write(`<!DOCTYPE html><html><head><title>${cycle.label} · ${activeLabor?.name || ""}</title>
         <style>
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }

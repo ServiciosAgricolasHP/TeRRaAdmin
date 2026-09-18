@@ -6,6 +6,7 @@ import { tripsService } from "../services/transportsService";
 import { useCarriers } from "../contexts/CarriersContext";
 import { useCatalogs } from "../contexts/CatalogsContext";
 import { useAuth } from "../contexts/AuthContext";
+import { useToast } from "../contexts/ToastContext";
 import { tratoTypeLabel, tratoUnitLabel, cosechaUnit, qualityLabel, containerLabel, getTratoTierTotals, getTratoTiers } from "../utils/cosechaCombos";
 import { useIsMobile } from "../hooks/useIsMobile";
 
@@ -211,6 +212,7 @@ async function fetchTripsInRange(start, end) {
 
 export default function Calendar() {
   const { isAdmin } = useAuth();
+  const toast = useToast();
   const { carriers } = useCarriers();
   const { catalogs } = useCatalogs();
   const today = useMemo(() => new Date(), []);
@@ -489,7 +491,10 @@ export default function Calendar() {
     const tableRows = weeks.map((w) => `<tr>${w.map(renderCell).join("")}</tr>`).join("");
     const title = `${MONTH_NAMES[month - 1]} ${year}`;
     const win = window.open("", "_blank", "width=1200,height=850");
-    if (!win) return;
+    if (!win) {
+      toast.warning("Permite las ventanas emergentes para imprimir.");
+      return;
+    }
     win.document.write(`<!DOCTYPE html><html><head><title>Calendario · ${title}</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
