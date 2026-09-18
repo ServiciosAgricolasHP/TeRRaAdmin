@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
+import { userPrefsService } from "../services/userPrefsService";
 
 const AuthContext = createContext(null);
 
@@ -48,8 +49,21 @@ export function AuthProvider({ children }) {
 
   const isAdmin = user?.role === ROLES.ADMIN;
 
+  // Cómo se llama esta persona en los documentos que firma. El correo es el
+  // único identificador garantizado, pero termina copiado en datos que
+  // después lee gente de terreno; el alias existe para que ahí quede un
+  // nombre y no una casilla de mail.
+  const displayName = user ? user.alias || user.email || user.uid : "";
+
+  const updateAlias = async (alias) => {
+    if (!user?.uid) return;
+    const clean = String(alias || "").trim();
+    await userPrefsService.saveAlias(user.uid, clean);
+    setUser((u) => (u ? { ...u, alias: clean } : u));
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, isAdmin }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, isAdmin, displayName, updateAlias }}>
       {children}
     </AuthContext.Provider>
   );

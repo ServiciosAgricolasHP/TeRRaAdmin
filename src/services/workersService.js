@@ -70,8 +70,15 @@ export async function searchWorkers(q, { take = 50 } = {}) {
 export async function findWorkerByRut(rut) {
   const normalized = normalizeRut(rut);
   if (!normalized) return null;
-  const found = await workersService.getById(normalized);
-  return found; // { id, rut, name, groupLeader?, idQr?, bankDetails? } or null
+  // El docId primero: es el caso de lejos más común y cuesta una sola lectura.
+  // La consulta por el campo `rut` solo corre si esa falla, que es cuando el
+  // trabajador cambió de cédula y su rut actual ya no coincide con el id con el
+  // que se creó. Quien llama recibe el doc completo, así que si necesita
+  // escribir contra ese trabajador tiene que usar `.id`, no el rut que buscó.
+  const byId = await workersService.getById(normalized);
+  if (byId) return byId;
+  const [byField] = await workersService.list({ wheres: [["rut", "==", normalized]], take: 1 });
+  return byField || null; // { id, rut, name, groupLeader?, idQr?, bankDetails? } or null
 }
 
 export async function createWorker({ rut, name }) {

@@ -63,6 +63,40 @@ export const tratoUnitLabel = (catalogs, u) => {
   return cat.find((e) => e.value === u)?.label || `Unidad ${u}`;
 };
 
+// Traduce un pesaje crudo de `harvestWeights` a (calidad, envase).
+//
+// `weightProcess` es la calidad y `weightType` el envase. El remapeo es POR
+// PREFIJO: los catálogos preservan la convención numérica del scan, así que el
+// default es identidad, y `qualityMap`/`containerMap` del prefijo son la válvula
+// de escape para un lote de QR que haya salido con otra numeración. Un mismo
+// trabajador puede traer dos convenciones en una sola consulta, así que cada
+// pesaje se mapea con SU prefijo, nunca con uno global.
+export function mapHarvestCodes(prefix, weight) {
+  const x = prefix?.qualityMap?.[String(weight?.weightProcess)] ?? weight?.weightProcess;
+  const y = prefix?.containerMap?.[String(weight?.weightType)] ?? weight?.weightType;
+  return { x: Number(x) || 0, y: Number(y) || 0 };
+}
+
+// Inversa de mapHarvestCodes: dado un combo del CATÁLOGO (x, y), devuelve los
+// códigos crudos que hay que guardar para que ese prefijo los lea como ese
+// combo. Hace falta al escribir un pesaje a mano desde la app admin: el doc
+// guarda la numeración del scan, no la del catálogo.
+//
+// Si el prefijo no tiene maps es identidad. Si los tiene y el combo elegido no
+// es representable, esto devuelve el valor crudo tal cual — por eso quien llama
+// SIEMPRE debe verificar el ida y vuelta con mapHarvestCodes antes de guardar.
+export function invertHarvestCodes(prefix, { x, y }) {
+  const inv = (map, v) => {
+    if (!map) return v;
+    const hit = Object.keys(map).find((k) => Number(map[k]) === Number(v));
+    return hit == null ? v : Number(hit);
+  };
+  return {
+    weightProcess: inv(prefix?.qualityMap, x),
+    weightType: inv(prefix?.containerMap, y),
+  };
+}
+
 export const comboLabel = (catalogs, x, y) =>
   `${qualityLabel(catalogs, x)} / ${containerLabel(catalogs, y)}`;
 

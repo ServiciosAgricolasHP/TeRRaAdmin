@@ -55,7 +55,9 @@ export default function MigrateWorkers() {
           continue;
         }
         if (built.mode === "update") {
-          await workersService.update(built.rut, built.patch);
+          // Por el id del doc encontrado, no por el rut del CSV: pueden diferir
+          // si el trabajador cambió de cédula después de crearse.
+          await workersService.update(existing.id, built.patch);
           results.updated++;
         } else {
           await workersService.create(built.payload, { id: built.rut });
