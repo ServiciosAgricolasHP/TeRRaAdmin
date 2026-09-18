@@ -4,6 +4,7 @@ import { useToast } from "../contexts/ToastContext";
 import { faenasService, cyclesService, workdaysService, harvestWeightsService, qrPrefixesService } from "../services";
 import { findWorkerByRut, workersService } from "../services/workersService";
 import { useCatalogs } from "../contexts/CatalogsContext";
+import { useIsMobile } from "../hooks/useIsMobile";
 import { useAuth } from "../contexts/AuthContext";
 import { comboKey, getDayCombos, workdayDocId, qualityLabel, containerLabel, mapHarvestCodes, invertHarvestCodes } from "../utils/cosechaCombos";
 import Modal from "../components/Modal";
@@ -34,6 +35,11 @@ const codesToRelease = (codes, incoming) => {
   if (!pfx) return [];
   return codes.filter((c) => c !== incoming && prefixOfCode(c) === pfx);
 };
+
+// Alto mínimo de toque del proyecto. Se usa en los botones que viven dentro
+// de celdas y filas: llega a 32px sin agrandar la fuente ni ensanchar la
+// columna, que es lo que un `py-` más grande sí haría.
+const TAP = "min-h-[32px] inline-flex items-center justify-center";
 
 const todayKey = () => new Date().toLocaleDateString("sv-SE");
 const daysAgoKey = (n) => {
@@ -210,19 +216,19 @@ export default function HarvestQr() {
           <div className="flex flex-wrap gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1 text-sm">
             <button
               onClick={() => setTab("sync")}
-              className={`rounded px-3 py-1 ${tab === "sync" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "text-[var(--color-muted)]"}`}
+              className={`${TAP} flex-1 rounded px-3 ${tab === "sync" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "text-[var(--color-muted)]"}`}
             >
               🔄 Sincronizar cosechas
             </button>
             <button
               onClick={() => setTab("weights")}
-              className={`rounded px-3 py-1 ${tab === "weights" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "text-[var(--color-muted)]"}`}
+              className={`${TAP} flex-1 rounded px-3 ${tab === "weights" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "text-[var(--color-muted)]"}`}
             >
               ⚖️ Pesajes
             </button>
             <button
               onClick={() => setTab("qr")}
-              className={`rounded px-3 py-1 ${tab === "qr" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "text-[var(--color-muted)]"}`}
+              className={`${TAP} flex-1 rounded px-3 ${tab === "qr" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "text-[var(--color-muted)]"}`}
             >
               📱 Gestión QRs
             </button>
@@ -897,6 +903,7 @@ function WeightsExplorer({ prefixes, faenaById }) {
   const [editing, setEditing] = useState(null); // null | { mode, data }
   const [reloadKey, setReloadKey] = useState(0);
 
+  const isMobile = useIsMobile();
   const prefixById = useMemo(() => new Map(prefixes.map((p) => [p.id, p])), [prefixes]);
 
   // Se indexa por las dos llaves porque el pesaje guarda el rut que escaneó la
@@ -1142,6 +1149,39 @@ function WeightsExplorer({ prefixes, faenaById }) {
         <p className="rounded-md border border-dashed border-[var(--color-border)] p-6 text-center text-sm text-[var(--color-muted)]">
           No hay pesajes en este rango{prefixFilter || search ? " con los filtros aplicados" : ""}.
         </p>
+      ) : groupBy === "detail" && isMobile ? (
+        <div className="space-y-2">
+          {view.detail.slice(0, DETAIL_CAP).map((d) => (
+            <div key={d.id} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{d.name || d.rut}</div>
+                  {d.name && <div className="font-mono text-xs text-[var(--color-muted)]">{d.rut}</div>}
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="text-lg font-semibold leading-none">{fmt(d.qty)}</div>
+                  <div className="text-xs text-[var(--color-muted)]">{d.date}</div>
+                </div>
+              </div>
+              <div className="mt-2 space-y-0.5 text-xs text-[var(--color-muted)]">
+                <div>{d.comboLabel}</div>
+                <div className="font-mono">{d.idQr || d.prefixId}</div>
+                {d.supervisor && <div className="break-all">Supervisor: {d.supervisor}</div>}
+              </div>
+              <button
+                onClick={() => setEditing({ mode: "edit", data: { id: d.id, rut: d.rut, dateKey: d.date, prefix: d.prefixId, x: d.x, y: d.y, amount: d.qty, idQr: d.idQr } })}
+                className={`${TAP} mt-2 w-full rounded-md border border-[var(--color-border)] px-2.5 text-xs hover:bg-[var(--color-accent-soft)]`}
+              >
+                Editar
+              </button>
+            </div>
+          ))}
+          {view.detail.length > DETAIL_CAP && (
+            <p className="rounded-md border border-dashed border-[var(--color-border)] p-3 text-center text-xs text-[var(--color-muted)]">
+              Mostrando {DETAIL_CAP} de {fmt(view.detail.length)} pesajes — achicá el rango o filtrá por prefijo para ver el resto.
+            </p>
+          )}
+        </div>
       ) : groupBy === "detail" ? (
         <div className="overflow-x-auto rounded-md border border-[var(--color-border)]">
           <table className="w-full min-w-[640px] text-sm">
@@ -1171,13 +1211,13 @@ function WeightsExplorer({ prefixes, faenaById }) {
                   </td>
                   <td className="px-3 py-2 text-xs">{d.comboLabel}</td>
                   <td className="px-3 py-2 text-right font-medium">{fmt(d.qty)}</td>
-                  <td className="px-3 py-2 text-xs">
+                  <td className="max-w-[10rem] break-all px-3 py-2 text-xs">
                     {d.supervisor || <span className="text-[var(--color-muted)]">—</span>}
                   </td>
                   <td className="px-3 py-2 text-right">
                     <button
                       onClick={() => setEditing({ mode: "edit", data: { id: d.id, rut: d.rut, dateKey: d.date, prefix: d.prefixId, x: d.x, y: d.y, amount: d.qty, idQr: d.idQr } })}
-                      className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+                      className={`${TAP} rounded-md border border-[var(--color-border)] px-2.5 text-xs hover:bg-[var(--color-accent-soft)]`}
                     >
                       Editar
                     </button>
@@ -1217,7 +1257,7 @@ function WeightsExplorer({ prefixes, faenaById }) {
                         {g.name && <div className="font-mono text-xs text-[var(--color-muted)]">{g.rut}</div>}
                         <button
                           onClick={() => { setSearch(g.rut); setGroupBy("detail"); }}
-                          className="mt-1 rounded-md border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+                          className={`${TAP} mt-1 rounded-md border border-[var(--color-border)] px-2.5 text-xs hover:bg-[var(--color-accent-soft)]`}
                         >
                           Ver / editar pesajes
                         </button>
@@ -1264,24 +1304,25 @@ function WeightsExplorer({ prefixes, faenaById }) {
                           {groupDayByWorker(g.entries).map((w) => (
                             <Fragment key={w.rut}>
                               <tr className="border-t border-[var(--color-border)]">
-                                <td className="py-1 pr-3" colSpan={3}>
-                                  <span className="font-medium">{w.name || w.rut}</span>
-                                  {w.name && <span className="ml-2 font-mono text-[11px] text-[var(--color-muted)]">{w.rut}</span>}
-                                  <span className="ml-2 text-[11px] text-[var(--color-muted)]">{w.entries.length} pesaje(s)</span>
-                                </td>
-                                <td className="py-1 pr-3 text-right font-semibold">{w.total == null ? "" : fmt(w.total)}</td>
-                                <td className="py-1 text-right">
+                                <td className="py-1 pr-3 align-top">
                                   <button
                                     onClick={() => setEditing({
                                       mode: "create",
                                       data: { rut: w.rut, dateKey: g.date, prefix: w.entries[0]?.prefixId || prefixFilter },
                                     })}
                                     title={`Agregar pesajes a ${w.name || w.rut} el ${g.date}`}
-                                    className="rounded-md border border-[var(--color-border)] px-2 py-1 hover:bg-[var(--color-accent-soft)]"
+                                    className={`${TAP} rounded-md border border-[var(--color-border)] px-2.5 hover:bg-[var(--color-accent-soft)]`}
                                   >
                                     + pesaje
                                   </button>
                                 </td>
+                                <td className="py-1 pr-3" colSpan={2}>
+                                  <span className="font-medium">{w.name || w.rut}</span>
+                                  {w.name && <span className="ml-2 font-mono text-[11px] text-[var(--color-muted)]">{w.rut}</span>}
+                                  <span className="ml-2 text-[11px] text-[var(--color-muted)]">{w.entries.length} pesaje(s)</span>
+                                </td>
+                                <td className="py-1 pr-3 text-right font-semibold">{w.total == null ? "" : fmt(w.total)}</td>
+                                <td />
                               </tr>
                               {w.entries.map((e) => (
                                 <tr key={e.id}>
@@ -1294,7 +1335,7 @@ function WeightsExplorer({ prefixes, faenaById }) {
                                   <td className="py-1 text-right">
                                     <button
                                       onClick={() => setEditing({ mode: "edit", data: { id: e.id, rut: e.rut, dateKey: e.date, prefix: e.prefixId, x: e.x, y: e.y, amount: e.qty, idQr: e.idQr } })}
-                                      className="rounded-md border border-[var(--color-border)] px-2 py-1 hover:bg-[var(--color-accent-soft)]"
+                                      className={`${TAP} rounded-md border border-[var(--color-border)] px-2.5 hover:bg-[var(--color-accent-soft)]`}
                                     >
                                       Editar
                                     </button>
@@ -1499,7 +1540,7 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, onClose, 
   };
 
   const numSelect = (label, value, onChange, entries) => (
-    <label className="block flex-1">
+    <label className="block min-w-[9rem] flex-1">
       <span className="mb-1 block text-xs text-[var(--color-muted)]">{label}</span>
       <select
         value={value}
@@ -1621,17 +1662,17 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, onClose, 
                     <button
                       type="button"
                       onClick={() => dropRow(r.uid)}
-                      className="rounded px-2 py-0.5 text-[var(--color-danger)] hover:bg-[var(--color-danger-soft,rgba(220,38,38,0.12))]"
+                      className={`${TAP} rounded px-2 text-[var(--color-danger)] hover:bg-[var(--color-danger-soft,rgba(220,38,38,0.12))]`}
                     >
                       Quitar
                     </button>
                   )}
                 </div>
               )}
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {numSelect("Calidad", r.x, (v) => patchRow(r.uid, { x: v }), catalogs.qualities || [])}
                 {numSelect("Envase", r.y, (v) => patchRow(r.uid, { y: v }), catalogs.containers || [])}
-                <label className="block w-24">
+                <label className="block w-24 flex-none">
                   <span className="mb-1 block text-xs text-[var(--color-muted)]">
                     Cantidad <span className="text-[var(--color-danger)]">*</span>
                   </span>
@@ -1659,7 +1700,7 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, onClose, 
               <button
                 type="button"
                 onClick={addRow}
-                className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+                className={`${TAP} rounded-md border border-[var(--color-border)] px-2.5 text-xs hover:bg-[var(--color-accent-soft)]`}
               >
                 + Otro pesaje
               </button>
@@ -1954,10 +1995,10 @@ function QrManager({ prefixes }) {
         view.groups.map((g) => (
           <div key={g.id} className="overflow-hidden rounded-md border border-[var(--color-border)]">
             <div className="flex flex-wrap items-center justify-between gap-2 bg-[var(--color-surface-2)] px-3 py-2">
-              <button onClick={() => toggle(g.id)} className="flex items-center gap-2 text-left text-sm">
+              <button onClick={() => toggle(g.id)} className="flex min-h-[32px] min-w-0 flex-wrap items-center gap-2 text-left text-sm">
                 <span className="text-[var(--color-muted)]">{open.has(g.id) ? "▾" : "▸"}</span>
                 <span className="font-mono font-semibold">{g.id}</span>
-                {g.label && <span className="text-xs text-[var(--color-muted)]">{g.label}</span>}
+                {g.label && <span className="truncate text-xs text-[var(--color-muted)]">{g.label}</span>}
                 {!g.known && (
                   <span className="rounded-full border border-[var(--color-warning,#d97706)] px-2 py-0.5 text-[11px] text-[var(--color-warning,#d97706)]">
                     sin prefijo configurado
@@ -1967,7 +2008,7 @@ function QrManager({ prefixes }) {
               </button>
               <button
                 onClick={() => setClearing({ scope: "prefix", prefixId: g.id, codes: g.items.map((i) => i.code) })}
-                className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft,rgba(220,38,38,0.12))]"
+                className={`${TAP} rounded-md border border-[var(--color-border)] px-2.5 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft,rgba(220,38,38,0.12))]`}
               >
                 Limpiar {g.id}
               </button>
@@ -1998,14 +2039,14 @@ function QrManager({ prefixes }) {
                           <div className="flex justify-end gap-1.5">
                             <button
                               onClick={() => setAssigning({ code: it.code, from: it.worker })}
-                              className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+                              className={`${TAP} rounded-md border border-[var(--color-border)] px-2.5 text-xs hover:bg-[var(--color-accent-soft)]`}
                             >
                               Reasignar
                             </button>
                             <button
                               onClick={() => unassign(it.code, it.worker)}
                               disabled={busy}
-                              className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft,rgba(220,38,38,0.12))] disabled:opacity-40"
+                              className={`${TAP} rounded-md border border-[var(--color-border)] px-2.5 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft,rgba(220,38,38,0.12))] disabled:opacity-40`}
                             >
                               Quitar
                             </button>

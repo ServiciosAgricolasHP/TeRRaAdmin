@@ -43,7 +43,7 @@ export default function ConfirmDialog({ open, title = "Confirmar", message, onCo
         </>
       }
     >
-      <p className="whitespace-pre-line text-sm text-[var(--color-muted)]">{message}</p>
+      <p className="whitespace-pre-line break-words text-sm text-[var(--color-muted)]">{message}</p>
     </Modal>
   );
 }
