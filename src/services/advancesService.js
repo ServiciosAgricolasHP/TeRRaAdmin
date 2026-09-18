@@ -27,6 +27,7 @@
 import { writeBatch, doc, getDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { createService } from "./firestoreBase";
+import { logAction } from "./logger";
 
 export const ADVANCE_TYPES = [
   { value: "anticipo", label: "Anticipo", icon: "🪙", sign: -1 },
@@ -54,6 +55,18 @@ export function advanceTypeMeta(type) {
 }
 
 export const advancesService = createService("advance", "advances");
+
+// Clave con la que agrupar los anticipos de una misma persona. Un anticipo
+// viejo puede haberse guardado contra el rut con el que se creó el trabajador
+// y uno nuevo contra su rut actual, si cambió de cédula en el medio.
+export const advanceWorkerKey = (a) => a?.workerId || a?.workerRut || "";
+
+// Para filtrar hay que comparar los DOS identificadores del anticipo contra las
+// claves buscadas, no solo el derivado: un anticipo puede tener `workerId` y
+// `workerRut` distintos, y quedarse con el primero pierde el match cuando lo
+// que se conoce es el otro.
+export const advanceMatchesWorker = (a, keys) =>
+  [a?.workerId, a?.workerRut].some((id) => id && keys.has(id));
 
 // Fase 3 de "rut editable": un anticipo puede estar marcado por `workerRut`
 // (rut al crearlo) o por `workerId` (id estable, agregado en fase 2).
@@ -221,6 +234,21 @@ export async function applyAdvancesToPayroll(applications, payrollId) {
     await batch.commit();
   }
   advancesService.invalidate();
+  // Un log por operación, no por anticipo: el batch existe justo para no hacer
+  // N escrituras, y auditar cada doc por separado lo anularía. El evento que
+  // importa es "esta nómina descontó estos anticipos".
+  await logAction({
+    action: "update",
+    entity: "payroll",
+    entityId: payrollId,
+    changes: null,
+    meta: {
+      op: "applyAdvances",
+      count: applications.length,
+      total: applications.reduce((s, a) => s + (Number(a.amount) || 0), 0),
+      advanceIds: applications.map((a) => a.advanceId),
+    },
+  });
 }
 
 // Reverse the payments[] entries that match `payrollId`. If no other payroll
@@ -256,4 +284,11 @@ export async function restoreAdvancesFromPayroll(advanceIds, payrollId) {
     await batch.commit();
   }
   advancesService.invalidate();
+  await logAction({
+    action: "update",
+    entity: "payroll",
+    entityId: payrollId,
+    changes: null,
+    meta: { op: "restoreAdvances", count: advanceIds.length, advanceIds },
+  });
 }

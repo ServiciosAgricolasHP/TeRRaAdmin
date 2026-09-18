@@ -107,6 +107,7 @@ const navItems = [
   { to: "/", label: "Dashboard", icon: "🏠", end: true },
   { to: "/faenas", label: "Faenas", icon: "🌾" },
   { to: "/calendar", label: "Calendario", icon: "📅" },
+  { to: "/harvest-qr", label: "Cosecha QR", icon: "📷" },
   { to: "/workers", label: "Trabajadores", icon: "👷" },
   { to: "/transports", label: "Transportes", icon: "🚛" },
   { to: "/advances", label: "Anticipos / Bonos", icon: "🪙" },
@@ -167,8 +168,75 @@ function ThemePicker() {
   );
 }
 
+// El alias es editable por el propio usuario y no por un admin: es cómo quiere
+// que lo nombren los documentos que firma, no un permiso.
+function ProfileModal({ onClose }) {
+  const { user, displayName, updateAlias } = useAuth();
+  const [alias, setAlias] = useState(user?.alias || "");
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await updateAlias(alias);
+      onClose();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Mi perfil"
+      size="sm"
+      footer={
+        <>
+          <button onClick={onClose} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
+            Cancelar
+          </button>
+          <button
+            onClick={save}
+            disabled={busy}
+            className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
+          >
+            {busy ? "Guardando…" : "Guardar"}
+          </button>
+        </>
+      }
+    >
+      <div className="space-y-3 text-sm">
+        <div>
+          <span className="block text-xs text-[var(--color-muted)]">Cuenta</span>
+          <span className="break-all">{user?.email}</span>
+        </div>
+        <label className="block">
+          <span className="mb-1 block text-xs text-[var(--color-muted)]">Alias</span>
+          <input
+            type="text"
+            value={alias}
+            onChange={(e) => setAlias(e.target.value)}
+            placeholder={user?.email || ""}
+            maxLength={40}
+            className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
+          />
+          <span className="mt-1 block text-xs text-[var(--color-muted)]">
+            Es el nombre con el que quedás firmando los registros que cargás a mano
+            (por ejemplo, el supervisor de un pesaje). Sin alias se usa tu correo.
+          </span>
+        </label>
+        <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-xs">
+          Vas a figurar como <strong>{alias.trim() || displayName}</strong>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 export default function Layout() {
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, isAdmin, displayName } = useAuth();
+  const [profileOpen, setProfileOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -291,10 +359,6 @@ export default function Layout() {
                   <span>📟</span>
                   <span>Consola</span>
                 </NavLink>
-                <NavLink to="/admin/harvest-qr" className={linkClass}>
-                  <span>📷</span>
-                  <span>Cosecha QR</span>
-                </NavLink>
               </div>
             )}
           </div>
@@ -347,7 +411,14 @@ export default function Layout() {
             <div className="truncate text-xs text-[var(--color-muted)] sm:text-sm">
               <span className="font-semibold text-[var(--color-text)]">TeRRA {APP_VERSION}</span>
               <span className="mx-1.5 text-[var(--color-border)]">·</span>
-              <span className="truncate">{user?.email}</span>
+              <button
+                type="button"
+                onClick={() => setProfileOpen(true)}
+                title="Mi perfil"
+                className="truncate underline decoration-dotted underline-offset-2 hover:text-[var(--color-text)]"
+              >
+                {displayName}
+              </button>
               <span className="ml-2 rounded bg-[var(--color-accent-soft)] px-2 py-0.5 text-[10px] text-[var(--color-accent)] sm:text-xs">
                 {user?.role}
               </span>
@@ -404,6 +475,8 @@ export default function Layout() {
           onSave={saveIndicators}
         />
       )}
+
+      {profileOpen && <ProfileModal onClose={() => setProfileOpen(false)} />}
     </div>
   );
 }

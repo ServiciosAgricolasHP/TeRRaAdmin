@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Link, Navigate } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { CatalogsProvider } from "./contexts/CatalogsContext";
@@ -53,6 +53,9 @@ export default function App() {
                 <Route path="links" element={<InterestLinks />} />
                 <Route path="info-cuentas" element={<InfoAccounts />} />
                 <Route path="calendar" element={<Calendar />} />
+                <Route path="harvest-qr" element={<HarvestQr />} />
+                {/* La ruta vieja sigue viva en marcadores y en links compartidos. */}
+                <Route path="admin/harvest-qr" element={<Navigate to="/harvest-qr" replace />} />
                 <Route path="facturacion" element={<Facturacion />} />
                 <Route path="price-book" element={<PriceBook />} />
                 <Route
@@ -84,14 +87,6 @@ export default function App() {
                   element={
                     <ProtectedRoute adminOnly>
                       <AdminConsole />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
-                  path="admin/harvest-qr"
-                  element={
-                    <ProtectedRoute adminOnly>
-                      <HarvestQr />
                     </ProtectedRoute>
                   }
                 />

@@ -9,6 +9,10 @@ export const userPrefsService = {
     const snap = await getDoc(ref(uid));
     return snap.data()?.faenaLayout || null;
   },
+  async saveAlias(uid, alias) {
+    if (!uid) return;
+    await setDoc(ref(uid), { alias: String(alias || "").trim() }, { merge: true });
+  },
   async saveLayout(uid, layout) {
     if (!uid) return;
     await setDoc(

@@ -82,6 +82,8 @@ el id/workerId, nunca el campo `rut`.
 | `groupLeader` | string[] | historial; `[0]` = actual (ej. `CHILENOS`, `EXTRANJEROS`) |
 | `idQr` | string[] | códigos QR asignados |
 
+**Búsqueda**: `findWorkerByRut()` resuelve por **las dos vías** — primero el docId, y si no hay, por el campo `rut`. Un rut que se escribió en otro documento (`workday.workerRut`, `harvestWeights.rut`, items de nómina) puede ser cualquiera de los dos según cuándo se creó, así que buscar solo por docId pierde a los que corrigieron su cédula. Quien necesite **escribir** contra el trabajador encontrado tiene que usar el `.id` del doc devuelto, nunca el rut con el que buscó.
+
 ### `workdays`
 Una fila por (cycleId × laborId × workerRut × date). Es la tabla "transaccional" de producción.
 | Campo | Tipo | Notas |
@@ -368,7 +370,15 @@ Config chica y compartida del libro de precios. **Un único doc `priceBookConfig
 | `hiddenFaenaIds` | string[] | faenas reales que se esconden del selector (nombre no legible) |
 
 ### `harvestWeights`
-Pesajes de cosecha escaneados por QR, escritos por la **app externa de scan**. Colección plana tipo log de eventos (N por trabajador por día). Es fuente de verdad: la app admin **nunca la edita**, solo la lee para sincronizar hacia `workdays`.
+Pesajes de cosecha escaneados por QR, escritos por la **app externa de scan**. Colección plana tipo log de eventos (N por trabajador por día). Es fuente de verdad del dato de producción.
+
+La app admin la lee para sincronizar hacia `workdays` y, desde **Cosecha QR → Pesajes**, permite además **agregar o editar un pesaje a mano** — vía de excepción para corregir una lectura mala o cargar una que no se alcanzó a escanear. Cuidado al escribir a mano: el doc guarda la numeración del **scan** (`weightProcess`/`weightType`), así que hay que invertir el remapeo del prefijo (`invertHarvestCodes` en `utils/cosechaCombos.js`, con verificación de ida y vuelta). Editar o agregar **siempre** recalcula la jornada del ciclo (`mirrorWeightToWorkdays`), creando el día, el combo o el trabajador en el ciclo si no estaban — un pesaje de un día nuevo es justo el caso que hay que reflejar, no uno que haya que excluir. El único freno es no tener destino: un prefijo sin `cycleId`/`laborId` no tiene jornada posible y se reporta en `noTarget`. Las jornadas ya tagueadas a una nómina quedan intactas y se reportan aparte, igual que los días sin tarifa configurada (la jornada se crea en $0).
+
+Cargar a mano acepta **varios pesajes de una**: el trabajador, la fecha, el prefijo y el QR van una sola vez y cada envase es una fila, que es como se descarga en la pesa. Se escribe un documento por fila; dos filas del mismo combo colapsan a una sola jornada al espejarse, porque la jornada suma por (trabajador × día × combo).
+
+**No hay timestamp.** El día de cosecha es `dateKey` y nada más — un día de trabajo, no un instante de reloj, y por eso una carga a mano del día anterior cae donde corresponde. `createdAt`/`updatedAt` los pone el servicio base pero nadie los lee, y el docId es autoId (aleatorio, no cronológico): **el orden de llegada de los pesajes dentro de un día es irrecuperable**. No importa para la sincronización, que suma por (trabajador × día × combo).
+
+Esta colección también la lee el visor externo **cosechasAgrofrutos** (junto con `qrPrefixes` y `catalogs`): es contrato público, no se cambia su forma sin migrar a ese consumidor.
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | string | autoId (lo pone la app de scan) |
@@ -378,6 +388,15 @@ Pesajes de cosecha escaneados por QR, escritos por la **app externa de scan**. C
 | `amount` | number | kilos del pesaje |
 | `weightProcess` | number | eje "calidad" en la convención numérica del scan; se mapea vía `qrPrefixes.qualityMap` |
 | `weightType` | number | eje "envase"; se mapea vía `qrPrefixes.containerMap` |
+| `idQr` | string? | el QR **físico** que originó el pesaje (`"XX-19"`). Es un rastro histórico, **no la identidad del trabajador**: los códigos son desechables y reutilizables — si alguien pierde el suyo se le da otro y el viejo vuelve al pozo, así que el mismo código puede haber sido de otra persona antes. Para saber de quién es el pesaje se usa `rut`, nunca esto. En una carga a mano queda vacío si el trabajador no tiene ningún código de ese prefijo asignado |
+
+> **Nunca filtres pesajes por `idQr`.** Buscar un QR en **Cosecha QR → Pesajes** lo resuelve primero a su dueño y desde ahí filtra **por `rut`**: el código es una llave prestada, y filtrar por él escondería justo los pesajes de antes de un cambio de QR — los que se quieren revisar. Si el código ya está liberado no hay dueño, así que se resuelve al revés (por los pesajes que lo anotaron) y puede devolver más de una persona.
+>
+> Asignar un QR en **Gestión QRs** ofrece además anotar ese código en los pesajes de esa persona y ese prefijo que no tienen ninguno (manuales, o escaneados antes de que existiera el campo). Es cosmético: ningún pesaje cambia de dueño.
+>
+> **Un QR por cosecha por persona.** El prefijo *es* la cosecha, así que asignarle `XX-21` a quien tiene `XX-19` le suelta el 19 y lo devuelve al pozo — en el mismo `update`, no en dos pasos. Códigos de prefijos distintos conviven sin problema. Los pesajes que ya anotaron el código viejo **no se tocan**: siguen siendo de esa persona por `rut`, y buscar el código liberado los encuentra igual.
+| `supervisor` | string? | quién estuvo en el pesaje. En una carga a mano es el alias (o correo) de quien la cargó, y **no se sobrescribe al editar** — un pesaje escaneado conserva su supervisor real; quién editó está en `logs` |
+| `paid` | bool? | lo escribe el scan; la app admin no lo lee ni lo escribe |
 
 ### `qrPrefixes`
 Puente entre un prefijo de QR físico y el (faena, ciclo, labor) al que hay que sincronizar sus pesajes. **DocId = el prefijo** (ej. `"HP"`). El ciclo/labor vigente se reapunta a mano cada vez que se abre un ciclo nuevo — deliberadamente semi-manual.
@@ -389,6 +408,7 @@ Puente entre un prefijo de QR físico y el (faena, ciclo, labor) al que hay que 
 | `cycleId` | ref→`cycles` \| null | ciclo vigente al que se sincroniza |
 | `laborId` | string \| null | labor (de tipo cosecha) dentro de ese ciclo |
 | `qualityMap`, `containerMap` | `{ [codigoScan]: valorCatalogo }`? | remapeo opcional; sin ellos el mapeo es identidad |
+| `lastSync` | `{ at, days, written }`? | última corrida de "Sincronizar" para este prefijo. `days` son los días que **realmente tenían pesajes**, no el rango elegido en el formulario: un rango de todo el mes puede haber sincronizado tres días sueltos. Solo lo escribe esa acción — editar un pesaje suelto no lo mueve, porque no sincroniza un rango. |
 | `active` | bool | |
 
 ### `cycleSummaries`
@@ -411,6 +431,8 @@ Preferencias de UI por usuario. **DocId = uid de Auth.**
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | string | uid |
+| `alias` | string? | cómo se firma esta persona en los registros que carga a mano (ej. `harvestWeights.supervisor`). Lo edita el propio usuario desde **Mi perfil** en el header — es una preferencia, no un permiso. Sin alias se usa el correo |
+| `role` | `"admin"` | `"supervisor"` | se normaliza a minúsculas al leer. **Sin doc `users/{uid}` el usuario cae a `supervisor`** |
 | `faenaLayout` | `{ groups, faenaGroup, faenaColor }` | layout de la pantalla Faenas |
 | `faenaLayoutUpdatedAt` | ts | |
 
@@ -631,7 +653,7 @@ erDiagram
 - **transport.paymentId ↔ transportPayment.tripIds**: misma idea de tag bidireccional para transportistas. Lo mismo un nivel más arriba con **transportPayment.payrollId ↔ transportPayroll.paymentIds**.
 - **Totales denormalizados (transporte)**: `transportPayments.total` y `transportPayrolls.total` son sumas guardadas, no calculadas al leer. El detalle imprimible suma las vueltas **en vivo**, mientras que el Balance de quincenas y la tarjeta de la quincena leen el campo — si divergen, es que algo escribió una vuelta sin propagar hacia arriba. La propagación vive en `transportsService.js` (`recalcPaymentTotal` → `recalcPayrollTotal`), disparada desde `tripsService.create/update/remove`, **no en las pantallas**. Los docs con `status: "paid"` quedan congelados y no se recalculan.
 - **advance.amountPaid ↔ advance.payments[]**: `amountPaid` es la suma de `payments[]` y el `status` se deriva de comparar contra `amount`. Revertir una nómina filtra de `payments[]` las entradas de esa nómina y recalcula ambos — por eso el array no queda ordenado por fecha.
-- **qrPrefix → harvestWeights → workdays**: los pesajes los escribe una app externa contra un prefijo de QR; el prefijo dice a qué (ciclo, labor) sincronizarlos. La sincronización agrupa por (trabajador, día, combo) y escribe/actualiza `workdays` — es un flujo de una sola dirección, la app admin nunca escribe `harvestWeights`.
+- **qrPrefix → harvestWeights → workdays**: los pesajes los escribe una app externa contra un prefijo de QR; el prefijo dice a qué (ciclo, labor) sincronizarlos. La sincronización agrupa por (trabajador, día, combo) y escribe/actualiza `workdays` — flujo de una sola dirección. La app admin escribe `harvestWeights` solo por la vía manual de Cosecha QR → Pesajes, que no dispara la sincronización: queda a cargo del operador.
 - **costCenter → informalExpenses**: gastos sin respaldo tributario, deliberadamente separados de `dteDocuments` para no contaminar la data fiscal.
 - **company → dteDocuments** (`companyId`): los DTE cuelgan de una empresa. El docId es **determinístico** (no autoId) → reimportar el mismo período es idempotente; el "replace por período" borra huérfanos y preserva `paymentStatus`/`payments` existentes.
 - **catalogs / users**: docIds estables (nombre / uid), no autoId.

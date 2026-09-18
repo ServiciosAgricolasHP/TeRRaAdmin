@@ -6,6 +6,8 @@ import {
   advanceTypeMeta,
   advanceSign,
   advanceRemaining,
+  advanceWorkerKey,
+  advanceMatchesWorker,
   hasInstallmentPlan,
   installmentProgress,
   computeCuotaAmount,
@@ -13,9 +15,11 @@ import {
   INSTALLMENT_CADENCES,
 } from "../services/advancesService";
 import { searchWorkers } from "../services/workersService";
+import { logsService } from "../services";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import ConfirmDialog from "../components/ConfirmDialog";
 import Modal from "../components/Modal";
+import WorkerAdvancesModal from "../components/WorkerAdvancesModal";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useToast } from "../contexts/ToastContext";
 import { matchesSearchQuery } from "../utils/textSearch";
@@ -68,6 +72,7 @@ export default function Advances() {
   const [editing, setEditing] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [appliedSince, setAppliedSince] = useState(() => isoDateNDaysAgo(APPLIED_DEFAULT_DAYS));
+  const [workerView, setWorkerView] = useState(null);
 
   // Single query, ordered by date. Status + date range are filtered client-side
   // via `filtered` below. The collection is small enough that one cached read
@@ -272,7 +277,13 @@ export default function Advances() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="text-xs">{meta.icon} <span className="font-medium">{meta.label}</span></div>
-                      <div className="font-medium leading-tight">{a.workerName}</div>
+                      <button
+                        onClick={() => setWorkerView({ keys: [advanceWorkerKey(a), a.workerRut], name: a.workerName, rut: a.workerRut })}
+                        className="text-left font-medium leading-tight underline decoration-dotted underline-offset-2 hover:text-[var(--color-accent)]"
+                        title="Ver todos los anticipos y bonos de esta persona"
+                      >
+                        {a.workerName}
+                      </button>
                       <div className="font-mono text-xs text-[var(--color-muted)]">
                         {formatRutForDisplay(a.workerRut)}
                       </div>
@@ -419,9 +430,20 @@ export default function Advances() {
       <AdvanceFormModal
         open={!!editing}
         item={editing}
+        items={items}
         onClose={() => setEditing(null)}
         onSaved={onSaved}
       />
+      {workerView && (
+        <WorkerAdvancesModal
+          workerKeys={workerView.keys}
+          name={workerView.name}
+          rut={workerView.rut}
+          items={items}
+          onClose={() => setWorkerView(null)}
+        />
+      )}
+
       <ConfirmDialog
         open={!!confirmDelete}
         title="Eliminar"
@@ -435,7 +457,13 @@ export default function Advances() {
   );
 }
 
-function AdvanceFormModal({ open, item, onClose, onSaved }) {
+// Un anticipo repetido por el mismo monto casi siempre es que alguien lo cargó
+// dos veces, no que el trabajador pidió dos veces lo mismo. Se avisa con quién
+// lo puso, para poder resolverlo sin salir de acá — pero no se bloquea: el caso
+// legítimo existe.
+const PENDING_STATUSES = ["pending", "partial"];
+
+function AdvanceFormModal({ open, item, items = [], onClose, onSaved }) {
   const toast = useToast();
   const isEdit = item?.mode === "edit";
   // Editar un anticipo `partial` (con pagos aplicados) impone restricciones:
@@ -491,18 +519,9 @@ function AdvanceFormModal({ open, item, onClose, onSaved }) {
     return () => clearTimeout(debRef.current);
   }, [picker.q, picker.open]);
 
-  const submit = async () => {
-    if (!form.workerRut) { toast.warning("Seleccioná un trabajador."); return; }
-    if (!form.amount || form.amount <= 0) { toast.warning("Monto debe ser mayor a 0."); return; }
-    const newAmount = Math.round(Number(form.amount) || 0);
-    if (isPartial && newAmount < amountPaid) {
-      { toast.warning(`El monto no puede ser menor a lo ya pagado (${fmtCurrency(amountPaid)}). Si querés cerrar el saldo, ponelo igual a ${fmtCurrency(amountPaid)}.`); return; }
-    }
-    if (!isEdit && form.type === "anticipo" && form.useInstallments) {
-      const n = Math.floor(Number(form.installmentCount) || 0);
-      if (n < 2) { toast.warning("El plan de cuotas necesita al menos 2 cuotas."); return; }
-      if (n > 60) { toast.warning("Máximo 60 cuotas."); return; }
-    }
+  const [dupConfirm, setDupConfirm] = useState(null);
+
+  const doSave = async (newAmount) => {
     setBusy(true);
     try {
       // Recompute status si hay pagos aplicados: si amount queda en o por debajo
@@ -534,15 +553,75 @@ function AdvanceFormModal({ open, item, onClose, onSaved }) {
       }
       if (isEdit) await advancesService.update(item.id, data);
       else await advancesService.create(data);
+      setDupConfirm(null);
       onSaved();
     } finally {
       setBusy(false);
     }
   };
 
+  const submit = async () => {
+    if (!form.workerRut) { toast.warning("Seleccioná un trabajador."); return; }
+    if (!form.amount || form.amount <= 0) { toast.warning("Monto debe ser mayor a 0."); return; }
+    const newAmount = Math.round(Number(form.amount) || 0);
+    if (isPartial && newAmount < amountPaid) {
+      { toast.warning(`El monto no puede ser menor a lo ya pagado (${fmtCurrency(amountPaid)}). Si querés cerrar el saldo, ponelo igual a ${fmtCurrency(amountPaid)}.`); return; }
+    }
+    if (!isEdit && form.type === "anticipo" && form.useInstallments) {
+      const n = Math.floor(Number(form.installmentCount) || 0);
+      if (n < 2) { toast.warning("El plan de cuotas necesita al menos 2 cuotas."); return; }
+      if (n > 60) { toast.warning("Máximo 60 cuotas."); return; }
+    }
+
+    if (isEdit) { await doSave(newAmount); return; }
+
+    const keys = new Set([form.workerId || form.workerRut, form.workerRut].filter(Boolean));
+    const dupes = items.filter(
+      (a) =>
+        advanceMatchesWorker(a, keys) &&
+        (Number(a.amount) || 0) === newAmount &&
+        PENDING_STATUSES.includes(a.status || "pending"),
+    );
+    if (dupes.length === 0) { await doSave(newAmount); return; }
+
+    // El email de quien lo creó no está en el doc del anticipo (solo el uid);
+    // sale del log, que se puede pedir por trabajador.
+    const byId = new Map();
+    try {
+      const chunks = await Promise.all(
+        [...keys].map((k) =>
+          logsService.list({ wheres: [["entity", "==", "advance"], ["meta.workerRut", "==", k]] }).catch(() => []),
+        ),
+      );
+      for (const row of chunks.flat()) {
+        if (row.action === "create" && row.entityId) byId.set(row.entityId, row.email || row.uid);
+      }
+    } catch { /* sin atribución el aviso igual sirve */ }
+
+    const lineas = dupes.map((d) => {
+      const meta = advanceTypeMeta(d.type);
+      const quien = byId.get(d.id);
+      return `${meta.icon} ${meta.label} · ${fmtCurrency(d.amount)} · ${d.date}${quien ? ` · puesto por ${quien}` : ""}`;
+    });
+    setDupConfirm({
+      amount: newAmount,
+      message: `${form.workerName || form.workerRut} ya tiene ${dupes.length === 1 ? "un movimiento pendiente" : `${dupes.length} movimientos pendientes`} por el mismo monto:\n\n${lineas.join("\n")}\n\n¿Crear igual?`,
+    });
+  };
+
   if (!open) return null;
 
   return (
+    <>
+    <ConfirmDialog
+      open={!!dupConfirm}
+      title="Puede estar duplicado"
+      message={dupConfirm?.message || ""}
+      confirmLabel="Crear igual"
+      busy={busy}
+      onConfirm={() => doSave(dupConfirm.amount)}
+      onCancel={() => setDupConfirm(null)}
+    />
     <Modal
       open={open}
       onClose={onClose}
@@ -741,5 +820,6 @@ function AdvanceFormModal({ open, item, onClose, onSaved }) {
         </div>
       </div>
     </Modal>
+    </>
   );
 }
