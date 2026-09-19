@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { serverTimestamp } from "firebase/firestore";
+import { serverTimestamp, deleteField } from "firebase/firestore";
 import { Link } from "react-router-dom";
 import { useToast } from "../contexts/ToastContext";
 import { faenasService, cyclesService, workdaysService, harvestWeightsService, qrPrefixesService } from "../services";
@@ -64,7 +64,58 @@ async function assignQrCode(code, toWorker, fromWorker) {
       idQr: [...already.filter((c) => !released.includes(c)), ...(already.includes(clean) ? [] : [clean])],
     });
   }
+
+  // El espejo va después de la escritura real y sin bloquearla: si el código
+  // cambió de dueño, el anterior también tiene que soltarlo en el padrón.
+  await syncPadron({
+    assigned: [clean],
+    released: [...released, ...(fromWorker ? [] : [])],
+    worker: toWorker,
+  });
+  if (fromWorker) {
+    await syncPadron({ assigned: [], released: [], worker: fromWorker });
+  }
+
   return { released, code: clean };
+}
+
+// Espejo de código → trabajador dentro de `qrPrefixes/{PREFIJO}.padron`.
+//
+// La app de scan lo lee de una sola vez para poder resolver un QR **sin
+// señal**: no se le puede preguntar a Firestore "los trabajadores del prefijo
+// XX" porque `idQr` es un arreglo de códigos completos y no hay índice que
+// responda eso, así que la alternativa era bajarse la colección `worker`
+// entera — una lectura por trabajador, cada vez.
+//
+// Es una CACHÉ, nunca la autoridad: quién tiene cada código lo dice
+// `worker.idQr`. Si los dos discrepan gana `worker`, y para eso está
+// "Reconstruir padrones", que lo rehace y reporta las diferencias.
+//
+// Vive dentro del prefijo a propósito: el prefijo *es* la cosecha, así que al
+// liberar los QR de la temporada el padrón se va con él.
+async function syncPadron({ assigned = [], released = [], worker }) {
+  const porPrefijo = new Map();
+  const anotar = (code, valor) => {
+    const pfx = prefixOfCode(code);
+    if (!pfx) return;
+    if (!porPrefijo.has(pfx)) porPrefijo.set(pfx, {});
+    porPrefijo.get(pfx)[`padron.${code}`] = valor;
+  };
+
+  for (const c of released) anotar(c, deleteField());
+  for (const c of assigned) {
+    anotar(c, { rut: worker.id, name: worker.name || "" });
+  }
+
+  await Promise.all(
+    [...porPrefijo.entries()].map(([pfx, patch]) =>
+      qrPrefixesService.update(pfx, patch).catch((e) => {
+        // Que falle el espejo no invalida la asignación, que ya quedó hecha en
+        // `worker`. Se avisa y se sigue: el padrón se puede reconstruir.
+        console.warn(`No se pudo actualizar el padrón de ${pfx}`, e);
+      }),
+    ),
+  );
 }
 
 // Quién tiene hoy ese código, si alguien lo tiene.
@@ -2023,6 +2074,71 @@ function QrManager({ prefixes }) {
     [prefixes],
   );
 
+  // Rehace `qrPrefixes/{PREFIJO}.padron` desde `worker`, que es la fuente de
+  // verdad, y reporta en qué diferían.
+  //
+  // El padrón es la caché que la app de scan lee **de una sola vez** para poder
+  // resolver un QR sin señal. Como es un espejo, puede derivar: una asignación
+  // cuya escritura del espejo falló, o hecha por una versión vieja del scan. Y
+  // la deriva no se ve — los pesajes simplemente quedan con el rut equivocado.
+  // Por eso esto no es una herramienta de rescate sino parte del diseño:
+  // conviene correrlo al abrir cada temporada.
+  //
+  // No cuesta lecturas de trabajadores: usa la lista que esta pantalla ya tiene
+  // cargada.
+  const rebuildPadrones = async () => {
+    setBusy(true);
+    try {
+      const esperado = new Map(); // prefijo -> { code: {rut, name} }
+
+      for (const w of workers) {
+        for (const code of codesOfWorker(w)) {
+          const pfx = prefixOfCode(code);
+          if (!pfx) continue;
+          if (!esperado.has(pfx)) esperado.set(pfx, {});
+          esperado.get(pfx)[code] = { rut: w.id, name: w.name || "" };
+        }
+      }
+
+      // Los prefijos configurados que quedaron sin ningún código también hay
+      // que vaciarlos, o conservarían asignaciones de la temporada pasada.
+      for (const p of prefixes) if (!esperado.has(p.id)) esperado.set(p.id, {});
+
+      let agregados = 0;
+      let quitados = 0;
+      let cambiados = 0;
+
+      for (const [pfx, mapa] of esperado) {
+        const actual = prefixes.find((p) => p.id === pfx)?.padron || {};
+
+        for (const [code, info] of Object.entries(mapa)) {
+          if (!actual[code]) agregados += 1;
+          else if (actual[code].rut !== info.rut) cambiados += 1;
+        }
+        for (const code of Object.keys(actual)) if (!mapa[code]) quitados += 1;
+
+        // Se escribe el mapa entero, no un merge: el merge nunca borraría los
+        // códigos que dejaron de estar asignados.
+        await qrPrefixesService.update(pfx, { padron: mapa });
+      }
+
+      const partes = [];
+      if (agregados) partes.push(`${agregados} agregado(s)`);
+      if (quitados) partes.push(`${quitados} quitado(s)`);
+      if (cambiados) partes.push(`${cambiados} con otro dueño`);
+
+      toast.success(
+        partes.length
+          ? `Padrones reconstruidos · ${partes.join(" · ")}`
+          : "Padrones reconstruidos · ya estaban al día",
+      );
+    } catch (err) {
+      toast.error("No se pudieron reconstruir los padrones: " + (err.message || err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const view = useMemo(() => {
     const needle = search.trim().toUpperCase();
     const byPrefix = new Map();
@@ -2217,6 +2333,15 @@ function QrManager({ prefixes }) {
             className="rounded-md border border-[var(--color-danger)] px-3 py-1.5 text-sm text-[var(--color-danger)] hover:bg-[var(--color-danger-soft,rgba(220,38,38,0.12))] disabled:cursor-not-allowed disabled:opacity-40"
           >
             Limpiar todos
+          </button>
+
+          <button
+            onClick={rebuildPadrones}
+            disabled={busy || loading}
+            title="Rehace el espejo que la app de scan lee para reconocer los QR sin señal"
+            className={`${TAP} rounded-md border border-[var(--color-border)] px-3 text-sm hover:bg-[var(--color-accent-soft)] disabled:cursor-not-allowed disabled:opacity-40`}
+          >
+            Reconstruir padrones
           </button>
         </div>
       </div>
