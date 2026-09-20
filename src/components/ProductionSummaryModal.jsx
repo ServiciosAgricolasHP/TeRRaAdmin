@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { captureFullWidthBlob } from "../utils/imageCapture";
 import Modal from "./Modal";
-import { workdaysService, laborGroupsService } from "../services";
+import { listWorkdaysByCycle, laborGroupsService } from "../services";
 import { tripsService } from "../services/transportsService";
 import { useCatalogs } from "../contexts/CatalogsContext";
 import { useToast } from "../contexts/ToastContext";
@@ -151,20 +151,33 @@ export default function ProductionSummaryModal({
 
   // Carga workdays para los ciclos que no tengamos cacheados. El caller puede
   // precargar pasando `workdaysByCycleProp` y evitamos la query.
+  //
+  // Dos cosas importan acá, y las dos son de costo:
+  //
+  // 1. La consulta filtra por ciclo en el SERVIDOR. Antes pedía la colección
+  //    `workdays` completa y descartaba en JS lo que no era del ciclo. Como
+  //    las consultas salían todas juntas, ninguna alcanzaba a poblar la caché
+  //    para las otras (`setCache` corre recién cuando la consulta vuelve), y
+  //    abrir el resumen de una faena costaba la colección entera una vez por
+  //    ciclo.
+  // 2. Solo baja los ciclos PRENDIDOS. Todo lo que se deriva de `wdByCycle`
+  //    (columnas, días, celdas) ya está filtrado por `enabledCycles`, así que
+  //    traer los apagados era pagar por datos que nadie mira. Al prender un
+  //    chip el efecto vuelve a correr y trae el que falte.
   useEffect(() => {
     if (!open) return;
-    const missing = cycles.filter((c) => !wdByCycle[c.id]);
+    const missing = cycles.filter((c) => enabledCycles.has(c.id) && !wdByCycle[c.id]);
     if (missing.length === 0) return;
     let cancelled = false;
     (async () => {
       setLoading(true);
       try {
+        // Una consulta por ciclo en vez de agrupar de a 10 con `in`: la clave
+        // de caché queda estable por ciclo, así prender y apagar un chip no
+        // vuelve a pagar. Va por el helper compartido para no pelearle el TTL
+        // a Nómina, que pide exactamente lo mismo.
         const fetched = await Promise.all(
-          missing.map(async (c) => {
-            const all = await workdaysService.list({ cache: true, ttl: 5 * 60 * 1000 });
-            const forCycle = all.filter((w) => w.cycleId === c.id);
-            return [c.id, forCycle];
-          }),
+          missing.map(async (c) => [c.id, await listWorkdaysByCycle(c.id)]),
         );
         if (cancelled) return;
         setWdByCycle((prev) => {
@@ -178,7 +191,7 @@ export default function ProductionSummaryModal({
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, cycles.map((c) => c.id).join(",")]);
+  }, [open, cycles.map((c) => c.id).join(","), [...enabledCycles].sort().join(",")]);
 
   // Carga las vueltas de transporte de cada ciclo — usadas por la fila
   // TRANSPORTE de la tabla general (costo de transporte por ciclo).

@@ -179,7 +179,7 @@ export default function Workers() {
     if (!confirm) return;
     setConfirm((c) => ({ ...c, busy: true }));
     try {
-      await deleteWorkerSafe(confirm.worker.id);
+      await deleteWorkerSafe(confirm.worker);
       setConfirm(null);
       await refreshCache();
     } catch (err) {

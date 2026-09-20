@@ -92,17 +92,37 @@ export async function createWorker({ rut, name }) {
   );
 }
 
-// Los workdays de un trabajador pueden estar marcados por `workerRut` (rut al
-// momento de crear el workday) o por `workerId` (id estable), dependiendo de
-// cuándo se escribieron. Chequeamos ambos para no dejar borrar a alguien que
-// sí tiene producción, solo porque su rut cambió después de esos workdays.
-export async function deleteWorkerSafe(workerId) {
-  const [byRut, byId] = await Promise.all([
-    workdaysService.list({ wheres: [["workerRut", "==", workerId]], take: 1 }),
-    workdaysService.list({ wheres: [["workerId", "==", workerId]], take: 1 }),
-  ]);
-  if (byRut.length || byId.length) throw new Error("No se puede eliminar: el trabajador tiene días asociados");
-  return workersService.remove(workerId);
+// Todos los ruts con los que un trabajador puede figurar en documentos
+// viejos: el doc id (su rut de creación, inmutable), el `rut` vigente y los
+// intermedios que haya dejado por el camino. Un workday guarda en
+// `workerRut` el rut que tenía el roster de la labor cuando se escribió, así
+// que puede ser cualquiera de los tres.
+//
+// Existe para poder resolver con UNA consulta `in`. Antes cada lugar
+// consultaba `workerRut` y `workerId` por separado y mezclaba los resultados;
+// como todo workday moderno graba los dos campos, la segunda consulta traía
+// —y cobraba— los mismos documentos que la primera.
+//
+// Acepta un string por compatibilidad con quien todavía pase una sola clave.
+export function workerKeys(worker) {
+  if (!worker) return [];
+  const w = typeof worker === "string" ? { id: worker } : worker;
+  const claves = [w.id, w.rut, ...(w.rutHistory || [])].filter(Boolean).map(String);
+  return [...new Set(claves)].slice(0, 10); // tope de `in` en esta versión
+}
+
+// No dejamos borrar a alguien que tiene producción cargada, la haya cargado
+// con el rut que tenga hoy o con uno anterior.
+export async function deleteWorkerSafe(worker) {
+  const claves = workerKeys(worker);
+  if (claves.length === 0) throw new Error("Trabajador inválido");
+  const id = typeof worker === "string" ? worker : worker.id;
+  const conDias = await workdaysService.list({
+    wheres: [["workerRut", "in", claves]],
+    take: 1,
+  });
+  if (conDias.length) throw new Error("No se puede eliminar: el trabajador tiene días asociados");
+  return workersService.remove(id);
 }
 
 export { workersService };

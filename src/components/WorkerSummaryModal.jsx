@@ -1,11 +1,12 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
-import { captureFullWidthBlob, captureFullWidthDataUrl } from "../utils/imageCapture";
+import { captureFullWidthBlob, captureFullWidthDataUrl, cloneForExport } from "../utils/imageCapture";
 import Modal from "./Modal";
 import { workdayMapKey, getTratoTierTotals, getTratoTiers, containerLabel, tratoTypeLabel, tratoUnitLabel, cosechaUnit } from "../utils/cosechaCombos";
 import { DEFAULT_OVERTIME_RATE } from "../utils/tratoHE";
 import { countingStageIds } from "../utils/tratoEtapas";
 import { cyclesService, faenasService, subfaenasService, workdaysService } from "../services";
 import { payrollsService } from "../services/payrollsService";
+import { workerKeys } from "../services/workersService";
 import {
   listPendingForWorkers,
   advanceRemaining,
@@ -76,7 +77,10 @@ const defaultCycleTitle = ({ faena, subfaena, cycle }) =>
 //                    (o mezcla de con-payrollId y sin-payrollId — se comporta
 //                    como pendiente conservadoramente)
 //   - "paid"       → todos los wds tienen payrollId y todos con status "paid"
-function buildCycleRows(workerRut, cycle, workdaysByLabor, catalogs, payrollById) {
+// `claves` es el conjunto de ruts con los que este trabajador puede figurar
+// (ver `workerKeys`). Antes era un solo string, y para quien cambió de cédula
+// eso descartaba justamente los días escritos con el rut nuevo.
+function buildCycleRows(claves, cycle, workdaysByLabor, catalogs, payrollById) {
   const rows = [];
   const cosechaContainers = new Set();
   for (const labor of cycle.labors || []) {
@@ -87,7 +91,7 @@ function buildCycleRows(workerRut, cycle, workdaysByLabor, catalogs, payrollById
     const byDate = new Map();
     for (const k in wdMap) {
       const wd = wdMap[k];
-      if (wd.workerRut !== workerRut) continue;
+      if (!claves.has(wd.workerRut)) continue;
       const d = wd.date;
       if (!byDate.has(d)) byDate.set(d, { date: d, wds: [], tiersByIdx: new Map() });
       const bucket = byDate.get(d);
@@ -255,8 +259,9 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
     if (next.has(s)) next.delete(s); else next.add(s);
     return next;
   });
-  // Filtro visual manual: filas ocultas por click en el ojito. Session-only,
-  // no persistido — al cerrar el modal se limpian. Tampoco entran en totales.
+  // Filtro visual manual: filas sacadas a mano desde la columna "Filtrar".
+  // Session-only, no persistido — al cerrar el modal se limpian. Tampoco
+  // entran en totales.
   const [hiddenRowKeys, setHiddenRowKeys] = useState(() => new Set());
   const toggleHidden = (rowKey) => setHiddenRowKeys((prev) => {
     const next = new Set(prev);
@@ -264,11 +269,12 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
     return next;
   });
   const clearHidden = () => setHiddenRowKeys(new Set());
-  // Toggle master de los ojitos: cuando está en false NO se renderiza la
-  // columna de botones, así la foto sale limpia. La lista de ocultos se
-  // preserva — el usuario esconde primero lo que quiere, apaga los ojos, y
-  // recién ahí toma la screenshot.
-  const [showEyeButtons, setShowEyeButtons] = useState(true);
+  // Toggle master de la columna "Filtrar". Arranca apagada: el uso normal del
+  // resumen es mirarlo o sacarle la foto, no depurar filas. La lista de filas
+  // sacadas se preserva al apagarla. En las exportaciones la columna no
+  // aparece nunca, esté prendida o no — sus celdas van marcadas con
+  // `data-export-hide` y `cloneForExport` las saca.
+  const [showFiltrar, setShowFiltrar] = useState(false);
   const isRowVisible = (r) => statusFilter.has(r.paymentStatus) && !hiddenRowKeys.has(r.rowKey);
   const printRef = useRef(null);
 
@@ -285,7 +291,7 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
         const opts = includeClosed
           ? { includeClosed: true, closedFrom, closedTo }
           : { includeClosed: false };
-        const { data: result, advances: adv } = await loadWorkerSummaryData(worker.id, catalogs, opts);
+        const { data: result, advances: adv } = await loadWorkerSummaryData(worker, catalogs, opts);
         setAdvances(adv);
         setData(result);
       } finally {
@@ -343,6 +349,23 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
     });
   };
 
+  // El encabezado del resumen es uno solo (logo + título + nombre + RUT), pero
+  // cada vista guarda su propio texto: por-ciclo en `titles`, cronológico en
+  // `titles.linear`. Este par resuelve cuál se está editando para que el panel
+  // "Personalizar títulos" sirva para las dos. Tiene que vivir acá, fuera de
+  // `printRef`, o los controles saldrían dentro de la foto.
+  const tituloVista =
+    viewMode === "lineal"
+      ? {
+          main: titles?.linear?.main || "DETALLE DE JORNADA — CRONOLÓGICO",
+          subtitle: titles?.linear?.subtitle ?? titles?.subtitle ?? "",
+        }
+      : { main: titles.main || "", subtitle: titles.subtitle || "" };
+  const updateTituloVista = (patch) => {
+    if (viewMode !== "lineal") return updateTitles(patch);
+    updateTitles({ linear: { ...(titles?.linear || {}), ...tituloVista, ...patch } });
+  };
+
   const handleDownload = async () => {
     if (!printRef.current) return;
     setBusy("download");
@@ -374,7 +397,7 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
 
   const handlePrint = () => {
     if (!printRef.current) return;
-    const html = printRef.current.outerHTML;
+    const html = cloneForExport(printRef.current).outerHTML;
     const win = window.open("", "_blank", "width=900,height=700");
     if (!win) {
       toast.warning("Permite las ventanas emergentes para imprimir.");
@@ -386,7 +409,9 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
         body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; margin: 0; }
         table { border-collapse: collapse; width: 100%; }
         th, td { border: 1px solid #888; padding: 6px 8px; font-size: 12px; }
-        @media print { @page { size: portrait; margin: 12mm; } }
+        thead { display: table-header-group; }
+        tr { page-break-inside: avoid; }
+        @media print { @page { size: ${viewMode === "lineal" ? "landscape" : "portrait"}; margin: 12mm; } }
       </style>
     </head><body>${html}</body></html>`);
     win.document.close();
@@ -405,16 +430,16 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
           <button onClick={onClose} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
             Cerrar
           </button>
-          {viewMode !== "lineal" && (
-            <>
-              <button onClick={handleCopy} disabled={busy === "copy" || loading} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
-                {busy === "copy" ? "Copiando..." : "📋 Copiar imagen"}
-              </button>
-              <button onClick={handleDownload} disabled={busy === "download" || loading} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
-                {busy === "download" ? "Descargando..." : "📥 Descargar PNG"}
-              </button>
-            </>
-          )}
+          {/* Sirven para las dos vistas: capturan `printRef`, que envuelve el
+              encabezado con logo, título, nombre y RUT más la tabla que esté
+              activa. La vista cronológica tenía sus propios botones adentro
+              del bloque y sacaban la foto sin nada de eso. */}
+          <button onClick={handleCopy} disabled={busy === "copy" || loading} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
+            {busy === "copy" ? "Copiando..." : "📋 Copiar imagen"}
+          </button>
+          <button onClick={handleDownload} disabled={busy === "download" || loading} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
+            {busy === "download" ? "Descargando..." : "📥 Descargar PNG"}
+          </button>
           <button onClick={handlePrint} disabled={loading} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
             🖨 Imprimir
           </button>
@@ -505,17 +530,15 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
           <StatusFilterPill status="unpaid" label="○ Sin pagar" active={statusFilter.has("unpaid")} onToggle={() => toggleStatus("unpaid")} />
           <span className="ml-2 text-[var(--color-muted)]">·</span>
           <button
-            onClick={() => setShowEyeButtons((v) => !v)}
+            onClick={() => setShowFiltrar((v) => !v)}
             className={`rounded-md border px-2 py-0.5 transition-colors ${
-              showEyeButtons
-                ? "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
-                : "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+              showFiltrar
+                ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
             }`}
-            title={showEyeButtons
-              ? "Ocultar los botones de ojo (para tomar la foto sin ellos)"
-              : "Mostrar los botones de ojo para poder ocultar días"}
+            title="Muestra una columna para sacar días del resumen a mano. No sale en las fotos ni al imprimir."
           >
-            {showEyeButtons ? "👁 Ojos: ON" : "👁‍🗨 Ojos: OFF (foto limpia)"}
+            {showFiltrar ? "✓ 👁 Filtrar: ON" : "👁 Filtrar"}
           </button>
           {hiddenRowKeys.size > 0 && (
             <>
@@ -539,21 +562,21 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
             <label className="block">
               <span className="block text-[10px] text-[var(--color-muted)]">Título principal</span>
               <input
-                value={titles.main || ""}
-                onChange={(e) => updateTitles({ main: e.target.value })}
+                value={tituloVista.main}
+                onChange={(e) => updateTituloVista({ main: e.target.value })}
                 className="w-full rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-sm outline-none focus:border-[var(--color-accent)]"
               />
             </label>
             <label className="block">
               <span className="block text-[10px] text-[var(--color-muted)]">Subtítulo (nombre formal)</span>
               <input
-                value={titles.subtitle || ""}
-                onChange={(e) => updateTitles({ subtitle: e.target.value })}
+                value={tituloVista.subtitle}
+                onChange={(e) => updateTituloVista({ subtitle: e.target.value })}
                 className="w-full rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-sm outline-none focus:border-[var(--color-accent)]"
               />
             </label>
           </div>
-          {data.length > 0 && (
+          {data.length > 0 && viewMode !== "lineal" && (
             <div className="space-y-1.5 border-t border-[var(--color-border)] pt-2">
               <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">
                 Encabezado por ciclo
@@ -606,7 +629,7 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
         viewMode={viewMode}
         onUpdateTitles={updateTitles}
         catalogs={catalogs}
-        onToggleHidden={showEyeButtons ? toggleHidden : undefined}
+        onToggleHidden={showFiltrar ? toggleHidden : undefined}
       />
     </Modal>
   );
@@ -630,22 +653,20 @@ const advanceTypeIcon = (type) => advanceTypeMeta(type).icon;
 //     los workdays de ciclos CERRADOS. Los abiertos siempre se cargan
 //     completos. Si un ciclo cerrado no tiene workdays dentro del rango,
 //     se omite del resultado para no quedar con secciones vacías.
+// Recibe el trabajador completo (o al menos `{ id, rut }`), no un string: el
+// doc id y el rut vigente son dos cosas distintas y aplanarlos a un solo valor
+// era lo que obligaba a consultar dos campos y mezclar. Con las dos claves en
+// la mano alcanza una consulta `in`, que devuelve cada documento una sola vez.
 // eslint-disable-next-line react-refresh/only-export-components
-export async function loadWorkerSummaryData(workerId, catalogs, options = {}) {
+export async function loadWorkerSummaryData(worker, catalogs, options = {}) {
   const { includeClosed = false, closedFrom = null, closedTo = null } = options;
-  if (!workerId) return { data: [], advances: [], grandTotal: 0, advancesSaldo: 0 };
-  // Fase 3 de "rut editable": `workerId` puede venir como el id estable o
-  // como un rut (según el caller) — buscamos workdays/anticipos por ambos
-  // campos y mezclamos, para no perder producción/anticipos si el rut del
-  // trabajador cambió después de que se crearon.
-  const [wdsByRut, wdsById, pendingAdvances] = await Promise.all([
-    workdaysService.list({ wheres: [["workerRut", "==", workerId]] }),
-    workdaysService.list({ wheres: [["workerId", "==", workerId]] }),
-    listPendingForWorkers([workerId], [workerId]).catch(() => []),
+  const claves = workerKeys(worker);
+  if (claves.length === 0) return { data: [], advances: [], grandTotal: 0, advancesSaldo: 0 };
+  const clavesSet = new Set(claves);
+  const [wds, pendingAdvances] = await Promise.all([
+    workdaysService.list({ wheres: [["workerRut", "in", claves]] }),
+    listPendingForWorkers(claves).catch(() => []),
   ]);
-  const wdSeen = new Map();
-  for (const w of [...wdsByRut, ...wdsById]) wdSeen.set(w.id, w);
-  const wds = [...wdSeen.values()];
   const advances = [...pendingAdvances].sort((a, b) =>
     String(a.date || "").localeCompare(String(b.date || "")),
   );
@@ -715,7 +736,7 @@ export async function loadWorkerSummaryData(workerId, catalogs, options = {}) {
     // Saltamos ciclos cerrados sin workdays dentro del rango para no
     // mostrar secciones vacías.
     if (isClosed && Object.keys(wdMap).length === 0) return null;
-    const { rows, cosechaContainers } = buildCycleRows(workerId, c, wdMap, catalogs, payrollById);
+    const { rows, cosechaContainers } = buildCycleRows(clavesSet, c, wdMap, catalogs, payrollById);
     const totals = rows.reduce(
       (acc, r) => ({
         kilos: acc.kilos + r.kilos,
@@ -784,7 +805,7 @@ export async function loadWorkerSummaryData(workerId, catalogs, options = {}) {
 }
 
 export const PrintableWorkerSummary = forwardRef(function PrintableWorkerSummary(
-  { worker, data, grandTotal, advances = [], advancesSaldo = 0, anticiposSaldo, bonosSaldo, titles, viewMode = "por-ciclo", onUpdateTitles, catalogs = {}, onToggleHidden },
+  { worker, data, grandTotal, advances = [], advancesSaldo = 0, anticiposSaldo, bonosSaldo, titles, viewMode = "por-ciclo", catalogs = {}, onToggleHidden },
   ref,
 ) {
   // Soporte legacy: si solo viene advancesSaldo, lo tratamos como saldo de anticipos.
@@ -792,14 +813,23 @@ export const PrintableWorkerSummary = forwardRef(function PrintableWorkerSummary
   const bonSaldo = bonosSaldo != null ? bonosSaldo : 0;
   const neto = grandTotal - antSaldo + bonSaldo;
   const isLinear = viewMode === "lineal";
+  // Cada vista tiene su propio título editable, pero el encabezado con el
+  // logo, el nombre y el RUT es uno solo. Antes la vista cronológica repetía
+  // un segundo encabezado adentro de su bloque.
+  const encabezado = isLinear
+    ? {
+        main: titles?.linear?.main || "DETALLE DE JORNADA — CRONOLÓGICO",
+        subtitle: titles?.linear?.subtitle ?? titles?.subtitle,
+      }
+    : { main: titles?.main || "DETALLE DE JORNADA", subtitle: titles?.subtitle };
   const isMobile = useIsMobile();
   return (
     <div ref={ref} style={{ background: "#ffffff", color: "#000", padding: 20, fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 24, marginBottom: 16 }}>
         <img src={LOGO_URL} alt="logo" crossOrigin="anonymous" style={{ width: 90, height: 90, objectFit: "contain", flexShrink: 0 }} />
         <div style={{ textAlign: "center" }}>
-          <div style={{ fontWeight: 700, fontSize: 18, letterSpacing: 1 }}>{titles?.main || "DETALLE DE JORNADA"}</div>
-          {titles?.subtitle && <div style={{ marginTop: 6, fontSize: 14 }}>{titles.subtitle}</div>}
+          <div style={{ fontWeight: 700, fontSize: 18, letterSpacing: 1 }}>{encabezado.main}</div>
+          {encabezado.subtitle && <div style={{ marginTop: 6, fontSize: 14 }}>{encabezado.subtitle}</div>}
           {worker?.id && (
             <div style={{ marginTop: 2, fontSize: 12, color: "#444", fontFamily: "ui-monospace, monospace" }}>
               RUT {formatRutForDisplay(worker.rut || worker.id)}
@@ -813,13 +843,7 @@ export const PrintableWorkerSummary = forwardRef(function PrintableWorkerSummary
       </div>
 
       {isLinear && (
-        <LinearTable
-          data={data}
-          catalogs={catalogs}
-          titles={titles?.linear}
-          onUpdateLinearTitles={(patch) => onUpdateTitles && onUpdateTitles({ linear: { ...(titles?.linear || {}), ...patch } })}
-          onToggleHidden={onToggleHidden}
-        />
+        <LinearTable data={data} catalogs={catalogs} onToggleHidden={onToggleHidden} />
       )}
       {!isLinear && data.map(({ cycle, faena, subfaena, rows, totals, totalsByStatus, cols, tratoLabel, kilosLabel, isClosed }) => {
         // Helper local para que los totales caigan en la columna correcta.
@@ -828,7 +852,7 @@ export const PrintableWorkerSummary = forwardRef(function PrintableWorkerSummary
         const trailingEmpty = (
           <>
             <td style={cell}></td>
-            {onToggleHidden && <td style={cell}></td>}
+            {onToggleHidden && <td data-export-hide style={cell}></td>}
           </>
         );
         const renderTotalRow = (label, value, valueCol, bg) => (
@@ -899,7 +923,7 @@ export const PrintableWorkerSummary = forwardRef(function PrintableWorkerSummary
                   {cols.piso && <th style={{ ...cellH, textAlign: "right" }}>Piso</th>}
                   <th style={{ ...cellH, textAlign: "right" }}>Total</th>
                   <th style={{ ...cellH, textAlign: "center" }}>Estado</th>
-                  {onToggleHidden && <th style={{ ...cellH, width: 30 }}></th>}
+                  {onToggleHidden && <th data-export-hide style={{ ...cellH, width: 44 }}>Filtrar</th>}
                 </tr>
               </thead>
               <tbody>
@@ -986,11 +1010,11 @@ export const PrintableWorkerSummary = forwardRef(function PrintableWorkerSummary
                         <StatusPill status={r.paymentStatus} payrollNames={r.payrollNames} />
                       </td>
                       {onToggleHidden && (
-                        <td style={{ ...cell, textAlign: "center", padding: 2 }}>
+                        <td data-export-hide style={{ ...cell, textAlign: "center", padding: 2 }}>
                           <button
                             type="button"
                             onClick={() => onToggleHidden(r.rowKey)}
-                            title="Ocultar este día del resumen (no afecta datos, solo visual)"
+                            title="Sacar este día del resumen (solo visual, no toca los datos)"
                             style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 14, padding: 2, color: "#6b7280", lineHeight: 1 }}
                           >
                             👁
@@ -1262,11 +1286,7 @@ function StatusFilterPill({ status, label, active, onToggle }) {
 // menos una fila las tiene. Los labels de unidad caen al primero que se
 // vea — si los ciclos usan unidades distintas, la columna mostraría las
 // dos juntas indistintamente (caso raro y aceptado).
-function LinearTable({ data, catalogs, titles, onUpdateLinearTitles, onToggleHidden }) {
-  const toast = useToast();
-  const localRef = useRef(null);
-  const [busy, setBusy] = useState("");
-  const [editTitles, setEditTitles] = useState(false);
+function LinearTable({ data, catalogs, onToggleHidden }) {
 
   // Aplanado: una fila por (cycle, day-of-cycle-row).
   const flat = useMemo(() => {
@@ -1326,105 +1346,14 @@ function LinearTable({ data, catalogs, titles, onUpdateLinearTitles, onToggleHid
   const statusesPresent = ["paid", "in_pending", "unpaid"].filter((s) => (totalsByStatus[s] || 0) > 0);
   const showStatusSplit = statusesPresent.length > 1;
 
-  // Captura local solo del bloque (sin el resto del modal). Usa el mismo
-  // truco que `LaborWorkerGrid`: la ref envuelve el contenedor visible,
-  // los botones de acción quedan FUERA del ref.
-  const handleCopy = async () => {
-    if (!localRef.current) return;
-    setBusy("copy");
-    try {
-      const blob = await captureFullWidthBlob(localRef.current);
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada al portapapeles");
-    } catch (err) {
-      toast.error("Error: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
-  };
-  const handleDownload = async () => {
-    if (!localRef.current) return;
-    setBusy("download");
-    try {
-      const dataUrl = await captureFullWidthDataUrl(localRef.current);
-      const a = document.createElement("a");
-      a.download = "resumen_cronologico.png";
-      a.href = dataUrl;
-      a.click();
-    } finally { setBusy(""); }
-  };
-  const handlePrint = () => {
-    if (!localRef.current) return;
-    const html = localRef.current.outerHTML;
-    const win = window.open("", "_blank", "width=1100,height=800");
-    if (!win) {
-      toast.warning("Permite las ventanas emergentes para imprimir.");
-      return;
-    }
-    win.document.write(`<!DOCTYPE html><html><head><title>Resumen cronológico</title>
-      <style>
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
-        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; margin: 0; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #888; padding: 5px 7px; font-size: 11px; }
-        thead { display: table-header-group; }
-        tr { page-break-inside: avoid; }
-        @media print { @page { size: landscape; margin: 10mm; } }
-      </style>
-    </head><body>${html}<script>window.onload = () => { window.focus(); window.print(); };</script></body></html>`);
-    win.document.close();
-  };
-
   if (flat.length === 0) return null;
 
-  const main = titles?.main || "DETALLE DE JORNADA — LINEAL";
-  const subtitle = titles?.subtitle || "";
-
+  // Los valores que ve el editor son los mismos que pinta el encabezado de
+  // arriba (`encabezado` en PrintableWorkerSummary); si acá tuviéramos un
+  // default propio, el campo mostraría un texto y la foto otro.
   return (
     <div style={{ marginBottom: 20 }}>
-      {/* Botones — fuera del ref para que no se capturen en la imagen. */}
-      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginBottom: 6 }}>
-        <button onClick={handleCopy} disabled={busy === "copy"} style={btnStyle}>
-          {busy === "copy" ? "..." : "📋 Copiar"}
-        </button>
-        <button onClick={handleDownload} disabled={busy === "download"} style={btnStyle}>
-          {busy === "download" ? "..." : "📥 PNG"}
-        </button>
-        <button onClick={handlePrint} style={btnStyle}>🖨 Imprimir</button>
-        {onUpdateLinearTitles && (
-          <button onClick={() => setEditTitles((v) => !v)} style={btnStyle}>
-            {editTitles ? "✓ Listo" : "✎ Editar título"}
-          </button>
-        )}
-      </div>
-      {editTitles && onUpdateLinearTitles && (
-        <div style={{ marginBottom: 8, padding: 8, border: "1px solid #ddd", borderRadius: 6, background: "#fafafa", display: "flex", flexDirection: "column", gap: 4 }}>
-          <label style={{ fontSize: 11 }}>
-            <div style={{ color: "#666", marginBottom: 2 }}>Título principal</div>
-            <input
-              value={main}
-              onChange={(e) => onUpdateLinearTitles({ main: e.target.value })}
-              style={{ width: "100%", padding: "3px 6px", fontSize: 12, border: "1px solid #ccc", borderRadius: 4 }}
-            />
-          </label>
-          <label style={{ fontSize: 11 }}>
-            <div style={{ color: "#666", marginBottom: 2 }}>Subtítulo</div>
-            <input
-              value={subtitle}
-              onChange={(e) => onUpdateLinearTitles({ subtitle: e.target.value })}
-              style={{ width: "100%", padding: "3px 6px", fontSize: 12, border: "1px solid #ccc", borderRadius: 4 }}
-            />
-          </label>
-        </div>
-      )}
-
-      {/* Contenido capturable */}
-      <div ref={localRef} style={{ background: "#ffffff", padding: 12 }}>
-        <div style={{ textAlign: "center", marginBottom: 10 }}>
-          <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: 1 }}>{main}</div>
-          {subtitle && <div style={{ marginTop: 4, fontSize: 12 }}>{subtitle}</div>}
-        </div>
+      <div style={{ background: "#ffffff", padding: 12 }}>
         <div style={{ overflowX: "auto" }}>
         <table style={{ borderCollapse: "collapse", width: "100%" }}>
           <thead>
@@ -1439,7 +1368,7 @@ function LinearTable({ data, catalogs, titles, onUpdateLinearTitles, onToggleHid
               {cols.piso && <th style={{ ...cellH, textAlign: "right" }}>Piso</th>}
               <th style={{ ...cellH, textAlign: "right" }}>Total</th>
               <th style={{ ...cellH, textAlign: "center" }}>Estado</th>
-              {onToggleHidden && <th style={{ ...cellH, width: 30 }}></th>}
+              {onToggleHidden && <th data-export-hide style={{ ...cellH, width: 44 }}>Filtrar</th>}
             </tr>
           </thead>
           <tbody>
@@ -1519,11 +1448,11 @@ function LinearTable({ data, catalogs, titles, onUpdateLinearTitles, onToggleHid
                   <StatusPill status={r.paymentStatus} payrollNames={r.payrollNames} />
                 </td>
                 {onToggleHidden && (
-                  <td style={{ ...cell, textAlign: "center", padding: 2 }}>
+                  <td data-export-hide style={{ ...cell, textAlign: "center", padding: 2 }}>
                     <button
                       type="button"
                       onClick={() => onToggleHidden(r.rowKey)}
-                      title="Ocultar este día del resumen (no afecta datos, solo visual)"
+                      title="Sacar este día del resumen (solo visual, no toca los datos)"
                       style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 14, padding: 2, color: "#6b7280", lineHeight: 1 }}
                     >
                       👁
@@ -1565,7 +1494,7 @@ function LinearTable({ data, catalogs, titles, onUpdateLinearTitles, onToggleHid
                 {fmtCurrency(totals.amount + totals.piso)}
               </td>
               <td style={cell}></td>
-              {onToggleHidden && <td style={cell}></td>}
+              {onToggleHidden && <td data-export-hide style={cell}></td>}
             </tr>
             {showStatusSplit && (
               <tr style={{ background: "#f9fafb" }}>
@@ -1588,11 +1517,3 @@ function LinearTable({ data, catalogs, titles, onUpdateLinearTitles, onToggleHid
   );
 }
 
-const btnStyle = {
-  background: "var(--color-surface-2, #f3f4f6)",
-  border: "1px solid var(--color-border, #ddd)",
-  borderRadius: 4,
-  padding: "3px 8px",
-  fontSize: 11,
-  cursor: "pointer",
-};

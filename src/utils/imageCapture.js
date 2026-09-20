@@ -11,9 +11,26 @@ import { toBlob, toPng } from "html-to-image";
 //
 // Acepta options que se pasan a html-to-image (backgroundColor, pixelRatio,
 // cacheBust, etc). Los defaults son white bg + pixelRatio 2 (nítido en HDPI).
+
+// Controles que no tienen que aparecer en una exportación: botones de
+// filtrar, toggles, y en general cualquier cosa que solo sirve en pantalla.
+// Se marcan con `data-export-hide` en el JSX —incluyendo la celda de
+// encabezado de su columna, o la tabla quedaría corrida— y se sacan del clon
+// antes de medir. Así no hace falta apagarlos por estado y volver a
+// prenderlos, que parpadea y obliga a coordinar renders con la captura.
+export const EXPORT_HIDE_ATTR = "data-export-hide";
+
+// Clon ya limpio de esos controles. Lo usa la captura y también la impresión,
+// que arma su HTML con `outerHTML`.
+export function cloneForExport(node) {
+  const clone = node.cloneNode(true);
+  clone.querySelectorAll(`[${EXPORT_HIDE_ATTR}]`).forEach((el) => el.remove());
+  return clone;
+}
+
 async function _captureExpanded(node, captureFn, options = {}) {
   if (!node) throw new Error("captureFullWidth: node vacío");
-  const clone = node.cloneNode(true);
+  const clone = cloneForExport(node);
   const wrapper = document.createElement("div");
   wrapper.style.cssText =
     "position: fixed; left: -99999px; top: 0; pointer-events: none; background: #ffffff; z-index: -1;";

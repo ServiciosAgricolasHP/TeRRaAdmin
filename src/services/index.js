@@ -18,6 +18,41 @@ export const workersService = {
 };
 
 export const workdaysService = createService("workday", "workdays");
+
+// Los workdays de un ciclo: la consulta más repetida de la app. La piden
+// Nómina (al montar, para las cifras del selector, y otra vez al armar el
+// preview) y el resumen de producción por faena, a veces con segundos de
+// diferencia.
+//
+// Vive acá y no escrita a mano en cada pantalla por dos razones, las dos de
+// costo. La clave de caché es `workdays::{wheres,order,take}`, así que
+// cualquier diferencia en cómo se escribe la misma consulta (agrupar de a 10
+// con `in` en vez de pedir de a uno) forma una clave distinta y se vuelve a
+// pagar. Y el TTL se sella al escribir con el valor que pasó el último que
+// escribió: dos pantallas con TTL distinto se acortan el vencimiento entre
+// ellas sin que se note.
+//
+// Un minuto es corto a propósito: de estos documentos sale la plata que se le
+// paga a la gente. Alcanza para que dos lecturas seguidas de un mismo flujo no
+// se cobren dos veces, y no tanto como para armar una nómina sobre datos
+// viejos. Cualquier escritura a `workdays` invalida el scope completo, así que
+// editar un día en CycleDetail limpia esto solo.
+export const WORKDAYS_BY_CYCLE_TTL = 60_000;
+
+export function listWorkdaysByCycle(cycleId) {
+  return workdaysService.list({
+    wheres: [["cycleId", "==", cycleId]],
+    cache: true,
+    ttl: WORKDAYS_BY_CYCLE_TTL,
+  });
+}
+
+// Varios ciclos de una. Devuelve un solo array plano, sin repetir ciclos.
+export async function listWorkdaysByCycles(cycleIds) {
+  const uniq = [...new Set(cycleIds)].filter(Boolean);
+  const porCiclo = await Promise.all(uniq.map((id) => listWorkdaysByCycle(id)));
+  return porCiclo.flat();
+}
 export const groupLeadersService = createService("groupLeader", "groupLeader");
 export const payrollSnapshotsService = createService("payrollSnapshot", "payrollSnapshots");
 export const interestLinksService = createService("interestLink", "interestLinks");

@@ -68,35 +68,39 @@ export const advanceWorkerKey = (a) => a?.workerId || a?.workerRut || "";
 export const advanceMatchesWorker = (a, keys) =>
   [a?.workerId, a?.workerRut].some((id) => id && keys.has(id));
 
-// Fase 3 de "rut editable": un anticipo puede estar marcado por `workerRut`
-// (rut al crearlo) o por `workerId` (id estable, agregado en fase 2).
-// Aceptamos ambas listas y mezclamos — así no se pierde un anticipo pendiente
-// si el rut del trabajador cambió después de crearlo.
-export async function listPendingForWorkers(workerRuts, workerIds = []) {
-  // Firestore caps disjunctive normal form at 30. Two compound `in` filters
-  // multiply: 30 ruts × 2 statuses = 60 → too many disjunctions. We keep each
-  // chunk at 15 and filter status client-side to stay under the limit even
-  // if the status set grows in the future.
+// `workerRut` es la única forma de buscar un anticipo. Antes se consultaba
+// además por `workerId`, pero todos los trabajadores tienen su rut y los
+// nuevos nacen con él, así que esa segunda pasada consultaba el mismo valor en
+// un campo que casi ningún documento usa: duplicaba las consultas sin
+// encontrar nada.
+export async function listPendingForWorkers(workerRuts) {
+  // El estado se filtra en el SERVIDOR. Traerse todos los anticipos históricos
+  // de cada persona para descartar los saldados en JS significaba pagar por
+  // ~9 documentos por trabajador para quedarse con 1.
+  //
+  // Firestore expande la consulta a forma normal disyuntiva y admite hasta 30
+  // términos: 10 ruts × 2 estados = 20, con margen si algún día se suma un
+  // tercer estado pendiente.
   const out = [];
   const seen = new Set();
-  const PENDING_STATUSES = new Set(["pending", "partial"]);
-  const collect = async (field, values) => {
-    const uniq = [...new Set(values)].filter(Boolean);
-    for (let i = 0; i < uniq.length; i += 15) {
-      const chunk = uniq.slice(i, i + 15);
-      const list = await advancesService.list({ wheres: [[field, "in", chunk]] });
-      for (const a of list) {
-        if (seen.has(a.id)) continue;
-        // Legacy docs without a `status` field are treated as pending.
-        const st = a.status || "pending";
-        if (!PENDING_STATUSES.has(st)) continue;
-        seen.add(a.id);
-        out.push(a);
-      }
+  const uniq = [...new Set(workerRuts)].filter(Boolean);
+
+  for (let i = 0; i < uniq.length; i += 10) {
+    const chunk = uniq.slice(i, i + 10);
+    const list = await advancesService.list({
+      wheres: [
+        ["workerRut", "in", chunk],
+        ["status", "in", ["pending", "partial"]],
+      ],
+      cache: true,
+    });
+    for (const a of list) {
+      if (seen.has(a.id)) continue;
+      seen.add(a.id);
+      out.push(a);
     }
-  };
-  await collect("workerRut", workerRuts);
-  await collect("workerId", workerIds);
+  }
+
   return out;
 }
 

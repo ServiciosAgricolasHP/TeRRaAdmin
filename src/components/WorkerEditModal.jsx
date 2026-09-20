@@ -224,7 +224,22 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
         await workersService.update(rut, { groupLeader, idQr, bankDetails, email });
       } else {
         await workersService.update(worker.id, {
-          ...(rutChanged ? { rut } : {}),
+          // Al cambiar de cédula guardamos la anterior. Los workdays viejos
+          // quedaron grabados con ella (`workerRut` es el rut que tenía el
+          // roster ese día) y es la única forma de volver a encontrarlos si
+          // alguien cambia de rut más de una vez. Mismo patrón que
+          // `groupLeader`, que también es un historial.
+          ...(rutChanged
+            ? {
+                rut,
+                rutHistory: [
+                  ...new Set([
+                    ...(worker?.rutHistory || []),
+                    worker?.rut || worker?.id,
+                  ].filter(Boolean)),
+                ],
+              }
+            : {}),
           name: toProperName(form.name),
           email,
           groupLeader,
