@@ -43,7 +43,13 @@ export function aggregateWorkerAmounts(workdays, laborTypeById) {
     } else {
       amount = Number(wd.amount) || 0;
     }
-    if (amount === 0) continue;
+    // Un día en cero SÍ entra. Cortaba acá, antes de meter el id en
+    // `workdayIds`, así que nunca se etiquetaba con `payrollId` y quedaba
+    // disponible para siempre: las cifras de "pagado / pendiente" del ciclo
+    // no cerraban nunca. Es el caso de los días de asistencia de un sueldo
+    // mensual (`attendanceOnly: true, amount: 0`), que hay que marcar como
+    // pagados aunque no generen transferencia. El archivo del banco los
+    // filtra por su cuenta (ver `buildBchileRows`).
     if (!byWorker.has(wd.workerRut)) {
       // Fase 2 de "rut editable" (ver workersService.js): workerId es el id
       // estable del worker; fallback al rut para workdays viejos que todavía
@@ -130,52 +136,61 @@ const STYLE_BANK_TOTAL = { font: { bold: true }, fill: fill("FFD9E1F2"), border:
 const STYLE_CELL = { border: BORDER_ALL };
 
 // ─────────────────────────── BChile sheet ───────────────────────────
-const BCHILE_DEFAULT_EMAIL = "remuneracionesis@gmail.com";
+// El banco rechaza las filas sin mail, así que las que no lo traen se
+// completan con la casilla de remuneraciones.
+export const BCHILE_DEFAULT_EMAIL = "remuneracionesis@gmail.com";
 
-function buildBchileSheet(wb, items) {
-  const ws = wb.addWorksheet("Nomina");
-  const headers = [
-    "Rut Beneficiario *",
-    "Nombre Beneficiario *",
-    "Cuenta beneficiario *",
-    "Cod Banco *",
-    "Monto *",
-    "Tipo de Cuenta *",
-    "Identificador",
-    "Descripcion del Pago",
-    "Mail destinatario",
-    "Campo Libre 1  (Glosa 1)",
-    "Campo Libre 2 (Glosa 2)",
-  ];
-  ws.addRow(headers);
-  // Filtramos cero-neto: existen en la nómina solo para liquidar anticipos
+export const BCHILE_HEADERS = [
+  "Rut Beneficiario *",
+  "Nombre Beneficiario *",
+  "Cuenta beneficiario *",
+  "Cod Banco *",
+  "Monto *",
+  "Tipo de Cuenta *",
+  "Identificador",
+  "Descripcion del Pago",
+  "Mail destinatario",
+  "Campo Libre 1  (Glosa 1)",
+  "Campo Libre 2 (Glosa 2)",
+];
+
+// Las filas que el portal del banco ingiere, como matriz de primitivos.
+// Está separado de la escritura en ExcelJS porque acá viven tres reglas que
+// deciden a qué cuenta va la plata, y con el workbook de por medio no se
+// podían probar.
+export function buildBchileRows(items = []) {
+  // Cero-neto afuera: existen en la nómina solo para liquidar anticipos
   // (bruto = anticipo), pero el banco no acepta transferencias de $0.
   // Orden alfabético por nombre para que el correlativo A001…A999 sea estable.
-  const sorted = items
+  const ordenados = items
     .filter((it) => Math.round(Number(it.amount) || 0) > 0)
     .sort((a, b) =>
       cleanText(a.name || "").localeCompare(cleanText(b.name || ""), "es", { sensitivity: "base" }),
     );
-  sorted.forEach((it, idx) => {
-    const identifier = `A${String(idx + 1).padStart(3, "0")}`;
+
+  return ordenados.map((it, idx) => [
     // `paymentRut` viene de bankDetails[0] (la cuenta destino del banco) y
     // puede diferir del RUT de la persona — p.ej. cuando el pago va a una
     // cuenta de un familiar. El portal de BChile lo valida contra la
     // titularidad de la cuenta, así que SIEMPRE va paymentRut acá.
-    ws.addRow([
-      rutWithDvNoDash(it.paymentRut || it.rut),
-      cleanText(it.name),
-      String(it.accountNumber || ""),
-      String(it.bankCode || ""),
-      Math.round(Number(it.amount) || 0),
-      bchileAccountTypeCode(it.accountType),
-      identifier,
-      "",
-      it.email || BCHILE_DEFAULT_EMAIL,
-      "",
-      "",
-    ]);
-  });
+    rutWithDvNoDash(it.paymentRut || it.rut),
+    cleanText(it.name),
+    String(it.accountNumber || ""),
+    String(it.bankCode || ""),
+    Math.round(Number(it.amount) || 0),
+    bchileAccountTypeCode(it.accountType),
+    `A${String(idx + 1).padStart(3, "0")}`,
+    "",
+    it.email || BCHILE_DEFAULT_EMAIL,
+    "",
+    "",
+  ]);
+}
+
+function buildBchileSheet(wb, items) {
+  const ws = wb.addWorksheet("Nomina");
+  ws.addRow(BCHILE_HEADERS);
+  for (const row of buildBchileRows(items)) ws.addRow(row);
   ws.getRow(1).eachCell((c) => (c.style = STYLE_HEADER));
   ws.columns.forEach((col, i) => {
     col.width = i === 1 ? 30 : i === 8 ? 28 : 16;

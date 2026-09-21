@@ -37,10 +37,11 @@ import {
   installmentProgress,
   cadenceMeta,
 } from "../services/advancesService";
+import { saveSnapshot, deleteSnapshot, readSnapshot } from "../services/payrollSnapshots";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import { bankName, accountTypeLabel, ACCOUNT_TYPES, isCashBank, CASH_BANK_CODE } from "../utils/banks";
 import { getTratoTierTotals, getDayCombos, getDaySingle, getTratoTiers, tratoTypeLabel, tratoUnitLabel, cosechaUnit, comboLabel, containerLabel, formatLaborDayPrice } from "../utils/cosechaCombos";
-import { countingStageIds } from "../utils/tratoEtapas";
+import { describeStage, normalizeStages, stageTag } from "../utils/tratoEtapas";
 import { useCatalogs } from "../contexts/CatalogsContext";
 import { useToast } from "../contexts/ToastContext";
 import {
@@ -861,11 +862,7 @@ export default function Payroll() {
       recompute();
 
       const pSnapshot = (async () => {
-        try {
-          await payrollSnapshotsService.upsert(created.id, fullSnapshot);
-        } catch (err) {
-          console.warn("No se pudo guardar el snapshot en payrollSnapshots:", err);
-        }
+        await saveSnapshot(created.id, fullSnapshot);
         snapshotDone = true;
         recompute();
       })();
@@ -1036,7 +1033,7 @@ export default function Payroll() {
         recompute();
       })();
       const pSnap = (async () => {
-        try { await payrollSnapshotsService.remove(id); } catch { /* noop */ }
+        await deleteSnapshot(id);
         snapDone = true;
         recompute();
       })();
@@ -1099,16 +1096,7 @@ export default function Payroll() {
   // `p.snapshot` field if the payroll was created before the split.
   const onDownloadSnapshot = async (p) => {
     try {
-      let snap = null;
-      try {
-        const doc = await payrollSnapshotsService.getById(p.id);
-        if (doc) {
-          // Strip the firestore-injected `id` field from the snapshot payload.
-          const { id: _omit, ...rest } = doc;
-          snap = rest;
-        }
-      } catch { /* noop */ }
-      if (!snap && p.snapshot) snap = { ...p.snapshot, payrollId: p.id };
+      const snap = await readSnapshot(p);
       if (!snap) {
         toast.warning("Esta nómina no tiene snapshot guardado (creada antes de la feature).");
         return;
@@ -2820,8 +2808,10 @@ function buildGroupCycleSnapshot(groupRuts, cycle, workdays, nameByRut, catalogs
   for (const labor of labors) {
     const wdsLabor = wdsCycle.filter((w) => w.laborId === labor.id);
     if (wdsLabor.length === 0) continue;
-    // tratoEtapas: etapas que cuentan para el conteo de unidades.
-    const countingSet = labor.type === "tratoEtapas" ? countingStageIds(labor) : null;
+    // tratoEtapas: orden de las etapas para el desglose de cada celda.
+    const ordenEtapas = labor.type === "tratoEtapas"
+      ? normalizeStages(labor.stages).map((st) => String(st.id))
+      : null;
 
     // Aggregate per (worker, date) into a cell payload.
     // Multiple workdays for same (worker, date) are summed (e.g. trato tiers
@@ -2849,6 +2839,7 @@ function buildGroupCycleSnapshot(groupRuts, cycle, workdays, nameByRut, catalogs
           isHoliday: false,
           byCombo: {},
           byTier: {},
+          byStage: {},
         });
       }
       const c = cellByWorkerDay.get(key);
@@ -2901,10 +2892,19 @@ function buildGroupCycleSnapshot(groupRuts, cycle, workdays, nameByRut, catalogs
         c.hasManejo = c.hasManejo || !!wd.hasManejo;
         c.hasSupervision = c.hasSupervision || !!wd.hasSupervision;
       } else if (labor.type === "tratoEtapas") {
-        // Pago = amount de todas las etapas; unidades (jornadas) = solo las
-        // etapas que cuentan.
-        c.amount += Number(wd.amount) || 0;
-        if (countingSet.has(String(wd.stageId))) c.jornadas += Number(wd.qty) || 0;
+        // Para el trabajador toda la producción cuenta: `counts` decide qué
+        // se le factura al cliente, no qué hizo la persona. Antes las etapas
+        // que no cuentan aportaban el monto pero no la cantidad, así que el
+        // comprobante mostraba plata sin producción detrás.
+        const q = Number(wd.qty) || 0;
+        const monto = Number(wd.amount) || 0;
+        c.amount += monto;
+        c.jornadas += q;
+        const sid = String(wd.stageId ?? "");
+        const acc = c.byStage[sid] || { ...describeStage(labor, sid, ordenEtapas), qty: 0, amount: 0 };
+        acc.qty += q;
+        acc.amount += monto;
+        c.byStage[sid] = acc;
       } else {
         c.amount += Number(wd.amount) || 0;
         c.jornadas += 1;
@@ -2953,7 +2953,7 @@ function buildGroupCycleSnapshot(groupRuts, cycle, workdays, nameByRut, catalogs
     let grandExtras = 0;
     let grandPiso = 0;
     for (const d of sortedDates) {
-      const agg = { amount: 0, kilos: 0, jornadas: 0, overtimeHours: 0, extras: 0, piso: 0, byCombo: {}, byTier: {} };
+      const agg = { amount: 0, kilos: 0, jornadas: 0, overtimeHours: 0, extras: 0, piso: 0, byCombo: {}, byTier: {}, byStage: {} };
       for (const r of rows) {
         const c = r.cells[d];
         if (!c) continue;
@@ -2972,6 +2972,11 @@ function buildGroupCycleSnapshot(groupRuts, cycle, workdays, nameByRut, catalogs
           if (!agg.byTier[tk]) agg.byTier[tk] = { index: b.index, jornadas: 0, amount: 0 };
           agg.byTier[tk].jornadas += b.jornadas;
           agg.byTier[tk].amount += b.amount;
+        }
+        for (const [sid, b] of Object.entries(c.byStage || {})) {
+          if (!agg.byStage[sid]) agg.byStage[sid] = { stageId: sid, name: b.name, counts: b.counts, order: b.order, qty: 0, amount: 0 };
+          agg.byStage[sid].qty += b.qty;
+          agg.byStage[sid].amount += b.amount;
         }
       }
       dayTotals[d] = agg;
@@ -3077,10 +3082,18 @@ function renderProductionCell(cell, laborType, tratoLabel, kilosUnit, catalogs =
     return `${baseHtml}${flagsHtml}<div class="muted">${fmtMoney(cell.amount)}</div>`;
   }
   if (laborType === "tratoEtapas") {
-    // jornadas = unidades que cuentan (carpas). El monto es el pago del día.
+    // jornadas = unidades producidas, de todas las etapas. El desglose dice
+    // de qué etapa salió cada una, sin marcar cuáles cuentan para facturar:
+    // esto lo lee el trabajador.
     const j = cell.jornadas || 0;
+    const etapas = Object.values(cell.byStage || {})
+      .filter((b) => b.qty || b.amount)
+      .sort((a, b) => a.order - b.order);
+    const breakdown = etapas.length > 1
+      ? etapas.map((b) => `<div class="muted prod-breakdown">${stageTag(b)}: ${num(b.qty)}</div>`).join("")
+      : "";
     const jHtml = j ? `<div>${num(j)} unid</div>` : "";
-    return `${jHtml}${pisoTag}<div class="muted">${fmtMoney(cell.amount)}</div>`;
+    return `${breakdown}${jHtml}${pisoTag}<div class="muted">${fmtMoney(cell.amount)}</div>`;
   }
   // main / supervision / extra
   return `<div>${fmtMoney(cell.amount)}</div>`;
@@ -3133,8 +3146,14 @@ function renderProductionTotal(totals, laborType, tratoLabel, kilosUnit, catalog
   }
   if (laborType === "tratoEtapas") {
     const j = totals.jornadas || 0;
+    const etapas = Object.values(totals.byStage || {})
+      .filter((b) => b.qty || b.amount)
+      .sort((a, b) => a.order - b.order);
+    const breakdown = etapas.length > 1
+      ? etapas.map((b) => `<div class="muted prod-breakdown">${stageTag(b)}: ${num(b.qty)}</div>`).join("")
+      : "";
     const jHtml = j ? `<div>${num(j)} unid</div>` : "";
-    return `${jHtml}${pisoTag}<div><b>${fmtMoney(amount)}</b></div>`;
+    return `${breakdown}${jHtml}${pisoTag}<div><b>${fmtMoney(amount)}</b></div>`;
   }
   return `<div><b>${fmtMoney(amount)}</b></div>`;
 }
@@ -4175,7 +4194,24 @@ function printResumenTable(payroll, {
 }
 
 async function printCashReceipts(payroll, cashGroups, titleOverrides = {}, catalogs = {}, payrollData = null) {
-  if (cashGroups.length === 0) return;
+  // Fuera de la hoja que firma el líder los que no tienen nada que cobrar
+  // NI produjeron: son los días de asistencia de un sueldo mensual, que
+  // entran a la nómina solo para quedar etiquetados. Hacerle firmar a
+  // alguien que recibió $0 ensucia un documento de pago.
+  //
+  // El corte es por bruto, no por neto: quien produjo y quedó en cero
+  // porque un anticipo se llevó todo SÍ va en la hoja — al líder le sirve
+  // ver que esa persona ya está saldada.
+  const gruposConPago = cashGroups
+    .map((g) => {
+      const items = g.items.filter(
+        (it) => Math.round(Number(it.amount) || 0) > 0 || Math.round(Number(it.grossAmount) || 0) > 0,
+      );
+      return { ...g, items, total: items.reduce((sum, it) => sum + (Number(it.amount) || 0), 0) };
+    })
+    .filter((g) => g.items.length > 0);
+  if (gruposConPago.length === 0) return;
+  cashGroups = gruposConPago;
 
   const data = payrollData || (await fetchPayrollWorkdays(payroll));
   const { cyclesById } = data;

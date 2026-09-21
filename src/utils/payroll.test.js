@@ -8,6 +8,7 @@ import {
   splitBankAndCash,
   normalizeLeader,
   groupCashByLeader,
+  buildBchileRows,
 } from "./payroll";
 
 const wd = (over = {}) => ({
@@ -78,26 +79,36 @@ describe("aggregateWorkerAmounts", () => {
     expect(r.workerId).toBe("1-9");
   });
 
-  // ⚠️ COMPORTAMIENTO ACTUAL, PARECE UN BUG (payroll.js:46)
-  //
-  // `if (amount === 0) continue` corta ANTES de meter el id en `workdayIds`.
-  // El workday entonces nunca se etiqueta con `payrollId`, así que queda
-  // disponible para siempre y las cifras de "pagado / pendiente" del ciclo
-  // nunca cierran. Aparece con los días de asistencia de sueldo mensual
-  // (`attendanceOnly: true, amount: 0`) y con cualquier día puesto en cero.
-  //
-  // El test fija lo que hace HOY. No lo tomes como la conducta deseada.
-  it("[bug conocido] un workday en 0 no entra en workdayIds y queda sin etiquetar", () => {
+  // Los días en cero entran. Antes se descartaban antes de llegar a
+  // `workdayIds`, así que nunca se etiquetaban con `payrollId` y quedaban
+  // disponibles para siempre: las cifras de "pagado / pendiente" del ciclo no
+  // cerraban nunca.
+  it("un workday en 0 entra igual en workdayIds", () => {
     const res = aggregateWorkerAmounts(
       [wd({ id: "cero", amount: 0 }), wd({ id: "vale", amount: 100 })],
       tipos,
     );
-    expect(res[0].workdayIds).toEqual(["vale"]);
-    expect(res[0].workdayIds).not.toContain("cero");
+    expect(res[0].workdayIds).toEqual(["cero", "vale"]);
+    expect(res[0].total).toBe(100);
   });
 
-  it("[bug conocido] si TODOS los días son 0, el trabajador desaparece", () => {
-    expect(aggregateWorkerAmounts([wd({ amount: 0 })], tipos)).toEqual([]);
+  it("un trabajador con todos los días en 0 aparece con total 0", () => {
+    // Es el caso del sueldo mensual que marca asistencia: hay que poder
+    // etiquetarle los días como pagados aunque no genere transferencia.
+    const res = aggregateWorkerAmounts([wd({ id: "asist", amount: 0 })], tipos);
+    expect(res).toHaveLength(1);
+    expect(res[0].total).toBe(0);
+    expect(res[0].workdayIds).toEqual(["asist"]);
+  });
+
+  it("ese trabajador no llega al archivo del banco", () => {
+    // La otra mitad de la regla: entra a la nómina para que sus días queden
+    // marcados, pero el banco rechaza una transferencia de $0.
+    const [r] = aggregateWorkerAmounts([wd({ id: "asist", amount: 0 })], tipos);
+    const filas = buildBchileRows([
+      { rut: r.rut, name: "Mensual", amount: r.total, accountNumber: "1", accountType: 3, bankCode: "012" },
+    ]);
+    expect(filas).toEqual([]);
   });
 
   it("los montos negativos sí entran (no hay guard)", () => {

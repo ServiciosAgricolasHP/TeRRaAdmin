@@ -7,6 +7,8 @@ import {
   computeStageDayAmount,
   getDayStages,
   getEtapasTotals,
+  describeStage,
+  stageTag,
 } from "./tratoEtapas";
 
 describe("computeStageDayAmount", () => {
@@ -167,5 +169,113 @@ describe("getStageDayPrice / getDayStages", () => {
       { id: "s1", name: "Poda", counts: true, price: 300, mode: "flat" },
       { id: "s2", name: "Amarre", counts: false, price: 0, mode: "unit" },
     ]);
+  });
+});
+
+describe("describeStage", () => {
+  const labor = {
+    id: "l1",
+    type: "tratoEtapas",
+    stages: [
+      { id: "prep", name: "Preparación", counts: false },
+      { id: "inst", name: "Instalación", counts: true },
+      { id: "comp", name: "Completo", counts: true },
+    ],
+  };
+
+  it("trae nombre, counts y la posición de la definición", () => {
+    expect(describeStage(labor, "inst")).toEqual({
+      stageId: "inst",
+      name: "Instalación",
+      counts: true,
+      order: 1,
+    });
+  });
+
+  it("el orden sale del labor, no del orden en que llegan los workdays", () => {
+    const orden = [describeStage(labor, "comp"), describeStage(labor, "prep")]
+      .sort((a, b) => a.order - b.order)
+      .map((e) => e.name);
+    expect(orden).toEqual(["Preparación", "Completo"]);
+  });
+
+  it("acepta el id como número sin romper el match", () => {
+    const numerico = { stages: [{ id: 7, name: "Siete", counts: false }] };
+    expect(describeStage(numerico, 7).name).toBe("Siete");
+    expect(describeStage(numerico, "7").counts).toBe(false);
+  });
+
+  it("una etapa que ya no está en la definición se trata como que cuenta", () => {
+    // Es producción real que quedó huérfana porque alguien editó las etapas;
+    // esconderla del trabajador sería peor que mostrarla de más.
+    const e = describeStage(labor, "borrada");
+    expect(e.name).toBe("Etapa");
+    expect(e.counts).toBe(true);
+  });
+
+  it("sin etapas configuradas no revienta", () => {
+    expect(describeStage(null, "x").name).toBe("Etapa");
+    expect(describeStage({}, undefined).stageId).toBe("");
+  });
+});
+
+describe("stageTag", () => {
+  it("es solo el nombre de la etapa", () => {
+    expect(stageTag({ name: "Instalación", counts: true })).toBe("Instalación");
+  });
+
+  it("una etapa que no cuenta se rotula igual que las demás", () => {
+    // Estas vistas las lee el trabajador. `counts` es una distinción de
+    // facturación de la empresa, y al lado de la producción de alguien un
+    // "(no cuenta)" se lee como que su trabajo no vale.
+    expect(stageTag({ name: "Preparación", counts: false })).toBe("Preparación");
+  });
+
+  it("sin nombre cae a un rótulo genérico, no a vacío", () => {
+    expect(stageTag({ counts: true })).toBe("Etapa");
+  });
+
+  it("sin etapa devuelve vacío", () => {
+    expect(stageTag(null)).toBe("");
+    expect(stageTag(undefined)).toBe("");
+  });
+});
+
+describe("la frontera entre lo que ve el trabajador y lo que cuenta la empresa", () => {
+  const labor = {
+    id: "l1",
+    type: "tratoEtapas",
+    stages: [
+      { id: "prep", name: "Preparación", counts: false },
+      { id: "inst", name: "Instalación", counts: true },
+    ],
+  };
+  const dia = [
+    { stageId: "prep", qty: 10, amount: 20000 },
+    { stageId: "inst", qty: 4, amount: 40000 },
+  ];
+
+  it("el conteo de la empresa sigue excluyendo las etapas que no cuentan", () => {
+    // Esta es la regla que NO cambia: una unidad física se factura una sola
+    // vez, por etapas o como completo.
+    const { pago, unidades } = getEtapasTotals(labor, dia);
+    expect(pago).toBe(60000);
+    expect(unidades).toBe(4);
+  });
+
+  it("pero la producción del trabajador son las 14, no las 4", () => {
+    // Es lo que estaba roto: la vista del trabajador mostraba el pago de
+    // Preparación sin ninguna cantidad detrás.
+    const total = dia.reduce((sum, wd) => sum + wd.qty, 0);
+    expect(total).toBe(14);
+  });
+
+  it("el desglose nombra las dos etapas sin distinguirlas", () => {
+    // La frontera está en los números, no en los rótulos: la empresa cuenta 4
+    // y el trabajador ve 14, pero a él las dos etapas se le nombran igual.
+    const etiquetas = dia
+      .map((wd) => stageTag(describeStage(labor, wd.stageId)))
+      .sort();
+    expect(etiquetas).toEqual(["Instalación", "Preparación"]);
   });
 });

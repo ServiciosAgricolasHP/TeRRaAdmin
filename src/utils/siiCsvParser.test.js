@@ -185,23 +185,31 @@ describe("parseSiiRcvCsv — IVA", () => {
     expect(parseSiiRcvCsv(utf8(csv)).records[0].iva).toBe(19000);
   });
 
-  // ⚠️ COMPORTAMIENTO ACTUAL, PARECE UN BUG (siiCsvParser.js:260)
-  //
-  //   const iIvaRec = colIdx(headers, "monto iva recuperable", "monto iva");
-  //
-  // `colIdx` matchea por `includes`. Si el export trae "Monto IVA No
-  // Recuperable" pero NO trae "Monto IVA Recuperable", el primer patrón no
-  // encuentra nada y el segundo ("monto iva") matchea la columna de NO
-  // recuperable. Entonces `iIvaRec` e `iIvaNoRec` apuntan a la MISMA columna y
-  // `iva: ivaRec + ivaNoRec` la suma dos veces.
-  //
-  // Este test fija lo que pasa HOY. No es la conducta deseada.
-  it("[bug conocido] duplica el IVA si solo existe la columna No Recuperable", () => {
+  // `colIdx` matchea por `includes`, así que el fallback "monto iva" —que está
+  // para los exports con una sola columna de IVA— aterrizaba en la columna de
+  // No Recuperable cuando era la única, y el IVA se sumaba dos veces. Ese IVA
+  // va derecho al balance que alimenta el F29.
+  it("no duplica el IVA cuando solo existe la columna No Recuperable", () => {
     const head =
       "Nro;Tipo Doc;RUT Proveedor;Razon Social;Folio;Fecha Docto;Monto Neto;Monto IVA No Recuperable;Monto Total";
     const csv = [head, fila(1, 33, "76123456-7", "P", 55, "2026-03-15", 100000, 19000, 119000)].join("\n");
     const r = parseSiiRcvCsv(utf8(csv)).records[0];
-    expect(r.iva).toBe(38000); // debería ser 19000
+    expect(r.iva).toBe(19000);
+  });
+
+  it("sigue leyendo el IVA de un export con una sola columna \"Monto IVA\"", () => {
+    // El fallback tiene que seguir funcionando: es el caso para el que existe.
+    const head =
+      "Nro;Tipo Doc;Rut cliente;Razon Social;Folio;Fecha Docto;Monto Neto;Monto IVA;Monto Total";
+    const csv = [head, fila(1, 33, "77111111-1", "C", 55, "2026-03-15", 100000, 19000, 119000)].join("\n");
+    expect(parseSiiRcvCsv(utf8(csv)).records[0].iva).toBe(19000);
+  });
+
+  it("suma las dos columnas cuando el export trae recuperable y no recuperable", () => {
+    const head =
+      "Nro;Tipo Doc;RUT Proveedor;Razon Social;Folio;Fecha Docto;Monto Neto;Monto IVA Recuperable;Monto IVA No Recuperable;Monto Total";
+    const csv = [head, fila(1, 33, "76123456-7", "P", 55, "2026-03-15", 100000, 15000, 4000, 119000)].join("\n");
+    expect(parseSiiRcvCsv(utf8(csv)).records[0].iva).toBe(19000);
   });
 
   it("el orden de las columnas no lo confunde cuando están las dos", () => {

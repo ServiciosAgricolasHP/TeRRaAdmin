@@ -257,8 +257,13 @@ export function parseSiiRcvCsv(buffer, { companyRut } = {}) {
   const iRazon = colIdx(headers, "razon social");
   const iExento = colIdx(headers, "monto exento");
   const iNeto = colIdx(headers, "monto neto");
-  const iIvaRec = colIdx(headers, "monto iva recuperable", "monto iva");
   const iIvaNoRec = colIdx(headers, "monto iva no recuperable");
+  // El segundo patrón (`monto iva`) es el fallback para los exports que traen
+  // una sola columna de IVA. Pero `colIdx` matchea por "contiene", así que en
+  // un CSV que solo trae "Monto IVA No Recuperable" aterrizaba en esa misma
+  // columna y el IVA se sumaba dos veces (`ivaRec + ivaNoRec`).
+  const iIvaRecRaw = colIdx(headers, "monto iva recuperable", "monto iva");
+  const iIvaRec = iIvaRecRaw === iIvaNoRec ? -1 : iIvaRecRaw;
   const iOtroImp = colIdx(headers, "valor otro imp");
   // Código del "Otro Impuesto" (ej. 28 gasolina, 35 diésel). Sirve para
   // taggear automáticamente compras de combustible — ver `OTRO_IMP_CODES`.

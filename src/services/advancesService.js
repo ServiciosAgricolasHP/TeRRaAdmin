@@ -215,6 +215,10 @@ export async function applyAdvancesToPayroll(applications, payrollId) {
 
   const now = new Date(); // serverTimestamp() can't be used inside arrayUnion
   const uid = auth.currentUser?.uid || null;
+  // Aplicaciones que pidieron descontar más de lo que quedaba. Van al log
+  // para que queden visibles en Auditoría: capar en silencio es cómo se
+  // pierde plata sin dejar rastro.
+  const sobrantes = [];
   const chunkSize = 450;
   for (let i = 0; i < docs.length; i += chunkSize) {
     const batch = writeBatch(db);
@@ -222,10 +226,24 @@ export async function applyAdvancesToPayroll(applications, payrollId) {
       if (!data) continue;
       const total = Number(data.amount) || 0;
       const prevPaid = Number(data.amountPaid) || 0;
-      const newPaid = Math.min(total, prevPaid + (Number(app.amount) || 0));
+      const pedido = Number(app.amount) || 0;
+      const newPaid = Math.min(total, prevPaid + pedido);
+      // Lo que ESTE pago alcanzó a descontar de verdad, que no es lo pedido
+      // cuando el anticipo ya no tenía tanto saldo. `restoreAdvances` deshace
+      // un borrado recalculando el saldo desde `payments[]`, así que guardar
+      // acá el monto pedido hacía que un anticipo tocado por dos nóminas
+      // volviera con menos deuda de la real al borrar la primera.
+      const aplicado = newPaid - prevPaid;
       const status = newPaid >= total && total > 0 ? "applied" : (newPaid > 0 ? "partial" : "pending");
       const payments = Array.isArray(data.payments) ? [...data.payments] : [];
-      payments.push({ payrollId, amount: Number(app.amount) || 0, paidAt: now.toISOString() });
+      payments.push({ payrollId, amount: aplicado, paidAt: now.toISOString() });
+      if (aplicado < pedido) {
+        // El preview creyó que quedaba más saldo del que había — típicamente
+        // se armó antes de que otra nómina descontara contra el mismo
+        // anticipo. Al trabajador se le retuvo `pedido` pero la deuda solo
+        // baja `aplicado`: la diferencia hay que devolvérsela a mano.
+        sobrantes.push({ advanceId: app.advanceId, pedido, aplicado });
+      }
       batch.update(doc(db, "advances", app.advanceId), {
         status,
         amountPaid: newPaid,
@@ -251,8 +269,10 @@ export async function applyAdvancesToPayroll(applications, payrollId) {
       count: applications.length,
       total: applications.reduce((s, a) => s + (Number(a.amount) || 0), 0),
       advanceIds: applications.map((a) => a.advanceId),
+      ...(sobrantes.length ? { sobrantes } : {}),
     },
   });
+  return { sobrantes };
 }
 
 // Reverse the payments[] entries that match `payrollId`. If no other payroll

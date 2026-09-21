@@ -3,7 +3,7 @@ import { captureFullWidthBlob, captureFullWidthDataUrl, cloneForExport } from ".
 import Modal from "./Modal";
 import { workdayMapKey, getTratoTierTotals, getTratoTiers, containerLabel, tratoTypeLabel, tratoUnitLabel, cosechaUnit } from "../utils/cosechaCombos";
 import { DEFAULT_OVERTIME_RATE } from "../utils/tratoHE";
-import { countingStageIds } from "../utils/tratoEtapas";
+import { describeStage, normalizeStages, stageTag } from "../utils/tratoEtapas";
 import { cyclesService, faenasService, subfaenasService, workdaysService } from "../services";
 import { payrollsService } from "../services/payrollsService";
 import { workerKeys } from "../services/workersService";
@@ -108,8 +108,6 @@ function buildCycleRows(claves, cycle, workdaysByLabor, catalogs, payrollById) {
       }
     }
     const heRate = Number(labor.overtimeRate) || DEFAULT_OVERTIME_RATE;
-    // tratoEtapas: etapas que cuentan para el conteo de unidades.
-    const countingSet = labor.type === "tratoEtapas" ? countingStageIds(labor) : null;
     const sortedGroups = [...byDate.entries()].sort(([a], [b]) => (a < b ? -1 : 1));
     for (const [, group] of sortedGroups) {
       const { date: d, wds, tiersByIdx } = group;
@@ -121,6 +119,8 @@ function buildCycleRows(claves, cycle, workdaysByLabor, catalogs, payrollById) {
       let amount = 0;
       let piso = 0;
       const containers = new Set();
+      // tratoEtapas: qty y monto por etapa, para el desglose de la celda.
+      const etapasPorId = new Map();
       for (const wd of wds) {
         if (wd.pisoOnly) {
           piso += Number(wd.amount) || 0;
@@ -139,10 +139,21 @@ function buildCycleRows(claves, cycle, workdaysByLabor, catalogs, payrollById) {
           tratoQty += t.qty;
           amount += t.amount;
         } else if (labor.type === "tratoEtapas") {
-          // Pago = amount de todas las etapas; unidades (tratoQty) = solo las
-          // etapas que cuentan. Reusamos la columna trato para las unidades.
-          amount += Number(wd.amount) || 0;
-          if (countingSet.has(String(wd.stageId))) tratoQty += Number(wd.qty) || 0;
+          // Para el trabajador TODA la producción cuenta: `counts` es un
+          // concepto de la empresa (no contar dos veces la misma unidad
+          // física al facturar) y no tiene por qué recortar lo que ve quien
+          // hizo el trabajo. Antes solo se sumaba el qty de las etapas que
+          // cuentan, así que un día entero de "Preparación" aparecía con el
+          // monto y sin ninguna cantidad detrás.
+          const q = Number(wd.qty) || 0;
+          const monto = Number(wd.amount) || 0;
+          amount += monto;
+          tratoQty += q;
+          const sid = String(wd.stageId ?? "");
+          const acc = etapasPorId.get(sid) || { stageId: sid, qty: 0, amount: 0 };
+          acc.qty += q;
+          acc.amount += monto;
+          etapasPorId.set(sid, acc);
         } else if (labor.type === "tratoHE") {
           jornadas += Number(wd.qty) || 0;
           const oh = Number(wd.overtimeHours) || 0;
@@ -160,6 +171,16 @@ function buildCycleRows(claves, cycle, workdaysByLabor, catalogs, payrollById) {
       // tier (Árbol/Metro/...) para que el display la use.
       let tratoBreakdown = null;
       let tratoUnit = null;
+      if (labor.type === "tratoEtapas" && etapasPorId.size > 0) {
+        // El orden lo manda la definición del labor, no el de los workdays.
+        const orden = normalizeStages(labor.stages).map((st) => String(st.id));
+        const entries = [...etapasPorId.values()]
+          .filter((e) => e.qty > 0 || e.amount > 0)
+          .map((e) => ({ ...e, ...describeStage(labor, e.stageId, orden) }))
+          .sort((a, b) => a.order - b.order);
+        for (const e of entries) e.tag = stageTag(e);
+        if (entries.length > 0) tratoBreakdown = entries;
+      }
       if (labor.type === "trato") {
         const tiers = getTratoTiers(cycle.dayPrices || {}, labor.id, d);
         // Si solo hay un tier con producción, no mantenemos breakdown
@@ -763,8 +784,14 @@ export async function loadWorkerSummaryData(worker, catalogs, options = {}) {
     const hasEtapas = rows.some((r) => r.laborType === "tratoEtapas");
     const tratoUnits = new Set(tratoRows.map((r) => r.tratoUnit).filter((u) => u != null));
     let tratoLabel;
-    if (tratoRows.length === 0 && hasEtapas) {
+    if (hasEtapas && tratoRows.length === 0) {
       // Solo etapas → la columna de cantidad son "Unidades" producidas.
+      tratoLabel = "Unidades";
+    } else if (hasEtapas) {
+      // Conviven las dos: rotular la columna con la unidad del trato haría
+      // pasar la producción por etapas como si fuera de esa otra labor
+      // ("4.737 poda" incluyendo carpas). El desglose por fila dice cuál es
+      // cuál, así que el encabezado va neutro.
       tratoLabel = "Unidades";
     } else if (tratoUnits.size === 1) {
       const u = [...tratoUnits][0];
@@ -971,7 +998,9 @@ export const PrintableWorkerSummary = forwardRef(function PrintableWorkerSummary
                                   ? r.tratoBreakdown.map((b) => {
                                       const bu = b.unit;
                                       const lbl = bu != null ? tratoUnitLabel(catalogs, bu) : defaultLbl;
-                                      const tag = lbl || `T${(b.tierIdx || 0) + 1}`;
+                                      // `b.tag` lo trae el desglose por etapas, que ya viene
+                                      // con el nombre de la etapa resuelto.
+                                      const tag = b.tag || lbl || `T${(b.tierIdx || 0) + 1}`;
                                       const rate = b.qty > 0 ? Math.round(b.amount / b.qty) : 0;
                                       return { tag, qty: b.qty, rate, amount: b.amount };
                                     })
@@ -1409,7 +1438,7 @@ function LinearTable({ data, catalogs, onToggleHidden }) {
                             ? r.tratoBreakdown.map((b) => {
                                 const bu = b.unit;
                                 const lbl = bu != null ? tratoUnitLabel(catalogs, bu) : defaultLbl;
-                                const tag = lbl || `T${(b.tierIdx || 0) + 1}`;
+                                const tag = b.tag || lbl || `T${(b.tierIdx || 0) + 1}`;
                                 const rate = b.qty > 0 ? Math.round(b.amount / b.qty) : 0;
                                 return { tag, qty: b.qty, rate, amount: b.amount };
                               })

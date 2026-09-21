@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach } from "vitest";
-import { invalidate } from "../../src/services/cache";
+import { invalidateAll } from "../../src/services/cache";
 
 // Cuarta barrera contra tocar datos reales (las otras tres están en
 // vitest.config.e2e.js). Si la configuración se rompiera, o alguien corriera
@@ -63,28 +63,10 @@ beforeAll(async () => {
 // ese vacío cacheado al siguiente, que ya sembró datos. Pasa de verdad —
 // `listPendingForWorkers` cachea, así que los anticipos del test 2 no
 // aparecían porque el test 1 había cacheado una lista vacía.
-//
-// Los scopes son los nombres de colección que le pasa `createService`.
-const SCOPES = [
-  "worker",
-  "workdays",
-  "advances",
-  "payrolls",
-  "payrollSnapshots",
-  "cycles",
-  "faenas",
-  "subfaenas",
-  "transports",
-  "transportPayments",
-  "transportPayrolls",
-  "carriers",
-  "catalogs",
-  "logs",
-];
 
 // Cada test arranca de cero. Los archivos corren en serie (fileParallelism en
 // false) justamente para que esto sea seguro.
 beforeEach(async () => {
   await vaciarEmulador();
-  for (const s of SCOPES) invalidate(s);
+  invalidateAll();
 });

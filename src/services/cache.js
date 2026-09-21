@@ -70,6 +70,18 @@ export function invalidate(scopePrefix) {
   if (subs) subs.forEach((fn) => { try { fn(); } catch { /* */ } });
 }
 
+// Vacía toda la caché de una. La usan los tests end-to-end entre casos: la
+// caché vive a nivel de módulo y no se reinicia sola, así que un test que lee
+// una colección vacía le deja ese vacío al siguiente. Invalidar scope por
+// scope obliga a mantener una lista que se queda corta sin avisar.
+export function invalidateAll() {
+  mem.clear();
+  dropLS("");
+  for (const subs of SUBS.values()) {
+    subs.forEach((fn) => { try { fn(); } catch { /* */ } });
+  }
+}
+
 export function subscribe(scopePrefix, fn) {
   if (!SUBS.has(scopePrefix)) SUBS.set(scopePrefix, new Set());
   SUBS.get(scopePrefix).add(fn);

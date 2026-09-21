@@ -11,6 +11,11 @@ import {
   restoreAdvancesFromPayroll,
 } from "../../src/services/advancesService";
 import { workdaysService } from "../../src/services";
+import {
+  saveSnapshot,
+  deleteSnapshot,
+  readSnapshot,
+} from "../../src/services/payrollSnapshots";
 import { aggregateWorkerAmounts } from "../../src/utils/payroll";
 import { allocateAdvances } from "../../src/utils/payrollItem";
 import {
@@ -79,6 +84,15 @@ async function generarNomina({ nombre = "Nómina de prueba" } = {}) {
   ]);
   await tagWorkdaysWithPayroll(agg.workdayIds, nomina.id);
   await applyAdvancesToPayroll(aplicaciones, nomina.id);
+  // La pantalla escribe además el snapshot inmutable, que es el contrato que
+  // consume el portal público de trabajadores.
+  await saveSnapshot(nomina.id, {
+    payrollId: nomina.id,
+    name: nombre,
+    cycleIds: [CICLO],
+    items,
+    generatedAt: "2026-03-31T12:00:00.000Z",
+  });
   return { nomina: await get("payrolls", nomina.id), items, aplicaciones };
 }
 
@@ -86,6 +100,7 @@ async function borrarNomina(id) {
   const p = await get("payrolls", id);
   await untagWorkdaysFromPayroll(p.workdayIds || []);
   await restoreAdvancesFromPayroll(p.advanceIds || [], id);
+  await deleteSnapshot(id);
   await payrollsService.remove(id);
 }
 
@@ -291,5 +306,164 @@ describe("anticipo en cuotas a lo largo de varias nóminas", () => {
     expect(adv.payments).toHaveLength(1);
     expect(adv.payments[0].payrollId).toBe("vieja-1");
     expect(adv.status).toBe("partial");
+  });
+});
+
+describe("snapshot inmutable de la nómina", () => {
+  it("generar la nómina deja el snapshot escrito", async () => {
+    await seedEscenarioNomina();
+    const { nomina } = await generarNomina({ nombre: "Con snapshot" });
+
+    const snap = await get("payrollSnapshots", nomina.id);
+    expect(snap).toBeTruthy();
+    expect(snap.payrollId).toBe(nomina.id);
+    expect(snap.items).toHaveLength(3);
+  });
+
+  it("el snapshot vive en su propia colección, no adentro de la nómina", async () => {
+    // Están separados para no inflar los docs del historial, que se listan
+    // enteros en cada carga de la pantalla.
+    await seedEscenarioNomina();
+    const { nomina } = await generarNomina();
+
+    const doc = await get("payrolls", nomina.id);
+    // El campo ni siquiera existe: no es que esté vacío.
+    expect(doc.snapshot).toBeUndefined();
+  });
+
+  it("borrar la nómina se lleva el snapshot", async () => {
+    await seedEscenarioNomina();
+    const { nomina } = await generarNomina();
+    expect(await get("payrollSnapshots", nomina.id)).toBeTruthy();
+
+    await borrarNomina(nomina.id);
+
+    expect(await get("payrollSnapshots", nomina.id)).toBe(null);
+    expect(await get("payrolls", nomina.id)).toBe(null);
+  });
+
+  it("borrar una nómina sin snapshot no falla", async () => {
+    // El snapshot es un derivado: que no esté no puede trabar el borrado,
+    // que es lo que libera los workdays y restaura los anticipos.
+    await seedEscenarioNomina();
+    const p = await payrollsService.create({ name: "Sin snapshot", status: "pending", items: [] });
+    await expect(borrarNomina(p.id)).resolves.not.toThrow();
+    expect(await get("payrolls", p.id)).toBe(null);
+  });
+});
+
+describe("volver a leer el snapshot", () => {
+  it("lo devuelve sin el id que inyecta Firestore", async () => {
+    // El JSON que se descarga es contrato externo: un campo de más lo ensucia.
+    await seedEscenarioNomina();
+    const { nomina } = await generarNomina();
+
+    const snap = await readSnapshot({ id: nomina.id });
+    expect(snap.payrollId).toBe(nomina.id);
+    expect(snap).not.toHaveProperty("id");
+  });
+
+  it("cae al snapshot embebido de las nóminas viejas", async () => {
+    // Las creadas antes de separar las colecciones lo llevan adentro.
+    const vieja = await payrollsService.create({
+      name: "Legacy",
+      status: "paid",
+      snapshot: { name: "Legacy", items: [{ rut: "1-9" }] },
+    });
+
+    const snap = await readSnapshot(await get("payrolls", vieja.id));
+    expect(snap.items).toHaveLength(1);
+    expect(snap.payrollId).toBe(vieja.id);
+  });
+
+  it("prefiere la colección por sobre el campo embebido", async () => {
+    await seedEscenarioNomina();
+    const { nomina } = await generarNomina({ nombre: "Nueva" });
+
+    const snap = await readSnapshot({ id: nomina.id, snapshot: { name: "viejo y mentiroso" } });
+    expect(snap.name).toBe("Nueva");
+  });
+
+  it("sin snapshot de ningún tipo devuelve null", async () => {
+    const p = await payrollsService.create({ name: "Pelada", status: "pending" });
+    expect(await readSnapshot(await get("payrolls", p.id))).toBe(null);
+    expect(await readSnapshot(null)).toBe(null);
+    expect(await readSnapshot({})).toBe(null);
+  });
+});
+
+describe("dos nóminas contra el mismo anticipo", () => {
+  // El preview de la segunda nómina puede haberse armado antes de que la
+  // primera descontara, así que pide más saldo del que quedaba. `amountPaid`
+  // se capa, y lo que se guarda en `payments[]` tiene que ser lo que se
+  // descontó de verdad: `restoreAdvances` recalcula el saldo desde ahí, y con
+  // el monto pedido el anticipo volvía con menos deuda de la real.
+  const aplicar = (monto, payrollId) =>
+    applyAdvancesToPayroll([{ advanceId: "adv", amount: monto }], payrollId);
+
+  it("payments[] guarda lo descontado, no lo pedido", async () => {
+    await seedAdvance("adv", { rut: ANA.id, amount: 100000 });
+    await aplicar(80000, "nomina-A");
+    await aplicar(50000, "nomina-B"); // solo quedaban 20.000
+
+    const adv = await get("advances", "adv");
+    expect(adv.amountPaid).toBe(100000);
+    expect(adv.payments.map((x) => x.amount)).toEqual([80000, 20000]);
+    // La invariante que antes se rompía.
+    expect(adv.payments.reduce((s, x) => s + x.amount, 0)).toBe(adv.amountPaid);
+  });
+
+  it("borrar la primera deja la deuda correcta", async () => {
+    await seedAdvance("adv", { rut: ANA.id, amount: 100000 });
+    await aplicar(80000, "nomina-A");
+    await aplicar(50000, "nomina-B");
+
+    await restoreAdvancesFromPayroll(["adv"], "nomina-A");
+
+    const adv = await get("advances", "adv");
+    // B descontó 20.000 de verdad, así que quedan debiendo 80.000.
+    expect(adv.amountPaid).toBe(20000);
+    expect(adv.status).toBe("partial");
+  });
+
+  it("borrar las dos devuelve el anticipo entero", async () => {
+    await seedAdvance("adv", { rut: ANA.id, amount: 100000 });
+    await aplicar(80000, "nomina-A");
+    await aplicar(50000, "nomina-B");
+
+    await restoreAdvancesFromPayroll(["adv"], "nomina-A");
+    await restoreAdvancesFromPayroll(["adv"], "nomina-B");
+
+    const adv = await get("advances", "adv");
+    expect(adv.amountPaid).toBe(0);
+    expect(adv.payments).toEqual([]);
+    expect(adv.status).toBe("pending");
+  });
+
+  it("el recorte queda registrado para poder devolverle la diferencia", async () => {
+    // Al trabajador se le retuvieron 50.000 pero la deuda solo bajó 20.000:
+    // esos 30.000 hay que devolvérselos y nadie se entera si esto no avisa.
+    await seedAdvance("adv", { rut: ANA.id, amount: 100000 });
+    await aplicar(80000, "nomina-A");
+    const { sobrantes } = await aplicar(50000, "nomina-B");
+
+    expect(sobrantes).toEqual([{ advanceId: "adv", pedido: 50000, aplicado: 20000 }]);
+  });
+
+  it("sin recorte no reporta nada", async () => {
+    await seedAdvance("adv", { rut: ANA.id, amount: 100000 });
+    const { sobrantes } = await aplicar(30000, "nomina-A");
+    expect(sobrantes).toEqual([]);
+  });
+
+  it("aplicar contra un anticipo ya saldado no lo mueve", async () => {
+    await seedAdvance("adv", { rut: ANA.id, amount: 100000 });
+    await aplicar(100000, "nomina-A");
+    const { sobrantes } = await aplicar(40000, "nomina-B");
+
+    const adv = await get("advances", "adv");
+    expect(adv.amountPaid).toBe(100000);
+    expect(adv.status).toBe("applied");
+    expect(sobrantes).toEqual([{ advanceId: "adv", pedido: 40000, aplicado: 0 }]);
   });
 });
