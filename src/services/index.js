@@ -56,6 +56,11 @@ export async function listWorkdaysByCycles(cycleIds) {
 export const groupLeadersService = createService("groupLeader", "groupLeader");
 export const payrollSnapshotsService = createService("payrollSnapshot", "payrollSnapshots");
 export const interestLinksService = createService("interestLink", "interestLinks");
+
+// Perfiles de la app (doc id = uid de Firebase). `AuthContext` lee el doc del
+// usuario logueado directo; este servicio es para las pantallas de admin que
+// necesitan la lista completa o escribir en un perfil ajeno.
+export const usersService = createService("user", "users");
 // Empresas emisoras / receptoras — el sistema soporta múltiples empresas
 // (al menos 3) cada una con su RUT, razón social y alias para display.
 // Los DTE quedan namespaceados por `companyId` así no se colisionan folios

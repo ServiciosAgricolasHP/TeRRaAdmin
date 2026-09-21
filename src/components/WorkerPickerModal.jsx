@@ -15,6 +15,7 @@ import {
   rutWithoutDv,
 } from "../utils/banks";
 import { matchesSearchQuery } from "../utils/textSearch";
+import { greeting, GREETING_SLOTS } from "../utils/greetings";
 
 const MIN_SEARCH = 3;
 const WORKERS_TTL_MS = 2 * 60 * 60 * 1000;
@@ -39,12 +40,10 @@ function emptyNewWorker() {
 
 export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts = [], allowTemp = false, title = "Agregar trabajador", availableLeaders = [], excludedLabel = "Ya en la labor" }) {
   const { user } = useAuth();
-  // Easter egg hardcodeado: ximena ve un saludito custom en el tag de trabajadores
-  // ya agregados. El resto sigue viendo el label que pase el caller (default
-  // "Ya en la labor").
-  const resolvedExcludedLabel = user?.email === "ximena.mayorga.garrido@hotmail.com"
-    ? "Ya en la labor, Estupida <3"
-    : excludedLabel;
+  // Saludo personalizado en el tag de los trabajadores ya agregados, si el
+  // usuario tiene uno cargado en su propio doc. El resto ve el label que pase
+  // el caller (default "Ya en la labor"). Ver `utils/greetings.js`.
+  const resolvedExcludedLabel = greeting(user, GREETING_SLOTS.workerAlreadyInLabor, excludedLabel);
   const [allWorkers, setAllWorkers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");

@@ -104,6 +104,15 @@ src/
 - Perfiles en colección `users` de Firestore (doc id = Firebase uid).
 - Roles: `admin`, `supervisor` (por defecto si no hay perfil).
 - `ProtectedRoute` envuelve rutas autenticadas; prop `adminOnly` restringe a admins.
+- **`AuthContext` vuelca el doc `users/{uid}` entero en `user`**, así que cualquier campo que se le agregue queda disponible en toda la app sin pagar una lectura extra.
+
+### Saludos personalizados / easter eggs
+
+- `utils/greetings.js` — `GREETING_SLOTS` (los nombres de las ranuras) y `greeting(user, slot, fallback)`.
+- **El texto nunca va en el código.** Vive en `users/{uid}.greetings[slot]`, se carga a mano en la consola de Firebase, y cada usuario solo lee el suyo. Hardcodearlo deja el mail de una persona real en el repo, y fuera de contexto un chiste interno puede leerse como cualquier otra cosa.
+- Cuesta **0 lecturas**: el doc ya viene con el perfil. No hay colección aparte ni consulta al abrir el modal.
+- Un texto vacío o en blanco cuenta como "sin saludo" — borrar el easter egg es vaciar el campo, no eliminarlo del documento.
+- Ranura en uso: `workerAlreadyInLabor` (tag del trabajador ya agregado, en `WorkerPickerModal`). Para sumar otra: declararla en `GREETING_SLOTS`, leerla con `greeting()` donde toque, y cargar el texto en el doc del usuario.
 
 ### Servicios / Services
 
@@ -431,7 +440,7 @@ Botones de descarga:
 
 ## Dashboard
 
-- Pantalla: `src/screens/Dashboard.jsx`, ruta índice `/`. Tres bloques de KPIs (plata pagada a trabajadores, operación, transporte) + gráficos + dos tablas accionables. Selector de período global: mes actual / 3 meses / 12 meses.
+- Pantalla: `src/screens/Dashboard.jsx`, ruta `/dashboard`. **La home (`/`) redirige a `/faenas`**, no acá: abrir la app es la acción más frecuente del día y montar Faenas cuesta ~21 lecturas contra ~270 del Dashboard (medido con los conteos reales de septiembre 2026). El ahorro es real solo si no se entra igual al Dashboard — `faenas`, `cycles` y `payrolls` comparten clave de caché entre las dos pantallas. Tres bloques de KPIs (plata pagada a trabajadores, operación, transporte) + gráficos + dos tablas accionables. Selector de período global: mes actual / 3 meses / 12 meses.
 - **La restricción de diseño es el costo de lecturas.** Nada acá escanea `workdays`, `logs`, `transports` ni `dteDocuments`. El truco es que casi todo ya viene pre-agregado:
   - Los docs de `payrolls` traen `total`/`bankTotal`/`cashTotal`/`workerCount`/`advanceTotal` ya sumados → toda la serie de "pagado por mes" sale de ahí.
   - `transportPayments.total` y `transportPayrolls.total` están denormalizados por el servicio.
@@ -456,6 +465,7 @@ Botones de descarga:
 
 - Pantalla: `src/screens/AdminConsole.jsx`. Ruta `/admin/console` (solo admin).
 - Secciones para inspección barata: conteos por colección, workdays por mes (12 reads para todo un año), workdays por rango, workdays por ciclo, más los backfills y el debug de rol admin.
+- **`MAIN_COLLECTIONS` lista las 28 colecciones de la app**, agrupadas por área. Es una lista a mano: al agregar una colección nueva hay que sumarla acá o queda invisible (ya pasó — estuvo en 12 y le faltaba `dteDocuments`, la segunda más grande). El botón **📋 Copiar** baja los conteos ya ejecutados separados por tab, listos para pegar en una planilla.
 - **🧪 Ping a Cloud Functions**: verifica el plomo (auth + región) llamando al callable `ping`. Vivía como bloque TEMP en el Dashboard; se movió acá al rehacerlo. El deploy de esa función sigue pendiente (ver `functions/README.md`), así que por ahora responde `not-found`.
 - Usa `getCountFromServer` de Firestore — 1 read por cada 1000 docs vs N con `getDocs`. Permite estimar costos sin descargar la colección.
 
