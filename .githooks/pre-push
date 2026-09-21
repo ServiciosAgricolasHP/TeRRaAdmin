@@ -1,0 +1,11 @@
+#!/bin/sh
+# Corre solo los tests de logica pura (~2s). Los ciclos end-to-end piden el
+# emulador levantado y quedan para el PR, donde CI los corre bloqueantes.
+#
+# Se saltea con: git push --no-verify
+npm test || {
+  echo ""
+  echo "Tests en rojo. El push se cancela."
+  echo "Si sabes lo que haces: git push --no-verify"
+  exit 1
+}

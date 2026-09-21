@@ -8,10 +8,48 @@
 | `npm run build` | Compilar para producción → `dist/` / Production build → `dist/` |
 | `npm run lint` | ESLint (flat config, `.jsx` only) |
 | `npm run preview` | Vista previa del build / Preview production build locally |
+| `npm test` | Vitest sobre lógica pura (~2s, sin red) / Pure-logic unit tests |
+| `npm run test:watch` | Vitest en modo watch |
+| `npm run test:e2e` | Ciclos end-to-end contra el emulador de Firestore / Integration cycles against the Firestore emulator |
+| `npm run test:all` | Los dos anteriores |
 | `npm run deploy` | Deploy manual a GitHub Pages (`gh-pages -d dist -t`). **Escape hatch** — el camino normal es mergear a `main` y dejar que Actions deploye / Manual fallback; normal path is merge to `main` |
 
-**No hay framework de tests configurado.** No inventes uno sin preguntar.
-**No test framework is configured.** Do not invent one without asking.
+## Tests
+
+Dos capas, ninguna toca datos reales.
+
+- **Unidad** (`vitest.config.js`): `src/**/*.test.js`, entorno `node`, sin globals
+  (cada archivo importa `describe`/`it`/`expect` de `vitest`, así `eslint.config.js`
+  no necesita declararlos). Cubre la matemática: reparto de anticipos y bonos,
+  agregación de workdays, RUT, parser del SII, caché, cuotas.
+- **End-to-end** (`vitest.config.e2e.js` + `tests/e2e/`): ciclos completos por la
+  **capa de servicios**, no por el DOM — generar nómina → etiquetar workdays →
+  aplicar anticipos → borrar → verificar que todo volvió atrás. Corren en serie y
+  el emulador se vacía antes de cada test.
+
+**Cuatro barreras impiden que un test toque `arandanos-hp`**, y cualquiera alcanza:
+
+1. El project id es `demo-terra-test`. Con el prefijo `demo-` el SDK de Firebase
+   **nunca** contacta servidores de Google, aunque el emulador no responda.
+2. `VITE_FIRESTORE_EMULATOR` apunta `src/firebase.js` a localhost (ver el bloque al
+   final de ese archivo). En producción la variable no existe.
+3. `tests/e2e/setup.js` **aborta** si falta cualquiera de las dos.
+4. El emulador se levanta con `emulators:exec`, sin `--import` ni `--export-on-exit`:
+   todo vive en memoria y se va al terminar.
+
+Requisito local: **JDK 21 o superior** (`winget install EclipseAdoptium.Temurin.21.JDK`).
+`firebase-tools` 15 rechaza runtimes anteriores. En CI lo fija `actions/setup-java`.
+
+**No hay `firestore.rules` en el repo a propósito**: las reglas viven solo en la
+consola de Firebase, y un archivo de reglas permisivas acá estaría a un
+`firebase deploy` distraído de abrir producción.
+
+El mismo enganche sirve para usar la app entera contra datos descartables:
+`VITE_FIRESTORE_EMULATOR=127.0.0.1:8080 VITE_FIREBASE_PROJECT_ID=demo-terra-test npm run dev`.
+
+Los tests marcados `[bug conocido]` fijan el comportamiento **actual** de algo que
+parece estar mal, con el porqué en un comentario. No son la conducta deseada: si
+arreglás uno, el test se cae y eso es la señal de actualizar los dos.
 
 ## Despliegue / Deploy
 
@@ -307,7 +345,7 @@ Botones de descarga:
 - Al construir preview, `listPendingForWorkers(ruts)` carga anticipos y bonos `pending`+`partial` de los trabajadores.
 - **Orden: BONOS PRIMERO, anticipos después.** Los bonos se aplican completos (nunca tienen plan) y **engrosan la base** contra la que se descuenta el anticipo: el tope es `bruto + bonos`, no el bruto pelado. Invertir el orden hace que un bono deje el anticipo sin liquidar por **exactamente el monto del bono** — al trabajador se le entrega el bono en la mano y la deuda arrastra a la nómina siguiente en vez de cerrarse (ej. bruto 376.000 + bono 24.000 contra un anticipo de 400.000: con el orden correcto queda saldado y neto 0; al revés quedaban 24.000 debiendo y 24.000 pagados). La plata que desembolsa la empresa es la misma en los dos órdenes; lo que cambia es si la deuda queda cerrada.
 - Anticipos oldest-first, capados por `bruto + bonos` (no pueden dejar el neto negativo); si el anticipo tiene plan de cuotas, el tope por default es el monto de la cuota (`advanceDueNow`), no el saldo completo — con cuotas un bono puede igualmente no alcanzar a liquidarlo, y está bien.
-- **La lógica está duplicada en 4 lugares de `Payroll.jsx`** (armar nómina, agregar ciclos, recalcular, y anticipos nuevos sobre una nómina ya creada). Si se toca el orden o el tope, hay que tocar los cuatro — `grep -n "remainingGross = "`.
+- **La lógica vive en un solo lugar: `utils/payrollItem.js` → `allocateAdvances`.** Antes estaba duplicada en los 4 sitios de `Payroll.jsx` (armar nómina, agregar ciclos, recalcular, y anticipos nuevos sobre una nómina ya creada) y había que acordarse de tocar los cuatro. El cuarto caso —el incremental, donde la persona ya está en la nómina— es la misma función con `alreadyAdvanced` / `alreadyBonused`. Está cubierta por `utils/payrollItem.test.js`, incluido el caso de bruto 376.000 + bono 24.000 contra anticipo de 400.000.
 - Fórmula del item: `amount = grossInt − anticiposTotal + bonosTotal`.
 - Preview muestra columnas separadas **Bruto**, **Anticipo**, **Bono**, **A pagar**. Hint visual `↩ liquidado por anticipo` cuando `amount = 0 && advance > 0` (caso retiro con anticipo del valor total — el worker pasa a nómina como cero-neto pero los workdays/anticipos se marcan como pagados). El override manual de la celda Anticipo puede superar la cuota sugerida hasta el saldo real del anticipo (`maxAmount` en `anticipoApplications`, ver `updatePreview`).
 - **Confirmación de cuotas**: si hay anticipos-con-plan entre los trabajadores incluidos, al hacer clic en "Generar nómina" aparece `InstallmentConfirmModal` listando cada cuota candidata (marcada por defecto) antes de persistir nada — el admin decide a mano cuáles aplican esta corrida. Solo cubre el flujo principal de generación; "agregar ciclos"/"recalcular" aplican la cuota sugerida directo, sin modal.

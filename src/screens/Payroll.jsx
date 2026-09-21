@@ -33,7 +33,6 @@ import {
   advanceRemaining,
   advanceSign,
   advanceTypeMeta,
-  advanceDueNow,
   hasInstallmentPlan,
   installmentProgress,
   cadenceMeta,
@@ -54,6 +53,7 @@ import {
   validateAccountNumber,
   normalizeLeader,
 } from "../utils/payroll";
+import { allocateAdvances, advanceNote } from "../utils/payrollItem";
 import ConfirmDialog from "../components/ConfirmDialog";
 import Modal from "../components/Modal";
 import ResizableArea from "../components/ResizableArea";
@@ -498,48 +498,15 @@ export default function Payroll() {
           const adv = advancesByRut.get(a.workerId || a.rut) || { anticipos: [], bonos: [] };
 
           const grossInt = Math.round(a.total);
-
-          // Bonos PRIMERO: se aplican completos y engrosan la base contra la
-          // que después se descuenta el anticipo. Al revés (que era como
-          // estaba), un bono deja el anticipo sin liquidar por exactamente su
-          // monto: al trabajador se le entrega el bono en la mano y la deuda
-          // arrastra a la nómina siguiente en vez de cerrarse.
-          const sortedBonos = [...adv.bonos].sort((x, y) => {
-            const da = (x.date || ""), dbb = (y.date || "");
-            return da < dbb ? -1 : da > dbb ? 1 : 0;
+          // Bonos primero y anticipos después, topeados por bruto + bonos.
+          // La regla y el porqué viven en src/utils/payrollItem.js.
+          const reparto = allocateAdvances({
+            gross: grossInt,
+            anticipos: adv.anticipos,
+            bonos: adv.bonos,
           });
-          const bonoApplications = [];
-          for (const advItem of sortedBonos) {
-            const advRem = Math.round(advanceRemaining(advItem));
-            if (advRem <= 0) continue;
-            bonoApplications.push({ advanceId: advItem.id, amount: advRem });
-          }
-          const bonosTotal = bonoApplications.reduce((s, x) => s + x.amount, 0);
+          const { anticipoApplications, bonoApplications, anticiposTotal, bonosTotal } = reparto;
 
-          // Anticipos: oldest-first, capados por bruto + bonos.
-          const sortedAnticipos = [...adv.anticipos].sort((x, y) => {
-            const da = (x.date || ""), dbb = (y.date || "");
-            return da < dbb ? -1 : da > dbb ? 1 : 0;
-          });
-          let remainingGross = grossInt + bonosTotal;
-          const anticipoApplications = [];
-          for (const advItem of sortedAnticipos) {
-            if (remainingGross <= 0) break;
-            const advDue = Math.round(advanceDueNow(advItem));
-            if (advDue <= 0) continue;
-            const apply = Math.min(remainingGross, advDue);
-            if (apply <= 0) continue;
-            // maxAmount = saldo real (sin el tope de la cuota) — permite que
-            // updatePreview deje subir el override manual por encima de la
-            // cuota sugerida sin descuadrar lo descontado vs. lo acreditado.
-            anticipoApplications.push({ advanceId: advItem.id, amount: apply, maxAmount: Math.round(advanceRemaining(advItem)) });
-            remainingGross -= apply;
-          }
-
-          const anticiposTotal = anticipoApplications.reduce((s, x) => s + x.amount, 0);
-          const advanceNoteParts = [];
-          if (anticiposTotal) advanceNoteParts.push(`Anticipos ${anticipoApplications.length}`);
-          if (bonosTotal) advanceNoteParts.push(`Bonos ${bonoApplications.length}`);
           return {
             rut: a.rut,
             workerId: a.workerId || a.rut,
@@ -553,14 +520,14 @@ export default function Payroll() {
             grossAmount: grossInt,
             advance: anticiposTotal,
             bonus: bonosTotal,
-            advanceNote: advanceNoteParts.join(" · "),
+            advanceNote: advanceNote(reparto),
             anticipoApplications,
             bonoApplications,
             anticiposTotal,
             bonosTotal,
             // adelantosTotal kept for legacy snapshot read-back; always 0 going forward.
             adelantosTotal: 0,
-            amount: Math.max(0, grossInt - anticiposTotal + bonosTotal),
+            amount: reparto.amount,
             byCycle,
             workdayIds: a.workdayIds || [],
             include: true,
@@ -4545,7 +4512,6 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
         if (advanceSign(adv) > 0) e.bonos.push(adv); else e.anticipos.push(adv);
         advancesByKey.set(key, e);
       }
-      const byDateAsc = (x, y) => ((x.date || "") < (y.date || "") ? -1 : (x.date || "") > (y.date || "") ? 1 : 0);
       const workerById = (rut) => workers.find((w) => w.id === rut);
 
       const newAdvanceApplications = [];
@@ -4577,32 +4543,14 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
         for (const [cid, amt] of Object.entries(a.byCycle)) byCycle[cid] = Math.round(amt);
         const adv = advancesByKey.get(key) || { anticipos: [], bonos: [] };
 
-        // Bonos primero: engrosan la base contra la que se descuenta el
-        // anticipo, para que un bono no deje la deuda sin liquidar por
-        // exactamente su monto. Ver el comentario largo en buildPreview.
-        const bonoApplications = [];
-        for (const advItem of [...adv.bonos].sort(byDateAsc)) {
-          const advRem = Math.round(advanceRemaining(advItem));
-          if (advRem <= 0) continue;
-          bonoApplications.push({ advanceId: advItem.id, amount: advRem });
-        }
-        const bonosTotal = bonoApplications.reduce((s, x) => s + x.amount, 0);
-
-        let remainingGross = grossInt + bonosTotal;
-        const anticipoApplications = [];
-        for (const advItem of [...adv.anticipos].sort(byDateAsc)) {
-          if (remainingGross <= 0) break;
-          const advDue = Math.round(advanceDueNow(advItem));
-          if (advDue <= 0) continue;
-          const apply = Math.min(remainingGross, advDue);
-          if (apply <= 0) continue;
-          anticipoApplications.push({ advanceId: advItem.id, amount: apply });
-          remainingGross -= apply;
-        }
-        const anticiposTotal = anticipoApplications.reduce((s, x) => s + x.amount, 0);
-        const advanceNoteParts = [];
-        if (anticiposTotal) advanceNoteParts.push(`Anticipos ${anticipoApplications.length}`);
-        if (bonosTotal) advanceNoteParts.push(`Bonos ${bonoApplications.length}`);
+        // Mismo reparto que al armar la nómina: bonos primero, anticipos
+        // después topeados por bruto + bonos. Ver src/utils/payrollItem.js.
+        const reparto = allocateAdvances({
+          gross: grossInt,
+          anticipos: adv.anticipos,
+          bonos: adv.bonos,
+        });
+        const { anticipoApplications, bonoApplications, anticiposTotal, bonosTotal } = reparto;
         const advanceApplications = [...anticipoApplications, ...bonoApplications];
         newAdvanceApplications.push(...advanceApplications);
 
@@ -4619,7 +4567,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
           grossAmount: grossInt,
           advance: anticiposTotal,
           bonus: bonosTotal,
-          advanceNote: advanceNoteParts.join(" · "),
+          advanceNote: advanceNote(reparto),
           advanceIds: advanceApplications.map((x) => x.advanceId),
           advanceApplications,
           anticipoApplications,
@@ -4802,7 +4750,6 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
         if (advanceSign(adv) > 0) e.bonos.push(adv); else e.anticipos.push(adv);
         advancesByKey.set(key, e);
       }
-      const byDateAsc = (x, y) => ((x.date || "") < (y.date || "") ? -1 : (x.date || "") > (y.date || "") ? 1 : 0);
       const newAdvanceApplications = [];
 
       const PROFILE_FIELDS = [
@@ -4858,33 +4805,25 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
         if (newAnticipos.length || newBonos.length) {
           const currentAdvance = Number(it.advance) || 0;
           const currentBonus = Number(it.bonus) || 0;
-          // Bonos primero, igual que al armar la nómina: la base incluye los
-          // bonos (los que ya tenía y los nuevos) antes de descontar.
-          const appliedBonos = [];
-          for (const advItem of [...newBonos].sort(byDateAsc)) {
-            const advRem = Math.round(advanceRemaining(advItem));
-            if (advRem <= 0) continue;
-            appliedBonos.push({ advanceId: advItem.id, amount: advRem });
-          }
-          const addedBonoTotal = appliedBonos.reduce((s, x) => s + x.amount, 0);
-
-          let remainingGross = Math.max(0, newGross + currentBonus + addedBonoTotal - currentAdvance);
-          const appliedAnticipos = [];
-          for (const advItem of [...newAnticipos].sort(byDateAsc)) {
-            if (remainingGross <= 0) break;
-            const advDue = Math.round(advanceDueNow(advItem));
-            if (advDue <= 0) continue;
-            const apply = Math.min(remainingGross, advDue);
-            if (apply <= 0) continue;
-            appliedAnticipos.push({ advanceId: advItem.id, amount: apply });
-            remainingGross -= apply;
-          }
-          const addedAnticipoTotal = appliedAnticipos.reduce((s, x) => s + x.amount, 0);
+          // Caso incremental: este trabajador YA está en la nómina, así que
+          // la base arranca de lo que ya se le descontó y acreditó. Misma
+          // regla que al armarla — ver src/utils/payrollItem.js.
+          const reparto = allocateAdvances({
+            gross: newGross,
+            anticipos: newAnticipos,
+            bonos: newBonos,
+            alreadyAdvanced: currentAdvance,
+            alreadyBonused: currentBonus,
+          });
+          const appliedBonos = reparto.bonoApplications;
+          const appliedAnticipos = reparto.anticipoApplications;
+          const addedBonoTotal = reparto.bonosTotal;
+          const addedAnticipoTotal = reparto.anticiposTotal;
           if (addedAnticipoTotal > 0 || addedBonoTotal > 0) {
             const base = patch || it;
             const newAdvanceTotal = currentAdvance + addedAnticipoTotal;
             const newBonusTotal = currentBonus + addedBonoTotal;
-            const newAmount = Math.max(0, newGross - newAdvanceTotal + newBonusTotal);
+            const newAmount = reparto.amount;
             const appliedNow = [...appliedAnticipos, ...appliedBonos];
             patch = {
               ...base,
@@ -4935,32 +4874,14 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
         for (const [cid, amt] of Object.entries(a.byCycle)) byCycle[cid] = Math.round(amt);
         const adv = advancesByKey.get(key) || { anticipos: [], bonos: [] };
 
-        // Bonos primero: engrosan la base contra la que se descuenta el
-        // anticipo, para que un bono no deje la deuda sin liquidar por
-        // exactamente su monto. Ver el comentario largo en buildPreview.
-        const bonoApplications = [];
-        for (const advItem of [...adv.bonos].sort(byDateAsc)) {
-          const advRem = Math.round(advanceRemaining(advItem));
-          if (advRem <= 0) continue;
-          bonoApplications.push({ advanceId: advItem.id, amount: advRem });
-        }
-        const bonosTotal = bonoApplications.reduce((s, x) => s + x.amount, 0);
-
-        let remainingGross = grossInt + bonosTotal;
-        const anticipoApplications = [];
-        for (const advItem of [...adv.anticipos].sort(byDateAsc)) {
-          if (remainingGross <= 0) break;
-          const advDue = Math.round(advanceDueNow(advItem));
-          if (advDue <= 0) continue;
-          const apply = Math.min(remainingGross, advDue);
-          if (apply <= 0) continue;
-          anticipoApplications.push({ advanceId: advItem.id, amount: apply });
-          remainingGross -= apply;
-        }
-        const anticiposTotal = anticipoApplications.reduce((s, x) => s + x.amount, 0);
-        const advanceNoteParts = [];
-        if (anticiposTotal) advanceNoteParts.push(`Anticipos ${anticipoApplications.length}`);
-        if (bonosTotal) advanceNoteParts.push(`Bonos ${bonoApplications.length}`);
+        // Mismo reparto que al armar la nómina: bonos primero, anticipos
+        // después topeados por bruto + bonos. Ver src/utils/payrollItem.js.
+        const reparto = allocateAdvances({
+          gross: grossInt,
+          anticipos: adv.anticipos,
+          bonos: adv.bonos,
+        });
+        const { anticipoApplications, bonoApplications, anticiposTotal, bonosTotal } = reparto;
         const advanceApplications = [...anticipoApplications, ...bonoApplications];
         newAdvanceApplications.push(...advanceApplications);
 
@@ -4977,7 +4898,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
           grossAmount: grossInt,
           advance: anticiposTotal,
           bonus: bonosTotal,
-          advanceNote: advanceNoteParts.join(" · "),
+          advanceNote: advanceNote(reparto),
           advanceIds: advanceApplications.map((x) => x.advanceId),
           advanceApplications,
           anticipoApplications,

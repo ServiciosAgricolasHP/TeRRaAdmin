@@ -27,3 +27,34 @@ jobs:
         continue-on-error: true
 
       - run: npm run build
+
+  # Job aparte del build para no meterle firebase-tools (que es pesado) a la
+  # instalacion del build. Los dos pasos de test SI son bloqueantes.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # Logica pura: sin red, sin emulador, un par de segundos.
+      - run: npm run test
+
+      # Ciclos end-to-end contra el emulador de Firestore. No hacen falta
+      # secrets: el project id es `demo-terra-test` y con ese prefijo el SDK
+      # de Firebase nunca contacta servidores de Google.
+      #
+      # La version de Java se fija a mano: firebase-tools 15 rechaza runtimes
+      # anteriores a la 21, y el default de la imagen puede ser mas viejo.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - run: npm i -g firebase-tools@15
+      - run: npm run test:e2e
