@@ -120,6 +120,9 @@ src/
 - Servicios invalidan caché en memoria y escriben logs de auditoría via `services/logger.js`.
 - `list()` soporta `cache: true` con TTL (60s default); `persist: true` guarda en `localStorage`.
 - Para batched updates usar `writeBatch(db)` directo (chunks de 450 — el límite Firestore es 500).
+- **`update`, `upsert` y `remove` cuestan una lectura además de la escritura**: hacen un `getById` interno para armar el `before` del log de auditoría. `create` no lee.
+- **`upsert(id, data, { before })`** deja pasar el documento que el llamador ya leyó y se saltea ese `getById`. `undefined` = "no me lo pasaron, leelo"; `null` = "lo leí y no existe". La diferencia decide si el doc se crea con `createdAt`/`createdBy`, así que **no se puede colapsar en un chequeo de verdad/falsedad** — escrito `knownBefore ? …` el ahorro desaparece sin que nada falle a la vista. Fijado en `tests/e2e/upsert-before.test.js`, que lo observa pasando `null` sobre un doc que sí existe (única forma de ver desde afuera si la lectura ocurrió).
+- **`countedList(service, opts)`** (en `services/cache.js`) envuelve un `list()` y devuelve `{ data, reads }`, con `reads: 0` cuando salió de la caché. Es lo que alimenta los contadores de lecturas de Dashboard, Calendario y Pesajes QR. Las opciones que se le pasan tienen que ser **exactamente** las de la llamada real: reconstruye la clave `collection::{wheres,order,take}`, así que si divergen el contador miente en vez de avisar.
 - Nuevos servicios: agregar a `services/index.js` exports si son consumidos transversalmente.
 
 ### Caché aditiva
@@ -637,7 +640,28 @@ Tab **📊 Resumen**: vista que **cruza los 12 meses** de un año para la empres
 - `harvestWeights` la escribe una **app externa de scan**, no esta app. Es fuente de verdad y acá **nunca se edita**: solo se lee para sincronizar hacia `workdays`.
 - `qrPrefixes` (docId = el prefijo, ej. `"HP"`) es el puente entre un QR físico y el (faena, ciclo, labor) vigente al que hay que mandar sus pesajes. **Se reapunta a mano cada vez que se abre un ciclo nuevo** — semi-manual a propósito, no hay forma segura de adivinar el ciclo destino.
 - La sincronización agrupa los pesajes del rango por (trabajador, día, combo calidad/envase) sumando kilos, y escribe los `workdays` resultantes. Los ejes del combo se mapean con `qualityMap`/`containerMap` del prefijo; sin ellos el mapeo es identidad (los catálogos se diseñaron preservando la convención numérica de la app de scan).
-- `healthOf()` marca un prefijo como roto si su ciclo/labor apuntado ya no existe o dejó de ser de cosecha — es el chequeo de "me olvidé de reapuntarlo".
+- `healthOf()` marca un prefijo como roto si su ciclo/labor apuntado ya no existe, dejó de ser de cosecha **o el ciclo está cerrado** — es el chequeo de "me olvidé de reapuntarlo". El nivel `red` es el que deshabilita el botón de sincronizar, así que marcar ahí alcanza para bloquear.
+- **La sincronización paga una lectura por jornada, no dos.** Lee cada workday para saber si ya está liquidada (`payrollId`) y le pasa ese mismo documento al `upsert` como `before`, en vez de dejar que el servicio lo vuelva a leer. El `Map` `yaLeidas` existe para eso.
+- **No se sincroniza contra un ciclo cerrado.** Ese ciclo ya se liquidó o está por liquidarse, y escribirle jornadas por detrás descuadra lo que se pagó. Hay dos chequeos a propósito: `healthOf` apaga el botón, y `run()` vuelve a mirar el `status` del doc fresco porque la lista de ciclos es cacheada y el cierre lo hace otra pantalla.
+- **La sincronización lee `harvestWeights` SIN caché, y tiene que seguir así.** De esos documentos salen las jornadas que se pagan; sincronizar sobre pesajes viejos escribe producción incompleta. Lo cacheado es solo el explorador, que es para mirar.
+
+### Costo de lecturas
+
+- **Explorador de pesajes**: el rango de `dateKey` **y el prefijo** van en la query. Antes el prefijo se filtraba en memoria, así que elegirlo no bajaba las lecturas: traía los de todos y descartaba al renderizar. La búsqueda por trabajador sí sigue en cliente (es sobre nombre/RUT, no hay campo indexable).
+- **El filtro por prefijo depende del índice compuesto `(prefix, dateKey)`**, el mismo que ya usa la sincronización. Si falta, Firestore responde `failed-precondition`: la pantalla lo recuerda, vuelve a pedir sin el filtro y lo aplica en memoria —como funcionaba antes— mostrando un `⚠ filtro en memoria`. No hay `firestore.indexes.json` en el repo (los índices se manejan en la consola), así que ese camino de respaldo no es teórico.
+- **TTL largo (2 h) + botón 🔄 Refrescar**, no TTL corto. Los pesajes cambian todo el rato mientras se cosecha, y por eso mismo ningún TTL automático deja la pantalla fresca: solo decide cada cuánto se vuelve a pagar. Con TTL largo la antigüedad queda a la vista ("hace N min") y refrescar es una decisión de quien mira. Los inputs de fecha van con debounce de 400 ms — cada tecla releía el rango entero.
+- El explorador **no persiste** en `localStorage`: cada rango es su propia clave y la lista de trabajadores ya ocupa lo suyo. En memoria alcanza para ir y venir entre pestañas.
+- **Contador de lecturas visible solo para admin** en las tres pestañas (`· N lecturas` / `· desde caché`), mismo criterio que Dashboard y Calendario. Es lo que hace verificable todo lo anterior: si un día vuelve a mostrar un número grande donde decía "desde caché", alguien cambió las opciones de un `list()` y rompió la clave compartida.
+- Las listas compartidas (`worker` a 2 h, `faenas` a 10 min) usan **las mismas opciones que el resto de la app**. La clave de caché es `collection::{wheres,order,take}` y **no incluye el TTL**, así que el último que escribe sella el vencimiento para todos: bajarlo acá le acorta la caché a Trabajadores, Nómina y Calendario sin que se note. Omitir `cache: true` es peor que un TTL corto — esa llamada no lee la entrada **ni la escribe**, así que paga siempre y encima no deja la caché caliente para las demás pantallas.
+
+### Candado en la grilla del ciclo
+
+- Una labor apuntada por un prefijo QR activo se marca en `CycleDetail` con un chip **📱 \<PREFIJO\>** (en las tarjetas y en la barra de pestañas) y sus **celdas de producción quedan de solo lectura**, con un aviso arriba de la grilla.
+- El motivo no es de permisos: la sincronización hace `upsert` sobre el mismo docId, así que **pisa `qty` y `amount`**. Lo que se tipee a mano no queda compitiendo con el scan — desaparece en la próxima corrida sin dejar rastro. Bloquear es más honesto que advertir.
+- El **piso sigue editable**: es un bono manual, vive en un workday aparte (`comboKey: "_piso"`) y la sincronización no lo toca.
+- La fuente es `qrPrefixes`, **no** el campo `harvestSynced` de los workdays: hay que saberlo antes de que llegue el primer pesaje, que es justo cuando la grilla está vacía y tienta llenarla a mano. Cuesta 4 lecturas cacheadas a 1 h.
+- El predicado vive en `utils/harvestSync.js` (`isPrefixSyncing`, `qrLockedLaborsOf`) con tests: decide si se puede escribir en una grilla de la que sale plata. Ojo con `active`: ausente cuenta como **activo**, igual que en la pantalla de Pesajes QR.
+- Además de `editable`, el candado se chequea en `fillDown` y `pasteFromClipboard` — son los dos caminos que escriben celdas sin pasar por ahí.
 
 ## Links útiles
 

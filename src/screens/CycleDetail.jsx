@@ -5,7 +5,7 @@ import { ModuleRegistry, AllCommunityModule } from "ag-grid-community";
 import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-quartz.css";
 import { captureFullWidthBlob, captureFullWidthDataUrl } from "../utils/imageCapture";
-import { cyclesService, faenasService, subfaenasService, workdaysService, workersService, groupLeadersService, laborGroupsService } from "../services";
+import { cyclesService, faenasService, subfaenasService, workdaysService, workersService, groupLeadersService, laborGroupsService, qrPrefixesService } from "../services";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import { parseAmount } from "../utils/formula";
 import { AG_GRID_LOCALE_ES } from "../utils/agGridLocale";
@@ -67,6 +67,7 @@ import CycleWorkerEditModal from "../components/CycleWorkerEditModal";
 import { matchesSearchQuery } from "../utils/textSearch";
 import CycleSummaryModal from "../components/CycleSummaryModal";
 import { tripsService } from "../services/transportsService";
+import { qrLockedLaborsOf } from "../utils/harvestSync";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -583,6 +584,8 @@ export default function CycleDetail() {
   // labores del mismo tipo a través de ciclos. Ver laborGroupsService.
   const [laborGroups, setLaborGroups] = useState([]);
   const [workdaysByLabor, setWorkdaysByLabor] = useState({});
+  // Prefijos QR apuntados a este ciclo. Ver `qrLockedLabors` más abajo.
+  const [qrPrefixes, setQrPrefixes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeLaborId, setActiveLaborId] = useState(null);
 
@@ -804,6 +807,27 @@ export default function CycleDetail() {
 
   const closed = cycle?.status === "closed";
   const readOnly = closed && !isAdmin;
+
+  // Los prefijos QR (colección `qrPrefixes`) son 4 documentos y se reapuntan a
+  // mano cada vez que se abre un ciclo, así que casi nunca cambian: TTL largo y
+  // persistido. Son la única forma de saber, ANTES de que llegue el primer
+  // pesaje, que esta labor la alimenta la app de scan.
+  useEffect(() => {
+    qrPrefixesService
+      .list({ order: ["label", "asc"], cache: true, persist: true, ttl: 60 * 60 * 1000 })
+      .then(setQrPrefixes)
+      .catch(() => { /* sin esto solo se pierde el candado; no vale interrumpir */ });
+  }, []);
+
+  // laborId → prefijo QR que la sincroniza. El porqué del candado (la
+  // sincronización pisa `qty` y `amount`) está en utils/harvestSync.js.
+  const qrLockedLabors = useMemo(
+    () => qrLockedLaborsOf(qrPrefixes, cycle?.id),
+    [qrPrefixes, cycle?.id],
+  );
+
+  const qrPrefixForActive = activeLaborId ? qrLockedLabors.get(activeLaborId) : null;
+  const qrLocked = !!qrPrefixForActive;
 
   // Navegación rápida entre ciclos hermanos (misma faena + subfaena), para
   // saltar de "Ciclo 8" a "Ciclo 7" sin volver al listado. Ordenados por el
@@ -2109,7 +2133,7 @@ export default function CycleDetail() {
   // column on every selected row. Use Shift+Click on the row checkboxes to
   // pick the destination range first.
   const fillDown = async (params) => {
-    if (readOnly || photoMode) return;
+    if (readOnly || photoMode || qrLocked) return;
     const api = gridRef.current?.api;
     if (!api) return;
     const colDef = params.colDef;
@@ -2146,7 +2170,7 @@ export default function CycleDetail() {
   // displayed row at sourceIndex+i in the same column. Tabs (multi-column
   // copies from Excel) are not yet supported — only the first column is used.
   const pasteFromClipboard = async (params) => {
-    if (readOnly || photoMode) return;
+    if (readOnly || photoMode || qrLocked) return;
     const api = gridRef.current?.api;
     if (!api) return;
     const colDef = params.colDef;
@@ -3045,7 +3069,12 @@ export default function CycleDetail() {
         const children = combos.map((c) => ({
           headerName: comboLabel(catalogs, c.x, c.y),
           field: `${d}__${c.key}`,
-          editable: !readOnly && !photoMode,
+          // `qrLocked`: la sincronización de Pesajes QR hace `upsert` sobre este
+          // mismo docId, así que pisa `qty` y `amount`. Lo que se tipee acá no
+          // convive con el scan, desaparece en la próxima sincronización sin
+          // dejar rastro. El piso sí sigue editable: es un bono manual y la
+          // sincronización no lo toca.
+          editable: !readOnly && !photoMode && !qrLocked,
           width: isMobile ? 78 : 120,
           type: "numericColumn",
           valueParser: (p) => parseAmount(p.newValue),
@@ -3407,7 +3436,7 @@ export default function CycleDetail() {
     });
     return [...baseLeft, ...dayCols, totalCol, ...actionsCol];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [days, readOnly, photoMode, isCosechaLabor, isTratoLabor, isTratoEtapasLabor, isTratoHELabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, catalogs, dayPrices, activeLabor, tratoHEView, cosechaView, tratoView, activeLaborDayNotes, legacyDayNotes, activeLaborDatesWithProduction, daysWithPiso, isMobile]);
+  }, [days, readOnly, photoMode, qrLocked, isCosechaLabor, isTratoLabor, isTratoEtapasLabor, isTratoHELabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, catalogs, dayPrices, activeLabor, tratoHEView, cosechaView, tratoView, activeLaborDayNotes, legacyDayNotes, activeLaborDatesWithProduction, daysWithPiso, isMobile]);
 
   if (loading) return <div className="text-[var(--color-muted)]">Cargando...</div>;
   if (!cycle) return <div className="text-[var(--color-muted)]">Ciclo no encontrado.</div>;
@@ -3668,7 +3697,17 @@ export default function CycleDetail() {
             >
               <div className="flex items-center justify-between text-xs text-[var(--color-muted)]">
                 <span>{l.name}</span>
-                <span className={`rounded px-1.5 py-0.5 text-[10px] ${tagClass}`}>{tag}</span>
+                <span className="flex items-center gap-1">
+                  {qrLockedLabors.has(l.id) && (
+                    <span
+                      title={`Cosecha sincronizada desde los pesajes QR del prefijo ${qrLockedLabors.get(l.id).id}`}
+                      className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"
+                    >
+                      📱 {qrLockedLabors.get(l.id).id}
+                    </span>
+                  )}
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] ${tagClass}`}>{tag}</span>
+                </span>
               </div>
               <div className="mt-1 text-lg font-semibold tabular-nums">{fmtCurrency(totalAmt)}</div>
               {isCo && Object.keys(qtyByContainer).length > 0 && (
@@ -3820,6 +3859,14 @@ export default function CycleDetail() {
             >
               {l.name}
               <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${tagClass}`}>{tagIcon}</span>
+              {qrLockedLabors.has(l.id) && (
+                <span
+                  title={`Cosecha sincronizada desde los pesajes QR del prefijo ${qrLockedLabors.get(l.id).id}`}
+                  className="ml-1 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"
+                >
+                  📱 {qrLockedLabors.get(l.id).id}
+                </span>
+              )}
               {isActive && <span className="absolute inset-x-0 -bottom-px h-0.5 bg-[var(--color-accent)]" />}
             </button>
           );
@@ -3837,6 +3884,20 @@ export default function CycleDetail() {
 
       {activeLabor && (
         <>
+          {qrLocked && (
+            <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-violet-300 bg-violet-50 px-3 py-2 text-xs text-violet-800 dark:border-violet-800 dark:bg-violet-900/20 dark:text-violet-300">
+              <span className="font-medium">📱 Cosecha sincronizada desde QR</span>
+              <span>
+                La producción de esta labor la escribe la app de escaneo del prefijo{" "}
+                <span className="font-mono font-semibold">{qrPrefixForActive.id}</span>
+                {qrPrefixForActive.label ? ` (${qrPrefixForActive.label})` : ""}, así que las celdas
+                no se editan a mano: la próxima sincronización las sobrescribe. El piso sí se puede cargar.
+              </span>
+              <Link to="/admin/harvest-qr" className="underline hover:no-underline">
+                Ir a Pesajes QR
+              </Link>
+            </div>
+          )}
           {!toolbarCollapsed && (
           <>
           <div className="mb-2 flex flex-wrap items-center justify-between gap-2">

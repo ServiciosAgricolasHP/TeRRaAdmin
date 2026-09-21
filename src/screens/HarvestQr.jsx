@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { useToast } from "../contexts/ToastContext";
 import { faenasService, cyclesService, workdaysService, harvestWeightsService, qrPrefixesService } from "../services";
 import { findWorkerByRut, workersService } from "../services/workersService";
+import { countedList } from "../services/cache";
 import { useCatalogs } from "../contexts/CatalogsContext";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useAuth } from "../contexts/AuthContext";
@@ -22,6 +23,43 @@ import ConfirmDialog from "../components/ConfirmDialog";
 // El prefijo de un código es lo que va antes del primer guion (`XX-0123` →
 // `XX`), la misma convención que usa la app de scan para saber a qué faena
 // pertenece el pesaje.
+// Las tres listas que esta pantalla comparte con el resto de la app. Los
+// valores están copiados de las otras pantallas a propósito: la clave de caché
+// es `collection::{wheres,order,take}` y no incluye el TTL, así que el último
+// que escribe sella el vencimiento para todos. Bajarlos acá le acorta la
+// caché a Trabajadores, Nómina y Calendario sin que se note.
+const WORKERS_TTL_MS = 2 * 60 * 60 * 1000;
+const FAENAS_TTL_MS = 10 * 60 * 1000;
+
+// Los pesajes los escribe la app de scan mientras la gente cosecha, así que
+// cambian todo el rato. Eso no pide un TTL corto: pide lo contrario. Ningún
+// valor deja la pantalla realmente fresca —la app pudo escribir hace diez
+// segundos— así que un TTL corto no compra frescura, solo decide cada cuánto
+// se vuelve a pagar la lectura. Con uno largo la antigüedad queda a la vista y
+// el refresco es una decisión explícita del usuario.
+//
+// Ojo: esto vale para mirar. La sincronización a jornadas (SyncModal) lee
+// SIEMPRE sin caché, y tiene que seguir así: de esos documentos sale la plata
+// que se le paga a la gente.
+const WEIGHTS_TTL_MS = 2 * 60 * 60 * 1000;
+
+// "hace 3 min" para que la antigüedad de lo que se está mirando quede a la
+// vista. Con TTL largo es lo que reemplaza a refrescar solo.
+// Lo que se muestra al admin al lado del título. Es lo que hace verificable
+// todo el trabajo de caché: si dice "desde caché" no se pagó nada, y si un día
+// vuelve a decir un número grande es que alguien cambió las opciones de un
+// `list()` y rompió la clave compartida.
+const readsLabel = (reads) => (reads === 0 ? "· desde caché" : `· ${reads.toLocaleString("es-CL")} lecturas`);
+
+const agoLabel = (ts) => {
+  if (!ts) return "";
+  const min = Math.floor((Date.now() - ts) / 60000);
+  if (min < 1) return "recién";
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.floor(min / 60);
+  return h < 24 ? `hace ${h} h` : `hace ${Math.floor(h / 24)} d`;
+};
+
 const prefixOfCode = (code) => {
   const raw = String(code || "").trim().toUpperCase();
   const cut = raw.indexOf("-");
@@ -257,6 +295,12 @@ function healthOf(prefix, cyclesById) {
   }
   const cycle = cyclesById.get(prefix.cycleId);
   if (!cycle) return { level: "red", label: "El ciclo configurado ya no existe" };
+  // Un ciclo cerrado ya se liquidó o está por liquidarse: escribirle jornadas
+  // por detrás descuadra lo que se pagó. Se marca `red` porque es el mismo
+  // nivel que ya deshabilita el botón de sincronizar.
+  if (cycle.status === "closed") {
+    return { level: "red", label: "El ciclo vigente está cerrado — reapunta el prefijo al ciclo abierto" };
+  }
   const cosechaLabors = (cycle.labors || []).filter((l) => l.type === "cosecha");
   const labor = cosechaLabors.find((l) => l.id === prefix.laborId);
   if (!labor) {
@@ -279,6 +323,8 @@ const HEALTH_STYLES = {
 
 export default function HarvestQr() {
   const toast = useToast();
+  const { isAdmin } = useAuth();
+  const [reads, setReads] = useState(null);
   const [tab, setTab] = useState("sync"); // sync | weights | qr
   const [prefixes, setPrefixes] = useState([]);
   const [faenas, setFaenas] = useState([]);
@@ -292,14 +338,19 @@ export default function HarvestQr() {
   const reload = async () => {
     setLoading(true);
     try {
+      // `qrPrefixes` va sin caché a propósito: son 4 documentos y es la
+      // configuración que la gente se olvida de reapuntar al abrir un ciclo.
+      // Mostrarla vieja es peor que pagar 4 lecturas.
       const [px, fa] = await Promise.all([
-        qrPrefixesService.list({ order: ["label", "asc"] }),
-        faenasService.list({ order: ["name", "asc"], cache: true }),
+        countedList(qrPrefixesService, { order: ["label", "asc"] }),
+        countedList(faenasService, { order: ["name", "asc"], cache: true, persist: true, ttl: FAENAS_TTL_MS }),
       ]);
-      setPrefixes(px);
-      setFaenas(fa);
-      const cycleIds = [...new Set(px.map((p) => p.cycleId).filter(Boolean))];
+      setPrefixes(px.data);
+      setFaenas(fa.data);
+      const cycleIds = [...new Set(px.data.map((p) => p.cycleId).filter(Boolean))];
       const cycles = await Promise.all(cycleIds.map((id) => cyclesService.getById(id)));
+      // Los ciclos van por `getById`, que nunca cachea: 1 lectura por prefijo.
+      setReads(px.reads + fa.reads + cycleIds.length);
       const map = new Map();
       cycles.forEach((c) => { if (c) map.set(c.id, c); });
       setCyclesById(map);
@@ -333,7 +384,12 @@ export default function HarvestQr() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-lg font-semibold">📷 Cosecha QR</h1>
+          <h1 className="text-lg font-semibold">
+            📷 Cosecha QR
+            {isAdmin && tab === "sync" && reads != null ? (
+              <span className="ml-2 text-xs font-normal text-[var(--color-muted)]">{readsLabel(reads)}</span>
+            ) : null}
+          </h1>
           <p className="text-sm text-[var(--color-muted)]">
             {tab === "sync"
               ? "A qué faena/ciclo/labor apunta cada prefijo QR físico (app scan_IS), y sincronización de sus pesajes hacia las jornadas."
@@ -468,7 +524,7 @@ export default function HarvestQr() {
 
       {tab === "weights" && <WeightsExplorer prefixes={prefixes} faenaById={faenaById} />}
 
-      {tab === "qr" && <QrManager prefixes={prefixes} />}
+      {tab === "qr" && <QrManager prefixes={prefixes} onPrefixesChanged={reload} />}
 
       {formState && (
         <PrefixFormModal
@@ -520,7 +576,15 @@ function PrefixFormModal({ mode, initial, faenas, onClose, onSaved }) {
       .list({ wheres: [["faenaId", "==", faenaId]], order: ["createdAt", "desc"] })
       .then((list) => {
         setCycles(list.sort((a, b) => (a.status === b.status ? 0 : a.status === "open" ? -1 : 1)));
+      })
+      // Esta consulta cruza igualdad sobre `faenaId` con `orderBy createdAt`,
+      // o sea que necesita un índice compuesto. Sin `catch` el select quedaba
+      // vacío sin decir nada y el error moría en la consola del navegador.
+      .catch((err) => {
+        setCycles([]);
+        toast.error("No se pudieron cargar los ciclos de la faena: " + (err.message || err));
       });
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [faenaId]);
 
   const selectedCycle = cycles.find((c) => c.id === cycleId);
@@ -654,6 +718,12 @@ function SyncModal({ prefix, cycle, onClose, onSynced }) {
       const fresh = prefix.cycleId ? await cyclesService.getById(prefix.cycleId) : null;
       const labor = (fresh?.labors || []).find((l) => l.id === prefix.laborId);
       if (!fresh || !labor) throw new Error("Ciclo/labor vigente no disponible");
+      // El botón ya viene deshabilitado por `healthOf`, pero el ciclo pudo
+      // cerrarse entre que se cargó la pantalla y que se apretó: la lista de
+      // ciclos es cacheada y el cierre lo hace otra pantalla.
+      if (fresh.status === "closed") {
+        throw new Error("El ciclo vigente se cerró. Reapunta el prefijo al ciclo abierto antes de sincronizar.");
+      }
 
       setProgress({ label: "Leyendo pesajes…" });
       const weights = await harvestWeightsService.list({
@@ -748,10 +818,16 @@ function SyncModal({ prefix, cycle, onClose, onSynced }) {
       }));
       const bloqueadas = new Set();
       const blocked = [];
+      // Se guarda el doc, no solo si estaba bloqueado: abajo se le pasa a
+      // `upsert` como `before` para que el servicio no lo vuelva a leer. Sin
+      // esto cada jornada costaba dos lecturas, una acá y otra adentro del
+      // `upsert`.
+      const yaLeidas = new Map();
       for (let i = 0; i < claves.length; i += 25) {
         const tanda = claves.slice(i, i + 25);
         const docs = await Promise.all(tanda.map((k) => workdaysService.getById(k.docId)));
         docs.forEach((doc, j) => {
+          yaLeidas.set(tanda[j].docId, doc ?? null);
           if (!doc?.payrollId) return;
           bloqueadas.add(tanda[j].docId);
           blocked.push(`${tanda[j].g.rut} · ${tanda[j].g.dateKey}`);
@@ -781,7 +857,7 @@ function SyncModal({ prefix, cycle, onClose, onSynced }) {
           amount,
           harvestSynced: true,
           harvestPrefix: prefix.id,
-        });
+        }, { before: yaLeidas.get(docId) ?? null });
         written++;
         setProgress({ label: "Escribiendo jornadas…", done: written, total: claves.length });
       }
@@ -1064,6 +1140,12 @@ function WeightsExplorer({ prefixes, faenaById }) {
   const [workers, setWorkers] = useState([]);
   const [editing, setEditing] = useState(null); // null | { mode, data }
   const [reloadKey, setReloadKey] = useState(0);
+  const [fetchedAt, setFetchedAt] = useState(null);
+  const [reads, setReads] = useState(null);
+  // Se prende solo si Firestore rechaza la consulta acotada por falta de
+  // índice; a partir de ahí el filtro vuelve a ser en memoria.
+  const [sinIndice, setSinIndice] = useState(false);
+  const { isAdmin } = useAuth();
 
   const isMobile = useIsMobile();
   const prefixById = useMemo(() => new Map(prefixes.map((p) => [p.id, p])), [prefixes]);
@@ -1118,9 +1200,10 @@ function WeightsExplorer({ prefixes, faenaById }) {
     return { code: needle, owners, keys, freed: true };
   }, [workers, weights, search]);
 
-  // Con `cache: true`: tras asignar un QR el servicio invalida la entrada, así
-  // que esta llamada trae la lista fresca; el resto de las veces no cuesta
-  // lecturas.
+  // Cacheada y compartida con Trabajadores, Nómina y Calendario. Tras asignar
+  // un QR la lista igual sale fresca, pero no porque se invalide: `workersService`
+  // es aditivo (ver services/index.js) y parchea la entrada en memoria con el
+  // trabajador que acaba de cambiar, sin releer la colección.
   const loadWorkers = () =>
     workersService
       .list({ order: ["name", "asc"], cache: true, persist: true, ttl: 2 * 60 * 60 * 1000 })
@@ -1131,18 +1214,74 @@ function WeightsExplorer({ prefixes, faenaById }) {
     loadWorkers();
   }, []);
 
+  // Los `<input type="date">` emiten un cambio por cada pedazo de fecha que se
+  // completa, y cada uno relee el rango entero. Sin esta espera, correr el
+  // "Desde" un mes hacia atrás cuesta varias lecturas completas de la
+  // colección antes de llegar a la fecha que se quería.
+  const [range, setRange] = useState({ from: dateFrom, to: dateTo });
+  useEffect(() => {
+    const t = setTimeout(() => setRange({ from: dateFrom, to: dateTo }), 400);
+    return () => clearTimeout(t);
+  }, [dateFrom, dateTo]);
+
   useEffect(() => {
     let cancelled = false;
-    if (!dateFrom || !dateTo || dateFrom > dateTo) return;
+    const { from, to } = range;
+    if (!from || !to || from > to) return;
     setBusy(true);
-    harvestWeightsService
-      .list({ wheres: [["dateKey", ">=", dateFrom], ["dateKey", "<=", dateTo]], order: ["dateKey", "desc"] })
-      .then((list) => { if (!cancelled) setWeights(list); })
-      .catch((err) => { if (!cancelled) toast.error("No se pudieron leer los pesajes: " + err.message); })
-      .finally(() => { if (!cancelled) setBusy(false); });
+
+    // Acotar por prefijo en la consulta y no en memoria. Antes elegir un
+    // prefijo no bajaba las lecturas: traía los de todos y descartaba al
+    // renderizar. Cruza igualdad sobre `prefix` con el rango de `dateKey`, o
+    // sea que necesita el índice compuesto (prefix, dateKey) — el mismo que ya
+    // usa la sincronización. Si no está, Firestore responde
+    // `failed-precondition`: se recuerda y se vuelve a pedir sin el filtro,
+    // que es exactamente como funcionaba antes. El filtro en cliente se queda
+    // igual, porque es el que sostiene ese caso.
+    const acotar = !!prefixFilter && !sinIndice;
+    const opts = {
+      wheres: [
+        ...(acotar ? [["prefix", "==", prefixFilter]] : []),
+        ["dateKey", ">=", from],
+        ["dateKey", "<=", to],
+      ],
+      order: ["dateKey", "desc"],
+      // Sin `persist`: cada rango es su propia clave y la lista de trabajadores
+      // ya ocupa lo suyo en `localStorage`. En memoria alcanza — el ir y venir
+      // entre pestañas sale gratis, y recargar la página es raro.
+      cache: true,
+      ttl: WEIGHTS_TTL_MS,
+    };
+
+    (async () => {
+      try {
+        const { data, reads: pagadas } = await countedList(harvestWeightsService, opts);
+        if (cancelled) return;
+        setWeights(data);
+        setReads(pagadas);
+        setFetchedAt(Date.now());
+      } catch (err) {
+        if (cancelled) return;
+        if (acotar && err?.code === "failed-precondition") {
+          setSinIndice(true);
+          return;
+        }
+        toast.error("No se pudieron leer los pesajes: " + (err.message || err));
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+
     return () => { cancelled = true; };
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, [dateFrom, dateTo, reloadKey]);
+  }, [range, reloadKey, prefixFilter, sinIndice]);
+
+  // Tira la caché de pesajes y vuelve a leer. Es la contraparte del TTL largo:
+  // la pantalla no adivina cuándo quedó vieja, lo decide quien la mira.
+  const refrescar = () => {
+    harvestWeightsService.invalidate();
+    setReloadKey((k) => k + 1);
+  };
 
   // El filtro por prefijo y la búsqueda son en cliente a propósito: sumarlos a
   // la query obligaría a un índice compuesto (rango sobre dateKey + igualdad
@@ -1294,7 +1433,25 @@ function WeightsExplorer({ prefixes, faenaById }) {
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-[var(--color-muted)]">
             {busy ? "Leyendo…" : `${fmt(view.count)} pesajes · ${view.workersCount} trabajadores · ${view.daysCount} días`}
+            {!busy && fetchedAt ? ` · ${agoLabel(fetchedAt)}` : ""}
+            {!busy && isAdmin && reads != null ? ` ${readsLabel(reads)}` : ""}
           </span>
+          {sinIndice && prefixFilter ? (
+            <span
+              title="Falta el índice compuesto (prefix, dateKey) en Firestore"
+              className="text-xs text-[var(--color-warning,#d97706)]"
+            >
+              ⚠ filtro en memoria
+            </span>
+          ) : null}
+          <button
+            onClick={refrescar}
+            disabled={busy}
+            title="Vuelve a leer los pesajes del rango desde Firestore"
+            className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-40"
+          >
+            🔄 Refrescar
+          </button>
           <button
             onClick={() => setEditing({ mode: "create", data: { prefix: prefixFilter, dateKey: dateTo } })}
             disabled={prefixes.length === 0}
@@ -2040,7 +2197,9 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, knownCode
 // array `idQr` de algún trabajador. Por eso esta vista se arma desde `worker`
 // y solo puede mostrar los códigos asignados — un QR impreso que nadie tiene
 // todavía es invisible para el sistema.
-function QrManager({ prefixes }) {
+function QrManager({ prefixes, onPrefixesChanged }) {
+  const { isAdmin } = useAuth();
+  const [reads, setReads] = useState(null);
   const toast = useToast();
   const [workers, setWorkers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -2055,8 +2214,20 @@ function QrManager({ prefixes }) {
   const load = async () => {
     setLoading(true);
     try {
-      const list = await workersService.list({ order: ["name", "asc"] });
-      setWorkers(list);
+      // Mismas opciones que la pestaña de pesajes y que Trabajadores, Nómina y
+      // Calendario: comparten clave de caché, así que la primera pantalla que
+      // se abra paga y el resto sale gratis. Sin `cache: true` esta llamada no
+      // solo pagaba los ~3.100 trabajadores cada vez que se abre la pestaña y
+      // después de cada asignación — tampoco dejaba la entrada escrita para
+      // las demás.
+      const { data, reads: pagadas } = await countedList(workersService, {
+        order: ["name", "asc"],
+        cache: true,
+        persist: true,
+        ttl: WORKERS_TTL_MS,
+      });
+      setWorkers(data);
+      setReads(pagadas);
     } catch (err) {
       toast.error("No se pudieron cargar los trabajadores: " + (err.message || err));
     } finally {
@@ -2108,7 +2279,17 @@ function QrManager({ prefixes }) {
       let quitados = 0;
       let cambiados = 0;
 
+      // `esperado` se arma con los prefijos que aparecen en `worker.idQr`, y
+      // esos pueden no tener doc en `qrPrefixes` — la propia vista los marca
+      // como "sin prefijo configurado". `update` termina en `updateDoc`, que
+      // falla si el documento no existe: sin esta guarda el primer huérfano
+      // cortaba el recorrido y dejaba los prefijos que venían después sin
+      // escribir, con el toast de error como única señal.
+      const conocidos = new Set(prefixes.map((p) => p.id));
+      const huerfanos = [];
+
       for (const [pfx, mapa] of esperado) {
+        if (!conocidos.has(pfx)) { huerfanos.push(pfx); continue; }
         const actual = prefixes.find((p) => p.id === pfx)?.padron || {};
 
         for (const [code, info] of Object.entries(mapa)) {
@@ -2126,12 +2307,19 @@ function QrManager({ prefixes }) {
       if (agregados) partes.push(`${agregados} agregado(s)`);
       if (quitados) partes.push(`${quitados} quitado(s)`);
       if (cambiados) partes.push(`${cambiados} con otro dueño`);
+      if (huerfanos.length) partes.push(`${huerfanos.length} sin prefijo configurado: ${huerfanos.join(", ")}`);
 
       toast.success(
         partes.length
           ? `Padrones reconstruidos · ${partes.join(" · ")}`
           : "Padrones reconstruidos · ya estaban al día",
       );
+
+      // El diff se calcula contra `prefixes`, que viene del padre. Sin este
+      // aviso la lista quedaba con los padrones viejos y correr la función una
+      // segunda vez reportaba los mismos agregados/quitados aunque ya no
+      // hubiera nada que cambiar.
+      onPrefixesChanged?.();
     } catch (err) {
       toast.error("No se pudieron reconstruir los padrones: " + (err.message || err));
     } finally {
@@ -2320,7 +2508,10 @@ function QrManager({ prefixes }) {
           className="min-w-[200px] flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm outline-none focus:border-[var(--color-accent)]"
         />
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-[var(--color-muted)]">{view.total} QR asignados</span>
+          <span className="text-xs text-[var(--color-muted)]">
+            {view.total} QR asignados
+            {isAdmin && reads != null ? ` ${readsLabel(reads)}` : ""}
+          </span>
           <button
             onClick={() => setAssigning({ code: "", from: null })}
             className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]"

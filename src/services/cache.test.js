@@ -7,6 +7,7 @@ import {
   subscribe,
   mergeListItem,
   removeListItem,
+  countedList,
 } from "./cache";
 
 // El `mem` del módulo es global y se comparte entre tests, así que cada uno usa
@@ -227,5 +228,68 @@ describe("mergeListItem / removeListItem", () => {
     vi.advanceTimersByTime(600);
     // Mutar no renueva el TTL: a los 1100 ms la entrada ya venció.
     expect(getCache(k)).toBeUndefined();
+  });
+});
+
+describe("countedList", () => {
+  // Servicio de mentira: lo único que `countedList` le pide es el nombre de la
+  // colección y el `list()`. `llamadas` cuenta las idas a "Firestore".
+  const fakeService = (collectionName, data) => {
+    const service = {
+      collectionName,
+      llamadas: 0,
+      async list(opts) {
+        service.llamadas += 1;
+        const key = cacheKey(collectionName, {
+          wheres: opts.wheres || [],
+          order: opts.order,
+          take: opts.take,
+        });
+        const hit = opts.cache ? getCache(key) : undefined;
+        if (hit !== undefined) return hit;
+        if (opts.cache) setCache(key, data, { ttl: opts.ttl || 60_000 });
+        return data;
+      },
+    };
+    return service;
+  };
+
+  it("la primera llamada cobra una lectura por documento", async () => {
+    const svc = fakeService(scope(), [{ id: "a" }, { id: "b" }, { id: "c" }]);
+    const { data, reads } = await countedList(svc, { cache: true });
+    expect(data).toHaveLength(3);
+    expect(reads).toBe(3);
+  });
+
+  it("la segunda sale de la caché y no cobra nada", async () => {
+    const svc = fakeService(scope(), [{ id: "a" }, { id: "b" }]);
+    await countedList(svc, { cache: true });
+    const { data, reads } = await countedList(svc, { cache: true });
+    expect(data).toHaveLength(2);
+    expect(reads).toBe(0);
+  });
+
+  it("sin `cache` siempre cobra, aunque se llame mil veces", async () => {
+    const svc = fakeService(scope(), [{ id: "a" }]);
+    expect((await countedList(svc, {})).reads).toBe(1);
+    expect((await countedList(svc, {})).reads).toBe(1);
+  });
+
+  it("opciones distintas son otra clave, así que vuelven a cobrar", async () => {
+    // Es el modo de fallar que el contador tiene que delatar: dos pantallas que
+    // escriben la misma consulta distinto dejan de compartir caché en silencio.
+    const svc = fakeService(scope(), [{ id: "a" }, { id: "b" }]);
+    expect((await countedList(svc, { cache: true, order: ["name", "asc"] })).reads).toBe(2);
+    expect((await countedList(svc, { cache: true, order: ["name", "asc"] })).reads).toBe(0);
+    expect((await countedList(svc, { cache: true })).reads).toBe(2);
+  });
+
+  it("una colección vacía cacheada informa 0 y no relee", async () => {
+    // `[]` es un valor cacheado válido, no un fallo de caché: `getCache`
+    // distingue por `undefined`, no por falsedad.
+    const svc = fakeService(scope(), []);
+    expect((await countedList(svc, { cache: true })).reads).toBe(0);
+    await countedList(svc, { cache: true });
+    expect(svc.llamadas).toBe(2);
   });
 });

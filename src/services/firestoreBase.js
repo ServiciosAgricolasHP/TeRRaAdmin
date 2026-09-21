@@ -120,8 +120,18 @@ export function createService(entityName, collectionName = entityName) {
     return result;
   }
 
-  async function upsert(id, data, { additive = false } = {}) {
-    const before = await getById(id);
+  // `before` deja pasar el documento que el llamador YA leyó, para no pagar la
+  // misma lectura dos veces. Lo necesita cualquier flujo que tenga que mirar el
+  // doc justo antes de escribirlo: la sincronización de Pesajes QR lee cada
+  // jornada para saber si ya está liquidada y acto seguido la escribe, así que
+  // sin esto cada jornada costaba dos lecturas.
+  //
+  // `undefined` significa "no me lo pasaron, hay que leerlo"; `null` significa
+  // "lo leí y no existe". La diferencia decide si el doc se crea con
+  // `createdAt`/`createdBy`, así que no se puede colapsar en un chequeo de
+  // verdad/falsedad.
+  async function upsert(id, data, { additive = false, before: knownBefore } = {}) {
+    const before = knownBefore !== undefined ? knownBefore : await getById(id);
     const payload = before
       ? { ...data, ...stamp() }
       : { ...data, createdAt: serverTimestamp(), createdBy: auth.currentUser?.uid || null, ...stamp() };
