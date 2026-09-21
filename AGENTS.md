@@ -147,7 +147,7 @@ src/
 
 ## Tipos de Labor / Labor Types
 
-Definidos en `src/screens/CycleDetail.jsx` (`LABOR_TYPES`). Cada labor tiene un campo `type` que determina columnas del grid, entrada de datos y métricas:
+Definidos en `src/utils/laborTypes.js` (`LABOR_TYPES`). Viven ahí y no en `CycleDetail.jsx` porque el form de crear ciclo también necesita la lista: importarla desde la pantalla del ciclo arrastraría ese módulo entero —8.600 líneas, ag-grid incluido— al chunk de Faenas, que es justo la pantalla que se abre al entrar a la app. Cada labor tiene un campo `type` que determina columnas del grid, entrada de datos y métricas:
 
 | Tipo / Type | Etiqueta / Label | Comportamiento del grid / Grid behavior | Forma de datos / Data shape |
 |------|-------|---------------|------------|
@@ -209,6 +209,11 @@ Bono adicional configurable por día para trato y cosecha. Pensado para compensa
 - **Opt-in por día, sin default a nivel labor.** En el panel de Precios cada día tiene un botón discreto **"+ piso"** que solo está visible si el día no tiene piso configurado. Al click pasa a modo edición; al guardar muestra inline el monto con acciones ✎ editar / ✕ quitar. Mantiene la UI limpia: días sin piso no tienen ruido.
 - **Persistencia del default por día**: `dayPrices[laborId][date].piso: number`. Helper: `getDayPiso(dayPrices, laborId, date)`, `effectivePiso(labor, dayPrices, date)` (este último solo lee el día — no hay fallback a labor).
 - **Persistencia del workday**: workday separado con `comboKey: "_piso"` y `pisoOnly: true`. `qty: 0`, `amount: pisoAmount`. Un doc por (worker × date × labor). Hereda el `payrollId` como cualquier otro workday — al borrar la nómina, queda disponible nuevamente.
+- **Asignar el piso a todo un día de una**: junto al monto del piso, en el panel de Precios, un botón **👥 a todos (N)** con el contador de quiénes tienen producción y todavía no tienen el bono. **Pide confirmación** con el monto por persona, cuántas son y el total — es plata que se suma a cada una. Escribe exactamente los mismos workdays `_piso` que apretar los toggles uno por uno; queda deshabilitado cuando no falta nadie.
+- **Quién cuenta como "tiene producción"**: `pisoTargets(workdaysDeLaLabor, date)` en `utils/cosechaCombos.js`. Alcanza con que **exista** el workday, sin mirar `qty` ni `amount` — es el mismo criterio que habilita el toggle de la grilla, y un día en cero es justamente el caso que el piso compensa. Que las dos vías usen la misma regla es lo que hace que el botón sea equivalente a apretar todos los toggles habilitados; si divergen, el botón hace algo que no se puede replicar a mano. Los pisos viejos sin `pisoOnly` se detectan por la clave del mapa.
+- **Quitar el piso del día se lleva también los bonos ya asignados.** El ✕ (y dejar el monto en cero) **pide confirmación** con cuántos bonos se eliminan y por cuánto. Antes borraba solo la configuración del día: los workdays `_piso` sobrevivían con su monto, seguían sumando al total de cada persona y a la nómina, y en pantalla ya no quedaba ni el monto del día para darse cuenta.
+- **Los bonos que ya se llevó una nómina no se tocan**, ni por el ✕ ni por el toggle individual: borrar un workday con `payrollId` le descuadra el total a algo que ya se pagó. El diálogo dice cuántos quedan en pie y por qué; el toggle avisa por toast. El reparto lo hace `pisoAssigned(workdaysDeLaLabor, date)` → `{ libres, liquidados }`. Es el único chequeo de `payrollId` de la pantalla: para todo lo demás, el corte es el cierre del ciclo (ver más abajo).
+- **El piso NO se bloquea en labores sincronizadas por QR**: es un bono manual, vive en un workday aparte (`comboKey: "_piso"`) y la sincronización escribe combos de producción, así que nunca lo pisa.
 - **UI grilla**: la columna "P" 🪙 al final del día solo se renderiza cuando ese día tiene piso configurado en `dayPrices` **o** algún trabajador tiene un workday `pisoOnly` para ese día (computado en `daysWithPiso`). Días sin piso quedan sin columna extra. Click en el toggle crea/borra el workday `_piso` con el monto efectivo. El toggle está deshabilitado si no hay workday de producción todavía para ese (worker, date).
 - **Cálculo**: total del trabajador = producción + suma de pisoAmount. Reflejado en row.total del grid, métricas de la labor, CycleSummaryModal, WorkerSummaryModal, drawer del Calendar, comprobantes de Payroll.
 - **En Cobrar (CycleSummaryModal mode=cobrar)**: el piso NO se factura al cliente (es bono al trabajador). Se muestra en la tabla pero no entra al subtotal a cobrar.
@@ -219,7 +224,26 @@ Bono adicional configurable por día para trato y cosecha. Pensado para compensa
 - Jerarquía: Faena → Subfaena → Ciclo → Labors → Workdays.
 - Label de ciclo = prefijo bloqueado `Faena/Subfaena/` + sufijo editable.
 - Estados: `open` | `closed`. Se permiten **múltiples ciclos abiertos** por (faena, subfaena) — útil para correr varios frentes en paralelo o para "carve off" temporales.
+
+### Alta encadenada: subfaena → primer ciclo → primer día
+
+- **Crear una subfaena ofrece crear su primer ciclo** (modal "¿Crear el primer ciclo?", cancelable con "Después"). Una subfaena sin ciclos no tiene dónde anotar jornadas, así que quedarse ahí no es un estado útil.
+- **El ciclo nace con la fecha de inicio como primer día** (`days: [startDate]`). Antes el form pedía "Fecha inicio", la guardaba solo en `startDate` y creaba el ciclo con `days: []` — o sea sin ninguna columna en la grilla — y había que agregar el primer día a mano en CycleDetail repitiendo la fecha recién escrita. Mismo criterio en `createNextCycle` (el ciclo que se encadena al cerrar el anterior).
+- **La primera labor: se elige el tipo**, no siempre `main`. Más un checkbox para sumar de una una labor de **Supervisión**, que es la combinación habitual. El checkbox se deshabilita si el tipo elegido ya es `supervision` — si no, el ciclo nacería con dos labores idénticas.
+- El plan lo arma `initialLaborPlan({ type, withSupervision })` (`utils/laborTypes.js`), que devuelve descriptores **sin `id`**: el id lo pone quien crea el ciclo, que es el que ya tiene el generador. El nombre sale del tipo, salvo `main` que conserva **"Principal"** — es como se llamaban todas antes de poder elegir, y renombrarlas cambiaría el encabezado de ciclos que la gente ya conoce.
+- Los trabajadores que se pasen van **solo en la primera labor**; la de supervisión arranca vacía.
+- El bloque del tipo de labor **no se muestra con la importación activa**: ahí las labores salen del ciclo origen y elegir un tipo no tendría efecto.
+- **Un solo botón de alta de subfaena por estado**: el del encabezado de la faena (y el del estado vacío, que viene con la explicación). La cabecera de la lista "Subfaenas (N)" tenía un tercero idéntico, que se sacó.
 - `CycleRow` permite **✏ Renombrar**, abrir, cerrar y eliminar.
+
+### Ciclo cerrado = congelado
+
+- **Cerrar un ciclo es la señal de "esto ya está pagado y revisado": queda de solo lectura para todos, admin incluido.** Antes era `closed && !isAdmin`, o sea que el admin lo editaba sin ningún gesto de por medio y el cierre no protegía de lo único que importa, que es tocarlo sin querer. Para corregir algo hay que **reabrirlo** con el botón del encabezado — un cambio de estado visible, con confirmación, y que queda en el log de auditoría.
+- **El corte es el cierre del ciclo, NO el `payrollId` del workday.** Se paga a mitad de ciclo y después se sigue trabajando ahí para revisar detalles y generar diferencias; bloquear por "ya pagado" rompería ese paso. Por la misma razón el cierre es manual y no se dispara solo al pagar.
+- **Toda escritura de `CycleDetail` pasa por `cycleWrite` / `wdWrite`**, dos envoltorios locales que llaman a `assertOpen()` antes de tocar Firestore. El guard vive en un solo punto y no repartido por los ~40 llamados al servicio: basta uno que se olvide para que el candado sea un adorno. **Lanza** en vez de devolver en silencio, porque los llamadores actualizan el estado local justo después de escribir — si dejara seguir, la pantalla mostraría un cambio que nunca se guardó.
+- Quedan fuera del guard a propósito, y son las únicas cuatro: las dos escrituras de normalización del loader (corren al montar, no son edición del usuario) y cerrar/reabrir el ciclo, que es el gesto que levanta el candado.
+- Banner 🔒 sobre la grilla explicando que está congelado y cómo reabrirlo. La línea del encabezado dice `🔒 ciclo cerrado (solo lectura)`, sin distinguir rol.
+- **Pendiente**: reabrir no está restringido a admin. Cualquiera que vea el botón puede levantar el candado, así que hoy esto evita el accidente, no es un permiso.
 
 ### Importar desde otro ciclo abierto
 

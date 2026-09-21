@@ -5,6 +5,8 @@ import {
   cosechaUnit,
   getDayPiso,
   effectivePiso,
+  pisoTargets,
+  pisoAssigned,
   mapHarvestCodes,
   invertHarvestCodes,
   getDayCombos,
@@ -251,5 +253,117 @@ describe("cosechaUnit", () => {
   it("cae al genérico con mezcla, para no sumar unidades distintas", () => {
     expect(cosechaUnit(catalogs, new Set([1, 2]))).toBe("Unid.");
     expect(cosechaUnit(catalogs, new Set())).toBe("Unid.");
+  });
+});
+
+describe("pisoTargets", () => {
+  // El mapa es `workdaysByLabor[laborId]`: clave `rut__fecha__combo`, valor el
+  // workday. Se arma con los mismos helpers que usa la grilla.
+  const mapa = (...wds) => {
+    const out = {};
+    for (const wd of wds) out[workdayMapKey(wd.workerRut, wd.date, wd.ck || "0_0")] = wd;
+    return out;
+  };
+  const prod = (workerRut, date, extra = {}) => ({ workerRut, date, qty: 5, amount: 5000, ...extra });
+  const piso = (workerRut, date, extra = {}) => ({
+    workerRut, date, ck: PISO_COMBO_KEY, qty: 0, amount: 3000, pisoOnly: true, ...extra,
+  });
+
+  it("devuelve a los que tienen producción ese día", () => {
+    const wds = mapa(prod("A", "2026-03-02"), prod("B", "2026-03-02"));
+    expect(pisoTargets(wds, "2026-03-02")).toEqual(["A", "B"]);
+  });
+
+  it("deja fuera a los que ya tienen el piso", () => {
+    const wds = mapa(prod("A", "2026-03-02"), prod("B", "2026-03-02"), piso("A", "2026-03-02"));
+    expect(pisoTargets(wds, "2026-03-02")).toEqual(["B"]);
+  });
+
+  it("no cruza de día", () => {
+    // El piso se asigna por día: la producción del martes no habilita el bono
+    // del miércoles, y un piso del martes no bloquea el del miércoles.
+    const wds = mapa(prod("A", "2026-03-02"), prod("A", "2026-03-03"), piso("A", "2026-03-02"));
+    expect(pisoTargets(wds, "2026-03-02")).toEqual([]);
+    expect(pisoTargets(wds, "2026-03-03")).toEqual(["A"]);
+  });
+
+  it("un workday en cero también cuenta como producción", () => {
+    // Es el mismo criterio que habilita el toggle de la grilla, y es el caso
+    // que el piso existe para compensar. Si acá se filtrara por `amount > 0`,
+    // el botón haría algo distinto que apretar los toggles uno por uno.
+    const wds = mapa(prod("A", "2026-03-02", { qty: 0, amount: 0 }));
+    expect(pisoTargets(wds, "2026-03-02")).toEqual(["A"]);
+  });
+
+  it("varios combos de la misma persona cuentan una sola vez", () => {
+    const wds = mapa(
+      prod("A", "2026-03-02", { ck: "0_0" }),
+      prod("A", "2026-03-02", { ck: "1_2" }),
+    );
+    expect(pisoTargets(wds, "2026-03-02")).toEqual(["A"]);
+  });
+
+  it("un piso viejo sin `pisoOnly` igual bloquea, por la clave", () => {
+    // Los primeros pisos se escribieron antes del flag; sin esto el botón se
+    // los volvería a crear encima.
+    const wds = mapa(prod("A", "2026-03-02"), piso("A", "2026-03-02", { pisoOnly: undefined }));
+    expect(pisoTargets(wds, "2026-03-02")).toEqual([]);
+  });
+
+  it("alguien que solo tiene piso y ninguna producción no reaparece", () => {
+    const wds = mapa(piso("A", "2026-03-02"));
+    expect(pisoTargets(wds, "2026-03-02")).toEqual([]);
+  });
+
+  it("sin datos devuelve lista vacía y no revienta", () => {
+    expect(pisoTargets({}, "2026-03-02")).toEqual([]);
+    expect(pisoTargets(null, "2026-03-02")).toEqual([]);
+    expect(pisoTargets(undefined, undefined)).toEqual([]);
+  });
+});
+
+describe("pisoAssigned", () => {
+  const mapa = (...wds) => {
+    const out = {};
+    for (const wd of wds) out[workdayMapKey(wd.workerRut, wd.date, wd.ck || "0_0")] = wd;
+    return out;
+  };
+  const prod = (workerRut, date) => ({ workerRut, date, qty: 5, amount: 5000 });
+  const piso = (workerRut, date, extra = {}) => ({
+    workerRut, date, ck: PISO_COMBO_KEY, qty: 0, amount: 3000, pisoOnly: true, ...extra,
+  });
+
+  it("junta los pisos del día y deja la producción afuera", () => {
+    const wds = mapa(prod("A", "2026-03-02"), piso("A", "2026-03-02"), piso("B", "2026-03-02"));
+    const { libres, liquidados } = pisoAssigned(wds, "2026-03-02");
+    expect(libres.map((w) => w.workerRut).sort()).toEqual(["A", "B"]);
+    expect(liquidados).toEqual([]);
+  });
+
+  it("separa los que ya se llevó una nómina", () => {
+    // Borrar un workday que una nómina referencia le descuadra el total a algo
+    // que ya se pagó: por eso van aparte y no se tocan.
+    const wds = mapa(
+      piso("A", "2026-03-02"),
+      piso("B", "2026-03-02", { payrollId: "nom-1" }),
+    );
+    const { libres, liquidados } = pisoAssigned(wds, "2026-03-02");
+    expect(libres.map((w) => w.workerRut)).toEqual(["A"]);
+    expect(liquidados.map((w) => w.workerRut)).toEqual(["B"]);
+  });
+
+  it("no cruza de día", () => {
+    const wds = mapa(piso("A", "2026-03-02"), piso("A", "2026-03-03"));
+    expect(pisoAssigned(wds, "2026-03-03").libres.map((w) => w.date)).toEqual(["2026-03-03"]);
+  });
+
+  it("un piso viejo sin `pisoOnly` también entra, por la clave", () => {
+    const wds = mapa(piso("A", "2026-03-02", { pisoOnly: undefined }));
+    expect(pisoAssigned(wds, "2026-03-02").libres).toHaveLength(1);
+  });
+
+  it("sin pisos devuelve las dos listas vacías", () => {
+    expect(pisoAssigned(mapa(prod("A", "2026-03-02")), "2026-03-02")).toEqual({ libres: [], liquidados: [] });
+    expect(pisoAssigned(null, "2026-03-02")).toEqual({ libres: [], liquidados: [] });
   });
 });

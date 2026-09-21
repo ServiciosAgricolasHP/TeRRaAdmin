@@ -22,6 +22,7 @@ import TextField from "../components/TextField";
 import Select from "../components/Select";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { workdayDocId } from "../utils/cosechaCombos";
+import { LABOR_TYPES, initialLaborPlan } from "../utils/laborTypes";
 import ProductionSummaryModal from "../components/ProductionSummaryModal";
 
 const emptyFaena = { name: "", location: "", notes: "" };
@@ -64,8 +65,14 @@ function applyOrder(items, order) {
   });
 }
 
-function defaultLabors(workers = []) {
-  return [{ id: newId(), name: "Principal", type: "main", workers }];
+// Los workers van solo en la primera labor: la de supervisión arranca vacía
+// (la supervisa otra gente, no la misma cuadrilla).
+function defaultLabors(workers = [], opts = {}) {
+  return initialLaborPlan(opts).map((l, i) => ({
+    ...l,
+    id: newId(),
+    workers: i === 0 ? workers : [],
+  }));
 }
 
 export default function Faenas() {
@@ -104,6 +111,8 @@ export default function Faenas() {
 
   const [faenaForm, setFaenaForm] = useState(null);
   const [subForm, setSubForm] = useState(null);
+  // Subfaena recién creada a la que se le ofrece abrir su primer ciclo.
+  const [subOfferCycle, setSubOfferCycle] = useState(null);
   const [cycleForm, setCycleForm] = useState(null);
   const [closeFlow, setCloseFlow] = useState(null);
   const [confirm, setConfirm] = useState(null);
@@ -473,11 +482,16 @@ export default function Faenas() {
     const { mode, faenaId, data } = subForm;
     setBusy(true);
     try {
-      if (mode === "create") await subfaenasService.create({ ...data, faenaId });
+      let creada = null;
+      if (mode === "create") creada = await subfaenasService.create({ ...data, faenaId });
       else await subfaenasService.update(data.id, { name: data.name, notes: data.notes || "" });
       setSubForm(null);
       await loadSubs(faenaId);
       toast.success(mode === "create" ? "Subfaena creada" : "Subfaena actualizada");
+      // Una subfaena sin ciclos no sirve para nada: lo primero que se hace
+      // después de crearla es abrirle el primer ciclo. Se encadena el form en
+      // vez de dejar al usuario buscando el botón, y es cancelable.
+      if (creada?.id) setSubOfferCycle({ faenaId, subfaenaId: creada.id, name: data.name });
     } catch (err) {
       toast.error("Error al guardar la subfaena: " + (err.message || err));
     } finally {
@@ -529,6 +543,11 @@ export default function Faenas() {
           return { ...rest, id };
         });
         importPlan = { source, picked, oldToNewLaborId };
+      } else if (mode === "create") {
+        labors = defaultLabors([], {
+          type: data.laborType || "main",
+          withSupervision: !!data.withSupervision,
+        });
       } else {
         labors = data.labors && data.labors.length ? data.labors : defaultLabors();
       }
@@ -542,6 +561,12 @@ export default function Faenas() {
       let nextDays = data.days || [];
       if (mode === "create" && importPlan) {
         nextDays = (importPlan.source.days || []).filter((d) => importDaysSet.has(d));
+      } else if (mode === "create") {
+        // El form pide "Fecha inicio" y hasta acá se guardaba solo en
+        // `startDate`: el ciclo nacía con `days: []`, o sea sin ninguna columna
+        // en la grilla, y había que agregar a mano el primer día repitiendo la
+        // fecha que se acababa de escribir.
+        nextDays = [data.startDate || todayStr()];
       }
 
       // dayPrices: si pidieron copiarlos, re-mapeamos las claves de laborId
@@ -656,7 +681,10 @@ export default function Faenas() {
         subfaenaId,
         startDate: todayStr(),
         notes: "",
-        labors: defaultLabors(),
+        // Las labores se arman al guardar desde estas dos opciones, no acá:
+        // el tipo se elige en el form.
+        laborType: "main",
+        withSupervision: false,
         // Import desde otro ciclo abierto. Opt-in: arranca apagado para no
         // ensuciar la creación rápida. Al activarlo seleccionamos por defecto
         // el más reciente con todas sus labores y todos sus días.
@@ -736,7 +764,9 @@ export default function Faenas() {
         startDate: todayStr(),
         notes: "",
         status: "open",
-        days: [],
+        // Mismo criterio que al crear desde el form: un ciclo sin días nace sin
+        // grilla y obliga a agregar el primero a mano.
+        days: [todayStr()],
         labors: newLabors,
       });
       setCloseFlow(null);
@@ -1268,6 +1298,31 @@ export default function Faenas() {
               value={cycleForm.data.notes}
               onChange={(v) => setCycleForm((c) => ({ ...c, data: { ...c.data, notes: v } }))}
             />
+            {cycleForm.mode === "create" && !cycleForm.data.importEnabled && (
+              <div className="space-y-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
+                <Select
+                  label="Primera labor"
+                  value={cycleForm.data.laborType || "main"}
+                  onChange={(v) => setCycleForm((c) => ({ ...c, data: { ...c.data, laborType: v } }))}
+                  options={LABOR_TYPES}
+                />
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={!!cycleForm.data.withSupervision}
+                    onChange={(e) =>
+                      setCycleForm((c) => ({ ...c, data: { ...c.data, withSupervision: e.target.checked } }))
+                    }
+                    disabled={cycleForm.data.laborType === "supervision"}
+                    className="mt-0.5"
+                  />
+                  <span className={cycleForm.data.laborType === "supervision" ? "text-[var(--color-muted)]" : ""}>
+                    Agregar también una labor de Supervisión
+                    {cycleForm.data.laborType === "supervision" ? " (ya es la primera)" : ""}
+                  </span>
+                </label>
+              </div>
+            )}
             {cycleForm.mode === "create" && (cycleForm.data.importCandidates || []).length > 0 && (
               <ImportSection
                 data={cycleForm.data}
@@ -1279,7 +1334,11 @@ export default function Faenas() {
             <p className="text-xs text-[var(--color-muted)]">
               {cycleForm.mode === "create" && cycleForm.data.importEnabled
                 ? "Se clonarán las labores marcadas. Si activaste 'Mover workdays', se transferirán al nuevo ciclo y desaparecerán del origen."
-                : 'Se creará con una labor "Principal" por defecto. Podrás agregar más al abrir el ciclo.'}
+                : cycleForm.mode === "create"
+                  ? `El ciclo arranca con la fecha de inicio como primer día y ${
+                      cycleForm.data.withSupervision && cycleForm.data.laborType !== "supervision" ? "dos labores" : "una labor"
+                    }. Podrás agregar más al abrirlo.`
+                  : "Podrás agregar más labores al abrir el ciclo."}
             </p>
             <div className="flex justify-end gap-2 pt-2">
               <button
@@ -1300,6 +1359,38 @@ export default function Faenas() {
             </div>
           </form>
         )}
+      </Modal>
+
+      {/* Recién creada una subfaena, se ofrece abrirle el primer ciclo. */}
+      <Modal
+        open={!!subOfferCycle}
+        onClose={() => setSubOfferCycle(null)}
+        title="¿Crear el primer ciclo?"
+        footer={
+          <>
+            <button
+              onClick={() => setSubOfferCycle(null)}
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]"
+            >
+              Después
+            </button>
+            <button
+              onClick={() => {
+                const { faenaId, subfaenaId } = subOfferCycle;
+                setSubOfferCycle(null);
+                openCreateCycle(faenaId, subfaenaId);
+              }}
+              className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]"
+            >
+              Crear ciclo
+            </button>
+          </>
+        }
+      >
+        <p className="text-sm">
+          La subfaena <strong>{subOfferCycle?.name}</strong> ya está creada. Las jornadas se cargan
+          dentro de un ciclo, así que sin uno todavía no hay dónde anotar nada.
+        </p>
       </Modal>
 
       {/* Close cycle flow */}
@@ -1809,7 +1900,6 @@ function SelectedDetail({
           allCollapsed={allCollapsed}
           onExpandAllSubs={onExpandAllSubs}
           onCollapseAllSubs={onCollapseAllSubs}
-          onCreateSub={onCreateSub}
           onEditSub={onEditSub}
           onDeleteSub={onDeleteSub}
           onToggleHideSub={onToggleHideSub}
@@ -1837,7 +1927,6 @@ function SubfaenaListBody({
   allCollapsed,
   onExpandAllSubs,
   onCollapseAllSubs,
-  onCreateSub,
   onEditSub,
   onDeleteSub,
   onToggleHideSub,
@@ -1997,12 +2086,6 @@ function SubfaenaListBody({
             className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[10px] normal-case tracking-normal hover:bg-[var(--color-accent-soft)]"
           >
             {allCollapsed ? "▾ Expandir todo" : "▸ Colapsar todo"}
-          </button>
-          <button
-            onClick={onCreateSub}
-            className="min-h-[32px] rounded-md bg-[var(--color-accent)] px-3 py-1 text-xs font-medium normal-case text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]"
-          >
-            + Subfaena
           </button>
         </div>
       </div>
