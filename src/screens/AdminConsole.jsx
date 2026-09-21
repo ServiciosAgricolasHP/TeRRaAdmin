@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { collection, query, where, getCountFromServer, getDocs, doc, getDoc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "../firebase";
-import { faenasService, cyclesService, workersService } from "../services";
+import { faenasService, cyclesService, workersService, usersService } from "../services";
 import { advancesService } from "../services/advancesService";
 import { toProperName } from "../utils/nameUtils";
+import { GREETING_SLOTS } from "../utils/greetings";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -18,19 +19,74 @@ import ConfirmDialog from "../components/ConfirmDialog";
 // el costo estimado al lado. Si alguna query devuelve mucho, el contador
 // real puede ser >1.
 
+// Todas las colecciones que usa la app, agrupadas por área. La lista estaba
+// a mano y se había quedado en 12 de 28: faltaba `dteDocuments`, que es la
+// segunda más grande del sistema, y familias enteras como el libro de precios
+// o los pesajes QR.
 const MAIN_COLLECTIONS = [
-  { id: "workdays", label: "Workdays", note: "jornadas registradas (la tabla más grande)" },
-  { id: "worker", label: "Trabajadores", note: "doc id = RUT" },
-  { id: "cycles", label: "Ciclos", note: "abiertos y cerrados" },
-  { id: "payrolls", label: "Nóminas", note: "" },
-  { id: "payrollSnapshots", label: "Snapshots de nómina", note: "1:1 con payrolls" },
-  { id: "advances", label: "Anticipos/Adelantos", note: "" },
-  { id: "transports", label: "Vueltas de transporte", note: "" },
-  { id: "transportPayments", label: "Resúmenes de transporte", note: "" },
-  { id: "carriers", label: "Transportistas", note: "" },
-  { id: "faenas", label: "Faenas", note: "" },
-  { id: "subfaenas", label: "Subfaenas", note: "" },
-  { id: "logs", label: "Logs de auditoría", note: "puede ser MUY grande" },
+  // Producción
+  { id: "workdays", group: "Producción", label: "Workdays", note: "jornadas registradas (la tabla más grande)" },
+  { id: "cycles", group: "Producción", label: "Ciclos", note: "abiertos y cerrados" },
+  { id: "faenas", group: "Producción", label: "Faenas", note: "" },
+  { id: "subfaenas", group: "Producción", label: "Subfaenas", note: "" },
+  { id: "cycleSummaries", group: "Producción", label: "Resúmenes de ciclo", note: "tarifas de cobro y títulos, 1 por ciclo configurado" },
+  { id: "catalogs", group: "Producción", label: "Catálogos", note: "calidades, envases, tipos de trato" },
+  { id: "laborGroups", group: "Producción", label: "Grupos de labor", note: "" },
+
+  // Personas y pagos
+  { id: "worker", group: "Personas y pagos", label: "Trabajadores", note: "doc id = RUT" },
+  { id: "groupLeader", group: "Personas y pagos", label: "Líderes de grupo", note: "lista curada" },
+  { id: "payrolls", group: "Personas y pagos", label: "Nóminas", note: "" },
+  { id: "payrollSnapshots", group: "Personas y pagos", label: "Snapshots de nómina", note: "1:1 con payrolls" },
+  { id: "advances", group: "Personas y pagos", label: "Anticipos / Bonos", note: "" },
+
+  // Transporte
+  { id: "transports", group: "Transporte", label: "Vueltas", note: "" },
+  { id: "transportPayments", group: "Transporte", label: "Resúmenes", note: "" },
+  { id: "transportPayrolls", group: "Transporte", label: "Quincenas", note: "agrupan resúmenes" },
+  { id: "carriers", group: "Transporte", label: "Transportistas", note: "" },
+
+  // Facturación
+  { id: "dteDocuments", group: "Facturación", label: "Documentos DTE", note: "la segunda más grande; mezcla empresas y períodos" },
+  { id: "companies", group: "Facturación", label: "Empresas", note: "" },
+  { id: "costCenters", group: "Facturación", label: "Centros de costo", note: "" },
+  { id: "informalExpenses", group: "Facturación", label: "Gastos informales", note: "" },
+
+  // Otros registros
+  { id: "priceBookEntries", group: "Otros registros", label: "Libro de precios", note: "" },
+  { id: "priceBookConfig", group: "Otros registros", label: "Config del libro de precios", note: "normalmente 1 doc" },
+  { id: "contactCards", group: "Otros registros", label: "Información y cuentas", note: "" },
+  { id: "interestLinks", group: "Otros registros", label: "Links útiles", note: "" },
+  { id: "indicators", group: "Otros registros", label: "Indicadores", note: "" },
+  { id: "harvestWeights", group: "Otros registros", label: "Pesajes QR", note: "la escribe la app de scan, acá solo se lee" },
+  { id: "qrPrefixes", group: "Otros registros", label: "Prefijos QR", note: "1 por código físico" },
+
+  // Sistema
+  { id: "users", group: "Sistema", label: "Perfiles de usuario", note: "doc id = uid de Firebase" },
+  { id: "logs", group: "Sistema", label: "Logs de auditoría", note: "puede ser MUY grande" },
+];
+
+// Orden de los grupos en la tabla, para que no dependa del orden del array.
+const COLLECTION_GROUPS = [...new Set(MAIN_COLLECTIONS.map((c) => c.group))];
+
+// Ranuras de saludo, con una descripción de dónde aparece cada una. El texto
+// vive en `users/{uid}.greetings`, nunca en el código — ver utils/greetings.js.
+const GREETING_FIELDS = [
+  {
+    slot: GREETING_SLOTS.workerAlreadyInLabor,
+    label: "Trabajador ya en la labor",
+    note: 'Tag gris al intentar agregar a alguien que ya está. Default: "Ya en la labor".',
+  },
+  {
+    slot: GREETING_SLOTS.profileHover,
+    label: "Hover del nombre en el header",
+    note: 'Tooltip al pasar el mouse sobre el propio nombre. Default: "Mi perfil".',
+  },
+  {
+    slot: GREETING_SLOTS.notFound,
+    label: "Página no encontrada (404)",
+    note: "Línea suelta bajo el mensaje de error. Sin saludo no aparece nada.",
+  },
 ];
 
 const monthRange = (y, m) => {
@@ -132,6 +188,7 @@ export default function AdminConsole() {
       <Grupo titulo="Diagnóstico">
         <AuthDebugSection />
         <PingSection />
+        <GreetingsSection />
       </Grupo>
 
       <Grupo titulo="Inspección de escala">
@@ -383,6 +440,39 @@ function CollectionCountsSection() {
   };
 
   const totalRuns = Object.values(results).filter((r) => r.count != null).length;
+  const [copiado, setCopiado] = useState(false);
+
+  // Texto plano con las colecciones ya contadas, para pegar en un mensaje o
+  // una planilla. Solo las que tienen número: una lista con guiones no dice
+  // nada y se confunde con "colección vacía".
+  const copiarConteos = async () => {
+    const lineas = [];
+    let total = 0;
+    for (const g of COLLECTION_GROUPS) {
+      const delGrupo = MAIN_COLLECTIONS.filter(
+        (c) => c.group === g && results[c.id]?.count != null,
+      );
+      if (delGrupo.length === 0) continue;
+      lineas.push(`${g}`);
+      for (const c of delGrupo) {
+        const n = results[c.id].count;
+        total += n;
+        lineas.push(`  ${c.id}\t${n}`);
+      }
+    }
+    if (lineas.length === 0) return;
+    lineas.push("", `TOTAL\t${total}`);
+    const texto = lineas.join("\n");
+    try {
+      await navigator.clipboard.writeText(texto);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2000);
+    } catch {
+      // Sin permiso de portapapeles (o contexto no seguro): que al menos se
+      // pueda seleccionar a mano.
+      window.prompt("Copiá los conteos:", texto);
+    }
+  };
 
   return (
     <ConsoleCard id="counts-por-coleccion" title="Counts por colección" 
@@ -394,6 +484,15 @@ function CollectionCountsSection() {
           className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
         >
           {runningAll ? "Ejecutando…" : `▶ Contar todas (~${MAIN_COLLECTIONS.length} reads)`}
+        </button>
+        <button
+          type="button"
+          onClick={copiarConteos}
+          disabled={totalRuns === 0}
+          title={totalRuns === 0 ? "Primero contá alguna colección" : `Copiar ${totalRuns} conteos`}
+          className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+        >
+          {copiado ? "✓ Copiado" : `📋 Copiar${totalRuns ? ` (${totalRuns})` : ""}`}
         </button></>}>
       <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
         <table className="w-full text-sm">
@@ -405,7 +504,13 @@ function CollectionCountsSection() {
             </tr>
           </thead>
           <tbody>
-            {MAIN_COLLECTIONS.map((c) => {
+            {COLLECTION_GROUPS.flatMap((g) => [
+              <tr key={`g-${g}`} className="border-t border-[var(--color-border)] bg-[var(--color-surface-2)]">
+                <td colSpan={3} className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                  {g}
+                </td>
+              </tr>,
+              ...MAIN_COLLECTIONS.filter((c) => c.group === g).map((c) => {
               const r = results[c.id] || {};
               return (
                 <tr key={c.id} className="border-t border-[var(--color-border)]">
@@ -439,7 +544,8 @@ function CollectionCountsSection() {
                   </td>
                 </tr>
               );
-            })}
+              }),
+            ])}
           </tbody>
         </table>
       </div>
@@ -1456,6 +1562,160 @@ function MigrateAdvanceRutsSection() {
               <li key={h.id}>{h.rut} · {h.nombre || "sin nombre"} · {h.status}</li>
             ))}
           </ul>
+        </div>
+      )}
+    </ConsoleCard>
+  );
+}
+
+// ============================================================
+// Saludos personalizados por usuario
+// ============================================================
+// Editor de `users/{uid}.greetings`. El texto no vive en el código: un saludo
+// hardcodeado deja el mail de una persona real en el repo y fuera de contexto
+// puede leerse como cualquier otra cosa.
+//
+// Cuesta 1 lectura por usuario (son pocos) y solo al desplegar la sección.
+function GreetingsSection() {
+  const [usuarios, setUsuarios] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState("");
+  // uid → { [slot]: texto } con lo que el usuario está tipeando.
+  const [borradores, setBorradores] = useState({});
+  const [guardando, setGuardando] = useState("");
+  const [guardado, setGuardado] = useState("");
+
+  const cargar = async () => {
+    setCargando(true);
+    setError("");
+    try {
+      const lista = await usersService.list({ order: ["email", "asc"] });
+      setUsuarios(lista);
+      const inicial = {};
+      for (const u of lista) inicial[u.id] = { ...(u.greetings || {}) };
+      setBorradores(inicial);
+    } catch (err) {
+      setError(err.message || String(err));
+    } finally {
+      setCargando(false);
+    }
+  };
+
+  const editar = (uid, slot, valor) => {
+    setBorradores((b) => ({ ...b, [uid]: { ...(b[uid] || {}), [slot]: valor } }));
+    setGuardado("");
+  };
+
+  // Se escribe el mapa `greetings` completo porque `updateDoc` reemplaza el
+  // objeto entero: mandar una sola clave borraría las demás.
+  const guardar = async (uid) => {
+    setGuardando(uid);
+    setError("");
+    try {
+      const mapa = {};
+      for (const f of GREETING_FIELDS) {
+        const texto = (borradores[uid]?.[f.slot] || "").trim();
+        if (texto) mapa[f.slot] = texto;
+      }
+      await usersService.update(uid, { greetings: mapa });
+      setUsuarios((lista) =>
+        (lista || []).map((u) => (u.id === uid ? { ...u, greetings: mapa } : u)),
+      );
+      setGuardado(uid);
+      setTimeout(() => setGuardado((g) => (g === uid ? "" : g)), 2500);
+    } catch (err) {
+      setError(err.message || String(err));
+    } finally {
+      setGuardando("");
+    }
+  };
+
+  const sinGuardar = (uid) => {
+    const actual = usuarios?.find((u) => u.id === uid)?.greetings || {};
+    return GREETING_FIELDS.some(
+      (f) => (borradores[uid]?.[f.slot] || "").trim() !== (actual[f.slot] || "").trim(),
+    );
+  };
+
+  return (
+    <ConsoleCard
+      id="greetings"
+      title="Saludos personalizados"
+      description={
+        <>
+          Textos que ve un usuario y nadie más. Vacío = sin saludo, vuelve al default.
+        </>
+      }
+      actions={
+        <button
+          type="button"
+          onClick={cargar}
+          disabled={cargando}
+          className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
+        >
+          {cargando ? "Cargando…" : usuarios ? "↻ Recargar" : "▶ Cargar usuarios"}
+        </button>
+      }
+    >
+      {error ? (
+        <p className="mb-3 rounded-md bg-[var(--color-danger-soft)] px-3 py-2 text-xs text-[var(--color-danger)]">
+          {error}
+        </p>
+      ) : null}
+
+      {!usuarios ? (
+        <p className="text-xs text-[var(--color-muted)]">
+          Sin cargar. Cuesta 1 lectura por usuario.
+        </p>
+      ) : usuarios.length === 0 ? (
+        <p className="text-xs text-[var(--color-muted)]">No hay perfiles en `users`.</p>
+      ) : (
+        <div className="space-y-3">
+          {usuarios.map((u) => {
+            const pendiente = sinGuardar(u.id);
+            return (
+              <div
+                key={u.id}
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3"
+              >
+                <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium">{u.email || "(sin email)"}</div>
+                    <div className="font-mono text-[10px] text-[var(--color-muted)]">
+                      {u.id}
+                      {u.role ? ` · ${u.role}` : ""}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => guardar(u.id)}
+                    disabled={!pendiente || guardando === u.id}
+                    className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-[11px] hover:bg-[var(--color-accent-soft)] disabled:opacity-40"
+                  >
+                    {guardando === u.id
+                      ? "Guardando…"
+                      : guardado === u.id
+                        ? "✓ Guardado"
+                        : "Guardar"}
+                  </button>
+                </div>
+
+                {GREETING_FIELDS.map((f) => (
+                  <label key={f.slot} className="mt-2 block">
+                    <span className="block text-[11px] font-medium">{f.label}</span>
+                    <span className="block text-[10px] text-[var(--color-muted)]">{f.note}</span>
+                    <input
+                      type="text"
+                      value={borradores[u.id]?.[f.slot] || ""}
+                      onChange={(e) => editar(u.id, f.slot, e.target.value)}
+                      placeholder="(sin saludo)"
+                      className="mt-1 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
+                    />
+                  </label>
+                ))}
+              </div>
+            );
+          })}
         </div>
       )}
     </ConsoleCard>

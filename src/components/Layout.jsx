@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { greeting, GREETING_SLOTS } from "../utils/greetings";
 import { useTheme } from "../contexts/ThemeContext";
 import Modal from "./Modal";
 import { indicatorsService } from "../services";
@@ -104,8 +105,8 @@ const fmtCLP = (v) =>
 export const APP_VERSION = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev";
 
 const navItems = [
-  { to: "/", label: "Dashboard", icon: "🏠", end: true },
   { to: "/faenas", label: "Faenas", icon: "🌾" },
+  { to: "/dashboard", label: "Dashboard", icon: "🏠" },
   { to: "/calendar", label: "Calendario", icon: "📅" },
   { to: "/harvest-qr", label: "Cosecha QR", icon: "📷" },
   { to: "/workers", label: "Trabajadores", icon: "👷" },
@@ -316,10 +317,16 @@ export default function Layout() {
 
   const sidebarContent = (
     <>
-      <div className="flex h-14 items-center gap-2 border-b border-[var(--color-border)] px-4 font-semibold">
+      {/* La marca es el atajo al inicio. Apunta a `/` y no a `/faenas` para
+          que haya una sola definición de "home": si cambia, el logo sigue. */}
+      <Link
+        to="/"
+        aria-label="Ir al inicio"
+        className="flex h-14 items-center gap-2 border-b border-[var(--color-border)] px-4 font-semibold transition-colors hover:bg-[var(--color-surface-2)]"
+      >
         <TerraLogo className="h-11 w-11 shrink-0" />
         <TerraWordmark className="h-6 w-auto" />
-      </div>
+      </Link>
       <nav className="flex-1 space-y-1 overflow-y-auto p-2">
         {navItems.map((item) => (
           <NavLink key={item.to} to={item.to} end={item.end} className={linkClass}>
@@ -414,7 +421,7 @@ export default function Layout() {
               <button
                 type="button"
                 onClick={() => setProfileOpen(true)}
-                title="Mi perfil"
+                title={greeting(user, GREETING_SLOTS.profileHover, "Mi perfil")}
                 className="inline-flex min-h-[32px] max-w-[9rem] items-center truncate underline decoration-dotted underline-offset-2 hover:text-[var(--color-text)] sm:max-w-none"
               >
                 {displayName}

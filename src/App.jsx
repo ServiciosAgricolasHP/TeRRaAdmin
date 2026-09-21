@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Link, Navigate } from "react-router-dom";
-import { AuthProvider } from "./contexts/AuthContext";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { greeting, GREETING_SLOTS } from "./utils/greetings";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { CatalogsProvider } from "./contexts/CatalogsContext";
 import { CarriersProvider } from "./contexts/CarriersContext";
@@ -43,7 +44,14 @@ export default function App() {
                   </ProtectedRoute>
                 }
               >
-                <Route index element={<Dashboard />} />
+                {/* La home manda a Faenas, no al Dashboard: abrir la app es
+                    la acción más frecuente del día y el Dashboard cuesta
+                    bastantes lecturas más (ver la nota de costo en
+                    Dashboard.jsx). Es un redirect y no un render directo para
+                    que `/faenas` siga siendo la única URL de esa pantalla y el
+                    item del menú se marque como activo. */}
+                <Route index element={<Navigate to="/faenas" replace />} />
+                <Route path="dashboard" element={<Dashboard />} />
                 <Route path="faenas" element={<Faenas />} />
                 <Route path="cycles/:id" element={<CycleDetail />} />
                 <Route path="workers" element={<Workers />} />
@@ -104,6 +112,12 @@ export default function App() {
 }
 
 function NotFound() {
+  // `NotFound` se monta dentro y fuera del Layout, pero siempre dentro de
+  // `AuthProvider`. Sin sesión `user` es null y `greeting` devuelve "", así
+  // que la línea simplemente no se renderiza.
+  const { user } = useAuth();
+  const saludo = greeting(user, GREETING_SLOTS.notFound);
+
   return (
     <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
       <div className="text-5xl">🤔</div>
@@ -112,6 +126,14 @@ function NotFound() {
         La URL no corresponde a ninguna pantalla del sistema. Puede que el ciclo
         fue eliminado o que el link esté mal escrito.
       </p>
+      {/* El saludo es lo que la persona vino a ver, no una nota al pie: va
+          más grande que el propio mensaje de error. `text-balance` evita que
+          la última línea quede con una sola palabra colgando. */}
+      {saludo ? (
+        <p className="mt-6 max-w-2xl text-balance text-2xl font-semibold italic leading-snug text-[var(--color-accent)] sm:text-4xl">
+          {saludo}
+        </p>
+      ) : null}
       <div className="mt-6 flex gap-2">
         <button
           type="button"
@@ -124,7 +146,7 @@ function NotFound() {
           to="/"
           className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]"
         >
-          Ir al Dashboard
+          Ir al inicio
         </Link>
       </div>
     </div>

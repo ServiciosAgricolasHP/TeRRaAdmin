@@ -20,9 +20,14 @@ import {
 //
 // Costo: 1 read por log en el rango (Firestore no cobra por doc sino por
 // query, pero un rango grande puede pasar 10k docs y salir caro). Por eso el
-// range default es "últimos 7 días" y hay un hard cap de 5000 logs.
+// rango arranca acotado y hay un hard cap de 5000 logs.
 
 const HARD_CAP = 5000;
+
+// Días que cubre el rango al abrir la pantalla. `logs` es con diferencia la
+// colección más grande del sistema, así que el default es lo mínimo útil y
+// ampliar el rango queda como acción explícita.
+const DIAS_POR_DEFECTO = 3;
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const daysAgoISO = (n) => {
@@ -565,7 +570,7 @@ function EntitySearchPanel() {
 }
 
 export default function Audit() {
-  const [fromDate, setFromDate] = useState(daysAgoISO(7));
+  const [fromDate, setFromDate] = useState(daysAgoISO(DIAS_POR_DEFECTO));
   const [toDate, setToDateStr] = useState(todayISO());
   const [gapMinutes, setGapMinutes] = useState(30);
   const [emailFilter, setEmailFilter] = useState("");
