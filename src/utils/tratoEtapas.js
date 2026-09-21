@@ -99,3 +99,38 @@ export function getEtapasTotals(labor, workdays) {
   }
   return { pago, unidades };
 }
+
+// Metadatos de una etapa para mostrarla en un desglose: nombre, si cuenta para
+// el conteo de la empresa, y su posición según la definición del labor (no
+// según el orden en que aparezcan los workdays).
+//
+// Vive acá porque los tres consumidores —resumen del trabajador, detalle de
+// pago y grilla del ciclo— arman el mismo desglose, y tener la regla escrita
+// tres veces es lo que dejó pasar que el qty de las etapas sin `counts` no se
+// mostrara en ninguno de los tres.
+export function describeStage(labor, stageId, orden = null) {
+  const sid = String(stageId ?? "");
+  const lista = orden || normalizeStages(labor?.stages).map((st) => String(st.id));
+  const st = stageById(labor, sid);
+  return {
+    stageId: sid,
+    name: st?.name || "Etapa",
+    // Una etapa que no está en la definición se trata como que cuenta: es
+    // producción real que quedó huérfana, esconderla sería peor.
+    counts: st ? !!st.counts : true,
+    order: lista.indexOf(sid),
+  };
+}
+
+// Etiqueta visible de una etapa en las vistas del trabajador: resumen de
+// producción, comprobante de efectivo y detalle de pago.
+//
+// Va SOLO el nombre. `counts` no se rotula acá: es una distinción de
+// facturación de la empresa, y al lado de la producción de alguien un
+// "(no cuenta)" se lee como que su trabajo no vale. El rótulo sigue existiendo
+// donde sí corresponde — el resumen por faena de `CycleSummaryModal`, que es la
+// vista de cobro, y el tooltip de la grilla del ciclo.
+export function stageTag(etapa) {
+  if (!etapa) return "";
+  return etapa.name || "Etapa";
+}

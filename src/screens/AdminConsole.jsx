@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { collection, query, where, getCountFromServer, getDocs, doc, getDoc, writeBatch } from "firebase/firestore";
+import { collection, query, where, getCountFromServer, getDocs, doc, getDoc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "../firebase";
 import { faenasService, cyclesService, workersService } from "../services";
+import { advancesService } from "../services/advancesService";
 import { toProperName } from "../utils/nameUtils";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
@@ -63,6 +64,60 @@ async function countWorkdaysByCycle(cycleId) {
   return snap.data().count;
 }
 
+// Tarjeta colapsable. La consola junta diagnostico, inspeccion y migraciones
+// de una sola vez: desplegadas todas a la vez es un muro, y lo que se usa en
+// una visita suele ser una sola. El estado se recuerda por tarjeta.
+function Grupo({ titulo, children }) {
+  return (
+    <div className="space-y-2">
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">
+        {titulo}
+      </h2>
+      {children}
+    </div>
+  );
+}
+
+function ConsoleCard({ id, title, description, actions, children }) {
+  const clave = `af.console.${id}`;
+  const [abierta, setAbierta] = useState(() => {
+    try { return localStorage.getItem(clave) === "1"; } catch { return false; }
+  });
+
+  const alternar = () => {
+    setAbierta((v) => {
+      try { localStorage.setItem(clave, v ? "0" : "1"); } catch { /* noop */ }
+      return !v;
+    });
+  };
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+      <button
+        type="button"
+        onClick={alternar}
+        aria-expanded={abierta}
+        className="flex w-full items-baseline gap-3 p-4 text-left hover:bg-[var(--color-accent-soft)]"
+      >
+        <span className="text-xs text-[var(--color-muted)]">{abierta ? "\u25BE" : "\u25B8"}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold">{title}</span>
+          {description ? (
+            <span className="mt-0.5 block text-xs text-[var(--color-muted)]">{description}</span>
+          ) : null}
+        </span>
+      </button>
+
+      {abierta ? (
+        <div className="border-t border-[var(--color-border)] p-4">
+          {actions ? <div className="mb-3 flex flex-wrap items-center gap-2">{actions}</div> : null}
+          {children}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export default function AdminConsole() {
   return (
     <div className="space-y-6">
@@ -74,15 +129,26 @@ export default function AdminConsole() {
         </p>
       </div>
 
-      <AuthDebugSection />
-      <PingSection />
-      <CollectionCountsSection />
-      <WorkdaysByMonthSection />
-      <WorkdaysByRangeSection />
-      <WorkdaysByCycleSection />
-      <NormalizeWorkerNamesSection />
-      <BackfillWorkerRutFieldSection />
-      <BackfillWorkdayLogMetaSection />
+      <Grupo titulo="Diagnóstico">
+        <AuthDebugSection />
+        <PingSection />
+      </Grupo>
+
+      <Grupo titulo="Inspección de escala">
+        <CollectionCountsSection />
+        <WorkdaysByMonthSection />
+        <WorkdaysByRangeSection />
+        <WorkdaysByCycleSection />
+      </Grupo>
+
+      {/* Se corren una vez y se borran. Van juntas para que se vea de un
+          vistazo qué queda pendiente de migrar. */}
+      <Grupo titulo="Migraciones únicas">
+        <NormalizeWorkerNamesSection />
+        <BackfillWorkerRutFieldSection />
+        <BackfillWorkdayLogMetaSection />
+        <MigrateAdvanceRutsSection />
+      </Grupo>
     </div>
   );
 }
@@ -113,8 +179,7 @@ function PingSection() {
   };
 
   return (
-    <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <h2 className="mb-2 text-sm font-semibold">🧪 Ping a Cloud Functions</h2>
+    <ConsoleCard id="ping-a-cloud-functions" title="🧪 Ping a Cloud Functions">
       <p className="mb-3 text-xs text-[var(--color-muted)]">
         Llama al callable <code>ping</code> para verificar auth y región.
       </p>
@@ -137,8 +202,8 @@ function PingSection() {
             ? `✓ OK — ${JSON.stringify(result.data)}`
             : `✗ ${result.code || "error"}: ${result.message}`}
         </div>
-      )}
-    </section>
+      )}
+    </ConsoleCard>
   );
 }
 
@@ -191,8 +256,7 @@ function AuthDebugSection() {
   };
 
   return (
-    <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <h2 className="mb-2 text-sm font-semibold">🕵️ Debug de rol admin</h2>
+    <ConsoleCard id="debug-de-rol-admin" title="🕵️ Debug de rol admin">
       <p className="mb-3 text-xs text-[var(--color-muted)]">
         El AuthContext lee <code>users/{"{uid}"}</code> y toma el campo <code>role</code>.
         Si dice <code>"admin"</code> exactamente, activa el flag.
@@ -285,8 +349,8 @@ function AuthDebugSection() {
             </>
           )}
         </div>
-      </div>
-    </section>
+      </div>
+    </ConsoleCard>
   );
 }
 
@@ -321,23 +385,16 @@ function CollectionCountsSection() {
   const totalRuns = Object.values(results).filter((r) => r.count != null).length;
 
   return (
-    <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-semibold">Counts por colección</h2>
-          <p className="text-xs text-[var(--color-muted)]">
-            ~1 lectura por colección (Firestore aggregation).
-          </p>
-        </div>
-        <button
+    <ConsoleCard id="counts-por-coleccion" title="Counts por colección" 
+      description={<>~1 lectura por colección (Firestore aggregation).</>} 
+      actions={<><button
           type="button"
           onClick={runAll}
           disabled={runningAll}
           className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
         >
           {runningAll ? "Ejecutando…" : `▶ Contar todas (~${MAIN_COLLECTIONS.length} reads)`}
-        </button>
-      </div>
+        </button></>}>
       <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
         <table className="w-full text-sm">
           <thead className="bg-[var(--color-surface-2)] text-left text-xs text-[var(--color-muted)]">
@@ -390,8 +447,8 @@ function CollectionCountsSection() {
         <p className="mt-2 text-[11px] text-[var(--color-muted)]">
           {totalRuns} consulta{totalRuns === 1 ? "" : "s"} ejecutada{totalRuns === 1 ? "" : "s"}.
         </p>
-      )}
-    </section>
+      )}
+    </ConsoleCard>
   );
 }
 
@@ -454,15 +511,9 @@ function WorkdaysByMonthSection() {
   const totalRuns = rows.filter((r) => r.count != null).length;
 
   return (
-    <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-semibold">Workdays por mes</h2>
-          <p className="text-xs text-[var(--color-muted)]">
-            12 consultas, ~12 reads totales. Útil para ver estacionalidad.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <ConsoleCard id="workdays-por-mes" title="Workdays por mes" 
+      description={<>12 consultas, ~12 reads totales. Útil para ver estacionalidad.</>} 
+      actions={<><div className="flex items-center gap-2">
           <label className="text-xs text-[var(--color-muted)]">Año</label>
           <input
             type="number"
@@ -478,8 +529,7 @@ function WorkdaysByMonthSection() {
           >
             {running ? "Ejecutando…" : "▶ Contar año (~12 reads)"}
           </button>
-        </div>
-      </div>
+        </div></>}>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
         {rows.map((r, i) => (
           <div
@@ -503,8 +553,8 @@ function WorkdaysByMonthSection() {
           </span>{" "}
           workdays
         </p>
-      )}
-    </section>
+      )}
+    </ConsoleCard>
   );
 }
 
@@ -539,8 +589,7 @@ function WorkdaysByRangeSection() {
   };
 
   return (
-    <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <h2 className="mb-2 text-sm font-semibold">Workdays por rango custom</h2>
+    <ConsoleCard id="workdays-por-rango-custom" title="Workdays por rango custom">
       <div className="flex flex-wrap items-center gap-2">
         <label className="text-xs text-[var(--color-muted)]">Desde</label>
         <input
@@ -574,8 +623,8 @@ function WorkdaysByRangeSection() {
       </div>
       {error && (
         <p className="mt-2 text-xs text-[var(--color-danger)]">{error}</p>
-      )}
-    </section>
+      )}
+    </ConsoleCard>
   );
 }
 
@@ -638,15 +687,9 @@ function WorkdaysByCycleSection() {
   const total = numericCounts.reduce((s, n) => s + n, 0);
 
   return (
-    <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-semibold">Workdays por ciclo</h2>
-          <p className="text-xs text-[var(--color-muted)]">
-            1 lectura por ciclo. Útil para ver dónde está concentrada la data.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <ConsoleCard id="workdays-por-ciclo" title="Workdays por ciclo" 
+      description={<>1 lectura por ciclo. Útil para ver dónde está concentrada la data.</>} 
+      actions={<><div className="flex items-center gap-2">
           <label className="flex items-center gap-1 text-xs">
             <input
               type="checkbox"
@@ -665,8 +708,7 @@ function WorkdaysByCycleSection() {
               ? "Ejecutando…"
               : `▶ Contar ${visibleCycles.length} ciclo${visibleCycles.length === 1 ? "" : "s"} (~${visibleCycles.length} reads)`}
           </button>
-        </div>
-      </div>
+        </div></>}>
 
       {loading ? (
         <p className="text-xs text-[var(--color-muted)]">Cargando ciclos…</p>
@@ -723,8 +765,8 @@ function WorkdaysByCycleSection() {
           </span>{" "}
           workdays
         </p>
-      )}
-    </section>
+      )}
+    </ConsoleCard>
   );
 }
 
@@ -804,17 +846,11 @@ function NormalizeWorkerNamesSection() {
   const displayDiffs = showAll ? diffs : diffs.slice(0, 20);
 
   return (
-    <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-semibold">Normalizar nombres de trabajadores</h2>
-          <p className="text-xs text-[var(--color-muted)]">
-            Convierte los <code>name</code> al formato "Juan Pérez" (primera letra
+    <ConsoleCard id="normalizar-nombres-de-trabajadores" title="Normalizar nombres de trabajadores" 
+      description={<>Convierte los <code>name</code> al formato "Juan Pérez" (primera letra
             mayúscula, resto minúscula, conectores en minúscula).
-            Preview primero, después aplicar.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+            Preview primero, después aplicar.</>} 
+      actions={<><div className="flex items-center gap-2">
           <button
             type="button"
             onClick={preview}
@@ -833,8 +869,7 @@ function NormalizeWorkerNamesSection() {
               ? `Aplicando… ${progress.done}/${progress.total}`
               : `✔ Aplicar ${diffs.length || ""} cambio${diffs.length === 1 ? "" : "s"}`}
           </button>
-        </div>
-      </div>
+        </div></>}>
 
       {scanned > 0 && !loading && (
         <p className="mb-3 text-xs text-[var(--color-muted)]">
@@ -914,8 +949,8 @@ function NormalizeWorkerNamesSection() {
         danger
         onCancel={() => setConfirmApply(false)}
         onConfirm={() => { setConfirmApply(false); doApply(); }}
-      />
-    </section>
+      />
+    </ConsoleCard>
   );
 }
 
@@ -996,16 +1031,10 @@ function BackfillWorkdayLogMetaSection() {
   };
 
   return (
-    <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-semibold">Backfill: auditoría de workdays por trabajador</h2>
-          <p className="text-xs text-[var(--color-muted)]">
-            Completa <code>meta.workerRut</code>/<code>meta.cycleId</code> en logs viejos de workday
-            (parseados del entityId) para que el buscador de Auditoría los encuentre por trabajador.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <ConsoleCard id="backfill-auditoria-de-workdays-por-traba" title="Backfill: auditoría de workdays por trabajador" 
+      description={<>Completa <code>meta.workerRut</code>/<code>meta.cycleId</code> en logs viejos de workday
+            (parseados del entityId) para que el buscador de Auditoría los encuentre por trabajador.</>} 
+      actions={<><div className="flex items-center gap-2">
           <button
             type="button"
             onClick={preview}
@@ -1024,8 +1053,7 @@ function BackfillWorkdayLogMetaSection() {
               ? `Aplicando… ${progress.done}/${progress.total}`
               : `✔ Aplicar ${candidates?.length || ""} log${candidates?.length === 1 ? "" : "s"}`}
           </button>
-        </div>
-      </div>
+        </div></>}>
 
       {candidates !== null && !loading && (
         <p className="mb-3 text-xs text-[var(--color-muted)]">
@@ -1098,8 +1126,8 @@ function BackfillWorkdayLogMetaSection() {
         danger
         onCancel={() => setConfirmApply(false)}
         onConfirm={() => { setConfirmApply(false); doApply(); }}
-      />
-    </section>
+      />
+    </ConsoleCard>
   );
 }
 
@@ -1161,16 +1189,10 @@ function BackfillWorkerRutFieldSection() {
   };
 
   return (
-    <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-semibold">Backfill: campo rut en trabajadores</h2>
-          <p className="text-xs text-[var(--color-muted)]">
-            Completa <code>worker.rut</code> (= doc id actual) en trabajadores viejos que todavía
-            no lo tienen. Paso previo para poder editar el rut más adelante sin perder identidad.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+    <ConsoleCard id="backfill-campo-rut-en-trabajadores" title="Backfill: campo rut en trabajadores" 
+      description={<>Completa <code>worker.rut</code> (= doc id actual) en trabajadores viejos que todavía
+            no lo tienen. Paso previo para poder editar el rut más adelante sin perder identidad.</>} 
+      actions={<><div className="flex items-center gap-2">
           <button
             type="button"
             onClick={preview}
@@ -1189,8 +1211,7 @@ function BackfillWorkerRutFieldSection() {
               ? `Aplicando… ${progress.done}/${progress.total}`
               : `✔ Aplicar ${candidates?.length || ""} trabajador${candidates?.length === 1 ? "" : "es"}`}
           </button>
-        </div>
-      </div>
+        </div></>}>
 
       {candidates !== null && !loading && (
         <p className="mb-3 text-xs text-[var(--color-muted)]">
@@ -1260,7 +1281,183 @@ function BackfillWorkerRutFieldSection() {
         danger
         onCancel={() => setConfirmApply(false)}
         onConfirm={() => { setConfirmApply(false); doApply(); }}
-      />
-    </section>
+      />
+    </ConsoleCard>
+  );
+}
+
+// ============================================================
+// Migración única: anticipos al rut vigente
+// ============================================================
+// `advances` guardaba el rut de CREACIÓN del trabajador (el doc id). Para
+// quien pasó de una cédula provisoria a un rut definitivo ese valor diverge
+// del rut actual, y por eso la búsqueda de anticipos consultaba dos campos
+// distintos — duplicando cada consulta de la nómina para rescatar un puñado
+// de casos. Esta pasada re-apunta `workerRut` al rut vigente para que
+// `worker.rut` quede como única clave foránea. `workerId` no se toca: queda
+// como rastro de cuál era el id original.
+function MigrateAdvanceRutsSection() {
+  const [loading, setLoading] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [cambian, setCambian] = useState(null);
+  const [huerfanos, setHuerfanos] = useState([]);
+  const [totales, setTotales] = useState(null);
+
+  const preview = async () => {
+    setLoading(true);
+    setMsg("");
+    try {
+      const [workers, advances] = await Promise.all([
+        workersService.list({ order: ["name", "asc"] }),
+        advancesService.list({ order: ["date", "desc"] }),
+      ]);
+
+      // doc id -> rut vigente. El fallback al id cubre a los workers creados
+      // antes de que existiera el campo `rut`.
+      const rutActual = new Map(workers.map((w) => [w.id, w.rut || w.id]));
+      const nombre = new Map(workers.map((w) => [w.id, w.name || ""]));
+      const rutsVigentes = new Set(workers.map((w) => w.rut || w.id));
+
+      const aCambiar = [];
+      const sinDueno = [];
+
+      for (const a of advances) {
+        const actual = String(a.workerRut || "");
+        if (!actual) continue;
+        const destino = rutActual.get(actual);
+
+        if (destino === undefined) {
+          // Ni doc id ni rut vigente de nadie: o ya migró, o quedó huérfano.
+          if (!rutsVigentes.has(actual)) {
+            sinDueno.push({ id: a.id, nombre: a.workerName || "", rut: actual, status: a.status || "pending" });
+          }
+          continue;
+        }
+        if (destino !== actual) {
+          aCambiar.push({
+            id: a.id,
+            nombre: nombre.get(actual) || a.workerName || "",
+            desde: actual,
+            hacia: destino,
+            status: a.status || "pending",
+          });
+        }
+      }
+
+      setCambian(aCambiar);
+      setHuerfanos(sinDueno);
+      setTotales({
+        advances: advances.length,
+        divergentes: workers.filter((w) => w.rut && w.rut !== w.id).length,
+      });
+    } catch (err) {
+      setMsg(`Error: ${err.message || err}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const apply = async () => {
+    if (!cambian?.length) return;
+    setRunning(true);
+    setMsg("");
+    try {
+      for (let i = 0; i < cambian.length; i += 450) {
+        const batch = writeBatch(db);
+        for (const c of cambian.slice(i, i + 450)) {
+          batch.update(doc(db, "advances", c.id), { workerRut: c.hacia, updatedAt: serverTimestamp() });
+        }
+        await batch.commit();
+      }
+      advancesService.invalidate();
+      setMsg(`✓ Migrados ${cambian.length} anticipo(s).`);
+      await preview();
+    } catch (err) {
+      setMsg(`Error al migrar: ${err.message || err}`);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const vigentes = (cambian || []).filter((c) => c.status === "pending" || c.status === "partial").length;
+
+  return (
+    <ConsoleCard
+      id="migrar-anticipos-rut"
+      title="Migración: anticipos al rut vigente"
+      description={<>Re-apunta <code>advances.workerRut</code> al rut actual del trabajador para que <code>worker.rut</code> sea la única clave foránea. <code>workerId</code> no se toca.</>}
+      actions={<>
+        <button
+          type="button"
+          onClick={preview}
+          disabled={loading || running}
+          className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+        >
+          {loading ? "Buscando…" : "🔎 Preview"}
+        </button>
+        <button
+          type="button"
+          onClick={apply}
+          disabled={running || !cambian || cambian.length === 0}
+          className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
+        >
+          {running ? "Migrando…" : `✔ Migrar ${cambian?.length || ""} anticipo(s)`}
+        </button>
+      </>}
+    >
+      {msg && <p className="mb-3 text-sm">{msg}</p>}
+
+      {totales && (
+        <p className="mb-3 text-xs text-[var(--color-muted)]">
+          {totales.advances} anticipo(s) · {totales.divergentes} trabajador(es) con rut distinto del id
+          {cambian ? ` · ${cambian.length} a migrar (${vigentes} vigente(s))` : ""}
+        </p>
+      )}
+
+      {cambian && cambian.length === 0 && (
+        <p className="text-sm text-[var(--color-muted)]">
+          Nada que migrar: todos los anticipos ya apuntan al rut vigente.
+        </p>
+      )}
+
+      {cambian && cambian.length > 0 && (
+        <div className="max-h-72 overflow-auto rounded-md border border-[var(--color-border)]">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-[var(--color-surface-2)]">
+              <tr className="text-left">
+                <th className="px-3 py-2 font-semibold">Trabajador</th>
+                <th className="px-3 py-2 font-semibold">Desde (id)</th>
+                <th className="px-3 py-2 font-semibold">Hacia (rut vigente)</th>
+                <th className="px-3 py-2 font-semibold">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cambian.map((c) => (
+                <tr key={c.id} className="border-t border-[var(--color-border)]">
+                  <td className="px-3 py-2">{c.nombre || "—"}</td>
+                  <td className="px-3 py-2 font-mono text-xs">{c.desde}</td>
+                  <td className="px-3 py-2 font-mono text-xs font-semibold">{c.hacia}</td>
+                  <td className="px-3 py-2">{c.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {huerfanos.length > 0 && (
+        <div className="mt-3 rounded-md border border-[var(--color-border)] p-3">
+          <p className="text-xs font-semibold">
+            ⚠ {huerfanos.length} anticipo(s) sin trabajador que coincida — no se tocan
+          </p>
+          <ul className="mt-1 space-y-0.5 font-mono text-xs text-[var(--color-muted)]">
+            {huerfanos.map((h) => (
+              <li key={h.id}>{h.rut} · {h.nombre || "sin nombre"} · {h.status}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </ConsoleCard>
   );
 }

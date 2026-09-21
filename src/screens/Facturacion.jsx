@@ -7,9 +7,10 @@
 
 import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import { captureFullWidthBlob, captureFullWidthDataUrl } from "../utils/imageCapture";
-import { writeBatch, doc, serverTimestamp } from "firebase/firestore";
-import { db, auth } from "../firebase";
+import { serverTimestamp } from "firebase/firestore";
+import { auth } from "../firebase";
 import { companiesService, dteDocumentsService, costCentersService, informalExpensesService } from "../services";
+import { importDteRecords } from "../services/dteImportService";
 import { parseSiiRcvCsv, dteTypeLabel, buildDteDocId, normalizeRut, extractRutFromFilename, otroImpuestoLabel, otroImpuestoCategory, OTRO_IMP_CATEGORIES } from "../utils/siiCsvParser";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import Modal from "../components/Modal";
@@ -710,66 +711,11 @@ export default function Facturacion() {
         setImporting(false);
         return;
       }
-      const companyId = importCompanyId;
-      // Agrupar por (kind, periodo) — companyId es el mismo para todo el batch.
-      const byScope = new Map();
-      for (const r of allRecords) {
-        const key = `${r.kind}__${r.periodo || "__no_period__"}`;
-        if (!byScope.has(key)) byScope.set(key, { kind: r.kind, periodo: r.periodo, records: [] });
-        byScope.get(key).records.push(r);
-      }
-
-      let totalNew = 0, totalOverwrite = 0, totalDeleted = 0;
-      const uid = auth.currentUser?.uid || null;
-
-      for (const { kind, periodo, records } of byScope.values()) {
-        // Existentes en Firestore para (companyId, kind, periodo).
-        const existing = await dteDocumentsService.list({
-          wheres: [
-            ["companyId", "==", companyId],
-            ["kind", "==", kind],
-            ["periodo", "==", periodo],
-          ],
-        });
-        const newIds = new Set(records.map((r) => r.id));
-        const orphans = existing.filter((e) => !newIds.has(e.id));
-        const existingIds = new Set(existing.map((e) => e.id));
-
-        // Bulk write en chunks (límite Firestore 500 ops/batch).
-        const CHUNK = 450;
-        const writes = [
-          ...orphans.map((o) => ({ kind: "delete", id: o.id })),
-          ...records.map((r) => ({ kind: "set", record: r })),
-        ];
-        for (let i = 0; i < writes.length; i += CHUNK) {
-          const slice = writes.slice(i, i + CHUNK);
-          const batch = writeBatch(db);
-          for (const w of slice) {
-            if (w.kind === "delete") {
-              batch.delete(doc(db, "dteDocuments", w.id));
-            } else {
-              const { id, ...rest } = w.record;
-              const wasExisting = existingIds.has(id);
-              const patch = {
-                ...rest,
-                importedAt: serverTimestamp(),
-                importedBy: uid,
-              };
-              // Preservar paymentStatus existente al reimportar — solo seteamos
-              // "unpaid" si el doc es nuevo.
-              if (!wasExisting) patch.paymentStatus = "unpaid";
-              batch.set(doc(db, "dteDocuments", id), patch, { merge: true });
-            }
-          }
-          await batch.commit();
-        }
-        totalDeleted += orphans.length;
-        for (const r of records) {
-          if (existingIds.has(r.id)) totalOverwrite++;
-          else totalNew++;
-        }
-      }
-      dteDocumentsService.invalidate();
+      const { totalNew, totalOverwrite, totalDeleted } = await importDteRecords({
+        companyId: importCompanyId,
+        records: allRecords,
+        uid: auth.currentUser?.uid || null,
+      });
       const filesProcessed = importPreview.files.filter((f) => !f.excluded && !f.parseFailed).length;
       toast.success(
         `${filesProcessed} archivo${filesProcessed === 1 ? "" : "s"} procesado${filesProcessed === 1 ? "" : "s"}.\n` +

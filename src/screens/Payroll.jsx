@@ -6,6 +6,7 @@ import {
   cyclesService,
   workersService,
   workdaysService,
+  listWorkdaysByCycles,
   payrollSnapshotsService,
 } from "../services";
 import {
@@ -32,15 +33,15 @@ import {
   advanceRemaining,
   advanceSign,
   advanceTypeMeta,
-  advanceDueNow,
   hasInstallmentPlan,
   installmentProgress,
   cadenceMeta,
 } from "../services/advancesService";
+import { saveSnapshot, deleteSnapshot, readSnapshot } from "../services/payrollSnapshots";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import { bankName, accountTypeLabel, ACCOUNT_TYPES, isCashBank, CASH_BANK_CODE } from "../utils/banks";
 import { getTratoTierTotals, getDayCombos, getDaySingle, getTratoTiers, tratoTypeLabel, tratoUnitLabel, cosechaUnit, comboLabel, containerLabel, formatLaborDayPrice } from "../utils/cosechaCombos";
-import { countingStageIds } from "../utils/tratoEtapas";
+import { describeStage, normalizeStages, stageTag } from "../utils/tratoEtapas";
 import { useCatalogs } from "../contexts/CatalogsContext";
 import { useToast } from "../contexts/ToastContext";
 import {
@@ -53,6 +54,7 @@ import {
   validateAccountNumber,
   normalizeLeader,
 } from "../utils/payroll";
+import { allocateAdvances, advanceNote } from "../utils/payrollItem";
 import ConfirmDialog from "../components/ConfirmDialog";
 import Modal from "../components/Modal";
 import ResizableArea from "../components/ResizableArea";
@@ -146,6 +148,15 @@ function downloadSnapshotJson(payrollName, snapshot) {
     console.warn("No se pudo descargar el JSON del snapshot:", err);
   }
 }
+
+// La clave foranea de un anticipo es el rut VIGENTE del trabajador. Un workday
+// congela el rut que tenia al crearse, asi que hay que resolverlo contra la
+// ficha en vez de usar el del workday. Sale de la lista que la pantalla ya
+// tiene cargada: no cuesta lecturas.
+const resolverRutVigente = (workers) => {
+  const porId = new Map((workers || []).map((w) => [w.id, w.rut || w.id]));
+  return (agg) => porId.get(agg.workerId || agg.rut) ?? agg.rut;
+};
 
 export default function Payroll() {
   const toast = useToast();
@@ -283,42 +294,41 @@ export default function Payroll() {
           unpaidBank: 0, unpaidCash: 0, unpaidUnknown: 0,
         };
       }
-      for (let i = 0; i < activeIds.length; i += 10) {
-        const chunk = activeIds.slice(i, i + 10);
-        const wds = await workdaysService.list({ wheres: [["cycleId", "in", chunk]] });
-        const laborTypeMap = new Map();
-        for (const cy of c) {
-          if (chunk.includes(cy.id)) {
-            for (const labor of cy.labors || []) laborTypeMap.set(labor.id, labor.type);
-          }
+      const laborTypeMap = new Map();
+      for (const cy of c) {
+        for (const labor of cy.labors || []) laborTypeMap.set(labor.id, labor.type);
+      }
+      // Por ciclo y cacheado: estos mismos documentos los vuelve a pedir
+      // `buildPreview` cuando el usuario elige los ciclos, casi siempre
+      // dentro del minuto. Agrupados de a 10 con `in` las dos lecturas
+      // formaban claves distintas y se pagaban las dos.
+      const wds = await listWorkdaysByCycles(activeIds);
+      for (const wd of wds) {
+        const cid = wd.cycleId;
+        if (!stats[cid]) continue;
+        const type = laborTypeMap.get(wd.laborId);
+        let amount = 0;
+        if (type === "trato") {
+          amount = getTratoTierTotals(wd).amount;
+        } else {
+          amount = Number(wd.amount) || 0;
         }
-        for (const wd of wds) {
-          const cid = wd.cycleId;
-          if (!stats[cid]) continue;
-          const type = laborTypeMap.get(wd.laborId);
-          let amount = 0;
-          if (type === "trato") {
-            amount = getTratoTierTotals(wd).amount;
-          } else {
-            amount = Number(wd.amount) || 0;
-          }
-          stats[cid].total += amount;
-          if (wd.payrollId) {
-            stats[cid].paid += amount;
-          } else {
-            stats[cid].unpaid += amount;
-            // Un rut que no está en el catálogo (o sin banco cargado) no se
-            // asume transferencia: queda aparte como "por definir" para no
-            // inflar el monto del banco en silencio.
-            const kind = payKindByRut.get(wd.workerRut) || "unknown";
-            if (kind === "cash") stats[cid].unpaidCash += amount;
-            else if (kind === "bank") stats[cid].unpaidBank += amount;
-            else stats[cid].unpaidUnknown += amount;
-          }
-          if (wd.date) {
-            if (!stats[cid].firstDay || wd.date < stats[cid].firstDay) stats[cid].firstDay = wd.date;
-            if (!stats[cid].lastDay || wd.date > stats[cid].lastDay) stats[cid].lastDay = wd.date;
-          }
+        stats[cid].total += amount;
+        if (wd.payrollId) {
+          stats[cid].paid += amount;
+        } else {
+          stats[cid].unpaid += amount;
+          // Un rut que no está en el catálogo (o sin banco cargado) no se
+          // asume transferencia: queda aparte como "por definir" para no
+          // inflar el monto del banco en silencio.
+          const kind = payKindByRut.get(wd.workerRut) || "unknown";
+          if (kind === "cash") stats[cid].unpaidCash += amount;
+          else if (kind === "bank") stats[cid].unpaidBank += amount;
+          else stats[cid].unpaidUnknown += amount;
+        }
+        if (wd.date) {
+          if (!stats[cid].firstDay || wd.date < stats[cid].firstDay) stats[cid].firstDay = wd.date;
+          if (!stats[cid].lastDay || wd.date > stats[cid].lastDay) stats[cid].lastDay = wd.date;
         }
       }
       setCycleStats(stats);
@@ -346,6 +356,7 @@ export default function Payroll() {
       subfaenasService.invalidate();
       cyclesService.invalidate();
       workersService.invalidate();
+      workdaysService.invalidate();
       payrollsService.invalidate();
       await load();
       toast.success("Datos actualizados");
@@ -442,28 +453,26 @@ export default function Payroll() {
       // make it into a payroll until their RUT is assigned in CycleDetail.
       // También filtramos por la selección de labores por ciclo: workdays de
       // labores no marcadas quedan disponibles para una próxima nómina.
+      // Mismo helper que usó `load()` al montar: los ciclos seleccionados son
+      // un subconjunto de los abiertos, así que dentro del minuto esto no vuelve
+      // a leer de Firestore. El botón de refrescar invalida el scope cuando hace
+      // falta traer cambios de otro usuario.
       const allWorkdays = [];
-      const chunkSize = 10;
-      for (let i = 0; i < cycleIds.length; i += chunkSize) {
-        const chunk = cycleIds.slice(i, i + chunkSize);
-        const wds = await workdaysService.list({ wheres: [["cycleId", "in", chunk]] });
-        for (const wd of wds) {
-          if (wd.payrollId) continue;
-          if (String(wd.workerRut || "").startsWith("TEMP-")) continue;
-          const allowedLabors = selectedLaborsByCycle.get(wd.cycleId);
-          if (allowedLabors && !allowedLabors.has(wd.laborId)) continue;
-          allWorkdays.push(wd);
-        }
+      for (const wd of await listWorkdaysByCycles(cycleIds)) {
+        if (wd.payrollId) continue;
+        if (String(wd.workerRut || "").startsWith("TEMP-")) continue;
+        const allowedLabors = selectedLaborsByCycle.get(wd.cycleId);
+        if (allowedLabors && !allowedLabors.has(wd.laborId)) continue;
+        allWorkdays.push(wd);
       }
 
       const aggregates = aggregateWorkerAmounts(allWorkdays, laborTypeById);
 
-      // Pull pending advances for everyone in this preview. Buscamos tanto
-      // por rut como por workerId (fase 3 de "rut editable") para no perder
-      // anticipos creados antes de que el trabajador corrigiera su rut.
-      const candidateRuts = aggregates.filter((a) => a.total > 0).map((a) => a.rut);
-      const candidateWorkerIds = aggregates.filter((a) => a.total > 0).map((a) => a.workerId || a.rut);
-      const pendingAdvances = await listPendingForWorkers(candidateRuts, candidateWorkerIds);
+      // Los anticipos vigentes de todos los de este preview. El servidor ya
+      // devuelve solo pending/partial.
+      const claveDe = resolverRutVigente(workers);
+      const candidateIds = aggregates.filter((a) => a.total > 0).map(claveDe);
+      const pendingAdvances = await listPendingForWorkers(candidateIds);
       previewWorkdaysRef.current = allWorkdays;
       previewAdvancesRef.current = pendingAdvances;
       const advancesByRut = new Map();
@@ -490,48 +499,15 @@ export default function Payroll() {
           const adv = advancesByRut.get(a.workerId || a.rut) || { anticipos: [], bonos: [] };
 
           const grossInt = Math.round(a.total);
-
-          // Bonos PRIMERO: se aplican completos y engrosan la base contra la
-          // que después se descuenta el anticipo. Al revés (que era como
-          // estaba), un bono deja el anticipo sin liquidar por exactamente su
-          // monto: al trabajador se le entrega el bono en la mano y la deuda
-          // arrastra a la nómina siguiente en vez de cerrarse.
-          const sortedBonos = [...adv.bonos].sort((x, y) => {
-            const da = (x.date || ""), dbb = (y.date || "");
-            return da < dbb ? -1 : da > dbb ? 1 : 0;
+          // Bonos primero y anticipos después, topeados por bruto + bonos.
+          // La regla y el porqué viven en src/utils/payrollItem.js.
+          const reparto = allocateAdvances({
+            gross: grossInt,
+            anticipos: adv.anticipos,
+            bonos: adv.bonos,
           });
-          const bonoApplications = [];
-          for (const advItem of sortedBonos) {
-            const advRem = Math.round(advanceRemaining(advItem));
-            if (advRem <= 0) continue;
-            bonoApplications.push({ advanceId: advItem.id, amount: advRem });
-          }
-          const bonosTotal = bonoApplications.reduce((s, x) => s + x.amount, 0);
+          const { anticipoApplications, bonoApplications, anticiposTotal, bonosTotal } = reparto;
 
-          // Anticipos: oldest-first, capados por bruto + bonos.
-          const sortedAnticipos = [...adv.anticipos].sort((x, y) => {
-            const da = (x.date || ""), dbb = (y.date || "");
-            return da < dbb ? -1 : da > dbb ? 1 : 0;
-          });
-          let remainingGross = grossInt + bonosTotal;
-          const anticipoApplications = [];
-          for (const advItem of sortedAnticipos) {
-            if (remainingGross <= 0) break;
-            const advDue = Math.round(advanceDueNow(advItem));
-            if (advDue <= 0) continue;
-            const apply = Math.min(remainingGross, advDue);
-            if (apply <= 0) continue;
-            // maxAmount = saldo real (sin el tope de la cuota) — permite que
-            // updatePreview deje subir el override manual por encima de la
-            // cuota sugerida sin descuadrar lo descontado vs. lo acreditado.
-            anticipoApplications.push({ advanceId: advItem.id, amount: apply, maxAmount: Math.round(advanceRemaining(advItem)) });
-            remainingGross -= apply;
-          }
-
-          const anticiposTotal = anticipoApplications.reduce((s, x) => s + x.amount, 0);
-          const advanceNoteParts = [];
-          if (anticiposTotal) advanceNoteParts.push(`Anticipos ${anticipoApplications.length}`);
-          if (bonosTotal) advanceNoteParts.push(`Bonos ${bonoApplications.length}`);
           return {
             rut: a.rut,
             workerId: a.workerId || a.rut,
@@ -545,14 +521,14 @@ export default function Payroll() {
             grossAmount: grossInt,
             advance: anticiposTotal,
             bonus: bonosTotal,
-            advanceNote: advanceNoteParts.join(" · "),
+            advanceNote: advanceNote(reparto),
             anticipoApplications,
             bonoApplications,
             anticiposTotal,
             bonosTotal,
             // adelantosTotal kept for legacy snapshot read-back; always 0 going forward.
             adelantosTotal: 0,
-            amount: Math.max(0, grossInt - anticiposTotal + bonosTotal),
+            amount: reparto.amount,
             byCycle,
             workdayIds: a.workdayIds || [],
             include: true,
@@ -886,11 +862,7 @@ export default function Payroll() {
       recompute();
 
       const pSnapshot = (async () => {
-        try {
-          await payrollSnapshotsService.upsert(created.id, fullSnapshot);
-        } catch (err) {
-          console.warn("No se pudo guardar el snapshot en payrollSnapshots:", err);
-        }
+        await saveSnapshot(created.id, fullSnapshot);
         snapshotDone = true;
         recompute();
       })();
@@ -1061,7 +1033,7 @@ export default function Payroll() {
         recompute();
       })();
       const pSnap = (async () => {
-        try { await payrollSnapshotsService.remove(id); } catch { /* noop */ }
+        await deleteSnapshot(id);
         snapDone = true;
         recompute();
       })();
@@ -1124,16 +1096,7 @@ export default function Payroll() {
   // `p.snapshot` field if the payroll was created before the split.
   const onDownloadSnapshot = async (p) => {
     try {
-      let snap = null;
-      try {
-        const doc = await payrollSnapshotsService.getById(p.id);
-        if (doc) {
-          // Strip the firestore-injected `id` field from the snapshot payload.
-          const { id: _omit, ...rest } = doc;
-          snap = rest;
-        }
-      } catch { /* noop */ }
-      if (!snap && p.snapshot) snap = { ...p.snapshot, payrollId: p.id };
+      const snap = await readSnapshot(p);
       if (!snap) {
         toast.warning("Esta nómina no tiene snapshot guardado (creada antes de la feature).");
         return;
@@ -2845,8 +2808,10 @@ function buildGroupCycleSnapshot(groupRuts, cycle, workdays, nameByRut, catalogs
   for (const labor of labors) {
     const wdsLabor = wdsCycle.filter((w) => w.laborId === labor.id);
     if (wdsLabor.length === 0) continue;
-    // tratoEtapas: etapas que cuentan para el conteo de unidades.
-    const countingSet = labor.type === "tratoEtapas" ? countingStageIds(labor) : null;
+    // tratoEtapas: orden de las etapas para el desglose de cada celda.
+    const ordenEtapas = labor.type === "tratoEtapas"
+      ? normalizeStages(labor.stages).map((st) => String(st.id))
+      : null;
 
     // Aggregate per (worker, date) into a cell payload.
     // Multiple workdays for same (worker, date) are summed (e.g. trato tiers
@@ -2874,6 +2839,7 @@ function buildGroupCycleSnapshot(groupRuts, cycle, workdays, nameByRut, catalogs
           isHoliday: false,
           byCombo: {},
           byTier: {},
+          byStage: {},
         });
       }
       const c = cellByWorkerDay.get(key);
@@ -2926,10 +2892,19 @@ function buildGroupCycleSnapshot(groupRuts, cycle, workdays, nameByRut, catalogs
         c.hasManejo = c.hasManejo || !!wd.hasManejo;
         c.hasSupervision = c.hasSupervision || !!wd.hasSupervision;
       } else if (labor.type === "tratoEtapas") {
-        // Pago = amount de todas las etapas; unidades (jornadas) = solo las
-        // etapas que cuentan.
-        c.amount += Number(wd.amount) || 0;
-        if (countingSet.has(String(wd.stageId))) c.jornadas += Number(wd.qty) || 0;
+        // Para el trabajador toda la producción cuenta: `counts` decide qué
+        // se le factura al cliente, no qué hizo la persona. Antes las etapas
+        // que no cuentan aportaban el monto pero no la cantidad, así que el
+        // comprobante mostraba plata sin producción detrás.
+        const q = Number(wd.qty) || 0;
+        const monto = Number(wd.amount) || 0;
+        c.amount += monto;
+        c.jornadas += q;
+        const sid = String(wd.stageId ?? "");
+        const acc = c.byStage[sid] || { ...describeStage(labor, sid, ordenEtapas), qty: 0, amount: 0 };
+        acc.qty += q;
+        acc.amount += monto;
+        c.byStage[sid] = acc;
       } else {
         c.amount += Number(wd.amount) || 0;
         c.jornadas += 1;
@@ -2978,7 +2953,7 @@ function buildGroupCycleSnapshot(groupRuts, cycle, workdays, nameByRut, catalogs
     let grandExtras = 0;
     let grandPiso = 0;
     for (const d of sortedDates) {
-      const agg = { amount: 0, kilos: 0, jornadas: 0, overtimeHours: 0, extras: 0, piso: 0, byCombo: {}, byTier: {} };
+      const agg = { amount: 0, kilos: 0, jornadas: 0, overtimeHours: 0, extras: 0, piso: 0, byCombo: {}, byTier: {}, byStage: {} };
       for (const r of rows) {
         const c = r.cells[d];
         if (!c) continue;
@@ -2997,6 +2972,11 @@ function buildGroupCycleSnapshot(groupRuts, cycle, workdays, nameByRut, catalogs
           if (!agg.byTier[tk]) agg.byTier[tk] = { index: b.index, jornadas: 0, amount: 0 };
           agg.byTier[tk].jornadas += b.jornadas;
           agg.byTier[tk].amount += b.amount;
+        }
+        for (const [sid, b] of Object.entries(c.byStage || {})) {
+          if (!agg.byStage[sid]) agg.byStage[sid] = { stageId: sid, name: b.name, counts: b.counts, order: b.order, qty: 0, amount: 0 };
+          agg.byStage[sid].qty += b.qty;
+          agg.byStage[sid].amount += b.amount;
         }
       }
       dayTotals[d] = agg;
@@ -3102,10 +3082,18 @@ function renderProductionCell(cell, laborType, tratoLabel, kilosUnit, catalogs =
     return `${baseHtml}${flagsHtml}<div class="muted">${fmtMoney(cell.amount)}</div>`;
   }
   if (laborType === "tratoEtapas") {
-    // jornadas = unidades que cuentan (carpas). El monto es el pago del día.
+    // jornadas = unidades producidas, de todas las etapas. El desglose dice
+    // de qué etapa salió cada una, sin marcar cuáles cuentan para facturar:
+    // esto lo lee el trabajador.
     const j = cell.jornadas || 0;
+    const etapas = Object.values(cell.byStage || {})
+      .filter((b) => b.qty || b.amount)
+      .sort((a, b) => a.order - b.order);
+    const breakdown = etapas.length > 1
+      ? etapas.map((b) => `<div class="muted prod-breakdown">${stageTag(b)}: ${num(b.qty)}</div>`).join("")
+      : "";
     const jHtml = j ? `<div>${num(j)} unid</div>` : "";
-    return `${jHtml}${pisoTag}<div class="muted">${fmtMoney(cell.amount)}</div>`;
+    return `${breakdown}${jHtml}${pisoTag}<div class="muted">${fmtMoney(cell.amount)}</div>`;
   }
   // main / supervision / extra
   return `<div>${fmtMoney(cell.amount)}</div>`;
@@ -3158,8 +3146,14 @@ function renderProductionTotal(totals, laborType, tratoLabel, kilosUnit, catalog
   }
   if (laborType === "tratoEtapas") {
     const j = totals.jornadas || 0;
+    const etapas = Object.values(totals.byStage || {})
+      .filter((b) => b.qty || b.amount)
+      .sort((a, b) => a.order - b.order);
+    const breakdown = etapas.length > 1
+      ? etapas.map((b) => `<div class="muted prod-breakdown">${stageTag(b)}: ${num(b.qty)}</div>`).join("")
+      : "";
     const jHtml = j ? `<div>${num(j)} unid</div>` : "";
-    return `${jHtml}${pisoTag}<div><b>${fmtMoney(amount)}</b></div>`;
+    return `${breakdown}${jHtml}${pisoTag}<div><b>${fmtMoney(amount)}</b></div>`;
   }
   return `<div><b>${fmtMoney(amount)}</b></div>`;
 }
@@ -3888,17 +3882,22 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
 </body></html>`;
 }
 
-// Fetch de ciclos + workdays y armado de snapshots por (grupo, ciclo) —
-// compartido por el PDF de "Detalle de pago" y por el toggle "con labores"
-// del Resumen en pantalla, que necesitan el mismo desglose costoso por labor.
-async function loadWorkdaysByGroup(payroll, allGroups, catalogs = {}) {
+// Ciclos + workdays de una nómina: la parte cara. No depende de cómo se
+// agrupe a la gente —`wdIdSet` sale de `payroll.items[].workdayIds`, que ya es
+// la unión de todos los grupos— así que se pide una sola vez por nómina y la
+// reusan el detalle de pago, los comprobantes de efectivo y la hoja de cada
+// líder. Antes cada uno de esos botones la volvía a bajar entera: imprimir la
+// hoja de un solo líder costaba lo mismo que imprimir la nómina completa.
+async function fetchPayrollWorkdays(payroll) {
   const cycleIds = payroll.cycleIds || (payroll.cycleDetails || []).map((c) => c.id);
   const cycles = await Promise.all(cycleIds.map((id) => cyclesService.getById(id)));
   const cyclesById = {};
   for (const c of cycles) if (c) cyclesById[c.id] = c;
 
-  const allItems = allGroups.flatMap((g) => g.items);
-  const wdIdSet = new Set(allItems.flatMap((it) => it.workdayIds || []));
+  const items = payroll.items || [];
+  // Indispensable: los ciclos de esta nómina también tienen workdays de OTRAS
+  // nóminas, y contarlos inflaría los montos del comprobante.
+  const wdIdSet = new Set(items.flatMap((it) => it.workdayIds || []));
   const workdays = [];
   for (let i = 0; i < cycleIds.length; i += 10) {
     const chunk = cycleIds.slice(i, i + 10);
@@ -3907,9 +3906,24 @@ async function loadWorkdaysByGroup(payroll, allGroups, catalogs = {}) {
     for (const w of wds) if (wdIdSet.has(w.id)) workdays.push(w);
   }
 
-  const nameByRut = new Map(allItems.map((it) => [it.rut, it.name]));
+  const nameByRut = new Map(items.map((it) => [it.rut, it.name]));
+  return { cycleIds, cyclesById, workdays, nameByRut };
+}
+
+// Snapshots por (grupo, ciclo). CPU pura sobre lo que trajo
+// `fetchPayrollWorkdays`, y cada llamador pasa SUS grupos: todos para el
+// detalle de pago, solo los de efectivo para los comprobantes, uno solo para
+// la hoja de un líder. Esa distinción no se puede perder — los grupos de
+// `allGroups` juntan banco y efectivo bajo el mismo líder, así que reusar ese
+// resultado en los comprobantes de efectivo metería en la hoja firmable la
+// producción de gente que cobró por transferencia.
+//
+// Compartir el fetch sí es seguro: `buildGroupCycleSnapshot` filtra adentro
+// por ciclo y por rut, así que recibir workdays de más no cambia una fila.
+function buildWorkdaysByGroup(groups, payrollData, catalogs = {}) {
+  const { cycleIds, cyclesById, workdays, nameByRut } = payrollData;
   const workdaysByGroup = {};
-  for (const g of allGroups) {
+  for (const g of groups) {
     const groupRuts = g.items.map((it) => it.rut);
     const byCycle = {};
     for (const cid of cycleIds) {
@@ -3919,14 +3933,14 @@ async function loadWorkdaysByGroup(payroll, allGroups, catalogs = {}) {
     }
     workdaysByGroup[g.leader] = byCycle;
   }
-  return { cyclesById, workdaysByGroup };
+  return workdaysByGroup;
 }
 
 // Resumen por labor (segunda hoja del "Detalle de pago" imprimible, y vista
 // "con labores" del Resumen en pantalla). Mismo criterio que subfaenaSummary
 // (bank vs cash por fila), pero desglosado también por labor dentro de cada
 // subfaena, sumando a TODOS los trabajadores de la nómina (no solo a los de
-// un grupo/líder). Requiere `workdaysByGroup` (ver loadWorkdaysByGroup)
+// un grupo/líder). Requiere `workdaysByGroup` (ver buildWorkdaysByGroup)
 // porque ese desglose no vive en payroll.items — solo el total por ciclo.
 function computeLaborSummary(payroll, allGroups, workdaysByGroup) {
   const allItems = allGroups.flatMap((g) => g.items);
@@ -3990,10 +4004,15 @@ function computeBonusAdvanceSummary(items) {
   };
 }
 
-async function printPaymentDetails(payroll, allGroups, titleOverrides = {}, summaries = [], catalogs = {}, subfaenaSummary = null) {
+async function printPaymentDetails(payroll, allGroups, titleOverrides = {}, summaries = [], catalogs = {}, subfaenaSummary = null, payrollData = null) {
   if (allGroups.length === 0) return;
   const allItems = allGroups.flatMap((g) => g.items);
-  const { cyclesById, workdaysByGroup } = await loadWorkdaysByGroup(payroll, allGroups, catalogs);
+  // `payrollData` viene memorizado desde el modal. El fallback existe para que
+  // un llamador nuevo que se olvide de pasarlo siga imprimiendo bien, aunque
+  // pague la lectura.
+  const data = payrollData || (await fetchPayrollWorkdays(payroll));
+  const { cyclesById } = data;
+  const workdaysByGroup = buildWorkdaysByGroup(allGroups, data, catalogs);
   const laborSummary = computeLaborSummary(payroll, allGroups, workdaysByGroup);
   const bonusAdvanceSummary = computeBonusAdvanceSummary(allItems);
 
@@ -4174,39 +4193,31 @@ function printResumenTable(payroll, {
   w.document.close();
 }
 
-async function printCashReceipts(payroll, cashGroups, titleOverrides = {}, catalogs = {}) {
-  if (cashGroups.length === 0) return;
+async function printCashReceipts(payroll, cashGroups, titleOverrides = {}, catalogs = {}, payrollData = null) {
+  // Fuera de la hoja que firma el líder los que no tienen nada que cobrar
+  // NI produjeron: son los días de asistencia de un sueldo mensual, que
+  // entran a la nómina solo para quedar etiquetados. Hacerle firmar a
+  // alguien que recibió $0 ensucia un documento de pago.
+  //
+  // El corte es por bruto, no por neto: quien produjo y quedó en cero
+  // porque un anticipo se llevó todo SÍ va en la hoja — al líder le sirve
+  // ver que esa persona ya está saldada.
+  const gruposConPago = cashGroups
+    .map((g) => {
+      const items = g.items.filter(
+        (it) => Math.round(Number(it.amount) || 0) > 0 || Math.round(Number(it.grossAmount) || 0) > 0,
+      );
+      return { ...g, items, total: items.reduce((sum, it) => sum + (Number(it.amount) || 0), 0) };
+    })
+    .filter((g) => g.items.length > 0);
+  if (gruposConPago.length === 0) return;
+  cashGroups = gruposConPago;
 
-  // Load cycles (for labor types) + workdays linked to cash items.
-  const cycleIds = payroll.cycleIds || (payroll.cycleDetails || []).map((c) => c.id);
-  const cycles = await Promise.all(cycleIds.map((id) => cyclesService.getById(id)));
-  const cyclesById = {};
-  for (const c of cycles) if (c) cyclesById[c.id] = c;
-
-  // Workday ids: union of all cash items.
-  const cashItems = cashGroups.flatMap((g) => g.items);
-  const wdIdSet = new Set(cashItems.flatMap((it) => it.workdayIds || []));
-  const workdays = [];
-  for (let i = 0; i < cycleIds.length; i += 10) {
-    const chunk = cycleIds.slice(i, i + 10);
-    if (chunk.length === 0) continue;
-    const wds = await workdaysService.list({ wheres: [["cycleId", "in", chunk]] });
-    for (const w of wds) if (wdIdSet.has(w.id)) workdays.push(w);
-  }
-
-  // For each group, for each cycle, build per-labor production snapshots.
-  const nameByRut = new Map(cashItems.map((it) => [it.rut, it.name]));
-  const workdaysByGroup = {};
-  for (const g of cashGroups) {
-    const groupRuts = g.items.map((it) => it.rut);
-    const byCycle = {};
-    for (const cid of cycleIds) {
-      const cycle = cyclesById[cid];
-      if (!cycle) continue;
-      byCycle[cid] = buildGroupCycleSnapshot(groupRuts, cycle, workdays, nameByRut, catalogs);
-    }
-    workdaysByGroup[g.leader] = byCycle;
-  }
+  const data = payrollData || (await fetchPayrollWorkdays(payroll));
+  const { cyclesById } = data;
+  // Los grupos son SOLO los de efectivo: la hoja que firma el líder no puede
+  // mostrar la producción de su gente de banco.
+  const workdaysByGroup = buildWorkdaysByGroup(cashGroups, data, catalogs);
 
   const html = buildCashReceiptHtml(payroll, cashGroups, {
     titleOverrides,
@@ -4528,7 +4539,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
 
       const newWorkerAggs = aggregates.filter((a) => !existingByKey.has(a.workerId || a.rut));
       const pendingAdvances = newWorkerAggs.length
-        ? await listPendingForWorkers(newWorkerAggs.map((a) => a.rut), newWorkerAggs.map((a) => a.workerId || a.rut))
+        ? await listPendingForWorkers(newWorkerAggs.map(resolverRutVigente(workers)))
         : [];
       const advancesByKey = new Map();
       for (const adv of pendingAdvances) {
@@ -4537,7 +4548,6 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
         if (advanceSign(adv) > 0) e.bonos.push(adv); else e.anticipos.push(adv);
         advancesByKey.set(key, e);
       }
-      const byDateAsc = (x, y) => ((x.date || "") < (y.date || "") ? -1 : (x.date || "") > (y.date || "") ? 1 : 0);
       const workerById = (rut) => workers.find((w) => w.id === rut);
 
       const newAdvanceApplications = [];
@@ -4569,32 +4579,14 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
         for (const [cid, amt] of Object.entries(a.byCycle)) byCycle[cid] = Math.round(amt);
         const adv = advancesByKey.get(key) || { anticipos: [], bonos: [] };
 
-        // Bonos primero: engrosan la base contra la que se descuenta el
-        // anticipo, para que un bono no deje la deuda sin liquidar por
-        // exactamente su monto. Ver el comentario largo en buildPreview.
-        const bonoApplications = [];
-        for (const advItem of [...adv.bonos].sort(byDateAsc)) {
-          const advRem = Math.round(advanceRemaining(advItem));
-          if (advRem <= 0) continue;
-          bonoApplications.push({ advanceId: advItem.id, amount: advRem });
-        }
-        const bonosTotal = bonoApplications.reduce((s, x) => s + x.amount, 0);
-
-        let remainingGross = grossInt + bonosTotal;
-        const anticipoApplications = [];
-        for (const advItem of [...adv.anticipos].sort(byDateAsc)) {
-          if (remainingGross <= 0) break;
-          const advDue = Math.round(advanceDueNow(advItem));
-          if (advDue <= 0) continue;
-          const apply = Math.min(remainingGross, advDue);
-          if (apply <= 0) continue;
-          anticipoApplications.push({ advanceId: advItem.id, amount: apply });
-          remainingGross -= apply;
-        }
-        const anticiposTotal = anticipoApplications.reduce((s, x) => s + x.amount, 0);
-        const advanceNoteParts = [];
-        if (anticiposTotal) advanceNoteParts.push(`Anticipos ${anticipoApplications.length}`);
-        if (bonosTotal) advanceNoteParts.push(`Bonos ${bonoApplications.length}`);
+        // Mismo reparto que al armar la nómina: bonos primero, anticipos
+        // después topeados por bruto + bonos. Ver src/utils/payrollItem.js.
+        const reparto = allocateAdvances({
+          gross: grossInt,
+          anticipos: adv.anticipos,
+          bonos: adv.bonos,
+        });
+        const { anticipoApplications, bonoApplications, anticiposTotal, bonosTotal } = reparto;
         const advanceApplications = [...anticipoApplications, ...bonoApplications];
         newAdvanceApplications.push(...advanceApplications);
 
@@ -4611,7 +4603,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
           grossAmount: grossInt,
           advance: anticiposTotal,
           bonus: bonosTotal,
-          advanceNote: advanceNoteParts.join(" · "),
+          advanceNote: advanceNote(reparto),
           advanceIds: advanceApplications.map((x) => x.advanceId),
           advanceApplications,
           anticipoApplications,
@@ -4784,9 +4776,9 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
       // incluido o nuevo) — un anticipo creado después de generar la nómina
       // nunca se aplica solo, así que acá lo detectamos y aplicamos igual
       // que se haría al crear la nómina de nuevo.
-      const allRuts = [...items.map((it) => it.rut), ...newWorkerAggs.map((a) => a.rut)];
-      const allWorkerIds = [...items.map((it) => it.workerId || it.rut), ...newWorkerAggs.map((a) => a.workerId || a.rut)];
-      const pendingAdvances = allRuts.length ? await listPendingForWorkers(allRuts, allWorkerIds) : [];
+      const claveDe = resolverRutVigente(workers);
+      const allIds = [...items.map(claveDe), ...newWorkerAggs.map(claveDe)];
+      const pendingAdvances = allIds.length ? await listPendingForWorkers(allIds) : [];
       const advancesByKey = new Map();
       for (const adv of pendingAdvances) {
         const key = adv.workerId || adv.workerRut;
@@ -4794,7 +4786,6 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
         if (advanceSign(adv) > 0) e.bonos.push(adv); else e.anticipos.push(adv);
         advancesByKey.set(key, e);
       }
-      const byDateAsc = (x, y) => ((x.date || "") < (y.date || "") ? -1 : (x.date || "") > (y.date || "") ? 1 : 0);
       const newAdvanceApplications = [];
 
       const PROFILE_FIELDS = [
@@ -4850,33 +4841,25 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
         if (newAnticipos.length || newBonos.length) {
           const currentAdvance = Number(it.advance) || 0;
           const currentBonus = Number(it.bonus) || 0;
-          // Bonos primero, igual que al armar la nómina: la base incluye los
-          // bonos (los que ya tenía y los nuevos) antes de descontar.
-          const appliedBonos = [];
-          for (const advItem of [...newBonos].sort(byDateAsc)) {
-            const advRem = Math.round(advanceRemaining(advItem));
-            if (advRem <= 0) continue;
-            appliedBonos.push({ advanceId: advItem.id, amount: advRem });
-          }
-          const addedBonoTotal = appliedBonos.reduce((s, x) => s + x.amount, 0);
-
-          let remainingGross = Math.max(0, newGross + currentBonus + addedBonoTotal - currentAdvance);
-          const appliedAnticipos = [];
-          for (const advItem of [...newAnticipos].sort(byDateAsc)) {
-            if (remainingGross <= 0) break;
-            const advDue = Math.round(advanceDueNow(advItem));
-            if (advDue <= 0) continue;
-            const apply = Math.min(remainingGross, advDue);
-            if (apply <= 0) continue;
-            appliedAnticipos.push({ advanceId: advItem.id, amount: apply });
-            remainingGross -= apply;
-          }
-          const addedAnticipoTotal = appliedAnticipos.reduce((s, x) => s + x.amount, 0);
+          // Caso incremental: este trabajador YA está en la nómina, así que
+          // la base arranca de lo que ya se le descontó y acreditó. Misma
+          // regla que al armarla — ver src/utils/payrollItem.js.
+          const reparto = allocateAdvances({
+            gross: newGross,
+            anticipos: newAnticipos,
+            bonos: newBonos,
+            alreadyAdvanced: currentAdvance,
+            alreadyBonused: currentBonus,
+          });
+          const appliedBonos = reparto.bonoApplications;
+          const appliedAnticipos = reparto.anticipoApplications;
+          const addedBonoTotal = reparto.bonosTotal;
+          const addedAnticipoTotal = reparto.anticiposTotal;
           if (addedAnticipoTotal > 0 || addedBonoTotal > 0) {
             const base = patch || it;
             const newAdvanceTotal = currentAdvance + addedAnticipoTotal;
             const newBonusTotal = currentBonus + addedBonoTotal;
-            const newAmount = Math.max(0, newGross - newAdvanceTotal + newBonusTotal);
+            const newAmount = reparto.amount;
             const appliedNow = [...appliedAnticipos, ...appliedBonos];
             patch = {
               ...base,
@@ -4927,32 +4910,14 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
         for (const [cid, amt] of Object.entries(a.byCycle)) byCycle[cid] = Math.round(amt);
         const adv = advancesByKey.get(key) || { anticipos: [], bonos: [] };
 
-        // Bonos primero: engrosan la base contra la que se descuenta el
-        // anticipo, para que un bono no deje la deuda sin liquidar por
-        // exactamente su monto. Ver el comentario largo en buildPreview.
-        const bonoApplications = [];
-        for (const advItem of [...adv.bonos].sort(byDateAsc)) {
-          const advRem = Math.round(advanceRemaining(advItem));
-          if (advRem <= 0) continue;
-          bonoApplications.push({ advanceId: advItem.id, amount: advRem });
-        }
-        const bonosTotal = bonoApplications.reduce((s, x) => s + x.amount, 0);
-
-        let remainingGross = grossInt + bonosTotal;
-        const anticipoApplications = [];
-        for (const advItem of [...adv.anticipos].sort(byDateAsc)) {
-          if (remainingGross <= 0) break;
-          const advDue = Math.round(advanceDueNow(advItem));
-          if (advDue <= 0) continue;
-          const apply = Math.min(remainingGross, advDue);
-          if (apply <= 0) continue;
-          anticipoApplications.push({ advanceId: advItem.id, amount: apply });
-          remainingGross -= apply;
-        }
-        const anticiposTotal = anticipoApplications.reduce((s, x) => s + x.amount, 0);
-        const advanceNoteParts = [];
-        if (anticiposTotal) advanceNoteParts.push(`Anticipos ${anticipoApplications.length}`);
-        if (bonosTotal) advanceNoteParts.push(`Bonos ${bonoApplications.length}`);
+        // Mismo reparto que al armar la nómina: bonos primero, anticipos
+        // después topeados por bruto + bonos. Ver src/utils/payrollItem.js.
+        const reparto = allocateAdvances({
+          gross: grossInt,
+          anticipos: adv.anticipos,
+          bonos: adv.bonos,
+        });
+        const { anticipoApplications, bonoApplications, anticiposTotal, bonosTotal } = reparto;
         const advanceApplications = [...anticipoApplications, ...bonoApplications];
         newAdvanceApplications.push(...advanceApplications);
 
@@ -4969,7 +4934,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
           grossAmount: grossInt,
           advance: anticiposTotal,
           bonus: bonosTotal,
-          advanceNote: advanceNoteParts.join(" · "),
+          advanceNote: advanceNote(reparto),
           advanceIds: advanceApplications.map((x) => x.advanceId),
           advanceApplications,
           anticipoApplications,
@@ -5152,6 +5117,19 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     return a || b || "—";
   };
 
+  // Ciclos + workdays de la nómina, una sola vez por modal. Guardamos la
+  // PROMESA y no el resultado para que dos clicks seguidos no disparen dos
+  // lecturas, y la atamos a la identidad de `payroll`: toda edición pasa por
+  // `onChanged`, que reemplaza el objeto, así que el memo se invalida solo.
+  // Cerrar y volver a abrir el modal también fuerza una relectura.
+  const payrollDataRef = useRef({ payroll: null, promise: null });
+  const getPayrollData = () => {
+    if (payrollDataRef.current.payroll !== payroll) {
+      payrollDataRef.current = { payroll, promise: fetchPayrollWorkdays(payroll) };
+    }
+    return payrollDataRef.current.promise;
+  };
+
   // Resumen en pantalla: mismas tablas que "Detalle de pago" (por subfaena /
   // por labor), con sus propias acciones de imprimir/copiar/descargar. La
   // vista "con labores" necesita el mismo fetch costoso (ciclos + workdays)
@@ -5166,8 +5144,9 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     setLaborSummaryLoading(true);
     (async () => {
       try {
-        const { workdaysByGroup } = await loadWorkdaysByGroup(payroll, allGroups, catalogs);
+        const data = await getPayrollData();
         if (cancelled) return;
+        const workdaysByGroup = buildWorkdaysByGroup(allGroups, data, catalogs);
         setLaborSummaryData(computeLaborSummary(payroll, allGroups, workdaysByGroup));
       } catch (err) {
         if (!cancelled) toast.error("No se pudo cargar el resumen por labor: " + (err?.message || err));
@@ -5528,7 +5507,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
   const handlePrint = async () => {
     setPrinting(true);
     try {
-      await printCashReceipts(payroll, cashGroups, cycleTitleOverrides, catalogs);
+      await printCashReceipts(payroll, cashGroups, cycleTitleOverrides, catalogs, await getPayrollData());
     } catch (err) {
       toast.error(err?.message || "Error al imprimir");
     } finally {
@@ -5539,7 +5518,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
   const handlePrintDetail = async () => {
     setPrintingDetail(true);
     try {
-      await printPaymentDetails(payroll, allGroups, cycleTitleOverrides, detailSummaries, catalogs, subfaenaSummary);
+      await printPaymentDetails(payroll, allGroups, cycleTitleOverrides, detailSummaries, catalogs, subfaenaSummary, await getPayrollData());
     } catch (err) {
       toast.error(err?.message || "Error al imprimir");
     } finally {
@@ -5556,7 +5535,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     const loadingKey = key || group.leader;
     setPrintingGroupLeader(loadingKey);
     try {
-      await printPaymentDetails(payroll, [group], cycleTitleOverrides, [], catalogs, null);
+      await printPaymentDetails(payroll, [group], cycleTitleOverrides, [], catalogs, null, await getPayrollData());
     } catch (err) {
       toast.error(err?.message || "Error al imprimir grupo");
     } finally {
@@ -6413,7 +6392,18 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
       </div>
       <WorkerSummaryModal
         open={!!workerSummaryFor}
-        worker={workerSummaryFor ? { id: workerSummaryFor.rut, name: workerSummaryFor.name } : null}
+        worker={
+          workerSummaryFor
+            ? {
+                // El item trae el id estable en `workerId` y el rut del roster
+                // en `rut`. Pasar solo el segundo como si fuera el id era lo
+                // que hacía que el resumen se abriera con la clave equivocada.
+                id: workerSummaryFor.workerId || workerSummaryFor.rut,
+                rut: workerSummaryFor.rut,
+                name: workerSummaryFor.name,
+              }
+            : null
+        }
         onClose={() => setWorkerSummaryFor(null)}
       />
       {showCashEstimation && (
@@ -8436,7 +8426,7 @@ function WorkerDetail({ worker, onBack, onExport, exporting }) {
 
       <WorkerSummaryModal
         open={summaryOpen}
-        worker={{ id: worker.rut, name: worker.name }}
+        worker={{ id: worker.workerId || worker.rut, rut: worker.rut, name: worker.name }}
         onClose={() => setSummaryOpen(false)}
       />
 

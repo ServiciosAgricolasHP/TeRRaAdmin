@@ -18,7 +18,7 @@ import {
   formatLaborDayPrice,
 } from "../utils/cosechaCombos";
 import { isRedDay } from "../utils/tratoHE";
-import { stageById, countingStageIds } from "../utils/tratoEtapas";
+import { stageById } from "../utils/tratoEtapas";
 import { tripsService } from "../services/transportsService";
 import { cyclesService, workdaysService, cycleSummariesService } from "../services";
 import { useCarriers } from "../contexts/CarriersContext";
@@ -467,8 +467,6 @@ function buildWorkerLaborGrid(labor, wdMap) {
   // Bonuses default a labor-level si el workday no trae override.
   const bonusManejoLabor = Number(labor?.bonusManejo) || 0;
   const bonusSupLabor = Number(labor?.bonusSupervision) || 0;
-  // tratoEtapas: set de etapas que cuentan para el conteo de unidades.
-  const countingSet = labor?.type === "tratoEtapas" ? countingStageIds(labor) : null;
 
   for (const k in wdMap) {
     const wd = wdMap[k];
@@ -560,13 +558,12 @@ function buildWorkerLaborGrid(labor, wdMap) {
       wEntry.totals.overtimeHours += oh;
       wEntry.totals.extras += extrasTotal;
     } else if (labor?.type === "tratoEtapas") {
-      // Conteo de unidades (carpas): solo etapas que cuentan. El amount (pago)
-      // ya se sumó arriba con todas las etapas.
+      // Toda la producción del trabajador, no solo la de las etapas que
+      // cuentan: `counts` decide qué se le factura al cliente. Esta grilla es
+      // del lado pagar, así que muestra lo que la persona hizo.
       const q = Number(wd.qty) || 0;
-      if (countingSet.has(String(wd.stageId))) {
-        c.qty += q;
-        wEntry.totals.qty += q;
-      }
+      c.qty += q;
+      wEntry.totals.qty += q;
     } else {
       c.qty += 1;
       c.jornadas += 1;

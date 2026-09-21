@@ -8,10 +8,49 @@
 | `npm run build` | Compilar para producción → `dist/` / Production build → `dist/` |
 | `npm run lint` | ESLint (flat config, `.jsx` only) |
 | `npm run preview` | Vista previa del build / Preview production build locally |
+| `npm test` | Vitest sobre lógica pura (~2s, sin red) / Pure-logic unit tests |
+| `npm run test:watch` | Vitest en modo watch |
+| `npm run test:e2e` | Ciclos end-to-end contra el emulador de Firestore / Integration cycles against the Firestore emulator |
+| `npm run test:all` | Los dos anteriores |
 | `npm run deploy` | Deploy manual a GitHub Pages (`gh-pages -d dist -t`). **Escape hatch** — el camino normal es mergear a `main` y dejar que Actions deploye / Manual fallback; normal path is merge to `main` |
 
-**No hay framework de tests configurado.** No inventes uno sin preguntar.
-**No test framework is configured.** Do not invent one without asking.
+## Tests
+
+Dos capas, ninguna toca datos reales.
+
+- **Unidad** (`vitest.config.js`): `src/**/*.test.js`, entorno `node`, sin globals
+  (cada archivo importa `describe`/`it`/`expect` de `vitest`, así `eslint.config.js`
+  no necesita declararlos). Cubre la matemática: reparto de anticipos y bonos,
+  agregación de workdays, RUT, parser del SII, caché, cuotas.
+- **End-to-end** (`vitest.config.e2e.js` + `tests/e2e/`): ciclos completos por la
+  **capa de servicios**, no por el DOM — generar nómina → etiquetar workdays →
+  aplicar anticipos → borrar → verificar que todo volvió atrás; y el import del
+  RCV del SII, incluido el borrado de huérfanos. Corren en serie y
+  el emulador se vacía antes de cada test.
+
+**Cuatro barreras impiden que un test toque `arandanos-hp`**, y cualquiera alcanza:
+
+1. El project id es `demo-terra-test`. Con el prefijo `demo-` el SDK de Firebase
+   **nunca** contacta servidores de Google, aunque el emulador no responda.
+2. `VITE_FIRESTORE_EMULATOR` apunta `src/firebase.js` a localhost (ver el bloque al
+   final de ese archivo). En producción la variable no existe.
+3. `tests/e2e/setup.js` **aborta** si falta cualquiera de las dos.
+4. El emulador se levanta con `emulators:exec`, sin `--import` ni `--export-on-exit`:
+   todo vive en memoria y se va al terminar.
+
+Requisito local: **JDK 21 o superior** (`winget install EclipseAdoptium.Temurin.21.JDK`).
+`firebase-tools` 15 rechaza runtimes anteriores. En CI lo fija `actions/setup-java`.
+
+**No hay `firestore.rules` en el repo a propósito**: las reglas viven solo en la
+consola de Firebase, y un archivo de reglas permisivas acá estaría a un
+`firebase deploy` distraído de abrir producción.
+
+El mismo enganche sirve para usar la app entera contra datos descartables:
+`VITE_FIRESTORE_EMULATOR=127.0.0.1:8080 VITE_FIREBASE_PROJECT_ID=demo-terra-test npm run dev`.
+
+Los tests marcados `[bug conocido]` fijan el comportamiento **actual** de algo que
+parece estar mal, con el porqué en un comentario. No son la conducta deseada: si
+arreglás uno, el test se cae y eso es la señal de actualizar los dos.
 
 ## Despliegue / Deploy
 
@@ -129,6 +168,28 @@ El tag `main` se renderiza como **"al día"** en métricas y tabs.
 - **Unidad mostrada en métricas** sale del envase del catálogo, no de un literal "kg". Helper `cosechaUnit(catalogs, containersSet)` en `utils/cosechaCombos.js`: si todos los workdays del scope usan el mismo envase (`Saco`, `Kilo`, `Caja`…) devuelve su label; si hay mezcla cae a `"Unid."`. Aplica en Calendar, CycleSummaryModal, WorkerSummaryModal y los comprobantes de Payroll.
 - **Unidad mostrada para trato** sale de `catalogs.tratoTypes` via `tratoTypeLabel(catalogs, labor.tratoType)` — ej. una labor a trato configurada como "Poda" muestra `4.737 poda` en vez de `4.737 trato`. Si una grilla mezcla varios `tratoType` en el mismo ciclo cae al genérico "Trato".
 
+### tratoEtapas — qué ve el trabajador vs qué cuenta la empresa
+
+`counts` decide qué unidades se le **facturan al cliente**: una unidad física se
+cobra una sola vez, por etapas o como completo. **No decide qué produjo la
+persona.**
+
+- **Vistas del trabajador** (resumen de producción, comprobante de efectivo,
+  detalle de pago): muestran el `qty` de **todas** las etapas, con desglose por
+  etapa y **solo el nombre** — nunca el rótulo `(no cuenta)`. Es una distinción
+  de facturación de la empresa, y al lado de la producción de alguien se lee
+  como que su trabajo no vale. Antes estas vistas recortaban el `qty` por
+  `counts`, así que un día entero de "Preparación" salía con el monto y sin
+  ninguna cantidad detrás. El rótulo del helper vive en `stageTag`.
+- **Vistas de la empresa**: ahí `counts` manda y se rotula. `getEtapasTotals`
+  devuelve `unidades` solo de las etapas que cuentan; el resumen por faena de
+  `CycleSummaryModal` (`formatRowMetric`) marca `(no cuenta)`; el tooltip de la
+  grilla del ciclo también. Igual el conteo de personas del
+  `ProductionSummaryModal` y el resumen por día de la barra de precios.
+
+Los helpers compartidos son `describeStage` y `stageTag` (`utils/tratoEtapas.js`):
+la regla estaba escrita tres veces y por eso el bug estaba en los tres lados.
+
 ### Piso (bono para trato/cosecha)
 
 Bono adicional configurable por día para trato y cosecha. Pensado para compensar a los trabajadores cuando la producción del día fue baja. Siempre **suma** al monto de producción, no lo reemplaza (no es un floor en sentido estricto).
@@ -239,6 +300,7 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
 - Lo escribe `payrollSnapshotsService` en el mismo flujo de "Generar y guardar".
 - Botón **📥 JSON** en la fila del historial vuelve a bajar el archivo.
 - Es la fuente que va a consumir el **portal público de trabajadores** (otra app, monorepo futuro). El schema debe considerarse contrato externo — cambiarlo coordinadamente.
+- **Escribir, borrar y releer el snapshot viven en `services/payrollSnapshots.js`** (`saveSnapshot`, `deleteSnapshot`, `readSnapshot`). Los `catch` silenciosos son deliberados: el snapshot es un derivado y que falle no puede tumbar la generación ni el borrado de la nómina, que son las operaciones que mueven la plata. `readSnapshot` saca el `id` que inyecta Firestore (el JSON es contrato externo) y cae al campo `snapshot` embebido de las nóminas anteriores a la separación de colecciones. Renombrar y parchear al agregar ciclos/recalcular siguen en `Payroll.jsx` como llamadas directas al servicio.
 
 ### Anticipos en comprobantes
 
@@ -251,6 +313,15 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
 ### Anti doble pago
 
 - Workday lleva `payrollId`, `payrollTaggedAt`, `payrollTaggedBy`, `paidAt`, `paidBy`.
+- **Los días en $0 entran a la nómina.** `aggregateWorkerAmounts` los descartaba
+  antes de meterlos en `workdayIds`, así que nunca se etiquetaban y quedaban
+  disponibles para siempre: las cifras de "pagado / pendiente" del ciclo no
+  cerraban nunca. Es el caso de los días de asistencia de un **sueldo mensual**
+  (`attendanceOnly: true, amount: 0`), que hay que marcar como pagados aunque no
+  generen transferencia. Las dos salidas los filtran solas: `buildBchileRows` por
+  `amount > 0`, y el comprobante de efectivo saca a los de bruto **y** neto en
+  cero — el corte es por bruto, así que quien produjo y quedó en cero porque un
+  anticipo se llevó todo SÍ aparece en la hoja que firma el líder.
 
 ### Pago en dos tiempos (transferencias / efectivo)
 Caso real: salen las transferencias pero el efectivo no se alcanza a entregar y queda debiéndose para la vuelta siguiente.
@@ -282,6 +353,7 @@ Botones de descarga:
 - **paymentRut vs RUT del trabajador**: la hoja `Nomina` BChile usa **`it.paymentRut`** (de `bankDetails[0]`), no el RUT de la persona. `paymentRut` puede diferir cuando el pago va a una cuenta de un familiar; el portal del banco lo valida contra la titularidad. Preservado en `cleanItems` y en el snapshot.
 - **Email default BChile**: si el trabajador no tiene email se completa con `remuneracionesis@gmail.com` (constante `BCHILE_DEFAULT_EMAIL` en `utils/payroll.js`). El banco rechaza filas sin email.
 - **Identificador alfa-numérico**: la columna identificador del BChile usa `A001..A999` (zero-padded) y los nombres se ordenan alfabéticamente con `localeCompare("es", { sensitivity: "base" })`. Filas con `amount === 0` se filtran (el banco rechaza transferencias de $0).
+  - **Las filas se arman en `buildBchileRows(items)`, aparte de ExcelJS** (`utils/payroll.js`, exportada). `buildBchileSheet` solo las escribe y estiliza. Tres reglas deciden a dónde va la plata y ninguna se podía probar con el workbook de por medio: el filtro de cero-neto, el orden alfabético que hace **estable** el correlativo entre corridas, y el `paymentRut || rut`. Cubiertas en `utils/bchile.test.js`, que nombra los índices de columna — una fila corrida manda la transferencia a otra cuenta y el archivo igual se sube sin error.
 
 ### Historial
 
@@ -307,11 +379,19 @@ Botones de descarga:
 - Al construir preview, `listPendingForWorkers(ruts)` carga anticipos y bonos `pending`+`partial` de los trabajadores.
 - **Orden: BONOS PRIMERO, anticipos después.** Los bonos se aplican completos (nunca tienen plan) y **engrosan la base** contra la que se descuenta el anticipo: el tope es `bruto + bonos`, no el bruto pelado. Invertir el orden hace que un bono deje el anticipo sin liquidar por **exactamente el monto del bono** — al trabajador se le entrega el bono en la mano y la deuda arrastra a la nómina siguiente en vez de cerrarse (ej. bruto 376.000 + bono 24.000 contra un anticipo de 400.000: con el orden correcto queda saldado y neto 0; al revés quedaban 24.000 debiendo y 24.000 pagados). La plata que desembolsa la empresa es la misma en los dos órdenes; lo que cambia es si la deuda queda cerrada.
 - Anticipos oldest-first, capados por `bruto + bonos` (no pueden dejar el neto negativo); si el anticipo tiene plan de cuotas, el tope por default es el monto de la cuota (`advanceDueNow`), no el saldo completo — con cuotas un bono puede igualmente no alcanzar a liquidarlo, y está bien.
-- **La lógica está duplicada en 4 lugares de `Payroll.jsx`** (armar nómina, agregar ciclos, recalcular, y anticipos nuevos sobre una nómina ya creada). Si se toca el orden o el tope, hay que tocar los cuatro — `grep -n "remainingGross = "`.
+- **La lógica vive en un solo lugar: `utils/payrollItem.js` → `allocateAdvances`.** Antes estaba duplicada en los 4 sitios de `Payroll.jsx` (armar nómina, agregar ciclos, recalcular, y anticipos nuevos sobre una nómina ya creada) y había que acordarse de tocar los cuatro. El cuarto caso —el incremental, donde la persona ya está en la nómina— es la misma función con `alreadyAdvanced` / `alreadyBonused`. Está cubierta por `utils/payrollItem.test.js`, incluido el caso de bruto 376.000 + bono 24.000 contra anticipo de 400.000.
 - Fórmula del item: `amount = grossInt − anticiposTotal + bonosTotal`.
 - Preview muestra columnas separadas **Bruto**, **Anticipo**, **Bono**, **A pagar**. Hint visual `↩ liquidado por anticipo` cuando `amount = 0 && advance > 0` (caso retiro con anticipo del valor total — el worker pasa a nómina como cero-neto pero los workdays/anticipos se marcan como pagados). El override manual de la celda Anticipo puede superar la cuota sugerida hasta el saldo real del anticipo (`maxAmount` en `anticipoApplications`, ver `updatePreview`).
 - **Confirmación de cuotas**: si hay anticipos-con-plan entre los trabajadores incluidos, al hacer clic en "Generar nómina" aparece `InstallmentConfirmModal` listando cada cuota candidata (marcada por defecto) antes de persistir nada — el admin decide a mano cuáles aplican esta corrida. Solo cubre el flujo principal de generación; "agregar ciclos"/"recalcular" aplican la cuota sugerida directo, sin modal.
 - Al crear nómina: `applyAdvancesToPayroll(advanceIds, payrollId)` cambia status a `applied`/`partial` según corresponda (para ambos tipos).
+- **`payments[]` guarda lo descontado, no lo pedido.** `amountPaid` se capa con
+  `Math.min` contra el total del anticipo; si a `payments[]` va el monto pedido,
+  los dos dejan de cuadrar y `restoreAdvancesFromPayroll` —que recalcula el saldo
+  **desde `payments[]`**— devuelve un anticipo tocado por dos nóminas con menos
+  deuda de la real. `applyAdvancesToPayroll` devuelve `{ sobrantes }` con las
+  aplicaciones recortadas y las escribe en el log (`meta.sobrantes`): al
+  trabajador se le retuvo lo pedido pero la deuda solo bajó lo aplicado, y esa
+  diferencia hay que devolvérsela a mano.
 - Al eliminar nómina: `restoreAdvancesFromPayroll(advanceIds)` recalcula el status hacia atrás (`pending`/`partial`) — también recalcula sola la fecha base del hint "última cuota hace N días", que se deriva de `payments[]` en vez de guardarse aparte.
 
 ## Bancos
@@ -393,6 +473,11 @@ Botones de descarga:
 Exporta: `parseSiiRcvCsv(buffer, { companyRut })`, `dteTypeLabel(tipo)`, `normalizeRut(raw)`, `rutNumeric(raw)`, `extractRutFromFilename(name)`, `buildDteDocId({ companyId, kind, tipo, folio, rutEmisor, rutReceptor })`.
 
 - Auto-detecta **kind** (ventas vs compras) por headers (`Rut cliente` vs `Rut Proveedor`).
+- **IVA**: suma `Monto IVA Recuperable` + `Monto IVA No Recuperable`. El fallback
+  `"monto iva"` existe para los exports con una sola columna, pero como `colIdx`
+  matchea por *contiene*, en un CSV que solo trae la No Recuperable aterrizaba en
+  esa misma columna y el IVA se duplicaba. Hoy se descarta si los dos índices
+  coinciden.
 - Encoding **UTF-8 con BOM o ISO-8859-1** — intenta UTF-8, fallback a latin-1 si detecta U+FFFD.
 - Fechas en YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY → normalizadas a ISO.
 - Montos con miles `.` y decimal `,` o sin separadores.
@@ -425,6 +510,7 @@ Exporta: `parseSiiRcvCsv(buffer, { companyRut })`, `dteTypeLabel(tipo)`, `normal
 
 - **Doc id determinístico por `companyId`**: reimportar el mismo período es **idempotente** (setDoc + merge sobreescribe sin duplicar). El preview cuenta cuántos sobreescriben antes de confirmar.
 - **Replace por período**: confirmar el import agrupa por `(companyId, kind, periodo)` y para cada scope (a) lee los existentes, (b) calcula **huérfanos** (existían antes, no vienen en el nuevo CSV) y los **elimina**, (c) escribe los nuevos/actualizados. Preserva `paymentStatus` existente al reimportar — solo setea `"unpaid"` para docs nuevos. Bulk write: `writeBatch(db)` con chunks de 450 (límite Firestore 500).
+  - **La persistencia vive en `services/dteImportService.js` (`importDteRecords`), no en la pantalla.** Estaba adentro del handler de React y era intesteable, justo la parte que borra documentos. `tests/e2e/facturacion-import.test.js` fija las tres propiedades que importan: reimportar es idempotente, el estado de pago y las notas cargadas a mano sobreviven, y el borrado de huérfanos **no** cruza de período, de `kind` ni de empresa. El borrado en sí sigue sin pedir confirmación — está fijado, no aprobado.
 
 ### UI
 

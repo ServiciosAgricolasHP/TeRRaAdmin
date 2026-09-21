@@ -107,7 +107,7 @@ export default function GroupSummaryModal({ open, onClose }) {
       // Cargar en paralelo: cada trabajador hace su propio batch de queries
       // (workdays + cycles + advances). Si el grupo es chico (5-10) está bien.
       const entries = await Promise.all(
-        selected.map(async (w) => [w.id, await loadWorkerSummaryData(w.id, catalogs)]),
+        selected.map(async (w) => [w.id, await loadWorkerSummaryData(w, catalogs)]),
       );
       setWorkerData(Object.fromEntries(entries));
       setStep("result");

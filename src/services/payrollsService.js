@@ -139,10 +139,10 @@ export async function markPaid(id, workdayIds = [], onProgress) {
 // `pendingCashOf`, para que no exista un booleano que pueda quedar
 // desincronizado de los items.
 
-const bankWorkdayIdsOf = (p) =>
+export const bankWorkdayIdsOf = (p) =>
   (p?.items || []).filter((it) => !isCashBank(it.bankCode)).flatMap((it) => it.workdayIds || []);
 
-const cashWorkdayIdsOf = (p) =>
+export const cashWorkdayIdsOf = (p) =>
   (p?.items || []).filter((it) => isCashBank(it.bankCode)).flatMap((it) => it.workdayIds || []);
 
 // Items de efectivo que esta nómina todavía debe entregar.
@@ -193,7 +193,7 @@ export async function setCashPaidRuts(payrollId, ruts) {
 // Una nómina con las transferencias ya pagadas no se puede editar: sacar un
 // trabajador de banco liberaría sus días y le restauraría los anticipos a
 // alguien que ya tiene la plata en la cuenta.
-function assertEditable(p, verb = "editar") {
+export function assertEditable(p, verb = "editar") {
   if (p.status === "paid") {
     throw new Error(`La nómina está pagada — revertí el pago antes de ${verb}.`);
   }
@@ -218,7 +218,7 @@ function assertEditable(p, verb = "editar") {
 //   - Recalcula `items`, `total`, `bankTotal`, `cashTotal`, `workerCount`,
 //     `bankCount`, `cashCount`, `workdayIds`, `advanceIds`, `advanceTotal`.
 
-function recalcPayrollAggregates(items) {
+export function recalcPayrollAggregates(items) {
   const bank = items.filter((it) => !isCashBank(it.bankCode));
   const cash = items.filter((it) => isCashBank(it.bankCode));
   return {

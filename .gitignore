@@ -32,3 +32,8 @@ functions/.runtimeconfig.json
 firebase-debug.log
 firebase-debug.*.log
 .firebase/
+
+# Tests
+coverage
+firebase-export-*
+*.timestamp-*.mjs
