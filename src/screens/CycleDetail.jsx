@@ -3884,16 +3884,23 @@ export default function CycleDetail() {
 
       {activeLabor && (
         <>
+          {/* Colores del tema, no violeta fijo: el accent es verde en `light`,
+              naranjo en donDiego y violeta en los aetisk, así que un violeta
+              hardcodeado choca en unos temas y se confunde con el accent en
+              otros. Ver la nota de colores en AGENTS.md. */}
           {qrLocked && (
-            <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-violet-300 bg-violet-50 px-3 py-2 text-xs text-violet-800 dark:border-violet-800 dark:bg-violet-900/20 dark:text-violet-300">
-              <span className="font-medium">📱 Cosecha sincronizada desde QR</span>
+            <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-3 py-2 text-xs text-[var(--color-text)]">
+              <span className="font-semibold text-[var(--color-accent)]">📱 Cosecha sincronizada desde QR</span>
               <span>
                 La producción de esta labor la escribe la app de escaneo del prefijo{" "}
                 <span className="font-mono font-semibold">{qrPrefixForActive.id}</span>
                 {qrPrefixForActive.label ? ` (${qrPrefixForActive.label})` : ""}, así que las celdas
                 no se editan a mano: la próxima sincronización las sobrescribe. El piso sí se puede cargar.
               </span>
-              <Link to="/admin/harvest-qr" className="underline hover:no-underline">
+              <Link
+                to="/admin/harvest-qr"
+                className="font-medium text-[var(--color-accent)] underline hover:no-underline"
+              >
                 Ir a Pesajes QR
               </Link>
             </div>
