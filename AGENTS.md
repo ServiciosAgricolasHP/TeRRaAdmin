@@ -12,6 +12,7 @@
 | `npm run test:watch` | Vitest en modo watch |
 | `npm run test:e2e` | Ciclos end-to-end contra el emulador de Firestore / Integration cycles against the Firestore emulator |
 | `npm run test:all` | Los dos anteriores |
+| `npm run functions:verify` | Cloud Functions contra los emuladores de functions+auth, sin deployar / Verify Cloud Functions locally |
 | `npm run deploy` | Deploy manual a GitHub Pages (`gh-pages -d dist -t`). **Escape hatch** — el camino normal es mergear a `main` y dejar que Actions deploye / Manual fallback; normal path is merge to `main` |
 
 ## Tests
@@ -68,6 +69,12 @@ arreglás uno, el test se cae y eso es la señal de actualizar los dos.
 - **Los secrets son obligatorios para el build de deploy**: las 6 `VITE_FIREBASE_*` viven en *Settings → Secrets and variables → Actions* del repo y se inyectan como `env` del paso de build. `.env` está gitignoreado, así que sin ellas el bundle sale con la config vacía y producción cae con `auth/invalid-api-key`.
 - **`fetch-depth: 0`** en el checkout del deploy: sin el historial completo, el `git rev-list --count` de `vite.config.js` devuelve 0 y la versión del header queda pegada en `.0`.
 - **Cloud Functions quedan fuera del pipeline** — se deployan a mano (ver `functions/README.md`).
+  - **El backend no se invoca por HTTP: se le escribe un documento.** La app crea un job en `functionJobs` y un **trigger de Firestore v2** lo levanta, lo ejecuta y escribe el resultado en el mismo doc; la UI lo mira con un `onSnapshot`. `PingSection` en `AdminConsole.jsx` es el ejemplo completo.
+  - **Las tres variantes de callable están cerradas**, y conviene no volver a intentarlas: *(a)* **v2** corre sobre Cloud Run y necesita un binding IAM `allUsers` que la org policy del proyecto prohíbe → **403 con cuerpo HTML** antes de llegar al código (verificado con `curl`); *(b)* **v1** no existe en `southamerica-west1` —Santiago no está entre sus 23 regiones, y encima no soporta App Engine, que gen1 necesita para el staging—, así que el deploy muere en un 403 sobre `locations/southamerica-west1` que hay que leer por su *"or it may not exist"*; *(c)* un **trigger de Firestore en v1** solo dispara sobre la base `(default)`, que en este proyecto no existe. Un trigger v2 lo invoca Eventarc con una service account, así que esquiva el invoker público — es el único camino que no pelea contra una restricción de plataforma.
+  - **Región `us-central1`, y no es negociable**: `hpdatabase` está en **`nam5`** (multi-región de EE.UU.) y un trigger de Firestore tiene que vivir en la ubicación de la base. Ver la nota de `nam5` en Arquitectura.
+  - **`database: "hpdatabase"` en el trigger.** La base no es `(default)`. Si no coincide, la función queda suscrita a una base inexistente y **nunca dispara, sin dar error** — el peor modo de falla del diseño.
+  - **La autorización se mudó a las reglas.** Antes el portero era `context.auth` adentro de la función; ahora es la regla de Firestore que decide quién crea un doc en `functionJobs`. Como no hay `firestore.rules` en el repo, ese permiso se carga a mano en la consola: el `create` exige `status == "pending"` y `requestedBy == request.auth.uid`, y `update`/`delete` van en `false` (la función escribe con el admin SDK, que no pasa por reglas). El texto completo está en `functions/README.md`.
+  - **`npm run functions:verify` antes de cada deploy** — ver `functions/README.md`. Iterar deployando cuesta minutos de Cloud Build por vuelta; el emulador da lo mismo en segundos. **Pero no prueba el enrutamiento por base**: el emulador de Firestore todavía no soporta bases múltiples, así que sirve una sola y el nombre le da igual. Eso solo se verifica en producción, y es para lo que está el botón de ping.
 
 ## Stack
 
@@ -98,6 +105,24 @@ src/
                         agGridLocale, similarity, etc.)
 ```
 
+### Dónde viven los datos
+
+La base se llama **`hpdatabase`** y **no existe la `(default)`** — varias APIs de
+Google asumen `(default)` en silencio, así que hay que declararla en todos lados
+(`getFirestore(app, "hpdatabase")` en el cliente, `database:` en los triggers).
+
+Está en **`nam5`**, el multi-región de Estados Unidos. **Los datos nunca
+estuvieron en Chile**, aunque la empresa sí: toda lectura de la app ya cruza a
+EE.UU. Sirve para dos cosas:
+
+- Desarma cualquier razonamiento de "poner X en Santiago para que quede cerca de
+  la base" — acerca a los usuarios y aleja de los datos. Fue el error que tenía
+  el backend durante meses.
+- Para lo que corre en el servidor y lee mucho (backups, agregaciones), la
+  región correcta es `us-central1`, pegada a la base.
+
+Se consulta con `firebase firestore:databases:get hpdatabase`.
+
 ### Auth
 
 - Firebase Email/Password.
@@ -120,6 +145,9 @@ src/
 - Servicios invalidan caché en memoria y escriben logs de auditoría via `services/logger.js`.
 - `list()` soporta `cache: true` con TTL (60s default); `persist: true` guarda en `localStorage`.
 - Para batched updates usar `writeBatch(db)` directo (chunks de 450 — el límite Firestore es 500).
+- **`update`, `upsert` y `remove` cuestan una lectura además de la escritura**: hacen un `getById` interno para armar el `before` del log de auditoría. `create` no lee.
+- **`upsert(id, data, { before })`** deja pasar el documento que el llamador ya leyó y se saltea ese `getById`. `undefined` = "no me lo pasaron, leelo"; `null` = "lo leí y no existe". La diferencia decide si el doc se crea con `createdAt`/`createdBy`, así que **no se puede colapsar en un chequeo de verdad/falsedad** — escrito `knownBefore ? …` el ahorro desaparece sin que nada falle a la vista. Fijado en `tests/e2e/upsert-before.test.js`, que lo observa pasando `null` sobre un doc que sí existe (única forma de ver desde afuera si la lectura ocurrió).
+- **`countedList(service, opts)`** (en `services/cache.js`) envuelve un `list()` y devuelve `{ data, reads }`, con `reads: 0` cuando salió de la caché. Es lo que alimenta los contadores de lecturas de Dashboard, Calendario y Pesajes QR. Las opciones que se le pasan tienen que ser **exactamente** las de la llamada real: reconstruye la clave `collection::{wheres,order,take}`, así que si divergen el contador miente en vez de avisar.
 - Nuevos servicios: agregar a `services/index.js` exports si son consumidos transversalmente.
 
 ### Caché aditiva
@@ -144,7 +172,7 @@ src/
 
 ## Tipos de Labor / Labor Types
 
-Definidos en `src/screens/CycleDetail.jsx` (`LABOR_TYPES`). Cada labor tiene un campo `type` que determina columnas del grid, entrada de datos y métricas:
+Definidos en `src/utils/laborTypes.js` (`LABOR_TYPES`). Viven ahí y no en `CycleDetail.jsx` porque el form de crear ciclo también necesita la lista: importarla desde la pantalla del ciclo arrastraría ese módulo entero —8.600 líneas, ag-grid incluido— al chunk de Faenas, que es justo la pantalla que se abre al entrar a la app. Cada labor tiene un campo `type` que determina columnas del grid, entrada de datos y métricas:
 
 | Tipo / Type | Etiqueta / Label | Comportamiento del grid / Grid behavior | Forma de datos / Data shape |
 |------|-------|---------------|------------|
@@ -206,6 +234,11 @@ Bono adicional configurable por día para trato y cosecha. Pensado para compensa
 - **Opt-in por día, sin default a nivel labor.** En el panel de Precios cada día tiene un botón discreto **"+ piso"** que solo está visible si el día no tiene piso configurado. Al click pasa a modo edición; al guardar muestra inline el monto con acciones ✎ editar / ✕ quitar. Mantiene la UI limpia: días sin piso no tienen ruido.
 - **Persistencia del default por día**: `dayPrices[laborId][date].piso: number`. Helper: `getDayPiso(dayPrices, laborId, date)`, `effectivePiso(labor, dayPrices, date)` (este último solo lee el día — no hay fallback a labor).
 - **Persistencia del workday**: workday separado con `comboKey: "_piso"` y `pisoOnly: true`. `qty: 0`, `amount: pisoAmount`. Un doc por (worker × date × labor). Hereda el `payrollId` como cualquier otro workday — al borrar la nómina, queda disponible nuevamente.
+- **Asignar el piso a todo un día de una**: junto al monto del piso, en el panel de Precios, un botón **👥 a todos (N)** con el contador de quiénes tienen producción y todavía no tienen el bono. **Pide confirmación** con el monto por persona, cuántas son y el total — es plata que se suma a cada una. Escribe exactamente los mismos workdays `_piso` que apretar los toggles uno por uno; queda deshabilitado cuando no falta nadie.
+- **Quién cuenta como "tiene producción"**: `pisoTargets(workdaysDeLaLabor, date)` en `utils/cosechaCombos.js`. Alcanza con que **exista** el workday, sin mirar `qty` ni `amount` — es el mismo criterio que habilita el toggle de la grilla, y un día en cero es justamente el caso que el piso compensa. Que las dos vías usen la misma regla es lo que hace que el botón sea equivalente a apretar todos los toggles habilitados; si divergen, el botón hace algo que no se puede replicar a mano. Los pisos viejos sin `pisoOnly` se detectan por la clave del mapa.
+- **Quitar el piso del día se lleva también los bonos ya asignados.** El ✕ (y dejar el monto en cero) **pide confirmación** con cuántos bonos se eliminan y por cuánto. Antes borraba solo la configuración del día: los workdays `_piso` sobrevivían con su monto, seguían sumando al total de cada persona y a la nómina, y en pantalla ya no quedaba ni el monto del día para darse cuenta.
+- **Los bonos que ya se llevó una nómina no se tocan**, ni por el ✕ ni por el toggle individual: borrar un workday con `payrollId` le descuadra el total a algo que ya se pagó. El diálogo dice cuántos quedan en pie y por qué; el toggle avisa por toast. El reparto lo hace `pisoAssigned(workdaysDeLaLabor, date)` → `{ libres, liquidados }`. Es el único chequeo de `payrollId` de la pantalla: para todo lo demás, el corte es el cierre del ciclo (ver más abajo).
+- **El piso NO se bloquea en labores sincronizadas por QR**: es un bono manual, vive en un workday aparte (`comboKey: "_piso"`) y la sincronización escribe combos de producción, así que nunca lo pisa.
 - **UI grilla**: la columna "P" 🪙 al final del día solo se renderiza cuando ese día tiene piso configurado en `dayPrices` **o** algún trabajador tiene un workday `pisoOnly` para ese día (computado en `daysWithPiso`). Días sin piso quedan sin columna extra. Click en el toggle crea/borra el workday `_piso` con el monto efectivo. El toggle está deshabilitado si no hay workday de producción todavía para ese (worker, date).
 - **Cálculo**: total del trabajador = producción + suma de pisoAmount. Reflejado en row.total del grid, métricas de la labor, CycleSummaryModal, WorkerSummaryModal, drawer del Calendar, comprobantes de Payroll.
 - **En Cobrar (CycleSummaryModal mode=cobrar)**: el piso NO se factura al cliente (es bono al trabajador). Se muestra en la tabla pero no entra al subtotal a cobrar.
@@ -216,7 +249,26 @@ Bono adicional configurable por día para trato y cosecha. Pensado para compensa
 - Jerarquía: Faena → Subfaena → Ciclo → Labors → Workdays.
 - Label de ciclo = prefijo bloqueado `Faena/Subfaena/` + sufijo editable.
 - Estados: `open` | `closed`. Se permiten **múltiples ciclos abiertos** por (faena, subfaena) — útil para correr varios frentes en paralelo o para "carve off" temporales.
+
+### Alta encadenada: subfaena → primer ciclo → primer día
+
+- **Crear una subfaena ofrece crear su primer ciclo** (modal "¿Crear el primer ciclo?", cancelable con "Después"). Una subfaena sin ciclos no tiene dónde anotar jornadas, así que quedarse ahí no es un estado útil.
+- **El ciclo nace con la fecha de inicio como primer día** (`days: [startDate]`). Antes el form pedía "Fecha inicio", la guardaba solo en `startDate` y creaba el ciclo con `days: []` — o sea sin ninguna columna en la grilla — y había que agregar el primer día a mano en CycleDetail repitiendo la fecha recién escrita. Mismo criterio en `createNextCycle` (el ciclo que se encadena al cerrar el anterior).
+- **La primera labor: se elige el tipo**, no siempre `main`. Más un checkbox para sumar de una una labor de **Supervisión**, que es la combinación habitual. El checkbox se deshabilita si el tipo elegido ya es `supervision` — si no, el ciclo nacería con dos labores idénticas.
+- El plan lo arma `initialLaborPlan({ type, withSupervision })` (`utils/laborTypes.js`), que devuelve descriptores **sin `id`**: el id lo pone quien crea el ciclo, que es el que ya tiene el generador. El nombre sale del tipo, salvo `main` que conserva **"Principal"** — es como se llamaban todas antes de poder elegir, y renombrarlas cambiaría el encabezado de ciclos que la gente ya conoce.
+- Los trabajadores que se pasen van **solo en la primera labor**; la de supervisión arranca vacía.
+- El bloque del tipo de labor **no se muestra con la importación activa**: ahí las labores salen del ciclo origen y elegir un tipo no tendría efecto.
+- **Un solo botón de alta de subfaena por estado**: el del encabezado de la faena (y el del estado vacío, que viene con la explicación). La cabecera de la lista "Subfaenas (N)" tenía un tercero idéntico, que se sacó.
 - `CycleRow` permite **✏ Renombrar**, abrir, cerrar y eliminar.
+
+### Ciclo cerrado = congelado
+
+- **Cerrar un ciclo es la señal de "esto ya está pagado y revisado": queda de solo lectura para todos, admin incluido.** Antes era `closed && !isAdmin`, o sea que el admin lo editaba sin ningún gesto de por medio y el cierre no protegía de lo único que importa, que es tocarlo sin querer. Para corregir algo hay que **reabrirlo** con el botón del encabezado — un cambio de estado visible, con confirmación, y que queda en el log de auditoría.
+- **El corte es el cierre del ciclo, NO el `payrollId` del workday.** Se paga a mitad de ciclo y después se sigue trabajando ahí para revisar detalles y generar diferencias; bloquear por "ya pagado" rompería ese paso. Por la misma razón el cierre es manual y no se dispara solo al pagar.
+- **Toda escritura de `CycleDetail` pasa por `cycleWrite` / `wdWrite`**, dos envoltorios locales que llaman a `assertOpen()` antes de tocar Firestore. El guard vive en un solo punto y no repartido por los ~40 llamados al servicio: basta uno que se olvide para que el candado sea un adorno. **Lanza** en vez de devolver en silencio, porque los llamadores actualizan el estado local justo después de escribir — si dejara seguir, la pantalla mostraría un cambio que nunca se guardó.
+- Quedan fuera del guard a propósito, y son las únicas cuatro: las dos escrituras de normalización del loader (corren al montar, no son edición del usuario) y cerrar/reabrir el ciclo, que es el gesto que levanta el candado.
+- Banner 🔒 sobre la grilla explicando que está congelado y cómo reabrirlo. La línea del encabezado dice `🔒 ciclo cerrado (solo lectura)`, sin distinguir rol.
+- **Pendiente**: reabrir no está restringido a admin. Cualquiera que vea el botón puede levantar el candado, así que hoy esto evita el accidente, no es un permiso.
 
 ### Importar desde otro ciclo abierto
 
@@ -258,6 +310,14 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
   3. **Pago por faena** — selecciona ciclos activos + rango de fechas → genera un `paymentSummary` por transportista con sus vueltas pendientes.
   4. **Resúmenes / Pagos** — historial; marcar pagado, revertir, imprimir uno a uno **y también imprimir varios en lote** (botón `🖨 Imprimir varios` → modal `PrintMultipleModal` con filtros estado/fechas/transportistas/faena-subfaena y dos acciones: 🖨 imprimir todos en una ventana con `page-break-after`, o 📦 descargar ZIP con un PNG por resumen vía `jszip` + `html-to-image`). En `PaymentDetailModal` el `Valor` **no** se edita inline: se edita la vuelta completa (qty/tarifa) con el lápiz, que abre `TripEditModal` — así el monto nunca queda desincronizado de N° vueltas × tarifa. La columna **Vehículo** está incluida en el `PrintableSummary`.
   5. **Quincenas** — agrupan varios resúmenes (`transportPayments`) en un payroll (`transportPayrolls`) para pagar en bloque. Modal **+ Nueva quincena** (`PayrollCreateModal`): elegís fechas + chips de faenas, auto-lista los transportistas que tienen vueltas sueltas (sin `paymentId`, status `pending`) en el rango — todos vienen tildados por default y se puede destildar individualmente; sección aparte para **importar resúmenes existentes sueltos** (status no pagado, sin `payrollId`) que se superpongan con el rango. Al confirmar crea un `payment` por cada carrier nuevo y llama a `transportPayrollsService.create({ paymentIds: [...nuevos, ...importados] })` que tagea cada resumen con `payrollId`. **Vista tabla** en `PayrollDetailModal`: `PrintablePayrollTable` (off-screen) renderiza `# | Transportista | Vueltas | Período | Estado | Total` + fila de totales en verde estilo Excel — capturada por `html-to-image` para los botones 📋 Copiar / 📥 PNG / 🖨 Imprimir. La tabla visible incluye columna `Acciones` (💰 Pagar / ✕ Quitar / ↶ Revertir) ocultable según el estado de la quincena.
+- **Balance de quincenas** (`QuincenasBalanceSummary`, arriba de la pestaña Quincenas) — pivot de transportistas × quincenas. Dos filtros independientes: las **columnas** dejan fuera las quincenas pagadas enteras (`status: "paid"` o sin ningún item pendiente), y las **filas** dejan fuera, por default, a los transportistas que ya cobraron todo lo suyo. El toggle **☐ Todos los resúmenes** levanta el segundo: una quincena con aunque sea un item pendiente se muestra completa, con los que ya cobraron incluidos. El de las columnas no cambia — una quincena cerrada no aparece en ningún modo.
+  - Sirve para cuadrar una quincena antes de cerrarla ("cómo viene"), no para decidir a quién pagar ("qué falta"), que es el default. Persistido en `localStorage` (`transports.quincenasBalance.showAll`).
+  - **El título cambia con el modo** (`Balance de quincenas pendientes` ↔ `activas`) y viaja al PNG, a la impresión y al nombre del archivo. No es cosmético: una imagen rotulada "pendientes" con filas ya pagadas adentro es como un transportista termina cobrando dos veces.
+  - Ojo al tocar el filtro de filas: en modo "todos" las filas con $0 pendiente son la función, no las "filas fantasma en $0" que se arreglaron antes. El comentario del `useMemo` lo aclara. Lo que sí queda afuera **en los dos modos** es el transportista sin pendiente *ni* pagado: son los resúmenes en $0 (vueltas sin costo de transporte propio), que si no salen como filas enteras en blanco.
+  - **Objetivo de ancho: que entren 8 quincenas sin desplazarse** (`QUINCENA_COL_W` 92 + `CARRIER_COL_W` 150 + ~115 del total ≈ 1.000 px). Lo que fijaba el ancho antes no era el `minWidth` sino **el rango de fechas en ISO**: `2026-04-16 → 2026-04-30` son 23 caracteres en una línea, ~145 px, y ningún `minWidth` más chico llegaba a mandar. `compactDate` lo baja a `16-04-26` en dos líneas y el ancho pasa a decidirlo el nombre, que sí se envuelve. Si alguna vez hay que apretarlo más, el lugar a mirar es el contenido del encabezado, no el `minWidth`.
+  - **Columnas fijas** (`stickyLeft`/`stickyRight`): con varias quincenas abiertas el pivot se va de ancho, y sin fijar el nombre y el Total hay que leerlo llevándose el dedo por la pantalla. Tres detalles que parecen cosméticos y no lo son: el fondo de la celda fija tiene que ser **opaco** (si no se transparenta lo que pasa por debajo) y **de color** (en blanco se lee como un hueco, no como una columna quieta); la línea de corte es un `box-shadow` y no el borde, porque con `border-collapse: collapse` el borde es compartido y se va con la celda que se movió; y `printRef` lleva `minWidth: max-content` o el bloque blanco mide lo que el contenedor y la tabla se le va por la derecha.
+  - Las celdas fijas no afectan las exportaciones: la captura clona a `width: max-content` con `overflow: visible`, así que sin contenedor de scroll se comportan como cualquier otra.
+  - **🖨 Imprimir de este balance imprime la captura PNG, no el `outerHTML`** — es la excepción al patrón del resto de la pantalla. Volcar el HTML salía cortado: el navegador no pagina de costado, así que un pivot más ancho que la hoja perdía las quincenas de la derecha sin avisar, y este pivot crece con cada quincena abierta. Reusar `captureFullWidthDataUrl` hace que las tres salidas muestren lo mismo; se pierde el texto seleccionable del PDF y se gana que salga completo. **Siempre una hoja y apaisado**: `max-height: 100vh` escala la imagen al área de página en vez de desbordar a una segunda, y el `@page { size: landscape }` va al nivel superior y no dentro de `@media print` porque anidado hay navegadores que lo ignoran. Partir el balance en dos hojas obliga a cruzar transportistas de una con quincenas de la otra, que es lo que la tabla existe para evitar.
 - **Balance general** — sección en la cabecera de la pantalla: rango de fechas + filas por transportista (viajes − pagos). Bumpea `balanceVersion` al pagar/revertir para refrescar. Botón **🖨 Imprimir balance** abre ventana de impresión.
 - Modal: `src/Components/TransportsModal.jsx` — usado en `CycleDetail` para asignar viajes rápidos. Incluye un sub-modal **+ Nuevo transportista** que crea un carrier inline y lo auto-selecciona junto con su primer vehículo (sin salir del modal de viajes). El selector de transportista del `TripEditModal` es un **combobox searchable** (`CarrierCombobox`) con typeahead sobre alias/nombre/aliases-de-vehículo, sección "RECIENTES" arriba (últimos 6 carriers usados en este ciclo, persistido en `localStorage` `transports.recentCarriers.{cycleId}`), navegación con flechas + Enter, y auto-select del primer (o único) vehículo del carrier elegido.
 - Servicios: `services/transportsService.js` exporta `tripsService` (alias `transportsService`) y `paymentsService` (alias `transportPaymentsService`).
@@ -465,9 +525,22 @@ Botones de descarga:
 
 - Pantalla: `src/screens/AdminConsole.jsx`. Ruta `/admin/console` (solo admin).
 - Secciones para inspección barata: conteos por colección, workdays por mes (12 reads para todo un año), workdays por rango, workdays por ciclo, más los backfills y el debug de rol admin.
-- **`MAIN_COLLECTIONS` lista las 28 colecciones de la app**, agrupadas por área. Es una lista a mano: al agregar una colección nueva hay que sumarla acá o queda invisible (ya pasó — estuvo en 12 y le faltaba `dteDocuments`, la segunda más grande). El botón **📋 Copiar** baja los conteos ya ejecutados separados por tab, listos para pegar en una planilla.
-- **🧪 Ping a Cloud Functions**: verifica el plomo (auth + región) llamando al callable `ping`. Vivía como bloque TEMP en el Dashboard; se movió acá al rehacerlo. El deploy de esa función sigue pendiente (ver `functions/README.md`), así que por ahora responde `not-found`.
+- **`MAIN_COLLECTIONS` lista las 29 colecciones de la app**, agrupadas por área. Es una lista a mano: al agregar una colección nueva hay que sumarla acá o queda invisible (ya pasó — estuvo en 12 y le faltaba `dteDocuments`, la segunda más grande). El botón **📋 Copiar** baja los conteos ya ejecutados separados por tab, listos para pegar en una planilla.
+- **🧪 Ping al backend**: encola un job en `functionJobs` y espera la respuesta. No llama ningún endpoint porque no hay ninguno invocable (ver Despliegue); ejercita exactamente el mismo camino que va a usar el backup. Distingue los tres modos de falla a propósito, porque cada uno se arregla en otro lado: `permission-denied` es la regla de Firestore que falta, el timeout de 45 s es la función sin desplegar o mirando otra base, y un job en `error` es la función corriendo y fallando adentro. Es además el **único** chequeo que prueba que el trigger esté suscrito a `hpdatabase` — el emulador no puede.
 - Usa `getCountFromServer` de Firestore — 1 read por cada 1000 docs vs N con `getDocs`. Permite estimar costos sin descargar la colección.
+- **Composición de logs** (`LogsBreakdownSection`): desglosa `logs` por entidad (~1 lectura por entidad) y mide cuántos documentos borraría un TTL de 6/12/24 meses (3 lecturas). Es lo que convierte la discusión de retención en números en vez de estimaciones. `LOG_ENTITIES` es una lista a mano: una entidad nueva que no se agregue queda invisible, y la fila "sin clasificar" del total es la que lo delata.
+
+## Auditoría / `logs`
+
+`logs` es la colección más grande del sistema (49.132 docs en septiembre 2026, el 72% de la base) y conviene entender por qué antes de tocarla.
+
+- **Nada la borra, nunca.** No existe un solo `logsService.remove` en el repo: es append-only y crece con cada escritura de cualquier colección, porque `logAction` lo llama `firestoreBase` en todos los `create`/`update`/`upsert`/`remove`.
+- **El conteo y el peso no vienen del mismo lado.** `diff()` (`services/logger.js`) compara por clave de **primer nivel**, así que cambiar un elemento de un array guarda **dos copias completas** de la estructura. Medido sobre un ciclo realista (3 labores × 80 personas, 30 días × 4 combos): **~30 KB por log de `cycle`** contra **~0,1 KB por log de `workday`**. Agregar un trabajador a una labor escribe 30 KB. Las entidades pesadas son `cycle` (`labors[]`, `dayPrices{}`), `payroll` (`items[]`, `workdayIds[]`), `payrollSnapshot` (el snapshot entero, que además es contrato externo), `qrPrefix` (`padron{}`, un código por trabajador) y `catalog` (`entries[]`). Ese blob **no se lee**: la UI lo pinta como JSON crudo en un `<pre>`.
+- **`log` es a su vez una entidad logueada** (`createService("log", "logs")`). Una poda hecha con `logsService.remove` escribiría un log por cada log borrado — la colección crecería mientras se vacía. **Toda poda tiene que usar `deleteDoc` directo.**
+- **Pérdida silenciosa**: si un log supera el límite de 1 MiB, `addDoc` lanza, `logAction` lo atrapa y solo hace `console.error`. El registro del cambio más grande es justo el candidato a perderse sin rastro.
+- **Cada mutación espera su log**: `firestoreBase` hace `await logAction(...)` después de escribir, así que editar una celda de la grilla son tres viajes en serie (leer el doc, escribirlo, escribir el log).
+- **Casi nada es consultable.** Solo hay tres formas de llegar a un log, y ninguna filtra por usuario ni por acción (la sesionización es en cliente): rango de fechas con tope de 5.000 (`HARD_CAP` en `Audit.jsx`), `entity + entityId`, y `entity + meta.workerRut|carrierId` — estas dos **sin tope ni límite de fecha**. Por eso un TTL le recorta el historial a la ficha por registro en silencio.
+- Las consultas de logs necesitan cuatro índices compuestos (`entity+entityId`, `entity+meta.workerRut`, `entity+meta.carrierId`, `entity+meta`). No hay `firestore.indexes.json` en el repo, así que no hay registro de cuáles existen.
 
 ## Facturación / Billing
 
@@ -637,7 +710,28 @@ Tab **📊 Resumen**: vista que **cruza los 12 meses** de un año para la empres
 - `harvestWeights` la escribe una **app externa de scan**, no esta app. Es fuente de verdad y acá **nunca se edita**: solo se lee para sincronizar hacia `workdays`.
 - `qrPrefixes` (docId = el prefijo, ej. `"HP"`) es el puente entre un QR físico y el (faena, ciclo, labor) vigente al que hay que mandar sus pesajes. **Se reapunta a mano cada vez que se abre un ciclo nuevo** — semi-manual a propósito, no hay forma segura de adivinar el ciclo destino.
 - La sincronización agrupa los pesajes del rango por (trabajador, día, combo calidad/envase) sumando kilos, y escribe los `workdays` resultantes. Los ejes del combo se mapean con `qualityMap`/`containerMap` del prefijo; sin ellos el mapeo es identidad (los catálogos se diseñaron preservando la convención numérica de la app de scan).
-- `healthOf()` marca un prefijo como roto si su ciclo/labor apuntado ya no existe o dejó de ser de cosecha — es el chequeo de "me olvidé de reapuntarlo".
+- `healthOf()` marca un prefijo como roto si su ciclo/labor apuntado ya no existe, dejó de ser de cosecha **o el ciclo está cerrado** — es el chequeo de "me olvidé de reapuntarlo". El nivel `red` es el que deshabilita el botón de sincronizar, así que marcar ahí alcanza para bloquear.
+- **La sincronización paga una lectura por jornada, no dos.** Lee cada workday para saber si ya está liquidada (`payrollId`) y le pasa ese mismo documento al `upsert` como `before`, en vez de dejar que el servicio lo vuelva a leer. El `Map` `yaLeidas` existe para eso.
+- **No se sincroniza contra un ciclo cerrado.** Ese ciclo ya se liquidó o está por liquidarse, y escribirle jornadas por detrás descuadra lo que se pagó. Hay dos chequeos a propósito: `healthOf` apaga el botón, y `run()` vuelve a mirar el `status` del doc fresco porque la lista de ciclos es cacheada y el cierre lo hace otra pantalla.
+- **La sincronización lee `harvestWeights` SIN caché, y tiene que seguir así.** De esos documentos salen las jornadas que se pagan; sincronizar sobre pesajes viejos escribe producción incompleta. Lo cacheado es solo el explorador, que es para mirar.
+
+### Costo de lecturas
+
+- **Explorador de pesajes**: el rango de `dateKey` **y el prefijo** van en la query. Antes el prefijo se filtraba en memoria, así que elegirlo no bajaba las lecturas: traía los de todos y descartaba al renderizar. La búsqueda por trabajador sí sigue en cliente (es sobre nombre/RUT, no hay campo indexable).
+- **El filtro por prefijo depende del índice compuesto `(prefix, dateKey)`**, el mismo que ya usa la sincronización. Si falta, Firestore responde `failed-precondition`: la pantalla lo recuerda, vuelve a pedir sin el filtro y lo aplica en memoria —como funcionaba antes— mostrando un `⚠ filtro en memoria`. No hay `firestore.indexes.json` en el repo (los índices se manejan en la consola), así que ese camino de respaldo no es teórico.
+- **TTL largo (2 h) + botón 🔄 Refrescar**, no TTL corto. Los pesajes cambian todo el rato mientras se cosecha, y por eso mismo ningún TTL automático deja la pantalla fresca: solo decide cada cuánto se vuelve a pagar. Con TTL largo la antigüedad queda a la vista ("hace N min") y refrescar es una decisión de quien mira. Los inputs de fecha van con debounce de 400 ms — cada tecla releía el rango entero.
+- El explorador **no persiste** en `localStorage`: cada rango es su propia clave y la lista de trabajadores ya ocupa lo suyo. En memoria alcanza para ir y venir entre pestañas.
+- **Contador de lecturas visible solo para admin** en las tres pestañas (`· N lecturas` / `· desde caché`), mismo criterio que Dashboard y Calendario. Es lo que hace verificable todo lo anterior: si un día vuelve a mostrar un número grande donde decía "desde caché", alguien cambió las opciones de un `list()` y rompió la clave compartida.
+- Las listas compartidas (`worker` a 2 h, `faenas` a 10 min) usan **las mismas opciones que el resto de la app**. La clave de caché es `collection::{wheres,order,take}` y **no incluye el TTL**, así que el último que escribe sella el vencimiento para todos: bajarlo acá le acorta la caché a Trabajadores, Nómina y Calendario sin que se note. Omitir `cache: true` es peor que un TTL corto — esa llamada no lee la entrada **ni la escribe**, así que paga siempre y encima no deja la caché caliente para las demás pantallas.
+
+### Candado en la grilla del ciclo
+
+- Una labor apuntada por un prefijo QR activo se marca en `CycleDetail` con un chip **📱 \<PREFIJO\>** (en las tarjetas y en la barra de pestañas) y sus **celdas de producción quedan de solo lectura**, con un aviso arriba de la grilla.
+- El motivo no es de permisos: la sincronización hace `upsert` sobre el mismo docId, así que **pisa `qty` y `amount`**. Lo que se tipee a mano no queda compitiendo con el scan — desaparece en la próxima corrida sin dejar rastro. Bloquear es más honesto que advertir.
+- El **piso sigue editable**: es un bono manual, vive en un workday aparte (`comboKey: "_piso"`) y la sincronización no lo toca.
+- La fuente es `qrPrefixes`, **no** el campo `harvestSynced` de los workdays: hay que saberlo antes de que llegue el primer pesaje, que es justo cuando la grilla está vacía y tienta llenarla a mano. Cuesta 4 lecturas cacheadas a 1 h.
+- El predicado vive en `utils/harvestSync.js` (`isPrefixSyncing`, `qrLockedLaborsOf`) con tests: decide si se puede escribir en una grilla de la que sale plata. Ojo con `active`: ausente cuenta como **activo**, igual que en la pantalla de Pesajes QR.
+- Además de `editable`, el candado se chequea en `fillDown` y `pasteFromClipboard` — son los dos caminos que escriben celdas sin pasar por ahí.
 
 ## Links útiles
 

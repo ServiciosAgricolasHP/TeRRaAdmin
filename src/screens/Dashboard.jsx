@@ -5,7 +5,7 @@ import { db } from "../firebase";
 import { faenasService, cyclesService, transportPaymentsService, companiesService, dteDocumentsService } from "../services";
 import { payrollsService, pendingCashOf } from "../services/payrollsService";
 import { transportPayrollsService } from "../services/transportsService";
-import { cacheKey, getCache } from "../services/cache";
+import { countedList } from "../services/cache";
 import { useAuth } from "../contexts/AuthContext";
 import { useCarriers } from "../contexts/CarriersContext";
 import { useToast } from "../contexts/ToastContext";
@@ -138,21 +138,6 @@ const pendingOfPayment = (p) => {
   const abonado = (p?.abonos || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
   return Math.max(0, total - abonado);
 };
-
-// Envuelve un `list()` cacheado para saber si efectivamente pagó lecturas o
-// salió del caché. Reconstruye la misma clave que arma `firestoreBase.list`
-// (`collection::{wheres,order,take}`) — por eso las opciones de acá tienen que
-// coincidir exactamente con las de las otras pantallas.
-async function countedList(service, opts) {
-  const key = cacheKey(service.collectionName, {
-    wheres: opts.wheres || [],
-    order: opts.order,
-    take: opts.take,
-  });
-  const warm = getCache(key, { persist: !!opts.persist }) !== undefined;
-  const data = await service.list(opts);
-  return { data, reads: warm ? 0 : data.length };
-}
 
 // Notas de crédito: restan del total del período. Mismo criterio que
 // `Facturacion.jsx` para que los números de las dos pantallas coincidan.

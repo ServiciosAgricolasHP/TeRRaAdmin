@@ -82,6 +82,24 @@ export function invalidateAll() {
   }
 }
 
+// ¿Esta llamada a `list()` va a pagar lecturas o va a salir de la caché?
+// Reconstruye la clave que arma `firestoreBase.list` y mira si ya está viva,
+// para poder mostrar el costo real en pantalla.
+//
+// Las opciones que se le pasan tienen que ser EXACTAMENTE las de la llamada
+// real: la clave es `collection::{wheres,order,take}`, así que cualquier
+// diferencia forma otra clave y el contador pasa a mentir en vez de avisar.
+export async function countedList(service, opts = {}) {
+  const key = cacheKey(service.collectionName, {
+    wheres: opts.wheres || [],
+    order: opts.order,
+    take: opts.take,
+  });
+  const warm = getCache(key, { persist: !!opts.persist }) !== undefined;
+  const data = await service.list(opts);
+  return { data, reads: warm ? 0 : data.length };
+}
+
 export function subscribe(scopePrefix, fn) {
   if (!SUBS.has(scopePrefix)) SUBS.set(scopePrefix, new Set());
   SUBS.get(scopePrefix).add(fn);

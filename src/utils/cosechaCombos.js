@@ -48,6 +48,46 @@ export const getDayPiso = (dayPrices, laborId, date) => {
 export const effectivePiso = (labor, dayPrices, date) =>
   Number(getDayPiso(dayPrices, labor?.id, date)) || 0;
 
+// A quienes les toca el piso de un dia: los que tienen produccion cargada y
+// todavia no tienen el bono. Lo usa el boton "a todos" del panel de precios.
+//
+// La regla de "tiene produccion" es la MISMA que habilita el toggle de la
+// columna del piso en la grilla: alcanza con que exista el workday, sin mirar
+// `qty` ni `amount`. Un dia en cero es justamente el caso que el piso
+// compensa, y si sobra alguien se destilda a mano. Que las dos vias usen el
+// mismo criterio es lo que hace que el boton sea equivalente a apretar todos
+// los toggles habilitados.
+export function pisoTargets(workdaysOfLabor, date) {
+  const conProduccion = new Set();
+  const yaTienen = new Set();
+  for (const [key, wd] of Object.entries(workdaysOfLabor || {})) {
+    if (!wd || !wd.workerRut || wd.date !== date) continue;
+    // Los pisos viejos pueden no traer `pisoOnly`; la clave del mapa los delata.
+    if (wd.pisoOnly || String(key).endsWith(`__${PISO_COMBO_KEY}`)) yaTienen.add(wd.workerRut);
+    else conProduccion.add(wd.workerRut);
+  }
+  return [...conProduccion].filter((rut) => !yaTienen.has(rut)).sort();
+}
+
+// Los bonos de piso YA asignados en un dia, separados por si una nomina se los
+// llevo. Lo usa el ✕ del panel de precios: quitar el piso del dia tiene que
+// llevarse tambien los bonos, o quedan repartidos sin ninguna configuracion que
+// los explique y nadie se entera de que se siguen pagando.
+//
+// Los liquidados NO se tocan: borrar un workday que una nomina referencia le
+// descuadra el total a algo que ya se pago. Misma regla que la sincronizacion
+// de Pesajes QR, que saltea las jornadas con `payrollId`.
+export function pisoAssigned(workdaysOfLabor, date) {
+  const libres = [];
+  const liquidados = [];
+  for (const [key, wd] of Object.entries(workdaysOfLabor || {})) {
+    if (!wd || !wd.workerRut || wd.date !== date) continue;
+    if (!wd.pisoOnly && !String(key).endsWith(`__${PISO_COMBO_KEY}`)) continue;
+    (wd.payrollId ? liquidados : libres).push(wd);
+  }
+  return { libres, liquidados };
+}
+
 export const tratoTypeLabel = (catalogs, t) => {
   const cat = catalogs?.tratoTypes || [];
   return cat.find((e) => e.value === t)?.label || `Trato ${t}`;

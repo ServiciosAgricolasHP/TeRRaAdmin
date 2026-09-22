@@ -15,7 +15,8 @@
     "test:all": "npm run test && npm run test:e2e",
     "prepare": "git config core.hooksPath .githooks",
     "predeploy": "npm run build",
-    "deploy": "gh-pages -d dist -t"
+    "deploy": "gh-pages -d dist -t",
+    "functions:verify": "firebase emulators:exec --only functions,firestore --project demo-terra-test \"node functions/verify.mjs\""
   },
   "dependencies": {
     "ag-grid-community": "^35.2.1",
