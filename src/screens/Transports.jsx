@@ -4064,6 +4064,57 @@ const cell = {
   fontSize: 12,
 };
 
+// Columnas fijas del balance de quincenas. Con varias quincenas abiertas el
+// pivot se va de ancho, y al scrollear se pierden las dos referencias que lo
+// hacen legible: de quién es la fila y cuánto suma. Sin esto hay que leer la
+// tabla llevándose el dedo por la pantalla.
+//
+// El anclaje es el contenedor con `overflowX` de afuera del printRef. En las
+// exportaciones no hay scroll —la captura clona a `width: max-content` con
+// overflow visible, y la impresión arma su propia página—, así que ahí estas
+// celdas se comportan como cualquier otra.
+//
+// El fondo explícito no es decorativo: sin un fondo opaco propio, el contenido
+// que pasa por debajo se ve a través de la celda fija. Por eso cada fila pasa
+// el suyo, que no es el mismo en el encabezado, el cuerpo y los dos pies.
+//
+// Y es **de color**, no blanco: en blanco la columna fija se confunde con el
+// fondo de la tabla y al desplazarse se lee como un hueco en vez de como una
+// columna que se quedó quieta. Las dos fijas comparten el mismo tinte
+// (`#eaf4fb`) justamente para que se lean como el marco de lo que scrollea.
+// La sombra hace de borde: con `border-collapse: collapse` el borde es
+// compartido entre celdas vecinas y al scrollear se va con la que se movió,
+// dejando la columna fija pegada al contenido sin línea de corte.
+//
+// Va más oscura y más gruesa que un borde normal (2px #333 contra 1px #999) a
+// propósito: no es una línea de tabla más, es dónde termina lo que se queda
+// quieto y empieza lo que se desplaza. Con el borde fino no se distinguía del
+// resto de la grilla y la columna fija se leía como parte del scroll.
+const stickyLeft = (background, zIndex = 1) => ({
+  position: "sticky", left: 0, zIndex, background, boxShadow: "2px 0 0 #333",
+});
+const stickyRight = (background, zIndex = 1) => ({
+  position: "sticky", right: 0, zIndex, background, boxShadow: "-2px 0 0 #333",
+});
+
+// "2026-04-16" → "16-04-26". El rango completo en ISO son 23 caracteres en una
+// sola línea (~145 px), y ESO era lo que fijaba el ancho de cada columna de
+// quincena — no el `minWidth`, que quedaba corto y nunca mandaba. Partido en
+// dos líneas y sin el siglo ocupa ~55 px, y el ancho pasa a decidirlo el
+// nombre de la quincena, que sí se puede envolver.
+const compactDate = (iso) => {
+  const [y, m, d] = String(iso || "").split("-");
+  return y && m && d ? `${d}-${m}-${y.slice(2)}` : iso || "?";
+};
+
+// Ancho de las columnas del balance de quincenas. El objetivo es que entren
+// **8 quincenas** sin desplazarse en un desktop normal: 8 × 92 + 150 del
+// nombre + ~115 del total ≈ 1.000 px, que entra con el sidebar abierto desde
+// 1280 px de pantalla. De la novena en adelante van detrás del scroll, que
+// para eso las columnas de los extremos quedan fijas.
+const QUINCENA_COL_W = 92;
+const CARRIER_COL_W = 150;
+
 // ============================================================
 // FAENA BATCH TAB — pick cycles, generate one payment per carrier
 // ============================================================
@@ -4465,6 +4516,24 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
   const [busy, setBusy] = useState("");
   const printRef = useRef(null);
 
+  // Ver la quincena activa completa, no solo lo que falta cobrar. Sirve para
+  // revisar o cuadrar una quincena antes de cerrarla: cuánto se pagó ya y a
+  // quién, no solo cuánto queda. Persistido porque quien la usa la usa siempre.
+  const [showAllSummaries, setShowAllSummaries] = useState(() => {
+    try { return localStorage.getItem("transports.quincenasBalance.showAll") === "true"; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("transports.quincenasBalance.showAll", String(showAllSummaries)); } catch { /* noop */ }
+  }, [showAllSummaries]);
+
+  // El título cambia con el modo a propósito: viaja al PNG y a la impresión, y
+  // una imagen rotulada "pendientes" con filas ya pagadas adentro es
+  // exactamente el malentendido que termina en un transportista cobrando dos
+  // veces.
+  const titulo = showAllSummaries
+    ? "Balance de quincenas activas"
+    : "Balance de quincenas pendientes";
+
   const paymentsById = useMemo(
     () => new Map(payments.map((p) => [p.id, p])),
     [payments],
@@ -4518,12 +4587,19 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
       }
     }
     qList.sort(comparePayrollPeriod);
-    // Carriers en las filas: solo los que todavía deben algo. Un carrier con
-    // pendingTotal=0 (todas sus cuotas/quincenas quedaron pagadas, aunque la
-    // quincena en sí siga sin cerrarse porque otro carrier del grupo sigue
-    // debiendo) no tiene nada que hacer en un balance de "pendientes" — antes
-    // se filtraba solo cuando pending+paid daba $0, dejando filas fantasma en
-    // $0 con puro "pagado" en verde.
+    // Carriers en las filas. Por default solo los que todavía deben algo: un
+    // carrier con pendingTotal=0 (ya cobró todo, aunque la quincena siga
+    // abierta porque otro del grupo sigue debiendo) no tiene nada que hacer en
+    // un balance de "pendientes" — antes se filtraba solo cuando pending+paid
+    // daba $0, dejando filas fantasma en $0 con puro "pagado" en verde.
+    //
+    // Con `showAllSummaries` esas filas vuelven **a propósito**: ahí la
+    // pregunta no es "a quién le debo" sino "cómo viene esta quincena", y el
+    // que ya cobró es parte de la respuesta. Ojo si se toca esto: en ese modo
+    // las filas en $0 pendiente son la función, no el bug de antes.
+    //
+    // El corte de las columnas no cambia entre modos — una quincena pagada
+    // entera ya quedó afuera arriba, que es lo que se quiere en los dos casos.
     const carrierIds = new Set([...pendMap.keys(), ...paidMap.keys()]);
     const carrierRows = [];
     for (const cid of carrierIds) {
@@ -4531,7 +4607,13 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
       const pd = paidMap.get(cid) || new Map();
       const pendingTotal = [...pm.values()].reduce((s, v) => s + v, 0);
       const paidTotal = [...pd.values()].reduce((s, v) => s + v, 0);
-      if (pendingTotal <= 0) continue;
+      // Nada que mostrar, en ningún modo: ni pendiente ni pagado. Son los
+      // resúmenes en $0 —vueltas sin costo de transporte propio— que en modo
+      // "todos" salían como filas enteras vacías, con el nombre y todas las
+      // celdas en blanco. Ese era justo el filtro original, antes de que se
+      // endureciera a `pendingTotal <= 0`; acá vuelve como piso.
+      if (pendingTotal <= 0 && paidTotal <= 0) continue;
+      if (pendingTotal <= 0 && !showAllSummaries) continue;
       const c = carriers.find((x) => x.id === cid);
       carrierRows.push({
         carrierId: cid,
@@ -4546,7 +4628,7 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
     // Ordenar por pendiente desc (lo más urgente primero), desempate por paid.
     carrierRows.sort((a, b) => (b.pendingTotal - a.pendingTotal) || (b.paidTotal - a.paidTotal));
     return { pendingQuincenas: qList, rows: carrierRows };
-  }, [carriers, payrolls, paymentsById]);
+  }, [carriers, payrolls, paymentsById, showAllSummaries]);
 
   const grandPending = rows.reduce((s, r) => s + r.pendingTotal, 0);
   const grandPaid = rows.reduce((s, r) => s + r.paidTotal, 0);
@@ -4587,7 +4669,9 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
     try {
       const dataUrl = await captureFullWidthDataUrl(printRef.current);
       const link = document.createElement("a");
-      link.download = "balance-quincenas.png";
+      link.download = showAllSummaries
+        ? "balance-quincenas-activas.png"
+        : "balance-quincenas.png";
       link.href = dataUrl;
       link.click();
     } finally {
@@ -4595,24 +4679,59 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
     }
   };
 
-  const handlePrint = () => {
+  // Imprime la MISMA captura que 📋 y 📥, no el HTML de la tabla.
+  //
+  // Volcar el `outerHTML` a la ventana de impresión salía cortado: el navegador
+  // no pagina de costado, así que un pivot más ancho que la hoja pierde las
+  // quincenas de la derecha sin avisar. Y este pivot crece con cada quincena
+  // abierta, o sea que el recorte empeora justo cuando el balance importa más.
+  //
+  // `captureFullWidthDataUrl` ya resuelve el ancho —clona off-screen a
+  // `max-content` con el overflow desarmado—, así que reusarlo hace que las
+  // tres salidas muestren exactamente lo mismo. Se pierde el texto
+  // seleccionable del PDF; a cambio se imprime todo, que es el punto.
+  const handlePrint = async () => {
     if (!printRef.current) return;
-    const html = printRef.current.outerHTML;
-    const win = window.open("", "_blank", "width=900,height=700");
-    if (!win) {
-      toast.warning("Permite las ventanas emergentes para imprimir.");
-      return;
+    setBusy("print");
+    try {
+      const dataUrl = await captureFullWidthDataUrl(printRef.current);
+      const win = window.open("", "_blank", "width=900,height=700");
+      if (!win) {
+        toast.warning("Permite las ventanas emergentes para imprimir.");
+        return;
+      }
+      // El `print()` cuelga del onload de la imagen: dispararlo antes imprime
+      // una hoja en blanco, porque el dataUrl todavía no se decodificó.
+      // Una sola hoja, siempre. El balance se mira de un vistazo: partido en
+      // dos páginas hay que cruzar transportistas de una con quincenas de la
+      // otra, que es justo lo que la tabla existe para evitar. Por eso la
+      // imagen se escala a la página en vez de desbordar — `max-height: 100vh`
+      // en impresión es el alto del área de página, y con `width/height: auto`
+      // el navegador achica manteniendo la proporción.
+      win.document.write(`<!DOCTYPE html><html><head><title>${titulo}</title>
+        <style>
+          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
+          /* Apaisado. Va al nivel superior y no adentro de @media print: la
+             regla solo aplica a medios paginados igual, y anidada hay
+             navegadores que la ignoran y salen en vertical. Sin tamaño de
+             papel explícito para respetar el que tenga configurado (carta o
+             A4) y solo cambiarle la orientación. */
+          @page { size: landscape; margin: 8mm; }
+          body { margin: 0; padding: 16px; background: #fff; }
+          img { display: block; margin: 0 auto; max-width: 100%; height: auto; }
+          @media print {
+            html, body { height: 100%; }
+            body { padding: 0; }
+            img { max-width: 100%; max-height: 100vh; width: auto; height: auto; break-inside: avoid; page-break-inside: avoid; }
+          }
+        </style>
+      </head><body><img alt="${titulo}" src="${dataUrl}" onload="window.focus(); window.print();"></body></html>`);
+      win.document.close();
+    } catch (err) {
+      toast.error("Error: " + (err.message || err));
+    } finally {
+      setBusy("");
     }
-    win.document.write(`<!DOCTYPE html><html><head><title>Balance de quincenas</title>
-      <style>
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
-        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; margin: 0; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #888; padding: 6px 8px; font-size: 12px; }
-        @media print { @page { size: landscape; margin: 12mm; } }
-      </style>
-    </head><body>${html}<script>window.onload = () => { window.focus(); window.print(); };</script></body></html>`);
-    win.document.close();
   };
 
   return (
@@ -4624,7 +4743,7 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
       >
         <span className="flex items-center gap-2">
           <span className="text-[var(--color-muted)]">{expanded ? "▾" : "▸"}</span>
-          <span className="font-medium">Balance de quincenas pendientes</span>
+          <span className="font-medium">{titulo}</span>
         </span>
         <span className="flex items-baseline gap-2">
           <span className="text-xs text-[var(--color-muted)]">
@@ -4638,28 +4757,53 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
 
       {expanded && (
         <div className="border-t border-[var(--color-border)] p-3">
-          <div className="mb-3 flex flex-wrap items-center justify-end gap-1">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <button
-              onClick={handleCopyImage}
-              disabled={busy === "copy" || rows.length === 0}
-              className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+              type="button"
+              onClick={() => setShowAllSummaries((v) => !v)}
+              role="switch"
+              aria-checked={showAllSummaries}
+              title="Mostrar también a los transportistas que ya cobraron todo lo suyo en estas quincenas"
+              className="flex min-h-[32px] items-center gap-2 rounded px-1 text-xs hover:opacity-80"
             >
-              {busy === "copy" ? "..." : "📋 Copiar imagen"}
+              <span
+                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+                  showAllSummaries ? "bg-[var(--color-accent)]" : "bg-[var(--color-border)]"
+                }`}
+              >
+                <span
+                  className={`absolute h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                    showAllSummaries ? "translate-x-[18px]" : "translate-x-[2px]"
+                  }`}
+                />
+              </span>
+              <span className={showAllSummaries ? "font-medium text-[var(--color-accent)]" : ""}>
+                Todos los resúmenes
+              </span>
             </button>
-            <button
-              onClick={handleDownload}
-              disabled={busy === "download" || rows.length === 0}
-              className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
-            >
-              {busy === "download" ? "..." : "📥 PNG"}
-            </button>
-            <button
-              onClick={handlePrint}
-              disabled={rows.length === 0}
-              className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
-            >
-              🖨 Imprimir
-            </button>
+            <div className="flex flex-wrap items-center gap-1">
+              <button
+                onClick={handleCopyImage}
+                disabled={busy === "copy" || rows.length === 0}
+                className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+              >
+                {busy === "copy" ? "..." : "📋 Copiar imagen"}
+              </button>
+              <button
+                onClick={handleDownload}
+                disabled={busy === "download" || rows.length === 0}
+                className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+              >
+                {busy === "download" ? "..." : "📥 PNG"}
+              </button>
+              <button
+                onClick={handlePrint}
+                disabled={busy === "print" || rows.length === 0}
+                className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+              >
+                {busy === "print" ? "Preparando..." : "🖨 Imprimir"}
+              </button>
+            </div>
           </div>
 
           {rows.length === 0 ? (
@@ -4675,14 +4819,19 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
                 color: "#000",
                 padding: 16,
                 fontFamily: "ui-sans-serif, system-ui, sans-serif",
+                // Sin esto el bloque blanco mide lo que mide el contenedor y
+                // la tabla se le va por la derecha: al scrollear se acaba el
+                // fondo y aparece el de la página por detrás de las celdas.
+                minWidth: "max-content",
               }}
             >
               <div style={{ marginBottom: 10 }}>
                 <div style={{ fontWeight: 700, fontSize: 15 }}>
-                  Balance de quincenas pendientes
+                  {titulo}
                 </div>
                 <div style={{ fontSize: 11, color: "#555" }}>
                   {quincenaCount} quincena{quincenaCount === 1 ? "" : "s"} · {rows.length} transportista{rows.length === 1 ? "" : "s"}
+                  {showAllSummaries && " · incluye a los que ya cobraron"}
                   {" · "}Generado{" "}
                   {new Date().toLocaleDateString("es-CL", {
                     day: "2-digit",
@@ -4694,23 +4843,33 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
               <table style={{ borderCollapse: "collapse", width: "100%" }}>
                 <thead>
                   <tr style={{ background: "#9dc3e6" }}>
-                    <th style={cellH}>Transportista</th>
-                    {pendingQuincenas.map((q) => {
-                      const period = (q.periodFrom || q.periodTo)
-                        ? `${q.periodFrom || "?"} → ${q.periodTo || "?"}`
-                        : "";
-                      return (
-                        <th key={q.id} style={{ ...cellH, textAlign: "right", minWidth: 110 }}>
-                          <div>{q.name}</div>
-                          {period && (
-                            <div style={{ fontSize: 10, fontWeight: 400, color: "#333" }}>
-                              {period}
-                            </div>
-                          )}
-                        </th>
-                      );
-                    })}
-                    <th style={{ ...cellH, textAlign: "right", background: "#7cb1d8" }}>
+                    <th style={{ ...cellH, minWidth: CARRIER_COL_W, ...stickyLeft("#9dc3e6", 3) }}>
+                      Transportista
+                    </th>
+                    {pendingQuincenas.map((q) => (
+                      <th
+                        key={q.id}
+                        style={{ ...cellH, textAlign: "right", minWidth: QUINCENA_COL_W }}
+                      >
+                        <div style={{ overflowWrap: "break-word" }}>{q.name}</div>
+                        {(q.periodFrom || q.periodTo) && (
+                          <div
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 400,
+                              color: "#333",
+                              // Las fechas no se parten: envueltas quedan como
+                              // "16-04-" / "26" y dejan de leerse como fecha.
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            <div>{compactDate(q.periodFrom)}</div>
+                            <div>→ {compactDate(q.periodTo)}</div>
+                          </div>
+                        )}
+                      </th>
+                    ))}
+                    <th style={{ ...cellH, textAlign: "right", ...stickyRight("#7cb1d8", 3) }}>
                       Total
                     </th>
                   </tr>
@@ -4718,7 +4877,7 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
                 <tbody>
                   {rows.map((r) => (
                     <tr key={r.carrierId}>
-                      <td style={cell}>
+                      <td style={{ ...cell, overflowWrap: "break-word", ...stickyLeft("#eaf4fb") }}>
                         <span style={{ fontWeight: 600 }}>{r.alias}</span>
                         {r.name && (
                           <span style={{ color: "#666", marginLeft: 6, fontSize: 11 }}>
@@ -4749,7 +4908,7 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
                           textAlign: "right",
                           fontWeight: 700,
                           fontVariantNumeric: "tabular-nums",
-                          background: "#eaf4fb",
+                          ...stickyRight("#eaf4fb"),
                         }}
                       >
                         {fmtCurrency(r.pendingTotal)}
@@ -4762,7 +4921,7 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
                     </tr>
                   ))}
                   <tr style={{ background: "#c6efce" }}>
-                    <td style={{ ...cell, fontWeight: 700 }}>Total pendiente</td>
+                    <td style={{ ...cell, fontWeight: 700, ...stickyLeft("#c6efce", 2) }}>Total pendiente</td>
                     {pendingQuincenas.map((q) => (
                       <td
                         key={q.id}
@@ -4778,13 +4937,14 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
                         fontWeight: 700,
                         fontSize: 13,
                         fontVariantNumeric: "tabular-nums",
+                        ...stickyRight("#c6efce", 2),
                       }}
                     >
                       {fmtCurrency(grandPending)}
                     </td>
                   </tr>
                   <tr style={{ background: "#dcedc8" }}>
-                    <td style={{ ...cell, fontWeight: 700, color: "#15803d" }}>Total pagado</td>
+                    <td style={{ ...cell, fontWeight: 700, color: "#15803d", ...stickyLeft("#dcedc8", 2) }}>Total pagado</td>
                     {pendingQuincenas.map((q) => {
                       const paid = colTotals.get(q.id)?.paid || 0;
                       return (
@@ -4804,6 +4964,7 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
                         fontSize: 13,
                         fontVariantNumeric: "tabular-nums",
                         color: "#15803d",
+                        ...stickyRight("#dcedc8", 2),
                       }}
                     >
                       {fmtCurrency(grandPaid)}
