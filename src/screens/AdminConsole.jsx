@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { collection, query, where, getCountFromServer, getDocs, doc, getDoc, writeBatch, serverTimestamp } from "firebase/firestore";
-import { httpsCallable } from "firebase/functions";
-import { db, functions } from "../firebase";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { collection, query, where, getCountFromServer, getDocs, doc, getDoc, writeBatch, serverTimestamp, addDoc, onSnapshot } from "firebase/firestore";
+import { db } from "../firebase";
 import { faenasService, cyclesService, workersService, usersService } from "../services";
 import { advancesService } from "../services/advancesService";
 import { toProperName } from "../utils/nameUtils";
@@ -64,6 +63,7 @@ const MAIN_COLLECTIONS = [
   // Sistema
   { id: "users", group: "Sistema", label: "Perfiles de usuario", note: "doc id = uid de Firebase" },
   { id: "logs", group: "Sistema", label: "Logs de auditoría", note: "puede ser MUY grande" },
+  { id: "functionJobs", group: "Sistema", label: "Jobs del backend", note: "cola de Cloud Functions; nada la poda todavía" },
 ];
 
 // Orden de los grupos en la tabla, para que no dependa del orden del array.
@@ -101,6 +101,49 @@ const fmtNumber = (n) => new Intl.NumberFormat("es-CL").format(Number(n) || 0);
 
 async function countCollection(collName) {
   const snap = await getCountFromServer(collection(db, collName));
+  return snap.data().count;
+}
+
+// Las entidades que escriben en `logs`. Sale de los `createService(entity, ...)`
+// de services/index.js más las literales de transportsService/catalogsService.
+// Es una lista a mano: una entidad nueva que no se agregue acá queda invisible
+// en el desglose, igual que pasa con MAIN_COLLECTIONS.
+const LOG_ENTITIES = [
+  "workday", "worker", "cycle", "faena", "subfaena", "advance", "payroll",
+  "payrollSnapshot", "transport", "transportPayment", "transportPayroll",
+  "carrier", "catalog", "qrPrefix", "harvestWeight", "dteDocument", "company",
+  "costCenter", "informalExpense", "priceBookEntry", "priceBookConfig",
+  "contactCard", "interestLink", "groupLeader", "laborGroup", "indicator",
+  "user", "log",
+];
+
+// Entidades cuyo log arrastra un array o mapa entero. `diff()` en
+// services/logger.js compara por clave de PRIMER NIVEL, así que tocar un solo
+// elemento guarda dos copias completas de la estructura: la de antes y la de
+// después. Medido sobre un ciclo realista (3 labores × 80 personas, 30 días ×
+// 4 combos) da ~30 KB por log, contra ~0,1 KB del log de una jornada.
+//
+// Por eso el conteo y el peso no vienen del mismo lado: las jornadas ponen los
+// documentos, estas entidades ponen los bytes.
+const LOG_HEAVY = {
+  cycle: "labors[] + dayPrices{} enteros",
+  payroll: "items[] + workdayIds[] enteros",
+  payrollSnapshot: "el snapshot completo, que es el contrato del portal",
+  qrPrefix: "padron{}, un código por trabajador",
+  catalog: "entries[] entero",
+};
+
+async function countLogsByEntity(entity) {
+  const q = query(collection(db, "logs"), where("entity", "==", entity));
+  const snap = await getCountFromServer(q);
+  return snap.data().count;
+}
+
+async function countLogsOlderThan(months) {
+  const corte = new Date();
+  corte.setMonth(corte.getMonth() - months);
+  const q = query(collection(db, "logs"), where("timestamp", "<", corte));
+  const snap = await getCountFromServer(q);
   return snap.data().count;
 }
 
@@ -193,6 +236,7 @@ export default function AdminConsole() {
 
       <Grupo titulo="Inspección de escala">
         <CollectionCountsSection />
+        <LogsBreakdownSection />
         <WorkdaysByMonthSection />
         <WorkdaysByRangeSection />
         <WorkdaysByCycleSection />
@@ -211,41 +255,113 @@ export default function AdminConsole() {
 }
 
 // ============================================================
-// Sección Debug: ping a Cloud Functions
+// Sección Debug: ping al backend
 // ============================================================
-// Verifica el plomo de Firebase Functions (auth + región) llamando al callable
-// `ping`. Vivía en el Dashboard como bloque temporal; se movió acá, que es
-// donde viven las herramientas de diagnóstico. El deploy de esa función sigue
-// pendiente (ver functions/README.md), así que mientras tanto va a fallar con
-// `not-found` — eso también es información útil.
+// Verifica el plomo de Cloud Functions de punta a punta: encola un job y espera
+// a que el backend lo resuelva.
+//
+// No llama un endpoint porque no hay ninguno que se pueda llamar — el backend
+// se invoca escribiendo en `functionJobs` y un trigger de Firestore lo levanta
+// (functions/index.js explica por qué las tres variantes de callable están
+// cerradas en este proyecto). Así que este ping ejercita exactamente el mismo
+// camino que va a usar el backup: escribir el job, que dispare, que conteste.
+//
+// Los tres modos de falla se distinguen a propósito, porque cada uno se arregla
+// en otro lado: `permission-denied` es la regla de Firestore que falta, el
+// timeout es la función que no está desplegada o mirando otra base, y un job en
+// `error` es la función corriendo y fallando adentro.
+const JOBS_COLLECTION = "functionJobs";
+
 function PingSection() {
+  const { user } = useAuth();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
+  const cleanupRef = useRef(null);
+
+  // Si alguien se va de la pantalla con un job en vuelo, el listener queda
+  // abierto pagando lecturas contra un documento que nadie mira.
+  useEffect(() => () => cleanupRef.current?.(), []);
 
   const runPing = async () => {
+    cleanupRef.current?.();
+    cleanupRef.current = null;
     setBusy(true);
     setResult(null);
-    try {
-      const { data } = await httpsCallable(functions, "ping")();
-      setResult({ ok: true, data });
-    } catch (err) {
-      setResult({ ok: false, code: err.code, message: err.message });
-    } finally {
+
+    let unsub = null;
+    let timer = null;
+    const teardown = () => {
+      if (timer) clearTimeout(timer);
+      if (unsub) unsub();
+    };
+    const finish = (r) => {
+      teardown();
+      cleanupRef.current = null;
+      setResult(r);
       setBusy(false);
+    };
+
+    let ref;
+    try {
+      ref = await addDoc(collection(db, JOBS_COLLECTION), {
+        type: "ping",
+        status: "pending",
+        requestedBy: user?.uid || null,
+        requestedByEmail: user?.email || null,
+        requestedAt: serverTimestamp(),
+      });
+    } catch (err) {
+      finish({
+        ok: false,
+        message:
+          err?.code === "permission-denied"
+            ? "Las reglas de Firestore no dejan crear el job. Falta la regla de functionJobs en la consola (ver functions/README.md)."
+            : err?.message || String(err),
+      });
+      return;
     }
+
+    cleanupRef.current = teardown;
+    const t0 = Date.now();
+
+    // El arranque en frío de una función que no se usó en el día son varios
+    // segundos, así que el corte es generoso: que expire tiene que significar
+    // "no está", no "tardó".
+    timer = setTimeout(() => {
+      finish({
+        ok: false,
+        message:
+          "El job quedó sin respuesta a los 45 s. O la función no está desplegada, o su trigger no está suscrito a hpdatabase.",
+      });
+    }, 45_000);
+
+    unsub = onSnapshot(
+      ref,
+      (snap) => {
+        const d = snap.data();
+        if (!d || d.status === "pending" || d.status === "running") return;
+        finish(
+          d.status === "done"
+            ? { ok: true, data: d.result, ms: Date.now() - t0 }
+            : { ok: false, message: d.error || "El job terminó en error." },
+        );
+      },
+      (err) => finish({ ok: false, message: err?.message || String(err) }),
+    );
   };
 
   return (
-    <ConsoleCard id="ping-a-cloud-functions" title="🧪 Ping a Cloud Functions">
+    <ConsoleCard id="ping-al-backend" title="🧪 Ping al backend">
       <p className="mb-3 text-xs text-[var(--color-muted)]">
-        Llama al callable <code>ping</code> para verificar auth y región.
+        Encola un job en <code>{JOBS_COLLECTION}</code> y espera la respuesta del
+        backend. Es el mismo camino que usa el backup.
       </p>
       <button
         onClick={runPing}
         disabled={busy}
         className="rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-3 py-1.5 text-sm text-[var(--color-warning)] hover:opacity-80 disabled:opacity-60"
       >
-        {busy ? "Llamando..." : "Probar ping"}
+        {busy ? "Esperando al backend..." : "Probar ping"}
       </button>
       {result && (
         <div
@@ -256,10 +372,10 @@ function PingSection() {
           }`}
         >
           {result.ok
-            ? `✓ OK — ${JSON.stringify(result.data)}`
-            : `✗ ${result.code || "error"}: ${result.message}`}
+            ? `✓ OK en ${result.ms} ms — ${JSON.stringify(result.data)}`
+            : `✗ ${result.message}`}
         </div>
-      )}
+      )}
     </ConsoleCard>
   );
 }
@@ -406,7 +522,7 @@ function AuthDebugSection() {
             </>
           )}
         </div>
-      </div>
+      </div>
     </ConsoleCard>
   );
 }
@@ -475,8 +591,8 @@ function CollectionCountsSection() {
   };
 
   return (
-    <ConsoleCard id="counts-por-coleccion" title="Counts por colección" 
-      description={<>~1 lectura por colección (Firestore aggregation).</>} 
+    <ConsoleCard id="counts-por-coleccion" title="Counts por colección" 
+      description={<>~1 lectura por colección (Firestore aggregation).</>} 
       actions={<><button
           type="button"
           onClick={runAll}
@@ -553,7 +669,7 @@ function CollectionCountsSection() {
         <p className="mt-2 text-[11px] text-[var(--color-muted)]">
           {totalRuns} consulta{totalRuns === 1 ? "" : "s"} ejecutada{totalRuns === 1 ? "" : "s"}.
         </p>
-      )}
+      )}
     </ConsoleCard>
   );
 }
@@ -617,8 +733,8 @@ function WorkdaysByMonthSection() {
   const totalRuns = rows.filter((r) => r.count != null).length;
 
   return (
-    <ConsoleCard id="workdays-por-mes" title="Workdays por mes" 
-      description={<>12 consultas, ~12 reads totales. Útil para ver estacionalidad.</>} 
+    <ConsoleCard id="workdays-por-mes" title="Workdays por mes" 
+      description={<>12 consultas, ~12 reads totales. Útil para ver estacionalidad.</>} 
       actions={<><div className="flex items-center gap-2">
           <label className="text-xs text-[var(--color-muted)]">Año</label>
           <input
@@ -659,7 +775,7 @@ function WorkdaysByMonthSection() {
           </span>{" "}
           workdays
         </p>
-      )}
+      )}
     </ConsoleCard>
   );
 }
@@ -729,7 +845,7 @@ function WorkdaysByRangeSection() {
       </div>
       {error && (
         <p className="mt-2 text-xs text-[var(--color-danger)]">{error}</p>
-      )}
+      )}
     </ConsoleCard>
   );
 }
@@ -793,8 +909,8 @@ function WorkdaysByCycleSection() {
   const total = numericCounts.reduce((s, n) => s + n, 0);
 
   return (
-    <ConsoleCard id="workdays-por-ciclo" title="Workdays por ciclo" 
-      description={<>1 lectura por ciclo. Útil para ver dónde está concentrada la data.</>} 
+    <ConsoleCard id="workdays-por-ciclo" title="Workdays por ciclo" 
+      description={<>1 lectura por ciclo. Útil para ver dónde está concentrada la data.</>} 
       actions={<><div className="flex items-center gap-2">
           <label className="flex items-center gap-1 text-xs">
             <input
@@ -871,7 +987,7 @@ function WorkdaysByCycleSection() {
           </span>{" "}
           workdays
         </p>
-      )}
+      )}
     </ConsoleCard>
   );
 }
@@ -952,10 +1068,10 @@ function NormalizeWorkerNamesSection() {
   const displayDiffs = showAll ? diffs : diffs.slice(0, 20);
 
   return (
-    <ConsoleCard id="normalizar-nombres-de-trabajadores" title="Normalizar nombres de trabajadores" 
+    <ConsoleCard id="normalizar-nombres-de-trabajadores" title="Normalizar nombres de trabajadores" 
       description={<>Convierte los <code>name</code> al formato "Juan Pérez" (primera letra
             mayúscula, resto minúscula, conectores en minúscula).
-            Preview primero, después aplicar.</>} 
+            Preview primero, después aplicar.</>} 
       actions={<><div className="flex items-center gap-2">
           <button
             type="button"
@@ -1055,7 +1171,7 @@ function NormalizeWorkerNamesSection() {
         danger
         onCancel={() => setConfirmApply(false)}
         onConfirm={() => { setConfirmApply(false); doApply(); }}
-      />
+      />
     </ConsoleCard>
   );
 }
@@ -1137,9 +1253,9 @@ function BackfillWorkdayLogMetaSection() {
   };
 
   return (
-    <ConsoleCard id="backfill-auditoria-de-workdays-por-traba" title="Backfill: auditoría de workdays por trabajador" 
+    <ConsoleCard id="backfill-auditoria-de-workdays-por-traba" title="Backfill: auditoría de workdays por trabajador" 
       description={<>Completa <code>meta.workerRut</code>/<code>meta.cycleId</code> en logs viejos de workday
-            (parseados del entityId) para que el buscador de Auditoría los encuentre por trabajador.</>} 
+            (parseados del entityId) para que el buscador de Auditoría los encuentre por trabajador.</>} 
       actions={<><div className="flex items-center gap-2">
           <button
             type="button"
@@ -1232,7 +1348,7 @@ function BackfillWorkdayLogMetaSection() {
         danger
         onCancel={() => setConfirmApply(false)}
         onConfirm={() => { setConfirmApply(false); doApply(); }}
-      />
+      />
     </ConsoleCard>
   );
 }
@@ -1295,9 +1411,9 @@ function BackfillWorkerRutFieldSection() {
   };
 
   return (
-    <ConsoleCard id="backfill-campo-rut-en-trabajadores" title="Backfill: campo rut en trabajadores" 
+    <ConsoleCard id="backfill-campo-rut-en-trabajadores" title="Backfill: campo rut en trabajadores" 
       description={<>Completa <code>worker.rut</code> (= doc id actual) en trabajadores viejos que todavía
-            no lo tienen. Paso previo para poder editar el rut más adelante sin perder identidad.</>} 
+            no lo tienen. Paso previo para poder editar el rut más adelante sin perder identidad.</>} 
       actions={<><div className="flex items-center gap-2">
           <button
             type="button"
@@ -1387,7 +1503,7 @@ function BackfillWorkerRutFieldSection() {
         danger
         onCancel={() => setConfirmApply(false)}
         onConfirm={() => { setConfirmApply(false); doApply(); }}
-      />
+      />
     </ConsoleCard>
   );
 }
@@ -1718,6 +1834,204 @@ function GreetingsSection() {
           })}
         </div>
       )}
+    </ConsoleCard>
+  );
+}
+
+// ============================================================
+// Composición de la colección `logs`
+// ============================================================
+// `logs` es la colección más grande del sistema y **nada la borra nunca**: no
+// existe un solo `logsService.remove` en el repo. Antes de decidir una política
+// de retención hay que saber de dónde salen los documentos, y eso se puede
+// medir barato: `getCountFromServer` cuesta ~1 lectura por consulta, no una por
+// documento.
+//
+// Ojo para cuando se implemente la poda: `log` es a su vez una entidad
+// logueada (`createService("log", "logs")`), así que borrar con
+// `logsService.remove` escribiría un log por cada log borrado. Una poda tiene
+// que usar `deleteDoc` directo.
+function LogsBreakdownSection() {
+  const [porEntidad, setPorEntidad] = useState({}); // entity → { count?, error?, busy? }
+  const [corriendo, setCorriendo] = useState(false);
+  const [antiguedad, setAntiguedad] = useState(null); // { 6, 12, 24 } | null
+  const [antBusy, setAntBusy] = useState(false);
+  const [total, setTotal] = useState(null);
+  const [copiado, setCopiado] = useState(false);
+
+  const contarTodas = async () => {
+    setCorriendo(true);
+    try {
+      // El total de la colección va aparte: sirve para ver si las entidades
+      // listadas suman todo o si hay alguna que no está en LOG_ENTITIES.
+      try { setTotal(await countCollection("logs")); } catch { /* el desglose igual sirve */ }
+      for (const e of LOG_ENTITIES) {
+        setPorEntidad((r) => ({ ...r, [e]: { busy: true } }));
+        try {
+          const count = await countLogsByEntity(e);
+          setPorEntidad((r) => ({ ...r, [e]: { count } }));
+        } catch (err) {
+          setPorEntidad((r) => ({ ...r, [e]: { error: err.message || String(err) } }));
+        }
+      }
+    } finally {
+      setCorriendo(false);
+    }
+  };
+
+  const medirAntiguedad = async () => {
+    setAntBusy(true);
+    try {
+      const out = {};
+      for (const m of [6, 12, 24]) out[m] = await countLogsOlderThan(m);
+      setAntiguedad(out);
+    } catch (err) {
+      setAntiguedad({ error: err.message || String(err) });
+    } finally {
+      setAntBusy(false);
+    }
+  };
+
+  const contadas = LOG_ENTITIES.filter((e) => porEntidad[e]?.count != null);
+  const suma = contadas.reduce((a, e) => a + porEntidad[e].count, 0);
+  // Lo que no cae en ninguna entidad listada: o falta agregarla acá, o son
+  // logs viejos escritos antes de que esa entidad existiera.
+  const sinClasificar = total != null ? total - suma : null;
+
+  const ordenadas = [...contadas].sort((a, b) => porEntidad[b].count - porEntidad[a].count);
+
+  const copiar = async () => {
+    if (ordenadas.length === 0) return;
+    const lineas = ordenadas.map((e) => `${e}\t${porEntidad[e].count}${LOG_HEAVY[e] ? "\tpesado" : ""}`);
+    if (sinClasificar != null && sinClasificar !== 0) lineas.push(`(sin clasificar)\t${sinClasificar}`);
+    lineas.push("", `TOTAL\t${total ?? suma}`);
+    if (antiguedad && !antiguedad.error) {
+      lineas.push("", "Anteriores a", ...[6, 12, 24].map((m) => `  ${m} meses\t${antiguedad[m]}`));
+    }
+    const texto = lineas.join("\n");
+    try {
+      await navigator.clipboard.writeText(texto);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2000);
+    } catch {
+      window.prompt("Copia el desglose:", texto);
+    }
+  };
+
+  return (
+    <ConsoleCard
+      id="logs-composicion"
+      title="Composición de logs"
+      description={
+        <>
+          De dónde salen los documentos de <code>logs</code>. ~1 lectura por entidad.
+          Las marcadas <b>pesado</b> guardan arrays o mapas enteros en cada cambio
+          (~30 KB por log contra ~0,1 KB de una jornada), así que pesan mucho más de
+          lo que sugiere su conteo.
+        </>
+      }
+      actions={
+        <>
+          <button
+            type="button"
+            onClick={contarTodas}
+            disabled={corriendo}
+            className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
+          >
+            {corriendo ? "Contando…" : `▶ Por entidad (~${LOG_ENTITIES.length + 1} reads)`}
+          </button>
+          <button
+            type="button"
+            onClick={medirAntiguedad}
+            disabled={antBusy}
+            title="Cuántos logs borraría un TTL de 6, 12 o 24 meses"
+            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+          >
+            {antBusy ? "Midiendo…" : "▶ Antigüedad (3 reads)"}
+          </button>
+          <button
+            type="button"
+            onClick={copiar}
+            disabled={ordenadas.length === 0}
+            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+          >
+            {copiado ? "✓ Copiado" : `📋 Copiar${ordenadas.length ? ` (${ordenadas.length})` : ""}`}
+          </button>
+        </>
+      }
+    >
+      {antiguedad ? (
+        antiguedad.error ? (
+          <p className="mb-3 rounded-md bg-[var(--color-danger-soft)] px-3 py-2 text-xs text-[var(--color-danger)]">
+            {antiguedad.error}
+          </p>
+        ) : (
+          <div className="mb-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-xs">
+            <div className="mb-1 font-medium">Cuánto borraría un TTL sobre <code>timestamp</code></div>
+            <div className="flex flex-wrap gap-4 tabular-nums">
+              {[6, 12, 24].map((m) => (
+                <span key={m}>
+                  &gt; {m} meses: <b>{fmtNumber(antiguedad[m])}</b>
+                  {total ? ` (${Math.round((antiguedad[m] / total) * 100)}%)` : ""}
+                </span>
+              ))}
+            </div>
+            <p className="mt-2 text-[var(--color-muted)]">
+              La ficha por registro de Auditoría no tiene límite de fecha, así que un TTL
+              le recorta el historial en silencio.
+            </p>
+          </div>
+        )
+      ) : null}
+
+      <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
+        <table className="w-full text-sm">
+          <thead className="bg-[var(--color-surface-2)] text-left text-xs text-[var(--color-muted)]">
+            <tr>
+              <th className="px-3 py-2">Entidad</th>
+              <th className="px-3 py-2 text-right">Logs</th>
+              <th className="px-3 py-2 text-right">%</th>
+              <th className="px-3 py-2">Peso</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[var(--color-border)]">
+            {(ordenadas.length ? ordenadas : LOG_ENTITIES).map((e) => {
+              const r = porEntidad[e] || {};
+              return (
+                <tr key={e}>
+                  <td className="px-3 py-1.5 font-mono text-xs">{e}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">
+                    {r.busy ? "…" : r.error ? "—" : r.count != null ? fmtNumber(r.count) : ""}
+                  </td>
+                  <td className="px-3 py-1.5 text-right tabular-nums text-xs text-[var(--color-muted)]">
+                    {r.count != null && total ? `${Math.round((r.count / total) * 100)}%` : ""}
+                  </td>
+                  <td className="px-3 py-1.5 text-xs">
+                    {LOG_HEAVY[e] ? (
+                      <span className="text-[var(--color-warning)]" title={LOG_HEAVY[e]}>
+                        ⚠ pesado · {LOG_HEAVY[e]}
+                      </span>
+                    ) : (
+                      <span className="text-[var(--color-muted)]">liviano</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+            {total != null && (
+              <tr className="bg-[var(--color-surface-2)] font-medium">
+                <td className="px-3 py-1.5">TOTAL en la colección</td>
+                <td className="px-3 py-1.5 text-right tabular-nums">{fmtNumber(total)}</td>
+                <td colSpan={2} className="px-3 py-1.5 text-xs text-[var(--color-muted)]">
+                  {sinClasificar != null && sinClasificar !== 0
+                    ? `${fmtNumber(sinClasificar)} sin clasificar — falta agregar esa entidad a LOG_ENTITIES`
+                    : ""}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </ConsoleCard>
   );
 }

@@ -1,7 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
-import { getFunctions } from "firebase/functions";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -17,8 +16,11 @@ const app = initializeApp(firebaseConfig);
 
 export const db = getFirestore(app, "hpdatabase");
 export const auth = getAuth(app);
-// Cloud Functions client — apuntado a la misma región del deploy.
-export const functions = getFunctions(app, "southamerica-west1");
+
+// No hay cliente de Cloud Functions a propósito. El backend no se invoca por
+// HTTP: se le escribe un documento en `functionJobs` y un trigger de Firestore
+// lo levanta (ver functions/index.js para por qué no se puede de la otra
+// forma). Sacar `firebase/functions` del import también lo saca del bundle.
 
 // Enganche del emulador. Solo se activa si `VITE_FIRESTORE_EMULATOR` viene
 // puesta como "host:puerto". En producción la variable no existe, así que esto
