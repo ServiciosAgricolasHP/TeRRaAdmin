@@ -1436,6 +1436,50 @@ export default function CycleSummaryModal({
     });
   }, [transportData, cobrar.carriers]);
 
+  // Observaciones por día — las anotaciones que en la grilla del ciclo solo se
+  // ven pasando el mouse por el encabezado de cada fecha. Viven en
+  // cycle.dayNotesByLabor[laborId][date], con cycle.dayNotes[date] como
+  // fallback compartido de los ciclos viejos (ver CycleDetail). Juntarlas acá
+  // es lo que hace que el resumen explique solo los días raros: si no, hay que
+  // abrir el ciclo y pasar el mouse labor por labor para saber por qué un día
+  // se cobró distinto.
+  //
+  // El fallback compartido se emite UNA vez por día (`shared`) y no por labor:
+  // en un ciclo viejo el mismo texto saldría repetido tantas veces como
+  // labores tenga.
+  const dayNotesSummary = useMemo(() => {
+    if (mode !== "cobrar") return [];
+    const byLabor = cycle?.dayNotesByLabor || {};
+    const legacy = cycle?.dayNotes || {};
+    const byDate = new Map();
+    const bucket = (date) => {
+      if (!byDate.has(date)) byDate.set(date, { date, shared: "", entries: [] });
+      return byDate.get(date);
+    };
+    for (const cl of cobrarLabors) {
+      if (cl.include === false) continue;
+      const laborId = cl.labor.id;
+      const name = titles.laborNames?.[laborId] || cl.labor.name;
+      const own = byLabor[laborId] || {};
+      // Las fechas que la labor muestra en el resumen MÁS las que solo tienen
+      // nota: un día sin producción igual puede llevar una observación, y
+      // perderla acá es peor que mostrar una fila de más.
+      const dates = new Set(Object.keys(own));
+      for (const r of cl.chargedRows || cl.rows || []) if (r.date) dates.add(r.date);
+      for (const date of dates) {
+        const propia = String(own[date] || "").trim();
+        if (propia) bucket(date).entries.push({ laborId, name, text: propia });
+        else {
+          const compartida = String(legacy[date] || "").trim();
+          if (compartida) bucket(date).shared = compartida;
+        }
+      }
+    }
+    return [...byDate.values()]
+      .filter((g) => g.shared || g.entries.length > 0)
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [mode, cycle?.dayNotesByLabor, cycle?.dayNotes, cobrarLabors, titles.laborNames]);
+
   // Subtotal del cobro = suma de labors + carriers incluidos. NO descuenta nada.
   // Se usa como fila "Subtotal" en el desglose cuando hay descuento aplicado.
   const subtotalCobrar = useMemo(() => {
@@ -2468,6 +2512,7 @@ export default function CycleSummaryModal({
           onChangePendingBalance={mode === "cobrar" ? setCobrarPendingBalance : undefined}
           catalogs={catalogs}
           dayPrices={dayPrices}
+          dayNotes={dayNotesSummary}
           editLaborRow={editCobrarLaborRow}
           addLaborRow={addCobrarLaborExtraRow}
           removeLaborRow={removeCobrarLaborExtraRow}
@@ -2968,6 +3013,7 @@ const PrintableSummary = forwardRef(function PrintableSummary(
     onChangePendingBalance,
     catalogs,
     dayPrices = {},
+    dayNotes = [],
     editLaborRow,
     addLaborRow,
     removeLaborRow,
@@ -3185,9 +3231,69 @@ const PrintableSummary = forwardRef(function PrintableSummary(
           })()}
         </tbody>
       </table>
+
+      {/* Observaciones por día — anexo, después del total: es el contexto del
+          cobro, no parte del cálculo. Solo en cobrar; en pagar el resumen ya
+          baja al detalle por trabajador. */}
+      {mode === "cobrar" && dayNotes.length > 0 && (
+        <DayNotesTable
+          notes={dayNotes}
+          showLaborNames={labors.filter((ld) => ld.include !== false).length > 1}
+        />
+      )}
     </div>
   );
 });
+
+// ============================================================
+// Observaciones por día (cobrar)
+// ============================================================
+// Agrupa por fecha y, dentro de la fecha, una línea por labor. `showLaborNames`
+// llega apagado cuando el resumen trae una sola labor: ahí el nombre es ruido,
+// porque no hay otra cosa a la que la observación pueda referirse.
+function DayNotesTable({ notes, showLaborNames }) {
+  return (
+    <div style={{ marginTop: 20, breakInside: "avoid" }}>
+      <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: 0.5, marginBottom: 6 }}>
+        OBSERVACIONES POR DÍA
+      </div>
+      <table style={{ borderCollapse: "collapse", width: "100%" }}>
+        <thead>
+          <tr style={{ background: "#9dc3e6" }}>
+            <th style={{ ...cellH, width: 90 }}>Fecha</th>
+            <th style={cellH}>Observación</th>
+          </tr>
+        </thead>
+        <tbody>
+          {notes.map((g) => {
+            // La nota compartida (ciclos viejos) va primero. Cuando convive con
+            // notas propias de otras labores el rótulo es lo único que evita
+            // leerla como la observación de una labor sola.
+            const lines = g.shared
+              ? [{ key: "__all__", name: "Todas las labores", text: g.shared }]
+              : [];
+            for (const e of g.entries) lines.push({ key: e.laborId, name: e.name, text: e.text });
+            return (
+              <tr key={g.date} style={{ background: "#fff" }}>
+                <td style={{ ...cell, fontWeight: 600, whiteSpace: "nowrap", verticalAlign: "top" }}>
+                  {dateLabel(g.date)}
+                </td>
+                <td style={cell}>
+                  {lines.map((l, i) => (
+                    <div key={l.key} style={{ marginTop: i === 0 ? 0 : 4 }}>
+                      {showLaborNames && <span style={{ fontWeight: 700 }}>{l.name} — </span>}
+                      <span style={{ whiteSpace: "pre-wrap" }}>{l.text}</span>
+                    </div>
+                  ))}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 // Estilos compartidos para los inputs editables en modo cobrar. Fondo amarillo
 // para señalar visualmente las celdas modificables (igual que en el XLSX).

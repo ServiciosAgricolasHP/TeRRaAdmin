@@ -4115,6 +4115,20 @@ const compactDate = (iso) => {
 const QUINCENA_COL_W = 92;
 const CARRIER_COL_W = 150;
 
+// Cuánto de un resumen está cobrado y cuánto falta. Vive suelto porque lo usan
+// la tabla del balance y el modal por transportista, y si cada uno lo calcula
+// a su manera el modal contradice a la fila que lo abrió.
+//
+// Un resumen `paid` está cerrado entero. Si sigue pendiente, los abonos cuentan
+// como cobrado y el resto como deuda; el `Math.min` es porque un abono de más
+// no puede hacer que aparezca cobrado más que el total.
+function paymentSplit(p) {
+  const total = Number(p?.total) || 0;
+  if (p?.status === "paid") return { pending: 0, paid: total, total };
+  const abonado = (p?.abonos || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
+  return { pending: Math.max(0, total - abonado), paid: Math.min(abonado, total), total };
+}
+
 // ============================================================
 // FAENA BATCH TAB — pick cycles, generate one payment per carrier
 // ============================================================
@@ -4510,11 +4524,146 @@ function comparePayrollPeriod(a, b) {
 //     (caso borde: el usuario marcó cada resumen por separado en lugar de
 //     usar "Marcar quincena pagada" — la quincena queda pending pero no
 //     debe nada).
+// Todos los resúmenes de un transportista, agrupados por quincena. Se abre
+// desde el balance: en desktop clickeando su nombre, en mobile tocando su
+// tarjeta.
+//
+// Es el drill-down que le faltaba al pivot. La celda del balance dice "este
+// transportista debe $X en esta quincena" y ahí se terminaba: de qué resúmenes
+// sale ese número, cuáles ya se pagaron y cuáles tienen abonos parciales había
+// que ir a buscarlo a otra pestaña. Acá está todo junto, incluyendo los
+// resúmenes que no están en ninguna quincena —los sueltos—, que en el balance
+// no aparecen y son justo los que se olvidan.
+function CarrierSummariesModal({ open, onClose, row, payments, payrolls }) {
+  const grupos = useMemo(() => {
+    if (!row) return [];
+    const mios = payments.filter((p) => (p.carrierId || "__none__") === row.carrierId);
+    const porQuincena = new Map(); // payrollId | "__sueltos__" → resúmenes
+    for (const p of mios) {
+      const k = p.payrollId || "__sueltos__";
+      if (!porQuincena.has(k)) porQuincena.set(k, []);
+      porQuincena.get(k).push(p);
+    }
+    const byId = new Map(payrolls.map((q) => [q.id, q]));
+    const out = [];
+    for (const [k, items] of porQuincena) {
+      const q = k === "__sueltos__" ? null : byId.get(k);
+      items.sort((a, b) => String(b.periodFrom || "").localeCompare(String(a.periodFrom || "")));
+      out.push({
+        key: k,
+        quincena: q,
+        // Una quincena borrada deja sus resúmenes apuntando a un id que ya no
+        // existe. Mostrarlos como sueltos los esconde; mejor decirlo.
+        titulo: q ? q.name : k === "__sueltos__" ? "Sin quincena" : "Quincena eliminada",
+        activa: q ? q.status !== "paid" : false,
+        items,
+        pending: items.reduce((s, p) => s + paymentSplit(p).pending, 0),
+        paid: items.reduce((s, p) => s + paymentSplit(p).paid, 0),
+      });
+    }
+    // Lo que se debe primero; después lo cerrado, más reciente arriba.
+    out.sort((a, b) => (b.pending - a.pending) || (a.quincena && b.quincena ? comparePayrollPeriod(b.quincena, a.quincena) : 0));
+    return out;
+  }, [row, payments, payrolls]);
+
+  const totalPend = grupos.reduce((s, g) => s + g.pending, 0);
+  const totalPaid = grupos.reduce((s, g) => s + g.paid, 0);
+
+  if (!row) return null;
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      size="lg"
+      title={row.alias + (row.name ? ` — ${row.name}` : "")}
+    >
+      <div className="mb-4 grid grid-cols-3 gap-2 text-center">
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2">
+          <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">Pendiente</div>
+          <div className="text-sm font-bold tabular-nums text-[var(--color-accent)]">{fmtCurrency(totalPend)}</div>
+        </div>
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2">
+          <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">Pagado</div>
+          <div className="text-sm font-bold tabular-nums text-[var(--color-success)]">{fmtCurrency(totalPaid)}</div>
+        </div>
+        <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2">
+          <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">Resúmenes</div>
+          <div className="text-sm font-bold tabular-nums">{grupos.reduce((s, g) => s + g.items.length, 0)}</div>
+        </div>
+      </div>
+
+      {grupos.length === 0 ? (
+        <div className="rounded-md border border-dashed border-[var(--color-border)] py-6 text-center text-xs text-[var(--color-muted)]">
+          Este transportista no tiene resúmenes.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {grupos.map((g) => (
+            <div key={g.key} className="overflow-hidden rounded-lg border border-[var(--color-border)]">
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-[var(--color-surface-2)] px-3 py-2">
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  {g.titulo}
+                  {g.activa && (
+                    <span className="rounded bg-[var(--color-accent-soft)] px-1.5 py-0.5 text-[10px] text-[var(--color-accent)]">
+                      abierta
+                    </span>
+                  )}
+                </span>
+                <span className="text-xs tabular-nums">
+                  {g.pending > 0 && (
+                    <span className="font-semibold text-[var(--color-accent)]">{fmtCurrency(g.pending)}</span>
+                  )}
+                  {g.paid > 0 && (
+                    <span className="ml-2 text-[var(--color-success)]">pagado {fmtCurrency(g.paid)}</span>
+                  )}
+                </span>
+              </div>
+              <div className="divide-y divide-[var(--color-border)]">
+                {g.items.map((p) => {
+                  const { pending, paid, total } = paymentSplit(p);
+                  const periodo = (p.periodFrom || p.periodTo)
+                    ? `${compactDate(p.periodFrom)} → ${compactDate(p.periodTo)}`
+                    : "sin período";
+                  return (
+                    <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs">
+                      <span className="flex flex-col">
+                        <span className="tabular-nums">{periodo}</span>
+                        <span className="text-[10px] text-[var(--color-muted)]">
+                          {(p.tripIds || []).length} vuelta{(p.tripIds || []).length === 1 ? "" : "s"}
+                        </span>
+                      </span>
+                      <span className="flex flex-col items-end tabular-nums">
+                        <span className="font-semibold">{fmtCurrency(total)}</span>
+                        {p.status === "paid" ? (
+                          <span className="text-[10px] text-[var(--color-success)]">✓ pagado</span>
+                        ) : paid > 0 ? (
+                          <span className="text-[10px] text-[var(--color-warning)]">
+                            abonado {fmtCurrency(paid)} · falta {fmtCurrency(pending)}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-[var(--color-muted)]">pendiente</span>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
   const toast = useToast();
   const [expanded, setExpanded] = useState(true);
   const [busy, setBusy] = useState("");
   const printRef = useRef(null);
+  // Fila del transportista cuyo detalle se está mirando, o null.
+  const [detalle, setDetalle] = useState(null);
 
   // Ver la quincena activa completa, no solo lo que falta cobrar. Sirve para
   // revisar o cuadrar una quincena antes de cerrarla: cuánto se pagó ya y a
@@ -4558,21 +4707,9 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
         const p = paymentsById.get(pid);
         if (!p) continue;
         const cid = p.carrierId || "__none__";
-        const total = Number(p.total) || 0;
-        if (p.status === "paid") {
-          paidByCarrier.set(cid, (paidByCarrier.get(cid) || 0) + total);
-        } else {
-          // Resumen pending: el "abonado" (sum de abonos) cuenta como pagado,
-          // el resto como pendiente. Si no hay abonos, todo va a pendiente.
-          const abonado = (p.abonos || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
-          const pending = Math.max(0, total - abonado);
-          if (pending > 0) {
-            pendByCarrier.set(cid, (pendByCarrier.get(cid) || 0) + pending);
-          }
-          if (abonado > 0) {
-            paidByCarrier.set(cid, (paidByCarrier.get(cid) || 0) + Math.min(abonado, total));
-          }
-        }
+        const { pending, paid } = paymentSplit(p);
+        if (pending > 0) pendByCarrier.set(cid, (pendByCarrier.get(cid) || 0) + pending);
+        if (paid > 0) paidByCarrier.set(cid, (paidByCarrier.get(cid) || 0) + paid);
       }
       // Excluir quincenas pending sin ningún item pendiente (todos paid sueltos).
       if (pendByCarrier.size === 0) continue;
@@ -4811,6 +4948,56 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
               Sin quincenas pendientes.
             </div>
           ) : (
+            <>
+            {/* Mobile: el pivot no entra y no hay forma de que entre. Con el
+                nombre fijo y el total ocupando 265 px, a 412 px sobra lugar
+                para UNA columna de quincena — o sea que la tabla se lee
+                desplazándose de a una, que es peor que no tenerla.
+                Acá la pregunta se responde ordenando por deuda, y el desglose
+                por quincena vive en el modal, que es el mismo que abre el
+                nombre en desktop. */}
+            <div className="space-y-2 md:hidden">
+              {rows.map((r) => (
+                <button
+                  key={r.carrierId}
+                  type="button"
+                  onClick={() => setDetalle(r)}
+                  className="flex w-full items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2.5 text-left hover:bg-[var(--color-accent-soft)]"
+                >
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-sm font-semibold">{r.alias}</span>
+                    {r.name && (
+                      <span className="truncate text-xs text-[var(--color-muted)]">{r.name}</span>
+                    )}
+                    <span className="mt-0.5 text-[10px] text-[var(--color-muted)]">
+                      {r.pending.size} quincena{r.pending.size === 1 ? "" : "s"} con saldo
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 flex-col items-end">
+                    <span className="text-sm font-bold tabular-nums text-[var(--color-accent)]">
+                      {fmtCurrency(r.pendingTotal)}
+                    </span>
+                    {r.paidTotal > 0 && (
+                      <span className="text-[10px] tabular-nums text-[var(--color-success)]">
+                        pagado {fmtCurrency(r.paidTotal)}
+                      </span>
+                    )}
+                    <span className="text-[10px] text-[var(--color-muted)]">ver ▸</span>
+                  </span>
+                </button>
+              ))}
+              <div className="flex items-center justify-between rounded-lg border border-[var(--color-border)] px-3 py-2 text-sm font-semibold">
+                <span>Total pendiente</span>
+                <span className="tabular-nums text-[var(--color-accent)]">{fmtCurrency(grandPending)}</span>
+              </div>
+            </div>
+
+            {/* Desktop: el pivot. Oculto en mobile con `display: none`, que NO
+                rompe las exportaciones — la captura clona el nodo de printRef y
+                lo cuelga de su propio contenedor, así que lo que le pase al
+                padre le da igual. Los botones 📋/📥/🖨 siguen andando desde el
+                teléfono y sacan la tabla completa. */}
+            <div className="hidden md:block">
             <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
             <div
               ref={printRef}
@@ -4878,12 +5065,32 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
                   {rows.map((r) => (
                     <tr key={r.carrierId}>
                       <td style={{ ...cell, overflowWrap: "break-word", ...stickyLeft("#eaf4fb") }}>
-                        <span style={{ fontWeight: 600 }}>{r.alias}</span>
-                        {r.name && (
-                          <span style={{ color: "#666", marginLeft: 6, fontSize: 11 }}>
-                            {r.name}
-                          </span>
-                        )}
+                        {/* Botón con aspecto de texto: esta celda viaja al PNG
+                            y a la impresión, así que no puede traer chrome de
+                            control. Lo único que lo delata es el subrayado al
+                            pasar por encima, que en la captura no existe. */}
+                        <button
+                          type="button"
+                          onClick={() => setDetalle(r)}
+                          title={`Ver todos los resúmenes de ${r.alias}`}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            padding: 0,
+                            font: "inherit",
+                            color: "inherit",
+                            textAlign: "left",
+                            cursor: "pointer",
+                          }}
+                          className="hover:underline"
+                        >
+                          <span style={{ fontWeight: 600 }}>{r.alias}</span>
+                          {r.name && (
+                            <span style={{ color: "#666", marginLeft: 6, fontSize: 11 }}>
+                              {r.name}
+                            </span>
+                          )}
+                        </button>
                       </td>
                       {pendingQuincenas.map((q) => {
                         const pend = r.pending.get(q.id) || 0;
@@ -4974,9 +5181,19 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
               </table>
             </div>
             </div>
+            </div>
+            </>
           )}
         </div>
       )}
+
+      <CarrierSummariesModal
+        open={!!detalle}
+        onClose={() => setDetalle(null)}
+        row={detalle}
+        payments={payments}
+        payrolls={payrolls}
+      />
     </div>
   );
 }
