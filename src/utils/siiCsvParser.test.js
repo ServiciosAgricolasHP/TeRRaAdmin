@@ -8,6 +8,7 @@ import {
   dteTypeLabel,
   otroImpuestoCategory,
   otroImpuestoLabel,
+  esRetencion,
 } from "./siiCsvParser";
 
 // El RCV del SII usa `;` como separador.
@@ -331,5 +332,93 @@ describe("tablas de códigos", () => {
 
   it("otroImpuestoLabel devuelve algo legible", () => {
     expect(typeof otroImpuestoLabel(28)).toBe("string");
+  });
+
+  // La columna `Codigo Otro Impuesto` del RCV carga DOS tablas del SII que se
+  // pisan numéricamente: impuestos adicionales y retenciones de cambio de
+  // sujeto. El mapa original estaba corrido y estos son los casos que lo
+  // delataban en datos reales. Contrastar contra el PDF oficial, no contra el
+  // nombre que suene razonable:
+  // https://www.sii.cl/declaraciones_juradas/ddjj_3327_3328/cod_otros_imp_retenc.pdf
+  it("no confunde retenciones de cambio de sujeto con impuestos adicionales", () => {
+    // El que se vio en producción: una factura de compra de fruta salía con
+    // chip 🍷 Alcohol porque el 15 estaba mapeado a "cervezas, vinos, sidras".
+    expect(otroImpuestoCategory(15)).toBe("retencion");
+    expect(otroImpuestoLabel(15)).toMatch(/retenido total/i);
+    expect(esRetencion(15)).toBe(true);
+
+    // Retenciones agrícolas: son las que le tocan a esta empresa.
+    for (const codigo of [30, 31, 32, 34, 37, 48]) {
+      expect(esRetencion(codigo)).toBe(true);
+    }
+    // Las variantes "retención total" del PDF (segunda columna) son códigos
+    // aparte y también tienen que caer en retención.
+    expect(esRetencion(481)).toBe(true);
+
+    // Un impuesto adicional NO es una retención: son ramas distintas del F29.
+    expect(esRetencion(25)).toBe(false);
+    expect(esRetencion(28)).toBe(false);
+  });
+
+  it("28 es diésel y 35 es gasolina, no al revés", () => {
+    // Estaban invertidos. Los dos son combustible, así que el agrupado por
+    // centro de costo nunca se rompió — solo mentía la etiqueta, que es peor
+    // porque se lee como un dato bueno.
+    expect(otroImpuestoLabel(28)).toMatch(/di[eé]sel/i);
+    expect(otroImpuestoLabel(35)).toMatch(/gasolina/i);
+  });
+
+  // El SII define el Monto Total del RCV de ventas (campo 39) como
+  // neto + exento + IVA + otro imp − IVA Retenido Total − IVA Retenido Parcial…
+  // O sea que **el total ya viene con la retención descontada**: una factura
+  // de compra con retención total se ve con total == neto, y una parcial se ve
+  // como una venta cualquiera más barata. Sin leer las columnas de retención
+  // no hay forma de distinguirlas, y la plata retenida desaparece del registro.
+  it("distingue retención total de parcial en facturas de compra recibidas", () => {
+    const csv = [
+      "Nro;Tipo Doc;Rut cliente;Razon Social;Folio;Fecha Docto;Monto Exento;Monto Neto;Monto IVA;IVA Retenido Total;IVA Retenido Parcial;IVA no retenido;Codigo Otro Imp.;Tasa Otro Imp.;Valor Otro Imp.;Monto total",
+      // Retención TOTAL (cód. 15): se retiene el 19% completo → total = neto.
+      "1;46;76625630-9;FRUTOS LA AGUADA S.A.;571;16-09-2026;0;2583700;490903;490903;0;0;15;19;0;2583700",
+      // Retención PARCIAL de frambuesas (cód. 48, 14% del neto).
+      "2;46;76625630-9;FRUTOS LA AGUADA S.A.;572;16-09-2026;0;1000000;190000;0;140000;50000;48;14;0;1050000",
+    ].join("\n");
+    const { kind, records } = parseSiiRcvCsv(utf8(csv));
+    expect(kind).toBe("venta");
+
+    const [totalRet, parcial] = records;
+
+    expect(totalRet.ivaRetenido).toBe(490903);
+    expect(totalRet.ivaRetenidoTipo).toBe("total");
+    expect(totalRet.retencionTasa).toBe(19);
+    // La señal que se ve a simple vista en la grilla.
+    expect(totalRet.total).toBe(totalRet.neto);
+
+    expect(parcial.ivaRetenido).toBe(140000);
+    expect(parcial.ivaRetenidoTipo).toBe("parcial");
+    expect(parcial.retencionTasa).toBe(14);
+    expect(parcial.ivaNoRetenido).toBe(50000);
+    // Acá el total NO delata nada: parece una venta normal.
+    expect(parcial.total).toBe(1050000);
+  });
+
+  it("un impuesto adicional no se cuenta como retención", () => {
+    // `Valor Otro Imp` carga las dos cosas. Una compra de diésel tiene monto
+    // ahí y no es plata retenida; contarla como retención inventaría una.
+    const csv = [
+      "Nro;Tipo Doc;Rut Proveedor;Razon Social;Folio;Fecha Docto;Monto Exento;Monto Neto;Monto IVA Recuperable;Codigo Otro Imp.;Valor Otro Imp.;Monto total",
+      "1;33;76111111-1;COPEC S.A.;900;16-09-2026;0;100000;19000;28;5000;124000",
+    ].join("\n");
+    const { records } = parseSiiRcvCsv(utf8(csv));
+    expect(records[0].otroImpuestoCategory).toBe("combustible");
+    expect(records[0].ivaRetenido).toBe(0);
+    expect(records[0].ivaRetenidoTipo).toBe(null);
+    expect(records[0].retencionTasa).toBe(null);
+  });
+
+  it("26 y 27 no son tabaco", () => {
+    expect(otroImpuestoLabel(26)).toMatch(/cerveza/i);
+    expect(otroImpuestoCategory(26)).toBe("alcohol");
+    expect(otroImpuestoLabel(27)).toMatch(/analcoh[oó]lica/i);
+    expect(otroImpuestoCategory(27)).toBe("bebidas");
   });
 });

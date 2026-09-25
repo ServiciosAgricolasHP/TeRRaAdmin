@@ -2030,7 +2030,7 @@ export default function Facturacion() {
                           <span className={isNC ? "rounded px-1.5 py-0.5 bg-[var(--color-danger-soft)] text-[var(--color-danger)]" : ""}>
                             {d.tipoLabel || dteTypeLabel(d.tipo)}
                           </span>
-                          <OtroImpChip code={d.otroImpuestoCodigo} />
+                          <OtroImpChip code={d.otroImpuestoCodigo} tasa={d.retencionTasa} />
                           <span className="font-mono">· Folio {d.folio}</span>
                         </div>
                         <div className="mt-0.5 truncate text-sm font-medium">{razon || "—"}</div>
@@ -2165,7 +2165,7 @@ export default function Facturacion() {
                       <span className={isNC ? "rounded px-1.5 py-0.5 bg-[var(--color-danger-soft)] text-[var(--color-danger)]" : ""}>
                         {d.tipoLabel || dteTypeLabel(d.tipo)}
                       </span>
-                      <OtroImpChip code={d.otroImpuestoCodigo} />
+                      <OtroImpChip code={d.otroImpuestoCodigo} tasa={d.retencionTasa} />
                     </td>
                     <td className="px-2 py-1.5 text-right font-mono tabular-nums">{d.folio}</td>
                     <td className="px-2 py-1.5 truncate max-w-[260px]">{razon || "—"}</td>
@@ -4564,7 +4564,7 @@ function DocDetailModal({ dteDoc, candidateNcs = [], costCenters = [], onClose, 
                 <span className="font-mono text-xs">Cód. {dteDoc.otroImpuestoCodigo}</span>
                 <span>·</span>
                 <span>{otroImpuestoLabel(dteDoc.otroImpuestoCodigo)}</span>
-                <OtroImpChip code={dteDoc.otroImpuestoCodigo} />
+                <OtroImpChip code={dteDoc.otroImpuestoCodigo} tasa={dteDoc.retencionTasa} />
                 {dteDoc.otrosImpuestos > 0 && (
                   <span className="ml-auto text-xs text-[var(--color-muted)]">
                     Valor: <span className="tabular-nums text-[var(--color-text)]">{fmtCurrency(dteDoc.otrosImpuestos)}</span>
@@ -4636,14 +4636,20 @@ function DocDetailModal({ dteDoc, candidateNcs = [], costCenters = [], onClose, 
 }
 
 // Chip pequeño que muestra el "Otro Impuesto" detectado del SII. Cuando el
-// código es de combustible (28 gasolina, 35 diésel, etc.) lo destacamos en
-// rojo + emoji ⛽ para que se identifique de un pantallazo. Para los demás
-// códigos cae al label genérico. Si no hay código, no renderiza nada.
-function OtroImpChip({ code }) {
+// código es de combustible lo destacamos en rojo + emoji ⛽ para que se
+// identifique de un pantallazo. Si no hay código, no renderiza nada.
+//
+// En las retenciones de cambio de sujeto el chip agrega la **tasa**, porque
+// esa es la pregunta real frente a una factura de compra: no "hay retención"
+// —eso ya se sabe— sino si fue el 19% completo o una parcial del 14%. El
+// `Monto Total` del RCV ya viene con la retención descontada, así que mirando
+// la fila no se puede deducir.
+function OtroImpChip({ code, tasa }) {
   if (!code) return null;
   const cat = otroImpuestoCategory(code);
   const meta = cat ? OTRO_IMP_CATEGORIES[cat] : null;
   const label = otroImpuestoLabel(code) || `Cód. ${code}`;
+  const sufijo = cat === "retencion" && tasa > 0 ? ` ${tasa}%` : "";
   const colorCls = !meta || meta.color === "muted"
     ? "bg-[var(--color-surface-2)] text-[var(--color-muted)]"
     : meta.color === "danger"
@@ -4657,7 +4663,7 @@ function OtroImpChip({ code }) {
       className={`ml-1 inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[9px] font-medium ${colorCls}`}
     >
       <span>{meta?.emoji || "•"}</span>
-      <span className="hidden sm:inline">{meta?.label || label}</span>
+      <span className="hidden sm:inline">{(meta?.label || label) + sufijo}</span>
     </span>
   );
 }
