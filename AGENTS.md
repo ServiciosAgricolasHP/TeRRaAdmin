@@ -697,6 +697,21 @@ Tab **📊 Resumen**: vista que **cruza los 12 meses** de un año para la empres
 - **Tabla mensual** (Ene–Dic + TOTAL): Ventas Neto · IVA Débito · Compras Neto · IVA Crédito · **IVA a pagar del mes**. Meses sin actividad atenuados.
 - Exports: misma toolbar 📋📥🖨📊. `PrintableResumen` (forwardRef) off-screen. XLSX respeta la convención col A vacía width 6 + fila 1 vacía, con el balance de IVA en el encabezado. Filename `Resumen_{empresa}_{año}`.
 
+### Proyección de flujo de caja (tab, solo admin)
+
+Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro es una decisión, no operación del día. Estima una temporada escalando la anterior — ventas netas de los 12 meses previos, **mes a mes**, por un porcentaje (75% por default).
+
+- **La ventana son 12 meses desde el mes elegido**: "Septiembre 2026-2027" = sep-2026 … ago-2027, y su base es sep-2025 … ago-2026. Las dos etiquetas usan la misma convención, así que nunca se superponen. Una ventana que no cruza de año se rotula "Enero 2026" a secas: `2026-2026` se lee como un error de la app.
+- **Mes a mes y no un total anual repartido en doceavos.** El punto de un flujo de caja es saber *cuándo* entra la plata, y acá la temporada es estacional — el promedio parejo esconde justo eso. Cada mes proyectado se cruza contra **el mismo mes** del período anterior.
+- **Solo entran ventas.** Las compras son salidas y no tienen nada que hacer en una proyección de entradas. Las **NC restan**, y van al detalle con signo: si se filtraran, el Excel mostraría un total que sus propias filas no dan.
+- **El redondeo va por mes y el total es la suma de los meses redondeados**, no el redondeo de la suma. El Excel imprime la columna, así que el total al pie tiene que ser el de la columna o no cuadra a ojo.
+- **Cuesta 0 lecturas**: sale entero de `docs`, que ya tiene la colección completa en memoria (TTL 10 min).
+- **Lógica pura en `utils/cashFlowProjection.js`** (`projectCashFlow`, `netSalesByPeriod`, `groupByCounterparty`, `shiftPeriod`, `periodWindow`, `windowLabel`), con tests en `cashFlowProjection.test.js`. La aritmética de meses va con **enteros, nunca con `Date`**: un período es la etiqueta `YYYY-MM` del RCV, no un instante, y con `Date` una zona horaria corre un documento al mes de al lado.
+- **`CREDIT_NOTE_TYPES` vive ahí** y `Facturacion.jsx` lo importa. La proyección y la pantalla tienen que coincidir en que una NC resta; si divergen, la base sale inflada. (`Dashboard.jsx` todavía tiene su propia copia — limpieza pendiente.)
+- **Export XLSX de dos hojas**: `Ventas netas` (banner con el neto de la base, bloque **por cliente** ordenado por monto, y el detalle documento por documento con fecha/período/tipo DTE/folio/cliente/RUT/neto, NC en rojo) y `Proyección` (12 filas mes a mes + total). El bloque por cliente no lo pidió nadie pero es lo que muestra de dónde viene la base: una proyección sostenida por dos clientes no se lee igual que una repartida entre veinte.
+- **El porcentaje va en UNA celda (`C4` de la hoja `Proyección`) y las filas la referencian** con `ROUND(D7*$C$4,0)`. Quien recibe el archivo mueve el supuesto en Excel y ve la temporada entera recalcularse, en vez de pedir otra corrida por cada escenario.
+- **`isAnalysisTab`** (`resumen` + `proyeccion`) apaga filtros, tarjetas y tabla del listado. El gate se repite en cuatro lugares: con un `kindTab !== "resumen"` suelto, cada tab nuevo obliga a encontrarlos todos de nuevo.
+
 ## Libro de Precios / PriceBook
 
 - Pantalla: `src/screens/PriceBook.jsx`. Ruta `/price-book`. Colecciones `priceBookEntries` + `priceBookConfig/main`.
