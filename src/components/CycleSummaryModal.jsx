@@ -1447,8 +1447,13 @@ export default function CycleSummaryModal({
   // El fallback compartido se emite UNA vez por día (`shared`) y no por labor:
   // en un ciclo viejo el mismo texto saldría repetido tantas veces como
   // labores tenga.
+  //
+  // Va en **pagar**, no en cobrar: son apuntes internos ("se cortó la luz",
+  // "llegó tarde el camión") y el resumen de cobrar es el que se manda al
+  // cliente. Sirven para revisar la jornada de este lado, no para explicarle
+  // nada a quien recibe la factura.
   const dayNotesSummary = useMemo(() => {
-    if (mode !== "cobrar") return [];
+    if (mode !== "pagar") return [];
     const byLabor = cycle?.dayNotesByLabor || {};
     const legacy = cycle?.dayNotes || {};
     const byDate = new Map();
@@ -1456,8 +1461,7 @@ export default function CycleSummaryModal({
       if (!byDate.has(date)) byDate.set(date, { date, shared: "", entries: [] });
       return byDate.get(date);
     };
-    for (const cl of cobrarLabors) {
-      if (cl.include === false) continue;
+    for (const cl of laborsData) {
       const laborId = cl.labor.id;
       const name = titles.laborNames?.[laborId] || cl.labor.name;
       const own = byLabor[laborId] || {};
@@ -1465,7 +1469,7 @@ export default function CycleSummaryModal({
       // nota: un día sin producción igual puede llevar una observación, y
       // perderla acá es peor que mostrar una fila de más.
       const dates = new Set(Object.keys(own));
-      for (const r of cl.chargedRows || cl.rows || []) if (r.date) dates.add(r.date);
+      for (const r of cl.rows || []) if (r.date) dates.add(r.date);
       for (const date of dates) {
         const propia = String(own[date] || "").trim();
         if (propia) bucket(date).entries.push({ laborId, name, text: propia });
@@ -1478,7 +1482,7 @@ export default function CycleSummaryModal({
     return [...byDate.values()]
       .filter((g) => g.shared || g.entries.length > 0)
       .sort((a, b) => a.date.localeCompare(b.date));
-  }, [mode, cycle?.dayNotesByLabor, cycle?.dayNotes, cobrarLabors, titles.laborNames]);
+  }, [mode, cycle?.dayNotesByLabor, cycle?.dayNotes, laborsData, titles.laborNames]);
 
   // Subtotal del cobro = suma de labors + carriers incluidos. NO descuenta nada.
   // Se usa como fila "Subtotal" en el desglose cuando hay descuento aplicado.
@@ -3232,21 +3236,18 @@ const PrintableSummary = forwardRef(function PrintableSummary(
         </tbody>
       </table>
 
-      {/* Observaciones por día — anexo, después del total: es el contexto del
-          cobro, no parte del cálculo. Solo en cobrar; en pagar el resumen ya
-          baja al detalle por trabajador. */}
-      {mode === "cobrar" && dayNotes.length > 0 && (
-        <DayNotesTable
-          notes={dayNotes}
-          showLaborNames={labors.filter((ld) => ld.include !== false).length > 1}
-        />
+      {/* Observaciones por día — anexo, después del total: es contexto de la
+          jornada, no parte del cálculo. Solo en pagar: son apuntes internos y
+          el resumen de cobrar es el que se manda al cliente. */}
+      {mode === "pagar" && dayNotes.length > 0 && (
+        <DayNotesTable notes={dayNotes} showLaborNames={labors.length > 1} />
       )}
     </div>
   );
 });
 
 // ============================================================
-// Observaciones por día (cobrar)
+// Observaciones por día (pagar)
 // ============================================================
 // Agrupa por fecha y, dentro de la fecha, una línea por labor. `showLaborNames`
 // llega apagado cuando el resumen trae una sola labor: ahí el nombre es ruido,
