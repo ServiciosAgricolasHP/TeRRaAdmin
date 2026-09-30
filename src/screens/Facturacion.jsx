@@ -1641,48 +1641,50 @@ export default function Facturacion() {
         c.border = box;
       };
 
-      // ---------- Hoja 1: ventas netas del período base ----------
-      const ws1 = wb.addWorksheet("Ventas netas");
+      // ---------- Hoja 1: ingresos del período base ----------
+      const ws1 = wb.addWorksheet("Ingresos");
       ws1.getColumn(1).width = 6; // convención del proyecto: col A vacía
-      [13, 12, 26, 10, 34, 15, 16].forEach((w, i) => { ws1.getColumn(2 + i).width = w; });
+      [13, 11, 26, 10, 32, 15, 15, 13, 15, 15].forEach((w, i) => { ws1.getColumn(2 + i).width = w; });
 
-      ws1.getCell("B2").value = `VENTAS NETAS — ${proyeccion.baseLabel}`;
+      ws1.getCell("B2").value = `INGRESOS — ${proyeccion.baseLabel}`;
       ws1.getCell("B2").font = { bold: true, size: 14 };
-      ws1.mergeCells("B2:H2");
+      ws1.mergeCells("B2:K2");
       ws1.getCell("B3").value =
-        `${empresa} · ${proyeccion.baseCount} documentos de venta · solo entradas (las compras no entran)`;
+        `${empresa} · ${proyeccion.baseCount} documentos de venta · solo entradas (las compras no entran)` +
+        ` · las facturas de compra entran solo por el neto porque el IVA lo retiene el cliente`;
       ws1.getCell("B3").font = { italic: true, color: { argb: "FF555555" } };
-      ws1.mergeCells("B3:H3");
+      ws1.mergeCells("B3:K3");
 
-      ws1.getCell("B5").value = "VENTAS NETAS DEL PERÍODO BASE";
-      ws1.mergeCells("B5:F5");
-      ws1.getCell("G5").value = proyeccion.baseTotal;
-      ws1.mergeCells("G5:H5");
-      for (const ref of ["B5", "G5"]) {
+      ws1.getCell("B5").value = "INGRESOS DEL PERÍODO BASE";
+      ws1.mergeCells("B5:H5");
+      ws1.getCell("I5").value = proyeccion.baseTotal;
+      ws1.mergeCells("I5:K5");
+      for (const ref of ["B5", "I5"]) {
         const c = ws1.getCell(ref);
-        c.font = { bold: true, size: ref === "G5" ? 16 : 12 };
+        c.font = { bold: true, size: ref === "I5" ? 16 : 12 };
         c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF2CC" } };
-        c.alignment = { horizontal: ref === "G5" ? "right" : "left", vertical: "middle" };
+        c.alignment = { horizontal: ref === "I5" ? "right" : "left", vertical: "middle" };
         c.border = box;
       }
-      ws1.getCell("G5").numFmt = money;
+      ws1.getCell("I5").numFmt = money;
       ws1.getRow(5).height = 24;
 
       // Bloque por cliente — de dónde viene la base. Una proyección sostenida
       // por dos clientes no se lee igual que una repartida entre veinte.
       ws1.getCell("B7").value = "Por cliente";
       ws1.getCell("B7").font = { bold: true, size: 12 };
-      ["RUT", "Razón social", "Documentos", "Neto"].forEach((h, i) =>
+      ["RUT", "Razón social", "Documentos", "Neto", "Ingreso"].forEach((h, i) =>
         header(ws1, 8, 2 + i, h, i >= 2 ? "right" : "left"));
       let r1 = 9;
       for (const g of proyeccionPorCliente) {
-        const vals = [formatRutForDisplay(g.rut) || g.rut, g.razonSocial, g.count, g.neto];
+        const vals = [formatRutForDisplay(g.rut) || g.rut, g.razonSocial, g.count, g.neto, g.monto];
         vals.forEach((v, j) => {
           const c = ws1.getCell(r1, 2 + j);
           c.value = v;
           c.alignment = { horizontal: j >= 2 ? "right" : "left" };
           c.border = box;
-          if (j === 3) c.numFmt = money;
+          if (j >= 3) c.numFmt = money;
+          if (j === 4) c.font = { bold: true };
         });
         r1++;
       }
@@ -1690,24 +1692,31 @@ export default function Facturacion() {
         const tr = r1;
         ws1.getCell(tr, 2).value = "TOTAL";
         ws1.getCell(tr, 4).value = { formula: `SUM(D9:D${r1 - 1})`, result: proyeccion.baseCount };
-        ws1.getCell(tr, 5).value = { formula: `SUM(E9:E${r1 - 1})`, result: proyeccion.baseTotal };
-        for (let col = 2; col <= 5; col++) {
+        ws1.getCell(tr, 5).value = {
+          formula: `SUM(E9:E${r1 - 1})`,
+          result: proyeccionPorCliente.reduce((acc, g) => acc + g.neto, 0),
+        };
+        ws1.getCell(tr, 6).value = { formula: `SUM(F9:F${r1 - 1})`, result: proyeccion.baseTotal };
+        for (let col = 2; col <= 6; col++) {
           const c = ws1.getCell(tr, col);
           c.font = { bold: true };
           c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
           c.alignment = { horizontal: col >= 4 ? "right" : "left" };
           c.border = box;
-          if (col === 5) c.numFmt = money;
+          if (col >= 5) c.numFmt = money;
         }
         r1 = tr + 1;
       }
 
-      // Bloque de detalle — un documento por fila.
+      // Bloque de detalle — un documento por fila. Va con neto, IVA y total
+      // además del ingreso: sin el desglose, una factura de compra que aporta
+      // menos que neto + IVA parece un error de la planilla.
       const detStart = r1 + 2;
       ws1.getCell(detStart - 1, 2).value = "Detalle de documentos";
       ws1.getCell(detStart - 1, 2).font = { bold: true, size: 12 };
-      ["Fecha", "Período", "Tipo de documento", "Folio", "Cliente", "RUT", "Neto"]
-        .forEach((h, i) => header(ws1, detStart, 2 + i, h, i === 3 || i === 6 ? "right" : "left"));
+      const DET_NUM = new Set([3, 6, 7, 8, 9]); // folio + los cuatro montos
+      ["Fecha", "Período", "Tipo de documento", "Folio", "Cliente", "RUT", "Neto", "IVA", "Total SII", "Ingreso"]
+        .forEach((h, i) => header(ws1, detStart, 2 + i, h, DET_NUM.has(i) ? "right" : "left"));
       let dr = detStart + 1;
       for (const d of proyeccion.detail) {
         const vals = [
@@ -1718,30 +1727,41 @@ export default function Facturacion() {
           d.razonSocial,
           formatRutForDisplay(d.rut) || d.rut,
           d.neto,
+          d.iva,
+          d.total,
+          d.monto,
         ];
         vals.forEach((v, j) => {
           const c = ws1.getCell(dr, 2 + j);
           c.value = v;
-          c.alignment = { horizontal: j === 3 || j === 6 ? "right" : "left" };
+          c.alignment = { horizontal: DET_NUM.has(j) ? "right" : "left" };
           c.border = box;
-          if (j === 6) c.numFmt = money;
+          if (j >= 6) c.numFmt = money;
           // Las NC restan; en rojo para que la fila negativa no se lea como un
           // error de tipeo del que armó la planilla.
           if (d.isNc) c.font = { color: { argb: "FFB00000" } };
+          // El ingreso va en negrita, y destacado cuando no coincide con el
+          // total del SII: ahí es donde se ve la retención.
+          if (j === 9) {
+            c.font = { bold: true, color: { argb: d.isNc ? "FFB00000" : "FF000000" } };
+            if (d.conRetencion) {
+              c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF2CC" } };
+            }
+          }
         });
         dr++;
       }
       if (proyeccion.detail.length > 0) {
         const tr = dr;
         ws1.getCell(tr, 2).value = "TOTAL";
-        ws1.getCell(tr, 8).value = { formula: `SUM(H${detStart + 1}:H${dr - 1})`, result: proyeccion.baseTotal };
-        for (let col = 2; col <= 8; col++) {
+        ws1.getCell(tr, 11).value = { formula: `SUM(K${detStart + 1}:K${dr - 1})`, result: proyeccion.baseTotal };
+        for (let col = 2; col <= 11; col++) {
           const c = ws1.getCell(tr, col);
           c.font = { bold: true };
           c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
-          c.alignment = { horizontal: col === 8 ? "right" : "left" };
+          c.alignment = { horizontal: col === 11 ? "right" : "left" };
           c.border = box;
-          if (col === 8) c.numFmt = money;
+          if (col === 11) c.numFmt = money;
         }
       }
 
@@ -1753,7 +1773,10 @@ export default function Facturacion() {
       ws2.getCell("B2").value = `PROYECCIÓN DE FLUJO DE CAJA — ${proyeccion.targetLabel}`;
       ws2.getCell("B2").font = { bold: true, size: 14 };
       ws2.mergeCells("B2:E2");
-      ws2.getCell("B3").value = `${empresa} · base: ventas netas de ${proyeccion.baseLabel}`;
+      ws2.getCell("B3").value =
+        `${empresa} · base: ingresos de ${proyeccion.baseLabel}` +
+        ` · ${proyeccion.mesesReales} ${proyeccion.mesesReales === 1 ? "mes real" : "meses reales"}` +
+        ` y ${proyeccion.mesesEstimados} ${proyeccion.mesesEstimados === 1 ? "estimado" : "estimados"}`;
       ws2.getCell("B3").font = { italic: true, color: { argb: "FF555555" } };
       ws2.mergeCells("B3:E3");
 
@@ -1770,25 +1793,39 @@ export default function Facturacion() {
       pctCell.border = box;
 
       const HR2 = 6;
-      ["Mes proyectado", "Período base", "Ventas netas base", "Proyectado"]
+      ["Mes proyectado", "Origen", "Ingreso base", "Monto"]
         .forEach((h, i) => header(ws2, HR2, 2 + i, h, i >= 2 ? "right" : "left"));
       let r2 = HR2 + 1;
       for (const row of proyeccion.rows) {
-        const vals = [formatPeriod(row.periodo), row.basePeriodo, row.baseNeto, null];
+        const origen = row.esReal
+          ? `Real · ${row.realCount} doc.`
+          : `${row.basePeriodo} × ${proyeccion.percent}%`;
+        const vals = [formatPeriod(row.periodo), origen, row.esReal ? null : row.baseMonto, null];
         vals.forEach((v, j) => {
           const c = ws2.getCell(r2, 2 + j);
-          if (j === 3) c.value = { formula: `ROUND(D${r2}*$C$4,0)`, result: row.proyectado };
-          else c.value = v;
+          // El mes real va como valor literal y NO como fórmula: si colgara de
+          // C4, mover el supuesto en Excel movería un número ya facturado.
+          if (j === 3) {
+            c.value = row.esReal ? row.monto : { formula: `ROUND(D${r2}*$C$4,0)`, result: row.proyectado };
+          } else {
+            c.value = v;
+          }
           c.alignment = { horizontal: j >= 2 ? "right" : "left" };
           c.border = box;
           if (j >= 2) c.numFmt = money;
-          if (j === 3) c.font = { bold: true };
+          if (j === 3) c.font = { bold: true, color: { argb: row.esReal ? "FF1F7A1F" : "FF000000" } };
+          if (j === 1 && row.esReal) c.font = { bold: true, color: { argb: "FF1F7A1F" } };
         });
         r2++;
       }
       const totalRow2 = r2;
       ws2.getCell(totalRow2, 2).value = `TOTAL ${proyeccion.targetLabel}`;
-      ws2.getCell(totalRow2, 4).value = { formula: `SUM(D${HR2 + 1}:D${r2 - 1})`, result: proyeccion.baseTotal };
+      // Solo suma las bases de los meses estimados: los reales dejan la celda
+      // vacía porque su base no se usó para nada.
+      ws2.getCell(totalRow2, 4).value = {
+        formula: `SUM(D${HR2 + 1}:D${r2 - 1})`,
+        result: proyeccion.rows.reduce((acc, row) => acc + (row.esReal ? 0 : row.baseMonto), 0),
+      };
       ws2.getCell(totalRow2, 5).value = { formula: `SUM(E${HR2 + 1}:E${r2 - 1})`, result: proyeccion.total };
       for (let col = 2; col <= 5; col++) {
         const c = ws2.getCell(totalRow2, col);
@@ -1803,8 +1840,11 @@ export default function Facturacion() {
       ws2.getCell(notaRow, 2).value =
         "Cada mes se proyecta desde el mismo mes del período anterior, no repartiendo el total en doceavos: " +
         "la temporada es estacional y el promedio parejo esconde cuándo entra la plata. " +
-        "Cambiando el porcentaje de C4 se recalcula la temporada entera. " +
-        "Solo entran ventas (entradas); las notas de crédito restan.";
+        "Los meses marcados \"Real\" ya están facturados y valen su dato: van como valor fijo y NO se mueven " +
+        "al cambiar el porcentaje de C4, que solo recalcula los meses estimados. " +
+        "Solo entran ventas (entradas); las notas de crédito restan. " +
+        "Una factura de compra entra solo por su neto, porque el IVA lo retiene el cliente y nunca se cobra; " +
+        "el resto entra por el Monto Total del SII. El desglose está en la hoja Ingresos.";
       ws2.getCell(notaRow, 2).font = { italic: true, size: 9, color: { argb: "FF666666" } };
       ws2.getCell(notaRow, 2).alignment = { wrapText: true, vertical: "top" };
       ws2.mergeCells(notaRow, 2, notaRow + 2, 5);
@@ -2162,21 +2202,34 @@ export default function Facturacion() {
 
               <p className="text-xs text-[var(--color-muted)]">
                 Proyección <strong>{proyeccion.targetLabel}</strong> — cada mes se estima desde el mismo mes de{" "}
-                <strong>{proyeccion.baseLabel}</strong> multiplicado por el porcentaje. Solo entran las{" "}
+                <strong>{proyeccion.baseLabel}</strong> multiplicado por el porcentaje, <strong>salvo los meses
+                que ya tienen ventas cargadas</strong>, que valen su dato real. Solo entran las{" "}
                 <strong>ventas</strong> (las compras son salidas y quedan fuera); las notas de crédito restan.
+                Una <strong>factura de compra entra solo por su neto</strong> —el IVA lo retiene el cliente y
+                nunca se cobra—; el resto entra con IVA incluido.
               </p>
 
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <SummaryCard label={`Ventas netas ${proyeccion.baseLabel}`} value={fmtCurrency(proyeccion.baseTotal)} />
-                <SummaryCard label="Documentos de la base" value={fmtNumber(proyeccion.baseCount)} subtle />
+              {proyeccion.rows.some((r) => r.esReal && r.periodo === currentPeriod()) && (
+                <p className="rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-3 py-2 text-xs text-[var(--color-warning)]">
+                  ⚠ {formatPeriod(currentPeriod())} es el mes en curso: su dato real puede estar incompleto y
+                  arrastrar el total para abajo.
+                </p>
+              )}
+
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <SummaryCard label={`Ingresos ${proyeccion.baseLabel}`} value={fmtCurrency(proyeccion.baseTotal)} subtle />
                 <SummaryCard
-                  label={`Proyección ${proyeccion.targetLabel} (${proyeccion.percent}%)`}
-                  value={fmtCurrency(proyeccion.total)}
-                  highlight
+                  label={`Real · ${proyeccion.mesesReales} ${proyeccion.mesesReales === 1 ? "mes" : "meses"}`}
+                  value={fmtCurrency(proyeccion.totalReal)}
                 />
+                <SummaryCard
+                  label={`Estimado · ${proyeccion.mesesEstimados} ${proyeccion.mesesEstimados === 1 ? "mes" : "meses"} al ${proyeccion.percent}%`}
+                  value={fmtCurrency(proyeccion.totalProyectado)}
+                />
+                <SummaryCard label={`Total ${proyeccion.targetLabel}`} value={fmtCurrency(proyeccion.total)} highlight />
               </div>
 
-              {sinBase ? (
+              {sinBase && proyeccion.mesesReales === 0 ? (
                 <div className="flex h-40 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-[var(--color-border)] px-4 text-center text-sm text-[var(--color-muted)]">
                   <div>No hay ventas importadas en {proyeccion.baseLabel}.</div>
                   <div className="text-xs">
@@ -2188,29 +2241,44 @@ export default function Facturacion() {
                   <table className="w-full text-sm">
                     <thead className="sticky top-0 bg-[var(--color-surface-2)] text-xs uppercase tracking-wide text-[var(--color-muted)]">
                       <tr>
-                        <th className="px-2 py-2 text-left">Mes proyectado</th>
-                        <th className="px-2 py-2 text-left">Período base</th>
-                        <th className="px-2 py-2 text-right">Ventas netas base</th>
-                        <th className="px-2 py-2 text-right">Proyectado</th>
+                        <th className="px-2 py-2 text-left">Mes</th>
+                        <th className="px-2 py-2 text-left">Origen</th>
+                        <th className="px-2 py-2 text-right">Ingreso base</th>
+                        <th className="px-2 py-2 text-right">Monto</th>
                       </tr>
                     </thead>
                     <tbody>
                       {proyeccion.rows.map((row) => (
                         <tr
                           key={row.periodo}
-                          className={`border-t border-[var(--color-border)] ${row.baseCount === 0 ? "text-[var(--color-muted)]" : ""}`}
+                          className={`border-t border-[var(--color-border)] ${
+                            !row.esReal && row.baseCount === 0 ? "text-[var(--color-muted)]" : ""
+                          }`}
                         >
                           <td className="px-2 py-1.5">{formatPeriod(row.periodo)}</td>
-                          <td className="px-2 py-1.5 text-xs">{row.basePeriodo}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(row.baseNeto)}</td>
-                          <td className="px-2 py-1.5 text-right font-semibold tabular-nums">{fmtCurrency(row.proyectado)}</td>
+                          <td className="px-2 py-1.5 text-xs">
+                            {row.esReal ? (
+                              <span className="rounded-full bg-[var(--color-success-soft)] px-1.5 py-0.5 font-semibold text-[var(--color-success)]">
+                                ✓ real · {row.realCount} doc.
+                              </span>
+                            ) : (
+                              <span className="text-[var(--color-muted)]">
+                                {row.basePeriodo} × {proyeccion.percent}%
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">
+                            {row.esReal ? <span className="text-[var(--color-muted)]">—</span> : fmtCurrency(row.baseMonto)}
+                          </td>
+                          <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${row.esReal ? "text-[var(--color-success)]" : ""}`}>
+                            {fmtCurrency(row.monto)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
                     <tfoot>
                       <tr className="border-t-2 border-[var(--color-border)] bg-[var(--color-surface-2)] font-semibold">
-                        <td className="px-2 py-2" colSpan={2}>TOTAL {proyeccion.targetLabel}</td>
-                        <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(proyeccion.baseTotal)}</td>
+                        <td className="px-2 py-2" colSpan={3}>TOTAL {proyeccion.targetLabel}</td>
                         <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(proyeccion.total)}</td>
                       </tr>
                     </tfoot>
