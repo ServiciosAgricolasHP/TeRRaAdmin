@@ -405,7 +405,7 @@ Caso real: salen las transferencias pero el efectivo no se alcanza a entregar y 
 - **Guards**: con `bankPaidAt` puesto la nómina no se puede editar ni eliminar (`assertEditable` en el servicio + chequeo en `onDelete`). Sacar un trabajador de banco liberaría sus días y le restauraría anticipos a alguien que ya tiene la plata en la cuenta.
 - **Dónde se ve**: pill de 3 caras y filtro "💵 Efectivo pendiente" en el Historial (la barra de totales cuenta como pendiente solo lo realmente adeudado); "Falta entregar" en el tile 💵 del detalle; línea informativa en **Generar → paso 1**; y el `CashEstimationModal` puede sumar el efectivo pendiente de otras nóminas para que el conteo de billetes y sencillo cuadre. **Los sobres y detalles NO se fusionan** — cada nómina imprime lo suyo.
 - Workdays con `payrollId` se filtran del preview (ya no entran a otra nómina).
-- Eliminar nómina → `untagWorkdaysFromPayroll` + `restoreAdvancesFromPayroll`. Workdays vuelven a estar disponibles.
+- Eliminar nómina → `untagWorkdaysFromPayroll` + `restoreAdvancesFromPayroll`. Workdays vuelven a estar disponibles. Achicarla (sacar ciclo/trabajador, recalcular) tiene sus propias reglas — ver la sección siguiente.
 - Marcar pagada → sello `paidAt` en los workdays. Revertir → quita `paidAt`.
 
 ### XLSX (BChile)
@@ -427,6 +427,28 @@ Botones de descarga:
 - **Email default BChile**: si el trabajador no tiene email se completa con `remuneracionesis@gmail.com` (constante `BCHILE_DEFAULT_EMAIL` en `utils/payroll.js`). El banco rechaza filas sin email.
 - **Identificador alfa-numérico**: la columna identificador del BChile usa `A001..A999` (zero-padded) y los nombres se ordenan alfabéticamente con `localeCompare("es", { sensitivity: "base" })`. Filas con `amount === 0` se filtran (el banco rechaza transferencias de $0).
   - **Las filas se arman en `buildBchileRows(items)`, aparte de ExcelJS** (`utils/payroll.js`, exportada). `buildBchileSheet` solo las escribe y estiliza. Tres reglas deciden a dónde va la plata y ninguna se podía probar con el workbook de por medio: el filtro de cero-neto, el orden alfabético que hace **estable** el correlativo entre corridas, y el `paymentRut || rut`. Cubiertas en `utils/bchile.test.js`, que nombra los índices de columna — una fila corrida manda la transferencia a otra cuenta y el archivo igual se sube sin error.
+
+### Achicar una nómina pendiente (sacar ciclo, sacar trabajador, recalcular)
+
+**La regla: la nómina tiene que quedar igual que si se hubiera armado sin lo que se le sacó, y cada anticipo tiene que reflejar exactamente lo que esa nómina le descuenta.** Sin registros nuevos, sin anticipos marcados como cobrados por una nómina que no los retuvo.
+
+- **El bug que la motivó (sacar ciclo)**: `byCycle` guarda una entrada por **cada** ciclo de la nómina, incluso en $0 (así lo arma "Generar"). El chequeo de "¿le queda algo a este trabajador?" contaba las claves de `byCycle`, así que quien solo trabajó en el ciclo sacado quedaba con `{ otroCiclo: 0 }` y pasaba como reducción parcial: seguía en la nómina con bruto 0 y el anticipo aplicado. La nómina siguiente no lo veía como pendiente y **nunca se descontaba** — la empresa perdía el anticipo entero.
+- **Segundo bug, mismo camino (cobertura parcial)**: si al trabajador le quedaba producción en otro ciclo pero no alcanzaba, el anticipo quedaba aplicado entero y `Math.max(0, neto)` se tragaba la diferencia. Esa diferencia figuraba cobrada y no se retenía en ninguna nómina.
+- **Recalcular tenía el mismo problema resuelto al revés**: dejaba el anticipo original aplicado entero y creaba un anticipo **nuevo** por el saldo ("Saldo pendiente por recálculo…"). No se perdía plata, pero el original mentía y quedaba un anticipo que nadie dio. Ya no se crea.
+
+Cómo se resuelve ahora — la lógica vive en `utils/payrollItem.js`, con tests en `utils/payrollRefit.test.js` y `tests/e2e/sacar-ciclo-anticipos.test.js`:
+
+- **Quien se queda con bruto 0 sale entero** (`planCycleRemoval`, `planRecalcExisting`). El corte es por bruto y no por las claves de `byCycle`: es el mismo criterio que usa "Generar" (`a.total > 0`), que es lo que hace que el resultado sea "como si se hubiera armado sin eso". Suelta todos sus anticipos **y bonos** de esa nómina (el bono se paga en la nómina donde sí tenga producción) y todas sus jornadas, incluidas las de $0 de otros ciclos.
+- **Quien sigue re-encaja lo ya aplicado en su bruto nuevo** (`refitAppliedAdvances`): bonos enteros, anticipos del más viejo al más nuevo topeados por `bruto + bonos` — el mismo orden que `allocateAdvances`, así que se achica primero el más nuevo. Lo que no cabe **vuelve al mismo anticipo**, con su fecha y su plan de cuotas originales.
+  - **Solo achica, nunca agranda.** Cada monto ya se validó contra el saldo del anticipo al aplicarlo, así que bajarlo siempre es válido sin mirar cuotas. Si la producción sube, lo ya aplicado no crece solo; un anticipo pendiente lo toma el resto del recálculo como anticipo nuevo.
+  - El neto sale como `bruto − anticipos + bonos` **sin ningún `Math.max`**: los anticipos ya se toparon. Un tope escondido ahí es exactamente como se perdía la plata.
+- **La fuente de verdad de "cuánto descontó esta nómina" es el `payments[]` del anticipo** (`readPayrollApplications`), no la copia en el item. Es lo mismo que leen el borrado de la nómina y la pantalla de Anticipos. Si el documento del anticipo ya no existe se respeta lo que dice el item (marcado `missing`, no se escribe): descontar de menos por algo que no se puede verificar es peor.
+- **`setPayrollAdvanceAmounts(payrollId, targets)`** fija cuánto descuenta UNA nómina de cada anticipo sin tocar lo de otras nóminas. Antes las únicas operaciones eran aplicar o soltar entero (`restoreAdvancesFromPayroll`), y la cobertura parcial no tenía cómo expresarse. Reescribe la entrada **en su lugar y con su `paidAt` original** —el hint "última cuota hace N días" sale de ahí, y achicar no es un pago nuevo— y topea contra el saldo que dejan las otras nóminas. Con 0 equivale a restaurar.
+- **Recalcular repara las nóminas que quedaron mal** antes de este cambio: además de los cambios de producción, re-reparte a quien tenga más descontado del que su bruto respalda (`isOverApplied`) y saca a quien quedó con bruto 0. Esas nóminas no tenían "cambios" que detectar, así que el recálculo viejo no las tocaba.
+- **Recalcular etiqueta exactamente las jornadas de los items** y suelta las que le quedaron etiquetadas sin estar en ninguno. Antes etiquetaba todo lo vigente de los ciclos, incluidas las jornadas de $0 de gente que no estaba en la nómina.
+- **Sacar ciclo también suelta las jornadas de $0 del ciclo**, que antes quedaban etiquetadas: con aporte 0 el trabajador se salteaba entero.
+- **El snapshot acompaña** (`pruneSnapshot` en `services/payrollSnapshots.js`): sacar un ciclo o un trabajador deja el JSON sin la persona que salió, sin sus jornadas y sin sus anticipos, con la cabecera de totales al día. Antes ninguno de los dos tocaba el snapshot, y ahí seguía alguien cobrando algo que no se le iba a pagar. El recálculo también actualiza la cabecera, que antes quedaba con los totales viejos.
+- **Limitación conocida**: sacar un ciclo y volver a agregarlo no deja la nómina igual que antes. "Agregar ciclos" nunca aplica anticipos a quien ya está en la nómina, así que lo que se soltó queda pendiente para la próxima nómina en vez de volver a descontarse acá. No se pierde plata; se descuenta después.
 
 ### Historial
 

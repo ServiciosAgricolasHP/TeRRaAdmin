@@ -3,7 +3,13 @@ import { db, auth } from "../firebase";
 import { createService } from "./firestoreBase";
 import { workdaysService } from "./index";
 import { isCashBank } from "../utils/banks";
-import { restoreAdvancesFromPayroll } from "./advancesService";
+import {
+  restoreAdvancesFromPayroll,
+  readPayrollApplications,
+  setPayrollAdvanceAmounts,
+} from "./advancesService";
+import { planCycleRemoval } from "../utils/payrollItem";
+import { pruneSnapshot } from "./payrollSnapshots";
 
 export const PAYROLL_STATUSES = [
   { value: "pending", label: "Pendiente" },
@@ -210,11 +216,9 @@ export function assertEditable(p, verb = "editar") {
 //
 // Side-effects:
 //   - Untag de los workdays involucrados (libera `payrollId`).
-//   - Si un item queda totalmente removido, restaura sus anticipos (les saca
-//     la entrada de `payments[]` y recalcula el status). Si el item queda
-//     parcialmente reducido (caso ciclo: tenía producción en otro ciclo
-//     también), los anticipos se mantienen aplicados — el bruto baja pero
-//     el descuento ya consumido sigue valiendo.
+//   - Sacar un trabajador suelta todos sus anticipos. Sacar un ciclo deja la
+//     nómina como si se hubiera armado sin ese ciclo — ver `planCycleRemoval`
+//     en `utils/payrollItem.js`, que es donde vive la regla y sus tests.
 //   - Recalcula `items`, `total`, `bankTotal`, `cashTotal`, `workerCount`,
 //     `bankCount`, `cashCount`, `workdayIds`, `advanceIds`, `advanceTotal`.
 
@@ -251,6 +255,11 @@ export async function removeWorkerFromPayroll(payrollId, workerRut) {
   const newItems = items.filter((it) => it.rut !== workerRut);
   const aggregates = recalcPayrollAggregates(newItems);
   await payrollsService.update(payrollId, aggregates);
+  await pruneSnapshot(payrollId, {
+    items: newItems,
+    aggregates,
+    releasedWorkdayIds: item.workdayIds || [],
+  });
 }
 
 export async function removeCycleFromPayroll(payrollId, cycleId) {
@@ -261,52 +270,24 @@ export async function removeCycleFromPayroll(payrollId, cycleId) {
   // Los workday docIds llevan el cycleId como prefijo
   // (`{cycleId}__{laborId}__{rut}__{date}[__{ck}]`), así que podemos
   // identificar qué workdays son de este ciclo sin leer cada doc.
-  const cyclePrefix = `${cycleId}__`;
+  const prefix = `${cycleId}__`;
 
-  const orphanWorkdayIds = [];
-  const advancesToRestore = [];
-  const newItems = [];
+  // Solo se leen los anticipos de quienes tocan el ciclo: el resto de la
+  // nómina queda igual y no paga lecturas.
+  const tocados = items.filter(
+    (it) =>
+      (Number(it.byCycle?.[cycleId]) || 0) !== 0 ||
+      (it.workdayIds || []).some((wid) => wid.startsWith(prefix)),
+  );
+  const appliedByAdvance = await readPayrollApplications(
+    payrollId,
+    tocados.flatMap((it) => it.advanceIds || []),
+  );
+  const plan = planCycleRemoval({ items, cycleId, appliedByAdvance });
 
-  for (const it of items) {
-    const cycleAmount = Number(it.byCycle?.[cycleId]) || 0;
-    if (cycleAmount === 0) {
-      // El trabajador no tenía nada de este ciclo — queda igual.
-      newItems.push(it);
-      continue;
-    }
-    const cycleWdIds = (it.workdayIds || []).filter((wid) => wid.startsWith(cyclePrefix));
-    orphanWorkdayIds.push(...cycleWdIds);
-    const remainingWdIds = (it.workdayIds || []).filter((wid) => !wid.startsWith(cyclePrefix));
-    const newByCycle = { ...(it.byCycle || {}) };
-    delete newByCycle[cycleId];
-    const hasRemaining =
-      remainingWdIds.length > 0 || Object.keys(newByCycle).length > 0;
-
-    if (!hasRemaining) {
-      // El trabajador SOLO tenía producción en este ciclo — sale entero.
-      // Restauramos sus anticipos como si nunca se hubieran aplicado.
-      advancesToRestore.push(...(it.advanceIds || []));
-      continue;
-    }
-    // Reducción parcial: bajamos gross/amount restando el aporte del ciclo.
-    // Los anticipos ya aplicados se mantienen (el bruto baja pero el
-    // descuento ya consumido sigue valiendo). Si el neto quedara negativo,
-    // lo capeamos a 0.
-    const newGross = Math.max(0, Number(it.grossAmount || it.amount || 0) - cycleAmount);
-    const newAmount = Math.max(0, Number(it.amount || 0) - cycleAmount);
-    newItems.push({
-      ...it,
-      amount: newAmount,
-      grossAmount: newGross,
-      byCycle: newByCycle,
-      workdayIds: remainingWdIds,
-    });
-  }
-
-  await untagWorkdaysFromPayroll(orphanWorkdayIds);
-  if (advancesToRestore.length) {
-    await restoreAdvancesFromPayroll(advancesToRestore, payrollId);
-  }
+  await untagWorkdaysFromPayroll(plan.untagWorkdayIds);
+  await setPayrollAdvanceAmounts(payrollId, plan.advanceTargets);
+  const newItems = plan.items;
 
   // Actualizar metadata de ciclos en la nómina.
   const oldCycleIds = Array.isArray(p.cycleIds) ? p.cycleIds : [];
@@ -323,6 +304,13 @@ export async function removeCycleFromPayroll(payrollId, cycleId) {
     cycleLabels: newCycleLabels,
     cycleDetails: newCycleDetails,
   });
+  await pruneSnapshot(payrollId, {
+    items: newItems,
+    aggregates,
+    cycleIds: newCycleIds,
+    releasedWorkdayIds: plan.untagWorkdayIds,
+  });
+  return { salen: plan.salen, ajustados: plan.ajustados };
 }
 
 // Agrega ciclos a una nómina pendiente ya creada — inverso de
