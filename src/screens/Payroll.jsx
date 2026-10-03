@@ -4298,6 +4298,21 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
       .sort((a, b) => a.leader.localeCompare(b.leader, "es"));
   }, [items]);
 
+  // Un filtro puede quedar apuntando a algo que ya no está en la nómina: el
+  // ciclo que se acaba de sacar, o un grupo cuyo último trabajador salió.
+  // Contarlo como activo dejaba la lista en 0 con el filtro marcado, y si
+  // quedaba un solo ciclo, sin la fila de chips para apagarlo. Se descarta al
+  // leer y no al editar, así cubre por igual sacar un ciclo, sacar un
+  // trabajador y recalcular, sin que cada camino tenga que acordarse.
+  const activeLeaderFilter = useMemo(() => {
+    const vigentes = new Set(allLeaders.map((g) => g.leader));
+    return new Set([...leaderFilter].filter((l) => vigentes.has(l)));
+  }, [leaderFilter, allLeaders]);
+  const activeCycleFilter = useMemo(() => {
+    const vigentes = new Set((payroll.cycleDetails || []).map((c) => c.id));
+    return new Set([...cycleFilter].filter((id) => vigentes.has(id)));
+  }, [cycleFilter, payroll.cycleDetails]);
+
   // Filtrado de items aplicando todos los criterios juntos.
   const filteredItems = useMemo(() => {
     const q = search.trim();
@@ -4309,17 +4324,17 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
       const isCash = isCashBank(it.bankCode);
       if (paymentMethod === "bank" && isCash) return false;
       if (paymentMethod === "cash" && !isCash) return false;
-      if (leaderFilter.size > 0) {
+      if (activeLeaderFilter.size > 0) {
         const l = normalizeLeader(it.groupLeader || "") || "SIN GRUPO";
-        if (!leaderFilter.has(l)) return false;
+        if (!activeLeaderFilter.has(l)) return false;
       }
-      if (cycleFilter.size > 0) {
-        const hasAny = [...cycleFilter].some((cid) => (Number(it.byCycle?.[cid]) || 0) > 0);
+      if (activeCycleFilter.size > 0) {
+        const hasAny = [...activeCycleFilter].some((cid) => (Number(it.byCycle?.[cid]) || 0) > 0);
         if (!hasAny) return false;
       }
       return true;
     });
-  }, [items, search, paymentMethod, leaderFilter, cycleFilter]);
+  }, [items, search, paymentMethod, activeLeaderFilter, activeCycleFilter]);
 
   const filteredSplit = useMemo(() => splitBankAndCash(filteredItems), [filteredItems]);
   const filteredBank = filteredSplit.bank;
@@ -4400,7 +4415,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     return out;
   }, [allPayrolls, payroll.id]);
 
-  const hasActiveFilter = !!(search || paymentMethod !== "all" || leaderFilter.size > 0 || cycleFilter.size > 0);
+  const hasActiveFilter = !!(search || paymentMethod !== "all" || activeLeaderFilter.size > 0 || activeCycleFilter.size > 0);
   const clearFilters = () => {
     setSearch("");
     setPaymentMethod("all");
@@ -5186,10 +5201,18 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
   // que ya paga "Detalle de pago" — se carga solo al activar el toggle, y se
   // cachea mientras el modal siga abierto.
   const [summaryShowLabor, setSummaryShowLabor] = useState(false);
-  const [laborSummaryData, setLaborSummaryData] = useState(null);
+  // Atado a la nómina para la que se calculó, igual que `getPayrollData`: toda
+  // edición llega como un `payroll` nuevo, y sin esto la tabla seguía
+  // mostrando el ciclo o el trabajador que se acababa de sacar hasta cerrar
+  // el modal.
+  const [laborSummary, setLaborSummary] = useState({ payroll: null, data: null });
+  const laborSummaryData = laborSummary.payroll === payroll ? laborSummary.data : null;
   const [laborSummaryLoading, setLaborSummaryLoading] = useState(false);
   useEffect(() => {
-    if (!summaryShowLabor || laborSummaryData || laborSummaryLoading) return;
+    // Sin chequear `laborSummaryLoading`: si la nómina cambia a mitad de una
+    // carga, el cleanup cancela la vieja y esta tiene que arrancar igual. Con
+    // el chequeo quedaba pegado en "Cargando…" — la cancelada nunca lo apaga.
+    if (!summaryShowLabor || laborSummaryData) return;
     let cancelled = false;
     setLaborSummaryLoading(true);
     (async () => {
@@ -5197,7 +5220,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
         const data = await getPayrollData();
         if (cancelled) return;
         const workdaysByGroup = buildWorkdaysByGroup(allGroups, data, catalogs);
-        setLaborSummaryData(computeLaborSummary(payroll, allGroups, workdaysByGroup));
+        setLaborSummary({ payroll, data: computeLaborSummary(payroll, allGroups, workdaysByGroup) });
       } catch (err) {
         if (!cancelled) toast.error("No se pudo cargar el resumen por labor: " + (err?.message || err));
       } finally {
@@ -5206,7 +5229,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [summaryShowLabor]);
+  }, [summaryShowLabor, payroll]);
   const activeSummary = summaryShowLabor ? laborSummaryData : subfaenaSummary;
   // Aplana filas + subtotales por faena en una sola lista para que el render
   // sea un simple .map() — evita mirar "la fila siguiente" adentro del JSX.
@@ -5747,7 +5770,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                       </button>
                     );
                   })}
-                  {leaderFilter.size > 0 && (
+                  {activeLeaderFilter.size > 0 && (
                     <button onClick={() => setLeaderFilter(new Set())} className="text-[var(--color-muted)] hover:text-[var(--color-danger)]">✕</button>
                   )}
                 </div>
@@ -5772,7 +5795,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                       </button>
                     );
                   })}
-                  {cycleFilter.size > 0 && (
+                  {activeCycleFilter.size > 0 && (
                     <button onClick={() => setCycleFilter(new Set())} className="text-[var(--color-muted)] hover:text-[var(--color-danger)]">✕</button>
                   )}
                 </div>
