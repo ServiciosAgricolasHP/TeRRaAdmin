@@ -19,6 +19,7 @@ import {
   removeCycleFromPayroll,
   addCyclesToPayroll,
   recalculatePayrollItems,
+  recalcPayrollAggregates,
   markBankPaid,
   revertBankPaid,
   setCashPaidRuts,
@@ -26,10 +27,11 @@ import {
   pendingCashItemsOf,
 } from "../services/payrollsService";
 import {
-  advancesService,
   listPendingForWorkers,
   applyAdvancesToPayroll,
   restoreAdvancesFromPayroll,
+  readPayrollApplications,
+  setPayrollAdvanceAmounts,
   advanceRemaining,
   advanceSign,
   advanceTypeMeta,
@@ -54,7 +56,12 @@ import {
   validateAccountNumber,
   normalizeLeader,
 } from "../utils/payroll";
-import { allocateAdvances, advanceNote } from "../utils/payrollItem";
+import {
+  allocateAdvances,
+  advanceNote,
+  recalcNeedsRefit,
+  planRecalcExisting,
+} from "../utils/payrollItem";
 import ConfirmDialog from "../components/ConfirmDialog";
 import Modal from "../components/Modal";
 import ResizableArea from "../components/ResizableArea";
@@ -4291,6 +4298,21 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
       .sort((a, b) => a.leader.localeCompare(b.leader, "es"));
   }, [items]);
 
+  // Un filtro puede quedar apuntando a algo que ya no está en la nómina: el
+  // ciclo que se acaba de sacar, o un grupo cuyo último trabajador salió.
+  // Contarlo como activo dejaba la lista en 0 con el filtro marcado, y si
+  // quedaba un solo ciclo, sin la fila de chips para apagarlo. Se descarta al
+  // leer y no al editar, así cubre por igual sacar un ciclo, sacar un
+  // trabajador y recalcular, sin que cada camino tenga que acordarse.
+  const activeLeaderFilter = useMemo(() => {
+    const vigentes = new Set(allLeaders.map((g) => g.leader));
+    return new Set([...leaderFilter].filter((l) => vigentes.has(l)));
+  }, [leaderFilter, allLeaders]);
+  const activeCycleFilter = useMemo(() => {
+    const vigentes = new Set((payroll.cycleDetails || []).map((c) => c.id));
+    return new Set([...cycleFilter].filter((id) => vigentes.has(id)));
+  }, [cycleFilter, payroll.cycleDetails]);
+
   // Filtrado de items aplicando todos los criterios juntos.
   const filteredItems = useMemo(() => {
     const q = search.trim();
@@ -4302,17 +4324,17 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
       const isCash = isCashBank(it.bankCode);
       if (paymentMethod === "bank" && isCash) return false;
       if (paymentMethod === "cash" && !isCash) return false;
-      if (leaderFilter.size > 0) {
+      if (activeLeaderFilter.size > 0) {
         const l = normalizeLeader(it.groupLeader || "") || "SIN GRUPO";
-        if (!leaderFilter.has(l)) return false;
+        if (!activeLeaderFilter.has(l)) return false;
       }
-      if (cycleFilter.size > 0) {
-        const hasAny = [...cycleFilter].some((cid) => (Number(it.byCycle?.[cid]) || 0) > 0);
+      if (activeCycleFilter.size > 0) {
+        const hasAny = [...activeCycleFilter].some((cid) => (Number(it.byCycle?.[cid]) || 0) > 0);
         if (!hasAny) return false;
       }
       return true;
     });
-  }, [items, search, paymentMethod, leaderFilter, cycleFilter]);
+  }, [items, search, paymentMethod, activeLeaderFilter, activeCycleFilter]);
 
   const filteredSplit = useMemo(() => splitBankAndCash(filteredItems), [filteredItems]);
   const filteredBank = filteredSplit.bank;
@@ -4393,7 +4415,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     return out;
   }, [allPayrolls, payroll.id]);
 
-  const hasActiveFilter = !!(search || paymentMethod !== "all" || leaderFilter.size > 0 || cycleFilter.size > 0);
+  const hasActiveFilter = !!(search || paymentMethod !== "all" || activeLeaderFilter.size > 0 || activeCycleFilter.size > 0);
   const clearFilters = () => {
     setSearch("");
     setPaymentMethod("all");
@@ -4480,14 +4502,23 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     setConfirmRemove({
       type: "cycle",
       target: cycle,
-      message: `¿Sacar el ciclo "${cycle.label}" (${fmtCurrency(cycleAmount)}) de esta nómina?\n\nSe liberan los workdays del ciclo. Los trabajadores que SOLO tenían producción en este ciclo salen también; los que tenían producción en otros ciclos quedan con su monto reducido. No se puede deshacer.`,
+      message: `¿Sacar el ciclo "${cycle.label}" (${fmtCurrency(cycleAmount)}) de esta nómina?\n\nSe liberan los workdays del ciclo. Los trabajadores que SOLO tenían producción en este ciclo salen también, y sus anticipos vuelven a quedar pendientes para la próxima nómina. Los que tenían producción en otros ciclos quedan con su monto reducido; si lo que les queda no alcanza para el anticipo ya descontado, la diferencia vuelve a quedar pendiente. No se puede deshacer.`,
     });
   };
   const doRemoveCycle = async (cycle) => {
     setEditBusy(true);
     try {
-      await removeCycleFromPayroll(payroll.id, cycle.id);
+      const { salen = [], ajustados = [] } = (await removeCycleFromPayroll(payroll.id, cycle.id)) || {};
       await onChanged?.();
+      // Decir qué pasó con la plata: que un anticipo vuelva a pendiente es
+      // justo lo que hay que saber antes de armar la nómina siguiente.
+      const devuelto =
+        salen.reduce((s, x) => s + (x.liberado || 0), 0) +
+        ajustados.reduce((s, x) => s + (x.devuelto || 0), 0);
+      const partes = [`Ciclo "${cycle.label}" fuera de la nómina.`];
+      if (salen.length) partes.push(`${salen.length} trabajador(es) salieron.`);
+      if (devuelto > 0) partes.push(`${fmtCurrency(devuelto)} de anticipos vuelven a quedar pendientes.`);
+      toast.success(partes.join(" "));
     } catch (err) {
       toast.error(`Error al sacar el ciclo: ${err?.message || err}`);
     } finally {
@@ -4721,11 +4752,14 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
   // por ciclo, así que un día nuevo ahí corresponde a esta nómina),
   // trabajadores nuevos con producción en esos ciclos (mismo tratamiento que
   // "+ Agregar ciclo" para uno nuevo), y datos de cuenta/grupo del
-  // trabajador que cambiaron desde que se generó. No toca anticipos/bonos ya
-  // aplicados — si el bruto recalculado queda por debajo de lo ya
-  // descontado, el neto se capea en 0 y se crea un anticipo nuevo pendiente
-  // por la diferencia no saldada, a recuperar en una nómina futura. Muestra
-  // todo en un modal de revisión antes de escribir nada.
+  // trabajador que cambiaron desde que se generó. Si el bruto baja, lo ya
+  // descontado de anticipos vuelve a encajar en el bruto nuevo y lo que no
+  // cabe vuelve al MISMO anticipo — misma regla que sacar un ciclo, ver
+  // `refitAppliedAdvances` en src/utils/payrollItem.js. Antes se dejaba el
+  // anticipo aplicado entero y se creaba uno nuevo por la diferencia: el
+  // original figuraba cobrado por una nómina que no lo retuvo y quedaba un
+  // anticipo que nadie dio. Quien se queda sin producción sale de la nómina.
+  // Muestra todo en un modal de revisión antes de escribir nada.
   const [recalcPreview, setRecalcPreview] = useState(null);
   const [recalcBusy, setRecalcBusy] = useState(false);
 
@@ -4798,49 +4832,45 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
         { key: "groupLeader", label: "Grupo" },
       ];
 
-      const amountChanges = [];
       const profileChanges = [];
       const advanceChanges = [];
-      const shortfallAnticipos = [];
       const updatedByKey = new Map();
+
+      // Primero se achica: quien se quedó sin producción sale, y a quien sigue
+      // se le re-encaja lo ya descontado en su bruto nuevo. Misma regla que
+      // sacar un ciclo — ver `planRecalcExisting` en src/utils/payrollItem.js.
+      // Los anticipos se leen solo de quienes cambian.
+      const appliedByAdvance = await readPayrollApplications(
+        payroll.id,
+        items
+          .filter((it) => recalcNeedsRefit(it, freshByKey.get(it.workerId || it.rut)))
+          .flatMap((it) => it.advanceIds || []),
+      );
+      const {
+        patches,
+        leaving: leavingWorkers,
+        leavingKeys,
+        advanceTargets,
+        amountChanges,
+      } = planRecalcExisting({ items, freshByKey, appliedByAdvance });
 
       for (const it of items) {
         const key = it.workerId || it.rut;
+        if (leavingKeys.has(key)) continue;
         const fresh = freshByKey.get(key);
         const newGross = Math.round(fresh?.total || 0);
-        const oldGross = Math.round(Number(it.grossAmount || it.amount || 0));
-        const newWorkdayIds = fresh?.workdayIds || [];
-        const idsChanged = [...newWorkdayIds].sort().join(",") !== [...(it.workdayIds || [])].sort().join(",");
-        let patch = null;
-
-        if (newGross !== oldGross || idsChanged) {
-          const newByCycle = {};
-          for (const [cid, amt] of Object.entries(fresh?.byCycle || {})) newByCycle[cid] = Math.round(amt);
-          const rawNet = newGross - (Number(it.advance) || 0) + (Number(it.bonus) || 0);
-          const newAmount = Math.max(0, rawNet);
-          const shortfall = rawNet < 0 ? Math.round(-rawNet) : 0;
-          amountChanges.push({
-            key, rut: it.rut, name: it.name,
-            oldGross, newGross,
-            oldNet: Math.round(Number(it.amount) || 0), newNet: newAmount,
-            shortfall,
-          });
-          patch = { ...it, grossAmount: newGross, byCycle: newByCycle, workdayIds: newWorkdayIds, amount: newAmount };
-          if (shortfall > 0) {
-            shortfallAnticipos.push({ workerId: it.workerId, rut: it.rut, name: it.name, amount: shortfall });
-          }
-        }
+        let patch = patches.get(key) || null;
 
         // Anticipos/bonos nuevos para un trabajador que YA está en la
-        // nómina (ej. se le cargó un anticipo después de generarla). Nunca
-        // se tocan los que ya estaban aplicados acá — solo los que faltan.
+        // nómina (ej. se le cargó un anticipo después de generarla). Se
+        // aplican sobre lo que quedó después del re-encaje de arriba.
         const advForWorker = advancesByKey.get(key) || { anticipos: [], bonos: [] };
         const existingAdvIds = new Set(it.advanceIds || []);
         const newAnticipos = advForWorker.anticipos.filter((a) => !existingAdvIds.has(a.id) && advanceRemaining(a) > 0);
         const newBonos = advForWorker.bonos.filter((a) => !existingAdvIds.has(a.id) && advanceRemaining(a) > 0);
         if (newAnticipos.length || newBonos.length) {
-          const currentAdvance = Number(it.advance) || 0;
-          const currentBonus = Number(it.bonus) || 0;
+          const currentAdvance = Number((patch || it).advance) || 0;
+          const currentBonus = Number((patch || it).bonus) || 0;
           // Caso incremental: este trabajador YA está en la nómina, así que
           // la base arranca de lo que ya se le descontó y acreditó. Misma
           // regla que al armarla — ver src/utils/payrollItem.js.
@@ -4951,18 +4981,26 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
       }
 
       const mergedItems = [
-        ...items.map((it) => updatedByKey.get(it.workerId || it.rut) || it),
+        ...items
+          .filter((it) => !leavingKeys.has(it.workerId || it.rut))
+          .map((it) => updatedByKey.get(it.workerId || it.rut) || it),
         ...newWorkerItems,
       ];
 
-      if (!amountChanges.length && !profileChanges.length && !newWorkers.length && !advanceChanges.length) {
+      if (
+        !amountChanges.length &&
+        !profileChanges.length &&
+        !newWorkers.length &&
+        !advanceChanges.length &&
+        !leavingWorkers.length
+      ) {
         toast.success("Sin cambios — la nómina ya está al día.");
         return;
       }
 
       setRecalcPreview({
-        amountChanges, profileChanges, advanceChanges, newWorkers, shortfallAnticipos,
-        mergedItems, allCurrentWorkdays, newAdvanceApplications, pendingAdvances,
+        amountChanges, profileChanges, advanceChanges, newWorkers, leavingWorkers,
+        mergedItems, allCurrentWorkdays, newAdvanceApplications, advanceTargets, pendingAdvances,
       });
     } catch (err) {
       toast.error(`Error al recalcular: ${err?.message || err}`);
@@ -4975,24 +5013,29 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     if (!recalcPreview) return;
     setRecalcBusy(true);
     try {
-      const { mergedItems, allCurrentWorkdays, newAdvanceApplications, shortfallAnticipos, pendingAdvances } = recalcPreview;
+      const { mergedItems, allCurrentWorkdays, newAdvanceApplications, advanceTargets, pendingAdvances } = recalcPreview;
 
       await recalculatePayrollItems(payroll.id, { items: mergedItems });
-      await tagWorkdaysWithPayroll(allCurrentWorkdays.map((wd) => wd.id), payroll.id);
+      // Se etiqueta exactamente lo que la nómina contiene, y se suelta lo que
+      // le quedó etiquetado sin estar en ningún item: las jornadas de quien
+      // salió, y las de $0 de quien nunca entró. Antes se etiquetaba todo lo
+      // vigente de los ciclos, así que esas jornadas quedaban tomadas por una
+      // nómina que no las paga.
+      const enNomina = new Set(mergedItems.flatMap((it) => it.workdayIds || []));
+      await untagWorkdaysFromPayroll(
+        allCurrentWorkdays.filter((wd) => !enNomina.has(wd.id) && wd.payrollId === payroll.id).map((wd) => wd.id),
+      );
+      await tagWorkdaysWithPayroll(
+        allCurrentWorkdays.filter((wd) => enNomina.has(wd.id)).map((wd) => wd.id),
+        payroll.id,
+      );
+      // Primero se achica lo ya aplicado y después se aplica lo nuevo: son
+      // anticipos distintos (lo nuevo excluye lo que la nómina ya tenía).
+      if (advanceTargets?.length) {
+        await setPayrollAdvanceAmounts(payroll.id, advanceTargets);
+      }
       if (newAdvanceApplications.length) {
         await applyAdvancesToPayroll(newAdvanceApplications, payroll.id);
-      }
-      for (const s of shortfallAnticipos) {
-        await advancesService.create({
-          type: "anticipo",
-          workerRut: s.rut,
-          workerId: s.workerId || s.rut,
-          workerName: s.name,
-          amount: s.amount,
-          date: todayISO(),
-          note: `Saldo pendiente por recálculo de "${payroll.name}" — la producción bajó después de aplicar el anticipo original.`,
-          status: "pending",
-        });
       }
 
       try {
@@ -5008,9 +5051,27 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
               date: adv.date || null, note: adv.note || "",
               status: adv.status || null,
             }));
+          const enNominaSnap = new Set(mergedItems.flatMap((it) => it.workdayIds || []));
+          const referenciados = new Set(mergedItems.flatMap((it) => it.advanceIds || []));
+          const agg = recalcPayrollAggregates(mergedItems);
           await payrollSnapshotsService.update(payroll.id, {
+            ...(snap.payroll
+              ? {
+                  payroll: {
+                    ...snap.payroll,
+                    total: agg.total,
+                    bankTotal: agg.bankTotal,
+                    cashTotal: agg.cashTotal,
+                    workerCount: agg.workerCount,
+                    bankCount: agg.bankCount,
+                    cashCount: agg.cashCount,
+                    advanceTotal: agg.advanceTotal,
+                    bonusTotal: mergedItems.reduce((s, it) => s + (Number(it.bonus) || 0), 0),
+                  },
+                }
+              : {}),
             workers: mergedItems,
-            workdays: allCurrentWorkdays.map((wd) => ({
+            workdays: allCurrentWorkdays.filter((wd) => enNominaSnap.has(wd.id)).map((wd) => ({
               id: wd.id, cycleId: wd.cycleId, laborId: wd.laborId,
               workerRut: wd.workerRut, date: wd.date,
               qty: wd.qty ?? null, amount: wd.amount ?? 0,
@@ -5021,7 +5082,11 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
               hasManejo: !!wd.hasManejo, hasSupervision: !!wd.hasSupervision,
               extras: wd.extras ?? null, isHoliday: !!wd.isHoliday,
             })),
-            advances: [...(snap.advances || []), ...newAdvancesForSnapshot],
+            // Un anticipo que la nómina soltó entero deja de figurar.
+            advances: [
+              ...(snap.advances || []).filter((a) => referenciados.has(a.id)),
+              ...newAdvancesForSnapshot,
+            ],
           });
         }
       } catch (err) {
@@ -5136,10 +5201,18 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
   // que ya paga "Detalle de pago" — se carga solo al activar el toggle, y se
   // cachea mientras el modal siga abierto.
   const [summaryShowLabor, setSummaryShowLabor] = useState(false);
-  const [laborSummaryData, setLaborSummaryData] = useState(null);
+  // Atado a la nómina para la que se calculó, igual que `getPayrollData`: toda
+  // edición llega como un `payroll` nuevo, y sin esto la tabla seguía
+  // mostrando el ciclo o el trabajador que se acababa de sacar hasta cerrar
+  // el modal.
+  const [laborSummary, setLaborSummary] = useState({ payroll: null, data: null });
+  const laborSummaryData = laborSummary.payroll === payroll ? laborSummary.data : null;
   const [laborSummaryLoading, setLaborSummaryLoading] = useState(false);
   useEffect(() => {
-    if (!summaryShowLabor || laborSummaryData || laborSummaryLoading) return;
+    // Sin chequear `laborSummaryLoading`: si la nómina cambia a mitad de una
+    // carga, el cleanup cancela la vieja y esta tiene que arrancar igual. Con
+    // el chequeo quedaba pegado en "Cargando…" — la cancelada nunca lo apaga.
+    if (!summaryShowLabor || laborSummaryData) return;
     let cancelled = false;
     setLaborSummaryLoading(true);
     (async () => {
@@ -5147,7 +5220,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
         const data = await getPayrollData();
         if (cancelled) return;
         const workdaysByGroup = buildWorkdaysByGroup(allGroups, data, catalogs);
-        setLaborSummaryData(computeLaborSummary(payroll, allGroups, workdaysByGroup));
+        setLaborSummary({ payroll, data: computeLaborSummary(payroll, allGroups, workdaysByGroup) });
       } catch (err) {
         if (!cancelled) toast.error("No se pudo cargar el resumen por labor: " + (err?.message || err));
       } finally {
@@ -5156,7 +5229,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [summaryShowLabor]);
+  }, [summaryShowLabor, payroll]);
   const activeSummary = summaryShowLabor ? laborSummaryData : subfaenaSummary;
   // Aplana filas + subtotales por faena en una sola lista para que el render
   // sea un simple .map() — evita mirar "la fila siguiente" adentro del JSX.
@@ -5697,7 +5770,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                       </button>
                     );
                   })}
-                  {leaderFilter.size > 0 && (
+                  {activeLeaderFilter.size > 0 && (
                     <button onClick={() => setLeaderFilter(new Set())} className="text-[var(--color-muted)] hover:text-[var(--color-danger)]">✕</button>
                   )}
                 </div>
@@ -5722,7 +5795,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                       </button>
                     );
                   })}
-                  {cycleFilter.size > 0 && (
+                  {activeCycleFilter.size > 0 && (
                     <button onClick={() => setCycleFilter(new Set())} className="text-[var(--color-muted)] hover:text-[var(--color-danger)]">✕</button>
                   )}
                 </div>
@@ -6567,7 +6640,7 @@ const formatProfileValue = (field, value) => {
 // cambiaron desde que se generó la nómina, antes de escribir nada.
 function RecalcModal({ preview, busy, onClose, onConfirm }) {
   if (!preview) return null;
-  const { amountChanges, profileChanges, advanceChanges, newWorkers } = preview;
+  const { amountChanges, profileChanges, advanceChanges, newWorkers, leavingWorkers = [] } = preview;
   return (
     <Modal
       open={!!preview}
@@ -6590,6 +6663,37 @@ function RecalcModal({ preview, busy, onClose, onConfirm }) {
       }
     >
       <div className="max-h-[60vh] space-y-4 overflow-y-auto text-sm">
+        {leavingWorkers.length > 0 && (
+          <div>
+            <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+              Salen de la nómina ({leavingWorkers.length})
+            </h4>
+            <p className="mb-1.5 text-xs text-[var(--color-muted)]">
+              Ya no tienen producción en estos ciclos. Sus anticipos vuelven a quedar pendientes para la próxima nómina.
+            </p>
+            <div className="overflow-x-auto rounded-md border border-[var(--color-border)]">
+              <table className="w-full text-xs">
+                <thead className="bg-[var(--color-surface-2)] text-left">
+                  <tr>
+                    <th className="px-2 py-1.5">Trabajador</th>
+                    <th className="px-2 py-1.5 text-right">Neto antes</th>
+                    <th className="px-2 py-1.5 text-right">Anticipo que vuelve</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {leavingWorkers.map((w) => (
+                    <tr key={w.key} className="border-t border-[var(--color-border)]">
+                      <td className="px-2 py-1.5">{w.name}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(w.oldNet)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{w.liberado > 0 ? fmtCurrency(w.liberado) : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {amountChanges.length > 0 && (
           <div>
             <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
@@ -6611,9 +6715,9 @@ function RecalcModal({ preview, busy, onClose, onConfirm }) {
                     <tr key={c.key} className="border-t border-[var(--color-border)] align-top">
                       <td className="px-2 py-1.5">
                         {c.name}
-                        {c.shortfall > 0 && (
+                        {c.devuelto > 0 && (
                           <div className="mt-0.5 text-[10px] text-[var(--color-warning)]">
-                            ⚠ Saldo sin cubrir {fmtCurrency(c.shortfall)} — se crea un anticipo pendiente nuevo.
+                            ↩ {fmtCurrency(c.devuelto)} del anticipo ya no alcanzan a cubrirse y vuelven a quedar pendientes.
                           </div>
                         )}
                       </td>

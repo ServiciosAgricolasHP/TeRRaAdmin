@@ -316,3 +316,128 @@ export async function restoreAdvancesFromPayroll(advanceIds, payrollId) {
     meta: { op: "restoreAdvances", count: advanceIds.length, advanceIds },
   });
 }
+
+// Cuánto le aplica HOY una nómina a cada anticipo/bono, leído del `payments[]`
+// de cada documento. Es la fuente de verdad que usan el borrado de la nómina y
+// la pantalla de Anticipos; la copia en el item de la nómina puede haber
+// quedado corta. Devuelve solo los documentos que existen.
+export async function readPayrollApplications(payrollId, advanceIds) {
+  const ids = [...new Set((advanceIds || []).filter(Boolean))];
+  const out = new Map();
+  if (!ids.length) return out;
+  const docs = await Promise.all(
+    ids.map(async (id) => {
+      const snap = await getDoc(doc(db, "advances", id));
+      return { id, data: snap.exists() ? snap.data() : null };
+    }),
+  );
+  for (const { id, data } of docs) {
+    if (!data) continue;
+    const amount = (Array.isArray(data.payments) ? data.payments : [])
+      .filter((p) => p.payrollId === payrollId)
+      .reduce((s, p) => s + (Number(p.amount) || 0), 0);
+    out.set(id, {
+      advanceId: id,
+      kind: isBono(data) ? "bono" : "anticipo",
+      date: data.date || "",
+      amount,
+    });
+  }
+  return out;
+}
+
+// Fija cuánto le descuenta UNA nómina a cada anticipo/bono, sin tocar lo que le
+// aplicaron otras nóminas. `targets`: [{ advanceId, amount }] con el monto
+// FINAL de esta nómina — 0 la suelta entera, que es lo mismo que hace
+// `restoreAdvancesFromPayroll`.
+//
+// Existe para achicar una nómina sin dejar rastro: antes la única operación era
+// soltar el anticipo entero o dejarlo entero, y la cobertura parcial no tenía
+// cómo expresarse. La entrada de esta nómina en `payments[]` se reescribe en su
+// lugar, conservando su `paidAt`: el hint "última cuota hace N días" sale de
+// ahí, y una nómina que se achica no hizo un pago nuevo.
+//
+// Topea contra el saldo que dejan las OTRAS nóminas, así que pedir de más
+// nunca sobre-cobra un anticipo.
+export async function setPayrollAdvanceAmounts(payrollId, targets) {
+  const list = (targets || []).filter((t) => t && t.advanceId);
+  if (!list.length) return { cambios: [] };
+  const docs = await Promise.all(
+    list.map(async (t) => {
+      const snap = await getDoc(doc(db, "advances", t.advanceId));
+      return { t, data: snap.exists() ? snap.data() : null };
+    }),
+  );
+
+  const cambios = [];
+  const now = new Date().toISOString();
+  const chunkSize = 450;
+  for (let i = 0; i < docs.length; i += chunkSize) {
+    const batch = writeBatch(db);
+    let escrituras = 0;
+    for (const { t, data } of docs.slice(i, i + chunkSize)) {
+      if (!data) continue;
+      const total = Number(data.amount) || 0;
+      const payments = Array.isArray(data.payments) ? data.payments : [];
+      const deOtras = payments
+        .filter((p) => p.payrollId !== payrollId)
+        .reduce((s, p) => s + (Number(p.amount) || 0), 0);
+      const antes = payments
+        .filter((p) => p.payrollId === payrollId)
+        .reduce((s, p) => s + (Number(p.amount) || 0), 0);
+      const pedido = Math.max(0, Math.round(Number(t.amount) || 0));
+      const despues = Math.min(pedido, Math.max(0, total - deOtras));
+      if (despues === antes) continue;
+
+      // Reescribe en su lugar la primera entrada de esta nómina y descarta el
+      // resto (agregar ciclos o recalcular pueden haberle sumado más de una).
+      let usada = false;
+      const nuevos = [];
+      for (const p of payments) {
+        if (p.payrollId !== payrollId) {
+          nuevos.push(p);
+          continue;
+        }
+        if (usada || despues <= 0) continue;
+        nuevos.push({ ...p, amount: despues });
+        usada = true;
+      }
+      if (!usada && despues > 0) nuevos.push({ payrollId, amount: despues, paidAt: now });
+
+      const newPaid = nuevos.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+      const status = newPaid >= total && total > 0 ? "applied" : newPaid > 0 ? "partial" : "pending";
+      // Mismo criterio que `restoreAdvancesFromPayroll` para el puntero: si
+      // esta nómina sigue descontando algo, el puntero no cambia.
+      const appliedPayrollId =
+        status === "pending"
+          ? null
+          : despues > 0
+            ? data.appliedPayrollId || payrollId
+            : data.appliedPayrollId === payrollId
+              ? null
+              : data.appliedPayrollId;
+      batch.update(doc(db, "advances", t.advanceId), {
+        status,
+        amountPaid: newPaid,
+        payments: nuevos,
+        appliedPayrollId,
+        appliedAt: status === "pending" ? null : data.appliedAt || serverTimestamp(),
+      });
+      escrituras += 1;
+      cambios.push({ advanceId: t.advanceId, antes, despues });
+    }
+    if (escrituras) await batch.commit();
+  }
+
+  if (cambios.length) {
+    advancesService.invalidate();
+    await logAction({
+      action: "update",
+      entity: "payroll",
+      entityId: payrollId,
+      changes: null,
+      meta: { op: "setPayrollAdvances", cambios },
+    });
+  }
+  return { cambios };
+}
