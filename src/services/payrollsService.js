@@ -7,8 +7,9 @@ import {
   restoreAdvancesFromPayroll,
   readPayrollApplications,
   setPayrollAdvanceAmounts,
+  applyAdvancesToPayroll,
 } from "./advancesService";
-import { planCycleRemoval } from "../utils/payrollItem";
+import { planCycleRemoval, mergeCycleDetails } from "../utils/payrollItem";
 import { pruneSnapshot } from "./payrollSnapshots";
 
 export const PAYROLL_STATUSES = [
@@ -318,24 +319,48 @@ export async function removeCycleFromPayroll(payrollId, cycleId) {
 // (trabajadores existentes con su byCycle/grossAmount ampliado + trabajadores
 // nuevos con su anticipo/bono aplicado) porque esa lógica depende de datos ya
 // cargados en pantalla (ciclos, trabajadores, catálogo). Acá solo persiste:
-// recalcula los totales agregados y agrega los ciclos nuevos a la metadata.
-export async function addCyclesToPayroll(payrollId, { items, cycleDetailsToAdd }) {
+// recalcula los totales agregados y suma los ciclos a la metadata.
+//
+// Un ciclo que ya estaba en la nómina no se repite: se le suman las labores
+// (`mergeCycleDetails`). Pasa al agregar las labores que faltaban de un ciclo,
+// o días puntuales de una persona en un ciclo que ya estaba.
+export async function addCyclesToPayroll(payrollId, { items, cycleDetailsToAdd = [] }) {
   const p = await payrollsService.getById(payrollId);
   if (!p) throw new Error("Nómina no encontrada");
   assertEditable(p);
   const aggregates = recalcPayrollAggregates(items);
-  const cycleIds = [...(p.cycleIds || []), ...cycleDetailsToAdd.map((c) => c.id)];
-  const cycleLabels = [...(p.cycleLabels || []), ...cycleDetailsToAdd.map((c) => c.label)];
-  const cycleDetails = [...(p.cycleDetails || []), ...cycleDetailsToAdd];
+  const yaEstan = new Set(p.cycleIds || []);
+  const nuevos = cycleDetailsToAdd.filter((c) => !yaEstan.has(c.id));
+  const cycleIds = [...(p.cycleIds || []), ...nuevos.map((c) => c.id)];
+  const cycleLabels = [...(p.cycleLabels || []), ...nuevos.map((c) => c.label)];
+  const cycleDetails = mergeCycleDetails(p.cycleDetails || [], cycleDetailsToAdd);
   await payrollsService.update(payrollId, { ...aggregates, cycleIds, cycleLabels, cycleDetails });
+  return aggregates;
+}
+
+// Agrega jornadas a una nómina pendiente con los items ya armados por
+// `planAddWorkdays`: escribe la nómina, etiqueta las jornadas y aplica los
+// anticipos y bonos nuevos. Mismo orden que "Generar": primero el documento,
+// para que una falla a mitad de camino no deje jornadas etiquetadas a una
+// nómina que no las cuenta. El guard de `assertEditable` corre antes de
+// tocar nada.
+export async function addWorkdaysToPayroll(
+  payrollId,
+  { items, cycleDetailsToAdd = [], workdayIds = [], advanceApplications = [] },
+) {
+  const aggregates = await addCyclesToPayroll(payrollId, { items, cycleDetailsToAdd });
+  await tagWorkdaysWithPayroll(workdayIds, payrollId);
+  if (advanceApplications.length) await applyAdvancesToPayroll(advanceApplications, payrollId);
+  return aggregates;
 }
 
 // Recalcula los items de una nómina pendiente contra la producción actual —
 // inverso de "confiar ciegamente" en lo que se guardó al crearla. El caller
 // (Payroll.jsx) ya trae `items` recalculado desde los workdays vigentes de
-// los mismos ciclos (ediciones, días nuevos, trabajadores nuevos, datos de
-// cuenta/grupo actualizados). Acá solo persiste los totales agregados; no
-// toca `cycleIds`/`cycleDetails` porque el set de ciclos no cambia.
+// las labores que la nómina abarca (ediciones, días nuevos, trabajadores
+// nuevos, datos de cuenta/grupo actualizados). Acá solo persiste los totales
+// agregados; no toca `cycleIds`/`cycleDetails` porque el set de ciclos no
+// cambia.
 export async function recalculatePayrollItems(payrollId, { items }) {
   const p = await payrollsService.getById(payrollId);
   if (!p) throw new Error("Nómina no encontrada");

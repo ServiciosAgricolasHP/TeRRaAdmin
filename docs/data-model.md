@@ -117,7 +117,8 @@ Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
 | `bankPaidAt`, `bankPaidBy` | string (ISO)? / string? | **pago en dos tiempos**: salieron las transferencias pero el efectivo no. Es el flag que convierte el efectivo de esta nómina en *deuda* |
 | `cashPaidRuts` | string[] | ruts de efectivo que ya cobraron sueltos; se descuentan de la deuda. NO estampan `paidAt` en sus workdays |
 | `cycleIds` | string[] | refs a `cycles` |
-| `cycleLabels`, `cycleDetails` | snapshot | |
+| `cycleLabels` | snapshot | |
+| `cycleDetails` | `{ id, label, faena…, firstDay, lastDay, laborIds? }[]` | `laborIds`: qué labores del ciclo le pertenecen a la nómina (lo que Recalcular puede traer). Sin el campo = el ciclo entero; `[]` = solo días agregados a mano. Ver "Agrandar una nómina pendiente" en AGENTS.md |
 | `items` | `PayrollItem[]` | snapshot por trabajador |
 | `total`, `bankTotal`, `cashTotal` | number | |
 | `workerCount`, `bankCount`, `cashCount` | number | |

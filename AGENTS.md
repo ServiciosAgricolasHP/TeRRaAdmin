@@ -360,7 +360,7 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
 
 ### Flujo
 
-1. **Generar** — selector de ciclos activos agrupados por faena. Cada ciclo muestra `Pendiente` y `Pagado` calculados desde workdays. Al chequear un ciclo, debajo aparecen sus labores como chips toggleables: click excluye/incluye esa labor de la nómina. Default: todas seleccionadas. Workdays de labores excluidas quedan disponibles para una nómina futura (no se taggean). Si el usuario destilda todas las labores, el ciclo se marca con "⚠ Sin labores seleccionadas" y no aporta workdays al preview.
+1. **Generar** — selector de ciclos activos agrupados por faena. Cada ciclo muestra `Pendiente` y `Pagado` calculados desde workdays. Al chequear un ciclo, debajo aparecen sus labores como chips toggleables: click excluye/incluye esa labor de la nómina. Default: todas seleccionadas. Workdays de labores excluidas quedan disponibles para una nómina futura (no se taggean). Si el usuario destilda todas las labores, el ciclo se marca con "⚠ Sin labores seleccionadas", no aporta workdays al preview y no entra a la nómina. La elección se guarda en `cycleDetails[].laborIds` para que Recalcular no traiga después lo que quedó afuera (ver "Agrandar una nómina pendiente").
 2. **Preview** — agrega por trabajador, cruza con `worker.bankDetails`, busca anticipos pendientes y los aplica.
    - Filtros: 🏦 Banco, 💵 Efectivo, ⚠ Datos faltantes, ⚠ Cuenta sospechosa, 👥 \<líder\>.
    - Bulk actions sobre el subset visible: incluir/excluir, → Efectivo / → Banco.
@@ -373,7 +373,7 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
 - Lo escribe `payrollSnapshotsService` en el mismo flujo de "Generar y guardar".
 - Botón **📥 JSON** en la fila del historial vuelve a bajar el archivo.
 - Es la fuente que va a consumir el **portal público de trabajadores** (otra app, monorepo futuro). El schema debe considerarse contrato externo — cambiarlo coordinadamente.
-- **Escribir, borrar y releer el snapshot viven en `services/payrollSnapshots.js`** (`saveSnapshot`, `deleteSnapshot`, `readSnapshot`). Los `catch` silenciosos son deliberados: el snapshot es un derivado y que falle no puede tumbar la generación ni el borrado de la nómina, que son las operaciones que mueven la plata. `readSnapshot` saca el `id` que inyecta Firestore (el JSON es contrato externo) y cae al campo `snapshot` embebido de las nóminas anteriores a la separación de colecciones. Renombrar y parchear al agregar ciclos/recalcular siguen en `Payroll.jsx` como llamadas directas al servicio.
+- **Escribir, borrar y releer el snapshot viven en `services/payrollSnapshots.js`** (`saveSnapshot`, `deleteSnapshot`, `readSnapshot`). Los `catch` silenciosos son deliberados: el snapshot es un derivado y que falle no puede tumbar la generación ni el borrado de la nómina, que son las operaciones que mueven la plata. `readSnapshot` saca el `id` que inyecta Firestore (el JSON es contrato externo) y cae al campo `snapshot` embebido de las nóminas anteriores a la separación de colecciones. También viven ahí las formas de ciclo, jornada y anticipo (`snapshotCycleOf`, `snapshotWorkdayOf`, `snapshotAdvanceOf`) —estaban copiadas en cada camino que escribe el JSON— y los ajustes al achicar o agrandar la nómina (`pruneSnapshot`, `extendSnapshot`). Renombrar y el parche del recálculo siguen en `Payroll.jsx` como llamadas directas al servicio.
 
 ### Anticipos en comprobantes
 
@@ -449,7 +449,23 @@ Cómo se resuelve ahora — la lógica vive en `utils/payrollItem.js`, con tests
 - **Sacar ciclo también suelta las jornadas de $0 del ciclo**, que antes quedaban etiquetadas: con aporte 0 el trabajador se salteaba entero.
 - **El snapshot acompaña** (`pruneSnapshot` en `services/payrollSnapshots.js`): sacar un ciclo o un trabajador deja el JSON sin la persona que salió, sin sus jornadas y sin sus anticipos, con la cabecera de totales al día. Antes ninguno de los dos tocaba el snapshot, y ahí seguía alguien cobrando algo que no se le iba a pagar. El recálculo también actualiza la cabecera, que antes quedaba con los totales viejos.
 - **El modal de detalle sigue a la nómina editada.** Un filtro de Grupo o Ciclo que apunta a algo que ya no está se ignora al filtrar (`activeLeaderFilter` / `activeCycleFilter`): antes dejaba la lista en 0 con el filtro marcado y, si quedaba un solo ciclo, sin chip para apagarlo. El resumen "Con labores" queda atado al `payroll` para el que se calculó y se recalcula después de cada edición; antes mostraba lo que se acababa de sacar hasta cerrar el modal.
-- **Limitación conocida**: sacar un ciclo y volver a agregarlo no deja la nómina igual que antes. "Agregar ciclos" nunca aplica anticipos a quien ya está en la nómina, así que lo que se soltó queda pendiente para la próxima nómina en vez de volver a descontarse acá. No se pierde plata; se descuenta después.
+- **Limitación conocida**: sacar un ciclo y volver a agregarlo no siempre deja la nómina igual que antes. Un anticipo que se soltó entero vuelve a aplicarse al agregar (ver la sección siguiente), pero uno que quedó aplicado en parte no crece: lo que se soltó queda pendiente para la próxima nómina en vez de volver a descontarse acá. No se pierde plata; se descuenta después.
+
+### Agrandar una nómina pendiente (agregar ciclos, labores o personas)
+
+Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se hubiera armado con eso adentro.** La cuenta vive en `planAddWorkdays` (`utils/payrollItem.js`) y la escritura en `addWorkdaysToPayroll` (`services/payrollsService.js`): primero el documento, después las jornadas y los anticipos. Tests en `utils/payrollAdd.test.js` y `tests/e2e/agregar-a-nomina.test.js`.
+
+- **Qué labores le pertenecen a la nómina: `cycleDetails[].laborIds`.** Sin el campo, el ciclo entero (las nóminas viejas, y un ciclo agregado con todas sus labores); una lista, solo esas; `[]`, ninguna — el ciclo está solo por días agregados a mano. Lo escriben "Generar", "+ Agregar ciclo" y "+ Agregar persona". `mergeCycleDetails` suma las labores de un ciclo que ya estaba en vez de repetirlo. "Entero" se guarda **sin** el campo: Firestore rechaza `undefined`.
+- **Recalcular respeta ese alcance** (`inRecalcScope`): trae lo etiquetado con la nómina, más lo pendiente de las labores que abarca. Antes traía todo lo pendiente de sus ciclos, así que deshacía en silencio las labores destildadas al generar; ese bug ya existía antes de poder elegir labores al agregar.
+- **"+ Agregar ciclo"** elige labores, igual que "Generar". Un ciclo que ya está con algunas labores aparece con las que le faltan; uno que está entero no aparece.
+- **"+ Agregar persona"** busca a alguien en el catálogo, carga sus días de ciclos abiertos —de cualquier faena, estén o no en la nómina— y deja elegir cuáles sumar. Los días que ya están en una nómina se ven sin casilla. Antes de confirmar, el pie muestra el bruto, los anticipos que se descuentan y el neto. Un ciclo que entra solo por estos días queda con `laborIds: []`.
+  - `asPayrollWorker` junta los días y anticipos de la persona bajo la clave que tiene en la nómina: sus jornadas viejas pueden guardar el rut de entonces, y sin eso entraría partida en dos items.
+  - Los días se **releen al confirmar**: si otra nómina tomó alguno mientras el modal estaba abierto, queda afuera y el aviso lo dice.
+- **Quien ya está** suma bruto, jornadas (también las de $0) y su `byCycle` **sumado, no pisado**: el ciclo puede estar ya con otras labores u otros días. Además **se le aplican los anticipos y bonos pendientes que esta nómina todavía no le tocaba**, con el mismo reparto incremental que Recalcular. Antes "Agregar ciclos" no se los aplicaba nunca.
+- **Quien no está** entra con el reparto completo si su bruto es mayor que 0. Sin bruto no entra, y sus días de $0 siguen pendientes, igual que al generar.
+- **Lo que esta nómina ya descuenta de un anticipo no crece** al agregar: re-encajar hacia arriba obligaría a revisar cuotas. Mismo criterio que Recalcular ("Solo achica, nunca agranda").
+- **El snapshot acompaña** (`extendSnapshot`): suma ciclos, jornadas y anticipos sin repetir y deja la cabecera al día; antes agregar ciclos no tocaba la cabecera. `laborIds` **no viaja** al JSON (`snapshotCycleOf` lo saca): es interno y el JSON es contrato externo.
+- Los dos modales se montan solo mientras están abiertos. El de ciclos se reseteaba con un `useEffect` que hacía `setState`, que era uno de los errores de lint de la deuda.
 
 ### Historial
 
