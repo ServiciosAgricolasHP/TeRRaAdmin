@@ -19,7 +19,8 @@
 // bono: al trabajador se le entrega el bono en la mano y la deuda arrastra a
 // la nómina siguiente en vez de cerrarse. La plata que desembolsa la empresa
 // es la misma en los dos órdenes; lo que cambia es si la deuda queda cerrada.
-import { advanceRemaining, advanceDueNow } from "../services/advancesService";
+import { advanceRemaining, advanceDueNow, advanceSign } from "../services/advancesService";
+import { aggregateWorkerAmounts, workdayPayAmount } from "./payroll";
 
 const porFechaAsc = (a, b) => {
   const da = a?.date || "";
@@ -375,4 +376,325 @@ export function planRecalcExisting({ items = [], freshByKey = new Map(), applied
   }
 
   return { patches, leaving, leavingKeys, advanceTargets, amountChanges };
+}
+
+// ───────────────────────── Agrandar una nómina ya armada ─────────────────────────
+//
+// Agregar un ciclo, unas labores o los días puntuales de una persona a una
+// nómina pendiente es el camino inverso de achicarla, con la misma regla: la
+// nómina tiene que quedar como si se hubiera armado con eso adentro.
+
+// Los datos de un ciclo que la nómina guarda en `cycleDetails`. El período
+// sale de `cycle.days`, que son los días que se marcaron en el ciclo.
+export function cycleDetailOf(cycle, { faenas = [], subfaenas = [] } = {}) {
+  const f = faenas.find((x) => x.id === cycle.faenaId);
+  const s = subfaenas.find((x) => x.id === cycle.subfaenaId);
+  const days = Array.isArray(cycle.days) ? [...cycle.days].sort() : [];
+  return {
+    id: cycle.id,
+    label: cycle.label || cycle.id,
+    faenaId: cycle.faenaId || "",
+    faenaName: f?.name || "",
+    subfaenaId: cycle.subfaenaId || "",
+    subfaenaName: s?.name || "",
+    firstDay: days[0] || "",
+    lastDay: days[days.length - 1] || "",
+  };
+}
+
+// Qué labores de cada ciclo le pertenecen a la nómina: las que Recalcular
+// puede traer cuando aparece producción nueva. Sale de `cycleDetails[].laborIds`:
+//
+//   - sin el campo → el ciclo entero (las nóminas viejas, y un ciclo que se
+//     agregó con todas sus labores);
+//   - una lista → solo esas labores;
+//   - `[]` → ninguna: el ciclo está en la nómina solo por días puntuales que
+//     se agregaron a mano, y de ahí no se trae nada más.
+//
+// Sin esto Recalcular traía TODO lo pendiente de los ciclos de la nómina, así
+// que deshacía en silencio cualquier elección: las labores que se destildaron
+// al generarla, y lo que se dejó afuera al agregarle cosas.
+export function payrollLaborScope(cycleDetails = []) {
+  const scope = new Map();
+  for (const cd of cycleDetails || []) {
+    if (cd?.id && Array.isArray(cd.laborIds)) scope.set(cd.id, new Set(cd.laborIds));
+  }
+  return scope;
+}
+
+// Si una jornada de los ciclos de la nómina entra a su recálculo. Lo que ya
+// está etiquetado con esta nómina entra siempre: es lo que se le paga hoy,
+// incluidos los días agregados a mano. Lo pendiente entra solo si es de una
+// labor que la nómina abarca.
+export function inRecalcScope(wd, payrollId, scope = new Map()) {
+  if (String(wd?.workerRut || "").startsWith("TEMP-")) return false;
+  if (wd.payrollId) return wd.payrollId === payrollId;
+  const labores = scope.get(wd.cycleId);
+  return !labores || labores.has(wd.laborId);
+}
+
+// Firestore rechaza `undefined`: un ciclo entero se guarda SIN `laborIds`, no
+// con `laborIds: undefined`.
+function conLabores(cd, laborIds) {
+  const { laborIds: _previo, ...resto } = cd;
+  return Array.isArray(laborIds) ? { ...resto, laborIds } : resto;
+}
+
+// Junta los `cycleDetails` de una nómina con los que se le agregan. Un ciclo
+// que ya estaba no se repite: se le suman las labores. Si cualquiera de los
+// dos lo trae entero (sin `laborIds`), queda entero.
+export function mergeCycleDetails(existing = [], toAdd = []) {
+  const out = (existing || []).map((cd) => ({ ...cd }));
+  const posicion = new Map(out.map((cd, i) => [cd.id, i]));
+  for (const cd of toAdd || []) {
+    if (!cd?.id) continue;
+    const i = posicion.get(cd.id);
+    if (i == null) {
+      posicion.set(cd.id, out.length);
+      out.push(conLabores(cd, cd.laborIds));
+      continue;
+    }
+    const antes = out[i];
+    const union =
+      Array.isArray(antes.laborIds) && Array.isArray(cd.laborIds)
+        ? [...new Set([...antes.laborIds, ...cd.laborIds])]
+        : null;
+    out[i] = conLabores(antes, union);
+  }
+  return out;
+}
+
+// Suma jornadas a una nómina pendiente: las de un ciclo o unas labores que se
+// agregan, o los días puntuales de una persona.
+//
+//   - Quien ya está suma el bruto, las jornadas (también las de $0) y su
+//     `byCycle` SUMADO, no pisado: el ciclo puede estar ya en la nómina con
+//     otras labores u otros días. Además se le aplican los anticipos y bonos
+//     pendientes que esta nómina todavía no le tocaba, con el mismo reparto
+//     incremental que usa Recalcular. Antes "Agregar ciclos" no se los
+//     aplicaba nunca y quedaban para la nómina siguiente.
+//   - Quien no está entra si su bruto es mayor que 0, con el reparto completo,
+//     igual que al generar. Sin bruto no entra (va a `sinBruto`) y sus
+//     jornadas de $0 siguen pendientes.
+//
+// Lo que esta nómina ya descuenta de un anticipo no crece acá: re-encajar
+// hacia arriba obligaría a revisar cuotas, y Recalcular sigue la misma regla.
+//
+// `profileFor(agg)` devuelve los datos de cuenta y de grupo de la ficha del
+// trabajador, o `null` si no está en el catálogo.
+export function planAddWorkdays({
+  items = [],
+  workdays = [],
+  laborTypeById = new Map(),
+  pendingAdvances = [],
+  profileFor = () => null,
+}) {
+  // Una persona puede venir partida en varios agregados: sus jornadas viejas
+  // guardan el rut que tenía entonces. Se juntan con la misma clave que usan
+  // los items.
+  const porClave = new Map();
+  for (const a of aggregateWorkerAmounts(workdays, laborTypeById)) {
+    const key = a.workerId || a.rut;
+    const e = porClave.get(key);
+    if (!e) {
+      porClave.set(key, { ...a, byCycle: { ...a.byCycle }, workdayIds: [...a.workdayIds] });
+      continue;
+    }
+    e.total += a.total;
+    for (const [cid, monto] of Object.entries(a.byCycle)) e.byCycle[cid] = (e.byCycle[cid] || 0) + monto;
+    e.workdayIds.push(...a.workdayIds);
+  }
+
+  const pendientesPorClave = new Map();
+  for (const adv of pendingAdvances || []) {
+    const key = adv.workerId || adv.workerRut;
+    const e = pendientesPorClave.get(key) || { anticipos: [], bonos: [] };
+    if (advanceSign(adv) > 0) e.bonos.push(adv);
+    else e.anticipos.push(adv);
+    pendientesPorClave.set(key, e);
+  }
+
+  const limpio = (x) => ({ advanceId: x.advanceId, amount: Math.round(Number(x.amount) || 0) });
+  const out = [...items];
+  const posicion = new Map(out.map((it, i) => [it.workerId || it.rut, i]));
+  const workdayIds = [];
+  const newAdvanceApplications = [];
+  const added = [];
+  const sinBruto = [];
+
+  for (const [key, a] of porClave) {
+    const suma = Math.round(a.total);
+    const pendientes = pendientesPorClave.get(key) || { anticipos: [], bonos: [] };
+    const i = posicion.get(key);
+
+    if (i != null) {
+      const it = out[i];
+      const yaTocados = new Set(it.advanceIds || []);
+      const nuevos = (xs) => xs.filter((x) => !yaTocados.has(x.id) && advanceRemaining(x) > 0);
+      const gross = brutoDe(it) + suma;
+      const byCycle = { ...(it.byCycle || {}) };
+      for (const [cid, monto] of Object.entries(a.byCycle)) {
+        byCycle[cid] = Math.round((Number(byCycle[cid]) || 0) + monto);
+      }
+      const reparto = allocateAdvances({
+        gross,
+        anticipos: nuevos(pendientes.anticipos),
+        bonos: nuevos(pendientes.bonos),
+        alreadyAdvanced: Number(it.advance) || 0,
+        alreadyBonused: Number(it.bonus) || 0,
+      });
+      const ant = reparto.anticipoApplications.map(limpio);
+      const bon = reparto.bonoApplications.map(limpio);
+      const ahora = [...ant, ...bon];
+      const anticipoApplications = [...(it.anticipoApplications || []), ...ant];
+      const bonoApplications = [...(it.bonoApplications || []), ...bon];
+      out[i] = {
+        ...it,
+        grossAmount: gross,
+        byCycle,
+        workdayIds: [...new Set([...(it.workdayIds || []), ...a.workdayIds])],
+        advance: reparto.advanceTotal,
+        bonus: reparto.bonusTotal,
+        anticiposTotal: reparto.advanceTotal,
+        bonosTotal: reparto.bonusTotal,
+        anticipoApplications,
+        bonoApplications,
+        advanceApplications: [...(it.advanceApplications || []), ...ahora],
+        advanceIds: [...(it.advanceIds || []), ...ahora.map((x) => x.advanceId)],
+        advanceNote: advanceNote({ anticipoApplications, bonoApplications }),
+        amount: reparto.amount,
+      };
+      workdayIds.push(...a.workdayIds);
+      newAdvanceApplications.push(...ahora);
+      added.push({
+        key,
+        rut: it.rut,
+        name: it.name,
+        isNew: false,
+        gross: suma,
+        anticipos: reparto.anticiposTotal,
+        bonos: reparto.bonosTotal,
+        oldGross: brutoDe(it),
+        newGross: gross,
+        oldNet: Math.round(Number(it.amount) || 0),
+        newNet: reparto.amount,
+      });
+      continue;
+    }
+
+    if (suma <= 0) {
+      sinBruto.push({ key, rut: a.rut, workdayIds: a.workdayIds });
+      continue;
+    }
+
+    const perfil = profileFor(a) || {};
+    const reparto = allocateAdvances({ gross: suma, anticipos: pendientes.anticipos, bonos: pendientes.bonos });
+    const ant = reparto.anticipoApplications.map(limpio);
+    const bon = reparto.bonoApplications.map(limpio);
+    const ahora = [...ant, ...bon];
+    const byCycle = {};
+    for (const [cid, monto] of Object.entries(a.byCycle)) byCycle[cid] = Math.round(monto);
+    const nuevo = {
+      rut: a.rut,
+      workerId: key,
+      paymentRut: perfil.paymentRut || a.rut,
+      name: perfil.name || "(sin nombre)",
+      accountNumber: perfil.accountNumber || "",
+      bankCode: perfil.bankCode || "",
+      accountType: perfil.accountType ?? 3,
+      email: perfil.email || "",
+      groupLeader: perfil.groupLeader || "",
+      grossAmount: suma,
+      advance: reparto.anticiposTotal,
+      bonus: reparto.bonosTotal,
+      advanceNote: advanceNote(reparto),
+      advanceIds: ahora.map((x) => x.advanceId),
+      advanceApplications: ahora,
+      anticipoApplications: ant,
+      bonoApplications: bon,
+      anticiposTotal: reparto.anticiposTotal,
+      bonosTotal: reparto.bonosTotal,
+      adelantosTotal: 0,
+      amount: reparto.amount,
+      byCycle,
+      workdayIds: a.workdayIds,
+    };
+    posicion.set(key, out.length);
+    out.push(nuevo);
+    workdayIds.push(...a.workdayIds);
+    newAdvanceApplications.push(...ahora);
+    added.push({
+      key,
+      rut: a.rut,
+      name: nuevo.name,
+      isNew: true,
+      gross: suma,
+      anticipos: reparto.anticiposTotal,
+      bonos: reparto.bonosTotal,
+      oldGross: 0,
+      newGross: suma,
+      oldNet: 0,
+      newNet: reparto.amount,
+    });
+  }
+
+  return { items: out, workdayIds, newAdvanceApplications, added, sinBruto };
+}
+
+// Los días y anticipos de UNA persona, listos para `planAddWorkdays`, bajo la
+// clave con la que figura en la nómina: la de su item si ya está, la de su
+// ficha si no. Sus jornadas viejas pueden guardar el rut que tenía entonces y
+// sus anticipos otro distinto; sin unificarlos entraría partida en dos items,
+// o sin que se le descuente lo que debe. Devuelve copias: lo que se etiqueta
+// y lo que va al snapshot sigue saliendo de los documentos originales.
+export function asPayrollWorker({ items = [], keys = [], fallbackKey, rut, workdays = [], advances = [] }) {
+  const claves = new Set(keys);
+  const existing = items.find((it) => claves.has(it.workerId) || claves.has(it.rut)) || null;
+  const key = existing ? existing.workerId || existing.rut : fallbackKey;
+  const rutItem = existing?.rut || rut || key;
+  return {
+    key,
+    existing,
+    workdays: workdays.map((wd) => ({ ...wd, workerId: key, workerRut: rutItem })),
+    advances: advances.map((a) => ({ ...a, workerId: key })),
+  };
+}
+
+// Los días de una persona, para elegir cuáles sumar a una nómina: una fila
+// por (ciclo, labor, fecha) y estado. El monto es lo que esa fila sumaría al
+// bruto, con la misma cuenta que `aggregateWorkerAmounts`: lo que se ve al
+// elegir es lo que entra.
+//
+// `status`: "pending" (se puede agregar), "here" (ya está en esta nómina) u
+// "other" (está en otra; `payrollId` dice en cuál).
+export function workerDayRows(workdays = [], { laborTypeById = new Map(), payrollId = null } = {}) {
+  const filas = new Map();
+  for (const wd of workdays || []) {
+    const status = !wd.payrollId ? "pending" : wd.payrollId === payrollId ? "here" : "other";
+    const key = [wd.cycleId, wd.laborId, wd.date || "", status, status === "other" ? wd.payrollId : ""].join("|");
+    let fila = filas.get(key);
+    if (!fila) {
+      fila = {
+        key,
+        cycleId: wd.cycleId,
+        laborId: wd.laborId,
+        date: wd.date || "",
+        status,
+        payrollId: wd.payrollId || null,
+        workdayIds: [],
+        workdays: [],
+        amount: 0,
+      };
+      filas.set(key, fila);
+    }
+    fila.workdayIds.push(wd.id);
+    fila.workdays.push(wd);
+    fila.amount += workdayPayAmount(wd, laborTypeById.get(wd.laborId));
+  }
+  return [...filas.values()].sort(
+    (a, b) =>
+      String(a.cycleId).localeCompare(String(b.cycleId)) ||
+      a.date.localeCompare(b.date) ||
+      String(a.laborId).localeCompare(String(b.laborId)),
+  );
 }

@@ -32,17 +32,18 @@ export function bchileAccountTypeCode(accountTypeValue) {
 
 // Aggregate amount per worker, per cycle, respecting labor type.
 // Returns: [{ rut, workerId, total, byCycle: { [cycleId]: amount }, workdayIds: [] }]
+// Lo que una jornada suma al bruto. Trato puede venir repartido en tiers.
+// Separado para que el selector de días de "Agregar persona" muestre
+// exactamente lo que después entra a la nómina.
+export function workdayPayAmount(wd, laborType) {
+  return laborType === "trato" ? getTratoTierTotals(wd).amount : Number(wd.amount) || 0;
+}
+
 export function aggregateWorkerAmounts(workdays, laborTypeById) {
   const byWorker = new Map();
   for (const wd of workdays) {
     if (!wd.workerRut) continue;
-    const type = laborTypeById.get(wd.laborId);
-    let amount = 0;
-    if (type === "trato") {
-      amount = getTratoTierTotals(wd).amount;
-    } else {
-      amount = Number(wd.amount) || 0;
-    }
+    const amount = workdayPayAmount(wd, laborTypeById.get(wd.laborId));
     // Un día en cero SÍ entra. Cortaba acá, antes de meter el id en
     // `workdayIds`, así que nunca se etiquetaba con `payrollId` y quedaba
     // disponible para siempre: las cifras de "pagado / pendiente" del ciclo

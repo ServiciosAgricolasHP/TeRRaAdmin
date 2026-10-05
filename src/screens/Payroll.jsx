@@ -17,7 +17,7 @@ import {
   untagWorkdaysFromPayroll,
   removeWorkerFromPayroll,
   removeCycleFromPayroll,
-  addCyclesToPayroll,
+  addWorkdaysToPayroll,
   recalculatePayrollItems,
   recalcPayrollAggregates,
   markBankPaid,
@@ -39,7 +39,16 @@ import {
   installmentProgress,
   cadenceMeta,
 } from "../services/advancesService";
-import { saveSnapshot, deleteSnapshot, readSnapshot } from "../services/payrollSnapshots";
+import {
+  saveSnapshot,
+  deleteSnapshot,
+  readSnapshot,
+  extendSnapshot,
+  snapshotCycleOf,
+  snapshotWorkdayOf,
+  snapshotAdvanceOf,
+} from "../services/payrollSnapshots";
+import { workerKeys } from "../services/workersService";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import { bankName, accountTypeLabel, ACCOUNT_TYPES, isCashBank, CASH_BANK_CODE } from "../utils/banks";
 import { getTratoTierTotals, getDayCombos, getDaySingle, getTratoTiers, tratoTypeLabel, tratoUnitLabel, cosechaUnit, comboLabel, containerLabel, formatLaborDayPrice } from "../utils/cosechaCombos";
@@ -61,6 +70,12 @@ import {
   advanceNote,
   recalcNeedsRefit,
   planRecalcExisting,
+  cycleDetailOf,
+  payrollLaborScope,
+  inRecalcScope,
+  planAddWorkdays,
+  workerDayRows,
+  asPayrollWorker,
 } from "../utils/payrollItem";
 import ConfirmDialog from "../components/ConfirmDialog";
 import Modal from "../components/Modal";
@@ -440,12 +455,28 @@ export default function Payroll() {
     });
   };
 
+  // Qué labores de un ciclo entran a la nómina, para guardarlo en
+  // `cycleDetails[].laborIds`: `undefined` = todas (el ciclo entero), una
+  // lista = solo esas, `[]` = ninguna. Guardarlo es lo que hace que
+  // Recalcular respete la elección: antes se perdía al generar, y el primer
+  // recálculo traía también las labores destildadas.
+  const laborScopeOf = (cycle) => {
+    const elegidas = selectedLaborsByCycle.get(cycle.id);
+    if (!elegidas) return undefined;
+    const todas = (cycle.labors || []).map((l) => l.id);
+    if (todas.every((id) => elegidas.has(id))) return undefined;
+    return todas.filter((id) => elegidas.has(id));
+  };
+
   const buildPreview = async () => {
     if (selectedCycleIds.size === 0) return;
     setBusy(true);
     try {
       const cycleIds = [...selectedCycleIds];
       const selectedCycles = cycles.filter((c) => cycleIds.includes(c.id));
+      // Un ciclo con todas sus labores destildadas no aporta nada y no entra
+      // a la nómina (ver `laborScopeOf`).
+      const cycleIdsConLabores = selectedCycles.filter((c) => laborScopeOf(c)?.length !== 0).map((c) => c.id);
 
       // Build labor type map
       const laborTypeById = new Map();
@@ -499,7 +530,7 @@ export default function Payroll() {
           const bankCode = bd[3] || "";
           const cash = isCashBank(bankCode);
           const byCycle = {};
-          for (const cid of cycleIds) {
+          for (const cid of cycleIdsConLabores) {
             byCycle[cid] = Math.round(a.byCycle[cid] || 0);
           }
           const accountIssue = validateAccountNumber(bd[1] || "", bankCode);
@@ -667,26 +698,16 @@ export default function Payroll() {
     setBusy(true);
     setProgress({ step: "Armando datos de la nómina...", detail: "", percent: 2 });
     try {
-      const cycleIds = [...selectedCycleIds];
-      const selectedCycles = cycles.filter((c) => cycleIds.includes(c.id));
+      // Un ciclo con todas sus labores destildadas no aportó nada: no entra.
+      // Los que entran guardan qué labores se eligieron, para que Recalcular
+      // no traiga después las que quedaron afuera.
+      const selectedCycles = cycles.filter((c) => selectedCycleIds.has(c.id) && laborScopeOf(c)?.length !== 0);
+      const cycleIds = selectedCycles.map((c) => c.id);
       const cycleLabels = selectedCycles.map((c) => c.label || c.id);
       const cycleDetails = selectedCycles.map((c) => {
-        const f = faenas.find((x) => x.id === c.faenaId);
-        const s = subfaenas.find((x) => x.id === c.subfaenaId);
-        // Período del ciclo (primer y último día). Lo tomamos de cycle.days
-        // — son los días que el usuario marcó en el ciclo. Ordenamos por las
-        // dudas (en general ya vienen ordenados pero no es invariante).
-        const days = Array.isArray(c.days) ? [...c.days].sort() : [];
-        return {
-          id: c.id,
-          label: c.label || c.id,
-          faenaId: c.faenaId || "",
-          faenaName: f?.name || "",
-          subfaenaId: c.subfaenaId || "",
-          subfaenaName: s?.name || "",
-          firstDay: days[0] || "",
-          lastDay: days[days.length - 1] || "",
-        };
+        const laborIds = laborScopeOf(c);
+        const detail = cycleDetailOf(c, { faenas, subfaenas });
+        return laborIds ? { ...detail, laborIds } : detail;
       });
 
       const cleanItems = items.map((p) => {
@@ -759,56 +780,14 @@ export default function Payroll() {
           advanceTotal: advanceTotalSum,
           bonusTotal: bonusTotalSum,
         },
-        cycles: cycleDetails.map((cd) => {
-          const cycle = cycles.find((c) => c.id === cd.id);
-          return {
-            ...cd,
-            dayPrices: cycle?.dayPrices || {},
-            labors: (cycle?.labors || []).map((l) => ({
-              id: l.id, name: l.name, type: l.type,
-              // Catálogo: tratoType (Poda/Amarre/...) y tratoUnit (Planta/
-              // Metro/...) son índices de catalogo. Para cosecha la unidad
-              // se deriva de containerY del workday → cosechaUnit(catalogs).
-              tratoType: l.tratoType ?? null,
-              tratoUnit: l.tratoUnit ?? null,
-              cosechaMode: l.cosechaMode || null,
-              cosechaPrices: l.cosechaPrices || null,
-              tratoMode: l.tratoMode || null,
-              tratoTiers: l.tratoTiers || null,
-              tratoHEDailyAmount: l.tratoHEDailyAmount ?? null,
-              tratoHEOvertimeRate: l.tratoHEOvertimeRate ?? null,
-              tratoHEManejoAmount: l.tratoHEManejoAmount ?? null,
-              tratoHESupervisionAmount: l.tratoHESupervisionAmount ?? null,
-              normalDailyAmount: l.normalDailyAmount ?? null,
-              // tratoEtapas: etapas del labor (nombre + tarifa por día + counts).
-              stages: l.stages ?? null,
-            })),
-          };
-        }),
+        cycles: cycleDetails.map((cd) => snapshotCycleOf(cd, cycles.find((c) => c.id === cd.id))),
         workers: cleanItems,
         workdays: (previewWorkdaysRef.current || [])
           .filter((wd) => wdIdSet.has(wd.id))
-          .map((wd) => ({
-            id: wd.id,
-            cycleId: wd.cycleId, laborId: wd.laborId,
-            workerRut: wd.workerRut, date: wd.date,
-            qty: wd.qty ?? null, amount: wd.amount ?? 0,
-            qualityX: wd.qualityX ?? null, containerY: wd.containerY ?? null,
-            tierKey: wd.tierKey ?? null, tiers: wd.tiers ?? null,
-            stageId: wd.stageId ?? null,
-            overtimeHours: wd.overtimeHours ?? null,
-            hasManejo: !!wd.hasManejo, hasSupervision: !!wd.hasSupervision,
-            extras: wd.extras ?? null, isHoliday: !!wd.isHoliday,
-          })),
+          .map(snapshotWorkdayOf),
         advances: (previewAdvancesRef.current || [])
           .filter((adv) => advIdSet.has(adv.id))
-          .map((adv) => ({
-            id: adv.id, workerRut: adv.workerRut,
-            type: adv.type, amount: Number(adv.amount) || 0,
-            amountPaid: Number(adv.amountPaid) || 0,
-            date: adv.date || null, note: adv.note || "",
-            status: adv.status || null,
-          })),
+          .map(snapshotAdvanceOf),
       };
 
       setProgress({ step: "Creando registro de la nómina...", detail: "", percent: 5 });
@@ -4466,6 +4445,12 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
   })();
 
   const cycleDetails = payroll.cycleDetails || [];
+  // Las labores que la nómina abarca de un ciclo agregado en parte, para el
+  // listado de ciclos.
+  const laborNamesOf = (cd) => {
+    const labors = cycles.find((x) => x.id === cd.id)?.labors || [];
+    return cd.laborIds.map((id) => labors.find((l) => l.id === id)?.name || "labor borrada").join(", ");
+  };
 
   // Edit mode: permite sacar un trabajador o un ciclo entero de la nómina.
   // Solo disponible si la nómina está pendiente (paga = revertir primero).
@@ -4479,7 +4464,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     setConfirmRemove({
       type: "worker",
       target: item,
-      message: `¿Sacar a ${label} de esta nómina?\n\nSe liberan sus workdays y se restauran sus anticipos aplicados. No se puede deshacer (pero podés re-incluirlo generando otra nómina).`,
+      message: `¿Sacar a ${label} de esta nómina?\n\nSe liberan sus workdays y se restauran sus anticipos aplicados. Se puede volver a sumar con "+ Agregar persona".`,
     });
   };
   const doRemoveWorker = async (item) => {
@@ -4533,211 +4518,104 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     else doRemoveCycle(cr.target);
   };
 
-  // Agregar ciclos (de la misma u otra subfaena) a una nómina ya creada.
-  // Trabajadores que ya estaban en la nómina solo suman el nuevo aporte al
-  // bruto — sus anticipos/bonos ya aplicados no se tocan. Trabajadores nuevos
-  // se arman igual que al generar la nómina originalmente: cuenta bancaria del
-  // catálogo + anticipos/bonos pendientes aplicados (anticipos oldest-first
-  // capados por el bruto, bonos completos).
+  // Datos de cuenta y grupo de la ficha del trabajador: con estos entra quien
+  // se agrega a la nómina, y contra estos compara Recalcular.
+  const workerByKey = (key) => workers.find((w) => w.id === key) || workers.find((w) => w.rut === key);
+  const liveProfileFor = (w) => {
+    const bd = w?.bankDetails || [];
+    return {
+      name: w?.name || "",
+      paymentRut: bd[0] || w?.rut || "",
+      accountNumber: bd[1] || "",
+      bankCode: bd[3] || "",
+      accountType: bd[2] != null ? Number(bd[2]) : 3,
+      email: w?.email || "",
+      groupLeader: normalizeLeader(w?.groupLeader?.[0]) || "",
+    };
+  };
+  const profileForAgg = (a) => {
+    const w = workerByKey(a.workerId || a.rut) || workers.find((x) => x.id === a.rut);
+    return w ? liveProfileFor(w) : null;
+  };
+
+  // Agregar ciclos o labores (de la misma u otra subfaena) a una nómina ya
+  // creada. `selection` es [{ cycleId, laborIds }]: se eligen las labores, y
+  // un ciclo que ya está en la nómina con algunas aparece con las que le
+  // faltan. La cuenta vive en `planAddWorkdays` (src/utils/payrollItem.js):
+  // quien ya está suma la producción y los anticipos pendientes que esta
+  // nómina no le tocaba; quien no está entra con el reparto completo.
   const [addCyclesOpen, setAddCyclesOpen] = useState(false);
-  const handleAddCycles = async (cycleIdsToAdd) => {
-    if (!cycleIdsToAdd?.length || editBusy) return;
+  const handleAddCycles = async (selection) => {
+    if (!selection?.length || editBusy) return;
     setEditBusy(true);
     try {
-      const selectedCycles = cycles.filter((c) => cycleIdsToAdd.includes(c.id));
+      const elegidas = new Map(selection.map((s) => [s.cycleId, new Set(s.laborIds)]));
+      const cycleIdsToAdd = [...elegidas.keys()];
+      const selectedCycles = cycles.filter((c) => elegidas.has(c.id));
       const laborTypeById = new Map();
       for (const cycle of selectedCycles) {
         for (const labor of cycle.labors || []) laborTypeById.set(labor.id, labor.type);
       }
 
-      const allNewWorkdays = [];
+      // Directo de Firestore, sin caché: de acá sale lo que se etiqueta.
+      const nuevas = [];
       for (let i = 0; i < cycleIdsToAdd.length; i += 10) {
         const chunk = cycleIdsToAdd.slice(i, i + 10);
         const wds = await workdaysService.list({ wheres: [["cycleId", "in", chunk]] });
         for (const wd of wds) {
           if (wd.payrollId) continue;
           if (String(wd.workerRut || "").startsWith("TEMP-")) continue;
-          allNewWorkdays.push(wd);
+          if (!elegidas.get(wd.cycleId)?.has(wd.laborId)) continue;
+          nuevas.push(wd);
         }
       }
-      if (allNewWorkdays.length === 0) {
-        toast.warning("No hay producción disponible para agregar en esos ciclos (ya está en otra nómina o no tiene monto).");
+      const pendingAdvances = await listPendingForWorkers(
+        aggregateWorkerAmounts(nuevas, laborTypeById).map(resolverRutVigente(workers)),
+      );
+      const plan = planAddWorkdays({
+        items,
+        workdays: nuevas,
+        laborTypeById,
+        pendingAdvances,
+        profileFor: profileForAgg,
+      });
+      if (plan.workdayIds.length === 0) {
+        toast.warning("No hay producción disponible para agregar en esas labores (ya está en otra nómina o no tiene monto).");
         return;
       }
 
-      const aggregates = aggregateWorkerAmounts(allNewWorkdays, laborTypeById).filter((a) => a.total > 0);
-      const existingByKey = new Map(items.map((it) => [it.workerId || it.rut, it]));
-
-      const newWorkerAggs = aggregates.filter((a) => !existingByKey.has(a.workerId || a.rut));
-      const pendingAdvances = newWorkerAggs.length
-        ? await listPendingForWorkers(newWorkerAggs.map(resolverRutVigente(workers)))
-        : [];
-      const advancesByKey = new Map();
-      for (const adv of pendingAdvances) {
-        const key = adv.workerId || adv.workerRut;
-        const e = advancesByKey.get(key) || { anticipos: [], bonos: [] };
-        if (advanceSign(adv) > 0) e.bonos.push(adv); else e.anticipos.push(adv);
-        advancesByKey.set(key, e);
-      }
-      const workerById = (rut) => workers.find((w) => w.id === rut);
-
-      const newAdvanceApplications = [];
-      const mergedItems = [...items];
-      for (const a of aggregates) {
-        const key = a.workerId || a.rut;
-        const existing = existingByKey.get(key);
-        if (existing) {
-          const idx = mergedItems.findIndex((it) => (it.workerId || it.rut) === key);
-          const addGross = Math.round(a.total);
-          const newGross = Math.round(Number(existing.grossAmount || existing.amount || 0)) + addGross;
-          const newByCycle = { ...(existing.byCycle || {}) };
-          for (const [cid, amt] of Object.entries(a.byCycle)) newByCycle[cid] = Math.round(amt);
-          mergedItems[idx] = {
-            ...existing,
-            grossAmount: newGross,
-            amount: Math.max(0, newGross - (Number(existing.advance) || 0) + (Number(existing.bonus) || 0)),
-            byCycle: newByCycle,
-            workdayIds: [...(existing.workdayIds || []), ...a.workdayIds],
-          };
-          continue;
-        }
-
-        const w = workerById(a.rut);
-        const bd = w?.bankDetails || [];
-        const bankCode = bd[3] || "";
-        const grossInt = Math.round(a.total);
-        const byCycle = {};
-        for (const [cid, amt] of Object.entries(a.byCycle)) byCycle[cid] = Math.round(amt);
-        const adv = advancesByKey.get(key) || { anticipos: [], bonos: [] };
-
-        // Mismo reparto que al armar la nómina: bonos primero, anticipos
-        // después topeados por bruto + bonos. Ver src/utils/payrollItem.js.
-        const reparto = allocateAdvances({
-          gross: grossInt,
-          anticipos: adv.anticipos,
-          bonos: adv.bonos,
-        });
-        const { anticipoApplications, bonoApplications, anticiposTotal, bonosTotal } = reparto;
-        const advanceApplications = [...anticipoApplications, ...bonoApplications];
-        newAdvanceApplications.push(...advanceApplications);
-
-        mergedItems.push({
-          rut: a.rut,
-          workerId: a.workerId || a.rut,
-          paymentRut: bd[0] || a.rut,
-          name: w?.name || "(sin nombre)",
-          accountNumber: bd[1] || "",
-          bankCode,
-          accountType: bd[2] != null ? Number(bd[2]) : 3,
-          email: w?.email || "",
-          groupLeader: normalizeLeader(w?.groupLeader?.[0]),
-          grossAmount: grossInt,
-          advance: anticiposTotal,
-          bonus: bonosTotal,
-          advanceNote: advanceNote(reparto),
-          advanceIds: advanceApplications.map((x) => x.advanceId),
-          advanceApplications,
-          anticipoApplications,
-          bonoApplications,
-          anticiposTotal,
-          bonosTotal,
-          adelantosTotal: 0,
-          amount: Math.max(0, grossInt - anticiposTotal + bonosTotal),
-          byCycle,
-          workdayIds: a.workdayIds || [],
-        });
-      }
-
       const cycleDetailsToAdd = selectedCycles.map((c) => {
-        const f = faenas.find((x) => x.id === c.faenaId);
-        const s = subfaenas.find((x) => x.id === c.subfaenaId);
-        const days = Array.isArray(c.days) ? [...c.days].sort() : [];
-        return {
-          id: c.id,
-          label: c.label || c.id,
-          faenaId: c.faenaId || "",
-          faenaName: f?.name || "",
-          subfaenaId: c.subfaenaId || "",
-          subfaenaName: s?.name || "",
-          firstDay: days[0] || "",
-          lastDay: days[days.length - 1] || "",
-        };
+        const detail = cycleDetailOf(c, { faenas, subfaenas });
+        const todas = (c.labors || []).map((l) => l.id);
+        const laborIds = todas.filter((id) => elegidas.get(c.id).has(id));
+        // Entero solo si es nuevo en la nómina y se eligieron todas sus
+        // labores; si no, Recalcular traería después lo que se dejó afuera.
+        const yaEsta = cycleDetails.some((cd) => cd.id === c.id);
+        return !yaEsta && laborIds.length === todas.length ? detail : { ...detail, laborIds };
       });
 
-      await addCyclesToPayroll(payroll.id, { items: mergedItems, cycleDetailsToAdd });
-      await tagWorkdaysWithPayroll(allNewWorkdays.map((wd) => wd.id), payroll.id);
-      if (newAdvanceApplications.length) {
-        await applyAdvancesToPayroll(newAdvanceApplications, payroll.id);
-      }
-
-      // Snapshot: agrega ciclos/labores/workdays/anticipos nuevos y refresca
-      // `workers` con los items mergeados, para que el desglose por trabajador
-      // (WorkerPaidDetailTables) siga viendo el detalle completo sin necesitar
-      // datos en vivo.
-      try {
-        const snap = await payrollSnapshotsService.getById(payroll.id);
-        if (snap) {
-          const newAdvIdSet = new Set(newAdvanceApplications.map((x) => x.advanceId));
-          const newAdvancesForSnapshot = pendingAdvances
-            .filter((adv) => newAdvIdSet.has(adv.id))
-            .map((adv) => ({
-              id: adv.id, workerRut: adv.workerRut,
-              type: adv.type, amount: Number(adv.amount) || 0,
-              amountPaid: Number(adv.amountPaid) || 0,
-              date: adv.date || null, note: adv.note || "",
-              status: adv.status || null,
-            }));
-          await payrollSnapshotsService.update(payroll.id, {
-            cycles: [
-              ...(snap.cycles || []),
-              ...selectedCycles.map((c) => {
-                const cd = cycleDetailsToAdd.find((x) => x.id === c.id);
-                return {
-                  ...cd,
-                  dayPrices: c.dayPrices || {},
-                  labors: (c.labors || []).map((l) => ({
-                    id: l.id, name: l.name, type: l.type,
-                    tratoType: l.tratoType ?? null,
-                    tratoUnit: l.tratoUnit ?? null,
-                    cosechaMode: l.cosechaMode || null,
-                    cosechaPrices: l.cosechaPrices || null,
-                    tratoMode: l.tratoMode || null,
-                    tratoTiers: l.tratoTiers || null,
-                    tratoHEDailyAmount: l.tratoHEDailyAmount ?? null,
-                    tratoHEOvertimeRate: l.tratoHEOvertimeRate ?? null,
-                    tratoHEManejoAmount: l.tratoHEManejoAmount ?? null,
-                    tratoHESupervisionAmount: l.tratoHESupervisionAmount ?? null,
-                    normalDailyAmount: l.normalDailyAmount ?? null,
-                    stages: l.stages ?? null,
-                  })),
-                };
-              }),
-            ],
-            workers: mergedItems,
-            workdays: [
-              ...(snap.workdays || []),
-              ...allNewWorkdays.map((wd) => ({
-                id: wd.id, cycleId: wd.cycleId, laborId: wd.laborId,
-                workerRut: wd.workerRut, date: wd.date,
-                qty: wd.qty ?? null, amount: wd.amount ?? 0,
-                qualityX: wd.qualityX ?? null, containerY: wd.containerY ?? null,
-                tierKey: wd.tierKey ?? null, tiers: wd.tiers ?? null,
-                stageId: wd.stageId ?? null,
-                overtimeHours: wd.overtimeHours ?? null,
-                hasManejo: !!wd.hasManejo, hasSupervision: !!wd.hasSupervision,
-                extras: wd.extras ?? null, isHoliday: !!wd.isHoliday,
-              })),
-            ],
-            advances: [...(snap.advances || []), ...newAdvancesForSnapshot],
-          });
-        }
-      } catch (err) {
-        console.warn("No se pudo actualizar el snapshot al agregar ciclos:", err);
-      }
+      const aggregates = await addWorkdaysToPayroll(payroll.id, {
+        items: plan.items,
+        cycleDetailsToAdd,
+        workdayIds: plan.workdayIds,
+        advanceApplications: plan.newAdvanceApplications,
+      });
+      const incluidas = new Set(plan.workdayIds);
+      const anticipoPorId = new Map(pendingAdvances.map((a) => [a.id, a]));
+      await extendSnapshot(payroll.id, {
+        items: plan.items,
+        aggregates,
+        cycles: cycleDetailsToAdd.map((cd) => snapshotCycleOf(cd, selectedCycles.find((c) => c.id === cd.id))),
+        workdays: nuevas.filter((wd) => incluidas.has(wd.id)).map(snapshotWorkdayOf),
+        advances: plan.newAdvanceApplications
+          .map((x) => anticipoPorId.get(x.advanceId))
+          .filter(Boolean)
+          .map(snapshotAdvanceOf),
+      });
 
       setAddCyclesOpen(false);
       await onChanged?.();
-      toast.success(`${selectedCycles.length} ciclo(s) agregado(s) a la nómina.`);
+      toast.success(resumenAgregado(`${selectedCycles.length} ciclo(s) agregado(s) a la nómina.`, plan.added));
     } catch (err) {
       toast.error(`Error al agregar ciclos: ${err?.message || err}`);
     } finally {
@@ -4745,9 +4623,91 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     }
   };
 
-  // Recalcular: vuelve a traer TODOS los workdays vigentes de los ciclos ya
-  // incluidos en la nómina (no solo los que quedaron etiquetados al crearla)
-  // y compara contra lo guardado. Detecta 3 cosas — ediciones a días
+  // Agregar los días puntuales de una persona, de cualquier ciclo abierto,
+  // esté o no en la nómina. Un ciclo que entra solo por estos días queda con
+  // `laborIds: []`: Recalcular no trae nada más de ahí, solo refresca lo que
+  // se agregó.
+  const [addWorkerOpen, setAddWorkerOpen] = useState(false);
+  const handleAddWorkerDays = async ({ worker, workdayIds }) => {
+    if (!worker || !workdayIds?.length || editBusy) return;
+    setEditBusy(true);
+    try {
+      const claves = workerKeys(worker);
+      // Se releen: entre que se abrió el modal y ahora, otra nómina pudo
+      // tomar alguno de esos días.
+      const frescas = await workdaysService.list({ wheres: [["workerRut", "in", claves]] });
+      const pedidas = new Set(workdayIds);
+      const libres = frescas.filter((wd) => pedidas.has(wd.id) && !wd.payrollId);
+      if (libres.length === 0) {
+        toast.error("Esos días ya no están disponibles: los tomó otra nómina.");
+        return;
+      }
+      const persona = asPayrollWorker({
+        items,
+        keys: claves,
+        fallbackKey: worker.id,
+        rut: worker.rut || worker.id,
+        workdays: libres,
+        advances: await listPendingForWorkers(claves),
+      });
+      const laborTypeById = new Map(cycles.flatMap((c) => (c.labors || []).map((l) => [l.id, l.type])));
+      const plan = planAddWorkdays({
+        items,
+        workdays: persona.workdays,
+        laborTypeById,
+        pendingAdvances: persona.advances,
+        profileFor: () => liveProfileFor(worker),
+      });
+      if (plan.workdayIds.length === 0) {
+        toast.warning("Lo elegido suma $0 y esta persona no está en la nómina: no hay nada que pagarle.");
+        return;
+      }
+
+      const yaEstan = new Set([...cycleDetails.map((c) => c.id), ...(payroll.cycleIds || [])]);
+      const ciclosNuevos = [...new Set(libres.map((wd) => wd.cycleId))]
+        .filter((cid) => !yaEstan.has(cid))
+        .map((cid) => cycles.find((c) => c.id === cid))
+        .filter(Boolean);
+      const cycleDetailsToAdd = ciclosNuevos.map((c) => ({ ...cycleDetailOf(c, { faenas, subfaenas }), laborIds: [] }));
+
+      const aggregates = await addWorkdaysToPayroll(payroll.id, {
+        items: plan.items,
+        cycleDetailsToAdd,
+        workdayIds: plan.workdayIds,
+        advanceApplications: plan.newAdvanceApplications,
+      });
+      const incluidas = new Set(plan.workdayIds);
+      const anticipoPorId = new Map(persona.advances.map((a) => [a.id, a]));
+      await extendSnapshot(payroll.id, {
+        items: plan.items,
+        aggregates,
+        cycles: cycleDetailsToAdd.map((cd) => snapshotCycleOf(cd, ciclosNuevos.find((c) => c.id === cd.id))),
+        workdays: libres.filter((wd) => incluidas.has(wd.id)).map(snapshotWorkdayOf),
+        advances: plan.newAdvanceApplications
+          .map((x) => anticipoPorId.get(x.advanceId))
+          .filter(Boolean)
+          .map(snapshotAdvanceOf),
+      });
+
+      setAddWorkerOpen(false);
+      await onChanged?.();
+      const dias = new Set(libres.map((wd) => `${wd.cycleId}|${wd.laborId}|${wd.date}`)).size;
+      const tomadas = workdayIds.length - libres.length;
+      toast.success(
+        resumenAgregado(`${dias} día(s) de ${worker.name || "la persona"} agregado(s) a la nómina.`, plan.added) +
+          (tomadas > 0 ? ` ${tomadas} jornada(s) ya no estaban disponibles y quedaron afuera.` : ""),
+      );
+    } catch (err) {
+      toast.error(`Error al agregar a la persona: ${err?.message || err}`);
+    } finally {
+      setEditBusy(false);
+    }
+  };
+
+  // Recalcular: vuelve a traer los workdays vigentes de los ciclos ya
+  // incluidos en la nómina (no solo los que quedaron etiquetados al crearla),
+  // de las labores que la nómina abarca (`inRecalcScope`), y compara contra
+  // lo guardado. Detecta 3 cosas — ediciones a días
   // existentes o días nuevos agregados a un ciclo ya nominado (el pago es
   // por ciclo, así que un día nuevo ahí corresponde a esta nómina),
   // trabajadores nuevos con producción en esos ciclos (mismo tratamiento que
@@ -4763,20 +4723,6 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
   const [recalcPreview, setRecalcPreview] = useState(null);
   const [recalcBusy, setRecalcBusy] = useState(false);
 
-  const workerByKey = (key) => workers.find((w) => w.id === key) || workers.find((w) => w.rut === key);
-  const liveProfileFor = (w) => {
-    const bd = w?.bankDetails || [];
-    return {
-      name: w?.name || "",
-      paymentRut: bd[0] || w?.rut || "",
-      accountNumber: bd[1] || "",
-      bankCode: bd[3] || "",
-      accountType: bd[2] != null ? Number(bd[2]) : 3,
-      email: w?.email || "",
-      groupLeader: normalizeLeader(w?.groupLeader?.[0]) || "",
-    };
-  };
-
   const computeRecalc = async () => {
     setRecalcBusy(true);
     try {
@@ -4787,14 +4733,16 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
         for (const labor of cycle.labors || []) laborTypeById.set(labor.id, labor.type);
       }
 
+      // Lo etiquetado con esta nómina, más lo pendiente de las labores que
+      // abarca. Lo que se dejó afuera al generarla o al agregarle cosas no
+      // vuelve a entrar solo.
+      const alcance = payrollLaborScope(cycleDetails);
       const allCurrentWorkdays = [];
       for (let i = 0; i < recalcCycleIds.length; i += 10) {
         const chunk = recalcCycleIds.slice(i, i + 10);
         const wds = await workdaysService.list({ wheres: [["cycleId", "in", chunk]] });
         for (const wd of wds) {
-          if (wd.payrollId && wd.payrollId !== payroll.id) continue;
-          if (String(wd.workerRut || "").startsWith("TEMP-")) continue;
-          allCurrentWorkdays.push(wd);
+          if (inRecalcScope(wd, payroll.id, alcance)) allCurrentWorkdays.push(wd);
         }
       }
 
@@ -5044,13 +4992,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
           const newAdvIdSet = new Set(newAdvanceApplications.map((x) => x.advanceId));
           const newAdvancesForSnapshot = pendingAdvances
             .filter((adv) => newAdvIdSet.has(adv.id))
-            .map((adv) => ({
-              id: adv.id, workerRut: adv.workerRut,
-              type: adv.type, amount: Number(adv.amount) || 0,
-              amountPaid: Number(adv.amountPaid) || 0,
-              date: adv.date || null, note: adv.note || "",
-              status: adv.status || null,
-            }));
+            .map(snapshotAdvanceOf);
           const enNominaSnap = new Set(mergedItems.flatMap((it) => it.workdayIds || []));
           const referenciados = new Set(mergedItems.flatMap((it) => it.advanceIds || []));
           const agg = recalcPayrollAggregates(mergedItems);
@@ -5071,17 +5013,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                 }
               : {}),
             workers: mergedItems,
-            workdays: allCurrentWorkdays.filter((wd) => enNominaSnap.has(wd.id)).map((wd) => ({
-              id: wd.id, cycleId: wd.cycleId, laborId: wd.laborId,
-              workerRut: wd.workerRut, date: wd.date,
-              qty: wd.qty ?? null, amount: wd.amount ?? 0,
-              qualityX: wd.qualityX ?? null, containerY: wd.containerY ?? null,
-              tierKey: wd.tierKey ?? null, tiers: wd.tiers ?? null,
-              stageId: wd.stageId ?? null,
-              overtimeHours: wd.overtimeHours ?? null,
-              hasManejo: !!wd.hasManejo, hasSupervision: !!wd.hasSupervision,
-              extras: wd.extras ?? null, isHoliday: !!wd.isHoliday,
-            })),
+            workdays: allCurrentWorkdays.filter((wd) => enNominaSnap.has(wd.id)).map(snapshotWorkdayOf),
             // Un anticipo que la nómina soltó entero deja de figurar.
             advances: [
               ...(snap.advances || []).filter((a) => referenciados.has(a.id)),
@@ -6133,15 +6065,26 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                   <span>Ciclos / Faenas pagadas ({cycleDetails.length})</span>
                 </button>
                 {editMode && isPending && (
-                  <button
-                    type="button"
-                    disabled={editBusy}
-                    onClick={() => setAddCyclesOpen(true)}
-                    className="shrink-0 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-[10px] text-[var(--color-accent)] hover:opacity-80 disabled:opacity-50"
-                    title="Agregar otro ciclo o subfaena a esta nómina"
-                  >
-                    + Agregar ciclo
-                  </button>
+                  <div className="flex shrink-0 gap-1">
+                    <button
+                      type="button"
+                      disabled={editBusy}
+                      onClick={() => setAddWorkerOpen(true)}
+                      className="min-h-[32px] rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-[10px] text-[var(--color-accent)] hover:opacity-80 disabled:opacity-50 sm:min-h-0"
+                      title="Sumar días puntuales de una persona, de cualquier ciclo abierto"
+                    >
+                      + Agregar persona
+                    </button>
+                    <button
+                      type="button"
+                      disabled={editBusy}
+                      onClick={() => setAddCyclesOpen(true)}
+                      className="min-h-[32px] rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-[10px] text-[var(--color-accent)] hover:opacity-80 disabled:opacity-50 sm:min-h-0"
+                      title="Agregar otro ciclo, o las labores que le faltan a uno que ya está"
+                    >
+                      + Agregar ciclo
+                    </button>
+                  </div>
                 )}
               </div>
               {!isCollapsed("cycles") && (
@@ -6161,6 +6104,14 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                               📅 {c.firstDay || "?"}{c.lastDay && c.firstDay !== c.lastDay ? ` → ${c.lastDay}` : ""}
                             </span>
                           )}
+                          {Array.isArray(c.laborIds) && (
+                            <span
+                              className="ml-2 text-[10px] text-[var(--color-muted)]"
+                              title="Lo que Recalcular trae de este ciclo. El resto de sus labores queda para otra nómina."
+                            >
+                              · {c.laborIds.length === 0 ? "solo días agregados a mano" : laborNamesOf(c)}
+                            </span>
+                          )}
                         </div>
                         {editMode && cycleDetails.length > 1 && (
                           <button
@@ -6178,7 +6129,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                   </ul>
                   {editMode && cycleDetails.length === 1 && (
                     <p className="mt-1 text-[10px] text-[var(--color-muted)]">
-                      Para sacar el único ciclo, eliminá la nómina entera.
+                      Para sacar el único ciclo, elimina la nómina entera.
                     </p>
                   )}
                 </>
@@ -6487,16 +6438,31 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
           onClose={() => setShowCashEstimation(false)}
         />
       )}
-      <AddCyclesModal
-        open={addCyclesOpen}
-        onClose={() => setAddCyclesOpen(false)}
-        cycles={cycles}
-        faenas={faenas}
-        subfaenas={subfaenas}
-        excludeCycleIds={cycleDetails.map((c) => c.id)}
-        onConfirm={handleAddCycles}
-        busy={editBusy}
-      />
+      {addCyclesOpen && (
+        <AddCyclesModal
+          onClose={() => setAddCyclesOpen(false)}
+          cycles={cycles}
+          faenas={faenas}
+          subfaenas={subfaenas}
+          payrollCycleDetails={cycleDetails}
+          payrollCycleIds={payroll.cycleIds || []}
+          onConfirm={handleAddCycles}
+          busy={editBusy}
+        />
+      )}
+      {addWorkerOpen && (
+        <AddWorkerDaysModal
+          onClose={() => setAddWorkerOpen(false)}
+          payroll={payroll}
+          items={items}
+          workers={workers}
+          cycles={cycles}
+          allPayrolls={allPayrolls}
+          profileFor={liveProfileFor}
+          onConfirm={handleAddWorkerDays}
+          busy={editBusy}
+        />
+      )}
       <RecalcModal
         preview={recalcPreview}
         busy={recalcBusy}
@@ -6516,16 +6482,34 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
   );
 }
 
+// Lo que pasó con la plata al agregar algo a una nómina, para el aviso.
+function resumenAgregado(inicio, added = []) {
+  const partes = [inicio];
+  const nuevos = added.filter((x) => x.isNew).length;
+  const suman = added.length - nuevos;
+  if (nuevos) partes.push(`${nuevos} trabajador(es) nuevo(s).`);
+  if (suman) partes.push(`${suman} ya estaba(n) y suma(n) producción.`);
+  const anticipos = added.reduce((s, x) => s + (x.anticipos || 0), 0);
+  const bonos = added.reduce((s, x) => s + (x.bonos || 0), 0);
+  if (anticipos > 0) partes.push(`Se descuentan ${fmtCurrency(anticipos)} de anticipos pendientes.`);
+  if (bonos > 0) partes.push(`Se suman ${fmtCurrency(bonos)} de bonos pendientes.`);
+  return partes.join(" ");
+}
+
 // Picker para agregar ciclos (de una subfaena que faltaba, o cualquier otra)
-// a una nómina pendiente ya creada. Agrupa por faena; excluye los ciclos que
-// ya están en la nómina. Selección a nivel ciclo completo (todas sus labores),
-// simétrico a "Quitar ciclo" que también opera a ese nivel.
-function AddCyclesModal({ open, onClose, cycles, faenas, subfaenas, excludeCycleIds, onConfirm, busy }) {
-  const [selected, setSelected] = useState(() => new Set());
+// a una nómina pendiente ya creada. Agrupa por faena y muestra solo ciclos
+// abiertos. Al marcar un ciclo se eligen sus labores, igual que al generar:
+// antes se agregaba el ciclo entero y no había forma de dejar una labor para
+// otra nómina. Un ciclo que ya está en la nómina con algunas labores aparece
+// con las que le faltan; uno que está entero no aparece.
+//
+// Se monta solo mientras está abierto, así cada apertura arranca limpia sin
+// un efecto que resetee el estado.
+function AddCyclesModal({ onClose, cycles, faenas, subfaenas, payrollCycleDetails = [], payrollCycleIds = [], onConfirm, busy }) {
+  // cycleId → labores elegidas. Un ciclo marcado puede quedar sin labores, y
+  // ese no se agrega.
+  const [selected, setSelected] = useState(() => new Map());
   const [query, setQuery] = useState("");
-  useEffect(() => {
-    if (open) { setSelected(new Set()); setQuery(""); }
-  }, [open]);
 
   const subfaenaNameById = useMemo(() => {
     const m = new Map();
@@ -6534,18 +6518,24 @@ function AddCyclesModal({ open, onClose, cycles, faenas, subfaenas, excludeCycle
   }, [subfaenas]);
   const subfaenaName = (id) => subfaenaNameById.get(id) || "";
 
+  // Por ciclo abierto, las labores que todavía se le pueden sumar a la nómina.
   const groups = useMemo(() => {
-    const excludeSet = new Set(excludeCycleIds);
+    const detalles = new Map(payrollCycleDetails.map((cd) => [cd.id, cd]));
+    // Nóminas viejas: un ciclo en `cycleIds` sin detalle está entero.
+    const enteros = new Set(payrollCycleIds.filter((id) => !detalles.has(id)));
     const byFaena = new Map();
-    for (const f of faenas) byFaena.set(f.id, { faena: f, cycles: [] });
+    for (const f of faenas) byFaena.set(f.id, { faena: f, entries: [] });
     for (const c of cycles) {
-      if (excludeSet.has(c.id)) continue;
-      if (c.status === "closed") continue;
-      const g = byFaena.get(c.faenaId);
-      if (g) g.cycles.push(c);
+      if (c.status === "closed" || enteros.has(c.id)) continue;
+      const enNomina = detalles.get(c.id);
+      if (enNomina && !Array.isArray(enNomina.laborIds)) continue;
+      const yaTiene = new Set(enNomina?.laborIds || []);
+      const labors = (c.labors || []).filter((l) => !yaTiene.has(l.id));
+      if (labors.length === 0) continue;
+      byFaena.get(c.faenaId)?.entries.push({ cycle: c, labors, partial: !!enNomina });
     }
-    return [...byFaena.values()].filter((g) => g.cycles.length > 0);
-  }, [cycles, faenas, excludeCycleIds]);
+    return [...byFaena.values()].filter((g) => g.entries.length > 0);
+  }, [cycles, faenas, payrollCycleDetails, payrollCycleIds]);
 
   const filteredGroups = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -6553,27 +6543,38 @@ function AddCyclesModal({ open, onClose, cycles, faenas, subfaenas, excludeCycle
     return groups
       .map((g) => ({
         ...g,
-        cycles: g.cycles.filter((c) =>
+        entries: g.entries.filter(({ cycle: c }) =>
           (c.label || "").toLowerCase().includes(q) ||
-          g.faena.name.toLowerCase().includes(q) ||
+          (g.faena.name || "").toLowerCase().includes(q) ||
           (subfaenaNameById.get(c.subfaenaId) || "").toLowerCase().includes(q)
         ),
       }))
-      .filter((g) => g.cycles.length > 0);
+      .filter((g) => g.entries.length > 0);
   }, [groups, query, subfaenaNameById]);
 
-  const toggle = (id) => setSelected((prev) => {
-    const next = new Set(prev);
-    if (next.has(id)) next.delete(id); else next.add(id);
+  const toggleCycle = (entry) => setSelected((prev) => {
+    const next = new Map(prev);
+    if (next.has(entry.cycle.id)) next.delete(entry.cycle.id);
+    else next.set(entry.cycle.id, new Set(entry.labors.map((l) => l.id)));
     return next;
   });
+  const toggleLabor = (cycleId, laborId) => setSelected((prev) => {
+    const next = new Map(prev);
+    const set = new Set(next.get(cycleId) || []);
+    if (set.has(laborId)) set.delete(laborId);
+    else set.add(laborId);
+    next.set(cycleId, set);
+    return next;
+  });
+  const seleccion = [...selected.entries()]
+    .filter(([, set]) => set.size > 0)
+    .map(([cycleId, set]) => ({ cycleId, laborIds: [...set] }));
 
-  if (!open) return null;
   return (
     <Modal
-      open={open}
+      open
       onClose={onClose}
-      title="Agregar ciclos a la nómina"
+      title="Agregar ciclos o labores a la nómina"
       size="lg"
       footer={
         <>
@@ -6581,11 +6582,11 @@ function AddCyclesModal({ open, onClose, cycles, faenas, subfaenas, excludeCycle
             Cancelar
           </button>
           <button
-            onClick={() => onConfirm([...selected])}
-            disabled={selected.size === 0 || busy}
+            onClick={() => onConfirm(seleccion)}
+            disabled={seleccion.length === 0 || busy}
             className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
           >
-            {busy ? "Agregando..." : `Agregar (${selected.size})`}
+            {busy ? "Agregando..." : `Agregar (${seleccion.length})`}
           </button>
         </>
       }
@@ -6598,7 +6599,7 @@ function AddCyclesModal({ open, onClose, cycles, faenas, subfaenas, excludeCycle
       />
       {filteredGroups.length === 0 ? (
         <div className="py-8 text-center text-sm text-[var(--color-muted)]">
-          No hay ciclos abiertos disponibles para agregar (los cerrados no se muestran acá; los que quedan ya están incluidos en esta nómina).
+          No hay ciclos abiertos ni labores para agregar (los cerrados no se muestran acá; lo demás ya está en esta nómina).
         </div>
       ) : (
         <div className="max-h-[55vh] space-y-3 overflow-y-auto">
@@ -6606,23 +6607,435 @@ function AddCyclesModal({ open, onClose, cycles, faenas, subfaenas, excludeCycle
             <div key={g.faena.id}>
               <div className="mb-1 text-xs font-semibold text-[var(--color-muted)]">{g.faena.name}</div>
               <div className="space-y-1">
-                {g.cycles.map((c) => (
-                  <label
-                    key={c.id}
-                    className="flex cursor-pointer items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]"
-                  >
-                    <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggle(c.id)} />
-                    <span className="min-w-0 flex-1 truncate">
-                      <span className="font-medium">{c.label || c.id}</span>
-                      {c.subfaenaId && (
-                        <span className="ml-2 text-xs text-[var(--color-muted)]">{subfaenaName(c.subfaenaId)}</span>
+                {g.entries.map((entry) => {
+                  const { cycle: c, labors, partial } = entry;
+                  const elegidas = selected.get(c.id);
+                  const marcado = !!elegidas;
+                  return (
+                    <div
+                      key={c.id}
+                      className={`overflow-hidden rounded-md border border-[var(--color-border)] ${
+                        marcado ? "bg-[var(--color-accent-soft)]/40" : "bg-[var(--color-surface-2)]"
+                      }`}
+                    >
+                      <label className="flex min-h-[36px] cursor-pointer items-center gap-2 px-2.5 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]">
+                        <input
+                          type="checkbox"
+                          checked={marcado}
+                          onChange={() => toggleCycle(entry)}
+                          className="h-4 w-4 shrink-0 accent-[var(--color-accent)]"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate">
+                            <span className="font-medium">{c.label || c.id}</span>
+                            {c.subfaenaId && (
+                              <span className="ml-2 text-xs text-[var(--color-muted)]">{subfaenaName(c.subfaenaId)}</span>
+                            )}
+                          </span>
+                          {partial && (
+                            <span className="block text-[11px] text-[var(--color-muted)]">
+                              Ya está en la nómina; {labors.length === 1 ? `falta ${labors[0].name}` : `faltan ${labors.length} labores`}
+                            </span>
+                          )}
+                          {marcado && elegidas.size === 0 && (
+                            <span className="block text-[11px] text-amber-700 dark:text-amber-400">
+                              ⚠ Sin labores seleccionadas: no se agrega
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                      {marcado && labors.length > 1 && (
+                        <div className="flex flex-wrap gap-1.5 border-t border-[var(--color-border)] px-2.5 py-2">
+                          {labors.map((l) => {
+                            const on = elegidas.has(l.id);
+                            return (
+                              <button
+                                type="button"
+                                key={l.id}
+                                onClick={() => toggleLabor(c.id, l.id)}
+                                className={`min-h-[32px] rounded-full border px-2.5 py-1 text-[11px] ${
+                                  on
+                                    ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                                    : "border-dashed border-[var(--color-border)] bg-transparent text-[var(--color-muted)] opacity-60"
+                                }`}
+                                title={on ? "Dejar esta labor afuera" : "Incluir esta labor"}
+                              >
+                                {on ? "✓" : "○"} {l.name}
+                              </button>
+                            );
+                          })}
+                        </div>
                       )}
-                    </span>
-                  </label>
-                ))}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ))}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// Dígitos (y la K) de un RUT, para buscar sin puntos ni guion.
+function rutDigits(s) {
+  return String(s || "").replace(/[^0-9kK]/g, "").toLowerCase();
+}
+
+// Agregar a una persona puntual: se la busca, se cargan sus días de los
+// ciclos abiertos —de cualquier faena, estén o no en esta nómina— y se elige
+// cuáles se le suman. Los días que ya están en una nómina se muestran sin
+// casilla, para ver el cuadro completo de la persona. La cuenta es la misma
+// que al agregar ciclos (`planAddWorkdays`), y el pie muestra antes de
+// confirmar cuánto suma y qué anticipos se le descuentan.
+//
+// Se monta solo mientras está abierto, igual que `AddCyclesModal`.
+function AddWorkerDaysModal({ onClose, payroll, items, workers, cycles, allPayrolls = [], profileFor, onConfirm, busy }) {
+  const { catalogs } = useCatalogs();
+  const [query, setQuery] = useState("");
+  const [worker, setWorker] = useState(null);
+  const [data, setData] = useState(null); // { workdays, advances }
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [selected, setSelected] = useState(() => new Set()); // keys de fila
+  // Si se elige otra persona antes de que termine la carga de la anterior,
+  // esa respuesta se descarta.
+  const pedido = useRef(0);
+
+  const clavesEnNomina = useMemo(() => {
+    const out = new Set();
+    for (const it of items) {
+      if (it.workerId) out.add(it.workerId);
+      if (it.rut) out.add(it.rut);
+    }
+    return out;
+  }, [items]);
+  const estaEnNomina = (w) => workerKeys(w).some((k) => clavesEnNomina.has(k));
+
+  const resultados = useMemo(() => {
+    const q = query.trim();
+    if (q.length < 2) return [];
+    const qRut = /\d/.test(q) ? rutDigits(q) : "";
+    return workers
+      .filter((w) => matchesSearchQuery(w.name || "", q) || (qRut.length >= 2 && rutDigits(w.rut || w.id).includes(qRut)))
+      .slice(0, 30);
+  }, [workers, query]);
+
+  const elegir = async (w) => {
+    const id = ++pedido.current;
+    setWorker(w);
+    setData(null);
+    setSelected(new Set());
+    setError("");
+    setLoading(true);
+    try {
+      const claves = workerKeys(w);
+      const [workdays, advances] = await Promise.all([
+        workdaysService.list({ wheres: [["workerRut", "in", claves]] }),
+        listPendingForWorkers(claves),
+      ]);
+      if (pedido.current === id) setData({ workdays, advances });
+    } catch (err) {
+      if (pedido.current === id) setError(err?.message || String(err));
+    } finally {
+      if (pedido.current === id) setLoading(false);
+    }
+  };
+  const otraPersona = () => {
+    pedido.current += 1;
+    setWorker(null);
+    setData(null);
+    setSelected(new Set());
+    setError("");
+    setLoading(false);
+  };
+
+  const laborById = useMemo(() => new Map(cycles.flatMap((c) => (c.labors || []).map((l) => [l.id, l]))), [cycles]);
+  const laborTypeById = useMemo(() => new Map([...laborById].map(([id, l]) => [id, l.type])), [laborById]);
+  const cycleById = useMemo(() => new Map(cycles.map((c) => [c.id, c])), [cycles]);
+  const payrollNameById = useMemo(() => new Map(allPayrolls.map((p) => [p.id, p.name || p.id])), [allPayrolls]);
+  const ciclosDeLaNomina = useMemo(
+    () => new Set([...(payroll.cycleDetails || []).map((c) => c.id), ...(payroll.cycleIds || [])]),
+    [payroll.cycleDetails, payroll.cycleIds],
+  );
+
+  // Por ciclo abierto, sus filas. Solo abiertos, igual que al generar o al
+  // agregar ciclos: uno cerrado ya se liquidó o está por liquidarse.
+  const secciones = useMemo(() => {
+    if (!data) return [];
+    const abiertas = data.workdays.filter((wd) => {
+      const c = cycleById.get(wd.cycleId);
+      return c && c.status !== "closed";
+    });
+    const porCiclo = new Map();
+    for (const fila of workerDayRows(abiertas, { laborTypeById, payrollId: payroll.id })) {
+      if (!porCiclo.has(fila.cycleId)) porCiclo.set(fila.cycleId, []);
+      porCiclo.get(fila.cycleId).push(fila);
+    }
+    return [...porCiclo.entries()]
+      .map(([cycleId, filas]) => ({ cycle: cycleById.get(cycleId), filas }))
+      .sort((a, b) => (a.cycle.label || "").localeCompare(b.cycle.label || "", "es"));
+  }, [data, cycleById, laborTypeById, payroll.id]);
+
+  const elegidas = secciones.flatMap((s) => s.filas).filter((f) => selected.has(f.key));
+  const totalElegido = elegidas.reduce((s, f) => s + f.amount, 0);
+
+  // Lo que pasaría al confirmar, con la misma cuenta que se va a guardar.
+  const preview = useMemo(() => {
+    if (!worker || !data) return null;
+    const marcadas = secciones.flatMap((s) => s.filas).filter((f) => selected.has(f.key));
+    if (marcadas.length === 0) return null;
+    const persona = asPayrollWorker({
+      items,
+      keys: workerKeys(worker),
+      fallbackKey: worker.id,
+      rut: worker.rut || worker.id,
+      workdays: marcadas.flatMap((f) => f.workdays),
+      advances: data.advances,
+    });
+    const plan = planAddWorkdays({
+      items,
+      workdays: persona.workdays,
+      laborTypeById,
+      pendingAdvances: persona.advances,
+      profileFor: () => profileFor(worker),
+    });
+    return plan.added.find((x) => x.key === persona.key) || null;
+  }, [worker, data, secciones, selected, items, laborTypeById, profileFor]);
+
+  const toggle = (key) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    return next;
+  });
+  const toggleSeccion = (seccion) => setSelected((prev) => {
+    const pendientes = seccion.filas.filter((f) => f.status === "pending").map((f) => f.key);
+    const todas = pendientes.every((k) => prev.has(k));
+    const next = new Set(prev);
+    for (const k of pendientes) {
+      if (todas) next.delete(k);
+      else next.add(k);
+    }
+    return next;
+  });
+
+  // Producción de la fila, con el mismo formato que el detalle por trabajador.
+  const prodDe = (fila, labor) => {
+    const acc = { labor, kilos: 0, containers: new Set(), tratoQty: 0, tratoUnits: new Set(), jornadas: 0, overtimeHours: 0 };
+    for (const wd of fila.workdays) {
+      const qty = Number(wd.qty) || 0;
+      if (labor?.type === "cosecha") {
+        acc.kilos += qty;
+        if (wd.containerY != null) acc.containers.add(Number(wd.containerY));
+      } else if (labor?.type === "trato") {
+        acc.tratoQty += getTratoTierTotals(wd).qty;
+        if (labor.tratoUnit != null) acc.tratoUnits.add(Number(labor.tratoUnit));
+      } else if (labor?.type === "tratoHE") {
+        acc.jornadas += qty;
+        acc.overtimeHours += Number(wd.overtimeHours) || 0;
+      } else {
+        acc.jornadas += 1;
+      }
+    }
+    return formatWorkerDetailProd(acc, catalogs);
+  };
+  const diaDe = (d) => {
+    const m = String(d || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return d || "—";
+    const dia = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+      .toLocaleDateString("es-CL", { weekday: "short" })
+      .replace(".", "");
+    return `${dia} ${workerDetailDateLabel(d)}`;
+  };
+  const estadoDe = (fila) =>
+    fila.status === "here" ? "en esta nómina" : `en ${payrollNameById.get(fila.payrollId) || "otra nómina"}`;
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Agregar persona a la nómina"
+      size="xl"
+      footer={
+        <>
+          {worker && elegidas.length > 0 && (
+            <div className="mr-auto min-w-0 text-xs">
+              <div className="font-semibold tabular-nums">
+                {elegidas.length} día{elegidas.length === 1 ? "" : "s"} · {fmtCurrency(totalElegido)}
+              </div>
+              {preview ? (
+                <div className="tabular-nums text-[var(--color-muted)]">
+                  {preview.isNew
+                    ? "Entra a la nómina"
+                    : `Bruto ${fmtCurrency(preview.oldGross)} → ${fmtCurrency(preview.newGross)}`}
+                  {preview.anticipos > 0 && (
+                    <> · <span style={{ color: "#b45309" }}>anticipos −{fmtCurrency(preview.anticipos)}</span></>
+                  )}
+                  {preview.bonos > 0 && <> · bonos +{fmtCurrency(preview.bonos)}</>}
+                  {" · a pagar "}
+                  {preview.isNew ? "" : `${fmtCurrency(preview.oldNet)} → `}
+                  <span className="font-semibold text-[var(--color-text)]">{fmtCurrency(preview.newNet)}</span>
+                </div>
+              ) : (
+                <div className="text-amber-700 dark:text-amber-400">
+                  Lo elegido suma $0 y no está en la nómina: no hay nada que pagarle.
+                </div>
+              )}
+            </div>
+          )}
+          <button onClick={onClose} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm">
+            Cancelar
+          </button>
+          <button
+            onClick={() => onConfirm({ worker, workdayIds: elegidas.flatMap((f) => f.workdayIds) })}
+            disabled={!preview || busy}
+            className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
+          >
+            {busy
+              ? "Agregando..."
+              : elegidas.length
+                ? `Agregar ${elegidas.length} día${elegidas.length === 1 ? "" : "s"}`
+                : "Agregar días"}
+          </button>
+        </>
+      }
+    >
+      {!worker ? (
+        <div>
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="🔍 Buscar por nombre o RUT…"
+            className="mb-3 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
+          />
+          {query.trim().length < 2 ? (
+            <p className="py-6 text-center text-sm text-[var(--color-muted)]">
+              Escribe al menos 2 letras del nombre o dígitos del RUT.
+            </p>
+          ) : resultados.length === 0 ? (
+            <p className="py-6 text-center text-sm text-[var(--color-muted)]">Nadie coincide con la búsqueda.</p>
+          ) : (
+            <ul className="space-y-1">
+              {resultados.map((w) => (
+                <li key={w.id}>
+                  <button
+                    type="button"
+                    onClick={() => elegir(w)}
+                    className="flex min-h-[40px] w-full items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-left text-sm hover:bg-[var(--color-accent-soft)]"
+                  >
+                    <span className="min-w-0 flex-1 truncate font-medium">{w.name || "(sin nombre)"}</span>
+                    {estaEnNomina(w) && (
+                      <span className="shrink-0 rounded-full bg-[var(--color-accent-soft)] px-2 py-0.5 text-[10px] text-[var(--color-accent)]">
+                        en esta nómina
+                      </span>
+                    )}
+                    <span className="shrink-0 text-xs tabular-nums text-[var(--color-muted)]">
+                      {formatRutForDisplay(w.rut || w.id)}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="truncate font-semibold">{worker.name || "(sin nombre)"}</div>
+              <div className="text-xs tabular-nums text-[var(--color-muted)]">
+                {formatRutForDisplay(worker.rut || worker.id)}
+                {estaEnNomina(worker) ? " · ya está en esta nómina" : ""}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={otraPersona}
+              className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 text-xs hover:bg-[var(--color-accent-soft)]"
+            >
+              ← Otra persona
+            </button>
+          </div>
+          <p className="text-[11px] text-[var(--color-muted)]">
+            Días de ciclos abiertos. Los que ya están en una nómina se muestran sin casilla.
+          </p>
+          {loading ? (
+            <div className="py-8 text-center text-sm text-[var(--color-muted)]">Cargando días…</div>
+          ) : error ? (
+            <div className="py-8 text-center text-sm text-[var(--color-danger)]">No se pudieron cargar los días: {error}</div>
+          ) : secciones.length === 0 ? (
+            <div className="py-8 text-center text-sm text-[var(--color-muted)]">No tiene días en ciclos abiertos.</div>
+          ) : (
+            <div className="space-y-2">
+              {secciones.map((sec) => {
+                const c = sec.cycle;
+                const pendientes = sec.filas.filter((f) => f.status === "pending");
+                const todas = pendientes.length > 0 && pendientes.every((f) => selected.has(f.key));
+                const pendienteTotal = pendientes.reduce((s, f) => s + f.amount, 0);
+                return (
+                  <div key={c.id} className="overflow-hidden rounded-md border border-[var(--color-border)]">
+                    <div className="flex flex-wrap items-center gap-2 bg-[var(--color-surface-2)] px-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-medium">{c.label || c.id}</div>
+                        <div className="text-[11px] text-[var(--color-muted)]">
+                          {ciclosDeLaNomina.has(c.id) ? "En esta nómina" : "Fuera de esta nómina"}
+                          {pendientes.length > 0
+                            ? ` · ${pendientes.length} pendiente${pendientes.length === 1 ? "" : "s"} · ${fmtCurrency(pendienteTotal)}`
+                            : " · sin pendientes"}
+                        </div>
+                      </div>
+                      {pendientes.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => toggleSeccion(sec)}
+                          className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 text-xs hover:bg-[var(--color-accent-soft)]"
+                        >
+                          {todas ? "Ninguno" : "Todos"}
+                        </button>
+                      )}
+                    </div>
+                    <ul className="divide-y divide-[var(--color-border)]">
+                      {sec.filas.map((f) => {
+                        const labor = laborById.get(f.laborId);
+                        const libre = f.status === "pending";
+                        return (
+                          <li key={f.key}>
+                            <label
+                              className={`flex min-h-[40px] items-center gap-2 px-3 py-1.5 text-sm ${
+                                libre ? "cursor-pointer hover:bg-[var(--color-accent-soft)]" : "opacity-60"
+                              }`}
+                            >
+                              {libre ? (
+                                <input
+                                  type="checkbox"
+                                  checked={selected.has(f.key)}
+                                  onChange={() => toggle(f.key)}
+                                  className="h-4 w-4 shrink-0 accent-[var(--color-accent)]"
+                                />
+                              ) : (
+                                <span className="w-4 shrink-0 text-center text-xs">{f.status === "here" ? "✓" : "—"}</span>
+                              )}
+                              <span className="w-[74px] shrink-0 text-xs tabular-nums">{diaDe(f.date)}</span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate">{labor?.name || "Labor"}</span>
+                                <span className="block truncate text-[11px] text-[var(--color-muted)]">
+                                  {libre ? prodDe(f, labor) : `${prodDe(f, labor)} · ${estadoDe(f)}`}
+                                </span>
+                              </span>
+                              <span className="shrink-0 tabular-nums">{fmtCurrency(f.amount)}</span>
+                            </label>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </Modal>
@@ -7861,12 +8274,13 @@ function formatWorkerDetailProd(r, catalogs) {
     const unitStr = unitNames.length > 0 ? " " + unitNames.join("/").toLowerCase() : "";
     return `${num(r.tratoQty)}${unitStr}`;
   }
+  const jornadas = (n) => `${num(n)} jornada${Number(n) === 1 ? "" : "s"}`;
   if (r.labor?.type === "tratoHE") {
-    const base = r.jornadas > 0 ? `${num(r.jornadas)} jornadas` : "";
+    const base = r.jornadas > 0 ? jornadas(r.jornadas) : "";
     const ot = r.overtimeHours > 0 ? `${num(r.overtimeHours)}h HE` : "";
     return [base, ot].filter(Boolean).join(" · ") || "—";
   }
-  return r.jornadas > 0 ? `${num(r.jornadas)} jornadas` : "—";
+  return r.jornadas > 0 ? jornadas(r.jornadas) : "—";
 }
 
 // ─────────────────────────── Workers History ───────────────────────────
