@@ -1,7 +1,7 @@
 import { doc, serverTimestamp, updateDoc, writeBatch } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { createService } from "./firestoreBase";
-import { workdaysService } from "./index";
+import { workdaysService, listWorkdaysByCycles } from "./index";
 import { isCashBank } from "../utils/banks";
 import {
   restoreAdvancesFromPayroll,
@@ -9,7 +9,7 @@ import {
   setPayrollAdvanceAmounts,
   applyAdvancesToPayroll,
 } from "./advancesService";
-import { planCycleRemoval, mergeCycleDetails } from "../utils/payrollItem";
+import { planCycleRemoval, mergeCycleDetails, inChosenCycles, stillFreeWorkdays } from "../utils/payrollItem";
 import { pruneSnapshot } from "./payrollSnapshots";
 
 export const PAYROLL_STATUSES = [
@@ -18,6 +18,50 @@ export const PAYROLL_STATUSES = [
 ];
 
 export const payrollsService = createService("payroll", "payrolls");
+
+// Las jornadas con que se arma una nómina nueva: lo pendiente de los ciclos y
+// labores elegidos (`chosen`, ver `newPayrollCycleDetails`) y los días
+// puntuales de las personas sueltas (`people`: [{ keys, workdayIds }], con
+// `keys` = `workerKeys` de la persona).
+//
+// Los ciclos se leen con la caché corta de `listWorkdaysByCycles`: es la misma
+// lectura que la pantalla acaba de hacer para mostrar lo pendiente. Los días
+// de las personas se releen sin caché, porque se eligieron en un modal que
+// pudo quedar abierto un buen rato y otra nómina pudo tomar alguno. Lo que esa
+// relectura muestra tomado queda afuera, aunque la caché de los ciclos lo diera
+// libre. `taken` cuenta los días elegidos que quedaron afuera, para avisarlo.
+//
+// Lo etiquetado con otra nómina no entra, ni los trabajadores temporales
+// (TEMP-*), que no entran a una nómina hasta que se les asigna RUT.
+export async function workdaysForNewPayroll({ chosen = new Map(), people = [] }) {
+  const conLabores = [...chosen].filter(([, laborIds]) => !Array.isArray(laborIds) || laborIds.length > 0);
+  const workdays = [];
+  const vistas = new Set();
+  for (const wd of await listWorkdaysByCycles(conLabores.map(([cycleId]) => cycleId))) {
+    if (wd.payrollId) continue;
+    if (String(wd.workerRut || "").startsWith("TEMP-")) continue;
+    if (!inChosenCycles(wd, chosen)) continue;
+    workdays.push(wd);
+    vistas.add(wd.id);
+  }
+
+  const frescas = await Promise.all(
+    people.map((p) => (p.keys?.length ? workdaysService.list({ wheres: [["workerRut", "in", p.keys]] }) : [])),
+  );
+  const ocupadas = new Set();
+  let taken = 0;
+  people.forEach((p, i) => {
+    const { libres, tomadas } = stillFreeWorkdays(frescas[i], p.workdayIds);
+    taken += tomadas;
+    for (const wd of frescas[i]) if (wd.payrollId) ocupadas.add(wd.id);
+    for (const wd of libres) {
+      if (vistas.has(wd.id)) continue;
+      vistas.add(wd.id);
+      workdays.push(wd);
+    }
+  });
+  return { workdays: workdays.filter((wd) => !ocupadas.has(wd.id)), taken };
+}
 
 // Batched: tag every included workday with payrollId. Firestore batch limit = 500.
 // `onProgress(done, total)` is called after each chunk for UI feedback.

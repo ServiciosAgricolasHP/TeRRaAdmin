@@ -698,3 +698,52 @@ export function workerDayRows(workdays = [], { laborTypeById = new Map(), payrol
       String(a.laborId).localeCompare(String(b.laborId)),
   );
 }
+
+// ───────────────────────── Armar una nómina nueva ─────────────────────────
+//
+// Al generar se eligen ciclos con sus labores y, además o en vez de eso, los
+// días puntuales de personas sueltas. La elección de ciclos llega como
+// `chosen`: Map(cycleId → laborIds), con la misma convención que
+// `cycleDetails[].laborIds` (`undefined` = el ciclo entero, una lista = solo
+// esas labores, `[]` = ninguna).
+
+// Si una jornada ya entra a la nómina nueva por los ciclos y labores elegidos.
+// Los días de una persona suelta que entran así se muestran incluidos, en vez
+// de dejarlos elegir por segunda vez.
+export function inChosenCycles(wd, chosen = new Map()) {
+  if (!chosen.has(wd?.cycleId)) return false;
+  const laborIds = chosen.get(wd.cycleId);
+  return !Array.isArray(laborIds) || laborIds.includes(wd.laborId);
+}
+
+// Los `cycleDetails` de una nómina nueva: los ciclos elegidos con al menos una
+// labor, con lo que se eligió de cada uno, y con `laborIds: []` los que entran
+// solo por los días de una persona suelta. Es lo mismo que deja "+ Agregar
+// persona" en una nómina ya armada: Recalcular no trae después el resto de ese
+// ciclo. Un ciclo elegido sin ninguna labor no entra, salvo que lo traiga una
+// persona.
+//
+// Va en el orden de `cycles`, el de la pantalla: las columnas por ciclo del
+// XLSX no dependen del orden en que se fue eligiendo cada cosa.
+export function newPayrollCycleDetails({ cycles = [], chosen = new Map(), workdays = [], faenas = [], subfaenas = [] }) {
+  const alcance = new Map();
+  for (const [cycleId, laborIds] of chosen) {
+    if (Array.isArray(laborIds) && laborIds.length === 0) continue;
+    alcance.set(cycleId, laborIds);
+  }
+  for (const wd of workdays || []) {
+    if (wd?.cycleId && !alcance.has(wd.cycleId)) alcance.set(wd.cycleId, []);
+  }
+  return cycles
+    .filter((c) => alcance.has(c.id))
+    .map((c) => conLabores(cycleDetailOf(c, { faenas, subfaenas }), alcance.get(c.id)));
+}
+
+// De los días que se le eligieron a una persona, los que siguen libres al
+// releerlos: entre que se eligieron y ahora, otra nómina pudo tomar alguno.
+// `tomadas` cuenta los que quedan afuera, también los que ya no existen.
+export function stillFreeWorkdays(fresh = [], workdayIds = []) {
+  const pedidas = new Set(workdayIds);
+  const libres = (fresh || []).filter((wd) => pedidas.has(wd.id) && !wd.payrollId);
+  return { libres, tomadas: pedidas.size - libres.length };
+}

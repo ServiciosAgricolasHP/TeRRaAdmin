@@ -18,6 +18,7 @@ import {
   removeWorkerFromPayroll,
   removeCycleFromPayroll,
   addWorkdaysToPayroll,
+  workdaysForNewPayroll,
   recalculatePayrollItems,
   recalcPayrollAggregates,
   markBankPaid,
@@ -76,6 +77,9 @@ import {
   planAddWorkdays,
   workerDayRows,
   asPayrollWorker,
+  inChosenCycles,
+  newPayrollCycleDetails,
+  stillFreeWorkdays,
 } from "../utils/payrollItem";
 import ConfirmDialog from "../components/ConfirmDialog";
 import Modal from "../components/Modal";
@@ -194,7 +198,22 @@ export default function Payroll() {
   // Por cada ciclo seleccionado guardamos qué labores entran a la nómina.
   // No persistido (a diferencia de selectedCycleIds): la elección es local
   // a la sesión de generación. Default al chequear un ciclo: todas sus labores.
+  // Un ciclo marcado sin entrada acá —quedó marcado de otra sesión— entra con
+  // todas.
   const [selectedLaborsByCycle, setSelectedLaborsByCycle] = useState(() => new Map());
+  // Personas sueltas: días puntuales de alguien, elegidos uno a uno en el mismo
+  // modal que "+ Agregar persona" del detalle de una nómina. Se suman a lo que
+  // traen los ciclos, así que una nómina se puede armar solo con personas, o
+  // con personas además de ciclos y labores. Como la elección de labores, vive
+  // solo en esta sesión de generación.
+  // [{ worker, workdayIds, rowKeys, filas: [{ cycleId, laborId, date, amount }] }]
+  const [people, setPeople] = useState([]);
+  // null = cerrado; {} abre el modal en la búsqueda, { worker } directo en esa
+  // persona, para corregir lo que se le eligió.
+  const [personModal, setPersonModal] = useState(null);
+  // Los ciclos de la nómina que se está previsualizando, para el filtro por
+  // ciclo: los elegidos más los que traen las personas sueltas.
+  const [previewCycles, setPreviewCycles] = useState([]);
   const [step, setStep] = useState(1); // 1 = pick cycles, 2 = preview
   const [previewItems, setPreviewItems] = useState([]); // [{rut, name, accountNumber, bankCode, accountType, email, amount, include, _missing}]
   // Cached source data from buildPreview, used to assemble the static snapshot
@@ -314,6 +333,7 @@ export default function Payroll() {
         stats[id] = {
           unpaid: 0, paid: 0, total: 0, firstDay: "", lastDay: "",
           unpaidBank: 0, unpaidCash: 0, unpaidUnknown: 0,
+          unpaidByLabor: {},
         };
       }
       const laborTypeMap = new Map();
@@ -347,6 +367,15 @@ export default function Payroll() {
           if (kind === "cash") stats[cid].unpaidCash += amount;
           else if (kind === "bank") stats[cid].unpaidBank += amount;
           else stats[cid].unpaidUnknown += amount;
+          // Lo mismo por labor: el total de lo elegido tiene que respetar las
+          // labores que se destildan.
+          const porLabor = stats[cid].unpaidByLabor;
+          if (!porLabor[wd.laborId]) porLabor[wd.laborId] = { unpaid: 0, bank: 0, cash: 0, unknown: 0 };
+          const pl = porLabor[wd.laborId];
+          pl.unpaid += amount;
+          if (kind === "cash") pl.cash += amount;
+          else if (kind === "bank") pl.bank += amount;
+          else pl.unknown += amount;
         }
         if (wd.date) {
           if (!stats[cid].firstDay || wd.date < stats[cid].firstDay) stats[cid].firstDay = wd.date;
@@ -424,21 +453,26 @@ export default function Payroll() {
   const workerById = (rut) => workers.find((w) => w.id === rut);
 
   const toggleCycle = (id) => {
+    const marcar = !selectedCycleIds.has(id);
     setSelectedCycleIds((prev) => {
       const next = new Set(prev);
-      const wasSelected = next.has(id);
-      if (wasSelected) next.delete(id);
-      else next.add(id);
+      if (marcar) next.add(id);
+      else next.delete(id);
       saveSelection(next);
       return next;
     });
+    // Se decide por la selección de ciclos, no por si el ciclo ya tenía
+    // entrada en este mapa. La selección de ciclos se guarda entre sesiones y
+    // la de labores no, y con ese criterio las dos se desfasaban: la pantalla
+    // mostraba un ciclo marcado sin ninguna labor mientras la nómina lo traía
+    // entero.
     setSelectedLaborsByCycle((prev) => {
       const next = new Map(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
+      if (marcar) {
         const cycle = cycles.find((c) => c.id === id);
         next.set(id, new Set((cycle?.labors || []).map((l) => l.id)));
+      } else {
+        next.delete(id);
       }
       return next;
     });
@@ -447,7 +481,8 @@ export default function Payroll() {
   const toggleLaborInCycle = (cycleId, laborId) => {
     setSelectedLaborsByCycle((prev) => {
       const next = new Map(prev);
-      const set = new Set(next.get(cycleId) || []);
+      const todas = (cycles.find((c) => c.id === cycleId)?.labors || []).map((l) => l.id);
+      const set = new Set(next.get(cycleId) ?? todas);
       if (set.has(laborId)) set.delete(laborId);
       else set.add(laborId);
       next.set(cycleId, set);
@@ -468,41 +503,64 @@ export default function Payroll() {
     return todas.filter((id) => elegidas.has(id));
   };
 
+  // Los ciclos elegidos y qué labores de cada uno: Map(cycleId → laborIds),
+  // con la convención de `laborScopeOf`. Solo abiertos: la selección se guarda
+  // entre sesiones, y un ciclo que se cerró desde entonces ya no aparece en la
+  // lista para poder desmarcarlo.
+  const chosenCycles = new Map(
+    cycles
+      .filter((c) => selectedCycleIds.has(c.id) && c.status !== "closed")
+      .map((c) => [c.id, laborScopeOf(c)]),
+  );
+
+  // Agregar o corregir una persona suelta: la elección nueva reemplaza la que
+  // tenía, en el mismo lugar de la lista.
+  const savePerson = ({ worker, workdayIds, rowKeys, filas }) => {
+    setPeople((prev) => {
+      const entrada = { worker, workdayIds, rowKeys, filas };
+      const i = prev.findIndex((p) => p.worker.id === worker.id);
+      if (i < 0) return [...prev, entrada];
+      const next = [...prev];
+      next[i] = entrada;
+      return next;
+    });
+    setPersonModal(null);
+  };
+  const removePerson = (workerId) => setPeople((prev) => prev.filter((p) => p.worker.id !== workerId));
+
   const buildPreview = async () => {
-    if (selectedCycleIds.size === 0) return;
+    if (chosenCycles.size === 0 && people.length === 0) return;
     setBusy(true);
     try {
-      const cycleIds = [...selectedCycleIds];
-      const selectedCycles = cycles.filter((c) => cycleIds.includes(c.id));
-      // Un ciclo con todas sus labores destildadas no aporta nada y no entra
-      // a la nómina (ver `laborScopeOf`).
-      const cycleIdsConLabores = selectedCycles.filter((c) => laborScopeOf(c)?.length !== 0).map((c) => c.id);
-
-      // Build labor type map
+      // Los tipos de labor de todos los ciclos: los días de una persona suelta
+      // pueden ser de un ciclo que no se eligió.
       const laborTypeById = new Map();
-      for (const cycle of selectedCycles) {
+      for (const cycle of cycles) {
         for (const labor of cycle.labors || []) {
           laborTypeById.set(labor.id, labor.type);
         }
       }
 
-      // Load workdays for each cycle, excluding ones already tagged in another
-      // payroll y ones belonging to TEMP-* (temporary) workers, which never
-      // make it into a payroll until their RUT is assigned in CycleDetail.
-      // También filtramos por la selección de labores por ciclo: workdays de
-      // labores no marcadas quedan disponibles para una próxima nómina.
-      // Mismo helper que usó `load()` al montar: los ciclos seleccionados son
-      // un subconjunto de los abiertos, así que dentro del minuto esto no vuelve
-      // a leer de Firestore. El botón de refrescar invalida el scope cuando hace
-      // falta traer cambios de otro usuario.
-      const allWorkdays = [];
-      for (const wd of await listWorkdaysByCycles(cycleIds)) {
-        if (wd.payrollId) continue;
-        if (String(wd.workerRut || "").startsWith("TEMP-")) continue;
-        const allowedLabors = selectedLaborsByCycle.get(wd.cycleId);
-        if (allowedLabors && !allowedLabors.has(wd.laborId)) continue;
-        allWorkdays.push(wd);
-      }
+      // Lo pendiente de los ciclos y labores elegidos, más los días de las
+      // personas sueltas, releídos (ver `workdaysForNewPayroll`). Las labores
+      // no marcadas quedan disponibles para una próxima nómina. Los ciclos se
+      // leen con el mismo helper que usó `load()` al montar, así que dentro del
+      // minuto no se vuelven a pagar; el botón de refrescar invalida el scope
+      // cuando hace falta traer cambios de otro usuario.
+      const { workdays: allWorkdays, taken } = await workdaysForNewPayroll({
+        chosen: chosenCycles,
+        people: people.map((p) => ({ keys: workerKeys(p.worker), workdayIds: p.workdayIds })),
+      });
+      // Los ciclos de la nómina: los elegidos con alguna labor y los que traen
+      // las personas sueltas. Cada item lleva una entrada por cada uno, incluso
+      // en $0.
+      const ciclosNomina = newPayrollCycleDetails({
+        cycles,
+        chosen: chosenCycles,
+        workdays: allWorkdays,
+        faenas,
+        subfaenas,
+      });
 
       const aggregates = aggregateWorkerAmounts(allWorkdays, laborTypeById);
 
@@ -530,7 +588,7 @@ export default function Payroll() {
           const bankCode = bd[3] || "";
           const cash = isCashBank(bankCode);
           const byCycle = {};
-          for (const cid of cycleIdsConLabores) {
+          for (const { id: cid } of ciclosNomina) {
             byCycle[cid] = Math.round(a.byCycle[cid] || 0);
           }
           const accountIssue = validateAccountNumber(bd[1] || "", bankCode);
@@ -577,8 +635,14 @@ export default function Payroll() {
         .sort((a, b) => a.name.localeCompare(b.name));
 
       setPreviewItems(items);
+      setPreviewCycles(ciclosNomina.map((c) => ({ id: c.id, label: c.label })));
       setPayrollName(payrollSuggestedName());
       setStep(2);
+      if (taken > 0) {
+        toast.warning(`Otra nómina tomó ${taken} jornada(s) de las personas sueltas mientras tanto; quedaron afuera.`);
+      }
+    } catch (err) {
+      toast.error(`No se pudo armar la vista previa: ${err?.message || err}`);
     } finally {
       setBusy(false);
     }
@@ -698,17 +762,21 @@ export default function Payroll() {
     setBusy(true);
     setProgress({ step: "Armando datos de la nómina...", detail: "", percent: 2 });
     try {
-      // Un ciclo con todas sus labores destildadas no aportó nada: no entra.
-      // Los que entran guardan qué labores se eligieron, para que Recalcular
-      // no traiga después las que quedaron afuera.
-      const selectedCycles = cycles.filter((c) => selectedCycleIds.has(c.id) && laborScopeOf(c)?.length !== 0);
-      const cycleIds = selectedCycles.map((c) => c.id);
-      const cycleLabels = selectedCycles.map((c) => c.label || c.id);
-      const cycleDetails = selectedCycles.map((c) => {
-        const laborIds = laborScopeOf(c);
-        const detail = cycleDetailOf(c, { faenas, subfaenas });
-        return laborIds ? { ...detail, laborIds } : detail;
+      // Los ciclos de la nómina y qué labores abarca cada uno, para que
+      // Recalcular no traiga después lo que quedó afuera: los elegidos con
+      // alguna labor, y con `laborIds: []` los que traen las personas sueltas.
+      // El ciclo de una persona entra solo si ella quedó incluida.
+      const incluidas = new Set(items.flatMap((p) => p.workdayIds || []));
+      const cycleDetails = newPayrollCycleDetails({
+        cycles,
+        chosen: chosenCycles,
+        workdays: (previewWorkdaysRef.current || []).filter((wd) => incluidas.has(wd.id)),
+        faenas,
+        subfaenas,
       });
+      const cycleIds = cycleDetails.map((c) => c.id);
+      const cycleLabels = cycleDetails.map((c) => c.label);
+      const enLaNomina = new Set(cycleIds);
 
       const cleanItems = items.map((p) => {
         const anticipoApps = (p.anticipoApplications || []).map((x) => ({
@@ -742,7 +810,9 @@ export default function Payroll() {
           bonosTotal: Math.round(Number(p.bonosTotal) || 0),
           adelantosTotal: Math.round(Number(p.adelantosTotal) || 0),
           amount: Math.round(Number(p.amount) || 0),
-          byCycle: p.byCycle || {},
+          // Sin la columna de un ciclo que no entró: el de una persona suelta
+          // que se excluyó en la vista previa, donde todos quedaban en $0.
+          byCycle: Object.fromEntries(Object.entries(p.byCycle || {}).filter(([cid]) => enLaNomina.has(cid))),
           workdayIds: p.workdayIds || [],
         };
       });
@@ -873,7 +943,10 @@ export default function Payroll() {
       // Reset
       setSelectedCycleIds(new Set());
       saveSelection(new Set());
+      setSelectedLaborsByCycle(new Map());
+      setPeople([]);
       setPreviewItems([]);
+      setPreviewCycles([]);
       setPayrollName("");
       setStep(1);
       setTab("history");
@@ -1153,6 +1226,11 @@ export default function Payroll() {
             subfaenaName={subfaenaName}
             cycleStats={cycleStats}
             pendingCashPayrolls={pendingCashPayrolls}
+            chosen={chosenCycles}
+            people={people}
+            onAddPerson={() => setPersonModal({})}
+            onEditPerson={(worker) => setPersonModal({ worker })}
+            onRemovePerson={removePerson}
             onNext={buildPreview}
             busy={busy}
           />
@@ -1169,9 +1247,7 @@ export default function Payroll() {
             setPayrollClassification={setPayrollClassification}
             totalSelected={totalSelected}
             countSelected={countSelected}
-            cycleOptions={cycles
-              .filter((c) => selectedCycleIds.has(c.id))
-              .map((c) => ({ id: c.id, label: c.label || c.id }))}
+            cycleOptions={previewCycles}
             onBack={() => setStep(1)}
             onGenerate={generateAndSave}
             busy={busy}
@@ -1249,6 +1325,19 @@ export default function Payroll() {
         onConfirm={onConfirmPay}
       />
 
+      {personModal && (
+        <AddWorkerDaysModal
+          onClose={() => setPersonModal(null)}
+          workers={workers}
+          cycles={cycles}
+          allPayrolls={payrolls}
+          chosen={chosenCycles}
+          previous={new Map(people.map((p) => [p.worker.id, p.rowKeys]))}
+          initialWorker={personModal.worker || null}
+          onConfirm={savePerson}
+        />
+      )}
+
       {detailPayroll && (
         <PayrollDetailModal
           payroll={detailPayroll}
@@ -1313,12 +1402,29 @@ const PAY_SPLIT_HINT =
 const PAY_UNKNOWN_HINT =
   "Trabajadores sin banco cargado o que no están en el catálogo. Se define su medio de pago en el preview.";
 
-// Paso 1 de "Generar": elegir qué ciclos entran a la nómina. Por defecto solo
+// Paso 1 de "Generar": elegir qué ciclos entran a la nómina y, además o en vez
+// de eso, personas sueltas con sus días puntuales. Por defecto solo
 // se listan los ciclos que tienen plata pendiente de pagar — un ciclo abierto
 // sin nada pendiente es ruido acá, no una opción. Quedan detrás del toggle
 // "Sin pendientes" (y siempre visibles si están seleccionados, para que nunca
 // desaparezca algo que el usuario ya marcó).
-function CycleSelector({ groups, selected, toggle, selectedLaborsByCycle, toggleLaborInCycle, subfaenaName, cycleStats, pendingCashPayrolls = [], onNext, busy }) {
+function CycleSelector({
+  groups,
+  selected,
+  toggle,
+  selectedLaborsByCycle,
+  toggleLaborInCycle,
+  subfaenaName,
+  cycleStats,
+  pendingCashPayrolls = [],
+  chosen = new Map(),
+  people = [],
+  onAddPerson,
+  onEditPerson,
+  onRemovePerson,
+  onNext,
+  busy,
+}) {
   const [search, setSearch] = useState("");
   const [showEmpty, setShowEmpty] = useState(false);
   const [showPendingCash, setShowPendingCash] = useState(false);
@@ -1335,6 +1441,46 @@ function CycleSelector({ groups, selected, toggle, selectedLaborsByCycle, toggle
     }
     return { total, people, rows: pendingCashPayrolls };
   }, [pendingCashPayrolls]);
+
+  // Lo pendiente de un ciclo marcado, solo de las labores elegidas. Antes el
+  // total de lo seleccionado sumaba el ciclo entero aunque se destildaran
+  // labores, y con las personas sueltas una labor destildada se contaba dos
+  // veces: en el ciclo y en la persona.
+  const pendingOfChosenLabors = (cycle, stat) => {
+    const elegidas = selectedLaborsByCycle?.get(cycle.id);
+    const todas = (cycle.labors || []).map((l) => l.id);
+    if (!elegidas || todas.every((id) => elegidas.has(id))) {
+      return {
+        unpaid: stat.unpaid,
+        bank: stat.unpaidBank || 0,
+        cash: stat.unpaidCash || 0,
+        unknown: stat.unpaidUnknown || 0,
+      };
+    }
+    const out = { unpaid: 0, bank: 0, cash: 0, unknown: 0 };
+    for (const id of elegidas) {
+      const pl = stat.unpaidByLabor?.[id];
+      if (!pl) continue;
+      out.unpaid += pl.unpaid;
+      out.bank += pl.bank;
+      out.cash += pl.cash;
+      out.unknown += pl.unknown;
+    }
+    return out;
+  };
+
+  // Lo que suma cada persona suelta, sin los días que ya entran por un ciclo
+  // elegido: esos ya se cuentan en el ciclo.
+  const peopleRows = people.map((p) => {
+    const propias = p.filas.filter((f) => !inChosenCycles(f, chosen));
+    return {
+      worker: p.worker,
+      dias: propias.length,
+      monto: propias.reduce((s, f) => s + f.amount, 0),
+      cubiertas: p.filas.length - propias.length,
+    };
+  });
+  const peopleTotal = peopleRows.reduce((s, r) => s + r.monto, 0);
 
   const {
     visibleGroups, emptyCount, totalPending, pendingCount,
@@ -1371,10 +1517,11 @@ function CycleSelector({ groups, selected, toggle, selectedLaborsByCycle, toggle
           empty += 1;
         }
         if (isSelected) {
-          selSum += stat.unpaid;
-          selBank += stat.unpaidBank || 0;
-          selCash += stat.unpaidCash || 0;
-          selUnknown += stat.unpaidUnknown || 0;
+          const parte = pendingOfChosenLabors(c, stat);
+          selSum += parte.unpaid;
+          selBank += parte.bank;
+          selCash += parte.cash;
+          selUnknown += parte.unknown;
         }
         if (!hasPending && !showEmpty && !isSelected) continue;
         const sub = subfaenaName(c.subfaenaId);
@@ -1402,7 +1549,7 @@ function CycleSelector({ groups, selected, toggle, selectedLaborsByCycle, toggle
       selectedUnknown: selUnknown,
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groups, cycleStats, selected, search, showEmpty]);
+  }, [groups, cycleStats, selected, selectedLaborsByCycle, search, showEmpty]);
 
   // "Todos / ninguno" por faena: solo opera sobre los ciclos que están a la
   // vista, así el botón nunca marca algo que el usuario no ve.
@@ -1443,6 +1590,14 @@ function CycleSelector({ groups, selected, toggle, selectedLaborsByCycle, toggle
           } disabled:opacity-40 disabled:hover:bg-[var(--color-surface-2)]`}
         >
           {showEmpty ? "✓ " : ""}Sin pendientes ({emptyCount})
+        </button>
+        <button
+          type="button"
+          onClick={onAddPerson}
+          title="Sumar los días puntuales de una persona, de cualquier ciclo abierto. Sirve para armar la nómina solo con personas, o junto con los ciclos."
+          className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1 text-xs hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)]"
+        >
+          + Agregar persona
         </button>
         <div className="ml-auto flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
           <span>
@@ -1500,6 +1655,48 @@ function CycleSelector({ groups, selected, toggle, selectedLaborsByCycle, toggle
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {peopleRows.length > 0 && (
+        <div className="shrink-0 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
+          <div className="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 sm:px-4">
+            <span className="text-sm font-semibold">👤 Personas sueltas</span>
+            <span className="rounded-full bg-[var(--color-surface)] px-2 py-0.5 text-[11px] tabular-nums text-[var(--color-muted)]">
+              {peopleRows.length}
+            </span>
+            <span className="ml-auto text-xs font-semibold tabular-nums text-[var(--color-warning)]">
+              {fmtCurrency(peopleTotal)}
+            </span>
+          </div>
+          <ul className="max-h-[30vh] divide-y divide-[var(--color-border)] overflow-auto">
+            {peopleRows.map((r) => (
+              <li key={r.worker.id} className="flex items-center gap-2 px-3 py-1 sm:px-4">
+                <button
+                  type="button"
+                  onClick={() => onEditPerson(r.worker)}
+                  title="Cambiar los días elegidos"
+                  className="flex min-h-[40px] min-w-0 flex-1 flex-col items-start justify-center text-left"
+                >
+                  <span className="w-full truncate text-sm font-medium">{r.worker.name || "(sin nombre)"}</span>
+                  <span className="text-xs tabular-nums text-[var(--color-muted)]">
+                    {r.dias} día{r.dias === 1 ? "" : "s"} · {fmtCurrency(r.monto)}
+                    {r.cubiertas > 0 &&
+                      ` · ${r.cubiertas} ya entra${r.cubiertas === 1 ? "" : "n"} con un ciclo elegido`}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onRemovePerson(r.worker.id)}
+                  title="Quitar a esta persona"
+                  aria-label={`Quitar a ${r.worker.name || "esta persona"}`}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-[var(--color-border)] text-xs text-[var(--color-muted)] hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -1563,7 +1760,9 @@ function CycleSelector({ groups, selected, toggle, selectedLaborsByCycle, toggle
                           : `${stat.firstDay || "?"} → ${stat.lastDay || "?"}`)
                       : "";
                     const labors = c.labors || [];
-                    const selectedLabors = selectedLaborsByCycle?.get(c.id) || new Set();
+                    // Sin entrada = todas: un ciclo que quedó marcado de otra
+                    // sesión (ver `toggleCycle`).
+                    const selectedLabors = selectedLaborsByCycle?.get(c.id) ?? new Set(labors.map((l) => l.id));
                     const allLaborsOn = labors.length > 0 && labors.every((l) => selectedLabors.has(l.id));
                     const noneOn = isSelected && labors.length > 0 && selectedLabors.size === 0;
                     const splitTitle = hasPending
@@ -1665,16 +1864,23 @@ function CycleSelector({ groups, selected, toggle, selectedLaborsByCycle, toggle
 
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3 shadow-sm">
         <div className="text-sm">
-          <span className="font-semibold tabular-nums">{selected.size}</span>{" "}
+          <span className="font-semibold tabular-nums">{chosen.size}</span>{" "}
           <span className="text-[var(--color-muted)]">
-            ciclo{selected.size === 1 ? "" : "s"} seleccionado{selected.size === 1 ? "" : "s"}
+            ciclo{chosen.size === 1 ? "" : "s"} seleccionado{chosen.size === 1 ? "" : "s"}
           </span>
-          {selected.size > 0 && (
+          {chosen.size > 0 && (
             <span className="ml-2 tabular-nums">
               · <span className="font-semibold text-[var(--color-warning)]">{fmtCurrency(selectedTotal)}</span>
             </span>
           )}
-          {selected.size > 0 && (
+          {peopleRows.length > 0 && (
+            <span className="ml-2 tabular-nums">
+              + <span className="font-semibold">{peopleRows.length}</span>{" "}
+              <span className="text-[var(--color-muted)]">persona{peopleRows.length === 1 ? "" : "s"}</span>{" "}
+              · <span className="font-semibold text-[var(--color-warning)]">{fmtCurrency(peopleTotal)}</span>
+            </span>
+          )}
+          {chosen.size > 0 && (
             <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-[var(--color-muted)]" title={PAY_SPLIT_HINT}>
               <span>Estimado:</span>
               <span className="tabular-nums">🏦 {fmtCurrency(selectedBank)}</span>
@@ -1687,7 +1893,7 @@ function CycleSelector({ groups, selected, toggle, selectedLaborsByCycle, toggle
         </div>
         <button
           onClick={onNext}
-          disabled={selected.size === 0 || busy}
+          disabled={(chosen.size === 0 && peopleRows.length === 0) || busy}
           className="min-h-[36px] rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
         >
           {busy ? "Calculando..." : "Continuar →"}
@@ -2025,7 +2231,7 @@ function PreviewTable({
               <tr>
                 <td colSpan={11} className="px-3 py-6 text-center text-[var(--color-muted)]">
                   {items.length === 0
-                    ? "No hay trabajadores con monto en los ciclos seleccionados."
+                    ? "No hay trabajadores con monto en lo elegido."
                     : "Ningún trabajador coincide con el filtro."}
                 </td>
               </tr>
@@ -4636,8 +4842,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
       // Se releen: entre que se abrió el modal y ahora, otra nómina pudo
       // tomar alguno de esos días.
       const frescas = await workdaysService.list({ wheres: [["workerRut", "in", claves]] });
-      const pedidas = new Set(workdayIds);
-      const libres = frescas.filter((wd) => pedidas.has(wd.id) && !wd.payrollId);
+      const { libres, tomadas } = stillFreeWorkdays(frescas, workdayIds);
       if (libres.length === 0) {
         toast.error("Esos días ya no están disponibles: los tomó otra nómina.");
         return;
@@ -4692,7 +4897,6 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
       setAddWorkerOpen(false);
       await onChanged?.();
       const dias = new Set(libres.map((wd) => `${wd.cycleId}|${wd.laborId}|${wd.date}`)).size;
-      const tomadas = workdayIds.length - libres.length;
       toast.success(
         resumenAgregado(`${dias} día(s) de ${worker.name || "la persona"} agregado(s) a la nómina.`, plan.added) +
           (tomadas > 0 ? ` ${tomadas} jornada(s) ya no estaban disponibles y quedaron afuera.` : ""),
@@ -6684,21 +6888,46 @@ function rutDigits(s) {
 }
 
 // Agregar a una persona puntual: se la busca, se cargan sus días de los
-// ciclos abiertos —de cualquier faena, estén o no en esta nómina— y se elige
+// ciclos abiertos —de cualquier faena, estén o no en la nómina— y se elige
 // cuáles se le suman. Los días que ya están en una nómina se muestran sin
-// casilla, para ver el cuadro completo de la persona. La cuenta es la misma
-// que al agregar ciclos (`planAddWorkdays`), y el pie muestra antes de
-// confirmar cuánto suma y qué anticipos se le descuentan.
+// casilla, para ver el cuadro completo de la persona.
+//
+// Sirve en los dos momentos:
+//   - En una nómina pendiente (`payroll`): la cuenta es la misma que al
+//     agregar ciclos (`planAddWorkdays`), y el pie muestra antes de confirmar
+//     cuánto suma y qué anticipos se le descuentan.
+//   - Al generar (sin `payroll`): se eligen los días de una persona suelta.
+//     Los que ya entran por los ciclos elegidos (`chosen`) se ven incluidos y
+//     sin casilla. Los anticipos se reparten en la vista previa, junto con lo
+//     que la persona traiga de los ciclos, así que el pie muestra solo lo
+//     elegido. `previous` tiene lo que ya se le eligió a cada persona, para
+//     poder corregirlo, e `initialWorker` abre el modal directo en una.
 //
 // Se monta solo mientras está abierto, igual que `AddCyclesModal`.
-function AddWorkerDaysModal({ onClose, payroll, items, workers, cycles, allPayrolls = [], profileFor, onConfirm, busy }) {
+function AddWorkerDaysModal({
+  onClose,
+  payroll = null,
+  items = [],
+  workers,
+  cycles,
+  allPayrolls = [],
+  profileFor,
+  chosen = null,
+  previous = null,
+  initialWorker = null,
+  onConfirm,
+  busy,
+}) {
   const { catalogs } = useCatalogs();
+  const generando = !payroll;
+  const payrollId = payroll?.id ?? null;
   const [query, setQuery] = useState("");
-  const [worker, setWorker] = useState(null);
+  const [worker, setWorker] = useState(initialWorker);
   const [data, setData] = useState(null); // { workdays, advances }
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(!!initialWorker);
   const [error, setError] = useState("");
-  const [selected, setSelected] = useState(() => new Set()); // keys de fila
+  // keys de fila
+  const [selected, setSelected] = useState(() => new Set((initialWorker && previous?.get(initialWorker.id)) || []));
   // Si se elige otra persona antes de que termine la carga de la anterior,
   // esa respuesta se descarta.
   const pedido = useRef(0);
@@ -6711,7 +6940,8 @@ function AddWorkerDaysModal({ onClose, payroll, items, workers, cycles, allPayro
     }
     return out;
   }, [items]);
-  const estaEnNomina = (w) => workerKeys(w).some((k) => clavesEnNomina.has(k));
+  // Ya en la nómina, o, al generar, ya agregada como persona suelta.
+  const yaEsta = (w) => (generando ? !!previous?.has(w.id) : workerKeys(w).some((k) => clavesEnNomina.has(k)));
 
   const resultados = useMemo(() => {
     const q = query.trim();
@@ -6722,18 +6952,14 @@ function AddWorkerDaysModal({ onClose, payroll, items, workers, cycles, allPayro
       .slice(0, 30);
   }, [workers, query]);
 
-  const elegir = async (w) => {
-    const id = ++pedido.current;
-    setWorker(w);
-    setData(null);
-    setSelected(new Set());
-    setError("");
-    setLoading(true);
+  const cargar = async (w, id) => {
     try {
       const claves = workerKeys(w);
+      // Al generar, los anticipos se reparten en la vista previa: acá no se
+      // necesitan.
       const [workdays, advances] = await Promise.all([
         workdaysService.list({ wheres: [["workerRut", "in", claves]] }),
-        listPendingForWorkers(claves),
+        generando ? [] : listPendingForWorkers(claves),
       ]);
       if (pedido.current === id) setData({ workdays, advances });
     } catch (err) {
@@ -6742,6 +6968,20 @@ function AddWorkerDaysModal({ onClose, payroll, items, workers, cycles, allPayro
       if (pedido.current === id) setLoading(false);
     }
   };
+  const elegir = (w) => {
+    const id = ++pedido.current;
+    setWorker(w);
+    setData(null);
+    setSelected(new Set(previous?.get(w.id) || []));
+    setError("");
+    setLoading(true);
+    cargar(w, id);
+  };
+  // Abierto directo en una persona: sus días se cargan al montar.
+  useEffect(() => {
+    if (initialWorker) cargar(initialWorker, ++pedido.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const otraPersona = () => {
     pedido.current += 1;
     setWorker(null);
@@ -6755,10 +6995,21 @@ function AddWorkerDaysModal({ onClose, payroll, items, workers, cycles, allPayro
   const laborTypeById = useMemo(() => new Map([...laborById].map(([id, l]) => [id, l.type])), [laborById]);
   const cycleById = useMemo(() => new Map(cycles.map((c) => [c.id, c])), [cycles]);
   const payrollNameById = useMemo(() => new Map(allPayrolls.map((p) => [p.id, p.name || p.id])), [allPayrolls]);
-  const ciclosDeLaNomina = useMemo(
-    () => new Set([...(payroll.cycleDetails || []).map((c) => c.id), ...(payroll.cycleIds || [])]),
-    [payroll.cycleDetails, payroll.cycleIds],
-  );
+  // Los ciclos que ya están en la nómina o, al generar, los elegidos con
+  // alguna labor.
+  const ciclosDeLaNomina = useMemo(() => {
+    if (!generando) return new Set([...(payroll.cycleDetails || []).map((c) => c.id), ...(payroll.cycleIds || [])]);
+    return new Set(
+      [...(chosen || new Map())]
+        .filter(([, laborIds]) => !Array.isArray(laborIds) || laborIds.length > 0)
+        .map(([cycleId]) => cycleId),
+    );
+  }, [generando, payroll, chosen]);
+
+  // Al generar, lo que ya entra por los ciclos y labores elegidos: se ve
+  // incluido y no se puede elegir otra vez.
+  const cubierta = (f) => generando && f.status === "pending" && inChosenCycles(f, chosen || new Map());
+  const libre = (f) => f.status === "pending" && !cubierta(f);
 
   // Por ciclo abierto, sus filas. Solo abiertos, igual que al generar o al
   // agregar ciclos: uno cerrado ya se liquidó o está por liquidarse.
@@ -6769,22 +7020,23 @@ function AddWorkerDaysModal({ onClose, payroll, items, workers, cycles, allPayro
       return c && c.status !== "closed";
     });
     const porCiclo = new Map();
-    for (const fila of workerDayRows(abiertas, { laborTypeById, payrollId: payroll.id })) {
+    for (const fila of workerDayRows(abiertas, { laborTypeById, payrollId })) {
       if (!porCiclo.has(fila.cycleId)) porCiclo.set(fila.cycleId, []);
       porCiclo.get(fila.cycleId).push(fila);
     }
     return [...porCiclo.entries()]
       .map(([cycleId, filas]) => ({ cycle: cycleById.get(cycleId), filas }))
       .sort((a, b) => (a.cycle.label || "").localeCompare(b.cycle.label || "", "es"));
-  }, [data, cycleById, laborTypeById, payroll.id]);
+  }, [data, cycleById, laborTypeById, payrollId]);
 
-  const elegidas = secciones.flatMap((s) => s.filas).filter((f) => selected.has(f.key));
+  const elegidas = secciones.flatMap((s) => s.filas).filter((f) => libre(f) && selected.has(f.key));
   const totalElegido = elegidas.reduce((s, f) => s + f.amount, 0);
 
-  // Lo que pasaría al confirmar, con la misma cuenta que se va a guardar.
+  // Lo que pasaría al confirmar, con la misma cuenta que se va a guardar. Solo
+  // en una nómina ya armada: al generar, el reparto sale en la vista previa.
   const preview = useMemo(() => {
-    if (!worker || !data) return null;
-    const marcadas = secciones.flatMap((s) => s.filas).filter((f) => selected.has(f.key));
+    if (generando || !worker || !data) return null;
+    const marcadas = secciones.flatMap((s) => s.filas).filter((f) => f.status === "pending" && selected.has(f.key));
     if (marcadas.length === 0) return null;
     const persona = asPayrollWorker({
       items,
@@ -6802,7 +7054,8 @@ function AddWorkerDaysModal({ onClose, payroll, items, workers, cycles, allPayro
       profileFor: () => profileFor(worker),
     });
     return plan.added.find((x) => x.key === persona.key) || null;
-  }, [worker, data, secciones, selected, items, laborTypeById, profileFor]);
+  }, [generando, worker, data, secciones, selected, items, laborTypeById, profileFor]);
+  const puedeConfirmar = generando ? elegidas.length > 0 : !!preview;
 
   const toggle = (key) => setSelected((prev) => {
     const next = new Set(prev);
@@ -6811,7 +7064,7 @@ function AddWorkerDaysModal({ onClose, payroll, items, workers, cycles, allPayro
     return next;
   });
   const toggleSeccion = (seccion) => setSelected((prev) => {
-    const pendientes = seccion.filas.filter((f) => f.status === "pending").map((f) => f.key);
+    const pendientes = seccion.filas.filter(libre).map((f) => f.key);
     const todas = pendientes.every((k) => prev.has(k));
     const next = new Set(prev);
     for (const k of pendientes) {
@@ -6850,13 +7103,17 @@ function AddWorkerDaysModal({ onClose, payroll, items, workers, cycles, allPayro
     return `${dia} ${workerDetailDateLabel(d)}`;
   };
   const estadoDe = (fila) =>
-    fila.status === "here" ? "en esta nómina" : `en ${payrollNameById.get(fila.payrollId) || "otra nómina"}`;
+    cubierta(fila)
+      ? "entra con el ciclo elegido"
+      : fila.status === "here"
+        ? "en esta nómina"
+        : `en ${payrollNameById.get(fila.payrollId) || "otra nómina"}`;
 
   return (
     <Modal
       open
       onClose={onClose}
-      title="Agregar persona a la nómina"
+      title={generando ? "Agregar persona a la nómina nueva" : "Agregar persona a la nómina"}
       size="xl"
       footer={
         <>
@@ -6865,7 +7122,15 @@ function AddWorkerDaysModal({ onClose, payroll, items, workers, cycles, allPayro
               <div className="font-semibold tabular-nums">
                 {elegidas.length} día{elegidas.length === 1 ? "" : "s"} · {fmtCurrency(totalElegido)}
               </div>
-              {preview ? (
+              {generando ? (
+                totalElegido > 0 ? (
+                  <div className="text-[var(--color-muted)]">Los anticipos y bonos se descuentan en la vista previa.</div>
+                ) : (
+                  <div className="text-amber-700 dark:text-amber-400">
+                    Lo elegido suma $0: solo entra si tiene otra producción en la nómina.
+                  </div>
+                )
+              ) : preview ? (
                 <div className="tabular-nums text-[var(--color-muted)]">
                   {preview.isNew
                     ? "Entra a la nómina"
@@ -6889,8 +7154,15 @@ function AddWorkerDaysModal({ onClose, payroll, items, workers, cycles, allPayro
             Cancelar
           </button>
           <button
-            onClick={() => onConfirm({ worker, workdayIds: elegidas.flatMap((f) => f.workdayIds) })}
-            disabled={!preview || busy}
+            onClick={() =>
+              onConfirm({
+                worker,
+                workdayIds: elegidas.flatMap((f) => f.workdayIds),
+                rowKeys: elegidas.map((f) => f.key),
+                filas: elegidas.map((f) => ({ cycleId: f.cycleId, laborId: f.laborId, date: f.date, amount: f.amount })),
+              })
+            }
+            disabled={!puedeConfirmar || busy}
             className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
           >
             {busy
@@ -6927,9 +7199,9 @@ function AddWorkerDaysModal({ onClose, payroll, items, workers, cycles, allPayro
                     className="flex min-h-[40px] w-full items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-left text-sm hover:bg-[var(--color-accent-soft)]"
                   >
                     <span className="min-w-0 flex-1 truncate font-medium">{w.name || "(sin nombre)"}</span>
-                    {estaEnNomina(w) && (
+                    {yaEsta(w) && (
                       <span className="shrink-0 rounded-full bg-[var(--color-accent-soft)] px-2 py-0.5 text-[10px] text-[var(--color-accent)]">
-                        en esta nómina
+                        {generando ? "ya agregada" : "en esta nómina"}
                       </span>
                     )}
                     <span className="shrink-0 text-xs tabular-nums text-[var(--color-muted)]">
@@ -6948,7 +7220,7 @@ function AddWorkerDaysModal({ onClose, payroll, items, workers, cycles, allPayro
               <div className="truncate font-semibold">{worker.name || "(sin nombre)"}</div>
               <div className="text-xs tabular-nums text-[var(--color-muted)]">
                 {formatRutForDisplay(worker.rut || worker.id)}
-                {estaEnNomina(worker) ? " · ya está en esta nómina" : ""}
+                {yaEsta(worker) ? (generando ? " · ya agregada" : " · ya está en esta nómina") : ""}
               </div>
             </div>
             <button
@@ -6960,7 +7232,9 @@ function AddWorkerDaysModal({ onClose, payroll, items, workers, cycles, allPayro
             </button>
           </div>
           <p className="text-[11px] text-[var(--color-muted)]">
-            Días de ciclos abiertos. Los que ya están en una nómina se muestran sin casilla.
+            {generando
+              ? "Días de ciclos abiertos. Los que ya están en una nómina, o que ya entran con los ciclos elegidos, se muestran sin casilla."
+              : "Días de ciclos abiertos. Los que ya están en una nómina se muestran sin casilla."}
           </p>
           {loading ? (
             <div className="py-8 text-center text-sm text-[var(--color-muted)]">Cargando días…</div>
@@ -6972,22 +7246,30 @@ function AddWorkerDaysModal({ onClose, payroll, items, workers, cycles, allPayro
             <div className="space-y-2">
               {secciones.map((sec) => {
                 const c = sec.cycle;
-                const pendientes = sec.filas.filter((f) => f.status === "pending");
-                const todas = pendientes.length > 0 && pendientes.every((f) => selected.has(f.key));
-                const pendienteTotal = pendientes.reduce((s, f) => s + f.amount, 0);
+                const libres = sec.filas.filter(libre);
+                const cubiertas = sec.filas.filter(cubierta);
+                const todas = libres.length > 0 && libres.every((f) => selected.has(f.key));
+                const pendienteTotal = libres.reduce((s, f) => s + f.amount, 0);
+                const enNomina = ciclosDeLaNomina.has(c.id);
+                const detalle = [
+                  generando
+                    ? enNomina ? "Ciclo elegido" : "Ciclo sin elegir"
+                    : enNomina ? "En esta nómina" : "Fuera de esta nómina",
+                  libres.length > 0 &&
+                    `${libres.length} pendiente${libres.length === 1 ? "" : "s"} · ${fmtCurrency(pendienteTotal)}`,
+                  cubiertas.length > 0 && `${cubiertas.length} ya entra${cubiertas.length === 1 ? "" : "n"} con el ciclo`,
+                  libres.length === 0 && cubiertas.length === 0 && "sin pendientes",
+                ]
+                  .filter(Boolean)
+                  .join(" · ");
                 return (
                   <div key={c.id} className="overflow-hidden rounded-md border border-[var(--color-border)]">
                     <div className="flex flex-wrap items-center gap-2 bg-[var(--color-surface-2)] px-3 py-2">
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-medium">{c.label || c.id}</div>
-                        <div className="text-[11px] text-[var(--color-muted)]">
-                          {ciclosDeLaNomina.has(c.id) ? "En esta nómina" : "Fuera de esta nómina"}
-                          {pendientes.length > 0
-                            ? ` · ${pendientes.length} pendiente${pendientes.length === 1 ? "" : "s"} · ${fmtCurrency(pendienteTotal)}`
-                            : " · sin pendientes"}
-                        </div>
+                        <div className="text-[11px] text-[var(--color-muted)]">{detalle}</div>
                       </div>
-                      {pendientes.length > 0 && (
+                      {libres.length > 0 && (
                         <button
                           type="button"
                           onClick={() => toggleSeccion(sec)}
@@ -7000,15 +7282,15 @@ function AddWorkerDaysModal({ onClose, payroll, items, workers, cycles, allPayro
                     <ul className="divide-y divide-[var(--color-border)]">
                       {sec.filas.map((f) => {
                         const labor = laborById.get(f.laborId);
-                        const libre = f.status === "pending";
+                        const esLibre = libre(f);
                         return (
                           <li key={f.key}>
                             <label
                               className={`flex min-h-[40px] items-center gap-2 px-3 py-1.5 text-sm ${
-                                libre ? "cursor-pointer hover:bg-[var(--color-accent-soft)]" : "opacity-60"
+                                esLibre ? "cursor-pointer hover:bg-[var(--color-accent-soft)]" : "opacity-60"
                               }`}
                             >
-                              {libre ? (
+                              {esLibre ? (
                                 <input
                                   type="checkbox"
                                   checked={selected.has(f.key)}
@@ -7016,13 +7298,15 @@ function AddWorkerDaysModal({ onClose, payroll, items, workers, cycles, allPayro
                                   className="h-4 w-4 shrink-0 accent-[var(--color-accent)]"
                                 />
                               ) : (
-                                <span className="w-4 shrink-0 text-center text-xs">{f.status === "here" ? "✓" : "—"}</span>
+                                <span className="w-4 shrink-0 text-center text-xs">
+                                  {f.status === "here" || cubierta(f) ? "✓" : "—"}
+                                </span>
                               )}
                               <span className="w-[74px] shrink-0 text-xs tabular-nums">{diaDe(f.date)}</span>
                               <span className="min-w-0 flex-1">
                                 <span className="block truncate">{labor?.name || "Labor"}</span>
                                 <span className="block truncate text-[11px] text-[var(--color-muted)]">
-                                  {libre ? prodDe(f, labor) : `${prodDe(f, labor)} · ${estadoDe(f)}`}
+                                  {esLibre ? prodDe(f, labor) : `${prodDe(f, labor)} · ${estadoDe(f)}`}
                                 </span>
                               </span>
                               <span className="shrink-0 tabular-nums">{fmtCurrency(f.amount)}</span>
