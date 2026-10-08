@@ -84,7 +84,11 @@ tienen un helper de admin, usar ese en vez de repetir el `get()`.
 
 ## Convenciones
 
-- **Runtime**: Node 20.
+- **Runtime**: Node 24. Node 20 queda dado de baja en Google Cloud el
+  2026-10-30: desde esa fecha no se puede crear ni actualizar una función con
+  ese runtime, y las que lo sigan usando pueden quedar deshabilitadas. Node 24
+  tiene soporte hasta octubre de 2028. Al cambiar de versión, mirar el
+  calendario en https://cloud.google.com/run/docs/runtime-support.
 - **Versión de Functions**: **v2** (`firebase-functions/v2`).
 - **Un job nuevo** es una entrada más en el objeto `handlers` de `index.js`: una
   función `async` que recibe el job y devuelve lo que va al campo `result`. Si
