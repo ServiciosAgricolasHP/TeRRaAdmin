@@ -470,7 +470,7 @@ Auditoría — una fila por mutación.
 | `uid`, `email` | string? | quién |
 | `action` | `"create"` \| `"update"` \| `"delete"` | |
 | `entity`, `entityId` | string | qué |
-| `before` | objeto? | solo en `delete` (snapshot completo) |
+| `before` | objeto? | solo en `delete` (snapshot completo). Borrar un documento que no existe no deja log |
 | `after` | objeto? | solo en `create` (snapshot completo) |
 | `changes` | `{ [campo]: { from, to } }`? | solo en `update` — **es el diff, no el doc entero** |
 | `meta` | objeto? | referencias cruzadas denormalizadas + contexto extra (ver abajo) |

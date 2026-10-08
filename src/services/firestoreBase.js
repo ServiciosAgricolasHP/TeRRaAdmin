@@ -151,11 +151,14 @@ export function createService(entityName, collectionName = entityName) {
     return result;
   }
 
+  // Un documento que ya no existe no se borra ni deja log; igual sale de la
+  // caché.
   async function remove(id, { additive = false } = {}) {
     const before = await getById(id);
-    await deleteDoc(ref(id));
+    if (before) await deleteDoc(ref(id));
     if (additive) removeListItem(scope, id);
     else invalidate();
+    if (!before) return;
     await logAction({ action: "delete", entity: entityName, entityId: id, before, meta: extractRefMeta(before) });
   }
 
