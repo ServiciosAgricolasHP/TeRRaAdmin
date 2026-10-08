@@ -11,13 +11,14 @@
 | `npm test` | Vitest sobre lógica pura (~2s, sin red) / Pure-logic unit tests |
 | `npm run test:watch` | Vitest en modo watch |
 | `npm run test:e2e` | Ciclos end-to-end contra el emulador de Firestore / Integration cycles against the Firestore emulator |
-| `npm run test:all` | Los dos anteriores |
+| `npm run test:rules` | `firestore.rules` contra el emulador / Security rules against the Firestore emulator |
+| `npm run test:all` | Los tres anteriores |
 | `npm run functions:verify` | Cloud Functions contra los emuladores de functions+auth, sin deployar / Verify Cloud Functions locally |
 | `npm run deploy` | Deploy manual a GitHub Pages (`gh-pages -d dist -t`). **Escape hatch** — el camino normal es mergear a `main` y dejar que Actions deploye / Manual fallback; normal path is merge to `main` |
 
 ## Tests
 
-Dos capas, ninguna toca datos reales.
+Tres capas, ninguna toca datos reales.
 
 - **Unidad** (`vitest.config.js`): `src/**/*.test.js`, entorno `node`, sin globals
   (cada archivo importa `describe`/`it`/`expect` de `vitest`, así `eslint.config.js`
@@ -28,6 +29,10 @@ Dos capas, ninguna toca datos reales.
   aplicar anticipos → borrar → verificar que todo volvió atrás; y el import del
   RCV del SII, incluido el borrado de huérfanos. Corren en serie y
   el emulador se vacía antes de cada test.
+- **Reglas** (`vitest.config.rules.js` + `tests/rules/`): `firestore.rules` contra
+  el emulador, desde el lado de cada cliente real: TeRRa con perfil, una cuenta
+  sin perfil o suspendida, el escáner sin sesión y la cola del backend. Usa
+  `@firebase/rules-unit-testing` y su propio project id (`demo-terra-rules`).
 
 **Cuatro barreras impiden que un test toque `arandanos-hp`**, y cualquiera alcanza:
 
@@ -42,16 +47,34 @@ Dos capas, ninguna toca datos reales.
 Requisito local: **JDK 21 o superior** (`winget install EclipseAdoptium.Temurin.21.JDK`).
 `firebase-tools` 15 rechaza runtimes anteriores. En CI lo fija `actions/setup-java`.
 
-**No hay `firestore.rules` en el repo a propósito**: las reglas viven solo en la
-consola de Firebase, y un archivo de reglas permisivas acá estaría a un
-`firebase deploy` distraído de abrir producción.
+**Las reglas de Firestore viven en `firestore.rules`** y se prueban con
+`npm run test:rules`. Se publican a mano: el archivo entero se pega en la consola
+de Firebase, en la base `hpdatabase`. `firebase.json` no las referencia a
+propósito: el emulador de los e2e las cargaría, y esos tests hablan con la base
+sin sesión.
+
+- **Una sesión sola no da acceso.** Lo que da acceso es tener perfil en
+  `users/{uid}` (el id del documento es el UID de la cuenta) sin `disabled: true`.
+  Los perfiles se crean desde la consola de Firebase; el rol y la suspensión se
+  cambian desde Usuarios (ver esa sección).
+- Cualquier perfil lee y escribe lo de la app, igual que en las pantallas: lo que
+  separa a un admin del resto son las rutas, no los datos. `users`, `logs` y
+  `functionJobs` tienen reglas propias.
+- **El escáner (`scan_IS`) y las apps de cosechas y reportes no inician sesión**:
+  lo que usan queda abierto, acotado campo por campo a lo que esas apps escriben.
+- Si el escáner empieza a escribir un campo nuevo (en un pesaje, por ejemplo), el
+  campo **tiene que entrar también en `firestore.rules`**. Si no, el servidor
+  rechaza los pesajes nuevos.
+- Lo que se carga al abrir la app y vive fuera de las rutas protegidas
+  (`CatalogsProvider`, `CarriersProvider`) espera a que la cuenta tenga acceso
+  (`hasAccess`): sin eso las reglas rechazan la lectura.
 
 El mismo enganche sirve para usar la app entera contra datos descartables:
 `VITE_FIRESTORE_EMULATOR=127.0.0.1:8080 VITE_FIREBASE_PROJECT_ID=demo-terra-test npm run dev`.
 
 Los tests marcados `[bug conocido]` fijan el comportamiento **actual** de algo que
 parece estar mal, con el porqué en un comentario. No son la conducta deseada: si
-arreglás uno, el test se cae y eso es la señal de actualizar los dos.
+arreglas uno, el test se cae y eso es la señal de actualizar los dos.
 
 ## Despliegue / Deploy
 
@@ -59,22 +82,23 @@ arreglás uno, el test se cae y eso es la señal de actualizar los dos.
 - El path base `/TeRRaAdmin/` está en **dos archivos** — ambos deben coincidir:
   - `vite.config.js` → `base`
   - `src/App.jsx` → `<BrowserRouter basename="/TeRRaAdmin">`
-- La URL vieja (`/adminAgrofrutos/`) sirve un stub de redirect desde un repo aparte con ese nombre bajo la misma organización. **GitHub no redirige URLs de Pages al renombrar un repo** (solo las URLs de git/web), por eso el stub existe.
+- La URL anterior (`/adminAgrofrutos/`) la sirve un repo aparte con ese nombre, en la misma organización: un stub que redirige a `/TeRRaAdmin/`. **GitHub no redirige las URLs de Pages de un repo renombrado** (solo las de git y web).
 
 ### Flujo de trabajo Git / Git workflow
 
 - **Día a día en `develop`.** `main` es producción y solo recibe merges vía Pull Request.
-- `.github/workflows/ci.yml` — corre en push/PR: `npm run lint` (**no bloqueante**, `continue-on-error`, por deuda previa de ~65 errores) y `npm run build` (**sí bloqueante**). Este build en Linux es lo que caza los imports con casing incorrecto que Windows esconde.
+- **`docs/data-model.md` acompaña a cada cambio de modelo.** Una colección nueva, un campo nuevo, uno que cambia de tipo o de significado, o uno que se deja de escribir se documenta en el mismo commit; una colección nueva también va en `MAIN_COLLECTIONS` (Consola admin). Antes de un push se revisa que los commits que tocaron entidades lo hayan actualizado.
+- `.github/workflows/ci.yml` — corre en push/PR: `npm run lint` (**no bloqueante**, `continue-on-error`: el lint tiene ~65 errores sin resolver) y `npm run build` (**sí bloqueante**). Este build en Linux es lo que caza los imports con casing incorrecto que Windows esconde.
 - `.github/workflows/deploy.yml` — push a `main` → build → publica `dist/` en la rama `gh-pages`.
 - **Los secrets son obligatorios para el build de deploy**: las 6 `VITE_FIREBASE_*` viven en *Settings → Secrets and variables → Actions* del repo y se inyectan como `env` del paso de build. `.env` está gitignoreado, así que sin ellas el bundle sale con la config vacía y producción cae con `auth/invalid-api-key`.
 - **`fetch-depth: 0`** en el checkout del deploy: sin el historial completo, el `git rev-list --count` de `vite.config.js` devuelve 0 y la versión del header queda pegada en `.0`.
 - **Cloud Functions quedan fuera del pipeline** — se deployan a mano (ver `functions/README.md`).
   - **El backend no se invoca por HTTP: se le escribe un documento.** La app crea un job en `functionJobs` y un **trigger de Firestore v2** lo levanta, lo ejecuta y escribe el resultado en el mismo doc; la UI lo mira con un `onSnapshot`. `PingSection` en `AdminConsole.jsx` es el ejemplo completo.
-  - **Las tres variantes de callable están cerradas**, y conviene no volver a intentarlas: *(a)* **v2** corre sobre Cloud Run y necesita un binding IAM `allUsers` que la org policy del proyecto prohíbe → **403 con cuerpo HTML** antes de llegar al código (verificado con `curl`); *(b)* **v1** no existe en `southamerica-west1` —Santiago no está entre sus 23 regiones, y encima no soporta App Engine, que gen1 necesita para el staging—, así que el deploy muere en un 403 sobre `locations/southamerica-west1` que hay que leer por su *"or it may not exist"*; *(c)* un **trigger de Firestore en v1** solo dispara sobre la base `(default)`, que en este proyecto no existe. Un trigger v2 lo invoca Eventarc con una service account, así que esquiva el invoker público — es el único camino que no pelea contra una restricción de plataforma.
+  - **No hay funciones callable.** *(a)* Una callable **v2** corre sobre Cloud Run y necesita un binding IAM `allUsers`, que la org policy del proyecto prohíbe: responde **403 con cuerpo HTML** antes de llegar al código. *(b)* Cloud Functions **v1** no existe en `southamerica-west1`, y esa región tampoco tiene App Engine, que gen1 necesita para el staging. *(c)* Un **trigger de Firestore v1** solo dispara sobre la base `(default)`, que en este proyecto no existe. Un trigger v2 lo invoca Eventarc con una service account, sin invoker público.
   - **Región `us-central1`, y no es negociable**: `hpdatabase` está en **`nam5`** (multi-región de EE.UU.) y un trigger de Firestore tiene que vivir en la ubicación de la base. Ver la nota de `nam5` en Arquitectura.
   - **`database: "hpdatabase"` en el trigger.** La base no es `(default)`. Si no coincide, la función queda suscrita a una base inexistente y **nunca dispara, sin dar error** — el peor modo de falla del diseño.
-  - **La autorización se mudó a las reglas.** Antes el portero era `context.auth` adentro de la función; ahora es la regla de Firestore que decide quién crea un doc en `functionJobs`. Como no hay `firestore.rules` en el repo, ese permiso se carga a mano en la consola: el `create` exige `status == "pending"` y `requestedBy == request.auth.uid`, y `update`/`delete` van en `false` (la función escribe con el admin SDK, que no pasa por reglas). El texto completo está en `functions/README.md`.
-  - **`npm run functions:verify` antes de cada deploy** — ver `functions/README.md`. Iterar deployando cuesta minutos de Cloud Build por vuelta; el emulador da lo mismo en segundos. **Pero no prueba el enrutamiento por base**: el emulador de Firestore todavía no soporta bases múltiples, así que sirve una sola y el nombre le da igual. Eso solo se verifica en producción, y es para lo que está el botón de ping.
+  - **La autorización está en las reglas**: la regla de Firestore decide quién crea un doc en `functionJobs` (`firestore.rules`, ver Tests). El `create` exige que lo pida un admin, con `status == "pending"` y `requestedBy == request.auth.uid`, y nadie edita ni borra un job desde el cliente (la función escribe con el admin SDK, que no pasa por reglas).
+  - **`npm run functions:verify` antes de cada deploy** — ver `functions/README.md`. Iterar deployando cuesta minutos de Cloud Build por vuelta; el emulador da lo mismo en segundos. **Pero no prueba el enrutamiento por base**: el emulador de Firestore no soporta bases múltiples, así que sirve una sola y el nombre le da igual. Eso solo se verifica en producción, y es para lo que está el botón de ping.
 
 ## Stack
 
@@ -96,7 +120,8 @@ src/
   Components/           ← UI compartida (Layout, Modal, ProtectedRoute, TransportsModal, WorkerEditModal, WorkerSummaryModal, CycleSummaryModal, etc.)
   screens/              ← componentes de ruta / page-level route components
                         (Dashboard, Faenas, CycleDetail, Workers, Transports, Payroll, Advances,
-                         InterestLinks, Calendar, AdminConsole, MigrateWorkers, CleanupPaidWorkdays)
+                         InterestLinks, Calendar, AdminConsole, Users, NoAccess, MigrateWorkers,
+                         CleanupPaidWorkdays)
   contexts/             ← AuthContext, ThemeContext, CatalogsContext, CarriersContext
   services/             ← capa de datos (Firestore CRUD + caché + auditoría)
                         firestoreBase, transportsService, carriersService,
@@ -111,15 +136,10 @@ La base se llama **`hpdatabase`** y **no existe la `(default)`** — varias APIs
 Google asumen `(default)` en silencio, así que hay que declararla en todos lados
 (`getFirestore(app, "hpdatabase")` en el cliente, `database:` en los triggers).
 
-Está en **`nam5`**, el multi-región de Estados Unidos. **Los datos nunca
-estuvieron en Chile**, aunque la empresa sí: toda lectura de la app ya cruza a
-EE.UU. Sirve para dos cosas:
-
-- Desarma cualquier razonamiento de "poner X en Santiago para que quede cerca de
-  la base" — acerca a los usuarios y aleja de los datos. Fue el error que tenía
-  el backend durante meses.
-- Para lo que corre en el servidor y lee mucho (backups, agregaciones), la
-  región correcta es `us-central1`, pegada a la base.
+Está en **`nam5`**, el multi-región de Estados Unidos: toda lectura de la app
+cruza a EE.UU. Lo que corre en el servidor y lee mucho (backups, agregaciones)
+va en `us-central1`, pegado a la base. En Santiago quedaría cerca de los
+usuarios y lejos de los datos.
 
 Se consulta con `firebase firestore:databases:get hpdatabase`.
 
@@ -127,17 +147,20 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 
 - Firebase Email/Password.
 - Perfiles en colección `users` de Firestore (doc id = Firebase uid).
-- Roles: `admin`, `supervisor` (por defecto si no hay perfil).
+- Roles: `admin` y `user`; cualquier otro valor cuenta como usuario (`roleLabel` en `utils/userAccounts.js`).
 - `ProtectedRoute` envuelve rutas autenticadas; prop `adminOnly` restringe a admins.
+- `Login` redirige a la app cuando `user` ya está cargado en `AuthContext`.
+- **Sin perfil, o con `disabled: true`, la cuenta no entra.** `user.access` vale `"none"` o `"disabled"` y `ProtectedRoute` muestra `NoAccess`, que a una cuenta sin perfil le muestra su UID para pasárselo a un admin. Si leer el perfil falla, la app entra igual como usuario y las reglas deciden qué datos ve.
+- Al abrir la app, `AuthContext` guarda en el perfil el `email` de la cuenta y `lastSeenAt` (`userPrefsService.recordVisit`). Es lo que muestra Usuarios: el navegador no puede listar las cuentas de Authentication.
 - **`AuthContext` vuelca el doc `users/{uid}` entero en `user`**, así que cualquier campo que se le agregue queda disponible en toda la app sin pagar una lectura extra.
 
 ### Saludos personalizados / easter eggs
 
 - `utils/greetings.js` — `GREETING_SLOTS` (los nombres de las ranuras) y `greeting(user, slot, fallback)`.
-- **El texto nunca va en el código.** Vive en `users/{uid}.greetings[slot]`, se carga a mano en la consola de Firebase, y cada usuario solo lee el suyo. Hardcodearlo deja el mail de una persona real en el repo, y fuera de contexto un chiste interno puede leerse como cualquier otra cosa.
+- **El texto nunca va en el código.** Vive en `users/{uid}.greetings[slot]`, se carga desde Usuarios → Saludos, y cada usuario solo lee el suyo. Hardcodearlo deja el mail de una persona real en el repo, y fuera de contexto un chiste interno puede leerse como cualquier otra cosa.
 - Cuesta **0 lecturas**: el doc ya viene con el perfil. No hay colección aparte ni consulta al abrir el modal.
 - Un texto vacío o en blanco cuenta como "sin saludo" — borrar el easter egg es vaciar el campo, no eliminarlo del documento.
-- Ranura en uso: `workerAlreadyInLabor` (tag del trabajador ya agregado, en `WorkerPickerModal`). Para sumar otra: declararla en `GREETING_SLOTS`, leerla con `greeting()` donde toque, y cargar el texto en el doc del usuario.
+- Ranuras en uso: `workerAlreadyInLabor` (tag del trabajador ya agregado, en `WorkerPickerModal`), `profileHover` (tooltip del nombre en el header) y `notFound` (la 404). Para sumar otra: declararla en `GREETING_SLOTS` y describirla en `GREETING_FIELDS` (el editor de Usuarios), leerla con `greeting()` donde toque, y cargar el texto desde Usuarios.
 
 ### Servicios / Services
 
@@ -215,17 +238,15 @@ persona.**
   detalle de pago): muestran el `qty` de **todas** las etapas, con desglose por
   etapa y **solo el nombre** — nunca el rótulo `(no cuenta)`. Es una distinción
   de facturación de la empresa, y al lado de la producción de alguien se lee
-  como que su trabajo no vale. Antes estas vistas recortaban el `qty` por
-  `counts`, así que un día entero de "Preparación" salía con el monto y sin
-  ninguna cantidad detrás. El rótulo del helper vive en `stageTag`.
+  como que su trabajo no vale. El rótulo del helper vive en `stageTag`.
 - **Vistas de la empresa**: ahí `counts` manda y se rotula. `getEtapasTotals`
   devuelve `unidades` solo de las etapas que cuentan; el resumen por faena de
   `CycleSummaryModal` (`formatRowMetric`) marca `(no cuenta)`; el tooltip de la
   grilla del ciclo también. Igual el conteo de personas del
   `ProductionSummaryModal` y el resumen por día de la barra de precios.
 
-Los helpers compartidos son `describeStage` y `stageTag` (`utils/tratoEtapas.js`):
-la regla estaba escrita tres veces y por eso el bug estaba en los tres lados.
+La regla vive en un solo lugar, los helpers `describeStage` y `stageTag`
+(`utils/tratoEtapas.js`), que usan todas estas vistas.
 
 ### Piso (bono para trato/cosecha)
 
@@ -235,8 +256,8 @@ Bono adicional configurable por día para trato y cosecha. Pensado para compensa
 - **Persistencia del default por día**: `dayPrices[laborId][date].piso: number`. Helper: `getDayPiso(dayPrices, laborId, date)`, `effectivePiso(labor, dayPrices, date)` (este último solo lee el día — no hay fallback a labor).
 - **Persistencia del workday**: workday separado con `comboKey: "_piso"` y `pisoOnly: true`. `qty: 0`, `amount: pisoAmount`. Un doc por (worker × date × labor). Hereda el `payrollId` como cualquier otro workday — al borrar la nómina, queda disponible nuevamente.
 - **Asignar el piso a todo un día de una**: junto al monto del piso, en el panel de Precios, un botón **👥 a todos (N)** con el contador de quiénes tienen producción y todavía no tienen el bono. **Pide confirmación** con el monto por persona, cuántas son y el total — es plata que se suma a cada una. Escribe exactamente los mismos workdays `_piso` que apretar los toggles uno por uno; queda deshabilitado cuando no falta nadie.
-- **Quién cuenta como "tiene producción"**: `pisoTargets(workdaysDeLaLabor, date)` en `utils/cosechaCombos.js`. Alcanza con que **exista** el workday, sin mirar `qty` ni `amount` — es el mismo criterio que habilita el toggle de la grilla, y un día en cero es justamente el caso que el piso compensa. Que las dos vías usen la misma regla es lo que hace que el botón sea equivalente a apretar todos los toggles habilitados; si divergen, el botón hace algo que no se puede replicar a mano. Los pisos viejos sin `pisoOnly` se detectan por la clave del mapa.
-- **Quitar el piso del día se lleva también los bonos ya asignados.** El ✕ (y dejar el monto en cero) **pide confirmación** con cuántos bonos se eliminan y por cuánto. Antes borraba solo la configuración del día: los workdays `_piso` sobrevivían con su monto, seguían sumando al total de cada persona y a la nómina, y en pantalla ya no quedaba ni el monto del día para darse cuenta.
+- **Quién cuenta como "tiene producción"**: `pisoTargets(workdaysDeLaLabor, date)` en `utils/cosechaCombos.js`. Alcanza con que **exista** el workday, sin mirar `qty` ni `amount` — es el mismo criterio que habilita el toggle de la grilla, y un día en cero es justamente el caso que el piso compensa. Que las dos vías usen la misma regla es lo que hace que el botón sea equivalente a apretar todos los toggles habilitados; si divergen, el botón hace algo que no se puede replicar a mano. Un piso sin `pisoOnly` se detecta por la clave del mapa.
+- **Quitar el piso del día se lleva también los bonos ya asignados.** El ✕ (y dejar el monto en cero) **pide confirmación** con cuántos bonos se eliminan y por cuánto.
 - **Los bonos que ya se llevó una nómina no se tocan**, ni por el ✕ ni por el toggle individual: borrar un workday con `payrollId` le descuadra el total a algo que ya se pagó. El diálogo dice cuántos quedan en pie y por qué; el toggle avisa por toast. El reparto lo hace `pisoAssigned(workdaysDeLaLabor, date)` → `{ libres, liquidados }`. Es el único chequeo de `payrollId` de la pantalla: para todo lo demás, el corte es el cierre del ciclo (ver más abajo).
 - **El piso NO se bloquea en labores sincronizadas por QR**: es un bono manual, vive en un workday aparte (`comboKey: "_piso"`) y la sincronización escribe combos de producción, así que nunca lo pisa.
 - **UI grilla**: la columna "P" 🪙 al final del día solo se renderiza cuando ese día tiene piso configurado en `dayPrices` **o** algún trabajador tiene un workday `pisoOnly` para ese día (computado en `daysWithPiso`). Días sin piso quedan sin columna extra. Click en el toggle crea/borra el workday `_piso` con el monto efectivo. El toggle está deshabilitado si no hay workday de producción todavía para ese (worker, date).
@@ -253,22 +274,22 @@ Bono adicional configurable por día para trato y cosecha. Pensado para compensa
 ### Alta encadenada: subfaena → primer ciclo → primer día
 
 - **Crear una subfaena ofrece crear su primer ciclo** (modal "¿Crear el primer ciclo?", cancelable con "Después"). Una subfaena sin ciclos no tiene dónde anotar jornadas, así que quedarse ahí no es un estado útil.
-- **El ciclo nace con la fecha de inicio como primer día** (`days: [startDate]`). Antes el form pedía "Fecha inicio", la guardaba solo en `startDate` y creaba el ciclo con `days: []` — o sea sin ninguna columna en la grilla — y había que agregar el primer día a mano en CycleDetail repitiendo la fecha recién escrita. Mismo criterio en `createNextCycle` (el ciclo que se encadena al cerrar el anterior).
+- **El ciclo nace con la fecha de inicio como primer día** (`days: [startDate]`), así la grilla abre con una columna. Mismo criterio en `createNextCycle` (el ciclo que se encadena al cerrar el anterior).
 - **La primera labor: se elige el tipo**, no siempre `main`. Más un checkbox para sumar de una una labor de **Supervisión**, que es la combinación habitual. El checkbox se deshabilita si el tipo elegido ya es `supervision` — si no, el ciclo nacería con dos labores idénticas.
-- El plan lo arma `initialLaborPlan({ type, withSupervision })` (`utils/laborTypes.js`), que devuelve descriptores **sin `id`**: el id lo pone quien crea el ciclo, que es el que ya tiene el generador. El nombre sale del tipo, salvo `main` que conserva **"Principal"** — es como se llamaban todas antes de poder elegir, y renombrarlas cambiaría el encabezado de ciclos que la gente ya conoce.
+- El plan lo arma `initialLaborPlan({ type, withSupervision })` (`utils/laborTypes.js`), que devuelve descriptores **sin `id`**: el id lo pone quien crea el ciclo, que es el que ya tiene el generador. El nombre sale del tipo, salvo `main`, que se llama **"Principal"**.
 - Los trabajadores que se pasen van **solo en la primera labor**; la de supervisión arranca vacía.
 - El bloque del tipo de labor **no se muestra con la importación activa**: ahí las labores salen del ciclo origen y elegir un tipo no tendría efecto.
-- **Un solo botón de alta de subfaena por estado**: el del encabezado de la faena (y el del estado vacío, que viene con la explicación). La cabecera de la lista "Subfaenas (N)" tenía un tercero idéntico, que se sacó.
+- **Un solo botón de alta de subfaena por estado**: el del encabezado de la faena (y el del estado vacío, que viene con la explicación).
 - `CycleRow` permite **✏ Renombrar**, abrir, cerrar y eliminar.
 
 ### Ciclo cerrado = congelado
 
-- **Cerrar un ciclo es la señal de "esto ya está pagado y revisado": queda de solo lectura para todos, admin incluido.** Antes era `closed && !isAdmin`, o sea que el admin lo editaba sin ningún gesto de por medio y el cierre no protegía de lo único que importa, que es tocarlo sin querer. Para corregir algo hay que **reabrirlo** con el botón del encabezado — un cambio de estado visible, con confirmación, y que queda en el log de auditoría.
+- **Cerrar un ciclo es la señal de "esto ya está pagado y revisado": queda de solo lectura para todos, admin incluido.** Para corregir algo hay que **reabrirlo** con el botón del encabezado — un cambio de estado visible, con confirmación, y que queda en el log de auditoría.
 - **El corte es el cierre del ciclo, NO el `payrollId` del workday.** Se paga a mitad de ciclo y después se sigue trabajando ahí para revisar detalles y generar diferencias; bloquear por "ya pagado" rompería ese paso. Por la misma razón el cierre es manual y no se dispara solo al pagar.
 - **Toda escritura de `CycleDetail` pasa por `cycleWrite` / `wdWrite`**, dos envoltorios locales que llaman a `assertOpen()` antes de tocar Firestore. El guard vive en un solo punto y no repartido por los ~40 llamados al servicio: basta uno que se olvide para que el candado sea un adorno. **Lanza** en vez de devolver en silencio, porque los llamadores actualizan el estado local justo después de escribir — si dejara seguir, la pantalla mostraría un cambio que nunca se guardó.
 - Quedan fuera del guard a propósito, y son las únicas cuatro: las dos escrituras de normalización del loader (corren al montar, no son edición del usuario) y cerrar/reabrir el ciclo, que es el gesto que levanta el candado.
 - Banner 🔒 sobre la grilla explicando que está congelado y cómo reabrirlo. La línea del encabezado dice `🔒 ciclo cerrado (solo lectura)`, sin distinguir rol.
-- **Pendiente**: reabrir no está restringido a admin. Cualquiera que vea el botón puede levantar el candado, así que hoy esto evita el accidente, no es un permiso.
+- **Reabrir no está restringido a admin**: cualquiera que vea el botón levanta el candado. El cierre evita ediciones por accidente; no es un permiso.
 
 ### Importar desde otro ciclo abierto
 
@@ -309,25 +330,25 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
   2. **Vueltas** — listado y CRUD.
   3. **Pago por faena** — selecciona ciclos activos + rango de fechas → genera un `paymentSummary` por transportista con sus vueltas pendientes.
   4. **Resúmenes / Pagos** — historial; marcar pagado, revertir, imprimir uno a uno **y también imprimir varios en lote** (botón `🖨 Imprimir varios` → modal `PrintMultipleModal` con filtros estado/fechas/transportistas/faena-subfaena y dos acciones: 🖨 imprimir todos en una ventana con `page-break-after`, o 📦 descargar ZIP con un PNG por resumen vía `jszip` + `html-to-image`). En `PaymentDetailModal` el `Valor` **no** se edita inline: se edita la vuelta completa (qty/tarifa) con el lápiz, que abre `TripEditModal` — así el monto nunca queda desincronizado de N° vueltas × tarifa. La columna **Vehículo** está incluida en el `PrintableSummary`.
-  5. **Quincenas** — agrupan varios resúmenes (`transportPayments`) en un payroll (`transportPayrolls`) para pagar en bloque. Modal **+ Nueva quincena** (`PayrollCreateModal`): elegís fechas + chips de faenas, auto-lista los transportistas que tienen vueltas sueltas (sin `paymentId`, status `pending`) en el rango — todos vienen tildados por default y se puede destildar individualmente; sección aparte para **importar resúmenes existentes sueltos** (status no pagado, sin `payrollId`) que se superpongan con el rango. Al confirmar crea un `payment` por cada carrier nuevo y llama a `transportPayrollsService.create({ paymentIds: [...nuevos, ...importados] })` que tagea cada resumen con `payrollId`. **Vista tabla** en `PayrollDetailModal`: `PrintablePayrollTable` (off-screen) renderiza `# | Transportista | Vueltas | Período | Estado | Total` + fila de totales en verde estilo Excel — capturada por `html-to-image` para los botones 📋 Copiar / 📥 PNG / 🖨 Imprimir. La tabla visible incluye columna `Acciones` (💰 Pagar / ✕ Quitar / ↶ Revertir) ocultable según el estado de la quincena.
+  5. **Quincenas** — agrupan varios resúmenes (`transportPayments`) en un payroll (`transportPayrolls`) para pagar en bloque. Modal **+ Nueva quincena** (`PayrollCreateModal`): se eligen fechas y chips de faenas, y auto-lista los transportistas que tienen vueltas sueltas (sin `paymentId`, status `pending`) en el rango — todos vienen tildados por default y se puede destildar individualmente; sección aparte para **importar resúmenes existentes sueltos** (status no pagado, sin `payrollId`) que se superpongan con el rango. Al confirmar crea un `payment` por cada carrier nuevo y llama a `transportPayrollsService.create({ paymentIds: [...nuevos, ...importados] })` que tagea cada resumen con `payrollId`. **Vista tabla** en `PayrollDetailModal`: `PrintablePayrollTable` (off-screen) renderiza `# | Transportista | Vueltas | Período | Estado | Total` + fila de totales en verde estilo Excel — capturada por `html-to-image` para los botones 📋 Copiar / 📥 PNG / 🖨 Imprimir. La tabla visible incluye columna `Acciones` (💰 Pagar / ✕ Quitar / ↶ Revertir) ocultable según el estado de la quincena.
 - **Balance de quincenas** (`QuincenasBalanceSummary`, arriba de la pestaña Quincenas) — pivot de transportistas × quincenas. Dos filtros independientes: las **columnas** dejan fuera las quincenas pagadas enteras (`status: "paid"` o sin ningún item pendiente), y las **filas** dejan fuera, por default, a los transportistas que ya cobraron todo lo suyo. El toggle **☐ Todos los resúmenes** levanta el segundo: una quincena con aunque sea un item pendiente se muestra completa, con los que ya cobraron incluidos. El de las columnas no cambia — una quincena cerrada no aparece en ningún modo.
   - Sirve para cuadrar una quincena antes de cerrarla ("cómo viene"), no para decidir a quién pagar ("qué falta"), que es el default. Persistido en `localStorage` (`transports.quincenasBalance.showAll`).
   - **El título cambia con el modo** (`Balance de quincenas pendientes` ↔ `activas`) y viaja al PNG, a la impresión y al nombre del archivo. No es cosmético: una imagen rotulada "pendientes" con filas ya pagadas adentro es como un transportista termina cobrando dos veces.
-  - Ojo al tocar el filtro de filas: en modo "todos" las filas con $0 pendiente son la función, no las "filas fantasma en $0" que se arreglaron antes. El comentario del `useMemo` lo aclara. Lo que sí queda afuera **en los dos modos** es el transportista sin pendiente *ni* pagado: son los resúmenes en $0 (vueltas sin costo de transporte propio), que si no salen como filas enteras en blanco.
-  - **Click en el nombre del transportista → `CarrierSummariesModal`**: todos sus resúmenes agrupados por quincena, con pendiente/pagado por grupo. Es el drill-down que le faltaba al pivot — la celda decía "debe $X acá" y de qué resúmenes salía ese número había que ir a buscarlo a otra pestaña. Incluye los resúmenes **sueltos** (sin `payrollId`), que en el balance no aparecen y son los que se olvidan, y rotula "Quincena eliminada" cuando el `payrollId` apunta a algo que ya no existe en vez de disfrazarlos de sueltos.
+  - En modo "todos" se muestran las filas con $0 pendiente. En los dos modos queda afuera el transportista sin pendiente *ni* pagado: son los resúmenes en $0 (vueltas sin costo de transporte propio), que, si no, saldrían como filas en blanco.
+  - **Click en el nombre del transportista → `CarrierSummariesModal`**: todos sus resúmenes agrupados por quincena, con pendiente/pagado por grupo, o sea de dónde sale el monto de cada celda. Incluye los resúmenes **sueltos** (sin `payrollId`), que en el balance no aparecen, y rotula "Quincena eliminada" cuando el `payrollId` apunta a una quincena que ya no existe.
   - **`paymentSplit(p)` decide cuánto de un resumen está cobrado**, y vive suelto porque lo usan la tabla y el modal: si cada uno lo calculara a su manera, el modal contradiría a la fila que lo abrió. Un `paid` está cerrado entero; si sigue pendiente, los abonos cuentan como cobrado (capados al total) y el resto es deuda.
-  - **Mobile (`< md`) no muestra el pivot: muestra una lista ordenada por deuda.** No es una simplificación, es que no entra — con el nombre fijo y el total ocupando 265 px, a 412 px sobra lugar para UNA columna de quincena, o sea leer la tabla desplazándose de a una. Cada tarjeta abre el mismo modal que el nombre en desktop, así que el desglose por quincena no se pierde.
+  - **Mobile (`< md`) no muestra el pivot: muestra una lista ordenada por deuda.** Con el nombre y el total fijos (265 px), a 412 px entra una sola columna de quincena. Cada tarjeta abre el mismo modal que el nombre en desktop, así que el desglose por quincena no se pierde.
     - El pivot queda `hidden md:block`. Ese `display: none` **no rompe las exportaciones**: `captureFullWidth*` clona el nodo de `printRef` y lo cuelga de su propio contenedor, así que lo que le pase al padre le da igual. Los botones 📋/📥/🖨 andan desde el teléfono y sacan la tabla completa.
-  - **Objetivo de ancho (desktop): que entren 8 quincenas sin desplazarse** (`QUINCENA_COL_W` 92 + `CARRIER_COL_W` 150 + ~115 del total ≈ 1.000 px). Lo que fijaba el ancho antes no era el `minWidth` sino **el rango de fechas en ISO**: `2026-04-16 → 2026-04-30` son 23 caracteres en una línea, ~145 px, y ningún `minWidth` más chico llegaba a mandar. `compactDate` lo baja a `16-04-26` en dos líneas y el ancho pasa a decidirlo el nombre, que sí se envuelve. Si alguna vez hay que apretarlo más, el lugar a mirar es el contenido del encabezado, no el `minWidth`.
-  - **Columnas fijas** (`stickyLeft`/`stickyRight`): con varias quincenas abiertas el pivot se va de ancho, y sin fijar el nombre y el Total hay que leerlo llevándose el dedo por la pantalla. Tres detalles que parecen cosméticos y no lo son: el fondo de la celda fija tiene que ser **opaco** (si no se transparenta lo que pasa por debajo) y **de color** (en blanco se lee como un hueco, no como una columna quieta); la línea de corte es un `box-shadow` y no el borde, porque con `border-collapse: collapse` el borde es compartido y se va con la celda que se movió; y `printRef` lleva `minWidth: max-content` o el bloque blanco mide lo que el contenedor y la tabla se le va por la derecha.
+  - **Objetivo de ancho (desktop): que entren 8 quincenas sin desplazarse** (`QUINCENA_COL_W` 92 + `CARRIER_COL_W` 150 + ~115 del total ≈ 1.000 px). **El ancho lo decide el contenido del encabezado, no el `minWidth`**: `compactDate` muestra el rango como `16-04-26` en dos líneas (en ISO, `2026-04-16 → 2026-04-30` ocupa ~145 px en una línea) y el nombre se envuelve.
+  - **Columnas fijas** (`stickyLeft`/`stickyRight`): el nombre y el Total quedan quietos al desplazar el pivot. Tres detalles: el fondo de la celda fija es **opaco** (si no, se transparenta lo que pasa por debajo) y **de color** (en blanco se lee como un hueco); la línea de corte es un `box-shadow` y no el borde, porque con `border-collapse: collapse` el borde es compartido y se va con la celda que se mueve; y `printRef` lleva `minWidth: max-content`, si no el bloque blanco mide lo que el contenedor y la tabla se sale por la derecha.
   - Las celdas fijas no afectan las exportaciones: la captura clona a `width: max-content` con `overflow: visible`, así que sin contenedor de scroll se comportan como cualquier otra.
-  - **🖨 Imprimir de este balance imprime la captura PNG, no el `outerHTML`** — es la excepción al patrón del resto de la pantalla. Volcar el HTML salía cortado: el navegador no pagina de costado, así que un pivot más ancho que la hoja perdía las quincenas de la derecha sin avisar, y este pivot crece con cada quincena abierta. Reusar `captureFullWidthDataUrl` hace que las tres salidas muestren lo mismo; se pierde el texto seleccionable del PDF y se gana que salga completo. **Siempre una hoja y apaisado**: `max-height: 100vh` escala la imagen al área de página en vez de desbordar a una segunda, y el `@page { size: landscape }` va al nivel superior y no dentro de `@media print` porque anidado hay navegadores que lo ignoran. Partir el balance en dos hojas obliga a cruzar transportistas de una con quincenas de la otra, que es lo que la tabla existe para evitar.
+  - **🖨 Imprimir de este balance imprime la captura PNG, no el `outerHTML`** — es la excepción al patrón del resto de la pantalla: el navegador no pagina de costado, y un pivot más ancho que la hoja perdería las quincenas de la derecha. Reusar `captureFullWidthDataUrl` hace que las tres salidas muestren lo mismo; se pierde el texto seleccionable del PDF y se gana que salga completo. **Siempre una hoja y apaisado**: `max-height: 100vh` escala la imagen al área de página en vez de desbordar a una segunda, y el `@page { size: landscape }` va al nivel superior y no dentro de `@media print` porque anidado hay navegadores que lo ignoran. Partir el balance en dos hojas obliga a cruzar transportistas de una con quincenas de la otra, que es lo que la tabla existe para evitar.
 - **Balance general** — sección en la cabecera de la pantalla: rango de fechas + filas por transportista (viajes − pagos). Bumpea `balanceVersion` al pagar/revertir para refrescar. Botón **🖨 Imprimir balance** abre ventana de impresión.
 - Modal: `src/Components/TransportsModal.jsx` — usado en `CycleDetail` para asignar viajes rápidos. Incluye un sub-modal **+ Nuevo transportista** que crea un carrier inline y lo auto-selecciona junto con su primer vehículo (sin salir del modal de viajes). El selector de transportista del `TripEditModal` es un **combobox searchable** (`CarrierCombobox`) con typeahead sobre alias/nombre/aliases-de-vehículo, sección "RECIENTES" arriba (últimos 6 carriers usados en este ciclo, persistido en `localStorage` `transports.recentCarriers.{cycleId}`), navegación con flechas + Enter, y auto-select del primer (o único) vehículo del carrier elegido.
 - Servicios: `services/transportsService.js` exporta `tripsService` (alias `transportsService`) y `paymentsService` (alias `transportPaymentsService`).
-- **Totales derivados (invariante)**: `transportPayments.total` y `transportPayrolls.total` son denormalizaciones. El detalle imprimible (`PrintableSummary`) suma las vueltas **en vivo**, mientras que el **Balance de quincenas** (`QuincenasBalanceSummary`) y la tarjeta de la quincena leen el campo guardado — si el `amount` de una vuelta cambia y nadie refresca el campo, las dos vistas muestran montos distintos para el mismo transportista. La propagación vive en el servicio, **no en las pantallas**: `tripsService.create/update/remove` llaman `recalcPaymentTotal()` (que además saca del `tripIds` los IDs de vueltas borradas) y este llama `recalcPayrollTotal()`. `editSummaryTrips`, `updateTotal` y `deleteSummary` también propagan hacia la quincena. Los documentos con `status: "paid"` están congelados y no se recalculan. **No agregar recálculos manuales en las pantallas** — antes cada pantalla tenía que acordarse de llamar `updateTotal` y las que editan una vuelta fuera del modal del resumen (pestaña Vueltas, modal del ciclo) no lo hacían, lo que descuadraba el balance en silencio.
+- **Totales derivados (invariante)**: `transportPayments.total` y `transportPayrolls.total` son denormalizaciones. El detalle imprimible (`PrintableSummary`) suma las vueltas **en vivo**, mientras que el **Balance de quincenas** (`QuincenasBalanceSummary`) y la tarjeta de la quincena leen el campo guardado — si el `amount` de una vuelta cambia y nadie refresca el campo, las dos vistas muestran montos distintos para el mismo transportista. La propagación vive en el servicio, **no en las pantallas**: `tripsService.create/update/remove` llaman `recalcPaymentTotal()` (que además saca del `tripIds` los IDs de vueltas borradas) y este llama `recalcPayrollTotal()`. `editSummaryTrips`, `updateTotal` y `deleteSummary` también propagan hacia la quincena. Los documentos con `status: "paid"` están congelados y no se recalculan. **No agregar recálculos manuales en las pantallas**: todo camino que edita una vuelta (pestaña Vueltas, modal del ciclo, modal del resumen) pasa por el servicio, que ya propaga.
 - Contexto: `CarriersContext` precarga transportistas; expone CRUD con soft-delete.
-- **Auditoría por transportista**: los logs de `transport` / `transportPayment` llevan `meta.carrierId` denormalizado (helper `carrierMeta()` en `transportsService.js`) — sin eso no se puede preguntar "qué le pasó a las vueltas de este transportista", porque un log de `update` solo guarda el diff y el `entityId` es el de la vuelta. Mismo patrón que `extractRefMeta` (workerRut/cycleId) en `firestoreBase.js`. Lo consume `Audit.jsx → fetchSatelliteLogs`: al elegir un transportista en "Buscar por registro" se suman sus vueltas y resúmenes al historial de la ficha. Los recálculos automáticos de total quedan logueados con `meta.auto = "recalcTotal"`. **Los logs anteriores a este cambio no tienen `meta.carrierId` y no aparecen** en esa vista.
+- **Auditoría por transportista**: los logs de `transport` / `transportPayment` llevan `meta.carrierId` denormalizado (helper `carrierMeta()` en `transportsService.js`) — sin eso no se puede preguntar "qué le pasó a las vueltas de este transportista", porque un log de `update` solo guarda el diff y el `entityId` es el de la vuelta. Mismo patrón que `extractRefMeta` (workerRut/cycleId) en `firestoreBase.js`. Lo consume `Audit.jsx → fetchSatelliteLogs`: al elegir un transportista en "Buscar por registro" se suman sus vueltas y resúmenes al historial de la ficha. Los recálculos automáticos de total quedan logueados con `meta.auto = "recalcTotal"`. **Un log sin `meta.carrierId` no aparece** en esa vista.
 - Tipos de viaje: `regular` (Vuelta), `approach` (Acercamiento) — definidos en `TRIP_KINDS`.
 - Tipos de transportista: `own` (Propio), `contracted` (Contratado) — definidos en `CARRIER_TYPES`.
 - Trips: `{carrierId, vehicleAlias, cycleId, faenaId, subfaenaId, date, kind, qty, rate, amount, lugar, destino, personCount, notes, status, paymentId}`.
@@ -336,10 +357,12 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
 ## Trabajadores / Workers
 
 - Pantalla: `src/screens/Workers.jsx`.
-- **Búsqueda client-side sobre la lista cacheada** (única fuente de datos). Al montar la pantalla, `ensureAllForModal()` trae la lista completa via `workersService.list({ cache: true, persist: true, ttl: 2h })` — primera carga ~500-2000 reads, después gratis hasta que vence el TTL. El filtro es substring acentos-insensitive sobre nombre y RUT (sin puntos/guiones), gated por `MIN_SEARCH = 2`. Permite buscar por apellido o dígitos del RUT en cualquier posición. Antes había un flujo paralelo server-side (`searchWorkers` por prefijo ≥4 chars, debounced 250ms) — se eliminó por redundante: con la lista en memoria, el filtro client-side gana en flexibilidad sin reads extra. `searchWorkers` sigue exportado en `workersService` para autocompletes pequeños (`Advances`, `GroupSummaryModal`).
+- **Búsqueda client-side sobre la lista cacheada** (única fuente de datos). Al montar la pantalla, `ensureAllForModal()` trae la lista completa via `workersService.list({ cache: true, persist: true, ttl: 2h })` — primera carga ~500-2000 reads, después gratis hasta que vence el TTL. El filtro es substring acentos-insensitive sobre nombre y RUT (sin puntos/guiones), gated por `MIN_SEARCH = 2`. Permite buscar por apellido o dígitos del RUT en cualquier posición. `searchWorkers` (búsqueda por prefijo en el servidor) se usa solo en autocompletes chicos (`Advances`, `GroupSummaryModal`).
 - Auto-detect badge **RUT** vs **Nombre** (basado en `detectQueryKind`: empieza con dígito → RUT).
 - **Filtros opcionales** (componibles con la búsqueda): dropdown 👥 Líder (con opción "— Sin líder —" + lista única extraída del dataset completo) y chips toggle 💵 Efectivo / 🏦 Transferencia. Los filtros ignoran el gate de `MIN_SEARCH` — activar cualquiera muestra resultados aunque la query esté vacía. Al editar/eliminar/togglear banco desde la grilla, `refreshCache()` re-trae la lista para reflejar el cambio.
 - Acciones por fila: 📊 Resumen, Editar, ✕. La forma de pago se muestra como **indicador informativo** (`💵 Efectivo` / `🏦 Transferencia`) — no es toggle. El cambio de banco se hace adentro de `WorkerEditModal`, que tiene un botón **🆔 Asignar Cuenta RUT** que setea Banco Estado + Cuenta RUT en un click usando el RUT del trabajador.
+- **Click sobre un RUT lo copia al portapapeles**: el del trabajador, y en escritorio también el RUT de pago. Va con puntos y guion, el mismo formato que copia Información y Cuentas. En el teléfono el RUT de la tarjeta lleva 📋 para que se note que se puede tocar.
+- **Los IDs QR son de solo lectura en la ficha del trabajador** (`WorkerEditModal`, que también se abre desde la grilla del ciclo). Se asignan en Cosecha QR con `assignQrCode`, que le quita el código a quien lo tenía y actualiza el padrón de `qrPrefixes` con que la app de escaneo resuelve un QR sin señal. Al guardar, la ficha no escribe `idQr`: viene de la caché de 2 h y podría pisar una reasignación hecha en Cosecha QR. Un trabajador nuevo nace con `idQr: []`.
 - Doc id = RUT. No hay campo `rut` separado en el doc.
 - Bank details = `[paymentRut, accountNumber, accountType, bankCode]` (orden importante).
 - `services/workersService.js` expone `findWorkerByRut`, `createWorker`, `deleteWorkerSafe`, `searchWorkers` (server-side prefix), `detectQueryKind`.
@@ -363,7 +386,7 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
 1. **Generar** — selector de ciclos activos agrupados por faena. Cada ciclo muestra `Pendiente` y `Pagado` calculados desde workdays. Al chequear un ciclo, debajo aparecen sus labores como chips toggleables: click excluye/incluye esa labor de la nómina. Default: todas seleccionadas. Workdays de labores excluidas quedan disponibles para una nómina futura (no se taggean). Si el usuario destilda todas las labores, el ciclo se marca con "⚠ Sin labores seleccionadas", no aporta workdays al preview y no entra a la nómina. La elección se guarda en `cycleDetails[].laborIds` para que Recalcular no traiga después lo que quedó afuera (ver "Agrandar una nómina pendiente").
    - **Personas sueltas** ("+ Agregar persona"): los días puntuales de alguien, elegidos en el mismo modal que en el detalle de una nómina. Se suman a lo que traen los ciclos, así que una nómina se puede armar solo con personas, o con personas además de ciclos y labores. Los días que ya entran por un ciclo elegido se ven incluidos y sin casilla. Un ciclo que entra solo por estos días queda con `laborIds: []`, y solo si la persona quedó incluida en la vista previa. Los ciclos de la nómina los arma `newPayrollCycleDetails`.
    - **Los días de las personas se releen al continuar** (`workdaysForNewPayroll` en `payrollsService`): el modal pudo quedar abierto un rato y otra nómina pudo tomar alguno. Lo que la relectura muestra tomado queda afuera —aunque la caché de un minuto de los ciclos lo diera libre— y se avisa.
-   - **La selección de ciclos se guarda entre sesiones (`localStorage`) y la de labores no.** Un ciclo marcado sin entrada en el mapa de labores cuenta con todas, y así se muestra: antes la pantalla lo mostraba con "⚠ Sin labores seleccionadas" mientras la nómina lo traía entero. Un ciclo marcado que después se cerró ya no entra, porque no aparece en la lista para poder desmarcarlo.
+   - **La selección de ciclos se guarda entre sesiones (`localStorage`) y la de labores no.** Un ciclo marcado sin entrada en el mapa de labores cuenta con todas, y así se muestra. Un ciclo marcado que después se cerró ya no entra, porque no aparece en la lista para poder desmarcarlo.
 2. **Preview** — agrega por trabajador, cruza con `worker.bankDetails`, busca anticipos pendientes y los aplica.
    - Filtros: 🏦 Banco, 💵 Efectivo, ⚠ Datos faltantes, ⚠ Cuenta sospechosa, 👥 \<líder\>.
    - Bulk actions sobre el subset visible: incluir/excluir, → Efectivo / → Banco.
@@ -375,8 +398,8 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
 - Colección separada de `payrolls` para no inflar los docs del historial.
 - Lo escribe `payrollSnapshotsService` en el mismo flujo de "Generar y guardar".
 - Botón **📥 JSON** en la fila del historial vuelve a bajar el archivo.
-- Es la fuente que va a consumir el **portal público de trabajadores** (otra app, monorepo futuro). El schema debe considerarse contrato externo — cambiarlo coordinadamente.
-- **Escribir, borrar y releer el snapshot viven en `services/payrollSnapshots.js`** (`saveSnapshot`, `deleteSnapshot`, `readSnapshot`). Los `catch` silenciosos son deliberados: el snapshot es un derivado y que falle no puede tumbar la generación ni el borrado de la nómina, que son las operaciones que mueven la plata. `readSnapshot` saca el `id` que inyecta Firestore (el JSON es contrato externo) y cae al campo `snapshot` embebido de las nóminas anteriores a la separación de colecciones. También viven ahí las formas de ciclo, jornada y anticipo (`snapshotCycleOf`, `snapshotWorkdayOf`, `snapshotAdvanceOf`) —estaban copiadas en cada camino que escribe el JSON— y los ajustes al achicar o agrandar la nómina (`pruneSnapshot`, `extendSnapshot`). Renombrar y el parche del recálculo siguen en `Payroll.jsx` como llamadas directas al servicio.
+- El schema es **contrato externo**, pensado para el portal público de trabajadores (otra app): cambiarlo coordinadamente.
+- **Escribir, borrar y releer el snapshot viven en `services/payrollSnapshots.js`** (`saveSnapshot`, `deleteSnapshot`, `readSnapshot`). Los `catch` silenciosos son deliberados: el snapshot es un derivado y que falle no puede tumbar la generación ni el borrado de la nómina, que son las operaciones que mueven la plata. `readSnapshot` saca el `id` que inyecta Firestore (el JSON es contrato externo) y, si el doc no existe, lee el campo `snapshot` embebido en la nómina. También viven ahí las formas de ciclo, jornada y anticipo (`snapshotCycleOf`, `snapshotWorkdayOf`, `snapshotAdvanceOf`), que usan todos los caminos que escriben el JSON, y los ajustes al achicar o agrandar la nómina (`pruneSnapshot`, `extendSnapshot`). Renombrar y el parche del recálculo siguen en `Payroll.jsx` como llamadas directas al servicio.
 
 ### Anticipos en comprobantes
 
@@ -389,25 +412,24 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
 ### Anti doble pago
 
 - Workday lleva `payrollId`, `payrollTaggedAt`, `payrollTaggedBy`, `paidAt`, `paidBy`.
-- **Los días en $0 entran a la nómina.** `aggregateWorkerAmounts` los descartaba
-  antes de meterlos en `workdayIds`, así que nunca se etiquetaban y quedaban
-  disponibles para siempre: las cifras de "pagado / pendiente" del ciclo no
-  cerraban nunca. Es el caso de los días de asistencia de un **sueldo mensual**
-  (`attendanceOnly: true, amount: 0`), que hay que marcar como pagados aunque no
+- **Los días en $0 entran a la nómina**: `aggregateWorkerAmounts` los mete en
+  `workdayIds`, así quedan etiquetados y las cifras de "pagado / pendiente" del
+  ciclo cierran. Es el caso de los días de asistencia de un **sueldo mensual**
+  (`attendanceOnly: true, amount: 0`), que se marcan como pagados aunque no
   generen transferencia. Las dos salidas los filtran solas: `buildBchileRows` por
   `amount > 0`, y el comprobante de efectivo saca a los de bruto **y** neto en
   cero — el corte es por bruto, así que quien produjo y quedó en cero porque un
   anticipo se llevó todo SÍ aparece en la hoja que firma el líder.
 
 ### Pago en dos tiempos (transferencias / efectivo)
-Caso real: salen las transferencias pero el efectivo no se alcanza a entregar y queda debiéndose para la vuelta siguiente.
+Para cuando salen las transferencias y el efectivo queda debiéndose para la vuelta siguiente.
 - **🏦 Solo transferencias** (`markBankPaid`) sella `paidAt` **solo en los workdays de banco** y escribe `bankPaidAt`/`bankPaidBy`. La nómina **sigue `pending`** — no está pagada entera — así que ninguna comparación `status === "paid"` de la app cambia de significado. Revertible con `revertBankPaid`.
 - **La deuda no se guarda**: se deriva siempre con `pendingCashOf(payroll)` / `pendingCashItemsOf(payroll)` (exportadas por `payrollsService`). Devuelven 0/[] si la nómina está pagada entera **o si no tiene el flag** — una nómina recién generada tiene `cashTotal > 0` pero eso no es deuda vencida. **No agregar un booleano `cashPending`**: sería derivable y podría quedar desincronizado de los items.
 - **`cashPaidRuts`** registra a las personas de efectivo que cobraron sueltas (toggle por persona y por líder en `PayrollDetailModal`). Se descuentan de la deuda pero **no** estampan `paidAt` en sus workdays: ese campo significa "la nómina se marcó pagada" y darle un segundo significado obliga a un camino de des-estampado. `markPaid` los sella a todos al final.
 - **`markPaid` sobre una nómina con el flag** sella solo los workdays de efectivo (re-estampar los de banco les pisaría la fecha real de la transferencia). `bankPaidAt` **no se borra** al pagar: queda como registro. `markPending` sí lo borra, junto con `cashPaidRuts`.
 - **Guards**: con `bankPaidAt` puesto la nómina no se puede editar ni eliminar (`assertEditable` en el servicio + chequeo en `onDelete`). Sacar un trabajador de banco liberaría sus días y le restauraría anticipos a alguien que ya tiene la plata en la cuenta.
 - **Dónde se ve**: pill de 3 caras y filtro "💵 Efectivo pendiente" en el Historial (la barra de totales cuenta como pendiente solo lo realmente adeudado); "Falta entregar" en el tile 💵 del detalle; línea informativa en **Generar → paso 1**; y el `CashEstimationModal` puede sumar el efectivo pendiente de otras nóminas para que el conteo de billetes y sencillo cuadre. **Los sobres y detalles NO se fusionan** — cada nómina imprime lo suyo.
-- Workdays con `payrollId` se filtran del preview (ya no entran a otra nómina).
+- Workdays con `payrollId` se filtran del preview (no entran a otra nómina).
 - Eliminar nómina → `untagWorkdaysFromPayroll` + `restoreAdvancesFromPayroll`. Workdays vuelven a estar disponibles. Achicarla (sacar ciclo/trabajador, recalcular) tiene sus propias reglas — ver la sección siguiente.
 - Marcar pagada → sello `paidAt` en los workdays. Revertir → quita `paidAt`.
 
@@ -429,46 +451,40 @@ Botones de descarga:
 - **paymentRut vs RUT del trabajador**: la hoja `Nomina` BChile usa **`it.paymentRut`** (de `bankDetails[0]`), no el RUT de la persona. `paymentRut` puede diferir cuando el pago va a una cuenta de un familiar; el portal del banco lo valida contra la titularidad. Preservado en `cleanItems` y en el snapshot.
 - **Email default BChile**: si el trabajador no tiene email se completa con `remuneracionesis@gmail.com` (constante `BCHILE_DEFAULT_EMAIL` en `utils/payroll.js`). El banco rechaza filas sin email.
 - **Identificador alfa-numérico**: la columna identificador del BChile usa `A001..A999` (zero-padded) y los nombres se ordenan alfabéticamente con `localeCompare("es", { sensitivity: "base" })`. Filas con `amount === 0` se filtran (el banco rechaza transferencias de $0).
-  - **Las filas se arman en `buildBchileRows(items)`, aparte de ExcelJS** (`utils/payroll.js`, exportada). `buildBchileSheet` solo las escribe y estiliza. Tres reglas deciden a dónde va la plata y ninguna se podía probar con el workbook de por medio: el filtro de cero-neto, el orden alfabético que hace **estable** el correlativo entre corridas, y el `paymentRut || rut`. Cubiertas en `utils/bchile.test.js`, que nombra los índices de columna — una fila corrida manda la transferencia a otra cuenta y el archivo igual se sube sin error.
+  - **Las filas se arman en `buildBchileRows(items)`, aparte de ExcelJS** (`utils/payroll.js`, exportada). `buildBchileSheet` solo las escribe y estiliza. Así se prueban sin el workbook las tres reglas que deciden a dónde va la plata: el filtro de cero-neto, el orden alfabético que hace **estable** el correlativo entre corridas, y el `paymentRut || rut`. Cubiertas en `utils/bchile.test.js`, que nombra los índices de columna — una fila corrida manda la transferencia a otra cuenta y el archivo igual se sube sin error.
 
 ### Achicar una nómina pendiente (sacar ciclo, sacar trabajador, recalcular)
 
-**La regla: la nómina tiene que quedar igual que si se hubiera armado sin lo que se le sacó, y cada anticipo tiene que reflejar exactamente lo que esa nómina le descuenta.** Sin registros nuevos, sin anticipos marcados como cobrados por una nómina que no los retuvo.
+**La regla: la nómina tiene que quedar igual que si se hubiera armado sin lo que se le sacó, y cada anticipo tiene que reflejar exactamente lo que esa nómina le descuenta.** Sin registros nuevos, sin anticipos marcados como cobrados por una nómina que no los retuvo. La lógica vive en `utils/payrollItem.js`, con tests en `utils/payrollRefit.test.js` y `tests/e2e/sacar-ciclo-anticipos.test.js`.
 
-- **El bug que la motivó (sacar ciclo)**: `byCycle` guarda una entrada por **cada** ciclo de la nómina, incluso en $0 (así lo arma "Generar"). El chequeo de "¿le queda algo a este trabajador?" contaba las claves de `byCycle`, así que quien solo trabajó en el ciclo sacado quedaba con `{ otroCiclo: 0 }` y pasaba como reducción parcial: seguía en la nómina con bruto 0 y el anticipo aplicado. La nómina siguiente no lo veía como pendiente y **nunca se descontaba** — la empresa perdía el anticipo entero.
-- **Segundo bug, mismo camino (cobertura parcial)**: si al trabajador le quedaba producción en otro ciclo pero no alcanzaba, el anticipo quedaba aplicado entero y `Math.max(0, neto)` se tragaba la diferencia. Esa diferencia figuraba cobrada y no se retenía en ninguna nómina.
-- **Recalcular tenía el mismo problema resuelto al revés**: dejaba el anticipo original aplicado entero y creaba un anticipo **nuevo** por el saldo ("Saldo pendiente por recálculo…"). No se perdía plata, pero el original mentía y quedaba un anticipo que nadie dio. Ya no se crea.
-
-Cómo se resuelve ahora — la lógica vive en `utils/payrollItem.js`, con tests en `utils/payrollRefit.test.js` y `tests/e2e/sacar-ciclo-anticipos.test.js`:
-
-- **Quien se queda con bruto 0 sale entero** (`planCycleRemoval`, `planRecalcExisting`). El corte es por bruto y no por las claves de `byCycle`: es el mismo criterio que usa "Generar" (`a.total > 0`), que es lo que hace que el resultado sea "como si se hubiera armado sin eso". Suelta todos sus anticipos **y bonos** de esa nómina (el bono se paga en la nómina donde sí tenga producción) y todas sus jornadas, incluidas las de $0 de otros ciclos.
+- **Quien se queda con bruto 0 sale entero** (`planCycleRemoval`, `planRecalcExisting`). El corte es por bruto y no por las claves de `byCycle`, que guarda una entrada por **cada** ciclo de la nómina aunque esté en $0: es el mismo criterio que usa "Generar" (`a.total > 0`), y eso deja el resultado "como si se hubiera armado sin eso". Suelta todos sus anticipos **y bonos** de esa nómina (el bono se paga en la nómina donde sí tenga producción) y todas sus jornadas, incluidas las de $0 de otros ciclos.
 - **Quien sigue re-encaja lo ya aplicado en su bruto nuevo** (`refitAppliedAdvances`): bonos enteros, anticipos del más viejo al más nuevo topeados por `bruto + bonos` — el mismo orden que `allocateAdvances`, así que se achica primero el más nuevo. Lo que no cabe **vuelve al mismo anticipo**, con su fecha y su plan de cuotas originales.
   - **Solo achica, nunca agranda.** Cada monto ya se validó contra el saldo del anticipo al aplicarlo, así que bajarlo siempre es válido sin mirar cuotas. Si la producción sube, lo ya aplicado no crece solo; un anticipo pendiente lo toma el resto del recálculo como anticipo nuevo.
-  - El neto sale como `bruto − anticipos + bonos` **sin ningún `Math.max`**: los anticipos ya se toparon. Un tope escondido ahí es exactamente como se perdía la plata.
+  - El neto sale como `bruto − anticipos + bonos` **sin ningún `Math.max`**: los anticipos ya se toparon, y un tope ahí haría figurar como cobrado algo que no se retuvo.
 - **La fuente de verdad de "cuánto descontó esta nómina" es el `payments[]` del anticipo** (`readPayrollApplications`), no la copia en el item. Es lo mismo que leen el borrado de la nómina y la pantalla de Anticipos. Si el documento del anticipo ya no existe se respeta lo que dice el item (marcado `missing`, no se escribe): descontar de menos por algo que no se puede verificar es peor.
-- **`setPayrollAdvanceAmounts(payrollId, targets)`** fija cuánto descuenta UNA nómina de cada anticipo sin tocar lo de otras nóminas. Antes las únicas operaciones eran aplicar o soltar entero (`restoreAdvancesFromPayroll`), y la cobertura parcial no tenía cómo expresarse. Reescribe la entrada **en su lugar y con su `paidAt` original** —el hint "última cuota hace N días" sale de ahí, y achicar no es un pago nuevo— y topea contra el saldo que dejan las otras nóminas. Con 0 equivale a restaurar.
-- **Recalcular repara las nóminas que quedaron mal** antes de este cambio: además de los cambios de producción, re-reparte a quien tenga más descontado del que su bruto respalda (`isOverApplied`) y saca a quien quedó con bruto 0. Esas nóminas no tenían "cambios" que detectar, así que el recálculo viejo no las tocaba.
-- **Recalcular etiqueta exactamente las jornadas de los items** y suelta las que le quedaron etiquetadas sin estar en ninguno. Antes etiquetaba todo lo vigente de los ciclos, incluidas las jornadas de $0 de gente que no estaba en la nómina.
-- **Sacar ciclo también suelta las jornadas de $0 del ciclo**, que antes quedaban etiquetadas: con aporte 0 el trabajador se salteaba entero.
-- **El snapshot acompaña** (`pruneSnapshot` en `services/payrollSnapshots.js`): sacar un ciclo o un trabajador deja el JSON sin la persona que salió, sin sus jornadas y sin sus anticipos, con la cabecera de totales al día. Antes ninguno de los dos tocaba el snapshot, y ahí seguía alguien cobrando algo que no se le iba a pagar. El recálculo también actualiza la cabecera, que antes quedaba con los totales viejos.
-- **El modal de detalle sigue a la nómina editada.** Un filtro de Grupo o Ciclo que apunta a algo que ya no está se ignora al filtrar (`activeLeaderFilter` / `activeCycleFilter`): antes dejaba la lista en 0 con el filtro marcado y, si quedaba un solo ciclo, sin chip para apagarlo. El resumen "Con labores" queda atado al `payroll` para el que se calculó y se recalcula después de cada edición; antes mostraba lo que se acababa de sacar hasta cerrar el modal.
+- **`setPayrollAdvanceAmounts(payrollId, targets)`** fija cuánto descuenta UNA nómina de cada anticipo sin tocar lo de otras nóminas; es lo que permite descontar una parte (`restoreAdvancesFromPayroll` solo suelta entero). Reescribe la entrada **en su lugar y con su `paidAt` original** —el hint "última cuota hace N días" sale de ahí, y achicar no es un pago nuevo— y topea contra el saldo que dejan las otras nóminas. Con 0 equivale a restaurar.
+- **Recalcular**, además de aplicar los cambios de producción, re-reparte a quien tenga más descontado del que su bruto respalda (`isOverApplied`) y saca a quien quedó con bruto 0.
+- **Recalcular etiqueta exactamente las jornadas de los items** y suelta las que le quedaron etiquetadas sin estar en ninguno.
+- **Sacar ciclo también suelta las jornadas de $0 del ciclo.**
+- **El snapshot acompaña** (`pruneSnapshot` en `services/payrollSnapshots.js`): sacar un ciclo o un trabajador deja el JSON sin la persona que salió, sin sus jornadas y sin sus anticipos, con la cabecera de totales al día. El recálculo también actualiza la cabecera.
+- **El modal de detalle sigue a la nómina editada.** Un filtro de Grupo o Ciclo que apunta a algo que ya no está se ignora al filtrar (`activeLeaderFilter` / `activeCycleFilter`). El resumen "Con labores" queda atado al `payroll` para el que se calculó y se recalcula después de cada edición.
 - **Limitación conocida**: sacar un ciclo y volver a agregarlo no siempre deja la nómina igual que antes. Un anticipo que se soltó entero vuelve a aplicarse al agregar (ver la sección siguiente), pero uno que quedó aplicado en parte no crece: lo que se soltó queda pendiente para la próxima nómina en vez de volver a descontarse acá. No se pierde plata; se descuenta después.
 
 ### Agrandar una nómina pendiente (agregar ciclos, labores o personas)
 
 Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se hubiera armado con eso adentro.** La cuenta vive en `planAddWorkdays` (`utils/payrollItem.js`) y la escritura en `addWorkdaysToPayroll` (`services/payrollsService.js`): primero el documento, después las jornadas y los anticipos. Tests en `utils/payrollAdd.test.js` y `tests/e2e/agregar-a-nomina.test.js`.
 
-- **Qué labores le pertenecen a la nómina: `cycleDetails[].laborIds`.** Sin el campo, el ciclo entero (las nóminas viejas, y un ciclo agregado con todas sus labores); una lista, solo esas; `[]`, ninguna — el ciclo está solo por días agregados a mano. Lo escriben "Generar" (también por sus personas sueltas), "+ Agregar ciclo" y "+ Agregar persona". `mergeCycleDetails` suma las labores de un ciclo que ya estaba en vez de repetirlo. "Entero" se guarda **sin** el campo: Firestore rechaza `undefined`.
-- **Recalcular respeta ese alcance** (`inRecalcScope`): trae lo etiquetado con la nómina, más lo pendiente de las labores que abarca. Antes traía todo lo pendiente de sus ciclos, así que deshacía en silencio las labores destildadas al generar; ese bug ya existía antes de poder elegir labores al agregar.
+- **Qué labores le pertenecen a la nómina: `cycleDetails[].laborIds`.** Sin el campo, el ciclo entero (por ejemplo, un ciclo agregado con todas sus labores); una lista, solo esas; `[]`, ninguna — el ciclo está solo por días agregados a mano. Lo escriben "Generar" (también por sus personas sueltas), "+ Agregar ciclo" y "+ Agregar persona". `mergeCycleDetails` suma las labores de un ciclo que ya estaba en vez de repetirlo. "Entero" se guarda **sin** el campo: Firestore rechaza `undefined`.
+- **Recalcular respeta ese alcance** (`inRecalcScope`): trae lo etiquetado con la nómina, más lo pendiente de las labores que abarca. Las labores destildadas al generar no vuelven a entrar.
 - **"+ Agregar ciclo"** elige labores, igual que "Generar". Un ciclo que ya está con algunas labores aparece con las que le faltan; uno que está entero no aparece.
 - **"+ Agregar persona"** busca a alguien en el catálogo, carga sus días de ciclos abiertos —de cualquier faena, estén o no en la nómina— y deja elegir cuáles sumar. Los días que ya están en una nómina se ven sin casilla. Antes de confirmar, el pie muestra el bruto, los anticipos que se descuentan y el neto. Un ciclo que entra solo por estos días queda con `laborIds: []`. El mismo modal elige las personas sueltas al generar (ver "Flujo"), sin el pie de anticipos: ahí el reparto sale en la vista previa, junto con lo que la persona traiga de los ciclos.
-  - `asPayrollWorker` junta los días y anticipos de la persona bajo la clave que tiene en la nómina: sus jornadas viejas pueden guardar el rut de entonces, y sin eso entraría partida en dos items.
+  - `asPayrollWorker` junta los días y anticipos de la persona bajo la clave que tiene en la nómina: sus jornadas pueden guardar un rut anterior, y sin eso entraría partida en dos items.
   - Los días se **releen al confirmar**: si otra nómina tomó alguno mientras el modal estaba abierto, queda afuera y el aviso lo dice.
-- **Quien ya está** suma bruto, jornadas (también las de $0) y su `byCycle` **sumado, no pisado**: el ciclo puede estar ya con otras labores u otros días. Además **se le aplican los anticipos y bonos pendientes que esta nómina todavía no le tocaba**, con el mismo reparto incremental que Recalcular. Antes "Agregar ciclos" no se los aplicaba nunca.
+- **Quien ya está** suma bruto, jornadas (también las de $0) y su `byCycle` **sumado, no pisado**: el ciclo puede estar ya con otras labores u otros días. Además **se le aplican los anticipos y bonos pendientes que esta nómina todavía no le tocaba**, con el mismo reparto incremental que Recalcular.
 - **Quien no está** entra con el reparto completo si su bruto es mayor que 0. Sin bruto no entra, y sus días de $0 siguen pendientes, igual que al generar.
 - **Lo que esta nómina ya descuenta de un anticipo no crece** al agregar: re-encajar hacia arriba obligaría a revisar cuotas. Mismo criterio que Recalcular ("Solo achica, nunca agranda").
-- **El snapshot acompaña** (`extendSnapshot`): suma ciclos, jornadas y anticipos sin repetir y deja la cabecera al día; antes agregar ciclos no tocaba la cabecera. `laborIds` **no viaja** al JSON (`snapshotCycleOf` lo saca): es interno y el JSON es contrato externo.
-- Los dos modales se montan solo mientras están abiertos. El de ciclos se reseteaba con un `useEffect` que hacía `setState`, que era uno de los errores de lint de la deuda.
+- **El snapshot acompaña** (`extendSnapshot`): suma ciclos, jornadas y anticipos sin repetir y deja la cabecera al día. `laborIds` **no viaja** al JSON (`snapshotCycleOf` lo saca): es interno y el JSON es contrato externo.
+- Los dos modales se montan solo mientras están abiertos, así arrancan con el estado limpio sin un `useEffect` que lo resetee.
 
 ### Historial
 
@@ -479,7 +495,7 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 
 - Pantalla: `src/screens/Advances.jsx`. Ruta `/advances`. Nav label: "Anticipos / Bonos".
 - Servicio: `services/advancesService.js` (colección `advances`).
-- Una colección con discriminador `type: "anticipo" | "bono"`. **Legacy** `"adelanto"` se normaliza a `"anticipo"` al leer (vía `LEGACY_TYPE_MAP`) — no hay tipo separado. Helpers: `ADVANCE_TYPES`, `normalizeAdvanceType`, `advanceSign`, `isBono`, `advanceTypeMeta`.
+- Una colección con discriminador `type: "anticipo" | "bono"`. El valor `"adelanto"` se normaliza a `"anticipo"` al leer (vía `LEGACY_TYPE_MAP`) — no hay tipo separado. Helpers: `ADVANCE_TYPES`, `normalizeAdvanceType`, `advanceSign`, `isBono`, `advanceTypeMeta`.
 - **Signo**: anticipo = `-1` (descuenta del bruto), bono = `+1` (suma al bruto). Mismo flow / lifecycle, distinto signo.
 - Estados: `pending` | `partial` | `applied` | `cancelled`. `partial` = `amountPaid > 0 && amountPaid < amount` (la siguiente nómina sigue aplicando contra el saldo pendiente).
 - Documento: `{type, workerRut, workerName, amount, date, note, status, amountPaid, payments[], appliedPayrollId, appliedAt, appliedBy, installments}`.
@@ -492,9 +508,9 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 ### Integración con Nómina
 
 - Al construir preview, `listPendingForWorkers(ruts)` carga anticipos y bonos `pending`+`partial` de los trabajadores.
-- **Orden: BONOS PRIMERO, anticipos después.** Los bonos se aplican completos (nunca tienen plan) y **engrosan la base** contra la que se descuenta el anticipo: el tope es `bruto + bonos`, no el bruto pelado. Invertir el orden hace que un bono deje el anticipo sin liquidar por **exactamente el monto del bono** — al trabajador se le entrega el bono en la mano y la deuda arrastra a la nómina siguiente en vez de cerrarse (ej. bruto 376.000 + bono 24.000 contra un anticipo de 400.000: con el orden correcto queda saldado y neto 0; al revés quedaban 24.000 debiendo y 24.000 pagados). La plata que desembolsa la empresa es la misma en los dos órdenes; lo que cambia es si la deuda queda cerrada.
+- **Orden: BONOS PRIMERO, anticipos después.** Los bonos se aplican completos (nunca tienen plan) y **engrosan la base** contra la que se descuenta el anticipo: el tope es `bruto + bonos`, no el bruto pelado. Con el orden invertido, un bono deja el anticipo sin liquidar por **exactamente el monto del bono**: el trabajador recibe el bono en la mano y la deuda pasa a la nómina siguiente en vez de cerrarse (bruto 376.000 + bono 24.000 contra un anticipo de 400.000: en este orden queda saldado y neto 0; al revés quedarían 24.000 debiendo y 24.000 pagados). La plata que desembolsa la empresa es la misma en los dos órdenes; lo que cambia es si la deuda queda cerrada.
 - Anticipos oldest-first, capados por `bruto + bonos` (no pueden dejar el neto negativo); si el anticipo tiene plan de cuotas, el tope por default es el monto de la cuota (`advanceDueNow`), no el saldo completo — con cuotas un bono puede igualmente no alcanzar a liquidarlo, y está bien.
-- **La lógica vive en un solo lugar: `utils/payrollItem.js` → `allocateAdvances`.** Antes estaba duplicada en los 4 sitios de `Payroll.jsx` (armar nómina, agregar ciclos, recalcular, y anticipos nuevos sobre una nómina ya creada) y había que acordarse de tocar los cuatro. El cuarto caso —el incremental, donde la persona ya está en la nómina— es la misma función con `alreadyAdvanced` / `alreadyBonused`. Está cubierta por `utils/payrollItem.test.js`, incluido el caso de bruto 376.000 + bono 24.000 contra anticipo de 400.000.
+- **La lógica vive en un solo lugar: `utils/payrollItem.js` → `allocateAdvances`**, y la usan los cuatro caminos de `Payroll.jsx`: armar nómina, agregar ciclos, recalcular, y anticipos nuevos sobre una nómina ya creada. El cuarto caso —el incremental, donde la persona ya está en la nómina— es la misma función con `alreadyAdvanced` / `alreadyBonused`. Está cubierta por `utils/payrollItem.test.js`, incluido el caso de bruto 376.000 + bono 24.000 contra anticipo de 400.000.
 - Fórmula del item: `amount = grossInt − anticiposTotal + bonosTotal`.
 - Preview muestra columnas separadas **Bruto**, **Anticipo**, **Bono**, **A pagar**. Hint visual `↩ liquidado por anticipo` cuando `amount = 0 && advance > 0` (caso retiro con anticipo del valor total — el worker pasa a nómina como cero-neto pero los workdays/anticipos se marcan como pagados). El override manual de la celda Anticipo puede superar la cuota sugerida hasta el saldo real del anticipo (`maxAmount` en `anticipoApplications`, ver `updatePreview`).
 - **Confirmación de cuotas**: si hay anticipos-con-plan entre los trabajadores incluidos, al hacer clic en "Generar nómina" aparece `InstallmentConfirmModal` listando cada cuota candidata (marcada por defecto) antes de persistir nada — el admin decide a mano cuáles aplican esta corrida. Solo cubre el flujo principal de generación; "agregar ciclos"/"recalcular" aplican la cuota sugerida directo, sin modal.
@@ -518,15 +534,15 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 
 ## Resúmenes / Summary modals
 
-- `Components/CycleSummaryModal.jsx` — modos **Pagar** y **Cobrar**, day-by-day por labor. Las tarifas de cobro y los títulos editables se guardan en Firestore (`cycleSummaries/{cycleId}`, ver `docs/data-model.md`) **compartidos entre usuarios**; localStorage quedó como espejo local y como origen de la migración automática la primera vez que se abre un ciclo configurado antes del cambio. Después del resumen general agrega una **infografía por labor con grilla `Trabajador × Días`** (`LaborWorkerGrid`): nombre+RUT, una columna por fecha con qty grande + monto chico, totales `Total qty` y `Total $` por trabajador, fila `Total día` al pie. Cada labor tiene sus propios botones `📋 / 📥 / 🖨` (capturan solo esa sección via `ref` propio); los botones globales del modal capturan todo (general + grillas). El CSS de impresión incluye `thead { display: table-header-group }` para que el encabezado se repita en cada hoja nueva cuando la tabla excede una página. Sólo se rinden las grillas en modo `pagar` (cobrar es por tarifa pactada).
+- `Components/CycleSummaryModal.jsx` — modos **Pagar** y **Cobrar**, day-by-day por labor. Las tarifas de cobro y los títulos editables se guardan en Firestore (`cycleSummaries/{cycleId}`, ver `docs/data-model.md`) **compartidos entre usuarios**; localStorage es un espejo local, y si un ciclo no tiene doc en Firestore, al abrirlo se migra desde ahí. Después del resumen general agrega una **infografía por labor con grilla `Trabajador × Días`** (`LaborWorkerGrid`): nombre+RUT, una columna por fecha con qty grande + monto chico, totales `Total qty` y `Total $` por trabajador, fila `Total día` al pie. Cada labor tiene sus propios botones `📋 / 📥 / 🖨` (capturan solo esa sección via `ref` propio); los botones globales del modal capturan todo (general + grillas). El CSS de impresión incluye `thead { display: table-header-group }` para que el encabezado se repita en cada hoja nueva cuando la tabla excede una página. Sólo se rinden las grillas en modo `pagar` (cobrar es por tarifa pactada).
   - **Columnas del `LaborTable` (resumen por faena)**: además de Detalle/Fecha/Métrica/Valor/Valor total/Transporte/Total, al final se agrega `Personas` (cantidad de trabajadores únicos del día) para todas las labores. Para **tratoHE** la columna "Valor" se reemplaza por **`Total HE`** = `HE_hrs × labor.overtimeRate` (informativa, no editable), y al final se agrega **`Bonos`** = `amount − base − HE×tarifa` (derivado, incluye manejo + supervisión + extras agregados de todos los trabajadores del día). Sat/Dom + feriados del labor en rojo + bold en la columna Fecha (sólo tratoHE; usa `isRedDay` + `getDaySingle(dayPrices, ...)`).
-  - **Modo Cobrar editable inline**: cada fila de `LaborTable`/`TransportTable` muestra inputs editables (`<input type=number>`) en las celdas de Cantidad/HE/Valor/Valor total. El `Total HE` y `Bonos` no son editables (son derivados). Los overrides se persisten por ciclo en `cobrar.labors[laborId].rowOverrides[date] = { qty?, overtimeHours?, rate?, amount? }`. Vaciar un input vuelve al valor base. También se pueden **agregar filas manuales** ("+ Agregar día / ajuste manual") que se guardan en `cobrar.labors[laborId].extraRows[]` con un `id` único; arrancan con `qty/rate/amount = ""` (no `0`) para que el `computedAmount = qty × rate` se aplique en cuanto el usuario tipea — si arrancaran en `0`, el override `amount=0` bloquea la multiplicación y la fila queda en `$0`. Aparecen mezcladas en la tabla con badge `(ajuste)` y botón `✕` para eliminar. Para labores `trato`, las filas extra **heredan la `unit` dominante** del labor (la más frecuente entre las filas regulares) para que `formatRowMetric` muestre "X saco" en vez de solo "X". Mismo modelo para transportistas (`cobrar.carriers[carrierId].rowOverrides/extraRows`). El `grandTotalCobrar` usa `chargedTotals.amount` (overrides aplicados) en lugar del `qty × chargeRate` viejo.
+  - **Modo Cobrar editable inline**: cada fila de `LaborTable`/`TransportTable` muestra inputs editables (`<input type=number>`) en las celdas de Cantidad/HE/Valor/Valor total. El `Total HE` y `Bonos` no son editables (son derivados). Los overrides se persisten por ciclo en `cobrar.labors[laborId].rowOverrides[date] = { qty?, overtimeHours?, rate?, amount? }`. Vaciar un input vuelve al valor base. También se pueden **agregar filas manuales** ("+ Agregar día / ajuste manual") que se guardan en `cobrar.labors[laborId].extraRows[]` con un `id` único; arrancan con `qty/rate/amount = ""` (no `0`) para que el `computedAmount = qty × rate` se aplique en cuanto el usuario tipea — si arrancaran en `0`, el override `amount=0` bloquea la multiplicación y la fila queda en `$0`. Aparecen mezcladas en la tabla con badge `(ajuste)` y botón `✕` para eliminar. Para labores `trato`, las filas extra **heredan la `unit` dominante** del labor (la más frecuente entre las filas regulares) para que `formatRowMetric` muestre "X saco" en vez de solo "X". Mismo modelo para transportistas (`cobrar.carriers[carrierId].rowOverrides/extraRows`). El `grandTotalCobrar` usa `chargedTotals.amount` (con los overrides aplicados).
   - **Candado 🔒 Bloqueado / ✏️ Editando (solo modo Cobrar)**: control segmentado en la barra superior; `editMode` **arranca en `false`** (bloqueado). Bloqueado = el resumen no se toca: sin inputs por fila, sin botones `+`/`✕`, y los paneles "Personalizar títulos", "Editar tarifas cobro" e "Importar ciclos anteriores" ni se muestran. En Editando se renderiza una **marca de agua "EDITANDO — NO ENVIAR"** (componente `EditingWatermark`) *dentro* del nodo `printRef`, para que marque cualquier screenshot manual, y **📋 Copiar imagen / 📥 Descargar PNG / 🖨 Imprimir quedan bloqueados**: abren un `ConfirmDialog` con acción "Bloquear y copiar/descargar/imprimir" que apaga `editMode` y recién después captura (espera dos `requestAnimationFrame` — capturar en el mismo handler sacaría el DOM viejo, con los inputs). **📊 Excel no se bloquea**: se arma desde los datos, no del DOM. En modo Pagar no existe el candado.
-  - **Observaciones por día (solo pagar)**: anexo al pie del printable con las anotaciones que en la grilla del ciclo solo se ven pasando el mouse por el encabezado de cada fecha. Agrupadas por día y, dentro del día, una línea por labor. Sin esto hay que abrir el ciclo y pasar el mouse labor por labor para saber por qué un día salió distinto. Va **después del total** a propósito: es contexto de la jornada, no parte del cálculo.
-    - **En cobrar NO se muestra, y es deliberado**: son apuntes internos ("se cortó la luz", "llegó tarde el camión") y el resumen de cobrar es el que se manda al cliente. Arrancó al revés y se movió; si alguna vez se lleva a cobrar, conviene que sea con una lista aparte y no con estas notas.
+  - **Observaciones por día (solo pagar)**: anexo al pie del printable con las anotaciones que en la grilla del ciclo solo se ven pasando el mouse por el encabezado de cada fecha. Agrupadas por día y, dentro del día, una línea por labor. Va **después del total** a propósito: es contexto de la jornada, no parte del cálculo.
+    - **En cobrar NO se muestra, y es deliberado**: son apuntes internos ("se cortó la luz", "llegó tarde el camión") y el resumen de cobrar es el que se manda al cliente. Si alguna vez se lleva a cobrar, conviene que sea con una lista aparte y no con estas notas.
     - El nombre de la labor se imprime **solo si el ciclo trae más de una labor**. Con una sola es ruido: no hay otra cosa a la que la observación pueda referirse.
     - Itera `laborsData` (todas las labores del ciclo), no `cobrarLabors`: en pagar no existe el tildado por labor del cobro.
-    - La fuente son los dos campos que lee `CycleDetail`: `cycle.dayNotesByLabor[laborId][date]` (el actual) y `cycle.dayNotes[date]` (el compartido de los ciclos viejos, que ya no se escribe). El compartido se emite **una vez por día**, rotulado "Todas las labores", y no una vez por labor — si no, un ciclo viejo repetiría el mismo texto tantas veces como labores tenga.
+    - La fuente son los dos campos que lee `CycleDetail`: `cycle.dayNotesByLabor[laborId][date]` (por labor) y `cycle.dayNotes[date]` (compartido entre labores; la app solo lo lee). El compartido se emite **una vez por día**, rotulado "Todas las labores", y no una vez por labor — si no, el mismo texto se repetiría tantas veces como labores tenga el ciclo.
     - Se listan también los días que tienen nota pero no tienen producción. Esconder una observación que alguien escribió es peor que mostrar una fila de más.
   - **Total a facturar + IVA**: en el printable de cobrar el grand total se rotula **TOTAL A FACTURAR** y debajo se muestran dos filas: **Valor IVA (19%)** = `round(total × 0.19)` e **IVA incluido** = `round(total × 1.19)`. La hoja `Total` del XLSX las reproduce con fórmulas vivas (`ROUND(C*0.19,0)` y `=C+C`).
   - **XLSX consolidado** (botón **📊 Excel** del footer): genera un workbook con **una hoja por labor** (cosecha/trato con desglose multi-combo, tratoHE con tarifa HE editable + fórmulas, main/sup/extra plano) + **una hoja por transportista** + una hoja **`Total`** que referencia los subtotales con fórmulas `='<sheet>'!$X$N`. Layout obligatorio: col A vacía width 6, fila 1 vacía, datos desde B2 (ver `memory/project_xlsx_layout_constraints.md`). En modo cobrar refleja los overrides (escribe valores literales en lugar de fórmulas que apuntan a una tarifa única).
@@ -542,8 +558,8 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
   1. Click en una **barra** → `DayDetailDrawer` con detalle por labor + transportistas del día/subfaena. Métricas heterogéneas (kilos solo de cosecha, jornadas solo de los tipos que aportan jornada, trato/HE solo donde aplica). Las tarjetas con valor 0 se ocultan.
   2. Click en la **celda** (zona blanca) → `DayExpandedModal` con todas las subfaenas del día. Click en una subfaena dentro de este modal pasa a `DayDetailDrawer` con `from: "all"` para que al cerrar el drawer se vuelva al modal del día (cadena de modales).
 - **Cache de sesión por mes**: `sessionStorage` con TTL 5 min, key `af.calendar.{year}.{month}`. Reduce reads al navegar atrás/adelante.
-- **Estrategia de lecturas**: hoy lee todos los workdays del rango del mes (~3k reads en mes pico, ~US$0.02). La función `fetchWorkdaysInRange(start, end)` está aislada como el punto de migración: cuando el volumen crezca consistentemente >5k workdays/mes o la carga supere 2s, mover ciclos cerrados a un snapshot agregado y combinar abierto+cerrado en esa misma función — el resto de la UI no cambia.
-- **Workers**: además de workdays/trips, el Calendar pre-carga la lista completa de trabajadores con `workersService.list({ cache: true, persist: true, ttl: 2h })`. Mismo cache que usa la pantalla Trabajadores → 0 reads extra si ya está vivo. Necesario para mostrar nombres (no solo RUT) en los breakdowns por trabajador del drawer. TTL bajado a 2h (antes 24h) para que las ediciones de bancos/datos de un colaborador aparezcan al otro en una jornada.
+- **Estrategia de lecturas**: lee todos los workdays del rango del mes (~3k lecturas en un mes pico, ~US$0.02). `fetchWorkdaysInRange(start, end)` es el único punto que los lee: si el volumen pasa de ~5k workdays/mes o la carga de 2 s, ahí se puede combinar un snapshot agregado de los ciclos cerrados con los abiertos sin tocar el resto de la UI.
+- **Workers**: además de workdays/trips, el Calendar pre-carga la lista completa de trabajadores con `workersService.list({ cache: true, persist: true, ttl: 2h })`. Mismo cache que usa la pantalla Trabajadores → 0 reads extra si ya está vivo. Necesario para mostrar nombres (no solo RUT) en los breakdowns por trabajador del drawer. El TTL de 2 h hace que las ediciones de bancos/datos de un colaborador le aparezcan al otro en la misma jornada.
 - **DayDetailDrawer — fila expandible por labor**: cada fila de la tabla "Por labor" es clickeable (▸/▾). Al expandir se muestra:
   - Para **cosecha**: cards con `qualityLabel / containerLabel · kg · %` por combo (calidad×envase) — sale del catálogo, no `Q1/E2`.
   - **Trabajadores** que participaron: nombre + RUT + producción (kilos / tratoQty / jornadas / HE / piso) + monto, ordenados por monto desc. Estado expandido en memoria (no persistido).
@@ -558,7 +574,7 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
   - `transportPayments.total` y `transportPayrolls.total` están denormalizados por el servicio.
   - `cycles.summaryTotals` (ver `docs/data-model.md`) da el margen por ciclo.
   - La actividad por mes sale de `getCountFromServer`: 12 consultas de recuento = 12 lecturas para el año entero, contra decenas de miles si se trajeran las filas. Se piden una vez por sesión (no dependen del selector de período) y alimentan tanto la tarjeta de jornadas como su gráfico.
-- **Las opciones de `list()` están copiadas literal de otras pantallas a propósito**: la clave de caché es `collection::{wheres,order,take}`, así que `faenas` comparte clave con Faenas/Nómina, `cycles` con Transportes y `payrolls` con Nómina. Si tocás el `order` o el `take` de acá, dejan de compartir caché y el Dashboard empieza a pagar lecturas de nuevo.
+- **Las opciones de `list()` están copiadas literal de otras pantallas a propósito**: la clave de caché es `collection::{wheres,order,take}`, así que `faenas` comparte clave con Faenas/Nómina, `cycles` con Transportes y `payrolls` con Nómina. Si cambia el `order` o el `take` de acá, dejan de compartir caché y el Dashboard paga esas lecturas.
 - Contador de lecturas visible solo para admin en el subtítulo (`· N lecturas` / `· desde caché`), mismo criterio que el de Calendario. Es lo que hace verificable la restricción.
 - **Tabla "ciclos abiertos sin movimiento"**: ciclos `open` cuyo último día en `cycle.days[]` quedó a más de 14 días. Sale gratis de la lista de ciclos y es lo más accionable del tablero.
 - Gráficos en `src/components/DashboardCharts.jsx` (Recharts, lazy). Ocho, en este orden: pagado por mes (barras apiladas banco/efectivo, el tooltip suma el total), deuda con transportistas en el tiempo, actividad por mes (área, 12 meses fijos), ciclos abiertos por faena, composición de lo devengado (dona con la leyenda al costado, con monto y porcentaje por categoría), gasto por transportista, gasto de transporte por mes (ventana fija de 6 meses) y compras vs ventas por empresa.
@@ -570,17 +586,29 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
   - **Atribución de mes**: un resumen se cuenta en el mes del **período que cubre**, no en el de `createdAt` — el resumen de la segunda semana de agosto suele armarse recién en septiembre, y fecharlo por creación corre el gasto de mes. `paymentPeriodDate()` toma el punto medio de `[periodFrom, periodTo]`, que cuando el período cruza el cambio de mes cae en el mes con la mayoría de los días (28-ago a 3-sep → 31-ago → agosto); si el resumen no trae período, cae a `createdAt`. Los pagos y abonos **no** se reatribuyen: van por su fecha real, que es cuando la plata se movió.
   - Limitación conocida: los resúmenes se piden por `createdAt` de los últimos 12 meses, así que una deuda más vieja que eso y todavía impaga no entra en el saldo inicial de la curva.
   - Los colores salen de `var(--color-*)`; **no hardcodear verde como "bueno"** — el accent es naranja en donDiego y violeta en sheridan/aetiskPastel. Gradientes y sombras se declaran en `<defs>` con id prefijado por gráfico (los ids de SVG son globales al documento).
-- `src/components/MetricCard.jsx` es la tarjeta de KPI compartida. Las versiones locales de Facturación (`SummaryCard`), Payroll (`MetricCard`) y Calendar (`Stat`) siguen existiendo; migrarlas es limpieza pendiente.
-- `src/utils/format.js` centraliza `fmtCurrency`/`fmtNumber`/`fmtPercent`/`fmtMonthKey`. Las ~11 copias locales siguen ahí; el código nuevo usa el módulo.
+- `src/components/MetricCard.jsx` es la tarjeta de KPI compartida. Facturación (`SummaryCard`), Payroll (`MetricCard`) y Calendar (`Stat`) tienen versiones locales propias.
+- `src/utils/format.js` centraliza `fmtCurrency`/`fmtNumber`/`fmtPercent`/`fmtMonthKey`. El código nuevo usa este módulo; varias pantallas tienen copias locales (~11).
 
 ## Consola admin / AdminConsole
 
 - Pantalla: `src/screens/AdminConsole.jsx`. Ruta `/admin/console` (solo admin).
 - Secciones para inspección barata: conteos por colección, workdays por mes (12 reads para todo un año), workdays por rango, workdays por ciclo, más los backfills y el debug de rol admin.
-- **`MAIN_COLLECTIONS` lista las 29 colecciones de la app**, agrupadas por área. Es una lista a mano: al agregar una colección nueva hay que sumarla acá o queda invisible (ya pasó — estuvo en 12 y le faltaba `dteDocuments`, la segunda más grande). El botón **📋 Copiar** baja los conteos ya ejecutados separados por tab, listos para pegar en una planilla.
-- **🧪 Ping al backend**: encola un job en `functionJobs` y espera la respuesta. No llama ningún endpoint porque no hay ninguno invocable (ver Despliegue); ejercita exactamente el mismo camino que va a usar el backup. Distingue los tres modos de falla a propósito, porque cada uno se arregla en otro lado: `permission-denied` es la regla de Firestore que falta, el timeout de 45 s es la función sin desplegar o mirando otra base, y un job en `error` es la función corriendo y fallando adentro. Es además el **único** chequeo que prueba que el trigger esté suscrito a `hpdatabase` — el emulador no puede.
+- **`MAIN_COLLECTIONS` lista las 29 colecciones de la app**, agrupadas por área. Es una lista a mano: al agregar una colección nueva hay que sumarla acá o queda invisible. El botón **📋 Copiar** baja los conteos ya ejecutados separados por tab, listos para pegar en una planilla.
+- **🧪 Ping al backend**: encola un job en `functionJobs` y espera la respuesta. No llama ningún endpoint porque no hay ninguno invocable (ver Despliegue); ejercita el mismo camino que usa cualquier job. Distingue los tres modos de falla a propósito, porque cada uno se arregla en otro lado: `permission-denied` es que las reglas publicadas no dejan crear el job (o quien aprieta no es admin), el timeout de 45 s es la función sin desplegar o mirando otra base, y un job en `error` es la función corriendo y fallando adentro. Es además el **único** chequeo que prueba que el trigger esté suscrito a `hpdatabase` — el emulador no puede.
 - Usa `getCountFromServer` de Firestore — 1 read por cada 1000 docs vs N con `getDocs`. Permite estimar costos sin descargar la colección.
-- **Composición de logs** (`LogsBreakdownSection`): desglosa `logs` por entidad (~1 lectura por entidad) y mide cuántos documentos borraría un TTL de 6/12/24 meses (3 lecturas). Es lo que convierte la discusión de retención en números en vez de estimaciones. `LOG_ENTITIES` es una lista a mano: una entidad nueva que no se agregue queda invisible, y la fila "sin clasificar" del total es la que lo delata.
+- **Composición de logs** (`LogsBreakdownSection`): desglosa `logs` por entidad (~1 lectura por entidad) y mide cuántos documentos borraría un TTL de 6/12/24 meses (3 lecturas), para decidir la retención con números. `LOG_ENTITIES` es una lista a mano: una entidad nueva que no se agregue queda invisible, y la fila "sin clasificar" del total es la que lo delata.
+
+## Usuarios / Users
+
+- Pantalla: `src/screens/Users.jsx`. Ruta `/admin/users` (solo admin). Colección `users`.
+- Lista los perfiles (1 lectura por perfil) con correo, alias, rol, estado y último ingreso. El correo y el último ingreso los escribe cada cuenta al abrir la app (ver Auth): un perfil de alguien que todavía no entra sale "Sin correo todavía".
+- Acciones por cuenta: **Hacer admin / Quitar admin**, **Suspender / Reactivar** (`disabled`), **Contraseña** (el correo de Firebase para elegir una nueva, en español) y **Saludos** (ver Saludos personalizados).
+- **Límites**, los mismos en `firestore.rules` y en `utils/userAccounts.js`, con tests en los dos lados:
+  - Nadie cambia su propio rol ni suspende su propia cuenta. Por eso siempre queda al menos un admin: el que actúa no puede quitarse el rol.
+  - Un admin no se suspende: primero se le quita el rol.
+  - Una cuenta suspendida no pasa a admin: primero se reactiva.
+- El rol y la suspensión pasan por `usersService.update`, así que quedan en la auditoría.
+- **Las cuentas se crean en la consola de Firebase**: la cuenta en Authentication y el perfil en `users` con el UID como id, `role` y `email`. La pantalla lo explica en "¿Cómo dar acceso a alguien nuevo?". El navegador no puede crear cuentas de Authentication para otra persona ni listarlas; el alta desde la app es el job `createUser` (TODO en `functions/index.js`).
 
 ## Auditoría / `logs`
 
@@ -596,11 +624,11 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 
 ## Facturación / Billing
 
-- Pantalla: `src/screens/Facturacion.jsx`. Ruta `/facturacion`. Nav label: "Facturación" (icono 🧾). Acceso para admin y supervisor.
+- Pantalla: `src/screens/Facturacion.jsx`. Ruta `/facturacion`. Nav label: "Facturación" (icono 🧾). Acceso para todas las cuentas.
 - Servicios: `companiesService` (colección `companies`) + `dteDocumentsService` (colección `dteDocuments`) en `services/index.js`. TTL del list = **10 min** (`ttl: 600_000`) — las mutaciones locales (status, notas, pagos, import) actualizan el state en memoria, así que el TTL solo afecta al re-entrar a la pantalla.
 - **Multi-empresa**: el sistema soporta N empresas (probado con 3). Cada empresa tiene `{ rut, razonSocial, alias, enabled }`. CRUD inline desde el modal **🏢 Empresas**. Los DTE quedan namespaceados por `companyId` así no se colisionan folios entre empresas (mismo proveedor puede facturar a varias empresas con el mismo folio).
 - **Empresa elegida persiste en localStorage** (`facturacion.selectedCompanyId`). Si la empresa guardada fue borrada, cae a la primera.
-- **V1: solo lectura/import**. La emisión sigue siendo manual en el portal SII — no hay integración con LibreDTE/OpenFactura. Cuando se sume emisión se distingue por `source: "self_emitted"` (hoy todos son `"sii_import"`).
+- **Solo lectura e import.** La emisión se hace en el portal del SII; la app no se integra con ningún emisor. Cada documento lleva `source: "sii_import"`.
 - **Flujo de import**: el usuario exporta CSV del **Registro de Compras y Ventas (RCV)** desde el portal SII. En la app: 📥 Importar → elegir empresa + **uno o varios archivos** (Ctrl/Cmd+click) → preview multi-file con stats, warnings de RUT mismatch, exclusiones togglables → Confirmar → escribe a Firestore.
 
 ### Parser CSV (`src/utils/siiCsvParser.js`)
@@ -609,10 +637,9 @@ Exporta: `parseSiiRcvCsv(buffer, { companyRut })`, `dteTypeLabel(tipo)`, `normal
 
 - Auto-detecta **kind** (ventas vs compras) por headers (`Rut cliente` vs `Rut Proveedor`).
 - **IVA**: suma `Monto IVA Recuperable` + `Monto IVA No Recuperable`. El fallback
-  `"monto iva"` existe para los exports con una sola columna, pero como `colIdx`
-  matchea por *contiene*, en un CSV que solo trae la No Recuperable aterrizaba en
-  esa misma columna y el IVA se duplicaba. Hoy se descarta si los dos índices
-  coinciden.
+  `"monto iva"` es para los exports con una sola columna. Como `colIdx` matchea
+  por *contiene*, el fallback se descarta si cae en la misma columna que la No
+  Recuperable; si no, el IVA se sumaría dos veces.
 - Encoding **UTF-8 con BOM o ISO-8859-1** — intenta UTF-8, fallback a latin-1 si detecta U+FFFD.
 - Fechas en YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY → normalizadas a ISO.
 - Montos con miles `.` y decimal `,` o sin separadores.
@@ -645,11 +672,11 @@ Exporta: `parseSiiRcvCsv(buffer, { companyRut })`, `dteTypeLabel(tipo)`, `normal
 
 - **Doc id determinístico por `companyId`**: reimportar el mismo período es **idempotente** (setDoc + merge sobreescribe sin duplicar). El preview cuenta cuántos sobreescriben antes de confirmar.
 - **Replace por período**: confirmar el import agrupa por `(companyId, kind, periodo)` y para cada scope (a) lee los existentes, (b) calcula **huérfanos** (existían antes, no vienen en el nuevo CSV) y los **elimina**, (c) escribe los nuevos/actualizados. Preserva `paymentStatus` existente al reimportar — solo setea `"unpaid"` para docs nuevos. Bulk write: `writeBatch(db)` con chunks de 450 (límite Firestore 500).
-  - **La persistencia vive en `services/dteImportService.js` (`importDteRecords`), no en la pantalla.** Estaba adentro del handler de React y era intesteable, justo la parte que borra documentos. `tests/e2e/facturacion-import.test.js` fija las tres propiedades que importan: reimportar es idempotente, el estado de pago y las notas cargadas a mano sobreviven, y el borrado de huérfanos **no** cruza de período, de `kind` ni de empresa. El borrado en sí sigue sin pedir confirmación — está fijado, no aprobado.
+  - **La persistencia vive en `services/dteImportService.js` (`importDteRecords`), no en la pantalla**, así se prueba sin React. `tests/e2e/facturacion-import.test.js` fija las tres propiedades que importan: reimportar es idempotente, el estado de pago y las notas cargadas a mano sobreviven, y el borrado de huérfanos **no** cruza de período, de `kind` ni de empresa. El borrado no pide confirmación: el test fija ese comportamiento, no lo aprueba.
 
 ### UI
 
-- Tabs **📤 Facturas** (kind=venta — antes "Ventas", renombrado a Facturas), **📥 Compras**, **📑 Retenciones**, **📊 Resumen** (resumen anual + balance de IVA).
+- Tabs **📤 Facturas** (kind=venta), **📥 Compras**, **📑 Retenciones**, **📊 Resumen** (resumen anual + balance de IVA).
 - **Vista default = mes actual**. Toggle **🔍 Auditoría** habilita navegar todos los períodos.
 - Filtros: período, tipo de DTE, **estado de pago** (chips: Todos / No pagado / Pagado / Solo neto / Solo IVA / Anulada), búsqueda libre con `<datalist>` autocomplete de contrapartes únicas.
 - Cards de totales: Documentos, Neto, IVA, Total. **NCs (tipos 61/112) restan con signo** en los totales y se cuentan aparte en una card específica. Para vista normal: cards adicionales de No pagado del período / Solo neto / Cedidas. Para Retenciones: Facturas con retención / IVA retenido / Total facturado.
@@ -753,24 +780,24 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
   - La pantalla avisa cuando un mes real es **el mes en curso**: su dato puede estar incompleto (el RCV del mes recién cierra después) y arrastra el total para abajo.
 - **Solo entran ventas.** Las compras son salidas y no tienen nada que hacer en una proyección de entradas. Las **NC restan**, y van al detalle con signo: si se filtraran, el Excel mostraría un total que sus propias filas no dan.
 - **El ingreso de un documento no es su neto ni siempre su total** — lo decide `cashInOf(d)`:
-  - Con **IVA retenido** (factura de compra 45/46, o cualquier documento al que el cliente le retuvo el IVA): **solo el neto**. Ese IVA no es plata que entre. En sus datos son 47 facturas tipo 46 en el registro de ventas.
+  - Con **IVA retenido** (factura de compra 45/46, o cualquier documento al que el cliente le retuvo el IVA): **solo el neto**. Ese IVA no es plata que entre.
   - El resto: el **Monto Total** del SII (neto + el IVA que sí se cobra; en un documento exento, el exento).
-  - **Una NC sobre una factura de compra tiene que restar con la misma regla que el documento que reversa**, o el par no cierra en cero. En los datos reales la NC folio 305 reversa exactamente la factura 387: restándole el total dejaría un ingreso negativo de 822.415 que nunca existió. Hay 5 NC así en el histórico.
-  - **La retención se deduce de los montos, no de la columna `NCE o NDE sobre Fact. de Compra` del RCV**: `neto + exento + iva` que no da el `total` **es** la retención. Así funciona sobre lo ya importado, sin depender de una reimportación ni de un campo nuevo en el parser, y de paso cubre las facturas normales a las que el cliente retuvo el IVA. El margen de 1 peso absorbe el redondeo del SII.
+  - **Una NC sobre una factura de compra tiene que restar con la misma regla que el documento que reversa**, o el par no cierra en cero: restarle el total a esa NC dejaría un ingreso negativo que nunca existió.
+  - **La retención se deduce de los montos, no de la columna `NCE o NDE sobre Fact. de Compra` del RCV**: `neto + exento + iva` que no da el `total` **es** la retención. Así funciona con cualquier documento importado y cubre también las facturas normales a las que el cliente les retuvo el IVA. El margen de 1 peso absorbe el redondeo del SII.
   - El detalle del XLSX lleva **Neto, IVA, Total SII e Ingreso** en columnas separadas, con la celda de Ingreso resaltada cuando hubo retención: sin el desglose, una factura de compra que aporta menos que neto + IVA parece un error de la planilla.
 - **El redondeo va por mes y el total es la suma de los meses redondeados**, no el redondeo de la suma. El Excel imprime la columna, así que el total al pie tiene que ser el de la columna o no cuadra a ojo.
 - **Cuesta 0 lecturas**: sale entero de `docs`, que ya tiene la colección completa en memoria (TTL 10 min).
 - **Lógica pura en `utils/cashFlowProjection.js`** (`projectCashFlow`, `netSalesByPeriod`, `groupByCounterparty`, `shiftPeriod`, `periodWindow`, `windowLabel`), con tests en `cashFlowProjection.test.js`. La aritmética de meses va con **enteros, nunca con `Date`**: un período es la etiqueta `YYYY-MM` del RCV, no un instante, y con `Date` una zona horaria corre un documento al mes de al lado.
-- **`CREDIT_NOTE_TYPES` vive ahí** y `Facturacion.jsx` lo importa. La proyección y la pantalla tienen que coincidir en que una NC resta; si divergen, la base sale inflada. (`Dashboard.jsx` todavía tiene su propia copia — limpieza pendiente.)
-- **Export XLSX de dos hojas**: `Ventas netas` (banner con el neto de la base, bloque **por cliente** ordenado por monto, y el detalle documento por documento con fecha/período/tipo DTE/folio/cliente/RUT/neto, NC en rojo) y `Proyección` (12 filas mes a mes + total). El bloque por cliente no lo pidió nadie pero es lo que muestra de dónde viene la base: una proyección sostenida por dos clientes no se lee igual que una repartida entre veinte.
+- **`CREDIT_NOTE_TYPES` vive ahí** y `Facturacion.jsx` lo importa. La proyección y la pantalla tienen que coincidir en que una NC resta; si divergen, la base sale inflada. `Dashboard.jsx` tiene su propia copia, que tiene que coincidir con esta.
+- **Export XLSX de dos hojas**: `Ventas netas` (banner con el neto de la base, bloque **por cliente** ordenado por monto, y el detalle documento por documento con fecha/período/tipo DTE/folio/cliente/RUT/neto, NC en rojo) y `Proyección` (12 filas mes a mes + total). El bloque por cliente muestra de dónde viene la base: una proyección sostenida por dos clientes no se lee igual que una repartida entre veinte.
 - **El porcentaje va en UNA celda (`C4` de la hoja `Proyección`) y las filas la referencian** con `ROUND(D7*$C$4,0)`. Quien recibe el archivo mueve el supuesto en Excel y ve la temporada entera recalcularse, en vez de pedir otra corrida por cada escenario.
-- **`isAnalysisTab`** (`resumen` + `proyeccion`) apaga filtros, tarjetas y tabla del listado. El gate se repite en cuatro lugares: con un `kindTab !== "resumen"` suelto, cada tab nuevo obliga a encontrarlos todos de nuevo.
+- **`isAnalysisTab`** (`resumen` + `proyeccion`) apaga filtros, tarjetas y tabla del listado. La usan los cuatro lugares que dependen de eso, así un tab de análisis nuevo se suma solo ahí.
 
 ## Libro de Precios / PriceBook
 
 - Pantalla: `src/screens/PriceBook.jsx`. Ruta `/price-book`. Colecciones `priceBookEntries` + `priceBookConfig/main`.
 - **Registro contable independiente**: no alimenta ni lee `cycles`/`workdays`/`faenas` para calcular nada. Es el histórico de "qué se pagó y qué se cobró por tal labor en tal faena, en tal período".
-- Una entrada puede colgar de una **faena real** (`faenaId`) o de una **faena dummy** (`faenaId: null` + `faenaLabel` como texto libre) — hay faenas históricas que nunca existieron en la app.
+- Una entrada puede colgar de una **faena real** (`faenaId`) o de una **faena dummy** (`faenaId: null` + `faenaLabel` como texto libre), para faenas que no existen en la app.
 - Cada entrada lleva N líneas de precio: `unit` (texto libre), `payPrice` (pago) vs `chargePrice` (cobro), y para unidades de jornada opcionalmente el par de hora extra. Las unidades nuevas se acumulan solas en el catálogo compartido `priceBookConfig/main.units`.
 - `priceBookConfig/main.hiddenFaenaIds` esconde del selector faenas reales cuyo nombre no es legible.
 
@@ -786,17 +813,17 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 - Pantalla: `src/screens/HarvestQr.jsx`. Ruta `/admin/harvest-qr` (solo admin). Colecciones `harvestWeights` (lectura) + `qrPrefixes` (CRUD).
 - `harvestWeights` la escribe una **app externa de scan**, no esta app. Es fuente de verdad y acá **nunca se edita**: solo se lee para sincronizar hacia `workdays`.
 - `qrPrefixes` (docId = el prefijo, ej. `"HP"`) es el puente entre un QR físico y el (faena, ciclo, labor) vigente al que hay que mandar sus pesajes. **Se reapunta a mano cada vez que se abre un ciclo nuevo** — semi-manual a propósito, no hay forma segura de adivinar el ciclo destino.
-- La sincronización agrupa los pesajes del rango por (trabajador, día, combo calidad/envase) sumando kilos, y escribe los `workdays` resultantes. Los ejes del combo se mapean con `qualityMap`/`containerMap` del prefijo; sin ellos el mapeo es identidad (los catálogos se diseñaron preservando la convención numérica de la app de scan).
-- `healthOf()` marca un prefijo como roto si su ciclo/labor apuntado ya no existe, dejó de ser de cosecha **o el ciclo está cerrado** — es el chequeo de "me olvidé de reapuntarlo". El nivel `red` es el que deshabilita el botón de sincronizar, así que marcar ahí alcanza para bloquear.
+- La sincronización agrupa los pesajes del rango por (trabajador, día, combo calidad/envase) sumando kilos, y escribe los `workdays` resultantes. Los ejes del combo se mapean con `qualityMap`/`containerMap` del prefijo; sin ellos el mapeo es identidad (los catálogos usan la misma numeración que la app de scan).
+- `healthOf()` marca un prefijo como roto si su ciclo/labor apuntado ya no existe, dejó de ser de cosecha **o el ciclo está cerrado**: detecta un prefijo que quedó sin reapuntar. El nivel `red` es el que deshabilita el botón de sincronizar, así que marcar ahí alcanza para bloquear.
 - **La sincronización paga una lectura por jornada, no dos.** Lee cada workday para saber si ya está liquidada (`payrollId`) y le pasa ese mismo documento al `upsert` como `before`, en vez de dejar que el servicio lo vuelva a leer. El `Map` `yaLeidas` existe para eso.
 - **No se sincroniza contra un ciclo cerrado.** Ese ciclo ya se liquidó o está por liquidarse, y escribirle jornadas por detrás descuadra lo que se pagó. Hay dos chequeos a propósito: `healthOf` apaga el botón, y `run()` vuelve a mirar el `status` del doc fresco porque la lista de ciclos es cacheada y el cierre lo hace otra pantalla.
 - **La sincronización lee `harvestWeights` SIN caché, y tiene que seguir así.** De esos documentos salen las jornadas que se pagan; sincronizar sobre pesajes viejos escribe producción incompleta. Lo cacheado es solo el explorador, que es para mirar.
 
 ### Costo de lecturas
 
-- **Explorador de pesajes**: el rango de `dateKey` **y el prefijo** van en la query. Antes el prefijo se filtraba en memoria, así que elegirlo no bajaba las lecturas: traía los de todos y descartaba al renderizar. La búsqueda por trabajador sí sigue en cliente (es sobre nombre/RUT, no hay campo indexable).
-- **El filtro por prefijo depende del índice compuesto `(prefix, dateKey)`**, el mismo que ya usa la sincronización. Si falta, Firestore responde `failed-precondition`: la pantalla lo recuerda, vuelve a pedir sin el filtro y lo aplica en memoria —como funcionaba antes— mostrando un `⚠ filtro en memoria`. No hay `firestore.indexes.json` en el repo (los índices se manejan en la consola), así que ese camino de respaldo no es teórico.
-- **TTL largo (2 h) + botón 🔄 Refrescar**, no TTL corto. Los pesajes cambian todo el rato mientras se cosecha, y por eso mismo ningún TTL automático deja la pantalla fresca: solo decide cada cuánto se vuelve a pagar. Con TTL largo la antigüedad queda a la vista ("hace N min") y refrescar es una decisión de quien mira. Los inputs de fecha van con debounce de 400 ms — cada tecla releía el rango entero.
+- **Explorador de pesajes**: el rango de `dateKey` **y el prefijo** van en la query, así elegir un prefijo baja las lecturas. La búsqueda por trabajador es en cliente (es sobre nombre/RUT, no hay campo indexable).
+- **El filtro por prefijo depende del índice compuesto `(prefix, dateKey)`**, el mismo que ya usa la sincronización. Si falta, Firestore responde `failed-precondition`: la pantalla lo recuerda, vuelve a pedir sin el filtro y lo aplica en memoria, mostrando un `⚠ filtro en memoria`. No hay `firestore.indexes.json` en el repo (los índices se manejan en la consola), así que ese camino de respaldo no es teórico.
+- **TTL largo (2 h) + botón 🔄 Refrescar**, no TTL corto. Los pesajes cambian todo el rato mientras se cosecha, y por eso mismo ningún TTL automático deja la pantalla fresca: solo decide cada cuánto se vuelve a pagar. Con TTL largo la antigüedad queda a la vista ("hace N min") y refrescar es una decisión de quien mira. Los inputs de fecha van con debounce de 400 ms, para no releer el rango en cada tecla.
 - El explorador **no persiste** en `localStorage`: cada rango es su propia clave y la lista de trabajadores ya ocupa lo suyo. En memoria alcanza para ir y venir entre pestañas.
 - **Contador de lecturas visible solo para admin** en las tres pestañas (`· N lecturas` / `· desde caché`), mismo criterio que Dashboard y Calendario. Es lo que hace verificable todo lo anterior: si un día vuelve a mostrar un número grande donde decía "desde caché", alguien cambió las opciones de un `list()` y rompió la clave compartida.
 - Las listas compartidas (`worker` a 2 h, `faenas` a 10 min) usan **las mismas opciones que el resto de la app**. La clave de caché es `collection::{wheres,order,take}` y **no incluye el TTL**, así que el último que escribe sella el vencimiento para todos: bajarlo acá le acorta la caché a Trabajadores, Nómina y Calendario sin que se note. Omitir `cache: true` es peor que un TTL corto — esa llamada no lee la entrada **ni la escribe**, así que paga siempre y encima no deja la caché caliente para las demás pantallas.
@@ -820,7 +847,7 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 ## Layout
 
 - **Sidebar colapsable** (`layout.sidebarOpen` en `localStorage`): un solo botón ☰ funciona como toggle en desktop y abre drawer en mobile (decidido por `matchMedia("(min-width: 768px)")`).
-- Nav incluye: Dashboard, Faenas, Calendario, Trabajadores, Transportes, Anticipos / Bonos, Nómina, Facturación, Links útiles. Items admin (Auditoría, Migrar CSV, Limpiar pagados, Consola) se ven solo con `isAdmin`.
+- Nav incluye: Dashboard, Faenas, Calendario, Trabajadores, Transportes, Anticipos / Bonos, Nómina, Facturación, Links útiles. Items admin (Usuarios, Auditoría, Migrar CSV, Limpiar pagados, Consola) se ven solo con `isAdmin`.
 - **Versión en el header** — `TeRRA v1.1.{commitCount}` autogenerado en build-time por `vite.config.js` (via `git rev-list --count ${VERSION_RESET_COMMIT}..HEAD`, inyectado como `__APP_VERSION__`). El conteo arranca desde un commit de reset, no desde el inicio del repo. Sirve para diagnosticar caché PWA viejo de un vistazo: si el header sigue mostrando una versión anterior tras un deploy, el SW tiene un bundle stale. Ojo en CI: sin `fetch-depth: 0` el conteo da 0.
 
 ## Env
@@ -848,6 +875,7 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 /admin/migrate-workers         Importar trabajadores desde CSV (admin)
 /admin/cleanup-paid-workdays   Limpieza de workdays ya pagados (admin)
 /admin/console                 Consola admin: Firestore counts (admin only)
+/admin/users                   Usuarios: rol, suspensión, contraseña y saludos (admin)
 /admin/harvest-qr              Sincronizar pesajes QR → workdays (admin)
 *                              NotFound (catch-all dentro y fuera del Layout)
 ```
@@ -859,7 +887,7 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 ### PWA
 
 - Configurada via `vite-plugin-pwa` en `vite.config.js` con `registerType: 'autoUpdate'`. Genera `manifest.webmanifest`, `sw.js` y `registerSW.js` en `dist/` al build.
-- **Instalación**: abrís la URL desplegada en Chrome (Android) o Safari (iOS) → el navegador ofrece "Instalar app" / "Agregar a pantalla de inicio" → queda ícono en el escritorio que abre la app en standalone (sin barra de URL).
+- **Instalación**: se abre la URL desplegada en Chrome (Android) o Safari (iOS) → el navegador ofrece "Instalar app" / "Agregar a pantalla de inicio" → queda ícono en el escritorio que abre la app en standalone (sin barra de URL).
 - **Precache**: precachea todos los assets del build con `globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}']`. Límite subido a 5MB porque el chunk de exceljs excede el default de 2MB.
 - **Cache de datos**: NO interceptamos las llamadas a Firestore — el SDK de Firebase ya maneja su propio cache offline en IndexedDB. Habilitar `enableIndexedDbPersistence` si queremos offline-first más agresivo.
 - **navigateFallback: null** intencional. No queremos que el SW devuelva `index.html` para rutas desconocidas porque romperíamos el truco 404.html → `?/path` de GitHub Pages.

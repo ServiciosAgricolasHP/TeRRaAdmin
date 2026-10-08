@@ -26,6 +26,7 @@ import Calendar from "./screens/Calendar";
 import Facturacion from "./screens/Facturacion";
 import HarvestQr from "./screens/HarvestQr";
 import PriceBook from "./screens/PriceBook";
+import Users from "./screens/Users";
 
 export default function App() {
   return (
@@ -95,6 +96,14 @@ export default function App() {
                   element={
                     <ProtectedRoute adminOnly>
                       <AdminConsole />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="admin/users"
+                  element={
+                    <ProtectedRoute adminOnly>
+                      <Users />
                     </ProtectedRoute>
                   }
                 />

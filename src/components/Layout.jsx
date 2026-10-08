@@ -350,6 +350,10 @@ export default function Layout() {
             </button>
             {adminExpanded && (
               <div className="mt-1 space-y-1">
+                <NavLink to="/admin/users" className={linkClass}>
+                  <span>👥</span>
+                  <span>Usuarios</span>
+                </NavLink>
                 <NavLink to="/audit" className={linkClass}>
                   <span>🛡️</span>
                   <span>Auditoría</span>

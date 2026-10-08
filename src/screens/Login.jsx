@@ -1,11 +1,10 @@
 
 import { useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 
 export default function Login() {
-  const { login } = useAuth();
-  const navigate = useNavigate();
+  const { login, user } = useAuth();
   const location = useLocation();
   const from = location.state?.from?.pathname || "/";
 
@@ -14,6 +13,8 @@ export default function Login() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
+  if (user) return <Navigate to={from} replace />;
+
   const submit = async (e) => {
     e.preventDefault();
 
@@ -21,10 +22,8 @@ export default function Login() {
     setBusy(true);
     try {
       await login(email, password);
-      navigate(from, { replace: true });
     } catch (err) {
       setError(err?.code || err?.message || "Error de autenticación");
-    } finally {
       setBusy(false);
     }
   };

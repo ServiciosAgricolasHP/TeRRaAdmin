@@ -33,8 +33,7 @@
 // portero es la regla de Firestore que decide quién puede crear un doc en
 // `functionJobs` — o sea el mismo lugar donde ya vive la autorización del resto
 // de la app. La función confía en que si el doc existe, alguien con permiso lo
-// creó. Las reglas viven solo en la consola de Firebase (ver AGENTS.md → Tests),
-// así que ese permiso hay que configurarlo a mano; está anotado en el README.
+// creó. La regla está en `firestore.rules`, en la raíz del repo, con sus tests.
 
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { logger } from "firebase-functions/v2";
@@ -175,5 +174,18 @@ export const runFunctionJob = onDocumentCreated(
 //     patrón da gratis y un callable no.
 //   - El restore se hace colección por colección (acción de admin normal, con
 //     confirmación) — nunca "restaurar todo" de un clic.
+//
+// Antes de subirlo: sumarle sus chequeos a `functions/verify.mjs`.
+
+// TODO: alta de cuentas desde Usuarios (`src/screens/Users.jsx`) — handler
+// `createUser`.
+//
+//   - Crea la cuenta en Authentication (`getAuth().createUser`) sin contraseña,
+//     y su perfil `users/{uid}` con el mismo UID, `role` y `email`.
+//   - La persona elige su contraseña con el correo de restablecimiento, que la
+//     pantalla ya envía.
+//   - Confirma que `requestedBy` sea admin leyendo su perfil.
+//   - Con el mismo patrón: listar las cuentas de Authentication sin perfil, y
+//     desactivar o borrar una cuenta.
 //
 // Antes de subirlo: sumarle sus chequeos a `functions/verify.mjs`.

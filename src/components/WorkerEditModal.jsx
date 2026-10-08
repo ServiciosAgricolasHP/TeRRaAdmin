@@ -18,13 +18,6 @@ import {
   rutWithoutDv,
 } from "../utils/banks";
 
-function normalizeIdQrInput(value) {
-  return String(value || "")
-    .split(/[\s,]+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
 export default function WorkerEditModal({ open, mode, worker, allWorkers = [], onClose, onSaved }) {
   const isCreate = mode === "create";
   const [form, setForm] = useState(null);
@@ -44,7 +37,6 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
         email: "",
         groupLeader: "",
         groupLeaderHistory: [],
-        idQrText: "",
         bd_paymentRut: "",
         bd_accountNumber: "",
         bd_accountType: ACCOUNT_TYPE_RUT,
@@ -62,7 +54,6 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
         email: worker?.email || "",
         groupLeader: worker?.groupLeader?.[0] || "",
         groupLeaderHistory: worker?.groupLeader || [],
-        idQrText: (worker?.idQr || []).join(", "),
         bd_paymentRut: bd[0] || rut,
         bd_accountNumber: bd[1] || rutWithoutDv(rut),
         bd_accountType: bd[2] != null ? Number(bd[2]) : ACCOUNT_TYPE_RUT,
@@ -100,6 +91,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
   const accType = Number(form.bd_accountType);
   const isCuentaRutSelected = accType === ACCOUNT_TYPE_RUT;
   const isCash = isCashBank(form.bd_bankCode);
+  const qrCodes = (worker?.idQr || []).map((c) => String(c || "").trim()).filter(Boolean);
 
   const switchToCash = () => {
     setForm((f) => ({
@@ -213,7 +205,6 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
     if (newLeader && newLeader !== prevLeaders[0]) groupLeader = [newLeader, ...prevLeaders];
     else if (!newLeader && prevLeaders.length === 0) groupLeader = [];
 
-    const idQr = normalizeIdQrInput(form.idQrText);
     const bankDetails = [payRut, accNumber, accType, bankCode];
     const email = form.email.trim();
 
@@ -221,8 +212,9 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
     try {
       if (isCreate) {
         await createWorker({ rut, name: form.name });
-        await workersService.update(rut, { groupLeader, idQr, bankDetails, email });
+        await workersService.update(rut, { groupLeader, idQr: [], bankDetails, email });
       } else {
+        // `idQr` no se escribe desde la ficha: lo asigna `assignQrCode`.
         await workersService.update(worker.id, {
           // Al cambiar de cédula guardamos la anterior. Los workdays viejos
           // quedaron grabados con ella (`workerRut` es el rut que tenía el
@@ -243,7 +235,6 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
           name: toProperName(form.name),
           email,
           groupLeader,
-          idQr,
           bankDetails,
         });
       }
@@ -362,12 +353,23 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
               Selecciona uno existente. Solo crea uno nuevo si realmente no está en la lista.
             </p>
           </div>
-          <TextField
-            label="IDs QR (separados por coma)"
-            value={form.idQrText}
-            onChange={(v) => setForm((f) => ({ ...f, idQrText: v }))}
-            placeholder="QR1, QR2..."
-          />
+          {!isCreate && (
+            <div>
+              <span className="mb-1 block text-sm text-[var(--color-muted)]">IDs QR</span>
+              <div className="flex min-h-[38px] flex-wrap items-center gap-1 rounded-md border border-dashed border-[var(--color-border)] px-3 py-1.5 text-sm">
+                {qrCodes.length > 0 ? (
+                  qrCodes.map((c) => (
+                    <span key={c} className="rounded bg-[var(--color-surface-2)] px-1.5 py-0.5 font-mono text-xs">
+                      {c}
+                    </span>
+                  ))
+                ) : (
+                  <span className="text-[var(--color-muted)]">—</span>
+                )}
+              </div>
+              <p className="mt-1 text-[10px] text-[var(--color-muted)]">Solo lectura: se asignan en Cosecha QR.</p>
+            </div>
+          )}
           <TextField
             label="Email"
             type="email"
@@ -432,7 +434,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
               />
               {(form.bd_prevBankCode || form.bd_prevAccountNumber) && (
                 <p className="text-[10px] text-[var(--color-muted)]">
-                  Datos bancarios guardados (se restauran si volvés a Banco):
+                  Datos bancarios guardados (se restauran si vuelves a Banco):
                   {form.bd_prevBankCode && ` ${bankName(form.bd_prevBankCode)}`}
                   {form.bd_prevAccountNumber && ` · ${form.bd_prevAccountNumber}`}
                 </p>

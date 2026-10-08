@@ -1,13 +1,17 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { catalogsService, CATALOG_DEFAULTS } from "../services/catalogsService";
+import { useAuth } from "./AuthContext";
 
 const CatalogsContext = createContext(null);
 
 export function CatalogsProvider({ children }) {
+  const { user, hasAccess } = useAuth();
+  const uid = hasAccess ? user.uid : null;
   const [catalogs, setCatalogs] = useState(CATALOG_DEFAULTS);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!uid) return;
     (async () => {
       try {
         const all = await catalogsService.getAll();
@@ -18,7 +22,7 @@ export function CatalogsProvider({ children }) {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [uid]);
 
   const addEntry = useCallback(
     async (name, label) => {

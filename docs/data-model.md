@@ -432,14 +432,32 @@ Colección aparte y no un campo en `cycles` porque los docs de `cycles` se traen
 > Sin `logs` de auditoría: el guardado es debounced mientras se tipea, así que registrar cada escritura llenaría el log de diffs anidados. La trazabilidad acá es `updatedBy`/`updatedAt`. Por eso el servicio (`src/services/cycleSummariesService.js`) está escrito a mano y no con `createService()`.
 
 ### `users`
-Preferencias de UI por usuario. **DocId = uid de Auth.**
+Perfil de cada cuenta: acceso, rol y preferencias. **DocId = uid de Auth.** Se crea desde la consola de Firebase. **Sin este doc la cuenta no tiene acceso** (ver `firestore.rules` y Usuarios en AGENTS.md).
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | string | uid |
+| `role` | `"admin"` \| `"user"` | se lee en minúsculas; cualquier valor distinto de `admin` cuenta como usuario. Un admin lo cambia desde Usuarios, nunca el propio |
+| `disabled` | bool? | `true` = cuenta suspendida: sin acceso a los datos. Un perfil admin no puede quedar suspendido |
+| `email` | string? | correo de la cuenta; lo escribe la app al abrirse y tiene que ser el del token |
+| `lastSeenAt` | ts? | última vez que la cuenta abrió la app |
 | `alias` | string? | cómo se firma esta persona en los registros que carga a mano (ej. `harvestWeights.supervisor`). Lo edita el propio usuario desde **Mi perfil** en el header — es una preferencia, no un permiso. Sin alias se usa el correo |
-| `role` | `"admin"` | `"supervisor"` | se normaliza a minúsculas al leer. **Sin doc `users/{uid}` el usuario cae a `supervisor`** |
+| `greetings` | `{ [slot]: string }`? | saludos personalizados por ranura (`GREETING_SLOTS` en `utils/greetings.js`); los edita un admin desde Usuarios. Texto vacío = sin saludo |
 | `faenaLayout` | `{ groups, faenaGroup, faenaColor }` | layout de la pantalla Faenas |
 | `faenaLayoutUpdatedAt` | ts | |
+
+### `functionJobs`
+Cola de trabajos del backend. La app crea el job y el trigger `runFunctionJob` (`functions/index.js`) lo ejecuta y escribe el resultado en el mismo doc. Solo un admin crea jobs, y nadie los edita ni los borra desde el cliente.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | autoId |
+| `type` | string | handler que se ejecuta (`ping`) |
+| `status` | `"pending"` \| `"running"` \| `"done"` \| `"error"` | nace `pending`; la función lo pasa a `running` en una transacción antes de ejecutarlo |
+| `requestedBy` | string | uid de quien lo pidió; las reglas exigen que sea el de la sesión |
+| `requestedByEmail` | string? | |
+| `requestedAt` | ts | |
+| `startedAt`, `finishedAt` | ts? | los escribe la función |
+| `result` | any? | lo que devuelve el handler, si terminó bien |
+| `error` | string? | mensaje, si falló |
 
 ### `logs`
 Auditoría — una fila por mutación.
@@ -462,8 +480,11 @@ Auditoría — una fila por mutación.
 | `carrierId` | `transportsService.js` → `carrierMeta()` (a mano: ese servicio no usa `createService`) | ligar `transport` y `transportPayment` a su transportista |
 | `auto: "recalcTotal"` | `recalcPaymentTotal` / `recalcPayrollTotal` | distinguir un recálculo automático de total de una edición hecha por una persona |
 | `addedAbono`, `removedAbonoId` | `paymentsService` | detalle del abono tocado |
+| `op: "applyAdvances"`, `count`, `total`, `advanceIds`, `sobrantes?` | `applyAdvancesToPayroll` | un log por nómina (`entity: "payroll"`) con los anticipos que descontó. `sobrantes: [{ advanceId, pedido, aplicado }]` son las aplicaciones recortadas |
+| `op: "restoreAdvances"`, `count`, `advanceIds` | `restoreAdvancesFromPayroll` | los anticipos que soltó la nómina |
+| `op: "setPayrollAdvances"`, `cambios` | `setPayrollAdvanceAmounts` | `cambios: [{ advanceId, antes, despues }]`: cuánto descontaba y cuánto descuenta la nómina de cada anticipo |
 
-> Consumidor: `Audit.jsx` → `fetchSatelliteLogs`. Al elegir un registro en "Buscar por registro" suma los logs satélite (trabajador → sus jornadas; transportista → sus vueltas y resúmenes). **La atribución por `meta.carrierId` es reciente: los logs de transporte anteriores no la tienen y no aparecen ahí.**
+> Consumidor: `Audit.jsx` → `fetchSatelliteLogs`. Al elegir un registro en "Buscar por registro" suma los logs satélite (trabajador → sus jornadas; transportista → sus vueltas y resúmenes). Un log de transporte sin `meta.carrierId` no aparece ahí.
 
 ---
 
@@ -489,6 +510,7 @@ erDiagram
     QR_PREFIXES ||--o{ HARVEST_WEIGHTS : "origina (prefix)"
     HARVEST_WEIGHTS }o--|| WORKDAYS : "sincroniza hacia"
     USERS ||--o| FAENAS : "layout pref"
+    USERS ||--o{ FUNCTION_JOBS : "encola (requestedBy)"
     LOGS }o--|| WORKER : "audita"
     LOGS }o--|| CYCLES : "audita"
 
@@ -635,7 +657,17 @@ erDiagram
     }
     USERS {
         string id PK "uid"
+        string role "admin|user"
+        bool   disabled
+        string email
+        map    greetings
         map    faenaLayout
+    }
+    FUNCTION_JOBS {
+        string id PK
+        string type
+        string status "pending|running|done|error"
+        string requestedBy FK
     }
     LOGS {
         string id PK

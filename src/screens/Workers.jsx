@@ -174,6 +174,18 @@ export default function Workers() {
     setEdit({ mode: "edit", worker });
   };
 
+  // Copia el RUT con puntos y guion.
+  const copyRut = async (value, label = "RUT") => {
+    const rut = formatRutForDisplay(value);
+    if (!rut) return;
+    try {
+      await navigator.clipboard.writeText(rut);
+      toast.success(`${label} ${rut} copiado`);
+    } catch {
+      toast.error(`No se pudo copiar el ${label}`);
+    }
+  };
+
   const askDelete = (worker) => setConfirm({ worker });
   const doDelete = async () => {
     if (!confirm) return;
@@ -199,6 +211,16 @@ export default function Workers() {
         width: 140,
         valueFormatter: (p) => formatRutForDisplay(p.value),
         pinned: "left",
+        cellRenderer: (p) => (
+          <button
+            type="button"
+            onClick={() => copyRut(p.value)}
+            title="Copiar RUT"
+            className="w-full text-left hover:text-[var(--color-accent)] hover:underline"
+          >
+            {p.valueFormatted}
+          </button>
+        ),
       },
       { headerName: "Nombre", field: "name", flex: 1, minWidth: 180, pinned: "left" },
       { headerName: "Líder", valueGetter: (p) => (p.data.groupLeader?.[0] || "").toUpperCase().trim() || "—", width: 160 },
@@ -236,6 +258,17 @@ export default function Workers() {
         headerName: "RUT pago",
         valueGetter: (p) => formatRutForDisplay(p.data.bankDetails?.[0] || ""),
         width: 130,
+        cellRenderer: (p) =>
+          p.value ? (
+            <button
+              type="button"
+              onClick={() => copyRut(p.value, "RUT de pago")}
+              title="Copiar RUT de pago"
+              className="w-full text-left hover:text-[var(--color-accent)] hover:underline"
+            >
+              {p.value}
+            </button>
+          ) : null,
       },
       {
         headerName: "",
@@ -295,7 +328,7 @@ export default function Workers() {
               ? "Cargando trabajadores..."
               : showResults
                 ? `${displayedResults.length} resultado(s) · ${allWorkers.length} en total`
-                : `Buscá por nombre, apellido o RUT (mín. ${MIN_SEARCH} caracteres) · ${allWorkers.length} trabajadores`}
+                : `Busca por nombre, apellido o RUT (mín. ${MIN_SEARCH} caracteres) · ${allWorkers.length} trabajadores`}
           </p>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
@@ -384,7 +417,7 @@ export default function Workers() {
           <div className="flex h-full items-center justify-center text-[var(--color-muted)]">Cargando trabajadores...</div>
         ) : !showResults ? (
           <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-[var(--color-border)] text-sm text-[var(--color-muted)]">
-            Buscá por nombre, apellido o RUT (mín. {MIN_SEARCH} caracteres) o activá un filtro para listar.
+            Busca por nombre, apellido o RUT (mín. {MIN_SEARCH} caracteres) o activa un filtro para listar.
           </div>
         ) : displayedResults.length === 0 ? (
           <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-[var(--color-border)] text-sm text-[var(--color-muted)]">
@@ -402,9 +435,15 @@ export default function Workers() {
                 >
                   <div>
                     <div className="text-base font-semibold leading-tight">{w.name}</div>
-                    <div className="font-mono text-xs text-[var(--color-muted)]">
+                    <button
+                      type="button"
+                      onClick={() => copyRut(w.rut || w.id)}
+                      title="Copiar RUT"
+                      className="-mx-1 inline-flex min-h-[32px] items-center gap-1 rounded px-1 font-mono text-xs text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)] active:bg-[var(--color-accent-soft)]"
+                    >
                       {formatRutForDisplay(w.rut || w.id)}
-                    </div>
+                      <span aria-hidden="true">📋</span>
+                    </button>
                   </div>
                   <div className="text-xs">
                     <span className={isCash ? "font-medium text-[var(--color-accent)]" : ""}>

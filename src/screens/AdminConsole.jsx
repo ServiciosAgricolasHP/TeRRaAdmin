@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { collection, query, where, getCountFromServer, getDocs, doc, getDoc, writeBatch, serverTimestamp, addDoc, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
-import { faenasService, cyclesService, workersService, usersService } from "../services";
+import { faenasService, cyclesService, workersService } from "../services";
 import { advancesService } from "../services/advancesService";
 import { toProperName } from "../utils/nameUtils";
-import { GREETING_SLOTS } from "../utils/greetings";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -68,26 +67,6 @@ const MAIN_COLLECTIONS = [
 
 // Orden de los grupos en la tabla, para que no dependa del orden del array.
 const COLLECTION_GROUPS = [...new Set(MAIN_COLLECTIONS.map((c) => c.group))];
-
-// Ranuras de saludo, con una descripción de dónde aparece cada una. El texto
-// vive en `users/{uid}.greetings`, nunca en el código — ver utils/greetings.js.
-const GREETING_FIELDS = [
-  {
-    slot: GREETING_SLOTS.workerAlreadyInLabor,
-    label: "Trabajador ya en la labor",
-    note: 'Tag gris al intentar agregar a alguien que ya está. Default: "Ya en la labor".',
-  },
-  {
-    slot: GREETING_SLOTS.profileHover,
-    label: "Hover del nombre en el header",
-    note: 'Tooltip al pasar el mouse sobre el propio nombre. Default: "Mi perfil".',
-  },
-  {
-    slot: GREETING_SLOTS.notFound,
-    label: "Página no encontrada (404)",
-    note: "Línea suelta bajo el mensaje de error. Sin saludo no aparece nada.",
-  },
-];
 
 const monthRange = (y, m) => {
   // m: 1..12
@@ -231,7 +210,6 @@ export default function AdminConsole() {
       <Grupo titulo="Diagnóstico">
         <AuthDebugSection />
         <PingSection />
-        <GreetingsSection />
       </Grupo>
 
       <Grupo titulo="Inspección de escala">
@@ -315,7 +293,7 @@ function PingSection() {
         ok: false,
         message:
           err?.code === "permission-denied"
-            ? "Las reglas de Firestore no dejan crear el job. Falta la regla de functionJobs en la consola (ver functions/README.md)."
+            ? "Las reglas de Firestore no dejan crear el job: solo un admin puede encolarlo. Si lo eres, revisa que firestore.rules esté publicado en la consola."
             : err?.message || String(err),
       });
       return;
@@ -383,18 +361,8 @@ function PingSection() {
 // ============================================================
 // Sección Debug: por qué no soy admin
 // ============================================================
-// Muestra qué le llega al AuthContext (uid, email, role calculado) y qué
-// contiene realmente el doc `users/{uid}` en Firestore. Sirve para diagnosticar
-// por qué `isAdmin === false` cuando el usuario cree que debería ser true.
-//
-// Casos típicos:
-//   1. El doc `users/{uid}` NO existe → AuthContext cae a role: "supervisor".
-//      Fix: crear el doc en Firestore Console con { role: "admin" }.
-//   2. El doc existe pero `role !== "admin"` (ej: "ADMIN" en mayúsculas,
-//      "administrador", o el campo se llama `rol` en vez de `role`).
-//   3. La security rule bloquea el read → error visible acá, y el AuthContext
-//      cae al catch → role: "supervisor". Fix: rule tipo
-//      `match /users/{uid} { allow read: if request.auth.uid == uid; }`.
+// Muestra qué recibe el AuthContext (uid, email, rol calculado) y qué contiene
+// el doc `users/{uid}` en Firestore.
 function AuthDebugSection() {
   const { user, isAdmin } = useAuth();
   const [docState, setDocState] = useState({ loading: true });
@@ -1678,160 +1646,6 @@ function MigrateAdvanceRutsSection() {
               <li key={h.id}>{h.rut} · {h.nombre || "sin nombre"} · {h.status}</li>
             ))}
           </ul>
-        </div>
-      )}
-    </ConsoleCard>
-  );
-}
-
-// ============================================================
-// Saludos personalizados por usuario
-// ============================================================
-// Editor de `users/{uid}.greetings`. El texto no vive en el código: un saludo
-// hardcodeado deja el mail de una persona real en el repo y fuera de contexto
-// puede leerse como cualquier otra cosa.
-//
-// Cuesta 1 lectura por usuario (son pocos) y solo al desplegar la sección.
-function GreetingsSection() {
-  const [usuarios, setUsuarios] = useState(null);
-  const [cargando, setCargando] = useState(false);
-  const [error, setError] = useState("");
-  // uid → { [slot]: texto } con lo que el usuario está tipeando.
-  const [borradores, setBorradores] = useState({});
-  const [guardando, setGuardando] = useState("");
-  const [guardado, setGuardado] = useState("");
-
-  const cargar = async () => {
-    setCargando(true);
-    setError("");
-    try {
-      const lista = await usersService.list({ order: ["email", "asc"] });
-      setUsuarios(lista);
-      const inicial = {};
-      for (const u of lista) inicial[u.id] = { ...(u.greetings || {}) };
-      setBorradores(inicial);
-    } catch (err) {
-      setError(err.message || String(err));
-    } finally {
-      setCargando(false);
-    }
-  };
-
-  const editar = (uid, slot, valor) => {
-    setBorradores((b) => ({ ...b, [uid]: { ...(b[uid] || {}), [slot]: valor } }));
-    setGuardado("");
-  };
-
-  // Se escribe el mapa `greetings` completo porque `updateDoc` reemplaza el
-  // objeto entero: mandar una sola clave borraría las demás.
-  const guardar = async (uid) => {
-    setGuardando(uid);
-    setError("");
-    try {
-      const mapa = {};
-      for (const f of GREETING_FIELDS) {
-        const texto = (borradores[uid]?.[f.slot] || "").trim();
-        if (texto) mapa[f.slot] = texto;
-      }
-      await usersService.update(uid, { greetings: mapa });
-      setUsuarios((lista) =>
-        (lista || []).map((u) => (u.id === uid ? { ...u, greetings: mapa } : u)),
-      );
-      setGuardado(uid);
-      setTimeout(() => setGuardado((g) => (g === uid ? "" : g)), 2500);
-    } catch (err) {
-      setError(err.message || String(err));
-    } finally {
-      setGuardando("");
-    }
-  };
-
-  const sinGuardar = (uid) => {
-    const actual = usuarios?.find((u) => u.id === uid)?.greetings || {};
-    return GREETING_FIELDS.some(
-      (f) => (borradores[uid]?.[f.slot] || "").trim() !== (actual[f.slot] || "").trim(),
-    );
-  };
-
-  return (
-    <ConsoleCard
-      id="greetings"
-      title="Saludos personalizados"
-      description={
-        <>
-          Textos que ve un usuario y nadie más. Vacío = sin saludo, vuelve al default.
-        </>
-      }
-      actions={
-        <button
-          type="button"
-          onClick={cargar}
-          disabled={cargando}
-          className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
-        >
-          {cargando ? "Cargando…" : usuarios ? "↻ Recargar" : "▶ Cargar usuarios"}
-        </button>
-      }
-    >
-      {error ? (
-        <p className="mb-3 rounded-md bg-[var(--color-danger-soft)] px-3 py-2 text-xs text-[var(--color-danger)]">
-          {error}
-        </p>
-      ) : null}
-
-      {!usuarios ? (
-        <p className="text-xs text-[var(--color-muted)]">
-          Sin cargar. Cuesta 1 lectura por usuario.
-        </p>
-      ) : usuarios.length === 0 ? (
-        <p className="text-xs text-[var(--color-muted)]">No hay perfiles en `users`.</p>
-      ) : (
-        <div className="space-y-3">
-          {usuarios.map((u) => {
-            const pendiente = sinGuardar(u.id);
-            return (
-              <div
-                key={u.id}
-                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3"
-              >
-                <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium">{u.email || "(sin email)"}</div>
-                    <div className="font-mono text-[10px] text-[var(--color-muted)]">
-                      {u.id}
-                      {u.role ? ` · ${u.role}` : ""}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => guardar(u.id)}
-                    disabled={!pendiente || guardando === u.id}
-                    className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-[11px] hover:bg-[var(--color-accent-soft)] disabled:opacity-40"
-                  >
-                    {guardando === u.id
-                      ? "Guardando…"
-                      : guardado === u.id
-                        ? "✓ Guardado"
-                        : "Guardar"}
-                  </button>
-                </div>
-
-                {GREETING_FIELDS.map((f) => (
-                  <label key={f.slot} className="mt-2 block">
-                    <span className="block text-[11px] font-medium">{f.label}</span>
-                    <span className="block text-[10px] text-[var(--color-muted)]">{f.note}</span>
-                    <input
-                      type="text"
-                      value={borradores[u.id]?.[f.slot] || ""}
-                      onChange={(e) => editar(u.id, f.slot, e.target.value)}
-                      placeholder="(sin saludo)"
-                      className="mt-1 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
-                    />
-                  </label>
-                ))}
-              </div>
-            );
-          })}
         </div>
       )}
     </ConsoleCard>

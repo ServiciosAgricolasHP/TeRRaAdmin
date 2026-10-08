@@ -3,7 +3,7 @@
   "description": "Cloud Functions for TeRRaAdmin",
   "type": "module",
   "engines": {
-    "node": "20"
+    "node": "24"
   },
   "main": "index.js",
   "scripts": {

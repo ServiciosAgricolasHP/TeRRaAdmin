@@ -5,8 +5,9 @@ en la colección `functionJobs` y un trigger de Firestore lo levanta, lo ejecuta
 escribe el resultado en el mismo documento. La UI mira ese documento con un
 listener.
 
-Hoy hay un solo tipo de job, `ping`, que verifica el plomo de punta a punta. El
-backup en JSON es el siguiente (ver el TODO al final de `index.js`).
+Hoy hay un solo tipo de job, `ping`, que verifica el plomo de punta a punta. Los
+siguientes son el backup en JSON y el alta de cuentas desde Usuarios (ver los
+TODO al final de `index.js`).
 
 ## Por qué un trigger y no un callable
 
@@ -49,42 +50,32 @@ portero es la regla de Firestore que decide quién puede crear un documento en
 la app. La función confía en que si el documento existe, alguien con permiso lo
 creó.
 
-**Las reglas viven solo en la consola de Firebase** (no hay `firestore.rules` en
-el repo, a propósito — ver AGENTS.md → Tests), así que este permiso hay que
-cargarlo a mano. Sin esto el botón de la Consola falla con `permission-denied`:
+La regla está en [`firestore.rules`](../firestore.rules), en la raíz del repo, con
+sus tests en `tests/rules/` (`npm run test:rules`). Se publica a mano, pegando el
+archivo entero en la consola de Firebase (ver AGENTS.md → Tests). Si no está
+publicada, el botón de la Consola falla con `permission-denied`.
 
-```js
-match /functionJobs/{jobId} {
-  // Encolar trabajo del backend es una acción de admin.
-  allow create: if request.auth != null
-    && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin"
-    && request.resource.data.status == "pending"
-    && request.resource.data.requestedBy == request.auth.uid;
+Lo que exige para crear un job, y por qué:
 
-  // Hace falta para que la UI vea el resultado.
-  allow read: if request.auth != null
-    && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
-
-  // La función escribe con el admin SDK, que no pasa por reglas. Nadie desde
-  // el cliente puede cambiarle el estado a un job ni borrar el registro.
-  allow update, delete: if false;
-}
-```
-
-Dos detalles de esa regla que no son adorno:
-
-- **`status == "pending"` en el `create`** evita que un cliente cree un job ya
-  marcado como `done` y así se saltee la ejecución, o lo cree en `running` para
-  que la función lo descarte por el reclamo transaccional.
+- **Que lo pida un admin**: encolar trabajo del backend es una acción de admin.
+- **`status == "pending"`** evita que un cliente cree un job ya marcado como
+  `done` y así se saltee la ejecución, o lo cree en `running` para que la función
+  lo descarte por el reclamo transaccional.
 - **`requestedBy == request.auth.uid`** hace que nadie pueda encolar un job a
   nombre de otro. El campo es lo que queda en el registro de quién lo pidió.
+- **Nadie edita ni borra un job desde el cliente.** La función escribe con el
+  admin SDK, que no pasa por reglas.
 
-El `get()` del doc de `users` cuesta una lectura por evaluación. Si las reglas ya
-tienen un helper de admin, usar ese en vez de repetir el `get()`.
+Como la función da por hecho que el job lo creó alguien con permiso, **un job
+delicado (un respaldo, por ejemplo) solo se suma si esa regla está publicada**.
 
 ## Convenciones
 
-- **Runtime**: Node 20.
+- **Runtime**: Node 24. Node 20 queda dado de baja en Google Cloud el
+  2026-10-30: desde esa fecha no se puede crear ni actualizar una función con
+  ese runtime, y las que lo sigan usando pueden quedar deshabilitadas. Node 24
+  tiene soporte hasta octubre de 2028. Al cambiar de versión, mirar el
+  calendario en https://cloud.google.com/run/docs/runtime-support.
 - **Versión de Functions**: **v2** (`firebase-functions/v2`).
 - **Un job nuevo** es una entrada más en el objeto `handlers` de `index.js`: una
   función `async` que recibe el job y devuelve lo que va al campo `result`. Si
@@ -163,7 +154,7 @@ solo hace falta para `deploy` — el emulador descubre las funciones sin él.
 
 ### Después del primer deploy
 
-1. Cargar la regla de `functionJobs` en la consola (arriba). Sin eso el botón
+1. Que `firestore.rules` esté publicado en la consola (arriba). Sin eso el botón
    falla con `permission-denied`.
 2. Ir a **Consola admin → 🧪 Ping al backend** y apretar el botón. Ese es el
    chequeo que la verificación local no puede hacer: prueba que el trigger esté
