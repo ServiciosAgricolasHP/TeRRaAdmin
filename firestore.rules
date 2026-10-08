@@ -1,0 +1,136 @@
+rules_version = '2';
+
+// Reglas de la base `hpdatabase`. Se publican desde la consola de Firebase.
+// Tests: `npm run test:rules`.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // La cuenta tiene perfil en `users`.
+    function hasProfile() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    // El perfil tiene rol admin, sin distinguir mayúsculas.
+    function isAdmin() {
+      return hasProfile()
+        && string(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '')).lower() == 'admin';
+    }
+
+    // Campos que modifica una escritura sobre un documento existente.
+    function changed() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    // ── Colecciones de la app ──────────────────────────────────────────────
+    // Lectura y escritura para cualquier cuenta con perfil. `users`, `logs` y
+    // `functionJobs` tienen reglas propias.
+    match /{coll}/{docId} {
+      allow read, write: if hasProfile()
+        && !(coll in ['users', 'functionJobs', 'logs']);
+    }
+
+    // ── Perfiles ───────────────────────────────────────────────────────────
+    // Altas y roles se manejan desde la consola de Firebase.
+    match /users/{uid} {
+      allow read: if (signedIn() && request.auth.uid == uid) || isAdmin();
+
+      // Preferencias de la propia cuenta.
+      allow update: if signedIn() && request.auth.uid == uid
+        && changed().hasOnly(['alias', 'faenaLayout', 'faenaLayoutUpdatedAt']);
+
+      // Saludos, a cargo de un admin.
+      allow update: if isAdmin()
+        && changed().hasOnly(['greetings', 'updatedAt', 'updatedBy']);
+    }
+
+    // ── Auditoría ──────────────────────────────────────────────────────────
+    // Solo se agregan registros, con el uid de quien escribe.
+    match /logs/{logId} {
+      allow read: if hasProfile();
+      allow create: if hasProfile()
+        && request.resource.data.uid == request.auth.uid;
+    }
+
+    // ── Cola de jobs del backend (`functions/index.js`) ────────────────────
+    // Un admin encola a su nombre y en `pending`; el resultado lo escribe la
+    // función.
+    match /functionJobs/{jobId} {
+      allow create: if isAdmin()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.requestedBy == request.auth.uid;
+      allow read: if isAdmin();
+    }
+
+    // ── Sin sesión: escáner (scan_IS) y apps de cosechas y reportes ────────
+    // Leen lo que usan y escriben solo los campos que manejan.
+
+    match /worker/{rut} {
+      allow read: if true;
+
+      // Alta con nombre, RUT y QR.
+      allow create: if request.resource.data.keys().hasOnly(['name', 'rut', 'idQr'])
+        && request.resource.data.name is string
+        && request.resource.data.rut is string
+        && request.resource.data.idQr is list;
+
+      // QR y líder; el RUT, solo si está vacío.
+      allow update: if changed().hasOnly(['idQr', 'groupLeader', 'rut'])
+        && request.resource.data.get('idQr', []) is list
+        && request.resource.data.get('groupLeader', []) is list
+        && (!changed().hasAny(['rut']) || resource.data.get('rut', null) in [null, '']);
+    }
+
+    match /qrPrefixes/{prefix} {
+      allow read: if true;
+
+      // Solo el padrón del prefijo.
+      allow create: if request.resource.data.keys().hasOnly(['padron'])
+        && request.resource.data.padron is map;
+      allow update: if changed().hasOnly(['padron'])
+        && request.resource.data.padron is map;
+    }
+
+    // Pesaje con la forma que escribe el escáner.
+    function isScannerWeight(d) {
+      return d.keys().hasAll(['idQr', 'prefix', 'rut', 'amount', 'dateInsert', 'dateKey', 'paid'])
+        && d.keys().hasOnly(['idQr', 'prefix', 'rut', 'amount', 'dateInsert', 'dateKey',
+                             'supervisor', 'deviceId', 'weightType', 'weightProcess', 'paid'])
+        && d.idQr is string && d.idQr.size() > 0
+        && d.prefix is string
+        && d.rut is string && d.rut.size() > 0
+        && d.amount is number && d.amount >= 0
+        && d.dateInsert is timestamp
+        && d.dateKey is string && d.dateKey.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && d.paid == false;
+    }
+
+    match /harvestWeights/{weightId} {
+      allow read: if true;
+      allow create: if isScannerWeight(request.resource.data);
+      // Reescribir un pesaje sin cambios (reintentos del escáner).
+      allow update: if changed().size() == 0;
+    }
+
+    match /catalogs/{id} {
+      allow read: if true;
+    }
+
+    match /groupLeader/{id} {
+      allow read: if true;
+    }
+
+    // Pesajes por fecha que lee la app de reportes.
+    match /weights/{date} {
+      allow read: if true;
+
+      match /entry/{entryId} {
+        allow read: if true;
+      }
+    }
+  }
+}

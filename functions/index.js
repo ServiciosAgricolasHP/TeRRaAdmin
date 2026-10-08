@@ -33,8 +33,7 @@
 // portero es la regla de Firestore que decide quién puede crear un doc en
 // `functionJobs` — o sea el mismo lugar donde ya vive la autorización del resto
 // de la app. La función confía en que si el doc existe, alguien con permiso lo
-// creó. Las reglas viven solo en la consola de Firebase (ver AGENTS.md → Tests),
-// así que ese permiso hay que configurarlo a mano; está anotado en el README.
+// creó. La regla está en `firestore.rules`, en la raíz del repo, con sus tests.
 
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { logger } from "firebase-functions/v2";

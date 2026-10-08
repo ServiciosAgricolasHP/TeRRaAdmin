@@ -58,3 +58,6 @@ jobs:
 
       - run: npm i -g firebase-tools@15
       - run: npm run test:e2e
+
+      # `firestore.rules` contra el emulador.
+      - run: npm run test:rules

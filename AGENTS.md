@@ -11,13 +11,14 @@
 | `npm test` | Vitest sobre lógica pura (~2s, sin red) / Pure-logic unit tests |
 | `npm run test:watch` | Vitest en modo watch |
 | `npm run test:e2e` | Ciclos end-to-end contra el emulador de Firestore / Integration cycles against the Firestore emulator |
-| `npm run test:all` | Los dos anteriores |
+| `npm run test:rules` | `firestore.rules` contra el emulador / Security rules against the Firestore emulator |
+| `npm run test:all` | Los tres anteriores |
 | `npm run functions:verify` | Cloud Functions contra los emuladores de functions+auth, sin deployar / Verify Cloud Functions locally |
 | `npm run deploy` | Deploy manual a GitHub Pages (`gh-pages -d dist -t`). **Escape hatch** — el camino normal es mergear a `main` y dejar que Actions deploye / Manual fallback; normal path is merge to `main` |
 
 ## Tests
 
-Dos capas, ninguna toca datos reales.
+Tres capas, ninguna toca datos reales.
 
 - **Unidad** (`vitest.config.js`): `src/**/*.test.js`, entorno `node`, sin globals
   (cada archivo importa `describe`/`it`/`expect` de `vitest`, así `eslint.config.js`
@@ -28,6 +29,10 @@ Dos capas, ninguna toca datos reales.
   aplicar anticipos → borrar → verificar que todo volvió atrás; y el import del
   RCV del SII, incluido el borrado de huérfanos. Corren en serie y
   el emulador se vacía antes de cada test.
+- **Reglas** (`vitest.config.rules.js` + `tests/rules/`): `firestore.rules` contra
+  el emulador, desde el lado de cada cliente real: TeRRa con perfil, una cuenta
+  sin perfil, el escáner sin sesión y la cola del backend. Usa
+  `@firebase/rules-unit-testing` y su propio project id (`demo-terra-rules`).
 
 **Cuatro barreras impiden que un test toque `arandanos-hp`**, y cualquiera alcanza:
 
@@ -42,16 +47,35 @@ Dos capas, ninguna toca datos reales.
 Requisito local: **JDK 21 o superior** (`winget install EclipseAdoptium.Temurin.21.JDK`).
 `firebase-tools` 15 rechaza runtimes anteriores. En CI lo fija `actions/setup-java`.
 
-**No hay `firestore.rules` en el repo a propósito**: las reglas viven solo en la
-consola de Firebase, y un archivo de reglas permisivas acá estaría a un
-`firebase deploy` distraído de abrir producción.
+**Las reglas de Firestore viven en `firestore.rules`** y se prueban con
+`npm run test:rules`. Se publican a mano: el archivo entero se pega en la consola
+de Firebase, en la base `hpdatabase`. `firebase.json` no las referencia a
+propósito: el emulador de los e2e las cargaría, y esos tests hablan con la base
+sin sesión.
+
+- **Iniciar sesión no da acceso a nada.** La API key va en el JavaScript
+  publicado, así que cualquiera puede crearse una cuenta en Authentication. Lo
+  que da acceso es tener perfil en `users/{uid}` (el id del documento es el UID
+  de la cuenta), y los perfiles y roles se crean solo desde la consola de Firebase.
+- Cualquier perfil lee y escribe lo de la app, igual que en las pantallas: lo que
+  separa a un admin del resto son las rutas, no los datos. `users`, `logs` y
+  `functionJobs` tienen reglas propias.
+- **El escáner (`scan_IS`) y las apps de cosechas y reportes todavía no inician
+  sesión**, así que lo que usan queda abierto, acotado campo por campo a lo que
+  esas apps escriben. Cuando tengan cuenta propia, esos permisos pasan a ser un rol.
+- Si el escáner empieza a escribir un campo nuevo (en un pesaje, por ejemplo), el
+  campo **tiene que entrar también en `firestore.rules`**. Si no, el servidor
+  rechaza los pesajes nuevos.
+- Lo que se carga al abrir la app y vive fuera de las rutas protegidas
+  (`CatalogsProvider`, `CarriersProvider`) espera a que haya sesión: sin ella
+  las reglas rechazan la lectura.
 
 El mismo enganche sirve para usar la app entera contra datos descartables:
 `VITE_FIRESTORE_EMULATOR=127.0.0.1:8080 VITE_FIREBASE_PROJECT_ID=demo-terra-test npm run dev`.
 
 Los tests marcados `[bug conocido]` fijan el comportamiento **actual** de algo que
 parece estar mal, con el porqué en un comentario. No son la conducta deseada: si
-arreglás uno, el test se cae y eso es la señal de actualizar los dos.
+arreglas uno, el test se cae y eso es la señal de actualizar los dos.
 
 ## Despliegue / Deploy
 
@@ -73,7 +97,7 @@ arreglás uno, el test se cae y eso es la señal de actualizar los dos.
   - **Las tres variantes de callable están cerradas**, y conviene no volver a intentarlas: *(a)* **v2** corre sobre Cloud Run y necesita un binding IAM `allUsers` que la org policy del proyecto prohíbe → **403 con cuerpo HTML** antes de llegar al código (verificado con `curl`); *(b)* **v1** no existe en `southamerica-west1` —Santiago no está entre sus 23 regiones, y encima no soporta App Engine, que gen1 necesita para el staging—, así que el deploy muere en un 403 sobre `locations/southamerica-west1` que hay que leer por su *"or it may not exist"*; *(c)* un **trigger de Firestore en v1** solo dispara sobre la base `(default)`, que en este proyecto no existe. Un trigger v2 lo invoca Eventarc con una service account, así que esquiva el invoker público — es el único camino que no pelea contra una restricción de plataforma.
   - **Región `us-central1`, y no es negociable**: `hpdatabase` está en **`nam5`** (multi-región de EE.UU.) y un trigger de Firestore tiene que vivir en la ubicación de la base. Ver la nota de `nam5` en Arquitectura.
   - **`database: "hpdatabase"` en el trigger.** La base no es `(default)`. Si no coincide, la función queda suscrita a una base inexistente y **nunca dispara, sin dar error** — el peor modo de falla del diseño.
-  - **La autorización se mudó a las reglas.** Antes el portero era `context.auth` adentro de la función; ahora es la regla de Firestore que decide quién crea un doc en `functionJobs`. Como no hay `firestore.rules` en el repo, ese permiso se carga a mano en la consola: el `create` exige `status == "pending"` y `requestedBy == request.auth.uid`, y `update`/`delete` van en `false` (la función escribe con el admin SDK, que no pasa por reglas). El texto completo está en `functions/README.md`.
+  - **La autorización se mudó a las reglas.** Antes el portero era `context.auth` adentro de la función; ahora es la regla de Firestore que decide quién crea un doc en `functionJobs`. La regla está en `firestore.rules` (ver Tests): el `create` exige que lo pida un admin, con `status == "pending"` y `requestedBy == request.auth.uid`, y nadie edita ni borra un job desde el cliente (la función escribe con el admin SDK, que no pasa por reglas).
   - **`npm run functions:verify` antes de cada deploy** — ver `functions/README.md`. Iterar deployando cuesta minutos de Cloud Build por vuelta; el emulador da lo mismo en segundos. **Pero no prueba el enrutamiento por base**: el emulador de Firestore todavía no soporta bases múltiples, así que sirve una sola y el nombre le da igual. Eso solo se verifica en producción, y es para lo que está el botón de ping.
 
 ## Stack
@@ -580,7 +604,7 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 - Pantalla: `src/screens/AdminConsole.jsx`. Ruta `/admin/console` (solo admin).
 - Secciones para inspección barata: conteos por colección, workdays por mes (12 reads para todo un año), workdays por rango, workdays por ciclo, más los backfills y el debug de rol admin.
 - **`MAIN_COLLECTIONS` lista las 29 colecciones de la app**, agrupadas por área. Es una lista a mano: al agregar una colección nueva hay que sumarla acá o queda invisible (ya pasó — estuvo en 12 y le faltaba `dteDocuments`, la segunda más grande). El botón **📋 Copiar** baja los conteos ya ejecutados separados por tab, listos para pegar en una planilla.
-- **🧪 Ping al backend**: encola un job en `functionJobs` y espera la respuesta. No llama ningún endpoint porque no hay ninguno invocable (ver Despliegue); ejercita exactamente el mismo camino que va a usar el backup. Distingue los tres modos de falla a propósito, porque cada uno se arregla en otro lado: `permission-denied` es la regla de Firestore que falta, el timeout de 45 s es la función sin desplegar o mirando otra base, y un job en `error` es la función corriendo y fallando adentro. Es además el **único** chequeo que prueba que el trigger esté suscrito a `hpdatabase` — el emulador no puede.
+- **🧪 Ping al backend**: encola un job en `functionJobs` y espera la respuesta. No llama ningún endpoint porque no hay ninguno invocable (ver Despliegue); ejercita exactamente el mismo camino que va a usar el backup. Distingue los tres modos de falla a propósito, porque cada uno se arregla en otro lado: `permission-denied` es que las reglas publicadas no dejan crear el job (o quien aprieta no es admin), el timeout de 45 s es la función sin desplegar o mirando otra base, y un job en `error` es la función corriendo y fallando adentro. Es además el **único** chequeo que prueba que el trigger esté suscrito a `hpdatabase` — el emulador no puede.
 - Usa `getCountFromServer` de Firestore — 1 read por cada 1000 docs vs N con `getDocs`. Permite estimar costos sin descargar la colección.
 - **Composición de logs** (`LogsBreakdownSection`): desglosa `logs` por entidad (~1 lectura por entidad) y mide cuántos documentos borraría un TTL de 6/12/24 meses (3 lecturas). Es lo que convierte la discusión de retención en números en vez de estimaciones. `LOG_ENTITIES` es una lista a mano: una entidad nueva que no se agregue queda invisible, y la fila "sin clasificar" del total es la que lo delata.
 

@@ -315,7 +315,7 @@ function PingSection() {
         ok: false,
         message:
           err?.code === "permission-denied"
-            ? "Las reglas de Firestore no dejan crear el job. Falta la regla de functionJobs en la consola (ver functions/README.md)."
+            ? "Las reglas de Firestore no dejan crear el job: solo un admin puede encolarlo. Si lo eres, revisa que firestore.rules esté publicado en la consola."
             : err?.message || String(err),
       });
       return;

@@ -1,9 +1,12 @@
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { carriersService } from "../services/carriersService";
+import { useAuth } from "./AuthContext";
 
 const CarriersContext = createContext(null);
 
 export function CarriersProvider({ children }) {
+  const { user } = useAuth();
+  const uid = user?.uid;
   const [carriers, setCarriers] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -20,8 +23,8 @@ export function CarriersProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    reload();
-  }, [reload]);
+    if (uid) reload();
+  }, [uid, reload]);
 
   const addCarrier = useCallback(async (data) => {
     const created = await carriersService.createCarrier(data);
