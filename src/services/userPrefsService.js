@@ -9,6 +9,13 @@ export const userPrefsService = {
     const snap = await getDoc(ref(uid));
     return snap.data()?.faenaLayout || null;
   },
+  // Correo de la cuenta y hora del ingreso, para la lista de Usuarios.
+  async recordVisit(uid, email) {
+    if (!uid) return;
+    const data = { lastSeenAt: serverTimestamp() };
+    if (email) data.email = email;
+    await setDoc(ref(uid), data, { merge: true });
+  },
   async saveAlias(uid, alias) {
     if (!uid) return;
     await setDoc(ref(uid), { alias: String(alias || "").trim() }, { merge: true });

@@ -5,8 +5,9 @@ en la colección `functionJobs` y un trigger de Firestore lo levanta, lo ejecuta
 escribe el resultado en el mismo documento. La UI mira ese documento con un
 listener.
 
-Hoy hay un solo tipo de job, `ping`, que verifica el plomo de punta a punta. El
-backup en JSON es el siguiente (ver el TODO al final de `index.js`).
+Hoy hay un solo tipo de job, `ping`, que verifica el plomo de punta a punta. Los
+siguientes son el backup en JSON y el alta de cuentas desde Usuarios (ver los
+TODO al final de `index.js`).
 
 ## Por qué un trigger y no un callable
 

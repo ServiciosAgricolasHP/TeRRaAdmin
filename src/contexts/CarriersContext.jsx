@@ -5,8 +5,8 @@ import { useAuth } from "./AuthContext";
 const CarriersContext = createContext(null);
 
 export function CarriersProvider({ children }) {
-  const { user } = useAuth();
-  const uid = user?.uid;
+  const { user, hasAccess } = useAuth();
+  const uid = hasAccess ? user.uid : null;
   const [carriers, setCarriers] = useState([]);
   const [loading, setLoading] = useState(true);
 

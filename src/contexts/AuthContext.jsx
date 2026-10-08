@@ -1,26 +1,24 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "firebase/auth";
+import { onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { userPrefsService } from "../services/userPrefsService";
+import { accessOf } from "../utils/userAccounts";
 
 const AuthContext = createContext(null);
 
 const ROLES = { ADMIN: "admin", SUPERVISOR: "supervisor" };
 
+// `access`: "ok", "none" (sin perfil) o "disabled" (suspendida). `role` va en
+// minúsculas.
 async function loadProfile(user) {
-  const ref = doc(db, "users", user.uid);
-  const snap = await getDoc(ref);
-  if (snap.exists()) {
-    const data = snap.data();
-    // Normalizamos `role` a minúsculas — históricamente algunos docs quedaron
-    // con "ADMIN"/"Admin" y la comparación contra ROLES.ADMIN ("admin") fallaba
-    // silenciosamente. `toLowerCase` acá lo resuelve para todos los usuarios
-    // sin tener que reescribir los docs.
-    const role = String(data.role || ROLES.SUPERVISOR).toLowerCase();
-    return { uid: user.uid, email: user.email, ...data, role };
+  const snap = await getDoc(doc(db, "users", user.uid));
+  if (!snap.exists()) {
+    return { uid: user.uid, email: user.email, role: null, access: accessOf(null) };
   }
-  return { uid: user.uid, email: user.email, role: ROLES.SUPERVISOR };
+  const data = snap.data();
+  const role = String(data.role || ROLES.SUPERVISOR).toLowerCase();
+  return { ...data, uid: user.uid, email: user.email, role, access: accessOf(data) };
 }
 
 export function AuthProvider({ children }) {
@@ -33,9 +31,14 @@ export function AuthProvider({ children }) {
         try {
           const profile = await loadProfile(fbUser);
           setUser(profile);
+          if (profile.access !== "none") {
+            userPrefsService
+              .recordVisit(fbUser.uid, fbUser.email)
+              .catch((err) => console.warn("[Auth] recordVisit failed:", err));
+          }
         } catch (e) {
           console.error("Failed to load profile", e);
-          setUser({ uid: fbUser.uid, email: fbUser.email, role: ROLES.SUPERVISOR });
+          setUser({ uid: fbUser.uid, email: fbUser.email, role: ROLES.SUPERVISOR, access: "ok" });
         }
       } else {
         setUser(null);
@@ -47,7 +50,14 @@ export function AuthProvider({ children }) {
   const login = (email, password) => signInWithEmailAndPassword(auth, email, password);
   const logout = () => signOut(auth);
 
-  const isAdmin = user?.role === ROLES.ADMIN;
+  // Correo de Firebase, en español, para elegir una contraseña nueva.
+  const sendPasswordReset = (email) => {
+    auth.languageCode = "es";
+    return sendPasswordResetEmail(auth, email);
+  };
+
+  const hasAccess = user?.access === "ok";
+  const isAdmin = hasAccess && user.role === ROLES.ADMIN;
 
   // Cómo se llama esta persona en los documentos que firma. El correo es el
   // único identificador garantizado, pero termina copiado en datos que
@@ -63,7 +73,9 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, isAdmin, displayName, updateAlias }}>
+    <AuthContext.Provider
+      value={{ user, loading, login, logout, hasAccess, isAdmin, displayName, updateAlias, sendPasswordReset }}
+    >
       {children}
     </AuthContext.Provider>
   );

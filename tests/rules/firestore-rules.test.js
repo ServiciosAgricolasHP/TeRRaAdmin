@@ -1,6 +1,6 @@
 // Tests de `firestore.rules` por tipo de cliente: cuenta con perfil, cuenta
-// sin perfil, sin sesión (escáner y apps de cosecha) y cola del backend. Las
-// escrituras replican las de cada app.
+// sin perfil o suspendida, sin sesión (escáner y apps de cosecha) y cola del
+// backend. Las escrituras replican las de cada app.
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 import {
@@ -32,7 +32,7 @@ const PROJECT_ID = "demo-terra-rules";
 let env;
 
 const anon = () => env.unauthenticatedContext().firestore();
-const as = (uid) => env.authenticatedContext(uid).firestore();
+const as = (uid, token) => env.authenticatedContext(uid, token).firestore();
 // Cuenta de Authentication sin perfil en `users`.
 const stranger = () => as("stranger");
 
@@ -72,6 +72,8 @@ beforeEach(async () => {
     await setDoc(doc(db, "users/admin1"), { role: "admin", email: "admin@terra.test" });
     await setDoc(doc(db, "users/upperAdmin"), { role: "ADMIN" });
     await setDoc(doc(db, "users/sup1"), { role: "user" });
+    await setDoc(doc(db, "users/offUser"), { role: "user", disabled: true });
+    await setDoc(doc(db, "users/offAdmin"), { role: "admin", disabled: true });
     await setDoc(doc(db, "worker/11111111-1"), {
       name: "Ana",
       rut: "11111111-1",
@@ -135,7 +137,28 @@ describe("sin perfil no se entra", () => {
   });
 });
 
+describe("cuentas suspendidas", () => {
+  it("no leen ni escriben la app, pero sí leen su perfil", async () => {
+    const db = as("offUser");
+    await assertFails(getDoc(doc(db, "payrolls/p1")));
+    await assertFails(setDoc(doc(db, "payrolls/p2"), { total: 1 }));
+    await assertFails(addDoc(collection(db, "logs"), { uid: "offUser", action: "update" }));
+    await assertSucceeds(getDoc(doc(db, "users/offUser")));
+  });
+
+  it("no se reactivan solas", async () => {
+    await assertFails(updateDoc(doc(as("offUser"), "users/offUser"), { disabled: false }));
+  });
+
+  it("un admin suspendido no es admin", async () => {
+    await assertFails(getDoc(doc(as("offAdmin"), "users/sup1")));
+    await assertFails(getDoc(doc(as("offAdmin"), "payrolls/p1")));
+  });
+});
+
 describe("perfiles (users)", () => {
+  const stamp = (uid) => ({ updatedAt: serverTimestamp(), updatedBy: uid });
+
   it("cada uno lee el suyo; el admin lee todos", async () => {
     await assertSucceeds(getDoc(doc(as("sup1"), "users/sup1")));
     await assertFails(getDoc(doc(as("sup1"), "users/admin1")));
@@ -143,26 +166,59 @@ describe("perfiles (users)", () => {
     await assertSucceeds(getDocs(collection(as("admin1"), "users")));
   });
 
-  it("cada uno guarda sus preferencias, nunca su rol", async () => {
-    const db = as("sup1");
+  it("cada uno guarda sus preferencias, su correo y su último ingreso", async () => {
+    const db = as("sup1", { email: "sup1@terra.test" });
     await assertSucceeds(setDoc(doc(db, "users/sup1"), { alias: "Sup" }, { merge: true }));
     await assertSucceeds(
       setDoc(doc(db, "users/sup1"), { faenaLayout: ["f1"], faenaLayoutUpdatedAt: serverTimestamp() }, { merge: true }),
     );
-    await assertFails(updateDoc(doc(db, "users/sup1"), { role: "admin" }));
+    await assertSucceeds(
+      setDoc(doc(db, "users/sup1"), { email: "sup1@terra.test", lastSeenAt: serverTimestamp() }, { merge: true }),
+    );
+    await assertFails(setDoc(doc(db, "users/sup1"), { email: "otro@terra.test" }, { merge: true }));
+    await assertFails(
+      setDoc(doc(db, "users/sup1"), { lastSeenAt: Timestamp.fromDate(new Date("2020-01-01")) }, { merge: true }),
+    );
   });
 
-  it("el admin carga saludos, pero no crea perfiles ni cambia roles", async () => {
+  it("nadie cambia su propio rol ni su suspensión", async () => {
+    await assertFails(updateDoc(doc(as("sup1"), "users/sup1"), { role: "admin" }));
+    await assertFails(updateDoc(doc(as("admin1"), "users/admin1"), { role: "user", ...stamp("admin1") }));
+    await assertFails(updateDoc(doc(as("admin1"), "users/admin1"), { disabled: true, ...stamp("admin1") }));
+  });
+
+  it("el admin carga saludos, pero no crea perfiles", async () => {
     const db = as("admin1");
     await assertSucceeds(
-      updateDoc(doc(db, "users/sup1"), {
-        greetings: { workerAlreadyInLabor: "hola" },
-        updatedAt: serverTimestamp(),
-        updatedBy: "admin1",
-      }),
+      updateDoc(doc(db, "users/sup1"), { greetings: { workerAlreadyInLabor: "hola" }, ...stamp("admin1") }),
     );
-    await assertFails(updateDoc(doc(db, "users/sup1"), { role: "admin" }));
     await assertFails(setDoc(doc(db, "users/newUser"), { role: "user" }));
+  });
+
+  it("el admin cambia el rol de otras cuentas, entre admin y user", async () => {
+    const db = as("admin1");
+    await assertSucceeds(updateDoc(doc(db, "users/sup1"), { role: "admin", ...stamp("admin1") }));
+    await assertSucceeds(updateDoc(doc(db, "users/upperAdmin"), { role: "user", ...stamp("admin1") }));
+    await assertFails(updateDoc(doc(db, "users/offUser"), { role: "root", ...stamp("admin1") }));
+  });
+
+  it("el admin suspende y reactiva otras cuentas, nunca a un admin", async () => {
+    const db = as("admin1");
+    await assertSucceeds(updateDoc(doc(db, "users/sup1"), { disabled: true, ...stamp("admin1") }));
+    await assertFails(updateDoc(doc(db, "users/sup1"), { role: "admin", ...stamp("admin1") }));
+    await assertSucceeds(updateDoc(doc(db, "users/offUser"), { disabled: false, ...stamp("admin1") }));
+    await assertFails(updateDoc(doc(db, "users/upperAdmin"), { disabled: true, ...stamp("admin1") }));
+    await assertFails(updateDoc(doc(db, "users/offUser"), { disabled: "yes", ...stamp("admin1") }));
+  });
+
+  it("el admin no toca las preferencias de otra cuenta", async () => {
+    await assertFails(updateDoc(doc(as("admin1"), "users/sup1"), { alias: "Otro", ...stamp("admin1") }));
+  });
+
+  it("un usuario no cambia roles ni suspende", async () => {
+    const db = as("sup1");
+    await assertFails(updateDoc(doc(db, "users/offUser"), { disabled: false, ...stamp("sup1") }));
+    await assertFails(updateDoc(doc(db, "users/admin1"), { role: "user", ...stamp("sup1") }));
   });
 
   it("'ADMIN' en mayúsculas también es admin", async () => {

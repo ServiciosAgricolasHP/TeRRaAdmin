@@ -176,3 +176,16 @@ export const runFunctionJob = onDocumentCreated(
 //     confirmación) — nunca "restaurar todo" de un clic.
 //
 // Antes de subirlo: sumarle sus chequeos a `functions/verify.mjs`.
+
+// TODO: alta de cuentas desde Usuarios (`src/screens/Users.jsx`) — handler
+// `createUser`.
+//
+//   - Crea la cuenta en Authentication (`getAuth().createUser`) sin contraseña,
+//     y su perfil `users/{uid}` con el mismo UID, `role` y `email`.
+//   - La persona elige su contraseña con el correo de restablecimiento, que la
+//     pantalla ya envía.
+//   - Confirma que `requestedBy` sea admin leyendo su perfil.
+//   - Con el mismo patrón: listar las cuentas de Authentication sin perfil, y
+//     desactivar o borrar una cuenta.
+//
+// Antes de subirlo: sumarle sus chequeos a `functions/verify.mjs`.

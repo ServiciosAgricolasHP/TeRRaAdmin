@@ -31,7 +31,7 @@ Tres capas, ninguna toca datos reales.
   el emulador se vacía antes de cada test.
 - **Reglas** (`vitest.config.rules.js` + `tests/rules/`): `firestore.rules` contra
   el emulador, desde el lado de cada cliente real: TeRRa con perfil, una cuenta
-  sin perfil, el escáner sin sesión y la cola del backend. Usa
+  sin perfil o suspendida, el escáner sin sesión y la cola del backend. Usa
   `@firebase/rules-unit-testing` y su propio project id (`demo-terra-rules`).
 
 **Cuatro barreras impiden que un test toque `arandanos-hp`**, y cualquiera alcanza:
@@ -56,7 +56,8 @@ sin sesión.
 - **Iniciar sesión no da acceso a nada.** La API key va en el JavaScript
   publicado, así que cualquiera puede crearse una cuenta en Authentication. Lo
   que da acceso es tener perfil en `users/{uid}` (el id del documento es el UID
-  de la cuenta), y los perfiles y roles se crean solo desde la consola de Firebase.
+  de la cuenta) sin `disabled: true`. Los perfiles se crean desde la consola de
+  Firebase; el rol y la suspensión se cambian desde Usuarios (ver esa sección).
 - Cualquier perfil lee y escribe lo de la app, igual que en las pantallas: lo que
   separa a un admin del resto son las rutas, no los datos. `users`, `logs` y
   `functionJobs` tienen reglas propias.
@@ -67,8 +68,8 @@ sin sesión.
   campo **tiene que entrar también en `firestore.rules`**. Si no, el servidor
   rechaza los pesajes nuevos.
 - Lo que se carga al abrir la app y vive fuera de las rutas protegidas
-  (`CatalogsProvider`, `CarriersProvider`) espera a que haya sesión: sin ella
-  las reglas rechazan la lectura.
+  (`CatalogsProvider`, `CarriersProvider`) espera a que la cuenta tenga acceso
+  (`hasAccess`): sin eso las reglas rechazan la lectura.
 
 El mismo enganche sirve para usar la app entera contra datos descartables:
 `VITE_FIRESTORE_EMULATOR=127.0.0.1:8080 VITE_FIREBASE_PROJECT_ID=demo-terra-test npm run dev`.
@@ -120,7 +121,8 @@ src/
   Components/           ← UI compartida (Layout, Modal, ProtectedRoute, TransportsModal, WorkerEditModal, WorkerSummaryModal, CycleSummaryModal, etc.)
   screens/              ← componentes de ruta / page-level route components
                         (Dashboard, Faenas, CycleDetail, Workers, Transports, Payroll, Advances,
-                         InterestLinks, Calendar, AdminConsole, MigrateWorkers, CleanupPaidWorkdays)
+                         InterestLinks, Calendar, AdminConsole, Users, NoAccess, MigrateWorkers,
+                         CleanupPaidWorkdays)
   contexts/             ← AuthContext, ThemeContext, CatalogsContext, CarriersContext
   services/             ← capa de datos (Firestore CRUD + caché + auditoría)
                         firestoreBase, transportsService, carriersService,
@@ -151,17 +153,19 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 
 - Firebase Email/Password.
 - Perfiles en colección `users` de Firestore (doc id = Firebase uid).
-- Roles: `admin`, `supervisor` (por defecto si no hay perfil).
+- Roles: `admin` y `user`; cualquier otro valor cuenta como usuario (`roleLabel` en `utils/userAccounts.js`).
 - `ProtectedRoute` envuelve rutas autenticadas; prop `adminOnly` restringe a admins.
+- **Sin perfil, o con `disabled: true`, la cuenta no entra.** `user.access` vale `"none"` o `"disabled"` y `ProtectedRoute` muestra `NoAccess`, que a una cuenta sin perfil le muestra su UID para pasárselo a un admin. Si leer el perfil falla, la app entra igual como usuario y las reglas deciden qué datos ve.
+- Al abrir la app, `AuthContext` guarda en el perfil el `email` de la cuenta y `lastSeenAt` (`userPrefsService.recordVisit`). Es lo que muestra Usuarios: el navegador no puede listar las cuentas de Authentication.
 - **`AuthContext` vuelca el doc `users/{uid}` entero en `user`**, así que cualquier campo que se le agregue queda disponible en toda la app sin pagar una lectura extra.
 
 ### Saludos personalizados / easter eggs
 
 - `utils/greetings.js` — `GREETING_SLOTS` (los nombres de las ranuras) y `greeting(user, slot, fallback)`.
-- **El texto nunca va en el código.** Vive en `users/{uid}.greetings[slot]`, se carga a mano en la consola de Firebase, y cada usuario solo lee el suyo. Hardcodearlo deja el mail de una persona real en el repo, y fuera de contexto un chiste interno puede leerse como cualquier otra cosa.
+- **El texto nunca va en el código.** Vive en `users/{uid}.greetings[slot]`, se carga desde Usuarios → Saludos, y cada usuario solo lee el suyo. Hardcodearlo deja el mail de una persona real en el repo, y fuera de contexto un chiste interno puede leerse como cualquier otra cosa.
 - Cuesta **0 lecturas**: el doc ya viene con el perfil. No hay colección aparte ni consulta al abrir el modal.
 - Un texto vacío o en blanco cuenta como "sin saludo" — borrar el easter egg es vaciar el campo, no eliminarlo del documento.
-- Ranura en uso: `workerAlreadyInLabor` (tag del trabajador ya agregado, en `WorkerPickerModal`). Para sumar otra: declararla en `GREETING_SLOTS`, leerla con `greeting()` donde toque, y cargar el texto en el doc del usuario.
+- Ranuras en uso: `workerAlreadyInLabor` (tag del trabajador ya agregado, en `WorkerPickerModal`), `profileHover` (tooltip del nombre en el header) y `notFound` (la 404). Para sumar otra: declararla en `GREETING_SLOTS` y describirla en `GREETING_FIELDS` (el editor de Usuarios), leerla con `greeting()` donde toque, y cargar el texto desde Usuarios.
 
 ### Servicios / Services
 
@@ -608,6 +612,18 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 - Usa `getCountFromServer` de Firestore — 1 read por cada 1000 docs vs N con `getDocs`. Permite estimar costos sin descargar la colección.
 - **Composición de logs** (`LogsBreakdownSection`): desglosa `logs` por entidad (~1 lectura por entidad) y mide cuántos documentos borraría un TTL de 6/12/24 meses (3 lecturas). Es lo que convierte la discusión de retención en números en vez de estimaciones. `LOG_ENTITIES` es una lista a mano: una entidad nueva que no se agregue queda invisible, y la fila "sin clasificar" del total es la que lo delata.
 
+## Usuarios / Users
+
+- Pantalla: `src/screens/Users.jsx`. Ruta `/admin/users` (solo admin). Colección `users`.
+- Lista los perfiles (1 lectura por perfil) con correo, alias, rol, estado y último ingreso. El correo y el último ingreso los escribe cada cuenta al abrir la app (ver Auth): un perfil de alguien que todavía no entra sale "Sin correo todavía".
+- Acciones por cuenta: **Hacer admin / Quitar admin**, **Suspender / Reactivar** (`disabled`), **Contraseña** (el correo de Firebase para elegir una nueva, en español) y **Saludos** (ver Saludos personalizados).
+- **Límites**, los mismos en `firestore.rules` y en `utils/userAccounts.js`, con tests en los dos lados:
+  - Nadie cambia su propio rol ni suspende su propia cuenta. Por eso siempre queda al menos un admin: el que actúa no puede quitarse el rol.
+  - Un admin no se suspende: primero se le quita el rol.
+  - Una cuenta suspendida no pasa a admin: primero se reactiva.
+- El rol y la suspensión pasan por `usersService.update`, así que quedan en la auditoría.
+- **Pendiente: crear cuentas desde acá.** El navegador no puede crear cuentas de Authentication para otra persona ni listarlas; eso va por Functions (job `createUser`, ver el TODO en `functions/index.js`). Mientras tanto se crean en la consola de Firebase: la cuenta en Authentication y el perfil en `users` con el UID como id, `role` y `email`. La pantalla lo explica en "¿Cómo dar acceso a alguien nuevo?".
+
 ## Auditoría / `logs`
 
 `logs` es la colección más grande del sistema (49.132 docs en septiembre 2026, el 72% de la base) y conviene entender por qué antes de tocarla.
@@ -846,7 +862,7 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 ## Layout
 
 - **Sidebar colapsable** (`layout.sidebarOpen` en `localStorage`): un solo botón ☰ funciona como toggle en desktop y abre drawer en mobile (decidido por `matchMedia("(min-width: 768px)")`).
-- Nav incluye: Dashboard, Faenas, Calendario, Trabajadores, Transportes, Anticipos / Bonos, Nómina, Facturación, Links útiles. Items admin (Auditoría, Migrar CSV, Limpiar pagados, Consola) se ven solo con `isAdmin`.
+- Nav incluye: Dashboard, Faenas, Calendario, Trabajadores, Transportes, Anticipos / Bonos, Nómina, Facturación, Links útiles. Items admin (Usuarios, Auditoría, Migrar CSV, Limpiar pagados, Consola) se ven solo con `isAdmin`.
 - **Versión en el header** — `TeRRA v1.1.{commitCount}` autogenerado en build-time por `vite.config.js` (via `git rev-list --count ${VERSION_RESET_COMMIT}..HEAD`, inyectado como `__APP_VERSION__`). El conteo arranca desde un commit de reset, no desde el inicio del repo. Sirve para diagnosticar caché PWA viejo de un vistazo: si el header sigue mostrando una versión anterior tras un deploy, el SW tiene un bundle stale. Ojo en CI: sin `fetch-depth: 0` el conteo da 0.
 
 ## Env
@@ -874,6 +890,7 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 /admin/migrate-workers         Importar trabajadores desde CSV (admin)
 /admin/cleanup-paid-workdays   Limpieza de workdays ya pagados (admin)
 /admin/console                 Consola admin: Firestore counts (admin only)
+/admin/users                   Usuarios: rol, suspensión, contraseña y saludos (admin)
 /admin/harvest-qr              Sincronizar pesajes QR → workdays (admin)
 *                              NotFound (catch-all dentro y fuera del Layout)
 ```

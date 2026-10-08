@@ -5,8 +5,8 @@ import { useAuth } from "./AuthContext";
 const CatalogsContext = createContext(null);
 
 export function CatalogsProvider({ children }) {
-  const { user } = useAuth();
-  const uid = user?.uid;
+  const { user, hasAccess } = useAuth();
+  const uid = hasAccess ? user.uid : null;
   const [catalogs, setCatalogs] = useState(CATALOG_DEFAULTS);
   const [loading, setLoading] = useState(true);
 

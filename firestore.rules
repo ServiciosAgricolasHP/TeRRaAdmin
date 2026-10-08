@@ -9,16 +9,25 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // La cuenta tiene perfil en `users`.
-    function hasProfile() {
-      return signedIn()
-        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    // Perfil de la cuenta con la sesión.
+    function myProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    // El perfil tiene rol admin, sin distinguir mayúsculas.
+    // La cuenta tiene perfil en `users` y no está suspendida.
+    function hasProfile() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && myProfile().get('disabled', false) != true;
+    }
+
+    // Rol admin, sin distinguir mayúsculas.
+    function isAdminData(data) {
+      return string(data.get('role', '')).lower() == 'admin';
+    }
+
     function isAdmin() {
-      return hasProfile()
-        && string(get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '')).lower() == 'admin';
+      return hasProfile() && isAdminData(myProfile());
     }
 
     // Campos que modifica una escritura sobre un documento existente.
@@ -35,17 +44,27 @@ service cloud.firestore {
     }
 
     // ── Perfiles ───────────────────────────────────────────────────────────
-    // Altas y roles se manejan desde la consola de Firebase.
+    // Se crean desde la consola de Firebase.
     match /users/{uid} {
       allow read: if (signedIn() && request.auth.uid == uid) || isAdmin();
 
-      // Preferencias de la propia cuenta.
+      // Preferencias de la propia cuenta, y el correo y la hora de ingreso que
+      // registra la app.
       allow update: if signedIn() && request.auth.uid == uid
-        && changed().hasOnly(['alias', 'faenaLayout', 'faenaLayoutUpdatedAt']);
+        && changed().hasOnly(['alias', 'faenaLayout', 'faenaLayoutUpdatedAt', 'email', 'lastSeenAt'])
+        && (!changed().hasAny(['email']) || request.resource.data.email == request.auth.token.email)
+        && (!changed().hasAny(['lastSeenAt']) || request.resource.data.lastSeenAt == request.time);
 
-      // Saludos, a cargo de un admin.
+      // Saludos de cualquier perfil, a cargo de un admin.
       allow update: if isAdmin()
         && changed().hasOnly(['greetings', 'updatedAt', 'updatedBy']);
+
+      // Rol y suspensión de las otras cuentas. Un admin nunca queda suspendido.
+      allow update: if isAdmin() && request.auth.uid != uid
+        && changed().hasOnly(['role', 'disabled', 'updatedAt', 'updatedBy'])
+        && (!changed().hasAny(['role']) || request.resource.data.role in ['admin', 'user'])
+        && request.resource.data.get('disabled', false) is bool
+        && !(isAdminData(request.resource.data) && request.resource.data.get('disabled', false));
     }
 
     // ── Auditoría ──────────────────────────────────────────────────────────
