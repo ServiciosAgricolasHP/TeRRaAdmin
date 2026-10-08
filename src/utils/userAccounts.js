@@ -2,9 +2,21 @@
 // Los permisos de este archivo son los mismos que aplica `firestore.rules`.
 
 export const ROLE_OPTIONS = [
-  { value: "admin", label: "Admin" },
   { value: "user", label: "Usuario" },
+  { value: "admin", label: "Admin" },
 ];
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Formulario de cuenta nueva, con las mismas reglas que `createUser` en
+// functions/index.js. Devuelve `{ value }` o `{ error }`.
+export function parseNewAccount({ email, role, alias }) {
+  const cleanEmail = String(email || "").trim().toLowerCase();
+  if (!EMAIL_RE.test(cleanEmail)) return { error: "El correo no es válido." };
+  if (!ROLE_OPTIONS.some((r) => r.value === role)) return { error: "Elige un rol." };
+  const cleanAlias = String(alias || "").trim().slice(0, 40);
+  return { value: { email: cleanEmail, role, ...(cleanAlias ? { alias: cleanAlias } : {}) } };
+}
 
 export function isAdminRole(role) {
   return String(role || "").toLowerCase() === "admin";

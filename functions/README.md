@@ -5,9 +5,14 @@ en la colección `functionJobs` y un trigger de Firestore lo levanta, lo ejecuta
 escribe el resultado en el mismo documento. La UI mira ese documento con un
 listener.
 
-Hoy hay un solo tipo de job, `ping`, que verifica el plomo de punta a punta. Los
-siguientes son el backup en JSON y el alta de cuentas desde Usuarios (ver los
-TODO al final de `index.js`).
+Hay dos tipos de job:
+
+- `ping` verifica el plomo de punta a punta (Consola admin → Ping al backend).
+- `createUser` crea una cuenta en Authentication y su perfil en `users/{uid}`
+  (Usuarios → + Nueva cuenta).
+
+Los siguientes están como TODO al final de `index.js`: el backup en JSON y más
+jobs para Usuarios.
 
 ## Por qué un trigger y no un callable
 
@@ -78,8 +83,10 @@ delicado (un respaldo, por ejemplo) solo se suma si esa regla está publicada**.
   calendario en https://cloud.google.com/run/docs/runtime-support.
 - **Versión de Functions**: **v2** (`firebase-functions/v2`).
 - **Un job nuevo** es una entrada más en el objeto `handlers` de `index.js`: una
-  función `async` que recibe el job y devuelve lo que va al campo `result`. Si
-  lanza, el job queda en `error` con el mensaje. No hay que tocar el trigger.
+  función `async` que recibe el job y `{ jobId }`, y devuelve lo que va al campo
+  `result`. Si lanza, el job queda en `error` con el mensaje; si el error viene
+  de `jobError(code, message)`, queda además `errorCode`, que la app puede
+  reconocer. No hay que tocar el trigger.
 - **Entrega al menos una vez**: Eventarc puede entregar el mismo evento dos
   veces. El job se reclama con una transacción antes de ejecutarse — eso es lo
   que separa "un backup" de "dos backups". No sacar ese bloque.
@@ -97,6 +104,12 @@ delicado (un respaldo, por ejemplo) solo se suma si esa regla está publicada**.
 3. **APIs habilitadas** en GCP (las activa el primer deploy): Cloud Functions,
    Cloud Build, Artifact Registry, Cloud Run, **Eventarc** y **Pub/Sub** — las dos
    últimas son nuevas respecto de v1 y son las que hacen andar el trigger.
+4. **Una cuenta dueña del proyecto** para el primer deploy de un trigger v2 (y
+   para el de una región nueva). Ese deploy les da roles a cuentas de servicio
+   del proyecto: `iam.serviceAccountTokenCreator` a la de Pub/Sub, y `run.invoker`
+   y `eventarc.eventReceiver` a la de Compute. Sin permiso para tocar IAM se
+   corta con *"We failed to modify the IAM policy for the project"*. La cuenta se
+   elige con `--account` (`firebase login:list` muestra las disponibles).
 
 ## Setup local
 
@@ -111,7 +124,7 @@ npm install
 npm run functions:verify     # desde la raíz del repo
 ```
 
-Levanta los emuladores de **functions + firestore** con el project id
+Levanta los emuladores de **functions, firestore y auth** con el project id
 `demo-terra-test` y corre `functions/verify.mjs`, que encola jobs y espera el
 resultado igual que lo hace la Consola. Sale con código ≠ 0 si algo falla.
 
@@ -165,6 +178,14 @@ Eventarc y Pub/Sub y crea el trigger.
 
 ### Problemas conocidos
 
+**"Permission denied while using the Eventarc Service Agent" en el primer
+deploy.** Los permisos del agente de Eventarc tardan unos minutos en propagarse.
+Se reintenta el mismo deploy a los ~5 minutos.
+
+**`functions:verify` falla en la primera corrida del día con los jobs en
+`pending`.** El emulador a veces no alcanza a registrar el trigger antes de que
+arranque el script. Se vuelve a correr.
+
 **"Failed to parse build specification" / timeout en el análisis.** La CLI le da
 10 s al paso de discovery y en esta máquina no alcanza. Ver el
 `FUNCTIONS_DISCOVERY_TIMEOUT` de arriba.
@@ -214,7 +235,8 @@ const handlers = {
 };
 ```
 
-Del lado del cliente, encolarlo es un `addDoc` a `functionJobs` con
-`{ type: "miJob", status: "pending", requestedBy, params }` y un `onSnapshot`
-sobre el documento que devuelve. `PingSection` en `src/screens/AdminConsole.jsx`
-es el ejemplo completo, con los tres modos de falla separados.
+Del lado del cliente, `src/services/functionJobsService.js` crea el job
+(`enqueueJob(type, params, user)`) y espera el resultado (`waitForJob(ref)`, que
+resuelve con `done`, `error` o `timeout`). `NewAccountModal` en
+`src/screens/Users.jsx` es el ejemplo completo, incluido un `errorCode` que pide
+confirmación antes de reintentar.

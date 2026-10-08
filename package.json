@@ -17,7 +17,7 @@
     "prepare": "git config core.hooksPath .githooks",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist -t",
-    "functions:verify": "firebase emulators:exec --only functions,firestore --project demo-terra-test \"node functions/verify.mjs\""
+    "functions:verify": "firebase emulators:exec --only functions,firestore,auth --project demo-terra-test \"node functions/verify.mjs\""
   },
   "dependencies": {
     "ag-grid-community": "^35.2.1",

@@ -444,13 +444,15 @@ Perfil de cada cuenta: acceso, rol y preferencias. **DocId = uid de Auth.** Se c
 | `greetings` | `{ [slot]: string }`? | saludos personalizados por ranura (`GREETING_SLOTS` en `utils/greetings.js`); los edita un admin desde Usuarios. Texto vacío = sin saludo |
 | `faenaLayout` | `{ groups, faenaGroup, faenaColor }` | layout de la pantalla Faenas |
 | `faenaLayoutUpdatedAt` | ts | |
+| `createdAt`, `createdBy` | ts?, string? | los escribe el job `createUser` al crear el perfil desde Usuarios; un perfil creado en la consola no los tiene |
 
 ### `functionJobs`
 Cola de trabajos del backend. La app crea el job y el trigger `runFunctionJob` (`functions/index.js`) lo ejecuta y escribe el resultado en el mismo doc. Solo un admin crea jobs, y nadie los edita ni los borra desde el cliente.
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | string | autoId |
-| `type` | string | handler que se ejecuta (`ping`) |
+| `type` | string | handler que se ejecuta (`ping`, `createUser`) |
+| `params` | object? | datos del job. `createUser`: `{ email, role, alias?, useExisting? }` |
 | `status` | `"pending"` \| `"running"` \| `"done"` \| `"error"` | nace `pending`; la función lo pasa a `running` en una transacción antes de ejecutarlo |
 | `requestedBy` | string | uid de quien lo pidió; las reglas exigen que sea el de la sesión |
 | `requestedByEmail` | string? | |
@@ -458,6 +460,7 @@ Cola de trabajos del backend. La app crea el job y el trigger `runFunctionJob` (
 | `startedAt`, `finishedAt` | ts? | los escribe la función |
 | `result` | any? | lo que devuelve el handler, si terminó bien |
 | `error` | string? | mensaje, si falló |
+| `errorCode` | string? | código que la app reconoce. `createUser`: `account-exists`, `profile-exists`, `not-admin`, `invalid-email`, `invalid-role` |
 
 ### `logs`
 Auditoría — una fila por mutación.
@@ -483,6 +486,7 @@ Auditoría — una fila por mutación.
 | `op: "applyAdvances"`, `count`, `total`, `advanceIds`, `sobrantes?` | `applyAdvancesToPayroll` | un log por nómina (`entity: "payroll"`) con los anticipos que descontó. `sobrantes: [{ advanceId, pedido, aplicado }]` son las aplicaciones recortadas |
 | `op: "restoreAdvances"`, `count`, `advanceIds` | `restoreAdvancesFromPayroll` | los anticipos que soltó la nómina |
 | `op: "setPayrollAdvances"`, `cambios` | `setPayrollAdvanceAmounts` | `cambios: [{ advanceId, antes, despues }]`: cuánto descontaba y cuánto descuenta la nómina de cada anticipo |
+| `jobId`, `existingAccount?` | job `createUser` (`functions/index.js`) | el job que creó la cuenta (`entity: "user"`); `existingAccount` cuando se le dio acceso a una cuenta que ya existía |
 
 > Consumidor: `Audit.jsx` → `fetchSatelliteLogs`. Al elegir un registro en "Buscar por registro" suma los logs satélite (trabajador → sus jornadas; transportista → sus vueltas y resúmenes). Un log de transporte sin `meta.carrierId` no aparece ahí.
 
@@ -666,6 +670,7 @@ erDiagram
     FUNCTION_JOBS {
         string id PK
         string type
+        map    params
         string status "pending|running|done|error"
         string requestedBy FK
     }

@@ -35,9 +35,11 @@
 // de la app. La función confía en que si el doc existe, alguien con permiso lo
 // creó. La regla está en `firestore.rules`, en la raíz del repo, con sus tests.
 
+import { randomBytes } from "node:crypto";
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import { logger } from "firebase-functions/v2";
 import { initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 // La base NO se llama `(default)`: es `hpdatabase`. Sin esto el trigger se
@@ -58,10 +60,42 @@ initializeApp();
 const db = getFirestore(DATABASE);
 
 const JOBS = "functionJobs";
+const USERS = "users";
+const LOGS = "logs";
+
+const ROLES = ["admin", "user"];
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Error con un código que la app reconoce: va al campo `errorCode` del job.
+function jobError(code, message) {
+  const err = new Error(message);
+  err.jobCode = code;
+  return err;
+}
+
+// Lanza si `uid` no es un admin con acceso.
+async function assertAdmin(uid) {
+  const snap = uid ? await db.collection(USERS).doc(uid).get() : null;
+  const profile = snap?.exists ? snap.data() : null;
+  const isAdmin =
+    profile && profile.disabled !== true && String(profile.role || "").toLowerCase() === "admin";
+  if (!isAdmin) throw jobError("not-admin", "Solo un admin puede crear cuentas.");
+}
+
+// Correo en minúsculas, rol de `ROLES` y alias de hasta 40 caracteres.
+function parseNewAccount(params) {
+  const email = String(params?.email || "").trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) throw jobError("invalid-email", "El correo no es válido.");
+  const role = String(params?.role || "user");
+  if (!ROLES.includes(role)) throw jobError("invalid-role", "Rol desconocido: " + role);
+  const alias = String(params?.alias || "").trim().slice(0, 40);
+  return { email, role, alias };
+}
 
 // ── Handlers ────────────────────────────────────────────────────────────────
-// Cada uno recibe el job y devuelve lo que va al campo `result`. Si lanza, el
-// job queda en `error` con el mensaje.
+// Cada uno recibe el job y `{ jobId }`, y devuelve lo que va al campo `result`.
+// Si lanza, el job queda en `error` con el mensaje, y con `errorCode` si el
+// error viene de `jobError`.
 
 const handlers = {
   // Verifica el plomo: que la función exista, que haya disparado, que esté en
@@ -81,6 +115,55 @@ const handlers = {
       requestedBy: job.requestedBy || null,
       serverTime: new Date().toISOString(),
     };
+  },
+
+  // Crea la cuenta en Authentication y su perfil en `users/{uid}` con el mismo
+  // UID, y lo registra en `logs`. La contraseña es aleatoria y no se guarda: la
+  // persona elige la suya con el correo de restablecimiento que envía la app.
+  // Un correo que ya tiene cuenta recibe acceso solo con `params.useExisting`.
+  async createUser(job, { jobId }) {
+    await assertAdmin(job.requestedBy);
+    const { email, role, alias } = parseNewAccount(job.params);
+    const auth = getAuth();
+
+    const existing = await auth.getUserByEmail(email).catch((err) => {
+      if (err?.code === "auth/user-not-found") return null;
+      throw err;
+    });
+    if (existing && job.params?.useExisting !== true) {
+      throw jobError("account-exists", "Ya existe una cuenta con ese correo.");
+    }
+    const account =
+      existing || (await auth.createUser({ email, password: randomBytes(24).toString("base64url") }));
+
+    const profile = { role, email, ...(alias ? { alias } : {}) };
+    try {
+      await db.collection(USERS).doc(account.uid).create({
+        ...profile,
+        createdAt: FieldValue.serverTimestamp(),
+        createdBy: job.requestedBy,
+      });
+    } catch (err) {
+      if (!existing) await auth.deleteUser(account.uid).catch(() => {});
+      // 6 = ALREADY_EXISTS
+      if (err?.code === 6) throw jobError("profile-exists", "Esa cuenta ya tiene acceso a TeRRa.");
+      throw err;
+    }
+
+    await db.collection(LOGS).add({
+      uid: job.requestedBy,
+      email: job.requestedByEmail || null,
+      action: "create",
+      entity: "user",
+      entityId: account.uid,
+      changes: null,
+      before: null,
+      after: profile,
+      meta: { jobId, ...(existing ? { existingAccount: true } : {}) },
+      timestamp: FieldValue.serverTimestamp(),
+    });
+
+    return { uid: account.uid, email, role, existingAccount: !!existing };
   },
 };
 
@@ -130,7 +213,7 @@ export const runFunctionJob = onDocumentCreated(
     }
 
     try {
-      const result = await handler(job);
+      const result = await handler(job, { jobId });
       // Esto es un `update`, y el trigger es `onDocumentCreated`: no se
       // redispara. Si algún día se pasa a `onDocumentWritten` hay que agregar
       // un corte explícito o el job entra en bucle.
@@ -140,10 +223,12 @@ export const runFunctionJob = onDocumentCreated(
         finishedAt: FieldValue.serverTimestamp(),
       });
     } catch (err) {
-      logger.error("job " + jobId + " (" + job.type + ") falló", err);
+      if (err?.jobCode) logger.warn("job " + jobId + " (" + job.type + "): " + err.message);
+      else logger.error("job " + jobId + " (" + job.type + ") falló", err);
       await ref.update({
         status: "error",
         error: (err && err.message) || String(err),
+        ...(err?.jobCode ? { errorCode: err.jobCode } : {}),
         finishedAt: FieldValue.serverTimestamp(),
       });
     }
@@ -177,15 +262,6 @@ export const runFunctionJob = onDocumentCreated(
 //
 // Antes de subirlo: sumarle sus chequeos a `functions/verify.mjs`.
 
-// TODO: alta de cuentas desde Usuarios (`src/screens/Users.jsx`) — handler
-// `createUser`.
-//
-//   - Crea la cuenta en Authentication (`getAuth().createUser`) sin contraseña,
-//     y su perfil `users/{uid}` con el mismo UID, `role` y `email`.
-//   - La persona elige su contraseña con el correo de restablecimiento, que la
-//     pantalla ya envía.
-//   - Confirma que `requestedBy` sea admin leyendo su perfil.
-//   - Con el mismo patrón: listar las cuentas de Authentication sin perfil, y
-//     desactivar o borrar una cuenta.
-//
-// Antes de subirlo: sumarle sus chequeos a `functions/verify.mjs`.
+// TODO: más jobs para Usuarios (`src/screens/Users.jsx`), con el patrón de
+// `createUser`: listar las cuentas de Authentication sin perfil, y desactivar o
+// borrar una cuenta. Cada uno con sus chequeos en `functions/verify.mjs`.

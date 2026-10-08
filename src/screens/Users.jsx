@@ -2,12 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import Modal from "../components/Modal";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { usersService } from "../services";
+import { enqueueJob, waitForJob } from "../services/functionJobsService";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import { GREETING_FIELDS } from "../utils/greetings";
 import {
+  ROLE_OPTIONS,
   isAdminRole,
   lastSeenLabel,
+  parseNewAccount,
   passwordResetBlock,
   roleChangeBlock,
   roleLabel,
@@ -75,6 +78,7 @@ export default function Users() {
   const [action, setAction] = useState(null);
   const [busy, setBusy] = useState(false);
   const [greetingsOf, setGreetingsOf] = useState(null);
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,17 +148,24 @@ export default function Users() {
             Cuentas con acceso a TeRRa: rol, suspensión, contraseña y saludos.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={reload}
-          disabled={loading}
-          className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
-        >
-          {loading ? "Cargando…" : "↻ Recargar"}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={reload}
+            disabled={loading}
+            className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+          >
+            {loading ? "Cargando…" : "↻ Recargar"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setCreating(true)}
+            className="min-h-[32px] rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]"
+          >
+            + Nueva cuenta
+          </button>
+        </div>
       </div>
-
-      <NewAccountHelp />
 
       {error ? (
         <p className="rounded-md bg-[var(--color-danger-soft)] px-3 py-2 text-sm text-[var(--color-danger)]">{error}</p>
@@ -205,31 +216,193 @@ export default function Users() {
           }}
         />
       )}
+
+      {creating && (
+        <NewAccountModal
+          onClose={() => setCreating(false)}
+          onCreated={(created) => {
+            setProfiles((list) => [...list.filter((p) => p.id !== created.id), created]);
+            setCreating(false);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function NewAccountHelp() {
+// Crea la cuenta con el job `createUser` y, si se pidió, envía el correo para
+// elegir contraseña. Un correo que ya tiene cuenta pasa por una confirmación.
+function NewAccountModal({ onClose, onCreated }) {
+  const { user, sendPasswordReset } = useAuth();
+  const toast = useToast();
+  const [form, setForm] = useState({ email: "", alias: "", role: "user", sendReset: true });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [existingEmail, setExistingEmail] = useState(null);
+
+  const edit = (field, value) => {
+    setForm((f) => ({ ...f, [field]: value }));
+    setError("");
+    setExistingEmail(null);
+  };
+
+  const submit = async (useExisting = false) => {
+    const parsed = parseNewAccount(form);
+    if (parsed.error) {
+      setError(parsed.error);
+      return;
+    }
+    const { email } = parsed.value;
+    setBusy(true);
+    setError("");
+    try {
+      const ref = await enqueueJob("createUser", { ...parsed.value, ...(useExisting ? { useExisting: true } : {}) }, user);
+      const outcome = await waitForJob(ref);
+
+      if (outcome.status === "done") {
+        let resetSent = false;
+        if (form.sendReset) {
+          try {
+            await sendPasswordReset(email);
+            resetSent = true;
+          } catch {
+            toast.warning(`No se pudo enviar el correo a ${email}. Puedes enviarlo con "Contraseña".`);
+          }
+        }
+        const what = outcome.result?.existingAccount ? `${email} ya tiene acceso a TeRRa` : `Cuenta creada para ${email}`;
+        toast.success(resetSent ? `${what}. Le llegó un correo para elegir su contraseña.` : `${what}.`);
+        onCreated({ id: outcome.result?.uid, ...parsed.value });
+        return;
+      }
+      if (outcome.errorCode === "account-exists") {
+        setExistingEmail(email);
+        return;
+      }
+      setError(
+        outcome.status === "timeout"
+          ? "El backend no respondió a los 45 s. Revisa que las Functions estén desplegadas."
+          : outcome.error || "No se pudo crear la cuenta.",
+      );
+    } catch (err) {
+      setError(
+        err?.code === "permission-denied"
+          ? "Las reglas de Firestore no dejan crear el job: solo un admin puede crear cuentas."
+          : err?.message || String(err),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmButton = existingEmail ? (
+    <button
+      type="button"
+      onClick={() => submit(true)}
+      disabled={busy}
+      className="rounded-md bg-[var(--color-danger)] px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-60"
+    >
+      {busy ? "Dando acceso…" : "Darle acceso"}
+    </button>
+  ) : (
+    <button
+      type="button"
+      onClick={() => submit(false)}
+      disabled={busy}
+      className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
+    >
+      {busy ? "Creando…" : "Crear cuenta"}
+    </button>
+  );
+
   return (
-    <details className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm">
-      <summary className="min-h-[32px] cursor-pointer select-none py-1 font-medium">
-        ¿Cómo dar acceso a alguien nuevo?
-      </summary>
-      <ol className="mt-2 list-decimal space-y-1.5 pb-1 pl-5 text-xs text-[var(--color-muted)]">
-        <li>
-          En la consola de Firebase, <strong>Authentication → Agregar usuario</strong>, con su correo y una
-          contraseña temporal.
-        </li>
-        <li>
-          En <strong>Firestore</strong>, base <code>hpdatabase</code>, colección <code>users</code>: agrega un
-          documento cuyo ID sea el <strong>UID</strong> de la cuenta, con los campos <code>role</code> ={" "}
-          <code>user</code> y <code>email</code> = su correo.
-        </li>
-        <li>
-          Acá, con <strong>Contraseña</strong>, le llega un correo para elegir la suya.
-        </li>
-      </ol>
-    </details>
+    <Modal
+      open
+      onClose={busy ? undefined : onClose}
+      title="Nueva cuenta"
+      footer={
+        <>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-60"
+          >
+            Cancelar
+          </button>
+          {confirmButton}
+        </>
+      }
+    >
+      <div className="space-y-3 text-sm">
+        <label className="block">
+          <span className="mb-1 block text-xs text-[var(--color-muted)]">Correo</span>
+          <input
+            type="email"
+            value={form.email}
+            onChange={(e) => edit("email", e.target.value)}
+            disabled={busy}
+            autoFocus
+            className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-[var(--color-muted)]">Alias (opcional)</span>
+          <input
+            type="text"
+            value={form.alias}
+            onChange={(e) => edit("alias", e.target.value)}
+            disabled={busy}
+            maxLength={40}
+            className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
+          />
+          <span className="mt-1 block text-[11px] text-[var(--color-muted)]">
+            El nombre con que firma lo que carga a mano. La persona lo puede cambiar en Mi perfil.
+          </span>
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-xs text-[var(--color-muted)]">Rol</span>
+          <select
+            value={form.role}
+            onChange={(e) => edit("role", e.target.value)}
+            disabled={busy}
+            className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm"
+          >
+            {ROLE_OPTIONS.map((r) => (
+              <option key={r.value} value={r.value} className="bg-[var(--color-surface)] text-[var(--color-text)]">
+                {r.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex min-h-[32px] items-start gap-2">
+          <input
+            type="checkbox"
+            checked={form.sendReset}
+            onChange={(e) => setForm((f) => ({ ...f, sendReset: e.target.checked }))}
+            disabled={busy}
+            className="mt-0.5"
+          />
+          <span>
+            Enviarle el correo para elegir su contraseña
+            <span className="block text-[11px] text-[var(--color-muted)]">
+              La cuenta se crea con una contraseña al azar que nadie conoce.
+            </span>
+          </span>
+        </label>
+
+        {existingEmail && (
+          <div className="rounded-md border border-[var(--color-danger)] bg-[var(--color-danger-soft)] px-3 py-2 text-xs">
+            <strong>{existingEmail}</strong> ya tiene una cuenta en Authentication (por ejemplo, de la app
+            Calendario). ¿Darle acceso a TeRRa? Hazlo solo si sabes de quién es: quien conozca su contraseña va a
+            poder entrar.
+          </div>
+        )}
+        {busy && <p className="text-xs text-[var(--color-muted)]">Esperando al backend…</p>}
+        {error && (
+          <p className="rounded-md bg-[var(--color-danger-soft)] px-3 py-2 text-xs text-[var(--color-danger)]">{error}</p>
+        )}
+      </div>
+    </Modal>
   );
 }
 
