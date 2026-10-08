@@ -5,9 +5,14 @@ en la colección `functionJobs` y un trigger de Firestore lo levanta, lo ejecuta
 escribe el resultado en el mismo documento. La UI mira ese documento con un
 listener.
 
-Hoy hay un solo tipo de job, `ping`, que verifica el plomo de punta a punta. Los
-siguientes son el backup en JSON y el alta de cuentas desde Usuarios (ver los
-TODO al final de `index.js`).
+Hay dos tipos de job:
+
+- `ping` verifica el plomo de punta a punta (Consola admin → Ping al backend).
+- `createUser` crea una cuenta en Authentication y su perfil en `users/{uid}`
+  (Usuarios → + Nueva cuenta).
+
+Los siguientes están como TODO al final de `index.js`: el backup en JSON y más
+jobs para Usuarios.
 
 ## Por qué un trigger y no un callable
 
@@ -78,8 +83,10 @@ delicado (un respaldo, por ejemplo) solo se suma si esa regla está publicada**.
   calendario en https://cloud.google.com/run/docs/runtime-support.
 - **Versión de Functions**: **v2** (`firebase-functions/v2`).
 - **Un job nuevo** es una entrada más en el objeto `handlers` de `index.js`: una
-  función `async` que recibe el job y devuelve lo que va al campo `result`. Si
-  lanza, el job queda en `error` con el mensaje. No hay que tocar el trigger.
+  función `async` que recibe el job y `{ jobId }`, y devuelve lo que va al campo
+  `result`. Si lanza, el job queda en `error` con el mensaje; si el error viene
+  de `jobError(code, message)`, queda además `errorCode`, que la app puede
+  reconocer. No hay que tocar el trigger.
 - **Entrega al menos una vez**: Eventarc puede entregar el mismo evento dos
   veces. El job se reclama con una transacción antes de ejecutarse — eso es lo
   que separa "un backup" de "dos backups". No sacar ese bloque.
@@ -117,7 +124,7 @@ npm install
 npm run functions:verify     # desde la raíz del repo
 ```
 
-Levanta los emuladores de **functions + firestore** con el project id
+Levanta los emuladores de **functions, firestore y auth** con el project id
 `demo-terra-test` y corre `functions/verify.mjs`, que encola jobs y espera el
 resultado igual que lo hace la Consola. Sale con código ≠ 0 si algo falla.
 
@@ -228,7 +235,8 @@ const handlers = {
 };
 ```
 
-Del lado del cliente, encolarlo es un `addDoc` a `functionJobs` con
-`{ type: "miJob", status: "pending", requestedBy, params }` y un `onSnapshot`
-sobre el documento que devuelve. `PingSection` en `src/screens/AdminConsole.jsx`
-es el ejemplo completo, con los tres modos de falla separados.
+Del lado del cliente, `src/services/functionJobsService.js` crea el job
+(`enqueueJob(type, params, user)`) y espera el resultado (`waitForJob(ref)`, que
+resuelve con `done`, `error` o `timeout`). `NewAccountModal` en
+`src/screens/Users.jsx` es el ejemplo completo, incluido un `errorCode` que pide
+confirmación antes de reintentar.

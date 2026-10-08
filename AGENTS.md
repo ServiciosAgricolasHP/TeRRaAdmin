@@ -13,7 +13,7 @@
 | `npm run test:e2e` | Ciclos end-to-end contra el emulador de Firestore / Integration cycles against the Firestore emulator |
 | `npm run test:rules` | `firestore.rules` contra el emulador / Security rules against the Firestore emulator |
 | `npm run test:all` | Los tres anteriores |
-| `npm run functions:verify` | Cloud Functions contra los emuladores de functions+auth, sin deployar / Verify Cloud Functions locally |
+| `npm run functions:verify` | Cloud Functions contra los emuladores de functions, firestore y auth, sin deployar / Verify Cloud Functions locally |
 | `npm run deploy` | Deploy manual a GitHub Pages (`gh-pages -d dist -t`). **Escape hatch** — el camino normal es mergear a `main` y dejar que Actions deploye / Manual fallback; normal path is merge to `main` |
 
 ## Tests
@@ -71,6 +71,12 @@ sin sesión.
 
 El mismo enganche sirve para usar la app entera contra datos descartables:
 `VITE_FIRESTORE_EMULATOR=127.0.0.1:8080 VITE_FIREBASE_PROJECT_ID=demo-terra-test npm run dev`.
+Con `VITE_AUTH_EMULATOR=127.0.0.1:9099` también se inicia sesión contra el
+emulador de Authentication; con
+`firebase emulators:start --only functions,firestore,auth --project demo-terra-test`
+corren además los jobs del backend. La cuenta y su perfil en `users` se crean en
+los emuladores, y conviene pasar también las demás `VITE_FIREBASE_*` con valores
+de demo (como en `vitest.config.e2e.js`).
 
 Los tests marcados `[bug conocido]` fijan el comportamiento **actual** de algo que
 parece estar mal, con el porqué en un comentario. No son la conducta deseada: si
@@ -93,7 +99,7 @@ arreglas uno, el test se cae y eso es la señal de actualizar los dos.
 - **Los secrets son obligatorios para el build de deploy**: las 6 `VITE_FIREBASE_*` viven en *Settings → Secrets and variables → Actions* del repo y se inyectan como `env` del paso de build. `.env` está gitignoreado, así que sin ellas el bundle sale con la config vacía y producción cae con `auth/invalid-api-key`.
 - **`fetch-depth: 0`** en el checkout del deploy: sin el historial completo, el `git rev-list --count` de `vite.config.js` devuelve 0 y la versión del header queda pegada en `.0`.
 - **Cloud Functions quedan fuera del pipeline** — se deployan a mano (ver `functions/README.md`).
-  - **El backend no se invoca por HTTP: se le escribe un documento.** La app crea un job en `functionJobs` y un **trigger de Firestore v2** lo levanta, lo ejecuta y escribe el resultado en el mismo doc; la UI lo mira con un `onSnapshot`. `PingSection` en `AdminConsole.jsx` es el ejemplo completo.
+  - **El backend no se invoca por HTTP: se le escribe un documento.** La app crea un job en `functionJobs` y un **trigger de Firestore v2** lo levanta, lo ejecuta y escribe el resultado en el mismo doc; la UI lo mira con un `onSnapshot`. Del lado de la app, `services/functionJobsService.js` crea el job (`enqueueJob`) y espera el resultado (`waitForJob`).
   - **No hay funciones callable.** *(a)* Una callable **v2** corre sobre Cloud Run y necesita un binding IAM `allUsers`, que la org policy del proyecto prohíbe: responde **403 con cuerpo HTML** antes de llegar al código. *(b)* Cloud Functions **v1** no existe en `southamerica-west1`, y esa región tampoco tiene App Engine, que gen1 necesita para el staging. *(c)* Un **trigger de Firestore v1** solo dispara sobre la base `(default)`, que en este proyecto no existe. Un trigger v2 lo invoca Eventarc con una service account, sin invoker público.
   - **Región `us-central1`, y no es negociable**: `hpdatabase` está en **`nam5`** (multi-región de EE.UU.) y un trigger de Firestore tiene que vivir en la ubicación de la base. Ver la nota de `nam5` en Arquitectura.
   - **`database: "hpdatabase"` en el trigger.** La base no es `(default)`. Si no coincide, la función queda suscrita a una base inexistente y **nunca dispara, sin dar error** — el peor modo de falla del diseño.
@@ -150,7 +156,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 - Roles: `admin` y `user`; cualquier otro valor cuenta como usuario (`roleLabel` en `utils/userAccounts.js`).
 - `ProtectedRoute` envuelve rutas autenticadas; prop `adminOnly` restringe a admins.
 - `Login` redirige a la app cuando `user` ya está cargado en `AuthContext`.
-- **Sin perfil, o con `disabled: true`, la cuenta no entra.** `user.access` vale `"none"` o `"disabled"` y `ProtectedRoute` muestra `NoAccess`, que a una cuenta sin perfil le muestra su UID para pasárselo a un admin. Si leer el perfil falla, la app entra igual como usuario y las reglas deciden qué datos ve.
+- **Sin perfil, o con `disabled: true`, la cuenta no entra.** `user.access` vale `"none"` o `"disabled"` y `ProtectedRoute` muestra `NoAccess` con el correo de la cuenta, que es lo que necesita un admin para darle acceso desde Usuarios. Si leer el perfil falla, la app entra igual como usuario y las reglas deciden qué datos ve.
 - Al abrir la app, `AuthContext` guarda en el perfil el `email` de la cuenta y `lastSeenAt` (`userPrefsService.recordVisit`). Es lo que muestra Usuarios: el navegador no puede listar las cuentas de Authentication.
 - **`AuthContext` vuelca el doc `users/{uid}` entero en `user`**, así que cualquier campo que se le agregue queda disponible en toda la app sin pagar una lectura extra.
 
@@ -608,7 +614,10 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
   - Un admin no se suspende: primero se le quita el rol.
   - Una cuenta suspendida no pasa a admin: primero se reactiva.
 - El rol y la suspensión pasan por `usersService.update`, así que quedan en la auditoría.
-- **Las cuentas se crean en la consola de Firebase**: la cuenta en Authentication y el perfil en `users` con el UID como id, `role` y `email`. La pantalla lo explica en "¿Cómo dar acceso a alguien nuevo?". El navegador no puede crear cuentas de Authentication para otra persona ni listarlas; el alta desde la app es el job `createUser` (TODO en `functions/index.js`).
+- **+ Nueva cuenta** usa el job `createUser` (Cloud Functions): crea la cuenta en Authentication con una contraseña al azar que no se guarda, y el perfil con el mismo UID, y lo registra en la auditoría. Después la app envía el correo para elegir contraseña (opción marcada por defecto).
+  - Si el correo ya tiene cuenta (por ejemplo, de la app Calendario), la función responde `errorCode: "account-exists"` y la pantalla pide confirmación antes de darle acceso a esa cuenta (`params.useExisting`): quien conozca su contraseña va a poder entrar.
+  - La función vuelve a comprobar que quien pide sea admin, leyendo su perfil, además de la regla de `functionJobs`.
+  - Listar las cuentas de Authentication sin perfil, y desactivar o borrar una cuenta, están como TODO en `functions/index.js`.
 
 ## Auditoría / `logs`
 

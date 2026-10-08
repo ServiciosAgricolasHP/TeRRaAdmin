@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
-import { getAuth } from "firebase/auth";
+import { getAuth, connectAuthEmulator } from "firebase/auth";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -36,6 +36,13 @@ const emulatorHost = import.meta.env.VITE_FIRESTORE_EMULATOR;
 if (emulatorHost) {
   const [host, port] = String(emulatorHost).split(":");
   connectFirestoreEmulator(db, host, Number(port));
+}
+
+// Lo mismo para Authentication, con `VITE_AUTH_EMULATOR` ("host:puerto"): con
+// las dos variables se puede iniciar sesión en la app contra los emuladores.
+const authEmulatorHost = import.meta.env.VITE_AUTH_EMULATOR;
+if (authEmulatorHost) {
+  connectAuthEmulator(auth, `http://${authEmulatorHost}`, { disableWarnings: true });
 }
 
 export default app;

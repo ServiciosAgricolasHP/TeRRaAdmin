@@ -3,6 +3,7 @@ import {
   accessOf,
   isAdminRole,
   lastSeenLabel,
+  parseNewAccount,
   passwordResetBlock,
   roleChangeBlock,
   roleLabel,
@@ -79,6 +80,34 @@ describe("restablecer contraseña", () => {
   it("necesita el correo del perfil", () => {
     expect(passwordResetBlock({ id: "u1" })).toMatch(/Sin correo/);
     expect(passwordResetBlock({ id: "u1", email: "u1@terra.test" })).toBeNull();
+  });
+});
+
+describe("parseNewAccount", () => {
+  it("deja el correo en minúsculas y sin espacios", () => {
+    expect(parseNewAccount({ email: "  Ana.Perez@Terra.TEST ", role: "user" })).toEqual({
+      value: { email: "ana.perez@terra.test", role: "user" },
+    });
+  });
+
+  it("guarda el alias recortado, y nada si viene vacío", () => {
+    expect(parseNewAccount({ email: "a@x.cl", role: "admin", alias: "  Ana  " }).value).toEqual({
+      email: "a@x.cl",
+      role: "admin",
+      alias: "Ana",
+    });
+    expect(parseNewAccount({ email: "a@x.cl", role: "user", alias: "   " }).value).not.toHaveProperty("alias");
+    expect(parseNewAccount({ email: "a@x.cl", role: "user", alias: "x".repeat(60) }).value.alias).toHaveLength(40);
+  });
+
+  it("rechaza un correo inválido", () => {
+    expect(parseNewAccount({ email: "ana", role: "user" }).error).toMatch(/correo/);
+    expect(parseNewAccount({ email: "ana@terra", role: "user" }).error).toMatch(/correo/);
+    expect(parseNewAccount({ email: "", role: "user" }).error).toMatch(/correo/);
+  });
+
+  it("rechaza un rol que no existe", () => {
+    expect(parseNewAccount({ email: "a@x.cl", role: "root" }).error).toMatch(/rol/);
   });
 });
 
