@@ -97,6 +97,12 @@ delicado (un respaldo, por ejemplo) solo se suma si esa regla está publicada**.
 3. **APIs habilitadas** en GCP (las activa el primer deploy): Cloud Functions,
    Cloud Build, Artifact Registry, Cloud Run, **Eventarc** y **Pub/Sub** — las dos
    últimas son nuevas respecto de v1 y son las que hacen andar el trigger.
+4. **Una cuenta dueña del proyecto** para el primer deploy de un trigger v2 (y
+   para el de una región nueva). Ese deploy les da roles a cuentas de servicio
+   del proyecto: `iam.serviceAccountTokenCreator` a la de Pub/Sub, y `run.invoker`
+   y `eventarc.eventReceiver` a la de Compute. Sin permiso para tocar IAM se
+   corta con *"We failed to modify the IAM policy for the project"*. La cuenta se
+   elige con `--account` (`firebase login:list` muestra las disponibles).
 
 ## Setup local
 
@@ -164,6 +170,14 @@ El primer deploy puede tardar varios minutos: además de compilar, habilita
 Eventarc y Pub/Sub y crea el trigger.
 
 ### Problemas conocidos
+
+**"Permission denied while using the Eventarc Service Agent" en el primer
+deploy.** Los permisos del agente de Eventarc tardan unos minutos en propagarse.
+Se reintenta el mismo deploy a los ~5 minutos.
+
+**`functions:verify` falla en la primera corrida del día con los jobs en
+`pending`.** El emulador a veces no alcanza a registrar el trigger antes de que
+arranque el script. Se vuelve a correr.
 
 **"Failed to parse build specification" / timeout en el análisis.** La CLI le da
 10 s al paso de discovery y en esta máquina no alcanza. Ver el
