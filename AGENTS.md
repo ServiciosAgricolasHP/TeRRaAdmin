@@ -155,6 +155,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 - Perfiles en colección `users` de Firestore (doc id = Firebase uid).
 - Roles: `admin` y `user`; cualquier otro valor cuenta como usuario (`roleLabel` en `utils/userAccounts.js`).
 - `ProtectedRoute` envuelve rutas autenticadas; prop `adminOnly` restringe a admins.
+- `Login` redirige a la app cuando `user` ya está cargado en `AuthContext`.
 - **Sin perfil, o con `disabled: true`, la cuenta no entra.** `user.access` vale `"none"` o `"disabled"` y `ProtectedRoute` muestra `NoAccess`, que a una cuenta sin perfil le muestra su UID para pasárselo a un admin. Si leer el perfil falla, la app entra igual como usuario y las reglas deciden qué datos ve.
 - Al abrir la app, `AuthContext` guarda en el perfil el `email` de la cuenta y `lastSeenAt` (`userPrefsService.recordVisit`). Es lo que muestra Usuarios: el navegador no puede listar las cuentas de Authentication.
 - **`AuthContext` vuelca el doc `users/{uid}` entero en `user`**, así que cualquier campo que se le agregue queda disponible en toda la app sin pagar una lectura extra.
