@@ -556,6 +556,10 @@ export default function CycleDetail() {
   // labores del mismo tipo a través de ciclos. Ver laborGroupsService.
   const [laborGroups, setLaborGroups] = useState([]);
   const [workdaysByLabor, setWorkdaysByLabor] = useState({});
+  // Última versión de las jornadas, para los handlers que las columnas de la
+  // grilla capturan en un render anterior.
+  const workdaysRef = useRef(workdaysByLabor);
+  useEffect(() => { workdaysRef.current = workdaysByLabor; }, [workdaysByLabor]);
 
   // Prefijos QR apuntados a este ciclo. Ver `qrLockedLabors` más abajo.
   const [qrPrefixes, setQrPrefixes] = useState([]);
@@ -622,6 +626,9 @@ export default function CycleDetail() {
   const [assignBusy, setAssignBusy] = useState(false);
 
   const [removeWorker, setRemoveWorker] = useState(null);
+  // Aviso al marcar como mensual a alguien con días con monto (ver toggleMonthly).
+  const [monthlyConfirm, setMonthlyConfirm] = useState(null);
+  const [monthlyBusy, setMonthlyBusy] = useState(false);
   const [removeBusy, setRemoveBusy] = useState(false);
 
   // Edición rápida del trabajador desde la grilla — doble click en la
@@ -2527,12 +2534,74 @@ export default function CycleDetail() {
   // true` en su entrada de labor.workers). Solo donde `allowsMonthly`: las
   // celdas del día pasan a casilla de asistencia y el workday se guarda con
   // amount 0, así no suma a la transferencia de la nómina.
+  //
+  // Al marcarlo, si ya tiene días con monto en la labor, pregunta antes
+  // (`monthlyConfirm`): la grilla mostraría ✓ en esos días, pero sus montos se
+  // seguirían pagando. Los días que ya están en una nómina no se tocan.
+  const setMonthlyFlag = async (rut, monthly) => {
+    const nextWorkers = workers.map((w) => (w.rut === rut ? { ...w, monthly } : w));
+    await persistLabor({ ...activeLabor, workers: nextWorkers });
+  };
+
   const toggleMonthly = async (rut) => {
     if (readOnly || !activeLabor) return;
-    const nextWorkers = workers.map((w) =>
-      w.rut === rut ? { ...w, monthly: !w.monthly } : w,
+    const worker = workers.find((w) => w.rut === rut);
+    if (!worker) return;
+    if (worker.monthly) {
+      await setMonthlyFlag(rut, false);
+      return;
+    }
+    // Las columnas de la grilla guardan esta función de un render anterior:
+    // las jornadas se leen del ref para no decidir con datos viejos.
+    const lab = workdaysRef.current[activeLabor.id] || {};
+    const withAmount = Object.entries(lab).filter(
+      ([, wd]) => wd?.workerRut === rut && Number(wd.amount) !== 0,
     );
-    await persistLabor({ ...activeLabor, workers: nextWorkers });
+    if (withAmount.length === 0) {
+      await setMonthlyFlag(rut, true);
+      return;
+    }
+    const free = withAmount.filter(([, wd]) => !wd.payrollId);
+    setMonthlyConfirm({
+      rut,
+      name: worker.name || rut,
+      free,
+      freeTotal: free.reduce((s, [, wd]) => s + (Number(wd.amount) || 0), 0),
+      inPayroll: withAmount.length - free.length,
+    });
+  };
+
+  // Marca al trabajador como mensual. Con `convert`, deja en asistencia de $0
+  // los días con monto que todavía no están en una nómina.
+  const confirmMonthly = async (convert) => {
+    const req = monthlyConfirm;
+    if (!req || !activeLabor) return;
+    setMonthlyBusy(true);
+    try {
+      if (convert) {
+        const patch = { amount: 0, attendanceOnly: true };
+        if (isTratoHELabor) {
+          Object.assign(patch, { qty: 0, overtimeHours: 0, extras: 0, hasManejo: false, hasSupervision: false });
+        }
+        for (const [, wd] of req.free) {
+          const docId = wd.id || workdayDocId(id, activeLabor.id, req.rut, wd.date, SINGLE_COMBO);
+          await wdWrite.upsert(docId, patch);
+        }
+        setWorkdaysByLabor((prev) => {
+          const lab = { ...(prev[activeLabor.id] || {}) };
+          for (const [mapKey] of req.free) {
+            if (lab[mapKey]) lab[mapKey] = { ...lab[mapKey], ...patch };
+          }
+          return { ...prev, [activeLabor.id]: lab };
+        });
+      }
+      await setMonthlyFlag(req.rut, true);
+      setMonthlyConfirm(null);
+    } catch (err) {
+      toast.error("No se pudo marcar como mensual: " + (err.message || err));
+    } finally {
+      setMonthlyBusy(false);
+    }
   };
 
   // Crea o borra el workday en $0 (`attendanceOnly`) de un trabajador mensual:
@@ -5311,6 +5380,68 @@ export default function CycleDetail() {
         canGoPrev={editingWorkerIndex > 0}
         canGoNext={editingWorkerIndex !== -1 && editingWorkerIndex < sortedWorkerRuts.length - 1}
       />
+
+      {/* Después del modal del teléfono, para quedar encima cuando se marca
+          mensual desde ahí. */}
+      <Modal
+        open={!!monthlyConfirm}
+        onClose={() => !monthlyBusy && setMonthlyConfirm(null)}
+        title={`Marcar a ${monthlyConfirm?.name || ""} como mensual`}
+        size="sm"
+        footer={monthlyConfirm && (
+          <>
+            <button
+              type="button"
+              onClick={() => setMonthlyConfirm(null)}
+              disabled={monthlyBusy}
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={() => confirmMonthly(false)}
+              disabled={monthlyBusy}
+              className={monthlyConfirm.free.length > 0
+                ? "rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
+                : "rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--color-accent-hover)] disabled:opacity-60"}
+            >
+              {monthlyConfirm.free.length > 0 ? "Dejar los montos" : "Marcar mensual"}
+            </button>
+            {monthlyConfirm.free.length > 0 && (
+              <button
+                type="button"
+                onClick={() => confirmMonthly(true)}
+                disabled={monthlyBusy}
+                className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
+              >
+                {monthlyBusy ? "..." : "Pasar a asistencia en $0"}
+              </button>
+            )}
+          </>
+        )}
+      >
+        {monthlyConfirm && (
+          <div className="space-y-2 text-sm text-[var(--color-muted)]">
+            <p>
+              Como mensual, sus días en esta labor son solo asistencia en $0 y no entran a la nómina.
+            </p>
+            {monthlyConfirm.free.length > 0 && (
+              <p>
+                Ya tiene <b className="text-[var(--color-text)]">{monthlyConfirm.free.length} día{monthlyConfirm.free.length === 1 ? "" : "s"} con monto</b>{" "}
+                por <b className="text-[var(--color-text)]">{fmtCurrency(monthlyConfirm.freeTotal)}</b> que todavía no están en una nómina.
+                Si dejas los montos, la grilla va a mostrar ✓ en esos días pero se van a seguir pagando.
+              </p>
+            )}
+            {monthlyConfirm.inPayroll > 0 && (
+              <p>
+                {monthlyConfirm.inPayroll} día{monthlyConfirm.inPayroll === 1 ? "" : "s"} con monto ya{" "}
+                {monthlyConfirm.inPayroll === 1 ? "está" : "están"} en una nómina y no se {monthlyConfirm.inPayroll === 1 ? "toca" : "tocan"}.
+              </p>
+            )}
+          </div>
+        )}
+      </Modal>
 
       <DayModeModal
         open={!!dayModeEdit}
