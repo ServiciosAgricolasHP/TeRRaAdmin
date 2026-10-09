@@ -1,21 +1,20 @@
 import { describe, it, expect, vi } from "vitest";
 
-// Mismo motivo que `payrollItem.test.js`: el módulo importa helpers puros de
-// `advancesService`, que arrastra `../firebase`.
+// `payrollItem` importa helpers puros de `advancesService`, que importa
+// `../firebase`.
 vi.mock("../firebase", () => ({ db: {}, auth: { currentUser: null } }));
 
 const { refitAppliedAdvances, appliedFromItem, planCycleRemoval, planRecalcExisting, isOverApplied } =
   await import("./payrollItem");
 
-// Lo que una nómina le aplica hoy a un anticipo / bono, tal como lo devuelve
+// Lo que una nómina le aplica a un anticipo / bono, tal como lo devuelve
 // `readPayrollApplications`.
 const ant = (advanceId, amount, date = "2026-01-01") => ({ advanceId, kind: "anticipo", amount, date });
 const bon = (advanceId, amount, date = "2026-01-01") => ({ advanceId, kind: "bono", amount, date });
 const leidos = (...xs) => new Map(xs.map((x) => [x.advanceId, x]));
 
 // Un item con la forma que deja "Generar y guardar". `byCycle` lleva una entrada
-// por CADA ciclo de la nómina, incluso en $0 — así lo arma la pantalla, y es
-// lo que disparaba el bug.
+// por cada ciclo de la nómina, incluso en $0, igual que en la pantalla.
 function item({ rut = "P", gross, byCycle, workdayIds, anticipos = [], bonos = [] }) {
   const advance = anticipos.reduce((s, a) => s + a.amount, 0);
   const bonus = bonos.reduce((s, b) => s + b.amount, 0);
@@ -44,9 +43,8 @@ describe("refitAppliedAdvances — re-encajar lo aplicado en un bruto que bajó"
   });
 
   it("cobertura parcial: el anticipo se achica a lo que cabe y el resto vuelve", () => {
-    // Bruto 50.000 contra un anticipo de 100.000 ya aplicado. Antes quedaba
-    // aplicado entero con el neto topeado en 0: los 50.000 que no se
-    // retuvieron figuraban como cobrados y no se descontaban nunca.
+    // Bruto 50.000 contra un anticipo de 100.000 ya aplicado: se aplican 50.000
+    // y los otros 50.000 vuelven a quedar pendientes.
     const r = refitAppliedAdvances({ gross: 50000, applied: [ant("a1", 100000)] });
     expect(r).toMatchObject({ anticiposTotal: 50000, devuelto: 50000, amount: 0 });
     expect(r.targets).toEqual([{ advanceId: "a1", amount: 50000, missing: false }]);
@@ -121,10 +119,9 @@ describe("appliedFromItem — de dónde sale lo aplicado", () => {
 
 describe("planCycleRemoval — sacar un ciclo de una nómina pendiente", () => {
   it("[el caso reportado] quien solo trabajó en el ciclo sacado sale entero y suelta su anticipo", () => {
-    // Nómina con los ciclos A y B. La persona solo trabajó en A, así que
-    // byCycle = { A: 300.000, B: 0 }. Antes la entrada en $0 de B la hacía
-    // pasar por "reducción parcial": quedaba con bruto 0 y el anticipo
-    // aplicado, y la nómina siguiente nunca lo descontaba.
+    // Nómina con los ciclos A y B. La persona solo trabajó en A
+    // (byCycle = { A: 300.000, B: 0 }): al sacar A queda con bruto 0, sale de
+    // la nómina y suelta el anticipo.
     const it = item({
       gross: 300000,
       byCycle: { A: 300000, B: 0 },
@@ -196,8 +193,7 @@ describe("planCycleRemoval — sacar un ciclo de una nómina pendiente", () => {
   it("[cobertura parcial] con producción en otro ciclo que no alcanza, el sobrante vuelve al anticipo", () => {
     // Bruto 350.000 (300.000 en A + 50.000 en B), anticipo de 100.000. Al
     // sacar A quedan 50.000: el anticipo se achica a 50.000 y los otros 50.000
-    // vuelven a quedar pendientes. Antes se quedaba aplicado entero con neto 0
-    // y esos 50.000 no se descontaban en ninguna nómina.
+    // vuelven a quedar pendientes.
     const it = item({
       gross: 350000,
       byCycle: { A: 300000, B: 50000 },
@@ -231,9 +227,8 @@ describe("planCycleRemoval — sacar un ciclo de una nómina pendiente", () => {
   });
 
   it("libera las jornadas de $0 del ciclo sacado aunque el aporte del ciclo sea 0", () => {
-    // Días de asistencia de un sueldo mensual: entran a la nómina en $0. Antes,
-    // con aporte 0, el trabajador se salteaba y esas jornadas quedaban
-    // etiquetadas a una nómina que ya no tenía ese ciclo.
+    // Días de asistencia de un sueldo mensual: entran a la nómina en $0 y se
+    // sueltan junto con su ciclo.
     const it = item({
       gross: 200000,
       byCycle: { A: 0, B: 200000 },
@@ -305,8 +300,8 @@ describe("planRecalcExisting — recalcular cuando la producción bajó", () => 
   });
 
   it("si la producción baja y no alcanza, el anticipo se achica — sin crear uno nuevo", () => {
-    // Antes: neto topeado en 0, anticipo original aplicado entero, y un
-    // anticipo NUEVO por la diferencia. Ahora la diferencia vuelve al mismo.
+    // Producción de 200.000 a 100.000 con 150.000 aplicados: el anticipo baja a
+    // 100.000 y los 50.000 restantes vuelven a quedar pendientes en el mismo.
     const it = item({
       gross: 200000,
       byCycle: { A: 200000 },
@@ -347,9 +342,8 @@ describe("planRecalcExisting — recalcular cuando la producción bajó", () => 
   });
 
   it("[reparación] la nómina que dejó el bug viejo de sacar ciclo se arregla al recalcular", () => {
-    // Exactamente el estado que dejaba el bug: bruto 0, sin jornadas, y el
-    // anticipo aplicado. La producción no "cambió" desde entonces, así que el
-    // recálculo viejo no la tocaba. Ahora se detecta y la persona sale.
+    // Bruto 0, sin jornadas y con el anticipo aplicado: isOverApplied lo detecta
+    // aunque la producción no haya cambiado, y la persona sale.
     const roto = {
       ...item({ gross: 0, byCycle: { B: 0 }, workdayIds: [], anticipos: [ant("adv", 100000)] }),
       amount: 0,
@@ -365,9 +359,8 @@ describe("planRecalcExisting — recalcular cuando la producción bajó", () => 
   });
 
   it("[reparación] cobertura parcial que quedó sobre-aplicada se re-encaja aunque el bruto no cambie", () => {
-    // El otro estado que dejaba el bug: bruto 50.000, anticipo 100.000
-    // aplicado, neto topeado en 0. Misma producción que antes, pero
-    // sobre-aplicado: el recálculo devuelve los 50.000 que no se retuvieron.
+    // Bruto 50.000 con un anticipo de 100.000 aplicado y neto 0: aunque la
+    // producción no cambie, el recálculo devuelve los 50.000 que no se retuvieron.
     const roto = {
       ...item({
         gross: 50000,

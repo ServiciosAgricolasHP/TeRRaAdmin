@@ -70,17 +70,14 @@ describe("cashInOf", () => {
   });
 
   it("una factura de compra entra solo por el neto", () => {
-    // Caso real, folio 273: le retienen el 14% y el Monto Total del SII ya
-    // viene con esa retención descontada (2.024.338 = neto + el 5% que sí se
-    // cobra). Igual solo cuenta el neto.
+    // Le retienen el 14% y el Monto Total del SII viene con esa retención
+    // descontada (2.024.338 = neto + el 5% que sí se cobra). Solo cuenta el neto.
     expect(cashInOf({ tipo: 46, neto: 1_927_940, iva: 366_309, exento: 0, total: 2_024_338 }))
       .toEqual({ monto: 1_927_940, conRetencion: true });
   });
 
   it("una nota de crédito sobre una factura de compra revierte con la misma regla", () => {
-    // Datos reales: la NC folio 305 reversa exactamente la factura 46 folio
-    // 387. El par TIENE que cerrar en cero — restando el total dejaría un
-    // ingreso negativo de 822.415 que nunca existió.
+    // La NC reversa exactamente la factura de compra: el par cierra en cero.
     const factura = { tipo: 46, neto: 16_448_300, iva: 3_125_177, exento: 0, total: 17_270_715 };
     const nc = { ...factura, tipo: 61 };
     expect(cashInOf(nc)).toEqual({ monto: -16_448_300, conRetencion: true });
@@ -131,7 +128,6 @@ describe("cashInByPeriod", () => {
   });
 
   it("las notas de crédito restan y quedan en el detalle con signo", () => {
-    // Si se filtraran, el Excel mostraría un total que sus filas no dan.
     const docs = [
       venta({ id: "f", neto: 1_000_000 }),
       venta({ id: "nc", tipo: 61, neto: 400_000, fechaEmision: "2025-09-20" }),
@@ -144,8 +140,6 @@ describe("cashInByPeriod", () => {
   });
 
   it("el detalle guarda neto, IVA y total además del ingreso, para poder auditarlo", () => {
-    // Sin el desglose, una factura de compra que aporta menos que neto + IVA
-    // parece un error de la app.
     const docs = [venta({ id: "fc", tipo: 46, neto: 1_927_940, iva: 366_309, total: 2_024_338 })];
     const r = cashInByPeriod(docs, { companyId: "HP", periods });
     expect(r.detail[0]).toMatchObject({
@@ -200,9 +194,7 @@ describe("projectCashFlow", () => {
   });
 
   it("un mes de la ventana que ya tiene ventas vale su dato real, no la estimación", () => {
-    // Es el caso de arrancar la temporada a mitad de camino: septiembre 2026 ya
-    // está facturado, así que estimarlo sería cambiar un número cierto por uno
-    // inventado.
+    // La temporada ya empezó: septiembre 2026 está facturado.
     const docs = [
       venta({ periodo: "2025-09", neto: 1_000_000 }),   // base de septiembre
       venta({ periodo: "2025-10", neto: 2_000_000 }),   // base de octubre
@@ -229,9 +221,8 @@ describe("projectCashFlow", () => {
   });
 
   it("un mes real que cerró en $0 sigue siendo real y no se reemplaza por la estimación", () => {
-    // Facturado y anulado con NC: el ingreso da 0, pero ese cero ES el dato. Si
-    // el corte fuera "monto distinto de cero", el mes volvería a estimarse en
-    // positivo y la temporada saldría inflada por algo que se anuló.
+    // Facturado y anulado con NC: el ingreso da 0 y ese cero es el dato real. El
+    // corte es que haya documentos, no que el monto sea distinto de cero.
     const docs = [
       venta({ periodo: "2025-09", neto: 4_000_000 }),
       venta({ id: "f", periodo: "2026-09", neto: 1_000_000 }),
@@ -272,9 +263,8 @@ describe("projectCashFlow", () => {
   });
 
   it("el total es la suma de los meses redondeados, no el redondeo de la suma", () => {
-    // Tres meses de 3.333 al 33,33%: cada uno redondea a 1.111 (3.333), mientras
-    // que redondear la suma daría 3.332. El Excel imprime la columna, así que el
-    // total tiene que ser el de la columna o no cuadra a ojo.
+    // Tres meses de 3.333 al 33,33%: cada uno redondea a 1.111 y el total es la
+    // suma de esa columna, que es la que imprime el Excel.
     const docs = ["2025-09", "2025-10", "2025-11"].map((periodo) =>
       venta({ periodo, tipo: 46, neto: 3333, iva: 633, total: 3333 }));
     const p = projectCashFlow(docs, { companyId: "HP", startPeriod: "2026-09", percent: 33.33 });

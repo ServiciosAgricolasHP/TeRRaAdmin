@@ -88,7 +88,7 @@ describe("reimportar el mismo período", () => {
   });
 
   it("conserva el estado de pago y las notas cargadas a mano", async () => {
-    // Lo que se perdería acá es trabajo manual que no está en ningún CSV.
+    // El estado de pago y las notas se cargan a mano: no vienen en el CSV.
     await importar(csvVentas(MARZO));
     await dteDocumentsService.update(idDe(102), {
       paymentStatus: "net_only",
@@ -134,8 +134,8 @@ describe("reimportar el mismo período", () => {
 
 describe("replace por período: el borrado de huérfanos", () => {
   it("importar un CSV parcial borra las facturas que faltan", async () => {
-    // Este es el camino de pérdida de datos más grande del repo y hoy no
-    // pide confirmación. El test lo deja por escrito, no lo aprueba.
+    // El borrado no pide confirmación: el test fija ese comportamiento, no lo
+    // aprueba.
     await importar(csvVentas(MARZO));
     await dteDocumentsService.update(idDe(103), { paymentStatus: "paid", notes: "cobrada" });
 

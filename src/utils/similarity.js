@@ -1,5 +1,6 @@
-// Lightweight name similarity (Levenshtein-based ratio).
-// Used to flag possible duplicate workers, especially for foreign RUTs we cannot verify.
+// Similitud de nombres (razón basada en la distancia de Levenshtein).
+// Marca posibles trabajadores duplicados, sobre todo con RUT de extranjero, que
+// no tiene dígito verificador.
 
 function levenshtein(a, b) {
   if (a === b) return 0;

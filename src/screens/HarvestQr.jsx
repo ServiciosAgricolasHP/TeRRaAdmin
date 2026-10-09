@@ -14,43 +14,32 @@ import Select from "../components/Select";
 import ConfirmDialog from "../components/ConfirmDialog";
 
 // Puente entre los prefijos QR físicos (impresos de antemano, app scan_IS) y
-// el (faena, ciclo, labor) vigente al que hay que sincronizar sus pesajes.
+// el (faena, ciclo, labor) vigente al que se sincronizan sus pesajes.
 //
-// Por qué el ciclo/labor vigente se reapunta a mano: los ciclos son un límite
-// de negocio (cuándo se cierra uno y se abre el siguiente), no algo que el
-// sistema pueda inferir con confianza — "el ciclo más reciente" no siempre es
-// el vigente. Es una decisión deliberada, no una automatización pendiente.
-// El prefijo de un código es lo que va antes del primer guion (`XX-0123` →
-// `XX`), la misma convención que usa la app de scan para saber a qué faena
-// pertenece el pesaje.
-// Las tres listas que esta pantalla comparte con el resto de la app. Los
-// valores están copiados de las otras pantallas a propósito: la clave de caché
-// es `collection::{wheres,order,take}` y no incluye el TTL, así que el último
-// que escribe sella el vencimiento para todos. Bajarlos acá le acorta la
-// caché a Trabajadores, Nómina y Calendario sin que se note.
+// El ciclo y la labor vigentes se reapuntan a mano: cuándo se cierra un ciclo
+// y se abre el siguiente es una decisión de negocio, y el ciclo más reciente
+// no siempre es el vigente.
+
+// TTL de las listas que esta pantalla comparte con el resto de la app, con los
+// mismos valores que usan las otras pantallas. La clave de caché
+// (`collection::{wheres,order,take}`) no incluye el TTL, así que el último que
+// escribe fija el vencimiento para todos: bajarlos aquí acorta la caché de
+// Trabajadores, Nómina y Calendario.
 const WORKERS_TTL_MS = 2 * 60 * 60 * 1000;
 const FAENAS_TTL_MS = 10 * 60 * 1000;
 
-// Los pesajes los escribe la app de scan mientras la gente cosecha, así que
-// cambian todo el rato. Eso no pide un TTL corto: pide lo contrario. Ningún
-// valor deja la pantalla realmente fresca —la app pudo escribir hace diez
-// segundos— así que un TTL corto no compra frescura, solo decide cada cuánto
-// se vuelve a pagar la lectura. Con uno largo la antigüedad queda a la vista y
-// el refresco es una decisión explícita del usuario.
-//
-// Ojo: esto vale para mirar. La sincronización a jornadas (SyncModal) lee
-// SIEMPRE sin caché, y tiene que seguir así: de esos documentos sale la plata
-// que se le paga a la gente.
+// TTL del explorador de pesajes. Los pesajes cambian todo el rato mientras se
+// cosecha y ningún TTL deja la pantalla fresca: la antigüedad se muestra y el
+// refresco es manual.
+// Solo vale para mirar: la sincronización a jornadas (SyncModal) lee sin
+// caché, porque de esos pesajes salen las jornadas que se pagan.
 const WEIGHTS_TTL_MS = 2 * 60 * 60 * 1000;
 
-// "hace 3 min" para que la antigüedad de lo que se está mirando quede a la
-// vista. Con TTL largo es lo que reemplaza a refrescar solo.
-// Lo que se muestra al admin al lado del título. Es lo que hace verificable
-// todo el trabajo de caché: si dice "desde caché" no se pagó nada, y si un día
-// vuelve a decir un número grande es que alguien cambió las opciones de un
-// `list()` y rompió la clave compartida.
+// Contador de lecturas que ve el admin junto al título. Permite verificar que
+// las listas compartidas salen de la caché ("desde caché" = 0 lecturas).
 const readsLabel = (reads) => (reads === 0 ? "· desde caché" : `· ${reads.toLocaleString("es-CL")} lecturas`);
 
+// Antigüedad de los datos en pantalla ("hace 3 min"), que no se refrescan solos.
 const agoLabel = (ts) => {
   if (!ts) return "";
   const min = Math.floor((Date.now() - ts) / 60000);
@@ -60,6 +49,9 @@ const agoLabel = (ts) => {
   return h < 24 ? `hace ${h} h` : `hace ${Math.floor(h / 24)} d`;
 };
 
+// El prefijo de un código es lo que va antes del primer guion (`XX-0123` →
+// `XX`), la misma convención que usa la app de scan para saber a qué faena
+// pertenece el pesaje.
 const prefixOfCode = (code) => {
   const raw = String(code || "").trim().toUpperCase();
   const cut = raw.indexOf("-");
@@ -75,16 +67,15 @@ const codesToRelease = (codes, incoming) => {
   return codes.filter((c) => c !== incoming && prefixOfCode(c) === pfx);
 };
 
-// Alto mínimo de toque del proyecto. Se usa en los botones que viven dentro
-// de celdas y filas: llega a 32px sin agrandar la fuente ni ensanchar la
-// columna, que es lo que un `py-` más grande sí haría.
+// Alto mínimo de toque (32px) para los botones dentro de celdas y filas, sin
+// agrandar la fuente ni ensanchar la columna.
 const TAP = "min-h-[32px] inline-flex items-center justify-center";
 
 const codesOfWorker = (w) => (w?.idQr || []).map((c) => String(c || "").trim().toUpperCase()).filter(Boolean);
 
 // Deja `code` en manos de `toWorker`: se lo quita a quien lo tuviera y suelta
 // el que esa persona ya tenía de la misma cosecha. Devuelve los códigos que
-// quedaron libres, para poder decirlo.
+// quedaron libres, para informarlos.
 async function assignQrCode(code, toWorker, fromWorker) {
   const clean = String(code || "").trim().toUpperCase();
   if (!clean) throw new Error("El código es obligatorio");
@@ -103,8 +94,8 @@ async function assignQrCode(code, toWorker, fromWorker) {
     });
   }
 
-  // El espejo va después de la escritura real y sin bloquearla: si el código
-  // cambió de dueño, el anterior también tiene que soltarlo en el padrón.
+  // El padrón se actualiza después de `worker`, y un fallo ahí no deshace la
+  // asignación. La entrada del código se sobrescribe con el dueño nuevo.
   await syncPadron({
     assigned: [clean],
     released: [...released, ...(fromWorker ? [] : [])],
@@ -117,20 +108,16 @@ async function assignQrCode(code, toWorker, fromWorker) {
   return { released, code: clean };
 }
 
-// Espejo de código → trabajador dentro de `qrPrefixes/{PREFIJO}.padron`.
+// Espejo de código → trabajador dentro de `qrPrefixes/{PREFIJO}.padron`. La
+// app de scan lo lee de una vez para resolver un QR sin señal: `idQr` guarda
+// códigos completos y no hay consulta de trabajadores por prefijo.
 //
-// La app de scan lo lee de una sola vez para poder resolver un QR **sin
-// señal**: no se le puede preguntar a Firestore "los trabajadores del prefijo
-// XX" porque `idQr` es un arreglo de códigos completos y no hay índice que
-// responda eso, así que la alternativa era bajarse la colección `worker`
-// entera — una lectura por trabajador, cada vez.
+// Es una caché, no la autoridad: quién tiene cada código lo dice
+// `worker.idQr`. Si discrepan gana `worker`; "Reconstruir padrones" lo rehace
+// y reporta las diferencias.
 //
-// Es una CACHÉ, nunca la autoridad: quién tiene cada código lo dice
-// `worker.idQr`. Si los dos discrepan gana `worker`, y para eso está
-// "Reconstruir padrones", que lo rehace y reporta las diferencias.
-//
-// Vive dentro del prefijo a propósito: el prefijo *es* la cosecha, así que al
-// liberar los QR de la temporada el padrón se va con él.
+// Vive dentro del prefijo porque el prefijo es la cosecha: al liberar los QR
+// de la temporada, el padrón se va con él.
 async function syncPadron({ assigned = [], released = [], worker }) {
   const porPrefijo = new Map();
   const anotar = (code, valor) => {
@@ -168,13 +155,12 @@ const numberOfCode = (code) => {
   return m ? { n: Number(m[1]), pad: m[1].length } : null;
 };
 
-// Códigos del prefijo que hoy no tiene nadie, para no tener que sacarle el
-// suyo a otra persona. No hay catálogo de QRs impresos, así que "libre" se
-// deduce de dos fuentes: los números que faltan en la serie que sí está
-// asignada, y los que aparecen en pesajes viejos (esos existen físicamente
-// seguro, alguien los escaneó). Un hueco marcado `impreso` es la mejor
-// sugerencia posible; el `fueraDeRango` es un número que quizá nunca se
-// imprimió, y solo se ofrece cuando no quedan huecos.
+// Hasta `max` códigos del prefijo que hoy no tiene nadie. Como no hay catálogo
+// de QR impresos, "libre" es un número que falta en la serie asignada, hasta
+// el mayor visto entre los asignados y los pesajes (`knownCodes`). `impreso`
+// marca los que aparecen en pesajes, que existen físicamente. Si no queda
+// ningún hueco, sugiere el siguiente al mayor (`fueraDeRango`), que quizá
+// nunca se imprimió.
 function suggestFreeCodes(workers, prefixId, knownCodes, max = 3) {
   if (!prefixId) return [];
   const taken = new Set();
@@ -225,9 +211,9 @@ const addDaysKey = (key, n) => {
   return new Date(y, m - 1, d + n).toLocaleDateString("sv-SE");
 };
 
-// La sincronización siguiente arranca donde terminó la anterior: el día
-// después del último que realmente se sincronizó. El techo son 14 días, o
-// hoy si el ciclo viene más atrasado que eso.
+// Rango de la próxima sincronización: desde el día siguiente al último
+// sincronizado, por hasta 14 días, sin pasar de hoy. Sin sincronizaciones
+// previas, los últimos 14 días.
 const nextSyncRange = (lastSync) => {
   const days = lastSync?.days || [];
   const hoy = todayKey();
@@ -253,8 +239,6 @@ const lastSyncLabel = (lastSync) => {
   return `${days[0]} al ${days[days.length - 1]} · ${days.length} días`;
 };
 
-// Sin `total` la barra queda indeterminada: sirve para los pasos que no se
-// pueden contar de antemano (leer, actualizar el ciclo) y que igual tardan.
 // Agrupa los pesajes de un día por trabajador. El subtotal solo aparece si
 // todos sus pesajes son del mismo combo — sumar kilos con bandejas no da nada.
 const groupDayByWorker = (entries) => {
@@ -271,6 +255,8 @@ const groupDayByWorker = (entries) => {
     .sort((a, b) => (a.name || a.rut).localeCompare(b.name || b.rut));
 };
 
+// Sin `total` la barra queda indeterminada: sirve para los pasos que no se
+// pueden contar de antemano (leer, actualizar el ciclo) y que igual tardan.
 function ProgressBar({ label, done, total }) {
   const pct = total ? Math.round((done / total) * 100) : null;
   return (
@@ -296,8 +282,8 @@ function healthOf(prefix, cyclesById) {
   const cycle = cyclesById.get(prefix.cycleId);
   if (!cycle) return { level: "red", label: "El ciclo configurado ya no existe" };
   // Un ciclo cerrado ya se liquidó o está por liquidarse: escribirle jornadas
-  // por detrás descuadra lo que se pagó. Se marca `red` porque es el mismo
-  // nivel que ya deshabilita el botón de sincronizar.
+  // por detrás descuadra lo que se pagó. Va en `red`, el nivel que deshabilita
+  // el botón de sincronizar.
   if (cycle.status === "closed") {
     return { level: "red", label: "El ciclo vigente está cerrado — reapunta el prefijo al ciclo abierto" };
   }
@@ -333,14 +319,13 @@ export default function HarvestQr() {
   const [formState, setFormState] = useState(null); // null | { mode: "create" | "edit", data }
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
-  const [syncFor, setSyncFor] = useState(null); // prefix doc mientras se elige rango
+  const [syncFor, setSyncFor] = useState(null); // doc del prefijo mientras se elige el rango
 
   const reload = async () => {
     setLoading(true);
     try {
-      // `qrPrefixes` va sin caché a propósito: son 4 documentos y es la
-      // configuración que la gente se olvida de reapuntar al abrir un ciclo.
-      // Mostrarla vieja es peor que pagar 4 lecturas.
+      // `qrPrefixes` va sin caché: son pocos documentos y es la configuración
+      // que hay que reapuntar al abrir un ciclo, así que se muestra al día.
       const [px, fa] = await Promise.all([
         countedList(qrPrefixesService, { order: ["label", "asc"] }),
         countedList(faenasService, { order: ["name", "asc"], cache: true, persist: true, ttl: FAENAS_TTL_MS }),
@@ -349,7 +334,7 @@ export default function HarvestQr() {
       setFaenas(fa.data);
       const cycleIds = [...new Set(px.data.map((p) => p.cycleId).filter(Boolean))];
       const cycles = await Promise.all(cycleIds.map((id) => cyclesService.getById(id)));
-      // Los ciclos van por `getById`, que nunca cachea: 1 lectura por prefijo.
+      // Los ciclos van por `getById`, que nunca cachea: 1 lectura por ciclo apuntado.
       setReads(px.reads + fa.reads + cycleIds.length);
       const map = new Map();
       cycles.forEach((c) => { if (c) map.set(c.id, c); });
@@ -577,9 +562,8 @@ function PrefixFormModal({ mode, initial, faenas, onClose, onSaved }) {
       .then((list) => {
         setCycles(list.sort((a, b) => (a.status === b.status ? 0 : a.status === "open" ? -1 : 1)));
       })
-      // Esta consulta cruza igualdad sobre `faenaId` con `orderBy createdAt`,
-      // o sea que necesita un índice compuesto. Sin `catch` el select quedaba
-      // vacío sin decir nada y el error moría en la consola del navegador.
+      // Igualdad sobre `faenaId` más `orderBy createdAt` necesita un índice
+      // compuesto; si falta, se avisa con un toast y el select queda vacío.
       .catch((err) => {
         setCycles([]);
         toast.error("No se pudieron cargar los ciclos de la faena: " + (err.message || err));
@@ -718,9 +702,8 @@ function SyncModal({ prefix, cycle, onClose, onSynced }) {
       const fresh = prefix.cycleId ? await cyclesService.getById(prefix.cycleId) : null;
       const labor = (fresh?.labors || []).find((l) => l.id === prefix.laborId);
       if (!fresh || !labor) throw new Error("Ciclo/labor vigente no disponible");
-      // El botón ya viene deshabilitado por `healthOf`, pero el ciclo pudo
-      // cerrarse entre que se cargó la pantalla y que se apretó: la lista de
-      // ciclos es cacheada y el cierre lo hace otra pantalla.
+      // `healthOf` ya deshabilita el botón, pero el ciclo pudo cerrarse desde
+      // otra pantalla después de que esta lo cargó: se revisa el doc fresco.
       if (fresh.status === "closed") {
         throw new Error("El ciclo vigente se cerró. Reapunta el prefijo al ciclo abierto antes de sincronizar.");
       }
@@ -734,9 +717,9 @@ function SyncModal({ prefix, cycle, onClose, onSynced }) {
         ],
       });
 
-      // Agrupa por (trabajador, día, combo calidad/envase) y suma los kilos —
-      // el mapeo por defecto es identidad (ver contexto: los catálogos se
-      // diseñaron a propósito preservando la convención numérica del scan app).
+      // Agrupa por (trabajador, día, combo calidad/envase) y suma los kilos.
+      // Sin `qualityMap`/`containerMap` el mapeo es identidad: los catálogos
+      // usan la misma numeración que la app de scan.
       const groups = new Map();
       for (const w of weights) {
         if (!w.rut || !w.dateKey) continue;
@@ -748,9 +731,8 @@ function SyncModal({ prefix, cycle, onClose, onSynced }) {
         groups.set(gKey, g);
       }
 
-      // Un doc de worker por rut distinto del batch, no uno por grupo. Se usa
-      // para dos cosas: el `workerId` estable del workday y la entrada del
-      // roster de la labor.
+      // Una lectura de `worker` por RUT distinto, no una por grupo. Da el
+      // `workerId` de la jornada y la entrada del trabajador en la labor.
       const workerByRut = new Map();
       const resolveWorker = async (rut) => {
         if (workerByRut.has(rut)) return workerByRut.get(rut);
@@ -768,22 +750,22 @@ function SyncModal({ prefix, cycle, onClose, onSynced }) {
       }
 
       // La grilla del ciclo se dibuja con `cycle.days` (columnas) y
-      // `labor.workers` (filas): un workday cuyo día o trabajador no esté en
-      // esas listas existe pero no tiene celda donde mostrarse. Se adjunta lo
-      // que falte en un solo update del ciclo.
+      // `labor.workers` (filas): una jornada cuyo día o trabajador no esté en
+      // esas listas no tiene celda donde mostrarse. Lo que falte se agrega en
+      // una sola actualización del ciclo.
       const neededDays = [...new Set([...groups.values()].map((g) => g.dateKey))];
       const neededRuts = [...new Set([...groups.values()].map((g) => g.rut))];
       const rosterKeys = new Set((labor.workers || []).flatMap((w) => [w.rut, w.id].filter(Boolean)));
 
       const daysAdded = neededDays.filter((d) => !(fresh.days || []).includes(d)).sort();
       const rutsToAdd = neededRuts.filter((r) => !rosterKeys.has(r));
-      // Sin ficha en `worker` no hay con qué armar la entrada del roster; se
-      // reportan en vez de inventarles un nombre.
+      // Sin ficha en `worker` no hay con qué armar la entrada de la labor: esos
+      // RUT se reportan.
       const unknownRuts = rutsToAdd.filter((r) => !workerByRut.get(r));
-      // El `rut` de la entrada es el de `harvestWeights`, no el rut legal del
-      // worker: la grilla arma el docId del workday con ese valor para buscar
-      // la celda, y si divergen la fila sale vacía. El dedupe por id es porque
-      // dos ruts distintos pueden resolver al mismo trabajador.
+      // El `rut` de la entrada es el de `harvestWeights`, no el del doc del
+      // trabajador: la grilla arma con ese valor el docId de la jornada para
+      // buscar la celda. Se deduplica por id porque dos RUT distintos pueden
+      // resolver al mismo trabajador.
       const seenWorkerIds = new Set();
       const workersToAdd = [];
       for (const r of rutsToAdd) {
@@ -803,14 +785,11 @@ function SyncModal({ prefix, cycle, onClose, onSynced }) {
         await cyclesService.update(fresh.id, { days: nextDays, labors: nextLabors });
       }
 
-      // Una jornada ya liquidada no se toca por detrás. Si se recalcula, queda
-      // con monto nuevo y `payrollId` viejo (el upsert hace merge y no manda
-      // ese campo): sigue contando como pagada, se sigue filtrando de las
-      // nóminas futuras, y la diferencia no se cobra nunca.
+      // Una jornada ya liquidada no se toca: el upsert hace merge y la dejaría
+      // con monto nuevo y el `payrollId` viejo, contando como pagada sin que
+      // la diferencia se pague nunca.
       //
-      // Se leen de a tandas y en paralelo — son lecturas, no escrituras, así
-      // que no hay nada que ordenar. Una query de rango sobre `date` sería una
-      // sola lectura pero exige un índice compuesto que el proyecto no tiene.
+      // Se leen por id, en tandas de 25 en paralelo.
       setProgress({ label: "Revisando jornadas ya liquidadas…", done: 0, total: groups.size });
       const claves = [...groups.values()].map((g) => ({
         g,
@@ -818,10 +797,8 @@ function SyncModal({ prefix, cycle, onClose, onSynced }) {
       }));
       const bloqueadas = new Set();
       const blocked = [];
-      // Se guarda el doc, no solo si estaba bloqueado: abajo se le pasa a
-      // `upsert` como `before` para que el servicio no lo vuelva a leer. Sin
-      // esto cada jornada costaba dos lecturas, una acá y otra adentro del
-      // `upsert`.
+      // Guarda cada doc leído para pasárselo a `upsert` como `before`, así el
+      // servicio no lo vuelve a leer: una lectura por jornada.
       const yaLeidas = new Map();
       for (let i = 0; i < claves.length; i += 25) {
         const tanda = claves.slice(i, i + 25);
@@ -979,11 +956,6 @@ function SyncModal({ prefix, cycle, onClose, onSynced }) {
 // pesaje se conocen las claves afectadas —la de antes y la de después—, así
 // que alcanza con recalcular esas dos desde los pesajes que existen ahora; no
 // hace falta recorrer el rango.
-//
-// Solo se espeja si la clave ya tenía jornada. Esa jornada es la prueba de que
-// alguien aprobó que este prefijo apunte a ese ciclo para esa fecha: el puntero
-// ciclo/labor del prefijo se reapunta a mano y puede estar viejo, así que crear
-// jornadas sin esa prueba podría meterlas en el ciclo equivocado.
 
 const keyOf = (k) => `${k.prefixId}__${k.rut}__${k.dateKey}__${comboKey(k.x, k.y)}`;
 
@@ -1081,11 +1053,9 @@ async function syncWorkdayKeys(prefixDoc, target, keys) {
   return report;
 }
 
-// Lleva cada clave tocada a su jornada, creándola si no existía — un combo, un
-// trabajador o un día nuevo son exactamente el caso que hay que reflejar, no
-// uno que haya que excluir. El único freno es no tener a dónde escribir: un
-// prefijo sin ciclo y labor asignados no tiene jornada posible, y eso se
-// reporta en `noTarget` para poder decirlo.
+// Lleva cada clave tocada a su jornada, creándola si no existía. Un prefijo
+// sin ciclo y labor asignados no tiene dónde escribir y se reporta en
+// `noTarget`; si ningún prefijo tiene destino, devuelve null.
 async function mirrorWeightToWorkdays(prefixes, keys) {
   const byPrefix = new Map();
   const seen = new Set();
@@ -1142,8 +1112,8 @@ function WeightsExplorer({ prefixes, faenaById }) {
   const [reloadKey, setReloadKey] = useState(0);
   const [fetchedAt, setFetchedAt] = useState(null);
   const [reads, setReads] = useState(null);
-  // Se prende solo si Firestore rechaza la consulta acotada por falta de
-  // índice; a partir de ahí el filtro vuelve a ser en memoria.
+  // Se prende si Firestore rechaza la consulta acotada por falta de índice; a
+  // partir de ahí el filtro por prefijo se aplica en memoria.
   const [sinIndice, setSinIndice] = useState(false);
   const { isAdmin } = useAuth();
 
@@ -1171,10 +1141,9 @@ function WeightsExplorer({ prefixes, faenaById }) {
     return map;
   }, [workers]);
 
-  // Buscar por QR resuelve al trabajador y desde ahí filtra por rut, nunca por
-  // el `idQr` del pesaje. El código es una llave prestada: se recicla, se
-  // pierde, se reemplaza. Filtrar por él escondería justo los pesajes que se
-  // quieren revisar cuando alguien cambió de QR — los de antes del cambio.
+  // Buscar por QR resuelve al trabajador y filtra por su RUT, no por el `idQr`
+  // del pesaje: los códigos se reciclan y se reemplazan, y así aparecen
+  // también los pesajes de antes de un cambio de QR.
   const qrMatch = useMemo(() => {
     const needle = search.trim().toUpperCase();
     if (!needle) return null;
@@ -1183,10 +1152,9 @@ function WeightsExplorer({ prefixes, faenaById }) {
     );
     if (owner) return { code: needle, owners: [owner], keys: new Set([owner.id, owner.rut].filter(Boolean)) };
 
-    // Un código liberado no es de nadie hoy, pero los pesajes que lo anotaron
-    // siguen diciendo de quién fue. Se resuelve por ahí para que buscar un QR
-    // devuelto al pozo no quede mudo. Puede traer más de una persona: el mismo
-    // código pudo andar en manos distintas en temporadas distintas.
+    // Un código liberado no es de nadie hoy: se resuelve por los pesajes que
+    // lo anotaron. Puede traer más de una persona si el código pasó por varias
+    // manos.
     const keys = new Set();
     for (const w of weights) {
       if (String(w.idQr || "").trim().toUpperCase() === needle && w.rut) keys.add(w.rut);
@@ -1200,24 +1168,22 @@ function WeightsExplorer({ prefixes, faenaById }) {
     return { code: needle, owners, keys, freed: true };
   }, [workers, weights, search]);
 
-  // Cacheada y compartida con Trabajadores, Nómina y Calendario. Tras asignar
-  // un QR la lista igual sale fresca, pero no porque se invalide: `workersService`
-  // es aditivo (ver services/index.js) y parchea la entrada en memoria con el
-  // trabajador que acaba de cambiar, sin releer la colección.
+  // Cacheada y compartida con Trabajadores, Nómina y Calendario.
+  // `workersService` es aditivo (ver services/index.js): al asignar un QR
+  // parchea la entrada en memoria sin releer la colección.
   const loadWorkers = () =>
     workersService
       .list({ order: ["name", "asc"], cache: true, persist: true, ttl: 2 * 60 * 60 * 1000 })
       .then(setWorkers)
-      .catch(() => { /* sin nombres se muestra el rut, no vale la pena molestar */ });
+      .catch(() => { /* sin la lista se muestra el RUT en vez del nombre */ });
 
   useEffect(() => {
     loadWorkers();
   }, []);
 
-  // Los `<input type="date">` emiten un cambio por cada pedazo de fecha que se
-  // completa, y cada uno relee el rango entero. Sin esta espera, correr el
-  // "Desde" un mes hacia atrás cuesta varias lecturas completas de la
-  // colección antes de llegar a la fecha que se quería.
+  // Espera 400 ms antes de releer: un `<input type="date">` emite un cambio
+  // por cada parte de la fecha que se completa, y cada rango nuevo se lee
+  // entero.
   const [range, setRange] = useState({ from: dateFrom, to: dateTo });
   useEffect(() => {
     const t = setTimeout(() => setRange({ from: dateFrom, to: dateTo }), 400);
@@ -1230,14 +1196,11 @@ function WeightsExplorer({ prefixes, faenaById }) {
     if (!from || !to || from > to) return;
     setBusy(true);
 
-    // Acotar por prefijo en la consulta y no en memoria. Antes elegir un
-    // prefijo no bajaba las lecturas: traía los de todos y descartaba al
-    // renderizar. Cruza igualdad sobre `prefix` con el rango de `dateKey`, o
-    // sea que necesita el índice compuesto (prefix, dateKey) — el mismo que ya
-    // usa la sincronización. Si no está, Firestore responde
-    // `failed-precondition`: se recuerda y se vuelve a pedir sin el filtro,
-    // que es exactamente como funcionaba antes. El filtro en cliente se queda
-    // igual, porque es el que sostiene ese caso.
+    // El prefijo filtra en la consulta, así elegir uno baja las lecturas.
+    // Necesita el índice compuesto (prefix, dateKey), el mismo que usa la
+    // sincronización. Si falta, Firestore responde `failed-precondition`: se
+    // recuerda en `sinIndice` y se vuelve a pedir sin el filtro, que entonces
+    // se aplica en memoria.
     const acotar = !!prefixFilter && !sinIndice;
     const opts = {
       wheres: [
@@ -1247,8 +1210,8 @@ function WeightsExplorer({ prefixes, faenaById }) {
       ],
       order: ["dateKey", "desc"],
       // Sin `persist`: cada rango es su propia clave y la lista de trabajadores
-      // ya ocupa lo suyo en `localStorage`. En memoria alcanza — el ir y venir
-      // entre pestañas sale gratis, y recargar la página es raro.
+      // ya ocupa lo suyo en `localStorage`. En memoria alcanza para ir y venir
+      // entre pestañas.
       cache: true,
       ttl: WEIGHTS_TTL_MS,
     };
@@ -1276,16 +1239,15 @@ function WeightsExplorer({ prefixes, faenaById }) {
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [range, reloadKey, prefixFilter, sinIndice]);
 
-  // Tira la caché de pesajes y vuelve a leer. Es la contraparte del TTL largo:
-  // la pantalla no adivina cuándo quedó vieja, lo decide quien la mira.
+  // Descarta la caché de pesajes y vuelve a leer: con TTL largo, refrescar es
+  // una decisión de quien mira.
   const refrescar = () => {
     harvestWeightsService.invalidate();
     setReloadKey((k) => k + 1);
   };
 
-  // El filtro por prefijo y la búsqueda son en cliente a propósito: sumarlos a
-  // la query obligaría a un índice compuesto (rango sobre dateKey + igualdad
-  // sobre prefix) por una ganancia nula a este volumen.
+  // La búsqueda filtra en cliente. El filtro por prefijo se repite aquí para
+  // cuando la consulta va sin él (`sinIndice`).
   const view = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const combos = new Map();
@@ -1711,20 +1673,17 @@ function WeightsExplorer({ prefixes, faenaById }) {
   );
 }
 
-// Alta y edición manual de un pesaje. `harvestWeights` la escribe normalmente
-// la app de scan; esto es la vía de excepción para corregir una lectura mala o
-// cargar una que no se alcanzó a escanear.
+// Alta y edición manual de pesajes. `harvestWeights` la escribe la app de
+// scan; esto es la vía de excepción para corregir una lectura mala o cargar
+// una que no se alcanzó a escanear.
 //
-// Dos cosas que no son obvias:
+// 1. El documento guarda la numeración del scan (`weightProcess`/`weightType`),
+//    no la del catálogo: el formulario elige el combo del catálogo y guarda su
+//    inversa según el prefijo, con verificación de ida y vuelta, porque un
+//    prefijo con remapeo puede no poder representar el combo elegido.
 //
-// 1. El documento guarda la numeración del SCAN (`weightProcess`/`weightType`),
-//    no la del catálogo. El formulario deja elegir el combo del catálogo y
-//    guarda su inversa según el prefijo — con verificación de ida y vuelta,
-//    porque un prefijo con remapeo puede no poder representar el combo elegido.
-//
-// 2. El `rut` que se guarda es el docId del trabajador (el id estable), que es
-//    contra el que resuelve la sincronización. Guardar el rut legal actual
-//    haría que un trabajador que cambió de cédula no matchee.
+// 2. El `rut` que se guarda es el docId del trabajador (el id estable), con el
+//    que resuelve la sincronización aunque la persona haya cambiado de cédula.
 function WeightFormModal({ mode, initial, prefixes, workers, catalogs, knownCodes, onClose, onSaved, onWorkersChanged }) {
   const toast = useToast();
   const { displayName } = useAuth();
@@ -1735,10 +1694,8 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, knownCode
   const [qrPick, setQrPick] = useState(initial?.idQr || "");
   const [busy, setBusy] = useState(false);
 
-  // Asignar un QR desde acá evita salir a Gestión QRs cuando la persona
-  // recién llega y todavía no tiene código. Lo que NO evita es la validación:
-  // los códigos se reciclan, así que asignar uno puede estar quitándoselo a
-  // otra persona, y eso se pregunta.
+  // Asignación de QR sin salir a Gestión QRs. Si el código ya tiene dueño, se
+  // pide confirmación antes de quitárselo.
   const [nuevoQr, setNuevoQr] = useState(null); // null | { code }
   const [confirmarRobo, setConfirmarRobo] = useState(null); // null | { code, from }
   const [recienAsignado, setRecienAsignado] = useState("");
@@ -1765,11 +1722,9 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, knownCode
     [workers, rut],
   );
 
-  // El idQr es la llave del QR físico que originó el pesaje, no la identidad
-  // del trabajador: los códigos se imprimen antes de la cosecha, se entregan, y
-  // se reciclan — el mismo XX-19 pudo ser de otra persona la temporada pasada.
-  // Queda como rastro de lo que se escaneó ese día; quien necesite saber de
-  // quién es el pesaje usa `rut`, nunca esto.
+  // El `idQr` del pesaje es el rastro del QR físico escaneado, no la identidad
+  // del trabajador: los códigos se reciclan entre temporadas. De quién es el
+  // pesaje lo dice `rut`.
   const workerCodes = useMemo(() => {
     const all = (worker?.idQr || []).map((c) => String(c || "").trim().toUpperCase()).filter(Boolean);
     return prefixId ? all.filter((c) => prefixOfCode(c) === prefixId) : all;
@@ -1785,8 +1740,8 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, knownCode
     return [...new Set([...original, ...workerCodes, ...extra])];
   }, [isEdit, initial, rut, prefixId, workerCodes, recienAsignado]);
 
-  // Derivado y no un efecto: cambiar de trabajador o de prefijo invalida la
-  // selección anterior sin que haya que sincronizarla a mano.
+  // Se deriva en el render: al cambiar de trabajador o de prefijo, una
+  // selección que ya no está entre las opciones se descarta sola.
   const qrCode = qrOptions.includes(qrPick) ? qrPick : qrOptions.length === 1 ? qrOptions[0] : "";
 
   const sugerencias = useMemo(
@@ -1794,9 +1749,8 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, knownCode
     [nuevoQr, workers, prefixId, knownCodes],
   );
 
-  // Verificación de ida y vuelta: si el prefijo tiene un remapeo que no permite
-  // representar este combo, guardarlo escribiría un pesaje que se lee como otra
-  // cosa. Mejor bloquear que guardar algo que miente.
+  // Verificación de ida y vuelta: si el remapeo del prefijo no puede
+  // representar el combo, el pesaje se leería como otra cosa y no se guarda.
   const checked = useMemo(
     () =>
       rows.map((r) => {
@@ -1871,21 +1825,19 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, knownCode
           amount: r.qty,
           idQr: qrCode,
         };
-        // Solo al crear, y nunca al editar:
-        //  - `supervisor` es quién estuvo en el pesaje; en una carga a mano ese
-        //    es quien la carga. Sobrescribirlo borraría al supervisor real de
-        //    un pesaje escaneado; quién editó está en el log.
-        //  - `dateInsert` es cuándo se creó el registro, no cuándo se cosechó
-        //    (eso es `dateKey`, que puede ser un día pasado). Es con lo que la
-        //    app de scan ordena los pesajes dentro del día, así que sin esto
-        //    los cargados a mano se le irían todos al principio.
+        // `supervisor` y `dateInsert` se escriben solo al crear:
+        //  - `supervisor` es quién estuvo en el pesaje; en una carga a mano,
+        //    quien la carga. Al editar se conserva el del escaneo; quién editó
+        //    queda en el log.
+        //  - `dateInsert` es cuándo se creó el registro (la cosecha es
+        //    `dateKey`). La app de scan ordena con él los pesajes del día.
         if (isEdit) await harvestWeightsService.update(initial.id, payload);
         else await harvestWeightsService.create({ ...payload, supervisor: displayName, dateInsert: serverTimestamp() });
       }
       toast.success(isEdit ? "Pesaje actualizado" : `${checked.length} pesaje(s) agregado(s)`);
 
-      // El espejo va aparte: si falla, los pesajes igual quedaron guardados y
-      // hay que decirlo así en vez de que parezca que no se guardó nada.
+      // El espejo va en su propio try: si falla, los pesajes ya quedaron
+      // guardados y el aviso lo dice.
       try {
         const nuevas = checked.map((r) => ({ prefixId, rut: worker.id, dateKey, x: r.x, y: r.y }));
         const vieja = isEdit
@@ -2216,10 +2168,7 @@ function QrManager({ prefixes, onPrefixesChanged }) {
     try {
       // Mismas opciones que la pestaña de pesajes y que Trabajadores, Nómina y
       // Calendario: comparten clave de caché, así que la primera pantalla que
-      // se abra paga y el resto sale gratis. Sin `cache: true` esta llamada no
-      // solo pagaba los ~3.100 trabajadores cada vez que se abre la pestaña y
-      // después de cada asignación — tampoco dejaba la entrada escrita para
-      // las demás.
+      // se abre paga y el resto sale de la caché.
       const { data, reads: pagadas } = await countedList(workersService, {
         order: ["name", "asc"],
         cache: true,
@@ -2248,15 +2197,11 @@ function QrManager({ prefixes, onPrefixesChanged }) {
   // Rehace `qrPrefixes/{PREFIJO}.padron` desde `worker`, que es la fuente de
   // verdad, y reporta en qué diferían.
   //
-  // El padrón es la caché que la app de scan lee **de una sola vez** para poder
-  // resolver un QR sin señal. Como es un espejo, puede derivar: una asignación
-  // cuya escritura del espejo falló, o hecha por una versión vieja del scan. Y
-  // la deriva no se ve — los pesajes simplemente quedan con el rut equivocado.
-  // Por eso esto no es una herramienta de rescate sino parte del diseño:
-  // conviene correrlo al abrir cada temporada.
+  // El padrón es un espejo y puede desviarse sin que se note (por ejemplo, si
+  // falló la escritura del espejo): los pesajes quedan con el RUT equivocado.
+  // Conviene correrlo al abrir cada temporada.
   //
-  // No cuesta lecturas de trabajadores: usa la lista que esta pantalla ya tiene
-  // cargada.
+  // No cuesta lecturas de trabajadores: usa la lista ya cargada.
   const rebuildPadrones = async () => {
     setBusy(true);
     try {
@@ -2279,12 +2224,10 @@ function QrManager({ prefixes, onPrefixesChanged }) {
       let quitados = 0;
       let cambiados = 0;
 
-      // `esperado` se arma con los prefijos que aparecen en `worker.idQr`, y
-      // esos pueden no tener doc en `qrPrefixes` — la propia vista los marca
-      // como "sin prefijo configurado". `update` termina en `updateDoc`, que
-      // falla si el documento no existe: sin esta guarda el primer huérfano
-      // cortaba el recorrido y dejaba los prefijos que venían después sin
-      // escribir, con el toast de error como única señal.
+      // `esperado` puede traer prefijos de `worker.idQr` sin doc en
+      // `qrPrefixes` (la vista los marca "sin prefijo configurado"). `update`
+      // usa `updateDoc`, que falla si el doc no existe: esos se saltan y se
+      // reportan como huérfanos.
       const conocidos = new Set(prefixes.map((p) => p.id));
       const huerfanos = [];
 
@@ -2315,10 +2258,8 @@ function QrManager({ prefixes, onPrefixesChanged }) {
           : "Padrones reconstruidos · ya estaban al día",
       );
 
-      // El diff se calcula contra `prefixes`, que viene del padre. Sin este
-      // aviso la lista quedaba con los padrones viejos y correr la función una
-      // segunda vez reportaba los mismos agregados/quitados aunque ya no
-      // hubiera nada que cambiar.
+      // El diff se calcula contra `prefixes`, que viene del padre: se recarga
+      // para que una segunda corrida compare contra los padrones nuevos.
       onPrefixesChanged?.();
     } catch (err) {
       toast.error("No se pudieron reconstruir los padrones: " + (err.message || err));
@@ -2348,9 +2289,8 @@ function QrManager({ prefixes, onPrefixesChanged }) {
     const duplicated = [...owners.entries()].filter(([, ws]) => ws.length > 1).map(([code]) => code);
     const dupSet = new Set(duplicated);
 
-    // Data vieja puede tener a alguien con dos códigos de la misma cosecha,
-    // de antes de que la asignación soltara el anterior. Se muestra para que
-    // se pueda limpiar; reasignar cualquiera de los dos lo resuelve.
+    // Trabajadores con más de un código de la misma cosecha. Se muestran para
+    // limpiarlos: reasignar cualquiera de los dos deja solo ese.
     const multi = [];
     for (const w of workers) {
       const byPfx = new Map();
@@ -2388,13 +2328,11 @@ function QrManager({ prefixes, onPrefixesChanged }) {
 
   const codesOf = (worker) => (worker.idQr || []).map((c) => String(c || "").trim().toUpperCase()).filter(Boolean);
 
-  // Un pesaje pertenece a su trabajador por `rut`; el `idQr` es solo el rastro
-  // del QR físico con el que se lo identificó ese día. Por eso rellenarlo es
-  // seguro: no cambia de quién es ningún pesaje.
+  // Pesajes del trabajador en el prefijo del código que no tienen `idQr`.
+  // Rellenarlo no cambia de quién es ningún pesaje: eso lo dice `rut`.
   //
   // El filtro por prefijo y por "sin código" va en cliente: Firestore no puede
-  // consultar por un campo ausente, y los pesajes escaneados antes de que
-  // existiera `idQr` no lo tienen — que son justamente los que se buscan.
+  // consultar por un campo ausente.
   const findLooseWeights = async (worker, code) => {
     const pfx = prefixOfCode(code);
     if (!pfx) return [];
@@ -2468,9 +2406,8 @@ function QrManager({ prefixes, onPrefixesChanged }) {
     }
   };
 
-  // Limpiar es un update por trabajador afectado, no un batch: así cada
-  // borrado queda en el log de auditoría, que para una acción masiva y
-  // destructiva importa más que la velocidad.
+  // Limpiar hace una actualización por trabajador afectado, sin batch, para
+  // que cada borrado quede en el log de auditoría.
   const runClear = async () => {
     if (!clearing) return;
     const codes = new Set(clearing.codes);

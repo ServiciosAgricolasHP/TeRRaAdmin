@@ -114,8 +114,7 @@ describe("parseSiiRcvCsv — codificación", () => {
   it("descarta el BOM de UTF-8", () => {
     const csv = [HEAD_VENTAS, fila(1, 33, 1, "76123456-7", "Muñoz", 100, "2026-03-15", 0, 1, 0, 1)].join("\n");
     const r = parseSiiRcvCsv(utf8ConBom(csv));
-    // Si el BOM no se sacara, el primer header quedaría con el carácter
-    // invisible adelante y el Tipo Doc no se encontraría.
+    // El BOM se descarta antes de leer los encabezados.
     expect(r.records).toHaveLength(1);
     expect(r.records[0].razonSocialReceptor).toBe("Muñoz");
   });
@@ -170,8 +169,7 @@ describe("parseSiiRcvCsv — montos y fechas", () => {
   });
 
   it("una fecha que no se puede parsear pasa tal cual y ensucia el período", () => {
-    // Vale la pena tenerlo fijado: un período basura arma un scope propio en
-    // el import y nunca coincide con nada.
+    // El período son los primeros 7 caracteres de la fecha sin normalizar.
     const r = conFecha("marzo 2026");
     expect(r.fechaEmision).toBe("marzo 2026");
     expect(r.periodo).toBe("marzo 2");
@@ -186,10 +184,9 @@ describe("parseSiiRcvCsv — IVA", () => {
     expect(parseSiiRcvCsv(utf8(csv)).records[0].iva).toBe(19000);
   });
 
-  // `colIdx` matchea por `includes`, así que el fallback "monto iva" —que está
-  // para los exports con una sola columna de IVA— aterrizaba en la columna de
-  // No Recuperable cuando era la única, y el IVA se sumaba dos veces. Ese IVA
-  // va derecho al balance que alimenta el F29.
+  // `colIdx` busca por "contiene": el fallback "monto iva" también calza con la
+  // columna No Recuperable, y en ese caso se descarta para no sumar el IVA dos
+  // veces.
   it("no duplica el IVA cuando solo existe la columna No Recuperable", () => {
     const head =
       "Nro;Tipo Doc;RUT Proveedor;Razon Social;Folio;Fecha Docto;Monto Neto;Monto IVA No Recuperable;Monto Total";
@@ -199,7 +196,7 @@ describe("parseSiiRcvCsv — IVA", () => {
   });
 
   it("sigue leyendo el IVA de un export con una sola columna \"Monto IVA\"", () => {
-    // El fallback tiene que seguir funcionando: es el caso para el que existe.
+    // Es el caso para el que existe el fallback "monto iva".
     const head =
       "Nro;Tipo Doc;Rut cliente;Razon Social;Folio;Fecha Docto;Monto Neto;Monto IVA;Monto Total";
     const csv = [head, fila(1, 33, "77111111-1", "C", 55, "2026-03-15", 100000, 19000, 119000)].join("\n");
@@ -263,8 +260,8 @@ describe("normalizeRut / rutNumeric", () => {
   });
 
   it("⚠️ es otra función que la de rutUtils: esta AGREGA el guion", () => {
-    // rutUtils.normalizeRut("761234567") devuelve "761234567" sin tocar.
-    // Mismo nombre, contrato distinto. Documentado para que nadie las cruce.
+    // rutUtils.normalizeRut("761234567") devuelve "761234567" sin tocar: mismo
+    // nombre, contrato distinto.
     expect(normalizeRut("761234567")).toBe("76123456-7");
   });
 
@@ -286,29 +283,18 @@ describe("extractRutFromFilename", () => {
     expect(extractRutFromFilename("")).toBe("");
   });
 
-  // ⚠️ COMPORTAMIENTO ACTUAL, PARECE UN BUG (siiCsvParser.js:166)
-  //
-  // Los dos regex anclan con `\b`, y en JavaScript el guion bajo ES un
-  // carácter de palabra: entre `_` y un dígito NO hay borde. Como el SII
-  // separa con guiones bajos —el propio comentario de la función pone de
-  // ejemplo `Detalle_VENTA_76123456-7_202405.csv`— el caso documentado no
-  // matchea nunca.
-  //
-  // Esto alimenta el aviso de "RUT del archivo distinto al de la empresa" en
-  // el preview del import. No corrompe datos, pero el aviso no aparece cuando
-  // tendría que aparecer.
+  // Fija lo actual: los dos regex anclan con `\b`, y entre `_` y un dígito no
+  // hay borde de palabra, así que con guiones bajos (el formato del SII) no
+  // encuentra el RUT. Lo esperado sería extraerlo, para que el preview del
+  // import avise cuando no coincide con la empresa.
   it("[bug conocido] no encuentra nada con guiones bajos, que es el formato del SII", () => {
     expect(extractRutFromFilename("Detalle_VENTA_76123456-7_202405.csv")).toBe("");
     expect(extractRutFromFilename("compras_76123456-k.csv")).toBe("");
   });
 
-  // ⚠️ Y este es peor: devuelve un RUT TRUNCADO en vez de nada.
-  //
-  // Con puntos de miles, el primer regex puede empezar a matchear en medio del
-  // número (después de un `.` sí hay borde) y se queda con los últimos grupos.
-  // De "76.123.456-7" saca "123456-7", que es un RUT que existe y es de otra
-  // persona: el preview podría avisar de un desajuste falso, o callarse ante
-  // uno real.
+  // Fija lo actual: con puntos de miles, el primer regex empieza a calzar
+  // después de un `.` (ahí sí hay borde) y de "76.123.456-7" saca "123456-7",
+  // otro RUT. Lo esperado sería "76123456-7".
   it("[bug conocido] trunca el RUT cuando viene con puntos y guion bajo delante", () => {
     expect(extractRutFromFilename("RCV_76.123.456-7.csv")).toBe("123456-7");
   });
@@ -336,13 +322,10 @@ describe("tablas de códigos", () => {
 
   // La columna `Codigo Otro Impuesto` del RCV carga DOS tablas del SII que se
   // pisan numéricamente: impuestos adicionales y retenciones de cambio de
-  // sujeto. El mapa original estaba corrido y estos son los casos que lo
-  // delataban en datos reales. Contrastar contra el PDF oficial, no contra el
-  // nombre que suene razonable:
+  // sujeto. Los códigos se contrastan contra el PDF oficial:
   // https://www.sii.cl/declaraciones_juradas/ddjj_3327_3328/cod_otros_imp_retenc.pdf
   it("no confunde retenciones de cambio de sujeto con impuestos adicionales", () => {
-    // El que se vio en producción: una factura de compra de fruta salía con
-    // chip 🍷 Alcohol porque el 15 estaba mapeado a "cervezas, vinos, sidras".
+    // El 15 es IVA retenido total, no un impuesto al alcohol.
     expect(otroImpuestoCategory(15)).toBe("retencion");
     expect(otroImpuestoLabel(15)).toMatch(/retenido total/i);
     expect(esRetencion(15)).toBe(true);
@@ -361,9 +344,6 @@ describe("tablas de códigos", () => {
   });
 
   it("28 es diésel y 35 es gasolina, no al revés", () => {
-    // Estaban invertidos. Los dos son combustible, así que el agrupado por
-    // centro de costo nunca se rompió — solo mentía la etiqueta, que es peor
-    // porque se lee como un dato bueno.
     expect(otroImpuestoLabel(28)).toMatch(/di[eé]sel/i);
     expect(otroImpuestoLabel(35)).toMatch(/gasolina/i);
   });
@@ -373,7 +353,7 @@ describe("tablas de códigos", () => {
   // O sea que **el total ya viene con la retención descontada**: una factura
   // de compra con retención total se ve con total == neto, y una parcial se ve
   // como una venta cualquiera más barata. Sin leer las columnas de retención
-  // no hay forma de distinguirlas, y la plata retenida desaparece del registro.
+  // no hay forma de distinguirlas.
   it("distingue retención total de parcial en facturas de compra recibidas", () => {
     const csv = [
       "Nro;Tipo Doc;Rut cliente;Razon Social;Folio;Fecha Docto;Monto Exento;Monto Neto;Monto IVA;IVA Retenido Total;IVA Retenido Parcial;IVA no retenido;Codigo Otro Imp.;Tasa Otro Imp.;Valor Otro Imp.;Monto total",
@@ -402,8 +382,8 @@ describe("tablas de códigos", () => {
   });
 
   it("un impuesto adicional no se cuenta como retención", () => {
-    // `Valor Otro Imp` carga las dos cosas. Una compra de diésel tiene monto
-    // ahí y no es plata retenida; contarla como retención inventaría una.
+    // `Valor Otro Imp` carga las dos cosas: una compra de diésel tiene monto
+    // ahí y no es plata retenida.
     const csv = [
       "Nro;Tipo Doc;Rut Proveedor;Razon Social;Folio;Fecha Docto;Monto Exento;Monto Neto;Monto IVA Recuperable;Codigo Otro Imp.;Valor Otro Imp.;Monto total",
       "1;33;76111111-1;COPEC S.A.;900;16-09-2026;0;100000;19000;28;5000;124000",

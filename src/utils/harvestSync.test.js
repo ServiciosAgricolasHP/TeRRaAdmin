@@ -19,9 +19,8 @@ describe("isPrefixSyncing", () => {
   });
 
   it("`active` ausente cuenta como activo", () => {
-    // Los documentos anteriores al campo no lo traen, y la pantalla de Pesajes
-    // QR los muestra como activos. Si acá contaran como inactivos, una labor
-    // que sí se sincroniza quedaría editable a mano.
+    // Mismo criterio que la pantalla de Pesajes QR, que muestra como activo un
+    // prefijo sin `active`.
     const { active: _drop, ...sinCampo } = pfx({ active: true });
     expect(sinCampo.active).toBeUndefined();
     expect(isPrefixSyncing(sinCampo, "c1")).toBe(true);

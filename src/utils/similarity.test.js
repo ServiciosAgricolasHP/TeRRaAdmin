@@ -7,8 +7,6 @@ describe("nameSimilarity", () => {
   });
 
   it("ignora mayúsculas, tildes y puntuación", () => {
-    // Detectar el duplicado es lo que evita pagarle dos veces a la misma
-    // persona bajo dos RUT distintos.
     expect(nameSimilarity("josé muñoz", "JOSE MUNOZ")).toBe(1);
     expect(nameSimilarity("O'Brien, Ana", "O BRIEN ANA")).toBe(1);
   });
@@ -82,8 +80,6 @@ describe("findSimilarWorkers", () => {
   });
 
   it("un nombre vacío no devuelve a todo el padrón", () => {
-    // Si devolviera todo, el alta de un trabajador sin nombre tipeado
-    // mostraría una alerta de duplicado con cualquiera.
     expect(findSimilarWorkers("", padron)).toEqual([]);
     expect(findSimilarWorkers(null, padron)).toEqual([]);
   });

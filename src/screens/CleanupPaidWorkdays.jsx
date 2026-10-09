@@ -1,9 +1,8 @@
-// TEMPORARY admin/cleanup screen.
-// Shows workdays marked as paid for a given cycle and lets you "release"
-// them (clear payrollId + paidAt + paidBy). Useful when a payroll was
-// deleted manually and its workdays still point at the dead doc.
+// Pantalla de limpieza (admin): lista las jornadas de un ciclo con `paidAt` o
+// `payrollId` y permite liberarlas (payrollId, paidAt y paidBy en null), para
+// las que apuntan a una nómina que ya no existe.
 //
-// Delete this file + its route in App.jsx once the cleanup is done.
+// TODO: eliminar esta pantalla, su ruta en App.jsx y su ítem en Layout.jsx al terminar la limpieza.
 import { useEffect, useMemo, useState } from "react";
 import { doc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
@@ -53,7 +52,7 @@ export default function CleanupPaidWorkdays() {
       paid.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
       setRows(paid);
 
-      // Load worker names for display (chunked by 30 — Firestore "in" limit).
+      // Nombres de los trabajadores, en tandas de 30 (límite de `in` en Firestore).
       const ruts = [...new Set(paid.map((w) => w.workerRut).filter(Boolean))];
       const map = {};
       for (let i = 0; i < ruts.length; i += 30) {
@@ -73,10 +72,6 @@ export default function CleanupPaidWorkdays() {
   };
 
   useEffect(() => {
-    // Antes había un cycleId de Firestore pegado a mano acá — reemplazado
-    // por un selector poblado desde la colección real (mismo patrón que
-    // HarvestQr.jsx para elegir ciclo), para no tener que copiar/pegar un
-    // ID crudo en una pantalla que hace writes destructivos en batch.
     cyclesService.list({ order: ["label", "asc"] }).then(setCycles);
   }, []);
 

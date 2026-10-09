@@ -12,10 +12,9 @@ const fmtCurrency = (v) =>
 
 const toDate = (ts) => (ts?.toDate ? ts.toDate() : ts ? new Date(ts) : null);
 
-// El doc del anticipo solo guarda `createdBy`/`updatedBy` como uid, y la
-// colección `users` no tiene nombre ni email. Quién lo puso sale del log de
-// auditoría, que sí guarda el email — y se puede pedir por trabajador porque
-// el log denormaliza `meta.workerRut` (REF_META_FIELDS en firestoreBase).
+// Quién puso o editó cada anticipo sale del log de auditoría, que guarda el
+// correo (el doc del anticipo solo guarda uids). Se pide por trabajador con
+// `meta.workerRut` (REF_META_FIELDS en firestoreBase).
 const whoLabel = (entry) => entry?.by || "—";
 
 const shortWhen = (d) =>
@@ -35,10 +34,6 @@ const STATUS_CLASS = {
   cancelled: "bg-[var(--color-surface-2)] text-[var(--color-muted)]",
 };
 
-// Ficha completa de anticipos y bonos de un trabajador: TODOS sus registros,
-// sin los filtros de estado ni la ventana de fechas de la pantalla. Se arma
-// desde la misma lista ya cargada, así que no cuesta ninguna lectura.
-//
 function AdvanceTotalsTile({ title, data, tone }) {
   return (
     <div className="flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
@@ -52,6 +47,9 @@ function AdvanceTotalsTile({ title, data, tone }) {
   );
 }
 
+// Ficha de anticipos y bonos de un trabajador: todos sus registros, sin los
+// filtros de estado ni de fechas de la pantalla. Sale de la lista que la
+// pantalla ya cargó; solo la autoría lee el log de auditoría.
 export default function WorkerAdvancesModal({ workerKeys, name, rut, items, onClose }) {
   const mine = useMemo(() => {
     const keys = new Set((workerKeys || []).filter(Boolean));

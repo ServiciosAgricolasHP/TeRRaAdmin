@@ -1,17 +1,17 @@
 // Parser de archivos CSV exportados del Registro de Compras y Ventas (RCV)
 // del portal del SII. Estos archivos vienen con:
 // - Separador: `;`
-// - Encoding: UTF-8 con BOM (moderno) o ISO-8859-1 (legacy).
-// - Primera fila: headers en español.
+// - Encoding: UTF-8 con BOM o ISO-8859-1.
+// - Primera fila: encabezados en español.
 // - Una fila por documento.
 //
-// Detectamos automáticamente si es de ventas o compras inspeccionando los
-// headers ("Rut cliente" vs "Rut Proveedor"). Devolvemos registros normalizados
-// con el shape de `dteDocuments`. El doc id es determinístico (rutEmisor+tipo
-// +folio) para que importar el mismo mes dos veces sea idempotente.
+// Detecta si es de ventas o de compras por los encabezados ("Rut cliente" vs
+// "Rut Proveedor") y devuelve registros con la forma de `dteDocuments`, sin id:
+// el id lo arma `buildDteDocId` y es determinístico, así que importar dos veces
+// el mismo período es idempotente.
 
-// Mapeo de tipos de DTE del SII. No cubre absolutamente todos los códigos
-// existentes pero sí los más comunes para una operación agrícola/servicios.
+// Tipos de DTE del SII: los más comunes para una operación agrícola y de
+// servicios, no todos.
 export const DTE_TYPES = {
   29: "Factura de Inicio Electrónica",
   30: "Factura",
@@ -46,22 +46,14 @@ export function dteTypeLabel(tipo) {
 // Tabla "Códigos Otros Impuestos y Retenciones" del SII, transcrita del PDF
 // oficial de las DDJJ 3327/3328:
 // https://www.sii.cl/declaraciones_juradas/ddjj_3327_3328/cod_otros_imp_retenc.pdf
+// Cualquier cambio se contrasta contra el PDF.
 //
 // **Esta columna NO es solo de impuestos adicionales.** El SII usa la misma
 // `Codigo Otro Impuesto` del RCV para las RETENCIONES de cambio de sujeto: si
 // la retención viene de una factura de compra (DTE 45/46), se registra ahí
-// mismo. Por eso la tabla mezcla dos mundos que numéricamente se pisan.
+// mismo. Por eso la tabla mezcla los dos tipos de código.
 //
-// La versión anterior de este mapa estaba hecha a ojo y casi todo el rango
-// bajo estaba corrido: el 15 figuraba como "Cervezas, vinos, sidras" cuando en
-// realidad es **IVA retenido total**, así que una factura de compra de fruta
-// salía en pantalla con un chip 🍷 Alcohol. El 26 y el 27 decían tabaco siendo
-// cervezas y bebidas, y el 28 y el 35 estaban invertidos (28 es diésel, 35 es
-// gasolina). Al corregir conviene contrastar contra el PDF, no contra la
-// intuición: los nombres suenan plausibles en el lugar equivocado.
-//
-// Para los códigos no mapeados el helper devuelve el número crudo y la
-// categoría queda en null.
+// Un código que no está en la tabla sale como "Código N" y sin categoría.
 export const OTRO_IMP_CODES = {
   // Márgenes de comercialización (facturas de venta).
   14: { label: "IVA margen de comercialización", category: "otros" },
@@ -116,16 +108,14 @@ export const OTRO_IMP_CODES = {
   35: { label: "Impuesto específico gasolina", category: "combustible" },
   51: { label: "Impuesto gas natural comprimido", category: "combustible" },
   52: { label: "Impuesto gas licuado", category: "combustible" },
-  // 271 y 272 NO están en el PDF oficial. Venían del mapa original y los tests
-  // los fijan como combustible; se conservan por si aparecen en los CSV reales
-  // —quitarlos sacaría esos documentos del agrupado ⛽ por centro de costo, que
-  // es plata mal atribuida— pero si se confirma que nunca llegan, se borran.
+  // 271 y 272 no están en el PDF oficial; cuentan como combustible (lo fijan
+  // los tests) para que esos documentos entren al agrupado ⛽ por centro de costo.
   271: { label: "Petróleo diésel industrial", category: "combustible" },
   272: { label: "Otros petróleos", category: "combustible" },
 };
 
-// Mapeo categoría → display (emoji + color) usado en chips de la UI. El chip
-// muestra ESTE label, no el del código; el nombre exacto va en el tooltip.
+// Categoría → cómo se muestra en los chips de la UI (emoji, label, color). El
+// chip muestra ESTE label, no el del código; el nombre exacto va en el tooltip.
 export const OTRO_IMP_CATEGORIES = {
   combustible: { emoji: "⛽", label: "Combustible", color: "danger" },
   retencion:   { emoji: "📑", label: "IVA retenido", color: "accent" },
@@ -136,9 +126,8 @@ export const OTRO_IMP_CATEGORIES = {
   otros:       { emoji: "•",  label: "Otro impuesto", color: "muted" },
 };
 
-// ¿Este código es una retención de cambio de sujeto? Es lo que distingue
-// "me cobraron un impuesto adicional" de "me retuvieron el IVA", que son
-// cosas distintas para el F29 y hasta ahora la app no separaba.
+// Si el código es una retención de cambio de sujeto: distingue "me retuvieron
+// el IVA" de "me cobraron un impuesto adicional", que en el F29 van por separado.
 export function esRetencion(code) {
   return otroImpuestoCategory(code) === "retencion";
 }
@@ -167,7 +156,7 @@ function decodeFileBytes(buffer) {
   const body = hasBom ? u8.subarray(3) : u8;
   try {
     const utf8 = new TextDecoder("utf-8", { fatal: false }).decode(body);
-    // Heurística: si vemos el char de reemplazo es probable mojibake. Reintentar.
+    // Con el carácter de reemplazo, el archivo no era UTF-8: se lee como latin-1.
     if (utf8.includes("�")) {
       return new TextDecoder("iso-8859-1").decode(body);
     }
@@ -177,9 +166,8 @@ function decodeFileBytes(buffer) {
   }
 }
 
-// Split de una línea CSV con separador `;`. El RCV del SII no usa quoting —
-// los campos no contienen `;` ni `"`. Mantengo igual un parser que respeta
-// quotes por si en algún caso aparecen comillas en razones sociales.
+// Separa una línea CSV por `;`. Respeta los campos entre comillas (`""` es una
+// comilla literal) por si alguna razón social las trae; el RCV no suele usarlas.
 function splitCsvLine(line, sep = ";") {
   const out = [];
   let cur = "";
@@ -202,7 +190,7 @@ function splitCsvLine(line, sep = ";") {
 
 // El SII exporta montos como enteros sin separador de miles (ej. "119000")
 // o con separador de miles "." y decimales con "," (ej. "1.234.567" o
-// "1.234,50"). Normalizamos a Number.
+// "1.234,50"). Devuelve un Number, o 0 si no se puede leer.
 function parseAmount(raw) {
   if (raw == null || raw === "") return 0;
   let s = String(raw).trim();
@@ -211,8 +199,8 @@ function parseAmount(raw) {
   if (s.includes(",")) {
     s = s.replace(/\./g, "").replace(",", ".");
   } else {
-    // Si solo tiene puntos: si hay un solo punto y 1-2 dígitos después, es decimal;
-    // sino son separadores de miles → removerlos.
+    // Solo puntos: un único punto seguido de 1-2 dígitos es decimal; si no,
+    // son separadores de miles y se quitan.
     const m = s.match(/^-?\d+\.(\d{1,2})$/);
     if (!m) s = s.replace(/\./g, "");
   }
@@ -223,8 +211,7 @@ function parseAmount(raw) {
 // Intenta extraer un RUT del nombre del archivo. El SII suele incluir el RUT
 // del contribuyente en el filename de los exports del RCV (ej.
 // `Detalle_VENTA_76123456-7_202405.csv`). Devuelve "" si no encuentra nada.
-// Es heurística: si el usuario renombró el archivo no vamos a detectar nada,
-// pero la mayoría de las veces el nombre original se preserva.
+// Es heurística: un archivo renombrado puede no traerlo.
 export function extractRutFromFilename(name) {
   if (!name) return "";
   // Captura `12345678-9` o `1234567-K` con o sin puntos.
@@ -235,8 +222,8 @@ export function extractRutFromFilename(name) {
   return `${num}-${m[2].toUpperCase()}`;
 }
 
-// RUT chileno: normaliza a formato "12345678-9" (sin puntos, con guión).
-// Si viene con DV separado por guión o pegado, lo dejamos consistente.
+// RUT chileno al formato "12345678-9" (sin puntos, con guion), venga el DV
+// separado por guion o pegado.
 export function normalizeRut(rawRut) {
   if (!rawRut) return "";
   const s = String(rawRut).replace(/\./g, "").replace(/\s/g, "").toUpperCase();
@@ -255,9 +242,9 @@ export function rutNumeric(rawRut) {
   return s.length > 1 ? s.slice(0, -1) : s;
 }
 
-// Builder del doc id de un DTE en Firestore. Combina companyId + kind + tipo +
-// folio + (proveedor en compras) para que cada documento sea único globalmente
-// dentro de la empresa. Reimportar el mismo período sobreescribe sin duplicar.
+// Id del doc de un DTE en Firestore: companyId + kind + tipo + folio (+ el
+// proveedor en compras), único dentro de la empresa. Reimportar el mismo
+// período sobrescribe sin duplicar.
 export function buildDteDocId({ companyId, kind, tipo, folio, rutEmisor, rutReceptor }) {
   if (!companyId) throw new Error("buildDteDocId requiere companyId");
   if (kind === "venta") {
@@ -268,8 +255,8 @@ export function buildDteDocId({ companyId, kind, tipo, folio, rutEmisor, rutRece
   return `${companyId}_C_${rutNumeric(rutEmisor)}_${tipo}_${folio}`;
 }
 
-// Detecta si el header corresponde a ventas o compras. Estrategia:
-// busca columnas distintivas. Si no detecta, devuelve null.
+// Detecta por columnas distintivas si el encabezado es de ventas o de compras.
+// Devuelve null si no lo reconoce.
 function detectKind(headers) {
   const h = headers.map((x) => x.toLowerCase());
   if (h.some((x) => x.includes("rut cliente"))) return "venta";
@@ -292,7 +279,7 @@ function colIdx(headers, ...needles) {
 }
 
 // Parsea el ArrayBuffer del archivo y devuelve:
-//   { kind: "venta"|"compra", records: [...], errors: [...], stats: {...} }
+//   { kind: "venta"|"compra", headers, records: [...], errors: [...], stats: {...} }
 // Lanza si el header no se reconoce. Filas mal formadas pasan a `errors`.
 export function parseSiiRcvCsv(buffer, { companyRut } = {}) {
   const text = decodeFileBytes(buffer);
@@ -309,7 +296,8 @@ export function parseSiiRcvCsv(buffer, { companyRut } = {}) {
     );
   }
 
-  // Mapeo de columnas — el SII varía entre exports. Aceptamos varios nombres.
+  // Mapeo de columnas: los nombres varían entre exports del SII, así que se
+  // aceptan varios.
   const iTipo = colIdx(headers, "tipo doc", "tipo dte");
   const iFolio = colIdx(headers, "folio");
   const iFecha = colIdx(headers, "fecha docto", "fecha emision");
@@ -320,10 +308,9 @@ export function parseSiiRcvCsv(buffer, { companyRut } = {}) {
   const iExento = colIdx(headers, "monto exento");
   const iNeto = colIdx(headers, "monto neto");
   const iIvaNoRec = colIdx(headers, "monto iva no recuperable");
-  // El segundo patrón (`monto iva`) es el fallback para los exports que traen
-  // una sola columna de IVA. Pero `colIdx` matchea por "contiene", así que en
-  // un CSV que solo trae "Monto IVA No Recuperable" aterrizaba en esa misma
-  // columna y el IVA se sumaba dos veces (`ivaRec + ivaNoRec`).
+  // `monto iva` es para los exports con una sola columna de IVA. Como `colIdx`
+  // matchea por "contiene", se descarta si cae en la misma columna que la No
+  // Recuperable; si no, el IVA se sumaría dos veces (`ivaRec + ivaNoRec`).
   const iIvaRecRaw = colIdx(headers, "monto iva recuperable", "monto iva");
   const iIvaRec = iIvaRecRaw === iIvaNoRec ? -1 : iIvaRecRaw;
   const iOtroImp = colIdx(headers, "valor otro imp", "monto otro imp");
@@ -332,15 +319,14 @@ export function parseSiiRcvCsv(buffer, { companyRut } = {}) {
   const iOtroImpCod = colIdx(headers, "codigo otro imp", "código otro imp", "cod otro imp");
   const iTotal = colIdx(headers, "monto total");
 
-  // Retenciones de cambio de sujeto. El código solo dice de QUÉ tipo es; estas
-  // columnas dicen CUÁNTO se retuvo, que es lo que permite distinguir una
-  // retención parcial (4% trigo, 8% madera, 14% frambuesas…) de la total del
-  // 19%. Sin leerlas no hay forma de saberlo: el `Monto Total` del RCV ya
-  // viene con la retención descontada, así que el documento se ve igual.
+  // Retenciones de cambio de sujeto. El código dice de QUÉ tipo es; estas
+  // columnas dicen CUÁNTO se retuvo, y así se distingue una retención parcial
+  // (4% trigo, 8% madera, 14% frambuesas…) de la total del 19%: el
+  // `Monto Total` del RCV ya viene con la retención descontada.
   //
-  // Están solo en el RCV de ventas (donde la factura de compra la emitió el
-  // cliente y nos retuvo a nosotros). En compras el monto retenido va en
-  // `Valor Otro Imp`, junto al código.
+  // Solo están en el RCV de ventas (el cliente emitió la factura de compra y
+  // retuvo el IVA). En compras el monto retenido va en `Valor Otro Imp`, junto
+  // al código.
   const iRetTotal = colIdx(headers, "iva retenido total");
   const iRetParcial = colIdx(headers, "iva retenido parcial");
   const iNoRetenido = colIdx(headers, "iva no retenido");
@@ -376,10 +362,10 @@ export function parseSiiRcvCsv(buffer, { companyRut } = {}) {
       const otroImpCod = otroImpCodRaw ? Number(String(otroImpCodRaw).trim()) || null : null;
       const total = parseAmount(cols[iTotal]);
 
-      // Cuánto IVA nos retuvieron, venga por donde venga. En ventas el RCV usa
-      // columnas propias; en compras el monto va en `Valor Otro Imp` y solo
-      // cuenta como retención si el código dice que lo es (ese mismo campo
-      // también carga impuestos adicionales, que NO son una retención).
+      // IVA retenido, venga de donde venga. En ventas el RCV usa columnas
+      // propias; en compras el monto va en `Valor Otro Imp` y solo cuenta como
+      // retención si el código lo es (ese campo también carga impuestos
+      // adicionales, que NO son una retención).
       const retTotal = iRetTotal >= 0 ? parseAmount(cols[iRetTotal]) : 0;
       const retParcial = iRetParcial >= 0 ? parseAmount(cols[iRetParcial]) : 0;
       const ivaNoRetenido = iNoRetenido >= 0 ? parseAmount(cols[iNoRetenido]) : 0;
@@ -398,9 +384,8 @@ export function parseSiiRcvCsv(buffer, { companyRut } = {}) {
         : retTotal > 0 ? "total"
         : (iva > 0 && Math.abs(ivaRetenido - iva) <= 1 ? "total" : "parcial");
 
-      // Tasa de retención. La del CSV manda; si no viene, se deriva del neto.
-      // Es el dato que responde "¿me retuvieron el 19% o el 14%?" sin tener
-      // que abrir el documento en el portal del SII.
+      // Tasa de retención (19%, 14%…). La del CSV manda; si no viene, se deriva
+      // del neto.
       const tasaCsv = iOtroImpTasa >= 0 ? parseAmount(cols[iOtroImpTasa]) : 0;
       const retencionTasa = ivaRetenido <= 0
         ? null
@@ -408,9 +393,8 @@ export function parseSiiRcvCsv(buffer, { companyRut } = {}) {
         : neto > 0 ? Math.round((ivaRetenido / neto) * 1000) / 10
         : null;
 
-      // En ventas el emisor somos nosotros (companyRut si lo pasaron, sino vacío
-      // y se completa después en la UI); el receptor es la contraparte.
-      // En compras es al revés.
+      // En ventas el emisor es la empresa (companyRut, o vacío si no se pasó) y
+      // el receptor la contraparte. En compras, al revés.
       const rutEmisor = kind === "venta" ? (companyRut || "") : rutContraparte;
       const razonSocialEmisor = kind === "venta" ? "" : razon;
       const rutReceptor = kind === "venta" ? rutContraparte : (companyRut || "");
@@ -418,8 +402,7 @@ export function parseSiiRcvCsv(buffer, { companyRut } = {}) {
 
       const periodo = fecha ? fecha.slice(0, 7) : "";
 
-      // Sin id — el caller arma el id final cuando sabe el companyId
-      // (vía `buildDteDocId`).
+      // Sin id: quien llama lo arma con `buildDteDocId` cuando sabe el companyId.
       const rec = {
         kind,
         tipo,
@@ -437,9 +420,8 @@ export function parseSiiRcvCsv(buffer, { companyRut } = {}) {
         otrosImpuestos: otroImp,
         otroImpuestoCodigo: otroImpCod,
         otroImpuestoCategory: otroImpuestoCategory(otroImpCod),
-        // Cambio de sujeto. `ivaRetenido` es plata que NO entró: el `total` del
-        // RCV ya viene con esto descontado, así que sin estos campos una
-        // retención es indistinguible de una venta normal más barata.
+        // Cambio de sujeto: IVA retenido, que el `total` del RCV ya trae
+        // descontado.
         ivaRetenido,
         ivaRetenidoTipo,
         ivaNoRetenido,
@@ -459,8 +441,8 @@ export function parseSiiRcvCsv(buffer, { companyRut } = {}) {
   return { kind, headers, records, errors, stats };
 }
 
-// El SII a veces exporta fechas como YYYY-MM-DD, otras como DD/MM/YYYY o
-// DD-MM-YYYY. Normalizamos siempre a YYYY-MM-DD (string).
+// El SII exporta fechas como YYYY-MM-DD, DD/MM/YYYY o DD-MM-YYYY. Las lleva a
+// YYYY-MM-DD (string).
 function normalizeFecha(raw) {
   if (!raw) return "";
   const s = String(raw).trim();
@@ -470,5 +452,5 @@ function normalizeFecha(raw) {
     const [, d, mo, y] = m;
     return `${y}-${mo.padStart(2, "0")}-${d.padStart(2, "0")}`;
   }
-  return s; // dejamos lo que vino — la UI lo va a mostrar tal cual
+  return s; // formato desconocido: se devuelve tal cual
 }

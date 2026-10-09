@@ -59,10 +59,8 @@ export function AuthProvider({ children }) {
   const hasAccess = user?.access === "ok";
   const isAdmin = hasAccess && user.role === ROLES.ADMIN;
 
-  // Cómo se llama esta persona en los documentos que firma. El correo es el
-  // único identificador garantizado, pero termina copiado en datos que
-  // después lee gente de terreno; el alias existe para que ahí quede un
-  // nombre y no una casilla de mail.
+  // Nombre con que la persona queda en lo que firma: el alias o, si no tiene,
+  // el correo. El alias deja un nombre legible en datos que lee gente de terreno.
   const displayName = user ? user.alias || user.email || user.uid : "";
 
   const updateAlias = async (alias) => {

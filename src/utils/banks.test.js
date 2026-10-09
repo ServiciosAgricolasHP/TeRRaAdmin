@@ -32,8 +32,7 @@ describe("isCashBank", () => {
 
   it("sin dato NO se asume efectivo", () => {
     // Un trabajador sin banco cargado cae del lado de transferencia, donde la
-    // nómina lo marca como dato faltante. Asumir efectivo lo sacaría del
-    // control de datos bancarios en silencio.
+    // nómina lo marca como dato faltante.
     expect(isCashBank("")).toBe(false);
     expect(isCashBank(null)).toBe(false);
     expect(isCashBank(undefined)).toBe(false);

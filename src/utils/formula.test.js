@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { parseAmount } from "./formula";
 
-// Por acá entra CADA monto que alguien tipea en la grilla del ciclo.
+// Interpreta los montos que se escriben en la grilla del ciclo.
 describe("parseAmount", () => {
   it("números y strings simples", () => {
     expect(parseAmount(1500)).toBe(1500);
@@ -34,7 +34,7 @@ describe("parseAmount", () => {
 
   it("una fórmula con letras se rechaza y da 0", () => {
     // El guard `/^[\d+\-*/().\s]+$/` es lo único que impide evaluar cualquier
-    // cosa con Function(); vale la pena tenerlo fijado.
+    // cosa con Function().
     expect(parseAmount("=alert(1)")).toBe(0);
     expect(parseAmount("=process.exit()")).toBe(0);
     expect(parseAmount("=1500*a")).toBe(0);

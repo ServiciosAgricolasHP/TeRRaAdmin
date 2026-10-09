@@ -4,10 +4,10 @@ import { workdaysService, workersService } from "../../src/services";
 import { loadWorkerSummaryData } from "../../src/components/WorkerSummaryModal";
 import { seedCycle, seedWorkday, set, get, CICLO } from "./helpers/seed";
 
-// Caso real: un extranjero que entró con cédula provisoria y después consiguió
-// su rut definitivo. El doc id queda congelado con el rut viejo (Firestore no
-// renombra documentos) y el campo `rut` pasa a tener el nuevo. Sus workdays
-// quedan repartidos entre los dos valores según cuándo se escribieron.
+// Un trabajador que cambió de rut (de una cédula provisoria a la definitiva):
+// el doc id queda con el rut viejo (Firestore no renombra documentos) y el
+// campo `rut` tiene el nuevo. Sus workdays quedan repartidos entre los dos
+// valores según cuándo se escribieron.
 const VIEJO = "12345678-5"; // doc id = rut de creación
 const NUEVO = "11111111-1"; // rut vigente
 

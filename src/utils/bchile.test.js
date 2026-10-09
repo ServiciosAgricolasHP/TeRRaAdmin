@@ -8,9 +8,7 @@ import {
   cleanText,
 } from "./payroll";
 
-// Las columnas del archivo que ingiere el portal del banco. Los índices se
-// nombran porque una fila mal ordenada manda la plata a otro lado y el
-// archivo igual se sube sin error.
+// Índices de las columnas del archivo que ingiere el portal del banco.
 const RUT = 0;
 const NOMBRE = 1;
 const CUENTA = 2;
@@ -82,8 +80,8 @@ describe("a qué cuenta va la plata", () => {
 });
 
 describe("el filtro de cero-neto", () => {
-  // Existen en la nómina para liquidar anticipos (bruto = anticipo), pero el
-  // banco rechaza una transferencia de $0 y voltea el archivo entero.
+  // Los items en $0 existen para liquidar anticipos (bruto = anticipo), y el
+  // banco rechaza el archivo entero si trae una transferencia de $0.
   it("deja afuera a quien cobra cero", () => {
     const filas = buildBchileRows([
       persona({ name: "Ana", amount: 100000 }),
@@ -103,7 +101,7 @@ describe("el filtro de cero-neto", () => {
   });
 
   it("los excluidos no consumen correlativo", () => {
-    // Si el filtro corriera después de numerar, el archivo tendría huecos.
+    // El filtro corre antes de numerar: el correlativo no queda con huecos.
     const filas = buildBchileRows([
       persona({ name: "Ana", amount: 0 }),
       persona({ name: "Beto", amount: 50000 }),
@@ -124,8 +122,6 @@ describe("el orden y el correlativo", () => {
   });
 
   it("el orden ignora tildes y mayúsculas", () => {
-    // Sin `sensitivity: base`, "Ángel" se iría al final y el correlativo
-    // cambiaría entre dos corridas con los mismos datos.
     const filas = buildBchileRows([
       persona({ name: "ZULEMA" }),
       persona({ name: "Ángel" }),
@@ -150,7 +146,6 @@ describe("el orden y el correlativo", () => {
   });
 
   it("el correlativo es estable: dos corridas con el mismo set dan lo mismo", () => {
-    // Es lo que hace comparable un archivo con el de la corrida anterior.
     const gente = [persona({ name: "Caro" }), persona({ name: "Ana" }), persona({ name: "Beto" })];
     const a = buildBchileRows(gente);
     const b = buildBchileRows([...gente].reverse());
@@ -158,8 +153,7 @@ describe("el orden y el correlativo", () => {
   });
 
   it("pasado el 999 el correlativo se desborda en vez de truncarse", () => {
-    // No pasa hoy (la nómina más grande no llega), pero deja fijado que el
-    // padding no corta: A1000 sigue siendo único.
+    // El relleno con ceros no trunca: A1000 sigue siendo único.
     const mil = Array.from({ length: 1000 }, (_, i) =>
       persona({ name: `P${String(i).padStart(4, "0")}` }),
     );

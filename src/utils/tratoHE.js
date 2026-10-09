@@ -1,11 +1,11 @@
-// Helpers for "trato con horas extras" labor type.
-// Workday for tratoHE:
+// Helpers del tipo de labor "tratoHE" (jornadas con horas extras).
+// Workday de tratoHE:
 //   { qty, overtimeHours, hasManejo, hasSupervision, extras, amount }
-//   `qty` semantically holds the BASE DAY AMOUNT for that worker on that day
-//   (currency, e.g. 25000). Empty/0 means "didn't work that day".
-// Day config in dayPrices[laborId][date]["0_0"]:
+//   `qty` guarda el MONTO BASE del día de ese trabajador, en pesos (p. ej.
+//   25000). Vacío o 0 = no trabajó ese día.
+// Config del día en dayPrices[laborId][date]["0_0"]:
 //   { price, mode: "normal"|"overtimeOnly", isHoliday }
-//   `price` is the SUGGESTED default base for the column (used to pre-fill rows).
+//   `price` es la base SUGERIDA para la columna (sirve para precargar las filas).
 
 export const TRATO_HE_MODES = [
   { value: "normal", label: "Jornada normal (base + HE + bonos)" },
@@ -41,7 +41,7 @@ export function calcTratoHEAmount(input) {
     bonusSupervision = DEFAULT_BONUS_SUPERVISION,
     overtimeRate = DEFAULT_OVERTIME_RATE,
   } = input || {};
-  // qty IS the base amount in currency now (no multiplication by dayPrice).
+  // qty ya es el monto base en pesos: no se multiplica por el precio del día.
   const base = dayMode === "overtimeOnly" ? 0 : Number(qty) || 0;
   const oh = (Number(overtimeHours) || 0) * (Number(overtimeRate) || 0);
   const m = hasManejo ? (Number(bonusManejo) || 0) : 0;
@@ -50,7 +50,7 @@ export function calcTratoHEAmount(input) {
   return base + oh + m + s + x;
 }
 
-// Has the workday any data worth keeping?
+// Si el workday tiene algún dato que valga la pena guardar.
 export function workdayHasData(wd) {
   if (!wd) return false;
   return (

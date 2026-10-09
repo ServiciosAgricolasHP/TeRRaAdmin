@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { workdaysService } from "../../src/services";
 import { set, get, all } from "./helpers/seed";
 
-// Log de auditoría que deja `remove`.
+// Jornada con la que se revisa el log de auditoría que deja `remove`.
 const WORKDAY = { cycleId: "ciclo-1", workerRut: "11111111-1", amount: 100 };
 
 describe("remove y su log de auditoría", () => {

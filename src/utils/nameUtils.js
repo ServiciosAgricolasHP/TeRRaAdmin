@@ -3,12 +3,6 @@
 // posición sí se capitalizan ("De la Torre").
 const CONNECTORS = new Set(["de", "del", "la", "las", "los", "y", "e", "da", "do", "dos", "das"]);
 
-// Convierte un string a "Nombre Propio". Preserva tildes y ñ. Maneja separadores
-// comunes: espacio, guión ("Ana-María"), apóstrofe ("D'Angelo").
-//
-// A diferencia de `normalizeName` en importWorkers.js — que quita tildes para
-// matcheo — este helper es para display/persistencia: mantiene lo que el
-// usuario tipeó, solo arregla el casing.
 // Iniciales para avatares (2 letras): primera + primera del segundo nombre,
 // o las 2 primeras letras si viene un solo nombre.
 export function initials(name) {
@@ -18,6 +12,10 @@ export function initials(name) {
   return (parts[0][0] + parts[1][0]).toUpperCase();
 }
 
+// Convierte un string a "Nombre Propio": preserva tildes y ñ, y solo corrige
+// mayúsculas y minúsculas. Capitaliza después de espacio, guion ("Ana-María")
+// y apóstrofe ("D'Angelo"). `normalizeName` de importWorkers.js, en cambio,
+// quita las tildes.
 export function toProperName(input) {
   if (!input) return "";
   const collapsed = String(input).trim().replace(/\s+/g, " ").toLowerCase();

@@ -42,9 +42,8 @@ const dateLabel = (dateStr) => {
 
 const LOGO_URL = `${import.meta.env.BASE_URL}logo.png`;
 
-// Mediana — estadístico robusto a outliers (una jornada mensual no la corre
-// como sí lo hace el promedio simple). Usado para sugerir la tarifa de cobro
-// por día sin que un único día atípico distorsione el resultado.
+// Mediana: sugiere la tarifa de cobro por día sin que un día atípico, como una
+// jornada mensual, la distorsione.
 function medianOf(values) {
   if (!values || values.length === 0) return 0;
   const sorted = [...values].sort((a, b) => a - b);
@@ -54,14 +53,9 @@ function medianOf(values) {
     : sorted[mid];
 }
 
-// Etiqueta descriptiva de la actividad para mostrar en el editor de cobro y
-// resúmenes. Usa los catálogos para describir "qué se está cobrando":
-//   - cosecha → "Cosecha — Saco" (envase si todas las filas usan el mismo)
-//   - trato   → "Trato — Poda × Árbol" (tratoType × unidad cuando coincide)
-//   - tratoHE → "Jornada + HE"
-//   - main    → "Jornada simple"
-//   - supervision → "Supervisión"
-//   - extra   → "Extra"
+// Etiqueta de lo que se cobra, para el editor de tarifas, armada con los
+// catálogos: "Cosecha — Saco" (envase si todas las filas usan el mismo),
+// "Trato — Poda × Árbol" (unidad si todas las filas usan la misma).
 function activityLabel(labor, catalogs, containers, tratoUnitsSet) {
   const type = labor?.type;
   if (type === "cosecha") {
@@ -88,16 +82,13 @@ function activityLabel(labor, catalogs, containers, tratoUnitsSet) {
 }
 
 // ============================================================
-// Day-by-day aggregation per labor
+// Agregación día a día por labor
 // ============================================================
 
-// Encabezado de la columna principal según tipo de labor. tratoHE muestra
-// "Jornadas / HE" porque agrega dos métricas en la misma columna. Para trato
-// y cosecha tomamos la unidad del catálogo en vez de literales fijos.
-//
-// Para trato: si todos los días del ciclo usan la MISMA unidad configurada
-// (ej. "Árbol", "Metro", "Polín"), usamos esa. Si hay mezcla o ningún día
-// tiene unidad, caemos al tipo de trato (Poda, Amarre…) como fallback.
+// Unidad de la columna principal según el tipo de labor, tomada de los
+// catálogos. En trato es la unidad configurada si todos los días usan la misma
+// (Árbol, Metro, Polín…); si hay mezcla o ninguna, el tipo de trato (Poda,
+// Amarre…).
 function laborQtyUnit(labor, catalogs, containers, tratoUnitsSet) {
   const type = labor?.type;
   if (type === "cosecha") return cosechaUnit(catalogs, containers);
@@ -110,8 +101,8 @@ function laborQtyUnit(labor, catalogs, containers, tratoUnitsSet) {
     return tratoTypeLabel(catalogs, labor?.tratoType ?? 0);
   }
   if (type === "tratoEtapas") return "Unidades";
-  // Para tratoHE el unit primario son jornadas. Las horas extras viven
-  // adentro de la línea de monto ($amount + Xh), no en una columna aparte.
+  // En tratoHE la unidad principal son las jornadas; las horas extras se
+  // muestran aparte.
   if (type === "tratoHE") return "Jornadas";
   return "Jornadas";
 }
@@ -120,7 +111,8 @@ function laborQtyUnit(labor, catalogs, containers, tratoUnitsSet) {
 function formatRowMetric(row, type, catalogs) {
   if (type === "cosecha") return fmtNumber(row.qty);
   if (type === "trato") {
-    // La unidad sale del config del día (`row.unit`). Si no hay, solo qty.
+    // La unidad sale de la configuración del día (`row.unit`); sin ella, solo
+    // la cantidad.
     if (row.unit != null) {
       const label = tratoUnitLabel(catalogs, row.unit) || "";
       return `${fmtNumber(row.qty)} ${label}`.trim();
@@ -128,8 +120,8 @@ function formatRowMetric(row, type, catalogs) {
     return fmtNumber(row.qty);
   }
   if (type === "tratoEtapas") {
-    // Cada fila es una etapa: mostramos su cantidad + nombre. Las etapas que
-    // no cuentan llevan un guioncito para que se lea que no suman unidades.
+    // Cada fila es una etapa: cantidad y nombre, con "(no cuenta)" si la etapa
+    // no suma unidades.
     const name = row.stageName || "";
     const tag = row.stageCounts === false ? " (no cuenta)" : "";
     return `${fmtNumber(row.qty)}${name ? ` ${name}` : ""}${tag}`.trim();
@@ -143,9 +135,9 @@ function formatRowMetric(row, type, catalogs) {
   return fmtNumber(row.qty);
 }
 
-// Total agrupado por unidad para trato: si todos los rows comparten la
-// misma unidad, devuelve "20 metros". Si hay mezcla, "12 metros + 8 polines".
-// Si nadie tiene unidad configurada, cae al qty plano.
+// Texto de la métrica en la fila de subtotal. En trato agrupa por unidad:
+// "20 metros" si todas las filas comparten unidad, "12 metros + 8 polines" si
+// hay mezcla, y la cantidad sola si ninguna tiene unidad.
 function formatTotalsMetric(totals, type, rows, catalogs) {
   if (type === "tratoEtapas") {
     // Unidades producidas = solo etapas que cuentan (countedQty).
@@ -176,14 +168,12 @@ function formatTotalsMetric(totals, type, rows, catalogs) {
   return fmtNumber(totals.qty);
 }
 
-// Returns { rows: [...], containers: Set<number> }
-// Cada row trae además `pisoAmount` (suma de workdays pisoOnly del día) y
-// `pisoCount` (cuántas personas tuvieron piso). El `amount` total incluye
-// la producción + piso.
-//
-// Para trato: si el día/labor tiene una `unit` configurada en
-// `dayPrices[labor.id][date].t0.unit`, queda en `row.unit` (índice del
-// catálogo `tratoUnits`). Display la convierte a label vía `tratoUnitLabel`.
+// Devuelve { rows, containers: Set<number> }: una fila por día, o por día y
+// tier en trato y por día y etapa en tratoEtapas (ahí el piso queda en una
+// fila propia del día). `amount` es solo producción: el piso va en
+// `pisoAmount` y `pisoCount` cuenta las personas con piso. En trato,
+// `row.unit` es la unidad del tier en `dayPrices` (índice del catálogo
+// `tratoUnits`), que `tratoUnitLabel` convierte en texto.
 function buildDailyRows(labor, wdMap, dayPrices = {}) {
   const byKey = new Map();
   const containers = new Set();
@@ -221,16 +211,16 @@ function buildDailyRows(labor, wdMap, dayPrices = {}) {
           row.tierKey = tierKey;
           row.tierIdx = tierIdx;
           row.unit = tiers[tierIdx]?.unit ?? tiers[0]?.unit ?? null;
-          // rowKey único por (date, tier) — la UI lo usa como React key
-          // y cobrar mode lo usa como clave de rowOverrides.
+          // rowKey único por (fecha, tier): es la key de React y la clave de
+          // rowOverrides en el modo cobrar.
           row.rowKey = `${d}__${tierKey}`;
         } else {
-          // wd.pisoOnly → cae acá; no es un tier real.
+          // Piso (wd.pisoOnly): fila del día, sin tier.
           row.unit = tiers[0]?.unit ?? null;
         }
       } else if (isEtapas && tierKey) {
-        // Cada fila es una etapa del día. Guardamos nombre y si cuenta para
-        // que el conteo de unidades solo sume las etapas marcadas.
+        // Cada fila es una etapa del día. Guarda el nombre y si cuenta, para
+        // que el conteo de unidades sume solo las etapas que cuentan.
         const st = stageById(labor, tierKey);
         row.stageId = tierKey;
         row.stageName = st?.name || "";
@@ -268,18 +258,16 @@ function buildDailyRows(labor, wdMap, dayPrices = {}) {
     }
     if (wd.workerRut) g.workersSet.add(wd.workerId || wd.workerRut);
   }
-  // Tarifa HE del ciclo — leemos el override de labor o caemos al default.
-  // Solo se usa para derivar `bonosTotal` y `heTotal` en tratoHE; los demás
-  // tipos lo ignoran.
+  // Tarifa HE de la labor (3.500 si no tiene). Solo tratoHE la usa, para
+  // `heTotal` y `bonosTotal`.
   const overtimeRate = labor?.type === "tratoHE"
     ? (Number(labor?.overtimeRate) > 0 ? Number(labor.overtimeRate) : 3500)
     : 0;
   const rows = [...byKey.values()]
     .map((g) => {
-      // bonosTotal = amount - base - HE_hrs * tarifa. Suma manejo + supervision
-      // + extras a través de TODOS los trabajadores del día. Es derivado del
-      // amount real (no asume bonos fijos por trabajador) — si la tarifa HE
-      // cambia, los bonos se recalculan automáticamente.
+      // bonosTotal = amount − base − horas HE × tarifa (en tratoHE la base es
+      // `qty`): manejo, supervisión y extras de todos los trabajadores del día,
+      // derivados del monto real.
       const heTotal = (g.overtimeHours || 0) * overtimeRate;
       const bonosTotal = labor?.type === "tratoHE"
         ? Math.max(0, (g.amount || 0) - (g.qty || 0) - heTotal)
@@ -292,8 +280,7 @@ function buildDailyRows(labor, wdMap, dayPrices = {}) {
         bonosTotal,
       };
     })
-    // Para trato puede haber varias filas en el mismo día (una por tier);
-    // las ordenamos por (date, tierIdx) para que aparezcan juntas y en orden.
+    // Orden por fecha y, dentro del día, por tier.
     .sort((a, b) => {
       if (a.date !== b.date) return a.date < b.date ? -1 : 1;
       return (a.tierIdx ?? 0) - (b.tierIdx ?? 0);
@@ -306,9 +293,8 @@ function laborTotals(rows) {
   let workerDays = 0, heTotal = 0, bonosTotal = 0, countedQty = 0;
   for (const r of rows) {
     qty += r.qty;
-    // Unidades de producción (deduplicado): si la fila trae flag de etapa
-    // (tratoEtapas), solo cuenta cuando la etapa cuenta; para el resto de los
-    // tipos `stageCounts` es undefined y suma normal.
+    // Unidades de producción: en tratoEtapas suman solo las etapas que
+    // cuentan; en los demás tipos `stageCounts` es undefined y suma todo.
     if (r.stageCounts === undefined || r.stageCounts) countedQty += r.qty;
     overtimeHours += r.overtimeHours || 0;
     amount += r.amount;
@@ -321,8 +307,7 @@ function laborTotals(rows) {
   return { qty, countedQty, overtimeHours, amount, pisoAmount, pisoCount, workerDays, heTotal, bonosTotal };
 }
 
-// Convierte 1-based column index a letra excel ("A", "B", ..., "AA", ...).
-// Compartido por todos los handlers de XLSX en este archivo.
+// Índice de columna (desde 1) a letra de Excel: 1 → "A", 27 → "AA".
 function colLetterX(n) {
   let s = "";
   while (n > 0) {
@@ -333,17 +318,15 @@ function colLetterX(n) {
   return s;
 }
 
-// Expande wdMap a filas por (date, combo/tier) para el XLSX del resumen.
-// A diferencia de `buildDailyRows` (que colapsa todo a 1 fila/día), esta
-// función mantiene el desglose por combo en cosecha (qx_cy) y por tier en
-// trato (tX). Para tratoHE/main devuelve 1 fila por día sin desglose.
+// Expande wdMap a filas por (día, combo): en cosecha una por calidad × envase
+// (`qx_cy`) y en trato una por tier (`tX`), con el piso en una fila propia;
+// el resto, una fila por día.
 //
-// Output shape común:
-//   { date, comboKey, comboLabel, qty, amount, pisoAmount, unit, ...extras }
-//
-// Extras por tipo:
+// Campos comunes: { date, comboKey, amount, pisoAmount }. Además:
+//   - cosecha: { qx, cy, qty, isPiso }
+//   - trato: { tierIdx, unit, qty, isPiso }
 //   - tratoHE: { base, overtimeHours, extras }
-//   - main/sup/extra: solo qty (n° jornadas) + amount
+//   - main/sup/extra (y tratoEtapas): qty = n° de jornadas
 function buildExpandedRows(labor, wdMap, dayPrices = {}) {
   const type = labor?.type;
   const byKey = new Map();
@@ -435,21 +418,20 @@ function buildExpandedRows(labor, wdMap, dayPrices = {}) {
 }
 
 // ============================================================
-// Worker × Date grid per labor (segunda sección imprimible)
+// Grilla trabajador × día por labor (segunda sección imprimible)
 // ============================================================
-// Construye la grilla workers × dates para una labor: cada celda trae la
-// producción del trabajador ese día. La métrica varía según labor.type:
-//   - cosecha: kilos (qty) + monto + breakdown por combo (calidad/envase)
-//   - trato:   qty (n° de "podas"/"desmalezados"/...) + monto
-//   - tratoHE: jornadas + horas extras + monto
-//   - main/supervision/extra: 1 jornada + monto
-// Los nombres de trabajadores salen de `labor.workers[].name` (denormalizado
-// al asignarlos a la labor). Si un workday queda huérfano, cae al RUT.
+// Cada celda trae la producción del trabajador ese día, según labor.type:
+//   - cosecha: kilos (qty), monto y desglose por combo (calidad/envase)
+//   - trato:   cantidad, monto y desglose por tier
+//   - tratoHE: monto base, jornadas, horas extras, extras y monto
+//   - tratoEtapas: cantidad de todas las etapas y monto
+//   - main/supervision/extra: 1 jornada y monto
+// El nombre sale de `labor.workers[].name`; si el trabajador ya no está en la
+// labor, del `workerName` del workday o, si no hay, del RUT.
 function buildWorkerLaborGrid(labor, wdMap) {
-  // Un trabajador puede tener workdays con distinto `workerRut` si corrigió
-  // su rut a mitad de ciclo (el rut queda congelado en cada workday al
-  // crearse). Agrupamos por `workerId` — la referencia que no cambia — y
-  // reservamos `workerRut` solo para mostrar/etiquetar.
+  // Agrupa por `workerId`, que no cambia. `workerRut` queda fijo en cada
+  // workday al crearse y puede variar si el RUT se corrigió a mitad de ciclo,
+  // así que solo se usa para mostrar.
   const nameById = new Map();
   const rutById = new Map();
   for (const w of labor?.workers || []) {
@@ -464,7 +446,8 @@ function buildWorkerLaborGrid(labor, wdMap) {
   const containers = new Set();
   let anyPiso = false;
 
-  // Bonuses default a labor-level si el workday no trae override.
+  // Montos de los bonos de manejo y supervisión: los fija la labor y el
+  // workday solo marca si aplican.
   const bonusManejoLabor = Number(labor?.bonusManejo) || 0;
   const bonusSupLabor = Number(labor?.bonusSupervision) || 0;
 
@@ -527,8 +510,8 @@ function buildWorkerLaborGrid(labor, wdMap) {
       const t = getTratoTierTotals(wd);
       c.qty += t.qty;
       wEntry.totals.qty += t.qty;
-      // El tierKey es la 3ra parte del map key `rut__date__ck`. Para trato
-      // valores típicos: "t0", "t1", … Cada tier-workday es un doc separado.
+      // El tierKey es la tercera parte de la clave `rut__date__ck` ("t0",
+      // "t1"…): cada tier es un workday aparte.
       const parts = String(k).split("__");
       const tierKey = parts[2] || "t0";
       if (!c.byTier.has(tierKey)) c.byTier.set(tierKey, { qty: 0, amount: 0 });
@@ -536,13 +519,10 @@ function buildWorkerLaborGrid(labor, wdMap) {
       tb.qty += t.qty;
       tb.amount += t.amount;
     } else if (labor?.type === "tratoHE") {
-      // Para tratoHE `wd.qty` guarda el monto base diario (no la cuenta de
-      // jornadas). La jornada es implícita: 1 por workday document. Antes
-      // sumábamos `q` a jornadas y por eso aparecía algo como "200.000" en
-      // la columna de Total Jornadas — era $200k, no 8 jornadas.
+      // En tratoHE `wd.qty` es el monto base del día, no una cantidad de
+      // jornadas: cada workday cuenta como una jornada.
       const q = Number(wd.qty) || 0;
       const oh = Number(wd.overtimeHours) || 0;
-      // Extras = bono manejo + bono supervisión + valor `extras` numérico.
       const manejoAmt = wd.hasManejo ? bonusManejoLabor : 0;
       const supAmt = wd.hasSupervision ? bonusSupLabor : 0;
       const extrasNum = Number(wd.extras) || 0;
@@ -580,12 +560,12 @@ function buildWorkerLaborGrid(labor, wdMap) {
 }
 
 // ============================================================
-// LocalStorage helpers
+// Espejo en localStorage
 //
 // La fuente de verdad del estado editable del resumen es Firestore
-// (`cycleSummariesService`) — compartido entre usuarios y navegadores.
-// localStorage queda como espejo local: sirve de respaldo si falla la red y
-// como origen de la migración para los ciclos configurados antes del cambio.
+// (`cycleSummariesService`), compartido entre usuarios y navegadores.
+// localStorage es un espejo local: respaldo si falla la red y origen de la
+// migración cuando el ciclo no tiene doc en Firestore.
 // ============================================================
 
 const cobrarStorageKey = (cycleId) => `cobrar_${cycleId}`;
@@ -604,15 +584,14 @@ const saveJSON = (key, value) => {
 };
 
 // ============================================================
-// Main component
+// Componente principal
 // ============================================================
 
 export default function CycleSummaryModal({
   open, onClose, cycle, faena, subfaena, workdaysByLabor = {}, dayPrices = {}, catalogs = {},
 }) {
-  // Usamos TODOS los carriers (no solo activos) — un transportista soft-deleted
-  // puede tener vueltas viejas en el ciclo y necesitamos su alias para no
-  // mostrar el UUID crudo.
+  // Todos los transportistas, también los dados de baja: uno eliminado puede
+  // tener vueltas en el ciclo y hace falta su alias para no mostrar el id.
   const { carriers } = useCarriers();
   const toast = useToast();
   const { user } = useAuth();
@@ -620,20 +599,16 @@ export default function CycleSummaryModal({
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState("");
   const [mode, setMode] = useState("pagar"); // pagar | cobrar
-  // `withIva` (default true) controla si el printable + XLSX en modo cobrar
-  // muestran las filas de IVA 19%. Algunos cobros van sin IVA (servicios
-  // exentos, boletas, acuerdos netos) — el toggle queda persistido por ciclo
-  // así no hay que setearlo cada vez.
+  // `withIva` (true por defecto) decide si el imprimible y el XLSX de cobrar
+  // muestran las filas de IVA 19%. Se guarda por ciclo: hay cobros sin IVA
+  // (servicios exentos, boletas, acuerdos netos).
   const [cobrar, setCobrar] = useState({ labors: {}, carriers: {}, withIva: true, discount: 0, discountNote: "", pendingBalance: 0, pendingBalanceNote: "" });
   const [titles, setTitles] = useState({ main: "DETALLE DE JORNADA", subtitle: "", laborNames: {}, carrierNames: {} });
   const [showTitleEditor, setShowTitleEditor] = useState(false);
   const [showCobrarEditor, setShowCobrarEditor] = useState(true);
-  // Toggle de edición — cuando es false, oculta inputs/+filas/✕ y los paneles
-  // de edición en cobrar mode. El resumen queda "limpio" para
-  // copiar/imprimir/exportar. Arranca bloqueado: ahora que las tarifas quedan
-  // guardadas y compartidas, lo normal al abrir es querer copiar un resumen ya
-  // configurado, no venir a editarlo — y así no se copia sin querer la vista
-  // con los inputs y la marca de agua.
+  // Candado de edición del modo cobrar. En false oculta los inputs, los
+  // botones + y ✕ y los paneles de edición, y deja el resumen listo para
+  // copiar, imprimir o exportar. Arranca bloqueado.
   const [editMode, setEditMode] = useState(false);
   // Captura pedida mientras el resumen estaba en edición. `captureAsk` abre el
   // diálogo de confirmación; `pendingCapture` es la acción que corre después
@@ -642,24 +617,23 @@ export default function CycleSummaryModal({
   const [pendingCapture, setPendingCapture] = useState(null);
   // Metadata de la última edición del resumen compartido (quién y cuándo).
   const [summaryMeta, setSummaryMeta] = useState(null);
-  // Solo después de hidratar el estado desde Firestore se habilitan los
-  // guardados debounced. Sin esto, abrir el modal reescribiría el doc con lo
-  // que acaba de leer.
+  // Los guardados con debounce se habilitan recién al hidratar el estado desde
+  // Firestore, para que abrir el modal no reescriba el doc con lo que leyó.
   const hydratedRef = useRef(false);
-  // Última versión persistida (serializada) para no reescribir el doc con lo
-  // mismo que acabamos de leer ni en cada render.
+  // Última versión guardada (serializada), para no reescribir el doc con lo
+  // mismo que se leyó ni en cada render.
   const lastSavedRef = useRef({ cobrar: null, titles: null });
-  // Últimos totales (pagar/cobrar) escritos en el doc del ciclo. El prop
-  // `cycle` queda viejo después de nuestra propia escritura, así que la
-  // comparación va contra este ref y no contra el prop.
+  // Últimos totales (pagar/cobrar) escritos en el doc del ciclo. Se compara
+  // contra este ref y no contra el prop `cycle`, que no se entera de la
+  // escritura propia.
   const lastTotalsRef = useRef(null);
-  // Popover de visibilidad de columnas (cobrar mode). El botón ancla se pasa
-  // como ref para posicionar el popover via portal sin que el overflow del
-  // Modal padre lo recorte.
+  // Popover de columnas visibles (modo cobrar). El botón ancla va como ref
+  // para posicionar el popover por portal, sin que el overflow del Modal
+  // padre lo recorte.
   const [colsMenuOpen, setColsMenuOpen] = useState(false);
   const colsBtnRef = useRef(null);
-  // Modal de importar ciclos anteriores (cobrar mode). Mantiene la lista de
-  // ciclos disponibles + selección.
+  // Modal de importar ciclos anteriores (modo cobrar): ciclos disponibles y
+  // selección.
   const [importOpen, setImportOpen] = useState(false);
   const [availableCycles, setAvailableCycles] = useState([]);
   const [selectedImportIds, setSelectedImportIds] = useState(new Set());
@@ -670,8 +644,7 @@ export default function CycleSummaryModal({
     if (!open || !cycleId) return;
     hydratedRef.current = false;
     let cancelled = false;
-    // Backfill para resúmenes guardados antes de que existieran los campos
-    // (withIva, discount, discountNote — todos defaults seguros).
+    // Valores por defecto para los campos que un resumen guardado no traiga.
     const cobrarDefaults = { labors: {}, carriers: {}, withIva: true, discount: 0, discountNote: "", pendingBalance: 0, pendingBalanceNote: "" };
     const titlesDefaults = {
       main: "DETALLE DE JORNADA",
@@ -703,9 +676,8 @@ export default function CycleSummaryModal({
           ? { pagar: Number(cycle.summaryTotals.pagar) || 0, cobrar: Number(cycle.summaryTotals.cobrar) || 0 }
           : null;
         setSummaryMeta(remote?.updatedAt ? { email: remote.updatedByEmail, at: remote.updatedAt.toDate?.() || null } : null);
-        // Migración: el ciclo se configuró en este navegador antes de que el
-        // resumen fuera compartido y todavía no existe el doc → se sube tal
-        // cual, una sola vez, sin molestar al usuario.
+        // Migración: si el ciclo no tiene doc en Firestore pero sí copia local,
+        // la sube tal cual, sin avisar.
         if (!remote && (localCobrar || localTitles)) {
           cycleSummariesService
             .save(cycleId, { cobrar: nextCobrar, titles: nextTitles })
@@ -727,9 +699,8 @@ export default function CycleSummaryModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, cycleId, cycle?.label, faena?.name, subfaena?.name]);
 
-  // Persistencia debounced en Firestore — el estado se toca tecla por tecla,
-  // así que se espera a que pare. localStorage sigue escribiéndose en cada
-  // cambio (espejo local inmediato, ver `saveJSON`).
+  // Guarda en Firestore con debounce de 600 ms, porque el estado cambia tecla
+  // por tecla. localStorage se escribe en cada cambio (ver `saveJSON`).
   useEffect(() => {
     if (!open || !cycleId || !hydratedRef.current) return;
     const serialized = JSON.stringify(cobrar);
@@ -740,8 +711,8 @@ export default function CycleSummaryModal({
         .save(cycleId, { cobrar })
         .then(() => setSummaryMeta({ email: user?.email || null, at: new Date() }))
         .catch((err) => {
-          // Que el próximo cambio (o el flush al cerrar) reintente en vez de
-          // darlo por guardado.
+          // Así el próximo cambio, o el guardado al cerrar, reintenta en vez
+          // de darlo por guardado.
           lastSavedRef.current.cobrar = null;
           console.error("[resumen] guardar cobrar:", err);
           toast.error("No se pudieron guardar las tarifas del resumen.");
@@ -800,9 +771,9 @@ export default function CycleSummaryModal({
     });
   };
 
-  // Descuento global aplicado al neto del cobro (antes del IVA, si está activo).
-  // `patch` puede traer `amount` (number) y/o `note` (string). Se persiste con
-  // el resto del estado de cobrar por ciclo en localStorage.
+  // Descuento global sobre el neto del cobro (antes del IVA, si está activo).
+  // `patch` puede traer `amount` (number) y/o `note` (string). Se guarda con el
+  // resto del estado de cobrar del ciclo.
   const setCobrarDiscount = (patch) => {
     setCobrar((prev) => {
       const n = { ...prev };
@@ -813,8 +784,8 @@ export default function CycleSummaryModal({
     });
   };
 
-  // Saldo pendiente global aplicado al neto del cobro (suma, antes del IVA).
-  // Espejo simétrico del descuento — `patch` puede traer `amount` y/o `note`.
+  // Saldo pendiente global: se suma al total del cobro después del IVA. Igual
+  // que en el descuento, `patch` puede traer `amount` y/o `note`.
   const setCobrarPendingBalance = (patch) => {
     setCobrar((prev) => {
       const n = { ...prev };
@@ -840,17 +811,18 @@ export default function CycleSummaryModal({
     });
   };
 
-  // Overrides por fila (cobrar). Cada labor mantiene un map { rowKey -> patch }
-  // donde rowKey = date (filas existentes) o "extra:${id}" (filas agregadas
-  // manualmente). El patch puede tener qty, overtimeHours, rate, amount —
-  // todos opcionales; los no seteados caen al valor base.
+  // Overrides por fila (cobrar). Cada labor guarda un mapa { rowKey -> patch }
+  // con el rowKey de la fila del día: la fecha, o fecha y tier/etapa en trato
+  // y tratoEtapas. El patch puede traer qty, overtimeHours, rate, amount,
+  // transport o workerCount, todos opcionales; los que faltan toman el valor
+  // base. Las filas extra se editan en `extraRows`.
   const updateCobrarLaborRow = (laborId, rowKey, patch) => {
     setCobrar((prev) => {
       const labor = prev.labors[laborId] || {};
       const rowOverrides = { ...(labor.rowOverrides || {}) };
       const existing = rowOverrides[rowKey] || {};
       const merged = { ...existing, ...patch };
-      // Si el patch deja todas las keys en undefined/null/"", removemos override.
+      // Si todos los campos quedan vacíos (undefined, null o ""), se quita el override.
       const allEmpty = Object.values(merged).every((v) => v === "" || v == null);
       if (allEmpty) delete rowOverrides[rowKey];
       else rowOverrides[rowKey] = merged;
@@ -864,9 +836,8 @@ export default function CycleSummaryModal({
       const labor = prev.labors[laborId] || {};
       const extraRows = [...(labor.extraRows || [])];
       const id = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `x${Date.now()}${Math.random()}`;
-      // amount/rate vacíos para que la multiplicación automática (qty × rate)
-      // arranque a funcionar apenas el usuario tipea qty + rate. Si dejamos `0`,
-      // el override `amount=0` bloquea el `computedAmount` y la fila queda en $0.
+      // Las filas extra arrancan con los campos vacíos para que el monto se
+      // calcule (qty × rate) al tipear.
       extraRows.push({ id, date: "", qty: "", overtimeHours: "", rate: "", amount: "" });
       const next = { ...prev, labors: { ...prev.labors, [laborId]: { ...labor, extraRows } } };
       saveJSON(cobrarStorageKey(cycle?.id), next);
@@ -911,7 +882,7 @@ export default function CycleSummaryModal({
       const carrier = prev.carriers[carrierId] || {};
       const extraRows = [...(carrier.extraRows || [])];
       const id = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `x${Date.now()}${Math.random()}`;
-      // amount/rate vacíos — ver comentario en addCobrarLaborExtraRow.
+      // Campos vacíos, igual que en addCobrarLaborExtraRow.
       extraRows.push({ id, date: "", count: "", rate: "", amount: "" });
       const next = { ...prev, carriers: { ...prev.carriers, [carrierId]: { ...carrier, extraRows } } };
       saveJSON(cobrarStorageKey(cycle?.id), next);
@@ -938,15 +909,10 @@ export default function CycleSummaryModal({
   };
 
   // ============================================================
-  // Importar ciclos anteriores (cobrar mode)
+  // Importar ciclos anteriores (modo cobrar)
   // ============================================================
-  // Al abrir el modal de importar, listamos ciclos de la misma faena+subfaena
-  // (excluyendo el actual) — todos los estados, ya que se permite consolidar
-  // ciclos abiertos también. Usamos `cache: true` para evitar pegar al
-  // Firestore cada vez que se abre.
-  // Set de cycleIds ya importados — derivado de las filas existentes en
-  // `cobrar.labors[].extraRows[].sourceCycleId`. Usado para deshabilitar
-  // ciclos ya importados en el modal y evitar duplicar el merge.
+  // Ciclos ya importados, según el `sourceCycleId` de las filas extra de cada
+  // labor. El modal los muestra deshabilitados para no importarlos dos veces.
   const importedCycleIds = useMemo(() => {
     const set = new Set();
     for (const laborCfg of Object.values(cobrar.labors || {})) {
@@ -957,6 +923,8 @@ export default function CycleSummaryModal({
     return set;
   }, [cobrar.labors]);
 
+  // Lista los ciclos de la misma faena y subfaena, salvo el actual, en
+  // cualquier estado (también se pueden sumar ciclos abiertos), con caché.
   const openImportModal = async () => {
     setImportOpen(true);
     setSelectedImportIds(new Set());
@@ -983,13 +951,12 @@ export default function CycleSummaryModal({
     }
   };
 
-  // Carga workdays de cada ciclo elegido, los agrupa por labor, matchea por
-  // nombre (case-insensitive) contra el ciclo actual y pushea cada día como
-  // `extraRow` en `cobrar.labors[laborId].extraRows`. Las labores cuyo nombre
-  // no matchee se reportan en un alert al final (el usuario puede renombrar
-  // y re-importar).
+  // Lee las jornadas de cada ciclo elegido, las agrupa por labor, empareja las
+  // labores por nombre (sin distinguir mayúsculas) con las del ciclo actual y
+  // agrega cada fila diaria a `cobrar.labors[laborId].extraRows`. Las labores
+  // sin par se listan en el aviso final.
   const handleImportCycles = async () => {
-    // Defensa: filtramos los ya-importados aunque el modal los deshabilite.
+    // Descarta los ya importados aunque el modal los muestre deshabilitados.
     const ids = [...selectedImportIds].filter((id) => !importedCycleIds.has(id));
     if (ids.length === 0) {
       setImportOpen(false);
@@ -1089,9 +1056,9 @@ export default function CycleSummaryModal({
     });
   };
 
-  // Toggle visibilidad de columna (global por ciclo). Set persistido en
-  // `cobrar.hiddenColumns: string[]`. Las claves coinciden con los campos
-  // que renderiza LaborTable/TransportTable (ver render).
+  // Muestra u oculta una columna en todas las tablas del resumen del ciclo. Se
+  // guarda en `cobrar.hiddenColumns: string[]`, con las claves de columna de
+  // LaborTable y TransportTable.
   const toggleColumn = (key) => {
     setCobrar((prev) => {
       const set = new Set(prev.hiddenColumns || []);
@@ -1112,7 +1079,7 @@ export default function CycleSummaryModal({
   const hiddenColumns = useMemo(() => new Set(cobrar.hiddenColumns || []), [cobrar.hiddenColumns]);
 
   // ============================================================
-  // Build per-labor data
+  // Datos por labor
   // ============================================================
   const laborsData = useMemo(() => {
     if (!cycle?.labors) return [];
@@ -1120,9 +1087,8 @@ export default function CycleSummaryModal({
       const wdMap = workdaysByLabor[l.id] || {};
       const { rows, containers } = buildDailyRows(l, wdMap, dayPrices);
       const totals = laborTotals(rows);
-      // Set de unidades únicas usadas en este ciclo para esta labor de trato.
-      // Si todas las filas comparten una sola unidad, laborQtyUnit la elige
-      // como header de columna en vez del tratoType.
+      // Unidades de trato usadas en la labor: si hay una sola, laborQtyUnit la
+      // usa como encabezado de columna en vez del tipo de trato.
       const tratoUnitsSet =
         l.type === "trato"
           ? new Set(rows.map((r) => r.unit).filter((u) => u != null))
@@ -1138,8 +1104,8 @@ export default function CycleSummaryModal({
     });
   }, [cycle?.labors, workdaysByLabor, catalogs, dayPrices]);
 
-  // Grilla workers × dates por labor — segunda sección imprimible. Cada
-  // labor rinde su propia infografía con botones de copiar/imprimir.
+  // Grilla trabajador × día por labor (segunda sección imprimible). Cada
+  // labor tiene sus propios botones de copiar e imprimir.
   const laborWorkerGrids = useMemo(() => {
     if (!cycle?.labors) return [];
     return cycle.labors.map((l) => {
@@ -1149,7 +1115,7 @@ export default function CycleSummaryModal({
     });
   }, [cycle?.labors, workdaysByLabor]);
 
-  // Transport: group by carrier + date
+  // Transporte agrupado por transportista y fecha.
   const transportData = useMemo(() => {
     const byCarrier = new Map();
     for (const t of trips) {
@@ -1179,18 +1145,13 @@ export default function CycleSummaryModal({
   }, [laborsData, transportData]);
 
   // ============================================================
-  // Cobrar rows
+  // Filas de cobro
   // ============================================================
   //
-  // Para la tarifa sugerida usamos la MEDIANA del precio por día y no el
-  // promedio simple (total/qty). Motivo: si una labor tiene 1 jornada
-  // mensual de $500k mezclada con 30 días normales a $25k, el promedio se
-  // dispara (~$40k) y queda muy lejos del precio real del 96% de los días.
-  // La mediana ignora el outlier y devuelve $25k, que es lo que el
-  // contratista efectivamente está pagando.
-  //
-  // Igual mantenemos el `meanRate` calculado para mostrarlo entre paréntesis
-  // y que el usuario tenga visibilidad de la diferencia.
+  // La tarifa sugerida es la mediana del precio por día, para que un día
+  // atípico (una jornada mensual, por ejemplo) no la corra. El promedio
+  // (`meanRate`) se muestra como referencia en el editor de tarifas cuando
+  // difiere más de un 10%.
   const cobrarLabors = useMemo(() => {
     return laborsData.map((ld) => {
       const cfg = cobrar.labors[ld.labor.id] || {};
@@ -1203,11 +1164,9 @@ export default function CycleSummaryModal({
       const defaultRate = medianRate || meanRate;
       const rate = cfg.chargeRate != null ? Number(cfg.chargeRate) : defaultRate;
 
-      // Para trato multi-tier la tarifa "promedio del labor" miente — cada
-      // tier suele tener precio distinto. Calculamos mediana por tierIdx
-      // para sugerir una tarifa más cercana al precio real de ese tier.
-      // La tarifa explícita del labor (`cfg.chargeRate`) sigue mandando si
-      // el usuario la fijó; sino usamos la mediana del tier para cada fila.
+      // En trato con varios tiers se sugiere una mediana por tier, porque
+      // cada tier suele tener su propio precio. Si la labor tiene tarifa fija
+      // (`cfg.chargeRate`), esa manda.
       const tierRateMedians = new Map();
       if (ld.labor.type === "trato") {
         const ratesByTier = new Map();
@@ -1225,9 +1184,9 @@ export default function CycleSummaryModal({
       }
       const activity = activityLabel(ld.labor, catalogs, ld.containers, ld.tratoUnitsSet);
 
-      // Aplicar overrides por fila + sumar extraRows. Cada chargedRow trae los
-      // valores resultantes (qty, rate, amount) ya aplicados. La UI los usa
-      // para mostrar inputs y el XLSX/totales para sumar.
+      // Filas de cobro: las del día con sus overrides, más las filas extra.
+      // Cada una trae los valores finales (chargedQty, chargedRate,
+      // chargedAmount…), que leen los inputs, los totales y el XLSX.
       const rowOverrides = cfg.rowOverrides || {};
       const extraRows = cfg.extraRows || [];
       const isHE = ld.labor.type === "tratoHE";
@@ -1235,10 +1194,8 @@ export default function CycleSummaryModal({
       const computeAmount = (qty, hours, rowRate) =>
         isHE ? Number(qty) + Number(hours) * Number(rowRate) : Number(qty) * Number(rowRate);
 
-      // Para labors `trato`, las filas regulares traen `unit` desde el config
-      // del día (`saco`, `metro`, etc.). Las filas extra/manuales no tienen
-      // unit → heredamos la unidad dominante de las filas regulares para que
-      // el formato muestre "212 saco" en vez de solo "212".
+      // En trato las filas extra no traen unidad: heredan la más frecuente de
+      // las filas del día, para que la métrica diga "212 saco" y no "212".
       let dominantUnit = null;
       if (ld.labor.type === "trato") {
         const unitCounts = new Map();
@@ -1251,21 +1208,18 @@ export default function CycleSummaryModal({
         }
       }
       const chargedRows = (ld.rows || []).map((r) => {
-        // Para trato multi-tier el rowKey lleva el tier (`${date}__${tierKey}`),
-        // y los overrides nuevos se guardan con esa clave. Las nóminas viejas
-        // tenían un único override por día — si no hay override en la clave
-        // nueva pero sí en la clave legacy (solo fecha), lo usamos para no
-        // perder ediciones previas.
+        // Override de la fila: por `rowKey` (en trato, `${date}__${tierKey}`)
+        // y, si no hay, por la fecha sola.
         const newKey = r.rowKey || r.date;
         const ov = rowOverrides[newKey] || rowOverrides[r.date] || {};
         const qty = ov.qty != null && ov.qty !== "" ? Number(ov.qty) : Number(r.qty) || 0;
         const overtimeHours = ov.overtimeHours != null && ov.overtimeHours !== ""
           ? Number(ov.overtimeHours)
           : Number(r.overtimeHours) || 0;
-        // Prioridad de tarifa: override del row → tarifa explícita del labor
-        // (cfg.chargeRate) → para tratoEtapas el precio real de la fila
-        // (amount/qty, que ya viene del precio del día) → mediana del tier
-        // (solo trato multi-tier) → mediana global del labor.
+        // Prioridad de tarifa: override de la fila → tarifa fija de la labor
+        // (cfg.chargeRate) → en tratoEtapas, el precio real de la fila
+        // (amount/qty) → mediana del tier (trato) → tarifa sugerida de la
+        // labor.
         const tierDefault = r.tierIdx != null ? tierRateMedians.get(r.tierIdx) : null;
         const etapaRealRate = ld.labor.type === "tratoEtapas" && Number(r.qty) > 0
           ? (Number(r.amount) || 0) / Number(r.qty)
@@ -1278,12 +1232,12 @@ export default function CycleSummaryModal({
         const rowRate = ov.rate != null && ov.rate !== "" ? Number(ov.rate) : baseRate;
         const computedAmount = computeAmount(qty, overtimeHours, rowRate);
         const amount = ov.amount != null && ov.amount !== "" ? Number(ov.amount) : computedAmount;
-        // Transporte por fila: monto manual que SUMA al total de la fila y al
-        // total a cobrar (decisión de diseño — si se usa, conviene excluir la
-        // tabla del transportista para no cobrar doble). Default 0.
+        // Transporte por fila: monto manual que se suma al total de la fila y
+        // al total a cobrar; si se usa, conviene excluir la tabla del
+        // transportista para no cobrarlo dos veces. 0 por defecto.
         const transport = ov.transport != null && ov.transport !== "" ? Number(ov.transport) : 0;
-        // Personas: informativa — editable pero no afecta montos. Default: el
-        // conteo real de trabajadores del día.
+        // Personas: informativa; se puede editar y no afecta montos. Por
+        // defecto, el conteo real de trabajadores del día.
         const workerCount = ov.workerCount != null && ov.workerCount !== ""
           ? Number(ov.workerCount)
           : Number(r.workerCount) || 0;
@@ -1313,8 +1267,8 @@ export default function CycleSummaryModal({
           qty: Number(ex.qty) || 0,
           overtimeHours: Number(ex.overtimeHours) || 0,
           amount: amount,
-          // Heredá la unit dominante del labor (solo trato) para que
-          // formatRowMetric muestre "X saco" cuando se imprime no-editable.
+          // Unidad más frecuente de la labor (solo trato), para que
+          // formatRowMetric muestre "X saco" fuera de edición.
           unit: ex.unit != null ? ex.unit : dominantUnit,
           pisoAmount: 0,
           pisoCount: 0,
@@ -1329,7 +1283,7 @@ export default function CycleSummaryModal({
           extraId: ex.id,
         });
       }
-      // Ordenar por fecha (las extra con date vacío al final).
+      // Orden por fecha; las filas extra sin fecha van al final.
       chargedRows.sort((a, b) => {
         if (!a.date && !b.date) return 0;
         if (!a.date) return 1;
@@ -1352,8 +1306,8 @@ export default function CycleSummaryModal({
         qty: chargedTotalQty,
         countedQty: chargedCountedQty,
         overtimeHours: chargedTotalOvertimeHours,
-        // Transporte manual por fila — suma aparte del amount para que el
-        // subtotal de producción no se contamine, pero el Total sí lo incluye.
+        // Transporte manual por fila: va aparte de amount, así el subtotal de
+        // producción no lo incluye y el Total sí.
         transport: chargedTotalTransport,
         pisoAmount: ld.totals.pisoAmount || 0,
         pisoCount: ld.totals.pisoCount || 0,
@@ -1436,22 +1390,13 @@ export default function CycleSummaryModal({
     });
   }, [transportData, cobrar.carriers]);
 
-  // Observaciones por día — las anotaciones que en la grilla del ciclo solo se
-  // ven pasando el mouse por el encabezado de cada fecha. Viven en
-  // cycle.dayNotesByLabor[laborId][date], con cycle.dayNotes[date] como
-  // fallback compartido de los ciclos viejos (ver CycleDetail). Juntarlas acá
-  // es lo que hace que el resumen explique solo los días raros: si no, hay que
-  // abrir el ciclo y pasar el mouse labor por labor para saber por qué un día
-  // se cobró distinto.
+  // Observaciones por día: las notas de cycle.dayNotesByLabor[laborId][date]
+  // y, para las labores sin nota propia ese día, la compartida de
+  // cycle.dayNotes[date] (ver CycleDetail). La compartida se emite una vez por
+  // día (`shared`), no una vez por labor.
   //
-  // El fallback compartido se emite UNA vez por día (`shared`) y no por labor:
-  // en un ciclo viejo el mismo texto saldría repetido tantas veces como
-  // labores tenga.
-  //
-  // Va en **pagar**, no en cobrar: son apuntes internos ("se cortó la luz",
-  // "llegó tarde el camión") y el resumen de cobrar es el que se manda al
-  // cliente. Sirven para revisar la jornada de este lado, no para explicarle
-  // nada a quien recibe la factura.
+  // Solo en pagar: son apuntes internos, y el resumen de cobrar es el que se
+  // manda al cliente.
   const dayNotesSummary = useMemo(() => {
     if (mode !== "pagar") return [];
     const byLabor = cycle?.dayNotesByLabor || {};
@@ -1465,9 +1410,8 @@ export default function CycleSummaryModal({
       const laborId = cl.labor.id;
       const name = titles.laborNames?.[laborId] || cl.labor.name;
       const own = byLabor[laborId] || {};
-      // Las fechas que la labor muestra en el resumen MÁS las que solo tienen
-      // nota: un día sin producción igual puede llevar una observación, y
-      // perderla acá es peor que mostrar una fila de más.
+      // Fechas con producción más las que solo tienen nota propia: un día sin
+      // producción también puede llevar una observación.
       const dates = new Set(Object.keys(own));
       for (const r of cl.rows || []) if (r.date) dates.add(r.date);
       for (const date of dates) {
@@ -1484,34 +1428,29 @@ export default function CycleSummaryModal({
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [mode, cycle?.dayNotesByLabor, cycle?.dayNotes, laborsData, titles.laborNames]);
 
-  // Subtotal del cobro = suma de labors + carriers incluidos. NO descuenta nada.
-  // Se usa como fila "Subtotal" en el desglose cuando hay descuento aplicado.
+  // Subtotal del cobro: labores y transportistas incluidos, sin descuento. Es
+  // la fila "Subtotal" del desglose.
   const subtotalCobrar = useMemo(() => {
     let sum = 0;
     // El transporte manual por fila (chargedTotals.transport) suma al cobro
-    // junto con la producción del labor.
+    // junto con la producción de la labor.
     for (const cl of cobrarLabors) if (cl.include) sum += (cl.chargedTotals?.amount || 0) + (cl.chargedTotals?.transport || 0);
     for (const cc of cobrarCarriers) if (cc.include) sum += cc.chargedTotalAmount || 0;
     return sum;
   }, [cobrarLabors, cobrarCarriers]);
-  // Grand total final = subtotal − descuento. Sobre este valor se calculan el
-  // IVA (19%) y el total con IVA incluido, así que el descuento queda aplicado
-  // antes de impuestos como pidió el usuario.
-  // Neto del cobro (pre-IVA). El saldo pendiente NO entra acá — se suma
-  // después del IVA (ver bloque del XLSX y del PrintableSummary).
+  // Neto del cobro: subtotal − descuento, sin bajar de 0. Sobre él se calculan
+  // el IVA (19%) y el total con IVA. El saldo pendiente no entra acá: se suma
+  // después del IVA (ver el XLSX y PrintableSummary).
   const grandTotalCobrar = useMemo(
     () => Math.max(0, subtotalCobrar - (Number(cobrar.discount) || 0)),
     [subtotalCobrar, cobrar.discount],
   );
 
-  // Wrappers que dispatchan a updateRow / updateExtra según el tipo de fila.
-  // Simplifican la API que recibe LaborTable / TransportTable: ellos sólo
-  // saben `editRow(row, patch)` sin preocuparse si es base u override.
-  // Si el usuario edita un factor (qty/count/rate/overtimeHours) sin pasar
-  // `amount` explícito, blanqueamos `amount` para que el cálculo
-  // qty × rate (o qty + hours × rate en tratoHE) vuelva a mandar. Sin esto
-  // el amount viejo (ej. el que vino de la importación) queda pegado y la
-  // multiplicación parece no actualizarse.
+  // LaborTable y TransportTable editan una fila con `onEditRow(id, row, patch)`;
+  // estos envoltorios mandan el cambio al override de la fila o a la fila
+  // extra. Editar un factor (qty, count, rate, overtimeHours) sin pasar
+  // `amount` vacía `amount`, para que vuelva a mandar el cálculo (qty × rate,
+  // o qty + horas × rate en tratoHE) y no quede fijo el monto anterior.
   const clearAmountIfFactorEdit = (patch, factorKeys) => {
     const editsFactor = factorKeys.some((k) => k in patch);
     return editsFactor && !("amount" in patch) ? { ...patch, amount: "" } : patch;
@@ -1519,9 +1458,8 @@ export default function CycleSummaryModal({
   const editCobrarLaborRow = (laborId, row, patch) => {
     const finalPatch = clearAmountIfFactorEdit(patch, ["qty", "rate", "overtimeHours"]);
     if (row?.isExtra) updateCobrarLaborExtraRow(laborId, row.extraId, finalPatch);
-    // Para trato multi-tier el rowKey incluye el tier — escribimos con esa
-    // clave para que cada tier tenga su override independiente. Otros tipos
-    // siguen escribiendo con date como clave (compatible con overrides viejos).
+    // La clave del override es el rowKey de la fila: la fecha, o fecha y
+    // tier/etapa en trato y tratoEtapas, así cada tier tiene su override.
     else updateCobrarLaborRow(laborId, row.rowKey || row.date, finalPatch);
   };
   const editCobrarCarrierRow = (carrierId, row, patch) => {
@@ -1530,16 +1468,12 @@ export default function CycleSummaryModal({
     else updateCobrarCarrierRow(carrierId, row.date, finalPatch);
   };
 
-  // El Dashboard muestra margen por ciclo (cobrar − pagar). Los dos totales ya
-  // se calculan acá en cada apertura del modal (son memos incondicionales, no
-  // dependen de la pestaña), así que se guardan en el propio doc del ciclo:
-  // son tres números y el Dashboard ya carga la lista de ciclos, o sea que le
-  // salen gratis — leer los docs de `cycleSummaries` costaría una lectura por
-  // ciclo. Solo escribe cuando el valor cambió, así que en la práctica es una
-  // escritura por sesión de edición.
+  // Guarda los totales de pagar y cobrar en `cycle.summaryTotals`, de donde el
+  // Dashboard saca el margen por ciclo sin leer `cycleSummaries` (una lectura
+  // por ciclo). Solo escribe si cambiaron.
   //
-  // `additive: true` es importante: sin eso `update` invalida el caché entero
-  // de `cycles` y obliga a todas las demás pantallas a releer.
+  // `additive: true` actualiza la caché de `cycles` en vez de invalidarla, así
+  // las demás pantallas no vuelven a leer la colección.
   const saveCycleTotals = () => {
     const pagar = Math.round(grandTotalPagar);
     const cobrar = Math.round(grandTotalCobrar);
@@ -1555,9 +1489,8 @@ export default function CycleSummaryModal({
       });
   };
 
-  // Si el modal se cierra con un guardado debounced en vuelo, el timer se
-  // cancela y esa última edición no llegaría nunca a Firestore. Al cerrar (o
-  // al desmontar) se fuerza lo que haya quedado sin persistir.
+  // Al cerrar o desmontar, guarda lo que quedó pendiente: cerrar cancela el
+  // timer del guardado con debounce.
   const flushRef = useRef(null);
   useEffect(() => {
     flushRef.current = () => {
@@ -1583,12 +1516,12 @@ export default function CycleSummaryModal({
   useEffect(() => () => flushRef.current?.(), []);
 
   // ============================================================
-  // Image / print actions
+  // Imagen e impresión
   // ============================================================
   const filename = `resumen_${mode}_${(cycle?.label || "ciclo").replace(/[/\s]+/g, "_")}.png`;
-  // `scrollWidth`/`scrollHeight` en vez de dejar que html-to-image use el
-  // `offsetWidth` del nodo — con tablas anchas (muchas columnas/extras) el
-  // contenedor scrollable de arriba corta el offsetWidth al ancho visible.
+  // Captura con `scrollWidth`/`scrollHeight`: con tablas anchas, el
+  // `offsetWidth` que usaría html-to-image queda cortado al ancho visible del
+  // contenedor con scroll.
   const fullCaptureOpts = () => ({
     backgroundColor: "#ffffff",
     pixelRatio: 2,
@@ -1619,12 +1552,12 @@ export default function CycleSummaryModal({
     } finally { setBusy(""); }
   };
   // ============================================================
-  // XLSX del resumen consolidado (una hoja por labor + transporte + Total).
-  // Cada hoja respeta las restricciones globales: col A vacía mitad ancho,
-  // fila 1 vacía. Datos arrancan en B2. Cosecha/Trato se desglosan por
-  // (día, combo/tier) con precios editables. tratoHE tiene tarifa HE
-  // editable y fórmulas Base+HE×tarifa+Extras. Subtotales y total general
-  // con SUM() para que el usuario pueda editar precios y recalcular.
+  // XLSX del resumen consolidado: una hoja por labor, una por transportista y
+  // la hoja Total. Cada hoja deja la columna A vacía (mitad de ancho) y la
+  // fila 1 vacía; los datos arrancan en B2. Cosecha y trato se desglosan por
+  // (día, combo/tier) con precios editables; tratoHE tiene tarifa HE editable
+  // y fórmulas Base + HE × tarifa + Extras. Subtotales y total con SUM() para
+  // recalcular al editar precios.
   // ============================================================
   const handleXlsxSummary = async () => {
     setBusy("xlsx");
@@ -1661,7 +1594,7 @@ export default function CycleSummaryModal({
       const laborsForMode = mode === "cobrar" ? cobrarLabors : laborsData;
       const carriersForMode = mode === "cobrar" ? cobrarCarriers : transportData;
 
-      // Para la hoja Total: lista de {displayName, sheetName, totalCellRef}.
+      // Para la hoja Total: { displayName, sheetName, totalRef, fallback } por hoja.
       const sheetTotals = [];
 
       // ============ HOJAS DE LABORES ============
@@ -1674,7 +1607,7 @@ export default function CycleSummaryModal({
         const ws = wb.addWorksheet(sheetName);
         ws.getColumn(1).width = 6;
 
-        // Title B2
+        // Título en B2
         ws.getCell("B2").value = displayName;
         ws.getCell("B2").font = { bold: true, size: 14 };
 
@@ -1682,7 +1615,8 @@ export default function CycleSummaryModal({
         const isTrato = labor.type === "trato";
         const isHE = labor.type === "tratoHE";
 
-        // RedDates (solo tratoHE) — para color rojo en columna Fecha.
+        // Días en rojo en la columna Fecha (solo tratoHE): fines de semana y
+        // feriados.
         const redDates = new Set();
         if (isHE) {
           for (const r of ld.rows) {
@@ -1693,7 +1627,7 @@ export default function CycleSummaryModal({
 
         if (isCosecha || isTrato) {
           // Estructura: B Fecha | C Combo/Tier | D Cantidad | E Precio | F Total
-          // mode=cobrar: una sola tarifa editable en C3 (todas las filas la referencian)
+          // En cobrar, una sola tarifa editable en C3 que todas las filas referencian.
           let chargeRef = null;
           if (mode === "cobrar") {
             ws.getCell("B3").value = "Tarifa cobro:";
@@ -1754,7 +1688,6 @@ export default function CycleSummaryModal({
             for (const it of items) {
               const dateCell = ws.getCell(`B${curRow}`);
               dateCell.value = dateLabel(date);
-              // Marca rojo solo si aplicara (tratoHE no entra acá; reservado).
               ws.getCell(`C${curRow}`).value = it.label;
               const qCell = ws.getCell(`D${curRow}`);
               qCell.value = it.qty;
@@ -1818,11 +1751,9 @@ export default function CycleSummaryModal({
           ws.getCell("B3").value = "Tarifa HE:";
           ws.getCell("B3").font = { bold: true };
           const c3 = ws.getCell("C3");
-          // Tarifa por defecto: si hay HE en datos, calcular como promedio implícito.
-          // Si no hay HE, dejar 0.
+          // Tarifa HE inicial: (monto − base) / horas HE, o 0 si no hay horas.
           const totalHE = ld.totals.overtimeHours || 0;
           const implicitRate = totalHE > 0 ? Math.round(ld.totals.amount - ld.totals.qty) / Math.max(totalHE, 1) : 0;
-          // Mejor: dejar editable iniciado en 0 si no hay HE, o usar implícito si lo hay.
           c3.value = totalHE > 0 ? Math.max(0, Math.round(implicitRate)) : 0;
           c3.numFmt = moneyFmt;
           c3.fill = editableFill;
@@ -1841,7 +1772,7 @@ export default function CycleSummaryModal({
 
           let curRow = HEADER_ROW + 1;
           const dataStartRow = curRow;
-          // En cobrar usamos chargedRows (incluye overrides + extras manuales).
+          // En cobrar, chargedRows (con overrides y filas extra).
           const heRows = mode === "cobrar" ? (ld.chargedRows || ld.rows) : ld.rows;
           for (const r of heRows) {
             const isRed = redDates.has(r.date);
@@ -1906,8 +1837,8 @@ export default function CycleSummaryModal({
           ws.views = [{ state: "frozen", ySplit: HEADER_ROW }];
         }
         else {
-          // main / supervision / extra: B Fecha | C Jornadas | D $ jornada | E Total
-          // Para mode=cobrar usa tarifa única en C3.
+          // main / supervision / extra (y tratoEtapas): B Fecha | C Jornadas | D $ jornada | E Total
+          // En cobrar, C3 muestra la tarifa de la labor y cada fila lleva la suya.
           let chargeRef = null;
           if (mode === "cobrar") {
             ws.getCell("B3").value = "Tarifa cobro:";
@@ -1932,7 +1863,7 @@ export default function CycleSummaryModal({
 
           let curRow = HEADER_ROW + 1;
           const dataStartRow = curRow;
-          // En cobrar usamos chargedRows con overrides + extras manuales.
+          // En cobrar, chargedRows (con overrides y filas extra).
           const simpleRows = mode === "cobrar" ? (ld.chargedRows || ld.rows) : ld.rows;
           for (const r of simpleRows) {
             ws.getCell(`B${curRow}`).value = r.date ? dateLabel(r.date) : (r.isExtra ? "(ajuste)" : "");
@@ -1942,8 +1873,8 @@ export default function CycleSummaryModal({
             qCell.numFmt = "#,##0";
             const pCell = ws.getCell(`D${curRow}`);
             if (mode === "cobrar") {
-              // En cobrar el rate puede tener override por fila → escribimos
-              // el valor literal en lugar de referenciar $C$3.
+              // En cobrar la tarifa puede tener override por fila: va el valor
+              // literal, sin referenciar $C$3.
               pCell.value = Number(r.chargedRate) || 0;
               pCell.fill = editableFill;
             } else {
@@ -2070,8 +2001,8 @@ export default function CycleSummaryModal({
 
       // ============ HOJA TOTAL GENERAL ============
       // Transporte manual por fila (cobrar): las hojas por labor no tienen esa
-      // columna, así que lo agregamos como una línea propia en el Total para
-      // que el XLSX cierre igual que la pantalla (subtotalCobrar lo incluye).
+      // columna, así que va como línea propia en el Total, igual que en
+      // subtotalCobrar.
       if (mode === "cobrar") {
         let laborTransportSum = 0;
         for (const ld of laborsForMode) {
@@ -2111,17 +2042,17 @@ export default function CycleSummaryModal({
       }
       const totalEnd = totalRow - 1;
 
-      // Si hay descuento (cobrar), insertamos Subtotal + Descuento antes del
-      // total final. El total final = subtotal − descuento. Sobre ese total se
-      // calcula el IVA si está activo.
+      // Con descuento (cobrar) van las filas Subtotal y Descuento antes del
+      // total, que queda en subtotal − descuento. El IVA, si está activo, se
+      // calcula sobre ese total.
       const discountValue = mode === "cobrar" ? Math.max(0, Number(cobrar.discount) || 0) : 0;
       const discountNoteValue = mode === "cobrar" ? (cobrar.discountNote || "") : "";
       const pendingValue = mode === "cobrar" ? Math.max(0, Number(cobrar.pendingBalance) || 0) : 0;
       const pendingNoteValue = mode === "cobrar" ? (cobrar.pendingBalanceNote || "") : "";
       let subtotalRow = null;
       let discountRow = null;
-      // El saldo pendiente NO va acá — se aplica DESPUÉS del IVA (al final).
-      // Solo el descuento entra antes del grand total.
+      // Antes del total solo entra el descuento; el saldo pendiente se suma
+      // después del IVA, al final.
       if (discountValue > 0) {
         subtotalRow = totalRow;
         wsTotal.getCell(`B${subtotalRow}`).value = "Subtotal";
@@ -2167,9 +2098,8 @@ export default function CycleSummaryModal({
       grand.font = { bold: true, size: 12 };
       grand.fill = titleFill;
 
-      // En modo cobrar agregamos abajo: Valor IVA (19%) y total con IVA incluido.
-      // Si el toggle "Sin IVA" está activo, se omiten estas filas.
-      let postIvaRow = grandRow; // referencia al "subtotal" para sumar el saldo
+      // En cobrar con IVA van debajo las filas Valor IVA (19%) e IVA incluido.
+      let postIvaRow = grandRow; // fila a la que se suma el saldo pendiente
       const postIvaFallback = (cobrar.withIva !== false)
         ? Math.round((Number(grandFallback) || 0) * 1.19)
         : Number(grandFallback) || 0;
@@ -2197,9 +2127,8 @@ export default function CycleSummaryModal({
         totalRow = grandRow + 1;
       }
 
-      // Saldo pendiente — se aplica DESPUÉS del IVA. Si hay saldo > 0,
-      // agregamos fila de Saldo pendiente y una fila de TOTAL FINAL que suma
-      // el total post-IVA + el saldo.
+      // Saldo pendiente, después del IVA: con saldo > 0 van la fila del saldo y
+      // TOTAL FINAL = total con IVA (o neto, sin IVA) + saldo.
       if (mode === "cobrar" && pendingValue > 0) {
         const pendingRow = totalRow;
         wsTotal.getCell(`B${pendingRow}`).value = pendingNoteValue
@@ -2314,9 +2243,8 @@ export default function CycleSummaryModal({
     runCapture(kind);
   };
 
-  // Tras confirmar "Bloquear y …" hay que esperar a que React repinte sin los
-  // controles de edición antes de rasterizar; capturar en el mismo handler
-  // sacaría justo lo que se quería esconder.
+  // Tras "Bloquear y …", espera dos requestAnimationFrame antes de capturar:
+  // el DOM tiene que reflejar el modo bloqueado.
   useEffect(() => {
     if (!pendingCapture || editMode) return;
     let cancelled = false;
@@ -2393,9 +2321,8 @@ export default function CycleSummaryModal({
             </button>
           </div>
         )}
-        {/* Las superficies de edición siguen al candado: con el resumen
-            bloqueado no hay forma de tocarlo, ni por las filas ni por los
-            paneles. En modo pagar no existe el candado. */}
+        {/* Los controles de edición siguen al candado: con el resumen
+            bloqueado no se muestra ninguno. En pagar no hay candado. */}
         {(mode !== "cobrar" || editMode) && (
           <button
             onClick={() => setShowTitleEditor((v) => !v)}
@@ -2492,10 +2419,9 @@ export default function CycleSummaryModal({
 
       <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
       <div ref={printRef} style={{ position: "relative" }}>
-        {/* Marca de agua mientras se edita. Va DENTRO del nodo capturable a
-            propósito: copiar/descargar/imprimir quedan bloqueados en modo
-            edición, así que su única función es que un screenshot manual (o un
-            recorte de pantalla) quede marcado como borrador. */}
+        {/* Marca de agua en edición. Va dentro del nodo capturable para que
+            una captura de pantalla manual quede marcada como borrador;
+            copiar, descargar e imprimir están bloqueados en edición. */}
         {captureLocked && <EditingWatermark />}
         <PrintableSummary
           mode={mode}
@@ -2524,9 +2450,9 @@ export default function CycleSummaryModal({
           addCarrierRow={addCobrarCarrierExtraRow}
           removeCarrierRow={removeCobrarCarrierExtraRow}
         />
-        {/* Resumen por trabajador (workers × dates), una infografía por
-            labor. Solo se muestra en modo "pagar" — el cobrar es por
-            tarifa pactada, no por desglose por trabajador. */}
+        {/* Resumen por trabajador (trabajador × día), una infografía por
+            labor. Solo en pagar: el cobro es por tarifa pactada, no por
+            trabajador. */}
         {mode === "pagar" && laborWorkerGrids.map((g) => (
           <LaborWorkerGrid
             key={g.labor.id}
@@ -2575,14 +2501,12 @@ export default function CycleSummaryModal({
 }
 
 // ============================================================
-// Popover: Mostrar / ocultar columnas (cobrar mode)
+// Popover: Mostrar / ocultar columnas (modo cobrar)
 // ============================================================
-// Lista las claves de columna que pueden ocultarse globalmente en todas las
-// tablas del resumen cobrar. Persiste en `cobrar.hiddenColumns`. Las keys
-// coinciden con los gates `hiddenColumns.has(key)` dentro de LaborTable /
-// TransportTable. Algunas keys aplican solo a ciertos tipos (he/bonos a
-// tratoHE; piso cuando hay piso registrado) — ocultarlas no rompe nada en
-// otras tablas.
+// Columnas que se pueden ocultar en todas las tablas del resumen; se guardan
+// en `cobrar.hiddenColumns`. Las claves son las que consultan LaborTable y
+// TransportTable con `hiddenColumns.has(key)`. Algunas aplican solo a ciertos
+// tipos (he y bonos a tratoHE; piso, cuando hay piso registrado).
 const COLUMN_OPTIONS = [
   { key: "qty", label: "Base $ / Unidad / Vueltas" },
   { key: "he", label: "HE (hrs) — tratoHE" },
@@ -2596,10 +2520,9 @@ const COLUMN_OPTIONS = [
 ];
 
 function ColumnsMenu({ anchorRef, hidden, onToggle, onReset, onClose }) {
-  // Posicionamos el popover en coordenadas viewport-relative (fixed) usando
-  // el rect del botón ancla. Renderizado via portal en <body> para escapar
-  // del overflow del Modal padre — sin esto el popover quedaba recortado
-  // cuando el usuario ocultaba columnas y el botón se desplazaba.
+  // Popover con posición fija, calculada desde el rect del botón ancla, y
+  // renderizado por portal en <body> para que el overflow del Modal padre no
+  // lo recorte.
   const POPOVER_WIDTH = 256; // = w-64
   const MARGIN = 8;
   const [pos, setPos] = useState(null);
@@ -2609,7 +2532,7 @@ function ColumnsMenu({ anchorRef, hidden, onToggle, onReset, onClose }) {
       const el = anchorRef?.current;
       if (!el) return;
       const r = el.getBoundingClientRect();
-      // Alineamos el borde derecho del popover con el borde derecho del botón.
+      // Alinea el borde derecho del popover con el del botón, dentro de la ventana.
       const left = Math.max(MARGIN, Math.min(window.innerWidth - POPOVER_WIDTH - MARGIN, r.right - POPOVER_WIDTH));
       const top = r.bottom + 4;
       setPos({ top, left });
@@ -2667,9 +2590,9 @@ function ColumnsMenu({ anchorRef, hidden, onToggle, onReset, onClose }) {
 // ============================================================
 // Modal: Importar ciclos anteriores
 // ============================================================
-// Sub-modal del CycleSummaryModal (cobrar mode). Lista ciclos de la misma
-// faena+subfaena para que el usuario elija cuáles importar; cada día de cada
-// labor matcheada se inyecta como `extraRow` (con badge de origen).
+// Sub-modal de CycleSummaryModal (modo cobrar). Lista los ciclos de la misma
+// faena y subfaena para elegir cuáles importar; cada fila diaria de las
+// labores con par entra como fila extra, rotulada con su ciclo de origen.
 function ImportCyclesModal({ open, onClose, cycles, alreadyImported, selected, onToggle, onConfirm, busy }) {
   if (!open) return null;
   return (
@@ -2760,7 +2683,7 @@ function ImportCyclesModal({ open, onClose, cycles, alreadyImported, selected, o
 }
 
 // ============================================================
-// Editors
+// Editores
 // ============================================================
 
 function TitlesEditor({ titles, labors, carriers, onChange, onLaborNameChange, onCarrierNameChange }) {
@@ -2943,9 +2866,8 @@ function CobrarEditor({ labors, carriers, carrierById, onLaborChange, onCarrierC
   );
 }
 
-// Marca de agua de borrador. Translúcida a propósito: tiene que dejar leer los
-// números mientras se edita, y solo pretende delatar un screenshot sacado a
-// mano de un resumen a medio armar.
+// Marca de agua de borrador: translúcida, para que se lean los números
+// mientras se edita, y que deje marcada una captura manual del resumen.
 function EditingWatermark() {
   return (
     <div
@@ -2994,7 +2916,7 @@ function EditingWatermark() {
 }
 
 // ============================================================
-// Printable
+// Imprimible
 // ============================================================
 
 const PrintableSummary = forwardRef(function PrintableSummary(
@@ -3029,7 +2951,7 @@ const PrintableSummary = forwardRef(function PrintableSummary(
 ) {
   return (
     <div ref={ref} style={{ background: "#ffffff", color: "#000", padding: 20, fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
-      {/* Header */}
+      {/* Encabezado */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 24, marginBottom: 16 }}>
         <img src={LOGO_URL} alt="logo" crossOrigin="anonymous" style={{ width: 90, height: 90, objectFit: "contain", flexShrink: 0 }} />
         <div style={{ textAlign: "center" }}>
@@ -3039,12 +2961,12 @@ const PrintableSummary = forwardRef(function PrintableSummary(
         <div style={{ width: 90 }} />
       </div>
 
-      {/* Per-labor day-by-day tables */}
+      {/* Tablas día a día por labor */}
       {labors.map((ld) => {
         if (mode === "cobrar" && ld.include === false) return null;
         const displayName = titles.laborNames?.[ld.labor.id] || ld.labor.name;
-        // Para tratoHE: marcar sábados/domingos/feriados en rojo en la
-        // columna Fecha (mismo criterio que el grid del trabajador).
+        // tratoHE: sábados, domingos y feriados en rojo en la columna Fecha,
+        // con el mismo criterio que la grilla por trabajador.
         let redDates = null;
         if (ld.labor.type === "tratoHE") {
           redDates = new Set();
@@ -3055,7 +2977,7 @@ const PrintableSummary = forwardRef(function PrintableSummary(
             if (isRedDay(r.date, cfg)) redDates.add(r.date);
           }
         }
-        // En cobrar usamos chargedRows (incluyen overrides + extras) y chargedTotals.
+        // En cobrar, chargedRows (con overrides y filas extra) y chargedTotals.
         const tableRows = mode === "cobrar" ? (ld.chargedRows || ld.rows) : ld.rows;
         const tableTotals = mode === "cobrar" ? (ld.chargedTotals || ld.totals) : ld.totals;
         return (
@@ -3081,7 +3003,7 @@ const PrintableSummary = forwardRef(function PrintableSummary(
         );
       })}
 
-      {/* Transport tables (one per carrier) */}
+      {/* Tablas de transporte (una por transportista) */}
       {carriers.map((tg) => {
         if (mode === "cobrar" && tg.include === false) return null;
         const c = carrierById.get(tg.carrierId);
@@ -3109,13 +3031,12 @@ const PrintableSummary = forwardRef(function PrintableSummary(
         );
       })}
 
-      {/* Grand total — en modo cobrar incluye opcionalmente fila de Subtotal,
-          Descuento, y desglose de IVA (19%) abajo. */}
+      {/* Total general. En cobrar suma, cuando corresponde, las filas de
+          Subtotal, Descuento, IVA (19%) y saldo pendiente. */}
       <table style={{ borderCollapse: "collapse", width: "100%", marginTop: 12 }}>
         <tbody>
-          {/* Subtotal (pre-descuento) — solo en cobrar cuando hay descuento o se
-              está editando, para evidenciar el origen del número antes del
-              descuento. */}
+          {/* Subtotal antes del descuento: en cobrar, con descuento o saldo
+              pendiente, o en edición. */}
           {mode === "cobrar" && (discount > 0 || pendingBalance > 0 || editMode) && subtotal != null && (
             <tr style={{ background: "#fff" }}>
               <td style={{ ...cell, fontWeight: 600 }}>Subtotal</td>
@@ -3249,9 +3170,8 @@ const PrintableSummary = forwardRef(function PrintableSummary(
 // ============================================================
 // Observaciones por día (pagar)
 // ============================================================
-// Agrupa por fecha y, dentro de la fecha, una línea por labor. `showLaborNames`
-// llega apagado cuando el resumen trae una sola labor: ahí el nombre es ruido,
-// porque no hay otra cosa a la que la observación pueda referirse.
+// Una fila por fecha y, dentro, una línea por labor. `showLaborNames` llega
+// apagado cuando el ciclo tiene una sola labor.
 function DayNotesTable({ notes, showLaborNames }) {
   return (
     <div style={{ marginTop: 20, breakInside: "avoid" }}>
@@ -3267,9 +3187,8 @@ function DayNotesTable({ notes, showLaborNames }) {
         </thead>
         <tbody>
           {notes.map((g) => {
-            // La nota compartida (ciclos viejos) va primero. Cuando convive con
-            // notas propias de otras labores el rótulo es lo único que evita
-            // leerla como la observación de una labor sola.
+            // La nota compartida va primero, rotulada "Todas las labores" para
+            // no leerla como la observación de una labor sola.
             const lines = g.shared
               ? [{ key: "__all__", name: "Todas las labores", text: g.shared }]
               : [];
@@ -3340,16 +3259,15 @@ function LaborTable({
   if (rows.length === 0 && !isCobrar) return null;
   const showPiso = (totals.pisoAmount || 0) > 0;
   const isHE = laborType === "tratoHE";
-  // Helper: cada columna chequea si su key está en hiddenColumns.
   const showCol = (key) => !hiddenColumns.has(key);
 
-  // En cobrar las filas vienen pre-cargadas con chargedQty/chargedOvertimeHours/
-  // chargedRate/chargedAmount (overrides aplicados). En pagar leemos los campos
-  // directos del workday agregado.
+  // En cobrar las filas traen chargedQty, chargedOvertimeHours, chargedRate y
+  // chargedAmount, con los overrides aplicados; en pagar se leen los campos de
+  // la fila agregada.
   const rowQty = (r) => isCobrar ? r.chargedQty : r.qty;
   const rowHE = (r) => isCobrar ? r.chargedOvertimeHours : r.overtimeHours;
-  // Total HE (tratoHE) = HE_hrs × tarifa HE del ciclo. Para los demás tipos
-  // mantenemos "Valor" = $/unidad (amount/qty).
+  // Columna "Valor": en tratoHE, el Total HE (horas × tarifa HE de la labor);
+  // en el resto, el precio por unidad.
   const rowHeTotal = (r) => (Number(rowHE(r)) || 0) * overtimeRate;
   const rowRate = (r) => {
     if (isHE) return rowHeTotal(r);
@@ -3363,10 +3281,9 @@ function LaborTable({
     const value = raw === "" ? "" : Number(raw);
     onEditRow(laborId, r, { [field]: value });
   };
-  // Para trato: si el día tiene más de una fila (multi-tier) mostramos un
-  // badge al lado de la fecha con la unidad del tier (Árbol/Metro/...) o
-  // un fallback "T2/T3/..." si no hay unidad configurada. La 1ra fila del
-  // día solo lleva badge cuando hay otra fila el mismo día (para diferenciar).
+  // Trato: badge junto a la fecha con la unidad del tier (Árbol, Metro…) o
+  // "T1", "T2"… si no tiene unidad. La fila del primer tier lo lleva solo si
+  // el día tiene más de una fila.
   const isTrato = laborType === "trato";
   const rowCountByDate = (() => {
     if (!isTrato) return new Map();
@@ -3527,9 +3444,8 @@ function LaborTable({
                           style={cobrarInputStyle}
                         />
                       ) : (
-                        // Cuando NO está en edit, `r.qty` es el original — para que el
-                        // display refleje los overrides aplicados (cobrar mode) pasamos
-                        // el `qty` ya resuelto (= chargedQty en cobrar, qty en pagar).
+                        // Se pasa el qty resuelto (chargedQty en cobrar, qty en pagar)
+                        // para que la métrica refleje los overrides.
                         formatRowMetric({ ...r, qty, overtimeHours: heHrs }, laborType, catalogs)
                       )}
                     </td>
@@ -3889,13 +3805,12 @@ const cellH = { border: "1px solid #555", padding: "6px 8px", fontSize: 12, font
 const cell = { border: "1px solid #999", padding: "5px 8px", fontSize: 12 };
 
 // ============================================================
-// LaborWorkerGrid — grilla imprimible workers × dates, una por labor
+// LaborWorkerGrid: grilla imprimible trabajador × día, una por labor
 // ============================================================
-// Replica visualmente lo que se ve en el grid de CycleDetail pero solo lectura
-// y optimizado para imprimir / capturar imagen. Tiene su propio ref +
-// botones (📋 / 📥 / 🖨). Para impresión, el `<thead>` lleva
-// `display: table-header-group` que hace que Chrome repita el encabezado en
-// cada hoja nueva cuando la tabla excede la primera página.
+// Muestra lo mismo que la grilla de CycleDetail, de solo lectura y preparada
+// para imprimir o capturar. Tiene su propio ref y sus botones (📋 / 📥 / 🖨).
+// Al imprimir, `thead { display: table-header-group }` repite el encabezado
+// en cada hoja cuando la tabla pasa de una página.
 function LaborWorkerGrid({
   labor,
   displayName,
@@ -3911,14 +3826,12 @@ function LaborWorkerGrid({
   const toast = useToast();
   const ref = useRef(null);
   const [busy, setBusy] = useState("");
-  // Vista ampliada: la grilla se renderiza en un Modal aparte para que se
-  // pueda ver completa sin que rompa el layout del modal padre. Útil cuando
-  // hay muchos días (>15) y el scroll horizontal inline es incómodo.
+  // Vista ampliada: la grilla en un Modal aparte, para verla completa cuando
+  // hay muchos días.
   const [expanded, setExpanded] = useState(false);
 
-  // Filtro de trabajadores — set de ruts ocultos. Vacío = mostrar todos.
-  // Se aplica al render del grid Y a los totales/XLSX, así el resumen
-  // filtrado refleja solo el subgrupo seleccionado.
+  // Filtro de trabajadores: RUTs ocultos (vacío = todos visibles). Vale para
+  // la grilla, los totales y el XLSX.
   const [hiddenRuts, setHiddenRuts] = useState(() => new Set());
   const [filterOpen, setFilterOpen] = useState(false);
   const workers = useMemo(
@@ -3926,9 +3839,8 @@ function LaborWorkerGrid({
     [allWorkers, hiddenRuts],
   );
 
-  // Para tratoHE: marcamos en rojo sábados, domingos y días configurados como
-  // feriado en el dayPrices del ciclo (mismo criterio que el grid). Para
-  // otras labores el array queda vacío.
+  // tratoHE: sábados, domingos y feriados del dayPrices en rojo, con el mismo
+  // criterio que la grilla del ciclo. Para otras labores queda vacío.
   const redDates = useMemo(() => {
     if (labor?.type !== "tratoHE") return new Set();
     const out = new Set();
@@ -3942,10 +3854,9 @@ function LaborWorkerGrid({
   const filename = `resumen_trabajadores_${(labor?.name || "labor").replace(/[/\s]+/g, "_")}.png`;
   const xlsxFilename = `resumen_${(labor?.name || "labor").replace(/[/\s]+/g, "_")}.xlsx`;
 
-  // Cuando la grilla es más ancha que el viewport, `html-to-image` puede
-  // truncar al `offsetWidth` del elemento. Forzamos `width` / `height` desde
-  // `scrollWidth` / `scrollHeight` para garantizar que el PNG contenga la
-  // tabla completa, incluyendo las columnas de la derecha.
+  // Con una grilla más ancha que la ventana, `html-to-image` puede cortar en
+  // el `offsetWidth` del elemento; `width`/`height` salen de
+  // `scrollWidth`/`scrollHeight` para que el PNG traiga la tabla completa.
   const fullCaptureOpts = () => ({
     backgroundColor: "#ffffff",
     pixelRatio: 2,
@@ -3980,7 +3891,7 @@ function LaborWorkerGrid({
       setBusy("");
     }
   };
-  // Exporta la grilla a XLSX con fórmulas Excel.
+  // Exporta la grilla a XLSX con fórmulas de Excel.
   // Restricciones de layout:
   //   - Col A vacía (width = 6, mitad de una columna normal de 12).
   //   - Fila 1 vacía.
@@ -3988,11 +3899,12 @@ function LaborWorkerGrid({
   //
   // Por tipo:
   //   - tratoHE → 3 cols por día (Base, Horas, Extras). Tarifa HE editable
-  //     al final. Total $ = TotalBase + TotalHoras × tarifa_HE + TotalExtras.
+  //     al pie. Total $ = TotalBase + TotalHoras × tarifa_HE + TotalExtras.
   //   - cosecha → 1 col por (día, combo) con kg + 1 col $ por día (fórmula).
-  //     Precios por combo en celdas editables al inicio.
-  //   - trato   → idem cosecha pero con tiers.
-  //   - main/supervision/extra → 1 col por día con monto; totales son SUM.
+  //     El precio de cada (día, combo) va en una fila editable del encabezado.
+  //   - trato   → igual que cosecha, con tiers.
+  //   - el resto (main, supervision, extra, tratoEtapas) → 1 col por día con
+  //     el monto; totales con SUM.
   const handleXlsx = async () => {
     setBusy("xlsx");
     try {
@@ -4029,11 +3941,11 @@ function LaborWorkerGrid({
       const COL_RUT = 3; // col C = RUT
 
       // ────────────────────────────────────────────────────────────────────
-      // Recolección de combos / tiers (cosecha / trato).
+      // Combos (cosecha) o tiers (trato).
       // ────────────────────────────────────────────────────────────────────
-      // combos: array ordenado de { key, label }. El PRECIO real varía por
-      // (date, key); se obtiene del `dayPrices` y se renderiza en una fila
-      // de precios DENTRO del header (no como referencia única arriba).
+      // combos: lista ordenada de { key, label }. El precio varía por
+      // (fecha, key): sale de `dayPrices` y va en una fila de precios dentro
+      // del encabezado, una celda por día y combo.
       let combos = [];
       if (isCosecha) {
         const seen = new Map(); // key -> { qx, cy }
@@ -4065,12 +3977,10 @@ function LaborWorkerGrid({
         }).sort((a, b) => a.key.localeCompare(b.key));
       }
 
-      // Precio real por (date, key) desde dayPrices.
-      // Usa los helpers que ya normalizan formatos legacy:
+      // Precio por (fecha, key) desde dayPrices, con los helpers que normalizan
+      // los formatos antiguos (precio plano o clave "0_0"):
       //   - cosecha: getDayCombos devuelve [{ key:"x_y", price }, ...]
       //   - trato:   getTratoTiers devuelve [{ key:"tN", price }, ...]
-      // Sin normalizar caería a 0 en docs legacy (price flat o "0_0"), que
-      // es exactamente el síntoma que el usuario reportó como "precio constante".
       const priceFor = (date, key) => {
         if (!labor?.id) return 0;
         if (isCosecha) {
@@ -4089,18 +3999,18 @@ function LaborWorkerGrid({
       let cursorRow = 2; // fila 1 vacía
 
       // ────────────────────────────────────────────────────────────────────
-      // Header de la tabla principal.
+      // Encabezado de la tabla principal.
       // ────────────────────────────────────────────────────────────────────
       const HEADER_ROW = cursorRow;
       const cellsPerDay = isHE ? 3 : (combos.length > 0 ? combos.length + 1 : 1);
       // tratoHE: Base / Horas / Extras por día
       // cosecha/trato con combos: 1 col por combo + 1 col Subtotal $
-      // money-only o cosecha/trato sin combos: 1 col $
+      // el resto: 1 col (cantidad en cosecha/trato sin combos, monto en los demás)
 
       const COL_FIRST_DAY = COL_RUT + 1;
       const COL_AFTER_DAYS = COL_FIRST_DAY + dates.length * cellsPerDay;
 
-      // Cols de totales finales:
+      // Columnas de totales:
       let COL_TOTAL_BASE = null, COL_TOTAL_HORAS = null, COL_TOTAL_EXTRAS = null;
       let COL_TOTAL_QTY_BY_COMBO = []; // por combo
       let COL_TOTAL_AMT;
@@ -4114,7 +4024,7 @@ function LaborWorkerGrid({
         for (let i = 0; i < combos.length; i++) COL_TOTAL_QTY_BY_COMBO.push(COL_AFTER_DAYS + i);
         COL_TOTAL_AMT = COL_AFTER_DAYS + combos.length;
       } else if (isCosecha || isTrato) {
-        // Sin combos detectados (raro): solo Total $.
+        // Sin combos (raro): total de cantidad y, en la columna siguiente, Total $.
         COL_TOTAL_AMT = COL_AFTER_DAYS;
       } else {
         COL_TOTAL_AMT = COL_AFTER_DAYS;
@@ -4124,11 +4034,11 @@ function LaborWorkerGrid({
       headerRow.getCell(COL_FIXED_START).value = "Trabajador";
       headerRow.getCell(COL_RUT).value = "RUT";
 
-      // Para cosecha/trato con combos: TRIPLE fila de header
-      //   Row 0: fecha (merged sobre las cols del día)
-      //   Row 1: nombre del combo / tier + "$" para subtotal
-      //   Row 2: PRECIO por combo (editable) + "" para la col $
-      // tratoHE / money-only usan header simple en una fila.
+      // Cosecha/trato con combos: encabezado de tres filas
+      //   1: fecha (combinada sobre las columnas del día)
+      //   2: nombre del combo / tier y "$" para el subtotal
+      //   3: precio por combo (editable) y "$" en la columna del subtotal
+      // tratoHE y el resto usan un encabezado de una fila.
       const useDoubleHeader = (isCosecha || isTrato) && combos.length > 0;
       const HEADER_ROW_2 = useDoubleHeader ? HEADER_ROW + 1 : null;
       const PRICE_HEADER_ROW = useDoubleHeader ? HEADER_ROW + 2 : null;
@@ -4151,10 +4061,10 @@ function LaborWorkerGrid({
             }
           }
         } else if (useDoubleHeader) {
-          // Fila 1: la fecha merged sobre las (combo+1) columnas de ese día.
+          // Fila 1: la fecha, combinada sobre las (combos + 1) columnas del día.
           headerRow.getCell(baseCol).value = lbl;
           ws.mergeCells(HEADER_ROW, baseCol, HEADER_ROW, baseCol + combos.length);
-          // Fila 2: combo labels + "$"
+          // Fila 2: nombre de cada combo y "$"
           combos.forEach((cb, ci) => {
             subHeaderRow.getCell(baseCol + ci).value = cb.label;
           });
@@ -4169,8 +4079,8 @@ function LaborWorkerGrid({
             priceCell.font = { italic: true };
             priceCell.alignment = { horizontal: "center", vertical: "middle" };
           });
-          // La celda $ del día queda en blanco en la fila de precios (es el
-          // subtotal computado abajo, no un precio).
+          // En la fila de precios, la columna $ del día lleva solo "$": es el
+          // subtotal calculado abajo, no un precio.
           const subAmtPriceCell = priceHeaderRow.getCell(baseCol + combos.length);
           subAmtPriceCell.value = "$";
           subAmtPriceCell.font = { italic: true, color: { argb: "FF888888" } };
@@ -4182,7 +4092,7 @@ function LaborWorkerGrid({
         }
       });
 
-      // Totales finales en header.
+      // Encabezados de los totales.
       if (isHE) {
         headerRow.getCell(COL_TOTAL_BASE).value = "Total Base";
         headerRow.getCell(COL_TOTAL_HORAS).value = "Total Horas";
@@ -4201,7 +4111,7 @@ function LaborWorkerGrid({
         headerRow.getCell(COL_TOTAL_AMT).value = "Total $";
       }
 
-      // Estilos de header (filas 1 y 2 — la fila 3 de precios ya está estilada).
+      // Estilo del encabezado (filas 1 y 2; la fila 3 de precios ya tiene el suyo).
       const styleHeaderCell = (c) => {
         c.font = c.font?.color ? c.font : { bold: true };
         c.fill = c.fill || HEADER_FILL;
@@ -4238,7 +4148,7 @@ function LaborWorkerGrid({
             row.getCell(baseCol + 1).value = Number(c?.overtimeHours) || 0;
             row.getCell(baseCol + 2).value = Number(c?.extras) || 0;
           } else if ((isCosecha || isTrato) && combos.length > 0) {
-            // Por combo: qty en cada col, $ subtotal en última col (formula).
+            // Por combo: cantidad en cada columna y subtotal $ (fórmula) en la última.
             const qtyCells = [];
             combos.forEach((cb, ci) => {
               const qtyCell = row.getCell(baseCol + ci);
@@ -4246,8 +4156,8 @@ function LaborWorkerGrid({
                 ? Number(c?.byCombo?.get(cb.key)?.kilos) || 0
                 : Number(c?.byTier?.get(cb.key)?.qty) || 0;
               qtyCell.value = qty;
-              // Precio editable de ESE día/combo: fila PRICE_HEADER_ROW,
-              // misma columna que la qty. Row absoluto, col relativa.
+              // Precio de ese día y combo: fila PRICE_HEADER_ROW (absoluta),
+              // misma columna que la cantidad (relativa).
               const priceRef = `${colLetter(baseCol + ci)}$${PRICE_HEADER_ROW}`;
               qtyCells.push({
                 ref: `${colLetter(baseCol + ci)}${rowNum}`,
@@ -4273,7 +4183,7 @@ function LaborWorkerGrid({
           row.getCell(COL_TOTAL_BASE).value = { formula: `SUM(${baseCells})`, result: Number(w.totals.base) || 0 };
           row.getCell(COL_TOTAL_HORAS).value = { formula: `SUM(${horasCells})`, result: Number(w.totals.overtimeHours) || 0 };
           row.getCell(COL_TOTAL_EXTRAS).value = { formula: `SUM(${extrasCells})`, result: Number(w.totals.extras) || 0 };
-          // Total $ se setea más abajo (después de armar la celda de tarifa HE).
+          // Total $ se escribe más abajo, después de la celda de tarifa HE.
           row.getCell(COL_TOTAL_AMT).value = Number(w.totals.amount) || 0;
         } else if ((isCosecha || isTrato) && combos.length > 0) {
           // Total por combo: SUM hacia la derecha tomando solo las cols de ese combo.
@@ -4296,7 +4206,7 @@ function LaborWorkerGrid({
           row.getCell(COL_TOTAL_AMT).value = { formula: `SUM(${dayCells})`, result: Number(w.totals.amount) || 0 };
         }
 
-        // Formato celdas.
+        // Formato de las celdas.
         row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
           cell.border = hairBorder;
           if (colNumber < COL_FIRST_DAY) return; // Trabajador/RUT
@@ -4332,7 +4242,7 @@ function LaborWorkerGrid({
       });
 
       // ────────────────────────────────────────────────────────────────────
-      // Fila Total día (footer).
+      // Fila Total día (pie).
       // ────────────────────────────────────────────────────────────────────
       const TOTAL_ROW = DATA_END_ROW + 1;
       const totalRow = ws.getRow(TOTAL_ROW);
@@ -4360,7 +4270,7 @@ function LaborWorkerGrid({
       }
       totalRow.getCell(COL_TOTAL_AMT).value = { formula: sumDown(COL_TOTAL_AMT), result: 0 };
 
-      // Estilo total row.
+      // Estilo de la fila de totales.
       const lastTotalCol = (isCosecha || isTrato) && combos.length === 0 ? COL_TOTAL_AMT + 1 : COL_TOTAL_AMT;
       for (let col = COL_FIXED_START; col <= lastTotalCol; col++) {
         const cell = totalRow.getCell(col);
@@ -4416,8 +4326,7 @@ function LaborWorkerGrid({
             result: Number(w.totals.amount) || 0,
           };
         });
-        // Footer Total $ → suma de Total $ por trabajador (sigue funcionando
-        // porque las fórmulas devuelven números).
+        // Pie: suma de los Total $ por trabajador.
         totalRow.getCell(COL_TOTAL_AMT).value = { formula: sumDown(COL_TOTAL_AMT), result: 0 };
 
         const note = ws.getRow(HE_RATE_ROW + 1);
@@ -4426,7 +4335,7 @@ function LaborWorkerGrid({
       }
 
       // ────────────────────────────────────────────────────────────────────
-      // Anchos y views.
+      // Anchos y paneles fijos.
       // ────────────────────────────────────────────────────────────────────
       ws.getColumn(1).width = 6; // col A = mitad
       ws.getColumn(COL_FIXED_START).width = 30; // Trabajador
@@ -4435,8 +4344,7 @@ function LaborWorkerGrid({
         ws.getColumn(i).width = 12;
       }
 
-      // Freeze: 3 cols a la izquierda (A, Trabajador, RUT) + header.
-      // Freeze el header completo + col A/Trabajador/RUT.
+      // Fija las columnas A, Trabajador y RUT y el encabezado completo.
       const ySplit = useDoubleHeader ? PRICE_HEADER_ROW : HEADER_ROW;
       ws.views = [{ state: "frozen", xSplit: COL_RUT, ySplit }];
 
@@ -4512,12 +4420,10 @@ function LaborWorkerGrid({
     ? containerLabel(catalogs, [...containers][0])
     : null;
 
-  // Devuelve el contenido de una celda (worker, date). qty arriba grande,
-  // monto chico abajo. Para piso muestra un tag dorado discreto.
-  //
-  // Para tratoHE: NO mostramos "j" (la jornada está implícita en el día con
-  // trabajo). En su lugar, la línea de monto se muestra como `$amount + Xh`
-  // cuando hay horas extras, o solo `$amount` cuando es jornada limpia.
+  // Contenido de una celda (trabajador, día). En cosecha y trato, la cantidad
+  // arriba y el monto chico abajo; en el resto, el monto es la línea
+  // principal. El piso va con 🪙. En tratoHE no se muestra la jornada (cada
+  // día con trabajo es una) y el monto lleva "(X HE)" si hubo horas extras.
   const renderCell = (c) => {
     if (!c || (!c.qty && !c.amount && !c.pisoAmount)) return null;
     const lines = [];
@@ -4545,10 +4451,10 @@ function LaborWorkerGrid({
     } else if (t === "trato") {
       lines.push(<div key="qty" style={{ fontWeight: 600 }}>{fmtNumber(c.qty)}</div>);
     } else if (t === "tratoHE") {
-      // Sin línea de jornada — se renderiza solo en la línea de monto abajo.
+      // Sin línea de jornada: solo la del monto, más abajo.
     } else {
-      // main/supervision/extra: tampoco mostramos "j". El monto manda como
-      // línea principal (la jornada se cuenta sola en la columna Total).
+      // main, supervision, extra (y tratoEtapas): sin línea de cantidad; el
+      // monto es la línea principal y la cantidad va en la columna Total.
     }
     if (c.pisoAmount > 0 && (c.qty || c.jornadas)) {
       lines.push(
@@ -4559,10 +4465,8 @@ function LaborWorkerGrid({
       const heSuffix = (t === "tratoHE" && c.overtimeHours > 0)
         ? ` (${fmtNumber(c.overtimeHours)} HE)`
         : "";
-      // Cosecha y trato tienen su métrica "principal" arriba (kg / cantidad),
-      // entonces el monto va abajo en chico/gris. Para los tipos sin métrica
-      // arriba (tratoHE, main, supervision, extra) el monto ES la info
-      // principal: lo agrandamos y oscurecemos.
+      // En cosecha y trato la cantidad va arriba y el monto abajo, chico y
+      // gris; en el resto el monto es la línea principal, más grande y oscura.
       const isMainLine = t !== "cosecha" && t !== "trato";
       const fontSize = isMainLine ? 11 : 9;
       const fontWeight = isMainLine ? 600 : 400;
@@ -4575,10 +4479,9 @@ function LaborWorkerGrid({
     return <>{lines}</>;
   };
 
-  // Contenido visual del grid — extraído para poder renderizarlo tanto inline
-  // (con ref para capturar PNG) como dentro del Modal "Ampliar". Solo una de
-  // las dos instancias está montada a la vez (depende de `expanded`), así el
-  // ref siempre apunta a la única instancia activa.
+  // Cuerpo de la grilla, que se dibuja en línea o dentro del Modal "Ampliar".
+  // Según `expanded` hay una sola instancia montada, así el ref apunta
+  // siempre a la activa.
   const gridBody = (
     <>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
@@ -4664,10 +4567,9 @@ function LaborWorkerGrid({
                 const t = dayTotals.get(d);
                 const lt = labor?.type;
                 const isHE = lt === "tratoHE";
-                // Cosecha, trato y tratoEtapas muestran la métrica de producción
-                // arriba (kilos / cantidad / carpas). Para tratoHE, main,
-                // supervision, extra solo va el monto — el conteo de jornadas
-                // vive en la columna Total Jornadas a la derecha.
+                // Cosecha, trato y tratoEtapas muestran la cantidad arriba;
+                // tratoHE, main, supervision y extra solo el monto (las
+                // jornadas van en la columna Total de la derecha).
                 const showQty = lt === "cosecha" || lt === "trato" || lt === "tratoEtapas";
                 const amtLine = isHE && t.overtimeHours > 0
                   ? `${fmtCurrency(t.amount)} (${fmtNumber(t.overtimeHours)} HE)`
@@ -4712,15 +4614,10 @@ function LaborWorkerGrid({
     </>
   );
 
-  // Card wrapper compartido para inline y modal — replica los padding y
-  // colores del print. `ref` lo recibe solo cuando se renderiza inline (o
-  // dentro del modal) — pero nunca en ambos lados a la vez (mutuamente
-  // excluyentes vía `expanded`).
-  //
-  // `width: max-content` evita que el navegador trate de hacer caber el
-  // contenido en el ancho del contenedor con overflow. Cada columna conserva
-  // su ancho natural y la tabla puede ser más amplia que el viewport (que es
-  // justo lo que queremos — el scroller exterior se encarga).
+  // Estilo de la tarjeta, igual en línea y en el modal, con el padding y los
+  // colores del impreso. `width: max-content` deja que cada columna conserve
+  // su ancho natural aunque la tabla supere la ventana; el contenedor de
+  // afuera hace el scroll.
   const cardStyles = {
     background: "#ffffff",
     color: "#000",
@@ -4841,9 +4738,9 @@ function LaborWorkerGrid({
           </div>
         </div>
       )}
-      {/* Inline: scroll horizontal dentro del modal padre para que la grilla
-          con muchos días no rompa el layout. PNG/print toman desde el ref del
-          div interno (full-width, no recortado por el overflow del wrapper). */}
+      {/* En línea: scroll horizontal dentro del modal padre. El PNG y la
+          impresión toman el div interno, de ancho completo, sin el recorte
+          del contenedor. */}
       {!expanded && (
         <div style={{ overflowX: "auto", maxWidth: "100%" }}>
           <div ref={ref} style={cardStyles}>
@@ -4851,11 +4748,9 @@ function LaborWorkerGrid({
           </div>
         </div>
       )}
-      {/* Modal "Ampliar": cuando hay muchos días, el inline scrollea pero igual
-          es incómodo. Este modal abre la misma grilla en un viewport más
-          grande, también con scroll. Los botones de export/print están afuera
-          (en la action row del card) — siguen funcionando porque `ref` apunta
-          al div que se monta acá cuando `expanded` es true. */}
+      {/* Modal "Ampliar": la misma grilla en un área más grande, con scroll.
+          Con `expanded`, `ref` apunta al div de acá, así que los botones de
+          exportar e imprimir siguen funcionando. */}
       {expanded && (
         <Modal
           open={expanded}

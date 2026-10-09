@@ -50,7 +50,7 @@ async function ciclo(id, labores) {
 
 // Arma la nómina como "Generar", por la capa de servicios: jornadas de lo
 // elegido → agregar por trabajador → guardar con sus ciclos → etiquetar. Los
-// anticipos siguen el mismo camino de siempre y acá no se miran.
+// anticipos no se miran acá.
 async function generar({ chosen = new Map(), people = [] }) {
   const { workdays, taken } = await workdaysForNewPayroll({
     chosen,

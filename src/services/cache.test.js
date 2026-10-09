@@ -10,10 +10,9 @@ import {
   countedList,
 } from "./cache";
 
-// El `mem` del módulo es global y se comparte entre tests, así que cada uno usa
-// su propio scope en vez de limpiar. En Node no hay `localStorage`: las ramas
-// con `persist` quedan en no-op silencioso (están envueltas en try/catch), y lo
-// que se ejercita acá es la caché en memoria, que es la que sirve de verdad.
+// El `mem` del módulo se comparte entre tests, así que cada uno usa su propio
+// scope. En Node no hay `localStorage`: las ramas con `persist` no hacen nada
+// (están envueltas en try/catch) y se ejercita solo la caché en memoria.
 let n = 0;
 const scope = () => `test${n++}`;
 
@@ -33,19 +32,16 @@ describe("cacheKey", () => {
     expect(cacheKey("workers", null)).toBe("workers::");
   });
 
-  // Estas dos son la razón por la que el proyecto pagó lecturas de más: la
-  // clave sale de JSON.stringify, así que depende del ORDEN de las propiedades
-  // y `undefined` desaparece. Dos llamadas equivalentes forman claves distintas.
+  // La clave sale de JSON.stringify: depende del ORDEN de las propiedades y
+  // descarta las que valen `undefined`.
   it("el orden de las propiedades cambia la clave", () => {
     expect(cacheKey("c", { a: 1, b: 2 })).not.toBe(cacheKey("c", { b: 2, a: 1 }));
   });
 
   it("omitir una opción no es lo mismo que pasarla en undefined... salvo que sí", () => {
-    // JSON.stringify descarta las claves con undefined, así que estas dos SÍ
-    // coinciden. La trampa es la de arriba (el orden), no esta.
+    // JSON.stringify descarta las claves con undefined: estas dos coinciden.
     expect(cacheKey("c", { wheres: [], order: undefined })).toBe(cacheKey("c", { wheres: [] }));
-    // Pero agregar una opción con valor sí forma otra clave, y por eso
-    // AGENTS.md avisa de no tocar `order`/`take` en el Dashboard.
+    // Una opción con valor sí forma otra clave.
     expect(cacheKey("c", { wheres: [] })).not.toBe(
       cacheKey("c", { wheres: [], order: ["name", "asc"] }),
     );
@@ -71,9 +67,8 @@ describe("getCache / setCache", () => {
   });
 
   it("el TTL se sella al escribir, y el último que escribe manda", () => {
-    // Es lo que hace que dos pantallas con TTL distinto se acorten el
-    // vencimiento entre ellas sin que se note: por eso las consultas
-    // compartidas van por un helper único.
+    // Dos pantallas que comparten clave con TTL distinto se acortan el
+    // vencimiento entre ellas.
     vi.useFakeTimers();
     const k = cacheKey(scope(), { wheres: [] });
     setCache(k, ["largo"], { ttl: 600_000 });
@@ -143,8 +138,7 @@ describe("invalidate", () => {
 });
 
 describe("mergeListItem / removeListItem", () => {
-  // Estos mutan datos cacheados que después las pantallas leen como verdad: un
-  // bug acá alimenta una nómina con datos de banco viejos.
+  // Actualizan en el lugar las listas completas cacheadas.
   it("agrega al final si el id no estaba", () => {
     const s = scope();
     const k = cacheKey(s, { wheres: [] });
@@ -232,8 +226,8 @@ describe("mergeListItem / removeListItem", () => {
 });
 
 describe("countedList", () => {
-  // Servicio de mentira: lo único que `countedList` le pide es el nombre de la
-  // colección y el `list()`. `llamadas` cuenta las idas a "Firestore".
+  // Servicio falso: `countedList` solo usa el nombre de la colección y `list()`.
+  // `llamadas` cuenta las llamadas a `list()`, salgan o no de la caché.
   const fakeService = (collectionName, data) => {
     const service = {
       collectionName,
@@ -276,8 +270,6 @@ describe("countedList", () => {
   });
 
   it("opciones distintas son otra clave, así que vuelven a cobrar", async () => {
-    // Es el modo de fallar que el contador tiene que delatar: dos pantallas que
-    // escriben la misma consulta distinto dejan de compartir caché en silencio.
     const svc = fakeService(scope(), [{ id: "a" }, { id: "b" }]);
     expect((await countedList(svc, { cache: true, order: ["name", "asc"] })).reads).toBe(2);
     expect((await countedList(svc, { cache: true, order: ["name", "asc"] })).reads).toBe(0);

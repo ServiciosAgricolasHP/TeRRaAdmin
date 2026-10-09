@@ -1,4 +1,4 @@
-// One-shot CSV migration helpers for workers (RUT;Nombre;APELLIDO;APELLIDO2;CORREO;BANCO;TIPOCUENTA;N_CUENTA).
+// Importación de trabajadores desde un CSV (RUT;Nombre;APELLIDO;APELLIDO2;CORREO;BANCO;TIPOCUENTA;N_CUENTA).
 import { ACCOUNT_TYPE_RUT, DEFAULT_BANK_CODE } from "./banks";
 import { normalizeRut, validateRut } from "./rutUtils";
 
@@ -43,7 +43,7 @@ export function accountTypeFromCsv(label) {
   return ACCOUNT_TYPE_RUT;
 }
 
-// Title Case ("Nombres Propios"), without accents and without non-letter chars.
+// Une las partes en "Nombres Propios", sin tildes y sin caracteres que no sean letras.
 export function normalizeName(...parts) {
   const raw = parts.filter(Boolean).map((p) => String(p)).join(" ");
   const noAccents = raw.normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -62,8 +62,8 @@ export function normalizeEmail(email) {
   return e;
 }
 
-// Parse a single CSV line accounting for ;-separated values; the file is simple
-// (no quoted fields), so a plain split works.
+// Lee el CSV separado por ";": la primera línea es el encabezado y cada una de
+// las siguientes, un trabajador. No admite campos entre comillas.
 export function parseCsv(text) {
   const lines = text.replace(/\r/g, "").split("\n").filter((l) => l.trim().length > 0);
   if (lines.length === 0) return { header: [], rows: [] };
@@ -84,8 +84,9 @@ export function parseCsv(text) {
   return { header, rows };
 }
 
-// Build the worker payload for create/update. Returns null if the RUT is invalid.
-// existing: current Firestore doc (or null if not present).
+// Arma el payload del trabajador para crearlo o actualizarlo. Devuelve
+// { error } si el RUT no es válido o el nombre queda vacío.
+// existing: el doc actual en Firestore, o null si no existe.
 export function buildWorkerPatch(row, existing) {
   const rut = normalizeRut(row.rut);
   if (!validateRut(rut)) return { error: `RUT inválido: ${row.rut}` };
@@ -94,12 +95,12 @@ export function buildWorkerPatch(row, existing) {
   const email = normalizeEmail(row.correo);
 
   if (existing) {
-    // Update only name + email per spec.
+    // A un trabajador existente solo se le actualizan nombre y correo.
     const patch = { name: fullName, email };
     return { rut, mode: "update", patch };
   }
 
-  // New: create with full data including bank details.
+  // Trabajador nuevo: se crea con todos los datos, incluidos los bancarios.
   const accountType = accountTypeFromCsv(row.tipoCuenta);
   const bankCode = bankCodeFromCsv(row.banco);
   const accountNumber =
@@ -116,7 +117,7 @@ export function buildWorkerPatch(row, existing) {
   };
 }
 
-// Local rut-without-dv (avoid circular imports).
+// RUT sin dígito verificador; misma lógica que `rutWithoutDv` de banks.js.
 function rutWithoutDvLocal(rut) {
   if (!rut) return "";
   const [num] = String(rut).split("-");

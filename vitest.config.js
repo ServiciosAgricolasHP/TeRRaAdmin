@@ -1,17 +1,15 @@
 import { defineConfig } from "vitest/config";
 
-// Config propia, deliberadamente separada de `vite.config.js`. Ese config corre
-// `execSync("git rev-list --count")` al cargarse y monta VitePWA: dos cosas que
-// no queremos pagar en cada corrida de tests. Acá solo se copia el `define` de
-// la versión, que es lo único de la app que los módulos pueden llegar a leer.
+// Config propia, separada de `vite.config.js`, que al cargarse corre
+// `execSync("git rev-list --count")` y monta VitePWA. Acá solo se copia el
+// `define` de la versión, lo único de la app que los módulos pueden leer.
 export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify("0.0.0-test"),
   },
   test: {
-    // Sin globals: cada test importa `describe`/`it`/`expect` de "vitest". Así
-    // `eslint.config.js` no necesita declarar globals nuevos y el lint no suma
-    // ruido a la deuda que ya arrastra.
+    // Sin globals: cada test importa `describe`/`it`/`expect` de "vitest", así
+    // `eslint.config.js` no necesita declararlos.
     globals: false,
     environment: "node",
     include: ["src/**/*.test.js"],

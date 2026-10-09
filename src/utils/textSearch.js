@@ -1,7 +1,6 @@
-// Búsqueda "like" para buscadores de texto libre (nombres, principalmente).
-// Cada palabra escrita tiene que aparecer en algún lado del texto, en
-// cualquier orden y sin importar acentos — así "bruno silva" encuentra a
-// "Bruno Ignacio Silva" aunque "silva" no venga pegado a "bruno".
+// Búsqueda "like" para buscadores de texto libre (sobre todo nombres): cada
+// palabra escrita tiene que aparecer en el texto, en cualquier orden y sin
+// importar tildes. "juan perez" encuentra a "Juan Ignacio Pérez".
 export function normalizeSearchText(s) {
   return String(s || "")
     .normalize("NFD")

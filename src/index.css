@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* =========================
-   THEME TOKENS
+   TOKENS DEL TEMA
 ========================= */
 :root {
   --color-bg: #f7f8f7;
@@ -170,7 +170,7 @@ input, select, textarea {
   color: var(--color-accent);
 }
 
-/* Subtle scrollbar */
+/* Barra de desplazamiento discreta */
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -184,7 +184,7 @@ input, select, textarea {
 ::-webkit-scrollbar-thumb:hover { background: var(--color-muted); }
 
 /* =========================
-   AG GRID THEME BRIDGE
+   PUENTE DEL TEMA CON AG GRID
 ========================= */
 .ag-theme-app {
   --ag-background-color: var(--color-surface) !important;
@@ -219,7 +219,7 @@ input, select, textarea {
   color-scheme: dark;
 }
 
-/* Force AG Grid internals to follow our tokens even when -dark variant is applied */
+/* Los elementos internos de AG Grid siguen los tokens propios aunque se aplique la variante -dark */
 .ag-theme-app .ag-root-wrapper,
 .ag-theme-app .ag-header,
 .ag-theme-app .ag-row,
@@ -246,7 +246,7 @@ input, select, textarea {
   background: var(--color-surface-2) !important;
 }
 
-/* Stronger cell separators for readability */
+/* Separadores de celda más marcados, para leer mejor */
 .ag-theme-app .ag-cell {
   border-right: 1px solid var(--color-border) !important;
 }
@@ -268,7 +268,7 @@ input, select, textarea {
 .ag-theme-app .ag-pinned-right-header {
   border-left: 2px solid var(--color-border-strong) !important;
 }
-/* Subtle zebra striping */
+/* Filas alternadas con un tono suave */
 .ag-theme-app .ag-row-odd {
   background-color: var(--color-surface) !important;
 }
@@ -279,7 +279,7 @@ input, select, textarea {
   background-color: var(--color-accent-soft) !important;
 }
 
-/* Red day header for tratoHE (weekends/holidays) */
+/* Encabezado de día en rojo para tratoHE (fines de semana y feriados) */
 .ag-theme-app .ag-header-group-cell.ag-header-red-day,
 .ag-theme-app .ag-header-cell.ag-header-red-day {
   background-color: var(--color-danger-soft) !important;
@@ -287,7 +287,7 @@ input, select, textarea {
   font-weight: 600;
 }
 
-/* Drag-and-drop affordances */
+/* Indicaciones visuales de arrastrar y soltar */
 .dnd-card {
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
@@ -300,7 +300,7 @@ input, select, textarea {
   box-shadow: 0 0 0 2px var(--color-accent-soft);
 }
 
-/* Toast notifications — enter animation */
+/* Notificaciones toast: animación de entrada */
 @keyframes toastIn {
   0%   { transform: translateY(-8px); opacity: 0; }
   100% { transform: translateY(0);    opacity: 1; }

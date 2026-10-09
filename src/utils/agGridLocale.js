@@ -1,14 +1,14 @@
-// Spanish locale for AG Grid Community.
-// See: https://www.ag-grid.com/javascript-data-grid/localisation/
+// Textos en español para AG Grid Community.
+// Ver: https://www.ag-grid.com/javascript-data-grid/localisation/
 export const AG_GRID_LOCALE_ES = {
-  // Set Filter
+  // Filtro de selección
   selectAll: "(Seleccionar todo)",
   selectAllSearchResults: "(Seleccionar todos los resultados)",
   searchOoo: "Buscar...",
   blanks: "(Vacíos)",
   noMatches: "Sin coincidencias",
 
-  // Number Filter / Text Filter / Date Filter
+  // Filtros de número, texto y fecha
   filterOoo: "Filtrar...",
   equals: "Igual a",
   notEqual: "Distinto de",
@@ -16,7 +16,7 @@ export const AG_GRID_LOCALE_ES = {
   notBlank: "No vacío",
   empty: "Selecciona uno",
 
-  // Number Filter
+  // Filtro de número
   lessThan: "Menor que",
   greaterThan: "Mayor que",
   lessThanOrEqual: "Menor o igual",
@@ -25,39 +25,39 @@ export const AG_GRID_LOCALE_ES = {
   inRangeStart: "Desde",
   inRangeEnd: "Hasta",
 
-  // Text Filter
+  // Filtro de texto
   contains: "Contiene",
   notContains: "No contiene",
   startsWith: "Empieza con",
   endsWith: "Termina con",
 
-  // Date Filter
+  // Filtro de fecha
   dateFormatOoo: "yyyy-mm-dd",
 
-  // Filter Conditions
+  // Condiciones del filtro
   andCondition: "Y",
   orCondition: "O",
 
-  // Filter Buttons
+  // Botones del filtro
   applyFilter: "Aplicar",
   resetFilter: "Limpiar",
   clearFilter: "Borrar",
   cancelFilter: "Cancelar",
 
-  // Filter Titles
+  // Títulos de los filtros
   textFilter: "Filtro de texto",
   numberFilter: "Filtro numérico",
   dateFilter: "Filtro de fecha",
   setFilter: "Filtro de selección",
 
-  // Group Column
+  // Columna de grupo
   groupFilterSelect: "Selecciona campo:",
 
-  // Side Bar
+  // Barra lateral
   columns: "Columnas",
   filters: "Filtros",
 
-  // columns tool panel
+  // Panel de columnas
   pivotMode: "Modo pivote",
   groups: "Grupos",
   rowGroupColumnsEmptyMessage: "Arrastra aquí para agrupar",
@@ -66,16 +66,16 @@ export const AG_GRID_LOCALE_ES = {
   pivots: "Etiquetas de columna",
   pivotColumnsEmptyMessage: "Arrastra aquí para pivotear",
 
-  // Header of the Default Group Column
+  // Encabezado de la columna de grupo por defecto
   group: "Grupo",
 
-  // Other
+  // Otros
   loadingOoo: "Cargando...",
   loadingError: "Error al cargar",
   noRowsToShow: "Sin filas para mostrar",
   enabled: "Activado",
 
-  // Menu
+  // Menú
   pinColumn: "Fijar columna",
   pinLeft: "Fijar a la izquierda",
   pinRight: "Fijar a la derecha",
@@ -98,7 +98,7 @@ export const AG_GRID_LOCALE_ES = {
   csvExport: "Exportar a CSV",
   excelExport: "Exportar a Excel",
 
-  // Enterprise menu aggregation and status bar
+  // Agregación del menú (Enterprise) y barra de estado
   sum: "Suma",
   min: "Mín",
   max: "Máx",
@@ -120,10 +120,10 @@ export const AG_GRID_LOCALE_ES = {
   previousPage: "Anterior",
   pageSizeSelectorLabel: "Tamaño:",
 
-  // Pivoting
+  // Pivote
   pivotColumnGroupTotals: "Total",
 
-  // Aggregations
+  // Menú de gráficos
   pivotChartAndPivotMode: "Gráfico y pivote",
   pivotChart: "Gráfico pivote",
   chartRange: "Rango del gráfico",
@@ -148,7 +148,7 @@ export const AG_GRID_LOCALE_ES = {
   normalizedArea: "100% apilada",
   histogramChart: "Histograma",
 
-  // Charts
+  // Gráficos
   pivotChartTitle: "Gráfico pivote",
   rangeChartTitle: "Gráfico de rango",
   settings: "Ajustes",

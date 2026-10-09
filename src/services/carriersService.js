@@ -76,7 +76,7 @@ function normalizeVehicle(v) {
   return out;
 }
 
-// Vehicle alias must be unique within a carrier.
+// El alias del vehículo es único dentro del transportista.
 export function validateVehicleAlias(carrier, alias, ignoreAlias = null) {
   const a = String(alias || "").trim();
   if (!a) return "Alias requerido";

@@ -1,16 +1,13 @@
 // Proyección de flujo de caja para Facturación.
 //
-// Una temporada se proyecta escalando la anterior: se toman las ventas netas
-// de los 12 meses previos, mes a mes, y se les aplica un porcentaje.
+// Una temporada se proyecta escalando la anterior: se toman los ingresos de
+// los 12 meses previos, mes a mes, y se les aplica un porcentaje. Cada mes sale
+// del mismo mes de la temporada anterior: la temporada es estacional y el flujo
+// de caja tiene que mostrar en qué mes entra la plata.
 //
-// Mes a mes y no como un único número anual: el punto de un flujo de caja es
-// saber CUÁNDO entra la plata. La temporada acá es estacional —la cosecha se
-// concentra en pocos meses— y repartir el total en doceavos parejos escondería
-// justo eso.
-//
-// Un "período" es la etiqueta "YYYY-MM" del RCV, no un instante: toda la
-// aritmética de meses va con enteros y nunca con `Date`, así no hay forma de
-// que una zona horaria corra un documento al mes de al lado.
+// Un "período" es la etiqueta "YYYY-MM" del RCV, no un instante: la aritmética
+// de meses va con enteros, nunca con `Date`, para que una zona horaria no corra
+// un documento al mes de al lado.
 
 // Notas de crédito. Restan: revierten una venta, no son una entrada nueva.
 export const CREDIT_NOTE_TYPES = new Set([61, 112]);
@@ -25,9 +22,8 @@ const MONTH_NAMES_ES = [
 
 const PERIOD_RE = /^(\d{4})-(\d{2})$/;
 
-// "2026-09" desplazado `delta` meses. Devuelve null si el período no tiene
-// forma de período — el llamador decide qué hacer, pero nunca recibe un
-// "NaN-NaN" que después se filtra contra los documentos y no matchea nada.
+// "2026-09" desplazado `delta` meses, o null si `periodo` no tiene la forma
+// "YYYY-MM" con un mes válido.
 export function shiftPeriod(periodo, delta) {
   const m = PERIOD_RE.exec(String(periodo || ""));
   if (!m) return null;
@@ -64,8 +60,7 @@ export function formatPeriod(periodo) {
 }
 
 // Etiqueta de la temporada: "Septiembre 2026-2027". Una ventana que no cruza de
-// año (arranca en enero) queda "Enero 2026" a secas — "2026-2026" se lee como
-// un error de la app, no como un dato.
+// año (arranca en enero) queda "Enero 2026" a secas.
 export function windowLabel(start, months = PROJECTION_MONTHS) {
   const w = periodWindow(start, months);
   if (w.length === 0) return "";
@@ -86,17 +81,9 @@ export const FACTURA_COMPRA_TYPES = new Set([45, 46]);
 // - Todo el resto: el Monto Total del SII, o sea el neto más el IVA que sí se
 //   cobra, y en un documento exento el exento.
 //
-// Una nota de crédito sobre una factura de compra tiene que restar con la MISMA
-// regla que el documento que reversa, o el par no cierra en cero. En los datos
-// reales la NC del folio 305 reversa exactamente la factura 387: restándole el
-// total dejaría un ingreso negativo de 822.415 que nunca existió.
-//
-// La retención se deduce de los montos en vez de leerse de la columna "NCE o
-// NDE sobre Fact. de Compra" del RCV a propósito: `neto + exento + iva` que no
-// da el `total` **es** la retención, y eso funciona sobre los documentos ya
-// importados, sin depender de una reimportación ni de un campo nuevo. De paso
-// cubre las facturas normales a las que el cliente retuvo el IVA, que por la
-// misma razón tampoco entran completas.
+// La retención se deduce de los montos: `neto + exento + iva` que no da el
+// `total` **es** la retención. Así una NC sobre una factura de compra resta con
+// la misma regla que el documento que reversa, y el par cierra en cero.
 export function cashInOf(d) {
   const tipo = Number(d?.tipo) || 0;
   const neto = Number(d?.neto) || 0;
@@ -113,12 +100,9 @@ export function cashInOf(d) {
   };
 }
 
-// Ingresos de una empresa en una ventana de períodos.
-//
-// Solo `kind: "venta"`: las compras son salidas y en una proyección de entradas
-// no tienen nada que hacer. El monto va con signo, así que la suma del detalle
-// es exactamente el total — si las NC se filtraran, el Excel mostraría un total
-// que sus propias filas no dan.
+// Ingresos de una empresa en una ventana de períodos. Solo cuenta
+// `kind: "venta"`: las compras son salidas. Las NC van al detalle con signo
+// negativo, así la suma del detalle da exactamente el total.
 export function cashInByPeriod(docs, { companyId = "", periods = [] } = {}) {
   const byPeriod = new Map(periods.map((p) => [p, { periodo: p, monto: 0, count: 0 }]));
   const detail = [];
@@ -163,9 +147,8 @@ export function cashInByPeriod(docs, { companyId = "", periods = [] } = {}) {
   };
 }
 
-// Agrupa el detalle por contraparte, de mayor a menor. Es lo que muestra de
-// dónde viene la base: una proyección sostenida por dos clientes no se lee
-// igual que una repartida entre veinte.
+// Agrupa el detalle por contraparte, de mayor a menor monto: muestra de dónde
+// viene la base.
 export function groupByCounterparty(detail) {
   const by = new Map();
   for (const d of detail || []) {
@@ -184,14 +167,11 @@ export function groupByCounterparty(detail) {
 // son los `months` meses inmediatamente anteriores.
 //
 // **Un mes que ya tiene ventas cargadas no se proyecta: vale su dato real.**
-// A mitad de temporada la mitad de la ventana ya ocurrió, y estimar un mes que
-// se puede leer del RCV es cambiar un número cierto por uno inventado. Cada
-// fila dice de dónde salió (`esReal`), porque un total que mezcla lo facturado
-// con lo estimado sin distinguirlos no se puede defender frente a nadie.
+// Cada fila dice de dónde salió (`esReal`) y el resultado separa `totalReal`
+// de `totalProyectado`.
 //
-// El redondeo va POR MES y el total es la suma de los meses redondeados, no el
-// redondeo de la suma: si no, la columna del Excel no daría el total impreso
-// al pie y quien lo revise va a pensar que hay una fila escondida.
+// El redondeo va por mes y el total es la suma de los meses redondeados, no el
+// redondeo de la suma: así la columna del Excel da el total impreso al pie.
 export function projectCashFlow(docs, {
   companyId = "",
   startPeriod,

@@ -4,14 +4,14 @@ import { workersService, workdaysService } from "./index";
 import { normalizeRut, validateRut } from "../utils/rutUtils";
 import { toProperName } from "../utils/nameUtils";
 
-// Auto-detect: starts with digit → RUT search; else name search.
+// Si empieza con un dígito se busca por RUT; si no, por nombre.
 export function detectQueryKind(q) {
   const s = String(q || "").trim();
   if (!s) return null;
   return /^\d/.test(s) ? "rut" : "name";
 }
 
-// Server-side prefix search. Returns up to `take` workers matching the query.
+// Búsqueda por prefijo en el servidor. Devuelve hasta `take` trabajadores.
 export async function searchWorkers(q, { take = 50 } = {}) {
   const kind = detectQueryKind(q);
   if (!kind) return [];
@@ -19,11 +19,10 @@ export async function searchWorkers(q, { take = 50 } = {}) {
   const col = collection(db, "worker");
 
   if (kind === "rut") {
-    // El doc id sigue siendo el rut de creación (workerId estable) pero el
-    // rut ACTUAL vive en el campo `rut`, que puede haber cambiado. Buscamos
-    // por ambos y mezclamos — así encontramos
-    // tanto a los que nunca editaron su rut (matchean por id) como a los que
-    // sí (matchean por el campo `rut` actual aunque su id sea otro).
+    // El doc id es el rut de creación (workerId estable) y el rut actual vive
+    // en el campo `rut`, que puede ser otro. Se busca por los dos y se mezclan
+    // los resultados: aparece tanto quien nunca cambió de rut (coincide por id)
+    // como quien sí (coincide por el campo `rut`).
     const prefix = raw.replace(/[.\s]/g, "").toUpperCase();
     const [byId, byField] = await Promise.all([
       getDocs(query(col, where(documentId(), ">=", prefix), where(documentId(), "<", prefix + ""), limit(take))),
@@ -36,7 +35,8 @@ export async function searchWorkers(q, { take = 50 } = {}) {
     return [...seenRut.values()].slice(0, take);
   }
 
-  // Name search — try a couple casings since Firestore is case-sensitive.
+  // Por nombre: prueba algunas variantes de mayúsculas, porque Firestore
+  // distingue mayúsculas de minúsculas.
   const variants = new Set([raw, raw.toUpperCase(), raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase()]);
   const seen = new Map();
   for (const v of variants) {
@@ -56,29 +56,28 @@ export async function searchWorkers(q, { take = 50 } = {}) {
   return [...seen.values()].slice(0, take);
 }
 
-// El doc id sigue siendo el rut con el que se creó el trabajador — se trata
-// como `workerId` estable, y NUNCA se vuelve a tocar aunque el rut cambie
-// (Firestore no soporta rename; ver docs/data-model.md). El campo `rut` de
-// abajo es el valor legal ACTUAL, editable — arranca igual al id pero puede
-// divergir con el tiempo si el trabajador pasa de un rut provisorio (cédula
-// extranjera -B/-H) a uno definitivo. Todo lo que necesite identidad estable
-// (agrupar workdays, nóminas, auditoría) debe usar el id/workerId, no `rut`.
+// El doc id es el rut con el que se creó el trabajador: se trata como
+// `workerId` estable y no cambia aunque cambie el rut (Firestore no renombra
+// documentos; ver docs/data-model.md). El campo `rut` es el valor legal
+// ACTUAL, editable: nace igual al id y puede divergir, p. ej. si el trabajador
+// pasa de un rut provisorio (cédula extranjera -B/-H) a uno definitivo. Todo
+// lo que necesite identidad estable (agrupar workdays, nóminas, auditoría) usa
+// el id/workerId, no `rut`.
 //
-// Workers creados antes de que existiera el campo `rut` pueden no tenerlo
-// todavía — ver AdminConsole.jsx → BackfillWorkerRutFieldSection para completarlo.
+// Un trabajador puede no tener el campo `rut`; AdminConsole.jsx →
+// BackfillWorkerRutFieldSection lo completa.
 
 export async function findWorkerByRut(rut) {
   const normalized = normalizeRut(rut);
   if (!normalized) return null;
-  // El docId primero: es el caso de lejos más común y cuesta una sola lectura.
-  // La consulta por el campo `rut` solo corre si esa falla, que es cuando el
-  // trabajador cambió de cédula y su rut actual ya no coincide con el id con el
-  // que se creó. Quien llama recibe el doc completo, así que si necesita
-  // escribir contra ese trabajador tiene que usar `.id`, no el rut que buscó.
+  // Primero por docId, el caso más común, que cuesta una sola lectura. La
+  // consulta por el campo `rut` corre solo si esa falla: el trabajador cambió
+  // de rut y el actual ya no coincide con el id. Quien llama recibe el doc
+  // completo; para escribir contra ese trabajador usa `.id`, no el rut buscado.
   const byId = await workersService.getById(normalized);
   if (byId) return byId;
   const [byField] = await workersService.list({ wheres: [["rut", "==", normalized]], take: 1 });
-  return byField || null; // { id, rut, name, groupLeader?, idQr?, bankDetails? } or null
+  return byField || null; // { id, rut, name, groupLeader?, idQr?, bankDetails? } o null
 }
 
 export async function createWorker({ rut, name }) {
@@ -92,27 +91,22 @@ export async function createWorker({ rut, name }) {
   );
 }
 
-// Todos los ruts con los que un trabajador puede figurar en documentos
-// viejos: el doc id (su rut de creación, inmutable), el `rut` vigente y los
-// intermedios que haya dejado por el camino. Un workday guarda en
-// `workerRut` el rut que tenía el roster de la labor cuando se escribió, así
-// que puede ser cualquiera de los tres.
+// Todos los ruts con los que un trabajador puede figurar en documentos: el
+// doc id (su rut de creación, inmutable), el `rut` vigente y los intermedios
+// de `rutHistory`. Un workday guarda en `workerRut` el rut que tenía el roster
+// de la labor cuando se escribió, así que puede ser cualquiera de ellos.
 //
-// Existe para poder resolver con UNA consulta `in`. Antes cada lugar
-// consultaba `workerRut` y `workerId` por separado y mezclaba los resultados;
-// como todo workday moderno graba los dos campos, la segunda consulta traía
-// —y cobraba— los mismos documentos que la primera.
-//
-// Acepta un string por compatibilidad con quien todavía pase una sola clave.
+// Sirve para resolver con UNA consulta `in`. También acepta un string con una
+// sola clave.
 export function workerKeys(worker) {
   if (!worker) return [];
   const w = typeof worker === "string" ? { id: worker } : worker;
   const claves = [w.id, w.rut, ...(w.rutHistory || [])].filter(Boolean).map(String);
-  return [...new Set(claves)].slice(0, 10); // tope de `in` en esta versión
+  return [...new Set(claves)].slice(0, 10); // tope de claves para la consulta `in`
 }
 
-// No dejamos borrar a alguien que tiene producción cargada, la haya cargado
-// con el rut que tenga hoy o con uno anterior.
+// No deja borrar a quien tiene producción cargada, con su rut actual o con
+// uno anterior.
 export async function deleteWorkerSafe(worker) {
   const claves = workerKeys(worker);
   if (claves.length === 0) throw new Error("Trabajador inválido");

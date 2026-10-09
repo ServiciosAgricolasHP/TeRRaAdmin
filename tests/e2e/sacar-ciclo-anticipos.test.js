@@ -16,21 +16,17 @@ import { saveSnapshot } from "../../src/services/payrollSnapshots";
 import { allocateAdvances } from "../../src/utils/payrollItem";
 import { ANA, BETO, LABOR, seedCycle, seedWorker, seedWorkday, seedAdvance, get } from "./helpers/seed";
 
-// Sacar un ciclo de una nómina pendiente cuando hay anticipos de por medio.
-//
-// El caso que lo destapó: una persona con jornadas en un solo ciclo y un
-// anticipo. Al sacar ese ciclo de la nómina, la persona quedaba en la nómina
-// con bruto 0 y el anticipo marcado como aplicado; al armar la nómina
-// siguiente el anticipo ya no figuraba pendiente y nunca se descontaba.
+// Sacar un ciclo de una nómina pendiente cuando hay anticipos de por medio: la
+// nómina queda como si se hubiera armado sin ese ciclo, y lo que no se retuvo
+// de un anticipo vuelve a quedar pendiente.
 
 const CICLO_A = "ciclo-A";
 const CICLO_B = "ciclo-B";
 const laborTypes = () => new Map([[LABOR, "cosecha"]]);
 
 // Arma la nómina como la pantalla: `byCycle` con una entrada por CADA ciclo de
-// la nómina, en $0 incluido. Esa forma exacta es la que disparaba el bug, así
-// que el helper genérico de `nomina-ciclo-completo` (que no arma `byCycle`) no
-// alcanzaba para reproducirlo.
+// la nómina, en $0 incluido (el helper de `nomina-ciclo-completo` no arma
+// `byCycle`).
 async function armarNomina(cycleIds, { nombre = "Nómina" } = {}) {
   const workdays = [];
   for (const cid of cycleIds) {

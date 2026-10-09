@@ -17,10 +17,9 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, "hpdatabase");
 export const auth = getAuth(app);
 
-// No hay cliente de Cloud Functions a propósito. El backend no se invoca por
-// HTTP: se le escribe un documento en `functionJobs` y un trigger de Firestore
-// lo levanta (ver functions/index.js para por qué no se puede de la otra
-// forma). Sacar `firebase/functions` del import también lo saca del bundle.
+// No hay cliente de Cloud Functions: el backend no se invoca por HTTP, se le
+// escribe un documento en `functionJobs` y un trigger de Firestore lo levanta
+// (ver functions/index.js). Así `firebase/functions` tampoco entra al bundle.
 
 // Enganche del emulador. Solo se activa si `VITE_FIRESTORE_EMULATOR` viene
 // puesta como "host:puerto". En producción la variable no existe, así que esto

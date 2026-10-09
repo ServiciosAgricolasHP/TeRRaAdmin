@@ -20,16 +20,15 @@ jobs:
 
       - run: npm ci
 
-      # Hay deuda tecnica preexistente (errores de lint no relacionados a
-      # cambios nuevos) que todavia no bloquea merges - queda visible en el
-      # log del check pero no lo hace fallar hasta que se limpie el backlog.
+      # El lint no bloquea: sus errores quedan visibles en el log del check
+      # sin hacerlo fallar.
       - run: npm run lint
         continue-on-error: true
 
       - run: npm run build
 
-  # Job aparte del build para no meterle firebase-tools (que es pesado) a la
-  # instalacion del build. Los dos pasos de test SI son bloqueantes.
+  # Job aparte del build, para no sumarle firebase-tools (que es pesado) a su
+  # instalación. Los pasos de test SÍ son bloqueantes.
   test:
     runs-on: ubuntu-latest
     steps:
@@ -42,15 +41,15 @@ jobs:
 
       - run: npm ci
 
-      # Logica pura: sin red, sin emulador, un par de segundos.
+      # Lógica pura: sin red, sin emulador, un par de segundos.
       - run: npm run test
 
       # Ciclos end-to-end contra el emulador de Firestore. No hacen falta
       # secrets: el project id es `demo-terra-test` y con ese prefijo el SDK
       # de Firebase nunca contacta servidores de Google.
       #
-      # La version de Java se fija a mano: firebase-tools 15 rechaza runtimes
-      # anteriores a la 21, y el default de la imagen puede ser mas viejo.
+      # La versión de Java se fija a mano: firebase-tools 15 rechaza runtimes
+      # anteriores a la 21, y el de la imagen por defecto puede ser más viejo.
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

@@ -73,19 +73,14 @@ import { LABOR_TYPES } from "../utils/laborTypes";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
-// Cell editor custom para inputs numéricos del grid. Cuando el usuario abre
-// una celda que ya tiene un valor, arrancamos con `=<valor>` para que le
-// baste tipear `+50` (o `-10`, `*2`, `/3`) al final y aprovechar el parser
-// de fórmulas de parseAmount(). Si el usuario disparó la edición tipeando
-// un carácter (dígito u operador), respetamos ese input crudo — es el
-// comportamiento estándar de AG-Grid, sería confuso perderlo.
+// Editor de las celdas numéricas de la grilla. Si la celda ya tiene un valor,
+// arranca con `=<valor>` para que baste agregar `+50` (o `-10`, `*2`, `/3`)
+// y lo evalúe parseAmount(). Si la edición se abrió tipeando un carácter
+// (dígito u operador), arranca con ese carácter, como hace AG-Grid.
 //
-// AG-Grid v33+ usa un proxy para React cell editors: los props `initialValue`
-// + `onValueChange` son el canal oficial para propagar el valor editado. El
-// proxy expone `getValue()` que devuelve internamente lo que reportamos via
-// onValueChange — NO lo que exponemos con useImperativeHandle o
-// useGridCellEditor (esos hooks aplican a filter/menu, no cell editor
-// stateless). Por eso el value se leía como si nada hubiera cambiado.
+// En AG-Grid v33+ el valor editado se informa con `onValueChange`: el
+// `getValue()` del proxy devuelve lo último reportado por ahí, no lo que se
+// exponga con useImperativeHandle o useGridCellEditor.
 function FormulaCellEditor({ initialValue, onValueChange, eventKey }) {
   const startFromKey = eventKey && /^[\d+\-*/(.]$/.test(eventKey);
   const initial = startFromKey
@@ -96,10 +91,8 @@ function FormulaCellEditor({ initialValue, onValueChange, eventKey }) {
   const [text, setText] = useState(initial);
   const inputRef = useRef(null);
 
-  // Sincronizar el valor inicial (ya sea `=100` cuando el user solo abrió, o
-  // el char tipeado) con el proxy de AG-Grid — sino, si el usuario hace
-  // Enter sin tocar, quedaría con el value original numérico sin el prefix
-  // (que casualmente parseAmount evalúa igual). Es más limpio propagarlo.
+  // Informa al proxy el valor inicial ya evaluado, así Enter sin editar
+  // confirma ese mismo número.
   useEffect(() => {
     onValueChange?.(parseAmount(initial));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -116,10 +109,8 @@ function FormulaCellEditor({ initialValue, onValueChange, eventKey }) {
   const handleChange = (e) => {
     const v = e.target.value;
     setText(v);
-    // Propagar cada tecla al proxy — evaluamos la fórmula acá para que
-    // AG-Grid vea el número resuelto. Si la expresión es inválida a mitad
-    // de tipeo (ej "=100+"), parseAmount devuelve 0; no importa porque el
-    // usuario sigue tipeando y en el siguiente onChange queda bien.
+    // Informa al proxy el número ya evaluado en cada tecla. Una expresión a
+    // medio escribir (ej. "=100+") vale 0 hasta completarla.
     onValueChange?.(parseAmount(v));
   };
 
@@ -148,13 +139,9 @@ function FormulaCellEditor({ initialValue, onValueChange, eventKey }) {
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const newId = () => (crypto?.randomUUID?.() || `id_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`);
 
-// Primer/último día real con producción cargada en el ciclo (cycle.days).
-// Se usan al cerrar el ciclo para recalcular startDate/endDate en base a lo
-// que efectivamente se trabajó, no en base a lo que alguien tipeó al crear
-// el ciclo (startDate) o a la fecha en que apretó "Cerrar ciclo" (endDate) —
-// ambas pueden estar mal si el ciclo se creó antes de empezar a trabajar, o
-// si se cierran varios ciclos atrasados de una sola vez. Si el ciclo nunca
-// tuvo días cargados, no hay nada que recalcular: se deja lo que ya había.
+// Primer y último día de cycle.days. Al cerrar el ciclo, startDate y endDate
+// toman estos valores: el rango de lo trabajado, no la fecha de creación ni
+// la del cierre. Sin días, devuelven startDate/endDate (o hoy si faltan).
 const firstWorkedDay = (cycle) => {
   const days = cycle?.days;
   if (Array.isArray(days) && days.length > 0) {
@@ -243,13 +230,10 @@ function LeaderPickerModal({ open, onClose, leaders, workerName, busy, onPick })
   );
 }
 
-// Header component for day columns / column groups. Renders the date plus a
-// 📝 indicator that highlights when an annotation exists for that day. Click
-// anywhere on the header opens the day-note modal. When a note exists, the
-// browser tooltip shows the note text itself (so the user can read it on
-// hover without opening the modal). `clickable=false` (day with no
-// production and no existing note for this labor) drops the icon and the
-// click handler — nothing to annotate there.
+// Encabezado de las columnas (o del grupo de columnas) de un día: la fecha y
+// un 📝 que se resalta si el día tiene anotación. Un click abre el modal de
+// la anotación y el tooltip muestra su texto. Con `clickable=false` (día sin
+// producción ni anotación en esta labor) muestra solo la fecha.
 function DayHeader(props) {
   const { date, note, onClickNote, displayName, clickable = true } = props;
   const hasNote = !!String(note || "").trim();
@@ -313,15 +297,10 @@ function GroupHeaderRowRenderer(props) {
   );
 }
 
-// Columna "P" que se anexa al final de cada día en cosecha/trato. Toggle del
-// piso del trabajador en ese día: click crea/borra el workday `_piso`. Solo
-// es clickable si ya existe alguna producción del día (sin workday previo
-// el botón queda deshabilitado).
-// El monto del piso solo se veía en el tooltip (hover) — el resto de la fila
-// (montos de combos/tiers) sí se ve siempre, así que sumando a ojo lo visible
-// en la fila no daba lo mismo que el TOTAL($) de la derecha, que sí incluye
-// el piso. Ahora la celda muestra el piso Y la suma lista del día (producción
-// + piso), y el tooltip desglosa el cálculo — sin agregar una columna nueva.
+// Columna "Piso" al final de cada día en cosecha/trato: un click crea o borra
+// el workday `_piso` del trabajador en ese día. Se habilita si el día tiene
+// piso configurado y el trabajador ya tiene producción ese día. Muestra el
+// piso y el total del día (producción + piso); el tooltip desglosa la suma.
 function buildPisoChildCol(date, labor, dayPrices, disabled, togglePiso) {
   const eff = effectivePiso(labor, dayPrices, date);
   return {
@@ -493,7 +472,7 @@ function buildRowsNormal(workers, days, wdMap) {
       const wd = wdMap[workdayMapKey(w.rut, d, SINGLE_COMBO)];
       const amount = Number(wd?.amount) || 0;
       row[d] = amount;
-      // Presence flag so monthly cells can render ✓ without re-reading wdMap.
+      // Marca si existe la jornada, para el ✓ de las celdas de sueldo mensual.
       row[`${d}__present`] = !!wd;
       total += amount;
     }
@@ -502,9 +481,9 @@ function buildRowsNormal(workers, days, wdMap) {
   });
 }
 
-// Editor de etapas para un labor "A trato por etapas". Cada etapa: nombre,
-// tarifa fija y si cuenta para el conteo de unidades. Pueden marcarse VARIAS
-// como "cuenta" (ej. Instalación y Completo). Preparación se deja sin marcar.
+// Editor de etapas de una labor "A trato por etapas": el nombre de cada etapa
+// y si cuenta para el conteo de unidades. Pueden contar varias (ej.
+// Instalación y Completo). El precio de cada etapa se configura por día.
 function StagesEditor({ stages, onChange }) {
   const update = (idx, patch) =>
     onChange(stages.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
@@ -575,16 +554,6 @@ export default function CycleDetail() {
   // labores del mismo tipo a través de ciclos. Ver laborGroupsService.
   const [laborGroups, setLaborGroups] = useState([]);
   const [workdaysByLabor, setWorkdaysByLabor] = useState({});
-  // Toda escritura de esta pantalla pasa por `cycleWrite`/`wdWrite`. El guard
-  // vive en un solo punto y no repartido por los ~40 llamados al servicio:
-  // basta uno que se olvide para que el candado sea un adorno. Lanza en vez de
-  // devolver en silencio porque los llamadores actualizan el estado local justo
-  // después de escribir — si el guard dejara seguir, la pantalla mostraría un
-  // cambio que nunca se guardó.
-  //
-  // Quedan fuera a propósito: la normalización del loader (corre al montar, no
-  // es una edición del usuario) y abrir/cerrar el ciclo, que es el gesto que
-  // levanta el candado.
 
   // Prefijos QR apuntados a este ciclo. Ver `qrLockedLabors` más abajo.
   const [qrPrefixes, setQrPrefixes] = useState([]);
@@ -604,26 +573,21 @@ export default function CycleDetail() {
     const d = new Date();
     return { year: d.getFullYear(), month: d.getMonth() };
   });
-  // Day notes: one annotation per (labor, day). Used to live at
-  // cycle.dayNotes = { "YYYY-MM-DD": "text" }, shared across every labor of
-  // the cycle — wrong when a cycle bundles unrelated labors. New notes are
-  // written per labor at cycle.dayNotesByLabor = { [laborId]: { "YYYY-MM-DD":
-  // "text" } }; the old flat dayNotes field is kept read-only as a fallback
-  // (never written again) so pre-existing annotations stay visible. Edited
-  // via a modal that opens when the user clicks the date header (DayHeader
-  // component).
-  const [editingDayNote, setEditingDayNote] = useState(null); // { laborId, date } or null
+  // Anotaciones por (labor, día) en cycle.dayNotesByLabor = { [laborId]:
+  // { "YYYY-MM-DD": "texto" } }. cycle.dayNotes (compartido entre labores)
+  // solo se lee, cuando la labor no tiene anotación propia para ese día. Se
+  // editan en un modal que abre el encabezado de la fecha (DayHeader).
+  const [editingDayNote, setEditingDayNote] = useState(null); // { laborId, date } o null
   const [editingDayNoteText, setEditingDayNoteText] = useState("");
   const [dayNoteBusy, setDayNoteBusy] = useState(false);
 
-  // Modal para agregar un nuevo precio (tier) en un trato. Reemplaza al
-  // prompt() nativo que rompía el estilo de la app.
+  // Modal para agregar un precio (tier) a un día de trato.
   const [addPriceModal, setAddPriceModal] = useState(null);
-  // shape: { laborId, date, nextKey, defaultMode, value }
+  // forma: { laborId, date, nextKey, defaultMode, value }
   const [addPriceBusy, setAddPriceBusy] = useState(false);
 
-  // Collapsible sections (metrics + prices). Persisted so the user only has
-  // to hide them once per device. Helps reclaim vertical space for the grid.
+  // Secciones colapsables (métricas y precios), persistidas por dispositivo,
+  // para dejarle más alto a la grilla.
   const [metricsCollapsed, setMetricsCollapsed] = useState(() => {
     try { return localStorage.getItem("cycleDetail.metricsCollapsed") === "true"; } catch { return false; }
   });
@@ -649,9 +613,9 @@ export default function CycleDetail() {
   }, [pricesCollapsed]);
 
   const [pickerOpen, setPickerOpen] = useState(false);
-  // Holds the synthetic TEMP-* rut of the worker currently being converted
-  // to a real RUT. When set, opens a second picker that replaces this temp
-  // entry (and rewrites all of its workday docs) with the chosen real worker.
+  // RUT sintético (TEMP-*) del temporal al que se le está asignando un RUT
+  // real. Con valor, abre un segundo selector que reemplaza esa entrada (y
+  // reescribe todas sus jornadas) por el trabajador elegido.
   const [assignTempRut, setAssignTempRut] = useState(null);
   const [assignBusy, setAssignBusy] = useState(false);
 
@@ -667,14 +631,12 @@ export default function CycleDetail() {
   const [removeLabor, setRemoveLabor] = useState(null);
 
   const [photoMode, setPhotoMode] = useState(false);
-  // Mobile: por defecto se muestra la lista de trabajadores (CycleWorkerList)
-  // en vez del AG-Grid, que en pantallas chicas obliga a scrollear por
-  // decenas de columnas-día. Este toggle deja ver el grid completo igual,
-  // como escape hatch — no se le sacó ninguna capacidad a nadie.
+  // En mobile se muestra la lista de trabajadores (CycleWorkerList) en vez de
+  // la grilla, que obliga a desplazarse por decenas de columnas de día. Este
+  // toggle muestra la grilla completa.
   const [showDesktopGrid, setShowDesktopGrid] = useState(false);
-  // Modal mobile: edita un trabajador a la vez (una fila por día). Se
-  // resetea si cambia la labor activa para no dejarlo abierto apuntando a
-  // un rut que puede ni existir en la nueva labor.
+  // Modal mobile: edita un trabajador a la vez (una fila por día). Se cierra
+  // al cambiar de labor, donde ese rut puede no existir.
   const [editingCycleWorkerRut, setEditingCycleWorkerRut] = useState(null);
   const [copyToast, setCopyToast] = useState("");
   const [closeFlow, setCloseFlow] = useState(false);
@@ -689,7 +651,7 @@ export default function CycleDetail() {
   const [confirmRemoveDay, setConfirmRemoveDay] = useState(null); // fecha (string) o null
   const [confirmReopen, setConfirmReopen] = useState(false);
   const [catalogsOpen, setCatalogsOpen] = useState(false);
-  // tratoHE-specific modals
+  // Modales de tratoHE
   const [bonusEdit, setBonusEdit] = useState(null);   // { laborId, date, workerRut }
   const [dayModeEdit, setDayModeEdit] = useState(null); // { laborId, date }
   const [defaultLeadersOpen, setDefaultLeadersOpen] = useState(false);
@@ -706,29 +668,25 @@ export default function CycleDetail() {
   const [allWorkers, setAllWorkers] = useState([]);
   const [enabledLeaders, setEnabledLeaders] = useState([]);
   const [groupBusy, setGroupBusy] = useState(false);
-  // Oculta en el grid a los trabajadores con $0 en esta labor+ciclo — el
-  // listado de trabajadores se arrastra desde el ciclo 1, así que para el
-  // ciclo 12 puede haber 200+ personas que ya no trabajan acá. Se ignora
-  // mientras haya un filtro de columna activo (ver isExternalFilterPresent/
-  // doesExternalFilterPass más abajo) para que buscar a alguien puntual
-  // siga mostrando resultados aunque tenga $0 ese ciclo.
+  // Oculta de la grilla a los trabajadores con $0 en esta labor. Se ignora
+  // mientras haya un filtro de columna activo (ver isExternalFilterPresent /
+  // doesExternalFilterPass), así una búsqueda también encuentra a quien está
+  // en $0.
   const [onlyWithProduction, setOnlyWithProduction] = useState(false);
   const [columnFilterActive, setColumnFilterActive] = useState(false);
 
   const gridRef = useRef(null);
   const photoRef = useRef(null);
-  // Modo mobile (<768px): se esconde la columna RUT y se reducen anchos para
-  // que entre la mayor cantidad posible de días en pantalla sin scroll
-  // horizontal infinito. La edición sigue funcionando igual (touch).
+  // Modo mobile (<768px): oculta la columna RUT y angosta las columnas para
+  // que entren más días en pantalla.
   const isMobile = useIsMobile();
-  // El toggle Detalle/Resumen solo afecta columnas del AG-Grid — en mobile,
-  // mientras se muestra CycleWorkerList (grid oculto), no tiene ningún
-  // efecto visible, así que se esconde para no ensuciar la barra. Reaparece
-  // si el usuario cae al grid completo vía "Ver grid completo".
+  // El toggle Detalle/Resumen solo cambia columnas de la grilla, así que se
+  // oculta mientras la grilla no se ve (mobile con CycleWorkerList).
   const gridVisible = !isMobile || showDesktopGrid;
-  // Undo stack: each entry is a batch (array) of { rut, field, oldValue }.
-  // Ctrl+Z pops one batch and replays the old values. Single edits push a
-  // 1-item batch; fillDown/paste push N-item batches so they undo in one step.
+  // Pila de deshacer: cada entrada es un lote (array) de { rut, field, oldValue }.
+  // Ctrl+Z saca un lote y vuelve a escribir los valores anteriores. Una edición
+  // suelta apila un lote de 1; fillDown y pegar apilan uno de N, que se deshace
+  // en un solo paso.
   const undoStackRef = useRef([]);
   const isUndoingRef = useRef(false);
   const pendingBatchRef = useRef(null);
@@ -771,9 +729,8 @@ export default function CycleDetail() {
       if (normalized.faenaId) setFaena(await faenasService.getById(normalized.faenaId));
       if (normalized.subfaenaId) {
         setSubfaena(await subfaenasService.getById(normalized.subfaenaId));
-        // Sin `order` a propósito: combinar where(subfaenaId) + orderBy(name)
-        // pide un índice compuesto en Firestore. La lista es chica — se
-        // ordena en el cliente y no hace falta crear ningún índice.
+        // Sin `order`: where(subfaenaId) + orderBy(name) pediría un índice
+        // compuesto en Firestore. La lista es chica y se ordena en el cliente.
         const groups = await laborGroupsService.list({ wheres: [["subfaenaId", "==", normalized.subfaenaId]] });
         setLaborGroups([...groups].sort((a, b) => a.name.localeCompare(b.name)));
       }
@@ -783,13 +740,10 @@ export default function CycleDetail() {
       const labors = normalized.labors || [];
       for (const w of wds) {
         const lid = w.laborId || labors[0]?.id;
-        // Derive the combo/tier key (ck) for the in-memory map. The docId
-        // encodes it as the optional 5th segment ("...__rut__date__ck"); when
-        // absent the doc was written with the implicit "0_0". Trato docs need
-        // their tier key (e.g. "t0", "t1") because the row builder looks them
-        // up that way — using qualityX/Y here yields "0_0" and silently hides
-        // every value in the grid. Legacy trato docs (no __tN suffix) are
-        // treated as tier 0.
+        // Clave de combo/tier (ck) del mapa en memoria: el 5.º segmento del
+        // docId ("...__rut__date__ck"). Sin ese segmento, en trato es el tier
+        // "t0" y en el resto el combo de qualityX/containerY. Las filas de
+        // trato buscan sus jornadas por tier ("t0", "t1"…).
         const parts = String(w.id || "").split("__");
         const laborForDoc = labors.find((l) => l.id === lid);
         const isTrato = laborForDoc?.type === "trato";
@@ -804,7 +758,7 @@ export default function CycleDetail() {
           ck = makeComboKey(x, y);
         }
         if (!byLabor[lid]) byLabor[lid] = {};
-        // Piso workdays no se normalizan como trato (no tienen tiers reales).
+        // Los workdays de piso no se normalizan como trato: no tienen tiers.
         const normalizedWd = w.pisoOnly || ck === PISO_COMBO_KEY ? w : normalizeTratoWorkday(w);
         byLabor[lid][workdayMapKey(w.workerRut, w.date, ck)] = normalizedWd;
       }
@@ -814,17 +768,22 @@ export default function CycleDetail() {
   }, [id]);
 
   const closed = cycle?.status === "closed";
-  // Cerrar un ciclo es la señal de "esto ya está pagado y revisado": queda
-  // congelado para todos, admin incluido. Antes el admin podía editarlo sin
-  // ningún gesto de por medio, así que el cierre no protegía de lo único que
-  // importa, que es tocarlo sin querer. Para editarlo hay que **reabrirlo**,
-  // que es un cambio de estado visible y con su propia confirmación.
+  // Un ciclo cerrado es de solo lectura para todos, admin incluido; para
+  // editarlo hay que reabrirlo.
   //
-  // El corte es el cierre del ciclo, NO el `payrollId` del workday: se paga a
-  // mitad de ciclo y después se sigue trabajando ahí para revisar detalles y
-  // generar diferencias. Bloquear por "ya pagado" rompería justamente ese paso.
+  // El corte es el cierre del ciclo, no el `payrollId` del workday: se paga a
+  // mitad de ciclo y se sigue trabajando ahí para revisar y generar
+  // diferencias.
   const readOnly = closed;
 
+  // Toda escritura del ciclo y de sus workdays pasa por `cycleWrite`/`wdWrite`, que
+  // verifican en un solo punto que el ciclo esté abierto. assertOpen lanza en
+  // vez de devolver: los llamadores actualizan el estado local justo después
+  // de escribir.
+  //
+  // Quedan fuera la normalización del loader (corre al montar, no es una
+  // edición del usuario) y cerrar/reabrir el ciclo, que es lo que levanta el
+  // candado.
   const assertOpen = () => {
     if (!closed) return;
     toast.warning("El ciclo está cerrado. Reábrelo para poder editarlo.");
@@ -845,19 +804,18 @@ export default function CycleDetail() {
     },
   };
 
-  // Los prefijos QR (colección `qrPrefixes`) son 4 documentos y se reapuntan a
-  // mano cada vez que se abre un ciclo, así que casi nunca cambian: TTL largo y
-  // persistido. Son la única forma de saber, ANTES de que llegue el primer
-  // pesaje, que esta labor la alimenta la app de scan.
+  // Prefijos QR (`qrPrefixes`): pocos documentos que cambian poco, en caché
+  // persistida con TTL de 1 h. Dicen qué labores alimenta la app de escaneo
+  // antes de que llegue el primer pesaje.
   useEffect(() => {
     qrPrefixesService
       .list({ order: ["label", "asc"], cache: true, persist: true, ttl: 60 * 60 * 1000 })
       .then(setQrPrefixes)
-      .catch(() => { /* sin esto solo se pierde el candado; no vale interrumpir */ });
+      .catch(() => { /* si falla, la pantalla sigue sin el candado QR */ });
   }, []);
 
-  // laborId → prefijo QR que la sincroniza. El porqué del candado (la
-  // sincronización pisa `qty` y `amount`) está en utils/harvestSync.js.
+  // laborId → prefijo QR que la sincroniza. La sincronización pisa `qty` y
+  // `amount`, así que esas celdas se bloquean (ver utils/harvestSync.js).
   const qrLockedLabors = useMemo(
     () => qrLockedLaborsOf(qrPrefixes, cycle?.id),
     [qrPrefixes, cycle?.id],
@@ -866,14 +824,9 @@ export default function CycleDetail() {
   const qrPrefixForActive = activeLaborId ? qrLockedLabors.get(activeLaborId) : null;
   const qrLocked = !!qrPrefixForActive;
 
-  // Navegación rápida entre ciclos hermanos (misma faena + subfaena), para
-  // saltar de "Ciclo 8" a "Ciclo 7" sin volver al listado. Ordenados por el
-  // PRIMER día real con producción cargada (min de cycle.days), no por
-  // startDate/endDate/createdAt: esos campos son manuales y se desalinean
-  // cuando se cierran ciclos atrasados o varios a la vez. Tampoco se usa el
-  // número en el label (editable, podría no coincidir con el orden real).
-  // Solo se recarga cuando cambia el ámbito (faenaId/subfaenaId), no en cada
-  // edición del ciclo.
+  // Navegación entre ciclos hermanos (misma faena y subfaena), ordenados por
+  // su primer día trabajado (mínimo de cycle.days), no por el número del
+  // label. Se recarga solo cuando cambia la faena o la subfaena.
   const [siblingCycles, setSiblingCycles] = useState(null);
   useEffect(() => {
     const faenaId = cycle?.faenaId;
@@ -888,9 +841,8 @@ export default function CycleDetail() {
       });
       if (cancelled) return;
       const scope = list.filter((c) => (c.subfaenaId || null) === subfaenaId);
-      // Fallback propio para ordenar (createdAt en vez de todayStr): un ciclo
-      // sin días cargados debe ubicarse según cuándo se creó, no como si
-      // "ahora" fuera su fecha — eso lo mandaría al final de la lista.
+      // Un ciclo sin días se ordena por startDate o createdAt, nunca por hoy
+      // (a diferencia de firstWorkedDay).
       const firstDayForSort = (c) => {
         const days = c.days;
         if (Array.isArray(days) && days.length > 0) {
@@ -949,10 +901,9 @@ export default function CycleDetail() {
       const l = String(w.groupLeader?.[0] || "").trim().toUpperCase();
       if (l) m.set(w.id, l);
     }
-    // Temp workers live only inside labor.workers; their leader (if any) is
-    // stored as a plain string field on that entry rather than the array form
-    // used on the canonical worker doc. We walk every labor so the map is
-    // valid even if the active labor changes later.
+    // Los temporales solo existen en labor.workers y guardan el líder como
+    // string, no como el array del doc del trabajador. Se recorren todas las
+    // labores para que el mapa sirva al cambiar de labor activa.
     for (const labor of cycle?.labors || []) {
       for (const w of labor.workers || []) {
         if (!w?.isTemp) continue;
@@ -963,9 +914,9 @@ export default function CycleDetail() {
     return m;
   }, [allWorkers, cycle]);
 
-  // Lookup table for the current canonical name of each worker. Used at row
-  // build time so name edits in the Workers screen propagate to open cycles
-  // without rewriting the (denormalized) `labor.workers[i].name` snapshot.
+  // Nombre vigente de cada trabajador según la caché de trabajadores. Las
+  // filas lo usan para reflejar los cambios de nombre hechos en Trabajadores
+  // sin reescribir la copia en `labor.workers[i].name`.
   const rutToName = useMemo(() => {
     const m = new Map();
     for (const w of allWorkers) {
@@ -1006,7 +957,7 @@ export default function CycleDetail() {
   const isTratoEtapasLabor = activeLabor?.type === "tratoEtapas";
   const isTratoHELabor = activeLabor?.type === "tratoHE";
   const isQtyLabor = isCosechaLabor || isTratoLabor || isTratoEtapasLabor || isTratoHELabor;
-  // Etapas del labor por etapas (fijas, no por día). Normalizadas para el render.
+  // Etapas de la labor por etapas (fijas, no por día), normalizadas.
   const etapas = useMemo(
     () => (isTratoEtapasLabor ? normalizeStages(activeLabor?.stages) : []),
     [isTratoEtapasLabor, activeLabor],
@@ -1018,31 +969,23 @@ export default function CycleDetail() {
   const days = cycle?.days || [];
   const workers = activeLabor?.workers || [];
   const wdMap = (activeLabor && workdaysByLabor[activeLabor.id]) || {};
-  // Fechas con al menos un workday de esta labor — usado para no mostrar la
-  // anotación del día en fechas donde esta labor no tuvo actividad (el ciclo
-  // comparte `days` entre todas sus labores, así que no todas tienen algo que
-  // anotar en cada fecha).
+  // Fechas con al menos un workday de esta labor. El ciclo comparte `days`
+  // entre todas sus labores; esto acota en qué fechas se ofrece anotar.
   const activeLaborDatesWithProduction = new Set(
     Object.keys(wdMap).map((k) => k.split("__")[1]),
   );
   const defaultMode = activeLabor?.cosechaMode || activeLabor?.tratoMode || "unit";
 
-  // Fase 2 de la migración "rut editable" (ver workersService.js /
-  // docs/data-model.md): cada workday nuevo/editado graba `workerId` además
-  // de `workerRut`, para que en el futuro (fase 4) las lecturas puedan dejar
-  // de depender del rut actual del trabajador. Se resuelve buscando la
-  // entrada del roster de la labor por rut y usando su `id` — con fallback al
-  // propio rut si el roster todavía no tiene `id` (entradas viejas,
-  // pre-migración; seguro mientras nadie haya editado su rut, ver fase 3).
+  // `workerId` que se graba en cada workday junto a `workerRut`: el `id` de la
+  // entrada del roster de la labor con ese rut, o el mismo rut si la entrada
+  // no tiene `id` (ver docs/data-model.md).
   const workerIdFor = (laborId, rut) => {
     const labor = cycle?.labors?.find((l) => l.id === laborId);
     return labor?.workers?.find((w) => w.rut === rut)?.id || rut;
   };
 
-  // Días de la labor activa que muestran la columna "P" en la grilla. Para
-  // no agregar ruido, la columna solo aparece en días que ya tienen piso
-  // configurado en `dayPrices` o que tienen al menos un workday pisoOnly
-  // asignado a algún trabajador.
+  // Días de la labor activa que muestran la columna "Piso": los que tienen
+  // piso configurado en `dayPrices` o algún workday pisoOnly.
   const daysWithPiso = useMemo(() => {
     if (!activeLabor || (!isCosechaLabor && !isTratoLabor)) return new Set();
     const s = new Set();
@@ -1109,17 +1052,15 @@ export default function CycleDetail() {
     return out;
   }, [isTratoLabor, activeLabor, days, dayPrices, defaultMode, workdaysByLabor]);
 
-  // Etapas visibles por día para tratoEtapas: todas las etapas del labor con su
-  // precio/modo de ese día resueltos. A diferencia de trato (tiers ad-hoc), las
-  // columnas son las etapas fijas del labor; el precio viene del día. Cada
-  // entrada: { id, name, counts, price, mode }.
+  // Etapas visibles por día en tratoEtapas: las etapas fijas de la labor que
+  // tienen precio ese día o producción, con el precio y el modo del día
+  // resueltos. Cada entrada: { id, name, counts, price, mode }.
   const dayStagesByDate = useMemo(() => {
     if (!isTratoEtapasLabor || !activeLabor) return {};
     const wdMapForLabor = workdaysByLabor[activeLabor.id] || {};
     const out = {};
     for (const d of days) {
-      // Etapas con producción ese día (para no ocultar una columna que ya tiene
-      // datos aunque le hayan borrado el precio).
+      // Etapas con producción ese día: se muestran aunque no tengan precio.
       const withData = new Set();
       for (const k in wdMapForLabor) {
         if (!k.includes(`__${d}__`)) continue;
@@ -1135,11 +1076,11 @@ export default function CycleDetail() {
   const legacyDayNotes = cycle?.dayNotes || {};
   const dayNotesByLabor = cycle?.dayNotesByLabor || {};
   const activeLaborDayNotes = (activeLabor && dayNotesByLabor[activeLabor.id]) || {};
-  // Per-labor note wins; falls back to the legacy shared note when this
-  // labor hasn't been given its own annotation for that day yet.
+  // Manda la anotación de la labor; si no tiene una para ese día, se usa la
+  // compartida del ciclo.
   const noteForDay = (d) => activeLaborDayNotes[d] ?? legacyDayNotes[d] ?? "";
-  // Solo tiene sentido anotar un día donde esta labor tuvo producción, o que
-  // ya tenga una anotación (para no esconder una nota existente).
+  // Se puede anotar un día con producción de esta labor o que ya tenga
+  // anotación.
   const dayHasContent = (d) => activeLaborDatesWithProduction.has(d) || !!noteForDay(d);
 
   const openDayNote = (date) => {
@@ -1190,19 +1131,16 @@ export default function CycleDetail() {
     }
   };
 
-  // Resolve each worker's current canonical name from the workers cache.
-  // Falls back to the snapshot stored in labor.workers (used for temp workers
-  // and as a safety net while the cache loads).
+  // Nombre vigente de cada trabajador según la caché; si no está, el guardado
+  // en labor.workers (temporales, o mientras carga la caché).
   const resolvedWorkers = useMemo(
     () => workers.map((w) => (w?.isTemp ? w : { ...w, name: rutToName.get(w.rut) || w.name })),
     [workers, rutToName],
   );
 
-  // Trabajadores que tienen workdays en esta labor pero ya no están en
-  // labor.workers (típicamente porque alguien los quitó del listado sin
-  // limpiar la producción). Los inyectamos al grid con flag `isOrphan`
-  // para que el usuario los vea y pueda quitarlos. Sin esto, las métricas
-  // y el payroll los siguen contando pero no aparecen en el grid.
+  // Trabajadores con workdays en esta labor que no están en labor.workers. Se
+  // suman a la grilla con `isOrphan` para que se vean y se puedan corregir:
+  // las métricas y la nómina los cuentan igual.
   const orphanWorkers = useMemo(() => {
     if (!activeLabor) return [];
     const inLabor = new Set((workers || []).map((w) => w.rut));
@@ -1292,12 +1230,10 @@ export default function CycleDetail() {
     return out;
   }, [useGrouped, rowDataRaw, orderedGroups]);
 
-  // El toggle "Solo con producción" se implementa como filtro externo de
-  // AG-Grid (no recortando `rowData` a mano) para que conviva bien con el
-  // resto de la grilla — orden, selección, etc. Mientras haya un filtro de
-  // columna activo (el usuario está buscando algo puntual por Nombre/RUT/lo
-  // que sea), este filtro se desactiva solo: se quiere ver a quien calce con
-  // la búsqueda tenga o no producción, no solo a los que además tengan plata.
+  // "Solo con producción" es un filtro externo de AG-Grid (no recorta
+  // `rowData`), así convive con el orden y la selección de la grilla. Con un
+  // filtro de columna activo deja pasar todo: la búsqueda muestra a todos los
+  // que calzan, tengan o no producción.
   const isExternalFilterPresent = () => onlyWithProduction;
   const doesExternalFilterPass = (node) => {
     if (node.data?._isHeader) return true;
@@ -1383,11 +1319,9 @@ export default function CycleDetail() {
     return out;
   }, [cycle?.labors, workdaysByLabor]);
 
-  // Resumen diario del labor tratoEtapas activo, para mostrar en la barra de
-  // precios (donde están los combos por día): producción del día (unidades de
-  // las etapas que cuentan, deduplicado), personas que trabajaron ese día
-  // (ruts únicos con qty>0 en cualquier etapa) y el monto del día.
-  // { [date]: { counted, people, amount } }.
+  // Resumen por día de la labor tratoEtapas activa, para la barra de precios:
+  // unidades de las etapas que cuentan, personas (ruts únicos con qty > 0 en
+  // cualquier etapa) y monto del día. { [date]: { counted, people, amount } }.
   const etapasDaySummary = useMemo(() => {
     if (!isTratoEtapasLabor || !activeLabor) return {};
     const counting = countingStageIds(activeLabor);
@@ -1411,10 +1345,9 @@ export default function CycleDetail() {
     return out;
   }, [isTratoEtapasLabor, activeLabor, workdaysByLabor]);
 
-  // Cantidad de RUTs únicos con producción real (qty > 0) por labor de trato.
-  // Usado para mostrar "N personas · prom X/persona" en la tarjeta de
-  // métricas. workdayMapKey es "rut__date__ck" → splitamos para extraer rut
-  // sin depender de que el doc traiga workerRut adentro (caso legacy).
+  // RUTs únicos con producción (qty > 0) por labor de trato, para el
+  // "N personas · prom X/persona" de la tarjeta de métricas. Si el doc no trae
+  // workerRut, el rut sale de la clave del mapa ("rut__date__ck").
   const tratoPeopleCountByLabor = useMemo(() => {
     const out = {};
     if (!cycle?.labors) return out;
@@ -1500,13 +1433,9 @@ export default function CycleDetail() {
     return out;
   }, [isCosechaLabor, activeLabor, workdaysByLabor, days, workers, dayCombosByDate]);
 
-  // Per-tier metrics for trato labors.
-  //
-  // Importante: cada workday se normaliza a `tiers: { "0": ... }` aunque sea
-  // de t1/t2 (ver `normalizeTratoWorkday`), así que iterar `wd.tiers` no
-  // distingue tiers. El tier real vive en la 3ra parte de la clave del map
-  // (`workdayMapKey` = `rut__date__ck`), igual que en buildDailyRows. De ahí
-  // sacamos el `tierIdx` y agrupamos por tier reales.
+  // Métricas por tier de las labores de trato. Los workdays de trato guardan
+  // `tiers: { "0": ... }` aunque sean de t1/t2, así que el tier sale de la
+  // 3.ª parte de la clave del mapa (`rut__date__ck`).
   const tratoTierMetricsByLabor = useMemo(() => {
     const out = {};
     if (!cycle?.labors) return out;
@@ -1521,8 +1450,8 @@ export default function CycleDetail() {
         const tierKey = parts[2] || "t0";
         const idx = tierKey.startsWith("t") ? Number(tierKey.slice(1)) || 0 : 0;
         if (!tiers[idx]) tiers[idx] = { qty: 0, amount: 0, workerCount: new Set() };
-        // El total real del wd lo da getTratoTierTotals (prioriza top-level
-        // qty/amount sobre el espejo tiers — ver doc del helper).
+        // getTratoTierTotals da el total del workday: prioriza qty/amount del
+        // primer nivel sobre la copia en `tiers`.
         const t = getTratoTierTotals(wd);
         tiers[idx].qty += t.qty;
         tiers[idx].amount += t.amount;
@@ -1545,7 +1474,7 @@ export default function CycleDetail() {
     () => Object.values(totalsByLabor).reduce((a, b) => a + b, 0),
     [totalsByLabor],
   );
-  const grandTotal = laborsTotal; // alias retrocompat — sigue siendo "Total ciclo"
+  const grandTotal = laborsTotal; // alias de laborsTotal: el "Total ciclo"
   const balanceWithTransport = useMemo(
     () => laborsTotal + transportTotal,
     [laborsTotal, transportTotal],
@@ -1566,11 +1495,9 @@ export default function CycleDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  // Único punto de escritura para días/labores del ciclo — agregar/quitar día,
-  // agregar/quitar trabajador y toggle de mensual pasan todos por acá. Sin
-  // try/catch un fallo de red/permisos quedaba 100% silencioso: el modal se
-  // cerraba igual y el usuario creía que había guardado. Devuelven true/false
-  // para que el caller sepa si además vale la pena mostrar un toast de éxito.
+  // Guardan los días y una labor del ciclo (agregar o quitar día o trabajador,
+  // toggle de mensual). Si la escritura falla muestran un toast de error y
+  // devuelven false; si guarda, true, y el llamador decide si avisa.
   const persistDays = async (nextDays) => {
     try {
       await cycleWrite({ days: nextDays });
@@ -1595,7 +1522,7 @@ export default function CycleDetail() {
   };
 
   // ============================================================
-  // Combo / single-price helpers
+  // Combos y precio único por día
   // ============================================================
 
   const getCombo = (laborId, date, ck) => {
@@ -1619,9 +1546,8 @@ export default function CycleDetail() {
       if (qty === 0) continue;
       const amount = mode === "flat" ? price : qty * price;
       const docId = workdayDocId(id, laborId, w.rut, date, ck);
-      // Para trato sincronizar también el campo legacy `tiers["0"]` que
-      // `getTratoTierTotals` prioriza al calcular totales. Si no se actualiza
-      // queda stale tras cambiar el precio del día. Ver onCellValueChanged.
+      // En trato también se reescriben `tiers["0"]` y `totalAmount`, la copia
+      // del monto que guarda el workday (igual que commitTratoTier).
       const patch = isTrato
         ? { ...wd, amount, tiers: { "0": { qty, amount } }, totalAmount: amount, workerId: w.id || w.rut }
         : { ...wd, qualityX: x, containerY: y, amount, workerId: w.id || w.rut };
@@ -1647,9 +1573,9 @@ export default function CycleDetail() {
     await recalcDayCombo(laborId, date, ck, merged.price, merged.mode, isTrato);
   };
 
-  // tratoEtapas: recalcula los amounts de los workdays de una etapa en un día
-  // cuando cambia su precio/modo (cada workday guarda su amount, hay que
-  // reescribirlo o el resumen/nómina quedan con el valor viejo).
+  // tratoEtapas: recalcula el amount de los workdays de una etapa en un día
+  // cuando cambia su precio o modo. Cada workday guarda su propio amount, que
+  // es el que leen el resumen y la nómina.
   const recalcDayStage = async (laborId, date, stageId, price, mode) => {
     const labor = cycle.labors.find((l) => l.id === laborId);
     if (!labor || labor.type !== "tratoEtapas") return;
@@ -1689,9 +1615,9 @@ export default function CycleDetail() {
     await recalcDayStage(laborId, date, stageId, merged.price, merged.mode);
   };
 
-  // Piso = monto fijo configurable por día (con fallback al pisoDefault de la
-  // labor). Conviven en el mismo doc `dayPrices[labId][date]` como campo
-  // `piso` al lado de los combos/tiers.
+  // Piso: monto fijo por día, guardado como campo `piso` de
+  // `dayPrices[laborId][date]`, junto a los combos o tiers. En 0 se quita el
+  // campo.
   const writeDayPiso = async (laborId, date, value) => {
     const dayEntry = normalizeDayPricesEntry(dayPrices[laborId]?.[date]);
     const nextDay = { ...dayEntry, piso: Number(value) || 0 };
@@ -1701,11 +1627,9 @@ export default function CycleDetail() {
     await cycleWrite({ dayPrices: next });
   };
 
-  // Quitar el piso del día (el ✕, o dejar el monto en cero) tiene que llevarse
-  // también los bonos ya asignados. Borrar solo la configuración los dejaba
-  // repartidos sin nada que los explicara: seguían sumando al total de cada
-  // persona y a la nómina, y en la pantalla no quedaba ni el monto del día para
-  // darse cuenta.
+  // Quitar el piso del día (el ✕, o dejar el monto en cero) también borra los
+  // bonos de ese día que no están en una nómina. Si hay bonos asignados, antes
+  // pide confirmación.
   const persistDayPiso = async (laborId, date, value) => {
     const monto = Number(value) || 0;
     if (!monto) {
@@ -1748,10 +1672,6 @@ export default function CycleDetail() {
     }
   };
 
-  // Toggle del piso por (worker, date) para la labor activa. Crea/borra un
-  // workday separado con `comboKey: "_piso"` y `pisoOnly: true`. El monto
-  // viene del piso efectivo (día > labor.pisoDefault). Requiere que ya
-  // exista al menos un workday de producción para esa fecha.
   // Cuántos trabajadores con producción quedan sin piso, por día. Alimenta el
   // contador del botón "a todos" del panel de precios.
   const pisoPendingByDate = useMemo(() => {
@@ -1763,9 +1683,8 @@ export default function CycleDetail() {
     return out;
   }, [activeLabor, workdaysByLabor]);
 
-  // Abre la confirmación del piso masivo. No escribe nada todavía: el piso es
-  // plata que se le suma a cada persona, así que la cuenta y el total van a la
-  // vista antes de tocar Firestore.
+  // Abre la confirmación del piso masivo, con la cantidad de personas y el
+  // total. No escribe nada.
   const askApplyPisoToAll = (laborId, date) => {
     const labor = cycle.labors.find((l) => l.id === laborId);
     if (!labor) return;
@@ -1815,6 +1734,8 @@ export default function CycleDetail() {
     }
   };
 
+  // Toggle del piso de un trabajador en un día: crea o borra su workday `_piso`
+  // (`pisoOnly: true`) con el piso configurado para ese día.
   const togglePiso = async (laborId, date, workerRut) => {
     const labor = cycle.labors.find((l) => l.id === laborId);
     if (!labor) return;
@@ -1822,8 +1743,7 @@ export default function CycleDetail() {
     const docId = workdayDocId(id, laborId, workerRut, date, PISO_COMBO_KEY);
     const existing = (workdaysByLabor[laborId] || {})[mapKey];
     if (existing) {
-      // Ese bono ya se pagó: borrarlo le descuadra el total a la nómina que lo
-      // referencia. Mismo criterio que la sincronización de Pesajes QR.
+      // Un piso que ya está en una nómina no se borra: le descuadraría el total.
       if (existing.payrollId) {
         toast.warning("Ese piso ya está en una nómina. Hay que eliminar o editar la nómina para poder quitarlo.");
         return;
@@ -1866,7 +1786,7 @@ export default function CycleDetail() {
   };
 
   // ============================================================
-  // tratoHE-specific helpers
+  // Helpers de tratoHE
   // ============================================================
 
   const tratoHERates = (labor) => ({
@@ -1879,10 +1799,9 @@ export default function CycleDetail() {
   const effectiveDayPrice = (labor, dayCfg) =>
     Number(dayCfg?.price) || Number(labor?.baseDayDefault) || DEFAULT_BASE_DAY;
 
-  // Para labores tipo main/supervision/extra: persiste el precio sugerido del
-  // día (un solo precio por día, no per-trabajador). No re-calcula los
-  // workdays existentes — cada amount queda como estaba; el cambio solo afecta
-  // al hint que muestran las celdas vacías y futuros clicks en ese sugerido.
+  // Labores main/supervision/extra: guarda el precio sugerido del día (uno por
+  // día, no por trabajador). No recalcula los workdays existentes: solo cambia
+  // el sugerido que muestran las celdas vacías.
   const persistNormalDayPrice = async (laborId, date, price) => {
     const dayEntry = normalizeDayPricesEntry(dayPrices[laborId]?.[date]);
     const current = dayEntry["0_0"] || { price: 0, mode: "normal" };
@@ -1893,21 +1812,16 @@ export default function CycleDetail() {
     await cycleWrite({ dayPrices: next });
   };
 
-  // Confirma el monto del día para un trabajador (labores main/supervision/
-  // extra). Único punto de escritura para este tipo — lo usa tanto el grid
-  // (onCellValueChanged) como el botón de "usar precio sugerido". amount=0
-  // borra el workday existente en vez de dejar (o ignorar) un doc en 0, para
-  // que ambos caminos de edición se comporten igual.
+  // Guarda el monto del día de un trabajador en labores main/supervision/extra.
+  // Lo usan la grilla (onCellValueChanged), el botón del precio sugerido y el
+  // modal de edición por trabajador. Con monto 0 borra el workday.
   const commitNormalAmount = async (date, workerRut, rawAmount) => {
     const laborId = activeLabor.id;
     const amount = parseAmount(rawAmount) || 0;
     const docId = workdayDocId(id, laborId, workerRut, date, SINGLE_COMBO);
     const mapKey = workdayMapKey(workerRut, date, SINGLE_COMBO);
-    // Si el write falla, devolvemos el último monto conocido (no lo que se
-    // tipeó) — el caller en onCellValueChanged usa exactamente este valor de
-    // retorno para pintar la celda, así que la celda se revierte sola sin
-    // tener que tocar ese código. Sin esto, un fallo de red/permisos dejaba
-    // la celda mostrando un valor que nunca se guardó, sin ningún aviso.
+    // Si la escritura falla, devuelve el último monto guardado; el llamador
+    // pinta la celda con este valor.
     try {
       if (amount === 0) {
         if (wdMap[mapKey]) {
@@ -1961,11 +1875,9 @@ export default function CycleDetail() {
     const amount = computeTratoHEAmount(labor, dayCfg, merged);
     const wd = { cycleId: id, laborId, workerRut, date, ...merged, amount, workerId: workerIdFor(laborId, workerRut) };
 
-    // `ok: false` en el fallo: a diferencia de los otros commit*, la rama
-    // isTratoHELabor de onCellValueChanged pinta el campo qty/HE con una
-    // variable local (`newVal`), no con lo que devuelve esta función — así
-    // que necesita esta bandera explícita para saber que tiene que revertir
-    // el campo a mano (ver onCellValueChanged).
+    // Si falla devuelve `ok: false`: la rama tratoHE de onCellValueChanged pinta
+    // qty/HE con su propio valor (`newVal`) y usa esta bandera para revertir
+    // el campo.
     try {
       if (!workdayHasData(wd)) {
         if (existing) {
@@ -1991,10 +1903,9 @@ export default function CycleDetail() {
     }
   };
 
-  // Confirma la cantidad de un combo (calidad×envase) para un trabajador en
-  // un día de cosecha. qty=0 borra el workday. Único punto de escritura —
-  // lo usa el grid (onCellValueChanged) y, más adelante, el modal de edición
-  // por trabajador.
+  // Guarda la cantidad de un combo (calidad×envase) de un trabajador en un día
+  // de cosecha; qty 0 borra el workday. Lo usan la grilla
+  // (onCellValueChanged) y el modal de edición por trabajador.
   const commitCosechaCombo = async (date, comboKey, workerRut, rawQty) => {
     const laborId = activeLabor.id;
     const { x, y } = parseComboKey(comboKey);
@@ -2033,8 +1944,8 @@ export default function CycleDetail() {
     }
   };
 
-  // Confirma la cantidad de un tier de precio para un trabajador en un día
-  // de trato. qty=0 borra el workday. Único punto de escritura.
+  // Guarda la cantidad de un tier de precio de un trabajador en un día de
+  // trato; qty 0 borra el workday.
   const commitTratoTier = async (date, tierKey, workerRut, rawQty) => {
     const laborId = activeLabor.id;
     const docId = workdayDocId(id, laborId, workerRut, date, tierKey);
@@ -2056,10 +1967,9 @@ export default function CycleDetail() {
           });
         }
       } else {
-        // `tiers` (single-key "0") es el campo legacy que `normalizeTratoWorkday`
-        // agrega al cargar. `getTratoTierTotals` prioriza ese campo, así que hay
-        // que sincronizarlo con `qty/amount` o el labor total queda contando el
-        // valor viejo hasta que se recargue la página.
+        // `tiers` (una sola clave, "0") es la copia que normalizeTratoWorkday
+        // agrega al cargar; se reescribe junto con qty/amount para que
+        // coincidan.
         const tiersField = { "0": { qty, amount } };
         const workerId = workerIdFor(laborId, workerRut);
         await wdWrite.upsert(docId, {
@@ -2083,8 +1993,8 @@ export default function CycleDetail() {
     }
   };
 
-  // Confirma la cantidad de una etapa para un trabajador en un día de
-  // tratoEtapas. qty=0 borra el workday. Único punto de escritura.
+  // Guarda la cantidad de una etapa de un trabajador en un día de
+  // tratoEtapas; qty 0 borra el workday.
   const commitEtapaQty = async (date, stageId, workerRut, rawQty) => {
     const laborId = activeLabor.id;
     const docId = workdayDocId(id, laborId, workerRut, date, stageId);
@@ -2223,7 +2133,7 @@ export default function CycleDetail() {
     if (raw === undefined) return;
     const price = parseAmount(String(raw)) || 0;
     setLocalPriceInputs((prev) => { const n = { ...prev }; delete n[k]; return n; });
-    // For tier keys (t0, t1, etc.) route through persistComboConfig so existing wds get recalculated
+    // Los tiers (t0, t1…) pasan por persistComboConfig, que recalcula los workdays existentes.
     if (isTrato && typeof ck === "string" && ck.startsWith("t")) {
       const entry = dayPrices?.[laborId]?.[date];
       const cur = entry?.[ck];
@@ -2243,7 +2153,7 @@ export default function CycleDetail() {
   const getPriceInputValue = (laborId, date, ck, isTrato = false) => {
     const k = inputKey(laborId, date, ck);
     if (k in localPriceInputs) return localPriceInputs[k];
-    // For tier keys (t0, t1, etc.)
+    // Tiers (t0, t1…)
     if (isTrato && typeof ck === "string" && ck.startsWith("t")) {
       const entry = dayPrices?.[laborId]?.[date];
       const tier = entry?.[ck];
@@ -2256,12 +2166,12 @@ export default function CycleDetail() {
   };
 
   // ============================================================
-  // Cell value changed
+  // Edición de celdas
   // ============================================================
 
-  // Field is one of the per-day editable fields (cosecha combo, trato tier,
-  // tratoHE qty/he, normal). All other fields (rut/name/total/__amt/__total)
-  // are derived and shouldn't be batch-written.
+  // Campos editables por día (combo de cosecha, tier de trato, qty/HE de
+  // tratoHE, monto normal). rut/name/total/__amt/__total son derivados y no
+  // se escriben en lote.
   const isEditableField = (field) => {
     if (!field) return false;
     if (["rut", "name", "total"].includes(field)) return false;
@@ -2282,9 +2192,8 @@ export default function CycleDetail() {
     });
   };
 
-  // Ctrl+D fill down: take the focused cell's value, write it to the same
-  // column on every selected row. Use Shift+Click on the row checkboxes to
-  // pick the destination range first.
+  // Ctrl+D (rellenar hacia abajo): copia el valor de la celda con foco a la
+  // misma columna de cada fila seleccionada (api.getSelectedNodes()).
   const fillDown = async (params) => {
     if (readOnly || photoMode || qrLocked) return;
     const api = gridRef.current?.api;
@@ -2319,9 +2228,9 @@ export default function CycleDetail() {
     setTimeout(() => setCopyToast(""), 1500);
   };
 
-  // Ctrl+V paste: split the clipboard by lines and apply each value to the
-  // displayed row at sourceIndex+i in the same column. Tabs (multi-column
-  // copies from Excel) are not yet supported — only the first column is used.
+  // Ctrl+V: reparte las líneas del portapapeles en la misma columna, desde la
+  // fila con foco hacia abajo y saltando los encabezados de grupo. De un
+  // copiado con varias columnas (tabs) solo se usa la primera.
   const pasteFromClipboard = async (params) => {
     if (readOnly || photoMode || qrLocked) return;
     const api = gridRef.current?.api;
@@ -2367,9 +2276,9 @@ export default function CycleDetail() {
     setTimeout(() => setCopyToast(""), 1500);
   };
 
-  // Ctrl+Z undo: pop the most recent batch off the stack and replay each
-  // entry's old value. While replaying we set isUndoingRef so onCellValueChanged
-  // does not push the revert itself onto the stack.
+  // Ctrl+Z: saca el último lote de la pila y vuelve a escribir los valores
+  // anteriores. Mientras tanto, isUndoingRef evita que onCellValueChanged
+  // apile la reversión.
   const undoLast = async () => {
     if (readOnly || photoMode) return;
     const batch = undoStackRef.current.pop();
@@ -2421,12 +2330,11 @@ export default function CycleDetail() {
     const field = params.colDef.field;
     if (!field || field === "total" || field === "rut" || field === "name" || field.endsWith("__amt") || field.endsWith("__total")) return;
 
-    // Sacado del if de abajo (antes solo se calculaba para el undo stack)
-    // porque la rama isTratoHELabor también lo necesita para revertir la
-    // celda si falla el guardado — ver ahí.
+    // Lo usan la pila de deshacer y la rama tratoHE, que revierte la celda si
+    // falla el guardado.
     const oldValue = params.oldValue !== undefined ? params.oldValue : params.data?.[field];
 
-    // Push to undo stack before mutating. Skip when we are replaying an undo.
+    // Apila el valor anterior antes de escribir, salvo mientras se deshace.
     if (!isUndoingRef.current) {
       const entry = { rut: params.data?.rut, field, oldValue };
       if (pendingBatchRef.current) {
@@ -2466,11 +2374,8 @@ export default function CycleDetail() {
       const newVal = parseAmount(params.newValue) || 0;
       const patch = kind === "qty" ? { qty: newVal } : { overtimeHours: newVal };
       const result = await upsertTratoHEWorkday(activeLabor.id, date, workerRut, patch);
-      // A diferencia de las otras 3 ramas, acá el campo se pinta con `newVal`
-      // (variable local), no con lo que devuelve la función — si el guardado
-      // falló (`ok: false`) hay que revertir a mano al `oldValue` que ya
-      // teníamos calculado arriba, o la celda queda mostrando un valor que
-      // nunca se guardó.
+      // Esta rama pinta el campo con `newVal`, no con lo que devuelve la
+      // función; si el guardado falló (`ok: false`) vuelve a `oldValue`.
       params.node.setDataValue(field, result.ok === false ? oldValue : newVal);
       params.node.setDataValue(`${date}__amt`, result.amount);
       let newTotal = 0;
@@ -2484,13 +2389,13 @@ export default function CycleDetail() {
 
     if (isTratoLabor) {
       const [date, ...rest] = field.split("__");
-      const tierKey = rest.join("_"); // e.g., "t0", "t1"
+      const tierKey = rest.join("_"); // p. ej. "t0", "t1"
       const workerRut = params.data.rut;
       const { qty, amount } = await commitTratoTier(date, tierKey, workerRut, params.newValue);
       params.node.setDataValue(field, qty);
       params.node.setDataValue(`${field}__amt`, amount);
 
-      // Recalc total from grid row data
+      // Recalcula el total con los datos de la fila
       let rowTotal = 0;
       for (const d of days) {
         const combos = dayTiersByDate[d] || [];
@@ -2524,7 +2429,7 @@ export default function CycleDetail() {
       return;
     }
 
-    // Normal labor
+    // Labor normal
     const date = field;
     const workerRut = params.data.rut;
     const { amount } = await commitNormalAmount(date, workerRut, params.newValue);
@@ -2534,7 +2439,7 @@ export default function CycleDetail() {
   };
 
   // ============================================================
-  // Days
+  // Días
   // ============================================================
 
   const addDay = async () => {
@@ -2579,7 +2484,7 @@ export default function CycleDetail() {
   };
 
   // ============================================================
-  // Workers
+  // Trabajadores
   // ============================================================
 
   const pickWorker = async (worker) => {
@@ -2588,9 +2493,8 @@ export default function CycleDetail() {
     const entry = { id: pickedId, rut: worker.rut, name: worker.name };
     if (worker.isTemp) {
       entry.isTemp = true;
-      // Temp workers don't have a row in the `worker` collection, so their
-      // leader is stored alongside the entry inside labor.workers and read
-      // back when building the per-leader group view.
+      // Los temporales no tienen doc en `worker`: su líder se guarda en la
+      // entrada de labor.workers y lo lee la vista por grupo.
       if (worker.groupLeader) entry.groupLeader = String(worker.groupLeader).toUpperCase();
     }
     const ok = await persistLabor({ ...activeLabor, workers: [...workers, entry] });
@@ -2598,11 +2502,10 @@ export default function CycleDetail() {
     if (ok) showToast(`${worker.name || "Trabajador"} agregado`);
   };
 
-  // Toggle the "pago mensual" flag for a worker inside the current labor.
-  // Stored as `monthly: true` on the labor.workers entry. Used only for
-  // "normal" labors (supervisión, etc.) — when set, the day cells switch to
-  // a presence checkbox and the workday is saved with amount=0 so it never
-  // makes it into the payroll transfer.
+  // Toggle de sueldo mensual de un trabajador en la labor activa (`monthly:
+  // true` en su entrada de labor.workers). Solo en labores normales: las
+  // celdas del día pasan a casilla de asistencia y el workday se guarda con
+  // amount 0, así no suma a la transferencia de la nómina.
   const toggleMonthly = async (rut) => {
     if (readOnly || !activeLabor) return;
     const nextWorkers = workers.map((w) =>
@@ -2611,11 +2514,10 @@ export default function CycleDetail() {
     await persistLabor({ ...activeLabor, workers: nextWorkers });
   };
 
-  // Create / remove a 0-amount workday for monthly workers — used as the
-  // "presente sin pago" toggle from the day cell. Reusing the existing
-  // workday infrastructure keeps metrics + jornada counters consistent. The
-  // caller passes `currentlyPresent` from the rendered row data so we never
-  // depend on a possibly-stale closure of wdMap.
+  // Crea o borra el workday en $0 (`attendanceOnly`) de un trabajador mensual:
+  // la casilla "presente sin pago" de la celda del día. Como es un workday más,
+  // cuenta en las métricas y en las jornadas. El llamador pasa
+  // `currentlyPresent` desde la fila, sin depender del wdMap del closure.
   const toggleAttendance = async (rut, date, currentlyPresent) => {
     if (readOnly || !activeLabor) return;
     const mapKey = workdayMapKey(rut, date, SINGLE_COMBO);
@@ -2646,14 +2548,12 @@ export default function CycleDetail() {
     if (w) setRemoveWorker(w);
   };
 
-  // Lógica pura de "quitar trabajador", separada del state del ConfirmDialog
-  // de escritorio para que el modal mobile (que hace su propia confirmación
-  // inline, sin ConfirmDialog, por la regla de no anidar Modals) pueda llamar
-  // exactamente el mismo camino. Retorna true si efectivamente lo quitó.
+  // Quita a un trabajador de la labor activa, sin pasar por el ConfirmDialog:
+  // la usan el diálogo de escritorio y el modal mobile, que confirma por su
+  // cuenta. Devuelve true si lo quitó.
   const removeWorkerNow = async (worker) => {
     if (!worker || !activeLabor) return false;
-    // Temp workers: borrar también todas sus workdays en este ciclo. Son
-    // datos descartables y no deben quedar huérfanos en Firestore.
+    // Temporales: también se borran sus workdays en todo el ciclo.
     if (worker.isTemp) {
       const all = await workdaysService.list({
         wheres: [["cycleId", "==", id], ["workerRut", "==", worker.rut]],
@@ -2706,10 +2606,10 @@ export default function CycleDetail() {
     return await removeWorkerNow(w);
   };
 
-  // Convert a temporary worker (TEMP-...) into a real one. Replaces the entry
-  // in the labor's workers array and rewrites every workday doc that used the
-  // temp rut. The doc id embeds the rut, so we copy each doc to a new id and
-  // delete the old one — there is no rename in Firestore.
+  // Convierte un temporal (TEMP-…) en un trabajador real: reemplaza su entrada
+  // en labor.workers y reescribe cada workday del ciclo con el rut temporal.
+  // El docId incluye el rut, así que cada doc se copia a un id nuevo y se
+  // borra el viejo (Firestore no renombra documentos).
   const convertTempToReal = async (real) => {
     const tempRut = assignTempRut;
     if (!tempRut || !real?.rut) { setAssignTempRut(null); return; }
@@ -2733,12 +2633,13 @@ export default function CycleDetail() {
         await wdWrite.upsert(newDocId, { ...rest, workerRut: real.rut, workerId: real.id || real.rut });
         await wdWrite.remove(wd.id);
       }
-      // Update labor.workers in place — preserve order.
+      // Reemplaza la entrada en labor.workers, conservando el orden.
       const nextWorkers = workers.map((w) =>
         w.rut === tempRut ? { id: real.id || real.rut, rut: real.rut, name: real.name } : w,
       );
       await persistLabor({ ...activeLabor, workers: nextWorkers });
-      // Rebuild local wdMap for this labor: re-key entries that pointed at temp.
+      // Cambia la clave de las entradas del mapa local (de todas las labores)
+      // que apuntaban al temporal.
       setWorkdaysByLabor((prev) => {
         const next = { ...prev };
         for (const [lid, m] of Object.entries(prev)) {
@@ -2811,8 +2712,8 @@ export default function CycleDetail() {
   const submitLabor = async (e) => {
     e.preventDefault();
     if (!laborForm.data.name.trim()) return;
-    // "__new__" = el usuario está creando una agrupación nueva desde acá
-    // mismo — se crea el doc en laborGroups antes de armar la labor.
+    // "__new__": se crea la agrupación nueva en laborGroups antes de armar la
+    // labor.
     let laborGroupId = laborForm.data.laborGroupId || null;
     if (laborGroupId === "__new__") {
       if (!laborForm.data.newGroupName.trim()) {
@@ -2867,10 +2768,10 @@ export default function CycleDetail() {
       );
       await cycleWrite({ labors: nextLabors });
       setCycle((c) => ({ ...c, labors: nextLabors }));
-      // Recalc workdays if tratoHE rates may have changed
+      // En tratoHE recalcula los workdays con las tarifas nuevas.
       if (laborForm.data.type === "tratoHE") {
-        // Need to wait for state update before recalc reads new labor rates.
-        // Simpler: do recalc using nextLabors directly via inline calc.
+        // Calcula con `nextLabors`: el estado `cycle` todavía tiene las
+        // tarifas anteriores.
         const updatedLabor = nextLabors.find((l) => l.id === laborForm.data.id);
         const wdMapForLabor = workdaysByLabor[updatedLabor.id] || {};
         const updates = {};
@@ -2891,8 +2792,8 @@ export default function CycleDetail() {
           }));
         }
       }
-      // tratoEtapas: el precio es por día (no del labor), así que cambiar las
-      // etapas (nombre/counts) no requiere recalcular montos de workdays.
+      // tratoEtapas: el precio es por día (no de la labor), así que cambiar
+      // las etapas (nombre/counts) no recalcula montos de workdays.
     }
     setLaborForm(null);
   };
@@ -2921,7 +2822,7 @@ export default function CycleDetail() {
   };
 
   // ============================================================
-  // Misc
+  // Varios
   // ============================================================
 
   const showToast = (msg) => {
@@ -3017,15 +2918,14 @@ export default function CycleDetail() {
   };
 
   // ============================================================
-  // Column defs
+  // Columnas de la grilla
   // ============================================================
 
   const columnDefs = useMemo(() => {
     const baseLeft = [
       {
         headerName: "RUT", field: "rut", editable: false, width: 140, pinned: "left",
-        // Mobile <768px: RUT se esconde para que quepan más días en pantalla.
-        // El RUT sigue accesible doble-clickeando la celda de Nombre.
+        // Mobile (<768px): la columna RUT se oculta para que quepan más días.
         hide: isMobile,
         onCellDoubleClicked: (p) => {
           if (p.data?._isHeader || p.data?._isTemp) return;
@@ -3116,9 +3016,8 @@ export default function CycleDetail() {
     const isNormalLaborForCol = !isCosechaLabor && !isTratoLabor && !isTratoHELabor;
     const actionsCol = photoMode ? [] : [{
       headerName: "", field: "_actions", editable: false,
-      // Ancho ajustado al contenido real de la celda: el botón "Quitar" ahora
-      // es un ícono circular (no texto), así que ya no hace falta el ancho
-      // inflado de antes ni una versión aparte más angosta para mobile.
+      // Ancho según los botones de la celda: ✕, más M en labores normales y los
+      // de líder en la vista por grupo.
       width: useGrouped
         ? (isNormalLaborForCol ? 160 : 130)
         : (isNormalLaborForCol ? 70 : 50),
@@ -3184,9 +3083,8 @@ export default function CycleDetail() {
       },
     }];
 
-    // Click-to-edit annotation header. Shared across single columns and
-    // column groups. Each day either gets `headerComponent` (single column)
-    // or `headerGroupComponent` (group with children).
+    // Encabezado del día con su anotación. Una columna simple usa
+    // `headerComponent`; un grupo con hijos, `headerGroupComponent`.
     const dayHdrParams = (d) => ({
       date: d, note: noteForDay(d), onClickNote: openDayNote, clickable: dayHasContent(d),
     });
@@ -3223,10 +3121,8 @@ export default function CycleDetail() {
           headerName: comboLabel(catalogs, c.x, c.y),
           field: `${d}__${c.key}`,
           // `qrLocked`: la sincronización de Pesajes QR hace `upsert` sobre este
-          // mismo docId, así que pisa `qty` y `amount`. Lo que se tipee acá no
-          // convive con el scan, desaparece en la próxima sincronización sin
-          // dejar rastro. El piso sí sigue editable: es un bono manual y la
-          // sincronización no lo toca.
+          // mismo docId y pisa `qty` y `amount`. El piso sigue editable: es un
+          // bono manual que la sincronización no toca.
           editable: !readOnly && !photoMode && !qrLocked,
           width: isMobile ? 78 : 120,
           type: "numericColumn",
@@ -3321,7 +3217,8 @@ export default function CycleDetail() {
     if (isTratoEtapasLabor) {
       // Cada día es un grupo; sus columnas hijas son las etapas visibles ese
       // día (con precio configurado o con producción). El precio del día va en
-      // el header. La celda editable es la cantidad; abajo muestra el monto.
+      // el tooltip del encabezado. La celda edita la cantidad y muestra el
+      // monto debajo.
       const dayGroups = days.map((d) => {
         const stages = dayStagesByDate[d] || [];
         const children = stages.map((st) => ({
@@ -3388,7 +3285,7 @@ export default function CycleDetail() {
         return lines.join("\n");
       };
 
-      // Resumen mode: single $ column per day
+      // Modo resumen: una columna de $ por día
       if (tratoHEView === "resumen") {
         const dayCols = days.map((d) => {
           const cfg = getDaySingle(dayPrices, activeLabor.id, d, "normal");
@@ -3437,9 +3334,8 @@ export default function CycleDetail() {
             {
               headerName: "Base",
               field: `${d}__qty`,
-              // Empty cells stay non-editable so the click reaches the
-              // "use suggested price" button rendered below; once they have
-              // a value, normal editing kicks back in.
+              // Una celda vacía no es editable, así el click llega al botón de
+              // la base sugerida; con valor, se edita normalmente.
               editable: (p) => !readOnly && !photoMode && Number(p.data?.[`${d}__qty`] || 0) > 0,
               width: isMobile ? 85 : 130,
               type: "numericColumn",
@@ -3522,11 +3418,9 @@ export default function CycleDetail() {
       return {
         headerName: d, field: d,
         ...dayCellHdr(d),
-        // Monthly workers don't edit a number per day — they only mark presence
-        // via a click. Block the editor for those rows.
-        // Las celdas vacías quedan no-editables así el click llega al botón
-        // "usar sugerido"; una vez con valor, vuelven a ser editables (doble
-        // click) para sobrescribir con otro precio.
+        // Las filas de sueldo mensual no se editan: solo marcan asistencia con
+        // un click. Una celda vacía tampoco, así el click llega al botón del
+        // precio sugerido; con valor, se edita con doble click.
         editable: (p) => !readOnly && !photoMode && !p.data?._monthly && Number(p.data?.[d] || 0) > 0,
         width: isMobile ? 70 : 110,
         type: "numericColumn",
@@ -3807,7 +3701,7 @@ export default function CycleDetail() {
         </div>
       </div>
 
-      {/* Metrics */}
+      {/* Métricas */}
       <button
         type="button"
         onClick={() => setMetricsCollapsed((v) => !v)}
@@ -3987,7 +3881,7 @@ export default function CycleDetail() {
       </div>
       )}
 
-      {/* Labor tabs */}
+      {/* Pestañas de labor */}
       <div className="mb-2 flex flex-wrap items-center gap-1 border-b border-[var(--color-border)]">
         {cycle.labors.map((l) => {
           const isActive = l.id === activeLabor?.id;
@@ -4047,10 +3941,8 @@ export default function CycleDetail() {
               </span>
             </div>
           )}
-          {/* Colores del tema, no violeta fijo: el accent es verde en `light`,
-              naranjo en donDiego y violeta en los aetisk, así que un violeta
-              hardcodeado choca en unos temas y se confunde con el accent en
-              otros. Ver la nota de colores en AGENTS.md. */}
+          {/* Colores del tema (accent), no un violeta fijo: el accent cambia
+              con el tema (ver la nota de colores en AGENTS.md). */}
           {qrLocked && (
             <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-3 py-2 text-xs text-[var(--color-text)]">
               <span className="font-semibold text-[var(--color-accent)]">📱 Cosecha sincronizada desde QR</span>
@@ -4209,7 +4101,7 @@ export default function CycleDetail() {
             </div>
           )}
 
-          {/* Cosecha price bar */}
+          {/* Barra de precios de cosecha */}
           {isCosechaLabor && days.length > 0 && (
             <div className={`mb-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] ${pricesCollapsed ? "px-3 py-1.5" : "p-2"}`}>
               <button
@@ -4342,7 +4234,7 @@ export default function CycleDetail() {
             </div>
           )}
 
-          {/* TratoEtapas price bar — precio por día por etapa (fijas del labor) */}
+          {/* Barra de precios de tratoEtapas: precio por día de cada etapa (fijas de la labor) */}
           {isTratoEtapasLabor && days.length > 0 && (
             <div className={`mb-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] ${pricesCollapsed ? "px-3 py-1.5" : "p-2"}`}>
               <button
@@ -4435,7 +4327,7 @@ export default function CycleDetail() {
             </div>
           )}
 
-          {/* TratoHE price bar */}
+          {/* Barra de configuración por día de tratoHE */}
           {isTratoHELabor && days.length > 0 && (
             <div className={`mb-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] ${pricesCollapsed ? "px-3 py-1.5" : "p-2"}`}>
               <button
@@ -4493,7 +4385,7 @@ export default function CycleDetail() {
             </div>
           )}
 
-          {/* Trato price bar */}
+          {/* Barra de precios de trato */}
           {isTratoLabor && days.length > 0 && (
             <div className={`mb-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] ${pricesCollapsed ? "px-3 py-1.5" : "p-2"}`}>
               <button
@@ -4511,8 +4403,7 @@ export default function CycleDetail() {
               <div className="mt-2 flex flex-wrap gap-2">
                 {days.map((d) => {
                   const tiers = dayTiersByDate[d] || [];
-                  // Métricas por tier en este día: cada tier tiene su propia
-                  // suma de qty/amount para diferenciarlo del agregado del día.
+                  // Suma de qty y monto de cada tier en este día.
                   const tierTotals = tiers.map((t) => {
                     let q = 0, a = 0;
                     for (const w of workers) {
@@ -4524,12 +4415,11 @@ export default function CycleDetail() {
                   });
                   const totalQty = tierTotals.reduce((s, x) => s + x.qty, 0);
                   const totalAmt = tierTotals.reduce((s, x) => s + x.amount, 0);
-                  // Hay desglose visible cuando existen ≥2 tiers con producción
-                  // — sino la línea final "=$X" alcanza por sí sola.
+                  // El desglose por tier se muestra con 2 o más tiers con
+                  // producción; con uno basta la línea "= $X".
                   const tiersWithQty = tierTotals.filter((x) => x.qty > 0).length;
-                  // Personas con producción real ese día (al menos un tier con
-                  // qty > 0). Sirve para mostrar "N personas · prom X/persona"
-                  // y evaluar rendimiento rápido sin abrir el detalle.
+                  // Personas con producción ese día (algún tier con qty > 0),
+                  // para el "N pers · prom X".
                   const peopleCount = workers.reduce((acc, w) => {
                     const hasProd = tiers.some(
                       (t) => Number(wdMap[workdayMapKey(w.rut, d, t.key)]?.qty) > 0,
@@ -4579,9 +4469,8 @@ export default function CycleDetail() {
                             placeholder="precio"
                             className="w-20 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-0.5 text-right text-[10px] tabular-nums outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
                           />
-                          {/* Selector de unidad del trato — se guarda junto
-                              al precio del tier. "—" = sin unidad (display
-                              cae a vacío, compat con datos antes del feature). */}
+                          {/* Unidad del tier, guardada junto a su precio.
+                              "—" = sin unidad. */}
                           <select
                             disabled={readOnly}
                             value={t.unit == null ? "" : String(t.unit)}
@@ -4702,9 +4591,9 @@ export default function CycleDetail() {
             </div>
           )}
 
-          {/* Normal labor price bar (main/supervision/extra) — un precio
-              sugerido por día que se usa como hint clickeable en las celdas
-              vacías del grid. Se persiste en dayPrices del ciclo. */}
+          {/* Barra de precios de labores normales (main/supervision/extra): un
+              precio sugerido por día, que las celdas vacías de la grilla
+              ofrecen con un click. Se guarda en dayPrices del ciclo. */}
           {isNormalLabor && days.length > 0 && (
             <div className={`mb-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] ${pricesCollapsed ? "px-3 py-1.5" : "p-2"}`}>
               <button
@@ -4851,12 +4740,9 @@ export default function CycleDetail() {
             </div>
           )}
 
-          {/* La grilla ocupa exactamente el alto libre del <main> (flex-1) y
-              scrollea internamente cuando hay más filas de las que caben. Sin
-              alto fijo ni piso: así nunca se fuerza más alta que el viewport,
-              que era lo que dejaba el área vacía ("footer") abajo.
-              En mobile, por defecto se muestra CycleWorkerList en su lugar
-              (ver toggle "Ver grid completo" arriba). */}
+          {/* Este bloque ocupa el alto libre del <main> (flex-1, min-h-0) y la
+              grilla se desplaza por dentro. En mobile se muestra
+              CycleWorkerList en su lugar, salvo con "Ver grid completo". */}
           <div className="flex min-h-0 flex-1 flex-col">
             {isMobile && !showDesktopGrid && !photoMode ? (
               <CycleWorkerList
@@ -4873,7 +4759,7 @@ export default function CycleDetail() {
         </>
       )}
 
-      {/* Modals */}
+      {/* Modales */}
       <Modal
         open={!!editingDayNote}
         onClose={closeDayNote}
@@ -5456,10 +5342,8 @@ export default function CycleDetail() {
           const rut = editingWorkerRut;
           setEditingWorkerRut(null);
           if (!rut) return;
-          // Refetch para que el grid (vía rutToName + rutToLeader) vea los
-          // cambios sin tener que recargar la pantalla. La caché aditiva
-          // ya tiene el doc actualizado, pero el state local de CycleDetail
-          // necesita el sync explícito.
+          // Relee el trabajador y lo reemplaza en allWorkers: la grilla toma el
+          // nombre y el líder de ahí (rutToName, rutToLeader).
           try {
             const updated = await workersService.getById(rut);
             if (updated) {
@@ -5487,7 +5371,7 @@ export default function CycleDetail() {
 }
 
 // ============================================================
-// Sub-components
+// Subcomponentes
 // ============================================================
 
 function AddComboModal({ open, onClose, catalogs, existingCombos, date, onAdd, onAddCatalogEntry }) {
@@ -5735,9 +5619,9 @@ function CatalogSection({ title, subtitle, field, entries, onAddEntry, onRenameE
   );
 }
 
-// Wrapper visual para agrupar catálogos relacionados (Cosecha / Trato) dentro
-// del modal de catálogos. Pone un header con emoji + título + descripción del
-// dominio, y un fondo sutil para separar visualmente del bloque siguiente.
+// Agrupa catálogos relacionados (Cosecha, Trato) en el modal de catálogos:
+// encabezado con emoji, título y descripción, y un fondo que lo separa del
+// bloque siguiente.
 function CatalogGroup({ emoji, title, description, children }) {
   return (
     <section className="mb-5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)]/50 p-4">
@@ -5754,7 +5638,7 @@ function CatalogGroup({ emoji, title, description, children }) {
 }
 
 // ============================================================
-// tratoHE modals
+// Modales de tratoHE
 // ============================================================
 
 function BonusEditModal({ open, onClose, labor, wd, workerName, date, readOnly, onSave }) {
@@ -5821,9 +5705,9 @@ function BonusEditModal({ open, onClose, labor, wd, workerName, date, readOnly, 
   );
 }
 
-// Piso opt-in por día. Mientras el día no tenga piso configurado, solo se
-// muestra un botón "+ piso". Al click pasa a modo edición. Si ya hay un
-// piso guardado, se muestra inline con su monto + acciones editar/quitar.
+// Piso opcional por día. Sin piso configurado muestra solo el botón "+ piso",
+// que abre la edición. Con piso, muestra el monto y las acciones editar,
+// asignar a todos y quitar.
 function PisoDayRow({ labor, dayPrices, date, readOnly, onPersist, pendingCount = 0, onApplyAll }) {
   const dayPiso = getDayPiso(dayPrices, labor.id, date);
   const hasPiso = dayPiso != null && dayPiso > 0;
@@ -6049,7 +5933,7 @@ function DefaultLeadersModal({ open, onClose, labor, readOnly, onSave }) {
 }
 
 // ============================================================
-// Day calendar picker — multi-select
+// Selector de días en calendario (selección múltiple)
 // ============================================================
 const MONTHS_ES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 const WEEKDAYS_ES = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"];
@@ -6061,7 +5945,7 @@ function DayCalendarPicker({ viewMonth, setViewMonth, selectedDays, toggleDay, e
   const { year, month } = viewMonth;
   const firstDay = new Date(year, month, 1);
   const daysInMonth = new Date(year, month + 1, 0).getDate();
-  // ISO week: Monday = 0, Sunday = 6
+  // Semana ISO: lunes = 0, domingo = 6
   const firstWeekday = (firstDay.getDay() + 6) % 7;
   const cells = [];
   for (let i = 0; i < firstWeekday; i++) cells.push(null);

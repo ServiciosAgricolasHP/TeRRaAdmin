@@ -131,7 +131,7 @@ export default function TransportsModal({ open, onClose, cycle, faena, subfaena,
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-12" style={{ minHeight: 360 }}>
-          {/* Day list */}
+          {/* Lista de días */}
           <div className="max-h-[40vh] overflow-auto rounded-md border border-[var(--color-border)] sm:col-span-4 sm:max-h-[60vh]">
             {days.map((d) => {
               const isActive = d === selectedDate;
@@ -157,7 +157,7 @@ export default function TransportsModal({ open, onClose, cycle, faena, subfaena,
             })}
           </div>
 
-          {/* Day detail */}
+          {/* Detalle del día */}
           <div className="sm:col-span-8">
             {selectedDate ? (
               <>
@@ -282,12 +282,10 @@ export default function TransportsModal({ open, onClose, cycle, faena, subfaena,
   );
 }
 
-// Combobox con typeahead para elegir transportista. Pensado para listas de
-// 50+ carriers donde un <select> nativo es incómodo. Filtra contra alias,
-// nombre y aliases de vehículos. Cuando la query está vacía muestra una
-// sección "Recientes" arriba (últimos N usados en este ciclo) seguida del
-// resto alfabético. Navegación con ↑/↓ + Enter, Esc cierra. Click en
-// "+ Nuevo" delega al callback `onCreateNew` para abrir el QuickCreate.
+// Combobox con búsqueda para elegir transportista. Filtra por alias, nombre y
+// alias de vehículos. Sin búsqueda muestra arriba los recientes de este ciclo
+// y después el resto en orden alfabético. ↑/↓ y Enter eligen, Esc cierra, y
+// "+ Nuevo transportista" llama a `onCreateNew`.
 function CarrierCombobox({ value, onChange, carriers, recentIds, onCreateNew, autoFocus = false }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -569,9 +567,9 @@ export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate
   const carrier = carriers.find((c) => c.id === carrierId);
   const isOwn = carrier?.type === "own";
 
-  // Cuando el carrier cambia, si tiene un solo vehículo lo auto-seleccionamos
-  // — ahorra un click en el caso común. Si tiene varios, pre-selecciona el
-  // primero (el usuario aún puede cambiarlo).
+  // Al cambiar de transportista: con un solo vehículo, lo elige; con varios,
+  // elige el primero solo si no había vehículo elegido; sin vehículos, limpia
+  // el campo.
   const handleCarrierChange = (nextId) => {
     setCarrierId(nextId);
     const c = carriers.find((x) => x.id === nextId);
@@ -710,9 +708,8 @@ export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate
   );
 }
 
-// Modal liviano para dar de alta un transportista sin salir del flujo de
-// agregar vuelta. Pide solo lo mínimo (alias, nombre, tipo, un vehículo);
-// edición completa sigue viviendo en el módulo de Transportes.
+// Alta rápida de un transportista desde el modal de la vuelta: alias, nombre,
+// tipo, tarifa y un vehículo. El resto se edita en Transportes.
 function QuickCreateCarrierModal({ open, onClose, onCreated }) {
   const { addCarrier } = useCarriers();
   const [alias, setAlias] = useState("");

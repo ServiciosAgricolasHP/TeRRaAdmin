@@ -8,19 +8,13 @@ import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import ConfirmDialog from "../components/ConfirmDialog";
 
-// Módulo de consola admin. Sirve para inspeccionar la escala de los datos
-// antes de tomar decisiones de costo (snapshots, paginación, etc.). Todas
-// las consultas usan `getCountFromServer` que cuesta ~1 read por cada 1000
-// docs contados — barato a propósito.
-//
-// Nada se ejecuta solo: cada botón dispara su query individual y mostramos
-// el costo estimado al lado. Si alguna query devuelve mucho, el contador
-// real puede ser >1.
+// Consola admin: diagnóstico, inspección de escala y migraciones únicas.
+// Los recuentos usan `getCountFromServer`, que cuesta ~1 lectura por cada
+// 1.000 documentos contados. Nada se ejecuta solo: cada botón dispara su
+// propia consulta.
 
-// Todas las colecciones que usa la app, agrupadas por área. La lista estaba
-// a mano y se había quedado en 12 de 28: faltaba `dteDocuments`, que es la
-// segunda más grande del sistema, y familias enteras como el libro de precios
-// o los pesajes QR.
+// Todas las colecciones que usa la app, agrupadas por área. Es una lista a
+// mano: una colección que no esté acá no aparece en los conteos.
 const MAIN_COLLECTIONS = [
   // Producción
   { id: "workdays", group: "Producción", label: "Workdays", note: "jornadas registradas (la tabla más grande)" },
@@ -65,7 +59,7 @@ const MAIN_COLLECTIONS = [
   { id: "functionJobs", group: "Sistema", label: "Jobs del backend", note: "cola de Cloud Functions; nada la poda todavía" },
 ];
 
-// Orden de los grupos en la tabla, para que no dependa del orden del array.
+// Grupos en el orden en que aparecen por primera vez en MAIN_COLLECTIONS.
 const COLLECTION_GROUPS = [...new Set(MAIN_COLLECTIONS.map((c) => c.group))];
 
 const monthRange = (y, m) => {
@@ -96,14 +90,11 @@ const LOG_ENTITIES = [
   "user", "log",
 ];
 
-// Entidades cuyo log arrastra un array o mapa entero. `diff()` en
-// services/logger.js compara por clave de PRIMER NIVEL, así que tocar un solo
-// elemento guarda dos copias completas de la estructura: la de antes y la de
-// después. Medido sobre un ciclo realista (3 labores × 80 personas, 30 días ×
-// 4 combos) da ~30 KB por log, contra ~0,1 KB del log de una jornada.
-//
-// Por eso el conteo y el peso no vienen del mismo lado: las jornadas ponen los
-// documentos, estas entidades ponen los bytes.
+// Entidades cuyo log guarda un array o mapa entero. `diff()` (services/logger.js)
+// compara por clave de primer nivel, así que tocar un solo elemento guarda la
+// estructura completa dos veces, antes y después: ~30 KB por log en un ciclo
+// de 3 labores × 80 personas y 30 días × 4 combos, contra ~0,1 KB por log de
+// una jornada. Las jornadas ponen la cantidad de logs; estas entidades, el peso.
 const LOG_HEAVY = {
   cycle: "labors[] + dayPrices{} enteros",
   payroll: "items[] + workdayIds[] enteros",
@@ -142,9 +133,6 @@ async function countWorkdaysByCycle(cycleId) {
   return snap.data().count;
 }
 
-// Tarjeta colapsable. La consola junta diagnostico, inspeccion y migraciones
-// de una sola vez: desplegadas todas a la vez es un muro, y lo que se usa en
-// una visita suele ser una sola. El estado se recuerda por tarjeta.
 function Grupo({ titulo, children }) {
   return (
     <div className="space-y-2">
@@ -156,6 +144,8 @@ function Grupo({ titulo, children }) {
   );
 }
 
+// Tarjeta colapsable, cerrada por defecto. Recuerda en localStorage si quedó
+// abierta, con una clave por tarjeta.
 function ConsoleCard({ id, title, description, actions, children }) {
   const clave = `af.console.${id}`;
   const [abierta, setAbierta] = useState(() => {
@@ -220,8 +210,8 @@ export default function AdminConsole() {
         <WorkdaysByCycleSection />
       </Grupo>
 
-      {/* Se corren una vez y se borran. Van juntas para que se vea de un
-          vistazo qué queda pendiente de migrar. */}
+      {/* Migraciones de una sola corrida, juntas para ver de un vistazo qué
+          queda pendiente de migrar. */}
       <Grupo titulo="Migraciones únicas">
         <NormalizeWorkerNamesSection />
         <BackfillWorkerRutFieldSection />
@@ -234,19 +224,14 @@ export default function AdminConsole() {
 // ============================================================
 // Sección Debug: ping al backend
 // ============================================================
-// Verifica el plomo de Cloud Functions de punta a punta: encola un job y espera
-// a que el backend lo resuelva.
+// Prueba Cloud Functions de punta a punta por el mismo camino que cualquier
+// job: escribe un doc en `functionJobs`, un trigger de Firestore lo levanta y
+// la respuesta llega en el mismo doc (ver functions/index.js).
 //
-// No llama un endpoint porque no hay ninguno que se pueda llamar — el backend
-// se invoca escribiendo en `functionJobs` y un trigger de Firestore lo levanta
-// (functions/index.js explica por qué las tres variantes de callable están
-// cerradas en este proyecto). Así que este ping ejercita exactamente el mismo
-// camino que va a usar el backup: escribir el job, que dispare, que conteste.
-//
-// Los tres modos de falla se distinguen a propósito, porque cada uno se arregla
-// en otro lado: `permission-denied` es la regla de Firestore que falta, el
-// timeout es la función que no está desplegada o mirando otra base, y un job en
-// `error` es la función corriendo y fallando adentro.
+// Distingue tres fallas, que se arreglan en lugares distintos:
+// `permission-denied` (las reglas no dejan crear el job), timeout (la función
+// no está desplegada o mira otra base) y job en `error` (la función corrió y
+// falló adentro).
 const JOBS_COLLECTION = "functionJobs";
 
 function PingSection() {
@@ -255,8 +240,7 @@ function PingSection() {
   const [result, setResult] = useState(null);
   const cleanupRef = useRef(null);
 
-  // Si alguien se va de la pantalla con un job en vuelo, el listener queda
-  // abierto pagando lecturas contra un documento que nadie mira.
+  // Al desmontar, cierra el listener y el timer del job en curso.
   useEffect(() => () => cleanupRef.current?.(), []);
 
   const runPing = async () => {
@@ -301,9 +285,8 @@ function PingSection() {
     cleanupRef.current = teardown;
     const t0 = Date.now();
 
-    // El arranque en frío de una función que no se usó en el día son varios
-    // segundos, así que el corte es generoso: que expire tiene que significar
-    // "no está", no "tardó".
+    // Corte generoso: un arranque en frío tarda varios segundos, y que expire
+    // tiene que significar "no está", no "tardó".
     timer = setTimeout(() => {
       finish({
         ok: false,
@@ -495,7 +478,7 @@ function AuthDebugSection() {
 }
 
 // ============================================================
-// Sección 1: counts de todas las colecciones principales
+// Sección: conteo de todas las colecciones
 // ============================================================
 function CollectionCountsSection() {
   const [results, setResults] = useState({}); // id → { count?, error?, busy? }
@@ -525,9 +508,9 @@ function CollectionCountsSection() {
   const totalRuns = Object.values(results).filter((r) => r.count != null).length;
   const [copiado, setCopiado] = useState(false);
 
-  // Texto plano con las colecciones ya contadas, para pegar en un mensaje o
-  // una planilla. Solo las que tienen número: una lista con guiones no dice
-  // nada y se confunde con "colección vacía".
+  // Copia como texto separado por tabs, para pegar en un mensaje o una
+  // planilla. Solo las colecciones ya contadas: un guion se confundiría con
+  // "colección vacía".
   const copiarConteos = async () => {
     const lineas = [];
     let total = 0;
@@ -551,8 +534,7 @@ function CollectionCountsSection() {
       setCopiado(true);
       setTimeout(() => setCopiado(false), 2000);
     } catch {
-      // Sin permiso de portapapeles (o contexto no seguro): que al menos se
-      // pueda seleccionar a mano.
+      // Sin acceso al portapapeles, muestra el texto para copiarlo a mano.
       window.prompt("Copiá los conteos:", texto);
     }
   };
@@ -642,7 +624,7 @@ function CollectionCountsSection() {
 }
 
 // ============================================================
-// Sección 2: workdays por mes del año seleccionado
+// Sección: workdays por mes del año elegido
 // ============================================================
 function WorkdaysByMonthSection() {
   const currentYear = new Date().getFullYear();
@@ -748,7 +730,7 @@ function WorkdaysByMonthSection() {
 }
 
 // ============================================================
-// Sección 3: workdays por rango custom
+// Sección: workdays en un rango de fechas
 // ============================================================
 function WorkdaysByRangeSection() {
   const today = new Date().toISOString().slice(0, 10);
@@ -818,7 +800,7 @@ function WorkdaysByRangeSection() {
 }
 
 // ============================================================
-// Sección 4: workdays por ciclo activo
+// Sección: workdays por ciclo (abiertos; los cerrados, opcionales)
 // ============================================================
 function WorkdaysByCycleSection() {
   const [cycles, setCycles] = useState([]);
@@ -960,15 +942,14 @@ function WorkdaysByCycleSection() {
 }
 
 // ============================================================
-// Sección 5: normalizar nombres de trabajadores a Proper Case
+// Sección: normalizar nombres de trabajadores a Proper Case
 // ============================================================
-// Aplica `toProperName` a todos los `worker.name` que difieran del formato
-// esperado ("Juan Pérez", "Juan de la Cruz"). Flujo en 2 pasos: primero un
-// preview que lista los cambios propuestos (leer no escribe), y después el
-// botón de aplicar corre updates uno-a-uno con progreso.
+// Aplica `toProperName` a los `worker.name` que no tengan el formato esperado
+// ("Juan Pérez", "Juan de la Cruz"). Dos pasos: una vista previa que solo lee
+// y lista los cambios, y aplicar, que los escribe uno a uno con progreso.
 //
-// El costo es 1 read por worker (list completo — no cacheado) + 1 write por
-// nombre cambiado. Los que ya están bien no se tocan.
+// Cuesta 1 lectura por trabajador (lista completa, sin caché) + 1 escritura
+// por nombre cambiado. Los que ya están bien no se tocan.
 function NormalizeWorkerNamesSection() {
   const toast = useToast();
   const [loading, setLoading] = useState(false);
@@ -986,7 +967,7 @@ function NormalizeWorkerNamesSection() {
     setDiffs([]);
     setShowAll(false);
     try {
-      // No caché — queremos datos frescos antes de escribir.
+      // Sin caché: lee datos frescos antes de escribir.
       const list = await workersService.list();
       setScanned(list.length);
       const changes = [];
@@ -997,7 +978,6 @@ function NormalizeWorkerNamesSection() {
           changes.push({ id: w.id, oldName, newName });
         }
       }
-      // Orden alfabético por nombre nuevo para revisar cómodo.
       changes.sort((a, b) => a.newName.localeCompare(b.newName));
       setDiffs(changes);
     } catch (err) {
@@ -1028,7 +1008,7 @@ function NormalizeWorkerNamesSection() {
       setProgress({ done: i + 1, total: diffs.length });
     }
     setResult({ updated, errors });
-    setDiffs([]); // limpia el preview — para re-verificar, pedir preview de nuevo
+    setDiffs([]); // vacía la vista previa; para volver a verificar se pide otra
     setRunning(false);
   };
 
@@ -1143,13 +1123,8 @@ function NormalizeWorkerNamesSection() {
   );
 }
 
-// Fase 1 de la migración "rut editable" (ver workersService.js): el campo
-// `rut` recién se empezó a grabar en workers nuevos/editados. Los workers
-// viejos solo tienen el rut como doc id, sin campo — este backfill lo
-// completa (`rut: doc.id`) para que sean auto-descriptivos y el doc id pueda
-// tratarse de acá en más como un `workerId` estable, independiente de si el
-// rut legal cambia después. Aditivo y re-ejecutable: solo toca workers sin
-// campo `rut`.
+// Completa `rut: doc.id` en los trabajadores que no tienen el campo. Solo toca
+// esos, así que se puede volver a correr.
 function BackfillWorkerRutFieldSection() {
   const toast = useToast();
   const [loading, setLoading] = useState(false);
@@ -1301,13 +1276,10 @@ function BackfillWorkerRutFieldSection() {
 // ============================================================
 // Migración única: anticipos al rut vigente
 // ============================================================
-// `advances` guardaba el rut de CREACIÓN del trabajador (el doc id). Para
-// quien pasó de una cédula provisoria a un rut definitivo ese valor diverge
-// del rut actual, y por eso la búsqueda de anticipos consultaba dos campos
-// distintos — duplicando cada consulta de la nómina para rescatar un puñado
-// de casos. Esta pasada re-apunta `workerRut` al rut vigente para que
-// `worker.rut` quede como única clave foránea. `workerId` no se toca: queda
-// como rastro de cuál era el id original.
+// Re-apunta `advances.workerRut` del doc id del trabajador a su rut vigente,
+// para que `worker.rut` sea la única clave foránea. Los dos difieren cuando el
+// rut cambió (p. ej. de una cédula provisoria al definitivo). `workerId` no se
+// toca: guarda el id original.
 function MigrateAdvanceRutsSection() {
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
@@ -1325,8 +1297,7 @@ function MigrateAdvanceRutsSection() {
         advancesService.list({ order: ["date", "desc"] }),
       ]);
 
-      // doc id -> rut vigente. El fallback al id cubre a los workers creados
-      // antes de que existiera el campo `rut`.
+      // doc id -> rut vigente; sin campo `rut`, el rut es el doc id.
       const rutActual = new Map(workers.map((w) => [w.id, w.rut || w.id]));
       const nombre = new Map(workers.map((w) => [w.id, w.name || ""]));
       const rutsVigentes = new Set(workers.map((w) => w.rut || w.id));
@@ -1477,14 +1448,10 @@ function MigrateAdvanceRutsSection() {
 // ============================================================
 // Composición de la colección `logs`
 // ============================================================
-// `logs` es la colección más grande del sistema y **nada la borra nunca**: no
-// existe un solo `logsService.remove` en el repo. Antes de decidir una política
-// de retención hay que saber de dónde salen los documentos, y eso se puede
-// medir barato: `getCountFromServer` cuesta ~1 lectura por consulta, no una por
-// documento.
-//
-// Desde la app un log solo se agrega: `firestore.rules` no deja editarlo ni
-// borrarlo.
+// Desglosa `logs` por entidad y cuenta cuántos documentos superan los 6, 12 y
+// 24 meses, como base para decidir una retención. `logs` solo crece: la app no
+// borra logs y `firestore.rules` no deja editarlos ni borrarlos. Cada recuento
+// cuesta ~1 lectura por cada 1.000 documentos contados.
 function LogsBreakdownSection() {
   const [porEntidad, setPorEntidad] = useState({}); // entity → { count?, error?, busy? }
   const [corriendo, setCorriendo] = useState(false);
@@ -1528,8 +1495,8 @@ function LogsBreakdownSection() {
 
   const contadas = LOG_ENTITIES.filter((e) => porEntidad[e]?.count != null);
   const suma = contadas.reduce((a, e) => a + porEntidad[e].count, 0);
-  // Lo que no cae en ninguna entidad listada: o falta agregarla acá, o son
-  // logs viejos escritos antes de que esa entidad existiera.
+  // Logs de entidades que no están en LOG_ENTITIES: una que falta agregar, o
+  // un nombre de entidad que ya no se escribe.
   const sinClasificar = total != null ? total - suma : null;
 
   const ordenadas = [...contadas].sort((a, b) => porEntidad[b].count - porEntidad[a].count);

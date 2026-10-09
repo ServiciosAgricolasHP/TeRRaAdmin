@@ -49,10 +49,8 @@ function PriceInput({ value, disabled, onCommit }) {
   );
 }
 
-// Fila con confirmación de "quitar" inline (dos toques, sin ConfirmDialog) —
-// ConfirmDialog usa el mismo Modal.jsx por dentro, y este contenido ya vive
-// adentro de un Modal (el de CycleWorkerEditModal); abrir un segundo Modal
-// encima duplicaría el listener de Escape (ver plan de mobile CycleDetail).
+// Fila con confirmación de "quitar" en línea (dos toques): el contenido ya va
+// dentro de un Modal y un ConfirmDialog encima duplicaría el listener de Escape.
 function RemovableRow({ label, disabled, onRemove, children }) {
   const [confirming, setConfirming] = useState(false);
   return (
@@ -156,14 +154,10 @@ function PisoConfig({ date, activeLabor, dayPrices, readOnly, fmtCurrency, persi
   );
 }
 
-// Configura combos/tiers/etapas/precio del día para TODOS los trabajadores
-// de la labor (comparte el mismo camino a Firestore que la barra de precios
-// del grid de escritorio — persistComboConfig/addComboToDay/removeComboFromDay/
-// persistStagePrice/persistDayPiso/persistNormalDayPrice/persistTratoHEDay).
-// A diferencia de CycleWorkerEditModal esto NO es "de un solo trabajador":
-// cualquier cambio acá se ve reflejado para todos los que carguen producción
-// ese día — por eso vive en una vista aparte, no mezclado con los valores
-// por trabajador.
+// Configura combos, precios, etapas y piso del día para TODOS los trabajadores
+// de la labor, con las mismas funciones de escritura que la barra de precios
+// de la grilla de escritorio (persistComboConfig, addComboToDay, etc.). Por
+// eso es una vista aparte de los valores por trabajador de CycleWorkerEditModal.
 export default function DayConfigContent({
   date,
   activeLabor,

@@ -1,6 +1,6 @@
 export default function TextField({ label, value, onChange, type = "text", required = false, placeholder, autoFocus = false }) {
-  // For numeric inputs, render 0 / null / undefined as empty so the placeholder
-  // shows and the user can type without having to delete a leading "0" first.
+  // En campos numéricos, 0, null y undefined se muestran vacíos: se ve el
+  // placeholder y no hay que borrar un "0" antes de escribir.
   const display = type === "number"
     ? (value === 0 || value === "0" || value == null ? "" : value)
     : (value ?? "");

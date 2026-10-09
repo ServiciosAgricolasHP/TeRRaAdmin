@@ -1,4 +1,4 @@
-// RUT helpers — supports Chilean RUT and foreign IDs (7-9 digits ending in -B or -H).
+// Helpers de RUT: aceptan el RUT chileno y el identificador de extranjero (7 a 9 dígitos terminados en -B o -H).
 
 const FOREIGN_SUFFIX = /^[BH]$/;
 
@@ -30,11 +30,11 @@ export function validateRut(value) {
   const r = normalizeRut(value);
   if (!r) return false;
 
-  // Foreign: 7–9 digits + -B or -H
+  // Extranjero: 7 a 9 dígitos + -B o -H
   const foreign = r.match(/^(\d{7,9})-([BH])$/);
   if (foreign) return FOREIGN_SUFFIX.test(foreign[2]);
 
-  // Chilean: 1–8 digits + -DV (0–9 or K)
+  // Chileno: 1 a 8 dígitos + -DV (0–9 o K)
   const chilean = r.match(/^(\d{1,8})-([0-9K])$/);
   if (!chilean) return false;
   return computeChileanDv(chilean[1]) === chilean[2];

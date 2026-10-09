@@ -55,17 +55,16 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  // Leader options for the create / temp forms. Combines the enabled leaders
-  // passed by the parent with the two built-in defaults so the dropdown is
-  // useful even if the parent forgot to load them.
+  // Líderes para los formularios de alta y de temporal: los habilitados que
+  // pasa el padre más los dos por defecto, así la lista nunca queda vacía.
   const leaderOptions = useMemo(() => {
     const set = new Set([LEADER_LOCAL, LEADER_FOREIGN, ...availableLeaders.map((l) => String(l || "").toUpperCase())]);
     return [...set].filter(Boolean).sort();
   }, [availableLeaders]);
 
-  // Load the workers list (from cache if hot, otherwise full fetch). Cache is
-  // additive on writes, so a brand-new worker added via this same modal
-  // appears immediately in subsequent searches without a re-fetch.
+  // Carga la lista de trabajadores, de la caché si está vigente. La caché es
+  // aditiva: un trabajador creado desde este modal aparece en las búsquedas
+  // siguientes sin releer la colección.
   useEffect(() => {
     if (!open) return;
     setSearch("");
@@ -92,15 +91,13 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
   const queryRaw = search.trim();
   const queryReady = queryRaw.replace(/[.\s-]/g, "").length >= MIN_SEARCH;
 
-  // Búsqueda "like" sobre la lista cacheada: cada palabra tipeada tiene que
-  // aparecer en el nombre en cualquier orden (accent-insensitive), así
-  // "bruno silva" encuentra a "Bruno Ignacio Silva". También matchea contra
-  // RUT (dígitos parciales).
+  // Búsqueda sobre la lista cacheada: cada palabra escrita tiene que aparecer
+  // en el nombre, en cualquier orden y sin distinguir acentos ("juan perez"
+  // encuentra a "Juan Andrés Pérez"). Si la búsqueda es solo dígitos, también
+  // busca en el RUT.
   //
-  // Los trabajadores en `excluded` (ya en la labor/ciclo) **sí** aparecen en
-  // los resultados, marcados como excluidos. Así el usuario que escribe el
-  // nombre y no lo encuentra no duda si tiene que crearlo — lo ve listado con
-  // el tag "Ya en la labor".
+  // Los trabajadores de `excluded` (ya en la labor o el ciclo) aparecen igual,
+  // deshabilitados y con su tag, para que no se creen de nuevo.
   const filtered = useMemo(() => {
     if (!queryReady) return [];
     const isDigits = /^[\d.\s-]+$/.test(queryRaw);
@@ -126,9 +123,8 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
       if (Number(w.bd_accountType) === ACCOUNT_TYPE_RUT && String(w.bd_bankCode).toUpperCase() !== CASH_BANK_CODE) {
         next.bd_accountNumber = rutWithoutDv(norm);
       }
-      // Reset leader to the RUT-based default whenever the user changes the
-      // RUT, unless they have explicitly chosen one (we detect "explicit" by
-      // the previous leader differing from the previous RUT's default).
+      // Al cambiar el RUT, el líder vuelve al de por defecto para ese RUT,
+      // salvo que se haya elegido otro (distinto del default del RUT anterior).
       const prevDefault = w.rut ? defaultLeaderForRut(w.rut) : LEADER_LOCAL;
       const userOverridden = w.leader && w.leader !== prevDefault;
       if (!userOverridden) {

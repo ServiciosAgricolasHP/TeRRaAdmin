@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 
 const STORAGE_PREFIX = "af.gridHeight.";
 
-// Headless hook for components that need to expose the resize control somewhere
-// other than directly under the grid (e.g. a toolbar). Returns the current
-// height, a drag-start handler and a reset helper; pair it with <ResizeHandle>.
+// Hook sin UI para componentes que ponen el control de alto en otro lugar que
+// no sea justo debajo de la grilla (p. ej. una toolbar). Devuelve el alto, el
+// handler que inicia el arrastre y `reset`; se usa junto con <ResizeHandle>.
 export function useResizableHeight(storageKey, defaultHeight = 500, minHeight = 240) {
   const computeMax = () => Math.max(minHeight + 100, window.innerHeight - 120);
 
@@ -23,18 +23,15 @@ export function useResizableHeight(storageKey, defaultHeight = 500, minHeight = 
     try { localStorage.setItem(STORAGE_PREFIX + storageKey, String(height)); } catch { /* noop */ }
   }, [height, storageKey]);
 
-  // Mutable drag state. Kept in a ref so the pointermove/pointerup listeners
-  // (attached imperatively in onPointerDown) always see fresh values even if
-  // React re-renders mid-drag.
+  // Arrastre en curso (nodo y listeners); null cuando no hay ninguno.
   const dragRef = useRef(null);
 
-  // Pointer Events with setPointerCapture: the most reliable cross-device
-  // approach. We capture the pointer on the handle DOM node itself, which
-  // routes every subsequent pointermove/pointerup to that node regardless of
-  // what the cursor is hovering over (ag-grid, popovers, iframes, etc.). No
-  // window listeners means nothing else on the page can swallow the events.
+  // Pointer Events con setPointerCapture sobre el handle: todos los
+  // pointermove/pointerup siguientes llegan a ese nodo, esté el cursor sobre
+  // ag-grid, un popover o un iframe. Sin listeners en window, nada de la
+  // página se traga los eventos.
   const onPointerDown = (e) => {
-    // Only react to primary button on mouse; touch/pen have button === 0 too
+    // Con mouse, solo el botón principal; touch y lápiz también traen button === 0.
     if (e.button !== undefined && e.button !== 0) return;
     const target = e.currentTarget;
     if (!target) return;
@@ -66,9 +63,9 @@ export function useResizableHeight(storageKey, defaultHeight = 500, minHeight = 
     target.addEventListener("pointercancel", stop);
     dragRef.current = { target, move, stop };
 
-    // Prevent text selection on the surrounding page during drag. We do NOT
-    // stopPropagation here: leaving the event to bubble lets other listeners
-    // (e.g. dropdown close-on-outside) see the click as normal.
+    // Evita seleccionar texto durante el arrastre. No corta la propagación:
+    // los demás listeners (p. ej. cerrar un dropdown al hacer click afuera)
+    // reciben el click igual.
     e.preventDefault();
   };
 
@@ -77,9 +74,9 @@ export function useResizableHeight(storageKey, defaultHeight = 500, minHeight = 
   return { height, setHeight, onPointerDown, reset };
 }
 
-// Visible drag bar styled like a UI splitter. Spans the full width of its
-// parent and shows a clear grip. Drag vertically to resize, double-click to
-// reset. Mouse, pen and touch are all handled via Pointer Events.
+// Barra de arrastre con estilo de separador, a todo el ancho del padre.
+// Arrastrar en vertical cambia el alto y el doble click lo reinicia. Mouse,
+// lápiz y touch van por Pointer Events.
 export function ResizeHandle({ onPointerDown, onDoubleClick, label = "Arrastrar para cambiar el alto del grid · Doble click para reiniciar" }) {
   return (
     <div
@@ -102,10 +99,8 @@ export function ResizeHandle({ onPointerDown, onDoubleClick, label = "Arrastrar 
   );
 }
 
-// Convenience wrapper: a fixed-height area with the drag handle rendered
-// directly underneath. Used by screens that want everything self-contained.
-// For screens that need the handle somewhere else (e.g. in a toolbar), use
-// useResizableHeight + ResizeHandle directly.
+// Área de alto fijo con el handle justo debajo. Si el handle va en otro lugar
+// (p. ej. una toolbar), se usan useResizableHeight y ResizeHandle.
 export default function ResizableArea({
   storageKey,
   defaultHeight = 500,

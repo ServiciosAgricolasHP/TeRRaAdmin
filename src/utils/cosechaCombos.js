@@ -1,5 +1,5 @@
-// Combo = (calidad, envase). Stored as `${qualityX}_${containerY}` keys.
-// Catalogs come from the global catalogs collection (via CatalogsContext).
+// Combo = (calidad, envase). Se guarda con claves `${qualityX}_${containerY}`.
+// Los catálogos vienen de la colección global de catálogos (vía CatalogsContext).
 
 export const COSECHA_MODES = [
   { value: "unit", label: "Por unidad (qty × precio/día)" },
@@ -23,19 +23,19 @@ export const containerLabel = (catalogs, y) => {
   return cat.find((c) => c.value === y)?.label || `Envase ${y}`;
 };
 
-// Unidad a mostrar para totales/métricas de cosecha. Si todos los workdays
-// usaron el mismo envase (saco, caja, kilo…), usamos su label del catálogo;
-// si hay mezcla devolvemos un genérico para no sumar unidades distintas.
+// Unidad a mostrar en totales y métricas de cosecha: el label del envase si
+// todos los workdays usaron el mismo (saco, caja, kilo…), o el genérico
+// "Unid." si hay mezcla.
 export const cosechaUnit = (catalogs, containersSet) => {
   if (!containersSet || containersSet.size === 0) return "Unid.";
   if (containersSet.size === 1) return containerLabel(catalogs, [...containersSet][0]);
   return "Unid.";
 };
 
-// Piso = bono fijo asignable a un trabajador en un día cuando la producción
-// fue baja. Vive como un workday separado con `comboKey: "_piso"` y
-// `pisoOnly: true`. Opt-in por día: se configura solo en los días que
-// realmente lo necesitan (boton "+ piso" en el panel de Precios).
+// Piso = bono fijo por trabajador y día, para cuando la producción fue baja.
+// Vive en un workday aparte con `comboKey: "_piso"` y `pisoOnly: true`. Se
+// configura día por día, solo en los que lo llevan (botón "+ piso" del panel
+// de Precios).
 export const PISO_COMBO_KEY = "_piso";
 
 export const getDayPiso = (dayPrices, laborId, date) => {
@@ -48,35 +48,31 @@ export const getDayPiso = (dayPrices, laborId, date) => {
 export const effectivePiso = (labor, dayPrices, date) =>
   Number(getDayPiso(dayPrices, labor?.id, date)) || 0;
 
-// A quienes les toca el piso de un dia: los que tienen produccion cargada y
-// todavia no tienen el bono. Lo usa el boton "a todos" del panel de precios.
+// A quiénes les toca el piso de un día: los que tienen producción cargada y
+// no tienen el bono. Lo usa el botón "a todos" del panel de Precios.
 //
-// La regla de "tiene produccion" es la MISMA que habilita el toggle de la
-// columna del piso en la grilla: alcanza con que exista el workday, sin mirar
-// `qty` ni `amount`. Un dia en cero es justamente el caso que el piso
-// compensa, y si sobra alguien se destilda a mano. Que las dos vias usen el
-// mismo criterio es lo que hace que el boton sea equivalente a apretar todos
-// los toggles habilitados.
+// "Tiene producción" usa la misma regla que habilita el toggle de la columna
+// del piso en la grilla: alcanza con que exista el workday, sin mirar `qty`
+// ni `amount` (un día en cero es justo el caso que el piso compensa). Con el
+// mismo criterio, el botón equivale a apretar todos los toggles habilitados.
 export function pisoTargets(workdaysOfLabor, date) {
   const conProduccion = new Set();
   const yaTienen = new Set();
   for (const [key, wd] of Object.entries(workdaysOfLabor || {})) {
     if (!wd || !wd.workerRut || wd.date !== date) continue;
-    // Los pisos viejos pueden no traer `pisoOnly`; la clave del mapa los delata.
+    // Un piso sin `pisoOnly` se reconoce por la clave del mapa.
     if (wd.pisoOnly || String(key).endsWith(`__${PISO_COMBO_KEY}`)) yaTienen.add(wd.workerRut);
     else conProduccion.add(wd.workerRut);
   }
   return [...conProduccion].filter((rut) => !yaTienen.has(rut)).sort();
 }
 
-// Los bonos de piso YA asignados en un dia, separados por si una nomina se los
-// llevo. Lo usa el ✕ del panel de precios: quitar el piso del dia tiene que
-// llevarse tambien los bonos, o quedan repartidos sin ninguna configuracion que
-// los explique y nadie se entera de que se siguen pagando.
+// Los bonos de piso ya asignados en un día, separados según si una nómina se
+// los llevó (`payrollId`). Lo usa el ✕ del panel de Precios: quitar el piso
+// del día se lleva también los bonos `libres`.
 //
-// Los liquidados NO se tocan: borrar un workday que una nomina referencia le
-// descuadra el total a algo que ya se pago. Misma regla que la sincronizacion
-// de Pesajes QR, que saltea las jornadas con `payrollId`.
+// Los `liquidados` no se tocan: borrar un workday que una nómina referencia le
+// descuadra el total a algo que ya se pagó.
 export function pisoAssigned(workdaysOfLabor, date) {
   const libres = [];
   const liquidados = [];
@@ -93,10 +89,10 @@ export const tratoTypeLabel = (catalogs, t) => {
   return cat.find((e) => e.value === t)?.label || `Trato ${t}`;
 };
 
-// Unidad de medida de un workday de trato (Metro / Polín / Planta / etc.). La
-// unidad vive en el config de precios del día (`dayPrices[labor][date].tN.unit`)
-// junto al precio. Devuelve el índice si está, o `null` si no fue configurada
-// — el display puede caer a "Unidad" o simplemente omitirla.
+// Label de la unidad de medida de un workday de trato (Metro / Polín /
+// Planta…). La unidad vive junto al precio, en `dayPrices[labor][date].tN.unit`.
+// Devuelve el label del catálogo (`Unidad N` si no está en el catálogo), o
+// `null` si no hay unidad configurada.
 export const tratoUnitLabel = (catalogs, u) => {
   if (u == null) return null;
   const cat = catalogs?.tratoUnits || [];
@@ -105,12 +101,11 @@ export const tratoUnitLabel = (catalogs, u) => {
 
 // Traduce un pesaje crudo de `harvestWeights` a (calidad, envase).
 //
-// `weightProcess` es la calidad y `weightType` el envase. El remapeo es POR
-// PREFIJO: los catálogos preservan la convención numérica del scan, así que el
-// default es identidad, y `qualityMap`/`containerMap` del prefijo son la válvula
-// de escape para un lote de QR que haya salido con otra numeración. Un mismo
-// trabajador puede traer dos convenciones en una sola consulta, así que cada
-// pesaje se mapea con SU prefijo, nunca con uno global.
+// `weightProcess` es la calidad y `weightType` el envase. El remapeo es por
+// prefijo: sin `qualityMap`/`containerMap` es identidad (los catálogos usan la
+// numeración del scan), y con ellos se traduce un lote de QR que use otra
+// numeración. Cada pesaje se mapea con su propio prefijo, nunca con uno
+// global: un mismo trabajador puede traer dos numeraciones en una consulta.
 export function mapHarvestCodes(prefix, weight) {
   const x = prefix?.qualityMap?.[String(weight?.weightProcess)] ?? weight?.weightProcess;
   const y = prefix?.containerMap?.[String(weight?.weightType)] ?? weight?.weightType;
@@ -140,9 +135,9 @@ export function invertHarvestCodes(prefix, { x, y }) {
 export const comboLabel = (catalogs, x, y) =>
   `${qualityLabel(catalogs, x)} / ${containerLabel(catalogs, y)}`;
 
-// Returns active combos for a (laborId, date), with backward compat:
-// - old format dayPrices[laborId][date] = { price, mode } → treat as 0_0
-// - missing entry → fallback single 0_0 with price 0 + default mode
+// Combos activos de (laborId, date), ordenados por calidad y envase:
+// - una entrada plana { price, mode } se toma como el combo 0_0
+// - sin entrada, o sin combos → un único 0_0 con precio 0 y el modo por defecto
 export function getDayCombos(dayPrices, laborId, date, defaultMode = "unit") {
   const entry = dayPrices?.[laborId]?.[date];
   if (!entry || typeof entry !== "object") {
@@ -170,8 +165,8 @@ export function getDayCombos(dayPrices, laborId, date, defaultMode = "unit") {
   return out;
 }
 
-// Returns the single per-day price config for a non-combo labor (trato).
-// Reads dayPrices[laborId][date]["0_0"] or legacy {price,mode}.
+// Config de precio del día para una labor sin combos (un solo precio por día).
+// Lee dayPrices[laborId][date]["0_0"] o la entrada plana { price, mode }.
 export function getDaySingle(dayPrices, laborId, date, defaultMode = "unit") {
   const entry = dayPrices?.[laborId]?.[date];
   if (!entry || typeof entry !== "object") return { price: 0, mode: defaultMode };
@@ -200,28 +195,26 @@ export const workdayMapKey = (rut, date, ck = "0_0") =>
   `${rut}__${date}__${ck}`;
 
 // ============================================================
-// Multi-price tier helpers for "trato" labors
+// Tiers de precio para labores a trato
 // ============================================================
 
-// Normalize legacy dayPrices entry to tier-based format.
-// Legacy: { price, mode } or { "0_0": { price, mode } }
-// New: { t0: { price, mode }, t1: { price, mode }, ... }
+// Lleva una entrada de dayPrices al formato por tiers
+// { t0: { price, mode }, t1: … }. Las entradas { price, mode } y
+// { "0_0": { price, mode } } pasan a t0.
 export function normalizeTratoDayPrices(entry, defaultMode = "unit") {
   if (!entry || typeof entry !== "object") return { t0: { price: 0, mode: defaultMode } };
-  // Already has tier keys (t0, t1, etc.)
+  // Ya trae claves de tier (t0, t1…).
   if (Object.keys(entry).some((k) => k.startsWith("t") && /^\d+$/.test(k.slice(1)))) return entry;
-  // Legacy { price, mode }
   if ("price" in entry || "mode" in entry) {
     return { t0: { price: Number(entry.price) || 0, mode: entry.mode || defaultMode } };
   }
-  // Legacy { "0_0": { price, mode } }
   const single = entry["0_0"];
   if (single) return { t0: { price: Number(single.price) || 0, mode: single.mode || defaultMode } };
   return { t0: { price: 0, mode: defaultMode } };
 }
 
-// Get price tiers for a labor+date from dayPrices.
-// Returns [{key: "t0", index: 0, price, mode}, ...]
+// Tiers de precio de una labor en una fecha, ordenados por índice:
+// [{ key: "t0", index: 0, price, mode, unit }, …]
 export function getTratoTiers(dayPrices, laborId, date, defaultMode = "unit") {
   const entry = dayPrices?.[laborId]?.[date];
   const normalized = normalizeTratoDayPrices(entry, defaultMode);
@@ -232,16 +225,15 @@ export function getTratoTiers(dayPrices, laborId, date, defaultMode = "unit") {
       index: Number(k.slice(1)),
       price: Number(v?.price) || 0,
       mode: v?.mode || defaultMode,
-      // Unidad de medida del trato para ese día/tier. `null` o `undefined` =
-      // sin unidad configurada (display ocultará la etiqueta).
+      // Unidad de medida del tier; `null` si no tiene una configurada.
       unit: v?.unit ?? null,
     }))
     .sort((a, b) => a.index - b.index);
 }
 
-// Normalize legacy workday record to tier-based format.
-// Legacy: { qty, amount }
-// New: { tiers: { "0": { qty, amount } }, totalAmount }
+// Lleva un workday de trato { qty, amount } al formato por tiers
+// { tiers: { "0": { qty, amount } }, totalAmount }. Si ya trae `tiers`, lo
+// devuelve tal cual.
 export function normalizeTratoWorkday(wd) {
   if (!wd) return wd;
   if (wd.tiers) return wd;
@@ -250,14 +242,12 @@ export function normalizeTratoWorkday(wd) {
   return { ...wd, tiers: { "0": { qty, amount } }, totalAmount: amount };
 }
 
-// Formato compacto del precio configurado para (labor, día). Devuelve un
-// string corto tipo "$300/árbol" para mostrar bajo el header de la fecha en
-// los resúmenes / comprobantes. Para cosecha cubre combos calidad×envase.
-// Para trato prioriza la `unit` del tier (Árbol/Metro/…) sobre el tratoType
-// (Poda/Amarre/…). Devuelve "" si no hay precio configurado.
-//
-// Convención: el resultado NO incluye prefijo de moneda mas allá del $ — se
-// pega tal cual a una etiqueta visual sin necesitar reformatear.
+// formatLaborDayPrice: el precio configurado de (labor, día) en formato corto,
+// tipo "$300/árbol", para mostrar bajo el encabezado de la fecha en resúmenes
+// y comprobantes. En cosecha cubre los combos calidad×envase; en trato
+// prioriza la `unit` del tier (Árbol/Metro/…) sobre el tratoType
+// (Poda/Amarre/…). Devuelve "" si no hay precio configurado. El texto sale
+// listo para pegar en la etiqueta, con "$" como único símbolo de moneda.
 const _fmtMoneyShort = (v) => "$" + (Number(v) || 0).toLocaleString("es-CL");
 
 export function formatLaborDayPrice(labor, date, dayPrices, catalogs = {}) {
@@ -309,19 +299,11 @@ export function formatLaborDayPrice(labor, date, dayPrices, catalogs = {}) {
 
 // Total de qty/amount de un workday de trato.
 //
-// Un workday de trato tiene DOS representaciones del mismo dato:
-//   - top-level `qty`/`amount`: lo que muestra el grid de la faena y lo que el
-//     editor SIEMPRE escribe en cada edición.
-//   - `tiers["0"]`: un espejo denormalizado que se agregó después. Algunos
-//     flujos de escritura pueden actualizarlo y otros no, así que puede quedar
-//     DESINCRONIZADO respecto del top-level (bug: grid muestra el valor nuevo
-//     pero resumen/nómina —que leían el espejo— mostraban el viejo).
-//
-// En el modelo actual cada tier es un documento aparte y `tiers` siempre tiene
-// una sola clave "0", así que el top-level es la fuente confiable. Lo
-// priorizamos para que resumen, nómina y grid coincidan. Sólo sumamos `tiers`
-// cuando hay más de un tier en el mismo doc (caso legacy que no debería
-// ocurrir) o cuando el doc no trae qty/amount top-level.
+// El dato está dos veces: `qty`/`amount` de primer nivel (lo que escribe el
+// editor y muestra la grilla) y `tiers["0"]`, un espejo que puede quedar
+// desincronizado. Manda el primer nivel, así resumen, nómina y grilla
+// coinciden. `tiers` se suma solo si el doc trae más de un tier o no trae
+// qty/amount de primer nivel.
 export function getTratoTierTotals(wd) {
   if (!wd) return { qty: 0, amount: 0 };
   const tierKeys = wd.tiers ? Object.keys(wd.tiers) : [];

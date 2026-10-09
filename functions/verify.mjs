@@ -1,9 +1,7 @@
 // Verificación local de las Cloud Functions contra los emuladores.
 //
-// Existe porque deployar functions es caro de iterar: cada corrida pasa por
-// Cloud Build, tarda minutos y factura. Antes había que deployar para saber si
-// la función siquiera cargaba. Esto prueba lo mismo en segundos y sin tocar
-// `arandanos-hp`.
+// Prueba en segundos, y sin tocar `arandanos-hp`, lo que de otro modo exigiría
+// un deploy (cada uno pasa por Cloud Build, tarda minutos y factura).
 //
 // Se corre con `npm run functions:verify` desde la raíz, que levanta los
 // emuladores de functions, firestore y auth con un project id `demo-`. Ese prefijo
@@ -17,8 +15,8 @@
 //   1. Que la función cargue, registre su trigger y resuelva un job de punta a
 //      punta, dejando marcas de inicio y fin.
 //   2. Que un job ya tomado **no se ejecute de nuevo**. Eventarc entrega al
-//      menos una vez; sin el reclamo transaccional, un backup podría correr
-//      dos veces.
+//      menos una vez; el reclamo transaccional evita que un job corra dos
+//      veces.
 //   3. Que un job que la función no sabe manejar termine en `error` y no
 //      colgado en `pending` para siempre.
 //   4. Que `createUser` cree la cuenta y su perfil con el mismo UID, lo deje en
@@ -27,15 +25,13 @@
 //      correo inválido.
 //
 // **Lo que este archivo NO puede probar**: que el trigger esté suscrito a la
-// base correcta. El emulador de Firestore todavía no soporta bases múltiples
-// —lo dice al arrancar— así que sirve una sola y el nombre le da igual. El
-// chequeo de `database` de más abajo compara contra la constante que la propia
-// función reporta: pasa aunque el `database` del trigger esté mal.
+// base correcta. El emulador de Firestore no soporta bases múltiples —lo dice
+// al arrancar—, así que sirve una sola y el nombre le da igual. El chequeo de
+// `database` de más abajo compara contra la constante que la propia función
+// reporta: pasa aunque el `database` del trigger esté mal.
 //
-// Importa porque ese es el peor modo de falla que tiene este diseño: la base no
-// se llama `(default)`, y un trigger apuntado a la base equivocada no da error
-// — simplemente nunca dispara. La única prueba real es en producción, y es
-// justo lo que hace el botón de ping de la Consola.
+// Un trigger apuntado a la base equivocada no da error: nunca dispara. Eso solo
+// se prueba en producción, con el botón de ping de la Consola.
 
 import { initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";

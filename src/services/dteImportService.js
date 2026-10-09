@@ -1,9 +1,6 @@
-// Persistencia del import del RCV del SII.
-//
-// Vivía dentro de `Facturacion.jsx` y era intesteable: el borrado de
-// huérfanos es el camino de pérdida de datos más grande del repo (importar
-// un CSV parcial borra el resto del mes con todo el estado cargado a mano),
-// y estaba atrapado en un handler de React de 5.000 líneas.
+// Persistencia del import del RCV del SII. Importar reemplaza el período: los
+// documentos del ámbito que no vienen en el CSV se borran, con todo lo que se
+// les cargó a mano.
 import { writeBatch, doc, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import { dteDocumentsService } from "./index";
