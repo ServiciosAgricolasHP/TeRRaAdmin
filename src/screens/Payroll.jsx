@@ -83,7 +83,6 @@ import {
 } from "../utils/payrollItem";
 import ConfirmDialog from "../components/ConfirmDialog";
 import Modal from "../components/Modal";
-import ResizableArea from "../components/ResizableArea";
 import WorkerSummaryModal from "../components/WorkerSummaryModal";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { matchesSearchQuery } from "../utils/textSearch";
@@ -1938,7 +1937,7 @@ function PreviewTable({
     }
   };
   return (
-    <div className="flex flex-1 flex-col gap-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
         <button
           onClick={onBack}
@@ -2066,8 +2065,7 @@ function PreviewTable({
         </div>
       </div>
 
-      <ResizableArea storageKey="payroll-preview" defaultHeight={420} minHeight={240}>
-      <div className="h-full overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+      <div className="min-h-[240px] flex-1 overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-[var(--color-surface-2)] text-left">
             <tr>
@@ -2199,7 +2197,6 @@ function PreviewTable({
           </tbody>
         </table>
       </div>
-      </ResizableArea>
 
       {cashGroups.length > 0 && (
         <div className="max-h-[32vh] shrink-0 overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">

@@ -318,9 +318,8 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
 
 ### Alto de las listas / grids
 
-- **Regla**: si la lista es el **último** elemento de la pantalla, va `min-h-0 flex-1` dentro del `flex h-full flex-col` de la raíz y listo (Advances, Workers). No poner un alto fijo ni un resize ahí: no hay nada debajo a lo que cederle espacio, así que el control no hace nada y deja un hueco.
-- `components/ResizableArea.jsx` (`ResizableArea`, o `useResizableHeight` + `<ResizeHandle>` si el handle va en otro lado, ej. una toolbar) es **solo para bloques que tienen contenido debajo** — hoy únicamente `Payroll.jsx` (preview con el panel de efectivo abajo, e historial con el pager abajo). El alto se persiste en `localStorage` bajo `af.gridHeight.<storageKey>`.
-- El drag usa **Pointer Events + `setPointerCapture`** sobre el handle, no listeners en `window` — si no, ag-grid se traga los eventos. Los hijos decorativos del handle van con `pointer-events-none`.
+- **Regla**: la lista va `min-h-0 flex-1` dentro del `flex h-full flex-col` de la raíz y toma el alto que queda libre (Advances, Workers). Sin alto fijo ni control para arrastrarlo.
+- Si la lista tiene algo debajo, eso va con `shrink-0` y un `max-h` propio, y la lista lleva además un alto mínimo para que no desaparezca en pantallas bajas: es el caso de la vista previa de Nómina, con el panel de efectivo abajo (`min-h-[240px] flex-1`). Cuando no cabe, desplaza el `<main>`.
 - **Anotación por día**: click sobre el header de la fecha → modal que edita `cycle.dayNotes[date]`. Hover sobre el header muestra el texto. Compartida entre todas las labores del ciclo.
 - **Trabajadores temporales**: alta sin RUT (`isTemp: true` dentro de `labor.workers`). Aparecen con badge "T" y botón "Asignar RUT" que los reemplaza por el RUT real preservando los workdays.
 - **Sueldo mensual por trabajador-ciclo**: toggle "M" en la fila de la labor → guarda `monthly: true` en `labor.workers[i]`. Las celdas pasan a checkbox de asistencia (`amount: 0`, `attendanceOnly: true`); excluidos de la nómina; badge verde "M".
