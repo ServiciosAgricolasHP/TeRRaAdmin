@@ -1,14 +1,13 @@
-// Resúmenes por grupo — el usuario arma un "grupo virtual" agregando trabajadores
-// de a uno y al final genera:
-//   1. Una matriz tipo comprobante de pago en efectivo (rows = trabajadores,
-//      cols = ciclos activos + Anticipo + Total + Firma).
-//   2. Una sección individual por integrante (PrintableWorkerSummary), cada
-//      una con su botón de bajar PNG ("una foto por cada integrante").
+// Resúmenes por grupo: se arma un grupo agregando trabajadores de a uno y se
+// genera:
+//   1. Una matriz tipo comprobante de pago en efectivo (filas = trabajadores,
+//      columnas = ciclos activos + Anticipo + Bono + Total + Firma).
+//   2. Un detalle por integrante (PrintableWorkerSummary), cada uno con sus
+//      botones de copiar y bajar PNG.
 //
-// Los datos se cargan al pasar a la pantalla de resultado: para cada trabajador
-// se reusa `loadWorkerSummaryData` (mismo loader que usa WorkerSummaryModal).
-// La matriz se arma combinando los resultados — los ciclos mostrados son la
-// unión de ciclos con producción de cualquier integrante.
+// Los datos se cargan al pasar al resultado, con `loadWorkerSummaryData` (el
+// mismo loader de WorkerSummaryModal) para cada trabajador. Los ciclos de la
+// matriz son la unión de los ciclos con producción de cualquier integrante.
 
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import { captureFullWidthBlob, captureFullWidthDataUrl } from "../utils/imageCapture";
@@ -21,14 +20,14 @@ import {
   PrintableWorkerSummary,
 } from "./WorkerSummaryModal";
 import { formatRutForDisplay } from "../utils/rutUtils";
+import { localIsoDate } from "../utils/dates";
 
 const fmtCurrency = (v) =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
     Number(v) || 0,
   );
 
-// Mismo palette de colores que el comprobante de pago (efectivo) — mantiene
-// el "look & feel" para que el usuario lo reconozca como familiar.
+// Mismos colores que el comprobante de pago en efectivo.
 const LEADER_FILL = "#FFE699";
 const ITEM_FILL = "#FFF2CC";
 
@@ -51,14 +50,14 @@ export default function GroupSummaryModal({ open, onClose }) {
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
-  // workerData: { [rut]: { data, advances, grandTotal, advancesSaldo } }
+  // workerData: { [rut]: { data, advances, grandTotal, advancesSaldo, anticiposSaldo, bonosSaldo } }
   const [workerData, setWorkerData] = useState({});
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState("");
   const matrixRef = useRef(null);
   const individualRefs = useRef({}); // { rut: HTMLElement }
 
-  // Reset al abrir.
+  // Reinicia el estado al abrir.
   useEffect(() => {
     if (!open) return;
     setStep("build");
@@ -69,8 +68,7 @@ export default function GroupSummaryModal({ open, onClose }) {
     individualRefs.current = {};
   }, [open]);
 
-  // Debounced search server-side (≥4 chars). Mismo patrón que la pantalla
-  // Trabajadores para que se sienta consistente.
+  // Búsqueda en el servidor con debounce, desde MIN_SEARCH caracteres.
   useEffect(() => {
     if (query.replace(/[.\s-]/g, "").length < MIN_SEARCH) {
       setSearchResults([]);
@@ -104,8 +102,8 @@ export default function GroupSummaryModal({ open, onClose }) {
     if (selected.length === 0) return;
     setLoading(true);
     try {
-      // Cargar en paralelo: cada trabajador hace su propio batch de queries
-      // (workdays + cycles + advances). Si el grupo es chico (5-10) está bien.
+      // En paralelo: cada trabajador hace sus propias consultas (jornadas,
+      // ciclos y anticipos).
       const entries = await Promise.all(
         selected.map(async (w) => [w.id, await loadWorkerSummaryData(w, catalogs)]),
       );
@@ -116,7 +114,7 @@ export default function GroupSummaryModal({ open, onClose }) {
     }
   };
 
-  // Unión de ciclos con producción de algún integrante (orden alfa por label).
+  // Unión de ciclos con producción de algún integrante, por label alfabético.
   const activeCycles = useMemo(() => {
     const m = new Map();
     for (const w of selected) {
@@ -140,8 +138,8 @@ export default function GroupSummaryModal({ open, onClose }) {
         byCycle[d.cycle.id] = amt;
         total += amt;
       }
-      // anticiposSaldo/bonosSaldo nuevos; fallback al legacy advancesSaldo
-      // (todo el saldo cuenta como anticipo).
+      // Sin `anticiposSaldo`, usa `advancesSaldo` y todo el saldo cuenta como
+      // anticipo.
       const advance = wd.anticiposSaldo != null ? wd.anticiposSaldo : (wd.advancesSaldo || 0);
       const bonus = wd.bonosSaldo || 0;
       const neto = total - advance + bonus;
@@ -153,7 +151,7 @@ export default function GroupSummaryModal({ open, onClose }) {
   const hasBonuses = matrixRows.some((r) => r.bonus > 0);
   const showCycleCols = activeCycles.length > 1;
 
-  // Totales por columna + grand totals.
+  // Totales por columna y generales.
   const totals = useMemo(() => {
     const cycleTotals = {};
     let advanceTotal = 0,
@@ -184,7 +182,7 @@ export default function GroupSummaryModal({ open, onClose }) {
       } else if (action === "download") {
         const dataUrl = await captureFullWidthDataUrl(matrixRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
         const link = document.createElement("a");
-        link.download = `grupo_matriz_${new Date().toISOString().slice(0, 10)}.png`;
+        link.download = `grupo_matriz_${localIsoDate()}.png`;
         link.href = dataUrl;
         link.click();
       }
@@ -220,9 +218,8 @@ export default function GroupSummaryModal({ open, onClose }) {
     }
   };
 
-  // Captura TODO (matriz + cards individuales) como una sola imagen gigante.
-  // El ref vive en el `ResultUI` wrapper para que `toPng` agarre el bloque
-  // entero. Útil para llevarse un screenshot completo del grupo.
+  // Captura todos los detalles individuales en una sola imagen; la matriz no
+  // entra, tiene sus propios botones.
   const everythingRef = useRef(null);
   const captureEverything = async (action = "copy") => {
     if (!everythingRef.current) return;
@@ -242,7 +239,7 @@ export default function GroupSummaryModal({ open, onClose }) {
           pixelRatio: 2,
         });
         const link = document.createElement("a");
-        link.download = `grupo_completo_${new Date().toISOString().slice(0, 10)}.png`;
+        link.download = `grupo_completo_${localIsoDate()}.png`;
         link.href = dataUrl;
         link.click();
       }
@@ -302,6 +299,7 @@ export default function GroupSummaryModal({ open, onClose }) {
         />
       ) : (
         <ResultUI
+          catalogs={catalogs}
           selected={selected}
           workerData={workerData}
           activeCycles={activeCycles}
@@ -328,10 +326,10 @@ function BuilderUI({ query, setQuery, searchResults, searching, selected, addWor
   return (
     <div className="space-y-3">
       <div className="text-sm text-[var(--color-muted)]">
-        Agregá trabajadores uno por uno. Al terminar tocá <b>Generar resumen</b> abajo.
+        Agrega trabajadores uno por uno. Al terminar toca <b>Generar resumen</b> abajo.
       </div>
 
-      {/* Selected chips */}
+      {/* Integrantes elegidos */}
       {selected.length > 0 && (
         <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2">
           <div className="mb-1.5 text-[10px] uppercase tracking-wider text-[var(--color-muted)]">
@@ -360,7 +358,7 @@ function BuilderUI({ query, setQuery, searchResults, searching, selected, addWor
         </div>
       )}
 
-      {/* Search */}
+      {/* Búsqueda */}
       <div className="space-y-2">
         <div className="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
           Agregar trabajador
@@ -430,11 +428,12 @@ function ResultUI({
   captureIndividual,
   captureEverything,
   busy,
+  catalogs,
 }) {
   return (
     <div>
       <div className="space-y-6">
-      {/* Matrix card */}
+      {/* Matriz */}
       <section>
         <div className="mb-2 flex items-center justify-between">
           <h3 className="text-sm font-semibold">Matriz grupal</h3>
@@ -470,10 +469,8 @@ function ResultUI({
         </div>
       </section>
 
-      {/* Per-worker individual sections. Tiene su propio botón "Copiar todos
-          los detalles" que NO incluye la matriz (la matriz se copia aparte
-          con su propio 📋). Combinar todo solía generar imágenes gigantes
-          con overflow cuando el grupo tenía 5+ personas, así que se split. */}
+      {/* Detalle por integrante. "Copiar todos" y "Todos" capturan solo estos
+          detalles, sin la matriz. */}
       <section>
         <div className="mb-2 flex items-center justify-between">
           <h3 className="text-sm font-semibold">Detalle individual</h3>
@@ -563,11 +560,10 @@ function ResultUI({
   );
 }
 
-// Matriz tipo comprobante de pago en efectivo, pero con el grupo armado a
-// mano. Soporta: # · Nombre · RUT · {ciclos} · Anticipo · Total · Firma.
-// La columna por-ciclo se oculta cuando solo hay 1 ciclo activo (el total
-// general ya cubre el caso). Anticipo se oculta si nadie del grupo tiene
-// saldo pendiente.
+// Matriz tipo comprobante de pago en efectivo para el grupo armado a mano:
+// # · Nombre · RUT · {ciclos} · Anticipo · Bono · Total · Firma. Las columnas
+// por ciclo se ocultan con un solo ciclo activo (el total ya lo cubre), y
+// Anticipo y Bono, si nadie del grupo tiene saldo de ese tipo.
 const MatrixTable = forwardRef(function MatrixTable(
   { rows, cycles, totals, hasAdvances, hasBonuses, showCycleCols },
   ref,
@@ -652,7 +648,7 @@ const MatrixTable = forwardRef(function MatrixTable(
                 <td style={cell}></td>
               </tr>
             ))}
-            {/* Subtotal row */}
+            {/* Fila de subtotal */}
             <tr style={{ background: LEADER_FILL }}>
               <td style={{ ...cell, fontWeight: 700, textAlign: "right" }} colSpan={3}>
                 Subtotal grupo

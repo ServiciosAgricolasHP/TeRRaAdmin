@@ -1,9 +1,9 @@
-// Tiny in-memory + localStorage cache with TTL.
-// Designed for query results that are read-heavy and tolerate brief staleness.
+// Caché con TTL en memoria y, opcionalmente, en localStorage. Para resultados
+// de consultas que se leen mucho y toleran estar un rato desactualizados.
 
 const mem = new Map();
 const LS_PREFIX = "af.cache.";
-const SUBS = new Map(); // key prefix -> Set<fn>
+const SUBS = new Map(); // prefijo del scope -> Set<fn>
 
 const now = () => Date.now();
 
@@ -27,7 +27,7 @@ function writeLS(key, data, ttl) {
   try {
     localStorage.setItem(LS_PREFIX + key, JSON.stringify({ data, expires: now() + ttl }));
   } catch {
-    /* quota or serialization — ignore */
+    /* sin espacio o error al serializar: se ignora */
   }
 }
 
@@ -38,7 +38,7 @@ function dropLS(prefix) {
       if (k && k.startsWith(LS_PREFIX + prefix)) localStorage.removeItem(k);
     }
   } catch {
-    /* ignore */
+    /* se ignora */
   }
 }
 
@@ -70,10 +70,9 @@ export function invalidate(scopePrefix) {
   if (subs) subs.forEach((fn) => { try { fn(); } catch { /* */ } });
 }
 
-// Vacía toda la caché de una. La usan los tests end-to-end entre casos: la
-// caché vive a nivel de módulo y no se reinicia sola, así que un test que lee
-// una colección vacía le deja ese vacío al siguiente. Invalidar scope por
-// scope obliga a mantener una lista que se queda corta sin avisar.
+// Vacía la caché entera y avisa a todos los suscriptores. La usan los tests
+// end-to-end entre casos: la caché vive a nivel de módulo y no se reinicia
+// sola entre un test y el siguiente.
 export function invalidateAll() {
   mem.clear();
   dropLS("");
@@ -106,8 +105,8 @@ export function subscribe(scopePrefix, fn) {
   return () => SUBS.get(scopePrefix)?.delete(fn);
 }
 
-// Parse the cacheKey suffix back to its params object so we can check filters
-// without re-running the full key derivation. Only used inside additive merge.
+// Recupera el objeto de parámetros desde el sufijo de la clave, para revisar
+// sus filtros. Solo lo usa la actualización aditiva.
 function parseKeyParams(key, scopePrefix) {
   const prefix = `${scopePrefix}::`;
   if (!key.startsWith(prefix)) return null;
@@ -116,23 +115,21 @@ function parseKeyParams(key, scopePrefix) {
   try { return JSON.parse(suffix); } catch { return null; }
 }
 
-// Returns true if the cache entry was built from a "list all" query (no
-// where clauses). We refuse to merge into filtered lists because we can't
-// know whether the new/changed doc satisfies their predicate.
+// Indica si la entrada viene de un listado completo (sin `wheres`). En una
+// lista filtrada no se puede saber si el doc nuevo o cambiado cumple el filtro.
 function isUnfilteredListKey(key, scopePrefix) {
   const p = parseKeyParams(key, scopePrefix);
   if (!p) return false;
   return !p.wheres || p.wheres.length === 0;
 }
 
-// Additive cache update: insert (or replace) an item in every cached "list
-// all" result for this scope. Used by services that opt into additive
-// mutations to avoid re-fetching the entire collection after one write.
-// Filtered lists (with `wheres`) are left alone — they will repopulate from
-// Firestore on next access.
+// Actualización aditiva: agrega (o reemplaza) el item en cada listado completo
+// cacheado del scope, así una escritura no obliga a releer la colección
+// entera. Las listas filtradas (con `wheres`) no se tocan: quedan como
+// estaban hasta que vence su TTL.
 export function mergeListItem(scopePrefix, item, { idKey = "id" } = {}) {
   if (!item || !item[idKey]) return;
-  // mem
+  // En memoria
   for (const [key, entry] of mem) {
     if (!isUnfilteredListKey(key, scopePrefix)) continue;
     if (!Array.isArray(entry.data)) continue;
@@ -142,7 +139,7 @@ export function mergeListItem(scopePrefix, item, { idKey = "id" } = {}) {
       : [...entry.data, item];
     mem.set(key, { ...entry, data: nextData });
   }
-  // localStorage
+  // En localStorage
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
@@ -161,7 +158,7 @@ export function mergeListItem(scopePrefix, item, { idKey = "id" } = {}) {
         : [...parsed.data, item];
       localStorage.setItem(k, JSON.stringify({ data: nextData, expires: parsed.expires }));
     }
-  } catch { /* ignore */ }
+  } catch { /* se ignora */ }
 }
 
 export function removeListItem(scopePrefix, id, { idKey = "id" } = {}) {
@@ -185,5 +182,5 @@ export function removeListItem(scopePrefix, id, { idKey = "id" } = {}) {
       const filtered = parsed.data.filter((x) => x?.[idKey] !== id);
       localStorage.setItem(k, JSON.stringify({ data: filtered, expires: parsed.expires }));
     }
-  } catch { /* ignore */ }
+  } catch { /* se ignora */ }
 }

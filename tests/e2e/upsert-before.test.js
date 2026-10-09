@@ -4,12 +4,10 @@ import { set, get } from "./helpers/seed";
 
 // La opción `before` de `upsert` deja pasar el documento que el llamador ya
 // leyó, para no pagar la misma lectura dos veces. La usa la sincronización de
-// Pesajes QR: lee cada jornada para saber si ya está liquidada y acto seguido
-// la escribe, así que sin esto cada jornada costaba dos lecturas.
+// Pesajes QR, que lee cada jornada para saber si ya está liquidada y acto
+// seguido la escribe.
 //
-// Lo que se fija acá es que pasarlo no cambie NADA del resultado. Es una
-// optimización de costo sobre el camino que escribe jornadas: si desvía el
-// comportamiento, desvía la plata.
+// Se fija que pasarlo no cambie nada del resultado.
 const ID = "wd-before-1";
 
 describe("upsert con `before` precargado", () => {
@@ -30,23 +28,17 @@ describe("upsert con `before` precargado", () => {
     const doc = await get("workdays", ID);
     expect(doc.qty).toBe(99);
     expect(doc.amount).toBe(9900);
-    // Un update no vuelve a sellar la creación: si `before` se tratara como
-    // "no existe", acá aparecería un createdAt nuevo encima del original.
+    // Un update no vuelve a sellar la creación.
     expect(doc.createdAt).toBe("sello-original");
   });
 
   it("con `before: null` no vuelve a leer el documento", async () => {
-    // El punto de toda la opción es AHORRAR la lectura, y eso no se ve mirando
-    // el resultado: pasar `null` sobre un doc que no existe da lo mismo que
-    // leerlo y encontrarlo vacío. La única forma de observarlo desde afuera es
-    // pasar `null` sobre un doc que SÍ existe: si el servicio respeta el dato,
-    // toma el camino de creación y vuelve a sellar `createdAt`; si lo ignora y
-    // lee, encuentra el doc y conserva el sello viejo.
+    // Se observa pasando `null` sobre un doc que sí existe: si el servicio no
+    // lee, toma el camino de creación y vuelve a sellar `createdAt`; si lee,
+    // encuentra el doc y conserva el sello viejo.
     //
-    // Esto fija la semántica exacta: `null` = "lo leí y no existe",
-    // `undefined` = "no me lo pasaron". Escribir el chequeo como
-    // `knownBefore ? ... : ...` colapsa las dos y se pierde el ahorro sin que
-    // nada falle a la vista.
+    // `null` = "lo leí y no existe"; `undefined` = "no me lo pasaron". Un
+    // chequeo por verdad/falsedad (`knownBefore ? … : …`) no distingue los dos.
     const existente = "wd-before-null";
     await set("workdays", existente, { qty: 3, createdAt: "sello-viejo" });
 
@@ -67,8 +59,8 @@ describe("upsert con `before` precargado", () => {
   });
 
   it("el merge conserva los campos que no se tocaron", async () => {
-    // `upsert` usa setDoc con merge, y la sincronización escribe solo un puñado
-    // de campos: el `payrollId` de una jornada ya liquidada no puede evaporarse.
+    // `upsert` usa setDoc con merge: la sincronización escribe solo algunos
+    // campos y el `payrollId` de una jornada ya liquidada se conserva.
     const otro = "wd-before-3";
     await set("workdays", otro, { qty: 5, payrollId: "nom-1", workerRut: "11111111-1" });
     const previo = await get("workdays", otro);

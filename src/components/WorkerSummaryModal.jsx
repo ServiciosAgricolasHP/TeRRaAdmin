@@ -19,6 +19,7 @@ import { useCatalogs } from "../contexts/CatalogsContext";
 import { useToast } from "../contexts/ToastContext";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { localIsoDate } from "../utils/dates";
 
 const fmtCurrency = (v) =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
@@ -67,27 +68,25 @@ const saveTitles = (rut, titles) => {
 const defaultCycleTitle = ({ faena, subfaena, cycle }) =>
   [faena?.name, subfaena?.name, cycle.label].filter(Boolean).join(" · ");
 
-// Mapea cada tipo de labor a los acumuladores que tiene sentido reportar.
-// El resto se deja en 0 y la tabla esconde la columna si nadie aportó.
+// Arma las filas del resumen de un ciclo, una por (labor, día). Cada tipo de
+// labor llena solo los acumuladores que le corresponden; el resto queda en 0
+// y la tabla esconde la columna si nadie aportó.
 //
-// `payrollById` es un Map opcional { payrollId → { name, status } } — si
-// está definido computamos `paymentStatus` por fila. Valores posibles:
+// `claves`: ruts con los que puede figurar el trabajador (ver `workerKeys`).
+// `payrollById` (opcional): Map { payrollId → { name, status } } para calcular
+// `paymentStatus` por fila:
 //   - "unpaid"     → ningún wd de la fila tiene payrollId
-//   - "in_pending" → todos con payrollId apuntan a nóminas con status !== "paid"
-//                    (o mezcla de con-payrollId y sin-payrollId — se comporta
-//                    como pendiente conservadoramente)
-//   - "paid"       → todos los wds tienen payrollId y todos con status "paid"
-// `claves` es el conjunto de ruts con los que este trabajador puede figurar
-// (ver `workerKeys`). Antes era un solo string, y para quien cambió de cédula
-// eso descartaba justamente los días escritos con el rut nuevo.
+//   - "in_pending" → algún wd tiene payrollId, pero no todos, o alguna de sus
+//                    nóminas no está pagada
+//   - "paid"       → todos los wds tienen payrollId y todas sus nóminas están
+//                    pagadas
 function buildCycleRows(claves, cycle, workdaysByLabor, catalogs, payrollById) {
   const rows = [];
   const cosechaContainers = new Set();
   for (const labor of cycle.labors || []) {
     const wdMap = workdaysByLabor[labor.id] || {};
-    // Una fila por (worker, labor, date). Para trato con múltiples tiers el
-    // mismo día, guardamos un breakdown interno (`tratoBreakdown`) con la
-    // info por tier; el total de la fila sigue siendo la suma del día.
+    // Agrupa por día. En trato acumula además qty y monto por tier, que
+    // alimentan `tratoBreakdown`; el total de la fila es la suma del día.
     const byDate = new Map();
     for (const k in wdMap) {
       const wd = wdMap[k];
@@ -139,12 +138,8 @@ function buildCycleRows(claves, cycle, workdaysByLabor, catalogs, payrollById) {
           tratoQty += t.qty;
           amount += t.amount;
         } else if (labor.type === "tratoEtapas") {
-          // Para el trabajador TODA la producción cuenta: `counts` es un
-          // concepto de la empresa (no contar dos veces la misma unidad
-          // física al facturar) y no tiene por qué recortar lo que ve quien
-          // hizo el trabajo. Antes solo se sumaba el qty de las etapas que
-          // cuentan, así que un día entero de "Preparación" aparecía con el
-          // monto y sin ninguna cantidad detrás.
+          // Para el trabajador cuenta la producción de todas las etapas:
+          // `counts` solo decide qué se le factura al cliente.
           const q = Number(wd.qty) || 0;
           const monto = Number(wd.amount) || 0;
           amount += monto;
@@ -167,12 +162,12 @@ function buildCycleRows(claves, cycle, workdaysByLabor, catalogs, payrollById) {
         }
       }
       const containerLabels = [...containers].map((y) => containerLabel(catalogs, y)).join("/");
-      // Breakdown por tier del día (trato): cada entry trae la unidad del
-      // tier (Árbol/Metro/...) para que el display la use.
+      // Desglose del día por tier (trato) o por etapa (tratoEtapas). En trato
+      // cada entrada lleva la unidad de su tier (Árbol, Metro…).
       let tratoBreakdown = null;
       let tratoUnit = null;
       if (labor.type === "tratoEtapas" && etapasPorId.size > 0) {
-        // El orden lo manda la definición del labor, no el de los workdays.
+        // Ordena según las etapas definidas en la labor, no según los workdays.
         const orden = normalizeStages(labor.stages).map((st) => String(st.id));
         const entries = [...etapasPorId.values()]
           .filter((e) => e.qty > 0 || e.amount > 0)
@@ -183,19 +178,19 @@ function buildCycleRows(claves, cycle, workdaysByLabor, catalogs, payrollById) {
       }
       if (labor.type === "trato") {
         const tiers = getTratoTiers(cycle.dayPrices || {}, labor.id, d);
-        // Si solo hay un tier con producción, no mantenemos breakdown
-        // (la fila ya tiene toda la info). Multi-tier sí.
+        // Con un solo tier con producción la fila ya lo dice todo: el
+        // desglose es solo para varios tiers.
         const entries = [...tiersByIdx.values()].sort((a, b) => a.tierIdx - b.tierIdx);
         for (const e of entries) {
           e.unit = tiers[e.tierIdx]?.unit ?? null;
         }
         if (entries.length > 1) tratoBreakdown = entries;
-        // tratoUnit a nivel de fila: usamos el primer tier con unidad, sino
-        // tiers[0]. Sirve para el label de la columna cuando solo hay 1 tier.
+        // Unidad de la fila: la del primer tier con producción o, si no tiene,
+        // la de tiers[0]. Rotula la cantidad cuando hay un solo tier.
         tratoUnit = entries[0]?.unit ?? tiers[0]?.unit ?? null;
       }
-      // Payment status por fila: revisamos los payrollIds de los wds del día.
-      // Si no hay payrollById (caller no pasó info) → status "unknown".
+      // Estado de pago de la fila según los payrollIds de los wds del día.
+      // Sin `payrollById`, la fila queda "unpaid".
       let paymentStatus = "unpaid";
       const payrollNames = [];
       if (payrollById) {
@@ -244,45 +239,42 @@ function buildCycleRows(claves, cycle, workdaysByLabor, catalogs, payrollById) {
   return { rows, cosechaContainers };
 }
 
-// Helpers de fecha para el toggle "incluir ciclos cerrados". Default: último
-// mes (hoy - 1 mes → hoy). El usuario puede modificarlas.
-const todayISO = () => new Date().toISOString().slice(0, 10);
+// Rango por defecto del toggle "incluir ciclos cerrados": el último mes
+// (hoy - 1 mes → hoy).
+const todayISO = () => localIsoDate();
 const oneMonthAgoISO = () => {
   const d = new Date();
   d.setMonth(d.getMonth() - 1);
-  return d.toISOString().slice(0, 10);
+  return localIsoDate(d);
 };
 
 export default function WorkerSummaryModal({ open, onClose, worker }) {
   const toast = useToast();
   const { catalogs } = useCatalogs();
   const [loading, setLoading] = useState(false);
-  const [data, setData] = useState([]); // [{ cycle, faena, subfaena, rows, totals, isClosed }]
-  const [advances, setAdvances] = useState([]); // pending/partial advances del trabajador
+  const [data, setData] = useState([]); // [{ cycle, faena, subfaena, rows, totals, cols, tratoLabel, kilosLabel, isClosed }]
+  const [advances, setAdvances] = useState([]); // anticipos y bonos pending/partial del trabajador
   const [busy, setBusy] = useState("");
   const [titles, setTitles] = useState({ main: "DETALLE DE JORNADA", subtitle: "" });
   const [showTitleEditor, setShowTitleEditor] = useState(false);
-  // Toggle: incluir ciclos cerrados (default off) + rango de fechas (default
-  // último mes). Cambios disparan re-fetch via el effect.
+  // Incluir ciclos cerrados (apagado por defecto) dentro de un rango de
+  // fechas (por defecto, el último mes). Cambiarlos vuelve a cargar los datos.
   const [includeClosed, setIncludeClosed] = useState(false);
   const [closedFrom, setClosedFrom] = useState(oneMonthAgoISO());
   const [closedTo, setClosedTo] = useState(todayISO());
-  // Vista: "por-ciclo" (default) o "lineal" (una sola tabla con columna Ciclo).
-  // El modo lineal es útil cuando el trabajador anduvo en varios ciclos chicos
-  // y querés ver la secuencia cronológica completa.
+  // Vista: "lineal" (por defecto; una sola tabla cronológica con columna
+  // Ciclo) o "por-ciclo" (una tabla por ciclo).
   const [viewMode, setViewMode] = useState("lineal");
-  // Filtro por status de pago. Default: mostrar todos. El toggle deja al
-  // usuario esconder pagados / en nómina / sin pagar. Los ocultos NO cuentan
-  // en los totales de las tablas.
+  // Filtro por estado de pago (pagado / en nómina / sin pagar); por defecto
+  // muestra todos. Las filas ocultas no cuentan en los totales.
   const [statusFilter, setStatusFilter] = useState(() => new Set(["paid", "in_pending", "unpaid"]));
   const toggleStatus = (s) => setStatusFilter((prev) => {
     const next = new Set(prev);
     if (next.has(s)) next.delete(s); else next.add(s);
     return next;
   });
-  // Filtro visual manual: filas sacadas a mano desde la columna "Filtrar".
-  // Session-only, no persistido — al cerrar el modal se limpian. Tampoco
-  // entran en totales.
+  // Filas sacadas a mano desde la columna "Filtrar". Viven solo en memoria
+  // (no se persisten) y tampoco cuentan en los totales.
   const [hiddenRowKeys, setHiddenRowKeys] = useState(() => new Set());
   const toggleHidden = (rowKey) => setHiddenRowKeys((prev) => {
     const next = new Set(prev);
@@ -290,11 +282,9 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
     return next;
   });
   const clearHidden = () => setHiddenRowKeys(new Set());
-  // Toggle master de la columna "Filtrar". Arranca apagada: el uso normal del
-  // resumen es mirarlo o sacarle la foto, no depurar filas. La lista de filas
-  // sacadas se preserva al apagarla. En las exportaciones la columna no
-  // aparece nunca, esté prendida o no — sus celdas van marcadas con
-  // `data-export-hide` y `cloneForExport` las saca.
+  // Muestra la columna "Filtrar"; arranca apagada. Apagarla conserva las
+  // filas ya sacadas. Las exportaciones nunca la incluyen: sus celdas llevan
+  // `data-export-hide` y `cloneForExport` las quita.
   const [showFiltrar, setShowFiltrar] = useState(false);
   const isRowVisible = (r) => statusFilter.has(r.paymentStatus) && !hiddenRowKeys.has(r.rowKey);
   const printRef = useRef(null);
@@ -321,10 +311,10 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
     })();
   }, [open, worker?.id, catalogs, includeClosed, closedFrom, closedTo]);
 
-  // Datos filtrados: aplica statusFilter + hiddenRowKeys y recomputa totals
-  // por ciclo así los subtotales reflejan solo lo visible. Además calcula
-  // `totalsByStatus` para el desglose "Pagado / En nómina / Sin pagar" que
-  // se agrega debajo del subtotal cuando hay mezcla de status en el ciclo.
+  // Aplica statusFilter y hiddenRowKeys y recalcula los totales por ciclo, así
+  // los subtotales reflejan solo lo visible. `totalsByStatus` alimenta el
+  // desglose "Pagado / En nómina / Sin pagar" bajo el subtotal cuando el ciclo
+  // mezcla estados.
   const filteredData = useMemo(() => {
     return data.map((d) => {
       const filteredRows = d.rows.filter((r) => statusFilter.has(r.paymentStatus) && !hiddenRowKeys.has(r.rowKey));
@@ -370,11 +360,11 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
     });
   };
 
-  // El encabezado del resumen es uno solo (logo + título + nombre + RUT), pero
-  // cada vista guarda su propio texto: por-ciclo en `titles`, cronológico en
-  // `titles.linear`. Este par resuelve cuál se está editando para que el panel
-  // "Personalizar títulos" sirva para las dos. Tiene que vivir acá, fuera de
-  // `printRef`, o los controles saldrían dentro de la foto.
+  // El encabezado (logo + título + nombre + RUT) es uno solo, pero cada vista
+  // guarda su texto: por-ciclo en `titles`, cronológico en `titles.linear`.
+  // Este par resuelve cuál se edita, así el panel "Personalizar títulos" sirve
+  // para las dos. Vive fuera de `printRef` para que los controles no salgan en
+  // la foto.
   const tituloVista =
     viewMode === "lineal"
       ? {
@@ -452,9 +442,7 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
             Cerrar
           </button>
           {/* Sirven para las dos vistas: capturan `printRef`, que envuelve el
-              encabezado con logo, título, nombre y RUT más la tabla que esté
-              activa. La vista cronológica tenía sus propios botones adentro
-              del bloque y sacaban la foto sin nada de eso. */}
+              encabezado (logo, título, nombre y RUT) y la tabla activa. */}
           <button onClick={handleCopy} disabled={busy === "copy" || loading} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
             {busy === "copy" ? "Copiando..." : "📋 Copiar imagen"}
           </button>
@@ -492,7 +480,7 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
         <button
           onClick={() => setIncludeClosed((v) => !v)}
           className={`rounded-md border px-2 py-1 text-xs ${includeClosed ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)]" : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"}`}
-          title="Anexa workdays de ciclos cerrados al resumen (limitado al rango de fechas)"
+          title="Suma al resumen las jornadas de ciclos cerrados (limitado al rango de fechas)"
         >
           {includeClosed ? "✓ " : ""}📂 Incluir ciclos cerrados
         </button>
@@ -540,9 +528,8 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
         )}
       </div>
 
-      {/* Filtro por status de pago + indicador de filas ocultas manualmente.
-          Los ocultos NO cuentan en los totales de las tablas — se recomputan
-          en base a filas visibles. */}
+      {/* Filtro por estado de pago e indicador de filas ocultas a mano. Las
+          filas ocultas no cuentan en los totales. */}
       {!loading && data.length > 0 && (
         <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
           <span className="text-[var(--color-muted)]">Mostrar:</span>
@@ -659,25 +646,20 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
 const advanceTypeLabel = (type) => advanceTypeMeta(type).label;
 const advanceTypeIcon = (type) => advanceTypeMeta(type).icon;
 
-// Carga los datos de resumen para un trabajador (workdays + ciclos + anticipos
-// pendientes), ya con el shape que espera `PrintableWorkerSummary`. Devuelve
-// `{ data, advances, grandTotal, advancesSaldo }`. Usado por `WorkerSummaryModal`
-// internamente y por `GroupSummaryModal` para componer N resúmenes seguidos.
+// Carga el resumen de un trabajador (workdays, ciclos y anticipos/bonos
+// pendientes) con la forma que espera `PrintableWorkerSummary`. Devuelve
+// `{ data, advances, grandTotal, advancesSaldo, anticiposSaldo, bonosSaldo }`.
+// La usan `WorkerSummaryModal` y `GroupSummaryModal`, que compone varios
+// resúmenes seguidos.
 //
+// `worker`: el trabajador completo, o al menos `{ id, rut }`. Sus claves
+// (`workerKeys`) van en una sola consulta `in`.
 // `options`:
-//   - `includeClosed` (bool, default false) — anexa ciclos cerrados además
-//     de los abiertos. Útil para auditar historia o reconstruir un pago
-//     viejo. Defaulteamos a false para mantener la carga rápida (un
-//     trabajador con años de historia tiene muchos cerrados que normalmente
-//     no se quieren ver).
-//   - `closedFrom` / `closedTo` (ISO date string) — rango aplicado solo a
-//     los workdays de ciclos CERRADOS. Los abiertos siempre se cargan
-//     completos. Si un ciclo cerrado no tiene workdays dentro del rango,
-//     se omite del resultado para no quedar con secciones vacías.
-// Recibe el trabajador completo (o al menos `{ id, rut }`), no un string: el
-// doc id y el rut vigente son dos cosas distintas y aplanarlos a un solo valor
-// era lo que obligaba a consultar dos campos y mezclar. Con las dos claves en
-// la mano alcanza una consulta `in`, que devuelve cada documento una sola vez.
+//   - `includeClosed` (bool, default false): suma los ciclos cerrados a los
+//     abiertos.
+//   - `closedFrom` / `closedTo` (fecha ISO): rango que se aplica solo a los
+//     workdays de ciclos cerrados; los abiertos van completos. Un ciclo
+//     cerrado sin workdays en el rango se omite.
 // eslint-disable-next-line react-refresh/only-export-components
 export async function loadWorkerSummaryData(worker, catalogs, options = {}) {
   const { includeClosed = false, closedFrom = null, closedTo = null } = options;
@@ -692,10 +674,8 @@ export async function loadWorkerSummaryData(worker, catalogs, options = {}) {
     String(a.date || "").localeCompare(String(b.date || "")),
   );
   const cycleIds = [...new Set(wds.map((w) => w.cycleId).filter(Boolean))];
-  // Payrolls: cargamos los referenciados por los wds para poder colorear
-  // cada fila según status (pagado / en nómina pendiente / sin pagar).
-  // getById es una query por payroll — con typical volume de docenas es OK;
-  // si escala mucho podemos migrar a `list({ wheres: [[__name__, in, chunk]] })`.
+  // Lee las nóminas referenciadas por los wds (una lectura por nómina) para
+  // el estado de pago de cada fila: pagado / en nómina / sin pagar.
   const payrollIds = [...new Set(wds.map((w) => w.payrollId).filter(Boolean))];
   const payrollsRaw = await Promise.all(
     payrollIds.map((id) => payrollsService.getById(id).catch(() => null)),
@@ -731,11 +711,9 @@ export async function loadWorkerSummaryData(worker, catalogs, options = {}) {
       const labor = (c.labors || []).find((l) => l.id === wd.laborId);
       if (!labor) continue;
       if (!wdMap[wd.laborId]) wdMap[wd.laborId] = {};
-      // Importante: keyeamos por `workdayMapKey(rut, date, ck)` — formato
-      // corto de 3 partes — y NO por `wd.id` (formato largo de 5+ partes
-      // `cycleId__laborId__rut__date__ck`). buildCycleRows parsea `parts[2]`
-      // como tierKey para trato, así que si pasamos `wd.id` se rompe la
-      // separación por tier (parts[2] sería el rut).
+      // La clave es `workdayMapKey(rut, date, ck)`, de 3 partes, y no `wd.id`
+      // (`cycleId__laborId__rut__date__ck`): buildCycleRows lee `parts[2]`
+      // como tierKey de trato.
       let ck = "0_0";
       if (labor.type === "trato") {
         if (wd.id) {
@@ -754,8 +732,7 @@ export async function loadWorkerSummaryData(worker, catalogs, options = {}) {
       }
       wdMap[wd.laborId][workdayMapKey(wd.workerRut, wd.date, ck)] = wd;
     }
-    // Saltamos ciclos cerrados sin workdays dentro del rango para no
-    // mostrar secciones vacías.
+    // Omite los ciclos cerrados sin workdays dentro del rango.
     if (isClosed && Object.keys(wdMap).length === 0) return null;
     const { rows, cosechaContainers } = buildCycleRows(clavesSet, c, wdMap, catalogs, payrollById);
     const totals = rows.reduce(
@@ -777,9 +754,9 @@ export async function loadWorkerSummaryData(worker, catalogs, options = {}) {
       trato: rows.some((r) => r.tratoQty > 0),
       piso: rows.some((r) => (r.piso || 0) > 0),
     };
-    // Label del header/total de la columna trato: si todos los días tienen
-    // configurada la MISMA unidad (Árbol, Metro, Polín…), usamos esa. Si no
-    // (o hay mezcla), caemos al tipo de trato como antes.
+    // Rótulo de la columna de trato: la unidad, si todos los días usan la
+    // misma (Árbol, Metro, Polín…); si no, el tipo de trato, o "Trato" si hay
+    // varios.
     const tratoRows = rows.filter((r) => r.laborType === "trato");
     const hasEtapas = rows.some((r) => r.laborType === "tratoEtapas");
     const tratoUnits = new Set(tratoRows.map((r) => r.tratoUnit).filter((u) => u != null));
@@ -788,10 +765,9 @@ export async function loadWorkerSummaryData(worker, catalogs, options = {}) {
       // Solo etapas → la columna de cantidad son "Unidades" producidas.
       tratoLabel = "Unidades";
     } else if (hasEtapas) {
-      // Conviven las dos: rotular la columna con la unidad del trato haría
-      // pasar la producción por etapas como si fuera de esa otra labor
-      // ("4.737 poda" incluyendo carpas). El desglose por fila dice cuál es
-      // cuál, así que el encabezado va neutro.
+      // Trato y etapas juntos: el encabezado va neutro, porque la unidad del
+      // trato rotularía también la producción por etapas ("4.737 poda"
+      // incluyendo carpas). El desglose por fila dice cuál es cuál.
       tratoLabel = "Unidades";
     } else if (tratoUnits.size === 1) {
       const u = [...tratoUnits][0];
@@ -835,14 +811,13 @@ export const PrintableWorkerSummary = forwardRef(function PrintableWorkerSummary
   { worker, data, grandTotal, advances = [], advancesSaldo = 0, anticiposSaldo, bonosSaldo, titles, viewMode = "por-ciclo", catalogs = {}, onToggleHidden },
   ref,
 ) {
-  // Soporte legacy: si solo viene advancesSaldo, lo tratamos como saldo de anticipos.
+  // Si solo llega `advancesSaldo`, se toma como saldo de anticipos.
   const antSaldo = anticiposSaldo != null ? anticiposSaldo : Math.max(0, advancesSaldo);
   const bonSaldo = bonosSaldo != null ? bonosSaldo : 0;
   const neto = grandTotal - antSaldo + bonSaldo;
   const isLinear = viewMode === "lineal";
-  // Cada vista tiene su propio título editable, pero el encabezado con el
-  // logo, el nombre y el RUT es uno solo. Antes la vista cronológica repetía
-  // un segundo encabezado adentro de su bloque.
+  // Cada vista tiene su propio título editable; el encabezado con el logo, el
+  // nombre y el RUT es uno solo.
   const encabezado = isLinear
     ? {
         main: titles?.linear?.main || "DETALLE DE JORNADA — CRONOLÓGICO",
@@ -873,9 +848,9 @@ export const PrintableWorkerSummary = forwardRef(function PrintableWorkerSummary
         <LinearTable data={data} catalogs={catalogs} onToggleHidden={onToggleHidden} />
       )}
       {!isLinear && data.map(({ cycle, faena, subfaena, rows, totals, totalsByStatus, cols, tratoLabel, kilosLabel, isClosed }) => {
-        // Helper local para que los totales caigan en la columna correcta.
-        // valueCol = "kilos" | "jornadas" | "he" | "trato" | "piso" | "amount"
-        // Extra trailing cells: Estado + (eye button si toggle disponible).
+        // Fila de total con el valor en la columna `valueCol`
+        // ("kilos" | "jornadas" | "he" | "trato" | "piso" | "amount"). Cierra
+        // con las celdas vacías de Estado y, si está activa, de Filtrar.
         const trailingEmpty = (
           <>
             <td style={cell}></td>
@@ -919,8 +894,8 @@ export const PrintableWorkerSummary = forwardRef(function PrintableWorkerSummary
         );
         const totalColSpan =
           2 + (cols.kilos ? 1 : 0) + (cols.jornadas ? 1 : 0) + (cols.he ? 1 : 0) + (cols.trato ? 1 : 0) + (cols.piso ? 1 : 0) + 1 + 1 + (onToggleHidden ? 1 : 0);
-        // Split de subtotal por status. Solo lo renderizamos si hay MIX de
-        // status en el ciclo — sino sería redundante con el subtotal único.
+        // Desglose del subtotal por estado, solo si el ciclo mezcla estados:
+        // con uno solo repetiría el subtotal.
         const statusesPresent = ["paid", "in_pending", "unpaid"].filter((s) => (totalsByStatus?.[s] || 0) > 0);
         const showStatusSplit = statusesPresent.length > 1;
 
@@ -987,10 +962,9 @@ export const PrintableWorkerSummary = forwardRef(function PrintableWorkerSummary
                           {r.tratoQty > 0 ? (
                             <>
                               <div>{fmtNumber(r.tratoQty)}</div>
-                              {/* Detalle por tier: si es multi-tier muestra una
-                                  línea por cada uno; si es single-tier, una sola
-                                  línea con el mismo formato para que se vea
-                                  consistente entre días. */}
+                              {/* Desglose por tier o por etapa, una línea por
+                                  cada uno; con uno solo, una línea con el
+                                  mismo formato. */}
                               {(() => {
                                 const u = r.tratoUnit;
                                 const defaultLbl = u != null ? tratoUnitLabel(catalogs, u) : null;
@@ -1066,7 +1040,6 @@ export const PrintableWorkerSummary = forwardRef(function PrintableWorkerSummary
                     {cols.trato && renderTotalRow(`Total ${tratoLabel}`, fmtNumber(totals.tratoQty), "trato")}
                     {cols.piso && renderTotalRow("Total Pisos", fmtCurrency(totals.piso), "piso")}
                     {renderTotalRow("Subtotal ciclo", fmtCurrency(totals.amount + (totals.piso || 0)), "amount", "#c6efce")}
-                    {/* Desglose por status — solo si hay mezcla (evita ruido) */}
                     {showStatusSplit && (
                       <tr style={{ background: "#f9fafb" }}>
                         <td style={cell}></td>
@@ -1254,9 +1227,8 @@ export const PrintableWorkerSummary = forwardRef(function PrintableWorkerSummary
 const cellH = { border: "1px solid #555", padding: "6px 8px", fontSize: 12, fontWeight: 700, textAlign: "left" };
 const cell = { border: "1px solid #999", padding: "5px 8px", fontSize: 12 };
 
-// Estilos por status de pago — pill compacto para la columna Estado. Los
-// mismos colores se reutilizan en el filtro superior para que el usuario
-// asocie rápidamente el chip del filtro con el badge de la fila.
+// Estilos por estado de pago, para el badge de la columna Estado y los chips
+// del filtro: los mismos colores asocian el chip con el badge de la fila.
 const STATUS_STYLES = {
   paid:       { bg: "#dcfce7", color: "#166534", label: "✓ Pagado" },
   in_pending: { bg: "#fef3c7", color: "#92400e", label: "⏳ En nómina" },
@@ -1306,18 +1278,15 @@ function StatusFilterPill({ status, label, active, onToggle }) {
 // ============================================================
 // LinearTable — vista lineal del resumen del trabajador
 // ============================================================
-// Aplana los días de TODOS los ciclos (open + closed-en-rango si está
-// activo) en una sola tabla cronológica con columna `Ciclo`. Tiene su
-// propio ref + botones (📋 / 📥 / 🖨) que capturan SOLO el bloque (header
-// editable + tabla), sin tocar el resto del modal.
+// Aplana los días de todos los ciclos (abiertos, y cerrados dentro del rango
+// si está activo) en una sola tabla cronológica con columna `Ciclo`.
 //
-// Las columnas (kilos / jornadas / HE / trato / piso) se muestran si al
-// menos una fila las tiene. Los labels de unidad caen al primero que se
-// vea — si los ciclos usan unidades distintas, la columna mostraría las
-// dos juntas indistintamente (caso raro y aceptado).
+// Una columna (kilos / jornadas / HE / trato / piso) se muestra si al menos
+// una fila la tiene. Su rótulo de unidad es el del primer ciclo que tenga la
+// columna: si los ciclos usan unidades distintas, la columna las mezcla bajo
+// ese rótulo.
 function LinearTable({ data, catalogs, onToggleHidden }) {
 
-  // Aplanado: una fila por (cycle, day-of-cycle-row).
   const flat = useMemo(() => {
     const out = [];
     for (const d of data) {
@@ -1331,7 +1300,6 @@ function LinearTable({ data, catalogs, onToggleHidden }) {
     return out;
   }, [data]);
 
-  // Cols: union de las que tienen algún valor en al menos una fila.
   const cols = useMemo(() => ({
     kilos: flat.some((r) => (r.kilos || 0) > 0),
     jornadas: flat.some((r) => (r.jornadas || 0) > 0),
@@ -1340,8 +1308,6 @@ function LinearTable({ data, catalogs, onToggleHidden }) {
     piso: flat.some((r) => (r.piso || 0) > 0),
   }), [flat]);
 
-  // Labels: tomamos el primer ciclo que tenga la columna; si los ciclos
-  // mezclan unidades distintas se pierde la mezcla aquí (aceptado).
   const kilosLabel = useMemo(() => {
     const d = data.find((d) => d.cols?.kilos);
     return d?.kilosLabel || "Unid.";
@@ -1363,7 +1329,7 @@ function LinearTable({ data, catalogs, onToggleHidden }) {
     }),
     { kilos: 0, jornadas: 0, overtimeHours: 0, heAmount: 0, tratoQty: 0, piso: 0, amount: 0 },
   ), [flat]);
-  // Desglose por status para el footer — mismo criterio que por-ciclo.
+  // Desglose por estado para el pie, con el mismo criterio que la vista por ciclo.
   const totalsByStatus = useMemo(() => {
     const acc = { paid: 0, in_pending: 0, unpaid: 0 };
     for (const r of flat) {
@@ -1377,9 +1343,6 @@ function LinearTable({ data, catalogs, onToggleHidden }) {
 
   if (flat.length === 0) return null;
 
-  // Los valores que ve el editor son los mismos que pinta el encabezado de
-  // arriba (`encabezado` en PrintableWorkerSummary); si acá tuviéramos un
-  // default propio, el campo mostraría un texto y la foto otro.
   return (
     <div style={{ marginBottom: 20 }}>
       <div style={{ background: "#ffffff", padding: 12 }}>

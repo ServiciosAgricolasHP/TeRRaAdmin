@@ -42,7 +42,7 @@ describe("allocateAdvances — el caso sin nada aplicado (armar la nómina)", ()
   });
 
   // ─────────────────────────────────────────────────────────────────────
-  // El caso que documenta AGENTS.md y que justifica el orden bonos→anticipos.
+  // El orden bonos → anticipos, con el caso que documenta AGENTS.md.
   // ─────────────────────────────────────────────────────────────────────
   it("bonos PRIMERO: el bono engrosa la base y deja el anticipo liquidado", () => {
     const r = allocateAdvances({
@@ -168,8 +168,8 @@ describe("allocateAdvances — el caso sin nada aplicado (armar la nómina)", ()
 });
 
 describe("allocateAdvances — el caso incremental (anticipos nuevos sobre alguien que ya está)", () => {
-  // Reproduce lo que hacía Payroll.jsx cuando se recalcula una nómina y
-  // aparecen anticipos que no estaban: la base ya trae descuentos aplicados.
+  // Anticipos que aparecen al recalcular una nómina: la base ya trae
+  // descuentos aplicados.
   it("la base descuenta lo ya aplicado y suma lo ya acreditado", () => {
     const r = allocateAdvances({
       gross: 200000,

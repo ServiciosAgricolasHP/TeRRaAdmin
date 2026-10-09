@@ -206,8 +206,8 @@ describe("describeStage", () => {
   });
 
   it("una etapa que ya no está en la definición se trata como que cuenta", () => {
-    // Es producción real que quedó huérfana porque alguien editó las etapas;
-    // esconderla del trabajador sería peor que mostrarla de más.
+    // La producción de una etapa que ya no está en la definición se sigue
+    // mostrando.
     const e = describeStage(labor, "borrada");
     expect(e.name).toBe("Etapa");
     expect(e.counts).toBe(true);
@@ -225,9 +225,8 @@ describe("stageTag", () => {
   });
 
   it("una etapa que no cuenta se rotula igual que las demás", () => {
-    // Estas vistas las lee el trabajador. `counts` es una distinción de
-    // facturación de la empresa, y al lado de la producción de alguien un
-    // "(no cuenta)" se lee como que su trabajo no vale.
+    // Estas vistas las lee el trabajador: `counts` es una distinción de
+    // facturación de la empresa y no se rotula.
     expect(stageTag({ name: "Preparación", counts: false })).toBe("Preparación");
   });
 
@@ -256,16 +255,14 @@ describe("la frontera entre lo que ve el trabajador y lo que cuenta la empresa",
   ];
 
   it("el conteo de la empresa sigue excluyendo las etapas que no cuentan", () => {
-    // Esta es la regla que NO cambia: una unidad física se factura una sola
-    // vez, por etapas o como completo.
+    // Una unidad física se factura una sola vez, por etapas o como completo.
     const { pago, unidades } = getEtapasTotals(labor, dia);
     expect(pago).toBe(60000);
     expect(unidades).toBe(4);
   });
 
   it("pero la producción del trabajador son las 14, no las 4", () => {
-    // Es lo que estaba roto: la vista del trabajador mostraba el pago de
-    // Preparación sin ninguna cantidad detrás.
+    // La vista del trabajador suma la cantidad de todas las etapas.
     const total = dia.reduce((sum, wd) => sum + wd.qty, 0);
     expect(total).toBe(14);
   });

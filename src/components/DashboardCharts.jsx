@@ -135,8 +135,8 @@ function ChartTooltip({ active, payload, label, valueFormatter, showTotal = fals
   );
 }
 
-// El gráfico de deuda necesita decir explícitamente si en ese mes se pagó más
-// o menos de lo que se generó — es la lectura útil, no los montos sueltos.
+// Tooltip de la deuda: lo generado y lo pagado en el mes, el saldo al cierre
+// y si se pagó más o menos de lo generado.
 function DebtTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   const row = payload[0].payload;
@@ -287,10 +287,10 @@ export default function DashboardCharts({
             margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
             barCategoryGap="24%"
             style={onDebtMonthClick ? { cursor: "pointer" } : undefined}
-            // Recharts 3 sacó `activePayload` del onClick del gráfico: ahora
-            // solo llegan el índice y la etiqueta del punto activo, así que el
-            // dato se resuelve contra el array. `activeIndex` puede venir como
-            // string, de ahí el Number(); si no llega, se cae a la etiqueta.
+            // El onClick de Recharts 3 entrega el índice y la etiqueta del
+            // punto activo, no el dato, así que la fila se busca en el array.
+            // `activeIndex` puede venir como string; sin índice, se busca por
+            // etiqueta.
             onClick={(state) => {
               const idx = Number(state?.activeTooltipIndex ?? state?.activeIndex);
               const row = Number.isInteger(idx)
@@ -373,9 +373,8 @@ export default function DashboardCharts({
       </ChartCard>
 
       <ChartCard title="Composición de lo devengado" hint="del período" empty={payMix.length === 0}>
-        {/* Dona a la izquierda y leyenda a la derecha: hay ancho de sobra en la
-            tarjeta, y así cada categoría muestra su monto y su porcentaje sin
-            tener que pasar el mouse por encima. */}
+        {/* Dona a la izquierda y leyenda a la derecha, con el monto y el
+            porcentaje de cada categoría a la vista. */}
         <div className="flex items-center gap-3">
           <div className="min-w-0 flex-1">
             <ResponsiveContainer width="100%" height={228}>
@@ -473,9 +472,8 @@ export default function DashboardCharts({
         </ResponsiveContainer>
       </ChartCard>
 
-      {/* Facturación: `dteDocuments` es la colección más grande del sistema, así
-          que esta tarjeta primero dice cuánto costaría y la carga es a pedido.
-          Una vez cargada queda en el estado de la pantalla y no se repite. */}
+      {/* Compras vs ventas de la empresa elegida en el selector: la consulta
+          a `dteDocuments`, la colección más grande, se acota a una empresa. */}
       {dte && (
         <ChartCard title="Compras vs ventas" hint={`${dte.months} meses · con IVA`} wide>
           <div className="mb-3 flex flex-wrap items-center gap-2">

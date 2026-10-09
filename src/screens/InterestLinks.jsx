@@ -30,8 +30,8 @@ export default function InterestLinks() {
   const load = async () => {
     setLoading(true);
     try {
-      // Sort by `order` if present, otherwise by text. Lets the user drag to
-      // reorder while keeping a stable display for older docs without order.
+      // Ordena por `order` y, sin ese campo, al final por texto: el orden
+      // queda estable aunque algunos links no tengan posición guardada.
       const list = await interestLinksService.list();
       list.sort((a, b) => {
         const ao = Number.isFinite(a.order) ? a.order : 1e9;
@@ -57,7 +57,7 @@ export default function InterestLinks() {
   const onDragStart = (i) => (e) => {
     setDragIndex(i);
     e.dataTransfer.effectAllowed = "move";
-    // Required for Firefox to start the drag.
+    // Firefox no inicia el arrastre sin datos.
     try { e.dataTransfer.setData("text/plain", String(i)); } catch { /* noop */ }
   };
   const onDragOver = (i) => (e) => {
@@ -79,7 +79,7 @@ export default function InterestLinks() {
     const [moved] = next.splice(src, 1);
     next.splice(target, 0, moved);
     setLinks(next);
-    // Persist new order. Only write the docs whose position actually changed.
+    // Guarda el orden nuevo, escribiendo solo los links que cambiaron de posición.
     const updates = [];
     next.forEach((l, idx) => {
       if (l.order !== idx) updates.push({ id: l.id, idx });

@@ -2,7 +2,7 @@ import { defineConfig } from "vitest/config";
 
 // Los ciclos end-to-end corren contra el EMULADOR de Firestore, nunca contra
 // datos reales. Tres de las cuatro barreras que lo garantizan se declaran acá;
-// la cuarta (la assertion que aborta si algo falta) vive en tests/e2e/setup.js.
+// la cuarta (la verificación que aborta si algo falta) vive en tests/e2e/setup.js.
 //
 //   1. `demo-terra-test` — el SDK de Firebase jamás contacta servidores de
 //      Google con un project id que empieza con `demo-`. Es la barrera que no

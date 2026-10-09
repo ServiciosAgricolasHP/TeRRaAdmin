@@ -14,8 +14,8 @@ function effectiveDayPrice(labor, dayCfg) {
 }
 
 const WEEKDAYS_SHORT = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
-// `d` siempre es "YYYY-MM-DD"; se agrega T00:00:00 para que el weekday se
-// calcule en horario local y no se corra un día por UTC.
+// `d` siempre es "YYYY-MM-DD"; con T00:00:00 el día de la semana se calcula
+// en hora local y no se corre un día por UTC.
 function formatDayLabel(d) {
   const dt = new Date(`${d}T00:00:00`);
   if (Number.isNaN(dt.getTime())) return d;
@@ -26,25 +26,23 @@ function formatDayLabel(d) {
 const inputCls =
   "w-24 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-right text-sm outline-none focus:border-[var(--color-accent)] disabled:opacity-50";
 
-// Borde izquierdo de acento: marca de un vistazo qué días de la lista (que
-// puede tener 20-30 tarjetas) ya tienen algo cargado, sin tener que leer el
-// monto de cada una.
+// Borde izquierdo de acento: marca de un vistazo qué días de la lista ya
+// tienen algo cargado.
 const cardAccentCls = (hasValue) =>
   `rounded-lg border border-l-4 p-3.5 border-[var(--color-border)] ${
     hasValue ? "border-l-emerald-500/70" : "border-l-transparent"
   }`;
 
-// Modal mobile: edita un trabajador a la vez, una fila por día (en vez de
-// columnas-día como el AG-Grid). Llama exactamente las mismas funciones de
-// escritura (commitCosechaCombo/commitTratoTier/commitEtapaQty/
-// commitNormalAmount/upsertTratoHEWorkday) que ya usa el grid en
-// CycleDetail.jsx — mismo camino a Firestore, cero lógica de plata duplicada.
+// Modal mobile: edita un trabajador a la vez, una tarjeta por día (en vez de
+// una columna por día como la grilla). Escribe con las mismas funciones que la
+// grilla de CycleDetail.jsx (commitCosechaCombo/commitTratoTier/
+// commitEtapaQty/commitNormalAmount/upsertTratoHEWorkday): el camino a
+// Firestore y el cálculo de montos son los mismos.
 //
-// Configurar un combo/tier/etapa nuevo o el precio del día es una acción
-// compartida por TODOS los trabajadores de ese día (no "de un solo
-// trabajador"), así que vive en una vista aparte (DayConfigContent) que
-// reemplaza el contenido de este mismo Modal en vez de abrir uno anidado —
-// ver plan de mobile CycleDetail sobre por qué evitar Modals anidados acá.
+// Configurar un combo/tier/etapa o el precio del día afecta a todos los
+// trabajadores de ese día, así que vive en una vista aparte
+// (DayConfigContent) que reemplaza el contenido de este mismo Modal en vez de
+// abrir uno anidado.
 export default function CycleWorkerEditModal({
   workerRut,
   onClose,
@@ -98,14 +96,9 @@ export default function CycleWorkerEditModal({
   const [onlyWithData, setOnlyWithData] = useState(false);
   const [savingFields, setSavingFields] = useState({});
 
-  // El modal queda montado siempre (solo cambia `workerRut`), así que si no
-  // se resetea acá, cambiar de trabajador podía reabrir directo en la vista
-  // de configuración del día anterior (o dejar colgado un estado de
-  // confirmación/búsqueda que ya no aplica al trabajador nuevo). `drafts`
-  // también se resetea acá: navegar con ‹/› cambia `workerRut` sin pasar por
-  // cerrar el modal (a diferencia de tocar otro trabajador en la lista), así
-  // que sin este reset un texto tipeado y no confirmado del trabajador
-  // anterior podía quedar pisando el campo del mismo nombre en el siguiente.
+  // El modal queda montado y solo cambia `workerRut`. Al cambiar de
+  // trabajador (también con ‹/›) vuelve a la vista principal y descarta los
+  // textos sin confirmar, la búsqueda de líder y las confirmaciones pendientes.
   useEffect(() => {
     setConfiguringDate(null);
     setPickingLeader(false);
@@ -115,12 +108,10 @@ export default function CycleWorkerEditModal({
     setDrafts({});
   }, [workerRut]);
 
-  // Precarga el formulario de bonos al abrirlo: usa el valor real del día si
-  // ya hay algo cargado, o el default del trabajador (`bonusDefaults`) si el
-  // día está completamente vacío (mismo criterio que el BonusEditModal de
-  // escritorio, que distingue por existencia de workday en vez de por campos
-  // en cero — acá no tenemos el workday crudo, así que "todo en cero" es la
-  // mejor aproximación disponible).
+  // Precarga el formulario de bonos: los valores del día si ya tiene algo
+  // cargado, o los `bonusDefaults` del trabajador si está vacío. El
+  // BonusEditModal de escritorio mira si existe el workday; acá no se tiene el
+  // workday, así que "vacío" es que todos los campos del día estén en cero.
   useEffect(() => {
     if (!bonusDate || !row || !activeLabor) return;
     const isBlankDay =
@@ -146,9 +137,9 @@ export default function CycleWorkerEditModal({
       return next;
     });
   const displayValue = (field) => (drafts[field] !== undefined ? drafts[field] : row?.[field] || "");
-  // Feedback de guardado: distinto de `drafts` (que es el texto en edición)
-  // porque acá lo que importa es la ventana entre soltar el input y que la
-  // escritura a Firestore confirme, no el contenido tipeado.
+  // Campos con una escritura en curso, para el indicador "guardando…". Va
+  // aparte de `drafts` (el texto en edición): cubre desde que se suelta el
+  // input hasta que Firestore confirma.
   const setSaving = (field, value) =>
     setSavingFields((prev) => {
       if (value) return { ...prev, [field]: true };
@@ -157,10 +148,8 @@ export default function CycleWorkerEditModal({
       delete next[field];
       return next;
     });
-  // Con buena conexión, commitX()/upsertTratoHEWorkday() resuelven en pocos
-  // ms — sin este piso el "guardando…" alcanza a renderizar un solo frame y
-  // en la práctica es invisible. Se fuerza un mínimo visible en vez de sacar
-  // el indicador, para que siempre se note que la escritura ocurrió.
+  // El indicador "guardando…" dura al menos MIN_SAVING_MS: con buena conexión
+  // la escritura resuelve en pocos ms y no alcanzaría a verse.
   const MIN_SAVING_MS = 350;
   const runWithSaving = async (field, task) => {
     setSaving(field, true);
@@ -181,6 +170,9 @@ export default function CycleWorkerEditModal({
   const isTrato = type === "trato";
   const isTratoEtapas = type === "tratoEtapas";
   const isTratoHE = type === "tratoHE";
+  // Mismo criterio que `allowsMonthly` en CycleDetail.jsx: labores al día y
+  // jornadas con horas extras.
+  const allowsMonthly = !isCosecha && !isTrato && !isTratoEtapas;
   const isTemp = !!row._isTemp;
 
   const doRemove = async () => {
@@ -194,13 +186,13 @@ export default function CycleWorkerEditModal({
     }
   };
 
-  // Barra de acciones sobre el trabajador en sí (no sobre un día puntual):
-  // pago mensual, grupo/líder, y quitar del labor. Mismo camino a Firestore
-  // que los botones equivalentes del grid de escritorio (toggleMonthly /
-  // assignLeaderToWorker / removeWorkerByRut en CycleDetail.jsx).
+  // Acciones sobre el trabajador (no sobre un día): pago mensual, grupo/líder
+  // y quitar de la labor. Usan las mismas funciones que los botones de la
+  // grilla de escritorio (toggleMonthly / assignLeaderToWorker /
+  // removeWorkerByRut en CycleDetail.jsx).
   const renderTopActions = () => (
     <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-[var(--color-surface-2)] p-2.5">
-      {type === "normal" && !readOnly && (
+      {allowsMonthly && !readOnly && (
         <button
           type="button"
           onClick={() => toggleMonthly(workerRut)}
@@ -209,7 +201,7 @@ export default function CycleWorkerEditModal({
               ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
               : "border border-[var(--color-border)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
           }`}
-          title="Pago mensual: las jornadas se registran como asistencia pero no entran al payroll"
+          title="Pago mensual: las jornadas se registran como asistencia pero no entran a la nómina"
         >
           {row._monthly ? "✓ Mensual" : "Marcar mensual"}
         </button>
@@ -336,12 +328,9 @@ export default function CycleWorkerEditModal({
     </div>
   );
 
-  // Editor de bonos (manejo/supervisión/extras) de tratoHE. Antes abría un
-  // BonusEditModal aparte (Modal propio, compartido con el botón "Bonos" del
-  // grid de escritorio) — dentro de este modal mobile eso quedaba como dos
-  // Modals simultáneos, y por el listener de Escape en `window` de Modal.jsx
-  // el segundo terminaba renderizando detrás del primero en vez de encima.
-  // Acá va como swap in-place, igual que el resto de las sub-vistas.
+  // Editor de bonos (manejo/supervisión/extras) de tratoHE. Como las demás
+  // sub-vistas, reemplaza el contenido de este Modal en vez de abrir otro
+  // encima.
   const renderBonusEditor = () => {
     const bonusManejo = activeLabor.bonusManejo ?? DEFAULT_BONUS_MANEJO;
     const bonusSupervision = activeLabor.bonusSupervision ?? DEFAULT_BONUS_SUPERVISION;
@@ -437,7 +426,7 @@ export default function CycleWorkerEditModal({
           type="button"
           disabled={!canToggle}
           onClick={() => togglePiso(activeLabor.id, d, workerRut)}
-          title={!hasWd ? "Asigná primero producción este día" : eff === 0 ? "Configurá el piso del día o el default de la labor" : ""}
+          title={!hasWd ? "Asigna primero producción a este día" : eff === 0 ? "Configura el piso del día o el piso por defecto de la labor" : ""}
           className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
             checked
               ? "bg-amber-500/20 text-amber-700 dark:text-amber-300"
@@ -473,9 +462,9 @@ export default function CycleWorkerEditModal({
       <span className="text-xs text-[var(--color-muted)]">—</span>
     );
 
-  // `amountField` porque el campo que trae el total del día varía por tipo:
-  // cosecha/trato/tratoEtapas usan `${d}__total`, tratoHE usa `${d}__amt`
-  // (no tiene `__total` — ver buildRowsTratoHE).
+  // `amountField`: el total del día está en `${d}__total` en
+  // cosecha/trato/tratoEtapas y en `${d}__amt` en tratoHE, que no tiene
+  // `__total` (ver buildRowsTratoHE).
   const dayHeader = (d, amountField = `${d}__total`) => (
     <div className="mb-2 flex items-center justify-between gap-2">
       <div className="flex items-center gap-1.5">
@@ -672,11 +661,9 @@ export default function CycleWorkerEditModal({
     );
   };
 
-  // Desglose visible del monto de tratoHE (base/HE/bonos/extras) — en
-  // desktop esto es un tooltip al pasar el mouse sobre el $ (`buildBreakdown`
-  // en CycleDetail.jsx); acá no hay hover, así que va como texto siempre
-  // visible. Se recalcula acá en vez de compartir la función de escritorio
-  // porque esa vive en un closure del useMemo de columnas del grid.
+  // Desglose del monto de tratoHE (base/HE/bonos/extras) como texto siempre
+  // visible. En escritorio es el tooltip de `buildBreakdown` (CycleDetail.jsx),
+  // que vive dentro del useMemo de columnas de la grilla y no se puede reusar.
   const tratoHEBreakdown = (d, cfg, m, s, x) => {
     const qty = Number(row[`${d}__qty`]) || 0;
     const he = Number(row[`${d}__he`]) || 0;
@@ -697,6 +684,7 @@ export default function CycleWorkerEditModal({
   };
 
   const renderTratoHEDay = (d) => {
+    if (row._monthly) return renderAttendanceDay(d);
     const cfg = getDaySingle(dayPrices, activeLabor.id, d, "normal");
     const suggested = effectiveDayPrice(activeLabor, cfg);
     const qtyField = `${d}__qty`;
@@ -790,32 +778,35 @@ export default function CycleWorkerEditModal({
     );
   };
 
+  // Día de un trabajador de sueldo mensual: solo la asistencia, en $0.
+  const renderAttendanceDay = (d) => {
+    const present = !!row[`${d}__present`];
+    return (
+      <div key={d} className={`flex items-center justify-between gap-2 ${cardAccentCls(present)}`}>
+        <div className="flex items-center gap-1.5">
+          <div className="text-sm font-semibold">{formatDayLabel(d)}</div>
+          {configureBtn(d)}
+        </div>
+        <button
+          type="button"
+          disabled={readOnly}
+          onClick={() => toggleAttendance(workerRut, d, present)}
+          className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+            present
+              ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+              : "border border-[var(--color-border)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
+          }`}
+        >
+          {present ? "✓ Presente" : "Marcar presente"}
+        </button>
+      </div>
+    );
+  };
+
   const renderNormalDay = (d) => {
     const dayCfg = getDaySingle(dayPrices, activeLabor.id, d, "normal");
     const suggested = effectiveDayPrice(activeLabor, dayCfg);
-    if (row._monthly) {
-      const present = !!row[`${d}__present`];
-      return (
-        <div key={d} className={`flex items-center justify-between gap-2 ${cardAccentCls(present)}`}>
-          <div className="flex items-center gap-1.5">
-            <div className="text-sm font-semibold">{formatDayLabel(d)}</div>
-            {configureBtn(d)}
-          </div>
-          <button
-            type="button"
-            disabled={readOnly}
-            onClick={() => toggleAttendance(workerRut, d, present)}
-            className={`rounded-full px-3 py-1.5 text-xs font-medium ${
-              present
-                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                : "border border-[var(--color-border)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
-            }`}
-          >
-            {present ? "✓ Presente" : "Marcar presente"}
-          </button>
-        </div>
-      );
-    }
+    if (row._monthly) return renderAttendanceDay(d);
     const field = d;
     const amt = Number(row[field]) || 0;
     return (
@@ -917,7 +908,7 @@ export default function CycleWorkerEditModal({
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5 text-xs font-normal text-[var(--color-muted)]">
-                  <span className="font-mono">{formatRutForDisplay(workerRut)}</span>
+                  <span className="font-mono">{formatRutForDisplay(row._displayRut || workerRut)}</span>
                   <span>·</span>
                   <span className="font-semibold text-[var(--color-accent)]">{fmtCurrency(row.total || 0)}</span>
                 </div>

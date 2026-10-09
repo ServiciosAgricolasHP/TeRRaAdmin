@@ -83,26 +83,26 @@ import {
 } from "../utils/payrollItem";
 import ConfirmDialog from "../components/ConfirmDialog";
 import Modal from "../components/Modal";
-import ResizableArea from "../components/ResizableArea";
 import WorkerSummaryModal from "../components/WorkerSummaryModal";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { matchesSearchQuery } from "../utils/textSearch";
+import { localIsoDate } from "../utils/dates";
+import { currentRutResolver } from "../utils/workerRut";
 
 const fmtCurrency = (v) =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
     Number(v) || 0,
   );
 
-// Denominaciones CLP que el usuario tiene disponibles para pagar efectivo.
-// Orden descendente porque la descomposición es greedy (toma el billete más
-// grande que entra y baja). $100 es la unidad más chica → cualquier monto
-// redondeado a múltiplo de $100 es descomponible exactamente.
+// Denominaciones CLP para pagar en efectivo, de mayor a menor porque la
+// descomposición es greedy (toma el billete más grande que entra y baja).
+// Con $100 como la más chica, todo múltiplo de $100 se descompone exacto.
 const CASH_DENOMINATIONS = [10000, 5000, 1000, 500, 100];
 
 // Para cada item de efectivo: redondea el monto hacia arriba al múltiplo de
-// $100 más cercano y descompone en cuántos billetes/monedas de cada
-// denominación se necesitan. Devuelve `{ totalNeeded, counts, perWorker }`
-// donde counts es un Map(denominacion → cantidad necesaria total).
+// $100 y lo descompone en billetes y monedas de cada denominación. Devuelve
+// `{ totalNeeded, totalOriginal, counts, perWorker }`, con counts como
+// Map(denominación → cantidad total).
 function estimateCashBreakdown(cashItems) {
   const counts = new Map(CASH_DENOMINATIONS.map((d) => [d, 0]));
   const perWorker = [];
@@ -155,8 +155,8 @@ const saveSelection = (set) => {
   try { localStorage.setItem(SELECTION_KEY, JSON.stringify([...set])); } catch {}
 };
 
-// Trigger a browser download of the snapshot object as a JSON file. The name
-// is sanitized for filesystems (any non-alphanumeric run becomes "_").
+// Descarga el snapshot como archivo JSON. En el nombre, cada tramo de
+// caracteres que no sean letra, número, "_" o "-" pasa a "_".
 function downloadSnapshotJson(payrollName, snapshot) {
   try {
     const json = JSON.stringify(snapshot, null, 2);
@@ -175,14 +175,19 @@ function downloadSnapshotJson(payrollName, snapshot) {
   }
 }
 
-// La clave foranea de un anticipo es el rut VIGENTE del trabajador. Un workday
-// congela el rut que tenia al crearse, asi que hay que resolverlo contra la
-// ficha en vez de usar el del workday. Sale de la lista que la pantalla ya
-// tiene cargada: no cuesta lecturas.
+// Los anticipos cuelgan del rut vigente del trabajador, y un workday guarda el
+// rut que tenía al crearse: se resuelve contra la ficha, con la lista de
+// trabajadores ya cargada (sin lecturas).
 const resolverRutVigente = (workers) => {
-  const porId = new Map((workers || []).map((w) => [w.id, w.rut || w.id]));
-  return (agg) => porId.get(agg.workerId || agg.rut) ?? agg.rut;
+  const rutOf = currentRutResolver(workers);
+  return (agg) => rutOf(agg.rut, agg.workerId);
 };
+
+// Copia de los items con el rut vigente, para exportar. Solo para archivos que
+// se leen afuera: dentro de la app los items conservan el rut guardado, que es
+// la clave con que se cruzan con jornadas y anticipos.
+const withCurrentRuts = (items, rutOf) =>
+  (items || []).map((it) => ({ ...it, rut: rutOf(it.rut, it.workerId) }));
 
 export default function Payroll() {
   const toast = useToast();
@@ -192,20 +197,18 @@ export default function Payroll() {
   const [subfaenas, setSubfaenas] = useState([]);
   const [cycles, setCycles] = useState([]);
   const [workers, setWorkers] = useState([]);
+  // Rut vigente para mostrar, ver utils/workerRut.js.
+  const rutOf = useMemo(() => currentRutResolver(workers), [workers]);
   const [payrolls, setPayrolls] = useState([]);
 
   const [selectedCycleIds, setSelectedCycleIds] = useState(loadSelection);
-  // Por cada ciclo seleccionado guardamos qué labores entran a la nómina.
-  // No persistido (a diferencia de selectedCycleIds): la elección es local
-  // a la sesión de generación. Default al chequear un ciclo: todas sus labores.
-  // Un ciclo marcado sin entrada acá —quedó marcado de otra sesión— entra con
-  // todas.
+  // Labores que entran a la nómina, por ciclo seleccionado. No se persiste,
+  // a diferencia de selectedCycleIds. Al marcar un ciclo entran todas sus
+  // labores, y un ciclo marcado sin entrada en el mapa también entra con todas.
   const [selectedLaborsByCycle, setSelectedLaborsByCycle] = useState(() => new Map());
-  // Personas sueltas: días puntuales de alguien, elegidos uno a uno en el mismo
-  // modal que "+ Agregar persona" del detalle de una nómina. Se suman a lo que
-  // traen los ciclos, así que una nómina se puede armar solo con personas, o
-  // con personas además de ciclos y labores. Como la elección de labores, vive
-  // solo en esta sesión de generación.
+  // Personas sueltas: días puntuales de alguien, elegidos en el mismo modal que
+  // "+ Agregar persona" del detalle de una nómina. Se suman a lo que traen los
+  // ciclos (o arman la nómina por sí solas) y no se persisten.
   // [{ worker, workdayIds, rowKeys, filas: [{ cycleId, laborId, date, amount }] }]
   const [people, setPeople] = useState([]);
   // null = cerrado; {} abre el modal en la búsqueda, { worker } directo en esa
@@ -214,28 +217,26 @@ export default function Payroll() {
   // Los ciclos de la nómina que se está previsualizando, para el filtro por
   // ciclo: los elegidos más los que traen las personas sueltas.
   const [previewCycles, setPreviewCycles] = useState([]);
-  const [step, setStep] = useState(1); // 1 = pick cycles, 2 = preview
-  const [previewItems, setPreviewItems] = useState([]); // [{rut, name, accountNumber, bankCode, accountType, email, amount, include, _missing}]
-  // Cached source data from buildPreview, used to assemble the static snapshot
-  // when generateAndSave fires. Avoids re-querying workdays and advances.
+  const [step, setStep] = useState(1); // 1 = elegir ciclos, 2 = vista previa
+  const [previewItems, setPreviewItems] = useState([]); // items de la vista previa; la forma se arma en buildPreview
+  // Datos de origen de buildPreview, con los que generateAndSave arma el
+  // snapshot sin volver a leer jornadas ni anticipos.
   const previewWorkdaysRef = useRef([]);
   const previewAdvancesRef = useRef([]);
   const [busy, setBusy] = useState(false);
-  // Progress overlay state. `step` es el mensaje principal (ej. "Etiquetando
-  // jornadas"), `detail` un complemento opcional (ej. "340 / 500"), `percent`
-  // 0-100. Si es `null`, no se muestra overlay.
+  // Overlay de progreso: `step` es el mensaje principal (ej. "Etiquetando
+  // jornadas"), `detail` un complemento opcional (ej. "340 / 500") y `percent`
+  // va de 0 a 100. `null` oculta el overlay.
   const [progress, setProgress] = useState(null);
   const [payrollName, setPayrollName] = useState("");
-  // Clasificación de la nómina: "nomina" (default) o "diferencia". Las
-  // diferencias suelen ser nóminas chicas (ajustes / pagos puntuales) y se
-  // muestran en una pestaña aparte del historial para no alargar la lista
-  // principal de nóminas.
+  // Clasificación: "nomina" (default) o "diferencia". Las diferencias (ajustes,
+  // pagos puntuales) se listan en una pestaña aparte del historial.
   const [payrollClassification, setPayrollClassification] = useState("nomina");
 
   const [confirmDelete, setConfirmDelete] = useState(null);
-  // Confirm genérico para flujos async que necesitan pausar a mitad de una
-  // función (ej. generateAndSave) y esperar la respuesta del usuario antes de
-  // seguir — reemplaza los `confirm()` nativos bloqueantes del navegador.
+  // Confirmación genérica para flujos async que esperan la respuesta del
+  // usuario a mitad de camino (ej. generateAndSave): `askConfirm` devuelve una
+  // promesa que resuelve el diálogo.
   const [confirmState, setConfirmState] = useState(null);
   const askConfirm = (message, opts = {}) =>
     new Promise((resolve) => setConfirmState({ message, resolve, ...opts }));
@@ -285,16 +286,16 @@ export default function Payroll() {
     });
   };
   const [detailPayroll, setDetailPayroll] = useState(null);
-  // Renombrar nómina: `renaming` = la nómina en edición (o null). El nombre es
-  // solo un label — no es clave de nada — así que se puede cambiar en cualquier
-  // estado (pendiente o pagada). Actualiza el doc y el snapshot embebido para
-  // que las re-descargas viejas también reflejen el nombre nuevo.
+  // Nómina que se está renombrando, o null. El nombre es solo una etiqueta y se
+  // cambia en cualquier estado; renombrar actualiza el doc y el snapshot
+  // embebido, así la re-descarga del JSON trae el nombre nuevo.
   const [renaming, setRenaming] = useState(null);
 
-  // Per-cycle aggregates: { [cycleId]: { unpaid, paid, total } }
+  // Totales por ciclo activo: { [cycleId]: { unpaid, paid, total, firstDay,
+  // lastDay, unpaidBank, unpaidCash, unpaidUnknown, unpaidByLabor } }
   const [cycleStats, setCycleStats] = useState({});
-  // Estado independiente del loading inicial: cuando el usuario pide refrescar
-  // mostramos un spinner en el botón sin tapar toda la pantalla con "Cargando…".
+  // Separado de `loading`: al refrescar, el spinner va en el botón y no tapa
+  // la pantalla con "Cargando…".
   const [refreshing, setRefreshing] = useState(false);
 
   const load = async () => {
@@ -313,16 +314,13 @@ export default function Payroll() {
       setWorkers(w);
       setPayrolls(p);
 
-      // Compute per-cycle paid/unpaid totals + date range (for active cycles
-      // only). firstDay/lastDay alimentan el CycleSelector para mostrar el
-      // período de cada subfaena en pantalla cuando se arma una nómina.
+      // Totales pagado/pendiente y rango de fechas de los ciclos activos.
+      // firstDay/lastDay son el período que muestra CycleSelector.
       const activeIds = c.filter((x) => x.status !== "closed").map((x) => x.id);
-      // Medio de pago por rut. Permite estimar cuánto de lo pendiente sale en
-      // efectivo y cuánto por transferencia sin ninguna lectura extra: los
-      // workdays ya se recorren acá abajo y el catálogo de workers ya está en
-      // `w`. Es un estimado en BRUTO — el monto real por medio de pago sale
-      // recién en el preview, con anticipos/bonos aplicados y con los cambios
-      // de bolsa que haga el usuario.
+      // Medio de pago por rut, para estimar sin lecturas extra cuánto de lo
+      // pendiente sale en efectivo y cuánto por transferencia. Es un estimado
+      // en bruto: el monto real por medio de pago sale en la vista previa, con
+      // anticipos, bonos y los cambios de medio que haga el usuario.
       const payKindByRut = new Map();
       for (const wk of w) {
         const code = wk.bankDetails?.[3] || "";
@@ -340,10 +338,8 @@ export default function Payroll() {
       for (const cy of c) {
         for (const labor of cy.labors || []) laborTypeMap.set(labor.id, labor.type);
       }
-      // Por ciclo y cacheado: estos mismos documentos los vuelve a pedir
-      // `buildPreview` cuando el usuario elige los ciclos, casi siempre
-      // dentro del minuto. Agrupados de a 10 con `in` las dos lecturas
-      // formaban claves distintas y se pagaban las dos.
+      // Por ciclo y cacheado: `buildPreview` vuelve a pedir estos mismos
+      // documentos al elegir los ciclos y los toma de la misma clave de caché.
       const wds = await listWorkdaysByCycles(activeIds);
       for (const wd of wds) {
         const cid = wd.cycleId;
@@ -360,15 +356,14 @@ export default function Payroll() {
           stats[cid].paid += amount;
         } else {
           stats[cid].unpaid += amount;
-          // Un rut que no está en el catálogo (o sin banco cargado) no se
-          // asume transferencia: queda aparte como "por definir" para no
-          // inflar el monto del banco en silencio.
+          // Un rut sin ficha o sin banco cargado queda aparte como "por
+          // definir", no como transferencia.
           const kind = payKindByRut.get(wd.workerRut) || "unknown";
           if (kind === "cash") stats[cid].unpaidCash += amount;
           else if (kind === "bank") stats[cid].unpaidBank += amount;
           else stats[cid].unpaidUnknown += amount;
-          // Lo mismo por labor: el total de lo elegido tiene que respetar las
-          // labores que se destildan.
+          // Lo mismo por labor, para que el total de lo elegido respete las
+          // labores destildadas.
           const porLabor = stats[cid].unpaidByLabor;
           if (!porLabor[wd.laborId]) porLabor[wd.laborId] = { unpaid: 0, bank: 0, cash: 0, unknown: 0 };
           const pl = porLabor[wd.laborId];
@@ -395,10 +390,9 @@ export default function Payroll() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Forzar lectura desde Firestore ignorando la cache local (mem + localStorage).
-  // Útil cuando otro usuario agregó workers/labores/workdays justo antes de
-  // generar una nómina y la TTL no caducó todavía. Invalida los scopes que
-  // alimentan el armado de la nómina y recarga.
+  // Relee desde Firestore sin la caché local (memoria y localStorage): invalida
+  // lo que alimenta el armado de la nómina y recarga. Sirve cuando otro usuario
+  // cambió trabajadores, labores o jornadas y la caché todavía no vence.
   const refresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
@@ -419,9 +413,9 @@ export default function Payroll() {
     }
   };
 
-  // Nóminas cuyas transferencias ya se pagaron pero cuyo efectivo sigue
-  // debiéndose. Sale de `payrolls`, que ya está cargado y cacheado — cero
-  // lecturas extra. Es informativo: no se anexa a la nómina nueva.
+  // Nóminas con las transferencias pagadas y el efectivo todavía adeudado.
+  // Sale de `payrolls`, ya cargado (sin lecturas extra). Es informativo: no se
+  // anexa a la nómina nueva.
   const pendingCashPayrolls = useMemo(() => {
     const out = [];
     for (const p of payrolls) {
@@ -437,7 +431,7 @@ export default function Payroll() {
     return out;
   }, [payrolls]);
 
-  // Group active cycles by faena (and subfaena).
+  // Ciclos activos agrupados por faena.
   const activeByFaena = useMemo(() => {
     const groups = new Map();
     for (const f of faenas) groups.set(f.id, { faena: f, cycles: [] });
@@ -461,11 +455,8 @@ export default function Payroll() {
       saveSelection(next);
       return next;
     });
-    // Se decide por la selección de ciclos, no por si el ciclo ya tenía
-    // entrada en este mapa. La selección de ciclos se guarda entre sesiones y
-    // la de labores no, y con ese criterio las dos se desfasaban: la pantalla
-    // mostraba un ciclo marcado sin ninguna labor mientras la nómina lo traía
-    // entero.
+    // Sigue a la selección de ciclos, no a si el ciclo ya tenía entrada en
+    // este mapa: marcar le pone todas sus labores y desmarcar lo saca.
     setSelectedLaborsByCycle((prev) => {
       const next = new Map(prev);
       if (marcar) {
@@ -490,11 +481,9 @@ export default function Payroll() {
     });
   };
 
-  // Qué labores de un ciclo entran a la nómina, para guardarlo en
-  // `cycleDetails[].laborIds`: `undefined` = todas (el ciclo entero), una
-  // lista = solo esas, `[]` = ninguna. Guardarlo es lo que hace que
-  // Recalcular respete la elección: antes se perdía al generar, y el primer
-  // recálculo traía también las labores destildadas.
+  // Qué labores de un ciclo entran a la nómina, para `cycleDetails[].laborIds`:
+  // `undefined` = todas (el ciclo entero), una lista = solo esas, `[]` =
+  // ninguna. Recalcular respeta esta elección.
   const laborScopeOf = (cycle) => {
     const elegidas = selectedLaborsByCycle.get(cycle.id);
     if (!elegidas) return undefined;
@@ -544,9 +533,8 @@ export default function Payroll() {
       // Lo pendiente de los ciclos y labores elegidos, más los días de las
       // personas sueltas, releídos (ver `workdaysForNewPayroll`). Las labores
       // no marcadas quedan disponibles para una próxima nómina. Los ciclos se
-      // leen con el mismo helper que usó `load()` al montar, así que dentro del
-      // minuto no se vuelven a pagar; el botón de refrescar invalida el scope
-      // cuando hace falta traer cambios de otro usuario.
+      // leen con el mismo helper que `load()`, así que dentro del minuto salen
+      // de la caché; el botón de refrescar la invalida.
       const { workdays: allWorkdays, taken } = await workdaysForNewPayroll({
         chosen: chosenCycles,
         people: people.map((p) => ({ keys: workerKeys(p.worker), workdayIds: p.workdayIds })),
@@ -564,7 +552,7 @@ export default function Payroll() {
 
       const aggregates = aggregateWorkerAmounts(allWorkdays, laborTypeById);
 
-      // Los anticipos vigentes de todos los de este preview. El servidor ya
+      // Anticipos vigentes de todos los de la vista previa; el servidor
       // devuelve solo pending/partial.
       const claveDe = resolverRutVigente(workers);
       const candidateIds = aggregates.filter((a) => a.total > 0).map(claveDe);
@@ -622,7 +610,7 @@ export default function Payroll() {
             bonoApplications,
             anticiposTotal,
             bonosTotal,
-            // adelantosTotal kept for legacy snapshot read-back; always 0 going forward.
+            // adelantosTotal se mantiene por compatibilidad del snapshot; siempre vale 0.
             adelantosTotal: 0,
             amount: reparto.amount,
             byCycle,
@@ -677,13 +665,10 @@ export default function Payroll() {
           next.bonus = bon;
           next.amount = Math.max(0, Math.round((p.grossAmount || 0) - adv + bon));
           if (touchesAdvance) {
-            // Re-clip anticipoApplications oldest-first so per-advance
-            // breakdown stays consistent with the (possibly reduced) total.
-            // Tope = maxAmount (saldo real del anticipo) cuando existe, no
-            // ap.amount — si no, subir el override manual por encima de la
-            // cuota sugerida no podía crecer y quedaba descontando al
-            // trabajador más de lo que se acreditaba al anticipo (bug
-            // preexistente que las cuotas dispararían seguido).
+            // Reparte el total editado entre los anticipos, del más viejo al
+            // más nuevo, para que el desglose cuadre con el total. El tope de
+            // cada uno es el mayor entre su saldo real (`maxAmount`) y lo ya
+            // aplicado, así el override puede superar la cuota sugerida.
             const apps = (p.anticipoApplications || []).map((x) => ({ ...x }));
             let remaining = adv;
             const out = [];
@@ -698,7 +683,7 @@ export default function Payroll() {
             next.anticiposTotal = out.reduce((s, x) => s + x.amount, 0);
           }
           if (touchesBonus) {
-            // Bonos: re-clip oldest-first too. User can lower the bono total if desired.
+            // Bonos: mismo reparto, topeado por el monto de cada aplicación.
             const apps = (p.bonoApplications || []).map((x) => ({ ...x }));
             let remaining = bon;
             const out = [];
@@ -722,10 +707,9 @@ export default function Payroll() {
   };
 
   const generateAndSave = async () => {
-    // Incluimos también items con amount === 0 cuando hubo anticipo aplicado
-    // (caso: el anticipo cubrió todo el bruto). Si no, sus workdays no se
-    // taggean ni los anticipos se marcan como aplicados — quedan huérfanos.
-    // El XLSX del banco los filtra después (no se hacen transferencias de $0).
+    // También entran los items en $0 con anticipo aplicado (el anticipo cubrió
+    // todo el bruto), para que sus jornadas se etiqueten y sus anticipos queden
+    // aplicados. El XLSX del banco filtra los de $0.
     const rawItems = previewItems.filter(
       (p) => p.include && (Number(p.amount) > 0 || Number(p.advance) > 0),
     );
@@ -733,14 +717,14 @@ export default function Payroll() {
       toast.warning("No hay trabajadores seleccionados con monto > 0 ni anticipos por aplicar.");
       return;
     }
-    // Cuotas: si hay anticipos-con-plan entre los incluidos, pausa acá y
-    // espera que el admin confirme cuáles se aplican esta corrida — antes de
-    // las validaciones de cuenta, porque excluir una cuota puede cambiar el
-    // `amount` neto de un trabajador (y por lo tanto si entra a payableItems).
+    // Cuotas: si hay anticipos con plan entre los incluidos, espera que el
+    // admin confirme cuáles se aplican. Va antes de validar cuentas porque
+    // excluir una cuota cambia el neto de un trabajador, y con eso si entra a
+    // payableItems.
     const items = await confirmInstallments(rawItems);
     if (!items) return; // el admin canceló en el modal de cuotas
-    // Para validaciones de cuenta solo consideramos los que realmente reciben
-    // pago (amount > 0). Los cero-neto no van al banco.
+    // Las cuentas se validan solo para quienes reciben pago (amount > 0): los
+    // de neto cero no van al banco.
     const payableItems = items.filter((p) => Number(p.amount) > 0);
     const missing = payableItems.filter((p) => !isCashBank(p.bankCode) && (!p.accountNumber || !p.bankCode));
     if (missing.length > 0) {
@@ -810,8 +794,8 @@ export default function Payroll() {
           bonosTotal: Math.round(Number(p.bonosTotal) || 0),
           adelantosTotal: Math.round(Number(p.adelantosTotal) || 0),
           amount: Math.round(Number(p.amount) || 0),
-          // Sin la columna de un ciclo que no entró: el de una persona suelta
-          // que se excluyó en la vista previa, donde todos quedaban en $0.
+          // Solo los ciclos de la nómina: el de una persona suelta que se
+          // excluyó en la vista previa no tiene columna.
           byCycle: Object.fromEntries(Object.entries(p.byCycle || {}).filter(([cid]) => enLaNomina.has(cid))),
           workdayIds: p.workdayIds || [],
         };
@@ -829,10 +813,9 @@ export default function Payroll() {
       const bonusTotalSum = cleanItems.reduce((s, x) => s + (Number(x.bonus) || 0), 0);
       const finalName = payrollName || payrollSuggestedName();
 
-      // Static snapshot: stores everything needed to re-render this payroll
-      // without further Firestore reads (workday detail + advance origins +
-      // labor configuration are embedded). Renders a static viewer page in
-      // the future without depending on live data that may have changed.
+      // Snapshot estático: todo lo necesario para volver a mostrar la nómina
+      // sin más lecturas ni depender de datos que pueden cambiar (detalle de
+      // jornadas, origen de los anticipos y configuración de las labores).
       const wdIdSet = new Set(allWorkdayIds);
       const advIdSet = new Set(allAdvanceIds);
       const snapshot = {
@@ -888,14 +871,12 @@ export default function Payroll() {
       // Bajada local inmediata del JSON (no toca red).
       downloadSnapshotJson(finalName, fullSnapshot);
 
-      // Los siguientes 3 pasos son independientes (solo necesitan `created.id`)
-      // y antes corrían secuenciales. En paralelo:
-      //   • snapshot upload (1 escritura, hasta 1MB)          ~15% del progreso
-      //   • tagWorkdays (N updates, progreso real por chunk)  ~65%
-      //   • applyAdvances (get M + batch update)              ~10%
-      // El % es una mezcla: el de workdays viene del callback real, los demás
-      // son toggles "iniciado / terminado". El XLSX ya NO se descarga
-      // automáticamente — queda como acción manual desde el historial.
+      // Los tres pasos siguientes solo necesitan `created.id` y corren en paralelo:
+      //   • subir el snapshot (1 escritura, hasta 1 MB)       ~15% del progreso
+      //   • etiquetar jornadas (N updates, avance por chunk)  ~65%
+      //   • aplicar anticipos (get M + batch update)          ~10%
+      // El avance de las jornadas viene del callback; los otros dos solo
+      // marcan iniciado o terminado.
       const W_SNAPSHOT = 15, W_TAG = 65, W_ADV = 10;
       let snapshotDone = false, advancesDone = false;
       let tagDone = 0, tagTotal = Math.max(1, allWorkdayIds.length);
@@ -908,7 +889,7 @@ export default function Payroll() {
         const detailParts = [];
         if (allWorkdayIds.length > 0) detailParts.push(`Jornadas ${tagDone}/${tagTotal}`);
         if (allApplications.length > 0) detailParts.push(`Anticipos ${advancesDone ? "✓" : "…"}`);
-        detailParts.push(`Snapshot ${snapshotDone ? "✓" : "…"}`);
+        detailParts.push(`JSON ${snapshotDone ? "✓" : "…"}`);
         setProgress({
           step: "Guardando y aplicando descuentos en paralelo...",
           detail: detailParts.join(" · "),
@@ -940,7 +921,7 @@ export default function Payroll() {
       await Promise.all([pSnapshot, pTag, pAdv]);
 
       setProgress({ step: "Actualizando lista...", detail: "", percent: 95 });
-      // Reset
+      // Limpia el armado y pasa al historial.
       setSelectedCycleIds(new Set());
       saveSelection(new Set());
       setSelectedLaborsByCycle(new Map());
@@ -978,8 +959,8 @@ export default function Payroll() {
     const name = (newName || "").trim();
     if (!name || name === renaming.name) { setRenaming(null); return; }
     await payrollsService.update(renaming.id, { name });
-    // Snapshot embebido (para re-descargas). Puede no existir en nóminas viejas
-    // → toleramos el not-found sin romper el rename.
+    // Renombra también el snapshot (para re-descargas); si la nómina no tiene,
+    // el error se ignora.
     try { await payrollSnapshotsService.update(renaming.id, { name }); } catch { /* snapshot inexistente */ }
     setRenaming(null);
     await load();
@@ -1024,10 +1005,8 @@ export default function Payroll() {
       await load();
       toast.success(PAY_DONE[mode] || "Listo");
     } catch (err) {
-      // El servicio lanza mensajes ya redactados para el usuario ("La nómina
-      // ya está pagada entera."). Sin este catch el throw sube al botón del
-      // modal, que solo tiene `finally`: el diálogo queda abierto, el motivo
-      // nunca llega a pantalla y parece que el click no hizo nada.
+      // El servicio lanza mensajes redactados para el usuario (ej. "La nómina
+      // ya está pagada entera."): se muestran en un toast.
       toast.error(err.message || "No se pudo completar la operación.");
     } finally {
       setProgress(null);
@@ -1035,17 +1014,15 @@ export default function Payroll() {
   };
   const onDelete = async () => {
     if (!confirmDelete) return;
-    // Safeguard: no permitir eliminar nóminas pagadas. El UI desactiva el
-    // botón, pero si alguien dispara la acción desde otro path (DevTools,
-    // race con una reverter en otra pestaña) cortamos acá igual.
+    // Una nómina pagada no se elimina. Se vuelve a chequear acá aunque la UI
+    // desactive el botón.
     if (confirmDelete.status === "paid") {
       setConfirmDelete(null);
-      toast.error("No se puede eliminar una nómina pagada. Revertí primero a No pagado.");
+      toast.error("No se puede eliminar una nómina pagada. Revierte primero a No pagado.");
       return;
     }
-    // Misma protección para el pago en dos tiempos: si las transferencias ya
-    // salieron, borrar la nómina liberaría los días y restauraría anticipos de
-    // gente que ya tiene la plata en la cuenta.
+    // Tampoco con las transferencias pagadas: borrarla liberaría los días y
+    // restauraría anticipos de quienes ya tienen la plata en la cuenta.
     if (confirmDelete.bankPaidAt) {
       setConfirmDelete(null);
       toast.error("Las transferencias de esta nómina ya se pagaron. Revertilas antes de eliminarla.");
@@ -1057,10 +1034,9 @@ export default function Payroll() {
     setConfirmDelete(null);
     setProgress({ step: "Iniciando eliminación...", detail: "", percent: 2 });
     try {
-      // Las tres operaciones de cleanup (untag workdays, restore advances,
-      // remove snapshot) son independientes — corren en paralelo. Solo
-      // necesitamos esperarlas antes de borrar el doc principal para no
-      // dejar referencias colgando.
+      // Soltar las jornadas, restaurar los anticipos y borrar el snapshot
+      // corren en paralelo; el doc de la nómina se borra después de las tres,
+      // para no dejar referencias colgando.
       const W_UNTAG = 70, W_ADV = 15, W_SNAP = 10;
       let untagDone = 0, untagTotal = Math.max(1, workdayIds.length);
       let advancesDone = false, snapDone = false;
@@ -1072,7 +1048,7 @@ export default function Payroll() {
         const detailParts = [];
         if (workdayIds.length > 0) detailParts.push(`Jornadas ${untagDone}/${untagTotal}`);
         if (advanceIds.length > 0) detailParts.push(`Anticipos ${advancesDone ? "✓" : "…"}`);
-        detailParts.push(`Snapshot ${snapDone ? "✓" : "…"}`);
+        detailParts.push(`JSON ${snapDone ? "✓" : "…"}`);
         setProgress({
           step: "Liberando jornadas y anticipos...",
           detail: detailParts.join(" · "),
@@ -1113,13 +1089,12 @@ export default function Payroll() {
     setTimeout(() => setProgress(null), 400);
   };
   const onRedownload = async (p) => {
-    // Aplicar overrides persistidos en el doc (lo que el usuario editó vía
-    // "📝 Editar encabezados") para que el XLSX use los nombres cortos.
+    // Aplica los nombres de ciclo editados en "📝 Editar encabezados"
+    // (guardados en el doc), así el XLSX usa los nombres cortos.
     const overrides = p.cycleLabelOverrides || {};
     const cyclesForExport = (p.cycleDetails || []).map((c) => {
-      // Fallback para nóminas viejas (sin firstDay/lastDay persistido):
-      // miramos el cycle vivo en memoria. Si tampoco está disponible
-      // (cycle borrado), queda vacío y la fila Período no se incluye.
+      // Sin firstDay/lastDay guardados, toma el rango del ciclo en memoria; si
+      // el ciclo ya no existe, queda vacío y el XLSX no incluye la fila Período.
       let firstDay = c.firstDay || "";
       let lastDay = c.lastDay || "";
       if (!firstDay && !lastDay) {
@@ -1144,20 +1119,19 @@ export default function Payroll() {
     if (cyclesForExport.length === 0 && p.cycleIds) {
       for (const id of p.cycleIds) cyclesForExport.push({ id, label: overrides[id] || id });
     }
-    await downloadBchileXlsx(p.items || [], p.name || "Nomina", cyclesForExport);
+    await downloadBchileXlsx(withCurrentRuts(p.items, rutOf), p.name || "Nomina", cyclesForExport);
   };
   const onDownloadNominaOnly = async (p) => {
     const filename = `${p.name || "Nomina"}_BChile`;
-    await downloadNominaOnlyXlsx(p.items || [], filename);
+    await downloadNominaOnlyXlsx(withCurrentRuts(p.items, rutOf), filename);
   };
-  // Re-download the static snapshot JSON for an existing payroll. Reads it
-  // from the payrollSnapshots collection; falls back to a legacy embedded
-  // `p.snapshot` field if the payroll was created before the split.
+  // Vuelve a bajar el JSON del snapshot de una nómina. Lo lee de
+  // payrollSnapshots y, si no está, del campo `snapshot` embebido en la nómina.
   const onDownloadSnapshot = async (p) => {
     try {
       const snap = await readSnapshot(p);
       if (!snap) {
-        toast.warning("Esta nómina no tiene snapshot guardado (creada antes de la feature).");
+        toast.warning("Esta nómina no tiene JSON guardado (se creó antes de que existiera).");
         return;
       }
       downloadSnapshotJson(p.name || "Nomina", snap);
@@ -1178,7 +1152,7 @@ export default function Payroll() {
           <button
             onClick={refresh}
             disabled={refreshing || loading}
-            title="Forzar recarga desde el servidor (ignora la cache local). Útil si otro usuario agregó workers, labores o jornadas recién."
+            title="Forzar recarga desde el servidor (ignora la caché local). Útil si otro usuario acaba de agregar trabajadores, labores o jornadas."
             className="flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm text-[var(--color-fg)] hover:bg-[var(--color-surface-3)] disabled:opacity-50"
           >
             <span className={refreshing ? "inline-block animate-spin" : "inline-block"}>↻</span>
@@ -1236,6 +1210,7 @@ export default function Payroll() {
           />
         ) : (
           <PreviewTable
+            rutOf={rutOf}
             items={previewItems}
             bankItems={bankSelected}
             cashGroups={cashGroups}
@@ -1271,6 +1246,7 @@ export default function Payroll() {
       ) : (
         <WorkersHistory
           faenas={faenas}
+          workers={workers}
         />
       )}
 
@@ -1351,7 +1327,7 @@ export default function Payroll() {
           onDownloadNominaOnly={onDownloadNominaOnly}
           onDownloadSnapshot={onDownloadSnapshot}
           onChanged={async () => {
-            // Re-fetch single payroll para refrescar el modal y la lista.
+            // Relee la nómina para refrescar el modal y después recarga la lista.
             try {
               const fresh = await payrollsService.getById(detailPayroll.id);
               if (fresh) setDetailPayroll(fresh);
@@ -1369,9 +1345,9 @@ export default function Payroll() {
   );
 }
 
-// Overlay modal de progreso. Se monta solo cuando hay `info`. Muestra el paso
-// actual, un detalle opcional (ej. "340 / 500") y una barra. No es cancelable
-// porque la mayoría de los pasos ya están corriendo en paralelo.
+// Overlay de progreso, visible solo cuando hay `info`: el paso actual, un
+// detalle opcional (ej. "340 / 500") y una barra. No es cancelable porque la
+// mayoría de los pasos corren en paralelo.
 function ProgressOverlay({ info }) {
   if (!info) return null;
   const pct = Math.max(0, Math.min(100, Math.round(Number(info.percent) || 0)));
@@ -1398,16 +1374,14 @@ function ProgressOverlay({ info }) {
 }
 
 const PAY_SPLIT_HINT =
-  "Estimado en bruto, según el banco que tiene cargado cada trabajador. El monto definitivo por medio de pago sale en el preview, después de anticipos/bonos y de los cambios que hagas ahí.";
+  "Estimado en bruto, según el banco que tiene cargado cada trabajador. El monto definitivo por medio de pago sale en la vista previa, después de anticipos/bonos y de los cambios que hagas ahí.";
 const PAY_UNKNOWN_HINT =
-  "Trabajadores sin banco cargado o que no están en el catálogo. Se define su medio de pago en el preview.";
+  "Trabajadores sin banco cargado o que no están en el catálogo. Se define su medio de pago en la vista previa.";
 
-// Paso 1 de "Generar": elegir qué ciclos entran a la nómina y, además o en vez
-// de eso, personas sueltas con sus días puntuales. Por defecto solo
-// se listan los ciclos que tienen plata pendiente de pagar — un ciclo abierto
-// sin nada pendiente es ruido acá, no una opción. Quedan detrás del toggle
-// "Sin pendientes" (y siempre visibles si están seleccionados, para que nunca
-// desaparezca algo que el usuario ya marcó).
+// Paso 1 de "Generar": elegir los ciclos de la nómina y, además o en vez de
+// eso, personas sueltas con sus días puntuales. Por defecto solo se listan los
+// ciclos con plata pendiente; los demás quedan detrás del toggle "Sin
+// pendientes", salvo los ya marcados, que siempre se ven.
 function CycleSelector({
   groups,
   selected,
@@ -1442,10 +1416,7 @@ function CycleSelector({
     return { total, people, rows: pendingCashPayrolls };
   }, [pendingCashPayrolls]);
 
-  // Lo pendiente de un ciclo marcado, solo de las labores elegidas. Antes el
-  // total de lo seleccionado sumaba el ciclo entero aunque se destildaran
-  // labores, y con las personas sueltas una labor destildada se contaba dos
-  // veces: en el ciclo y en la persona.
+  // Lo pendiente de un ciclo marcado, contando solo las labores elegidas.
   const pendingOfChosenLabors = (cycle, stat) => {
     const elegidas = selectedLaborsByCycle?.get(cycle.id);
     const todas = (cycle.labors || []).map((l) => l.id);
@@ -1810,7 +1781,7 @@ function CycleSelector({
                             {isSelected && labors.length > 0 && !allLaborsOn && (
                               <div className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">
                                 {noneOn
-                                  ? "⚠ Sin labores seleccionadas — no entra al preview"
+                                  ? "⚠ Sin labores seleccionadas — no entra a la vista previa"
                                   : `Pagar ${selectedLabors.size} de ${labors.length} labores`}
                               </div>
                             )}
@@ -1904,6 +1875,7 @@ function CycleSelector({
 }
 
 function PreviewTable({
+  rutOf,
   items,
   bankItems,
   cashGroups,
@@ -1921,15 +1893,14 @@ function PreviewTable({
   busy,
 }) {
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all"); // all | bank | cash | missing | leader:<name>
+  const [filter, setFilter] = useState("all"); // all | bank | cash | missing | suspicious | leader:<name>
   const [cycleFilter, setCycleFilter] = useState("all");
 
   const bankTotal = bankItems.reduce((s, p) => s + (Number(p.amount) || 0), 0);
   const cashTotal = cashGroups.reduce((s, g) => s + g.total, 0);
   const bankCount = bankItems.length;
-  // Cuánta gente y en cuántos sobres va el efectivo: para repartirlo hay que
-  // armar un sobre por jefe de grupo, así que el conteo de grupos es tan
-  // operativo como el monto.
+  // Cuánta gente y en cuántos sobres va el efectivo: se arma un sobre por
+  // líder de grupo, así que el conteo de grupos importa tanto como el monto.
   const cashCount = cashGroups.reduce((s, g) => s + g.items.length, 0);
   const totalAdvance = items.reduce((s, p) => s + (p.include ? Number(p.advance) || 0 : 0), 0);
 
@@ -1970,7 +1941,8 @@ function PreviewTable({
     bulkUpdate(matchPredicate(), {});
     setPreviewItemsBulkBank(filteredItems, cash);
   };
-  // Inline helper that uses updatePreview for safety with _origBank tracking.
+  // Pasa cada item a efectivo o a banco con toggleCash, que guarda el banco
+  // original en `_origBank`.
   const setPreviewItemsBulkBank = (list, cash) => {
     for (const p of list) {
       if (cash && !isCashBank(p.bankCode)) toggleCash(p);
@@ -1978,7 +1950,7 @@ function PreviewTable({
     }
   };
   return (
-    <div className="flex flex-1 flex-col gap-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
         <button
           onClick={onBack}
@@ -2106,8 +2078,7 @@ function PreviewTable({
         </div>
       </div>
 
-      <ResizableArea storageKey="payroll-preview" defaultHeight={420} minHeight={240}>
-      <div className="h-full overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+      <div className="min-h-[240px] flex-1 overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-[var(--color-surface-2)] text-left">
             <tr>
@@ -2141,7 +2112,7 @@ function PreviewTable({
                       onChange={(e) => updatePreview(p.rut, { include: e.target.checked })}
                     />
                   </td>
-                  <td className="px-3 py-2 font-mono text-xs">{formatRutForDisplay(p.rut)}</td>
+                  <td className="px-3 py-2 font-mono text-xs">{formatRutForDisplay(rutOf(p.rut, p.workerId))}</td>
                   <td className="px-3 py-2">{p.name}</td>
                   <td className="px-3 py-2 text-xs text-[var(--color-muted)]">
                     {p.groupLeader || "—"}
@@ -2206,7 +2177,7 @@ function PreviewTable({
                       className="w-28 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-right text-sm font-medium tabular-nums outline-none focus:border-[var(--color-accent)]"
                     />
                     {Number(p.amount) === 0 && Number(p.advance) > 0 && (
-                      <div className="mt-0.5 text-[10px] font-normal text-[var(--color-warning)]" title="El anticipo cubrió todo el bruto. Igual se incluye en la nómina para marcar workdays y anticipo como aplicados, pero no se transfiere.">
+                      <div className="mt-0.5 text-[10px] font-normal text-[var(--color-warning)]" title="El anticipo cubrió todo el bruto. Igual se incluye en la nómina para marcar sus jornadas y el anticipo como aplicados, pero no se transfiere.">
                         ↩ liquidado por anticipo
                       </div>
                     )}
@@ -2239,7 +2210,6 @@ function PreviewTable({
           </tbody>
         </table>
       </div>
-      </ResizableArea>
 
       {cashGroups.length > 0 && (
         <div className="max-h-[32vh] shrink-0 overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
@@ -2367,11 +2337,10 @@ function PayConfirmModal({ info, onCancel, onConfirm }) {
   );
 }
 
-// Confirmación manual de cuotas antes de generar una nómina. La cadencia
-// (Por pago/Quincenal/Mensual) guardada en el anticipo es solo una etiqueta
-// de referencia para el admin — acá es donde realmente se decide si una
-// cuota entra en esta corrida o no; nada se aplica automáticamente por fecha.
-// Todas vienen tildadas por defecto (se aplican salvo que el admin las saque).
+// Confirmación manual de cuotas antes de generar una nómina: acá se decide qué
+// cuotas entran en esta corrida. La cadencia del anticipo (Por pago/Quincenal/
+// Mensual) es solo una etiqueta y nada se aplica solo por fecha. Todas vienen
+// marcadas por defecto.
 function InstallmentConfirmModal({ state, onCancel, onConfirm }) {
   const [checked, setChecked] = useState(() => new Set());
   useEffect(() => {
@@ -2413,7 +2382,7 @@ function InstallmentConfirmModal({ state, onCancel, onConfirm }) {
     >
       <div className="space-y-3 text-sm">
         <p className="text-[var(--color-muted)]">
-          Estos anticipos tienen plan de cuotas. Revisá cuáles se descuentan en esta nómina — vienen todas marcadas por defecto.
+          Estos anticipos tienen plan de cuotas. Revisa cuáles se descuentan en esta nómina — vienen todas marcadas por defecto.
         </p>
         <div className="space-y-2">
           {state.candidates.map((c) => {
@@ -2451,8 +2420,8 @@ function InstallmentConfirmModal({ state, onCancel, onConfirm }) {
   );
 }
 
-// Modal chico para renombrar una nómina. El nombre es solo un label, así que
-// no valida más que "no vacío". Enter confirma, Escape cancela (vía Modal).
+// Modal para renombrar una nómina. El nombre es solo una etiqueta: solo se
+// valida que no esté vacío. Enter confirma, Escape cancela (vía Modal).
 function RenamePayrollModal({ payroll, onCancel, onConfirm }) {
   const [name, setName] = useState(payroll?.name || "");
   const [busy, setBusy] = useState(false);
@@ -2498,9 +2467,9 @@ function RenamePayrollModal({ payroll, onCancel, onConfirm }) {
   );
 }
 
-// El campo `status` sigue siendo binario en Firestore; lo que tiene tres caras
-// es el estado VISIBLE, porque una nómina con las transferencias ya pagadas y
-// el efectivo debiendo no es lo mismo que una sin pagar nada.
+// Estado visible de la nómina, de tres caras. `status` en Firestore es
+// binario; una nómina con las transferencias pagadas y el efectivo adeudado se
+// muestra aparte de una sin pagar nada.
 function payStateOf(p) {
   if (p.status === "paid") return "paid";
   if (p.bankPaidAt) return "bankPaid";
@@ -2522,9 +2491,8 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRe
   const [statusFilter, setStatusFilter] = useState("all"); // all | pending | paid | cashPending
   const [monthFilter, setMonthFilter] = useState("all"); // all | YYYY-MM
   const [search, setSearch] = useState("");
-  // "nomina" (default) | "diferencia". Las diferencias son nóminas chicas de
-  // ajuste; viven en una pestaña aparte para no alargar la lista principal.
-  // Nóminas viejas sin `classification` cuentan como "nomina".
+  // Pestaña del historial: "nomina" (default) | "diferencia". Una nómina sin
+  // `classification` cuenta como "nomina".
   const [classificationTab, setClassificationTab] = useState("nomina");
   const classify = (p) => p.classification || "nomina";
   const classificationCounts = useMemo(() => {
@@ -2566,9 +2534,8 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRe
     });
   }, [payrolls, classificationTab, statusFilter, monthFilter, search]);
 
-  // "Pendiente" es lo que realmente se debe. Una nómina con las transferencias
-  // ya pagadas solo debe su efectivo: contar su `total` entero inflaría la
-  // deuda con plata que ya salió del banco.
+  // "Pendiente" es lo que se debe: de una nómina con las transferencias
+  // pagadas solo cuenta el efectivo adeudado.
   const totals = useMemo(() => {
     let pending = 0, paid = 0, cashOwed = 0;
     for (const p of filtered) {
@@ -2583,9 +2550,9 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRe
     return { pending, paid, cashOwed, total: pending + paid };
   }, [filtered]);
 
-  // Paginación de a 15 para que el historial no crezca sin fin. Los totales y
-  // filtros siguen operando sobre TODO el set filtrado; solo se pagina lo que
-  // se renderiza. Cualquier cambio de filtro/tab/búsqueda vuelve a página 1.
+  // Paginación de a 15: los totales operan sobre todo el conjunto filtrado y
+  // solo se pagina lo que se dibuja. Cambiar filtro, pestaña o búsqueda vuelve
+  // a la página 1.
   const PAGE_SIZE = 15;
   const [page, setPage] = useState(1);
   useEffect(() => {
@@ -2833,7 +2800,7 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRe
                   onClick={() => onAskDelete(p)}
                   disabled={p.status === "paid" || !!p.bankPaidAt}
                   title={p.status === "paid"
-                    ? "No se puede eliminar una nómina pagada. Revertí primero a No pagado."
+                    ? "No se puede eliminar una nómina pagada. Revierte primero a No pagado."
                     : p.bankPaidAt
                       ? "Las transferencias ya se pagaron. Revertilas antes de eliminar."
                       : "Eliminar esta nómina"}
@@ -2963,7 +2930,7 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRe
                     onClick={() => onAskDelete(p)}
                     disabled={p.status === "paid" || !!p.bankPaidAt}
                     title={p.status === "paid"
-                      ? "No se puede eliminar una nómina pagada. Revertí primero a No pagado."
+                      ? "No se puede eliminar una nómina pagada. Revierte primero a No pagado."
                       : p.bankPaidAt
                         ? "Las transferencias ya se pagaron. Revertilas antes de eliminar."
                         : "Eliminar esta nómina"}
@@ -2985,9 +2952,9 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRe
   );
 }
 
-// Build a "grid snapshot" for a group of workers in a cycle: one labor table
-// per labor that had production, with rows = workers and columns = days.
-// Each cell content depends on labor type — mirrors the CycleDetail grid.
+// Arma la grilla de un grupo de trabajadores en un ciclo: una tabla por labor
+// con producción, con filas = trabajadores y columnas = días. El contenido de
+// cada celda depende del tipo de labor, como en la grilla de CycleDetail.
 function buildGroupCycleSnapshot(groupRuts, cycle, workdays, nameByRut, catalogs = {}) {
   const rutSet = new Set(groupRuts);
   const wdsCycle = workdays.filter((w) => w.cycleId === cycle.id && rutSet.has(w.workerRut));
@@ -3005,14 +2972,14 @@ function buildGroupCycleSnapshot(groupRuts, cycle, workdays, nameByRut, catalogs
       ? normalizeStages(labor.stages).map((st) => String(st.id))
       : null;
 
-    // Aggregate per (worker, date) into a cell payload.
-    // Multiple workdays for same (worker, date) are summed (e.g. trato tiers
-    // already handled via getTratoTierTotals; cosecha quality×container etc).
-    const cellByWorkerDay = new Map(); // key: rut + "|" + date
+    // Acumula por (trabajador, día) el contenido de la celda: las jornadas del
+    // mismo trabajador y día se suman (los tiers de trato vía
+    // getTratoTierTotals, los combos calidad × envase de cosecha, etc.).
+    const cellByWorkerDay = new Map(); // clave: rut + "|" + fecha
     const dates = new Set();
     const workersInLabor = new Set();
     const containers = new Set(); // envases vistos en cosecha — define la unidad
-    const tratoUnits = new Set(); // unidades del tier-day para trato (Árbol, Metro…)
+    const tratoUnits = new Set(); // unidades de los tiers del día, en trato (Árbol, Metro…)
     let anyPiso = false;
     for (const wd of wdsLabor) {
       const key = `${wd.workerRut}|${wd.date}`;
@@ -3045,8 +3012,8 @@ function buildGroupCycleSnapshot(groupRuts, cycle, workdays, nameByRut, catalogs
       if (labor.type === "cosecha") {
         const x = Number(wd.qualityX) || 0;
         const y = Number(wd.containerY) || 0;
-        // Clave estructural por combo (calidad_envase). El label visible se
-        // computa al render con `comboLabel(catalogs, x, y)`.
+        // Clave estructural por combo (calidad_envase); el nombre visible lo
+        // arma `comboLabel(catalogs, x, y)` al dibujar.
         const ck = `${x}_${y}`;
         const kg = Number(wd.qty) || 0;
         const amt = Number(wd.amount) || 0;
@@ -3060,16 +3027,16 @@ function buildGroupCycleSnapshot(groupRuts, cycle, workdays, nameByRut, catalogs
         const t = getTratoTierTotals(wd);
         c.jornadas += t.qty;
         c.amount += t.amount;
-        // Recolectar las unidades configuradas en los tiers del día — se
-        // denormalizan al snapshot para que el render del comprobante use
-        // la unidad (Árbol, Metro, …) en vez del tipo (Poda) cuando haya.
+        // Unidades configuradas en los tiers del día: van en la grilla para que
+        // el comprobante muestre la unidad (Árbol, Metro…) en vez del tipo
+        // (Poda) cuando la haya.
         const tiersForDay = getTratoTiers(dayPrices, labor.id, wd.date);
         for (const tier of tiersForDay) {
           if (tier.unit != null) tratoUnits.add(tier.unit);
         }
-        // Desglose por tramo del comprobante. Cada doc de trato es single-tier
-        // (clave "0") y `t` ya viene reconciliado (top-level por sobre el espejo
-        // `tiers`), así que lo usamos para que el desglose cuadre con el total.
+        // Desglose por tramo del comprobante. Cada doc de trato tiene un solo
+        // tier (clave "0") y `t` ya viene conciliado (los campos de primer nivel
+        // mandan sobre el espejo `tiers`): se usa `t` para que cuadre con el total.
         if (t.qty || t.amount) {
           const idx = "0";
           if (!c.byTier[idx]) c.byTier[idx] = { index: 0, jornadas: 0, amount: 0 };
@@ -3084,10 +3051,9 @@ function buildGroupCycleSnapshot(groupRuts, cycle, workdays, nameByRut, catalogs
         c.hasManejo = c.hasManejo || !!wd.hasManejo;
         c.hasSupervision = c.hasSupervision || !!wd.hasSupervision;
       } else if (labor.type === "tratoEtapas") {
-        // Para el trabajador toda la producción cuenta: `counts` decide qué
-        // se le factura al cliente, no qué hizo la persona. Antes las etapas
-        // que no cuentan aportaban el monto pero no la cantidad, así que el
-        // comprobante mostraba plata sin producción detrás.
+        // Para el trabajador cuenta toda la producción: `counts` decide qué se
+        // le factura al cliente, no qué hizo la persona. Cada etapa suma
+        // cantidad y monto.
         const q = Number(wd.qty) || 0;
         const monto = Number(wd.amount) || 0;
         c.amount += monto;
@@ -3108,7 +3074,6 @@ function buildGroupCycleSnapshot(groupRuts, cycle, workdays, nameByRut, catalogs
       (nameByRut.get(a) || a).localeCompare(nameByRut.get(b) || b),
     );
 
-    // Build rows
     const rows = sortedRuts.map((rut) => {
       let totalAmount = 0;
       let totalKilos = 0;
@@ -3136,7 +3101,7 @@ function buildGroupCycleSnapshot(groupRuts, cycle, workdays, nameByRut, catalogs
       };
     });
 
-    // Per-day totals — break out kilos/jornadas/etc. instead of just summing $.
+    // Totales por día, con kilos, jornadas, etc. por separado y no solo el monto.
     const dayTotals = {};
     let grandAmount = 0;
     let grandKilos = 0;
@@ -3213,9 +3178,6 @@ function fmtMoneyShort(v) {
   return "$" + (Number(v) || 0).toLocaleString("es-CL");
 }
 
-// `formatLaborDayPrice` se exporta desde `utils/cosechaCombos` para que
-// CycleSummaryModal lo comparta con el comprobante de pago.
-
 function fmtDateShort(dateStr) {
   if (!dateStr) return "";
   const d = new Date(dateStr + "T00:00:00");
@@ -3237,8 +3199,7 @@ function renderProductionCell(cell, laborType, tratoLabel, kilosUnit, catalogs =
       .filter(([, b]) => b.kilos || b.amount)
       .sort(([, a], [, b]) => a.x - b.x || a.y - b.y);
     if (combos.length > 1) {
-      // Cada combo se muestra con su label del catálogo (ej. "Premium / Saco")
-      // en vez del antiguo "Q1/E2".
+      // Cada combo se muestra con su nombre del catálogo (ej. "Premium / Saco").
       const lines = combos
         .map(([, b]) => {
           const lbl = comboLabel(catalogs, b.x, b.y);
@@ -3269,7 +3230,7 @@ function renderProductionCell(cell, laborType, tratoLabel, kilosUnit, catalogs =
     if (cell.hasSupervision) flags.push("S");
     if (cell.extras) flags.push(`X:${fmtMoney(cell.extras)}`);
     const flagsHtml = flags.length ? `<div class="muted">${flags.join(" · ")}</div>` : "";
-    // jornadas now holds base $ (was a multiplier before).
+    // En tratoHE, `jornadas` suma el `qty` de las jornadas: el monto base del día.
     const baseHtml = cell.jornadas ? `<div>Base ${fmtMoney(cell.jornadas)}</div>` : "";
     return `${baseHtml}${flagsHtml}<div class="muted">${fmtMoney(cell.amount)}</div>`;
   }
@@ -3291,8 +3252,8 @@ function renderProductionCell(cell, laborType, tratoLabel, kilosUnit, catalogs =
   return `<div>${fmtMoney(cell.amount)}</div>`;
 }
 
-// Like renderProductionCell, but for total rows/cells: keeps kg/jornadas
-// counts visible alongside the $ instead of letting them collapse into one number.
+// Como renderProductionCell, pero para filas y celdas de total: muestra los
+// kilos o jornadas junto al monto.
 function renderProductionTotal(totals, laborType, tratoLabel, kilosUnit, catalogs = {}) {
   if (!totals) return "";
   const fmtMoney = (v) => "$" + (Number(v) || 0).toLocaleString("es-CL");
@@ -3366,15 +3327,17 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
   const workdaysByGroup = options.workdaysByGroup || {}; // { leader: { cycleId: rows[] } }
   const cyclesById = options.cyclesById || {};
   const catalogs = options.catalogs || {};
+  // Rut vigente para mostrar (utils/workerRut.js); sin resolver, el guardado.
+  const rutOf = options.rutOf || ((r) => r);
   const mode = options.mode || "cash"; // "cash" | "detail"
   const isDetail = mode === "detail";
   const summaries = options.summaries || [];
   const subfaenaSummary = options.subfaenaSummary || null;
   const laborSummary = options.laborSummary || null;
   const bonusAdvanceSummary = options.bonusAdvanceSummary || null;
-  // Filas de ajuste (Bonos / Anticipos) + TOTAL final ya cuadrado, comunes a
-  // "Resumen por subfaena" y "Resumen por labor". `labelColspan` = cantidad
-  // de columnas de etiqueta antes de las 3 columnas de plata (bank/cash/total).
+  // Filas de ajuste (Bonos / Anticipos), comunes a "Resumen por subfaena" y
+  // "Resumen por labor"; el total cuadrado sale de `adjustedTotals`.
+  // `labelColspan` = columnas de etiqueta antes de las 3 de plata (bank/cash/total).
   const buildAdjustmentRowsHtml = (labelColspan) => {
     const rows = [];
     if (bonusAdvanceSummary?.bonus.total > 0) {
@@ -3405,9 +3368,8 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
   const overviewTitle = isDetail ? "Detalle de pago" : "Comprobante de pago en efectivo";
   const docTitle = isDetail ? `${payroll.name} — Detalle pago` : `${payroll.name} — Efectivo`;
   const cycleLabel = (cycleId) => titleOverrides[cycleId] || cyclesById[cycleId]?.label || cycleDetails.find((c) => c.id === cycleId)?.label || cycleId;
-  // Período del ciclo en formato dd/mm → dd/mm. Prioridad: cycleDetails
-  // persistido (firstDay/lastDay), luego cyclesById (cycle.days vivo) como
-  // fallback para nóminas viejas que no tienen el período guardado.
+  // Período del ciclo como dd/mm → dd/mm: sale de firstDay/lastDay de
+  // cycleDetails y, si no están guardados, de `days` del ciclo en cyclesById.
   const fmtDayShort = (d) => {
     if (!d || typeof d !== "string") return "";
     const m = d.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -3443,7 +3405,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
   };
   const today = new Date().toLocaleDateString("es-CL");
 
-  // Per-group leader palettes (same as Excel sheet).
+  // Paletas por grupo de líder (las mismas de la hoja Excel).
   const LEADER_FILLS = ["#FFE699", "#C6E0B4", "#F8CBAD", "#B4C7E7", "#E2C2F0", "#FFC9C9", "#CFE7F5", "#D9D2E9"];
   const ITEM_FILLS   = ["#FFF2CC", "#E2EFDA", "#FCE4D6", "#D9E1F2", "#EAD8F2", "#FCE0E0", "#E7F2F8", "#EEE7F4"];
 
@@ -3452,7 +3414,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
       const itemFill = ITEM_FILLS[idx % ITEM_FILLS.length];
       const leaderFill = LEADER_FILLS[idx % LEADER_FILLS.length];
 
-      // Only render cycle columns where ANY member of this group had production.
+      // Columnas solo de los ciclos donde alguien del grupo tuvo producción.
       const activeCycleIds = new Set();
       for (const it of g.items) {
         for (const cid of Object.keys(it.byCycle || {})) {
@@ -3466,8 +3428,8 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
         ? cycleCols.map((c) => `<th style="text-align:right">${cycleLabel(c.id)}</th>`).join("")
         : "";
 
-      // Show the Anticipo column whenever ANY worker in this group has an
-      // advance deduction. Otherwise hide it to keep the layout clean.
+      // Las columnas Anticipo y Bono aparecen solo si alguien del grupo tiene
+      // un descuento o un bono.
       const groupHasAdvance = g.items.some((it) => (Number(it.advance) || 0) > 0);
       const groupHasBonus = g.items.some((it) => (Number(it.bonus) || 0) > 0);
       const advanceHeader = groupHasAdvance
@@ -3477,11 +3439,9 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
         ? `<th style="width:110px;text-align:right">Bono</th>`
         : "";
 
-      // Desglose por subfaena/labor del trabajador. Sumamos lo que ganó por
-      // cada (subfaena, labor) atravesando todos los ciclos del grupo. Se
-      // muestra solo en el comprobante de efectivo (no detail), porque ahí
-      // no hay columnas por ciclo y el operador necesita ver de un vistazo
-      // por qué se le paga ese monto antes de firmar.
+      // Desglose del trabajador por (subfaena, labor), sumando todos los ciclos
+      // del grupo. Va solo en el comprobante de efectivo, para que se vea de
+      // dónde sale el monto antes de firmar.
       const workerBreakdown = (it) => {
         const acc = new Map();
         const groupSnapshots = workdaysByGroup[g.leader] || {};
@@ -3513,12 +3473,10 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
 
       const rows = g.items
         .map((it, i, arr) => {
-          // Las últimas 3 filas se marcan para que el navegador trate de no
-          // cortar la página entre ellas y la firma. Junto con
-          // `break-after:avoid` en tfoot y `break-inside:avoid` en
-          // .signs-block, si la firma no entra en la página actual, el
-          // navegador empuja también estas filas a la página siguiente —
-          // así la firma nunca queda sola.
+          // Las últimas 3 filas se marcan para no cortar la página entre ellas
+          // y la firma: con `break-after:avoid` en tfoot y `break-inside:avoid`
+          // en .signs-block, si la firma no entra, el navegador pasa también
+          // estas filas a la página siguiente.
           const keepWithSign = i >= arr.length - 3;
           const cellsByCycle = showCycleCols
             ? cycleCols
@@ -3544,7 +3502,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
             <tr class="${keepWithSign ? "keep-with-sign" : ""}" style="background:${itemFill}">
               <td>${i + 1}</td>
               <td>${it.name}</td>
-              <td class="mono">${fmtRut(it.rut)}</td>
+              <td class="mono">${fmtRut(rutOf(it.rut, it.workerId))}</td>
               <td style="vertical-align:top">${renderDetalle(it)}</td>
               ${cellsByCycle}
               ${advanceCell}
@@ -3582,18 +3540,17 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
 
       const totalColSpan = 3; // # + Nombre + RUT
 
-      // Per-cycle production snapshot for THIS group — mirrors the CycleDetail
-      // grid: one table per labor, rows = workers, columns = days.
+      // Producción del grupo por ciclo, como la grilla de CycleDetail: una
+      // tabla por labor, filas = trabajadores, columnas = días.
       const detailHtml = cycleCols
         .map((c) => {
           const laborSnapshots = workdaysByGroup[g.leader]?.[c.id] || [];
           if (laborSnapshots.length === 0) return "";
           const laborTables = laborSnapshots
             .map((ls) => {
-              // Para trato priorizamos la unidad de medida del tier-day
-              // (Árbol, Metro, Polín…) cuando esté configurada. Si no, o si
-              // el ciclo tiene mezcla de unidades, caemos al tipo de trato
-              // (Poda, Amarre…). Para cosecha la unidad sale del envase.
+              // En trato manda la unidad de los tiers del día (Árbol, Metro,
+              // Polín…) si hay una sola; si no hay o hay mezcla, el tipo de
+              // trato (Poda, Amarre…). En cosecha la unidad sale del envase.
               let tratoLabel = "";
               if (ls.laborType === "trato") {
                 const units = ls.tratoUnits || [];
@@ -3710,7 +3667,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
                 <tr style="background:${itemFill}">
                   <td>${i + 1}</td>
                   <td>${it.name}</td>
-                  <td class="mono">${fmtRut(it.rut)}</td>
+                  <td class="mono">${fmtRut(rutOf(it.rut, it.workerId))}</td>
                   <td style="font-size:10px;color:#555">${bankTag}</td>
                   ${cellsByCycle}
                   ${advanceCell}
@@ -3825,9 +3782,10 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
     return a || b || "—";
   };
 
-  // Resumen ejecutivo por subfaena (primera hoja del detalle imprimible).
-  // Filas: subfaena (faena se imprime sólo en la 1ra fila del bloque), cols:
-  // Con cuenta RUT vs Efectivo + TOTAL. Se rinde solo en mode "detail".
+  // Resumen por subfaena (primera hoja del detalle imprimible). Filas:
+  // subfaena, con la faena solo en la primera fila del bloque y un subtotal
+  // por faena; columnas: Período, Transferencia, Efectivo y TOTAL. Solo en
+  // modo "detail".
   const subfaenaSummaryHtml = (isDetail && subfaenaSummary && subfaenaSummary.rows.length > 0)
     ? (() => {
         let prevFaena = null;
@@ -3891,9 +3849,8 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
       })()
     : "";
 
-  // Resumen por labor (segunda hoja del detalle imprimible, justo después
-  // del resumen por subfaena). Mismo formato de tabla, pero desglosado
-  // también por labor dentro de cada subfaena. Se rinde solo en mode
+  // Resumen por labor (segunda hoja del detalle imprimible): la misma tabla
+  // que el resumen por subfaena, desglosada también por labor. Solo en modo
   // "detail".
   const laborSummaryHtml = (isDetail && laborSummary && laborSummary.rows.length > 0)
     ? (() => {
@@ -4074,12 +4031,10 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
 </body></html>`;
 }
 
-// Ciclos + workdays de una nómina: la parte cara. No depende de cómo se
-// agrupe a la gente —`wdIdSet` sale de `payroll.items[].workdayIds`, que ya es
-// la unión de todos los grupos— así que se pide una sola vez por nómina y la
-// reusan el detalle de pago, los comprobantes de efectivo y la hoja de cada
-// líder. Antes cada uno de esos botones la volvía a bajar entera: imprimir la
-// hoja de un solo líder costaba lo mismo que imprimir la nómina completa.
+// Ciclos y jornadas de una nómina: la parte cara. No depende de cómo se agrupe
+// a la gente (`wdIdSet` sale de `payroll.items[].workdayIds`, la unión de todos
+// los grupos), así que se pide una vez por nómina y la reusan el detalle de
+// pago, los comprobantes de efectivo y la hoja de cada líder.
 async function fetchPayrollWorkdays(payroll) {
   const cycleIds = payroll.cycleIds || (payroll.cycleDetails || []).map((c) => c.id);
   const cycles = await Promise.all(cycleIds.map((id) => cyclesService.getById(id)));
@@ -4087,8 +4042,8 @@ async function fetchPayrollWorkdays(payroll) {
   for (const c of cycles) if (c) cyclesById[c.id] = c;
 
   const items = payroll.items || [];
-  // Indispensable: los ciclos de esta nómina también tienen workdays de OTRAS
-  // nóminas, y contarlos inflaría los montos del comprobante.
+  // Solo las jornadas de esta nómina: sus ciclos también tienen jornadas de
+  // otras nóminas.
   const wdIdSet = new Set(items.flatMap((it) => it.workdayIds || []));
   const workdays = [];
   for (let i = 0; i < cycleIds.length; i += 10) {
@@ -4102,16 +4057,14 @@ async function fetchPayrollWorkdays(payroll) {
   return { cycleIds, cyclesById, workdays, nameByRut };
 }
 
-// Snapshots por (grupo, ciclo). CPU pura sobre lo que trajo
-// `fetchPayrollWorkdays`, y cada llamador pasa SUS grupos: todos para el
-// detalle de pago, solo los de efectivo para los comprobantes, uno solo para
-// la hoja de un líder. Esa distinción no se puede perder — los grupos de
-// `allGroups` juntan banco y efectivo bajo el mismo líder, así que reusar ese
-// resultado en los comprobantes de efectivo metería en la hoja firmable la
-// producción de gente que cobró por transferencia.
+// Grillas por (grupo, ciclo), calculadas en memoria sobre lo que trajo
+// `fetchPayrollWorkdays`. Cada llamador pasa sus grupos: todos para el detalle
+// de pago, solo los de efectivo para los comprobantes, uno para la hoja de un
+// líder. Los grupos de `allGroups` juntan banco y efectivo bajo el mismo líder,
+// así que su resultado no sirve para la hoja firmable de efectivo.
 //
-// Compartir el fetch sí es seguro: `buildGroupCycleSnapshot` filtra adentro
-// por ciclo y por rut, así que recibir workdays de más no cambia una fila.
+// Las jornadas sí se comparten: `buildGroupCycleSnapshot` filtra por ciclo y
+// por rut, así que recibir jornadas de más no cambia ninguna fila.
 function buildWorkdaysByGroup(groups, payrollData, catalogs = {}) {
   const { cycleIds, cyclesById, workdays, nameByRut } = payrollData;
   const workdaysByGroup = {};
@@ -4128,17 +4081,16 @@ function buildWorkdaysByGroup(groups, payrollData, catalogs = {}) {
   return workdaysByGroup;
 }
 
-// Resumen por labor (segunda hoja del "Detalle de pago" imprimible, y vista
+// Resumen por labor (segunda hoja del "Detalle de pago" imprimible y vista
 // "con labores" del Resumen en pantalla). Mismo criterio que subfaenaSummary
-// (bank vs cash por fila), pero desglosado también por labor dentro de cada
-// subfaena, sumando a TODOS los trabajadores de la nómina (no solo a los de
-// un grupo/líder). Requiere `workdaysByGroup` (ver buildWorkdaysByGroup)
-// porque ese desglose no vive en payroll.items — solo el total por ciclo.
+// (banco y efectivo por fila), desglosado también por labor y sumando a todos
+// los trabajadores de la nómina. Necesita `workdaysByGroup` (ver
+// buildWorkdaysByGroup): payroll.items solo trae el total por ciclo.
 function computeLaborSummary(payroll, allGroups, workdaysByGroup) {
   const allItems = allGroups.flatMap((g) => g.items);
   const cashByRut = new Map(allItems.map((it) => [it.rut, isCashBank(it.bankCode)]));
   const cycleDetails = payroll.cycleDetails || [];
-  const acc = new Map(); // key: subfaenaName||laborName
+  const acc = new Map(); // clave: subfaenaName||laborName
   for (const g of allGroups) {
     const byCycle = workdaysByGroup[g.leader] || {};
     for (const [cid, snapshots] of Object.entries(byCycle)) {
@@ -4175,12 +4127,10 @@ function computeLaborSummary(payroll, allGroups, workdaysByGroup) {
   return { rows, totals };
 }
 
-// Bonos y anticipos no están ligados a ninguna subfaena/labor en particular
-// (son un ajuste por trabajador, no por producción), así que no se pueden
-// repartir entre las filas de subfaenaSummary/laborSummary. Se calculan
-// aparte y se agregan como filas de ajuste al final de esas tablas para que
-// el TOTAL impreso/mostrado cuadre exactamente con lo que hay que pagar
-// (bank/cash).
+// Bonos y anticipos por medio de pago. Son un ajuste por trabajador, no por
+// subfaena ni labor, así que van como filas de ajuste al pie de
+// subfaenaSummary/laborSummary para que el TOTAL cuadre con lo que hay que
+// pagar.
 function computeBonusAdvanceSummary(items) {
   let bankBonus = 0, cashBonus = 0, bankAdvance = 0, cashAdvance = 0;
   for (const it of items) {
@@ -4196,12 +4146,10 @@ function computeBonusAdvanceSummary(items) {
   };
 }
 
-async function printPaymentDetails(payroll, allGroups, titleOverrides = {}, summaries = [], catalogs = {}, subfaenaSummary = null, payrollData = null) {
+async function printPaymentDetails(payroll, allGroups, titleOverrides = {}, summaries = [], catalogs = {}, subfaenaSummary = null, payrollData = null, rutOf = undefined) {
   if (allGroups.length === 0) return;
   const allItems = allGroups.flatMap((g) => g.items);
-  // `payrollData` viene memorizado desde el modal. El fallback existe para que
-  // un llamador nuevo que se olvide de pasarlo siga imprimiendo bien, aunque
-  // pague la lectura.
+  // `payrollData` viene memorizado desde el modal; si no llega, se lee acá.
   const data = payrollData || (await fetchPayrollWorkdays(payroll));
   const { cyclesById } = data;
   const workdaysByGroup = buildWorkdaysByGroup(allGroups, data, catalogs);
@@ -4218,6 +4166,7 @@ async function printPaymentDetails(payroll, allGroups, titleOverrides = {}, summ
     subfaenaSummary,
     laborSummary,
     bonusAdvanceSummary,
+    rutOf,
   });
   const w = window.open("", "_blank", "width=900,height=700");
   if (!w) {
@@ -4228,10 +4177,9 @@ async function printPaymentDetails(payroll, allGroups, titleOverrides = {}, summ
   w.document.close();
 }
 
-// Imprime solo la tabla de resumen (por subfaena o por labor, según el toggle
-// del Resumen en pantalla) — versión standalone de "Resumen por subfaena"/
-// "Resumen por labor" que ya usa el PDF completo de "Detalle de pago", para
-// cuando el usuario solo quiere esa tabla sin los comprobantes individuales.
+// Imprime solo la tabla de resumen, por subfaena o por labor según el toggle
+// del Resumen en pantalla: las mismas tablas del "Detalle de pago", sin los
+// comprobantes de cada grupo.
 function printResumenTable(payroll, {
   showLabor, subfaenaSummary, laborSummary, bonusAdvanceSummary,
   pendingRows = [], pendingMode = "none",
@@ -4385,15 +4333,11 @@ function printResumenTable(payroll, {
   w.document.close();
 }
 
-async function printCashReceipts(payroll, cashGroups, titleOverrides = {}, catalogs = {}, payrollData = null) {
-  // Fuera de la hoja que firma el líder los que no tienen nada que cobrar
-  // NI produjeron: son los días de asistencia de un sueldo mensual, que
-  // entran a la nómina solo para quedar etiquetados. Hacerle firmar a
-  // alguien que recibió $0 ensucia un documento de pago.
-  //
-  // El corte es por bruto, no por neto: quien produjo y quedó en cero
-  // porque un anticipo se llevó todo SÍ va en la hoja — al líder le sirve
-  // ver que esa persona ya está saldada.
+async function printCashReceipts(payroll, cashGroups, titleOverrides = {}, catalogs = {}, payrollData = null, rutOf = undefined) {
+  // La hoja que firma el líder deja fuera a quien no cobra nada ni produjo:
+  // los días de asistencia de un sueldo mensual, que entran a la nómina solo
+  // para quedar etiquetados. El corte es por bruto: quien produjo y quedó en
+  // cero por un anticipo sí va en la hoja, como saldado.
   const gruposConPago = cashGroups
     .map((g) => {
       const items = g.items.filter(
@@ -4416,6 +4360,7 @@ async function printCashReceipts(payroll, cashGroups, titleOverrides = {}, catal
     workdaysByGroup,
     cyclesById,
     catalogs,
+    rutOf,
   });
   const w = window.open("", "_blank", "width=900,height=700");
   if (!w) {
@@ -4431,22 +4376,20 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
   const toast = useToast();
   const isMobile = useIsMobile();
   const items = payroll.items || [];
+  const rutOf = useMemo(() => currentRutResolver(workers), [workers]);
   const { bank, cash } = splitBankAndCash(items);
   const cashGroups = groupCashByLeader(cash);
-  const allGroups = groupCashByLeader(items); // groups everyone (bank + cash) by leader
+  const allGroups = groupCashByLeader(items); // todos (banco y efectivo) agrupados por líder
 
-  // Filtros y estado de UI para el HUD mejorado.
+  // Filtros y estado de la UI del detalle.
   const [search, setSearch] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("all"); // all | bank | cash
   const [leaderFilter, setLeaderFilter] = useState(() => new Set());
   const [cycleFilter, setCycleFilter] = useState(() => new Set());
   const [expandedRut, setExpandedRut] = useState(null);
-  // Una nómina histórica (pagada) acumula mucha info arriba (resumen, ciclos)
-  // que ya no hace falta revisar de entrada — arranca colapsada. Una pendiente
-  // sigue arrancando expandida porque el usuario típicamente la está revisando,
-  // salvo el Resumen, que por su tamaño (tablas, toggles, acciones) arranca
-  // colapsado en ambos casos. Incluye también cada grupo por líder (banco y
-  // efectivo), que es donde vive el grueso del detalle trabajador-por-trabajador.
+  // Secciones colapsadas al abrir: en una nómina pagada, el resumen, los
+  // ciclos, los filtros y cada grupo por líder (banco y efectivo); en una
+  // pendiente, solo el resumen.
   const [collapsedSections, setCollapsedSections] = useState(() => {
     if (payroll.status !== "paid") return new Set(["summary"]);
     const set = new Set(["summary", "cycles", "filters"]);
@@ -4473,7 +4416,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
 
   // Líderes únicos en la nómina (para el filtro de grupo).
   const allLeaders = useMemo(() => {
-    const set = new Map(); // label → count
+    const set = new Map(); // líder → cantidad
     for (const it of items) {
       const l = normalizeLeader(it.groupLeader || "") || "SIN GRUPO";
       set.set(l, (set.get(l) || 0) + 1);
@@ -4483,12 +4426,10 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
       .sort((a, b) => a.leader.localeCompare(b.leader, "es"));
   }, [items]);
 
-  // Un filtro puede quedar apuntando a algo que ya no está en la nómina: el
-  // ciclo que se acaba de sacar, o un grupo cuyo último trabajador salió.
-  // Contarlo como activo dejaba la lista en 0 con el filtro marcado, y si
-  // quedaba un solo ciclo, sin la fila de chips para apagarlo. Se descarta al
-  // leer y no al editar, así cubre por igual sacar un ciclo, sacar un
-  // trabajador y recalcular, sin que cada camino tenga que acordarse.
+  // Filtros vigentes: se ignora el grupo o el ciclo que ya no está en la
+  // nómina (un ciclo que se sacó, un grupo cuyo último trabajador salió). Se
+  // descarta al leer y no al editar, así cubre sacar un ciclo, sacar un
+  // trabajador y recalcular.
   const activeLeaderFilter = useMemo(() => {
     const vigentes = new Set(allLeaders.map((g) => g.leader));
     return new Set([...leaderFilter].filter((l) => vigentes.has(l)));
@@ -4503,7 +4444,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     const q = search.trim();
     return items.filter((it) => {
       if (q) {
-        const hay = `${it.rut || ""} ${it.name || ""} ${it.groupLeader || ""}`;
+        const hay = `${it.rut || ""} ${rutOf(it.rut, it.workerId)} ${it.name || ""} ${it.groupLeader || ""}`;
         if (!matchesSearchQuery(hay, q)) return false;
       }
       const isCash = isCashBank(it.bankCode);
@@ -4525,9 +4466,9 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
   const filteredBank = filteredSplit.bank;
   const filteredCash = filteredSplit.cash;
   const filteredCashGroups = useMemo(() => groupCashByLeader(filteredCash), [filteredCash]);
-  // Banco también agrupado por líder, para poder imprimir el detalle por grupo
-  // (ej. solo CHILENOS) igual que en efectivo. groupCashByLeader sirve para
-  // cualquier conjunto de items, no solo cash.
+  // Banco también agrupado por líder, para imprimir el detalle por grupo (ej.
+  // solo CHILENOS) igual que en efectivo. groupCashByLeader sirve para
+  // cualquier conjunto de items, no solo los de efectivo.
   const filteredBankGroups = useMemo(() => groupCashByLeader(filteredBank), [filteredBank]);
 
   // Entrega del efectivo persona por persona. Solo tiene sentido cuando las
@@ -4535,7 +4476,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
   // no hay deuda que descontar, y después de pagar la nómina ya no importa.
   const cashPaidMode = !!payroll.bankPaidAt && payroll.status !== "paid";
   const [cashPaidSet, setCashPaidSet] = useState(() => new Set(payroll.cashPaidRuts || []));
-  // Guardado diferido: marcar 20 personas seguidas no puede ser 20 escrituras.
+  // Guardado diferido (700 ms): marcar varias personas seguidas es una sola escritura.
   const cashSaveRef = useRef(null);
   const flushCashPaid = useRef(() => {});
   const toggleCashPaid = (rut) => {
@@ -4586,8 +4527,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
       if (!other || other.id === payroll.id) continue;
       const pendItems = pendingCashItemsOf(other);
       if (pendItems.length === 0) continue;
-      // Período de la nómina vieja, sacado de su propio `cycleDetails` — no
-      // del de esta nómina, que es de otras fechas.
+      // Período de la otra nómina, sacado de su propio `cycleDetails`.
       const days = (other.cycleDetails || []).flatMap((c) => [c.firstDay, c.lastDay]).filter(Boolean).sort();
       out.push({
         payrollId: other.id,
@@ -4608,16 +4548,16 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     setCycleFilter(new Set());
   };
 
-  // Two leader-total summary tables shown at the top of "Detalle pago":
-  //   1) "Con cuenta RUT": CHILENOS + EXTRANJEROSCONCUENTARUT (each row separate).
-  //   2) "Otros grupos": every other leader (each row separate).
+  // Las dos tablas de totales por líder ("Resumen por grupo") de "Detalle de
+  // pago", con una fila por líder:
+  //   1) "Con cuenta RUT": CHILENOS y EXTRANJEROSCONCUENTARUT.
+  //   2) "Otros grupos": el resto de los líderes.
   const detailSummaries = (() => {
     const CRUT_LEADERS = new Set(["CHILENOS", "EXTRANJEROSCONCUENTARUT"]);
     const compact = (s) => normalizeLeader(s).replace(/\s+/g, "");
     const inCrut = (g) => CRUT_LEADERS.has(compact(g.leader));
 
-    // Map cycleId → faenaName (fallback al label del ciclo para nóminas
-    // viejas que no traen info de faena).
+    // cycleId → faenaName; sin faena guardada, usa el label del ciclo.
     const faenaByCycle = new Map();
     for (const cd of payroll.cycleDetails || []) {
       faenaByCycle.set(cd.id, cd.faenaName || cd.label || "—");
@@ -4658,8 +4598,8 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     return cd.laborIds.map((id) => labors.find((l) => l.id === id)?.name || "labor borrada").join(", ");
   };
 
-  // Edit mode: permite sacar un trabajador o un ciclo entero de la nómina.
-  // Solo disponible si la nómina está pendiente (paga = revertir primero).
+  // Modo edición: sacar un trabajador o un ciclo entero de la nómina. Solo con
+  // la nómina pendiente.
   const isPending = payroll.status !== "paid";
   const [editMode, setEditMode] = useState(false);
   const [editBusy, setEditBusy] = useState(false);
@@ -4670,7 +4610,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     setConfirmRemove({
       type: "worker",
       target: item,
-      message: `¿Sacar a ${label} de esta nómina?\n\nSe liberan sus workdays y se restauran sus anticipos aplicados. Se puede volver a sumar con "+ Agregar persona".`,
+      message: `¿Sacar a ${label} de esta nómina?\n\nSe liberan sus jornadas y se restauran sus anticipos aplicados. Se puede volver a sumar con "+ Agregar persona".`,
     });
   };
   const doRemoveWorker = async (item) => {
@@ -4693,7 +4633,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     setConfirmRemove({
       type: "cycle",
       target: cycle,
-      message: `¿Sacar el ciclo "${cycle.label}" (${fmtCurrency(cycleAmount)}) de esta nómina?\n\nSe liberan los workdays del ciclo. Los trabajadores que SOLO tenían producción en este ciclo salen también, y sus anticipos vuelven a quedar pendientes para la próxima nómina. Los que tenían producción en otros ciclos quedan con su monto reducido; si lo que les queda no alcanza para el anticipo ya descontado, la diferencia vuelve a quedar pendiente. No se puede deshacer.`,
+      message: `¿Sacar el ciclo "${cycle.label}" (${fmtCurrency(cycleAmount)}) de esta nómina?\n\nSe liberan las jornadas del ciclo. Los trabajadores que SOLO tenían producción en este ciclo salen también, y sus anticipos vuelven a quedar pendientes para la próxima nómina. Los que tenían producción en otros ciclos quedan con su monto reducido; si lo que les queda no alcanza para el anticipo ya descontado, la diferencia vuelve a quedar pendiente. No se puede deshacer.`,
     });
   };
   const doRemoveCycle = async (cycle) => {
@@ -4701,8 +4641,8 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     try {
       const { salen = [], ajustados = [] } = (await removeCycleFromPayroll(payroll.id, cycle.id)) || {};
       await onChanged?.();
-      // Decir qué pasó con la plata: que un anticipo vuelva a pendiente es
-      // justo lo que hay que saber antes de armar la nómina siguiente.
+      // El aviso dice qué pasó con la plata, incluido cuánto de anticipos
+      // vuelve a quedar pendiente para la nómina siguiente.
       const devuelto =
         salen.reduce((s, x) => s + (x.liberado || 0), 0) +
         ajustados.reduce((s, x) => s + (x.devuelto || 0), 0);
@@ -4908,22 +4848,16 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     }
   };
 
-  // Recalcular: vuelve a traer los workdays vigentes de los ciclos ya
-  // incluidos en la nómina (no solo los que quedaron etiquetados al crearla),
-  // de las labores que la nómina abarca (`inRecalcScope`), y compara contra
-  // lo guardado. Detecta 3 cosas — ediciones a días
-  // existentes o días nuevos agregados a un ciclo ya nominado (el pago es
-  // por ciclo, así que un día nuevo ahí corresponde a esta nómina),
-  // trabajadores nuevos con producción en esos ciclos (mismo tratamiento que
-  // "+ Agregar ciclo" para uno nuevo), y datos de cuenta/grupo del
-  // trabajador que cambiaron desde que se generó. Si el bruto baja, lo ya
-  // descontado de anticipos vuelve a encajar en el bruto nuevo y lo que no
-  // cabe vuelve al MISMO anticipo — misma regla que sacar un ciclo, ver
-  // `refitAppliedAdvances` en src/utils/payrollItem.js. Antes se dejaba el
-  // anticipo aplicado entero y se creaba uno nuevo por la diferencia: el
-  // original figuraba cobrado por una nómina que no lo retuvo y quedaba un
-  // anticipo que nadie dio. Quien se queda sin producción sale de la nómina.
-  // Muestra todo en un modal de revisión antes de escribir nada.
+  // Recalcular: vuelve a traer las jornadas vigentes de los ciclos de la
+  // nómina, de las labores que abarca (`inRecalcScope`), y las compara con lo
+  // guardado. Detecta ediciones o días nuevos en esos ciclos (el pago es por
+  // ciclo, así que un día nuevo ahí corresponde a esta nómina), trabajadores
+  // nuevos con producción (entran como en "+ Agregar ciclo") y datos de cuenta
+  // o grupo que cambiaron en la ficha. Si el bruto baja, lo ya descontado de
+  // anticipos se re-encaja en el bruto nuevo y lo que no cabe vuelve al mismo
+  // anticipo (`refitAppliedAdvances` en src/utils/payrollItem.js); quien se
+  // queda sin producción sale. Todo se muestra en un modal de revisión antes
+  // de escribir.
   const [recalcPreview, setRecalcPreview] = useState(null);
   const [recalcBusy, setRecalcBusy] = useState(false);
 
@@ -4958,10 +4892,9 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
       // la nómina — mismo criterio que "+ Agregar ciclo" para uno nuevo.
       const newWorkerAggs = aggregates.filter((a) => a.total > 0 && !existingByKey.has(a.workerId || a.rut));
 
-      // Anticipos/bonos pendientes de CUALQUIER trabajador relevante (ya
-      // incluido o nuevo) — un anticipo creado después de generar la nómina
-      // nunca se aplica solo, así que acá lo detectamos y aplicamos igual
-      // que se haría al crear la nómina de nuevo.
+      // Anticipos y bonos pendientes de todos los involucrados (ya incluidos o
+      // nuevos): uno creado después de generar la nómina se aplica acá, igual
+      // que al armarla.
       const claveDe = resolverRutVigente(workers);
       const allIds = [...items.map(claveDe), ...newWorkerAggs.map(claveDe)];
       const pendingAdvances = allIds.length ? await listPendingForWorkers(allIds) : [];
@@ -5168,11 +5101,9 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
       const { mergedItems, allCurrentWorkdays, newAdvanceApplications, advanceTargets, pendingAdvances } = recalcPreview;
 
       await recalculatePayrollItems(payroll.id, { items: mergedItems });
-      // Se etiqueta exactamente lo que la nómina contiene, y se suelta lo que
-      // le quedó etiquetado sin estar en ningún item: las jornadas de quien
-      // salió, y las de $0 de quien nunca entró. Antes se etiquetaba todo lo
-      // vigente de los ciclos, así que esas jornadas quedaban tomadas por una
-      // nómina que no las paga.
+      // Se etiqueta exactamente lo que contiene la nómina y se suelta lo que le
+      // quedó etiquetado sin estar en ningún item: las jornadas de quien salió
+      // y las de $0 de quien nunca entró.
       const enNomina = new Set(mergedItems.flatMap((it) => it.workdayIds || []));
       await untagWorkdaysFromPayroll(
         allCurrentWorkdays.filter((wd) => !enNomina.has(wd.id) && wd.payrollId === payroll.id).map((wd) => wd.id),
@@ -5239,11 +5170,10 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     }
   };
 
-  // Resumen ejecutivo por subfaena (primera hoja del "Detalle de pago"
-  // imprimible). Filas: subfaenas con monto > 0, ordenadas por faena y
-  // subfaena. Columnas: "Con cuenta RUT" (todas las transferencias) vs
-  // "Efectivo". Si la nómina vieja no trae info de subfaena, los rows
-  // muestran "—" / label del ciclo y de todos modos se rinden.
+  // Resumen por subfaena (primera hoja del "Detalle de pago" imprimible):
+  // subfaenas con monto > 0, ordenadas por faena y subfaena, con
+  // transferencia y efectivo por fila. Sin subfaena guardada, la fila usa el
+  // label del ciclo, y "—" sin faena.
   const subfaenaSummary = (() => {
     const bySubfaena = new Map();
     for (const cd of cycleDetails) {
@@ -5287,7 +5217,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     return { rows, totals };
   })();
 
-  // Aggregate breakdowns for the summary header.
+  // Totales para el encabezado del resumen.
   const bankTotal = bank.reduce((s, x) => s + (Number(x.amount) || 0), 0);
   const cashTotal = cash.reduce((s, x) => s + (Number(x.amount) || 0), 0);
   const grossTotal = items.reduce((s, x) => s + (Number(x.grossAmount) || Number(x.amount) || 0), 0);
@@ -5318,11 +5248,11 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     return a || b || "—";
   };
 
-  // Ciclos + workdays de la nómina, una sola vez por modal. Guardamos la
-  // PROMESA y no el resultado para que dos clicks seguidos no disparen dos
-  // lecturas, y la atamos a la identidad de `payroll`: toda edición pasa por
-  // `onChanged`, que reemplaza el objeto, así que el memo se invalida solo.
-  // Cerrar y volver a abrir el modal también fuerza una relectura.
+  // Ciclos y jornadas de la nómina, una vez por modal. Se guarda la promesa y
+  // no el resultado, así dos clicks seguidos no disparan dos lecturas, y queda
+  // atada a la identidad de `payroll`: toda edición pasa por `onChanged`, que
+  // reemplaza el objeto e invalida el memo. Cerrar y volver a abrir el modal
+  // también relee.
   const payrollDataRef = useRef({ payroll: null, promise: null });
   const getPayrollData = () => {
     if (payrollDataRef.current.payroll !== payroll) {
@@ -5331,23 +5261,20 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     return payrollDataRef.current.promise;
   };
 
-  // Resumen en pantalla: mismas tablas que "Detalle de pago" (por subfaena /
-  // por labor), con sus propias acciones de imprimir/copiar/descargar. La
-  // vista "con labores" necesita el mismo fetch costoso (ciclos + workdays)
-  // que ya paga "Detalle de pago" — se carga solo al activar el toggle, y se
-  // cachea mientras el modal siga abierto.
+  // Resumen en pantalla: las mismas tablas de "Detalle de pago" (por subfaena
+  // o por labor), con sus propias acciones de imprimir, copiar y descargar. La
+  // vista "con labores" usa la misma lectura cara de ciclos y jornadas: se
+  // carga al activar el toggle y queda en caché mientras el modal esté abierto.
   const [summaryShowLabor, setSummaryShowLabor] = useState(false);
   // Atado a la nómina para la que se calculó, igual que `getPayrollData`: toda
-  // edición llega como un `payroll` nuevo, y sin esto la tabla seguía
-  // mostrando el ciclo o el trabajador que se acababa de sacar hasta cerrar
-  // el modal.
+  // edición llega como un `payroll` nuevo y el resumen se vuelve a calcular.
   const [laborSummary, setLaborSummary] = useState({ payroll: null, data: null });
   const laborSummaryData = laborSummary.payroll === payroll ? laborSummary.data : null;
   const [laborSummaryLoading, setLaborSummaryLoading] = useState(false);
   useEffect(() => {
-    // Sin chequear `laborSummaryLoading`: si la nómina cambia a mitad de una
-    // carga, el cleanup cancela la vieja y esta tiene que arrancar igual. Con
-    // el chequeo quedaba pegado en "Cargando…" — la cancelada nunca lo apaga.
+    // No mira `laborSummaryLoading`: si la nómina cambia a mitad de una carga,
+    // el cleanup cancela la anterior (que ya no apaga el loading) y esta
+    // arranca igual.
     if (!summaryShowLabor || laborSummaryData) return;
     let cancelled = false;
     setLaborSummaryLoading(true);
@@ -5367,20 +5294,16 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [summaryShowLabor, payroll]);
   const activeSummary = summaryShowLabor ? laborSummaryData : subfaenaSummary;
-  // Aplana filas + subtotales por faena en una sola lista para que el render
-  // sea un simple .map() — evita mirar "la fila siguiente" adentro del JSX.
-  // El efectivo que quedó debiendo de nóminas anteriores se puede sumar a esta
-  // tabla. No se mezcla con las filas por subfaena —es plata de otro período,
-  // con su propio sobre— así que va como fila aparte, una por nómina, con el
-  // monto NETO adeudado (el que cuadra con la deuda del resto de la app).
+  // El efectivo adeudado de nóminas anteriores se puede sumar a esta tabla,
+  // como fila aparte por nómina (es plata de otro período, con su propio
+  // sobre) y con el monto neto adeudado.
   //
   // Modos:
-  //   none  → esta nómina sola, como siempre.
-  //   with  → esta nómina + lo que se debe de antes (foto completa).
-  //   onlyPending → de todo el efectivo, hoy sale SOLO el pendiente: las
-  //           transferencias de esta nómina + el efectivo que se debía de
-  //           antes. El efectivo de ESTA nómina se difiere y pasa a ser el
-  //           pendiente de la vuelta siguiente. Es el ciclo real de la empresa.
+  //   none        → esta nómina sola.
+  //   with        → esta nómina más lo que se debe de antes.
+  //   onlyPending → hoy sale solo lo pendiente: las transferencias de esta
+  //                 nómina y el efectivo que se debía de antes. El efectivo de
+  //                 esta nómina se difiere a la vuelta siguiente.
   const [summaryPending, setSummaryPending] = useState("none"); // none | with | onlyPending
   const pendingSummaryRows = useMemo(
     () => otherPendingCash.map((p) => ({
@@ -5401,8 +5324,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     ),
     [pendingSummaryRows],
   );
-  // Si no hay nada pendiente el selector no se muestra y el modo queda en
-  // "none" solo, sin efecto.
+  // Sin nada pendiente, el selector no se muestra y el modo vale "none".
   const pendingMode = pendingSummaryRows.length > 0 ? summaryPending : "none";
   const ownAdjusted = activeSummary
     ? adjustedTotals(activeSummary.totals)
@@ -5416,6 +5338,8 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     total: ownAdjusted.total - deferredCash + addedPending,
   };
 
+  // Aplana filas y subtotales por faena en una sola lista, así el JSX hace un
+  // .map() sin mirar la fila siguiente.
   const summaryDisplayRows = useMemo(() => {
     if (!activeSummary) return [];
     const rows = activeSummary.rows;
@@ -5486,7 +5410,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
       const PENDING_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF4E5" } };
       const thinBorder = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
       const moneyFmt = '"$"#,##0';
-      const labelCols = summaryShowLabor ? 4 : 3; // Faena..Período (labor) o Faena..Período (subfaena)
+      const labelCols = summaryShowLabor ? 4 : 3; // Faena, Subfaena, [Labor,] Período
       const totalCols = summaryShowLabor ? 7 : 6;
 
       let r = 2; // fila 1 vacía
@@ -5634,11 +5558,10 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     }
   };
 
-  // Encabezados editables por ciclo. Se guardan en el doc de la nómina
-  // (`payroll.cycleLabelOverrides`) para que persistan entre dispositivos y
-  // se apliquen a XLSX, comprobantes y PDF de detalle. Fallback: si la
-  // nómina no tiene el campo todavía pero existe localStorage de una
-  // versión vieja, lo migramos al primer save.
+  // Encabezados editables por ciclo, guardados en el doc de la nómina
+  // (`payroll.cycleLabelOverrides`) y aplicados al XLSX, los comprobantes y el
+  // detalle impreso. Si la nómina no tiene el campo, arranca desde la copia de
+  // localStorage.
   const titleStorageKey = `cash_receipt_titles_${payroll.id || payroll.name}`;
   const [cycleTitleOverrides, setCycleTitleOverrides] = useState(() => {
     const fromPayroll = payroll?.cycleLabelOverrides;
@@ -5650,10 +5573,9 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
   const [printingDetail, setPrintingDetail] = useState(false);
   const [showCashEstimation, setShowCashEstimation] = useState(false);
 
-  // Snapshot lazy-loaded para alimentar el detalle por trabajador (días
-  // pagados por ciclo, estilo módulo Trabajadores). Si la nómina no tiene
-  // snapshot (creada antes del feature) caemos al display básico de 4
-  // métricas — el detalle por días no se puede reconstruir sin re-fetch.
+  // Snapshot que se carga al abrir, para el detalle por trabajador (días
+  // pagados por ciclo, como en Trabajadores). Sin snapshot, el detalle muestra
+  // solo las 4 métricas básicas.
   const [snapshot, setSnapshot] = useState(null);
   const [snapshotLoading, setSnapshotLoading] = useState(false);
   useEffect(() => {
@@ -5693,9 +5615,8 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     });
   };
 
-  // Persistencia debounced en Firestore. Cada cambio en cycleTitleOverrides
-  // espera 500ms de inactividad y luego escribe. localStorage queda como
-  // espejo por compatibilidad con la versión anterior.
+  // Guarda en Firestore 500 ms después del último cambio; localStorage queda
+  // como espejo.
   useEffect(() => {
     if (!payroll?.id) return;
     const t = setTimeout(() => {
@@ -5716,7 +5637,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
   const handlePrint = async () => {
     setPrinting(true);
     try {
-      await printCashReceipts(payroll, cashGroups, cycleTitleOverrides, catalogs, await getPayrollData());
+      await printCashReceipts(payroll, cashGroups, cycleTitleOverrides, catalogs, await getPayrollData(), rutOf);
     } catch (err) {
       toast.error(err?.message || "Error al imprimir");
     } finally {
@@ -5727,7 +5648,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
   const handlePrintDetail = async () => {
     setPrintingDetail(true);
     try {
-      await printPaymentDetails(payroll, allGroups, cycleTitleOverrides, detailSummaries, catalogs, subfaenaSummary, await getPayrollData());
+      await printPaymentDetails(payroll, allGroups, cycleTitleOverrides, detailSummaries, catalogs, subfaenaSummary, await getPayrollData(), rutOf);
     } catch (err) {
       toast.error(err?.message || "Error al imprimir");
     } finally {
@@ -5735,16 +5656,14 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     }
   };
 
-  // Imprime el detalle por grupo (un solo líder) usando el mismo flujo que el
-  // detalle de pago completo, pero con un solo grupo. Útil para entregar la
-  // hoja del líder X sin imprimir todo lo demás. `key` se usa para distinguir
-  // banco vs efectivo del mismo líder en el estado de loading (ej. CHILENOS
-  // puede tener gente en ambos lados).
+  // Imprime el detalle de pago de un solo grupo (un líder). `key` distingue
+  // banco y efectivo del mismo líder en el estado de carga (ej. CHILENOS puede
+  // tener gente en los dos).
   const handlePrintGroupDetail = async (group, key) => {
     const loadingKey = key || group.leader;
     setPrintingGroupLeader(loadingKey);
     try {
-      await printPaymentDetails(payroll, [group], cycleTitleOverrides, [], catalogs, null, await getPayrollData());
+      await printPaymentDetails(payroll, [group], cycleTitleOverrides, [], catalogs, null, await getPayrollData(), rutOf);
     } catch (err) {
       toast.error(err?.message || "Error al imprimir grupo");
     } finally {
@@ -5834,8 +5753,8 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
             </div>
           )}
         </div>
-        {/* Barra de filtros fija — afuera del scroll para que no quede flotando
-            con gaps transparentes arriba. Edge-to-edge entre header y body. */}
+        {/* Barra de filtros fija, fuera del scroll, de borde a borde entre el
+            encabezado y el cuerpo. */}
         <div className="shrink-0 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 sm:px-5 sm:py-2.5">
           <div className="flex flex-wrap items-center gap-2">
             <input
@@ -5953,7 +5872,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                 </button>
               </div>
               <p className="mb-3 text-[11px] text-[var(--color-muted)]">
-                Personalizá cómo aparece cada ciclo en el XLSX, los comprobantes y el PDF de detalle.
+                Personaliza cómo aparece cada ciclo en el XLSX, los comprobantes y el PDF de detalle.
                 Dejar vacío para restaurar el nombre original. Los cambios se guardan automáticamente.
               </p>
               <div className="space-y-2">
@@ -6383,6 +6302,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                             {g.items.map((it) => (
                               <WorkerDetailRow
                                 key={it.rut}
+                                rutOf={rutOf}
                                 item={it}
                                 expanded={expandedRut === it.rut}
                                 onToggle={() => setExpandedRut((cur) => cur === it.rut ? null : it.rut)}
@@ -6419,6 +6339,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                               {g.items.map((it) => (
                                 <WorkerDetailRow
                                   key={it.rut}
+                                  rutOf={rutOf}
                                   item={it}
                                   expanded={expandedRut === it.rut}
                                   onToggle={() => setExpandedRut((cur) => cur === it.rut ? null : it.rut)}
@@ -6507,6 +6428,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                             {g.items.map((it) => (
                               <WorkerDetailRow
                                 key={it.rut}
+                                rutOf={rutOf}
                                 item={it}
                                 expanded={expandedRut === it.rut}
                                 onToggle={() => setExpandedRut((cur) => cur === it.rut ? null : it.rut)}
@@ -6533,6 +6455,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                               {g.items.map((it) => (
                                 <WorkerDetailRow
                                   key={it.rut}
+                                  rutOf={rutOf}
                                   item={it}
                                   expanded={expandedRut === it.rut}
                                   onToggle={() => setExpandedRut((cur) => cur === it.rut ? null : it.rut)}
@@ -6624,8 +6547,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
           workerSummaryFor
             ? {
                 // El item trae el id estable en `workerId` y el rut del roster
-                // en `rut`. Pasar solo el segundo como si fuera el id era lo
-                // que hacía que el resumen se abriera con la clave equivocada.
+                // en `rut`; el resumen se abre con el id.
                 id: workerSummaryFor.workerId || workerSummaryFor.rut,
                 rut: workerSummaryFor.rut,
                 name: workerSummaryFor.name,
@@ -6700,15 +6622,13 @@ function resumenAgregado(inicio, added = []) {
   return partes.join(" ");
 }
 
-// Picker para agregar ciclos (de una subfaena que faltaba, o cualquier otra)
-// a una nómina pendiente ya creada. Agrupa por faena y muestra solo ciclos
-// abiertos. Al marcar un ciclo se eligen sus labores, igual que al generar:
-// antes se agregaba el ciclo entero y no había forma de dejar una labor para
-// otra nómina. Un ciclo que ya está en la nómina con algunas labores aparece
-// con las que le faltan; uno que está entero no aparece.
+// Selector para agregar ciclos o labores a una nómina pendiente. Agrupa por
+// faena y muestra solo ciclos abiertos. Al marcar un ciclo se eligen sus
+// labores, igual que al generar. Un ciclo que ya está en la nómina con algunas
+// labores aparece con las que le faltan; uno que está entero no aparece.
 //
-// Se monta solo mientras está abierto, así cada apertura arranca limpia sin
-// un efecto que resetee el estado.
+// Se monta solo mientras está abierto, así cada apertura arranca con el estado
+// limpio.
 function AddCyclesModal({ onClose, cycles, faenas, subfaenas, payrollCycleDetails = [], payrollCycleIds = [], onConfirm, busy }) {
   // cycleId → labores elegidas. Un ciclo marcado puede quedar sin labores, y
   // ese no se agrega.
@@ -6725,7 +6645,7 @@ function AddCyclesModal({ onClose, cycles, faenas, subfaenas, payrollCycleDetail
   // Por ciclo abierto, las labores que todavía se le pueden sumar a la nómina.
   const groups = useMemo(() => {
     const detalles = new Map(payrollCycleDetails.map((cd) => [cd.id, cd]));
-    // Nóminas viejas: un ciclo en `cycleIds` sin detalle está entero.
+    // Un ciclo en `cycleIds` sin detalle en `cycleDetails` está entero.
     const enteros = new Set(payrollCycleIds.filter((id) => !detalles.has(id)));
     const byFaena = new Map();
     for (const f of faenas) byFaena.set(f.id, { faena: f, entries: [] });
@@ -6926,7 +6846,7 @@ function AddWorkerDaysModal({
   const [data, setData] = useState(null); // { workdays, advances }
   const [loading, setLoading] = useState(!!initialWorker);
   const [error, setError] = useState("");
-  // keys de fila
+  // Claves de las filas elegidas.
   const [selected, setSelected] = useState(() => new Set((initialWorker && previous?.get(initialWorker.id)) || []));
   // Si se elige otra persona antes de que termine la carga de la anterior,
   // esa respuesta se descarta.
@@ -7516,11 +7436,9 @@ function RecalcModal({ preview, busy, onClose, onConfirm }) {
   );
 }
 
-// Modal de estimación de efectivo: dice cuántos billetes/monedas de cada
-// denominación se necesitan para pagar la nómina en efectivo. Cada monto se
-// redondea HACIA ARRIBA al múltiplo de $100 más cercano para garantizar que
-// sea descomponible exactamente con denominaciones de [10000, 5000, 1000,
-// 500, 100].
+// Modal de estimación de efectivo: cuántos billetes y monedas de cada
+// denominación hacen falta. Cada monto se redondea hacia arriba al múltiplo de
+// $100, así se descompone exacto (ver `estimateCashBreakdown`).
 function CashEstimationModal({ cashItems, payrollName, pendingExtra = [], onClose }) {
   const toast = useToast();
   // El efectivo pendiente de otras nóminas se entrega aparte, pero la plata se
@@ -7543,9 +7461,8 @@ function CashEstimationModal({ cashItems, payrollName, pendingExtra = [], onClos
   const captureRef = useRef(null);
   const diff = est.totalNeeded - est.totalOriginal;
 
-  // Snapshot textual del desglose principal (sin el detalle por trabajador,
-  // para que entre en un chat o nota). Las cantidades quedan alineadas con
-  // padStart para que se lea ordenado en monospace.
+  // Desglose principal en texto plano, sin el detalle por trabajador, para
+  // pegar en un chat o una nota. padStart alinea las cantidades en monospace.
   const buildPlainText = () => {
     const lines = [];
     lines.push(`💵 Estimación de efectivo — ${payrollName}`);
@@ -7773,11 +7690,11 @@ function CashEstimationModal({ cashItems, payrollName, pendingExtra = [], onClos
   );
 }
 
-// Fila expandible para banco/efectivo. Click → muestra el desglose interno
-// de la nómina (byCycle + anticipos aplicados + bonos aplicados + bruto/
-// descuentos/neto). Botón "📅 Ver días" abre el WorkerSummaryModal completo.
+// Fila expandible de banco o efectivo. Al expandirla muestra el detalle de la
+// persona en la nómina: tablas por ciclo y tarjetas de bruto, anticipos, bonos
+// y neto. "📅 Ver historial completo" abre el WorkerSummaryModal.
 function WorkerDetailRow({
-  item, expanded, onToggle, onShowSummary, cycleDetails, displayCycleLabel,
+  rutOf = (r) => r, item, expanded, onToggle, onShowSummary, cycleDetails, displayCycleLabel,
   editMode, editBusy, onRemoveWorker, cols, snapshot, snapshotLoading, catalogs, isMobile,
   cashPaidMode = false, cashPaid = false, onToggleCashPaid,
 }) {
@@ -7790,7 +7707,7 @@ function WorkerDetailRow({
 
   const expandedDetail = (
     <div className="space-y-3">
-      {/* Header chico con líder/email + atajo al detalle completo */}
+      {/* Encabezado con líder y email, y atajo al historial completo */}
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
         <div className="flex flex-wrap items-center gap-2">
           {item.groupLeader && (
@@ -7812,9 +7729,10 @@ function WorkerDetailRow({
         </button>
       </div>
 
-      {/* Detalle por ciclo estilo Workers: tabla por ciclo con
+      {/* Detalle por ciclo, como en Trabajadores: una tabla por ciclo con
           encabezado faena · subfaena · ciclo y filas labor × día. */}
       <WorkerPaidDetailTables
+        displayRut={rutOf(item.rut, item.workerId)}
         item={item}
         snapshot={snapshot}
         snapshotLoading={snapshotLoading}
@@ -7838,7 +7756,7 @@ function WorkerDetailRow({
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium">{item.name}</div>
             <div className="flex flex-wrap items-center gap-x-2 font-mono text-[11px] text-[var(--color-muted)]">
-              <span>{formatRutForDisplay(item.rut)}</span>
+              <span>{formatRutForDisplay(rutOf(item.rut, item.workerId))}</span>
               {isBank && (
                 <span className="truncate">{bankName(item.bankCode)} · {item.accountNumber} · {accountTypeShort(item.accountType)}</span>
               )}
@@ -7891,7 +7809,7 @@ function WorkerDetailRow({
         {isBank ? (
           <>
             <td className="px-2 py-1 text-center text-[var(--color-muted)]">{expanded ? "▾" : "▸"}</td>
-            <td className="px-2 py-1 font-mono text-xs">{formatRutForDisplay(item.rut)}</td>
+            <td className="px-2 py-1 font-mono text-xs">{formatRutForDisplay(rutOf(item.rut, item.workerId))}</td>
             <td className="px-2 py-1">{item.name}</td>
             <td className="px-2 py-1 text-xs">{bankName(item.bankCode)}</td>
             <td className="px-2 py-1 font-mono text-xs">{item.accountNumber}</td>
@@ -7901,7 +7819,7 @@ function WorkerDetailRow({
         ) : (
           <>
             <td className="px-2 py-1 text-center text-[var(--color-muted)]">{expanded ? "▾" : "▸"}</td>
-            <td className="px-2 py-1 font-mono text-xs">{formatRutForDisplay(item.rut)}</td>
+            <td className="px-2 py-1 font-mono text-xs">{formatRutForDisplay(rutOf(item.rut, item.workerId))}</td>
             <td className="px-2 py-1">{item.name}</td>
             <td className="px-2 py-1 text-right tabular-nums">{fmtCurrency(item.amount)}</td>
           </>
@@ -7987,21 +7905,21 @@ function WorkerPaySummaryCards({ item }) {
   );
 }
 
-// Renderiza una tabla por ciclo con el detalle pagado en la nómina,
-// imitando el formato del módulo Trabajadores (faena · subfaena · ciclo
-// como header, filas por labor × día ordenadas cronológicamente). Si el
-// snapshot no está cargado todavía, muestra el fallback "Por ciclo"
-// agregado por monto. Si la nómina es vieja y no tiene snapshot, lo mismo.
-function WorkerPaidDetailTables({ item, snapshot, snapshotLoading, cycleDetails, displayCycleLabel, catalogs }) {
+// Detalle pagado en la nómina, con el formato del módulo Trabajadores. Vista
+// "Por ciclo": una tabla por ciclo (faena · subfaena · ciclo de encabezado,
+// filas labor × día); vista "Cronológico": una sola tabla por fecha con los
+// ajustes intercalados. Sin snapshot, o sin jornadas de la persona en él,
+// muestra solo los montos por ciclo.
+function WorkerPaidDetailTables({ displayRut, item, snapshot, snapshotLoading, cycleDetails, displayCycleLabel, catalogs }) {
   const toast = useToast();
   const [busy, setBusy] = useState("");
-  // cronologico (default): todo en una sola tabla ordenada por fecha, con
-  // los anticipos/bonos interleaved en su fecha real. porCiclo: una tabla
-  // por ciclo con subtotales, más un bloque final de ajustes.
+  // cronologico (default): una sola tabla ordenada por fecha, con los
+  // anticipos y bonos intercalados en su fecha. porCiclo: una tabla por ciclo
+  // con subtotales y un bloque final de ajustes.
   const [viewMode, setViewMode] = useState("cronologico");
   const captureRef = useRef(null);
 
-  // Fallback "Por ciclo" simple (montos sin detalle día×labor).
+  // Respaldo "Por ciclo": montos sin detalle día × labor.
   const byCycleEntries = Object.entries(item.byCycle || {})
     .filter(([, v]) => Number(v) > 0)
     .map(([cid, amt]) => {
@@ -8013,7 +7931,7 @@ function WorkerPaidDetailTables({ item, snapshot, snapshotLoading, cycleDetails,
     return <div className="rounded-md border border-dashed border-[var(--color-border)] px-3 py-2 text-[11px] text-[var(--color-muted)]">Cargando detalle…</div>;
   }
 
-  // Sin snapshot: mostramos la grilla básica de Por ciclo (legacy).
+  // Sin snapshot o sin jornadas de la persona: solo los montos por ciclo.
   const wds = snapshot ? (snapshot.workdays || []).filter((w) => w.workerRut === item.rut) : [];
   if (!snapshot || wds.length === 0) {
     if (byCycleEntries.length === 0) return null;
@@ -8039,7 +7957,7 @@ function WorkerPaidDetailTables({ item, snapshot, snapshotLoading, cycleDetails,
     );
   }
 
-  // Con snapshot: agrupar workdays por ciclo, luego por (labor, fecha).
+  // Con snapshot: jornadas agrupadas por ciclo y luego por (labor, fecha).
   const cyclesById = new Map((snapshot.cycles || []).map((c) => [c.id, c]));
   const wdsByCycle = new Map();
   for (const wd of wds) {
@@ -8081,10 +7999,10 @@ function WorkerPaidDetailTables({ item, snapshot, snapshotLoading, cycleDetails,
         g.kilos += wdQty;
         if (wd.containerY != null) g.containers.add(Number(wd.containerY));
       } else if (labor?.type === "trato") {
-        // Para trato, la unidad del catálogo (Planta/Metro/...) NO está en
-        // wd.tiers — está configurada por día en cycle.dayPrices (siempre
-        // presente en el snapshot, viejo o nuevo). Resolvemos consultando
-        // getTratoTiers para ese (labor, fecha) y mapeamos índice → unit.
+        // En trato, la unidad del catálogo (Planta, Metro…) no está en
+        // wd.tiers sino por día en cycle.dayPrices, que el snapshot siempre
+        // trae: se resuelve con getTratoTiers para ese (labor, fecha), de
+        // índice a unidad.
         const dayTiers = getTratoTiers(cycle?.dayPrices || {}, wd.laborId, wd.date);
         const unitByIdx = new Map();
         for (const t of dayTiers) {
@@ -8094,24 +8012,24 @@ function WorkerPaidDetailTables({ item, snapshot, snapshotLoading, cycleDetails,
           for (const k in wd.tiers) {
             const t = wd.tiers[k];
             g.tratoQty += Number(t?.qty) || 0;
-            // Tier key "t0", "t1", ... → índice numérico para mapear a unit
+            // Clave del tier ("t0", "t1"…) → índice numérico, para buscar la unidad.
             const raw = String(k);
             const idx = raw.startsWith("t") ? Number(raw.slice(1)) : Number(raw);
             if (Number.isFinite(idx) && unitByIdx.has(idx)) {
               g.tratoUnits.add(unitByIdx.get(idx));
             } else if (t?.unit != null) {
-              // Algunos snapshots viejos pueden traer unit directo en el tier.
+              // Si no, la unidad que traiga el propio tier.
               g.tratoUnits.add(Number(t.unit));
             }
           }
         } else {
           g.tratoQty += wdQty;
-          // Single-tier legacy: usar primer tier configurado con unidad.
+          // Jornada sin tiers: la unidad del primer tier del día que la tenga.
           if (unitByIdx.size > 0) {
             g.tratoUnits.add([...unitByIdx.values()][0]);
           }
         }
-        // Fallback final: labor.tratoUnit (snapshots nuevos lo persisten).
+        // Último recurso: labor.tratoUnit, si el snapshot lo trae.
         if (g.tratoUnits.size === 0 && labor?.tratoUnit != null) {
           g.tratoUnits.add(Number(labor.tratoUnit));
         }
@@ -8139,9 +8057,9 @@ function WorkerPaidDetailTables({ item, snapshot, snapshotLoading, cycleDetails,
 
   const totalAllCycles = cycleSections.reduce((s, sec) => s + sec.totalAmount, 0);
 
-  // Anticipos y bonos aplicados en esta nómina — con fecha resuelta del
-  // snapshot.advances. Sin snapshot.advances (nóminas viejas) la date queda
-  // vacía y esos ajustes van al final en cronológico.
+  // Anticipos y bonos aplicados en esta nómina, con la fecha sacada de
+  // snapshot.advances. Sin fecha, el ajuste va al final en la vista
+  // cronológica.
   const advancesById = new Map((snapshot?.advances || []).map((a) => [a.id, a]));
   const anticipoRows = (item.anticipoApplications || [])
     .map((app) => {
@@ -8168,8 +8086,8 @@ function WorkerPaidDetailTables({ item, snapshot, snapshotLoading, cycleDetails,
     })
     .filter((r) => r.amount > 0);
 
-  // Vista cronológica: mezcla jornadas + ajustes en una sola tabla ordenada
-  // por fecha. Ajustes sin fecha (snapshots viejos) quedan al final.
+  // Vista cronológica: jornadas y ajustes en una sola tabla ordenada por
+  // fecha; los ajustes sin fecha quedan al final.
   const KIND_ORDER = { work: 0, anticipo: 1, bono: 2 };
   const chronoRows = [];
   for (const sec of cycleSections) {
@@ -8195,7 +8113,7 @@ function WorkerPaidDetailTables({ item, snapshot, snapshotLoading, cycleDetails,
   // Texto plano — cambia según viewMode.
   const buildPlainText = () => {
     const lines = [];
-    lines.push(`📅 ${item.name} (${formatRutForDisplay(item.rut)})`);
+    lines.push(`📅 ${item.name} (${formatRutForDisplay(displayRut || item.rut)})`);
     lines.push(`Bruto: ${fmtCurrency(bruto)} · Anticipos: -${fmtCurrency(anticiposTotal)} · Bonos: +${fmtCurrency(bonosTotal)} · Neto: ${fmtCurrency(neto)}`);
     lines.push("");
     if (viewMode === "cronologico") {
@@ -8315,10 +8233,10 @@ function WorkerPaidDetailTables({ item, snapshot, snapshotLoading, cycleDetails,
         </div>
       </div>
       <div ref={captureRef} style={{ background: "#fff", padding: 8 }} className="space-y-2 rounded-md">
-        {/* Header trabajador */}
+        {/* Encabezado del trabajador */}
         <div style={{ fontSize: 11, color: "#444", borderBottom: "1px solid #ddd", paddingBottom: 4 }}>
           <b style={{ color: "#000" }}>{item.name}</b>
-          <span style={{ marginLeft: 6, fontFamily: "ui-monospace, monospace" }}>{formatRutForDisplay(item.rut)}</span>
+          <span style={{ marginLeft: 6, fontFamily: "ui-monospace, monospace" }}>{formatRutForDisplay(displayRut || item.rut)}</span>
           <span style={{ marginLeft: 8, color: "#666" }}>Producción: <b style={{ color: "#000" }}>{fmtCurrency(totalAllCycles)}</b></span>
         </div>
 
@@ -8450,10 +8368,8 @@ function WorkerPaidDetailTables({ item, snapshot, snapshotLoading, cycleDetails,
               </div>
             ))}
 
-            {/* Ajustes: anticipos + bonos aplicados. Se incluye en la imagen
-                para que el detalle sea autocontenido — el operativo suele
-                mandar la foto por WhatsApp y el trabajador debe entender de
-                dónde salió el neto. */}
+            {/* Ajustes aplicados (anticipos y bonos), dentro de la imagen para
+                que el detalle se entienda solo: de ahí sale el neto. */}
             {(anticipoRows.length > 0 || bonoRows.length > 0) && (
               <div className="overflow-x-auto">
                 <div style={{ fontSize: 12, fontWeight: 700, color: "#000", marginBottom: 4 }}>Ajustes aplicados</div>
@@ -8514,11 +8430,11 @@ function workerDetailDateLabel(d) {
   return `${m[3]}-${WD_MONTHS[Number(m[2]) - 1] || m[2]}`;
 }
 
-// Etiqueta secundaria (debajo del nombre) con el tipo del catálogo:
-// trato → tratoTypeLabel (Poda, Amarre, ...) + unidad si está
-// tratoHE → "Tratos HE (Manejo/Supervisión/...)"
+// Etiqueta secundaria (debajo del nombre) según el tipo de labor:
+// trato → tratoTypeLabel (Poda, Amarre…) + la unidad, si tiene
+// tratoHE → "Tratos HE / Jornadas"
 // cosecha → "Cosecha"
-// main / supervision / extra → labels legibles.
+// main / supervision / extra → nombres legibles; otro tipo, el tipo tal cual.
 function laborSubtypeLabel(labor, catalogs) {
   if (!labor) return "";
   const t = labor.type;
@@ -8535,7 +8451,7 @@ function laborSubtypeLabel(labor, catalogs) {
   return t || "";
 }
 
-// Etiqueta corta para el texto plano: nombre + subtype entre paréntesis.
+// Etiqueta corta para el texto plano: nombre y subtipo entre paréntesis.
 function laborDisplayLabel(labor, catalogs) {
   const name = labor?.name || "";
   const sub = laborSubtypeLabel(labor, catalogs);
@@ -8567,17 +8483,17 @@ function formatWorkerDetailProd(r, catalogs) {
   return r.jornadas > 0 ? jornadas(r.jornadas) : "—";
 }
 
-// ─────────────────────────── Workers History ───────────────────────────
-// Buscador retroactivo de pagos por trabajador. Carga todas las nóminas
-// (sin tope) y filtra cliente-side por rango de fechas, tipo y faena.
-// Default: últimos 6 meses, todas las clasificaciones.
+// ─────────────────── Pagos anteriores (WorkersHistory) ───────────────────
+// Buscador de pagos por trabajador. Carga todas las nóminas (sin tope) y
+// filtra en el cliente por rango de fechas, tipo y faena. Por defecto:
+// últimos 6 meses, todas las clasificaciones.
 
 const sixMonthsAgoISO = () => {
   const d = new Date();
   d.setMonth(d.getMonth() - 6);
-  return d.toISOString().slice(0, 10);
+  return localIsoDate(d);
 };
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = () => localIsoDate();
 
 const payrollDate = (p) => {
   if (p?.createdAt?.toDate) return p.createdAt.toDate();
@@ -8586,16 +8502,13 @@ const payrollDate = (p) => {
 };
 const payrollDateISO = (p) => {
   const d = payrollDate(p);
-  return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+  return isNaN(d.getTime()) ? "" : localIsoDate(d);
 };
 
 const normRut = (r) => String(r || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
 
-// Popover flotante para el filtro de faena — reemplaza la fila de chips
-// siempre visible (ocupaba varias líneas con muchas faenas) por un botón
-// colapsado por default, con buscador adentro para no tener que escanear
-// toda la lista. Mismo patrón de click-afuera/Escape que ColorPalette
-// (Faenas.jsx).
+// Popover del filtro de faena, con buscador. Se cierra con click afuera o
+// Escape, igual que ColorPalette (Faenas.jsx).
 function FaenaFilterPopover({ faenas, faenaFilter, setFaenaFilter, onClose }) {
   const ref = useRef(null);
   const [q, setQ] = useState("");
@@ -8681,7 +8594,8 @@ function FaenaFilterPopover({ faenas, faenaFilter, setFaenaFilter, onClose }) {
   );
 }
 
-function WorkersHistory({ faenas }) {
+function WorkersHistory({ faenas, workers }) {
+  const rutOf = useMemo(() => currentRutResolver(workers), [workers]);
   const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [allPayrolls, setAllPayrolls] = useState([]);
@@ -8723,15 +8637,19 @@ function WorkersHistory({ faenas }) {
     });
   }, [allPayrolls, dateFrom, dateTo, classification]);
 
-  // 2) Index workers: por RUT, lista de pagos enriquecidos.
+  // 2) Índice por trabajador con sus pagos. La clave es el workerId (estable
+  // aunque el rut se corrija); se muestra el rut vigente de la ficha.
   const workersIndex = useMemo(() => {
     const map = new Map();
     for (const p of filteredPayrolls) {
       for (const it of (p.items || [])) {
         if (!it.rut) continue;
-        if (!map.has(it.rut)) {
-          map.set(it.rut, {
-            rut: it.rut,
+        const key = it.workerId || it.rut;
+        if (!map.has(key)) {
+          map.set(key, {
+            key,
+            workerId: key,
+            rut: rutOf(it.rut, it.workerId),
             name: it.name || "",
             totalAmount: 0,
             totalGross: 0,
@@ -8740,7 +8658,7 @@ function WorkersHistory({ faenas }) {
             payments: [],
           });
         }
-        const w = map.get(it.rut);
+        const w = map.get(key);
         if (it.name && (!w.name || w.name === it.rut)) w.name = it.name;
         const amount = Number(it.amount) || 0;
         const gross = Number(it.grossAmount) || amount;
@@ -8783,9 +8701,9 @@ function WorkersHistory({ faenas }) {
       w.payments.sort((a, b) => b.payrollDate - a.payrollDate);
     }
     return map;
-  }, [filteredPayrolls]);
+  }, [filteredPayrolls, rutOf]);
 
-  // 3) Filtro por faena (a nivel pago — al menos un pago del worker tiene faena en el set).
+  // 3) Filtro por faena, a nivel de pago: quedan los pagos con alguna faena del filtro.
   const workersAfterFaena = useMemo(() => {
     if (faenaFilter.size === 0) return [...workersIndex.values()];
     const out = [];
@@ -8809,9 +8727,9 @@ function WorkersHistory({ faenas }) {
     return out;
   }, [workersIndex, faenaFilter]);
 
-  // 4) Filtro por búsqueda (rut o nombre) y orden por total desc. El nombre
-  // usa matchesSearchQuery ("like": cada palabra en cualquier orden) para que
-  // "bruno silva" encuentre a "Bruno Ignacio Silva".
+  // 4) Filtro por búsqueda (rut o nombre) y orden por total descendente. El
+  // nombre usa matchesSearchQuery (cada palabra, en cualquier orden): "ana
+  // soto" encuentra a "Ana María Soto".
   const filteredWorkers = useMemo(() => {
     const list = [...workersAfterFaena].sort((a, b) => b.totalAmount - a.totalAmount);
     const q = search.trim();
@@ -8819,13 +8737,14 @@ function WorkersHistory({ faenas }) {
     const qNorm = normRut(q);
     return list.filter((w) =>
       normRut(w.rut).includes(qNorm) ||
+      normRut(w.workerId).includes(qNorm) ||
       matchesSearchQuery(w.name, q),
     );
   }, [workersAfterFaena, search]);
 
-  const selectedWorker = selectedRut ? filteredWorkers.find((w) => w.rut === selectedRut) || workersAfterFaena.find((w) => w.rut === selectedRut) : null;
+  const selectedWorker = selectedRut ? filteredWorkers.find((w) => w.key === selectedRut) || workersAfterFaena.find((w) => w.key === selectedRut) : null;
 
-  // Faenas disponibles para el chip-toggle: las que aparecen en filteredPayrolls.
+  // Faenas del filtro: las que aparecen en filteredPayrolls.
   const faenasInPayrolls = useMemo(() => {
     const ids = new Set();
     for (const p of filteredPayrolls) {
@@ -8848,8 +8767,8 @@ function WorkersHistory({ faenas }) {
     const today = new Date();
     const from = new Date(today);
     from.setMonth(from.getMonth() - months);
-    setDateFrom(from.toISOString().slice(0, 10));
-    setDateTo(today.toISOString().slice(0, 10));
+    setDateFrom(localIsoDate(from));
+    setDateTo(localIsoDate(today));
   };
 
   const handleExport = async () => {
@@ -8939,9 +8858,8 @@ function WorkersHistory({ faenas }) {
             value={search}
             onChange={(e) => {
               setSearch(e.target.value);
-              // Escribir una nueva búsqueda vuelve directo al listado (ya
-              // filtrado) sin el paso intermedio de clickear "Volver" —
-              // antes quedaba pegado en el detalle del trabajador anterior.
+              // Escribir una búsqueda vuelve al listado filtrado, sin pasar
+              // por "Volver".
               if (selectedRut) setSelectedRut(null);
             }}
             placeholder="🔍 Buscar por RUT o nombre…"
@@ -8997,9 +8915,9 @@ function WorkersHistory({ faenas }) {
           <button
             onClick={resetFilters}
             className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)]"
-            title="Volver a defaults (6 meses, todas las clasif., sin faena)"
+            title="Volver a los filtros por defecto (6 meses, todas las clasif., sin faena)"
           >
-            ⟲ Reset
+            ⟲ Restablecer
           </button>
           {faenasInPayrolls.length > 0 && (
             <div className="relative">
@@ -9063,8 +8981,8 @@ function WorkersList({ workers, search, onSelect }) {
     <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
       {workers.map((w) => (
         <button
-          key={w.rut}
-          onClick={() => onSelect(w.rut)}
+          key={w.key}
+          onClick={() => onSelect(w.key)}
           className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-left text-sm transition-colors hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-soft)]"
         >
           <div className="min-w-0">
@@ -9091,14 +9009,10 @@ function WorkersList({ workers, search, onSelect }) {
   );
 }
 
-// Detalle de lo que un trabajador cobró EN UNA nómina puntual — mismo
-// contenido que la fila expandible dentro de PayrollDetailModal
-// (WorkerPaidDetailTables + WorkerPaySummaryCards), pero abierto directo
-// desde el historial del trabajador sin cargar la nómina completa con
-// todos los demás trabajadores. `payment.payroll` ya viene en memoria
-// (guardado al armar el historial), así que lo único que se pide a
-// Firestore acá es el snapshot de esa nómina puntual — igual que hace
-// PayrollDetailModal, un solo doc por id.
+// Lo que un trabajador cobró en una nómina: el mismo contenido que la fila
+// expandible de PayrollDetailModal (WorkerPaidDetailTables +
+// WorkerPaySummaryCards), abierto desde su historial. `payment.payroll` ya
+// está en memoria, así que solo se lee el snapshot de esa nómina (un doc).
 function WorkerPayrollDetailModal({ open, payment, worker, catalogs, onClose, onShowFullHistory }) {
   const payroll = payment?.payroll || null;
   const [snapshot, setSnapshot] = useState(null);
@@ -9126,7 +9040,7 @@ function WorkerPayrollDetailModal({ open, payment, worker, catalogs, onClose, on
   }, [open, payroll?.id]);
 
   if (!payroll) return null;
-  const item = (payroll.items || []).find((it) => it.rut === worker.rut) || null;
+  const item = (payroll.items || []).find((it) => (it.workerId || it.rut) === worker.workerId) || null;
   const cycleDetails = payroll.cycleDetails || [];
   const displayCycleLabel = (cycle) => payroll.cycleLabelOverrides?.[cycle.id] || cycle.label || cycle.id;
 
@@ -9160,6 +9074,7 @@ function WorkerPayrollDetailModal({ open, payment, worker, catalogs, onClose, on
           </div>
 
           <WorkerPaidDetailTables
+            displayRut={worker.rut}
             item={item}
             snapshot={snapshot}
             snapshotLoading={snapshotLoading}
@@ -9177,22 +9092,19 @@ function WorkerPayrollDetailModal({ open, payment, worker, catalogs, onClose, on
 
 function WorkerDetail({ worker, onBack, onExport, exporting }) {
   const { catalogs } = useCatalogs();
-  // Chart: bar por pago, X = orden cronológico, Y = monto neto.
+  // Gráfico: una barra por pago; X = orden cronológico, Y = monto neto.
   const chartData = useMemo(() => {
     const sorted = [...worker.payments].sort((a, b) => a.payrollDate - b.payrollDate);
     const maxAmt = Math.max(1, ...sorted.map((p) => p.amount));
     return { sorted, maxAmt };
   }, [worker.payments]);
 
-  // Modal de resumen integral del trabajador — reusa el mismo componente
-  // que se usa desde la tab Trabajadores del CRM. Trae todos los workdays
-  // (incluso los que aún no se pagaron / no entraron a una nómina) ordenados
-  // por ciclo + fecha.
+  // Resumen completo del trabajador, el mismo modal de la pantalla
+  // Trabajadores: todas sus jornadas, también las que no entraron a ninguna
+  // nómina, por ciclo y fecha.
   const [summaryOpen, setSummaryOpen] = useState(false);
-  // Detalle de lo que fue EN ESA nómina puntual (no el historial libre del
-  // trabajador) — mismo contenido que la fila expandible dentro del detalle
-  // completo de la nómina (WorkerPaidDetailTables + tarjetas de resumen),
-  // pero accesible directo desde acá sin abrir la nómina entera.
+  // Pago elegido, para ver su detalle en esa nómina sin abrirla entera (ver
+  // WorkerPayrollDetailModal).
   const [payDetailFor, setPayDetailFor] = useState(null);
 
   return (
@@ -9228,7 +9140,7 @@ function WorkerDetail({ worker, onBack, onExport, exporting }) {
 
       <WorkerSummaryModal
         open={summaryOpen}
-        worker={{ id: worker.workerId || worker.rut, rut: worker.rut, name: worker.name }}
+        worker={{ id: worker.workerId, rut: worker.rut, name: worker.name }}
         onClose={() => setSummaryOpen(false)}
       />
 
@@ -9261,7 +9173,7 @@ function WorkerDetail({ worker, onBack, onExport, exporting }) {
         />
       </div>
 
-      {/* Chart simple: barras por pago en orden cronológico */}
+      {/* Gráfico: barras por pago en orden cronológico */}
       {chartData.sorted.length > 0 && (
         <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
           <div className="mb-2 text-xs font-medium text-[var(--color-muted)]">
@@ -9339,7 +9251,7 @@ function MetricCard({ label, value, accent = false }) {
 }
 
 function PaymentsBarChart({ data, maxAmt }) {
-  // SVG inline simple. Width 100% (viewport responsive), height fija.
+  // SVG inline: ancho 100% y alto fijo.
   const H = 140;
   const padTop = 8, padBottom = 24, padLeft = 4, padRight = 4;
   const innerH = H - padTop - padBottom;

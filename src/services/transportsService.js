@@ -13,6 +13,7 @@ import {
 } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { logAction } from "./logger";
+import { localIsoDate } from "../utils/dates";
 
 const TRIPS = "transports";
 const PAYMENTS = "transportPayments";
@@ -38,13 +39,13 @@ const withCreate = () => ({
 });
 
 // ============================================================
-// TRIPS
+// VUELTAS
 // ============================================================
 
 // Normaliza un lugar/destino a formato de nombre propio (ej. "los lagos" o
-// "LOS LAGOS" → "Los Lagos") para que no queden varias grafías de un mismo
-// lugar dispersas en los informes. Exportada para poder normalizar también
-// en pantalla los registros viejos que se cargaron antes de este cambio.
+// "LOS LAGOS" → "Los Lagos"), para que un mismo lugar no aparezca con varias
+// grafías en los informes. Se exporta para normalizar también en pantalla los
+// registros guardados sin normalizar.
 export function titleCase(str) {
   return String(str || "")
     .trim()
@@ -77,12 +78,12 @@ function normalizeTrip(data) {
   };
 }
 
-// Denormaliza el transportista al `meta` del log de auditoría. Un log de
-// `update` solo guarda el diff (ver logger.js), así que sin esto no hay forma
-// de preguntar "qué le pasó a las vueltas/resúmenes de este transportista" —
-// el `entityId` es el id de la vuelta, no del carrier. Mismo patrón que
-// `extractRefMeta` en firestoreBase.js (workerRut/cycleId). Lo consume
-// Audit.jsx → EntitySearchPanel al elegir un transportista.
+// Copia el transportista al `meta` del log de auditoría, para buscar todo lo
+// que les pasó a sus vueltas y resúmenes: un log de `update` solo guarda el
+// diff (ver logger.js) y el `entityId` es el de la vuelta, no el del
+// transportista. Mismo patrón que `extractRefMeta` en firestoreBase.js
+// (workerRut/cycleId). Lo consume Audit.jsx → EntitySearchPanel al elegir un
+// transportista.
 const carrierMeta = (carrierId, extra = null) =>
   carrierId ? { carrierId, ...(extra || {}) } : extra;
 
@@ -96,10 +97,8 @@ const carrierMeta = (carrierId, extra = null) =>
 // vuelta (o la vuelta se borra) y nadie los refresca, las dos vistas muestran
 // montos distintos para el mismo transportista.
 //
-// Por eso el recálculo vive acá abajo y no en cada pantalla: antes cada
-// pantalla tenía que acordarse de llamar `updateTotal` a mano, y las que
-// editan una vuelta fuera del modal del resumen (pestaña Vueltas, módulo
-// Ciclo) no lo hacían.
+// El recálculo vive en el servicio y no en las pantallas: todo camino que
+// edita una vuelta pasa por acá, que ya propaga.
 
 // Suma los amounts reales de las vueltas del resumen y persiste el total.
 // `pruneMissingTrips` además saca del array los IDs que ya no existen (vueltas
@@ -121,8 +120,7 @@ async function recalcPaymentTotal(paymentId, { pruneMissingTrips = false } = {})
     alive.push(tripIds[i]);
   });
   const prunes = pruneMissingTrips && alive.length !== tripIds.length;
-  // Sin cambio real no escribimos: ahorra el write y evita ensuciar la
-  // auditoría con updates que no movieron nada.
+  // Sin cambio real no se escribe nada, ni el documento ni el log de auditoría.
   if (total === (Number(data.total) || 0) && !prunes) return total;
   const patch = { total, ...stamp() };
   if (prunes) patch.tripIds = alive;
@@ -141,9 +139,9 @@ async function recalcPaymentTotal(paymentId, { pruneMissingTrips = false } = {})
   return total;
 }
 
-// Suma los totales de los resúmenes de la quincena y persiste el total. Se
-// llama después de cada recalcPaymentTotal: sin esto la tarjeta de la quincena
-// queda con el monto viejo aunque el resumen ya esté corregido.
+// Suma los totales de los resúmenes de la quincena y persiste el total.
+// recalcPaymentTotal lo llama cada vez que cambia el total de un resumen, así
+// la tarjeta de la quincena sigue al resumen.
 async function recalcPayrollTotal(payrollId) {
   if (!payrollId) return null;
   const snap = await getDoc(doc(db, PAYROLLS, payrollId));
@@ -173,7 +171,7 @@ export const tripsService = {
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   },
 
-  // Push the status filter to Firestore when caller only wants pending trips.
+  // Con `onlyPending`, el filtro de estado va en la consulta.
   async listByCarrier(carrierId, { onlyPending = false } = {}) {
     const parts = [where("carrierId", "==", carrierId)];
     if (onlyPending) parts.push(where("status", "==", "pending"));
@@ -182,14 +180,14 @@ export const tripsService = {
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   },
 
-  // Reads everything in the collection. Avoid in screens — it grows unbounded.
-  // Prefer listSince() to bound by date.
+  // Lee la colección entera, que crece sin límite. En pantallas conviene
+  // listSince(), acotada por fecha.
   async listAll() {
     const snap = await getDocs(collection(db, TRIPS));
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   },
 
-  // Server-side filter by date string (YYYY-MM-DD). Optionally also by status.
+  // Filtra en el servidor por fecha (YYYY-MM-DD) y, opcionalmente, por estado.
   async listSince(sinceDate, { status } = {}) {
     const parts = [where("date", ">=", String(sinceDate || ""))];
     if (status) parts.push(where("status", "==", status));
@@ -198,8 +196,9 @@ export const tripsService = {
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   },
 
-  // Pending trips not yet linked to a payment summary. paymentId==null filter
-  // is applied in JS because Firestore doesn't index missing fields uniformly.
+  // Vueltas pendientes que no están en ningún resumen. El filtro por
+  // `paymentId` vacío va en JS: una consulta de Firestore no encuentra los
+  // documentos a los que les falta el campo.
   async listPendingUnlinked() {
     const q = query(collection(db, TRIPS), where("status", "==", "pending"));
     const snap = await getDocs(q);
@@ -225,9 +224,9 @@ export const tripsService = {
     if (before?.status === "paid") throw new Error("No se puede editar una vuelta pagada");
     const payload = { ...normalizeTrip({ ...before, ...data }), ...stamp() };
     await updateDoc(doc(db, TRIPS, id), payload);
-    // qty/rate cambian el amount: el resumen que la contiene queda con un total
-    // viejo si no se refresca acá. Los dos IDs cubren el caso de que la vuelta
-    // haya cambiado de resumen en el mismo guardado.
+    // qty/rate cambian el amount, así que se refresca el total del resumen que
+    // la contiene. Los dos IDs cubren una vuelta que cambió de resumen en el
+    // mismo guardado.
     for (const pid of new Set([before?.paymentId, payload.paymentId].filter(Boolean))) {
       await recalcPaymentTotal(pid);
     }
@@ -248,7 +247,7 @@ export const tripsService = {
 };
 
 // ============================================================
-// PAYMENTS (resúmenes)
+// RESÚMENES (transportPayments)
 // ============================================================
 
 // Filtra una lista de tripIds y devuelve solo los que existen actualmente
@@ -274,7 +273,7 @@ export const paymentsService = {
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   },
 
-  // Recent summaries only (filters by createdAt timestamp).
+  // Resúmenes creados desde `sinceDate` (filtra por createdAt).
   async listSince(sinceDate) {
     const ts = sinceDate instanceof Date ? sinceDate : new Date(sinceDate);
     const q = query(collection(db, PAYMENTS), where("createdAt", ">=", ts));
@@ -287,8 +286,8 @@ export const paymentsService = {
     return s.exists() ? { id: s.id, ...s.data() } : null;
   },
 
-  // Build a pending summary from currently-pending trips of a carrier within a period.
-  // Returns { trips, total } without persisting.
+  // Arma un resumen pendiente con las vueltas pendientes y sueltas del
+  // transportista en el período. Devuelve { trips, total } sin guardar nada.
   async previewSummary({ carrierId, periodFrom, periodTo }) {
     const trips = (await tripsService.listByCarrier(carrierId, { onlyPending: true }))
       .filter((t) => !t.paymentId)
@@ -298,7 +297,7 @@ export const paymentsService = {
     return { trips, total };
   },
 
-  // Persist a pending summary linking the given trips.
+  // Guarda un resumen pendiente con las vueltas dadas.
   async createSummary({ carrierId, periodFrom, periodTo, groupBy = "day", tripIds, total, notes = "" }) {
     const payload = {
       carrierId,
@@ -314,7 +313,7 @@ export const paymentsService = {
       ...withCreate(),
     };
     const ref = await addDoc(collection(db, PAYMENTS), payload);
-    // link trips → paymentId
+    // Enlaza las vueltas al resumen.
     const batch = writeBatch(db);
     for (const tid of tripIds) {
       batch.update(doc(db, TRIPS, tid), { paymentId: ref.id, ...stamp() });
@@ -324,7 +323,7 @@ export const paymentsService = {
     return { id: ref.id, ...payload };
   },
 
-  // Add or remove trips from a pending summary.
+  // Agrega o quita vueltas de un resumen pendiente.
   async editSummaryTrips(paymentId, { addTripIds = [], removeTripIds = [] }) {
     const before = await this.getById(paymentId);
     if (!before) throw new Error("Resumen no encontrado");
@@ -334,7 +333,7 @@ export const paymentsService = {
     for (const id of removeTripIds) ids.delete(id);
     const tripIds = [...ids];
 
-    // Recalculate total from current trip amounts
+    // Recalcula el total con los montos actuales de las vueltas.
     let total = 0;
     const tripDocs = await Promise.all(tripIds.map((id) => getDoc(doc(db, TRIPS, id))));
     for (const s of tripDocs) {
@@ -365,7 +364,7 @@ export const paymentsService = {
   async addAbono(paymentId, { amount, date, notes = "" }) {
     const before = await this.getById(paymentId);
     if (!before) throw new Error("Resumen no encontrado");
-    if (before.status === "paid") throw new Error("Resumen pagado — revertí el pago antes de cargar abonos");
+    if (before.status === "paid") throw new Error("Resumen pagado — revierte el pago antes de cargar abonos");
     const amt = Number(amount) || 0;
     if (amt <= 0) throw new Error("El monto del abono debe ser mayor a 0");
     const abono = {
@@ -373,7 +372,7 @@ export const paymentsService = {
         ? crypto.randomUUID()
         : `ab_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
       amount: amt,
-      date: date || new Date().toISOString().slice(0, 10),
+      date: date || localIsoDate(),
       notes: String(notes || "").trim(),
       createdAt: new Date().toISOString(),
       createdBy: auth.currentUser?.uid || null,
@@ -394,7 +393,7 @@ export const paymentsService = {
   async removeAbono(paymentId, abonoId) {
     const before = await this.getById(paymentId);
     if (!before) throw new Error("Resumen no encontrado");
-    if (before.status === "paid") throw new Error("Resumen pagado — revertí el pago antes de modificar abonos");
+    if (before.status === "paid") throw new Error("Resumen pagado — revierte el pago antes de modificar abonos");
     const abonos = (before.abonos || []).filter((a) => a.id !== abonoId);
     if (abonos.length === (before.abonos || []).length) {
       throw new Error("Abono no encontrado");
@@ -411,9 +410,8 @@ export const paymentsService = {
     return { ...before, abonos };
   },
 
-  // Actualiza solo el `total` del resumen (recalculado en cliente después de
-  // editar el `amount` de alguna vuelta vinculada). Pago bloqueado para
-  // resúmenes ya `paid`.
+  // Fija el `total` del resumen con el monto recibido y lo propaga a la
+  // quincena. Un resumen `paid` no se edita.
   async updateTotal(paymentId, total) {
     const before = await this.getById(paymentId);
     if (!before) throw new Error("Resumen no existe");
@@ -433,10 +431,9 @@ export const paymentsService = {
     await recalcPayrollTotal(before.payrollId);
   },
 
-  // Delete a pending summary; trips are unlinked (status remains pending).
-  // Si alguna vuelta referenciada ya fue borrada por separado (el resumen
-  // arrastra el ID dangling), la salteamos para que el batch no aborte
-  // entero con "No document to update".
+  // Elimina un resumen pendiente; sus vueltas quedan sueltas y siguen
+  // pendientes. Las vueltas referenciadas que ya no existen se omiten, para que
+  // el batch no aborte entero con "No document to update".
   async deleteSummary(paymentId) {
     const before = await this.getById(paymentId);
     if (!before) return;
@@ -453,7 +450,7 @@ export const paymentsService = {
     await logAction({ action: "delete", entity: "transportPayment", entityId: paymentId, before, meta: carrierMeta(before.carrierId) });
   },
 
-  // Mark summary as paid: all linked trips → status=paid.
+  // Marca el resumen como pagado, junto con todas sus vueltas.
   async markPaid(paymentId) {
     const before = await this.getById(paymentId);
     if (!before) throw new Error("Resumen no encontrado");
@@ -481,7 +478,7 @@ export const paymentsService = {
     });
   },
 
-  // Revert a paid summary back to pending (trips → pending).
+  // Devuelve un resumen pagado a pendiente, junto con sus vueltas.
   async revertPaid(paymentId) {
     const before = await this.getById(paymentId);
     if (!before) throw new Error("Resumen no encontrado");
@@ -511,22 +508,21 @@ export const paymentsService = {
 };
 
 // ============================================================
-// PAYROLLS (quincenas — agrupan resúmenes de varios transportistas)
+// QUINCENAS (transportPayrolls: agrupan resúmenes de varios transportistas)
 // ============================================================
 //
 // Modelo: una "quincena" es un payroll que agrupa N resúmenes de pago
-// (transportPayments) existentes — usualmente cubre ~15 días pero no es
-// estricto (es solo un grupo lógico con nombre + rango de fechas opcional).
+// (transportPayments) existentes. Suele cubrir ~15 días, pero es solo un grupo
+// lógico con nombre y rango de fechas opcional.
 //
 // Relación: quincena → N resúmenes → N vueltas. Cada `transportPayment` puede
 // tener `payrollId` apuntando a su quincena (o null si está "suelto").
 //
-// Status cascade:
+// Cascada de estado:
 //   - markPaid(quincena) → marca todos sus resúmenes como pagados → marca
 //     todas las vueltas de cada resumen como pagadas.
-//   - markItemPaid(quincena, paymentId) → solo marca ese resumen y sus
-//     vueltas; la quincena queda en pending hasta que todos los items
-//     estén pagados o el usuario la marque explícitamente.
+//   - Pagar un solo resumen (`paymentsService.markPaid`) marca ese resumen y
+//     sus vueltas; la quincena sigue en pending hasta que se marque pagada.
 //   - revertPaid → cascada inversa.
 
 export const transportPayrollsService = {
@@ -541,11 +537,11 @@ export const transportPayrollsService = {
   },
 
   // Crea una quincena enlazando los `paymentIds` indicados. Cada resumen
-  // queda tagged con `payrollId = <nueva quincena>`. Falla si algún resumen
-  // ya pertenece a otra quincena (relación 1:N estricta).
+  // queda con `payrollId = <nueva quincena>`. Falla si algún resumen ya
+  // pertenece a otra quincena (relación 1:N estricta).
   async create({ name, periodFrom, periodTo, paymentIds = [], notes = "" }) {
     if (!name || !String(name).trim()) throw new Error("Falta nombre de la quincena");
-    // Validar que ninguno esté ya enlazado a otro payroll.
+    // Valida que ninguno esté ya en otra quincena y suma el total.
     const payDocs = await Promise.all(paymentIds.map((pid) => getDoc(doc(db, PAYMENTS, pid))));
     let total = 0;
     for (const s of payDocs) {
@@ -581,7 +577,7 @@ export const transportPayrollsService = {
   async update(id, { name, periodFrom, periodTo, notes }) {
     const before = await this.getById(id);
     if (!before) throw new Error("Quincena no encontrada");
-    if (before.status === "paid") throw new Error("La quincena está pagada — revertí el pago antes de editar.");
+    if (before.status === "paid") throw new Error("La quincena está pagada — revierte el pago antes de editar.");
     const patch = { ...stamp() };
     if (name != null) patch.name = String(name).trim();
     if (periodFrom !== undefined) patch.periodFrom = periodFrom || null;
@@ -604,7 +600,7 @@ export const transportPayrollsService = {
     }
     const newSet = new Set([...(before.paymentIds || []), ...paymentIds]);
     const newIds = [...newSet];
-    // Recalc total del set completo.
+    // Recalcula el total con el set completo.
     const allDocs = await Promise.all(newIds.map((pid) => getDoc(doc(db, PAYMENTS, pid))));
     const total = allDocs.reduce((s, d) => s + (d.exists() ? (Number(d.data().total) || 0) : 0), 0);
     const batch = writeBatch(db);
@@ -640,7 +636,7 @@ export const transportPayrollsService = {
   async delete(id) {
     const before = await this.getById(id);
     if (!before) return;
-    if (before.status === "paid") throw new Error("Solo se pueden eliminar quincenas pendientes — revertí el pago primero.");
+    if (before.status === "paid") throw new Error("Solo se pueden eliminar quincenas pendientes — revierte el pago primero.");
     const batch = writeBatch(db);
     for (const pid of before.paymentIds || []) {
       batch.update(doc(db, PAYMENTS, pid), { payrollId: null, ...stamp() });
@@ -695,7 +691,7 @@ export const transportPayrollsService = {
 };
 
 // ============================================================
-// Aggregations
+// Agrupaciones
 // ============================================================
 
 export function groupTripsByDay(trips) {

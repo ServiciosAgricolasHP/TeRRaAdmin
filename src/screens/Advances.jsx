@@ -23,13 +23,14 @@ import WorkerAdvancesModal from "../components/WorkerAdvancesModal";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useToast } from "../contexts/ToastContext";
 import { matchesSearchQuery } from "../utils/textSearch";
+import { localIsoDate } from "../utils/dates";
 
 const fmtCurrency = (v) =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
     Number(v) || 0,
   );
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr = () => localIsoDate();
 
 const STATUS_LABEL = {
   pending: "Pendiente",
@@ -45,10 +46,8 @@ const STATUS_CLASS = {
   cancelled: "bg-[var(--color-surface-2)] text-[var(--color-muted)]",
 };
 
-// "pending" agrupa pending + partial en el filtro — un parcial sigue
-// debiendo saldo y listPendingForWorkers() ya los trata igual en el resto de
-// la app. El badge "Parcial" (STATUS_LABEL/STATUS_CLASS de arriba) los sigue
-// distinguiendo visualmente dentro del mismo bucket.
+// El filtro "pending" incluye los parciales, que siguen debiendo saldo (mismo
+// criterio que listPendingForWorkers()); el badge "Parcial" los distingue.
 const STATUS_BUCKET = { pending: ["pending", "partial"], applied: ["applied"], cancelled: ["cancelled"] };
 const matchesStatusFilter = (status, filter) =>
   filter === "all" || (STATUS_BUCKET[filter] || [filter]).includes(status);
@@ -56,7 +55,7 @@ const matchesStatusFilter = (status, filter) =>
 const isoDateNDaysAgo = (n) => {
   const d = new Date();
   d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
+  return localIsoDate(d);
 };
 
 const APPLIED_DEFAULT_DAYS = 90;
@@ -74,10 +73,10 @@ export default function Advances() {
   const [appliedSince, setAppliedSince] = useState(() => isoDateNDaysAgo(APPLIED_DEFAULT_DAYS));
   const [workerView, setWorkerView] = useState(null);
 
-  // Single query, ordered by date. Status + date range are filtered client-side
-  // via `filtered` below. The collection is small enough that one cached read
-  // every 5 min is cheaper than juggling composite indexes / missing-field
-  // edge cases for legacy docs.
+  // Una sola consulta ordenada por fecha; el estado y el rango de fechas se
+  // filtran en cliente (`filtered`). La colección es chica: una lectura
+  // cacheada cada 5 min evita índices compuestos y los documentos a los que
+  // les faltan campos.
   const load = async () => {
     setLoading(true);
     try {
@@ -110,7 +109,7 @@ export default function Advances() {
       if (typeFilter !== "all" && normType !== typeFilter) return false;
       const status = a.status || "pending";
       if (!matchesStatusFilter(status, statusFilter)) return false;
-      // For applied/all view, allow user to bound the historical range by date.
+      // En Aplicados y Todos, los aplicados se muestran desde la fecha elegida.
       if (showApplied && status === "applied" && appliedSince && (a.date || "") < appliedSince) return false;
       if (q) {
         const hay = `${a.workerName || ""} ${a.workerRut || ""} ${a.note || ""}`;
@@ -120,7 +119,7 @@ export default function Advances() {
     });
   }, [items, typeFilter, statusFilter, search, appliedSince]);
 
-  // Pending/applied totals split by sign — bonos suman, anticipos descuentan.
+  // Totales pendientes y aplicados por signo: los bonos suman y los anticipos descuentan.
   const totals = useMemo(() => {
     let pendingAnticipos = 0, pendingBonos = 0;
     let appliedAnticipos = 0, appliedBonos = 0;
@@ -131,8 +130,7 @@ export default function Advances() {
         const amount = Number(a.amount) || 0;
         if (isBonus) appliedBonos += amount; else appliedAnticipos += amount;
       } else if (status === "pending" || status === "partial") {
-        // Saldo real (no el monto original) — un parcial ya cobrado en parte
-        // solo debería sumar lo que efectivamente resta.
+        // Suma el saldo y no el monto original: de un parcial cuenta lo que resta.
         const rem = advanceRemaining(a);
         if (isBonus) pendingBonos += rem; else pendingAnticipos += rem;
       }
@@ -152,7 +150,7 @@ export default function Advances() {
       confirmDelete.status === "partial" ||
       (Number(confirmDelete.amountPaid) || 0) > 0;
     if (deleteLocked) {
-      toast.warning("No se puede eliminar un anticipo/bono con pagos aplicados. Para perdonar el saldo, usá Editar y bajá el monto al ya pagado.");
+      toast.warning("No se puede eliminar un anticipo/bono con pagos aplicados. Para perdonar el saldo, usa Editar y baja el monto a lo ya pagado.");
       setConfirmDelete(null);
       return;
     }
@@ -259,11 +257,11 @@ export default function Advances() {
           <div className="space-y-2">
             {filtered.map((a) => {
               const status = a.status || "pending";
-              // Edit lock: solo si el anticipo está totalmente aplicado. Los parciales
-              // son editables para permitir "perdonazo" (bajar amount al amountPaid).
+              // Editar se bloquea solo si está totalmente aplicado: un parcial se
+              // puede editar para bajar el monto a lo ya pagado.
               const editLocked = status === "applied";
-              // Delete lock: aplicado o parcial. Para borrar un parcial el usuario
-              // tiene que revertir la nómina o usar editar para cerrarlo.
+              // Eliminar se bloquea si hay algo aplicado; un parcial se cierra
+              // editándolo o revirtiendo la nómina.
               const deleteLocked = status === "applied" || status === "partial" || (Number(a.amountPaid) || 0) > 0;
               const meta = advanceTypeMeta(a.type);
               const sign = advanceSign(a);
@@ -320,7 +318,7 @@ export default function Advances() {
                     <button
                       onClick={() => setEditing({ ...a, mode: "edit" })}
                       disabled={editLocked}
-                      title={editLocked ? "No editable: totalmente aplicado" : (status === "partial" ? "Editar (parcial — podés bajar el monto para cerrar)" : "Editar")}
+                      title={editLocked ? "No editable: totalmente aplicado" : (status === "partial" ? "Editar (parcial — puedes bajar el monto para cerrar)" : "Editar")}
                       className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-40"
                     >
                       Editar
@@ -328,7 +326,7 @@ export default function Advances() {
                     <button
                       onClick={() => setConfirmDelete(a)}
                       disabled={deleteLocked}
-                      title={deleteLocked ? "Tiene pagos aplicados — usá Editar para cerrar el saldo" : "Eliminar"}
+                      title={deleteLocked ? "Tiene pagos aplicados — usa Editar para cerrar el saldo" : "Eliminar"}
                       className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:opacity-40"
                     >
                       Eliminar
@@ -409,7 +407,7 @@ export default function Advances() {
                             <button
                               onClick={() => setEditing({ ...a, mode: "edit" })}
                               disabled={editLocked}
-                              title={editLocked ? "No editable: totalmente aplicado" : (st === "partial" ? "Editar (parcial — podés bajar el monto para cerrar)" : "Editar")}
+                              title={editLocked ? "No editable: totalmente aplicado" : (st === "partial" ? "Editar (parcial — puedes bajar el monto para cerrar)" : "Editar")}
                               className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-40"
                             >
                               Editar
@@ -417,7 +415,7 @@ export default function Advances() {
                             <button
                               onClick={() => setConfirmDelete(a)}
                               disabled={deleteLocked}
-                              title={deleteLocked ? "Tiene pagos aplicados — usá Editar para cerrar el saldo" : "Eliminar"}
+                              title={deleteLocked ? "Tiene pagos aplicados — usa Editar para cerrar el saldo" : "Eliminar"}
                               className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:opacity-40"
                             >
                               Eliminar
@@ -465,19 +463,16 @@ export default function Advances() {
   );
 }
 
-// Un anticipo repetido por el mismo monto casi siempre es que alguien lo cargó
-// dos veces, no que el trabajador pidió dos veces lo mismo. Se avisa con quién
-// lo puso, para poder resolverlo sin salir de acá — pero no se bloquea: el caso
-// legítimo existe.
+// Al crear, un movimiento pendiente del mismo trabajador y por el mismo monto
+// se avisa como posible duplicado, con quién lo puso. No se bloquea.
 const PENDING_STATUSES = ["pending", "partial"];
 
 function AdvanceFormModal({ open, item, items = [], onClose, onSaved }) {
   const toast = useToast();
   const isEdit = item?.mode === "edit";
-  // Editar un anticipo `partial` (con pagos aplicados) impone restricciones:
-  // worker y type quedan locked (no se pueden reasignar pagos), y `amount` no
-  // puede caer por debajo de lo ya pagado. Setear `amount = amountPaid` cierra
-  // el anticipo (status → "applied") — esto es el "perdonazo del saldo".
+  // Con pagos aplicados no se cambia el trabajador ni el tipo, y el monto no
+  // baja de lo ya pagado. Bajarlo a `amountPaid` cierra el anticipo (status
+  // "applied") y perdona el saldo.
   const amountPaid = Number(item?.amountPaid) || 0;
   const isPartial = isEdit && (item?.status === "partial" || amountPaid > 0);
   const [form, setForm] = useState({
@@ -501,9 +496,8 @@ function AdvanceFormModal({ open, item, items = [], onClose, onSaved }) {
       setForm({
         type: normalizeAdvanceType(item?.type) || "anticipo",
         workerRut: item?.workerRut || "",
-        // Fase 2 de "rut editable": `workerId` es el id estable del worker;
-        // fallback a `workerRut` para anticipos viejos (pre-migración) donde
-        // todavía no existía este campo — hoy son el mismo valor.
+        // `workerId` es el id del trabajador, que no cambia; sin ese campo,
+        // usa `workerRut`.
         workerId: item?.workerId || item?.workerRut || "",
         workerName: item?.workerName || "",
         amount: item?.amount || 0,
@@ -532,8 +526,8 @@ function AdvanceFormModal({ open, item, items = [], onClose, onSaved }) {
   const doSave = async (newAmount) => {
     setBusy(true);
     try {
-      // Recompute status si hay pagos aplicados: si amount queda en o por debajo
-      // de amountPaid → "applied" (saldo perdonado); si supera → sigue "partial".
+      // Con pagos aplicados, el estado se recalcula: si el monto queda en lo
+      // pagado o menos, "applied" (saldo perdonado); si no, "partial".
       let status = item?.status || "pending";
       if (isPartial) {
         status = newAmount <= amountPaid ? "applied" : "partial";
@@ -554,9 +548,8 @@ function AdvanceFormModal({ open, item, items = [], onClose, onSaved }) {
           ? { count: Math.floor(form.installmentCount), amount: computeCuotaAmount(newAmount, form.installmentCount), cadence: form.installmentCadence }
           : null;
       } else if (item?.installments && !isPartial && newAmount !== (Number(item.amount) || 0)) {
-        // El plan en sí no se edita, pero si el monto total cambia (todavía
-        // pendiente, sin pagos) hay que re-derivar el monto de cuota — si no,
-        // count*cuota queda desalineado del nuevo total.
+        // El plan no se edita, pero si cambia el monto de un anticipo sin
+        // pagos, la cuota se recalcula para que calce con el nuevo total.
         data.installments = { ...item.installments, amount: computeCuotaAmount(newAmount, item.installments.count) };
       }
       if (isEdit) await advancesService.update(item.id, data);
@@ -569,11 +562,11 @@ function AdvanceFormModal({ open, item, items = [], onClose, onSaved }) {
   };
 
   const submit = async () => {
-    if (!form.workerRut) { toast.warning("Seleccioná un trabajador."); return; }
+    if (!form.workerRut) { toast.warning("Selecciona un trabajador."); return; }
     if (!form.amount || form.amount <= 0) { toast.warning("Monto debe ser mayor a 0."); return; }
     const newAmount = Math.round(Number(form.amount) || 0);
     if (isPartial && newAmount < amountPaid) {
-      { toast.warning(`El monto no puede ser menor a lo ya pagado (${fmtCurrency(amountPaid)}). Si querés cerrar el saldo, ponelo igual a ${fmtCurrency(amountPaid)}.`); return; }
+      { toast.warning(`El monto no puede ser menor a lo ya pagado (${fmtCurrency(amountPaid)}). Si quieres cerrar el saldo, déjalo igual a ${fmtCurrency(amountPaid)}.`); return; }
     }
     if (!isEdit && form.type === "anticipo" && form.useInstallments) {
       const n = Math.floor(Number(form.installmentCount) || 0);
@@ -651,7 +644,7 @@ function AdvanceFormModal({ open, item, items = [], onClose, onSaved }) {
               Resta: <span className="font-mono">{fmtCurrency(Math.max(0, (Number(item?.amount) || 0) - amountPaid))}</span>
             </div>
             <div className="mt-1 opacity-80">
-              Podés bajar el monto hasta <span className="font-mono">{fmtCurrency(amountPaid)}</span> para perdonar el saldo (queda cerrado).
+              Puedes bajar el monto hasta <span className="font-mono">{fmtCurrency(amountPaid)}</span> para perdonar el saldo (queda cerrado).
               No se puede cambiar el trabajador ni el tipo.
             </div>
           </div>
@@ -803,7 +796,7 @@ function AdvanceFormModal({ open, item, items = [], onClose, onSaved }) {
               Plan de cuotas: {item.installments.count} de {fmtCurrency(item.installments.amount)} · {cadenceMeta(item.installments.cadence).label}
             </div>
             <div className="mt-1 text-[var(--color-muted)]">
-              El plan no se edita. Para cambiarlo, eliminá y volvé a crear el anticipo (solo mientras sigue pendiente).
+              El plan no se edita. Para cambiarlo, elimina y vuelve a crear el anticipo (solo mientras sigue pendiente).
             </div>
           </div>
         )}
@@ -820,10 +813,8 @@ function AdvanceFormModal({ open, item, items = [], onClose, onSaved }) {
       </div>
     </Modal>
 
-    {/* Va DESPUÉS del formulario a propósito: los dos son `Modal`, que se
-        monta en su lugar del árbol con `z-50` fijo y sin portal. Con el mismo
-        z-index gana el último del DOM, así que puesto antes queda tapado por
-        el formulario — abierto, pero invisible. */}
+    {/* Va después del formulario: los dos son `Modal`, con `z-50` y sin
+        portal, y con el mismo z-index queda encima el último del DOM. */}
     <ConfirmDialog
       open={!!dupConfirm}
       title="Puede estar duplicado"

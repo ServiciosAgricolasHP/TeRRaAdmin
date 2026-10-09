@@ -1,8 +1,7 @@
-// Pantalla de facturación — v2: multi-empresa, vista por mes actual con
-// toggle de auditoría histórica, estados de pago (unpaid/paid/factored), y
-// reemplazo por período con borrado de huérfanos.
+// Pantalla de facturación: multi-empresa, vista por mes actual con selector de
+// período, estados de pago y reemplazo por período con borrado de huérfanos.
 //
-// La emisión sigue manual en el portal SII. Acá solo se importa el RCV
+// La emisión se hace en el portal del SII. Aquí solo se importa el RCV
 // mensual y se gestiona el estado de pago de cada factura.
 
 import React, { forwardRef, useEffect, useMemo, useRef, useState } from "react";
@@ -37,9 +36,8 @@ const fmtNumber = (v) =>
 // `utils/cashFlowProjection` junto con la proyección, que necesita el mismo
 // criterio: si una NC no restara ahí, la base proyectada saldría inflada.
 
-// Mes actual en formato YYYY-MM. Se usa como filtro por default — la vista
-// operativa muestra solo el mes en curso. Para ver otros períodos hay que
-// activar el toggle de Auditoría.
+// Mes actual en formato YYYY-MM. Es el filtro por defecto: la vista operativa
+// muestra solo el mes en curso, y el selector de período lleva a los demás.
 function currentPeriod() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -47,7 +45,7 @@ function currentPeriod() {
 
 // Convierte un periodo "YYYY-MM" a "Mes Año" (ej. "2026-05" → "Mayo 2026").
 // Si el periodo está vacío, devuelve "Todos los períodos" para que los
-// títulos de export tengan algo legible cuando el usuario auditó sin filtrar.
+// títulos de export tengan algo legible cuando no se filtra por período.
 const MONTH_NAMES_ES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
@@ -60,27 +58,27 @@ function formatPeriodPretty(periodo) {
   return `${MONTH_NAMES_ES[idx] || m[2]} ${m[1]}`;
 }
 
-// Label de tipo para títulos de export (no el tab interno — el tab sigue
-// diciendo "Facturas"). En print decimos "Ventas/Facturas" para que el
-// receptor del documento entienda el contexto fiscal.
+// Etiqueta del tipo para los títulos de export. La pestaña dice "Facturas";
+// lo exportado dice "Ventas/Facturas" para que quien lo reciba entienda el
+// contexto fiscal.
 function kindTitleLabel(kind) {
   if (kind === "venta") return "Ventas/Facturas";
   if (kind === "compra") return "Compras";
   return kind;
 }
 
-// Etiquetas + colores para los estados de pago. Los 5 estados aplicables a
+// Etiquetas y colores de los estados de pago. Los 5 estados aplicables a
 // facturas/boletas afectas:
 //   - unpaid: pendiente de cobro/pago.
 //   - paid: completo.
-//   - net_only: el cliente solo pagó el NETO (retuvo el IVA — caso típico de
-//     servicios con retención al SII). Se trackea aparte en el tab "Retenciones".
+//   - net_only: el cliente solo pagó el NETO (retuvo el IVA, típico de
+//     servicios con retención al SII). Se listan aparte en la pestaña "Retenciones".
 //   - factored: factura cedida vía factoring (el cliente paga al factor; queda
 //     "solo IVA" en libros).
-//   - cancelled: factura anulada por una NC posterior. Se marca manualmente
-//     (eventualmente con sugerencia auto cuando detectamos NC candidata).
-// Las notas de crédito (tipos 61/112) no usan estos estados — se muestran con
-// un chip fijo "Anulada" porque su naturaleza es justamente anular otra factura.
+//   - cancelled: factura anulada por una NC posterior. Se marca a mano; si hay
+//     una NC candidata, la pantalla lo sugiere.
+// Las notas de crédito (tipos 61/112) no usan estos estados: se muestran con
+// un chip fijo "Anulada" porque su función es anular otra factura.
 const PAYMENT_STATUSES = {
   unpaid: { label: "No pagado", chip: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]" },
   paid: { label: "Pagado", chip: "bg-[var(--color-success-soft)] text-[var(--color-success)]" },
@@ -90,10 +88,10 @@ const PAYMENT_STATUSES = {
 };
 const NC_STATE = { label: "Anulada", chip: "bg-[var(--color-danger-soft)] text-[var(--color-danger)]" };
 
-// Tipos de pago que el usuario puede registrar en una factura. Cada entrada
-// del array `payments` tiene un `kind` que sirve para categorizar (auditoría)
-// y para sugerir un monto al agregar. La suma de `amount` de todos los pagos
-// no puede superar `factura.total` — validamos al guardar.
+// Tipos de pago que se pueden registrar en una factura. Cada entrada del array
+// `payments` tiene un `kind` que sirve para categorizar (auditoría) y para
+// sugerir un monto al agregar. La suma de `amount` de todos los pagos no puede
+// superar `factura.total`: se valida al guardar.
 const PAYMENT_KINDS = {
   abono: { label: "Abono" },
   neto: { label: "Solo neto" },
@@ -119,12 +117,12 @@ function todayIso() {
 }
 
 // Categorías de facturas pendientes que aparecen en el modal "Ver pendientes".
-// Cada factura no-anulada / no-pagada cae en una sola categoría según su
-// estado + sus pagos registrados:
+// Cada factura no anulada y no pagada cae en una sola categoría según su
+// estado y sus pagos registrados:
 //   - full:    estado "unpaid" sin abonos → debe el total completo.
 //   - partial: estado "unpaid" con abonos pero saldo > 0.
-//   - iva:     estado "net_only" o "factored" → IVA pendiente (saldo IVA - lo
-//              que ya esté cubierto por pagos registrados sobre el neto).
+//   - iva:     estado "net_only" → IVA pendiente (el IVA menos lo que ya
+//              cubren los pagos registrados por encima del neto).
 const PENDIENTE_CATS = {
   full:    { key: "full",    label: "Factura completa pendiente", order: 1, hex: "#ffd6d6" },
   partial: { key: "partial", label: "Abono parcial",              order: 2, hex: "#fff2cc" },
@@ -132,10 +130,10 @@ const PENDIENTE_CATS = {
 };
 
 // Devuelve `{ category, amount }` para una factura pendiente, o null si no
-// tiene nada pendiente (pagada, anulada, NC, factura cerrada, etc.).
-// `factored` (Solo IVA — cedida vía factoring) se considera **pagada** para
-// efectos de cobranza: el factor ya pagó el neto al emisor y el cliente queda
-// debiéndole al factor, no a nosotros. El IVA es una obligación tributaria
+// tiene nada pendiente (pagada, anulada, NC, etc.).
+// `factored` (Solo IVA, cedida vía factoring) cuenta como **pagada** para
+// efectos de cobranza: el factor ya pagó el neto al emisor y el cliente le
+// debe al factor, no a la empresa. El IVA es una obligación tributaria
 // separada que se gestiona en el F29, no en este flujo.
 function pendingFor(d) {
   if (CREDIT_NOTE_TYPES.has(Number(d.tipo))) return null;
@@ -161,10 +159,10 @@ function pendingFor(d) {
 }
 
 // Heurística para sugerir que una factura está anulada por una NC.
-// Match: misma empresa + kind + contraparte (RUT) + total exacto, con NC
-// emitida en fecha >= factura. No es 100% confiable (un cliente con dos
-// facturas del mismo monto + una NC dispara falso positivo en ambas), por eso
-// es solo SUGERENCIA — el usuario decide marcarla como Anulada.
+// Coincide: misma empresa + kind + contraparte (RUT) + total exacto, con la NC
+// emitida en fecha >= factura. Es solo una sugerencia: un cliente con dos
+// facturas del mismo monto y una NC da coincidencia en ambas, así que el
+// usuario decide si la marca como Anulada.
 function findCancellingNcs(dteDoc, allDocs) {
   if (CREDIT_NOTE_TYPES.has(Number(dteDoc.tipo))) return [];
   const total = Number(dteDoc.total) || 0;
@@ -185,13 +183,12 @@ function findCancellingNcs(dteDoc, allDocs) {
   return out;
 }
 
-// Clave de localStorage para recordar la última empresa elegida por el usuario
-// entre sesiones — UX típica: el usuario casi siempre trabaja con la misma
-// empresa, no tiene sentido obligarlo a re-seleccionarla cada vez.
+// Clave de localStorage con la última empresa elegida, que se recuerda entre
+// sesiones.
 const LS_SELECTED_COMPANY = "facturacion.selectedCompanyId";
 
-// Tamaño de página de la tabla principal. La tabla siempre pagina (aunque no
-// haya búsqueda activa) para que meses con cientos de docs no rendericen todo.
+// Tamaño de página de la tabla principal. La vista plana pagina siempre, haya
+// o no búsqueda, para que meses con cientos de docs no rendericen todo.
 const PAGE_SIZE = 20;
 
 export default function Facturacion() {
@@ -205,68 +202,70 @@ export default function Facturacion() {
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [kindTab, setKindTab] = useState("venta");
-  // Vista por defecto = mes actual. El selector de período siempre está
-  // habilitado — el usuario puede navegar a cualquier mes pasado o pedir
-  // "Todos los períodos" sin pasar por un modo especial.
+  // Vista por defecto = mes actual. El selector de período permite ir a
+  // cualquier mes pasado o pedir "Todos los períodos".
   const [periodoFilter, setPeriodoFilter] = useState(currentPeriod());
   const [tipoFilter, setTipoFilter] = useState("");
-  const [paymentFilter, setPaymentFilter] = useState(""); // "" | "unpaid" | "paid" | "factored"
+  const [paymentFilter, setPaymentFilter] = useState(""); // "" | "unpaid" | "paid" | "net_only" | "factored"
   const [search, setSearch] = useState("");
-  // Sort de la tabla principal: click en un header alterna asc/desc; default
-  // es fechaEmision desc para mantener el comportamiento histórico.
+  // Orden de la tabla principal: click en un encabezado alterna asc/desc; por
+  // defecto, fechaEmision desc.
   const [sortBy, setSortBy] = useState({ key: "fechaEmision", dir: "desc" });
-  // Modals
+  // Modales
   const [importPreview, setImportPreview] = useState(null);
   const [importCompanyId, setImportCompanyId] = useState("");
   const [importing, setImporting] = useState(false);
   const [companiesModalOpen, setCompaniesModalOpen] = useState(false);
   const [pendientesModalOpen, setPendientesModalOpen] = useState(false);
-  // Catálogo de centros de costo ficticios (manual, ver costCentersService).
-  // Global — compartido entre todas las empresas, igual que se definió con el
-  // usuario. "Combustibles" no vive acá: sigue siendo automático por SII.
+  // Catálogo manual de centros de costo ficticios (ver costCentersService),
+  // global para todas las empresas. "Combustibles" no está aquí: sale
+  // automáticamente del código de impuesto del SII.
   const [costCenters, setCostCenters] = useState([]);
   // Gastos informales (sin factura/boleta formal) por centro de costo — ver
   // informalExpensesService. Puramente informativo, nunca entra a dteDocuments
   // ni a los totales/exports fiscales reales.
   const [informalExpenses, setInformalExpenses] = useState([]);
-  // Modal unificado: crear/editar/eliminar centros de costo + vista global de
-  // TODOS los documentos de un centro elegido, de todas las empresas y
-  // períodos (ignora los filtros de la tabla principal), ordenados
-  // cronológicamente. Independiente del toggle de agrupación de la tabla.
+  // Modal de centros de costo: crear/editar/eliminar + vista global de TODOS
+  // los documentos de un centro elegido, de todas las empresas y períodos
+  // (ignora los filtros de la tabla principal), ordenados cronológicamente.
+  // Independiente del toggle de agrupación de la tabla.
   const [costCentersModalOpen, setCostCentersModalOpen] = useState(false);
   // Modal de detalle: muestra todos los campos del DTE + notas editables.
   // Se abre al click en el botón ℹ de cada fila.
   const [detailDoc, setDetailDoc] = useState(null);
-  // Off-screen ref del printable de Retenciones (para html-to-image / print).
+  // Refs de los printables fuera de pantalla (retenciones, listado, resumen)
+  // para html-to-image e impresión.
   const retencionesPrintRef = useRef(null);
   const docListPrintRef = useRef(null);
   const resumenPrintRef = useRef(null);
   const [exportBusy, setExportBusy] = useState("");
   const [docListBusy, setDocListBusy] = useState("");
   const [resumenBusy, setResumenBusy] = useState("");
-  // Año del tab "Resumen" — su propio selector, independiente del filtro de mes
-  // (que ahí no aplica: el resumen cruza los 12 meses del año elegido).
+  // Año de la pestaña "Resumen", con selector propio, independiente del filtro
+  // de mes (que ahí no aplica: el resumen cruza los 12 meses del año elegido).
   const [resumenYear, setResumenYear] = useState(() => String(new Date().getFullYear()));
-  // Tab "Proyección" (solo admin). `proyeccionStart` es el PRIMER mes
-  // proyectado; la base son los 12 meses anteriores. Arranca en el mes actual,
-  // que es el caso normal: proyectar la temporada que viene parado en hoy.
+  // Pestaña "Proyección" (solo admin). `proyeccionStart` es el PRIMER mes
+  // proyectado; la base son los 12 meses anteriores. Arranca en el mes actual:
+  // proyecta la temporada que viene a partir de hoy.
   const [proyeccionStart, setProyeccionStart] = useState(() => currentPeriod());
   // Se guarda como texto para que el input se pueda vaciar mientras se tipea
   // sin que el valor salte a 0 y la tabla parpadee en cero.
   const [proyeccionPercent, setProyeccionPercent] = useState(String(DEFAULT_PROJECTION_PERCENT));
   const [proyeccionBusy, setProyeccionBusy] = useState("");
-  // Toggle "Separar por centro de costo" — agrupa el export por contraparte,
-  // con combustibles juntos como un único centro de costo arriba. Persistido
-  // por tab para que el usuario no tenga que activarlo cada vez.
+  // Toggle "Agrupar tabla por centro": agrupa la tabla y el export por centro
+  // de costo (o por contraparte si el documento no tiene uno), con los
+  // combustibles juntos arriba. Se guarda en localStorage (una sola clave para
+  // todas las pestañas).
   const [groupByCostCenter, setGroupByCostCenter] = useState(() => {
     try { return localStorage.getItem("facturacion.groupByCostCenter") === "true"; } catch { return false; }
   });
   useEffect(() => {
     try { localStorage.setItem("facturacion.groupByCostCenter", String(groupByCostCenter)); } catch { /* noop */ }
   }, [groupByCostCenter]);
-  // Refs por contraparte (mapa rut→DOM node) + flag de busy por grupo. Cada
-  // grupo se renderiza off-screen con su propio printable individual y los
-  // handlers usan estos refs para exportar/copiar/imprimir ese grupo solo.
+  // Refs por contraparte (mapa clave del grupo → nodo DOM) y estado de carga
+  // por grupo. Cada grupo se renderiza fuera de pantalla con su propio
+  // printable, y los handlers usan estos refs para copiar, descargar o
+  // imprimir solo ese grupo.
   const groupPrintRefs = useRef(new Map());
   const [groupBusy, setGroupBusy] = useState({}); // { [groupKey]: "copy"|"png"|... }
   const groupKey = (g) => g?.rut || "__sin_rut__";
@@ -299,8 +298,8 @@ export default function Facturacion() {
       setDocs(list);
       setCostCenters(centers);
       setInformalExpenses(expenses);
-      // Si lo guardado en localStorage ya no existe (empresa borrada) o no hay
-      // nada elegido, caemos al primero. Sino respetamos la última elección.
+      // Si la empresa guardada ya no existe o no hay ninguna elegida, toma la
+      // primera; si no, respeta la última elección.
       if (comps.length > 0 && !comps.some((c) => c.id === selectedCompanyId)) {
         setSelectedCompanyId(comps[0].id);
       }
@@ -311,21 +310,18 @@ export default function Facturacion() {
 
   useEffect(() => { loadAll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
-  // Persiste la empresa elegida — la próxima vez que el usuario entre a la
-  // pantalla, arranca con la misma seleccionada.
+  // Guarda la empresa elegida para la próxima visita a la pantalla.
   useEffect(() => {
     try { localStorage.setItem(LS_SELECTED_COMPANY, selectedCompanyId || ""); } catch { /* noop */ }
   }, [selectedCompanyId]);
 
-  // Tab "Retenciones" muestra todos los DTE (ventas y compras) con estado
-  // `net_only` agrupados por contraparte. Es ortogonal a kindTab pero lo
-  // tratamos como un valor más de la misma variable para que el switch sea
-  // limpio en la UI.
+  // La pestaña "Retenciones" muestra todos los DTE (ventas y compras) con
+  // estado `net_only`, agrupados por contraparte. No es un `kind`, pero va como
+  // un valor más de `kindTab` para que las pestañas usen un solo estado.
   const isRetencionesView = kindTab === "retenciones";
-  // Los tabs de análisis cruzan varios meses por su cuenta, así que apagan los
-  // filtros, las tarjetas y la tabla del listado. Van juntos en un predicado
-  // porque el gate se repite en media docena de lugares: con un `!== "resumen"`
-  // suelto, cada tab nuevo obliga a encontrarlos todos otra vez.
+  // Las pestañas de análisis cruzan varios meses por su cuenta, así que apagan
+  // los filtros, las tarjetas y la tabla del listado. Todos esos lugares leen
+  // este predicado: una pestaña de análisis nueva se agrega solo aquí.
   const isAnalysisTab = kindTab === "resumen" || kindTab === "proyeccion";
 
   // Filtros del listado.
@@ -344,7 +340,9 @@ export default function Facturacion() {
     const searching = !!search.trim();
     if (periodoFilter && !searching) arr = arr.filter((d) => d.periodo === periodoFilter);
     if (tipoFilter) arr = arr.filter((d) => String(d.tipo) === String(tipoFilter));
-    if (!isRetencionesView && paymentFilter) {
+    // El estado de pago solo se lleva en ventas; en Compras los chips del
+    // filtro no se muestran, así que tampoco filtran.
+    if (kindTab === "venta" && paymentFilter) {
       arr = arr.filter((d) => (d.paymentStatus || "unpaid") === paymentFilter);
     }
     if (search.trim()) {
@@ -364,9 +362,9 @@ export default function Facturacion() {
     return arr;
   }, [docs, kindTab, isRetencionesView, selectedCompanyId, periodoFilter, tipoFilter, paymentFilter, search]);
 
-  // Sort. Aplicado solo en la tabla principal (ventas/facturas/compras) — la
-  // vista de retenciones tiene su propio agrupador. NCs ordenan junto a las
-  // demás aunque el "estado" sea fijo "Anulada".
+  // Orden de la tabla principal (facturas y compras); la vista de retenciones
+  // agrupa por su cuenta. Al ordenar por estado, las NC usan la clave
+  // `zz_anulada`, que las deja al final en orden ascendente.
   const sortGetter = (d, key) => {
     switch (key) {
       case "fechaEmision": return d.fechaEmision || "";
@@ -400,17 +398,16 @@ export default function Facturacion() {
     setSortBy((cur) => cur.key === key ? { key, dir: cur.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "fechaEmision" ? "desc" : "asc" });
   };
 
-  // Paginación de la tabla plana (no aplica al modo "por centro de costo" ni
-  // a retenciones/resumen — esos son vistas de reporte con subtotales que se
-  // distorsionarían si cortamos filas). Cualquier cambio de filtro/orden
-  // vuelve a página 1.
+  // Paginación de la tabla plana. No aplica al modo "por centro de costo" ni a
+  // retenciones/resumen: son vistas de reporte con subtotales, y cortar filas
+  // los distorsionaría. Cualquier cambio de filtro u orden vuelve a la página 1.
   const [page, setPage] = useState(1);
   useEffect(() => {
     setPage(1);
   }, [kindTab, selectedCompanyId, periodoFilter, tipoFilter, paymentFilter, search, sortBy]);
   const pageCount = Math.max(1, Math.ceil(sortedFiltered.length / PAGE_SIZE));
-  // Clamp defensivo: si los docs se achican (ej. cambio de empresa con menos
-  // páginas) y el effect de reset aún no corrió, no mostramos página vacía.
+  // Acota la página al total: si la lista se achica (p. ej. al cambiar de
+  // empresa) antes de que corra el reset, no muestra una página vacía.
   const currentPage = Math.min(page, pageCount);
   const pagedDocs = useMemo(
     () => sortedFiltered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
@@ -432,8 +429,8 @@ export default function Facturacion() {
   }, [pageCount, currentPage]);
 
   // Lista de contrapartes únicas (razón social) para el datalist del buscador.
-  // Saca de los docs filtrados por empresa y kind (sin aplicar el resto de
-  // filtros para que el dropdown muestre todo el universo posible).
+  // Sale de los docs filtrados solo por empresa y kind, sin el resto de los
+  // filtros, para que el dropdown muestre todas las opciones posibles.
   const contrapartesAutocomplete = useMemo(() => {
     const set = new Set();
     for (const d of docs) {
@@ -445,8 +442,8 @@ export default function Facturacion() {
     return [...set].sort();
   }, [docs, kindTab, isRetencionesView, selectedCompanyId]);
 
-  // Retenciones agrupadas: por contraparte (rutContraparte) → suma neto/iva/total
-  // + lista de docs. Para el tab Retenciones.
+  // Retenciones agrupadas por contraparte (RUT) → suma neto/iva/total + lista
+  // de docs. Para la pestaña Retenciones.
   const retencionesByContraparte = useMemo(() => {
     if (!isRetencionesView) return [];
     const map = new Map();
@@ -474,8 +471,8 @@ export default function Facturacion() {
     const set = new Set();
     for (const d of docs) {
       // En retenciones la pestaña no corresponde a un `kind` (venta/compra),
-      // así que tomamos cualquier doc con estado net_only para que el dropdown
-      // ofrezca los meses pasados que tienen retenciones reales.
+      // así que se toma cualquier doc con estado net_only para que el dropdown
+      // ofrezca los meses pasados que tienen retenciones.
       const matchesTab = isRetencionesView
         ? (d.paymentStatus || "unpaid") === "net_only"
         : d.kind === kindTab;
@@ -497,10 +494,9 @@ export default function Facturacion() {
     return [...set].sort((a, b) => a - b);
   }, [docs, kindTab, selectedCompanyId]);
 
-  // Totales con signo: NC restan en lugar de sumar. Además contamos los NCs
-  // por separado para mostrar un card específico, y desglosamos por estado de
-  // pago los montos (unpaid/net_only/factored) sumando solo positivos (facturas,
-  // no NCs).
+  // Totales con signo: las NC restan en lugar de sumar. Además cuenta las NC
+  // por separado para su tarjeta propia, y desglosa los montos por estado de
+  // pago (unpaid/net_only/factored) sumando solo facturas, no NC.
   const totals = useMemo(() => {
     const t = {
       neto: 0, iva: 0, total: 0, count: 0,
@@ -530,10 +526,10 @@ export default function Facturacion() {
     return t;
   }, [filtered]);
 
-  // Mapa de docId → [NCs candidatas]. Se calcula sobre TODOS los docs (no solo
-  // filtered) para que una NC del mismo período/empresa cuente aunque el
-  // usuario esté filtrando por algo más. Excluye facturas ya marcadas como
-  // anuladas — para esas la sugerencia ya no aplica.
+  // Mapa de docId → [NC candidatas]. Se calcula sobre TODOS los docs (no solo
+  // filtered) para que una NC cuente aunque el usuario esté filtrando por otra
+  // cosa. Excluye las facturas ya marcadas como anuladas: para esas la
+  // sugerencia no aplica.
   const cancellingByDocId = useMemo(() => {
     const m = new Map();
     for (const d of docs) {
@@ -546,9 +542,9 @@ export default function Facturacion() {
   }, [docs]);
 
   // Lista global de facturas pendientes (cualquier período) para la empresa
-  // seleccionada — alimenta el modal "Ver pendientes". **Solo ventas** (kind
-  // === "venta"): las compras tienen su propio flujo de seguimiento y no
-  // mezclamos cuentas por cobrar con cuentas por pagar en la misma vista.
+  // seleccionada; alimenta el modal "Ver pendientes". **Solo ventas** (kind
+  // === "venta"): las compras tienen su propio flujo de seguimiento, y las
+  // cuentas por cobrar no se mezclan con las cuentas por pagar.
   // Cada item lleva `_category` y `_pending` calculados por `pendingFor`.
   // Ordenado por categoría (full → partial → iva) y luego por fecha ascendente.
   const pendientesList = useMemo(() => {
@@ -579,7 +575,7 @@ export default function Facturacion() {
     return t;
   }, [pendientesList]);
 
-  // ===== Resumen anual (tab "Resumen") =====
+  // ===== Resumen anual (pestaña "Resumen") =====
   // Años disponibles para el selector — derivados de los períodos de la empresa
   // seleccionada. Siempre incluye el año actual aunque no tenga docs todavía.
   const resumenYears = useMemo(() => {
@@ -596,7 +592,7 @@ export default function Facturacion() {
   // Resumen mensual del año elegido para la empresa seleccionada. Por cada mes
   // acumula ventas/compras con signo (NC restan) separando IVA débito (ventas)
   // de IVA crédito (compras). El IVA de las facturas "Solo neto" (net_only) se
-  // suma normalmente al débito/crédito que corresponda —no se trackea aparte—.
+  // suma normalmente al débito/crédito que corresponda, sin separarlo.
   // IVA a pagar del mes = débito − crédito.
   const resumenData = useMemo(() => {
     const mk = () => ({
@@ -634,23 +630,24 @@ export default function Facturacion() {
     return { months, total };
   }, [docs, selectedCompanyId, resumenYear]);
 
-  // --- IMPORT ---
+  // --- IMPORTACIÓN ---
 
   const openImport = () => {
     if (companies.length === 0) {
-      toast.warning("Tenés que registrar al menos una empresa antes de importar. Usá el botón 🏢 Empresas.");
+      toast.warning("Tienes que registrar al menos una empresa antes de importar. Usa el botón 🏢 Empresas.");
       return;
     }
     setImportCompanyId(selectedCompanyId || companies[0].id);
   };
 
-  // Multi-file: parsea cada archivo independientemente. Cada uno trae su propia
-  // kind (ventas/compras) detectada del header, sus stats, sus errores, y un
-  // RUT extraído del filename para detectar mismatch con la empresa elegida.
+  // Varios archivos: parsea cada uno por separado. Cada uno trae su propio
+  // kind (ventas/compras) detectado del encabezado, sus stats, sus errores y un
+  // RUT sacado del nombre del archivo para avisar si no coincide con la
+  // empresa elegida.
   const onFilesPick = async (files) => {
     if (!files || files.length === 0) return;
     if (!importCompanyId) {
-      toast.warning("Seleccioná una empresa antes de elegir los archivos.");
+      toast.warning("Selecciona una empresa antes de elegir los archivos.");
       return;
     }
     const company = companiesById.get(importCompanyId);
@@ -704,7 +701,7 @@ export default function Facturacion() {
     setImportPreview({ files: parsedFiles });
   };
 
-  // Permite togglear si un archivo se incluye o no en el import desde el modal.
+  // Incluye o excluye un archivo del import desde el modal.
   const toggleFileExclusion = (fileName) => {
     setImportPreview((prev) => {
       if (!prev) return prev;
@@ -717,10 +714,10 @@ export default function Facturacion() {
     });
   };
 
-  // Confirmar import: junta records de TODOS los files no excluidos, agrupa
-  // por (companyId, kind, periodo) y para cada scope hace un "replace" —
-  // borra los huérfanos (que estaban antes y ya no aparecen) y escribe los
-  // nuevos/actualizados. Cada scope se procesa en una transacción separada.
+  // Confirmar import: junta los records de TODOS los archivos no excluidos y
+  // los pasa a `importDteRecords`, que por cada (kind, periodo) de la empresa
+  // hace un "replace": borra los huérfanos (estaban antes y ya no vienen) y
+  // escribe los nuevos o actualizados, en batches de hasta 450 escrituras.
   const confirmImport = async () => {
     if (!importPreview) return;
     setImporting(true);
@@ -756,9 +753,7 @@ export default function Facturacion() {
   };
 
   // --- Marcar estado de pago de una factura ---
-  // Setter directo del estado — el UI lo expone como `<select>` por fila
-  // (con las 4 opciones) en vez del antiguo botón cíclico, que era confuso
-  // con más de 3 estados.
+  // Fija el estado directamente; la UI lo ofrece como un `<select>` por fila.
   const setPaymentStatus = async (dteDoc, newStatus) => {
     if (!PAYMENT_STATUSES[newStatus]) return;
     if ((dteDoc.paymentStatus || "unpaid") === newStatus) return;
@@ -774,8 +769,8 @@ export default function Facturacion() {
     }
   };
 
-  // Guarda notas / detalle libre asociado a un DTE. Útil para registrar
-  // glosa que el SII no incluye en el CSV o para tracking interno.
+  // Guarda notas o detalle libre de un DTE: la glosa que el SII no incluye en
+  // el CSV o apuntes de seguimiento interno.
   const saveDocNotes = async (dteDoc, notes) => {
     try {
       await dteDocumentsService.update(dteDoc.id, { notes });
@@ -787,8 +782,8 @@ export default function Facturacion() {
   };
 
   // Asigna (o quita) el centro de costo ficticio manual de un documento.
-  // Los combustibles siguen agrupándose solo, automático — este campo es para
-  // el resto de las categorías que el usuario define a mano.
+  // Los combustibles se agrupan solos; este campo es para las demás
+  // categorías, que el usuario define a mano.
   const saveDocCostCenter = async (dteDoc, costCenterId) => {
     const next = costCenterId || null;
     try {
@@ -800,9 +795,9 @@ export default function Facturacion() {
     }
   };
 
-  // Guarda el array completo de pagos. Persistimos `amountPaid` denormalizado
-  // por si en el futuro queremos filtrar/ordenar por saldo sin tener que
-  // recorrer el array en cada doc.
+  // Guarda el array completo de pagos junto con `amountPaid` denormalizado
+  // (su suma), que el orden por saldo y los pendientes leen sin recorrer el
+  // array.
   const saveDocPayments = async (dteDoc, payments) => {
     const amountPaid = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
     try {
@@ -815,9 +810,9 @@ export default function Facturacion() {
   };
 
   // --- Export de Retenciones (infografía) ---
-  // Captura el off-screen printable. El patrón es el mismo que usan los otros
-  // resúmenes (PrintablePayrollTable, PrintableSummary, etc.): el printable se
-  // renderiza fuera de pantalla y los botones lo capturan con html-to-image.
+  // El printable se renderiza fuera de pantalla y los botones lo capturan con
+  // html-to-image, igual que en los otros resúmenes (PrintablePayrollTable,
+  // PrintableSummary, etc.).
 
   const exportFileBase = useMemo(() => {
     const company = companiesById.get(selectedCompanyId);
@@ -880,9 +875,9 @@ export default function Facturacion() {
     setTimeout(() => { win.print(); }, 250);
   };
 
-  // XLSX siguiendo la convención del proyecto: col A vacía width 6, fila 1
-  // vacía, datos desde B2. Una sola hoja "Resumen" con un row por contraparte,
-  // y opcionalmente una segunda "Detalle" con cada factura individual.
+  // XLSX con la convención del proyecto: col A vacía de ancho 6, fila 1 vacía,
+  // datos desde B2. Dos hojas: "Resumen", con una fila por contraparte, y
+  // "Detalle", con cada factura.
   const handleRetencionesXlsx = async () => {
     setExportBusy("xlsx");
     try {
@@ -893,7 +888,7 @@ export default function Facturacion() {
 
       // ============ Hoja Resumen ============
       const ws = wb.addWorksheet("Resumen");
-      ws.getColumn(1).width = 6; // col A vacía + half-width (convención)
+      ws.getColumn(1).width = 6; // col A vacía de medio ancho (convención)
       ws.getColumn(2).width = 6;  // #
       ws.getColumn(3).width = 40; // Empresa
       ws.getColumn(4).width = 16; // RUT
@@ -907,7 +902,7 @@ export default function Facturacion() {
       ws.getCell("B2").font = { bold: true, size: 14 };
       ws.mergeCells("B2:H2");
 
-      // Headers en fila 4
+      // Encabezados en la fila 4
       const HR = 4;
       const headers = ["#", "Empresa", "RUT", "N° Facturas", "Neto", "IVA Retenido", "Total"];
       headers.forEach((h, i) => {
@@ -942,7 +937,7 @@ export default function Facturacion() {
       totalLabel.font = { bold: true };
       totalLabel.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
       totalLabel.alignment = { horizontal: "left" };
-      // merge B:D para el label
+      // Combina B:D para la etiqueta
       ws.mergeCells(totalRow, 2, totalRow, 4);
       for (let col = 2; col <= 8; col++) {
         const c = ws.getCell(totalRow, col);
@@ -966,12 +961,11 @@ export default function Facturacion() {
       ws.getCell(totalRow, 8).numFmt = '"$"#,##0';
 
       // ============ Hoja Detalle (todas las facturas individuales) ============
-      // Nota: omitimos columna "Tipo" numérico — la columna "Documento" trae
-      // el label legible y el número se vuelve ruido en la vista.
+      // Sin columna "Tipo" numérica: "Documento" ya trae la etiqueta legible.
       const wsd = wb.addWorksheet("Detalle");
       wsd.getColumn(1).width = 6;
       wsd.getColumn(2).width = 12; // Fecha
-      wsd.getColumn(3).width = 26; // Documento (label)
+      wsd.getColumn(3).width = 26; // Documento (etiqueta)
       wsd.getColumn(4).width = 10; // Folio
       wsd.getColumn(5).width = 36; // Contraparte
       wsd.getColumn(6).width = 16; // RUT
@@ -1008,14 +1002,13 @@ export default function Facturacion() {
             c.value = v;
             c.alignment = { horizontal: j <= 3 ? "left" : "right" };
             c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
-            if (j === 6) c.font = { bold: true }; // IVA en bold
+            if (j === 6) c.font = { bold: true }; // IVA en negrita
             if (j >= 5) c.numFmt = '"$"#,##0';
           });
           dr++;
         }
       }
 
-      // Descargar
       const buf = await wb.xlsx.writeBuffer();
       const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const link = document.createElement("a");
@@ -1034,7 +1027,7 @@ export default function Facturacion() {
   const noCompany = companies.length === 0;
 
   // ===== Export por contraparte (individual) =====
-  // Filename seguro para una contraparte específica.
+  // Nombre de archivo seguro para una contraparte.
   const groupFileBase = (g) => {
     const alias = (selectedCompany?.alias || selectedCompany?.razonSocial || "empresa").replace(/[^\w-]+/g, "_");
     const contra = (g.razon || "contraparte").replace(/[^\w-]+/g, "_").slice(0, 40);
@@ -1111,7 +1104,7 @@ export default function Facturacion() {
       const company = selectedCompany;
       const period = periodoFilter || "Todos los períodos";
       const ws = wb.addWorksheet("Retención");
-      ws.getColumn(1).width = 6;  // col A vacía half-width (convención)
+      ws.getColumn(1).width = 6;  // col A vacía de medio ancho (convención)
       ws.getColumn(2).width = 12; // Fecha
       ws.getColumn(3).width = 28; // Documento
       ws.getColumn(4).width = 10; // Folio
@@ -1169,7 +1162,7 @@ export default function Facturacion() {
           c.value = v;
           c.alignment = { horizontal: j <= 2 ? "left" : "right" };
           c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
-          if (j === 4) c.font = { bold: true }; // IVA en bold
+          if (j === 4) c.font = { bold: true }; // IVA en negrita
           if (j >= 3) c.numFmt = '"$"#,##0';
         });
         r++;
@@ -1218,8 +1211,8 @@ export default function Facturacion() {
   };
 
   // ===== Export del listado de Facturas / Compras (vista no-retenciones) =====
-  // Mismo patrón que Retenciones: el printable se renderiza off-screen con la
-  // misma data filtrada/ordenada que la tabla en pantalla.
+  // Mismo patrón que Retenciones: el printable se renderiza fuera de pantalla
+  // con los mismos datos filtrados y ordenados que la tabla.
   const docListFileBase = useMemo(() => {
     const alias = (selectedCompany?.alias || selectedCompany?.razonSocial || "empresa").replace(/[^\w-]+/g, "_");
     const kindLabel = kindTab === "venta" ? "Ventas-Facturas" : "Compras";
@@ -1290,7 +1283,7 @@ export default function Facturacion() {
       const contraLabel = kindTab === "venta" ? "Cliente" : "Proveedor";
       const showEstado = kindTab === "venta";
       const ws = wb.addWorksheet(kindTab === "venta" ? "Ventas-Facturas" : "Compras");
-      ws.getColumn(1).width = 6;  // col A vacía half-width (convención)
+      ws.getColumn(1).width = 6;  // col A vacía de medio ancho (convención)
       ws.getColumn(2).width = 12; // Fecha
       ws.getColumn(3).width = 26; // Documento
       ws.getColumn(4).width = 10; // Folio
@@ -1356,7 +1349,7 @@ export default function Facturacion() {
       };
 
       const writeGroupHeader = (r, label, count, isFuel, isManual) => {
-        ws.getCell(r, 2).value = `${isFuel ? "⛽ COMBUSTIBLES" : label} · ${count} doc${count === 1 ? "" : "s"}`;
+        ws.getCell(r, 2).value = `${isFuel ? "⛽ COMBUSTIBLES" : label} · ${count} documento${count === 1 ? "" : "s"}`;
         ws.getCell(r, 2).font = { bold: true };
         ws.mergeCells(r, 2, r, lastCol);
         const fillColor = isFuel ? "FFFDE2CC" : isManual ? "FFDCE6F1" : "FFE2EFDA";
@@ -1414,9 +1407,9 @@ export default function Facturacion() {
         c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
         c.font = { bold: true };
       }
-      // Cuando es vista plana podemos usar SUM sobre el rango; en vista
-      // agrupada hay filas intermedias (headers, subtotales) — escribimos
-      // los totales como valores precomputados para no sumar dos veces.
+      // En la vista plana el total es un SUM sobre el rango; en la agrupada hay
+      // filas intermedias (encabezados, subtotales), así que los totales van
+      // como valores precalculados para no sumar dos veces.
       if (!groupByCostCenter && lastDataRow >= dataStart) {
         ws.getCell(totalRow, 7).value = { formula: `SUM(G${dataStart}:G${lastDataRow})`, result: totals.neto };
         ws.getCell(totalRow, 8).value = { formula: `SUM(H${dataStart}:H${lastDataRow})`, result: totals.iva };
@@ -1585,10 +1578,10 @@ export default function Facturacion() {
 
 
   // ===== Proyección de flujo de caja (solo admin) =====
-  // La temporada que viene se estima escalando la anterior: ventas netas de los
-  // 12 meses previos, mes a mes, por un porcentaje. Sale entera de `docs`, que
-  // ya está en memoria con toda la colección — la proyección no cuesta una
-  // lectura más.
+  // Estima la temporada que viene escalando la anterior: los ingresos por
+  // ventas de los 12 meses previos, mes a mes, por un porcentaje. Sale entera
+  // de `docs`, que ya está en memoria con toda la colección: la proyección no
+  // cuesta lecturas.
   const proyeccionYears = useMemo(() => {
     const now = new Date().getFullYear();
     const set = new Set([now, now + 1, now + 2].map(String));
@@ -1620,9 +1613,9 @@ export default function Facturacion() {
 
   // ===== Export de la Proyección =====
   // Dos hojas: la base con el detalle que la sostiene, y la proyección aparte.
-  // El porcentaje va en UNA celda con las filas referenciándola (`$C$4`), así
-  // el que recibe el archivo mueve el supuesto en Excel y ve la temporada
-  // entera recalcularse, en vez de pedirnos otra corrida por cada escenario.
+  // El porcentaje va en UNA celda y las filas la referencian (`$C$4`): quien
+  // recibe el archivo cambia el supuesto en Excel y la temporada entera se
+  // recalcula.
   const handleProyeccionXlsx = async () => {
     setProyeccionBusy("xlsx");
     try {
@@ -1882,7 +1875,7 @@ export default function Facturacion() {
           <button
             onClick={openImport}
             disabled={noCompany}
-            title={noCompany ? "Registrá una empresa primero" : "Importar CSV del SII"}
+            title={noCompany ? "Registra una empresa primero" : "Importar CSV del SII"}
             className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] shadow-sm hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
           >
             📥 Importar CSV del SII
@@ -1890,7 +1883,7 @@ export default function Facturacion() {
         </div>
       </div>
 
-      {/* Empresa selector + tabs + audit toggle */}
+      {/* Selector de empresa + pestañas + botón de pendientes */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <select
           value={selectedCompanyId}
@@ -1955,7 +1948,7 @@ export default function Facturacion() {
           onChange={(e) => setPeriodoFilter(e.target.value)}
           disabled={!!search.trim()}
           title={search.trim()
-            ? "Ignorado mientras buscás — la búsqueda muestra todos los períodos de la empresa"
+            ? "Ignorado mientras buscas — la búsqueda muestra todos los períodos de la empresa"
             : "Filtrar por período"}
           className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs disabled:opacity-60"
         >
@@ -2294,7 +2287,7 @@ export default function Facturacion() {
             ? "Sin coincidencias para los filtros aplicados."
             : isRetencionesView
               ? "No hay facturas con estado \"Solo neto\" para esta empresa en este período."
-              : `No hay ${kindTab === "venta" ? "facturas" : "compras"} importadas para esta empresa en este período. Usá "📥 Importar CSV del SII".`}
+              : `No hay ${kindTab === "venta" ? "facturas" : "compras"} importadas para esta empresa en este período. Usa "📥 Importar CSV del SII".`}
         </div>
       ) : isRetencionesView ? (
         <>
@@ -2335,9 +2328,8 @@ export default function Facturacion() {
             </button>
           </div>
 
-          {/* Off-screen printables — capturados por html-to-image. No visibles.
-              Renderizamos el resumen general + un printable individual por cada
-              contraparte para poder exportarlos uno a uno. */}
+          {/* Printables fuera de pantalla para html-to-image: el resumen general
+              y uno por contraparte, para exportarlos uno a uno. */}
           <div style={{ position: "absolute", left: -99999, top: 0, pointerEvents: "none" }} aria-hidden>
             <PrintableRetenciones
               ref={retencionesPrintRef}
@@ -2417,8 +2409,8 @@ export default function Facturacion() {
                   : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
               }`}
               title={groupByCostCenter
-                ? "Esta tabla y su export están agrupados por centro de costo (combustibles juntos, resto por proveedor). Click para volver a la vista plana."
-                : "Agrupar ESTA tabla y su export por centro de costo: combustibles como un grupo aparte y el resto por proveedor."}
+                ? "Esta tabla y su exportación están agrupadas por centro de costo (combustibles juntos, resto por proveedor). Click para volver a la vista plana."
+                : "Agrupar ESTA tabla y su exportación por centro de costo: combustibles como un grupo aparte y el resto por proveedor."}
             >
               {groupByCostCenter ? "🗂 Agrupar tabla por centro · ON" : "🗂 Agrupar tabla por centro"}
             </button>
@@ -2431,7 +2423,7 @@ export default function Facturacion() {
             </button>
           </div>
 
-          {/* Off-screen printable — capturado por html-to-image / print. */}
+          {/* Printable fuera de pantalla para html-to-image e impresión. */}
           <div style={{ position: "absolute", left: -99999, top: 0, pointerEvents: "none" }} aria-hidden>
             <PrintableDocList
               ref={docListPrintRef}
@@ -2492,7 +2484,7 @@ export default function Facturacion() {
                       )}
                       {isFuel ? (
                         <span
-                          title="Ya agrupado automático como Combustible (código SII de otro impuesto)"
+                          title="Agrupado automáticamente como Combustible (código SII de otro impuesto)"
                           className="rounded-full bg-[var(--color-warning-soft)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-warning)]"
                         >
                           ⛽ auto
@@ -2554,7 +2546,7 @@ export default function Facturacion() {
                     {!g.isFuel && g.rut && (
                       <span className="ml-2 font-normal text-[var(--color-muted)]">· {formatRutForDisplay(g.rut)}</span>
                     )}
-                    <span className="ml-2 font-normal text-[var(--color-muted)]">· {g.docs.length} doc{g.docs.length === 1 ? "" : "s"}</span>
+                    <span className="ml-2 font-normal text-[var(--color-muted)]">· {g.docs.length} documento{g.docs.length === 1 ? "" : "s"}</span>
                   </div>
                   <div className="divide-y divide-[var(--color-border)]">
                     {g.docs.map(renderDocCard)}
@@ -2639,7 +2631,7 @@ export default function Facturacion() {
                     <td className="px-2 py-1.5">
                       {isFuel ? (
                         <span
-                          title="Ya agrupado automático como Combustible (código SII de otro impuesto)"
+                          title="Agrupado automáticamente como Combustible (código SII de otro impuesto)"
                           className="rounded-full bg-[var(--color-warning-soft)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-warning)]"
                         >
                           ⛽ auto
@@ -2710,7 +2702,7 @@ export default function Facturacion() {
                         {!g.isFuel && g.rut && (
                           <span className="ml-2 font-normal text-[var(--color-muted)]">· {formatRutForDisplay(g.rut)}</span>
                         )}
-                        <span className="ml-2 font-normal text-[var(--color-muted)]">· {g.docs.length} doc{g.docs.length === 1 ? "" : "s"}</span>
+                        <span className="ml-2 font-normal text-[var(--color-muted)]">· {g.docs.length} documento{g.docs.length === 1 ? "" : "s"}</span>
                       </td>
                     </tr>
                     {g.docs.map(renderDocRow)}
@@ -2880,13 +2872,12 @@ function CostCenterSelect({ value, costCenters, onChange }) {
 
 const FUEL_VIEW_ID = "__fuel__";
 
-// Modal unificado de Centros de costo: catálogo (crear/editar/eliminar,
-// arriba, como chips) + vista global del centro elegido (abajo) — TODOS sus
-// documentos, de TODAS las empresas y períodos (ignora a propósito los
-// filtros de la tabla principal), con búsqueda/filtros propios, columnas
-// ordenables y export (copiar/PNG/imprimir/XLSX). Incluye "Combustibles"
-// como chip fijo no editable aunque viva fuera del catálogo manual — es la
-// otra mitad del mismo concepto (automático vs. manual).
+// Modal de Centros de costo: catálogo (crear/editar/eliminar, arriba, como
+// chips) + vista global del centro elegido (abajo): TODOS sus documentos, de
+// TODAS las empresas y períodos (ignora los filtros de la tabla principal),
+// con búsqueda y filtros propios, columnas ordenables y export
+// (copiar/PNG/imprimir/XLSX). Incluye "Combustibles" como chip fijo no
+// editable aunque esté fuera del catálogo manual: es el centro automático.
 function CostCentersModal({ costCenters, docs, informalExpenses, companiesById, onClose, onChanged, onSelectDoc }) {
   const toast = useToast();
   const printRef = useRef(null);
@@ -3133,7 +3124,7 @@ function CostCentersModal({ costCenters, docs, informalExpenses, companiesById, 
       const ExcelJS = (await import("exceljs")).default || (await import("exceljs"));
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet("Centro de costo");
-      ws.getColumn(1).width = 6;  // col A vacía half-width (convención)
+      ws.getColumn(1).width = 6;  // col A vacía de medio ancho (convención)
       ws.getColumn(2).width = 12; // Fecha
       ws.getColumn(3).width = 22; // Empresa
       ws.getColumn(4).width = 10; // Mov.
@@ -3323,7 +3314,7 @@ function CostCentersModal({ costCenters, docs, informalExpenses, companiesById, 
                 onChange={(e) => setSelectedId(e.target.value)}
                 className="w-full max-w-sm rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
               >
-                <option value="">Elegí un centro de costo…</option>
+                <option value="">Elige un centro de costo…</option>
                 <option value={FUEL_VIEW_ID}>⛽ Combustibles (automático)</option>
                 {costCenters.map((c) => (
                   <option key={c.id} value={c.id}>{c.emoji ? `${c.emoji} ${c.label}` : c.label}</option>
@@ -3388,7 +3379,7 @@ function CostCentersModal({ costCenters, docs, informalExpenses, companiesById, 
 
           {!selectedId ? (
             <div className="rounded-md border border-dashed border-[var(--color-border)] p-8 text-center text-sm text-[var(--color-muted)]">
-              Elegí un centro de costo arriba para ver todos sus documentos.
+              Elige un centro de costo arriba para ver todos sus documentos.
             </div>
           ) : (
             <div className="space-y-2 border-t border-[var(--color-border)] pt-3">
@@ -3561,7 +3552,7 @@ function CostCentersModal({ costCenters, docs, informalExpenses, companiesById, 
                 Click en una fila para abrir su detalle. Las filas ⚠ Informal son gastos sin factura/boleta formal — no afectan la data fiscal real.
               </p>
 
-              {/* Off-screen printable — capturado por html-to-image / print. */}
+              {/* Printable fuera de pantalla para html-to-image e impresión. */}
               <div style={{ position: "absolute", left: -99999, top: 0, pointerEvents: "none" }} aria-hidden>
                 <PrintableCostCenterDocs
                   ref={printRef}
@@ -3609,8 +3600,8 @@ function CostCentersModal({ costCenters, docs, informalExpenses, companiesById, 
   );
 }
 
-// Printable de la vista global de un centro de costo — limpio, sin controles,
-// mismo aesthetic Excel-style del resto de los exports del proyecto.
+// Printable de la vista global de un centro de costo: sin controles, con el
+// mismo estilo tipo Excel del resto de los exports del proyecto.
 const PrintableCostCenterDocs = forwardRef(function PrintableCostCenterDocs(
   { label, docs, totals, informalTotal = 0, informalCount = 0, companiesById },
   ref,
@@ -3706,9 +3697,9 @@ const PrintableCostCenterDocs = forwardRef(function PrintableCostCenterDocs(
 });
 
 // Crear/editar/eliminar un gasto informal (sin factura/boleta formal) de un
-// centro de costo. Vive puramente en `informalExpenses` — nunca toca
-// `dteDocuments` ni la data fiscal real. El centro de costo viene fijo del
-// contexto (el que se está viendo en CostCentersModal), no es elegible acá.
+// centro de costo. Vive solo en `informalExpenses`: nunca toca `dteDocuments`
+// ni los datos fiscales. El centro de costo viene fijo (el que se está viendo
+// en CostCentersModal); no se elige aquí.
 function InformalExpenseFormModal({ expense, costCenterId, companiesList, onClose, onSaved, onDeleted }) {
   const toast = useToast();
   const [date, setDate] = useState(expense?.date || todayIso());
@@ -3721,8 +3712,8 @@ function InformalExpenseFormModal({ expense, costCenterId, companiesList, onClos
   const save = async () => {
     if (!date) { toast.warning("Falta la fecha."); return; }
     const amt = Number(amount);
-    if (!amt || amt <= 0) { toast.warning("Ingresá un monto válido."); return; }
-    if (!detail.trim()) { toast.warning("Agregá un detalle."); return; }
+    if (!amt || amt <= 0) { toast.warning("Ingresa un monto válido."); return; }
+    if (!detail.trim()) { toast.warning("Agrega un detalle."); return; }
     setBusy(true);
     try {
       const payload = { costCenterId, date, amount: amt, detail: detail.trim(), companyId: companyId || null };
@@ -3858,12 +3849,11 @@ function InformalExpenseFormModal({ expense, costCenterId, companiesList, onClos
   );
 }
 
-// Select inline en cada fila para cambiar el estado de pago de una factura.
-// Reemplaza el viejo botón cíclico — con 4 estados el ciclo se vuelve confuso.
-// El styling matchea el chip del estado actual para mantener la continuidad visual.
-// Las <option> llevan colores explícitos del tema (surface + text) porque el
-// dropdown nativo hereda el fondo del select y en dark mode los chips de color
-// soft (amarillo, rojo claro) hacen ilegibles los items del dropdown.
+// Select inline en cada fila para cambiar el estado de pago de una factura,
+// con el estilo del chip del estado actual.
+// Las <option> llevan colores explícitos del tema (surface + text): el
+// dropdown nativo hereda el fondo del select, y en dark mode los chips de
+// color soft (amarillo, rojo claro) dejan ilegibles los items.
 function PaymentStatusSelect({ value, onChange }) {
   const meta = PAYMENT_STATUSES[value] || PAYMENT_STATUSES.unpaid;
   const optionStyle = {
@@ -3883,12 +3873,12 @@ function PaymentStatusSelect({ value, onChange }) {
   );
 }
 
-// Printable de Retenciones — versión limpia para captura (html-to-image,
-// print, PNG). No incluye los selects ni controles interactivos; muestra
-// dos secciones: (1) resumen por contraparte y (2) detalle de cada factura
-// agrupada por contraparte con subtotales. Estética estilo Excel
-// (verde #92d050 header, verde claro #c6efce totales, verde muy claro
-// #e2efda subheader de grupo).
+// Printable de Retenciones para captura (html-to-image, impresión, PNG), sin
+// selects ni controles interactivos. Muestra el IVA retenido del período y dos
+// secciones: (1) resumen por contraparte y (2) detalle de cada factura
+// agrupada por contraparte con subtotales. Estilo tipo Excel (verde #92d050
+// en el encabezado, verde claro #c6efce en totales, verde muy claro #e2efda
+// en el encabezado de cada grupo).
 const PrintableRetenciones = forwardRef(function PrintableRetenciones(
   { groups, company, periodo, totals },
   ref,
@@ -3898,8 +3888,7 @@ const PrintableRetenciones = forwardRef(function PrintableRetenciones(
   const totalNeto = groups.reduce((s, g) => s + (Number(g.neto) || 0), 0);
   const totalIva = totals?.netOnlyIva ?? groups.reduce((s, g) => s + (Number(g.iva) || 0), 0);
   const totalTotal = totals?.netOnlyTotal ?? groups.reduce((s, g) => s + (Number(g.total) || 0), 0);
-  // Ordenar docs por fecha asc dentro de cada grupo — más legible que el orden
-  // por id que viene del agrupador.
+  // Ordena los docs de cada grupo por fecha ascendente.
   const groupsSorted = groups.map((g) => ({
     ...g,
     docs: [...g.docs].sort((a, b) => String(a.fechaEmision || "").localeCompare(String(b.fechaEmision || ""))),
@@ -4057,9 +4046,9 @@ const pCell = {
   fontSize: 12,
 };
 
-// Printable del Resumen anual (off-screen, fondo blanco). Misma tabla mensual
-// que la vista en pantalla, con el balance de IVA arriba como métricas
-// explícitas. El IVA a pagar = débito − crédito.
+// Printable del Resumen anual (fuera de pantalla, fondo blanco). Misma tabla
+// mensual que la vista en pantalla, con el balance de IVA arriba como
+// métricas explícitas. El IVA a pagar = débito − crédito.
 const PrintableResumen = forwardRef(function PrintableResumen(
   { data, year, company },
   ref,
@@ -4135,24 +4124,17 @@ const PrintableResumen = forwardRef(function PrintableResumen(
   );
 });
 
-// Printable de una sola contraparte (resumen individual). Se renderiza N veces
-// off-screen — uno por grupo — para que cada uno pueda exportarse a
-// imagen/PDF/XLSX de manera independiente.
-// Printable plano del listado de Facturas o Compras. Respeta los filtros + sort
-// que ya están aplicados en `docs` (el caller pasa `sortedFiltered`). NCs se
-// muestran en rojo con signo "−" en los montos para mantener la convención
-// visual del listado en pantalla.
-// Agrupa docs por centro de costo. Convención:
-//   - Combustibles (cualquier doc con `otroImpuestoCategory === "combustible"`)
-//     se juntan en un grupo virtual único "⛽ COMBUSTIBLES", ordenado por fecha.
-//     Este grupo va primero (centro de costo agregado, no por proveedor).
-//   - El resto se agrupa por contraparte (rutEmisor para compras, rutReceptor
-//     para ventas). Cada proveedor / cliente queda como un grupo individual.
-//   - Los grupos no-combustible se ordenan por total desc.
-// `costCentersById` es opcional (los printables/export sin este mapa siguen
-// funcionando, solo caen a agrupar todo lo no-combustible por proveedor).
-// Combustibles siempre gana — es automático y no se puede pisar con un tag
-// manual, para no volver confusa la regla de agrupación.
+// Agrupa docs por centro de costo. Orden de los grupos:
+//   - Combustibles (cualquier doc con `otroImpuestoCategory === "combustible"`):
+//     un grupo único "⛽ COMBUSTIBLES", siempre primero.
+//   - Centros de costo manuales (`costCenterId` presente en `costCentersById`).
+//   - El resto, un grupo por contraparte (rutEmisor en compras, rutReceptor en
+//     ventas).
+// Los grupos manuales y los de contraparte se ordenan por |total| desc; los
+// docs de cada grupo, por fecha ascendente. Totales con signo (las NC restan).
+// Sin `costCentersById`, todo lo que no es combustible se agrupa por
+// contraparte. Combustibles siempre gana: un doc de combustible no se puede
+// mover a un centro manual.
 function groupDocsByCostCenter(docs, kind, costCentersById = new Map()) {
   const fuel = { key: "__combustibles__", isFuel: true, razon: "Combustibles", rut: "", docs: [], neto: 0, iva: 0, total: 0 };
   const manualGroups = new Map();
@@ -4205,6 +4187,9 @@ function groupDocsByCostCenter(docs, kind, costCentersById = new Map()) {
   return [...(fuel.docs.length > 0 ? [fuel] : []), ...manual, ...others];
 }
 
+// Printable plano del listado de Facturas o Compras. Respeta los filtros y el
+// orden que ya trae `docs` (el llamador pasa `sortedFiltered`). Las NC van en
+// rojo y con signo "−" en los montos, como en el listado en pantalla.
 const PrintableDocList = forwardRef(function PrintableDocList(
   { kind, docs, company, periodo, totals, groupByCostCenter = false, costCentersById = new Map(), showEstado = true },
   ref,
@@ -4214,11 +4199,11 @@ const PrintableDocList = forwardRef(function PrintableDocList(
   const contraLabel = kind === "venta" ? "Cliente" : "Proveedor";
   const groups = groupByCostCenter ? groupDocsByCostCenter(docs, kind, costCentersById) : null;
 
-  // Columnas: en venta ocultamos Estado (sin control real); el colSpan del
-  // TOTAL al pie se ajusta dinámicamente.
+  // Columnas: Estado solo va en ventas (en compras no hay control de pago);
+  // los colSpan dependen de eso.
   const colCount = showEstado ? 10 : 9;
 
-  // Render de las celdas de un doc (reutilizado en flat y grouped).
+  // Fila de un doc, compartida por la vista plana y la agrupada.
   const renderDocRow = (d) => {
     const isNC = CREDIT_NOTE_TYPES.has(Number(d.tipo));
     const sign = isNC ? "−" : "";
@@ -4309,7 +4294,7 @@ const PrintableDocList = forwardRef(function PrintableDocList(
                     </span>
                   )}
                   <span style={{ marginLeft: 8, fontWeight: 400, color: "#555" }}>
-                    · {g.docs.length} doc{g.docs.length === 1 ? "" : "s"}
+                    · {g.docs.length} documento{g.docs.length === 1 ? "" : "s"}
                   </span>
                 </td>
               </tr>
@@ -4338,6 +4323,9 @@ const PrintableDocList = forwardRef(function PrintableDocList(
   );
 });
 
+// Printable de una sola contraparte (resumen individual). Se renderiza uno por
+// grupo, fuera de pantalla, para copiar, descargar o imprimir cada uno por
+// separado.
 const PrintableRetencionesGroup = forwardRef(function PrintableRetencionesGroup(
   { group, company, periodo },
   ref,
@@ -4658,8 +4646,8 @@ function PaymentsSection({ dteDoc, payments, amountPaid, balance, onSavePayments
   const [adding, setAdding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
-  // Sugerir el monto en función del kind elegido — UX rápida para los casos
-  // típicos (saldo completo, neto, IVA). El usuario puede sobreescribir.
+  // Sugiere el monto según el kind elegido (saldo completo, neto, IVA); el
+  // usuario lo puede cambiar.
   const suggestAmount = (kind) => {
     if (kind === "total") return Math.max(0, total - amountPaid);
     if (kind === "neto") return Number(dteDoc?.neto) || 0;
@@ -4691,7 +4679,7 @@ function PaymentsSection({ dteDoc, payments, amountPaid, balance, onSavePayments
       );
       return;
     }
-    if (!newPay.date) { toast.warning("Tenés que indicar la fecha del pago."); return; }
+    if (!newPay.date) { toast.warning("Tienes que indicar la fecha del pago."); return; }
     const entry = {
       id: newPaymentId(),
       date: newPay.date,
@@ -4879,10 +4867,10 @@ function PaymentsSection({ dteDoc, payments, amountPaid, balance, onSavePayments
   );
 }
 
-// Modal de detalle de un DTE — muestra todos los campos disponibles + permite
-// editar las notas (la "glosa" interna del usuario, ya que el SII RCV CSV no
-// trae los items de la factura). Para NCs muestra un campo extra opcional
-// para registrar manualmente la factura referenciada (tipo + folio).
+// Modal de detalle de un DTE: muestra los campos disponibles y permite editar
+// el estado, el centro de costo, los pagos y las notas (la "glosa" interna,
+// porque el CSV del RCV no trae los ítems de la factura). Las NC no tienen
+// pagos; en sus notas se anota la factura que anulan.
 function DocDetailModal({ dteDoc, candidateNcs = [], costCenters = [], onClose, onSaveNotes, onSetStatus, onSavePayments, onSetCostCenter }) {
   const [notes, setNotes] = useState(dteDoc.notes || "");
   const [dirty, setDirty] = useState(false);
@@ -4958,7 +4946,7 @@ function DocDetailModal({ dteDoc, candidateNcs = [], costCenters = [], onClose, 
               ))}
             </div>
             <div className="mt-1 text-[10px] text-[var(--color-muted)]">
-              Match por contraparte + total exacto. Verificá antes de aceptar — puede haber falso positivo.
+              Coincidencia por contraparte y total exacto. Verifica antes de aceptar — puede haber falso positivo.
             </div>
           </div>
         )}
@@ -5055,7 +5043,7 @@ function DocDetailModal({ dteDoc, candidateNcs = [], costCenters = [], onClose, 
             placeholder={
               isNC
                 ? 'Detalle libre. Ej: "Anula Factura 33-1234 por error en monto"'
-                : 'Detalle libre. El SII no trae la glosa en el CSV — usá este campo para registrar items, condiciones, OC, etc.'
+                : 'Detalle libre. El SII no trae la glosa en el CSV — usa este campo para registrar ítems, condiciones, OC, etc.'
             }
             className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
           />
@@ -5074,9 +5062,9 @@ function DocDetailModal({ dteDoc, candidateNcs = [], costCenters = [], onClose, 
   );
 }
 
-// Chip pequeño que muestra el "Otro Impuesto" detectado del SII. Cuando el
-// código es de combustible lo destacamos en rojo + emoji ⛽ para que se
-// identifique de un pantallazo. Si no hay código, no renderiza nada.
+// Chip pequeño que muestra el "Otro Impuesto" detectado del SII. Si el código
+// es de combustible va en rojo y con ⛽, para identificarlo de un vistazo. Sin
+// código no renderiza nada.
 //
 // En las retenciones de cambio de sujeto el chip agrega la **tasa**, porque
 // esa es la pregunta real frente a una factura de compra: no "hay retención"
@@ -5107,9 +5095,8 @@ function OtroImpChip({ code, tasa }) {
   );
 }
 
-// Header de tabla clickeable con indicador de orden actual. Mantiene el
-// estilo del thead original — solo agrega cursor + flechita ↑/↓ cuando es la
-// columna activa.
+// Encabezado de tabla clickeable con indicador de orden: agrega el cursor y
+// una flecha ▲/▼ en la columna activa.
 function SortHeader({ sortKey, sortBy, onToggle, align = "left", children }) {
   const active = sortBy.key === sortKey;
   const arrow = active ? (sortBy.dir === "asc" ? "▲" : "▼") : "";
@@ -5147,10 +5134,9 @@ function SummaryCard({ label, value, highlight = false, warning = false, subtle 
   );
 }
 
-// Modal intermedio: confirma empresa + abre file picker (multi-archivo).
-// El usuario puede subir varios archivos en una sola operación — ventas y
-// compras mezcladas, varios meses, lo que sea. Cada archivo se parsea
-// independiente y queda como entrada del preview.
+// Modal intermedio: confirma la empresa y abre el selector de archivos.
+// Acepta varios archivos a la vez (ventas y compras mezcladas, varios meses);
+// cada uno se parsea por separado y queda como una entrada del preview.
 function CompanySelectAndPickModal({ companies, companyId, onChange, onFilesPick, onCancel }) {
   const ref = useRef(null);
   return (
@@ -5206,21 +5192,22 @@ function CompanySelectAndPickModal({ companies, companyId, onChange, onFilesPick
           </select>
         </div>
         <div className="rounded-md bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-muted)] space-y-1">
-          <div>Podés seleccionar <b>varios archivos a la vez</b> (Ctrl/Cmd+click en el picker).</div>
-          <div>Cada archivo se identifica como <b>ventas</b> o <b>compras</b> auto mirando los encabezados.</div>
-          <div>Si detectamos un RUT en el nombre del archivo distinto al de la empresa, te lo avisamos en el preview.</div>
-          <div>Reimportar un período reemplaza completo (docs huérfanos del mismo mes se eliminan).</div>
+          <div>Puedes seleccionar <b>varios archivos a la vez</b> (Ctrl/Cmd+click en el selector de archivos).</div>
+          <div>Cada archivo se identifica como <b>ventas</b> o <b>compras</b> automáticamente según sus encabezados.</div>
+          <div>Si detectamos un RUT en el nombre del archivo distinto al de la empresa, te lo avisamos en la vista previa.</div>
+          <div>Reimportar un período reemplaza completo (los documentos huérfanos del mismo mes se eliminan).</div>
         </div>
       </div>
     </Modal>
   );
 }
 
-// Modal con preview de N archivos parseados. Muestra:
-//   - banner de empresa elegida
+// Modal con el preview de los archivos parseados. Muestra:
+//   - banner de la empresa elegida
 //   - stats agregados (sumando todos los archivos no excluidos)
-//   - lista de archivos con warnings de mismatch + checkbox para excluir
-//   - sample de las primeras filas del primer archivo incluido
+//   - lista de archivos con aviso de RUT distinto + checkbox para excluir
+//   - conteo por tipo de DTE
+//   - muestra de las primeras filas del primer archivo incluido
 function ImportPreviewModal({ preview, existingIds, company, busy, onToggleFile, onConfirm, onCancel }) {
   const { files } = preview;
   const included = files.filter((f) => !f.excluded && !f.parseFailed);
@@ -5264,7 +5251,7 @@ function ImportPreviewModal({ preview, existingIds, company, busy, onToggleFile,
             disabled={busy || agg.count === 0}
             className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
           >
-            {busy ? "Importando..." : `Confirmar (${agg.count} doc${agg.count === 1 ? "" : "s"} de ${included.length} archivo${included.length === 1 ? "" : "s"})`}
+            {busy ? "Importando..." : `Confirmar (${agg.count} documento${agg.count === 1 ? "" : "s"} de ${included.length} archivo${included.length === 1 ? "" : "s"})`}
           </button>
         </>
       }
@@ -5287,7 +5274,6 @@ function ImportPreviewModal({ preview, existingIds, company, busy, onToggleFile,
         <SummaryCard label="Sobreescriben" value={fmtNumber(agg.dupCount)} />
       </div>
 
-      {/* Lista de archivos */}
       <div className="mt-3 space-y-1.5">
         <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">
           Archivos ({files.length})
@@ -5323,7 +5309,7 @@ function ImportPreviewModal({ preview, existingIds, company, busy, onToggleFile,
         </div>
       )}
 
-      {/* Sample del primer archivo incluido */}
+      {/* Muestra del primer archivo incluido */}
       {sample.length > 0 && (
         <div className="mt-3">
           <div className="mb-1 text-[10px] uppercase tracking-wide text-[var(--color-muted)]">
@@ -5365,9 +5351,9 @@ function ImportPreviewModal({ preview, existingIds, company, busy, onToggleFile,
   );
 }
 
-// Fila por archivo en el preview multi-file: muestra nombre, kind detectada,
-// cantidad de docs, warning de mismatch de RUT, errores de parsing y checkbox
-// para excluir del import.
+// Fila de un archivo en el preview: nombre, kind detectado, cantidad de docs,
+// aviso de RUT distinto, errores de parseo y checkbox para excluirlo del
+// import.
 function FileRow({ file, existingIds, companyRut, onToggle }) {
   const dupCount = file.records.filter((r) => existingIds.has(r.id)).length;
   const newCount = file.records.length - dupCount;
@@ -5408,7 +5394,7 @@ function FileRow({ file, existingIds, companyRut, onToggle }) {
         )}
         {!isFailed && (
           <span className="text-xs tabular-nums">
-            {fmtNumber(file.records.length)} doc{file.records.length === 1 ? "" : "s"}
+            {fmtNumber(file.records.length)} documento{file.records.length === 1 ? "" : "s"}
             {dupCount > 0 && (
               <span className="ml-1 text-[var(--color-warning)]">({dupCount} sobreescriben)</span>
             )}
@@ -5430,12 +5416,12 @@ function FileRow({ file, existingIds, companyRut, onToggle }) {
       )}
       {showRutWarning && !file.excluded && (
         <div className="ml-6 text-[11px] font-medium text-[var(--color-warning)]">
-          ⚠ El archivo parece pertenecer al RUT <span className="font-mono">{file.detectedRut}</span>, distinto del seleccionado (<span className="font-mono">{normalizeRut(companyRut || "")}</span>). Excluí este archivo si fue un error.
+          ⚠ El archivo parece pertenecer al RUT <span className="font-mono">{file.detectedRut}</span>, distinto del seleccionado (<span className="font-mono">{normalizeRut(companyRut || "")}</span>). Excluye este archivo si fue un error.
         </div>
       )}
       {isFailed && (
         <div className="ml-6 text-[11px] font-medium text-[var(--color-danger)]">
-          ✕ No se pudo parsear: {file.errors[0]?.message || "error desconocido"}
+          ✕ No se pudo leer: {file.errors[0]?.message || "error desconocido"}
         </div>
       )}
       {!isFailed && file.errors.length > 0 && (
@@ -5460,7 +5446,7 @@ function CompaniesModal({ companies, onClose, onChanged }) {
 
   const save = async () => {
     if (!editing.rut.trim() || !editing.razonSocial.trim()) {
-      toast.warning("Completá RUT y Razón Social.");
+      toast.warning("Completa RUT y Razón Social.");
       return;
     }
     setBusy(true);
@@ -5519,7 +5505,7 @@ function CompaniesModal({ companies, onClose, onChanged }) {
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">Alias (display)</label>
+            <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">Alias (nombre visible)</label>
             <input
               value={editing.alias}
               onChange={(e) => setEditing({ ...editing, alias: e.target.value })}
@@ -5527,7 +5513,7 @@ function CompaniesModal({ companies, onClose, onChanged }) {
               className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
             />
             <p className="mt-1 text-[10px] text-[var(--color-muted)]">
-              Si lo dejás vacío, se usa la razón social.
+              Si lo dejas vacío, se usa la razón social.
             </p>
           </div>
           <div className="flex justify-end gap-2 pt-2">
@@ -5619,10 +5605,10 @@ function CompaniesModal({ companies, onClose, onChanged }) {
   );
 }
 
-// Modal con todas las facturas pendientes (cualquier período) de la empresa
-// seleccionada. Las separa en tres bloques (factura completa / abono parcial /
-// IVA pendiente) con subtotales y un total general. Toolbar de export idéntico
-// al de Retenciones: Copiar / PNG / Imprimir / XLSX.
+// Modal con todas las facturas de venta pendientes (cualquier período) de la
+// empresa seleccionada. Las separa en tres bloques (factura completa / abono
+// parcial / IVA pendiente) con subtotales y un total general. Toolbar de
+// export idéntica a la de Retenciones: Copiar / PNG / Imprimir / XLSX.
 function PendientesModal({ items, totals, company, onClose, onSelectDoc }) {
   const toast = useToast();
   const printRef = useRef(null);
@@ -5699,7 +5685,7 @@ function PendientesModal({ items, totals, company, onClose, onSelectDoc }) {
       const ExcelJS = (await import("exceljs")).default || (await import("exceljs"));
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet("Pendientes");
-      ws.getColumn(1).width = 6;  // col A vacía half-width (convención)
+      ws.getColumn(1).width = 6;  // col A vacía de medio ancho (convención)
       ws.getColumn(2).width = 12; // Fecha
       ws.getColumn(3).width = 26; // Documento
       ws.getColumn(4).width = 10; // Folio
@@ -5734,7 +5720,7 @@ function PendientesModal({ items, totals, company, onClose, onSelectDoc }) {
       for (const cat of catOrder) {
         const list = byCategory[cat];
         if (list.length === 0) continue;
-        // Sub-header por categoría
+        // Subencabezado por categoría
         const meta = PENDIENTE_CATS[cat];
         const subHexClean = meta.hex.replace("#", "");
         const argb = `FF${subHexClean.toUpperCase()}`;
@@ -5767,7 +5753,7 @@ function PendientesModal({ items, totals, company, onClose, onSelectDoc }) {
             c.value = v;
             c.alignment = { horizontal: j <= 4 ? "left" : "right" };
             c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
-            if (j === 7) c.font = { bold: true }; // Pendiente bold
+            if (j === 7) c.font = { bold: true }; // Pendiente en negrita
             if (j >= 5) c.numFmt = '"$"#,##0';
           });
           r++;
@@ -5786,10 +5772,9 @@ function PendientesModal({ items, totals, company, onClose, onSelectDoc }) {
         ws.getCell(r, 9).alignment = { horizontal: "right" };
         ws.getCell(r, 9).numFmt = '"$"#,##0';
         r++;
-        r++; // gap
+        r++; // fila en blanco
       }
 
-      // Total general
       ws.getCell(r, 2).value = "TOTAL PENDIENTE";
       ws.mergeCells(r, 2, r, 8);
       for (let col = 2; col <= 9; col++) {
@@ -5943,7 +5928,7 @@ function PendientesModal({ items, totals, company, onClose, onSelectDoc }) {
             </table>
           </div>
 
-          {/* Off-screen printable — capturado por html-to-image / print. */}
+          {/* Printable fuera de pantalla para html-to-image e impresión. */}
           <div style={{ position: "absolute", left: -99999, top: 0, pointerEvents: "none" }} aria-hidden>
             <PrintablePendientes
               ref={printRef}
@@ -5959,9 +5944,9 @@ function PendientesModal({ items, totals, company, onClose, onSelectDoc }) {
   );
 }
 
-// Printable de pendientes — limpio, sin controles. Agrupa por categoría con
-// sub-header coloreado y subtotal por categoría. Mismo aesthetic Excel-style
-// del resto de los exports del proyecto.
+// Printable de pendientes, sin controles. Agrupa por categoría con un
+// subencabezado de color y un subtotal por categoría, con el mismo estilo
+// tipo Excel del resto de los exports del proyecto.
 const PrintablePendientes = forwardRef(function PrintablePendientes(
   { items, byCategory, totals, company },
   ref,

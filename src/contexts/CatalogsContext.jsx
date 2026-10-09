@@ -29,7 +29,7 @@ export function CatalogsProvider({ children }) {
       const cur = catalogs[name] || [];
       const trimmed = label.trim();
       if (!trimmed) return null;
-      // Reuse existing entry if same label (case-insensitive)
+      // Si ya hay una entrada con la misma etiqueta (sin distinguir mayúsculas), devuelve esa.
       const existing = cur.find((e) => e.label.toLowerCase() === trimmed.toLowerCase());
       if (existing) return existing.value;
       const nextValue = cur.reduce((m, e) => Math.max(m, e.value), -1) + 1;

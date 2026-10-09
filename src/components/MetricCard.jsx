@@ -1,7 +1,5 @@
-// Tarjeta de KPI. La misma tarjeta estaba reimplementada casi igual en cuatro
-// pantallas (Facturacion `SummaryCard`, Payroll `MetricCard`, Calendar `Stat`
-// y las métricas de CycleDetail); esta es la versión compartida, con la API de
-// la de Facturación que era la más completa.
+// Tarjeta de KPI, con las mismas props que `SummaryCard` de Facturación más
+// `hint` y `title`.
 export default function MetricCard({
   label,
   value,

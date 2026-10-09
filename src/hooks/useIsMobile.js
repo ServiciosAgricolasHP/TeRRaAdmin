@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-export const MOBILE_BREAKPOINT = 768; // px — matches Tailwind's md
+export const MOBILE_BREAKPOINT = 768; // px; coincide con `md` de Tailwind
 export function useIsMobile() {
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== "undefined" && window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`).matches,

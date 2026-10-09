@@ -51,7 +51,7 @@ Período de trabajo en una subfaena. Contiene labores anidadas y la matriz de pr
   - `rut`, `name`
   - `isTemp?: bool` — trabajador temporal (sin RUT real); convertirlo via "Asignar RUT"
   - `groupLeader?: string` — solo para temps (los reales lo tienen en `worker.groupLeader`)
-  - `monthly?: bool` — sueldo mensual: las celdas pasan a checkbox de asistencia, workdays con `amount: 0` y `attendanceOnly: true`, excluidos de la nómina, badge "M"
+  - `monthly?: bool` — sueldo mensual: las celdas pasan a checkbox de asistencia, workdays con `amount: 0` y `attendanceOnly: true`, excluidos de la nómina, badge "M". Se usa en labores al día (`main`, `supervision`, `extra`) y en `tratoHE`
 - `baseDayDefault?`, `bonusManejo?`, `bonusSupervision?`, `overtimeRate?`
 
 ### `laborGroups`
@@ -470,7 +470,7 @@ Auditoría — una fila por mutación.
 | `uid`, `email` | string? | quién |
 | `action` | `"create"` \| `"update"` \| `"delete"` | |
 | `entity`, `entityId` | string | qué |
-| `before` | objeto? | solo en `delete` (snapshot completo) |
+| `before` | objeto? | solo en `delete` (snapshot completo). Borrar un documento que no existe no deja log |
 | `after` | objeto? | solo en `create` (snapshot completo) |
 | `changes` | `{ [campo]: { from, to } }`? | solo en `update` — **es el diff, no el doc entero** |
 | `meta` | objeto? | referencias cruzadas denormalizadas + contexto extra (ver abajo) |

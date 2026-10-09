@@ -10,17 +10,15 @@ import {
   diffLabelHint,
   resolveEntityLabel,
 } from "../utils/auditLabels";
+import { localIsoDate } from "../utils/dates";
 
-// Auditoría con sesionizado idle-based. Fetcheamos los logs del rango elegido,
-// los agrupamos por usuario y armamos "sesiones" cerrando cada vez que el gap
-// entre acciones consecutivas del mismo usuario supera `gapMinutes`.
+// Auditoría por sesiones de inactividad: lee los logs del rango elegido, los
+// agrupa por usuario y corta una sesión cada vez que la pausa entre dos
+// acciones seguidas del mismo usuario supera `gapMinutes`. Dos pestañas del
+// mismo usuario a la vez se ven como una sola sesión.
 //
-// Limitación aceptada: si el mismo usuario tiene 2 pestañas abiertas al mismo
-// tiempo, se ven como una sola sesión. Para uso interno es aceptable.
-//
-// Costo: 1 read por log en el rango (Firestore no cobra por doc sino por
-// query, pero un rango grande puede pasar 10k docs y salir caro). Por eso el
-// rango arranca acotado y hay un hard cap de 5000 logs.
+// Cuesta 1 lectura por log del rango; por eso el rango arranca acotado y la
+// consulta tiene un tope de HARD_CAP logs.
 
 const HARD_CAP = 5000;
 
@@ -29,15 +27,15 @@ const HARD_CAP = 5000;
 // ampliar el rango queda como acción explícita.
 const DIAS_POR_DEFECTO = 3;
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = () => localIsoDate();
 const daysAgoISO = (n) => {
   const d = new Date();
   d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
+  return localIsoDate(d);
 };
 
-// Firestore Timestamp → JS Date. Si viene `null` (log recién escrito antes de
-// que el server settleee el `serverTimestamp`), asumimos ahora.
+// Timestamp de Firestore → Date. Si viene `null` (log recién escrito cuyo
+// `serverTimestamp` todavía no resuelve el servidor), usa la hora actual.
 const toDate = (ts) => {
   if (!ts) return new Date();
   if (typeof ts.toDate === "function") return ts.toDate();
@@ -118,9 +116,8 @@ function EntityLabel({ entity, entityId, snapshot, changes }) {
   );
 }
 
-// Diccionario de campos comunes a español. Fallback: separa camelCase en
-// palabras ("groupLeader" → "Group Leader") — no es perfecto pero es mejor
-// que mostrar la key cruda.
+// Nombres en español de los campos comunes. Un campo que no está acá se
+// muestra con el camelCase separado en palabras ("groupLeader" → "Group Leader").
 const FIELD_LABELS = {
   name: "Nombre", label: "Etiqueta", rut: "RUT", amount: "Monto", total: "Total",
   bonus: "Bono", advance: "Anticipo", status: "Estado", active: "Activo",
@@ -232,9 +229,8 @@ function FieldBlock({ title, data, kind }) {
   );
 }
 
-// Convierte un rango JS Date en JS Date (inclusive) y arma la query. Devuelve
-// los logs ordenados por timestamp asc (más viejo primero) — más cómodo para
-// sesionizar.
+// Logs del rango [fromDate, toDate] (inclusive), ordenados por timestamp
+// ascendente, con tope HARD_CAP.
 async function fetchLogsInRange(fromDate, toDate) {
   const raw = await logsService.list({
     wheres: [
@@ -251,8 +247,8 @@ async function fetchLogsInRange(fromDate, toDate) {
 // array de sesiones ordenadas por start desc (más reciente primero).
 function sessionize(logs, gapMinutes) {
   const gapMs = gapMinutes * 60 * 1000;
-  // Agrupamos primero por email (fallback uid, fallback "unknown"). Dentro
-  // de cada grupo caminamos cronológicamente.
+  // Agrupa por email (o uid, o "unknown") y recorre cada grupo en orden
+  // cronológico.
   const byUser = new Map();
   for (const log of logs) {
     const key = log.email || log.uid || "unknown";
@@ -266,7 +262,7 @@ function sessionize(logs, gapMinutes) {
     for (const log of userLogs) {
       const t = toDate(log.timestamp);
       if (!current || t - current.endDate > gapMs) {
-        // Cerrar la anterior, arrancar una nueva.
+        // Cierra la sesión anterior y abre una nueva.
         if (current) sessions.push(current);
         current = {
           userKey,
@@ -284,7 +280,7 @@ function sessionize(logs, gapMinutes) {
     if (current) sessions.push(current);
   }
   sessions.sort((a, b) => b.startDate - a.startDate);
-  // Agregamos resumen por entidad
+  // Resumen por entidad y por acción de cada sesión.
   return sessions.map((s, idx) => {
     const byEntity = new Map();
     const byAction = { create: 0, update: 0, delete: 0 };
@@ -304,14 +300,10 @@ function sessionize(logs, gapMinutes) {
   });
 }
 
-// Historial "satélite": logs que pertenecen conceptualmente a un registro pero
-// se guardan bajo otra entidad, atribuidos vía `meta`. Sin esto, elegir un
-// transportista en la auditoría solo muestra los cambios a su ficha (alias,
-// vehículos) y no lo que de verdad importa: sus vueltas y sus resúmenes.
-//
-// Limitación conocida: la atribución por `meta.carrierId` se agregó junto con
-// esta pantalla, así que los logs de transporte anteriores a ese cambio no la
-// tienen y no aparecen acá (los de la ficha del transportista sí, siempre).
+// Historial "satélite": logs de otra entidad que pertenecen a un registro y
+// se atribuyen vía `meta`: las jornadas y anticipos de un trabajador, las
+// vueltas y resúmenes de un transportista. Un log sin ese campo en `meta` no
+// aparece acá; los de la ficha del registro, siempre.
 const SATELLITE_ENTITIES = {
   worker: [
     { entity: "workday", field: "meta.workerRut" },
@@ -339,12 +331,10 @@ async function fetchSatelliteLogs(entityType, recordId) {
   return results.flat();
 }
 
-// Buscador dedicado: elegí un tipo de registro (Trabajador, Ciclo, Faena…),
-// buscá el específico por nombre/rut y traé TODO su historial de auditoría
-// sin importar el rango de fechas — es una query acotada a ese entityId
-// puntual (entity + entityId, sin orderBy para no pedir índice compuesto; se
-// ordena en el cliente), así que no hace falta el hard cap ni el filtro de
-// fecha de la vista sesionizada de más abajo.
+// Buscador por registro: se elige un tipo (Trabajador, Ciclo, Faena…), se
+// busca el registro por nombre o rut y se trae todo su historial, sin rango de
+// fechas ni tope. La consulta va acotada a entity + entityId, sin orderBy para
+// no pedir otro índice compuesto; se ordena en el cliente.
 function EntitySearchPanel() {
   const [advancesFor, setAdvancesFor] = useState(null);
   const [advanceItems, setAdvanceItems] = useState([]);
@@ -361,9 +351,8 @@ function EntitySearchPanel() {
 
   const meta = ENTITY_META[entityType];
 
-  // Trae el catálogo completo del tipo elegido (cacheado 10 min — son listas
-  // chicas: trabajadores, ciclos, faenas, etc.) para buscar/filtrar en el
-  // cliente a medida que se escribe.
+  // Trae el catálogo completo del tipo elegido (caché de 10 min) para
+  // filtrarlo en el cliente a medida que se escribe.
   useEffect(() => {
     setSelected(null);
     setRecordLogs(null);
@@ -410,13 +399,10 @@ function EntitySearchPanel() {
           ["entityId", "==", doc.id],
         ],
       });
-      // Algunas entidades no tienen catálogo propio para buscarlas por nombre
-      // (un trabajador tiene N jornadas; un transportista N vueltas y N
-      // resúmenes). Para esas, el log guarda el "dueño" denormalizado en
-      // `meta` y lo levantamos acá como historial satélite del registro
-      // elegido:
-      //   - worker    → workday        vía meta.workerRut (firestoreBase.js)
-      //   - carrier   → transport,     vía meta.carrierId (transportsService.js)
+      // Suma el historial satélite: logs de entidades sin catálogo propio
+      // cuyo "dueño" va denormalizado en `meta`:
+      //   - worker    → workday, advance        vía meta.workerRut (firestoreBase.js)
+      //   - carrier   → transport,              vía meta.carrierId (transportsService.js)
       //                 transportPayment
       const satelliteRows = await fetchSatelliteLogs(entityType, doc.id);
       const merged = [...rows, ...satelliteRows];
@@ -441,7 +427,7 @@ function EntitySearchPanel() {
           <h2 className="text-sm font-semibold">🔍 Buscar por registro</h2>
           <p className="text-xs text-[var(--color-muted)]">
             Ver todo el historial de un registro (trabajador, ciclo, faena, transportista…) — sin límite de fecha.
-            Al buscar un trabajador se suman los cambios en sus jornadas (workdays); al buscar un transportista, los cambios en sus vueltas y en sus resúmenes de pago.
+            Al buscar un trabajador se suman los cambios en sus jornadas; al buscar un transportista, los cambios en sus vueltas y en sus resúmenes de pago.
           </p>
         </div>
         <span className="text-[var(--color-muted)]">{open ? "▾" : "▸"}</span>
@@ -704,13 +690,13 @@ export default function Audit() {
         </div>
         {ranAt && !loading && (
           <p className="mt-3 text-xs text-[var(--color-muted)]">
-            {fmtNumber(logs.length)} log{logs.length === 1 ? "" : "s"} leídos ·{" "}
+            {fmtNumber(logs.length)} registro{logs.length === 1 ? "" : "s"} leído{logs.length === 1 ? "" : "s"} ·{" "}
             {fmtNumber(sessions.length)} sesión{sessions.length === 1 ? "" : "es"} ·{" "}
             {fmtNumber(totalActions)} acciones ·{" "}
             {uniqueUsers} usuario{uniqueUsers === 1 ? "" : "s"} distinto{uniqueUsers === 1 ? "" : "s"}
             {capReached && (
               <span className="ml-2 rounded bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-[var(--color-danger)]">
-                ⚠ tope de {HARD_CAP} logs alcanzado — reducí el rango
+                ⚠ tope de {HARD_CAP} registros alcanzado — reduce el rango
               </span>
             )}
           </p>
@@ -803,10 +789,9 @@ function SessionDetail({ logs }) {
   );
 }
 
-// Tabla de logs reusable — la usa tanto SessionDetail (dentro de una sesión
-// ya sesionizada) como EntitySearchPanel (historial completo de un registro
-// puntual, sin sesionizar). Al hacer click en un row se expande el detalle
-// (changes/before/after/meta) ya traducido a tablas legibles.
+// Tabla de logs que usan SessionDetail (las acciones de una sesión) y
+// EntitySearchPanel (el historial completo de un registro). Click en una fila
+// expande el detalle (changes/before/after/meta) en tablas legibles.
 function LogsTable({ logs }) {
   const [openIdx, setOpenIdx] = useState(null);
   return (

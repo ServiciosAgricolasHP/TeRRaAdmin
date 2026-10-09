@@ -17,12 +17,13 @@ import {
 import { faenasService, subfaenasService, cyclesService } from "../services";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useToast } from "../contexts/ToastContext";
+import { localIsoDate } from "../utils/dates";
 
 const DEFAULT_HISTORY_DAYS = 90;
 const isoDateNDaysAgo = (n) => {
   const d = new Date();
   d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
+  return localIsoDate(d);
 };
 
 const fmtCurrency = (v) =>
@@ -40,11 +41,9 @@ const TABS = [
 
 export default function Transports() {
   const [tab, setTab] = useState("carriers");
-  // Deep-link puntual desde "Transportistas" → "Vueltas": guarda a qué
-  // transportista saltar y se consume una sola vez al montar TripsTab (ver
-  // su prop `initialCarrierId`). Cualquier click directo en un tab del nav
-  // (incluido "Vueltas") lo limpia, para que no quede un filtro fantasma si
-  // el usuario vuelve a la tab por su cuenta más tarde.
+  // Transportista al que salta "Vueltas" desde una tarjeta de "Transportistas".
+  // TripsTab lo lee una sola vez al montar (`initialCarrierId`); un click en
+  // cualquier pestaña del nav lo limpia.
   const [tripsCarrierPreset, setTripsCarrierPreset] = useState(null);
 
   const openCarrierTrips = (carrier) => {
@@ -86,7 +85,7 @@ export default function Transports() {
 }
 
 // ============================================================
-// CARRIERS TAB
+// PESTAÑA TRANSPORTISTAS
 // ============================================================
 
 function CarriersTab({ onViewTrips }) {
@@ -191,7 +190,7 @@ function CarriersTab({ onViewTrips }) {
 
   return (
     <div>
-      {/* Tira de totales generales: resumenes pendientes y adeudado global */}
+      {/* Totales generales: adeudado, resúmenes pendientes y vueltas sueltas */}
       {!metricsLoading && totalsAll.owed > 0 && (
         <div className="mb-3 grid grid-cols-3 gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2.5 text-xs">
           <div>
@@ -266,8 +265,8 @@ function CarriersTab({ onViewTrips }) {
             const hasDebt = owed > 0;
             const isOwn = c.type === "own";
             const isInactive = c.active === false;
-            // Banda superior con color según tipo (propio = verde acento,
-            // contratado = ámbar). Se atenúa para inactivos.
+            // Banda superior según tipo: propio = color de acento, contratado =
+            // ámbar. Los inactivos van en gris.
             const bandColor = isOwn ? "var(--color-accent)" : "#d97706";
             const bandSoft = isOwn ? "var(--color-accent-soft)" : "#fef3c7";
             return (
@@ -305,7 +304,7 @@ function CarriersTab({ onViewTrips }) {
                     </span>
                   </div>
 
-                  {/* Grilla de métricas: adeudado destacado, resumenes y vueltas */}
+                  {/* Métricas: adeudado destacado, resúmenes y vueltas */}
                   <div className="mt-2.5 grid grid-cols-3 gap-1.5">
                     <div className={`rounded-md p-1.5 ${hasDebt ? "bg-[var(--color-warning-soft)]" : "bg-[var(--color-surface-2)]"}`}>
                       <div className="text-[9px] uppercase tracking-wide text-[var(--color-muted)]">Adeudado</div>
@@ -329,7 +328,7 @@ function CarriersTab({ onViewTrips }) {
 
                   {!isOwn && c.defaultRate > 0 && (
                     <div className="mt-2 text-[10px] text-[var(--color-muted)]">
-                      Tarifa default · <span className="tabular-nums">{fmtCurrency(c.defaultRate)}</span>
+                      Tarifa por defecto · <span className="tabular-nums">{fmtCurrency(c.defaultRate)}</span>
                     </div>
                   )}
 
@@ -465,7 +464,7 @@ function CarrierEditModal({ open, onClose, carrier, onSave }) {
           options={CARRIER_TYPES.map((t) => ({ value: t.value, label: t.label }))}
         />
         {type !== "own" && (
-          <TextField label="Tarifa default" type="number" value={defaultRate} onChange={setDefaultRate} />
+          <TextField label="Tarifa por defecto" type="number" value={defaultRate} onChange={setDefaultRate} />
         )}
         <div className="col-span-2">
           <TextField label="Notas" value={notes} onChange={setNotes} />
@@ -530,7 +529,7 @@ function CarrierEditModal({ open, onClose, carrier, onSave }) {
 }
 
 // ============================================================
-// TRIPS TAB
+// PESTAÑA VUELTAS
 // ============================================================
 
 function TripsTab({ initialCarrierId = null }) {
@@ -542,20 +541,16 @@ function TripsTab({ initialCarrierId = null }) {
   const [faenas, setFaenas] = useState([]);
   const [subfaenas, setSubfaenas] = useState([]);
   const [loading, setLoading] = useState(true);
-  // `initialCarrierId` llega una sola vez al montar (deep-link desde
-  // "Transportistas" → click en un transportista), TripsTab se remonta
-  // entero cada vez que se cambia de tab así que alcanza con leerlo en el
-  // init perezoso — no hace falta sincronizarlo con un efecto.
+  // `initialCarrierId` se lee solo al montar: TripsTab se vuelve a montar cada
+  // vez que se cambia de pestaña.
   const [filter, setFilter] = useState({ carrierId: initialCarrierId || "", status: "", cycleId: "", faenaId: "" });
   const [sinceDate, setSinceDate] = useState(() => isoDateNDaysAgo(DEFAULT_HISTORY_DAYS));
   const [showHistoric, setShowHistoric] = useState(false);
-  // Filtro adicional de fecha "hasta" (client-side, no dispara re-fetch) +
-  // orden de las tablas por columna — mismas funcionalidades que tenía el
-  // modal por transportista que se fusionó acá.
+  // Fecha "hasta" (filtra en el cliente, no vuelve a leer) y orden por columna.
   const [dateTo, setDateTo] = useState("");
   const [sortBy, setSortBy] = useState("date");
   const [sortDir, setSortDir] = useState("desc");
-  const [editing, setEditing] = useState(null); // trip object o null
+  const [editing, setEditing] = useState(null); // vuelta en edición, o null
   const [confirmDel, setConfirmDel] = useState(null);
 
   const reload = async () => {
@@ -592,9 +587,8 @@ function TripsTab({ initialCarrierId = null }) {
   const faenaById = useMemo(() => new Map(faenas.map((f) => [f.id, f])), [faenas]);
   const subfaenaById = useMemo(() => new Map(subfaenas.map((s) => [s.id, s])), [subfaenas]);
 
-  // El filtro de Ciclo anida bajo Faena: sin faena elegida no tiene sentido
-  // listar los 30+ ciclos activos de golpe, así que el select queda vacío
-  // (deshabilitado) hasta que se elija una faena.
+  // El filtro de Ciclo cuelga de la Faena: sin faena elegida, el select queda
+  // vacío y deshabilitado.
   const cycleOptionsForFilter = useMemo(() => {
     if (!filter.faenaId) return [];
     return cycles
@@ -615,9 +609,8 @@ function TripsTab({ initialCarrierId = null }) {
 
   const total = filtered.reduce((s, t) => s + (Number(t.amount) || 0), 0);
 
-  // El label del ciclo ya viene como "Faena/Subfaena/Ciclo N" — mostrado
-  // junto a la columna Faena/Subfaena repetiría el mismo nombre dos veces,
-  // así que acá solo interesa el tramo final.
+  // Último tramo del label "Faena/Subfaena/Ciclo N": la faena y la subfaena
+  // ya tienen su propia columna.
   const cycleShort = (cy) => {
     const l = cy?.label || "";
     const idx = l.lastIndexOf("/");
@@ -635,8 +628,7 @@ function TripsTab({ initialCarrierId = null }) {
     { v: "estado", l: "Estado" },
   ];
 
-  // Orden compartido por todas las tablas/tarjetas de transportista — un
-  // solo estado global en vez de uno por grupo, más simple y consistente.
+  // Un solo orden para las tablas y tarjetas de todos los transportistas.
   const sortTrips = (list) => {
     const keyOf = (t) => {
       switch (sortBy) {
@@ -695,9 +687,8 @@ function TripsTab({ initialCarrierId = null }) {
 
   const handleSaveTrip = async (form) => {
     if (!editing) return;
-    // Preservar contexto del ciclo/faena/subfaena originales (no se editan
-    // desde acá; si el usuario quiere mover la vuelta a otro ciclo lo hace
-    // desde el módulo del ciclo).
+    // Conserva el ciclo, la faena y la subfaena de la vuelta: desde acá no se
+    // editan.
     const payload = {
       ...form,
       cycleId: editing.cycleId || null,
@@ -726,10 +717,9 @@ function TripsTab({ initialCarrierId = null }) {
     }
   };
 
-  // Agrupado por transportista. Cada grupo trae el alias, el total, y el
-  // desglose pendiente/pagado para que el header sea informativo sin tener
-  // que expandir. Si la vuelta no tiene carrierId asociable se cae a un
-  // grupo "Sin transportista" para no perder esas filas.
+  // Vueltas agrupadas por transportista, con alias, total y desglose
+  // pendiente/pagado para el encabezado del grupo. Las vueltas sin carrierId
+  // van al grupo "Sin transportista".
   const byCarrier = useMemo(() => {
     const groups = new Map();
     for (const t of filtered) {
@@ -757,8 +747,7 @@ function TripsTab({ initialCarrierId = null }) {
     return [...groups.values()].sort((a, b) => a.alias.localeCompare(b.alias, "es"));
   }, [filtered, carrierById]);
 
-  // Set de transportistas expandidos. Default: VACÍO (todos colapsados).
-  // El usuario solicitó que arranquen colapsados así no se mezclan visualmente.
+  // Transportistas expandidos; arrancan todos colapsados.
   const [expandedCarriers, setExpandedCarriers] = useState(() => new Set());
   const toggleCarrier = (cid) => setExpandedCarriers((prev) => {
     const next = new Set(prev);
@@ -774,10 +763,8 @@ function TripsTab({ initialCarrierId = null }) {
   return (
     <>
     <div>
-      {/* Título de transportista: aparece tanto si se llegó acá por el
-          deep-link desde "Transportistas" (click en un transportista) como
-          si se eligió a mano en el filtro de abajo — mismo mecanismo, mismo
-          título que tenía el modal por transportista que se fusionó acá. */}
+      {/* Encabezado del transportista filtrado, se llegue desde una tarjeta de
+          "Transportistas" o desde el filtro. */}
       {filterCarrier && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-3 py-2 text-sm">
           <span className="font-medium text-[var(--color-accent)]">
@@ -899,8 +886,6 @@ function TripsTab({ initialCarrierId = null }) {
         </div>
       ) : (
         <>
-          {/* Controles expandir/colapsar todos. Útil cuando hay muchos
-              transportistas y querés abrirlos a todos de un toque. */}
           <div className="mb-2 flex items-center justify-end gap-1 text-xs">
             <span className="mr-1 text-[var(--color-muted)]">
               {byCarrier.length} transportista{byCarrier.length === 1 ? "" : "s"}
@@ -924,8 +909,7 @@ function TripsTab({ initialCarrierId = null }) {
           </div>
           <div className="space-y-2">
             {byCarrier.map((g) => {
-              // Cuando el filtro deja un único transportista visible (deep-link
-              // o elegido a mano) no tiene sentido que arranque colapsado.
+              // Con un solo transportista visible, el grupo va siempre expandido.
               const expanded = expandedCarriers.has(g.carrierId) || byCarrier.length === 1;
               const carrierObj = carrierById.get(g.carrierId);
               const isOwn = carrierObj?.type === "own";
@@ -1191,7 +1175,7 @@ function TripsTab({ initialCarrierId = null }) {
 }
 
 // ============================================================
-// PAYMENTS TAB
+// PESTAÑA RESÚMENES
 // ============================================================
 
 function PaymentsTab() {
@@ -1201,8 +1185,8 @@ function PaymentsTab() {
   const [faenas, setFaenas] = useState([]);
   const [subfaenas, setSubfaenas] = useState([]);
   const [cycles, setCycles] = useState([]);
-  // Quincenas (transportPayrolls): para mostrar a qué quincena pertenece
-  // cada resumen y eventualmente filtrar por "sin quincena".
+  // Quincenas (transportPayrolls): muestran a cuál pertenece cada resumen y
+  // alimentan el filtro por quincena.
   const [transportPayrolls, setTransportPayrolls] = useState([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -1210,12 +1194,12 @@ function PaymentsTab() {
   const [viewing, setViewing] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
   const [showHistoricPaid, setShowHistoricPaid] = useState(false);
-  // Forzar re-fetch del balance cuando una operación cambia el estado
-  // (marcar pagado, revertir, eliminar resumen, generar uno nuevo).
+  // Se incrementa para que el balance vuelva a leer después de generar,
+  // editar, pagar, revertir o eliminar un resumen.
   const [balanceVersion, setBalanceVersion] = useState(0);
 
-  // Filtros y ordenamiento de la lista de resúmenes. Persistidos en
-  // localStorage para que no se pierdan al navegar entre tabs.
+  // Filtros y orden de la lista de resúmenes; solo el orden se guarda en
+  // localStorage.
   const [search, setSearch] = useState("");
   const [filterFrom, setFilterFrom] = useState("");
   const [filterTo, setFilterTo] = useState("");
@@ -1260,9 +1244,9 @@ function PaymentsTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showHistoricPaid]);
 
-  // Reload compartido para ediciones que ocurren fuera del PaymentDetailModal
-  // (ej. editar/quitar vueltas desde la vista unificada) — misma lógica que
-  // el onChanged del detalle individual, pero sin refrescar `viewing`.
+  // Recarga después de ediciones hechas fuera de PaymentDetailModal (p. ej.
+  // editar o quitar vueltas desde la vista unificada). Igual que su
+  // onChanged, pero sin refrescar `viewing`.
   const refreshAfterEdit = async () => {
     await reload();
     setBalanceVersion((v) => v + 1);
@@ -1277,13 +1261,13 @@ function PaymentsTab() {
     [transportPayrolls],
   );
 
-  // Filtro extra por quincena: "all" (default), "none" (sin quincena), o
-  // un id concreto de quincena.
+  // Filtro por quincena: "all" (todas), "none" (sin quincena) o el id de una
+  // quincena.
   const [payrollFilter, setPayrollFilter] = useState("all");
 
-  // Aplica búsqueda (alias/nombre del transportista) + rango de fechas
-  // (overlap con el período del resumen) + sort. El filtro se aplica antes
-  // del split por estado, así pending/paid quedan consistentes.
+  // Búsqueda (alias o nombre del transportista), rango de fechas (cruce con el
+  // período del resumen), quincena y orden. Se aplica antes de separar por
+  // estado, así pendientes y pagados usan el mismo filtro.
   const filteredSorted = useMemo(() => {
     const q = search.trim().toLowerCase();
     const filtered = payments.filter((p) => {
@@ -1295,7 +1279,7 @@ function PaymentsTab() {
       if (filterFrom || filterTo) {
         const pFrom = p.periodFrom || p.periodTo || "";
         const pTo = p.periodTo || p.periodFrom || "";
-        if (!pFrom && !pTo) return false; // sin período no entra en filtro por fechas
+        if (!pFrom && !pTo) return false; // con filtro de fechas, un resumen sin período queda fuera
         if (filterFrom && pTo && pTo < filterFrom) return false;
         if (filterTo && pFrom && pFrom > filterTo) return false;
       }
@@ -1515,9 +1499,8 @@ function PaymentsTab() {
         onRevert={() => setConfirmAction({ type: "revert", payment: viewing })}
         onDelete={() => setConfirmAction({ type: "delete", payment: viewing })}
         onChanged={async () => {
-          // Reload del listado padre + refresh del viewing actual (su .total
-          // cambió tras editar precios). Bump balanceVersion para que el
-          // balance también se refresque.
+          // Recarga la lista y el balance, y vuelve a leer el resumen abierto:
+          // su total cambia al editar las vueltas.
           await reload();
           setBalanceVersion((v) => v + 1);
           if (viewing) {
@@ -1563,12 +1546,12 @@ function PaymentsTab() {
 }
 
 // ============================================================
-// PRINT MULTIPLE — batch print/export of multiple summaries
+// IMPRIMIR VARIOS: imprime o exporta varios resúmenes a la vez
 // ============================================================
-// Filtros: estado (pending/paid/both), rango de fechas (overlap con
-// periodFrom/periodTo), transportistas (multi-select) y faena/subfaena
-// (requiere cargar trips). Acciones: imprimir todo en una ventana con
-// page-break entre resúmenes, o exportar todos como PNG en un ZIP.
+// Filtros: estado (pendiente/pagado/ambos), rango de fechas (cruce con
+// periodFrom/periodTo), transportistas (selección múltiple) y faena/subfaena
+// (necesita cargar las vueltas). Acciones: imprimir todo en una ventana, con
+// salto de página entre resúmenes, o exportar un PNG por resumen en un ZIP.
 function PrintMultipleModal({
   open,
   onClose,
@@ -1589,14 +1572,13 @@ function PrintMultipleModal({
   const [faenasSel, setFaenasSel] = useState(() => new Set());
   const [subfaenasSel, setSubfaenasSel] = useState(() => new Set());
 
-  // Trip data — se carga cuando se aplica filtro avanzado o cuando se
-  // ejecuta una acción. Cacheado en el lifetime del modal.
+  // Vueltas: se cargan al filtrar por faena o subfaena, o al imprimir o
+  // exportar, y quedan en memoria mientras el componente siga montado.
   const [allTrips, setAllTrips] = useState(null);
   const [tripsLoading, setTripsLoading] = useState(false);
 
-  // Acción en curso: "" | "print" | "zip". Mientras hay acción, renderizamos
-  // todos los PrintableSummary en un contenedor offscreen para capturar
-  // outerHTML / PNG.
+  // Acción en curso: "" | "print" | "zip". Mientras dura, se dibujan todos los
+  // PrintableSummary fuera de pantalla para capturar su outerHTML o PNG.
   const [busy, setBusy] = useState("");
   const [renderItems, setRenderItems] = useState(null);
   const itemRefs = useRef([]);
@@ -1626,14 +1608,14 @@ function PrintMultipleModal({
     }
   };
 
-  // Cargar trips automáticamente cuando se activa el filtro avanzado.
+  // Carga las vueltas al activar el filtro por faena o subfaena.
   const advancedActive = faenasSel.size > 0 || subfaenasSel.size > 0;
   useEffect(() => {
     if (open && advancedActive && !allTrips && !tripsLoading) ensureTrips();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, advancedActive]);
 
-  // Filtros básicos (no requieren trips).
+  // Filtros que no necesitan las vueltas.
   const basicFiltered = useMemo(() => {
     return payments.filter((p) => {
       if (statusFilter !== "both" && p.status !== statusFilter) return false;
@@ -1650,10 +1632,9 @@ function PrintMultipleModal({
     });
   }, [payments, statusFilter, dateFrom, dateTo, carriersSel]);
 
-  // Filtros avanzados (faena/subfaena) — un resumen pasa si tiene al menos
-  // una vuelta cuya faena/subfaena está en los sets. El resumen impreso
-  // muestra TODAS las vueltas (el filtro decide qué resúmenes entran, no
-  // qué vueltas dentro del resumen).
+  // Filtro por faena/subfaena: un resumen entra si tiene al menos una vuelta
+  // de las faenas y subfaenas elegidas. El resumen impreso muestra TODAS sus
+  // vueltas: el filtro decide qué resúmenes entran, no qué vueltas.
   const finalPayments = useMemo(() => {
     if (!advancedActive) return basicFiltered;
     if (!allTrips) return null;
@@ -1671,7 +1652,8 @@ function PrintMultipleModal({
   const finalCount = finalPayments?.length ?? "—";
   const finalTotal = (finalPayments || []).reduce((s, p) => s + (Number(p.total) || 0), 0);
 
-  // Construye los items a renderizar (payment + carrier + trips + periodo).
+  // Arma lo que se dibuja por resumen: el resumen, el transportista, sus
+  // vueltas y el período.
   const buildRenderItems = async () => {
     const trips = await ensureTrips();
     const tripById = new Map(trips.map((t) => [t.id, t]));
@@ -1705,7 +1687,7 @@ function PrintMultipleModal({
       }
       itemRefs.current = new Array(items.length).fill(null);
       setRenderItems(items);
-      await waitFor(80); // esperar el render
+      await waitFor(80); // espera el render
       const nodes = itemRefs.current.filter(Boolean);
       const html = nodes
         .map((n, i) => `<div class="page">${n.outerHTML}</div>`)
@@ -1768,7 +1750,7 @@ function PrintMultipleModal({
       const zipBlob = await zip.generateAsync({ type: "blob" });
       const url = URL.createObjectURL(zipBlob);
       const a = document.createElement("a");
-      const stamp = new Date().toISOString().slice(0, 10);
+      const stamp = localIsoDate();
       a.href = url;
       a.download = `resumenes_transportes_${stamp}.zip`;
       document.body.appendChild(a);
@@ -2008,8 +1990,8 @@ function PrintMultipleModal({
         <span className="font-semibold tabular-nums">{fmtCurrency(finalTotal)}</span>
       </div>
 
-      {/* Offscreen render container: solo monta durante la acción para que
-          html-to-image / outerHTML lo pueda leer. */}
+      {/* Contenedor fuera de pantalla: se monta solo durante la acción, para
+          capturarlo con html-to-image u outerHTML. */}
       {renderItems && (
         <div
           aria-hidden="true"
@@ -2042,17 +2024,16 @@ function PrintMultipleModal({
   );
 }
 
-// Balance general: cuánto se le debe a cada transportista (vueltas sueltas
-// pendientes + resumenes pendientes ya generados). Se filtra por rango de
-// fechas: el rango se aplica a la `date` de la vuelta y al overlap del
-// período del resumen (periodFrom/periodTo).
+// Balance general: cuánto se le debe a cada transportista, separado en vueltas
+// sueltas, resúmenes sin quincena y quincenas, todo pendiente. El rango de
+// fechas se aplica a la `date` de la vuelta y al cruce con el período
+// (periodFrom/periodTo) del resumen o la quincena.
 function BalanceSummary({ carriers, reloadVersion }) {
   const toast = useToast();
   const [pendingTrips, setPendingTrips] = useState([]);
   const [pendingPayments, setPendingPayments] = useState([]);
-  // Quincenas pendientes (transportPayrolls). Cada quincena agrupa N resúmenes
-  // y se cuenta aparte en el balance — el monto del resumen se atribuye a la
-  // columna "Quincenas" en lugar de "Resúmenes sueltos" para no duplicar.
+  // Quincenas pendientes. Un resumen que está en una quincena se suma en la
+  // columna de quincenas y no en la de resúmenes, para no contarlo dos veces.
   const [pendingPayrolls, setPendingPayrolls] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dateFrom, setDateFrom] = useState("");
@@ -2106,8 +2087,8 @@ function BalanceSummary({ carriers, reloadVersion }) {
     [pendingPayments, dateFrom, dateTo],
   );
 
-  // Quincenas pendientes filtradas por overlap del período. Misma lógica que
-  // payments — si la quincena no tiene período, se incluye igual.
+  // Mismo filtro que los resúmenes: cruce de períodos, y una quincena sin
+  // período entra igual.
   const payrollsInRange = useMemo(
     () =>
       pendingPayrolls.filter((q) => {
@@ -2122,8 +2103,8 @@ function BalanceSummary({ carriers, reloadVersion }) {
     [pendingPayrolls, dateFrom, dateTo],
   );
 
-  // Index de resúmenes pendientes por id, para resolver los paymentIds de cada
-  // quincena rápidamente y atribuir el monto al carrier correcto.
+  // Resúmenes pendientes por id, para atribuir cada resumen de una quincena a
+  // su transportista.
   const pendingPaymentsById = useMemo(
     () => new Map(pendingPayments.map((p) => [p.id, p])),
     [pendingPayments],
@@ -2153,26 +2134,23 @@ function BalanceSummary({ carriers, reloadVersion }) {
       e.tripCount += 1;
       e.tripTotal += Number(t.amount) || 0;
     }
-    // Pendiente real del resumen = total - sum(abonos). Si nunca cargaron
-    // abonos, equivale a `total`. Se usa para que el balance muestre lo que
-    // efectivamente falta cobrar, no el bruto.
+    // Saldo del resumen: total menos abonos, sin bajar de 0. El balance
+    // muestra lo que falta pagar, no el total.
     const pendingOf = (p) => {
       const total = Number(p?.total) || 0;
       const abonado = (p?.abonos || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
       return Math.max(0, total - abonado);
     };
-    // Resúmenes SUELTOS (sin quincena): se cuentan acá. Los que ya están en
-    // una quincena se atribuyen abajo, en la columna Quincenas, para que el
-    // mismo monto no aparezca dos veces en el total.
+    // Resúmenes sueltos (sin quincena). Los que están en una quincena se suman
+    // abajo, en la columna de quincenas.
     for (const p of paymentsInRange) {
       if (p.payrollId) continue;
       const e = ensure(p.carrierId);
       e.paymentCount += 1;
       e.paymentTotal += pendingOf(p);
     }
-    // Quincenas: por cada una, ver qué resúmenes contiene y sumar el monto al
-    // carrier de cada resumen. Una quincena con resúmenes de varios carriers
-    // contribuye fraccionalmente a cada uno (caso raro pero posible).
+    // Quincenas: el saldo de cada resumen se suma a su transportista, así una
+    // quincena con varios transportistas se reparte entre ellos.
     for (const q of payrollsInRange) {
       const totalsByCarrier = new Map();
       for (const pid of q.paymentIds || []) {
@@ -2229,9 +2207,8 @@ function BalanceSummary({ carriers, reloadVersion }) {
     }
   };
 
-  // Imprime el nodo del balance directo. Inyectamos los estilos mínimos
-  // para que la tabla se vea igual en el navegador (con colores y bordes).
-  // `print-color-adjust: exact` fuerza al engine a no descartar los fondos.
+  // Imprime el outerHTML del balance con estilos mínimos de tabla.
+  // `print-color-adjust: exact` evita que el navegador descarte los fondos.
   const handlePrint = () => {
     if (!printRef.current) return;
     const html = printRef.current.outerHTML;
@@ -2461,9 +2438,8 @@ function BalanceSummary({ carriers, reloadVersion }) {
 }
 
 function PaymentSection({ title, payments, carrierById, transportPayrollById, faenaById, subfaenaById, cycleById, onView, empty, dim = false, carriers = [], onChanged }) {
-  // Agrupado por transportista. Cada grupo es colapsable; default expandido
-  // porque típicamente hay pocos resúmenes por transportista (1-3) y el
-  // usuario quiere verlos para click-to-detail.
+  // Resúmenes agrupados por transportista. Cada grupo se puede colapsar y
+  // arranca expandido.
   const groups = useMemo(() => {
     const map = new Map();
     for (const p of payments) {
@@ -2494,8 +2470,8 @@ function PaymentSection({ title, payments, carrierById, transportPayrollById, fa
   });
 
   // Vista unificada: junta las vueltas de TODOS los resúmenes de un
-  // transportista (ej. las dos quincenas de un mes) en una sola tabla
-  // filtrable por día, para no tener que abrir cada resumen por separado.
+  // transportista (p. ej. las dos quincenas de un mes) en una sola tabla
+  // filtrable por día.
   const [unifiedGroup, setUnifiedGroup] = useState(null);
 
   const fmtDate = (d) => {
@@ -2587,9 +2563,8 @@ function PaymentSection({ title, payments, carrierById, transportPayrollById, fa
   );
 }
 
-// Contenido interno de la tarjeta de resumen — extraído del render agrupado
-// para mantener la lógica de badges (período, quincena, conteo de vueltas)
-// en un solo lugar.
+// Contenido de la tarjeta de un resumen: período, quincena, cantidad de
+// vueltas, total y estado.
 function paymentCardContent(p, c, period, transportPayrollById) {
   return (
     <>
@@ -2642,9 +2617,8 @@ function paymentCardContent(p, c, period, transportPayrollById) {
       <div className="text-right">
         <div className="font-semibold tabular-nums">{fmtCurrency(p.total)}</div>
         {(() => {
-          // Si el resumen pendiente tiene abonos cargados, mostramos el
-          // pendiente real (total - abonos) abajo del bruto para que se vea
-          // de un vistazo cuánto falta sin abrir el detalle.
+          // Resumen pendiente con abonos: muestra el saldo (total − abonos)
+          // bajo el total.
           const abonado = (p.abonos || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
           if (p.status !== "paid" && abonado > 0) {
             const pending = Math.max(0, (Number(p.total) || 0) - abonado);
@@ -2670,15 +2644,12 @@ function paymentCardContent(p, c, period, transportPayrollById) {
   );
 }
 
-// Junta las vueltas de todos los resúmenes de un transportista (ej. las dos
-// quincenas de un mes) en una sola tabla, para verlas/imprimirlas/copiarlas
-// de corrido en vez de resumen por resumen. También permite editar/quitar
-// vueltas desde acá mismo (mismo mecanismo que el resumen individual):
-// cada vuelta sabe a qué resumen pertenece (`items`/`paymentByTripId`), así
-// que editar recalcula el total de SU resumen de origen y quitar la
-// desvincula de ESE resumen puntual. Las vueltas ya pagadas quedan
-// bloqueadas fila por fila (t.status === "paid"), sin importar si otras
-// vueltas del mismo grupo siguen pendientes.
+// Junta las vueltas de todos los resúmenes de un transportista (p. ej. las dos
+// quincenas de un mes) en una sola tabla para verlas, imprimirlas o copiarlas.
+// Permite editar o quitar vueltas: editar recalcula el total de su resumen
+// (lo hace el servicio) y quitar la desvincula solo de su resumen
+// (`paymentByTripId`). Las vueltas pagadas se bloquean fila por fila
+// (t.status === "paid").
 function UnifiedSummaryModal({ open, onClose, group, faenaById, subfaenaById, cycleById, carriers = [], onChanged }) {
   const toast = useToast();
   const [trips, setTrips] = useState([]);
@@ -2722,8 +2693,7 @@ function UnifiedSummaryModal({ open, onClose, group, faenaById, subfaenaById, cy
     })();
   }, [open, group]);
 
-  // Qué resumen (item) es dueño de cada vuelta — necesario para saber a cuál
-  // recalcularle el total al editar, o de cuál desvincularla al quitar.
+  // Resumen al que pertenece cada vuelta, para desvincularla de él al quitarla.
   const paymentByTripId = useMemo(() => {
     const map = new Map();
     for (const p of items) for (const id of p.tripIds || []) map.set(id, p);
@@ -2748,8 +2718,8 @@ function UnifiedSummaryModal({ open, onClose, group, faenaById, subfaenaById, cy
   const handleSaveTrip = async (form) => {
     if (!editingTrip) return;
     try {
-      // Preservar metadata de origen (ciclo/faena/subfaena) como hace
-      // TripsTab — el resumen no decide eso.
+      // Conserva el ciclo, la faena y la subfaena de la vuelta, igual que
+      // TripsTab.
       const payload = {
         ...form,
         cycleId: editingTrip.cycleId || null,
@@ -3022,10 +2992,9 @@ function GenerateSummaryModal({ open, onClose, carriers, faenas = [], faenaById,
   const [notes, setNotes] = useState("");
   const [sortBy, setSortBy] = useState("date");
   const [sortDir, setSortDir] = useState("desc");
-  // Cuántas vueltas sueltas (pendientes, sin resumen) tiene cada
-  // transportista — una sola consulta a Firestore al abrir el modal (misma
-  // que ya usa "Pago por faena"), para no listar transportistas sin nada
-  // que generar y mostrar de una el volumen de cada uno.
+  // Vueltas sueltas (pendientes, sin resumen) por transportista, leídas una
+  // vez al abrir el modal. El selector solo lista a los transportistas que
+  // tienen alguna, con su cantidad y monto.
   const [pendingByCarrier, setPendingByCarrier] = useState(() => new Map());
   const [loadingCarrierCounts, setLoadingCarrierCounts] = useState(false);
 
@@ -3070,9 +3039,8 @@ function GenerateSummaryModal({ open, onClose, carriers, faenas = [], faenaById,
       .sort((a, b) => (pendingByCarrier.get(b.value)?.count || 0) - (pendingByCarrier.get(a.value)?.count || 0));
   }, [carriers, pendingByCarrier]);
 
-  // Vista previa dinámica: se recarga sola apenas cambia el transportista o
-  // el rango de fechas, sin depender de un botón manual — antes había que
-  // acordarse de clickear "Vista previa" cada vez.
+  // La vista previa se recarga al cambiar el transportista o el rango de
+  // fechas, y limpia el filtro de faena.
   useEffect(() => {
     if (!open || !carrierId) { setPreview(null); return; }
     let cancelled = false;
@@ -3103,9 +3071,8 @@ function GenerateSummaryModal({ open, onClose, carriers, faenas = [], faenaById,
     }
   };
 
-  // El filtro de faena es solo para revisar el detalle más cómodo — el
-  // resumen que se genera siempre incluye TODAS las vueltas pendientes del
-  // período (preview.trips), no solo las que quedan visibles con el filtro.
+  // El filtro de faena solo acota el detalle: el resumen generado incluye
+  // TODAS las vueltas pendientes del período (preview.trips).
   const faenaOptions = useMemo(() => {
     const ids = new Set((preview?.trips || []).map((t) => t.faenaId).filter(Boolean));
     return [...ids]
@@ -3334,28 +3301,27 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
   const printRef = useRef(null);
   const [busy, setBusy] = useState("");
   const [editMode, setEditMode] = useState(false);
-  // Edición avanzada de una vuelta (mismo modal que TripsTab) + confirmación
-  // para sacar una vuelta del resumen sin borrarla del sistema (vuelve a
-  // estar "suelta" para futuras nóminas).
+  // Edición de una vuelta (mismo modal que TripsTab) y confirmación para
+  // sacarla del resumen sin borrarla: vuelve a quedar suelta para otro
+  // resumen.
   const [editingTrip, setEditingTrip] = useState(null);
   const [confirmRemoveTrip, setConfirmRemoveTrip] = useState(null);
-  // Agregar vueltas sueltas olvidadas: en vez de borrar el resumen y
-  // regenerarlo, se buscan vueltas pendientes del mismo transportista que
-  // no estén vinculadas a ningún resumen y se suman a este.
+  // Agregar vueltas: busca vueltas pendientes del mismo transportista que no
+  // están en ningún resumen y las suma a este.
   const [addingTrips, setAddingTrips] = useState(false);
   const [availableTrips, setAvailableTrips] = useState([]);
   const [loadingAvailable, setLoadingAvailable] = useState(false);
   const [selectedToAdd, setSelectedToAdd] = useState(() => new Set());
   const [addBusy, setAddBusy] = useState(false);
-  // Abonos: el resumen puede tener pagos parciales antes de marcarse 100%
-  // pagado. Mantenemos un estado local sincronizado con el doc para que el UI
-  // refleje los cambios sin esperar el reload del padre.
+  // Abonos: pagos parciales antes de marcar el resumen como pagado. Copia
+  // local sincronizada con el doc, para mostrar los cambios sin esperar la
+  // recarga del padre.
   const [abonos, setAbonos] = useState(payment?.abonos || []);
   const [newAbono, setNewAbono] = useState({ amount: "", date: "", notes: "" });
   const [abonoBusy, setAbonoBusy] = useState(false);
   const [confirmRemoveAbono, setConfirmRemoveAbono] = useState(null); // abonoId o null
-  // Confirm genérico para el caso "abono supera el monto pendiente" — pausa
-  // handleAddAbono a mitad de camino en vez de un window.confirm bloqueante.
+  // Confirmación para un abono mayor que el saldo: askConfirm devuelve una
+  // promesa que handleAddAbono espera antes de seguir.
   const [confirmState, setConfirmState] = useState(null);
   const askConfirm = (message) => new Promise((resolve) => setConfirmState({ message, resolve }));
   useEffect(() => {
@@ -3421,16 +3387,15 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
     }
   };
 
-  // Suma actual de abonos + monto pendiente. Calculados a partir del estado
-  // local `abonos` (no `payment.abonos`) para que el UI se actualice apenas
-  // se agrega/quita un abono, sin esperar el reload del padre.
+  // Abonado y saldo, desde el estado local `abonos` (no `payment.abonos`),
+  // para reflejar al instante un abono agregado o quitado.
   const totalAbonado = abonos.reduce((s, a) => s + (Number(a.amount) || 0), 0);
   const pendingAmount = Math.max(0, (Number(payment.total) || 0) - totalAbonado);
 
   const handleAddAbono = async () => {
     const amt = Number(newAbono.amount) || 0;
     if (amt <= 0) {
-      toast.error("Ingresá un monto mayor a 0");
+      toast.error("Ingresa un monto mayor a 0");
       return;
     }
     if (amt > pendingAmount) {
@@ -3443,7 +3408,7 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
     try {
       const updated = await paymentsService.addAbono(payment.id, {
         amount: amt,
-        date: newAbono.date || new Date().toISOString().slice(0, 10),
+        date: newAbono.date || localIsoDate(),
         notes: newAbono.notes,
       });
       setAbonos(updated.abonos || []);
@@ -3470,13 +3435,12 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
     }
   };
 
-  // Refresca trips desde Firestore para reflejar cambios en el ítem
-  // actual del modal después de editar/quitar.
+  // Vuelve a leer las vueltas del resumen después de editar o quitar una.
   const refreshTrips = async () => {
     try {
       const all = await tripsService.listByCarrier(payment.carrierId);
-      // Necesitamos releer el payment para tener tripIds actualizado (el
-      // remove edita la lista). Caemos al payment del padre como fallback.
+      // Relee el resumen para tener sus tripIds al día (quitar una vuelta los
+      // cambia); si la lectura falla, usa los del resumen recibido.
       let currentTripIds = payment.tripIds || [];
       try {
         const updated = await paymentsService.getById(payment.id);
@@ -3494,8 +3458,8 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
   const handleSaveTrip = async (form) => {
     if (!editingTrip) return;
     try {
-      // Preservar metadata de origen (ciclo/faena/subfaena) como hace
-      // TripsTab — el resumen no decide eso.
+      // Conserva el ciclo, la faena y la subfaena de la vuelta, igual que
+      // TripsTab.
       const payload = {
         ...form,
         cycleId: editingTrip.cycleId || null,
@@ -3529,8 +3493,8 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
     }
   };
 
-  // Carga vueltas pendientes del mismo transportista sin resumen asignado —
-  // las "sueltas" que se olvidaron incluir al generar este resumen.
+  // Carga las vueltas pendientes del mismo transportista que no tienen
+  // resumen.
   const openAddTrips = async () => {
     setSelectedToAdd(new Set());
     setAddingTrips(true);
@@ -3653,11 +3617,10 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
               + Vuelta suelta
             </button>
           )}
-          {/* Marcar pagado / Revertir movieron a la pestaña "Quincenas".
-              Desde acá solo se crea, edita o elimina el resumen suelto.
-              Cuando el modal se abre desde la quincena, `onDelete` viene
-              null — escondemos el botón porque eliminar el resumen
-              requiere primero sacarlo de la quincena. */}
+          {/* Marcar pagado y revertir se hacen desde "Quincenas"; acá solo se
+              edita o elimina el resumen. Abierto desde una quincena, `onDelete`
+              llega null y el botón no se muestra: para eliminar el resumen
+              primero hay que sacarlo de la quincena. */}
           {!isPaid && onDelete && (
             <button
               onClick={onDelete}
@@ -3679,9 +3642,8 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
         </span>
       </div>
 
-      {/* Abonos parciales — solo cuando el resumen NO está marcado pagado.
-          Cuando está pagado los abonos se ven igual abajo pero no se pueden
-          modificar. */}
+      {/* Abonos: se muestran si hay alguno o si el resumen está pendiente;
+          con el resumen pagado quedan de solo lectura. */}
       {(abonos.length > 0 || !isPaid) && (
         <div className="mb-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm">
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
@@ -3930,12 +3892,10 @@ const PrintableSummary = forwardRef(function PrintableSummary(
   { payment, carrier, trips, periodLabel, faenaById, subfaenaById, cycleById, editable = false, onEditTrip, onRemoveTrip, isTripLocked },
   ref,
 ) {
-  // Si el modal en edición pasó callbacks por trip, mostramos una columna
-  // "Acciones" extra. Cuando se imprime, el usuario debería desactivar el
-  // modo edición antes (sino los botones aparecen en el print, pero son
-  // visualmente discretos y no afectan el contenido). El "Valor" ya no se
-  // edita inline acá: se edita completo (qty/tarifa) vía el lápiz, que abre
-  // TripEditModal — evita que quede desincronizado de N° vueltas/tarifa.
+  // En modo edición, con callbacks por vuelta, agrega la columna "Acciones",
+  // que también sale al imprimir o capturar. El "Valor" no se edita acá: el
+  // lápiz abre TripEditModal y edita la vuelta completa (cantidad y tarifa),
+  // así el monto sigue siendo N° vueltas × tarifa.
   const showActions = editable && (onEditTrip || onRemoveTrip);
   const month = monthOfTrips(trips);
   const total = trips.reduce((s, t) => s + (Number(t.amount) || 0), 0);
@@ -4064,32 +4024,18 @@ const cell = {
   fontSize: 12,
 };
 
-// Columnas fijas del balance de quincenas. Con varias quincenas abiertas el
-// pivot se va de ancho, y al scrollear se pierden las dos referencias que lo
-// hacen legible: de quién es la fila y cuánto suma. Sin esto hay que leer la
-// tabla llevándose el dedo por la pantalla.
+// Columnas fijas del balance de quincenas: el transportista y el total quedan
+// quietos al desplazar el pivot. Se anclan al contenedor con `overflowX` que
+// envuelve al printRef; en la captura y la impresión no hay scroll y se
+// comportan como cualquier otra celda.
 //
-// El anclaje es el contenedor con `overflowX` de afuera del printRef. En las
-// exportaciones no hay scroll —la captura clona a `width: max-content` con
-// overflow visible, y la impresión arma su propia página—, así que ahí estas
-// celdas se comportan como cualquier otra.
-//
-// El fondo explícito no es decorativo: sin un fondo opaco propio, el contenido
-// que pasa por debajo se ve a través de la celda fija. Por eso cada fila pasa
-// el suyo, que no es el mismo en el encabezado, el cuerpo y los dos pies.
-//
-// Y es **de color**, no blanco: en blanco la columna fija se confunde con el
-// fondo de la tabla y al desplazarse se lee como un hueco en vez de como una
-// columna que se quedó quieta. Las dos fijas comparten el mismo tinte
-// (`#eaf4fb`) justamente para que se lean como el marco de lo que scrollea.
-// La sombra hace de borde: con `border-collapse: collapse` el borde es
-// compartido entre celdas vecinas y al scrollear se va con la que se movió,
-// dejando la columna fija pegada al contenido sin línea de corte.
-//
-// Va más oscura y más gruesa que un borde normal (2px #333 contra 1px #999) a
-// propósito: no es una línea de tabla más, es dónde termina lo que se queda
-// quieto y empieza lo que se desplaza. Con el borde fino no se distinguía del
-// resto de la grilla y la columna fija se leía como parte del scroll.
+// Cada fila pasa su fondo (encabezado, cuerpo y pies usan uno distinto). Tiene
+// que ser opaco, o se transparenta lo que pasa por debajo, y de color (en el
+// cuerpo, `#eaf4fb` en las dos columnas), para que se lea como el marco de lo
+// que se desplaza y no como un hueco. La línea de corte es una sombra de 2px #333,
+// más marcada que el borde de la grilla (1px #999), y no un borde: con
+// `border-collapse: collapse` el borde es compartido y se va con la celda que
+// se mueve.
 const stickyLeft = (background, zIndex = 1) => ({
   position: "sticky", left: 0, zIndex, background, boxShadow: "2px 0 0 #333",
 });
@@ -4097,31 +4043,27 @@ const stickyRight = (background, zIndex = 1) => ({
   position: "sticky", right: 0, zIndex, background, boxShadow: "-2px 0 0 #333",
 });
 
-// "2026-04-16" → "16-04-26". El rango completo en ISO son 23 caracteres en una
-// sola línea (~145 px), y ESO era lo que fijaba el ancho de cada columna de
-// quincena — no el `minWidth`, que quedaba corto y nunca mandaba. Partido en
-// dos líneas y sin el siglo ocupa ~55 px, y el ancho pasa a decidirlo el
-// nombre de la quincena, que sí se puede envolver.
+// "2026-04-16" → "16-04-26". Así el rango del encabezado de cada quincena va en
+// dos líneas (~55 px) y el ancho de la columna lo decide el nombre, que se
+// envuelve; en ISO y en una línea ocuparía ~145 px, por encima del `minWidth`.
 const compactDate = (iso) => {
   const [y, m, d] = String(iso || "").split("-");
   return y && m && d ? `${d}-${m}-${y.slice(2)}` : iso || "?";
 };
 
-// Ancho de las columnas del balance de quincenas. El objetivo es que entren
-// **8 quincenas** sin desplazarse en un desktop normal: 8 × 92 + 150 del
-// nombre + ~115 del total ≈ 1.000 px, que entra con el sidebar abierto desde
-// 1280 px de pantalla. De la novena en adelante van detrás del scroll, que
-// para eso las columnas de los extremos quedan fijas.
+// Ancho de las columnas del balance de quincenas: entran **8 quincenas** sin
+// desplazarse (8 × 92 + 150 del nombre + ~115 del total ≈ 1.000 px, con el
+// sidebar abierto desde 1280 px de pantalla). Las demás quedan detrás del
+// scroll, con las columnas de los extremos fijas.
 const QUINCENA_COL_W = 92;
 const CARRIER_COL_W = 150;
 
-// Cuánto de un resumen está cobrado y cuánto falta. Vive suelto porque lo usan
-// la tabla del balance y el modal por transportista, y si cada uno lo calcula
-// a su manera el modal contradice a la fila que lo abrió.
+// Cuánto de un resumen está cobrado y cuánto falta. Lo usan la tabla del
+// balance y el modal por transportista, así el modal cuadra con la fila que lo
+// abrió.
 //
 // Un resumen `paid` está cerrado entero. Si sigue pendiente, los abonos cuentan
-// como cobrado y el resto como deuda; el `Math.min` es porque un abono de más
-// no puede hacer que aparezca cobrado más que el total.
+// como cobrado (topados al total con `Math.min`) y el resto es deuda.
 function paymentSplit(p) {
   const total = Number(p?.total) || 0;
   if (p?.status === "paid") return { pending: 0, paid: total, total };
@@ -4130,23 +4072,23 @@ function paymentSplit(p) {
 }
 
 // ============================================================
-// FAENA BATCH TAB — pick cycles, generate one payment per carrier
+// PESTAÑA PAGO POR FAENA: elige ciclos y genera un resumen por transportista
 // ============================================================
 
 function FaenaBatchTab() {
   const toast = useToast();
   const { carriers } = useCarriers();
-  const [step, setStep] = useState(1); // 1 picker, 2 preview
+  const [step, setStep] = useState(1); // 1: elegir ciclos, 2: vista previa
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [faenas, setFaenas] = useState([]);
   const [subfaenas, setSubfaenas] = useState([]);
   const [cycles, setCycles] = useState([]);
-  const [allTrips, setAllTrips] = useState([]); // pending trips for active cycles
+  const [allTrips, setAllTrips] = useState([]); // vueltas sueltas de ciclos abiertos
   const [selectedCycleIds, setSelectedCycleIds] = useState(() => new Set());
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [carrierItems, setCarrierItems] = useState([]); // [{carrier, trips, total, include, expanded}]
+  const [carrierItems, setCarrierItems] = useState([]); // [{carrierId, carrier, alias, name, trips, total, include, expanded}]
 
   const load = async () => {
     setLoading(true);
@@ -4160,7 +4102,7 @@ function FaenaBatchTab() {
       setFaenas(f);
       setSubfaenas(s);
       setCycles(c);
-      // Filter to active cycles only (the server-side query already gave us pending+unlinked).
+      // Solo ciclos abiertos; la consulta ya trae solo vueltas pendientes y sin resumen.
       const activeCycleIds = new Set(c.filter((x) => x.status !== "closed").map((x) => x.id));
       setAllTrips(pendingT.filter((t) => activeCycleIds.has(t.cycleId)));
     } finally {
@@ -4400,7 +4342,7 @@ function FaenaBatchTab() {
     );
   }
 
-  // step 2 — preview
+  // Paso 2: vista previa
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-4 py-3">
@@ -4501,12 +4443,10 @@ function FaenaBatchTab() {
   );
 }
 
-// Ordena quincenas por el período real (periodFrom), no por cuándo se creó
-// el documento en Firestore. Una quincena cargada después de las otras para
-// tapar un hueco de meses atrás (ej. armar recién en septiembre la
-// "Quincena Abril" que quedó suelta) tiene que aparecer en su lugar
-// cronológico, no saltar arriba de todo por ser la más nueva como doc. Cae a
-// createdAt solo si a alguna de las dos le falta período (dato opcional).
+// Ordena quincenas por período (periodFrom, la más reciente primero), no por
+// fecha de creación: una quincena armada tarde queda en su lugar cronológico.
+// Las que no tienen período van después de las que sí; con el mismo
+// periodFrom, o sin período las dos, decide createdAt (la más nueva primero).
 function comparePayrollPeriod(a, b) {
   if (a.periodFrom && b.periodFrom && a.periodFrom !== b.periodFrom) {
     return a.periodFrom < b.periodFrom ? 1 : -1; // desc: más reciente primero
@@ -4517,23 +4457,11 @@ function comparePayrollPeriod(a, b) {
   return tb - ta;
 }
 
-// Balance general SOLO de quincenas pendientes. Por cada quincena pending,
-// suma los items NO pagados agrupados por transportista. Excluye:
-//   - Quincenas marcadas como pagadas (status === "paid").
-//   - Quincenas pending donde todos sus items individuales ya están pagados
-//     (caso borde: el usuario marcó cada resumen por separado en lugar de
-//     usar "Marcar quincena pagada" — la quincena queda pending pero no
-//     debe nada).
-// Todos los resúmenes de un transportista, agrupados por quincena. Se abre
-// desde el balance: en desktop clickeando su nombre, en mobile tocando su
-// tarjeta.
-//
-// Es el drill-down que le faltaba al pivot. La celda del balance dice "este
-// transportista debe $X en esta quincena" y ahí se terminaba: de qué resúmenes
-// sale ese número, cuáles ya se pagaron y cuáles tienen abonos parciales había
-// que ir a buscarlo a otra pestaña. Acá está todo junto, incluyendo los
-// resúmenes que no están en ninguna quincena —los sueltos—, que en el balance
-// no aparecen y son justo los que se olvidan.
+// Todos los resúmenes de un transportista, agrupados por quincena, con lo
+// pagado, lo pendiente y los abonos de cada uno: el desglose de las celdas del
+// balance de quincenas. Incluye los resúmenes sueltos (sin quincena), que el
+// balance no muestra. Se abre desde el balance: en desktop con el nombre del
+// transportista, en mobile con su tarjeta.
 function CarrierSummariesModal({ open, onClose, row, payments, payrolls }) {
   const grupos = useMemo(() => {
     if (!row) return [];
@@ -4552,8 +4480,8 @@ function CarrierSummariesModal({ open, onClose, row, payments, payrolls }) {
       out.push({
         key: k,
         quincena: q,
-        // Una quincena borrada deja sus resúmenes apuntando a un id que ya no
-        // existe. Mostrarlos como sueltos los esconde; mejor decirlo.
+        // Un payrollId que apunta a una quincena que ya no existe se rotula
+        // "Quincena eliminada", no "Sin quincena".
         titulo: q ? q.name : k === "__sueltos__" ? "Sin quincena" : "Quincena eliminada",
         activa: q ? q.status !== "paid" : false,
         items,
@@ -4561,7 +4489,8 @@ function CarrierSummariesModal({ open, onClose, row, payments, payrolls }) {
         paid: items.reduce((s, p) => s + paymentSplit(p).paid, 0),
       });
     }
-    // Lo que se debe primero; después lo cerrado, más reciente arriba.
+    // Mayor pendiente primero; a igual pendiente, la quincena más antigua arriba
+    // (comparePayrollPeriod con los argumentos invertidos).
     out.sort((a, b) => (b.pending - a.pending) || (a.quincena && b.quincena ? comparePayrollPeriod(b.quincena, a.quincena) : 0));
     return out;
   }, [row, payments, payrolls]);
@@ -4665,9 +4594,9 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
   // Fila del transportista cuyo detalle se está mirando, o null.
   const [detalle, setDetalle] = useState(null);
 
-  // Ver la quincena activa completa, no solo lo que falta cobrar. Sirve para
-  // revisar o cuadrar una quincena antes de cerrarla: cuánto se pagó ya y a
-  // quién, no solo cuánto queda. Persistido porque quien la usa la usa siempre.
+  // Muestra también a quienes ya cobraron todo lo suyo en las quincenas
+  // activas, para cuadrar una quincena antes de cerrarla. Se guarda en
+  // localStorage.
   const [showAllSummaries, setShowAllSummaries] = useState(() => {
     try { return localStorage.getItem("transports.quincenasBalance.showAll") === "true"; } catch { return false; }
   });
@@ -4675,10 +4604,9 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
     try { localStorage.setItem("transports.quincenasBalance.showAll", String(showAllSummaries)); } catch { /* noop */ }
   }, [showAllSummaries]);
 
-  // El título cambia con el modo a propósito: viaja al PNG y a la impresión, y
-  // una imagen rotulada "pendientes" con filas ya pagadas adentro es
-  // exactamente el malentendido que termina en un transportista cobrando dos
-  // veces.
+  // El título cambia con el modo y viaja al PNG y a la impresión: una imagen
+  // rotulada "pendientes" no debe llevar filas ya pagadas, que podrían
+  // terminar pagándose dos veces.
   const titulo = showAllSummaries
     ? "Balance de quincenas activas"
     : "Balance de quincenas pendientes";
@@ -4688,13 +4616,11 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
     [payments],
   );
 
-  // Layout pivot: filas = transportistas, columnas = quincenas (excepto las
-  // totalmente pagadas), celdas = pending + paid del carrier en esa quincena.
-  // Las quincenas con status=paid o donde TODOS los items están pagados se
-  // excluyen — solo aparecen las que aún tienen al menos un item pendiente.
-  // Dentro de las incluidas, cada celda muestra el pendiente principal y, si
-  // hay items ya pagados de ese mismo carrier en esa quincena, una segunda
-  // línea con "pagado: $X" en gris.
+  // Pivot: filas = transportistas, columnas = quincenas, celda = pendiente y
+  // pagado del transportista en esa quincena. Solo entran las quincenas que no
+  // están pagadas (status "paid") y tienen al menos un resumen pendiente. La
+  // celda muestra el pendiente y, si hay algo pagado, una segunda línea
+  // "pagado: $X" en verde.
   const { pendingQuincenas, rows } = useMemo(() => {
     const qList = [];
     const pendMap = new Map(); // carrierId → Map(quincenaId → amount)
@@ -4711,7 +4637,8 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
         if (pending > 0) pendByCarrier.set(cid, (pendByCarrier.get(cid) || 0) + pending);
         if (paid > 0) paidByCarrier.set(cid, (paidByCarrier.get(cid) || 0) + paid);
       }
-      // Excluir quincenas pending sin ningún item pendiente (todos paid sueltos).
+      // Sin ningún resumen pendiente, la quincena queda fuera aunque siga en
+      // "pending" (p. ej. si sus resúmenes se pagaron uno por uno).
       if (pendByCarrier.size === 0) continue;
       qList.push(q);
       for (const [cid, amt] of pendByCarrier) {
@@ -4724,19 +4651,10 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
       }
     }
     qList.sort(comparePayrollPeriod);
-    // Carriers en las filas. Por default solo los que todavía deben algo: un
-    // carrier con pendingTotal=0 (ya cobró todo, aunque la quincena siga
-    // abierta porque otro del grupo sigue debiendo) no tiene nada que hacer en
-    // un balance de "pendientes" — antes se filtraba solo cuando pending+paid
-    // daba $0, dejando filas fantasma en $0 con puro "pagado" en verde.
-    //
-    // Con `showAllSummaries` esas filas vuelven **a propósito**: ahí la
-    // pregunta no es "a quién le debo" sino "cómo viene esta quincena", y el
-    // que ya cobró es parte de la respuesta. Ojo si se toca esto: en ese modo
-    // las filas en $0 pendiente son la función, no el bug de antes.
-    //
-    // El corte de las columnas no cambia entre modos — una quincena pagada
-    // entera ya quedó afuera arriba, que es lo que se quiere en los dos casos.
+    // Filas: por defecto, solo los transportistas con algo pendiente. Con
+    // `showAllSummaries` entran también los que ya cobraron todo lo suyo en
+    // estas quincenas (filas con $0 pendiente). Las columnas son las mismas en
+    // los dos modos.
     const carrierIds = new Set([...pendMap.keys(), ...paidMap.keys()]);
     const carrierRows = [];
     for (const cid of carrierIds) {
@@ -4744,11 +4662,8 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
       const pd = paidMap.get(cid) || new Map();
       const pendingTotal = [...pm.values()].reduce((s, v) => s + v, 0);
       const paidTotal = [...pd.values()].reduce((s, v) => s + v, 0);
-      // Nada que mostrar, en ningún modo: ni pendiente ni pagado. Son los
-      // resúmenes en $0 —vueltas sin costo de transporte propio— que en modo
-      // "todos" salían como filas enteras vacías, con el nombre y todas las
-      // celdas en blanco. Ese era justo el filtro original, antes de que se
-      // endureciera a `pendingTotal <= 0`; acá vuelve como piso.
+      // Sin pendiente ni pagado no hay fila en ningún modo: son resúmenes en $0
+      // (vueltas sin costo de transporte propio).
       if (pendingTotal <= 0 && paidTotal <= 0) continue;
       if (pendingTotal <= 0 && !showAllSummaries) continue;
       const c = carriers.find((x) => x.id === cid);
@@ -4762,14 +4677,14 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
         paidTotal,
       });
     }
-    // Ordenar por pendiente desc (lo más urgente primero), desempate por paid.
+    // Mayor pendiente primero; a igual pendiente, mayor pagado.
     carrierRows.sort((a, b) => (b.pendingTotal - a.pendingTotal) || (b.paidTotal - a.paidTotal));
     return { pendingQuincenas: qList, rows: carrierRows };
   }, [carriers, payrolls, paymentsById, showAllSummaries]);
 
   const grandPending = rows.reduce((s, r) => s + r.pendingTotal, 0);
   const grandPaid = rows.reduce((s, r) => s + r.paidTotal, 0);
-  // Totales por columna (footer): pendiente y pagado separados.
+  // Totales por columna para el pie: pendiente y pagado por separado.
   const colTotals = useMemo(() => {
     const map = new Map();
     for (const q of pendingQuincenas) {
@@ -4816,17 +4731,11 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
     }
   };
 
-  // Imprime la MISMA captura que 📋 y 📥, no el HTML de la tabla.
-  //
-  // Volcar el `outerHTML` a la ventana de impresión salía cortado: el navegador
-  // no pagina de costado, así que un pivot más ancho que la hoja pierde las
-  // quincenas de la derecha sin avisar. Y este pivot crece con cada quincena
-  // abierta, o sea que el recorte empeora justo cuando el balance importa más.
-  //
-  // `captureFullWidthDataUrl` ya resuelve el ancho —clona off-screen a
-  // `max-content` con el overflow desarmado—, así que reusarlo hace que las
-  // tres salidas muestren exactamente lo mismo. Se pierde el texto
-  // seleccionable del PDF; a cambio se imprime todo, que es el punto.
+  // Imprime la MISMA captura que 📋 y 📥, no el HTML de la tabla: el navegador
+  // no pagina de costado y un pivot más ancho que la hoja perdería las
+  // quincenas de la derecha. `captureFullWidthDataUrl` clona fuera de pantalla
+  // a `max-content`, así las tres salidas muestran lo mismo; a cambio, el PDF
+  // no trae texto seleccionable.
   const handlePrint = async () => {
     if (!printRef.current) return;
     setBusy("print");
@@ -4837,14 +4746,11 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
         toast.warning("Permite las ventanas emergentes para imprimir.");
         return;
       }
-      // El `print()` cuelga del onload de la imagen: dispararlo antes imprime
-      // una hoja en blanco, porque el dataUrl todavía no se decodificó.
-      // Una sola hoja, siempre. El balance se mira de un vistazo: partido en
-      // dos páginas hay que cruzar transportistas de una con quincenas de la
-      // otra, que es justo lo que la tabla existe para evitar. Por eso la
-      // imagen se escala a la página en vez de desbordar — `max-height: 100vh`
-      // en impresión es el alto del área de página, y con `width/height: auto`
-      // el navegador achica manteniendo la proporción.
+      // `print()` va en el onload de la imagen: antes de que se decodifique el
+      // dataUrl, la hoja sale en blanco.
+      // Siempre una sola hoja: la imagen se escala al área de página
+      // (`max-height: 100vh` en impresión, con `width/height: auto` para
+      // mantener la proporción) en vez de partir el balance en dos.
       win.document.write(`<!DOCTYPE html><html><head><title>${titulo}</title>
         <style>
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
@@ -4949,13 +4855,10 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
             </div>
           ) : (
             <>
-            {/* Mobile: el pivot no entra y no hay forma de que entre. Con el
-                nombre fijo y el total ocupando 265 px, a 412 px sobra lugar
-                para UNA columna de quincena — o sea que la tabla se lee
-                desplazándose de a una, que es peor que no tenerla.
-                Acá la pregunta se responde ordenando por deuda, y el desglose
-                por quincena vive en el modal, que es el mismo que abre el
-                nombre en desktop. */}
+            {/* Mobile: en vez del pivot (con el nombre y el total fijos, a
+                412 px entra una sola columna de quincena), una lista ordenada
+                por deuda. Cada tarjeta abre el mismo modal que el nombre en
+                desktop, con el desglose por quincena. */}
             <div className="space-y-2 md:hidden">
               {rows.map((r) => (
                 <button
@@ -4992,11 +4895,10 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
               </div>
             </div>
 
-            {/* Desktop: el pivot. Oculto en mobile con `display: none`, que NO
-                rompe las exportaciones — la captura clona el nodo de printRef y
-                lo cuelga de su propio contenedor, así que lo que le pase al
-                padre le da igual. Los botones 📋/📥/🖨 siguen andando desde el
-                teléfono y sacan la tabla completa. */}
+            {/* Desktop: el pivot. En mobile queda con `display: none` y las
+                exportaciones igual funcionan: la captura clona el nodo de
+                printRef en su propio contenedor, así que 📋/📥/🖨 sacan la
+                tabla completa también desde el teléfono. */}
             <div className="hidden md:block">
             <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
             <div
@@ -5006,9 +4908,8 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
                 color: "#000",
                 padding: 16,
                 fontFamily: "ui-sans-serif, system-ui, sans-serif",
-                // Sin esto el bloque blanco mide lo que mide el contenedor y
-                // la tabla se le va por la derecha: al scrollear se acaba el
-                // fondo y aparece el de la página por detrás de las celdas.
+                // El bloque blanco mide lo que la tabla y no lo que el
+                // contenedor, así el fondo la cubre entera al desplazarse.
                 minWidth: "max-content",
               }}
             >
@@ -5065,10 +4966,9 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
                   {rows.map((r) => (
                     <tr key={r.carrierId}>
                       <td style={{ ...cell, overflowWrap: "break-word", ...stickyLeft("#eaf4fb") }}>
-                        {/* Botón con aspecto de texto: esta celda viaja al PNG
-                            y a la impresión, así que no puede traer chrome de
-                            control. Lo único que lo delata es el subrayado al
-                            pasar por encima, que en la captura no existe. */}
+                        {/* Botón con aspecto de texto, porque la celda viaja al
+                            PNG y a la impresión. Solo se subraya al pasar el
+                            mouse, y eso no sale en la captura. */}
                         <button
                           type="button"
                           onClick={() => setDetalle(r)}
@@ -5199,15 +5099,14 @@ function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
 }
 
 // ============================================================
-// PAYROLLS (QUINCENAS) TAB
+// PESTAÑA QUINCENAS
 // ============================================================
 //
-// Una "quincena" es un payroll que agrupa N resúmenes (`transportPayments`)
-// de varios transportistas. No es estricto a 15 días — es un agrupamiento
-// con nombre + rango opcional. Es la vista PRINCIPAL para pagar: cada item
-// (resumen) se puede marcar pagado individual o todos juntos vía el botón
-// "Marcar quincena pagada". Toda acción de pago requiere doble confirm
-// (tipear "Pagada" en un input) para evitar taps accidentales.
+// Una quincena (`transportPayrolls`) agrupa resúmenes (`transportPayments`)
+// de varios transportistas, con nombre y un rango opcional que no tiene por
+// qué ser de 15 días. Es la vista PRINCIPAL para pagar: cada resumen se marca
+// pagado por separado o todos juntos con "Marcar quincena pagada". Marcar
+// pagado y revertir piden escribir una palabra ("Pagada" o "Revertir").
 
 function PayrollsTab() {
   const toast = useToast();
@@ -5216,11 +5115,9 @@ function PayrollsTab() {
 
   const [payrolls, setPayrolls] = useState([]);
   const [payments, setPayments] = useState([]);
-  // Para el flujo "Nueva quincena auto" necesitamos faenas activas (para los
-  // chips de filtrado) y vueltas pending sin paymentId (las "sueltas" desde
-  // las que se arman los resúmenes). Subfaenas y ciclos se cargan para que
-  // el "Imprimir quincena + resúmenes" pueda mostrar la columna Labor en
-  // cada resumen (faena/subfaena/ciclo).
+  // "+ Nueva quincena" usa las faenas (chips de filtro) y las vueltas sueltas
+  // (pendientes y sin resumen). Subfaenas y ciclos alimentan la columna Labor
+  // de los resúmenes al imprimir la quincena.
   const [faenas, setFaenas] = useState([]);
   const [subfaenas, setSubfaenas] = useState([]);
   const [cycles, setCycles] = useState([]);
@@ -5343,7 +5240,7 @@ function PayrollsTab() {
         </div>
       ) : payrolls.length === 0 ? (
         <div className="rounded-lg border border-dashed border-[var(--color-border)] py-10 text-center text-sm text-[var(--color-muted)]">
-          Aún no hay quincenas. Creá la primera con + Nueva quincena.
+          Aún no hay quincenas. Crea la primera con + Nueva quincena.
         </div>
       ) : (
         <div className="space-y-2">
@@ -5391,10 +5288,10 @@ function PayrollsTab() {
           onClose={() => setCreating(false)}
           onCreate={async ({ name, periodFrom, periodTo, notes, perCarrier, importSummaryIds }) => {
             try {
-              // 1) Creamos un resumen nuevo por cada carrier con sus vueltas sueltas filtradas.
-              // 2) Sumamos los resúmenes existentes seleccionados para importar.
-              // 3) Creamos la quincena referenciando todos los paymentIds (los importados quedan
-              //    linkeados via payrollId dentro de transportPayrollsService.create).
+              // 1) Crea un resumen por transportista con sus vueltas sueltas filtradas.
+              // 2) Suma los resúmenes existentes elegidos para importar.
+              // 3) Crea la quincena con todos los paymentIds; transportPayrollsService.create
+              //    les pone el payrollId.
               const created = [];
               for (const it of perCarrier) {
                 const datesSorted = it.trips.map((t) => t.date).filter(Boolean).sort();
@@ -5485,8 +5382,8 @@ function PayrollsTab() {
   );
 }
 
-// Modal de doble seguridad — el usuario debe escribir exactamente la palabra
-// `word` (case-insensitive) para habilitar el botón de confirmar.
+// Confirmación reforzada: el botón se habilita al escribir la palabra `word`,
+// sin distinguir mayúsculas.
 function TypeToConfirmModal({ word, title, message, confirmLabel, danger = false, onCancel, onConfirm }) {
   const toast = useToast();
   const [typed, setTyped] = useState("");
@@ -5522,7 +5419,7 @@ function TypeToConfirmModal({ word, title, message, confirmLabel, danger = false
     >
       <p className="mb-3 text-sm">{message}</p>
       <label className="block text-xs text-[var(--color-muted)]">
-        Para confirmar, escribí <b>{word}</b> abajo:
+        Para confirmar, escribe <b>{word}</b> abajo:
       </label>
       <input
         autoFocus
@@ -5538,27 +5435,27 @@ function TypeToConfirmModal({ word, title, message, confirmLabel, danger = false
   );
 }
 
-// Modal de creación de quincenas — flujo automático: elegís fechas, carriers
-// y faenas (chips toggleables), y la quincena se arma con un resumen por
-// carrier construido desde sus vueltas sueltas dentro de ese alcance.
+// Alta de quincena: se eligen fechas, faenas y transportistas, y la quincena
+// se arma con un resumen nuevo por transportista (con sus vueltas sueltas de
+// ese alcance) más los resúmenes sueltos que se elijan importar.
 function PayrollCreateModal({ carriers, carriersById, faenas, pendingTrips, looseSummaries, onClose, onCreate }) {
   const [name, setName] = useState("");
   const [periodFrom, setPeriodFrom] = useState("");
   const [periodTo, setPeriodTo] = useState("");
   const [notes, setNotes] = useState("");
-  // Carriers excluidos del armado automático (default vacío = todos incluidos).
+  // Transportistas excluidos; vacío = todos incluidos.
   const [excludedCarrierIds, setExcludedCarrierIds] = useState(new Set());
-  // excludedFaenaIds vacío = todas las faenas incluidas (default).
+  // Faenas excluidas; vacío = todas incluidas.
   const [excludedFaenaIds, setExcludedFaenaIds] = useState(new Set());
-  // Resúmenes existentes seleccionados para importar (default vacío).
+  // Resúmenes existentes elegidos para importar.
   const [importIds, setImportIds] = useState(new Set());
   const [busy, setBusy] = useState(false);
 
   const inRange = (d) =>
     (!periodFrom || d >= periodFrom) && (!periodTo || d <= periodTo);
 
-  // Vueltas sueltas (sin paymentId) filtradas por rango + faenas. Estas son
-  // las que van a alimentar los resúmenes nuevos que armaremos auto.
+  // Vueltas sueltas (sin paymentId) del rango y de las faenas incluidas: con
+  // ellas se arman los resúmenes nuevos.
   const eligibleTrips = useMemo(() => {
     return pendingTrips.filter((t) => {
       if (!inRange(t.date)) return false;
@@ -5567,7 +5464,7 @@ function PayrollCreateModal({ carriers, carriersById, faenas, pendingTrips, loos
     });
   }, [pendingTrips, periodFrom, periodTo, excludedFaenaIds]);
 
-  // Auto-listado: agrupar vueltas elegibles por carrier.
+  // Vueltas elegibles agrupadas por transportista.
   const tripsByCarrier = useMemo(() => {
     const m = new Map();
     for (const t of eligibleTrips) {
@@ -5577,8 +5474,8 @@ function PayrollCreateModal({ carriers, carriersById, faenas, pendingTrips, loos
     return m;
   }, [eligibleTrips]);
 
-  // Carriers auto-listados ordenados por alias. Todos incluidos por default
-  // — el usuario puede destildar individualmente.
+  // Transportistas con vueltas elegibles, por alias. Entran todos salvo los
+  // que se destilden.
   const autoCarriers = useMemo(() => {
     return [...tripsByCarrier.entries()]
       .map(([carrierId, trips]) => {
@@ -5592,14 +5489,14 @@ function PayrollCreateModal({ carriers, carriersById, faenas, pendingTrips, loos
       });
   }, [tripsByCarrier, carriersById]);
 
-  // Lo que efectivamente se va a usar para crear resúmenes nuevos.
+  // Transportistas a los que se les crea un resumen nuevo.
   const perCarrierToCreate = useMemo(
     () => autoCarriers.filter((c) => !excludedCarrierIds.has(c.carrierId)),
     [autoCarriers, excludedCarrierIds],
   );
 
-  // Resúmenes existentes (sueltos, no pagados) — opcionalmente importables.
-  // Filtro suave por overlap con el rango si está definido, para reducir ruido.
+  // Resúmenes sueltos y no pagados que se pueden importar. Con rango definido,
+  // solo los que se cruzan con él; los que no tienen período entran igual.
   const importableSummaries = useMemo(() => {
     return looseSummaries
       .filter((s) => {
@@ -5607,7 +5504,7 @@ function PayrollCreateModal({ carriers, carriersById, faenas, pendingTrips, loos
         const sFrom = s.periodFrom || s.periodTo || null;
         const sTo = s.periodTo || s.periodFrom || null;
         if (!sFrom || !sTo) return true;
-        // Hay overlap si NO (sTo < from || sFrom > to)
+        // Se cruzan si NO (sTo < from || sFrom > to)
         if (periodFrom && sTo < periodFrom) return false;
         if (periodTo && sFrom > periodTo) return false;
         return true;
@@ -5738,7 +5635,8 @@ function PayrollCreateModal({ carriers, carriersById, faenas, pendingTrips, loos
           />
         </label>
 
-        {/* Filtro de faenas — chips toggleables. Default todas activas. */}
+        {/* Faenas: cada chip excluye o vuelve a incluir una; arrancan todas
+            incluidas. */}
         <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2">
           <div className="mb-1.5 flex items-center justify-between text-xs">
             <span className="font-medium uppercase tracking-wide text-[var(--color-muted)]">
@@ -5776,7 +5674,7 @@ function PayrollCreateModal({ carriers, carriersById, faenas, pendingTrips, loos
           </div>
         </div>
 
-        {/* Transportistas con vueltas sueltas en el rango — auto-listados. */}
+        {/* Transportistas con vueltas sueltas en el rango. */}
         <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2">
           <div className="mb-1.5 flex items-center justify-between text-xs">
             <span className="font-medium uppercase tracking-wide text-[var(--color-muted)]">
@@ -6071,21 +5969,18 @@ function PayrollDetailModal({
   const [addingOpen, setAddingOpen] = useState(false);
   const [adding, setAdding] = useState(new Set());
   const printRef = useRef(null);
-  // Refs y datos para "Imprimir quincena + resúmenes". Renderizamos
-  // offscreen un PrintablePayrollTable + N PrintableSummary, capturamos
-  // outerHTML, y abrimos una ventana de impresión.
+  // "Imprimir quincena + resúmenes": dibuja fuera de pantalla la tabla de la
+  // quincena y un PrintableSummary por resumen, y abre la ventana de impresión
+  // con su outerHTML.
   const summaryRefs = useRef([]);
   const [printItems, setPrintItems] = useState(null);
   const [busy, setBusy] = useState("");
-  // Resumen actualmente abierto en vista detalle. Permite navegar de la
-  // tabla de la quincena a ver/editar las vueltas de un resumen sin salir
-  // del modal de la quincena.
+  // Resumen abierto en detalle, para ver o editar sus vueltas sin salir de la
+  // quincena.
   const [viewingPayment, setViewingPayment] = useState(null);
   const isPaid = payroll.status === "paid";
-  // Totales por estado: la quincena puede tener resúmenes ya pagados
-  // individualmente (con el botón "💰 Pagar" por ítem) aunque la quincena
-  // todavía no se marque como pagada en bloque. Mostramos el pendiente
-  // separado para que se vea cuánto queda por desembolsar.
+  // Totales por estado: una quincena pendiente puede tener resúmenes ya
+  // pagados uno por uno (botón "💰 Pagar"); el pendiente se muestra aparte.
   const totalAll = items.reduce((s, it) => s + (Number(it.total) || 0), 0);
   const totalPaid = items.reduce((s, it) => s + (it.status === "paid" ? (Number(it.total) || 0) : 0), 0);
   const totalPending = totalAll - totalPaid;
@@ -6152,9 +6047,9 @@ function PayrollDetailModal({
     setTimeout(() => { win.print(); }, 250);
   };
 
-  // Imprime la quincena (resumen) + 1 hoja por cada resumen interno con su
-  // detalle de vueltas. Trips se cargan al click via tripsService.listAll
-  // y se filtran por payment.tripIds.
+  // Imprime la tabla de la quincena y una hoja por resumen con el detalle de
+  // sus vueltas. Las vueltas se leen al hacer click (tripsService.listAll) y
+  // se filtran por los tripIds de cada resumen.
   const handlePrintAll = async () => {
     if (items.length === 0) {
       toast.warning("La quincena no tiene resúmenes para imprimir.");
@@ -6181,7 +6076,7 @@ function PayrollDetailModal({
       });
       summaryRefs.current = new Array(built.length).fill(null);
       setPrintItems(built);
-      // Esperar un tick para que React renderice los nodos offscreen.
+      // Espera a que React dibuje los nodos fuera de pantalla.
       await new Promise((r) => setTimeout(r, 100));
       const headerHtml = printRef.current?.outerHTML || "";
       const summariesHtml = summaryRefs.current
@@ -6289,10 +6184,9 @@ function PayrollDetailModal({
         </div>
       )}
 
-      {/* Renderizado off-screen del printable — capturado por html-to-image
-          y `outerHTML` para imprimir. No visible para el usuario.
-          Cuando se dispara "Imprimir quincena + resúmenes" agregamos también
-          un PrintableSummary por cada item (refs en summaryRefs). */}
+      {/* Tabla imprimible fuera de pantalla, para html-to-image y outerHTML.
+          Con "Imprimir quincena + resúmenes" se suma un PrintableSummary por
+          resumen (refs en summaryRefs). */}
       <div style={{ position: "absolute", left: -99999, top: 0, pointerEvents: "none" }} aria-hidden>
         <PrintablePayrollTable ref={printRef} payroll={payroll} items={items} carriersById={carriersById} />
         {printItems && printItems.map((it, i) => (
@@ -6398,7 +6292,7 @@ function PayrollDetailModal({
 
       {items.length === 0 ? (
         <div className="rounded-md border border-dashed border-[var(--color-border)] py-4 text-center text-xs text-[var(--color-muted)]">
-          La quincena está vacía. Agregá resúmenes con el botón de arriba.
+          La quincena está vacía. Agrega resúmenes con el botón de arriba.
         </div>
       ) : (
         <div className="overflow-x-auto rounded-md border border-[var(--color-border)]">
@@ -6524,9 +6418,9 @@ function PayrollDetailModal({
         </div>
       )}
 
-      {/* Detalle del resumen seleccionado. Reusa el PaymentDetailModal
-          completo (con editar/quitar vueltas) — desactivamos solo onPay /
-          onRevert / onDelete porque esos flujos se manejan a nivel quincena. */}
+      {/* Detalle del resumen elegido: PaymentDetailModal completo (editar y
+          quitar vueltas), sin onPay, onRevert ni onDelete, que se manejan
+          desde la quincena. */}
       <PaymentDetailModal
         open={!!viewingPayment}
         onClose={() => setViewingPayment(null)}
@@ -6541,9 +6435,8 @@ function PayrollDetailModal({
         onDelete={null}
         onChanged={async () => {
           if (onItemChanged) await onItemChanged();
-          // Releemos el viewingPayment del set fresco para que el modal hijo
-          // reaccione (su prop `payment` es el objeto, no el id, sino el
-          // contenido stale persistiría).
+          // Relee el resumen abierto y se lo vuelve a pasar al modal hijo, que
+          // recibe el objeto y no el id.
           if (viewingPayment) {
             try {
               const updated = await paymentsService.getById(viewingPayment.id);

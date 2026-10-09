@@ -23,12 +23,9 @@ import { useIsMobile } from "../hooks/useIsMobile";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
-// Mínimo de caracteres para que el campo de búsqueda libre filtre la lista.
-// Antes eran 4 — había una razón fuerte (la búsqueda corría server-side por
-// prefijo y necesitábamos limitar el universo de matches). Hoy todo el filtro
-// es client-side sobre la lista cacheada en localStorage (TTL 2h), así que
-// dejarlo en 2 da feedback inmediato y permite buscar por apellido / dígitos
-// del RUT en cualquier posición. Los filtros (líder/banco) ignoran este gate.
+// Mínimo de caracteres para que la búsqueda libre filtre la lista. El filtro
+// corre en cliente sobre la lista cacheada, y los filtros de líder y forma de
+// pago no dependen de este mínimo.
 const MIN_SEARCH = 2;
 
 export default function Workers() {
@@ -39,11 +36,8 @@ export default function Workers() {
   const [summary, setSummary] = useState(null);
   const [groupSummaryOpen, setGroupSummaryOpen] = useState(false);
   const [search, setSearch] = useState("");
-  // `allWorkers` es la fuente única de verdad — viene del cache persistente
-  // de `workersService.list` (2h TTL). Antes había también `results` con la
-  // búsqueda server-side (`searchWorkers`); se eliminó porque con la lista
-  // completa en memoria el filtro client-side gana en flexibilidad
-  // (substring sobre apellido, dígitos parciales del RUT) sin reads extra.
+  // `allWorkers` es la única fuente de datos de la pantalla: la caché
+  // persistente de `workersService.list` (TTL 2 h).
   const [allWorkers, setAllWorkers] = useState([]);
   const [cacheLoading, setCacheLoading] = useState(false);
   // Filtros opcionales componibles con la búsqueda de texto.
@@ -57,9 +51,8 @@ export default function Workers() {
   const queryReady = queryRaw.replace(/[.\s-]/g, "").length >= MIN_SEARCH;
   const filtersActive = leaderFilter !== "" || payFilter !== "";
 
-  // Carga la lista completa de trabajadores. Hit a Firestore solo si el cache
-  // de localStorage expiró (2h TTL) o si nunca se cargó. Devuelve la lista
-  // para encadenar; si ya estaba cargada, retorna inmediatamente.
+  // Carga la lista completa de trabajadores; lee Firestore solo si la caché
+  // venció o no existe. Si ya está cargada, la devuelve sin esperar.
   const ensureAllForModal = async () => {
     if (allWorkers.length) return allWorkers;
     setCacheLoading(true);
@@ -80,9 +73,8 @@ export default function Workers() {
     }
   };
 
-  // Pre-cargar la lista al montar la pantalla — la primera vez paga ~500-2000
-  // reads (una vez por TTL de 2h), después es gratis. Así el filtro client-side
-  // funciona desde el primer caracter sin esperar acciones del usuario.
+  // Precarga la lista al montar, para que el filtro funcione desde el primer
+  // carácter. Cuesta una lectura por trabajador una vez por TTL.
   useEffect(() => {
     ensureAllForModal();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -101,14 +93,13 @@ export default function Workers() {
   const stripAccents = (s) =>
     String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();
 
-  // Filtrado client-side sobre `allWorkers` (única fuente de datos):
-  //   1. Filtro de líder (si está set).
-  //   2. Filtro de pago (efectivo/transferencia).
-  //   3. Búsqueda libre (gated por MIN_SEARCH) — "like" sobre el nombre
-  //      (cada palabra tipeada en cualquier orden, accent-insensitive; ver
-  //      matchesSearchQuery) y substring acentos-insensitive sobre RUT/id.
-  // Si no hay query ni filtros, devuelve [] para mantener el empty state y
-  // no abrumar con 2000 filas de entrada.
+  // Filtrado en cliente sobre `allWorkers`:
+  //   1. Líder, si hay uno elegido.
+  //   2. Forma de pago (efectivo o transferencia).
+  //   3. Búsqueda libre (desde MIN_SEARCH): cada palabra en el nombre, en
+  //      cualquier orden y sin acentos (matchesSearchQuery), o subcadena del
+  //      RUT o del id.
+  // Sin búsqueda ni filtros devuelve [] y se ve el estado vacío.
   const displayedResults = useMemo(() => {
     if (!queryReady && !filtersActive) return [];
     let arr = allWorkers;
@@ -144,9 +135,8 @@ export default function Workers() {
     setPayFilter("");
   };
 
-  // Re-fetch full cache. Llamado tras edit/delete — `workersService.{update,
-  // remove}` ya muta el cache aditivamente, pero traemos la lista actualizada
-  // por las dudas (caso edición de un campo derivado).
+  // Tras editar o eliminar, vuelve a tomar la lista de la caché, que
+  // `workersService` ya actualizó en modo aditivo.
   const refreshCache = async () => {
     try {
       const list = await workersService.list({
@@ -204,9 +194,8 @@ export default function Workers() {
     () => [
       {
         headerName: "RUT",
-        // Fase 3 de "rut editable": mostramos el rut ACTUAL (campo `rut`),
-        // no el id (workerId estable, congelado desde la creación) —
-        // fallback al id para workers viejos sin backfill todavía.
+        // Muestra el rut actual (campo `rut`), no el id, que es el rut de
+        // creación y no cambia. Sin campo `rut`, usa el id.
         valueGetter: (p) => p.data.rut || p.data.id,
         width: 140,
         valueFormatter: (p) => formatRutForDisplay(p.value),
@@ -278,9 +267,8 @@ export default function Workers() {
           const isCash = isCashBank(p.data.bankDetails?.[3]);
           return (
             <div className="flex h-full items-center gap-1">
-              {/* Indicador informativo de medio de pago — no es un toggle.
-                  El cambio Banco ↔ Efectivo ahora vive solo en el modal
-                  de edición. */}
+              {/* Indicador de forma de pago, no un toggle: Banco ↔ Efectivo
+                  se cambia en el modal de edición. */}
               <span
                 className={`inline-flex items-center rounded-md border px-2 py-1 text-xs ${
                   isCash
@@ -407,9 +395,8 @@ export default function Workers() {
         )}
       </div>
 
-      {/* Ocupa el alto restante en vez de un alto fijo: la lista es el último
-          elemento de la pantalla, así que no hay nada debajo a lo que cederle
-          espacio. Mismo patrón que Advances.jsx. */}
+      {/* Ocupa el alto restante, sin alto fijo: la lista es el último
+          elemento de la pantalla. Mismo patrón que Advances.jsx. */}
       <div
         className={`min-h-0 flex-1 ${isMobile ? "overflow-y-auto" : "ag-theme-quartz ag-theme-app"}`}
       >

@@ -1,8 +1,8 @@
 // Helpers del tipo de labor "tratoEtapas" (trato por etapas).
 //
-// Un labor por etapas define una lista fija de etapas (solo nombre + si cuenta
-// para producción). El PRECIO de cada etapa es variable por día, igual que en
-// trato: se configura en la barra de precios por día. Ejemplo (carpas):
+// Una labor por etapas define una lista fija de etapas (nombre y si cuenta en
+// las unidades). El PRECIO de cada etapa varía por día, igual que en trato, y
+// se configura en la barra de precios por día. Ejemplo (carpas):
 //   stages: [
 //     { id, name: "Preparación", counts: false },
 //     { id, name: "Instalación", counts: true  },
@@ -10,8 +10,7 @@
 //   ]
 //   dayPrices[laborId][date] = { [stageId]: { price, mode } }   // "unit" | "flat"
 //
-// La regla de oro (viven las dos sumas acá para que ningún consumidor la
-// reinvente y el conteo no se descontrole):
+// Las dos sumas viven aquí, para que todas las vistas cuenten igual:
 //   • PAGO      = Σ (qty × precio del día) de TODAS las etapas.
 //   • UNIDADES  = Σ qty solo de las etapas con `counts === true`.
 //
@@ -20,9 +19,8 @@
 // hay doble conteo.
 
 export function newStageId() {
-  // Id único y estable: se genera en handlers (agregar etapa / abrir modal),
-  // no en render, así que Date.now + random es seguro y evita colisiones con
-  // ids ya persistidos entre recargas de página.
+  // Id único (Date.now + random). Se llama desde handlers (agregar etapa,
+  // abrir modal), no en render, para que el id quede estable.
   return `st_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 }
 
@@ -33,9 +31,9 @@ export function defaultStages() {
   ];
 }
 
-// Normaliza la lista de etapas: descarta entradas sin nombre y garantiza al
-// menos una marcada como `counts` (si ninguna lo está, marca la última — no
-// tiene sentido un labor por etapas donde nada cuenta para producción).
+// Normaliza la lista de etapas: les da id a las que no tienen, descarta las
+// que no tienen nombre y, si ninguna tiene `counts`, marca la última: siempre
+// cuenta al menos una.
 export function normalizeStages(stages) {
   const list = (Array.isArray(stages) ? stages : [])
     .map((s) => ({
@@ -75,7 +73,7 @@ export function computeStageDayAmount(mode, price, qty) {
 }
 
 // Etapas de un día con su precio/modo resueltos: [{ id, name, counts, price, mode }].
-// El orden respeta el de las etapas del labor.
+// El orden respeta el de las etapas de la labor.
 export function getDayStages(labor, dayPrices, date) {
   const stages = normalizeStages(labor?.stages);
   return stages.map((s) => {
@@ -84,7 +82,7 @@ export function getDayStages(labor, dayPrices, date) {
   });
 }
 
-// Totales de un conjunto de workdays de un labor por etapas.
+// Totales de un conjunto de workdays de una labor por etapas.
 // `workdays`: array de workday docs (con `stageId`, `qty`, `amount`).
 // Devuelve { pago, unidades }.
 export function getEtapasTotals(labor, workdays) {
@@ -101,13 +99,10 @@ export function getEtapasTotals(labor, workdays) {
 }
 
 // Metadatos de una etapa para mostrarla en un desglose: nombre, si cuenta para
-// el conteo de la empresa, y su posición según la definición del labor (no
-// según el orden en que aparezcan los workdays).
-//
-// Vive acá porque los tres consumidores —resumen del trabajador, detalle de
-// pago y grilla del ciclo— arman el mismo desglose, y tener la regla escrita
-// tres veces es lo que dejó pasar que el qty de las etapas sin `counts` no se
-// mostrara en ninguno de los tres.
+// el conteo de la empresa y su posición según la definición de la labor (no
+// según el orden en que aparezcan los workdays). La usan los tres desgloses
+// —resumen del trabajador, detalle de pago y grilla del ciclo— para que
+// muestren lo mismo.
 export function describeStage(labor, stageId, orden = null) {
   const sid = String(stageId ?? "");
   const lista = orden || normalizeStages(labor?.stages).map((st) => String(st.id));
@@ -115,8 +110,8 @@ export function describeStage(labor, stageId, orden = null) {
   return {
     stageId: sid,
     name: st?.name || "Etapa",
-    // Una etapa que no está en la definición se trata como que cuenta: es
-    // producción real que quedó huérfana, esconderla sería peor.
+    // Una etapa que no está en la definición cuenta: es producción real que
+    // quedó huérfana.
     counts: st ? !!st.counts : true,
     order: lista.indexOf(sid),
   };
@@ -125,11 +120,10 @@ export function describeStage(labor, stageId, orden = null) {
 // Etiqueta visible de una etapa en las vistas del trabajador: resumen de
 // producción, comprobante de efectivo y detalle de pago.
 //
-// Va SOLO el nombre. `counts` no se rotula acá: es una distinción de
-// facturación de la empresa, y al lado de la producción de alguien un
-// "(no cuenta)" se lee como que su trabajo no vale. El rótulo sigue existiendo
-// donde sí corresponde — el resumen por faena de `CycleSummaryModal`, que es la
-// vista de cobro, y el tooltip de la grilla del ciclo.
+// Va SOLO el nombre, sin "(no cuenta)": `counts` es una distinción de
+// facturación de la empresa, y al lado de la producción de alguien se lee como
+// que su trabajo no vale. Ese rótulo va solo en las vistas de la empresa: el
+// resumen por faena de `CycleSummaryModal` y el tooltip de la grilla del ciclo.
 export function stageTag(etapa) {
   if (!etapa) return "";
   return etapa.name || "Etapa";

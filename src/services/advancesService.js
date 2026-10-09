@@ -1,29 +1,27 @@
-// Anticipos & Bonos — single collection with type discriminator.
-// type "anticipo": descuento sobre la próxima nómina (sign = -1).
-// type "bono":     suma sobre la próxima nómina (sign = +1).
+// Anticipos y bonos: una sola colección con discriminador `type`.
+// type "anticipo": descuenta de la próxima nómina (signo -1).
+// type "bono":     suma a la próxima nómina (signo +1).
 //
-// Legacy "adelanto" se normaliza a "anticipo" al leer (mismo signo, mismo flujo).
+// El tipo "adelanto" se normaliza a "anticipo" al leer (mismo signo, mismo flujo).
 //
-// Doc shape:
+// Forma del documento:
 //   id, type, workerRut, workerName, amount, date, note,
 //   status: "pending" | "partial" | "applied" | "cancelled",
-//   amountPaid: number (sum of payments[]),
+//   amountPaid: number (suma de payments[]),
 //   payments: [{ payrollId, amount, paidAt }],
-//   appliedPayrollId: string | null  (last payroll that touched it; legacy)
+//   appliedPayrollId: string | null  (última nómina que lo tocó)
 //   appliedAt, appliedBy
-//   installments: { count, amount, cadence } | null  (anticipo-only; see below)
+//   installments: { count, amount, cadence } | null  (solo anticipos; ver abajo)
 //
-// "pending"  → no amount applied yet (or amountPaid == 0).
-// "partial"  → amountPaid > 0 but < amount; can keep being applied.
+// "pending"  → nada aplicado (amountPaid == 0).
+// "partial"  → amountPaid > 0 pero < amount; se sigue aplicando contra el saldo.
 // "applied"  → amountPaid >= amount.
 //
-// installments: optional repayment plan set at creation, only for type
-// "anticipo" (never bono), locked afterward (create a new advance instead of
-// editing a plan mid-repayment). `cadence` is a label/hint for the admin —
-// NOT a date-based gate — deduction still only happens when a payroll is
-// generated, and the admin explicitly confirms which cuotas apply in
-// InstallmentConfirmModal (Payroll.jsx). See advanceDueNow()/
-// installmentProgress() below.
+// installments: plan de cuotas opcional, solo para "anticipo" (nunca bono),
+// que se fija al crearlo y no se edita después. `cadence` es una etiqueta para
+// el admin, no un corte por fecha: el descuento ocurre al generar una nómina,
+// y el admin confirma qué cuotas aplica en InstallmentConfirmModal
+// (Payroll.jsx). Ver advanceDueNow() e installmentProgress().
 import { writeBatch, doc, getDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { createService } from "./firestoreBase";
@@ -56,31 +54,22 @@ export function advanceTypeMeta(type) {
 
 export const advancesService = createService("advance", "advances");
 
-// Clave con la que agrupar los anticipos de una misma persona. Un anticipo
-// viejo puede haberse guardado contra el rut con el que se creó el trabajador
-// y uno nuevo contra su rut actual, si cambió de cédula en el medio.
+// Clave para agrupar los anticipos de una misma persona. Prefiere `workerId`:
+// los anticipos de un trabajador que cambió de rut pueden tener distinto
+// `workerRut`.
 export const advanceWorkerKey = (a) => a?.workerId || a?.workerRut || "";
 
-// Para filtrar hay que comparar los DOS identificadores del anticipo contra las
-// claves buscadas, no solo el derivado: un anticipo puede tener `workerId` y
-// `workerRut` distintos, y quedarse con el primero pierde el match cuando lo
-// que se conoce es el otro.
+// Compara los dos identificadores del anticipo, `workerId` y `workerRut`,
+// contra las claves buscadas: pueden ser distintos y basta con que coincida uno.
 export const advanceMatchesWorker = (a, keys) =>
   [a?.workerId, a?.workerRut].some((id) => id && keys.has(id));
 
-// `workerRut` es la única forma de buscar un anticipo. Antes se consultaba
-// además por `workerId`, pero todos los trabajadores tienen su rut y los
-// nuevos nacen con él, así que esa segunda pasada consultaba el mismo valor en
-// un campo que casi ningún documento usa: duplicaba las consultas sin
-// encontrar nada.
+// Anticipos y bonos con saldo (`pending` o `partial`) de los ruts dados. Se
+// buscan solo por `workerRut`.
 export async function listPendingForWorkers(workerRuts) {
-  // El estado se filtra en el SERVIDOR. Traerse todos los anticipos históricos
-  // de cada persona para descartar los saldados en JS significaba pagar por
-  // ~9 documentos por trabajador para quedarse con 1.
-  //
+  // El estado se filtra en el servidor, así no se leen los anticipos saldados.
   // Firestore expande la consulta a forma normal disyuntiva y admite hasta 30
-  // términos: 10 ruts × 2 estados = 20, con margen si algún día se suma un
-  // tercer estado pendiente.
+  // términos: 10 ruts × 2 estados = 20.
   const out = [];
   const seen = new Set();
   const uniq = [...new Set(workerRuts)].filter(Boolean);
@@ -104,7 +93,7 @@ export async function listPendingForWorkers(workerRuts) {
   return out;
 }
 
-// Helper: how much of an advance is still owed.
+// Saldo que queda por descontar de un anticipo.
 export function advanceRemaining(adv) {
   const amount = Number(adv?.amount) || 0;
   const paid = Number(adv?.amountPaid) || 0;
@@ -121,10 +110,8 @@ export function cadenceMeta(cadence) {
   return INSTALLMENT_CADENCES.find((c) => c.value === cadence) || INSTALLMENT_CADENCES[0];
 }
 
-// Math.ceil (no Math.round): count cuotas siempre alcanzan para cubrir el
-// total, y la última queda naturalmente más chica (clippeada por
-// advanceRemaining() al aplicarla) — sin tener que llevar la cuenta de "en
-// qué cuota vamos".
+// Redondea hacia arriba para que `count` cuotas cubran el total. La última
+// queda más chica porque al aplicarla se topa con advanceRemaining().
 export function computeCuotaAmount(amount, count) {
   const n = Math.max(1, Math.floor(Number(count) || 1));
   return Math.ceil((Number(amount) || 0) / n);
@@ -134,10 +121,9 @@ export function hasInstallmentPlan(adv) {
   return Number(adv?.installments?.count) > 1 && !isBono(adv);
 }
 
-// Fecha base para "última cuota hace N días": el MÁXIMO entre los payments[]
-// con amount>0 (nunca el último elemento del array — restoreAdvancesFromPayroll
-// filtra entradas del medio al revertir una nómina, así que el array no queda
-// necesariamente ordenado por fecha), o la fecha del anticipo si aún no hay pagos.
+// Fecha base para "última cuota hace N días": la mayor fecha entre los
+// payments[] con amount > 0, o la del anticipo si no hay pagos. No se toma el
+// último elemento porque el array no está necesariamente ordenado por fecha.
 export function lastCuotaDate(adv) {
   const payments = Array.isArray(adv?.payments) ? adv.payments : [];
   let best = null;
@@ -160,7 +146,7 @@ export function daysSinceLastCuota(adv, asOf = new Date()) {
 }
 
 // Resumen del plan de cuotas de un anticipo, para badges y el modal de
-// confirmación al generar nómina. Puramente informativo — no gatea nada.
+// confirmación al generar nómina. Solo informativo: no bloquea nada.
 export function installmentProgress(adv) {
   if (!hasInstallmentPlan(adv)) return null;
   const plan = adv.installments;
@@ -199,13 +185,13 @@ export async function listAll() {
   return advancesService.list({ order: ["date", "desc"] });
 }
 
-// Apply partial / full payments against advances.
-// `applications`: [{ advanceId, amount }]  — `amount` is what this payroll
-// actually paid against that advance. The advance's status flips to "partial"
-// or "applied" depending on whether amountPaid reaches the full amount.
+// Aplica descuentos parciales o totales de una nómina contra los anticipos.
+// `applications`: [{ advanceId, amount }], con `amount` = lo que esta nómina
+// pide descontar de ese anticipo. El estado pasa a "partial" o "applied" según
+// si amountPaid llega al total.
 export async function applyAdvancesToPayroll(applications, payrollId) {
   if (!applications || applications.length === 0) return;
-  // Fetch each advance to compute its new amountPaid + status.
+  // Lee cada anticipo para calcular su nuevo amountPaid y estado.
   const docs = await Promise.all(
     applications.map(async (app) => {
       const snap = await getDoc(doc(db, "advances", app.advanceId));
@@ -213,11 +199,10 @@ export async function applyAdvancesToPayroll(applications, payrollId) {
     }),
   );
 
-  const now = new Date(); // serverTimestamp() can't be used inside arrayUnion
+  const now = new Date(); // serverTimestamp() no se puede usar dentro de un array
   const uid = auth.currentUser?.uid || null;
-  // Aplicaciones que pidieron descontar más de lo que quedaba. Van al log
-  // para que queden visibles en Auditoría: capar en silencio es cómo se
-  // pierde plata sin dejar rastro.
+  // Aplicaciones que pidieron descontar más que el saldo. Van al log, así
+  // quedan visibles en Auditoría.
   const sobrantes = [];
   const chunkSize = 450;
   for (let i = 0; i < docs.length; i += chunkSize) {
@@ -228,20 +213,15 @@ export async function applyAdvancesToPayroll(applications, payrollId) {
       const prevPaid = Number(data.amountPaid) || 0;
       const pedido = Number(app.amount) || 0;
       const newPaid = Math.min(total, prevPaid + pedido);
-      // Lo que ESTE pago alcanzó a descontar de verdad, que no es lo pedido
-      // cuando el anticipo ya no tenía tanto saldo. `restoreAdvances` deshace
-      // un borrado recalculando el saldo desde `payments[]`, así que guardar
-      // acá el monto pedido hacía que un anticipo tocado por dos nóminas
-      // volviera con menos deuda de la real al borrar la primera.
+      // payments[] guarda lo descontado, no lo pedido: restoreAdvancesFromPayroll
+      // recalcula el saldo desde ahí.
       const aplicado = newPaid - prevPaid;
       const status = newPaid >= total && total > 0 ? "applied" : (newPaid > 0 ? "partial" : "pending");
       const payments = Array.isArray(data.payments) ? [...data.payments] : [];
       payments.push({ payrollId, amount: aplicado, paidAt: now.toISOString() });
       if (aplicado < pedido) {
-        // El preview creyó que quedaba más saldo del que había — típicamente
-        // se armó antes de que otra nómina descontara contra el mismo
-        // anticipo. Al trabajador se le retuvo `pedido` pero la deuda solo
-        // baja `aplicado`: la diferencia hay que devolvérsela a mano.
+        // Se pidió más que el saldo: al trabajador se le retuvo `pedido` pero
+        // la deuda solo baja `aplicado`. La diferencia se le devuelve a mano.
         sobrantes.push({ advanceId: app.advanceId, pedido, aplicado });
       }
       batch.update(doc(db, "advances", app.advanceId), {
@@ -256,9 +236,8 @@ export async function applyAdvancesToPayroll(applications, payrollId) {
     await batch.commit();
   }
   advancesService.invalidate();
-  // Un log por operación, no por anticipo: el batch existe justo para no hacer
-  // N escrituras, y auditar cada doc por separado lo anularía. El evento que
-  // importa es "esta nómina descontó estos anticipos".
+  // Un log por operación ("esta nómina descontó estos anticipos"), no uno por
+  // anticipo.
   await logAction({
     action: "update",
     entity: "payroll",
@@ -275,9 +254,9 @@ export async function applyAdvancesToPayroll(applications, payrollId) {
   return { sobrantes };
 }
 
-// Reverse the payments[] entries that match `payrollId`. If no other payroll
-// has paid against it, the advance returns to "pending"; otherwise it stays
-// "partial" with the reduced amountPaid.
+// Quita de payments[] las entradas de `payrollId` y recalcula amountPaid y
+// estado con lo que descontaron las demás nóminas: sin otras, el anticipo
+// vuelve a "pending".
 export async function restoreAdvancesFromPayroll(advanceIds, payrollId) {
   if (!advanceIds || advanceIds.length === 0) return;
   const docs = await Promise.all(
@@ -300,7 +279,7 @@ export async function restoreAdvancesFromPayroll(advanceIds, payrollId) {
         status,
         amountPaid: newPaid,
         payments: remainingPayments,
-        // Best effort: clear appliedPayrollId only if this was the last pointer.
+        // Limpia appliedPayrollId si queda pendiente o si apuntaba a esta nómina.
         appliedPayrollId: status === "pending" ? null : (data.appliedPayrollId === payrollId ? null : data.appliedPayrollId),
         appliedAt: status === "pending" ? null : data.appliedAt,
       });
@@ -348,17 +327,12 @@ export async function readPayrollApplications(payrollId, advanceIds) {
 
 // Fija cuánto le descuenta UNA nómina a cada anticipo/bono, sin tocar lo que le
 // aplicaron otras nóminas. `targets`: [{ advanceId, amount }] con el monto
-// FINAL de esta nómina — 0 la suelta entera, que es lo mismo que hace
+// FINAL de esta nómina; 0 la suelta entera, igual que
 // `restoreAdvancesFromPayroll`.
 //
-// Existe para achicar una nómina sin dejar rastro: antes la única operación era
-// soltar el anticipo entero o dejarlo entero, y la cobertura parcial no tenía
-// cómo expresarse. La entrada de esta nómina en `payments[]` se reescribe en su
-// lugar, conservando su `paidAt`: el hint "última cuota hace N días" sale de
-// ahí, y una nómina que se achica no hizo un pago nuevo.
-//
-// Topea contra el saldo que dejan las OTRAS nóminas, así que pedir de más
-// nunca sobre-cobra un anticipo.
+// La entrada de esta nómina en `payments[]` se reescribe en su lugar y
+// conserva su `paidAt`, de donde sale el hint "última cuota hace N días".
+// Topea contra el saldo que dejan las OTRAS nóminas.
 export async function setPayrollAdvanceAmounts(payrollId, targets) {
   const list = (targets || []).filter((t) => t && t.advanceId);
   if (!list.length) return { cambios: [] };

@@ -13,8 +13,8 @@ import MetricCard from "../components/MetricCard";
 import Modal from "../components/Modal";
 import { fmtCurrency, fmtMonthKey, fmtNumber, fmtPercent, fmtShortDate } from "../utils/format";
 
-// Recharts pesa, y el bundle ya viene con warning de tamaño. Cargándolo con
-// lazy queda en su propio chunk y las tarjetas de KPI pintan sin esperarlo.
+// Recharts se carga lazy, en su propio chunk: las tarjetas de KPI pintan sin
+// esperarlo.
 const DashboardCharts = lazy(() => import("../components/DashboardCharts"));
 
 const PERIODS = [
@@ -23,9 +23,8 @@ const PERIODS = [
   { key: "12m", label: "12 meses", months: 12 },
 ];
 
-// Un ciclo abierto cuyo último día cargado quedó más atrás que esto se
-// considera olvidado. No hay nada que lo cierre solo — es justamente el tipo
-// de cosa que se escapa y por eso vale la pena tenerla en la portada.
+// Un ciclo abierto cuyo último día cargado tiene más días que esto se lista
+// como sin movimiento. El cierre de un ciclo es manual.
 const STALE_DAYS = 14;
 
 const monthKeyOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -54,17 +53,14 @@ function tsToIso(ts) {
   return d ? isoOf(d) : "";
 }
 
-// A qué fecha se atribuye un resumen de transporte. Va por el período que
-// cubre y no por `createdAt`: el resumen de la segunda semana de agosto se
-// suele armar recién en septiembre, y contarlo en septiembre corre el gasto de
-// mes. Se toma el punto medio de [periodFrom, periodTo] porque cuando el
-// período cruza el cambio de mes, el medio cae en el mes que tiene la mayoría
-// de los días (28-ago a 3-sep → 31-ago → agosto).
+// Fecha a la que se atribuye un resumen de transporte: el punto medio del
+// período que cubre, no `createdAt` (un resumen suele armarse semanas después
+// del período). Si el período cruza el cambio de mes, el punto medio cae en el
+// mes con más días (28-ago a 3-sep → 31-ago → agosto).
 //
 // `periodFrom`/`periodTo` son el rango con que se creó el resumen y no se
-// recalculan si después se le agregan vueltas, así que pueden quedar algo más
-// angostos que las fechas reales — igual es mucho mejor referencia que la
-// fecha de creación. Si el resumen no trae período, cae a `createdAt`.
+// recalculan al agregarle vueltas, así que pueden quedar algo más angostos que
+// las fechas reales. Sin período, usa `createdAt`.
 function paymentPeriodDate(p) {
   const from = p.periodFrom || p.periodTo;
   const to = p.periodTo || p.periodFrom;
@@ -139,8 +135,8 @@ const pendingOfPayment = (p) => {
   return Math.max(0, total - abonado);
 };
 
-// Notas de crédito: restan del total del período. Mismo criterio que
-// `Facturacion.jsx` para que los números de las dos pantallas coincidan.
+// Notas de crédito: restan del total del período. Copia de CREDIT_NOTE_TYPES
+// de utils/cashFlowProjection.js (el que usa Facturación): tienen que coincidir.
 const CREDIT_NOTE_TYPES = new Set([61, 112]);
 // Ventana de la comparativa de facturación. 6 meses entra cómodo en el límite
 // de 30 valores del operador `in`.
@@ -168,9 +164,9 @@ export default function Dashboard() {
   const [countReads, setCountReads] = useState(0);
   // Mes del gráfico de deuda abierto en el modal de detalle.
   const [debtDetail, setDebtDetail] = useState(null);
-  // Comparativa compras/ventas. `dteDocuments` es la colección más grande del
-  // sistema, así que primero se consulta cuánto costaría (1 lectura) y la carga
-  // queda a criterio del usuario.
+  // Comparativa compras/ventas, de una empresa a la vez: `dteDocuments` es la
+  // colección más grande del sistema y la consulta se acota a la empresa
+  // elegida.
   const [dteCompanies, setDteCompanies] = useState([]);
   const [dteCompanyId, setDteCompanyId] = useState("");
   const [dteRows, setDteRows] = useState(null);
@@ -207,7 +203,7 @@ export default function Dashboard() {
   }, []);
 
   // Catálogo de empresas para el selector. Misma clave de caché que
-  // Facturación, así que es gratis si ya pasaste por esa pantalla.
+  // Facturación: no cuesta lecturas si esa pantalla ya lo cargó.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -264,9 +260,9 @@ export default function Dashboard() {
         setDteReads((r) => r + reads);
       } catch (err) {
         if (cancelled) return;
-        // La consulta cruza `companyId` con `periodo`, así que puede pedir un
-        // índice compuesto. Firestore manda el link para crearlo dentro del
-        // mensaje — eso va a consola, que es donde sirve.
+        // La consulta cruza `companyId` con `periodo` y puede pedir un índice
+        // compuesto. El mensaje de Firestore trae el link para crearlo: va a la
+        // consola del navegador.
         console.error("[dashboard] comparativa de facturación:", err);
         setDteError(
           err.code === "failed-precondition"
@@ -328,9 +324,7 @@ export default function Dashboard() {
     for (const p of payrolls) {
       if (p.status !== "paid") {
         pendingCount += 1;
-        // Si las transferencias ya salieron, lo único que se debe es el
-        // efectivo — contar el total entero inflaría el pendiente con plata
-        // que ya está en las cuentas.
+        // Con las transferencias ya hechas, lo pendiente es solo el efectivo.
         pendingTotal += p.bankPaidAt ? pendingCashOf(p) : Number(p.total) || 0;
       }
       const mk = payrollMonthKey(p);
@@ -450,21 +444,18 @@ export default function Dashboard() {
 
   // Cómo fue variando la deuda con los transportistas.
   //
-  // La unidad de deuda es el RESUMEN (`transportPayments`), no la quincena: la
-  // quincena es apenas una agrupación de resúmenes, así que contar las dos
-  // duplicaría los montos. La deuda nace cuando se crea el resumen y baja de
-  // dos formas — por abonos parciales (cada uno con su propia fecha) o cuando
-  // se marca el resumen como pagado, que salda el remanente. Así el gráfico
-  // refleja tanto lo que se debe como lo que efectivamente se fue pagando.
+  // La unidad de deuda es el resumen (`transportPayments`), no la quincena,
+  // que solo agrupa resúmenes: contar las dos duplicaría los montos. La deuda
+  // nace con el resumen y baja por cada abono parcial (en su fecha) y al
+  // marcarlo pagado, que salda el remanente.
   //
-  // La deuda se fecha por el período que cubre el resumen (`paymentPeriodDate`),
-  // no por cuándo se armó; los pagos sí van por su fecha real, que es cuando la
-  // plata se movió.
+  // La deuda se fecha por el período que cubre el resumen (`paymentPeriodDate`);
+  // los pagos, por su fecha real.
   //
-  // Lo que cae antes de la ventana de 12 meses se acumula en un saldo inicial
-  // para que la línea sea el saldo vigente y no solo el flujo de la ventana.
-  // Ojo: los resúmenes se traen por `createdAt` de los últimos 12 meses, así
-  // que una deuda más vieja que eso y todavía impaga no entra en ese saldo.
+  // Lo anterior a la ventana de 12 meses se acumula en un saldo inicial, así la
+  // línea es el saldo vigente y no solo el flujo de la ventana. Los resúmenes
+  // se traen por `createdAt` de los últimos 12 meses: una deuda impaga más
+  // vieja que eso no entra en el saldo.
   const debt = useMemo(() => {
     const alias = new Map(carriers.map((c) => [c.id, c.alias || c.name || c.id]));
     const quincenaName = new Map(quincenas.map((q) => [q.id, q.name || q.id]));
@@ -640,7 +631,7 @@ export default function Dashboard() {
                     ? "mes actual"
                     : `${ops.workdaysDelta >= 0 ? "+" : ""}${fmtPercent(ops.workdaysDelta, 0)} vs mes anterior`
                 }
-                title="Filas de workday del mes en curso. Incluye piso y asistencia de trabajadores mensuales, así que no es exactamente la cuenta de jornadas pagadas."
+                title="Registros de jornada del mes en curso. Incluye piso y asistencia de trabajadores mensuales, así que no es exactamente la cuenta de jornadas pagadas."
               />
               <MetricCard
                 label="Ciclos estancados"

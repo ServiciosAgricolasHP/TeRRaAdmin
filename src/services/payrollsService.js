@@ -63,8 +63,8 @@ export async function workdaysForNewPayroll({ chosen = new Map(), people = [] })
   return { workdays: workdays.filter((wd) => !ocupadas.has(wd.id)), taken };
 }
 
-// Batched: tag every included workday with payrollId. Firestore batch limit = 500.
-// `onProgress(done, total)` is called after each chunk for UI feedback.
+// Etiqueta cada workday incluido con `payrollId`, en batches de hasta 500 (el
+// límite de Firestore). `onProgress(done, total)` se llama después de cada tanda.
 export async function tagWorkdaysWithPayroll(workdayIds, payrollId, onProgress) {
   await batchUpdateWorkdays(workdayIds, {
     payrollId,
@@ -73,12 +73,12 @@ export async function tagWorkdaysWithPayroll(workdayIds, payrollId, onProgress) 
   }, onProgress);
 }
 
-// Used when payroll is deleted — release the workdays.
+// Suelta los workdays de la nómina: borra `payrollId` y `paidAt`.
 export async function untagWorkdaysFromPayroll(workdayIds, onProgress) {
   await batchUpdateWorkdays(workdayIds, { payrollId: null, paidAt: null }, onProgress);
 }
 
-// Used when payroll is marked paid — also stamp the workdays.
+// Sella `paidAt` y `paidBy` en los workdays.
 export async function markWorkdaysPaid(workdayIds, onProgress) {
   await batchUpdateWorkdays(workdayIds, {
     paidAt: serverTimestamp(),
@@ -90,20 +90,13 @@ export async function unmarkWorkdaysPaid(workdayIds, onProgress) {
   await batchUpdateWorkdays(workdayIds, { paidAt: null, paidBy: null }, onProgress);
 }
 
-// Aplica un patch a una lista de workdays. Estrategia en 2 niveles:
+// Aplica un patch a una lista de workdays, en dos niveles:
 //
-// FAST PATH — `writeBatch` de hasta 500 updates, comiteados EN PARALELO.
-// Cada batch es 1 solo round-trip contra Firestore, así 1000 workdays son
-// 2 commits concurrentes (~0.5-1s total) en vez de 20 tandas de updateDoc
-// individuales (~2-4s, mucho más en conexión móvil).
-//
-// SLOW PATH (fallback por batch) — `batch.update` es atómico: si UN workday
-// del batch ya no existe (caso típico: un admin eliminó el ciclo en cascada
-// y los workdays se borraron, pero la nómina sigue referenciándolos en
-// `workdayIds`), el batch entero falla con "No document to update". En ese
-// caso reintentamos SOLO ese batch con `updateDoc` individual (concurrencia
-// 50) tragando los `not-found` puntuales. La data limpia nunca paga este
-// costo — solo los batches con referencias muertas.
+// - `writeBatch` de hasta 500 updates, con los commits en paralelo.
+// - `batch.update` es atómico: si UN workday del batch ya no existe (p. ej. se
+//   borró con su ciclo y la nómina lo sigue nombrando en `workdayIds`), el
+//   batch entero falla con "No document to update". Solo ese batch se
+//   reintenta con `updateDoc` uno por uno (de a 50), saltando los `not-found`.
 const BATCH_LIMIT = 500;
 
 async function updateWorkdaysIndividually(ids, patch) {
@@ -180,11 +173,10 @@ export async function markPaid(id, workdayIds = [], onProgress) {
 }
 
 // ───────────────── Pago en dos tiempos (banco / efectivo) ─────────────────
-// El caso real: salen las transferencias pero el efectivo no se alcanza a
-// entregar y queda debiéndose para la vuelta siguiente. `bankPaidAt` es el
-// flag que marca eso. La nómina sigue en `pending` — no está pagada entera —
-// así que ninguna de las ~11 comparaciones `status === "paid"` de la app
-// cambia de significado.
+// Salen las transferencias y el efectivo queda debiéndose para la vuelta
+// siguiente: `bankPaidAt` es el flag que lo marca. La nómina sigue en
+// `pending` (no está pagada entera), así que ninguna comparación
+// `status === "paid"` de la app cambia de significado.
 //
 // La deuda de efectivo NO se guarda como campo: se deriva siempre con
 // `pendingCashOf`, para que no exista un booleano que pueda quedar
@@ -226,17 +218,16 @@ export async function revertBankPaid(payrollId, onProgress) {
   const p = await payrollsService.getById(payrollId);
   if (!p) throw new Error("Nómina no encontrada");
   if (p.status === "paid") {
-    throw new Error("La nómina está pagada entera — revertí el pago completo.");
+    throw new Error("La nómina está pagada entera — revierte el pago completo.");
   }
   await unmarkWorkdaysPaid(bankWorkdayIdsOf(p), onProgress);
   return payrollsService.update(payrollId, { bankPaidAt: null, bankPaidBy: null });
 }
 
 // Personas de efectivo que cobraron sueltas, antes que el resto de su grupo.
-// Solo se registra el rut: NO se estampa `paidAt` en sus workdays, porque hoy
-// ese campo significa "la nómina se marcó pagada" y darle un segundo
-// significado por persona obliga a un camino de des-estampado. `markPaid` los
-// sella a todos al final, igual que siempre.
+// Solo se registra el rut: NO se estampa `paidAt` en sus workdays, porque ese
+// campo significa "la nómina se marcó pagada". `markPaid` los sella a todos al
+// final.
 export async function setCashPaidRuts(payrollId, ruts) {
   return payrollsService.update(payrollId, { cashPaidRuts: [...new Set(ruts || [])] });
 }
@@ -246,7 +237,7 @@ export async function setCashPaidRuts(payrollId, ruts) {
 // alguien que ya tiene la plata en la cuenta.
 export function assertEditable(p, verb = "editar") {
   if (p.status === "paid") {
-    throw new Error(`La nómina está pagada — revertí el pago antes de ${verb}.`);
+    throw new Error(`La nómina está pagada — revierte el pago antes de ${verb}.`);
   }
   if (p.bankPaidAt) {
     throw new Error(`Las transferencias de esta nómina ya se pagaron — revertilas antes de ${verb}.`);
@@ -254,16 +245,15 @@ export function assertEditable(p, verb = "editar") {
 }
 
 // ───────────────────────── Edición parcial ─────────────────────────
-// Estos helpers permiten "achicar" una nómina pendiente sin tener que
-// eliminarla entera: sacar un trabajador o sacar todo lo que aporta un ciclo.
-// La nómina debe estar en estado `pending`. Si está pagada, hay que revertir
-// el pago primero.
+// "Achicar" una nómina pendiente sin eliminarla entera: sacar un trabajador o
+// todo lo que aporta un ciclo. La nómina tiene que estar `pending`; si está
+// pagada, primero se revierte el pago.
 //
-// Side-effects:
-//   - Untag de los workdays involucrados (libera `payrollId`).
+// Efectos:
+//   - Suelta los workdays involucrados (libera `payrollId`).
 //   - Sacar un trabajador suelta todos sus anticipos. Sacar un ciclo deja la
-//     nómina como si se hubiera armado sin ese ciclo — ver `planCycleRemoval`
-//     en `utils/payrollItem.js`, que es donde vive la regla y sus tests.
+//     nómina como si se hubiera armado sin ese ciclo: ver `planCycleRemoval`
+//     en `utils/payrollItem.js`, donde vive la regla con sus tests.
 //   - Recalcula `items`, `total`, `bankTotal`, `cashTotal`, `workerCount`,
 //     `bankCount`, `cashCount`, `workdayIds`, `advanceIds`, `advanceTotal`.
 
@@ -358,12 +348,13 @@ export async function removeCycleFromPayroll(payrollId, cycleId) {
   return { salen: plan.salen, ajustados: plan.ajustados };
 }
 
-// Agrega ciclos a una nómina pendiente ya creada — inverso de
-// `removeCycleFromPayroll`. El caller (Payroll.jsx) ya trae `items` recalculado
-// (trabajadores existentes con su byCycle/grossAmount ampliado + trabajadores
-// nuevos con su anticipo/bono aplicado) porque esa lógica depende de datos ya
-// cargados en pantalla (ciclos, trabajadores, catálogo). Acá solo persiste:
-// recalcula los totales agregados y suma los ciclos a la metadata.
+// Agrega ciclos a una nómina pendiente ya creada; inverso de
+// `removeCycleFromPayroll`. El llamador (Payroll.jsx) trae `items` ya
+// recalculado (trabajadores existentes con su byCycle/grossAmount ampliado y
+// trabajadores nuevos con su anticipo/bono aplicado), porque esa cuenta
+// depende de datos cargados en pantalla (ciclos, trabajadores, catálogo). Acá
+// solo se persiste: recalcula los totales agregados y suma los ciclos a la
+// metadata.
 //
 // Un ciclo que ya estaba en la nómina no se repite: se le suman las labores
 // (`mergeCycleDetails`). Pasa al agregar las labores que faltaban de un ciclo,
@@ -398,13 +389,12 @@ export async function addWorkdaysToPayroll(
   return aggregates;
 }
 
-// Recalcula los items de una nómina pendiente contra la producción actual —
-// inverso de "confiar ciegamente" en lo que se guardó al crearla. El caller
-// (Payroll.jsx) ya trae `items` recalculado desde los workdays vigentes de
-// las labores que la nómina abarca (ediciones, días nuevos, trabajadores
-// nuevos, datos de cuenta/grupo actualizados). Acá solo persiste los totales
-// agregados; no toca `cycleIds`/`cycleDetails` porque el set de ciclos no
-// cambia.
+// Guarda los items de una nómina pendiente recalculados contra la producción
+// actual. El llamador (Payroll.jsx) trae `items` armado desde los workdays
+// vigentes de las labores que la nómina abarca (ediciones, días nuevos,
+// trabajadores nuevos, datos de cuenta/grupo al día). Acá solo se persisten
+// los items y sus totales; no toca `cycleIds`/`cycleDetails` porque el set de
+// ciclos no cambia.
 export async function recalculatePayrollItems(payrollId, { items }) {
   const p = await payrollsService.getById(payrollId);
   if (!p) throw new Error("Nómina no encontrada");

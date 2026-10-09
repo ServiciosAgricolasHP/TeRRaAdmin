@@ -1,7 +1,4 @@
-// Formatters compartidos. Estos mismos `Intl.NumberFormat` estaban duplicados
-// idénticos en una decena de pantallas; el código nuevo usa este módulo.
-// (Las pantallas viejas siguen con su copia local — migrarlas es una limpieza
-// aparte, no se mezcla con el cambio que trajo este archivo.)
+// Formatos compartidos de moneda, número, porcentaje y fecha.
 
 const clp = new Intl.NumberFormat("es-CL", {
   style: "currency",
@@ -13,8 +10,8 @@ const plain = new Intl.NumberFormat("es-CL");
 export const fmtCurrency = (v) => clp.format(Number(v) || 0);
 export const fmtNumber = (v) => plain.format(Number(v) || 0);
 
-// Montos grandes en un eje de gráfico: "$1,2M" / "$450k". No sirve para
-// mostrar plata en una tabla — ahí siempre va el monto exacto.
+// Montos grandes en un eje de gráfico: "$1.2M" / "$450k". No sirve para
+// mostrar plata en una tabla: ahí siempre va el monto exacto.
 export function fmtCompactCLP(v) {
   const n = Number(v) || 0;
   const abs = Math.abs(n);
@@ -35,9 +32,9 @@ export function fmtShortDate(iso) {
   return `${m[3]}-${MONTHS_ES[Number(m[2]) - 1] || m[2]}`;
 }
 
-// "2026-09" -> "sep 26". Las claves de mes en la app son strings YYYY-MM, así
-// que se parsean a mano en vez de pasar por Date (que interpretaría UTC y
-// podría correr el mes según la zona horaria).
+// "2026-09" -> "sep 26". Las claves de mes son strings YYYY-MM y se parsean a
+// mano, nunca con Date: Date las interpreta en UTC y la zona horaria puede
+// correr el mes.
 export function fmtMonthKey(key) {
   const [y, m] = String(key || "").split("-");
   const idx = Number(m) - 1;

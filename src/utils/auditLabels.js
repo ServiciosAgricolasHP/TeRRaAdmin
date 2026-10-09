@@ -1,21 +1,15 @@
-// Resuelve un `entity` + `entityId` de un log de auditoría (ver
-// services/logger.js) a algo legible para humanos ("Juan Pérez", "Ciclo
-// Poda Lote 3") en vez del uuid crudo del doc. Se usa desde Audit.jsx.
+// Resuelve el `entity` + `entityId` de un log de auditoría (ver
+// services/logger.js) a un texto legible ("Juan Pérez", "Ciclo Poda Lote 3")
+// en vez del id crudo del doc. Lo usa Audit.jsx.
 //
-// Estrategia (en orden, la primera que encuentre algo gana):
-//   1. Si el log trae un snapshot completo (before/after de create/delete),
-//      sacamos el campo "nombre" de ahí — gratis, sin fetch.
-//   2. Si el log es un update (solo trae `changes`, el diff), y ese diff
-//      justo tocó el campo de nombre, usamos el valor nuevo (`to`).
-//   3. Si no hay nada de lo anterior, hacemos un fetch en vivo al doc actual
-//      (`service.getById`) — puede no calzar con el nombre que tenía AL
-//      MOMENTO del log si se renombró después, pero es la mejor aproximación
-//      sin guardar el nombre denormalizado en cada log. Se cachea en memoria
-//      (Map a nivel de módulo) porque el nombre de una entidad rara vez
-//      cambia dentro de una sesión de auditoría.
+// Orden de búsqueda (gana la primera que encuentra algo):
+//   1. El snapshot completo del log (before/after de create/delete), sin lectura.
+//   2. En un update, el valor nuevo (`to`) si el diff tocó el campo de nombre.
+//   3. Una lectura en vivo del doc actual (`service.getById`), cacheada en
+//      memoria. Da el nombre actual, que puede no ser el que tenía al momento
+//      del log.
 //
-// Si la entidad fue borrada y no hay snapshot, no hay forma de recuperar el
-// nombre — se muestra el id crudo como fallback en el componente que llama.
+// Una entidad borrada y sin snapshot no tiene nombre: quien llama muestra el id.
 
 import {
   workersService,
@@ -66,13 +60,11 @@ export const ENTITY_META = {
     searchable: true,
   },
 
-  // El resto tiene entrada solo para el badge/label del tipo (vista general
-  // de Auditoría) — no aparecen en el buscador dedicado por registro porque
-  // no tienen un campo de nombre confiable para armar un picker.
+  // Las entidades de aquí abajo no son `searchable`: no aparecen en el
+  // buscador por registro porque no tienen un campo de nombre confiable.
   // El entityId de un workday codifica `cycleId__laborId__rut__date[__ck]`
-  // (ver utils/cosechaCombos.js → workdayDocId) — no hay snapshot ni service
-  // razonable para pickearlo por nombre, pero sí podemos parsear el id para
-  // mostrar "rut · fecha" en vez del id crudo completo.
+  // (ver utils/cosechaCombos.js → workdayDocId); `idLabel` lo muestra como
+  // "rut · fecha".
   workday: {
     labelEs: "Jornada",
     idLabel: (id) => {
@@ -82,11 +74,10 @@ export const ENTITY_META = {
       return `${rut} · ${date}`;
     },
   },
-  // Transporte: el `entityId` es el id de la vuelta/resumen, no del
-  // transportista — la atribución al carrier viaja en `meta.carrierId`
-  // (ver transportsService.js → carrierMeta) y la consume Audit.jsx. Acá solo
-  // resolvemos el label legible. Ninguno es `searchable`: sus services no
-  // exponen `list()`, y el punto de entrada natural es el transportista.
+  // Transporte: el `entityId` es el id de la vuelta o del resumen, no del
+  // transportista; el carrier viaja en `meta.carrierId` (ver
+  // transportsService.js → carrierMeta) y lo usa Audit.jsx. Aquí solo se arma
+  // el label. No son `searchable`: sus services no exponen `list()`.
   transport: {
     labelEs: "Vuelta",
     service: tripsService,
@@ -119,7 +110,7 @@ export const ENTITY_META = {
   indicator: { labelEs: "Indicador", labelOf: (_d, id) => id },
   interestLink: { labelEs: "Link de interés", labelOf: (d) => d?.title || d?.name },
   harvestWeight: { labelEs: "Pesaje cosecha" },
-  payrollSnapshot: { labelEs: "Snapshot de nómina" },
+  payrollSnapshot: { labelEs: "JSON de nómina" },
   groupLeader: { labelEs: "Líder de grupo", labelOf: (d) => d?.name },
 };
 
@@ -151,8 +142,8 @@ export function snapshotLabel(entity, obj, id) {
   return null;
 }
 
-// Intenta sacar un label del diff de un update: si el campo de nombre fue
-// justo lo que cambió, usamos el valor nuevo sin necesidad de fetch.
+// Saca un label del diff de un update: si el diff tocó un campo de nombre,
+// devuelve su valor nuevo.
 export function diffLabelHint(entity, changes) {
   if (!changes) return null;
   const meta = ENTITY_META[entity];
@@ -166,8 +157,8 @@ export function diffLabelHint(entity, changes) {
 const _cache = new Map(); // `${entity}:${id}` -> label | null
 const _inflight = new Map();
 
-// Fetch en vivo + cache. Devuelve null si no hay service registrado para esa
-// entidad, o si el doc ya no existe (borrado).
+// Lee el doc en vivo y cachea el label. Devuelve null si la entidad no tiene
+// service registrado, si el doc ya no existe o si la lectura falla.
 export async function resolveEntityLabel(entity, entityId) {
   if (!entityId) return null;
   const meta = ENTITY_META[entity];

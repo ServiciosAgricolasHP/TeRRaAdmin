@@ -6,13 +6,11 @@ import Select from "../components/Select";
 import TextField from "../components/TextField";
 import ConfirmDialog from "../components/ConfirmDialog";
 
-// Registro contable de precios por faena/labor — deliberadamente independiente
-// de faenas/cycles/labors reales: acepta faenas "dummy" (solo un nombre, sin
-// doc real) para poder documentar temporadas antiguas que no están en el
-// sistema. La unidad de precio es un catálogo propio y editable de este libro
-// (no los catálogos reales de la app) — crece solo a medida que se escriben
-// unidades nuevas (ej. "Saco"), vía <datalist>, sin pantalla de admin aparte.
-// Una misma entrada puede tener varias líneas de precio (ej. parte se pagó
+// Registro contable de precios por faena y labor, independiente de las
+// faenas, ciclos y labores reales: acepta faenas "dummy" (solo un nombre, sin
+// doc) para temporadas que no están en el sistema. Las unidades son un
+// catálogo propio del libro, que crece solo al escribir unidades nuevas en el
+// <datalist>. Una entrada puede tener varias líneas de precio (p. ej. parte
 // por kilo y parte por metro en el mismo período).
 
 const DEFAULT_UNITS = ["Kilo", "Metro", "Jornada", "Hora", "Trato", "Bandeja", "Capacho"];
@@ -26,9 +24,8 @@ const emptyPriceLine = () => ({
   unit: "", label: "", payPrice: "", chargePrice: "",
   hasOvertime: false, overtimePayPrice: "", overtimeChargePrice: "",
 });
-// Match "suave" — la unidad es texto libre del catálogo propio, así que solo
-// comparamos sin mayúsculas/espacios; variantes raras simplemente no muestran
-// el toggle de horas extra (no es un enum cerrado).
+// La unidad es texto libre: se compara sin mayúsculas ni espacios en los
+// bordes, y cualquier otra variante no muestra el toggle de horas extra.
 const isJornadaUnit = (unit) => (unit || "").trim().toLowerCase() === "jornada";
 
 const groupKeyOf = (entry) => entry.faenaId || `dummy:${entry.faenaLabel}`;

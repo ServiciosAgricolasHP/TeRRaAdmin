@@ -1,9 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 
-// `advancesService.js` importa `../firebase`, que hace `initializeApp()` en el
-// top level. Los helpers que probamos acá son puros — están en ese archivo solo
-// porque quedaron al lado de las escrituras. El mock evita construir una app de
-// Firebase para calcular una división.
+// `advancesService.js` importa `../firebase`, que llama a `initializeApp()` al
+// cargarse. Los helpers que se prueban aquí son puros: el mock evita construir
+// una app de Firebase para ellos.
 vi.mock("../firebase", () => ({ db: {}, auth: { currentUser: null } }));
 
 const {
@@ -39,7 +38,6 @@ describe("tipo y signo", () => {
   });
 
   it("el bono suma y el anticipo resta", () => {
-    // Un error de signo acá invierte la plata de alguien.
     expect(advanceSign("bono")).toBe(+1);
     expect(advanceSign(bono())).toBe(+1);
     expect(advanceSign(anticipo())).toBe(-1);
@@ -75,8 +73,7 @@ describe("advanceRemaining", () => {
 
 describe("computeCuotaAmount", () => {
   it("redondea para arriba a propósito, así las cuotas siempre cubren el total", () => {
-    // Con ceil, 3 cuotas de 33.334 cubren 100.000 y la última queda más chica
-    // sola (la clippea advanceRemaining). Con round quedaría 1 peso sin pagar.
+    // 3 cuotas de 33.334 cubren 100.000; advanceDueNow recorta la última al saldo.
     expect(computeCuotaAmount(100000, 3)).toBe(33334);
     expect(computeCuotaAmount(100000, 3) * 3).toBeGreaterThanOrEqual(100000);
   });
@@ -238,8 +235,7 @@ describe("advanceWorkerKey / advanceMatchesWorker", () => {
   });
 
   it("matchea contra CUALQUIERA de los dos identificadores", () => {
-    // Quedarse con el derivado pierde el match cuando lo que se conoce es el
-    // otro: alguien nunca vería su deuda cobrada.
+    // Compara los dos identificadores, no solo la clave de advanceWorkerKey.
     const a = { workerId: "1-9", workerRut: "2-7" };
     expect(advanceMatchesWorker(a, new Set(["1-9"]))).toBe(true);
     expect(advanceMatchesWorker(a, new Set(["2-7"]))).toBe(true);

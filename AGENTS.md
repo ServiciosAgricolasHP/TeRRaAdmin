@@ -175,6 +175,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 - `list()` soporta `cache: true` con TTL (60s default); `persist: true` guarda en `localStorage`.
 - Para batched updates usar `writeBatch(db)` directo (chunks de 450 — el límite Firestore es 500).
 - **`update`, `upsert` y `remove` cuestan una lectura además de la escritura**: hacen un `getById` interno para armar el `before` del log de auditoría. `create` no lee.
+- **`remove` de un documento que ya no existe no borra ni escribe log**: un log de `delete` siempre trae el `before`, y de ahí sale su `meta`.
 - **`upsert(id, data, { before })`** deja pasar el documento que el llamador ya leyó y se saltea ese `getById`. `undefined` = "no me lo pasaron, leelo"; `null` = "lo leí y no existe". La diferencia decide si el doc se crea con `createdAt`/`createdBy`, así que **no se puede colapsar en un chequeo de verdad/falsedad** — escrito `knownBefore ? …` el ahorro desaparece sin que nada falle a la vista. Fijado en `tests/e2e/upsert-before.test.js`, que lo observa pasando `null` sobre un doc que sí existe (única forma de ver desde afuera si la lectura ocurrió).
 - **`countedList(service, opts)`** (en `services/cache.js`) envuelve un `list()` y devuelve `{ data, reads }`, con `reads: 0` cuando salió de la caché. Es lo que alimenta los contadores de lecturas de Dashboard, Calendario y Pesajes QR. Las opciones que se le pasan tienen que ser **exactamente** las de la llamada real: reconstruye la clave `collection::{wheres,order,take}`, así que si divergen el contador miente en vez de avisar.
 - Nuevos servicios: agregar a `services/index.js` exports si son consumidos transversalmente.
@@ -198,6 +199,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 - ESLint: variables sin usar empezando con `A-Z_` son ignoradas.
 - `screens/` contiene lógica de rutas; data fetching en `services/`.
 - Strings UI en español; identificadores en código en inglés.
+- **La fecha de hoy (`YYYY-MM-DD`) sale de `localIsoDate()`** (`utils/dates.js`), nunca de `toISOString().slice(0, 10)`: esa da la fecha en UTC, y en Chile desde las 20 o 21 h ya es el día siguiente. Una marca de tiempo completa (`paidAt`, `createdAt`) sí va con `toISOString()`, porque es un instante y no un día.
 
 ## Tipos de Labor / Labor Types
 
@@ -305,7 +307,7 @@ Al crear un ciclo nuevo, si en la misma subfaena hay al menos un ciclo abierto, 
 - **Labores a clonar**: checkboxes — copia config completa de cada labor seleccionada (incluyendo tratoType, modos, baseDayDefault, overtimeRate, etc.) con un nuevo `id`.
 - **Días a importar**: chips toggleables con las fechas de `cycle.days[]` del origen (default todos). Definen tanto la `days[]` del nuevo ciclo como el filtro de fechas para mover workdays / copiar precios.
 - **Copiar precios por día** (opcional): copia las entradas de `dayPrices` re-keadas por el nuevo `laborId` y filtradas por días seleccionados.
-- **Mover workdays** (opcional, destructivo): para cada (labor seleccionada × día seleccionado), lee los workdays del origen y los re-crea en el nuevo ciclo con el nuevo `docId` (que encodea cycleId+laborId), luego borra los originales. Workdays con `payrollId` se saltan para no romper snapshots de nómina ya generadas — el usuario recibe un alert con el count de skipped.
+- **Mover jornadas** (opcional, destructivo): para cada (labor seleccionada × día seleccionado), lee los workdays del origen y los re-crea en el nuevo ciclo con el nuevo `docId` (que encodea cycleId+laborId), luego borra los originales. Workdays con `payrollId` se saltan para no romper snapshots de nómina ya generadas — el usuario recibe un alert con el count de skipped.
 
 Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLaborId` vive en un `Map` que sirve para re-keear tanto `dayPrices` como los `docId` de workdays movidos.
 
@@ -317,12 +319,16 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
 
 ### Alto de las listas / grids
 
-- **Regla**: si la lista es el **último** elemento de la pantalla, va `min-h-0 flex-1` dentro del `flex h-full flex-col` de la raíz y listo (Advances, Workers). No poner un alto fijo ni un resize ahí: no hay nada debajo a lo que cederle espacio, así que el control no hace nada y deja un hueco.
-- `components/ResizableArea.jsx` (`ResizableArea`, o `useResizableHeight` + `<ResizeHandle>` si el handle va en otro lado, ej. una toolbar) es **solo para bloques que tienen contenido debajo** — hoy únicamente `Payroll.jsx` (preview con el panel de efectivo abajo, e historial con el pager abajo). El alto se persiste en `localStorage` bajo `af.gridHeight.<storageKey>`.
-- El drag usa **Pointer Events + `setPointerCapture`** sobre el handle, no listeners en `window` — si no, ag-grid se traga los eventos. Los hijos decorativos del handle van con `pointer-events-none`.
+- **Regla**: la lista va `min-h-0 flex-1` dentro del `flex h-full flex-col` de la raíz y toma el alto que queda libre (Advances, Workers). Sin alto fijo ni control para arrastrarlo.
+- Si la lista tiene algo debajo, eso va con `shrink-0` y un `max-h` propio, y la lista lleva además un alto mínimo para que no desaparezca en pantallas bajas: es el caso de la vista previa de Nómina, con el panel de efectivo abajo (`min-h-[240px] flex-1`). Cuando no cabe, desplaza el `<main>`.
 - **Anotación por día**: click sobre el header de la fecha → modal que edita `cycle.dayNotes[date]`. Hover sobre el header muestra el texto. Compartida entre todas las labores del ciclo.
 - **Trabajadores temporales**: alta sin RUT (`isTemp: true` dentro de `labor.workers`). Aparecen con badge "T" y botón "Asignar RUT" que los reemplaza por el RUT real preservando los workdays.
 - **Sueldo mensual por trabajador-ciclo**: toggle "M" en la fila de la labor → guarda `monthly: true` en `labor.workers[i]`. Las celdas pasan a checkbox de asistencia (`amount: 0`, `attendanceOnly: true`); excluidos de la nómina; badge verde "M".
+  - Disponible en las labores al día (`main`, `supervision`, `extra`) y en `tratoHE` (`allowsMonthly` en `CycleDetail`, mismo criterio en el modal del teléfono). En `tratoHE` tampoco se pagan horas extras ni bonos: el día es solo asistencia, igual que en las demás.
+  - Una fila mensual no recibe montos por ningún camino: ni edición, ni rellenar hacia abajo, ni pegar, ni deshacer (`dispatchCellChange`).
+  - **Marcar mensual a alguien que ya tiene días con monto pide confirmación** (`toggleMonthly` → `monthlyConfirm`). Si no, la grilla mostraría ✓ en esos días y sus montos se seguirían pagando sin que se note. El diálogo ofrece pasar a asistencia en $0 los días que todavía no están en una nómina (base, HE y bonos en cero en `tratoHE`) o dejar los montos. Los días que ya tienen `payrollId` no se tocan: cambiarlos descuadra una nómina generada.
+  - `toggleMonthly` lee las jornadas de `workdaysRef` y no del estado: las columnas de la grilla guardan el handler de un render anterior.
+- **Personas por día en las labores al día**: cada tarjeta de "Precios por día" muestra cuántas personas tienen jornada ese día, contando la asistencia de los mensuales.
 - **`rutToName`**: las celdas del grid muestran el nombre desde un map derivado del cache de workers, no desde el snapshot del ciclo — editar el nombre en `/workers` se refleja sin recargar.
 - **Loader de workdays trato**: `ck` se deriva del docId, no del payload. 5 segmentos → `ck = parts.slice(4).join("__")`; 4 segmentos + labor trato → `"t0"`; resto → `makeComboKey(qualityX, qualityY)`.
 - **Diálogos**: nunca usar `window.prompt/confirm/alert` dentro del grid — usar `<Modal>` + `<ConfirmDialog>` para mantener el estilo.
@@ -369,7 +375,8 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
 - Acciones por fila: 📊 Resumen, Editar, ✕. La forma de pago se muestra como **indicador informativo** (`💵 Efectivo` / `🏦 Transferencia`) — no es toggle. El cambio de banco se hace adentro de `WorkerEditModal`, que tiene un botón **🆔 Asignar Cuenta RUT** que setea Banco Estado + Cuenta RUT en un click usando el RUT del trabajador.
 - **Click sobre un RUT lo copia al portapapeles**: el del trabajador, y en escritorio también el RUT de pago. Va con puntos y guion, el mismo formato que copia Información y Cuentas. En el teléfono el RUT de la tarjeta lleva 📋 para que se note que se puede tocar.
 - **Los IDs QR son de solo lectura en la ficha del trabajador** (`WorkerEditModal`, que también se abre desde la grilla del ciclo). Se asignan en Cosecha QR con `assignQrCode`, que le quita el código a quien lo tenía y actualiza el padrón de `qrPrefixes` con que la app de escaneo resuelve un QR sin señal. Al guardar, la ficha no escribe `idQr`: viene de la caché de 2 h y podría pisar una reasignación hecha en Cosecha QR. Un trabajador nuevo nace con `idQr: []`.
-- Doc id = RUT. No hay campo `rut` separado en el doc.
+- **Doc id = RUT con que se creó la ficha**, y es el id estable (`workerId`). El RUT vigente está en el campo `rut`, que puede diferir si se corrigió una cédula (ver `docs/data-model.md`).
+- **Se cruza por el id y se muestra siempre `worker.rut`.** Una jornada, un item de nómina o una entrada de labor guardan el RUT del momento en que se crearon, y ese valor sigue siendo la clave de los cruces. Para mostrarlo se pasa por `currentRutResolver(workers)` (`utils/workerRut.js`), que lo traduce al vigente con la lista de trabajadores ya cargada, sin lecturas extra. Lo usan Nómina (vista previa, detalle, impresiones, XLSX y Pagos anteriores, que además agrupa por `workerId`), la grilla del ciclo (`_displayRut` en las filas) y Pesajes QR.
 - Bank details = `[paymentRut, accountNumber, accountType, bankCode]` (orden importante).
 - `services/workersService.js` expone `findWorkerByRut`, `createWorker`, `deleteWorkerSafe`, `searchWorkers` (server-side prefix), `detectQueryKind`.
 
@@ -598,7 +605,7 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 ## Consola admin / AdminConsole
 
 - Pantalla: `src/screens/AdminConsole.jsx`. Ruta `/admin/console` (solo admin).
-- Secciones para inspección barata: conteos por colección, workdays por mes (12 reads para todo un año), workdays por rango, workdays por ciclo, más los backfills y el debug de rol admin.
+- Secciones para inspección barata: conteos por colección, workdays por mes (12 reads para todo un año), workdays por rango, workdays por ciclo, más los backfills y el diagnóstico del rol admin.
 - **`MAIN_COLLECTIONS` lista las 29 colecciones de la app**, agrupadas por área. Es una lista a mano: al agregar una colección nueva hay que sumarla acá o queda invisible. El botón **📋 Copiar** baja los conteos ya ejecutados separados por tab, listos para pegar en una planilla.
 - **🧪 Ping al backend**: encola un job en `functionJobs` y espera la respuesta. No llama ningún endpoint porque no hay ninguno invocable (ver Despliegue); ejercita el mismo camino que usa cualquier job. Distingue los tres modos de falla a propósito, porque cada uno se arregla en otro lado: `permission-denied` es que las reglas publicadas no dejan crear el job (o quien aprieta no es admin), el timeout de 45 s es la función sin desplegar o mirando otra base, y un job en `error` es la función corriendo y fallando adentro. Es además el **único** chequeo que prueba que el trigger esté suscrito a `hpdatabase` — el emulador no puede.
 - Usa `getCountFromServer` de Firestore — 1 read por cada 1000 docs vs N con `getDocs`. Permite estimar costos sin descargar la colección.
@@ -625,7 +632,7 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 
 - **Nada la borra, nunca.** No existe un solo `logsService.remove` en el repo: es append-only y crece con cada escritura de cualquier colección, porque `logAction` lo llama `firestoreBase` en todos los `create`/`update`/`upsert`/`remove`.
 - **El conteo y el peso no vienen del mismo lado.** `diff()` (`services/logger.js`) compara por clave de **primer nivel**, así que cambiar un elemento de un array guarda **dos copias completas** de la estructura. Medido sobre un ciclo realista (3 labores × 80 personas, 30 días × 4 combos): **~30 KB por log de `cycle`** contra **~0,1 KB por log de `workday`**. Agregar un trabajador a una labor escribe 30 KB. Las entidades pesadas son `cycle` (`labors[]`, `dayPrices{}`), `payroll` (`items[]`, `workdayIds[]`), `payrollSnapshot` (el snapshot entero, que además es contrato externo), `qrPrefix` (`padron{}`, un código por trabajador) y `catalog` (`entries[]`). Ese blob **no se lee**: la UI lo pinta como JSON crudo en un `<pre>`.
-- **`log` es a su vez una entidad logueada** (`createService("log", "logs")`). Una poda hecha con `logsService.remove` escribiría un log por cada log borrado — la colección crecería mientras se vacía. **Toda poda tiene que usar `deleteDoc` directo.**
+- **Desde la app, un log solo se agrega.** `firestore.rules` no deja editarlo ni borrarlo, ni siquiera a un admin. Una poda o un backfill sobre `logs` va en un job de Functions, con el admin SDK.
 - **Pérdida silenciosa**: si un log supera el límite de 1 MiB, `addDoc` lanza, `logAction` lo atrapa y solo hace `console.error`. El registro del cambio más grande es justo el candidato a perderse sin rastro.
 - **Cada mutación espera su log**: `firestoreBase` hace `await logAction(...)` después de escribir, así que editar una celda de la grilla son tres viajes en serie (leer el doc, escribirlo, escribir el log).
 - **Casi nada es consultable.** Solo hay tres formas de llegar a un log, y ninguna filtra por usuario ni por acción (la sesionización es en cliente): rango de fechas con tope de 5.000 (`HARD_CAP` en `Audit.jsx`), `entity + entityId`, y `entity + meta.workerRut|carrierId` — estas dos **sin tope ni límite de fecha**. Por eso un TTL le recorta el historial a la ficha por registro en silencio.

@@ -7,12 +7,12 @@
     <!--
       SPA fallback para GitHub Pages.
 
-      GH Pages no soporta rewrites: si pegás https://.../TeRRaAdmin/cycles/abc
-      directo en la barra (o recargás un deep-link), el server busca un archivo
-      cycles/abc/index.html que no existe y devuelve este 404.html. El script
-      de abajo nos rescata: re-redirige a /TeRRaAdmin/?/cycles/abc, y
-      después index.html (con su propio script) reconstruye la URL real con
-      history.replaceState y deja a react-router-dom hacer su trabajo.
+      GH Pages no soporta rewrites: al pegar https://.../TeRRaAdmin/cycles/abc
+      directo en la barra (o recargar un deep-link), el servidor busca un
+      archivo cycles/abc/index.html que no existe y devuelve este 404.html. El
+      script de abajo redirige a /TeRRaAdmin/?/cycles/abc, y después
+      index.html (con su propio script) reconstruye la URL real con
+      history.replaceState y deja que react-router-dom resuelva la ruta.
 
       Truco de rafgraph/spa-github-pages.
     -->

@@ -39,19 +39,16 @@ const emptyAccount = () => ({
   email: "",
 });
 
-// Empresa siempre muestra el RUT. Para persona depende del toggle
-// `includeRut`; las fichas viejas (guardadas antes de que existiera este
-// campo) no lo tienen guardado — en ese caso, si ya tenían un RUT cargado
-// lo seguimos mostrando por compatibilidad, en vez de esconderlo de golpe.
+// Empresa siempre muestra el RUT. Persona, según `includeRut`; si la ficha no
+// tiene ese campo, se muestra cuando hay RUT cargado.
 const rutIncluded = (card) => card.type !== "persona" || (card.includeRut ?? !!card.rut);
 
 const emptyCard = (type = "persona") => ({
   type,
   name: "",
   rut: "",
-  // Para personas el RUT no siempre aplica, así que arranca oculto por
-  // defecto (el dato igual se conserva si se llega a tipear y luego se
-  // apaga el toggle — solo deja de mostrarse). Empresa lo muestra siempre.
+  // Persona arranca con el RUT oculto; apagar el toggle solo lo oculta, el
+  // dato se conserva. Empresa lo muestra siempre.
   includeRut: type !== "persona",
   phone: "",
   email: "",
@@ -101,8 +98,8 @@ export default function InfoAccounts() {
   const [editing, setEditing] = useState(null); // card en edición/creación
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
-  // Captura de imagen on-demand: seteamos la tarjeta a renderizar off-screen,
-  // el effect la captura y limpia. Evita mantener N nodos ocultos montados.
+  // Captura de imagen a pedido: se monta fuera de pantalla solo la tarjeta
+  // elegida, el efecto la captura y limpia el estado.
   const [imageJob, setImageJob] = useState(null); // { card }
   const imageRef = useRef(null);
 
@@ -155,7 +152,7 @@ export default function InfoAccounts() {
           toast.success("Imagen descargada");
         }
       } catch {
-        // Fallback final: intentar descarga si el copy falló.
+        // Si copiar falla, intenta descargar.
         try {
           const dataUrl = await captureFullWidthDataUrl(imageRef.current, { pixelRatio: 2, cacheBust: true });
           const a = document.createElement("a");
@@ -267,7 +264,7 @@ export default function InfoAccounts() {
         <div className="py-10 text-center text-sm text-[var(--color-muted)]">Cargando…</div>
       ) : cards.length === 0 ? (
         <div className="rounded-lg border border-dashed border-[var(--color-border)] py-12 text-center text-sm text-[var(--color-muted)]">
-          Todavía no hay fichas. Creá la primera con “+ Nueva ficha”.
+          Todavía no hay fichas. Crea la primera con “+ Nueva ficha”.
         </div>
       ) : (
         <>
@@ -444,10 +441,8 @@ function ContactCard({ card, onCopy, onCopyImage, onToggleFavorite, onEdit, onDe
   );
 }
 
-// Fila label + valor. TODA la fila es un botón: tap/click copia el valor. Es
-// así (en vez de un botón 📋 que aparece con hover) para que funcione en
-// móvil, donde no hay hover — el target es el Samsung A56. No renderiza nada
-// si el valor está vacío (así las tarjetas no muestran campos en blanco).
+// Fila etiqueta + valor. Toda la fila es un botón que copia el valor, así
+// funciona en móvil, donde no hay hover. Con el valor vacío no renderiza nada.
 function Field({ label, value, copyValue, onCopy, mono = false }) {
   if (!value) return null;
   return (
@@ -602,8 +597,8 @@ function ContactCardModal({ initial, onCancel, onSave }) {
   const toast = useToast();
   const [form, setForm] = useState(() => {
     const base = { ...emptyCard(initial.type), ...initial, accounts: (initial.accounts || []).map((a) => ({ ...a })) };
-    // `includeRut` puede no venir en fichas viejas guardadas antes de este
-    // campo — rutIncluded() aplica el fallback (mostrar si ya tenía RUT).
+    // Si la ficha no trae `includeRut`, rutIncluded() lo deduce (se muestra si
+    // tiene RUT).
     return { ...base, includeRut: rutIncluded(base) };
   });
   const [busy, setBusy] = useState(false);
@@ -618,7 +613,7 @@ function ContactCardModal({ initial, onCancel, onSave }) {
 
   const submit = async () => {
     if (!form.name.trim()) {
-      toast.warning(`Ingresá ${meta.nameLabel.toLowerCase()}.`);
+      toast.warning(`Ingresa ${meta.nameLabel.toLowerCase()}.`);
       return;
     }
     setBusy(true);
@@ -727,7 +722,7 @@ function ContactCardModal({ initial, onCancel, onSave }) {
             </button>
           </div>
           {form.accounts.length === 0 && (
-            <p className="text-xs text-[var(--color-muted)]">Sin cuentas. Agregá una si querés guardar datos bancarios.</p>
+            <p className="text-xs text-[var(--color-muted)]">Sin cuentas. Agrega una si quieres guardar datos bancarios.</p>
           )}
           {form.accounts.map((acc, i) => (
             <div key={acc.id} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">

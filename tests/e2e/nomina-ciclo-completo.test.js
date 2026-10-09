@@ -161,7 +161,7 @@ describe("ciclo completo de nómina", () => {
   });
 
   it("el bono engrosa la base y deja el anticipo liquidado", async () => {
-    // El caso que documenta AGENTS.md, ahora de punta a punta.
+    // El caso que documenta AGENTS.md, de punta a punta.
     await seedEscenarioNomina();
     await seedAdvance("bono-1", { rut: ANA.id, amount: 24000, type: "bono" });
     await seedAdvance("adv-1", { rut: ANA.id, amount: 124000 });
@@ -364,7 +364,7 @@ describe("volver a leer el snapshot", () => {
   });
 
   it("cae al snapshot embebido de las nóminas viejas", async () => {
-    // Las creadas antes de separar las colecciones lo llevan adentro.
+    // Una nómina sin doc en payrollSnapshots lo lleva en el campo `snapshot`.
     const vieja = await payrollsService.create({
       name: "Legacy",
       status: "paid",
@@ -393,11 +393,9 @@ describe("volver a leer el snapshot", () => {
 });
 
 describe("dos nóminas contra el mismo anticipo", () => {
-  // El preview de la segunda nómina puede haberse armado antes de que la
-  // primera descontara, así que pide más saldo del que quedaba. `amountPaid`
-  // se capa, y lo que se guarda en `payments[]` tiene que ser lo que se
-  // descontó de verdad: `restoreAdvances` recalcula el saldo desde ahí, y con
-  // el monto pedido el anticipo volvía con menos deuda de la real.
+  // La segunda nómina puede pedir más saldo del que queda. `amountPaid` se
+  // capa, y `payments[]` guarda lo que se descontó de verdad: de ahí recalcula
+  // el saldo `restoreAdvancesFromPayroll`.
   const aplicar = (monto, payrollId) =>
     applyAdvancesToPayroll([{ advanceId: "adv", amount: monto }], payrollId);
 
@@ -409,7 +407,7 @@ describe("dos nóminas contra el mismo anticipo", () => {
     const adv = await get("advances", "adv");
     expect(adv.amountPaid).toBe(100000);
     expect(adv.payments.map((x) => x.amount)).toEqual([80000, 20000]);
-    // La invariante que antes se rompía.
+    // La suma de payments[] es amountPaid.
     expect(adv.payments.reduce((s, x) => s + x.amount, 0)).toBe(adv.amountPaid);
   });
 
@@ -441,8 +439,8 @@ describe("dos nóminas contra el mismo anticipo", () => {
   });
 
   it("el recorte queda registrado para poder devolverle la diferencia", async () => {
-    // Al trabajador se le retuvieron 50.000 pero la deuda solo bajó 20.000:
-    // esos 30.000 hay que devolvérselos y nadie se entera si esto no avisa.
+    // Al trabajador se le retuvieron 50.000 pero la deuda solo bajó 20.000: la
+    // diferencia queda en `sobrantes` para devolvérsela.
     await seedAdvance("adv", { rut: ANA.id, amount: 100000 });
     await aplicar(80000, "nomina-A");
     const { sobrantes } = await aplicar(50000, "nomina-B");

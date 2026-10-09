@@ -29,12 +29,9 @@ const shortDate = (iso) => {
   return m ? `${m[3]}/${m[2]}` : (iso || "");
 };
 
-// Persistencia de las opciones que el usuario configura en este modal
-// (filtros, % de ganancia, valores "pagan $", IVA, etc.) — así no hay que
-// re-ingresarlas cada vez que se reabre el resumen. Las claves por labor
-// (pctOverrides/paidToUs/workersPaid) usan colKey = cycleId__laborId, que es
-// estable en el tiempo, así que quedan asociadas al ciclo/labor correctos
-// aunque se reabra el modal semanas después.
+// Las opciones del modal (filtros, % de ganancia, "pagan $", IVA, etc.) se
+// guardan en localStorage. Las de cada labor (pctOverrides/paidToUs/
+// workersPaid) van por colKey = cycleId__laborId, que es estable en el tiempo.
 const LS_PREFIX = "productionSummary.";
 const loadJSON = (key, fallback) => {
   try {
@@ -46,12 +43,10 @@ const saveJSON = (key, value) => {
   try { localStorage.setItem(LS_PREFIX + key, JSON.stringify(value)); } catch { /* noop */ }
 };
 
-// Qué ciclos quedan tildados en el selector se recuerda por id de ciclo
-// (mapa acumulativo en localStorage, nunca se resetea entero) — así, si el
-// usuario destilda un ciclo, sigue destildado la próxima vez que se abra el
-// resumen, sea de la misma faena o de otra. Los ciclos que todavía no se
-// vieron nunca (no están en el mapa) usan el default que manda el caller
-// (`initialEnabledCycleIds`, típicamente "solo los abiertos").
+// Qué ciclos van tildados se recuerda por id en un mapa acumulativo de
+// localStorage, así un ciclo destildado sigue así al reabrir el resumen,
+// desde cualquier faena. Los ciclos que no están en el mapa usan
+// `initialEnabledCycleIds` (todos, si no viene).
 const computeEnabledCycles = (cyclesList, initialEnabledCycleIds) => {
   const map = loadJSON("enabledCyclesMap", {});
   const defaults = new Set(initialEnabledCycleIds || cyclesList.map((c) => c.id));
@@ -63,16 +58,16 @@ const computeEnabledCycles = (cyclesList, initialEnabledCycleIds) => {
   return set;
 };
 
-// Paleta y estilos clonados de las tablas de cobrar (CycleSummaryModal). Inline
-// porque las tablas tienen fondo blanco fijo — el modal entero corre con la
-// vista "print-ready" para que la imagen/impresión salga igual al UI.
+// Paleta y estilos de las tablas de cobrar (CycleSummaryModal), inline porque
+// las tablas tienen fondo blanco fijo: el modal se dibuja listo para imprimir
+// y la imagen o la impresión salen igual que en pantalla.
 const cellH = { border: "1px solid #555", padding: "6px 8px", fontSize: 12, fontWeight: 700, textAlign: "left" };
 const cell = { border: "1px solid #999", padding: "5px 8px", fontSize: 12 };
-const HDR_BLUE = "#9dc3e6";    // azul header — por-labor
-const HDR_GREEN = "#a9d08e";   // verde header — tabla general
-const ROW_TOTAL_LIGHT = "#c6efce"; // verde claro — fila total por-labor
+const HDR_BLUE = "#9dc3e6";    // azul de encabezado — tablas por labor
+const HDR_GREEN = "#a9d08e";   // verde de encabezado — tabla general
+const ROW_TOTAL_LIGHT = "#c6efce"; // verde claro — fila total por labor
 const ROW_TOTAL_DARK = "#6aa84f";  // verde oscuro — fila total general
-const ROW_HIGHLIGHT = "#fffbeb";   // amarillo pale — subhead general (labor name row)
+const ROW_HIGHLIGHT = "#fffbeb";   // amarillo pálido — fila con el nombre de la labor en la tabla general
 // Rampa de verdes para el bloque TOTAL/GANANCIAS/TOTAL GENERAL/IVA/BRUTO de
 // la tabla general — mismo tono base que el resto, pero cada fila con un
 // matiz distinto para que no se vea como un solo bloque sólido pegado.
@@ -87,15 +82,14 @@ const toArgbFill = (hex) => ({ type: "pattern", pattern: "solid", fgColor: { arg
 const XLSX_BORDER = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
 const XLSX_MONEY_FMT = '"$"#,##0';
 
-// Modal de resumen de producción para una o varias faenas/ciclos. Muestra
-// una tabla pivot: filas = días, columnas = (ciclo, labor) que sea trato o
-// cosecha. Cada celda lleva qty + unidad + precio + monto + rendimiento
-// (personas distintas y promedio por persona ese día).
+// Resumen de producción de uno o varios ciclos: una tarjeta por (ciclo, labor)
+// de cosecha, trato, trato por etapas, pago al día o supervisión, con filas
+// por día (cantidad, unidad, precio, monto y rendimiento: personas distintas y
+// promedio por persona); con más de una labor, además una tabla general que
+// las combina, y los totales por grupo de labor.
 //
-// `cycles` es un array de cycle docs con `dayPrices` y `labors` adentro. El
-// componente fetchea los workdays internamente para cada ciclo. Si el caller
-// los tiene cacheados puede pasar `workdaysByCycle` directamente y se evita
-// la query.
+// `cycles` son docs de ciclo con `dayPrices` y `labors`. Las jornadas se leen
+// por ciclo; si el llamador ya las tiene, puede pasarlas en `workdaysByCycle`.
 export default function ProductionSummaryModal({
   open,
   onClose,
@@ -109,25 +103,21 @@ export default function ProductionSummaryModal({
   const [wdByCycle, setWdByCycle] = useState(workdaysByCycleProp || {});
   const [tripsByCycle, setTripsByCycle] = useState({});
   const [loading, setLoading] = useState(false);
-  // Filtros: por tipo de labor (cosecha / trato) y por ciclos incluidos.
-  // `initialEnabledCycleIds` decide cuáles arrancan prendidos — útil para la
-  // vista a nivel faena donde solo queremos los abiertos por default, pero
-  // los cerrados igual deben aparecer como chip apagado por si el usuario
-  // quiere verlos también.
+  // Filtros: por tipo de labor y por ciclo. `initialEnabledCycleIds` decide
+  // qué ciclos arrancan prendidos; los demás aparecen como chip apagado.
   const [typeFilter, setTypeFilter] = useState(
     () => loadJSON("typeFilter", { cosecha: true, trato: true, tratoEtapas: true, main: true, supervision: true }),
   );
   useEffect(() => { saveJSON("typeFilter", typeFilter); }, [typeFilter]);
-  // Aparte del filtro por tipo de labor, un toggle propio para poner/sacar
-  // la fila TRANSPORTE (y su derivada MONTO LIBRE NETO) de la tabla, sin
-  // perder el cálculo por ciclo que sigue disponible si se vuelve a activar.
+  // Muestra u oculta la fila TRANSPORTE (y MONTO LIBRE NETO, que se deriva de
+  // ella); el cálculo por ciclo se mantiene.
   const [includeTransport, setIncludeTransport] = useState(() => loadJSON("includeTransport", true));
   useEffect(() => { saveJSON("includeTransport", includeTransport); }, [includeTransport]);
   const [enabledCycles, setEnabledCyclesState] = useState(
     () => computeEnabledCycles(cycles, initialEnabledCycleIds),
   );
-  // Envuelve el setter para que, además de actualizar el estado, persista el
-  // on/off de cada ciclo tocado en el mapa acumulativo de localStorage.
+  // Envuelve el setter: además de actualizar el estado, guarda en el mapa
+  // acumulativo de localStorage el estado de todos los ciclos de la lista.
   const setEnabledCycles = (updater) => {
     setEnabledCyclesState((prev) => {
       const next = typeof updater === "function" ? updater(prev) : updater;
@@ -137,10 +127,7 @@ export default function ProductionSummaryModal({
       return next;
     });
   };
-  // Toggle maestro: colapsa/expande de un solo click todas las tarjetas de
-  // ciclos cerrados (cada una ya arranca colapsada por defecto individualmente
-  // si el ciclo está cerrado; esto fuerza el estado de TODAS a la vez para no
-  // tener que ir card por card cuando hay muchos ciclos cerrados en la lista).
+  // Oculta los ciclos cerrados del selector y pliega sus tarjetas, todos de una vez.
   const [allClosedCollapsed, setAllClosedCollapsed] = useState(() => loadJSON("allClosedCollapsed", true));
   useEffect(() => { saveJSON("allClosedCollapsed", allClosedCollapsed); }, [allClosedCollapsed]);
 
@@ -149,21 +136,10 @@ export default function ProductionSummaryModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cycles.map((c) => c.id).join(","), (initialEnabledCycleIds || []).join(",")]);
 
-  // Carga workdays para los ciclos que no tengamos cacheados. El caller puede
-  // precargar pasando `workdaysByCycleProp` y evitamos la query.
-  //
-  // Dos cosas importan acá, y las dos son de costo:
-  //
-  // 1. La consulta filtra por ciclo en el SERVIDOR. Antes pedía la colección
-  //    `workdays` completa y descartaba en JS lo que no era del ciclo. Como
-  //    las consultas salían todas juntas, ninguna alcanzaba a poblar la caché
-  //    para las otras (`setCache` corre recién cuando la consulta vuelve), y
-  //    abrir el resumen de una faena costaba la colección entera una vez por
-  //    ciclo.
-  // 2. Solo baja los ciclos PRENDIDOS. Todo lo que se deriva de `wdByCycle`
-  //    (columnas, días, celdas) ya está filtrado por `enabledCycles`, así que
-  //    traer los apagados era pagar por datos que nadie mira. Al prender un
-  //    chip el efecto vuelve a correr y trae el que falte.
+  // Lee las jornadas de los ciclos prendidos que no están en `wdByCycle` (el
+  // llamador puede pasarlas en `workdaysByCycle`). La consulta filtra por
+  // ciclo en el servidor y los ciclos apagados no se leen: al prender un chip,
+  // el efecto trae el que falte.
   useEffect(() => {
     if (!open) return;
     const missing = cycles.filter((c) => enabledCycles.has(c.id) && !wdByCycle[c.id]);
@@ -172,10 +148,9 @@ export default function ProductionSummaryModal({
     (async () => {
       setLoading(true);
       try {
-        // Una consulta por ciclo en vez de agrupar de a 10 con `in`: la clave
-        // de caché queda estable por ciclo, así prender y apagar un chip no
-        // vuelve a pagar. Va por el helper compartido para no pelearle el TTL
-        // a Nómina, que pide exactamente lo mismo.
+        // Una consulta por ciclo: la clave de caché queda estable y prender o
+        // apagar un chip no vuelve a pagar. Usa el helper compartido con
+        // Nómina, que pide lo mismo con las mismas opciones (misma clave y TTL).
         const fetched = await Promise.all(
           missing.map(async (c) => [c.id, await listWorkdaysByCycle(c.id)]),
         );
@@ -217,10 +192,9 @@ export default function ProductionSummaryModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, cycles.map((c) => c.id).join(",")]);
 
-  // Agrupaciones de labor (laborGroups) de las subfaenas involucradas — para
-  // resolver el nombre del grupo al totalizar por laborGroupId más abajo.
-  // Se busca por subfaenaId (no por cycleId): varios ciclos comparten la
-  // misma subfaena, así que se evita refetchear el mismo grupo N veces.
+  // Agrupaciones de labor (laborGroups) de las subfaenas involucradas, para
+  // nombrar los grupos al totalizar por laborGroupId. Se leen por subfaena y
+  // no por ciclo: varios ciclos comparten subfaena.
   const [laborGroupsBySubfaena, setLaborGroupsBySubfaena] = useState({});
   useEffect(() => {
     if (!open) return;
@@ -252,14 +226,10 @@ export default function ProductionSummaryModal({
     return m;
   }, [laborGroupsBySubfaena]);
 
-  // Orden de columnas/chips: agrupadas por subfaena (para que los ciclos de
-  // una misma subfaena queden uno al lado del otro) y, dentro de cada grupo,
-  // en orden cronológico ascendente (más viejo primero) por el primer día
-  // real trabajado — mismo criterio que la navegación prev/next de
-  // CycleDetail, más confiable que startDate/createdAt tipeados a mano. Los
-  // grupos de subfaena también se ordenan cronológicamente por su ciclo más
-  // antiguo, así toda la tabla queda de más vieja a más nueva, agrupada por
-  // subfaena (ej. sub1/ciclo8 · sub1/ciclo9 · sub2/ciclo4 · sub3/ciclo1).
+  // Orden de columnas y chips: agrupados por subfaena y, dentro de cada
+  // grupo, del más viejo al más nuevo por el primer día de `days` (el mismo
+  // criterio que la navegación anterior/siguiente de CycleDetail). Los grupos
+  // se ordenan por su ciclo más antiguo.
   const orderedCycles = useMemo(() => {
     const sortKeyFor = (c) => {
       const days = c.days;
@@ -282,10 +252,9 @@ export default function ProductionSummaryModal({
     return groupList.flatMap((g) => g.sorted);
   }, [cycles]);
 
-  // Columnas: una por (ciclo, labor) donde labor.type es trato, cosecha,
-  // trato por etapas o pago al día (jornadas). Si dos ciclos tienen labores
-  // con el mismo nombre, quedan como columnas separadas — el usuario ve el
-  // detalle de cada ciclo sin que se mezclen.
+  // Columnas: una por (ciclo, labor) de tipo cosecha, trato, trato por
+  // etapas, pago al día o supervisión. Labores con el mismo nombre en ciclos
+  // distintos quedan en columnas separadas.
   const columns = useMemo(() => {
     const cols = [];
     for (const c of orderedCycles) {
@@ -306,8 +275,8 @@ export default function ProductionSummaryModal({
     return cols;
   }, [orderedCycles, enabledCycles, typeFilter]);
 
-  // Días: union de todas las fechas con workdays de los ciclos habilitados,
-  // ordenadas ascendente. Solo días con al menos un workday relevante.
+  // Días: unión de las fechas con jornadas (de cualquier labor) de los ciclos
+  // prendidos, en orden ascendente.
   const days = useMemo(() => {
     const set = new Set();
     for (const c of cycles) {
@@ -320,8 +289,8 @@ export default function ProductionSummaryModal({
     return [...set].sort();
   }, [cycles, enabledCycles, wdByCycle]);
 
-  // Por celda (día × columna) computa qty/amount/precios/personas. Se hace en
-  // un solo pase para evitar recorrer workdays N veces en el render.
+  // Por celda (día × columna): cantidad, monto, precios y personas, en un
+  // solo pase sobre las jornadas.
   const cellsByKey = useMemo(() => {
     const out = new Map(); // `${day}__${colKey}` → cellData
     for (const col of columns) {
@@ -342,10 +311,9 @@ export default function ProductionSummaryModal({
     return out;
   }, [columns, wdByCycle, catalogs]);
 
-  // Por columna (labor): lista de filas día×datos que tiene producción.
-  // Usado para renderizar un card independiente por labor con su propia
-  // tabla, en lugar de un solo pivot gigante con todas las labores como
-  // columnas. Cada card lleva sus botones de copiar/imprimir.
+  // Por columna (labor): las filas por día con producción y sus totales.
+  // Alimenta una tarjeta por labor, con su propia tabla y sus botones de
+  // copiar e imprimir.
   const dataByColumn = useMemo(() => {
     return columns
       .map((col) => {
@@ -359,8 +327,8 @@ export default function ProductionSummaryModal({
         rows.forEach((r) => {
           if (r.cell.unit) unitSet.add(r.cell.unit);
         });
-        // Personas únicas a lo largo de todos los días: sacamos del wd raw
-        // para que no se repita el mismo trabajador en varios días.
+        // Personas únicas en todos los días: se cuentan desde las jornadas
+        // para no repetir a quien trabajó varios días.
         const wds = (wdByCycle[col.cycleId] || []).filter(
           (w) => w.laborId === col.labor.id && w.workerRut,
         );
@@ -374,7 +342,7 @@ export default function ProductionSummaryModal({
             // que cuenta (misma regla que las unidades).
             hasProd = countingForCol.has(String(wd.stageId)) && Number(wd.qty) > 0 && !wd.pisoOnly;
           } else if (col.labor.type === "main" || col.labor.type === "supervision") {
-            // Pago al día: el monto ya está directo en el workday, sin tiers.
+            // Pago al día: el monto va directo en la jornada, sin tiers.
             hasProd = Number(wd.amount) > 0 && !wd.pisoOnly;
           } else {
             hasProd = Number(getTratoTierTotals(wd).qty) > 0 && !wd.pisoOnly;
@@ -394,12 +362,9 @@ export default function ProductionSummaryModal({
       .filter((d) => d.rows.length > 0);
   }, [columns, days, cellsByKey, wdByCycle]);
 
-  // Costo de transporte por ciclo (no por labor — un ciclo puede tener
-  // varias columnas de labor, pero el transporte es uno solo por ciclo).
-  // `hasTrips` distingue $0 porque hay vueltas creadas sin monto (revisar
-  // tarifas) de $0 porque no se cargó ninguna vuelta (típico cuando el
-  // transporte es propio y no se factura, aunque también puede ser un
-  // olvido — sin datos no hay forma de distinguir eso último).
+  // Costo de transporte por ciclo (uno por ciclo, aunque tenga varias
+  // columnas de labor). `hasTrips` distingue $0 con vueltas sin monto
+  // (revisar tarifas) de $0 sin ninguna vuelta cargada.
   const transportByCycle = useMemo(() => {
     const out = new Map();
     for (const c of cycles) {
@@ -430,12 +395,10 @@ export default function ProductionSummaryModal({
     return sum;
   }, [dataByColumn, transportByCycle]);
 
-  // Totales por grupo de labor: suma el monto de producción (bruto, sin
-  // % de ganancia/IVA — esos viven en CombinedSummaryCard) de todas las
-  // columnas (ciclo × labor) que comparten el mismo laborGroupId. Así se ve
-  // "todo lo de Poda" a través de varios ciclos sin tener que sumarlo a
-  // mano. Columnas sin grupo asignado no entran acá (siguen visibles en las
-  // otras tablas igual).
+  // Totales por grupo de labor: suma el monto de producción (bruto, sin % de
+  // ganancia ni IVA, que viven en CombinedSummaryCard) de las columnas
+  // (ciclo × labor) con el mismo laborGroupId. Las columnas sin grupo no
+  // entran.
   const groupTotals = useMemo(() => {
     const m = new Map();
     for (const d of dataByColumn) {
@@ -508,13 +471,10 @@ export default function ProductionSummaryModal({
         </label>
       </div>
 
-      {/* Selector de ciclos como tabla: mucho más legible que los chips que
-          tenía antes cuando hay varios ciclos — se ve de un vistazo el
-          estado y los días trabajados de cada uno. Los cerrados se colapsan
-          por defecto (son los que más se acumulan) detrás de un resumen
-          "+N cerrados". El on/off de cada ciclo se persiste por id en
-          localStorage (ver `computeEnabledCycles`), así la selección se
-          mantiene aunque se reabra el resumen otro día. */}
+      {/* Selector de ciclos (tabla en escritorio, lista en móvil) con estado y
+          días trabajados. Los cerrados van ocultos por defecto detrás de
+          "+N cerrados". La selección se guarda por id de ciclo (ver
+          `computeEnabledCycles`). */}
       {cycles.length > 1 && (
         <div className="mb-3 overflow-hidden rounded-md border border-[var(--color-border)]">
           <div className="flex items-center justify-between bg-[var(--color-surface-2)] px-2 py-1.5 text-xs">
@@ -641,7 +601,7 @@ export default function ProductionSummaryModal({
       )}
 
       {loading && (
-        <div className="py-2 text-center text-xs text-[var(--color-muted)]">Cargando workdays...</div>
+        <div className="py-2 text-center text-xs text-[var(--color-muted)]">Cargando jornadas…</div>
       )}
 
       {columns.length === 0 ? (
@@ -654,9 +614,8 @@ export default function ProductionSummaryModal({
         </div>
       ) : (
         <div className="space-y-3">
-          {/* Tabla general combinada — pivot días × labores con totales por
-              día y totales por labor. Aparece arriba para ver el resumen
-              global; abajo viene el detalle por labor. */}
+          {/* Tabla general combinada (días × labores, con totales por día y
+              por labor), solo con más de una labor; abajo, el detalle por labor. */}
           {dataByColumn.length > 1 && (
             <CombinedSummaryCard
               dataByColumn={dataByColumn}
@@ -677,11 +636,9 @@ export default function ProductionSummaryModal({
   );
 }
 
-// Totales por grupo de labor (cross-ciclo): una fila por laborGroupId con el
-// monto de producción sumado de todas sus columnas (ciclo × labor). Monto
-// bruto de producción — no toca % de ganancia/IVA, eso vive aparte en
-// CombinedSummaryCard. Solo aparece si al menos una labor tiene grupo
-// asignado; las que no tienen grupo simplemente no entran acá.
+// Totales por grupo de labor entre ciclos: una fila por laborGroupId con el
+// monto bruto de producción de sus columnas (ciclo × labor). Aparece solo si
+// al menos una labor tiene grupo.
 function LaborGroupTotalsCard({ groupTotals }) {
   const isMobile = useIsMobile();
   return (
@@ -725,27 +682,22 @@ function LaborGroupTotalsCard({ groupTotals }) {
   );
 }
 
-// Card combinada con todas las labores seleccionadas como columnas y los
-// días como filas. Cada celda muestra qty (con unidad) arriba y monto
-// abajo. Hay una columna "Total día" al final con la suma de montos y una
-// fila TOTAL al pie con los acumulados por labor y el gran total.
+// Tabla general: las labores seleccionadas como columnas y los días como
+// filas; cada celda muestra cantidad (con unidad) y monto. Al final, la
+// columna "Total día" y las filas de cierre (TOTAL A PAGAR, GANANCIAS,
+// TRANSPORTE, MONTO LIBRE, TOTAL GENERAL, IVA y BRUTO).
 function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firstColKeyForCycle, grandTotalTransport, includeTransport }) {
   const toast = useToast();
   const isMobile = useIsMobile();
   const [collapsed, setCollapsed] = useState(false);
   const [busy, setBusy] = useState("");
   const captureRef = useRef(null);
-  // Ganancia por labor: para labores de trato/cosecha/por-etapas se calcula
-  // como monto × %, editable de forma independiente por columna. `generalPct`
-  // es un control "maestro": al cambiarlo se pisan todos los % individuales
-  // (pctOverrides se vacía) para que todas las columnas vuelvan a seguirlo.
-  // Para labores de pago al día (jornadas) no hay % — se ingresa a mano lo
-  // que nos pagarán por esa labor, y la ganancia es la diferencia contra el
-  // monto (lo que le debemos a los trabajadores). Si ya les pagamos ese
-  // monto (checkbox "workersPaid"), el monto pasa a ser solo informativo —
-  // ya no se resta, así que TODO lo que nos paguen es ganancia. Todo esto se
-  // persiste en localStorage por colKey (cycleId__laborId) para no tener que
-  // re-ingresarlo cada vez que se reabre el modal.
+  // Ganancia por labor. Cosecha, trato y por etapas: monto × %, editable por
+  // columna; `generalPct` es el control maestro y al cambiarlo vacía
+  // pctOverrides para que todas las columnas lo sigan. Pago al día: sin %; se
+  // ingresa lo que paga el cliente (paidToUs) y la ganancia es esa cifra menos
+  // el monto, o la cifra entera si ya se pagó a los trabajadores (workersPaid).
+  // Todo se guarda en localStorage por colKey (cycleId__laborId).
   const [generalPct, setGeneralPct] = useState(() => loadJSON("generalPct", 40));
   useEffect(() => { saveJSON("generalPct", generalPct); }, [generalPct]);
   const [pctOverrides, setPctOverrides] = useState(() => loadJSON("pctOverrides", {})); // colKey -> % (solo no-jornada)
@@ -754,18 +706,15 @@ function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firstColKey
   useEffect(() => { saveJSON("paidToUs", paidToUs); }, [paidToUs]);
   const [workersPaid, setWorkersPaid] = useState(() => loadJSON("workersPaid", {})); // colKey -> bool (solo jornada)
   useEffect(() => { saveJSON("workersPaid", workersPaid); }, [workersPaid]);
-  // Si el resumen va con IVA: agrega una fila final que suma 19% solo sobre
-  // el gran total (columna "Total día"), las columnas por labor quedan en
-  // blanco en esa fila.
+  // Con IVA se agregan las filas IVA (19% del TOTAL GENERAL) y BRUTO, con
+  // valor solo en la columna de total; las columnas por labor quedan en blanco.
   const [ivaEnabled, setIvaEnabled] = useState(() => loadJSON("ivaEnabled", false));
   useEffect(() => { saveJSON("ivaEnabled", ivaEnabled); }, [ivaEnabled]);
 
   const isJornadaCol = (col) => col.labor.type === "main";
-  // Supervisión no se cobra aparte: normalmente ya está considerada dentro
-  // del % de ganancia del resto de las labores, así que en vez de sumarle
-  // su propio % se descuenta completa (monto negativo) — reduce la ganancia
-  // total y su "total general" queda en $0 (no se le cobra nada al cliente
-  // por esta línea, es un costo interno ya cubierto por el margen general).
+  // Supervisión no se cobra aparte: su monto se descuenta entero de la
+  // ganancia (ganancia negativa) y su total general es $0. Es un costo interno
+  // que cubre el margen de las demás labores.
   const isSupervisionCol = (col) => col.labor.type === "supervision";
   const effectivePct = (colKey) => pctOverrides[colKey] ?? generalPct;
   const gananciaFor = (col, totalAmount) => {
@@ -777,14 +726,10 @@ function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firstColKey
     if (isSupervisionCol(col)) return -totalAmount;
     return (totalAmount * effectivePct(col.key)) / 100;
   };
-  // Total general por columna: monto + ganancia, salvo el caso de jornada ya
-  // pagada — ahí el monto ya está cubierto aparte (no se vuelve a sumar) y
-  // solo se considera lo que nos van a pagar, que es 100% ganancia.
-  // Supervisión SIEMPRE es $0 acá — no es que "monto + ganancia" den cero por
-  // casualidad, es una regla explícita: lo que se factura al cliente no debe
-  // depender jamás de cuánto se gastó en supervisión, ese costo se cubre con
-  // el margen de las demás labores y solo se refleja como descuento
-  // informativo en la fila GANANCIAS, nunca en lo facturado.
+  // Total general por columna: monto + ganancia. Pago al día ya pagado a los
+  // trabajadores: solo lo que paga el cliente. Supervisión: siempre $0, para
+  // que lo facturado no dependa del gasto en supervisión; ese costo aparece
+  // solo como descuento informativo en la fila MONTO LIBRE.
   const totalGeneralFor = (col, totalAmount) => {
     if (isSupervisionCol(col)) return 0;
     if (isJornadaCol(col) && workersPaid[col.key]) {
@@ -804,7 +749,7 @@ function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firstColKey
     return [...set].sort();
   }, [dataByColumn]);
 
-  // Mapa rápido por labor de day → cell.
+  // Por labor: día → celda.
   const byLaborDay = useMemo(() => {
     const m = new Map();
     for (const d of dataByColumn) {
@@ -838,12 +783,9 @@ function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firstColKey
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [dataByColumn, generalPct, pctOverrides, paidToUs, workersPaid],
   );
-  // GANANCIAS y SUPERVISIÓN son filas separadas: GANANCIAS muestra el margen
-  // puro de las labores facturables, sin tocar por el descuento de
-  // supervisión. El "monto libre" (ganancia − supervisión) se calcula y
-  // muestra únicamente en la celda de gran total de la fila SUPERVISIÓN,
-  // mostrando los dos montos de la resta — no reemplaza ni reduce el total
-  // de GANANCIAS.
+  // GANANCIAS muestra el margen de las labores facturables, sin el descuento
+  // de supervisión. La fila MONTO LIBRE muestra ese descuento por columna y,
+  // en el total, ganancia − supervisión con los dos montos de la resta.
   const totalGananciaBillable = useMemo(
     () => dataByColumn.reduce((s, d) => s + (isSupervisionCol(d.col) ? 0 : gananciaFor(d.col, d.totalAmount)), 0),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -964,10 +906,9 @@ function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firstColKey
   };
 
   // XLSX de la tabla general: cada labor ocupa 2 columnas (Cant./Monto) bajo
-  // un header combinado con su nombre — mismo layout que la tabla en pantalla,
-  // trasladado a hoja de cálculo. `writeTotalRow` cubre las filas de cierre
-  // (TOTAL A PAGAR, GANANCIAS, TRANSPORTE, etc.), que comparten estructura
-  // pero difieren en qué columnas llenan y con qué color.
+  // un encabezado combinado con su nombre, como la tabla en pantalla.
+  // `writeTotalRow` escribe las filas de cierre (TOTAL A PAGAR, GANANCIAS,
+  // TRANSPORTE, etc.), que difieren en qué columnas llenan y con qué color.
   const handleXlsx = async () => {
     setBusy("xlsx");
     try {
@@ -1342,11 +1283,9 @@ function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firstColKey
           </div>
         </div>
 
-        {/* Tabla auxiliar para AJUSTAR la ganancia — a propósito FUERA de
-            captureRef: no debe salir al copiar/imprimir, solo ayuda en
-            pantalla a editar los % (o lo que paga el cliente en labores de
-            jornada), lo que alimenta las filas GANANCIAS/TOTAL GENERAL de
-            la tabla de arriba. */}
+        {/* Tabla para ajustar la ganancia (los % o lo que paga el cliente en
+            labores de jornada), que alimenta GANANCIAS y TOTAL GENERAL. Va
+            fuera de captureRef: no sale al copiar ni al imprimir. */}
         <div style={{ marginTop: 12, borderTop: "2px solid #ccc", paddingTop: 10, padding: "10px 12px 12px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8, fontSize: 13, fontWeight: 700 }}>
               <span>💰 Ajustar ganancia</span>
@@ -1549,9 +1488,9 @@ function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firstColKey
   );
 }
 
-// Card independiente por labor — header con título + total + chevron +
-// botones de copiar/imprimir, body con la tabla día por día. Default
-// colapsado para labores de ciclos cerrados; abierto para ciclos en curso.
+// Tarjeta por labor: encabezado con título, total, flecha de plegado y
+// botones de copiar e imprimir; cuerpo con la tabla día por día. Arranca
+// plegada si el ciclo está cerrado.
 function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
   const toast = useToast();
   const isMobile = useIsMobile();
@@ -1561,10 +1500,9 @@ function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
   const [busy, setBusy] = useState("");
   const captureRef = useRef(null);
 
-  // El toggle maestro del modal fuerza el colapso de todas las tarjetas
-  // cerradas a la vez; una tarjeta abierta nunca se ve afectada por esto. El
-  // usuario puede seguir expandiendo/colapsando cada una manualmente después
-  // — el próximo click al toggle maestro vuelve a sincronizar todas.
+  // El control maestro del modal pliega o despliega a la vez las tarjetas de
+  // ciclos cerrados (las de ciclos abiertos no cambian). Cada una se puede
+  // plegar a mano; el siguiente cambio del control las vuelve a igualar.
   useEffect(() => {
     if (isClosed) setCollapsed(allClosedCollapsed);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1580,9 +1518,9 @@ function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
           ? "🧑‍💼 Supervisión"
           : `🛠 ${tratoTypeLabel(catalogs, col.labor.tratoType ?? 0)}`;
 
-  // Texto plano del desglose para pegar en chat / nota. Mantenemos columnas
-  // alineadas con padStart sobre los strings finales — funciona en monospace
-  // (WhatsApp Web, Slack, etc.) y se ve razonable en proportional también.
+  // Texto plano del desglose para pegar en un chat o una nota. Alinea las
+  // columnas con padEnd sobre los textos finales: se ve bien en fuente
+  // monoespaciada y aceptable en proporcional.
   const buildPlainText = () => {
     const lines = [];
     lines.push(`📊 ${col.labor.name} — ${col.cycleLabel} (${typeLabel})`);
@@ -1781,8 +1719,8 @@ function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
       </div>
       {!collapsed && (
         <div ref={captureRef} style={{ background: "#fff", color: "#000", padding: 12 }}>
-          {/* Header redundante DENTRO del capturable para que la imagen/print
-              tengan contexto del labor sin depender del header gris. */}
+          {/* Encabezado repetido dentro de la zona capturada, para que la
+              imagen y la impresión lleven el nombre de la labor. */}
           <div style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 13, fontWeight: 700 }}>{col.labor.name}</div>
             <div style={{ fontSize: 11, color: "#666", marginTop: 2 }}>
@@ -1869,9 +1807,9 @@ function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
   );
 }
 
-// Construye los datos de una celda a partir de los workdays del día/labor.
-// Maneja cosecha (multi-combo: kilos por calidad/envase) y trato (multi-tier:
-// qty por unidad/precio). Devuelve null si no hay producción real.
+// Datos de una celda a partir de las jornadas del día y la labor: cosecha
+// (combos calidad/envase), trato (tiers), trato por etapas y pago al día o
+// supervisión. Devuelve null si no hay producción.
 function buildCell(labor, date, workdays, dayPrices, catalogs) {
   if (!workdays?.length) return null;
   if (labor.type === "cosecha") {
@@ -1891,8 +1829,8 @@ function buildCell(labor, date, workdays, dayPrices, catalogs) {
     }
     if (qty === 0 && amount === 0) return null;
     const unit = cosechaUnit(catalogs, containerSet).toLowerCase();
-    // Precio: si hay un solo combo (calidad/envase) mostramos su precio. Si
-    // hay varios, mostramos el rango. Si no hay configurado, derivamos $/kg.
+    // Precio: con un solo combo con precio, ese precio; con varios, el precio
+    // de cada calidad; sin precio configurado, el promedio por unidad.
     const combos = getDayCombos(dayPrices, labor.id, date);
     let priceLabel = "";
     const activeCombos = combos.filter((c) => c.price > 0);
@@ -1947,7 +1885,7 @@ function buildCell(labor, date, workdays, dayPrices, catalogs) {
     } else if (qty > 0) {
       priceLabel = `~${fmtCLP(amount / qty)}/u`;
     }
-    // Si no hay unidad configurada caemos al tipo de trato como label visual.
+    // Sin unidad configurada, se muestra el tipo de trato.
     const unit = unitSet.size > 0
       ? [...unitSet].join("/")
       : tratoTypeLabel(catalogs, labor.tratoType ?? 0).toLowerCase();
@@ -1956,9 +1894,8 @@ function buildCell(labor, date, workdays, dayPrices, catalogs) {
     return { qty, amount, unit, priceLabel, persons, avg };
   }
   if (labor.type === "tratoEtapas") {
-    // Conteo del día (qty) = solo etapas que cuentan; pago (amount) = todas.
-    // El desglose por etapa del día (priceLabel) también se limita a las que
-    // cuentan — las demás no aportan al conteo, así que no van en el detalle.
+    // Cantidad del día (qty): solo las etapas que cuentan; monto: todas. El
+    // desglose por etapa (priceLabel) también lista solo las que cuentan.
     const counting = countingStageIds(labor);
     let qty = 0;
     let amount = 0;
@@ -1976,8 +1913,6 @@ function buildCell(labor, date, workdays, dayPrices, catalogs) {
       }
     }
     if (qty === 0 && amount === 0) return null;
-    // Desglose "Inst 5" con solo las etapas que cuentan — las que no cuentan
-    // no aportan al conteo de unidades, así que no van en el detalle.
     const stages = normalizeStages(labor.stages);
     const priceLabel = stages
       .filter((s) => s.counts && (byStage.get(String(s.id)) || 0) > 0)
@@ -1988,10 +1923,9 @@ function buildCell(labor, date, workdays, dayPrices, catalogs) {
     return { qty, amount, unit: "unid", priceLabel, persons, avg };
   }
   if (labor.type === "main" || labor.type === "supervision") {
-    // Pago al día: no hay precio/unidad que calcular, el monto ya viene
-    // directo en cada workday. La "cantidad" es el número de jornadas
-    // (trabajadores distintos pagados ese día). Supervisión usa la misma
-    // mecánica de monto-por-día-por-trabajador que jornadas (main).
+    // Pago al día y supervisión: el monto viene directo en cada jornada. La
+    // cantidad es el número de jornadas (trabajadores distintos pagados ese
+    // día) y el precio, el promedio por jornada.
     let amount = 0;
     const ruts = new Set();
     for (const wd of workdays) {

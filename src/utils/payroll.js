@@ -1,10 +1,10 @@
-// Payroll helpers — Banco de Chile nómina format + Transferencias + Efectivo.
-// ExcelJS is loaded lazily — only when the user actually exports.
+// Helpers de nómina: formato de nómina de Banco de Chile, Transferencias y Efectivo.
+// ExcelJS se carga lazy, solo al exportar.
 import { ACCOUNT_TYPES, bankName, isCashBank } from "./banks";
 import { normalizeRut } from "./rutUtils";
 import { getTratoTierTotals } from "./cosechaCombos";
 
-// Strip accents and special chars (BChile only accepts ASCII).
+// Quita tildes y caracteres especiales (BChile solo acepta ASCII).
 export function cleanText(text) {
   if (!text) return "";
   return String(text)
@@ -15,7 +15,8 @@ export function cleanText(text) {
     .trim();
 }
 
-// Returns RUT digits + DV (no dash, no dots), or empty if can't parse.
+// RUT con el DV pegado, sin guion ni puntos. Si no tiene la forma esperada,
+// devuelve el valor normalizado sin guiones ni puntos.
 export function rutWithDvNoDash(rut) {
   const r = normalizeRut(rut);
   const m = r.match(/^(\d+)-([0-9KBH])$/);
@@ -23,38 +24,34 @@ export function rutWithDvNoDash(rut) {
   return m[1] + m[2];
 }
 
-// Map account type code (0/1/3) → BChile code (CTD / JUV / JUV).
+// Tipo de cuenta (0/1/3) → código BChile (CTD / JUV / JUV); JUV si no se reconoce.
 export function bchileAccountTypeCode(accountTypeValue) {
   const v = Number(accountTypeValue);
   const found = ACCOUNT_TYPES.find((t) => t.value === v);
   return found?.code || "JUV";
 }
 
-// Aggregate amount per worker, per cycle, respecting labor type.
-// Returns: [{ rut, workerId, total, byCycle: { [cycleId]: amount }, workdayIds: [] }]
 // Lo que una jornada suma al bruto. Trato puede venir repartido en tiers.
-// Separado para que el selector de días de "Agregar persona" muestre
-// exactamente lo que después entra a la nómina.
+// También lo usa el selector de días de "Agregar persona", así muestra lo
+// mismo que después entra a la nómina.
 export function workdayPayAmount(wd, laborType) {
   return laborType === "trato" ? getTratoTierTotals(wd).amount : Number(wd.amount) || 0;
 }
 
+// Suma lo de cada trabajador, en total y por ciclo, según el tipo de labor.
+// Devuelve [{ rut, workerId, total, byCycle: { [cycleId]: amount }, workdayIds: [] }]
 export function aggregateWorkerAmounts(workdays, laborTypeById) {
   const byWorker = new Map();
   for (const wd of workdays) {
     if (!wd.workerRut) continue;
     const amount = workdayPayAmount(wd, laborTypeById.get(wd.laborId));
-    // Un día en cero SÍ entra. Cortaba acá, antes de meter el id en
-    // `workdayIds`, así que nunca se etiquetaba con `payrollId` y quedaba
-    // disponible para siempre: las cifras de "pagado / pendiente" del ciclo
-    // no cerraban nunca. Es el caso de los días de asistencia de un sueldo
-    // mensual (`attendanceOnly: true, amount: 0`), que hay que marcar como
-    // pagados aunque no generen transferencia. El archivo del banco los
-    // filtra por su cuenta (ver `buildBchileRows`).
+    // Un día en cero SÍ entra a `workdayIds`, así queda etiquetado con
+    // `payrollId` y cuadra el "pagado / pendiente" del ciclo. Es el caso de
+    // los días de asistencia de un sueldo mensual (`attendanceOnly: true,
+    // amount: 0`). El archivo del banco los filtra (ver `buildBchileRows`).
     if (!byWorker.has(wd.workerRut)) {
-      // Fase 2 de "rut editable" (ver workersService.js): workerId es el id
-      // estable del worker; fallback al rut para workdays viejos que todavía
-      // no lo tienen (hoy son el mismo valor).
+      // workerId es el id estable del trabajador; si el workday no lo trae,
+      // se usa el rut.
       byWorker.set(wd.workerRut, { rut: wd.workerRut, workerId: wd.workerId || wd.workerRut, total: 0, byCycle: {}, workdayIds: [] });
     }
     const e = byWorker.get(wd.workerRut);
@@ -65,8 +62,8 @@ export function aggregateWorkerAmounts(workdays, laborTypeById) {
   return [...byWorker.values()];
 }
 
-// Validate the bank account number — returns null if OK, error string otherwise.
-// Lightweight sanity checks; not bank-format-specific, just catches obvious mistakes.
+// Valida el número de cuenta: null si está bien (o si es efectivo), o el texto
+// del error. Son chequeos básicos, no del formato de cada banco.
 export function validateAccountNumber(accountNumber, bankCode) {
   if (isCashBank(bankCode)) return null;
   const s = String(accountNumber || "").trim();
@@ -89,8 +86,9 @@ export function splitBankAndCash(items) {
   return { bank, cash };
 }
 
-// Normalize leader names to UPPERCASE-trimmed so case-only duplicates merge
-// (e.g. "Grupo Oliver" / "GRUPO OLIVER" / "grupo oliver" → all the same group).
+// Nombre del líder en MAYÚSCULAS y sin espacios en los bordes, para que los que
+// solo difieren en mayúsculas caigan en el mismo grupo ("Grupo Norte" /
+// "GRUPO NORTE" / "grupo norte").
 export function normalizeLeader(s) {
   return String(s || "").trim().toUpperCase();
 }
@@ -109,16 +107,16 @@ export function groupCashByLeader(cashItems) {
 
 export const groupItemsByLeader = groupCashByLeader;
 
-// ─────────────────────────── Styling helpers ───────────────────────────
+// ─────────────────────────── Estilos ───────────────────────────
 const BORDER_THIN = { style: "thin", color: { argb: "FF999999" } };
 const BORDER_ALL = { top: BORDER_THIN, left: BORDER_THIN, bottom: BORDER_THIN, right: BORDER_THIN };
 
 const fill = (argb) => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
 
-// Header (light blue like the screenshot).
+// Encabezado (celeste).
 const STYLE_HEADER = { font: { bold: true }, fill: fill("FFB7DEE8"), border: BORDER_ALL, alignment: { vertical: "middle" } };
 
-// Group leader row (per-leader). Cycle through warm colors so each group is visibly distinct.
+// Colores por grupo de líder (subtotal e items): se alternan para que cada grupo se distinga.
 const LEADER_FILLS = ["FFFFE699", "FFC6E0B4", "FFF8CBAD", "FFB4C7E7", "FFE2C2F0", "FFFFC9C9", "FFCFE7F5", "FFD9D2E9"];
 const ITEM_FILLS = ["FFFFF2CC", "FFE2EFDA", "FFFCE4D6", "FFD9E1F2", "FFEAD8F2", "FFFCE0E0", "FFE7F2F8", "FFEEE7F4"];
 
@@ -136,7 +134,7 @@ const STYLE_GRAND_TOTAL = { font: { bold: true, size: 12 }, fill: fill("FFC6EFCE
 const STYLE_BANK_TOTAL = { font: { bold: true }, fill: fill("FFD9E1F2"), border: BORDER_ALL };
 const STYLE_CELL = { border: BORDER_ALL };
 
-// ─────────────────────────── BChile sheet ───────────────────────────
+// ─────────────────────────── Hoja BChile ───────────────────────────
 // El banco rechaza las filas sin mail, así que las que no lo traen se
 // completan con la casilla de remuneraciones.
 export const BCHILE_DEFAULT_EMAIL = "remuneracionesis@gmail.com";
@@ -155,13 +153,12 @@ export const BCHILE_HEADERS = [
   "Campo Libre 2 (Glosa 2)",
 ];
 
-// Las filas que el portal del banco ingiere, como matriz de primitivos.
-// Está separado de la escritura en ExcelJS porque acá viven tres reglas que
-// deciden a qué cuenta va la plata, y con el workbook de por medio no se
-// podían probar.
+// Las filas que ingiere el portal del banco, como matriz de primitivos. Va
+// aparte de la escritura en ExcelJS para probar sin el workbook las tres
+// reglas que deciden a qué cuenta va la plata.
 export function buildBchileRows(items = []) {
-  // Cero-neto afuera: existen en la nómina solo para liquidar anticipos
-  // (bruto = anticipo), pero el banco no acepta transferencias de $0.
+  // Cero-neto afuera (por ejemplo, quien liquida un anticipo con todo su
+  // bruto): el banco no acepta transferencias de $0.
   // Orden alfabético por nombre para que el correlativo A001…A999 sea estable.
   const ordenados = items
     .filter((it) => Math.round(Number(it.amount) || 0) > 0)
@@ -173,7 +170,8 @@ export function buildBchileRows(items = []) {
     // `paymentRut` viene de bankDetails[0] (la cuenta destino del banco) y
     // puede diferir del RUT de la persona — p.ej. cuando el pago va a una
     // cuenta de un familiar. El portal de BChile lo valida contra la
-    // titularidad de la cuenta, así que SIEMPRE va paymentRut acá.
+    // titularidad de la cuenta, así que va paymentRut, y el RUT de la persona
+    // solo si no hay paymentRut.
     rutWithDvNoDash(it.paymentRut || it.rut),
     cleanText(it.name),
     String(it.accountNumber || ""),
@@ -199,8 +197,8 @@ function buildBchileSheet(wb, items) {
   return ws;
 }
 
-// ─────────────────────────── Transferencias sheet ───────────────────────────
-// items: bank items, cycles: [{ id, label }]
+// ─────────────────────────── Hoja Transferencias ───────────────────────────
+// items: los de banco; cycles: [{ id, label }]
 function buildTransferenciasSheet(wb, items, cycles) {
   const ws = wb.addWorksheet("Transferencias");
   const cycleHeaders = cycles.map((c) => c.label || c.id);
@@ -219,7 +217,6 @@ function buildTransferenciasSheet(wb, items, cycles) {
     ]);
   }
 
-  // Totals row
   const totalsByCycle = cycles.map((c) =>
     items.reduce((s, it) => s + (it.byCycle?.[c.id] || 0), 0),
   );
@@ -231,9 +228,8 @@ function buildTransferenciasSheet(wb, items, cycles) {
     Math.round(grand),
   ]);
 
-  // Style header
   ws.getRow(1).eachCell((c) => (c.style = STYLE_HEADER));
-  // Style data cells (just borders + currency format on numeric cols)
+  // Celdas de datos: bordes y formato de moneda en las columnas numéricas.
   const totalCol = headers.length;
   for (let r = 2; r < totalsRow.number; r++) {
     const row = ws.getRow(r);
@@ -242,7 +238,6 @@ function buildTransferenciasSheet(wb, items, cycles) {
       if (colNum >= 3) cell.numFmt = '"$"#,##0;[Red]"$"#,##0;""';
     });
   }
-  // Style totals
   totalsRow.eachCell({ includeEmpty: true }, (cell, colNum) => {
     cell.style = colNum === totalCol ? STYLE_GRAND_TOTAL : STYLE_BANK_TOTAL;
     if (colNum >= 3) cell.numFmt = '"$"#,##0';
@@ -253,7 +248,7 @@ function buildTransferenciasSheet(wb, items, cycles) {
   for (let i = 3; i <= totalCol; i++) ws.getColumn(i).width = 14;
 }
 
-// ─────────────────────────── Efectivo sheet ───────────────────────────
+// ─────────────────────────── Hoja Efectivo ───────────────────────────
 function buildEfectivoSheet(wb, cashItems, cycles) {
   if (cashItems.length === 0) return;
   const ws = wb.addWorksheet("Efectivo");
@@ -270,7 +265,7 @@ function buildEfectivoSheet(wb, cashItems, cycles) {
     const leaderStyleTotal = STYLE_GROUP_TOTAL(leaderIdx);
     const leaderStyleItem = STYLE_GROUP_ITEM(leaderIdx);
 
-    // Items first
+    // Primero las personas del grupo, después su subtotal.
     for (const it of g.items) {
       const cycleAmounts = cycles.map((c) =>
         it.byCycle && it.byCycle[c.id] ? Math.round(it.byCycle[c.id]) : "",
@@ -288,7 +283,6 @@ function buildEfectivoSheet(wb, cashItems, cycles) {
       });
     }
 
-    // Subtotal row per leader
     const subTotalsByCycle = cycles.map((c) =>
       g.items.reduce((s, it) => s + (it.byCycle?.[c.id] || 0), 0),
     );
@@ -304,12 +298,11 @@ function buildEfectivoSheet(wb, cashItems, cycles) {
       if (colNum >= 4) cell.numFmt = '"$"#,##0';
     });
 
-    // Spacer (no fill)
+    // Fila vacía, sin relleno, entre grupos.
     ws.addRow([]);
     leaderIdx++;
   }
 
-  // Grand total
   const grandTotalsByCycle = cycles.map((c) =>
     cashItems.reduce((s, it) => s + (it.byCycle?.[c.id] || 0), 0),
   );
@@ -332,10 +325,10 @@ function buildEfectivoSheet(wb, cashItems, cycles) {
   for (let i = 4; i <= totalCol; i++) ws.getColumn(i).width = 14;
 }
 
-// ─────────────────────────── Resumen sheet ───────────────────────────
-// Formatea un rango como "dd/mm → dd/mm" o "dd/mm" si es un solo día. Recibe
-// strings "YYYY-MM-DD" (los que persistimos en cycle.days). Si falta uno
-// devuelve el otro o vacío.
+// ─────────────────────────── Hoja Resumen ───────────────────────────
+// Rango "dd/mm → dd/mm", o "dd/mm" si es un solo día. Recibe strings
+// "YYYY-MM-DD" (los de cycle.days). Si falta uno devuelve el otro, y "—" si
+// faltan los dos.
 function fmtPeriod(first, last) {
   const fmt = (d) => {
     if (!d || typeof d !== "string") return "";
@@ -355,9 +348,8 @@ function buildResumenSheet(wb, bankItems, cashItems, cycles) {
   ws.addRow(headers);
   ws.getRow(1).eachCell((c) => (c.style = STYLE_HEADER));
 
-  // Fila Período: primer y último día de cada ciclo. Solo si al menos un
-  // ciclo trae fechas (las nóminas viejas no tienen firstDay/lastDay
-  // persistido y entonces saltamos esta fila para no ensuciar).
+  // Fila Período: primer y último día de cada ciclo. Solo va si al menos un
+  // ciclo trae firstDay/lastDay.
   const hasAnyPeriod = cycles.some((c) => c.firstDay || c.lastDay);
   if (hasAnyPeriod) {
     const periodRow = ws.addRow([
@@ -417,7 +409,7 @@ function buildResumenSheet(wb, bankItems, cashItems, cycles) {
   for (let i = 2; i <= headers.length; i++) ws.getColumn(i).width = 14;
 }
 
-// ─────────────────────────── Public API ───────────────────────────
+// ─────────────────────────── API pública ───────────────────────────
 async function writeWorkbook(wb, filename) {
   const buf = await wb.xlsx.writeBuffer();
   const blob = new Blob([buf], {
@@ -438,7 +430,7 @@ export async function downloadBchileXlsx(items, filename = "Nomina", cycles = []
   const wb = new ExcelJS.Workbook();
   const { bank, cash } = splitBankAndCash(items);
 
-  // Nomina first — it's the file the bank ingests.
+  // Nomina va primera: es la hoja que ingiere el banco.
   buildBchileSheet(wb, bank);
   buildResumenSheet(wb, bank, cash, cycles);
   buildTransferenciasSheet(wb, bank, cycles);
@@ -447,7 +439,7 @@ export async function downloadBchileXlsx(items, filename = "Nomina", cycles = []
   await writeWorkbook(wb, filename);
 }
 
-// Just the BChile Nomina sheet — the file you upload to the bank portal.
+// Solo la hoja Nomina de BChile: el archivo que se sube al portal del banco.
 export async function downloadNominaOnlyXlsx(items, filename = "Nomina") {
   const ExcelJS = (await import("exceljs")).default;
   const wb = new ExcelJS.Workbook();

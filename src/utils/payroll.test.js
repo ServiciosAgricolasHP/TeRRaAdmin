@@ -23,8 +23,7 @@ const wd = (over = {}) => ({
 });
 
 describe("aggregateWorkerAmounts", () => {
-  // Esto ES el bruto de la nómina: lo que sale de acá es contra lo que se
-  // descuentan anticipos y lo que termina en la transferencia.
+  // Calcula el bruto de la nómina, contra el que se descuentan los anticipos.
   const tipos = new Map([
     ["l1", "cosecha"],
     ["lTrato", "trato"],
@@ -79,10 +78,8 @@ describe("aggregateWorkerAmounts", () => {
     expect(r.workerId).toBe("1-9");
   });
 
-  // Los días en cero entran. Antes se descartaban antes de llegar a
-  // `workdayIds`, así que nunca se etiquetaban con `payrollId` y quedaban
-  // disponibles para siempre: las cifras de "pagado / pendiente" del ciclo no
-  // cerraban nunca.
+  // Los días en $0 entran a `workdayIds`: así quedan etiquetados con
+  // `payrollId` y las cifras de "pagado / pendiente" del ciclo cierran.
   it("un workday en 0 entra igual en workdayIds", () => {
     const res = aggregateWorkerAmounts(
       [wd({ id: "cero", amount: 0 }), wd({ id: "vale", amount: 100 })],
@@ -171,8 +168,6 @@ describe("splitBankAndCash", () => {
 
 describe("normalizeLeader / groupCashByLeader", () => {
   it("fusiona líderes que solo difieren en mayúsculas o espacios", () => {
-    // Un bug acá parte el sobre de un líder en dos y el conteo de billetes
-    // sale mal.
     expect(normalizeLeader(" grupo oliver ")).toBe("GRUPO OLIVER");
     const grupos = groupCashByLeader([
       { rut: "1-9", groupLeader: "Grupo Oliver", amount: 1000 },
@@ -235,8 +230,6 @@ describe("bchileAccountTypeCode", () => {
   });
 
   it("cae a JUV en silencio con un tipo desconocido", () => {
-    // Vale la pena tenerlo fijado: un tipo nuevo mal cargado se envía como
-    // cuenta vista sin que nada avise.
     expect(bchileAccountTypeCode(99)).toBe("JUV");
     expect(bchileAccountTypeCode(undefined)).toBe("JUV");
   });

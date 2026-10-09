@@ -8,8 +8,7 @@ import {
 } from "./rutUtils";
 
 // Los RUT de abajo tienen el dígito verificador calculado a mano con el
-// módulo 11, no tomado de la salida de esta misma función: si el test usara
-// lo que produce el código, no probaría nada.
+// módulo 11, no con la función que se prueba:
 //
 //   12345678 → suma 138, 138 % 11 = 6, 11 - 6 = 5   → DV "5"
 //   12345670 → suma 122, 122 % 11 = 1, 11 - 1 = 10  → DV "K"

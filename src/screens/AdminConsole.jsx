@@ -1,26 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { collection, query, where, getCountFromServer, getDocs, doc, getDoc, writeBatch, serverTimestamp, addDoc, onSnapshot } from "firebase/firestore";
+import { collection, query, where, getCountFromServer, doc, getDoc, writeBatch, serverTimestamp, addDoc, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
 import { faenasService, cyclesService, workersService } from "../services";
 import { advancesService } from "../services/advancesService";
 import { toProperName } from "../utils/nameUtils";
+import { isAdminRole } from "../utils/userAccounts";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { localIsoDate } from "../utils/dates";
 
-// Módulo de consola admin. Sirve para inspeccionar la escala de los datos
-// antes de tomar decisiones de costo (snapshots, paginación, etc.). Todas
-// las consultas usan `getCountFromServer` que cuesta ~1 read por cada 1000
-// docs contados — barato a propósito.
-//
-// Nada se ejecuta solo: cada botón dispara su query individual y mostramos
-// el costo estimado al lado. Si alguna query devuelve mucho, el contador
-// real puede ser >1.
+// Consola admin: diagnóstico, inspección de escala y migraciones únicas.
+// Los recuentos usan `getCountFromServer`, que cuesta ~1 lectura por cada
+// 1.000 documentos contados. Nada se ejecuta solo: cada botón dispara su
+// propia consulta.
 
-// Todas las colecciones que usa la app, agrupadas por área. La lista estaba
-// a mano y se había quedado en 12 de 28: faltaba `dteDocuments`, que es la
-// segunda más grande del sistema, y familias enteras como el libro de precios
-// o los pesajes QR.
+// Todas las colecciones que usa la app, agrupadas por área. Es una lista a
+// mano: una colección que no esté acá no aparece en los conteos.
 const MAIN_COLLECTIONS = [
   // Producción
   { id: "workdays", group: "Producción", label: "Workdays", note: "jornadas registradas (la tabla más grande)" },
@@ -32,10 +28,10 @@ const MAIN_COLLECTIONS = [
   { id: "laborGroups", group: "Producción", label: "Grupos de labor", note: "" },
 
   // Personas y pagos
-  { id: "worker", group: "Personas y pagos", label: "Trabajadores", note: "doc id = RUT" },
+  { id: "worker", group: "Personas y pagos", label: "Trabajadores", note: "id del documento = RUT" },
   { id: "groupLeader", group: "Personas y pagos", label: "Líderes de grupo", note: "lista curada" },
   { id: "payrolls", group: "Personas y pagos", label: "Nóminas", note: "" },
-  { id: "payrollSnapshots", group: "Personas y pagos", label: "Snapshots de nómina", note: "1:1 con payrolls" },
+  { id: "payrollSnapshots", group: "Personas y pagos", label: "JSON de nóminas", note: "uno por nómina" },
   { id: "advances", group: "Personas y pagos", label: "Anticipos / Bonos", note: "" },
 
   // Transporte
@@ -52,20 +48,20 @@ const MAIN_COLLECTIONS = [
 
   // Otros registros
   { id: "priceBookEntries", group: "Otros registros", label: "Libro de precios", note: "" },
-  { id: "priceBookConfig", group: "Otros registros", label: "Config del libro de precios", note: "normalmente 1 doc" },
+  { id: "priceBookConfig", group: "Otros registros", label: "Config del libro de precios", note: "normalmente 1 documento" },
   { id: "contactCards", group: "Otros registros", label: "Información y cuentas", note: "" },
   { id: "interestLinks", group: "Otros registros", label: "Links útiles", note: "" },
   { id: "indicators", group: "Otros registros", label: "Indicadores", note: "" },
-  { id: "harvestWeights", group: "Otros registros", label: "Pesajes QR", note: "la escribe la app de scan, acá solo se lee" },
+  { id: "harvestWeights", group: "Otros registros", label: "Pesajes QR", note: "la escribe la app de escaneo; acá solo se lee" },
   { id: "qrPrefixes", group: "Otros registros", label: "Prefijos QR", note: "1 por código físico" },
 
   // Sistema
-  { id: "users", group: "Sistema", label: "Perfiles de usuario", note: "doc id = uid de Firebase" },
-  { id: "logs", group: "Sistema", label: "Logs de auditoría", note: "puede ser MUY grande" },
-  { id: "functionJobs", group: "Sistema", label: "Jobs del backend", note: "cola de Cloud Functions; nada la poda todavía" },
+  { id: "users", group: "Sistema", label: "Perfiles de usuario", note: "id del documento = UID de Firebase" },
+  { id: "logs", group: "Sistema", label: "Registros de auditoría", note: "puede ser MUY grande" },
+  { id: "functionJobs", group: "Sistema", label: "Tareas del backend", note: "cola de Cloud Functions; nada la poda todavía" },
 ];
 
-// Orden de los grupos en la tabla, para que no dependa del orden del array.
+// Grupos en el orden en que aparecen por primera vez en MAIN_COLLECTIONS.
 const COLLECTION_GROUPS = [...new Set(MAIN_COLLECTIONS.map((c) => c.group))];
 
 const monthRange = (y, m) => {
@@ -96,14 +92,11 @@ const LOG_ENTITIES = [
   "user", "log",
 ];
 
-// Entidades cuyo log arrastra un array o mapa entero. `diff()` en
-// services/logger.js compara por clave de PRIMER NIVEL, así que tocar un solo
-// elemento guarda dos copias completas de la estructura: la de antes y la de
-// después. Medido sobre un ciclo realista (3 labores × 80 personas, 30 días ×
-// 4 combos) da ~30 KB por log, contra ~0,1 KB del log de una jornada.
-//
-// Por eso el conteo y el peso no vienen del mismo lado: las jornadas ponen los
-// documentos, estas entidades ponen los bytes.
+// Entidades cuyo log guarda un array o mapa entero. `diff()` (services/logger.js)
+// compara por clave de primer nivel, así que tocar un solo elemento guarda la
+// estructura completa dos veces, antes y después: ~30 KB por log en un ciclo
+// de 3 labores × 80 personas y 30 días × 4 combos, contra ~0,1 KB por log de
+// una jornada. Las jornadas ponen la cantidad de logs; estas entidades, el peso.
 const LOG_HEAVY = {
   cycle: "labors[] + dayPrices{} enteros",
   payroll: "items[] + workdayIds[] enteros",
@@ -142,9 +135,6 @@ async function countWorkdaysByCycle(cycleId) {
   return snap.data().count;
 }
 
-// Tarjeta colapsable. La consola junta diagnostico, inspeccion y migraciones
-// de una sola vez: desplegadas todas a la vez es un muro, y lo que se usa en
-// una visita suele ser una sola. El estado se recuerda por tarjeta.
 function Grupo({ titulo, children }) {
   return (
     <div className="space-y-2">
@@ -156,6 +146,8 @@ function Grupo({ titulo, children }) {
   );
 }
 
+// Tarjeta colapsable, cerrada por defecto. Recuerda en localStorage si quedó
+// abierta, con una clave por tarjeta.
 function ConsoleCard({ id, title, description, actions, children }) {
   const clave = `af.console.${id}`;
   const [abierta, setAbierta] = useState(() => {
@@ -203,7 +195,7 @@ export default function AdminConsole() {
         <h1 className="text-2xl font-semibold tracking-tight">Consola admin</h1>
         <p className="text-sm text-[var(--color-muted)]">
           Inspección de escala. Cada botón dispara una consulta de recuento
-          (~1 lectura por 1000 docs). No se ejecuta nada hasta que lo dispares.
+          (~1 lectura por 1000 documentos). No se ejecuta nada hasta que lo dispares.
         </p>
       </div>
 
@@ -220,12 +212,11 @@ export default function AdminConsole() {
         <WorkdaysByCycleSection />
       </Grupo>
 
-      {/* Se corren una vez y se borran. Van juntas para que se vea de un
-          vistazo qué queda pendiente de migrar. */}
+      {/* Migraciones de una sola corrida, juntas para ver de un vistazo qué
+          queda pendiente de migrar. */}
       <Grupo titulo="Migraciones únicas">
         <NormalizeWorkerNamesSection />
         <BackfillWorkerRutFieldSection />
-        <BackfillWorkdayLogMetaSection />
         <MigrateAdvanceRutsSection />
       </Grupo>
     </div>
@@ -235,19 +226,14 @@ export default function AdminConsole() {
 // ============================================================
 // Sección Debug: ping al backend
 // ============================================================
-// Verifica el plomo de Cloud Functions de punta a punta: encola un job y espera
-// a que el backend lo resuelva.
+// Prueba Cloud Functions de punta a punta por el mismo camino que cualquier
+// job: escribe un doc en `functionJobs`, un trigger de Firestore lo levanta y
+// la respuesta llega en el mismo doc (ver functions/index.js).
 //
-// No llama un endpoint porque no hay ninguno que se pueda llamar — el backend
-// se invoca escribiendo en `functionJobs` y un trigger de Firestore lo levanta
-// (functions/index.js explica por qué las tres variantes de callable están
-// cerradas en este proyecto). Así que este ping ejercita exactamente el mismo
-// camino que va a usar el backup: escribir el job, que dispare, que conteste.
-//
-// Los tres modos de falla se distinguen a propósito, porque cada uno se arregla
-// en otro lado: `permission-denied` es la regla de Firestore que falta, el
-// timeout es la función que no está desplegada o mirando otra base, y un job en
-// `error` es la función corriendo y fallando adentro.
+// Distingue tres fallas, que se arreglan en lugares distintos:
+// `permission-denied` (las reglas no dejan crear el job), timeout (la función
+// no está desplegada o mira otra base) y job en `error` (la función corrió y
+// falló adentro).
 const JOBS_COLLECTION = "functionJobs";
 
 function PingSection() {
@@ -256,8 +242,7 @@ function PingSection() {
   const [result, setResult] = useState(null);
   const cleanupRef = useRef(null);
 
-  // Si alguien se va de la pantalla con un job en vuelo, el listener queda
-  // abierto pagando lecturas contra un documento que nadie mira.
+  // Al desmontar, cierra el listener y el timer del job en curso.
   useEffect(() => () => cleanupRef.current?.(), []);
 
   const runPing = async () => {
@@ -293,7 +278,7 @@ function PingSection() {
         ok: false,
         message:
           err?.code === "permission-denied"
-            ? "Las reglas de Firestore no dejan crear el job: solo un admin puede encolarlo. Si lo eres, revisa que firestore.rules esté publicado en la consola."
+            ? "Las reglas de Firestore no dejan crear la tarea: solo un admin puede encolarla. Si lo eres, revisa que firestore.rules esté publicado en la consola."
             : err?.message || String(err),
       });
       return;
@@ -302,14 +287,13 @@ function PingSection() {
     cleanupRef.current = teardown;
     const t0 = Date.now();
 
-    // El arranque en frío de una función que no se usó en el día son varios
-    // segundos, así que el corte es generoso: que expire tiene que significar
-    // "no está", no "tardó".
+    // Corte generoso: un arranque en frío tarda varios segundos, y que expire
+    // tiene que significar "no está", no "tardó".
     timer = setTimeout(() => {
       finish({
         ok: false,
         message:
-          "El job quedó sin respuesta a los 45 s. O la función no está desplegada, o su trigger no está suscrito a hpdatabase.",
+          "La tarea quedó sin respuesta a los 45 s. O la función no está desplegada, o su trigger no está suscrito a hpdatabase.",
       });
     }, 45_000);
 
@@ -321,7 +305,7 @@ function PingSection() {
         finish(
           d.status === "done"
             ? { ok: true, data: d.result, ms: Date.now() - t0 }
-            : { ok: false, message: d.error || "El job terminó en error." },
+            : { ok: false, message: d.error || "La tarea terminó en error." },
         );
       },
       (err) => finish({ ok: false, message: err?.message || String(err) }),
@@ -331,7 +315,7 @@ function PingSection() {
   return (
     <ConsoleCard id="ping-al-backend" title="🧪 Ping al backend">
       <p className="mb-3 text-xs text-[var(--color-muted)]">
-        Encola un job en <code>{JOBS_COLLECTION}</code> y espera la respuesta del
+        Encola una tarea en <code>{JOBS_COLLECTION}</code> y espera la respuesta del
         backend. Es el mismo camino que usa el backup.
       </p>
       <button
@@ -397,10 +381,10 @@ function AuthDebugSection() {
   };
 
   return (
-    <ConsoleCard id="debug-de-rol-admin" title="🕵️ Debug de rol admin">
+    <ConsoleCard id="debug-de-rol-admin" title="🕵️ Diagnóstico del rol admin">
       <p className="mb-3 text-xs text-[var(--color-muted)]">
         El AuthContext lee <code>users/{"{uid}"}</code> y toma el campo <code>role</code>.
-        Si dice <code>"admin"</code> exactamente, activa el flag.
+        Si dice <code>"admin"</code> (sin importar mayúsculas), activa el modo admin.
       </p>
 
       <div className="space-y-3 text-sm">
@@ -424,7 +408,7 @@ function AuthDebugSection() {
                 </button>
               )}
             </div>
-            <div className="text-[var(--color-muted)]">Role visto por AuthContext:</div>
+            <div className="text-[var(--color-muted)]">Rol visto por AuthContext:</div>
             <div>
               <code className="font-mono">{user?.role || "(ninguno)"}</code>
             </div>
@@ -452,8 +436,8 @@ function AuthDebugSection() {
                 {docState.error}
               </div>
               <div className="mt-2 rounded bg-[var(--color-surface)] p-2 text-[10px]">
-                <strong>Probable causa:</strong> las security rules de Firestore
-                bloquean el read. Necesitás una rule tipo:
+                <strong>Probable causa:</strong> las reglas de seguridad de Firestore
+                bloquean la lectura. Necesitas una regla como esta:
                 <pre className="mt-1 overflow-auto text-[10px]">{`match /users/{uid} {
   allow read: if request.auth.uid == uid;
 }`}</pre>
@@ -462,14 +446,14 @@ function AuthDebugSection() {
           ) : !docState.exists ? (
             <>
               <div className="text-xs text-[var(--color-danger)]">
-                ✖ El doc <code>users/{user?.uid}</code> NO existe.
+                ✖ El documento <code>users/{user?.uid}</code> NO existe.
               </div>
               <div className="mt-2 rounded bg-[var(--color-surface)] p-2 text-[10px]">
-                <strong>Fix</strong>: en Firestore Console, crear el doc con id{" "}
+                <strong>Solución</strong>: en la consola de Firebase, crear el documento con id{" "}
                 <code>{user?.uid}</code> en la colección <code>users</code> y
-                agregar el campo <code>role</code> (string) con valor{" "}
+                agregar el campo <code>role</code> (texto) con valor{" "}
                 <code>"admin"</code> exactamente en minúscula. Después
-                relogueate en la app.
+                vuelve a iniciar sesión en la app.
               </div>
             </>
           ) : (
@@ -480,11 +464,10 @@ function AuthDebugSection() {
               <pre className="mt-1 overflow-auto rounded bg-[var(--color-surface)] p-2 text-[10px]">
                 {JSON.stringify(docState.data, null, 2)}
               </pre>
-              {docState.data?.role !== "admin" && (
+              {!isAdminRole(docState.data?.role) && (
                 <div className="mt-2 rounded bg-[var(--color-surface)] p-2 text-[10px] text-[var(--color-danger)]">
                   El campo <code>role</code> es <code>{JSON.stringify(docState.data?.role)}</code>,
-                  no <code>"admin"</code>. Corregí a exactamente{" "}
-                  <code>"admin"</code> en minúsculas y relogueate.
+                  no <code>"admin"</code>. Cámbialo a <code>"admin"</code> y vuelve a iniciar sesión.
                 </div>
               )}
             </>
@@ -496,7 +479,7 @@ function AuthDebugSection() {
 }
 
 // ============================================================
-// Sección 1: counts de todas las colecciones principales
+// Sección: conteo de todas las colecciones
 // ============================================================
 function CollectionCountsSection() {
   const [results, setResults] = useState({}); // id → { count?, error?, busy? }
@@ -526,9 +509,9 @@ function CollectionCountsSection() {
   const totalRuns = Object.values(results).filter((r) => r.count != null).length;
   const [copiado, setCopiado] = useState(false);
 
-  // Texto plano con las colecciones ya contadas, para pegar en un mensaje o
-  // una planilla. Solo las que tienen número: una lista con guiones no dice
-  // nada y se confunde con "colección vacía".
+  // Copia como texto separado por tabs, para pegar en un mensaje o una
+  // planilla. Solo las colecciones ya contadas: un guion se confundiría con
+  // "colección vacía".
   const copiarConteos = async () => {
     const lineas = [];
     let total = 0;
@@ -552,28 +535,27 @@ function CollectionCountsSection() {
       setCopiado(true);
       setTimeout(() => setCopiado(false), 2000);
     } catch {
-      // Sin permiso de portapapeles (o contexto no seguro): que al menos se
-      // pueda seleccionar a mano.
-      window.prompt("Copiá los conteos:", texto);
+      // Sin acceso al portapapeles, muestra el texto para copiarlo a mano.
+      window.prompt("Copia los conteos:", texto);
     }
   };
 
   return (
-    <ConsoleCard id="counts-por-coleccion" title="Counts por colección" 
-      description={<>~1 lectura por colección (Firestore aggregation).</>} 
+    <ConsoleCard id="counts-por-coleccion" title="Conteos por colección" 
+      description={<>~1 lectura por colección (consulta de recuento de Firestore).</>} 
       actions={<><button
           type="button"
           onClick={runAll}
           disabled={runningAll}
           className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
         >
-          {runningAll ? "Ejecutando…" : `▶ Contar todas (~${MAIN_COLLECTIONS.length} reads)`}
+          {runningAll ? "Ejecutando…" : `▶ Contar todas (~${MAIN_COLLECTIONS.length} lecturas)`}
         </button>
         <button
           type="button"
           onClick={copiarConteos}
           disabled={totalRuns === 0}
-          title={totalRuns === 0 ? "Primero contá alguna colección" : `Copiar ${totalRuns} conteos`}
+          title={totalRuns === 0 ? "Primero cuenta alguna colección" : `Copiar ${totalRuns} conteos`}
           className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
         >
           {copiado ? "✓ Copiado" : `📋 Copiar${totalRuns ? ` (${totalRuns})` : ""}`}
@@ -643,7 +625,7 @@ function CollectionCountsSection() {
 }
 
 // ============================================================
-// Sección 2: workdays por mes del año seleccionado
+// Sección: workdays por mes del año elegido
 // ============================================================
 function WorkdaysByMonthSection() {
   const currentYear = new Date().getFullYear();
@@ -701,8 +683,8 @@ function WorkdaysByMonthSection() {
   const totalRuns = rows.filter((r) => r.count != null).length;
 
   return (
-    <ConsoleCard id="workdays-por-mes" title="Workdays por mes" 
-      description={<>12 consultas, ~12 reads totales. Útil para ver estacionalidad.</>} 
+    <ConsoleCard id="workdays-por-mes" title="Jornadas por mes" 
+      description={<>12 consultas, ~12 lecturas en total. Útil para ver estacionalidad.</>} 
       actions={<><div className="flex items-center gap-2">
           <label className="text-xs text-[var(--color-muted)]">Año</label>
           <input
@@ -717,7 +699,7 @@ function WorkdaysByMonthSection() {
             disabled={running}
             className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
           >
-            {running ? "Ejecutando…" : "▶ Contar año (~12 reads)"}
+            {running ? "Ejecutando…" : "▶ Contar año (~12 lecturas)"}
           </button>
         </div></>}>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
@@ -749,10 +731,10 @@ function WorkdaysByMonthSection() {
 }
 
 // ============================================================
-// Sección 3: workdays por rango custom
+// Sección: workdays en un rango de fechas
 // ============================================================
 function WorkdaysByRangeSection() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localIsoDate();
   const monthStart = today.slice(0, 8) + "01";
   const [from, setFrom] = useState(monthStart);
   const [to, setTo] = useState(today);
@@ -762,7 +744,7 @@ function WorkdaysByRangeSection() {
 
   const run = async () => {
     if (!from || !to) {
-      setError("Completá ambas fechas");
+      setError("Completa ambas fechas");
       return;
     }
     setError("");
@@ -779,7 +761,7 @@ function WorkdaysByRangeSection() {
   };
 
   return (
-    <ConsoleCard id="workdays-por-rango-custom" title="Workdays por rango custom">
+    <ConsoleCard id="workdays-por-rango-custom" title="Jornadas por rango de fechas">
       <div className="flex flex-wrap items-center gap-2">
         <label className="text-xs text-[var(--color-muted)]">Desde</label>
         <input
@@ -801,7 +783,7 @@ function WorkdaysByRangeSection() {
           disabled={busy}
           className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
         >
-          {busy ? "Ejecutando…" : "▶ Contar (~1 read)"}
+          {busy ? "Ejecutando…" : "▶ Contar (~1 lectura)"}
         </button>
         {count != null && (
           <span className="ml-auto text-sm">
@@ -819,7 +801,7 @@ function WorkdaysByRangeSection() {
 }
 
 // ============================================================
-// Sección 4: workdays por ciclo activo
+// Sección: workdays por ciclo (abiertos; los cerrados, opcionales)
 // ============================================================
 function WorkdaysByCycleSection() {
   const [cycles, setCycles] = useState([]);
@@ -877,7 +859,7 @@ function WorkdaysByCycleSection() {
   const total = numericCounts.reduce((s, n) => s + n, 0);
 
   return (
-    <ConsoleCard id="workdays-por-ciclo" title="Workdays por ciclo" 
+    <ConsoleCard id="workdays-por-ciclo" title="Jornadas por ciclo" 
       description={<>1 lectura por ciclo. Útil para ver dónde está concentrada la data.</>} 
       actions={<><div className="flex items-center gap-2">
           <label className="flex items-center gap-1 text-xs">
@@ -896,7 +878,7 @@ function WorkdaysByCycleSection() {
           >
             {running
               ? "Ejecutando…"
-              : `▶ Contar ${visibleCycles.length} ciclo${visibleCycles.length === 1 ? "" : "s"} (~${visibleCycles.length} reads)`}
+              : `▶ Contar ${visibleCycles.length} ciclo${visibleCycles.length === 1 ? "" : "s"} (~${visibleCycles.length} lecturas)`}
           </button>
         </div></>}>
 
@@ -910,7 +892,7 @@ function WorkdaysByCycleSection() {
                 <th className="px-3 py-2">Faena</th>
                 <th className="px-3 py-2">Ciclo</th>
                 <th className="px-3 py-2">Estado</th>
-                <th className="px-3 py-2 text-right">Workdays</th>
+                <th className="px-3 py-2 text-right">Jornadas</th>
               </tr>
             </thead>
             <tbody>
@@ -961,15 +943,14 @@ function WorkdaysByCycleSection() {
 }
 
 // ============================================================
-// Sección 5: normalizar nombres de trabajadores a Proper Case
+// Sección: normalizar nombres de trabajadores a Proper Case
 // ============================================================
-// Aplica `toProperName` a todos los `worker.name` que difieran del formato
-// esperado ("Juan Pérez", "Juan de la Cruz"). Flujo en 2 pasos: primero un
-// preview que lista los cambios propuestos (leer no escribe), y después el
-// botón de aplicar corre updates uno-a-uno con progreso.
+// Aplica `toProperName` a los `worker.name` que no tengan el formato esperado
+// ("Juan Pérez", "Juan de la Cruz"). Dos pasos: una vista previa que solo lee
+// y lista los cambios, y aplicar, que los escribe uno a uno con progreso.
 //
-// El costo es 1 read por worker (list completo — no cacheado) + 1 write por
-// nombre cambiado. Los que ya están bien no se tocan.
+// Cuesta 1 lectura por trabajador (lista completa, sin caché) + 1 escritura
+// por nombre cambiado. Los que ya están bien no se tocan.
 function NormalizeWorkerNamesSection() {
   const toast = useToast();
   const [loading, setLoading] = useState(false);
@@ -987,7 +968,7 @@ function NormalizeWorkerNamesSection() {
     setDiffs([]);
     setShowAll(false);
     try {
-      // No caché — queremos datos frescos antes de escribir.
+      // Sin caché: lee datos frescos antes de escribir.
       const list = await workersService.list();
       setScanned(list.length);
       const changes = [];
@@ -998,7 +979,6 @@ function NormalizeWorkerNamesSection() {
           changes.push({ id: w.id, oldName, newName });
         }
       }
-      // Orden alfabético por nombre nuevo para revisar cómodo.
       changes.sort((a, b) => a.newName.localeCompare(b.newName));
       setDiffs(changes);
     } catch (err) {
@@ -1029,7 +1009,7 @@ function NormalizeWorkerNamesSection() {
       setProgress({ done: i + 1, total: diffs.length });
     }
     setResult({ updated, errors });
-    setDiffs([]); // limpia el preview — para re-verificar, pedir preview de nuevo
+    setDiffs([]); // vacía la vista previa; para volver a verificar se pide otra
     setRunning(false);
   };
 
@@ -1039,7 +1019,7 @@ function NormalizeWorkerNamesSection() {
     <ConsoleCard id="normalizar-nombres-de-trabajadores" title="Normalizar nombres de trabajadores" 
       description={<>Convierte los <code>name</code> al formato "Juan Pérez" (primera letra
             mayúscula, resto minúscula, conectores en minúscula).
-            Preview primero, después aplicar.</>} 
+            Primero la vista previa, después aplicar.</>} 
       actions={<><div className="flex items-center gap-2">
           <button
             type="button"
@@ -1047,7 +1027,7 @@ function NormalizeWorkerNamesSection() {
             disabled={loading || running}
             className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
           >
-            {loading ? "Analizando…" : "🔎 Preview cambios"}
+            {loading ? "Analizando…" : "🔎 Vista previa"}
           </button>
           <button
             type="button"
@@ -1134,7 +1114,7 @@ function NormalizeWorkerNamesSection() {
       <ConfirmDialog
         open={confirmApply}
         title="Aplicar cambios de nombre"
-        message={`¿Aplicar ${diffs.length} cambio(s) de nombre?\n\nEsta operación no se puede deshacer automáticamente. Revisá el preview antes de continuar.`}
+        message={`¿Aplicar ${diffs.length} cambio(s) de nombre?\n\nEsta operación no se puede deshacer automáticamente. Revisa la vista previa antes de continuar.`}
         confirmLabel="Aplicar"
         danger
         onCancel={() => setConfirmApply(false)}
@@ -1144,190 +1124,8 @@ function NormalizeWorkerNamesSection() {
   );
 }
 
-// Backfill: los logs de auditoría de "workday" escritos ANTES de que
-// firestoreBase.js empezara a denormalizar `meta.workerRut`/`meta.cycleId`
-// quedaron con `meta: null` — no aparecen en el buscador "por registro" de
-// Audit.jsx cuando buscás por trabajador. El entityId de un workday ya trae
-// el rut codificado (`cycleId__laborId__rut__fecha[__combo]`, ver
-// utils/cosechaCombos.js → workdayDocId), así que se puede reconstruir sin
-// tocar nada más del log. Aditivo y re-ejecutable: solo toca logs con
-// `meta == null`, así que correrlo dos veces no hace nada la segunda vez.
-function BackfillWorkdayLogMetaSection() {
-  const toast = useToast();
-  const [loading, setLoading] = useState(false);
-  const [running, setRunning] = useState(false);
-  const [candidates, setCandidates] = useState(null); // [{ id, entityId, workerRut, cycleId }]
-  const [skipped, setSkipped] = useState(0);
-  const [progress, setProgress] = useState({ done: 0, total: 0 });
-  const [result, setResult] = useState(null);
-  const [confirmApply, setConfirmApply] = useState(false);
-
-  const preview = async () => {
-    setLoading(true);
-    setResult(null);
-    setCandidates(null);
-    try {
-      const q = query(collection(db, "logs"), where("entity", "==", "workday"), where("meta", "==", null));
-      const snap = await getDocs(q);
-      const rows = [];
-      let bad = 0;
-      for (const docSnap of snap.docs) {
-        const entityId = docSnap.data().entityId || "";
-        const parts = String(entityId).split("__");
-        const [cycleId, , workerRut] = parts;
-        if (parts.length < 4 || !workerRut) {
-          bad++;
-          continue;
-        }
-        rows.push({ id: docSnap.id, entityId, workerRut, cycleId });
-      }
-      setCandidates(rows);
-      setSkipped(bad);
-    } catch (err) {
-      toast.error("Error al buscar logs de workday: " + (err.message || String(err)));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const CHUNK = 400; // margen bajo el límite de 500 ops por writeBatch
-  const apply = () => {
-    if (!candidates || candidates.length === 0) return;
-    setConfirmApply(true);
-  };
-
-  const doApply = async () => {
-    setRunning(true);
-    setProgress({ done: 0, total: candidates.length });
-    let updated = 0;
-    const errors = [];
-    for (let i = 0; i < candidates.length; i += CHUNK) {
-      const chunk = candidates.slice(i, i + CHUNK);
-      const batch = writeBatch(db);
-      for (const c of chunk) {
-        batch.update(doc(db, "logs", c.id), { meta: { workerRut: c.workerRut, cycleId: c.cycleId || null } });
-      }
-      try {
-        await batch.commit();
-        updated += chunk.length;
-      } catch (err) {
-        errors.push({ range: `${i + 1}-${i + chunk.length}`, error: err.message || String(err) });
-      }
-      setProgress({ done: Math.min(i + CHUNK, candidates.length), total: candidates.length });
-    }
-    setResult({ updated, errors });
-    setCandidates(null);
-    setRunning(false);
-  };
-
-  return (
-    <ConsoleCard id="backfill-auditoria-de-workdays-por-traba" title="Backfill: auditoría de workdays por trabajador" 
-      description={<>Completa <code>meta.workerRut</code>/<code>meta.cycleId</code> en logs viejos de workday
-            (parseados del entityId) para que el buscador de Auditoría los encuentre por trabajador.</>} 
-      actions={<><div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={preview}
-            disabled={loading || running}
-            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
-          >
-            {loading ? "Buscando…" : "🔎 Preview"}
-          </button>
-          <button
-            type="button"
-            onClick={apply}
-            disabled={running || !candidates || candidates.length === 0}
-            className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
-          >
-            {running
-              ? `Aplicando… ${progress.done}/${progress.total}`
-              : `✔ Aplicar ${candidates?.length || ""} log${candidates?.length === 1 ? "" : "s"}`}
-          </button>
-        </div></>}>
-
-      {candidates !== null && !loading && (
-        <p className="mb-3 text-xs text-[var(--color-muted)]">
-          Logs viejos sin meta:{" "}
-          <span className={`font-semibold tabular-nums ${candidates.length > 0 ? "text-[var(--color-accent)]" : "text-[var(--color-muted)]"}`}>
-            {fmtNumber(candidates.length)}
-          </span>
-          {skipped > 0 && <> · {fmtNumber(skipped)} con entityId no parseable (se dejan como están)</>}
-        </p>
-      )}
-
-      {candidates && candidates.length > 0 && (
-        <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
-          <table className="w-full text-xs">
-            <thead className="bg-[var(--color-surface-2)] text-left text-[var(--color-muted)]">
-              <tr>
-                <th className="px-3 py-1.5">RUT</th>
-                <th className="px-3 py-1.5">Ciclo</th>
-                <th className="px-3 py-1.5">entityId</th>
-              </tr>
-            </thead>
-            <tbody>
-              {candidates.slice(0, 10).map((c) => (
-                <tr key={c.id} className="border-t border-[var(--color-border)]">
-                  <td className="px-3 py-1 font-mono text-[10px]">{c.workerRut}</td>
-                  <td className="px-3 py-1 font-mono text-[10px] text-[var(--color-muted)]">{c.cycleId}</td>
-                  <td className="px-3 py-1 font-mono text-[10px] text-[var(--color-muted)]">{c.entityId}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {candidates.length > 10 && (
-            <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-center text-xs text-[var(--color-muted)]">
-              … y {fmtNumber(candidates.length - 10)} más (muestra acotada a 10)
-            </div>
-          )}
-        </div>
-      )}
-
-      {result && (
-        <div className="mt-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm">
-          <div>
-            ✔ Actualizados:{" "}
-            <span className="font-semibold tabular-nums text-[var(--color-success)]">
-              {result.updated}
-            </span>
-          </div>
-          {result.errors.length > 0 && (
-            <>
-              <div className="mt-1 text-[var(--color-danger)]">
-                ✖ Errores: {result.errors.length}
-              </div>
-              <ul className="mt-1 max-h-40 overflow-y-auto text-xs text-[var(--color-muted)]">
-                {result.errors.map((e, i) => (
-                  <li key={i}>
-                    lote {e.range}: {e.error}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </div>
-      )}
-
-      <ConfirmDialog
-        open={confirmApply}
-        title="Backfill de logs"
-        message={`¿Backfillear meta.workerRut/cycleId en ${candidates?.length || 0} log(s) viejos de workdays?\n\nEs aditivo — solo agrega el campo meta, no toca nada más del log. Se puede re-ejecutar sin problema.`}
-        confirmLabel="Aplicar"
-        danger
-        onCancel={() => setConfirmApply(false)}
-        onConfirm={() => { setConfirmApply(false); doApply(); }}
-      />
-    </ConsoleCard>
-  );
-}
-
-// Fase 1 de la migración "rut editable" (ver workersService.js): el campo
-// `rut` recién se empezó a grabar en workers nuevos/editados. Los workers
-// viejos solo tienen el rut como doc id, sin campo — este backfill lo
-// completa (`rut: doc.id`) para que sean auto-descriptivos y el doc id pueda
-// tratarse de acá en más como un `workerId` estable, independiente de si el
-// rut legal cambia después. Aditivo y re-ejecutable: solo toca workers sin
-// campo `rut`.
+// Completa `rut: doc.id` en los trabajadores que no tienen el campo. Solo toca
+// esos, así que se puede volver a correr.
 function BackfillWorkerRutFieldSection() {
   const toast = useToast();
   const [loading, setLoading] = useState(false);
@@ -1380,7 +1178,7 @@ function BackfillWorkerRutFieldSection() {
 
   return (
     <ConsoleCard id="backfill-campo-rut-en-trabajadores" title="Backfill: campo rut en trabajadores" 
-      description={<>Completa <code>worker.rut</code> (= doc id actual) en trabajadores viejos que todavía
+      description={<>Completa <code>worker.rut</code> (= id actual del documento) en trabajadores viejos que todavía
             no lo tienen. Paso previo para poder editar el rut más adelante sin perder identidad.</>} 
       actions={<><div className="flex items-center gap-2">
           <button
@@ -1389,7 +1187,7 @@ function BackfillWorkerRutFieldSection() {
             disabled={loading || running}
             className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
           >
-            {loading ? "Buscando…" : "🔎 Preview"}
+            {loading ? "Buscando…" : "🔎 Vista previa"}
           </button>
           <button
             type="button"
@@ -1479,13 +1277,10 @@ function BackfillWorkerRutFieldSection() {
 // ============================================================
 // Migración única: anticipos al rut vigente
 // ============================================================
-// `advances` guardaba el rut de CREACIÓN del trabajador (el doc id). Para
-// quien pasó de una cédula provisoria a un rut definitivo ese valor diverge
-// del rut actual, y por eso la búsqueda de anticipos consultaba dos campos
-// distintos — duplicando cada consulta de la nómina para rescatar un puñado
-// de casos. Esta pasada re-apunta `workerRut` al rut vigente para que
-// `worker.rut` quede como única clave foránea. `workerId` no se toca: queda
-// como rastro de cuál era el id original.
+// Re-apunta `advances.workerRut` del doc id del trabajador a su rut vigente,
+// para que `worker.rut` sea la única clave foránea. Los dos difieren cuando el
+// rut cambió (p. ej. de una cédula provisoria al definitivo). `workerId` no se
+// toca: guarda el id original.
 function MigrateAdvanceRutsSection() {
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
@@ -1503,8 +1298,7 @@ function MigrateAdvanceRutsSection() {
         advancesService.list({ order: ["date", "desc"] }),
       ]);
 
-      // doc id -> rut vigente. El fallback al id cubre a los workers creados
-      // antes de que existiera el campo `rut`.
+      // doc id -> rut vigente; sin campo `rut`, el rut es el doc id.
       const rutActual = new Map(workers.map((w) => [w.id, w.rut || w.id]));
       const nombre = new Map(workers.map((w) => [w.id, w.name || ""]));
       const rutsVigentes = new Set(workers.map((w) => w.rut || w.id));
@@ -1584,7 +1378,7 @@ function MigrateAdvanceRutsSection() {
           disabled={loading || running}
           className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
         >
-          {loading ? "Buscando…" : "🔎 Preview"}
+          {loading ? "Buscando…" : "🔎 Vista previa"}
         </button>
         <button
           type="button"
@@ -1655,16 +1449,10 @@ function MigrateAdvanceRutsSection() {
 // ============================================================
 // Composición de la colección `logs`
 // ============================================================
-// `logs` es la colección más grande del sistema y **nada la borra nunca**: no
-// existe un solo `logsService.remove` en el repo. Antes de decidir una política
-// de retención hay que saber de dónde salen los documentos, y eso se puede
-// medir barato: `getCountFromServer` cuesta ~1 lectura por consulta, no una por
-// documento.
-//
-// Ojo para cuando se implemente la poda: `log` es a su vez una entidad
-// logueada (`createService("log", "logs")`), así que borrar con
-// `logsService.remove` escribiría un log por cada log borrado. Una poda tiene
-// que usar `deleteDoc` directo.
+// Desglosa `logs` por entidad y cuenta cuántos documentos superan los 6, 12 y
+// 24 meses, como base para decidir una retención. `logs` solo crece: la app no
+// borra logs y `firestore.rules` no deja editarlos ni borrarlos. Cada recuento
+// cuesta ~1 lectura por cada 1.000 documentos contados.
 function LogsBreakdownSection() {
   const [porEntidad, setPorEntidad] = useState({}); // entity → { count?, error?, busy? }
   const [corriendo, setCorriendo] = useState(false);
@@ -1708,8 +1496,8 @@ function LogsBreakdownSection() {
 
   const contadas = LOG_ENTITIES.filter((e) => porEntidad[e]?.count != null);
   const suma = contadas.reduce((a, e) => a + porEntidad[e].count, 0);
-  // Lo que no cae en ninguna entidad listada: o falta agregarla acá, o son
-  // logs viejos escritos antes de que esa entidad existiera.
+  // Logs de entidades que no están en LOG_ENTITIES: una que falta agregar, o
+  // un nombre de entidad que ya no se escribe.
   const sinClasificar = total != null ? total - suma : null;
 
   const ordenadas = [...contadas].sort((a, b) => porEntidad[b].count - porEntidad[a].count);
@@ -1735,12 +1523,12 @@ function LogsBreakdownSection() {
   return (
     <ConsoleCard
       id="logs-composicion"
-      title="Composición de logs"
+      title="Composición de la auditoría"
       description={
         <>
           De dónde salen los documentos de <code>logs</code>. ~1 lectura por entidad.
           Las marcadas <b>pesado</b> guardan arrays o mapas enteros en cada cambio
-          (~30 KB por log contra ~0,1 KB de una jornada), así que pesan mucho más de
+          (~30 KB por registro contra ~0,1 KB de una jornada), así que pesan mucho más de
           lo que sugiere su conteo.
         </>
       }
@@ -1752,16 +1540,16 @@ function LogsBreakdownSection() {
             disabled={corriendo}
             className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
           >
-            {corriendo ? "Contando…" : `▶ Por entidad (~${LOG_ENTITIES.length + 1} reads)`}
+            {corriendo ? "Contando…" : `▶ Por entidad (~${LOG_ENTITIES.length + 1} lecturas)`}
           </button>
           <button
             type="button"
             onClick={medirAntiguedad}
             disabled={antBusy}
-            title="Cuántos logs borraría un TTL de 6, 12 o 24 meses"
+            title="Cuántos registros borraría un TTL de 6, 12 o 24 meses"
             className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
           >
-            {antBusy ? "Midiendo…" : "▶ Antigüedad (3 reads)"}
+            {antBusy ? "Midiendo…" : "▶ Antigüedad (3 lecturas)"}
           </button>
           <button
             type="button"
@@ -1803,7 +1591,7 @@ function LogsBreakdownSection() {
           <thead className="bg-[var(--color-surface-2)] text-left text-xs text-[var(--color-muted)]">
             <tr>
               <th className="px-3 py-2">Entidad</th>
-              <th className="px-3 py-2 text-right">Logs</th>
+              <th className="px-3 py-2 text-right">Registros</th>
               <th className="px-3 py-2 text-right">%</th>
               <th className="px-3 py-2">Peso</th>
             </tr>

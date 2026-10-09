@@ -9,33 +9,20 @@ import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import { tratoTypeLabel, tratoUnitLabel, cosechaUnit, qualityLabel, containerLabel, getTratoTierTotals, getTratoTiers } from "../utils/cosechaCombos";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { localIsoDate } from "../utils/dates";
 
 // ============================================================================
 // CALENDARIO DE PRODUCCIÓN
 // ============================================================================
 // Muestra un mes con celdas por día. Cada celda lista las subfaenas que
-// trabajaron ese día como barras de color. Click en una barra (o en la
-// celda completa) abre un drawer con el detalle del día.
+// trabajaron ese día como barras de color. Click en una barra abre el detalle
+// de esa subfaena en el día (DayDetailDrawer); click en la celda, todas las
+// subfaenas del día (DayExpandedModal).
 //
-// ESTRATEGIA DE LECTURAS — hoy y mañana
-// ─────────────────────────────────────
-// Hoy (Option A): leemos los workdays del rango del mes y agregamos en el
-// cliente. A escala actual (~700-3,000 workdays/mes en pico) son ~3k reads
-// por vista del mes, costo ~US$0.02. Cache de sesión (5 min) reduce reads
-// si el usuario navega para atrás/adelante.
-//
-// FUTURO — snapshot para ciclos cerrados:
-//   Cuando los meses superen consistentemente los 5,000 workdays:
-//   1. Al CERRAR un ciclo, escribir un doc por (date, faenaId) en una
-//      colección `daySummary` con los agregados ya calculados
-//      (workdaysByLabor, transports, totales).
-//   2. `loadMonth` cambia internamente: para días que pertenecen a ciclos
-//      cerrados → lee `daySummary` (1 doc por día × faena = ~150 reads/mes);
-//      para días que pertenecen a ciclos abiertos → leve igual que hoy.
-//   3. La UI no cambia: el contract de retorno de `loadMonth` se mantiene.
-//
-// Esa migración es agregar `daySummary` collection + cambiar UNA función,
-// no romper nada del calendario en sí.
+// Lecturas: lee los workdays del rango del mes y agrega en el cliente
+// (~3.000 lecturas en un mes pico, ~US$0,02). Un caché de sesión de 5 min
+// evita releer al ir y volver entre meses. `fetchWorkdaysInRange` es el único
+// punto que lee workdays.
 // ============================================================================
 
 const COLOR_PALETTE = [
@@ -45,8 +32,7 @@ const COLOR_PALETTE = [
   "#dc2626", "#7c3aed", "#059669", "#d97706",
 ];
 
-// Color estable basado en hash del id. Si en el futuro queremos que el
-// usuario elija color, basta agregar `subfaena.color` y caer al hash.
+// Color estable derivado de un hash del id de la subfaena.
 function colorForSubfaena(subfaenaId) {
   const s = String(subfaenaId || "");
   let hash = 0;
@@ -69,9 +55,9 @@ const MONTH_NAMES = [
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
 
-// Sábado/domingo — la convención del proyecto los marca en rojo (igual que
-// los grids de tratoHE). Los feriados configurados a nivel labor viven en
-// dayPrices y no están disponibles acá, así que solo cubrimos finde.
+// Sábado o domingo, que se marcan en rojo como en las grillas de tratoHE. Los
+// feriados de cada labor viven en dayPrices, que acá no se carga: solo cubre
+// fines de semana.
 function isWeekendDate(dateStr) {
   if (!dateStr) return false;
   const d = new Date(dateStr + "T00:00:00");
@@ -82,7 +68,7 @@ function isWeekendDate(dateStr) {
 
 const WEEKDAY_SHORT = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
 const MONTH_SHORT_LIST = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
-// "vie 16-may-2026" — más leíble que la ISO cruda en los headers de modales.
+// Formato "vie 16-may-2026" para los encabezados de los modales.
 function humanDate(dateStr) {
   if (!dateStr) return "";
   const d = new Date(dateStr + "T00:00:00");
@@ -99,9 +85,10 @@ const LABOR_TYPE_LABEL = {
   extra: "adicional",
 };
 
-// Texto a mostrar en la columna "Métrica" según tipo de labor. Devuelve
-// vacío para labores al día (no aportan número, el monto cuenta la historia).
-// Para trato usa el label del catálogo (ej. "poda") en vez del literal "trato".
+// Texto de la columna "Métrica" según el tipo de labor: cantidad con la unidad
+// del envase en cosecha, con la unidad del tier y el tipo del catálogo (ej.
+// "poda") en trato, jornadas y HE en tratoHE, y jornadas en las labores al
+// día. Vacío si no hay cantidad.
 function laborMetricLabel(l, catalogs) {
   if (l.laborType === "cosecha") {
     if (!(l.kilos > 0)) return "";
@@ -111,9 +98,8 @@ function laborMetricLabel(l, catalogs) {
   if (l.laborType === "trato") {
     if (!(l.tratoQty > 0)) return "";
     const typeLabel = tratoTypeLabel(catalogs, l.tratoType ?? 0);
-    // Si recolectamos al menos una unidad real de los tiers (plantas, metros,
-    // etc.) la usamos como cuerpo del label y el tipo queda entre paréntesis.
-    // Si no hay unidad (catálogo viejo / sin tier configurado), cae al tipo.
+    // Con unidades de tier (plantas, metros…) el rótulo es la unidad, con el
+    // tipo entre paréntesis; sin unidad configurada, el tipo.
     const units = l.tratoUnits ? [...l.tratoUnits]
       .map((u) => tratoUnitLabel(catalogs, u))
       .filter(Boolean)
@@ -137,7 +123,7 @@ function laborMetricLabel(l, catalogs) {
 }
 
 // ============================================================================
-// Cache de sesión por mes — TTL 5 min
+// Caché de sesión por mes (TTL 5 min)
 // ============================================================================
 
 const CACHE_TTL = 5 * 60 * 1000;
@@ -162,7 +148,7 @@ function writeMonthCache(y, m, workdays) {
       JSON.stringify({ ts: Date.now(), workdays }),
     );
   } catch {
-    // quota exceeded — silencioso, no crashea el render
+    // Sin espacio en sessionStorage: se sigue sin caché.
   }
 }
 
@@ -171,7 +157,7 @@ function invalidateMonthCache(y, m) {
 }
 
 // ============================================================================
-// Data loaders
+// Carga de datos
 // ============================================================================
 
 function monthBounds(year, month) {
@@ -181,9 +167,8 @@ function monthBounds(year, month) {
   return { start, end, lastDay };
 }
 
-// Trae los workdays crudos del rango. Es la query que paga reads — N por mes.
-// Helper aparte para que el día que migremos a snapshot, sea LA función que
-// cambia (ver bloque doc arriba).
+// Trae los workdays del rango: una lectura por workday. Es el único punto de
+// la pantalla que lee workdays.
 async function fetchWorkdaysInRange(start, end) {
   const snap = await getDocs(
     query(
@@ -207,7 +192,7 @@ async function fetchTripsInRange(start, end) {
 }
 
 // ============================================================================
-// Component
+// Componente
 // ============================================================================
 
 export default function Calendar() {
@@ -224,22 +209,21 @@ export default function Calendar() {
   const [cycles, setCycles] = useState([]);
   const [faenas, setFaenas] = useState([]);
   const [subfaenas, setSubfaenas] = useState([]);
-  // Lista completa de trabajadores — necesaria para mostrar nombres en el
-  // drawer del día. Compartido con el módulo Workers via cache 2h en
-  // localStorage; primera carga ~500-2000 reads, después gratis.
+  // Lista completa de trabajadores, para los nombres del detalle del día.
+  // Comparte con Trabajadores la caché de 2 h en localStorage: la primera
+  // carga cuesta ~500-2.000 lecturas y las siguientes, ninguna.
   const [workers, setWorkers] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [readCount, setReadCount] = useState(0); // info para mostrar lecturas
+  const [readCount, setReadCount] = useState(0); // lecturas de workdays del mes, para el contador
   const [fromCache, setFromCache] = useState(false);
 
-  const [selectedDay, setSelectedDay] = useState(null); // { date, subfaenaId? }
+  const [selectedDay, setSelectedDay] = useState(null); // { date, mode: "all" | "subfaena", subfaenaId?, from? }
 
-  // Filtro UI-only de subfaenas. `null` = mostrar todas. Cuando se activa el
-  // filtro guardamos el Set serializado en localStorage para que persista
-  // entre sesiones. NO afecta a la query de Firestore — solo oculta las
-  // barras en la grilla, en el modal del día y en la leyenda.
+  // Subfaenas ocultas (vacío = todas visibles), guardadas en localStorage. No
+  // cambia la consulta a Firestore: oculta sus barras en la grilla, el modal
+  // del día y la impresión; la leyenda las muestra tachadas.
   const [excludedSubfaenas, setExcludedSubfaenas] = useState(() => {
     try {
       const raw = localStorage.getItem("calendar.excludedSubfaenas");
@@ -259,9 +243,8 @@ export default function Calendar() {
     });
   };
   const clearSubfaenaFilter = () => setExcludedSubfaenas(new Set());
-  // Aislar = mostrar solo esta subfaena y ocultar el resto. Requiere conocer
-  // todas las subfaenas presentes en el mes; se las pasamos a la Legend
-  // calculadas más abajo y nos las devuelve en el callback.
+  // Deja visible solo `idToKeep`. `allIds` son las subfaenas del mes, que
+  // entrega la leyenda.
   const isolateSubfaena = (idToKeep, allIds) => {
     const next = new Set();
     for (const id of allIds) if (id !== idToKeep) next.add(id);
@@ -270,8 +253,8 @@ export default function Calendar() {
 
   const isMobile = useIsMobile();
 
-  // Carga inicial de metadata (cycles/faenas/subfaenas). Usa el cache de los
-  // services. No cuenta como reads "calendario" porque es metadata estable.
+  // Carga ciclos, faenas, subfaenas y trabajadores con la caché de los
+  // servicios. No suma al contador de lecturas del mes.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -301,8 +284,8 @@ export default function Calendar() {
     };
   }, []);
 
-  // Carga workdays + trips del mes seleccionado. Usa cache de sesión (5min)
-  // y los trips se cargan en paralelo (también N reads pero suelen ser pocos).
+  // Carga los workdays del mes (con el caché de sesión de 5 min) y después
+  // sus vueltas de transporte.
   const loadMonth = async (y, m, { forceFresh = false } = {}) => {
     setLoading(true);
     setError("");
@@ -320,7 +303,7 @@ export default function Calendar() {
         setWorkdays(wds);
         setReadCount(wds.length);
       }
-      // Trips se cargan siempre frescos por ahora — son chicos.
+      // Las vueltas se leen siempre frescas, sin caché: son pocas.
       const ts = await fetchTripsInRange(start, end);
       setTrips(ts);
     } catch (err) {
@@ -368,7 +351,8 @@ export default function Calendar() {
   }, [workers]);
 
   // Para cada día, qué subfaenas trabajaron y con cuánta actividad.
-  // Forma: { [date]: { [subfaenaId]: { workerCount, kilos, jornadas, amount, name, faenaName } } }
+  // Forma: { [date]: [{ subfaenaId, name, faenaName, color, workerCount, kilos, jornadas, amount }] },
+  // cada día ordenado por workerCount descendente.
   const dayIndex = useMemo(() => {
     const idx = {};
     for (const wd of workdays) {
@@ -396,13 +380,13 @@ export default function Calendar() {
       e.workers.add(wd.workerId || wd.workerRut);
       e.kilos += Number(wd.qty) || 0;
       e.amount += Number(wd.amount) || 0;
-      // jornadas: 1 por workday no-cosecha-no-trato (simplificación para vista mensual)
+      // jornadas: qty en tratoHE y 1 por workday en las labores al día; cosecha y trato no suman
       const labor = (cycle.labors || []).find((l) => l.id === wd.laborId);
       const t = labor?.type;
       if (t === "tratoHE") e.jornadas += Number(wd.qty) || 0;
       else if (t === "main" || t === "supervision" || t === "extra") e.jornadas += 1;
     }
-    // Convertir Sets en counts y array por día
+    // Convierte los Sets en conteos y cada día en un array.
     const out = {};
     for (const date in idx) {
       out[date] = Object.values(idx[date])
@@ -412,8 +396,8 @@ export default function Calendar() {
     return out;
   }, [workdays, cycleById, subfaenaById, faenaById]);
 
-  // Vista filtrada del dayIndex que respeta `excludedSubfaenas`. Solo afecta
-  // a la grilla, leyenda y modal del día — los datos crudos quedan igual.
+  // dayIndex sin las subfaenas ocultas. Lo usan la grilla, el modal del día y
+  // la impresión; la leyenda usa el dayIndex completo.
   const visibleDayIndex = useMemo(() => {
     if (!excludedSubfaenas || excludedSubfaenas.size === 0) return dayIndex;
     const out = {};
@@ -449,11 +433,9 @@ export default function Calendar() {
     setMonth(today.getMonth() + 1);
     setSelectedDay(null);
   };
-  // Export imprimible del mes completo. Genera HTML standalone en una nueva
-  // ventana y dispara window.print(). A diferencia del grid en pantalla (que
-  // recorta a 4 pills + "+N más"), acá se listan TODAS las subfaenas de cada
-  // día con su faena para que el impreso refleje toda la actividad.
-  // Usa visibleDayIndex para respetar el filtro de subfaenas activo.
+  // Imprime el mes completo desde una ventana nueva. A diferencia de la
+  // grilla (4 barras + "+N más"), lista todas las subfaenas de cada día con su
+  // faena. Respeta el filtro de subfaenas (`visibleDayIndex`).
   const handlePrintMonth = () => {
     const { lastDay } = monthBounds(year, month);
     const firstWeekday = new Date(year, month - 1, 1).getDay(); // 0=Domingo
@@ -551,8 +533,8 @@ export default function Calendar() {
           <h1 className="text-2xl font-semibold tracking-tight">Calendario</h1>
           <p className="text-sm text-[var(--color-muted)]">
             Producción diaria por subfaena.
-            {/* Métrica de costo de Firestore — solo tiene sentido para diagnosticar, no para un admin de campo. */}
-            {isAdmin && (fromCache ? " · resultado de caché" : ` · ${readCount} reads`)}
+            {/* Contador de lecturas de Firestore, para diagnóstico; solo lo ve un admin. */}
+            {isAdmin && (fromCache ? " · resultado de caché" : ` · ${readCount} lecturas`)}
           </p>
         </div>
         <div className="flex items-center gap-1">
@@ -587,7 +569,7 @@ export default function Calendar() {
             onClick={refresh}
             disabled={loading}
             className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
-            title="Forzar refresh (ignora cache)"
+            title="Forzar recarga (ignora la caché)"
           >
             ↻
           </button>
@@ -614,8 +596,8 @@ export default function Calendar() {
         month={month}
         dayIndex={visibleDayIndex}
         loading={loading}
-        // En mobile el click en la barra (que es chiquita) cae al cell click:
-        // siempre abre el modal del día y desde ahí el usuario tapea la subfaena.
+        // En mobile, tocar una barra abre el modal del día, igual que la
+        // celda; ahí se elige la subfaena.
         onCellClick={(date) => setSelectedDay({ date, mode: "all" })}
         onBarClick={
           isMobile
@@ -645,9 +627,8 @@ export default function Calendar() {
           workerById={workerById}
           catalogs={catalogs}
           onClose={() => {
-            // Si veníamos del modal de expansión del día (click en zona
-            // blanca), volvemos a esa vista en vez de cerrar todo. Mantiene
-            // la cadena para navegar entre subfaenas sin perder contexto.
+            // Si se llegó desde el modal del día, vuelve a ese modal en vez
+            // de cerrar todo.
             if (selectedDay.from === "all") {
               setSelectedDay({ date: selectedDay.date, mode: "all" });
             } else {
@@ -674,15 +655,15 @@ export default function Calendar() {
 }
 
 // ============================================================================
-// Month grid
+// Grilla del mes
 // ============================================================================
 
 function MonthGrid({ year, month, dayIndex, loading, onCellClick, onBarClick }) {
   const { lastDay } = monthBounds(year, month);
   const firstWeekday = new Date(year, month - 1, 1).getDay(); // 0=Domingo
-  // Offset si la semana arranca en lunes (sun=0 → 6, mon=1 → 0, etc.)
+  // Desfase con la semana empezando en lunes (dom=0 → 6, lun=1 → 0…)
   const offset = (firstWeekday + 6) % 7;
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = localIsoDate();
 
   const cells = [];
   for (let i = 0; i < offset; i++) cells.push({ empty: true, key: `e${i}` });
@@ -756,14 +737,13 @@ function MonthGrid({ year, month, dayIndex, loading, onCellClick, onBarClick }) 
 }
 
 // ============================================================================
-// Legend de colores
+// Leyenda de colores
 // ============================================================================
 
-// Leyenda interactiva: cada chip toggleable filtra la subfaena en la grilla y
-// el modal del día. Doble-click aísla esa subfaena (oculta el resto). Si todas
-// están visibles no aparece el botón "limpiar". Para evitar el flicker entre
-// el primer click y el dblclick, usamos un pequeño timer (~220ms) que aplaza
-// el toggle hasta confirmar que no era un doble-click.
+// Leyenda interactiva: click en un chip oculta o muestra esa subfaena en la
+// grilla y el modal del día; doble click la aísla. "Mostrar todas" aparece solo
+// con un filtro activo. El click espera ~220 ms antes de aplicarse, para no
+// alternar el chip cuando en realidad es un doble click.
 function Legend({ dayIndex, excludedSubfaenas, onToggle, onIsolate, onClear }) {
   const subfaenas = useMemo(() => {
     const seen = new Map();
@@ -846,12 +826,12 @@ function Legend({ dayIndex, excludedSubfaenas, onToggle, onIsolate, onClear }) {
 }
 
 // ============================================================================
-// Day detail drawer
+// Detalle del día (drawer)
 // ============================================================================
 
 function DayDetailDrawer({ date, subfaenaId, workdays, trips, cycleById, subfaenaById, faenaById, carrierById, workerById, catalogs, onClose }) {
-  // Set de labors expandidas para mostrar el desglose por trabajador +
-  // distribución por calidad. Cerrado por default para mantener compacto.
+  // Labores expandidas, que muestran el desglose por trabajador y por
+  // calidad. Arrancan cerradas.
   const [expandedLabors, setExpandedLabors] = useState(() => new Set());
   const toggleLabor = (key) =>
     setExpandedLabors((prev) => {
@@ -860,8 +840,8 @@ function DayDetailDrawer({ date, subfaenaId, workdays, trips, cycleById, subfaen
       else next.add(key);
       return next;
     });
-  // Si subfaenaId está set, filtramos workdays/trips a esa subfaena. Caemos
-  // por cycle.subfaenaId para workdays; trips heredan via cycle.
+  // Con `subfaenaId`, filtra workdays y vueltas a esa subfaena, según el
+  // `subfaenaId` de su ciclo.
   const filteredWorkdays = useMemo(() => {
     if (!subfaenaId) return workdays;
     return workdays.filter((wd) => {
@@ -878,10 +858,8 @@ function DayDetailDrawer({ date, subfaenaId, workdays, trips, cycleById, subfaen
     });
   }, [trips, subfaenaId, cycleById]);
 
-  // Aggregations. Cada métrica suma solo lo que corresponde a su tipo de
-  // labor: kilos viene de cosecha, tratoQty de labors a trato, etc. En el
-  // render abajo escondemos las tarjetas que queden en 0 para que el
-  // resumen refleje lo que de verdad pasó ese día.
+  // Totales del día. Cada métrica suma solo su tipo de labor (kilos de
+  // cosecha, tratoQty de trato, etc.); las tarjetas en 0 no se muestran.
   const totals = useMemo(() => {
     const workers = new Set();
     let kilos = 0;
@@ -899,7 +877,7 @@ function DayDetailDrawer({ date, subfaenaId, workdays, trips, cycleById, subfaen
       if (wd.pisoOnly) {
         pisoAmount += Number(wd.amount) || 0;
         pisoCount += 1;
-        continue; // ya contamos el monto, no aporta producción/jornada
+        continue; // el monto ya se sumó; el piso no aporta producción ni jornadas
       }
       const cycle = cycleById.get(wd.cycleId);
       const labor = cycle?.labors?.find((l) => l.id === wd.laborId);
@@ -938,13 +916,13 @@ function DayDetailDrawer({ date, subfaenaId, workdays, trips, cycleById, subfaen
     };
   }, [filteredWorkdays, filteredTrips, cycleById, catalogs]);
 
-  // Por labor: agrupa workdays por (cycleId, laborId). Mostramos solo las
-  // métricas que aplican al tipo de labor (no inventamos kilos en supervisión
-  // ni jornadas en cosecha). Además guarda dos breakdowns para expandir en
-  // el drawer:
-  //   - `workersMap`: per-trabajador con su producción (kilos / tratoQty /
-  //     jornadas / monto / piso). Se convierte a array `workersBreakdown`.
-  //   - `qualityMap`: para cosecha, totales por combo (calidadX/envaseY).
+  // Agrupa los workdays por (cycleId, laborId), con solo las métricas que
+  // aplican a cada tipo de labor. Guarda además dos desgloses para la fila
+  // expandida:
+  //   - `workersMap`: producción por trabajador (kilos / tratoQty / jornadas /
+  //     monto / piso); sale como el array `workersBreakdown`.
+  //   - `qualityMap`: en cosecha, totales por combo (calidadX/envaseY); sale
+  //     como `qualityDist`.
   const byLabor = useMemo(() => {
     const map = new Map();
     for (const wd of filteredWorkdays) {
@@ -976,14 +954,12 @@ function DayDetailDrawer({ date, subfaenaId, workdays, trips, cycleById, subfaen
         });
       }
       const e = map.get(key);
-      // Un workday guarda el rut que el trabajador tenía al crearse — si lo
-      // corrige después, sus workdays viejos y nuevos quedan con valores
-      // distintos ahí. `workerId` no cambia, así que agrupamos por eso.
+      // Agrupa por `workerId`, que no cambia: `workerRut` es el rut que tenía
+      // el trabajador al crear cada workday y puede diferir entre ellos.
       const workerId = wd.workerId || wd.workerRut;
       e.workers.add(workerId);
       e.amount += Number(wd.amount) || 0;
 
-      // Inicializar entrada de trabajador en el breakdown.
       if (!e.workersMap.has(workerId)) {
         e.workersMap.set(workerId, {
           id: workerId,
@@ -1026,9 +1002,9 @@ function DayDetailDrawer({ date, subfaenaId, workdays, trips, cycleById, subfaen
         const q = getTratoTierTotals(wd).qty;
         e.tratoQty += q;
         wEntry.tratoQty += q;
-        // Resolver unidades reales (plantas/metros/etc.) leyendo los tiers
-        // configurados en el dayPrices del ciclo para ese labor y fecha. Si
-        // el workday usa tiers múltiples, juntamos todas las unidades.
+        // Unidades (plantas, metros…) de los tiers del workday, según el
+        // dayPrices del ciclo para esa labor y fecha. Junta las de todos los
+        // tiers de `wd.tiers`; sin ese campo, usa el tier 0.
         if (e._cycle?.dayPrices) {
           const tiers = getTratoTiers(e._cycle.dayPrices, wd.laborId, wd.date);
           const tierKeys = wd.tiers ? Object.keys(wd.tiers) : ["0"];
@@ -1112,7 +1088,7 @@ function DayDetailDrawer({ date, subfaenaId, workdays, trips, cycleById, subfaen
         </header>
 
         <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
-          {/* Totales — mostramos solo las métricas que aplican al día. */}
+          {/* Totales: solo las métricas que aplican al día. */}
           <section className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             <Stat label="Trabajadores" value={fmtNumber(totals.workerCount)} />
             {totals.jornadas > 0 && <Stat label="Jornadas" value={fmtNumber(totals.jornadas)} />}
@@ -1149,10 +1125,9 @@ function DayDetailDrawer({ date, subfaenaId, workdays, trips, cycleById, subfaen
                       const cosechaUnitForLabor = l.laborType === "cosecha"
                         ? cosechaUnit(catalogs, l.containers).toLowerCase()
                         : "";
-                      // Label de unidad para trato en el detalle por
-                      // trabajador. Prefiere la unidad real (plantas, metros)
-                      // y deja el tipo (poda/amarre) entre paréntesis. Si no
-                      // hay unidad configurada en los tiers, cae al tipo solo.
+                      // Unidad de trato para el detalle por trabajador: la
+                      // del tier (plantas, metros) con el tipo (poda, amarre)
+                      // entre paréntesis; sin unidad configurada, el tipo.
                       const tratoUnitForLabor = (() => {
                         if (l.laborType !== "trato") return "";
                         const units = l.tratoUnits ? [...l.tratoUnits]
@@ -1199,12 +1174,10 @@ function DayDetailDrawer({ date, subfaenaId, workdays, trips, cycleById, subfaen
                                   )}
                                 </div>
                               ) : l.laborType === "trato" ? (() => {
-                                // Personas con producción real ese día (tratoQty > 0),
-                                // no todos los del listado. Permite ver "X plantas
-                                // hechas entre N personas → prom Y/persona", que es la
-                                // métrica útil para evaluar rendimiento. Usamos
-                                // workersBreakdown porque el byLabor final descarta
-                                // workersMap antes de retornar (ver línea ~1047).
+                                // Promedio por persona con producción ese día
+                                // (tratoQty > 0), no por todas las del listado.
+                                // Sale de `workersBreakdown`: byLabor no conserva
+                                // `workersMap`.
                                 const peopleWithProd = (l.workersBreakdown || [])
                                   .filter((w) => (w.tratoQty || 0) > 0);
                                 const n = peopleWithProd.length;
@@ -1388,16 +1361,13 @@ function Stat({ label, value }) {
 }
 
 // ============================================================================
-// Modal: expansión del día (zoom de la celda con todas las subfaenas)
+// Modal: todas las subfaenas del día
 // ============================================================================
 //
-// Se abre al hacer click en la zona blanca de la celda — sirve para los días
-// con muchas subfaenas que no entran en el cuadrado (más de 4). No agrega
-// información nueva: solo muestra todas las subfaenas como botones grandes
-// agrupadas por faena. Click en cualquiera → abre el drawer de detalle de
-// esa subfaena (mismo flujo que clickear la barrita en la celda).
+// Se abre con un click en la celda (en mobile, también en una barra). Muestra
+// todas las subfaenas del día, incluidas las que no caben en la celda, como
+// botones agrupados por faena; cada una abre su detalle del día.
 function DayExpandedModal({ date, subfaenasOfDay, subfaenaById, faenaById, onClose, onPickSubfaena }) {
-  // Agrupar las subfaenas activas por faena.
   const groupedByFaena = useMemo(() => {
     const map = new Map();
     for (const s of subfaenasOfDay) {

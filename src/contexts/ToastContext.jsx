@@ -1,11 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-// Sistema de notificaciones tipo toast — reemplaza los `window.alert` nativos
-// del navegador (que rompen estética y bloquean el hilo de UI). Soporta cuatro
-// niveles (success/error/info/warning), auto-dismiss configurable, click-to-
-// dismiss, y mensajes multilinea (renderiza `\n` como salto). Stackea arriba
-// a la derecha con animación.
+// Notificaciones tipo toast, en lugar de `window.alert`. Cuatro niveles
+// (success/error/info/warning), cierre automático configurable, cierre con
+// click y mensajes multilínea (`\n` es salto de línea). Se apilan arriba a la
+// derecha.
 
 const ToastContext = createContext(null);
 
@@ -80,8 +79,7 @@ export function ToastProvider({ children }) {
 export function useToast() {
   const ctx = useContext(ToastContext);
   if (!ctx) {
-    // Fallback graceful: si por error alguien lo usa sin provider, no rompemos
-    // la app — caemos al alert nativo. Esto facilita el reemplazo gradual.
+    // Sin provider, cae a `window.alert` en vez de lanzar.
     return {
       success: (m) => window.alert(m),
       error: (m) => window.alert(m),
@@ -111,9 +109,8 @@ function ToastViewport({ toasts, onDismiss }) {
 
 function ToastItem({ toast, onDismiss }) {
   const meta = TYPE_META[toast.type] || TYPE_META.info;
-  // Auto-dismiss timer pausable cuando el mouse está encima. Implementado con
-  // un ref + recalcular remaining al hover/leave para que el usuario tenga
-  // tiempo de leer mensajes largos.
+  // El cierre automático se pausa con el mouse encima y, al salir, sigue con
+  // el tiempo que le quedaba.
   const remainingRef = useRef(toast.duration);
   const startedRef = useRef(Date.now());
   const timerRef = useRef(null);

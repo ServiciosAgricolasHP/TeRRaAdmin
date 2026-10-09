@@ -1,13 +1,11 @@
 // Reparto de anticipos y bonos sobre el bruto de un trabajador.
 //
-// Esta cuenta estaba escrita cuatro veces adentro de `Payroll.jsx` —al armar
-// la nómina, al agregar ciclos, al recalcular, y al aplicar anticipos nuevos
-// sobre alguien que ya estaba— y AGENTS.md avisaba que tocar el orden o el
-// tope obligaba a tocar las cuatro. Los cuatro sitios son el mismo algoritmo:
-// el último arranca de una base que ya trae descuentos aplicados, y eso es
-// justo lo que expresan `alreadyAdvanced` / `alreadyBonused`.
+// Lo usan los cuatro caminos de `Payroll.jsx`: armar la nómina, agregar
+// ciclos, recalcular y aplicar anticipos nuevos sobre alguien que ya está. El
+// último parte de una base con descuentos ya aplicados (`alreadyAdvanced` /
+// `alreadyBonused`).
 //
-// La regla, y por qué importa el orden:
+// La regla:
 //
 //   1. Los BONOS van primero y se aplican completos. Engrosan la base contra
 //      la que después se descuenta el anticipo.
@@ -15,10 +13,9 @@
 //      esa base. De cada uno se toma `advanceDueNow`: la cuota si tiene plan,
 //      el saldo entero si no.
 //
-// Invertir el orden deja el anticipo sin liquidar por exactamente el monto del
-// bono: al trabajador se le entrega el bono en la mano y la deuda arrastra a
-// la nómina siguiente en vez de cerrarse. La plata que desembolsa la empresa
-// es la misma en los dos órdenes; lo que cambia es si la deuda queda cerrada.
+// Así el bono ayuda a cerrar la deuda en vez de pagarse aparte mientras el
+// anticipo sigue abierto: bruto 376.000 + bono 24.000 contra un anticipo de
+// 400.000 deja el anticipo saldado y el neto en 0.
 import { advanceRemaining, advanceDueNow, advanceSign } from "../services/advancesService";
 import { aggregateWorkerAmounts, workdayPayAmount } from "./payroll";
 
@@ -48,7 +45,7 @@ export function allocateAdvances({
   }
   const bonosTotal = bonoApplications.reduce((s, x) => s + x.amount, 0);
 
-  // Anticipos: oldest-first, topeados por lo que queda de base.
+  // Anticipos: del más viejo al más nuevo, topeados por lo que queda de base.
   let base = Math.max(0, brutoInt + yaAcreditado + bonosTotal - yaDescontado);
   const anticipoApplications = [];
   for (const anticipo of [...anticipos].sort(porFechaAsc)) {
@@ -101,16 +98,7 @@ export function advanceNote({ anticipoApplications = [], bonoApplications = [] }
 // y bonos tiene que volver a caber en el bruto nuevo. La regla de estas
 // funciones es una sola: **la nómina tiene que quedar igual que si se hubiera
 // armado sin lo que se le sacó**, y cada anticipo tiene que reflejar
-// exactamente lo que esta nómina le descuenta.
-//
-// Antes cada camino lo resolvía a su manera y los dos dejaban mal la plata:
-//   - Sacar un ciclo dejaba el anticipo aplicado entero aunque el bruto que
-//     quedaba no alcanzara a respaldarlo, y el `Math.max(0, …)` del neto se
-//     tragaba la diferencia. Esa plata no se descontaba en ninguna nómina.
-//   - Recalcular lo dejaba aplicado entero también, pero creaba un anticipo
-//     NUEVO por el saldo. No se perdía plata, pero el original figuraba como
-//     cobrado por una nómina que no lo retuvo, y quedaba un anticipo sintético
-//     que nadie había dado.
+// exactamente lo que esta nómina le descuenta, sin crear anticipos nuevos.
 
 // Lo que esta nómina le aplica hoy a cada anticipo/bono de un trabajador.
 //
@@ -219,21 +207,16 @@ export function itemAdvanceFields(refit) {
 
 // Qué pasa con cada trabajador al sacar un ciclo de una nómina pendiente.
 //
-// Un trabajador SALE entero cuando el bruto que le queda es 0 — no cuando "se
-// le acaban las claves de `byCycle`". Ese era el bug: al armar la nómina,
-// `byCycle` guarda una entrada por CADA ciclo, incluso con $0, así que quien
-// solo trabajó en el ciclo sacado quedaba con `{ otroCiclo: 0 }` y se lo
-// trataba como reducción parcial. Seguía en la nómina con bruto 0 y el
-// anticipo aplicado; la nómina siguiente no lo veía como pendiente y nunca se
-// descontaba. Cortar por bruto es además el mismo criterio que usa armar la
-// nómina (`a.total > 0`), que es lo que hace que el resultado sea "como si se
-// hubiera armado sin este ciclo".
+// Un trabajador SALE entero cuando el bruto que le queda es 0, no cuando se le
+// acaban las claves de `byCycle`: `byCycle` guarda una entrada por CADA ciclo,
+// aunque esté en $0. Es el mismo criterio que usa armar la nómina
+// (`a.total > 0`), así el resultado queda "como si se hubiera armado sin este
+// ciclo".
 //
 // El que sale suelta TODOS sus anticipos y bonos de esta nómina y todas sus
 // jornadas, incluidas las de $0 de otros ciclos: armada sin este ciclo, esa
 // persona no estaría. El que se queda pierde las jornadas del ciclo (también
-// las de $0, que antes quedaban etiquetadas a una nómina que ya no tenía ese
-// ciclo) y re-encaja sus anticipos con `refitAppliedAdvances`.
+// las de $0) y re-encaja sus anticipos con `refitAppliedAdvances`.
 export function planCycleRemoval({ items = [], cycleId, appliedByAdvance = new Map() }) {
   const prefix = `${cycleId}__`;
   const nextItems = [];
@@ -293,17 +276,16 @@ export function planCycleRemoval({ items = [], cycleId, appliedByAdvance = new M
 const brutoDe = (it) => Math.round(Number(it?.grossAmount || it?.amount) || 0);
 const idsDe = (ids) => [...(ids || [])].sort().join(",");
 
-// Más descontado del que el bruto respalda. No debería existir, pero es como
-// quedaron las nóminas a las que se les sacó un ciclo antes de
-// `planCycleRemoval`: recalcularlas las repara sin tocar nada a mano.
+// Más descontado del que el bruto (más bonos) respalda. Recalcular re-reparte
+// a quien quedó así.
 export function isOverApplied(it) {
   return (Number(it?.advance) || 0) > brutoDe(it) + (Number(it?.bonus) || 0);
 }
 
 // Si un trabajador que ya está en la nómina hay que re-repartirlo al
 // recalcular contra su producción vigente (`fresh`, de `aggregateWorkerAmounts`).
-// Separado de `planRecalcExisting` para que la pantalla lea solo los anticipos
-// de estos: el resto de la nómina no paga lecturas.
+// La pantalla lo usa para leer solo los anticipos de estos trabajadores: el
+// resto de la nómina no paga lecturas.
 export function recalcNeedsRefit(it, fresh) {
   const newGross = Math.round(Number(fresh?.total) || 0);
   return (
@@ -405,15 +387,14 @@ export function cycleDetailOf(cycle, { faenas = [], subfaenas = [] } = {}) {
 // Qué labores de cada ciclo le pertenecen a la nómina: las que Recalcular
 // puede traer cuando aparece producción nueva. Sale de `cycleDetails[].laborIds`:
 //
-//   - sin el campo → el ciclo entero (las nóminas viejas, y un ciclo que se
-//     agregó con todas sus labores);
+//   - sin el campo → el ciclo entero (por ejemplo, un ciclo que se agregó con
+//     todas sus labores);
 //   - una lista → solo esas labores;
 //   - `[]` → ninguna: el ciclo está en la nómina solo por días puntuales que
 //     se agregaron a mano, y de ahí no se trae nada más.
 //
-// Sin esto Recalcular traía TODO lo pendiente de los ciclos de la nómina, así
-// que deshacía en silencio cualquier elección: las labores que se destildaron
-// al generarla, y lo que se dejó afuera al agregarle cosas.
+// Así Recalcular respeta las labores que se dejaron afuera al generar la
+// nómina o al agregarle cosas.
 export function payrollLaborScope(cycleDetails = []) {
   const scope = new Map();
   for (const cd of cycleDetails || []) {
@@ -471,8 +452,7 @@ export function mergeCycleDetails(existing = [], toAdd = []) {
 //     `byCycle` SUMADO, no pisado: el ciclo puede estar ya en la nómina con
 //     otras labores u otros días. Además se le aplican los anticipos y bonos
 //     pendientes que esta nómina todavía no le tocaba, con el mismo reparto
-//     incremental que usa Recalcular. Antes "Agregar ciclos" no se los
-//     aplicaba nunca y quedaban para la nómina siguiente.
+//     incremental que usa Recalcular.
 //   - Quien no está entra si su bruto es mayor que 0, con el reparto completo,
 //     igual que al generar. Sin bruto no entra (va a `sinBruto`) y sus
 //     jornadas de $0 siguen pendientes.

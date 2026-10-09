@@ -46,7 +46,7 @@ describe("calcTratoHEAmount", () => {
   });
 
   it("qty es un monto en pesos, no una cantidad a multiplicar", () => {
-    // El header del módulo lo dice: `qty` guarda la base del día en moneda.
+    // `qty` guarda la base del día en pesos.
     expect(calcTratoHEAmount({ qty: 30000 })).toBe(30000);
   });
 
@@ -70,8 +70,8 @@ describe("calcTratoHEAmount", () => {
 });
 
 describe("isWeekendDate", () => {
-  // Parsea con "T00:00:00" o sea en hora local: dejamos fijado que la fecha no
-  // se corre un día por zona horaria.
+  // Parsea con "T00:00:00", o sea en hora local: la fecha no se corre un día
+  // por zona horaria.
   it("reconoce sábado y domingo", () => {
     expect(isWeekendDate("2026-09-19")).toBe(true); // sábado
     expect(isWeekendDate("2026-09-20")).toBe(true); // domingo
@@ -110,7 +110,7 @@ describe("workdayHasData", () => {
   });
 
   it("un extra negativo cuenta como dato", () => {
-    // Es un descuento, y perderlo cambiaría la plata.
+    // Es un descuento.
     expect(workdayHasData({ extras: -1000 })).toBe(true);
   });
 });

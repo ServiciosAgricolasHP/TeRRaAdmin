@@ -131,7 +131,7 @@ export default function TransportsModal({ open, onClose, cycle, faena, subfaena,
         </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-12" style={{ minHeight: 360 }}>
-          {/* Day list */}
+          {/* Lista de días */}
           <div className="max-h-[40vh] overflow-auto rounded-md border border-[var(--color-border)] sm:col-span-4 sm:max-h-[60vh]">
             {days.map((d) => {
               const isActive = d === selectedDate;
@@ -157,7 +157,7 @@ export default function TransportsModal({ open, onClose, cycle, faena, subfaena,
             })}
           </div>
 
-          {/* Day detail */}
+          {/* Detalle del día */}
           <div className="sm:col-span-8">
             {selectedDate ? (
               <>
@@ -282,12 +282,10 @@ export default function TransportsModal({ open, onClose, cycle, faena, subfaena,
   );
 }
 
-// Combobox con typeahead para elegir transportista. Pensado para listas de
-// 50+ carriers donde un <select> nativo es incómodo. Filtra contra alias,
-// nombre y aliases de vehículos. Cuando la query está vacía muestra una
-// sección "Recientes" arriba (últimos N usados en este ciclo) seguida del
-// resto alfabético. Navegación con ↑/↓ + Enter, Esc cierra. Click en
-// "+ Nuevo" delega al callback `onCreateNew` para abrir el QuickCreate.
+// Combobox con búsqueda para elegir transportista. Filtra por alias, nombre y
+// alias de vehículos. Sin búsqueda muestra arriba los recientes de este ciclo
+// y después el resto en orden alfabético. ↑/↓ y Enter eligen, Esc cierra, y
+// "+ Nuevo transportista" llama a `onCreateNew`.
 function CarrierCombobox({ value, onChange, carriers, recentIds, onCreateNew, autoFocus = false }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -569,9 +567,9 @@ export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate
   const carrier = carriers.find((c) => c.id === carrierId);
   const isOwn = carrier?.type === "own";
 
-  // Cuando el carrier cambia, si tiene un solo vehículo lo auto-seleccionamos
-  // — ahorra un click en el caso común. Si tiene varios, pre-selecciona el
-  // primero (el usuario aún puede cambiarlo).
+  // Al cambiar de transportista: con un solo vehículo, lo elige; con varios,
+  // elige el primero solo si no había vehículo elegido; sin vehículos, limpia
+  // el campo.
   const handleCarrierChange = (nextId) => {
     setCarrierId(nextId);
     const c = carriers.find((x) => x.id === nextId);
@@ -679,7 +677,7 @@ export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate
         <TextField label="Lugar (origen)" value={lugar} onChange={setLugar} placeholder="ej: C.ALTO/PURRANQUE" />
         <TextField label="Destino" value={destino} onChange={setDestino} placeholder="ej: FRESIA" />
         <TextField label="N° personas" type="number" value={personCount} onChange={setPersonCount} />
-        <TextField label="Vueltas (qty)" type="number" value={qty} onChange={setQty} />
+        <TextField label="Cantidad de vueltas" type="number" value={qty} onChange={setQty} />
         <TextField
           label={isOwn ? "Tarifa (propio = 0)" : "Tarifa por vuelta"}
           type="number"
@@ -710,9 +708,8 @@ export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate
   );
 }
 
-// Modal liviano para dar de alta un transportista sin salir del flujo de
-// agregar vuelta. Pide solo lo mínimo (alias, nombre, tipo, un vehículo);
-// edición completa sigue viviendo en el módulo de Transportes.
+// Alta rápida de un transportista desde el modal de la vuelta: alias, nombre,
+// tipo, tarifa y un vehículo. El resto se edita en Transportes.
 function QuickCreateCarrierModal({ open, onClose, onCreated }) {
   const { addCarrier } = useCarriers();
   const [alias, setAlias] = useState("");
@@ -739,7 +736,7 @@ function QuickCreateCarrierModal({ open, onClose, onCreated }) {
     e?.preventDefault?.();
     if (!alias.trim()) return setError("Alias requerido");
     if (!name.trim()) return setError("Nombre requerido");
-    if (!vehicleAlias.trim()) return setError("Agregá al menos un vehículo");
+    if (!vehicleAlias.trim()) return setError("Agrega al menos un vehículo");
     setBusy(true);
     try {
       const created = await addCarrier({
@@ -808,7 +805,7 @@ function QuickCreateCarrierModal({ open, onClose, onCreated }) {
         <TextField label="Patente" value={plate} onChange={setPlate} placeholder="opcional" />
         {error && <div className="col-span-2 text-sm text-[var(--color-danger)]">{error}</div>}
         <p className="col-span-2 text-[11px] text-[var(--color-muted)]">
-          Para agregar más vehículos o ajustar otros datos, editá el transportista desde el módulo de Transportes.
+          Para agregar más vehículos o ajustar otros datos, edita el transportista desde el módulo de Transportes.
         </p>
       </form>
     </Modal>

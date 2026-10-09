@@ -12,15 +12,10 @@ const INDICATOR_DEFS = [
   { key: "dia", label: "Día", icon: "📅" },
   { key: "hora", label: "Hora extra", icon: "⏱" },
 ];
-// Isotipo real de TeRRA (public/terra.svg, sin la wordmark — esa va aparte
-// como texto HTML de siempre). El archivo original es un trazado a un solo
-// color; acá los mismos paths (el `d` de cada uno, copiado tal cual) se
-// separan en 3 grupos según qué parte del dibujo son (identificado
-// coloreando cada path por separado y comparando contra el diseño
-// original), cada grupo con su propia variable de tema:
-// --color-text (laptop + circuito), --color-accent (anillo + hoja) y
-// --color-accent-hover (mitad del mosaico de píxeles, para el segundo verde
-// que tenía el original).
+// Isotipo de TeRRA (public/terra.svg sin el wordmark, que es TerraWordmark).
+// Los paths son los del archivo, separados en 3 grupos con su propia variable
+// de tema: --color-text (laptop y circuito), --color-accent (anillo, hoja y
+// parte de los píxeles) y --color-accent-hover (el resto de los píxeles).
 function TerraLogo({ className }) {
   return (
     <svg className={className} viewBox="335 245 590 510" aria-hidden="true">
@@ -50,9 +45,8 @@ function TerraLogo({ className }) {
     </svg>
   );
 }
-// Wordmark real "TeRRA" del isotipo (los 5 paths de letras del mismo
-// terra.svg, recortados a su propio bounding box) — reemplaza el texto HTML
-// plano por la tipografía llamativa/bold que trae el diseño original.
+// Wordmark "TeRRA": los 5 paths de letras de terra.svg, con el viewBox
+// recortado a su bounding box.
 function TerraWordmark({ className }) {
   return (
     <svg className={className} viewBox="290 800 670 200" aria-hidden="true">
@@ -67,9 +61,8 @@ function TerraWordmark({ className }) {
   );
 }
 
-// Motivo circuito+píxeles del isotipo, aislado (los mismos paths que ya usa
-// TerraLogo adentro del laptop), para reutilizar como acento decorativo en
-// otras partes de la UI en vez de dibujar uno nuevo a mano.
+// Motivo de circuito y píxeles del isotipo (los mismos paths de TerraLogo),
+// para usar como acento decorativo.
 function TerraCircuitPixels({ className }) {
   return (
     <svg className={className} viewBox="410 355 320 370" aria-hidden="true">
@@ -98,10 +91,9 @@ const fmtCLP = (v) =>
     ? new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(Number(v))
     : "—";
 
-// Inyectado por Vite en build-time desde el count de commits de HEAD.
-// Visible en el header para confirmar que el bundle no quedó en caché vieja
-// (PWA/Service Worker). Si el usuario ve una versión menor a la última
-// desplegada → hard refresh.
+// Versión que inyecta Vite al compilar (v1.1.<commits desde VERSION_RESET_COMMIT>).
+// Se muestra en el header: una versión menor a la desplegada indica un bundle
+// viejo en la caché del service worker.
 export const APP_VERSION = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev";
 
 const navItems = [
@@ -223,7 +215,7 @@ function ProfileModal({ onClose }) {
             className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
           />
           <span className="mt-1 block text-xs text-[var(--color-muted)]">
-            Es el nombre con el que quedás firmando los registros que cargás a mano
+            Es el nombre con el que quedan firmados los registros que cargas a mano
             (por ejemplo, el supervisor de un pesaje). Sin alias se usa tu correo.
           </span>
         </label>
@@ -241,17 +233,16 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  // Desktop sidebar collapsed state, persisted between sessions. Hidden
-  // entirely when collapsed to give the main content the full viewport width.
+  // Barra lateral de escritorio, abierta o cerrada según la última sesión.
+  // Cerrada se oculta entera y el contenido usa todo el ancho.
   const [sidebarOpen, setSidebarOpen] = useState(() => {
     try { return localStorage.getItem("layout.sidebarOpen") !== "false"; } catch { return true; }
   });
   useEffect(() => {
     try { localStorage.setItem("layout.sidebarOpen", String(sidebarOpen)); } catch { /* noop */ }
   }, [sidebarOpen]);
-  // Sección Admin colapsable — persistida entre sesiones. Default cerrada
-  // porque el admin la usa esporádicamente y evita que el sidebar quede
-  // largo. Solo aplica cuando el usuario es admin.
+  // Sección Admin colapsable, cerrada por defecto y recordada entre sesiones.
+  // Solo la ven los admins.
   const [adminExpanded, setAdminExpanded] = useState(() => {
     try { return localStorage.getItem("layout.adminExpanded") === "true"; } catch { return false; }
   });
@@ -263,9 +254,8 @@ export default function Layout() {
   // montar; se editan manualmente vía modal y quedan en el doc `indicators/main`.
   const [indicators, setIndicators] = useState(null);
   const [indicatorsModalOpen, setIndicatorsModalOpen] = useState(false);
-  // Barra de indicadores en mobile/tablet (IndicatorsBar): colapsable porque
-  // ocupa una fila entera en cada pantalla y la mayoría de las veces no hace
-  // falta mirarla. Arranca cerrada; se recuerda entre sesiones.
+  // Barra de indicadores en mobile y tablet (IndicatorsBar): colapsable,
+  // cerrada por defecto y recordada entre sesiones.
   const [indicatorsBarOpen, setIndicatorsBarOpen] = useState(() => {
     try { return localStorage.getItem("layout.indicatorsBarOpen") === "true"; } catch { return false; }
   });
@@ -288,13 +278,13 @@ export default function Layout() {
     setIndicatorsModalOpen(false);
   };
 
-  // Auto-close drawer on route change
+  // Cierra el drawer al cambiar de ruta.
   useEffect(() => {
     setDrawerOpen(false);
   }, [location.pathname]);
 
-  // Single button handles both mobile drawer and desktop collapse depending
-  // on viewport width so the user only has to learn one control.
+  // Un solo botón: según el ancho, colapsa la barra lateral (escritorio) o
+  // abre el drawer (mobile).
   const onMenuClick = () => {
     if (typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches) {
       setSidebarOpen((o) => !o);
@@ -317,8 +307,8 @@ export default function Layout() {
 
   const sidebarContent = (
     <>
-      {/* La marca es el atajo al inicio. Apunta a `/` y no a `/faenas` para
-          que haya una sola definición de "home": si cambia, el logo sigue. */}
+      {/* La marca lleva al inicio. Apunta a `/`, así la home se define solo
+          en el router. */}
       <Link
         to="/"
         aria-label="Ir al inicio"
@@ -375,8 +365,7 @@ export default function Layout() {
           </div>
         )}
       </nav>
-      {/* Hoja como marca de agua, muy sutil, en la esquina inferior — mismo
-          detalle "naturaleza" del isotipo. */}
+      {/* Hoja como marca de agua sutil en la esquina inferior. */}
       <svg
         className="pointer-events-none absolute -bottom-4 -right-6 -z-10 opacity-[0.1]"
         width="130" height="130" viewBox="0 0 130 130" aria-hidden="true"
@@ -389,12 +378,12 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen bg-[var(--color-bg)] text-[var(--color-text)]">
-      {/* Desktop sidebar */}
+      {/* Barra lateral de escritorio */}
       <aside className={`relative z-0 hidden w-60 flex-col overflow-hidden border-r border-[var(--color-border)] bg-[var(--color-surface)] ${sidebarOpen ? "md:flex" : ""}`}>
         {sidebarContent}
       </aside>
 
-      {/* Mobile drawer */}
+      {/* Drawer en mobile */}
       {drawerOpen && (
         <div className="fixed inset-0 z-40 md:hidden">
           <div
@@ -452,10 +441,9 @@ export default function Layout() {
               Salir
             </button>
           </div>
-          {/* Acentos decorativos del header — envueltos aparte (no en el
-              <header>) para que el overflow-hidden que los recorta nunca
-              afecte al dropdown del selector de tema, que es hermano de este
-              div, no descendiente. */}
+          {/* Acentos decorativos del header. El overflow-hidden que los
+              recorta va en este div y no en el <header>, para no cortar el
+              dropdown del selector de tema. */}
           <div className="pointer-events-none absolute right-0 top-0 -z-10 h-14 w-56 overflow-hidden" aria-hidden="true">
             <svg className="absolute -right-[30px] -top-[55px] opacity-[0.14]" width="150" height="150" viewBox="0 0 150 150">
               <circle
@@ -521,12 +509,9 @@ function EditIndicatorsButton({ onEdit }) {
   );
 }
 
-// Barra tipo ticker — solo en mobile/tablet angosto, donde el header no tiene
-// espacio para los indicadores en el centro. Colapsada (default) es solo una
-// tira angosta con una flecha, casi sin altura, para no robarle espacio
-// permanente a la pantalla. Al abrirla baja la fila completa de chips con
-// scroll horizontal por si no entran todos, y la flecha para volver a
-// cerrarla queda al final de esa fila.
+// Barra de indicadores bajo el header, solo debajo de `lg`, donde no caben en
+// el centro del header. Cerrada es una tira con una flecha; abierta muestra
+// los chips con scroll horizontal y la flecha para cerrarla al final.
 function IndicatorsBar({ indicators, onEdit, open, onToggle }) {
   if (!open) {
     return (

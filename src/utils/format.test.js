@@ -8,10 +8,8 @@ import {
   fmtMonthKey,
 } from "./format";
 
-// Los formatos salen de `Intl` con locale es-CL: punto para los miles, coma
-// para los decimales, sin decimales en pesos. Si estas aserciones se caen sin
-// que nadie haya tocado el módulo, la sospecha es un cambio de ICU en Node,
-// no un bug de la app.
+// Los formatos salen de `Intl` con locale es-CL (punto para los miles, coma
+// para los decimales, sin decimales en pesos), así que dependen del ICU de Node.
 describe("fmtCurrency", () => {
   it("usa punto de miles y no muestra decimales", () => {
     expect(fmtCurrency(1234)).toBe("$1.234");
@@ -148,11 +146,9 @@ describe("fmtMonthKey", () => {
   });
 
   it("[bug conocido] una clave sin guión devuelve \"undefined\"", () => {
-    // El guard quiso cubrir esto (`idx < 0 || idx > 11`) pero `Number(undefined)`
-    // es NaN y toda comparación con NaN es false, así que se cuela hasta el
-    // template y sale "undefined sura". Hoy no se alcanza: los únicos
-    // llamadores son los gráficos del Dashboard, que arman las claves con
-    // `lastMonthKeys`, nunca con texto del usuario.
+    // Fija lo actual: `Number(undefined)` es NaN, el guard `idx < 0 || idx > 11`
+    // no lo detecta y sale "undefined sura". Lo esperado sería devolver la clave
+    // tal cual, como con un mes fuera de rango.
     expect(fmtMonthKey("basura")).toBe("undefined sura");
   });
 });

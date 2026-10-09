@@ -44,9 +44,8 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
       });
     } else {
       const bd = worker?.bankDetails || [];
-      // Fase 3 de "rut editable": mostramos el rut ACTUAL (campo `rut`), no
-      // el id (workerId estable, congelado desde la creación) — fallback al
-      // id para workers viejos sin backfill todavía.
+      // Muestra el rut actual (campo `rut`), no el id, que es el rut con que
+      // se creó el trabajador y no cambia. Sin campo `rut`, usa el id.
       const rut = worker?.rut || worker?.id || "";
       setForm({
         rut,
@@ -67,7 +66,8 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
     return findSimilarWorkers(form.name, allWorkers, { threshold: 0.8, limit: 4 });
   }, [isCreate, form?.name, allWorkers]);
 
-  // Strict líder pool — case-insensitive (uppercase + trimmed) to merge dupes.
+  // Líderes actuales de los trabajadores, en mayúsculas y sin espacios en los
+  // bordes, para que las variantes de un mismo nombre cuenten como uno.
   const existingLeaders = useMemo(() => {
     const set = new Set();
     for (const w of allWorkers) {
@@ -96,8 +96,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
   const switchToCash = () => {
     setForm((f) => ({
       ...f,
-      // Recordamos el banco previo para poder volver con un click sin
-      // perder los datos.
+      // Guarda los datos bancarios previos para volver a ellos con un click.
       bd_prevBankCode: isCashBank(f.bd_bankCode) ? (f.bd_prevBankCode || DEFAULT_BANK_CODE) : f.bd_bankCode,
       bd_prevAccountType: isCashBank(f.bd_bankCode) ? (f.bd_prevAccountType ?? ACCOUNT_TYPE_RUT) : f.bd_accountType,
       bd_prevAccountNumber: isCashBank(f.bd_bankCode) ? (f.bd_prevAccountNumber ?? "") : f.bd_accountNumber,
@@ -114,10 +113,8 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
     }));
   };
 
-  // Quick-assign Cuenta RUT (Banco Estado). Vuelve a modo Banco si estaba en
-  // efectivo y aplica todos los defaults: RUT pago = RUT del trabajador,
-  // número = RUT sin DV, tipo = Cuenta RUT, banco = Banco Estado. Atajo para
-  // el caso más común (~80% de los trabajadores usa Cuenta RUT).
+  // Asigna Cuenta RUT de Banco Estado en un click: RUT de pago = RUT del
+  // trabajador y número = RUT sin DV. Si estaba en efectivo, vuelve a banco.
   const assignCuentaRut = () => {
     setForm((f) => {
       const rut = normalizeRut(f.rut);
@@ -166,9 +163,8 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
 
     const rutChanged = !isCreate && rut !== (worker?.rut || worker?.id || "");
     if (isCreate || rutChanged) {
-      // Chequeamos colisión por id (rut de creación de otro worker) Y por el
-      // campo `rut` actual de otro worker — un rut nuevo no puede coincidir
-      // con ninguno de los dos.
+      // Un rut nuevo no puede coincidir ni con el id (rut de creación) ni con
+      // el campo `rut` actual de otro trabajador.
       const dup = await findWorkerByRut(rut);
       if (dup && dup.id !== worker?.id) return setError("Ya existe un trabajador con ese RUT");
       if (rutChanged) {
@@ -180,8 +176,8 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
     const payRut = normalizeRut(form.bd_paymentRut || rut);
     if (!validateRut(payRut)) return setError("RUT de pago inválido");
 
-    // Efectivo: no requiere cuenta/banco propio, se guarda con bankCode "EFE"
-    // y el resto puede quedar como placeholder. Salteamos las validaciones.
+    // Efectivo: se guarda con bankCode "EFE" sin validar cuenta ni banco; el
+    // número de cuenta queda de relleno.
     let bankCode, accNumber;
     if (isCash) {
       bankCode = CASH_BANK_CODE;
@@ -216,11 +212,9 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
       } else {
         // `idQr` no se escribe desde la ficha: lo asigna `assignQrCode`.
         await workersService.update(worker.id, {
-          // Al cambiar de cédula guardamos la anterior. Los workdays viejos
-          // quedaron grabados con ella (`workerRut` es el rut que tenía el
-          // roster ese día) y es la única forma de volver a encontrarlos si
-          // alguien cambia de rut más de una vez. Mismo patrón que
-          // `groupLeader`, que también es un historial.
+          // Al cambiar el rut, guarda el anterior en `rutHistory`: cada jornada
+          // queda con el rut que tenía la persona ese día (`workerRut`), y el
+          // historial permite encontrarlas aunque cambie más de una vez.
           ...(rutChanged
             ? {
                 rut,

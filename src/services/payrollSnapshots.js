@@ -1,9 +1,5 @@
-// Ciclo de vida del snapshot inmutable de una nómina.
-//
-// El snapshot es el contrato que va a consumir el portal público de
-// trabajadores, así que las tres operaciones que lo crean, lo borran y lo
-// leen de vuelta importan más que el resto. Vivían sueltas dentro de
-// `Payroll.jsx` y no se podían ejercitar sin montar la pantalla entera.
+// Ciclo de vida del snapshot inmutable de una nómina. El snapshot es contrato
+// externo, pensado para el portal público de trabajadores.
 //
 // Los `catch` silenciosos son deliberados y hay que conservarlos: el
 // snapshot es un derivado, y que falle no puede tumbar la generación ni el
@@ -33,9 +29,9 @@ export async function deleteSnapshot(payrollId) {
   }
 }
 
-// Lee el snapshot para volver a bajarlo. Cae al campo `snapshot` embebido en
-// la nómina para las que se crearon antes de separar las colecciones.
-// Devuelve `null` cuando no hay ninguno de los dos.
+// Lee el snapshot para volver a bajarlo. Si no está en `payrollSnapshots`, usa
+// el campo `snapshot` embebido en la nómina. Devuelve `null` cuando no hay
+// ninguno de los dos.
 export async function readSnapshot(payroll) {
   if (!payroll?.id) return null;
   try {
@@ -46,19 +42,19 @@ export async function readSnapshot(payroll) {
       return rest;
     }
   } catch {
-    /* se intenta el legacy */
+    /* se intenta con el campo embebido */
   }
   if (payroll.snapshot) return { ...payroll.snapshot, payrollId: payroll.id };
   return null;
 }
 
 // Las formas en que el snapshot guarda un ciclo, una jornada y un anticipo.
-// Estaban copiadas en cada camino que escribe el snapshot (generar, agregar
-// ciclos, recalcular); al ser contrato externo, una copia que se desfase es
-// un JSON distinto según por dónde se armó la nómina.
+// Las usan todos los caminos que escriben el snapshot (generar, agregar
+// ciclos, recalcular): al ser contrato externo, el JSON tiene que salir igual
+// por cualquiera de ellos.
 //
 // `laborIds` es interno de la nómina (qué labores trae Recalcular) y no viaja:
-// el portal de trabajadores no lo necesita y el contrato no cambia.
+// el portal de trabajadores no lo necesita.
 export function snapshotCycleOf(detail, cycle) {
   const { laborIds: _interno, ...cd } = detail || {};
   return {
@@ -67,7 +63,7 @@ export function snapshotCycleOf(detail, cycle) {
     labors: (cycle?.labors || []).map((l) => ({
       id: l.id, name: l.name, type: l.type,
       // Catálogo: tratoType (Poda/Amarre/...) y tratoUnit (Planta/
-      // Metro/...) son índices de catalogo. Para cosecha la unidad
+      // Metro/...) son índices del catálogo. Para cosecha la unidad
       // se deriva de containerY del workday → cosechaUnit(catalogs).
       tratoType: l.tratoType ?? null,
       tratoUnit: l.tratoUnit ?? null,
@@ -80,7 +76,7 @@ export function snapshotCycleOf(detail, cycle) {
       tratoHEManejoAmount: l.tratoHEManejoAmount ?? null,
       tratoHESupervisionAmount: l.tratoHESupervisionAmount ?? null,
       normalDailyAmount: l.normalDailyAmount ?? null,
-      // tratoEtapas: etapas del labor (nombre + tarifa por día + counts).
+      // tratoEtapas: etapas de la labor (nombre + tarifa por día + counts).
       stages: l.stages ?? null,
     })),
   };
@@ -127,9 +123,8 @@ function headerTotals(header, aggregates, items) {
 }
 
 // Deja el snapshot alineado con una nómina que se achicó (se le sacó un ciclo o
-// un trabajador). Sin esto el JSON —el que baja el botón 📥 y el que va a leer
-// el portal de trabajadores— seguía mostrando a quien ya no está en la nómina,
-// con su anticipo descontado, cobrando algo que no se le va a pagar.
+// un trabajador): saca a quien salió, sus jornadas y sus anticipos, y pone al
+// día la cabecera de totales.
 //
 // Recibe lo que ya quedó guardado en la nómina: los items, los agregados y,
 // cuando corresponde, los ciclos que siguen y las jornadas que se soltaron.
@@ -158,9 +153,8 @@ export async function pruneSnapshot(payrollId, { items, aggregates, cycleIds = n
 
 // Lo mismo para una nómina que creció (se le agregaron ciclos, labores o días
 // de una persona): suma lo que no estaba —ciclos, jornadas y anticipos, ya con
-// la forma del snapshot— y deja los trabajadores y la cabecera al día. Antes
-// agregar ciclos no tocaba la cabecera, y el JSON quedaba con los totales de
-// cuando se generó. Nunca tira.
+// la forma del snapshot— y deja los trabajadores y la cabecera al día. Nunca
+// tira.
 export async function extendSnapshot(payrollId, { items, aggregates, cycles = [], workdays = [], advances = [] }) {
   try {
     const snap = await payrollSnapshotsService.getById(payrollId);

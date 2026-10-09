@@ -4,11 +4,10 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 import { execSync } from 'node:child_process'
 
-// Auto-bump del patch a partir del count de commits desde VERSION_RESET_COMMIT
-// (el HEAD al momento de reiniciar el versionado a 1.1.0). Cada commit nuevo
-// sobre esa base suma uno al patch. Si la build corre fuera de un repo git
-// (ej: CI con shallow clone) o ese commit no existe en el historial
-// disponible, caemos a "0" para que el build no falle.
+// El patch de la versión es la cantidad de commits desde VERSION_RESET_COMMIT,
+// donde el versionado arranca en 1.1.0. Fuera de un repo git, o si ese commit
+// no está en el historial disponible (p. ej. un clone shallow en CI), vale "0"
+// y el build no falla.
 const VERSION_RESET_COMMIT = 'e3c61c818e237c7edc2c8ef13ada2adac0c8713d'
 const commitCount = (() => {
   try {
@@ -22,7 +21,7 @@ const commitCount = (() => {
 const APP_VERSION = `v1.1.${commitCount}`
 
 export default defineConfig({
-  base: '/TeRRaAdmin/',   // ← ESTO ES CLAVE
+  base: '/TeRRaAdmin/',   // tiene que coincidir con el basename de src/App.jsx
   define: {
     __APP_VERSION__: JSON.stringify(APP_VERSION),
   },
@@ -35,7 +34,7 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       // autoUpdate: el service worker se actualiza solo cuando se hace deploy
-      // de una version nueva. Sin prompt al usuario.
+      // de una versión nueva, sin preguntarle al usuario.
       registerType: 'autoUpdate',
       includeAssets: ['logo.png', 'terra.png', 'terra.svg', '404.html'],
       manifest: {
@@ -60,26 +59,22 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // Precachea SOLO assets estables (imgs, fonts, íconos). NO incluimos
-        // js/css/html porque esos son los que cambian cada deploy (con hash
-        // en el nombre) y eran los que dejaban al usuario atascado con
-        // chunks borrados — el SW servía un index.js viejo que apuntaba a
-        // un exceljs.min-XXXX.js que el deploy nuevo ya borró.
-        // Ahora esos archivos van por NetworkFirst (ver runtimeCaching), así
-        // siempre que haya red el navegador trae lo último.
+        // Precachea SOLO assets estables (imágenes, fuentes, íconos). JS, CSS y
+        // HTML cambian de nombre (hash) en cada deploy: un index.js precacheado
+        // apuntaría a chunks que el deploy nuevo ya borró. Esos van por
+        // NetworkFirst (ver runtimeCaching).
         globPatterns: ['**/*.{ico,png,svg,woff2}'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-        // Que el SW nuevo tome control de los tabs abiertos en cuanto activa,
-        // sin esperar a que se cierren — sino los usuarios con la pestaña
-        // abierta pueden quedar con el SW viejo controlando.
+        // El SW nuevo toma control de las pestañas abiertas apenas se activa,
+        // sin esperar a que se cierren.
         skipWaiting: true,
         clientsClaim: true,
         navigateFallback: null,
         runtimeCaching: [
           {
-            // HTML / JS / CSS de la app: NetworkFirst. Si la red anda, trae
-            // lo último (cierra el bug de chunks borrados). Si la red falla
-            // o tarda más de 3s, usa el cache para mantener offline parcial.
+            // HTML / JS / CSS de la app: NetworkFirst. Con red trae lo último;
+            // si la red falla o tarda más de 3 s, usa la caché (offline
+            // parcial).
             urlPattern: ({ request }) =>
               request.destination === 'document' ||
               request.destination === 'script' ||

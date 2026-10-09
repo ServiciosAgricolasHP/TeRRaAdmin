@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 
-// Mismo motivo que `payrollItem.test.js`: el módulo importa helpers puros de
-// `advancesService`, que arrastra `../firebase`.
+// `payrollItem` importa helpers puros de `advancesService`, que importa
+// `../firebase`.
 vi.mock("../firebase", () => ({ db: {}, auth: { currentUser: null } }));
 
 const {

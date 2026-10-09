@@ -83,7 +83,7 @@ export function normalizeLayout(layout) {
   const base = defaultLayout();
   if (!layout) return base;
   const groups = Array.isArray(layout.groups) ? [...layout.groups] : [];
-  // Always ensure ungrouped exists, last
+  // "Sin grupo" siempre existe y va al final.
   const filtered = groups.filter((g) => g.id !== UNGROUPED_ID);
   filtered.push({ id: UNGROUPED_ID, name: "Sin grupo", color: null });
   return {

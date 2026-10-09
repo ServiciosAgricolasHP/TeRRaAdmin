@@ -42,12 +42,9 @@ export default function CycleWorkerList({ rows, days, fmtCurrency, onSelectWorke
     );
   }
 
-  // `minHeight` explícito: el padre es un flex column con `min-h-0 flex-1`
-  // (para que el AG-Grid pueda colapsar/scrollear internamente en vez de
-  // empujar el layout). Sin un piso propio, esta lista podía quedar con
-  // altura 0 y renderizarse invisible cuando el resto del toolbar (barra de
-  // precios expandida, etc.) ya ocupaba casi todo el viewport — el grid
-  // nunca sufría esto porque ya traía su propio `style={{ minHeight: 400 }}`.
+  // `minHeight` propio, igual que la grilla: el padre es un flex column con
+  // `min-h-0 flex-1` y, si la barra de precios ocupa casi toda la pantalla,
+  // la lista quedaría con alto 0.
   return (
     <div className="flex h-full flex-col" style={{ minHeight: 400 }}>
       <input
@@ -80,7 +77,7 @@ export default function CycleWorkerList({ rows, days, fmtCurrency, onSelectWorke
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium">{row.name}</div>
                   <div className="font-mono text-xs text-[var(--color-muted)]">
-                    {formatRutForDisplay(row.rut) || row.rut}
+                    {formatRutForDisplay(row._displayRut || row.rut) || row.rut}
                   </div>
                   {(row._isTemp || row._isOrphan || row._monthly) && (
                     <div className="mt-0.5 flex flex-wrap gap-1 text-[10px]">

@@ -26,8 +26,7 @@ import { ANA, BETO, CARO, FAENA, SUBFAENA, set, get, seedWorker, seedWorkday, se
 // Agrandar una nómina pendiente: sumarle las labores que le faltaban a un
 // ciclo, o los días puntuales de una persona. Lo que importa es que entre
 // exactamente lo elegido, que los anticipos se descuenten igual que al
-// generarla, y que Recalcular no traiga después lo que se dejó afuera — antes
-// traía todo lo pendiente de los ciclos de la nómina.
+// generarla, y que Recalcular no traiga después lo que se dejó afuera.
 
 const CICLO_A = "ciclo-A";
 const CICLO_B = "ciclo-B";

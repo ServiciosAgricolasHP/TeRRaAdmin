@@ -45,12 +45,10 @@ export default function App() {
                   </ProtectedRoute>
                 }
               >
-                {/* La home manda a Faenas, no al Dashboard: abrir la app es
-                    la acción más frecuente del día y el Dashboard cuesta
-                    bastantes lecturas más (ver la nota de costo en
-                    Dashboard.jsx). Es un redirect y no un render directo para
-                    que `/faenas` siga siendo la única URL de esa pantalla y el
-                    item del menú se marque como activo. */}
+                {/* La home redirige a Faenas, que se abre más seguido y lee
+                    mucho menos que el Dashboard. Redirige en vez de renderizar
+                    para que `/faenas` sea la única URL de esa pantalla y su
+                    ítem del menú quede activo. */}
                 <Route index element={<Navigate to="/faenas" replace />} />
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="faenas" element={<Faenas />} />
@@ -63,7 +61,7 @@ export default function App() {
                 <Route path="info-cuentas" element={<InfoAccounts />} />
                 <Route path="calendar" element={<Calendar />} />
                 <Route path="harvest-qr" element={<HarvestQr />} />
-                {/* La ruta vieja sigue viva en marcadores y en links compartidos. */}
+                {/* `/admin/harvest-qr` redirige a Pesajes QR: la usan marcadores y links compartidos. */}
                 <Route path="admin/harvest-qr" element={<Navigate to="/harvest-qr" replace />} />
                 <Route path="facturacion" element={<Facturacion />} />
                 <Route path="price-book" element={<PriceBook />} />
@@ -135,9 +133,8 @@ function NotFound() {
         La URL no corresponde a ninguna pantalla del sistema. Puede que el ciclo
         fue eliminado o que el link esté mal escrito.
       </p>
-      {/* El saludo es lo que la persona vino a ver, no una nota al pie: va
-          más grande que el propio mensaje de error. `text-balance` evita que
-          la última línea quede con una sola palabra colgando. */}
+      {/* El saludo va más grande que el mensaje de error. `text-balance`
+          evita que la última línea quede con una sola palabra. */}
       {saludo ? (
         <p className="mt-6 max-w-2xl text-balance text-2xl font-semibold italic leading-snug text-[var(--color-accent)] sm:text-4xl">
           {saludo}

@@ -6,8 +6,7 @@ const { workerKeys, detectQueryKind } = await import("./workersService");
 
 describe("workerKeys", () => {
   // Con estas claves se arma la consulta `workerRut in [...]` que busca los
-  // workdays de una persona. Si faltara una, se pierde producción histórica;
-  // si sobrara una ajena, se mezclaría con la de otro.
+  // workdays de una persona.
   it("un trabajador sin divergencia da una sola clave", () => {
     expect(workerKeys({ id: "11111111-1", rut: "11111111-1", name: "Ana" })).toEqual([
       "11111111-1",
@@ -46,8 +45,7 @@ describe("workerKeys", () => {
   });
 
   it("corta en 10, que es el tope del `in` de Firestore", () => {
-    // Truncar es preferible a que la consulta reviente, pero si alguna vez se
-    // pasa de 10 se perdería un rut histórico: este test es el aviso.
+    // Con más de 10 claves se descartan las últimas del historial de ruts.
     const claves = workerKeys({
       id: "a",
       rut: "b",

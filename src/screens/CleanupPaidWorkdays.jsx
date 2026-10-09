@@ -1,9 +1,8 @@
-// TEMPORARY admin/cleanup screen.
-// Shows workdays marked as paid for a given cycle and lets you "release"
-// them (clear payrollId + paidAt + paidBy). Useful when a payroll was
-// deleted manually and its workdays still point at the dead doc.
+// Pantalla de limpieza (admin): lista las jornadas de un ciclo con `paidAt` o
+// `payrollId` y permite liberarlas (payrollId, paidAt y paidBy en null), para
+// las que apuntan a una nómina que ya no existe.
 //
-// Delete this file + its route in App.jsx once the cleanup is done.
+// TODO: eliminar esta pantalla, su ruta en App.jsx y su ítem en Layout.jsx al terminar la limpieza.
 import { useEffect, useMemo, useState } from "react";
 import { doc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
@@ -53,7 +52,7 @@ export default function CleanupPaidWorkdays() {
       paid.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
       setRows(paid);
 
-      // Load worker names for display (chunked by 30 — Firestore "in" limit).
+      // Nombres de los trabajadores, en tandas de 30 (límite de `in` en Firestore).
       const ruts = [...new Set(paid.map((w) => w.workerRut).filter(Boolean))];
       const map = {};
       for (let i = 0; i < ruts.length; i += 30) {
@@ -73,10 +72,6 @@ export default function CleanupPaidWorkdays() {
   };
 
   useEffect(() => {
-    // Antes había un cycleId de Firestore pegado a mano acá — reemplazado
-    // por un selector poblado desde la colección real (mismo patrón que
-    // HarvestQr.jsx para elegir ciclo), para no tener que copiar/pegar un
-    // ID crudo en una pantalla que hace writes destructivos en batch.
     cyclesService.list({ order: ["label", "asc"] }).then(setCycles);
   }, []);
 
@@ -148,7 +143,7 @@ export default function CleanupPaidWorkdays() {
         await batch.commit();
       }
       workdaysService.invalidate();
-      setMessage(`✓ Liberados ${ids.length} workday(s).`);
+      setMessage(`✓ Liberadas ${ids.length} jornada(s).`);
       await load();
     } catch (err) {
       setMessage(`Error al liberar: ${err.message || err}`);
@@ -160,10 +155,10 @@ export default function CleanupPaidWorkdays() {
   return (
     <div className="flex h-full flex-col">
       <div className="mb-4">
-        <h1 className="text-2xl font-semibold tracking-tight">⚠️ Limpiar workdays pagados</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">⚠️ Limpiar jornadas pagadas</h1>
         <p className="text-sm text-[var(--color-muted)]">
-          Vista temporal. Lista los workdays con <code>paidAt</code> o <code>payrollId</code> seteados para un ciclo,
-          y permite liberarlos (set a null). Útil cuando se borró una nómina manualmente y quedaron huérfanos.
+          Vista temporal. Lista las jornadas de un ciclo que tienen <code>paidAt</code> o <code>payrollId</code>,
+          y permite liberarlas (dejar esos campos en null). Útil cuando se borró una nómina a mano y quedaron huérfanas.
         </p>
       </div>
 
@@ -175,7 +170,7 @@ export default function CleanupPaidWorkdays() {
             onChange={(e) => setCycleId(e.target.value)}
             className="w-72 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs"
           >
-            <option value="">Elegí un ciclo…</option>
+            <option value="">Elige un ciclo…</option>
             {cycles.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.label || c.id} {c.status === "closed" ? "(cerrado)" : "(abierto)"}
@@ -244,7 +239,7 @@ export default function CleanupPaidWorkdays() {
           <div className="flex h-40 items-center justify-center text-[var(--color-muted)]">Cargando...</div>
         ) : filtered.length === 0 ? (
           <div className="flex h-40 items-center justify-center text-sm text-[var(--color-muted)]">
-            {rows.length === 0 ? "Sin workdays pagados en este ciclo." : "Sin coincidencias con el filtro."}
+            {rows.length === 0 ? "Sin jornadas pagadas en este ciclo." : "Sin coincidencias con el filtro."}
           </div>
         ) : (
           <table className="w-full min-w-[860px] text-sm">
@@ -282,7 +277,7 @@ export default function CleanupPaidWorkdays() {
                     </td>
                     <td className="px-2 py-1 font-mono text-xs">{r.date}</td>
                     <td className="px-2 py-1">{w?.name || "—"}</td>
-                    <td className="px-2 py-1 font-mono text-xs">{r.workerRut}</td>
+                    <td className="px-2 py-1 font-mono text-xs">{w?.rut || r.workerRut}</td>
                     <td className="px-2 py-1 text-xs">
                       {labor?.name || r.laborId}
                       {labor?.type && <span className="text-[var(--color-muted)]"> · {labor.type}</span>}
@@ -301,8 +296,8 @@ export default function CleanupPaidWorkdays() {
 
       <ConfirmDialog
         open={confirmRelease}
-        title="Liberar workdays"
-        message={`Liberar (poner payrollId/paidAt en null) ${selected.size} workday(s)? No se puede deshacer fácilmente.`}
+        title="Liberar jornadas"
+        message={`Liberar (poner payrollId/paidAt en null) ${selected.size} jornada(s)? No se puede deshacer fácilmente.`}
         confirmLabel="Liberar"
         danger
         onConfirm={doReleaseSelected}

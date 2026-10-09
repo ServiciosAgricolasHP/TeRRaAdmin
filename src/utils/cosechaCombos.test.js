@@ -19,10 +19,9 @@ import {
 } from "./cosechaCombos";
 
 describe("workdayDocId", () => {
-  // Esta es la clave de idempotencia de TODA escritura de producción, y además
-  // se parsea de vuelta en payrollsService para decidir qué workdays pertenecen
-  // a un ciclo que se está sacando de una nómina. Un cambio de formato rompe la
-  // edición de nóminas sin que nada avise.
+  // Es la clave de idempotencia de toda escritura de producción, y
+  // payrollsService la usa para saber qué workdays son de un ciclo que se saca
+  // de una nómina.
   it("omite el sufijo cuando el combo es el default", () => {
     expect(workdayDocId("c1", "l1", "12345678-5", "2026-03-04")).toBe(
       "c1__l1__12345678-5__2026-03-04",
@@ -42,8 +41,8 @@ describe("workdayDocId", () => {
   });
 
   it("deja el rut en la tercera posición al partir por __", () => {
-    // Varias pantallas dependen de esto: buildCycleRows lee parts[2] como
-    // tierKey en los ids de 5 segmentos.
+    // parts[2] del docId es el rut: lo lee la auditoría y lo reemplaza la
+    // asignación de RUT a un trabajador temporal.
     const id = workdayDocId("c1", "l1", "12345678-5", "2026-03-04", "1_2");
     expect(id.split("__")[2]).toBe("12345678-5");
     expect(id.split("__")).toHaveLength(5);
@@ -78,8 +77,8 @@ describe("comboKey / parseComboKey", () => {
 });
 
 describe("getTratoTierTotals", () => {
-  // Las tres ramas que documenta el header del archivo. El espejo `tiers` puede
-  // quedar desincronizado del top-level, y el top-level gana.
+  // Las tres ramas de getTratoTierTotals. El espejo `tiers` puede quedar
+  // desincronizado del primer nivel, y el primer nivel gana.
   it("prioriza el top-level sobre el espejo desincronizado", () => {
     const wd = { qty: 10, amount: 5000, tiers: { 0: { qty: 3, amount: 1500 } } };
     expect(getTratoTierTotals(wd)).toEqual({ qty: 10, amount: 5000 });
@@ -102,8 +101,7 @@ describe("getTratoTierTotals", () => {
   });
 
   it("trata el 0 explícito como dato, no como ausencia", () => {
-    // `qty: 0` es distinto de "no vino": si cayera al espejo, un día puesto en
-    // cero volvería a pagar el valor viejo.
+    // `qty: 0` es un dato, distinto de que el campo no venga: no cae al espejo.
     const wd = { qty: 0, amount: 0, tiers: { 0: { qty: 9, amount: 9000 } } };
     expect(getTratoTierTotals(wd)).toEqual({ qty: 0, amount: 0 });
   });
@@ -221,8 +219,6 @@ describe("mapHarvestCodes / invertHarvestCodes", () => {
   });
 
   it("hace el viaje de ida y vuelta", () => {
-    // El comentario de invertHarvestCodes pide que quien llama verifique el
-    // round-trip antes de guardar; acá queda fijado que se cumple.
     const prefijo = { qualityMap: { 1: 5, 2: 6 }, containerMap: { 3: 7 } };
     const crudo = invertHarvestCodes(prefijo, { x: 6, y: 7 });
     expect(crudo).toEqual({ weightProcess: 2, weightType: 3 });
@@ -280,17 +276,16 @@ describe("pisoTargets", () => {
   });
 
   it("no cruza de día", () => {
-    // El piso se asigna por día: la producción del martes no habilita el bono
-    // del miércoles, y un piso del martes no bloquea el del miércoles.
+    // El piso se asigna por día: la producción de un día no habilita el bono del
+    // siguiente, y un piso de un día no bloquea el del siguiente.
     const wds = mapa(prod("A", "2026-03-02"), prod("A", "2026-03-03"), piso("A", "2026-03-02"));
     expect(pisoTargets(wds, "2026-03-02")).toEqual([]);
     expect(pisoTargets(wds, "2026-03-03")).toEqual(["A"]);
   });
 
   it("un workday en cero también cuenta como producción", () => {
-    // Es el mismo criterio que habilita el toggle de la grilla, y es el caso
-    // que el piso existe para compensar. Si acá se filtrara por `amount > 0`,
-    // el botón haría algo distinto que apretar los toggles uno por uno.
+    // Mismo criterio que habilita el toggle de la grilla: alcanza con que exista
+    // el workday, sin mirar `qty` ni `amount`.
     const wds = mapa(prod("A", "2026-03-02", { qty: 0, amount: 0 }));
     expect(pisoTargets(wds, "2026-03-02")).toEqual(["A"]);
   });
@@ -304,8 +299,7 @@ describe("pisoTargets", () => {
   });
 
   it("un piso viejo sin `pisoOnly` igual bloquea, por la clave", () => {
-    // Los primeros pisos se escribieron antes del flag; sin esto el botón se
-    // los volvería a crear encima.
+    // Un piso se reconoce por la clave del mapa aunque no traiga `pisoOnly`.
     const wds = mapa(prod("A", "2026-03-02"), piso("A", "2026-03-02", { pisoOnly: undefined }));
     expect(pisoTargets(wds, "2026-03-02")).toEqual([]);
   });
@@ -341,8 +335,7 @@ describe("pisoAssigned", () => {
   });
 
   it("separa los que ya se llevó una nómina", () => {
-    // Borrar un workday que una nómina referencia le descuadra el total a algo
-    // que ya se pagó: por eso van aparte y no se tocan.
+    // Los pisos con `payrollId` van aparte, en `liquidados`.
     const wds = mapa(
       piso("A", "2026-03-02"),
       piso("B", "2026-03-02", { payrollId: "nom-1" }),

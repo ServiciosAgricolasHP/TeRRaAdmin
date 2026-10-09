@@ -22,9 +22,6 @@ describe("bankCodeFromCsv", () => {
     expect(bankCodeFromCsv("  BANCO DE CREDITO E INVERSIONES / TBANC  ")).toBe("016");
   });
 
-  // ⚠️ Vale la pena tenerlo fijado: un banco que el CSV escriba distinto se
-  // manda a Banco Estado sin que nada avise, y la transferencia rebota o —peor—
-  // le llega a otra persona con esa misma cuenta en otro banco.
   it("cae a Banco Estado en silencio con un nombre desconocido", () => {
     expect(bankCodeFromCsv("BANCO QUE NO EXISTE")).toBe("012");
     expect(bankCodeFromCsv("")).toBe("012");
@@ -61,19 +58,10 @@ describe("normalizeName", () => {
     expect(normalizeName("ana3", "soto-lopez")).toBe("Ana Soto Lopez");
   });
 
-  // ⚠️ COMPORTAMIENTO ACTUAL, PARECE UN BUG (importWorkers.js:50-51)
-  //
-  //   const noAccents = raw.normalize("NFD").replace(/[̀-ͯ]/g, "");
-  //   const cleaned = noAccents.replace(/[^A-Za-z\sñÑ]/g, " ")...
-  //
-  // La `ñÑ` de la clase de caracteres dice que la intención era conservarla,
-  // pero es código muerto: `normalize("NFD")` ya partió la ñ en "n" + tilde
-  // combinante, y el replace anterior se llevó la tilde. Cuando se evalúa la
-  // clase, no queda ninguna ñ que preservar.
-  //
-  // Consecuencia: un "Muñoz" importado por CSV queda guardado como "Munoz"
-  // para siempre, y ese `name` es el que se muestra en toda la app. Solo
-  // afecta al import de CSV: el alta normal usa `toProperName` de nameUtils.
+  // Fija lo actual: `normalize("NFD")` separa la ñ en "n" + tilde combinante y
+  // el replace de acentos se lleva la tilde, así que la `ñÑ` de la clase de
+  // caracteres no conserva nada y "Muñoz" queda "Munoz". Lo esperado sería
+  // conservar la ñ. Solo afecta al import por CSV.
   it("[bug conocido] la ñ se pierde, aunque la clase de caracteres la permita", () => {
     expect(normalizeName("ñuble")).toBe("Nuble");
     expect(normalizeName("muñoz")).toBe("Munoz");

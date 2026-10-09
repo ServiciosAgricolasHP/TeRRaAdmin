@@ -3,9 +3,7 @@ import { LABOR_TYPES, laborTypeLabel, laborDefaultName, initialLaborPlan } from 
 
 describe("LABOR_TYPES", () => {
   it("cubre los siete tipos que entiende la grilla del ciclo", () => {
-    // Si acá falta uno, el select de crear ciclo no lo ofrece y la labor hay
-    // que cambiarla a mano después. Si sobra uno, se puede crear un ciclo con
-    // un tipo que CycleDetail no sabe dibujar.
+    // Es la lista que ofrece el form de crear ciclo.
     expect(LABOR_TYPES.map((t) => t.value)).toEqual([
       "main",
       "supervision",
@@ -31,8 +29,7 @@ describe("laborTypeLabel", () => {
   });
 
   it("un tipo desconocido devuelve vacío, no `undefined`", () => {
-    // El valor sale de documentos de Firestore escritos por versiones viejas;
-    // un `undefined` acá termina impreso como "undefined" en la pantalla.
+    // El rótulo va directo a la pantalla, donde un `undefined` se vería como texto.
     expect(laborTypeLabel("inventado")).toBe("");
     expect(laborTypeLabel(undefined)).toBe("");
   });
@@ -40,8 +37,7 @@ describe("laborTypeLabel", () => {
 
 describe("laborDefaultName", () => {
   it("`main` se sigue llamando Principal", () => {
-    // Es como se llamaban todas antes de poder elegir el tipo; renombrarlas
-    // cambiaría el encabezado de ciclos que la gente ya conoce.
+    // La labor `main` se llama "Principal", no como su tipo ("Pago al día").
     expect(laborDefaultName("main")).toBe("Principal");
   });
 
@@ -74,7 +70,6 @@ describe("initialLaborPlan", () => {
   });
 
   it("no duplica supervisión si la labor elegida ya es de supervisión", () => {
-    // Si no, el ciclo nace con dos labores idénticas y hay que borrar una.
     const plan = initialLaborPlan({ type: "supervision", withSupervision: true });
     expect(plan).toEqual([{ name: "Supervisión", type: "supervision" }]);
   });

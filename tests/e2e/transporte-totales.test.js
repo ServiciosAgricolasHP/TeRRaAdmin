@@ -56,8 +56,7 @@ describe("propagación de totales de transporte", () => {
   });
 
   it("editar una vuelta refresca el total del resumen solo", async () => {
-    // Esta cadena vive en el servicio justamente porque las pantallas se
-    // olvidaban de llamarla y el balance quedaba descuadrado en silencio.
+    // La propagación vive en el servicio: las pantallas no recalculan totales.
     await seedCarrier();
     const a = await nuevaVuelta({ qty: 2, rate: 50000 });
     const resumen = await paymentsService.createSummary({
@@ -97,7 +96,7 @@ describe("propagación de totales de transporte", () => {
   });
 
   it("borrar una vuelta la saca del total y del array de ids", async () => {
-    // Si el id queda colgado, el conteo de vueltas del resumen miente.
+    // El conteo de vueltas del resumen sale de `tripIds`.
     await seedCarrier();
     const a = await nuevaVuelta({ qty: 2, rate: 50000 });
     const b = await nuevaVuelta({ qty: 1, rate: 30000 });
@@ -146,7 +145,6 @@ describe("congelado al pagar", () => {
   });
 
   it("un resumen pagado ya no recalcula su total", async () => {
-    // El early-return por status paid es lo que congela el documento.
     await seedCarrier();
     const a = await nuevaVuelta({ qty: 2, rate: 50000 });
     const resumen = await paymentsService.createSummary({

@@ -1,7 +1,7 @@
-// Parse a cell input. Accepts:
-//   - Numbers ("1500", "1.500", "1,5")
-//   - Formulas starting with "=" using only digits and + - * / ( ) .
-// Returns a finite number or 0 on error.
+// Interpreta lo que se escribe en una celda. Acepta:
+//   - Números ("1500", "1.500", "1,5")
+//   - Fórmulas que empiezan con "=" y usan solo dígitos y + - * / ( ) .
+// Devuelve un número finito, o 0 si no se puede interpretar.
 export function parseAmount(input) {
   if (input == null) return 0;
   if (typeof input === "number") return Number.isFinite(input) ? input : 0;
@@ -20,7 +20,7 @@ export function parseAmount(input) {
     }
   }
 
-  // Allow Chilean-style "1.500,25" or plain "1500.25"
+  // Formato chileno "1.500,25" o plano "1500.25".
   const cleaned = s.replace(/\s/g, "");
   if (/^-?\d{1,3}(\.\d{3})+(,\d+)?$/.test(cleaned)) {
     return Number(cleaned.replace(/\./g, "").replace(",", ".")) || 0;

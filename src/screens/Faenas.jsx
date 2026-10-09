@@ -24,21 +24,19 @@ import { useIsMobile } from "../hooks/useIsMobile";
 import { workdayDocId } from "../utils/cosechaCombos";
 import { LABOR_TYPES, initialLaborPlan } from "../utils/laborTypes";
 import ProductionSummaryModal from "../components/ProductionSummaryModal";
+import { localIsoDate } from "../utils/dates";
 
 const emptyFaena = { name: "", location: "", notes: "" };
 const emptySub = { name: "", notes: "" };
 
 const orderKey = (uid) => `af.faenaOrder.${uid || "anon"}`;
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr = () => localIsoDate();
 const newId = () => (crypto?.randomUUID?.() || `id_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`);
 
-// Primer/último día real con producción cargada en el ciclo (cycle.days).
-// Se usan al cerrar el ciclo para recalcular startDate/endDate en base a lo
-// que efectivamente se trabajó, no en base a lo que alguien tipeó al crear
-// el ciclo (startDate) o a la fecha en que apretó "Cerrar ciclo" (endDate) —
-// ambas pueden estar mal si el ciclo se creó antes de empezar a trabajar, o
-// si se cierran varios ciclos atrasados de una sola vez. Si el ciclo nunca
-// tuvo días cargados, no hay nada que recalcular: se deja lo que ya había.
+// Primer y último día de la grilla del ciclo (`cycle.days`). Al cerrar el
+// ciclo, startDate/endDate se recalculan con lo que efectivamente se trabajó,
+// no con lo que se tipeó al crearlo ni con la fecha del cierre. Sin días,
+// quedan las fechas que ya tenía (u hoy, si faltan).
 const firstWorkedDay = (cycle) => {
   const days = cycle?.days;
   if (Array.isArray(days) && days.length > 0) {
@@ -65,8 +63,8 @@ function applyOrder(items, order) {
   });
 }
 
-// Los workers van solo en la primera labor: la de supervisión arranca vacía
-// (la supervisa otra gente, no la misma cuadrilla).
+// Los trabajadores van solo en la primera labor: la de supervisión arranca
+// vacía (la supervisa otra gente, no la misma cuadrilla).
 function defaultLabors(workers = [], opts = {}) {
   return initialLaborPlan(opts).map((l, i) => ({
     ...l,
@@ -91,7 +89,7 @@ export default function Faenas() {
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(() => searchParams.get("selected"));
 
-  // Sync selectedId with URL param (for breadcrumb deep-links from CycleDetail)
+  // Sincroniza selectedId con el parámetro `selected` de la URL (enlaces del breadcrumb de CycleDetail).
   useEffect(() => {
     const fromUrl = searchParams.get("selected");
     if (fromUrl && fromUrl !== selectedId) setSelectedId(fromUrl);
@@ -116,8 +114,8 @@ export default function Faenas() {
   const [cycleForm, setCycleForm] = useState(null);
   const [closeFlow, setCloseFlow] = useState(null);
   const [confirm, setConfirm] = useState(null);
-  // Segunda confirmación (cascada) dentro de doDelete — reemplaza los
-  // window.confirm nativos bloqueantes por un dialog async esperable.
+  // Segunda confirmación (cascada) dentro de doDelete: un diálogo que se
+  // puede esperar con await.
   const [cascadeConfirm, setCascadeConfirm] = useState(null);
   const askCascadeConfirm = (message) =>
     new Promise((resolve) => setCascadeConfirm({ message, resolve }));
@@ -127,11 +125,10 @@ export default function Faenas() {
   const [dropOverId, setDropOverId] = useState(null);
   const [dropOverGroupId, setDropOverGroupId] = useState(null);
 
-  // ---------------- Collapse de subfaenas / ciclos cerrados ----------------
-  // Persistido por usuario. Por defecto las subfaenas arrancan expandidas;
-  // los ciclos cerrados arrancan ocultos cuando hay abiertos al lado (el
-  // usuario lo abre con un toggle "Ver N cerrados"). El objetivo es que
-  // faenas con muchos ciclos históricos no inunden la vista operativa.
+  // ---------------- Subfaenas plegadas / ciclos cerrados ----------------
+  // Guardado por usuario en localStorage. Las subfaenas arrancan expandidas;
+  // los ciclos cerrados, ocultos cuando hay abiertos al lado (se muestran
+  // con "Ver N cerrados").
   const collapsedSubsKey = `af.collapsedSubs.${user?.uid || "anon"}`;
   const [collapsedSubs, setCollapsedSubs] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem(collapsedSubsKey) || "[]")); } catch { return new Set(); }
@@ -156,10 +153,9 @@ export default function Faenas() {
     });
   };
 
-  // Set de subfaenas hidden ya auto-colapsadas en esta sesión. Sirve para
-  // que solo se "force" el colapso una vez por sub — si el usuario expande
-  // manualmente una sub oculta, queda expandida hasta refrescar la pestaña.
-  // Próximo reload vuelven a estado colapsado.
+  // Subfaenas ocultas (`hidden`) que ya se plegaron solas en esta sesión. Se
+  // pliegan una vez por sesión: si el usuario expande una, queda expandida
+  // hasta recargar la página.
   const processedHiddenRef = useRef(new Set());
   const toggleShowClosed = (subId) => {
     setShowClosedInSub((prev) => {
@@ -169,12 +165,12 @@ export default function Faenas() {
     });
   };
 
-  // ---------------- Layout (groups + colors per user) ----------------
+  // ---------------- Distribución (grupos y colores por usuario) ----------------
   const [layout, setLayout] = useState(defaultLayout);
   const [editLayout, setEditLayout] = useState(false);
   const layoutSaveTimer = useRef(null);
-  // Set de groupIds colapsados. Local al dispositivo (localStorage) — el
-  // layout viaja con el usuario, pero plegar/desplegar es preferencia visual
+  // Grupos plegados, guardados en el dispositivo (localStorage): la
+  // distribución viaja con el usuario, pero plegar es una preferencia visual
   // del momento.
   const [collapsedGroups, setCollapsedGroups] = useState(() => {
     try {
@@ -202,7 +198,7 @@ export default function Faenas() {
     })();
   }, [user?.uid]);
 
-  // Debounced persist
+  // Actualiza el estado y guarda en las preferencias del usuario tras 400 ms sin cambios.
   const persistLayout = (next) => {
     setLayout(next);
     if (!user?.uid) return;
@@ -217,7 +213,7 @@ export default function Faenas() {
 
   const faenas = useMemo(() => applyOrder(rawFaenas, order), [rawFaenas, order]);
 
-  // Faenas indexed by group
+  // Faenas por grupo
   const faenasByGroup = useMemo(() => {
     const out = {};
     for (const g of layout.groups) out[g.id] = [];
@@ -286,9 +282,8 @@ export default function Faenas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
-  // Auto-colapsa subfaenas marcadas como hidden cuando se cargan. Solo se
-  // procesa una vez por sub-id por sesión (ver processedHiddenRef) para no
-  // pisar al usuario si decide expandir una sub oculta.
+  // Pliega las subfaenas ocultas al cargarlas, una vez por subfaena y por
+  // sesión (ver processedHiddenRef), para respetar las que el usuario expanda.
   useEffect(() => {
     if (!selectedId) return;
     const subs = subsByFaena[selectedId];
@@ -309,16 +304,13 @@ export default function Faenas() {
     }
   }, [selectedId, subsByFaena]);
 
-  // Marca/desmarca una subfaena como oculta. Persistido en Firestore para
-  // que la marca viaje con la cuenta (sino el dato sería poco útil — cada
-  // usuario tendría que ocultar de nuevo en su dispositivo).
+  // Marca o desmarca una subfaena como oculta. Se guarda en el doc de la
+  // subfaena, así que vale para todos los usuarios y dispositivos.
   const toggleHideSub = async (sub) => {
     try {
       await subfaenasService.update(sub.id, { hidden: !sub.hidden });
       subfaenasService.invalidate();
-      // Si la marcamos oculta y no estaba en collapsedSubs, agregarla. Si
-      // la des-ocultamos, NO sacarla automáticamente (el usuario puede
-      // querer dejarla colapsada igual).
+      // Al ocultarla se pliega. Al mostrarla queda como esté, plegada o no.
       if (!sub.hidden) {
         setCollapsedSubs((prev) => new Set(prev).add(sub.id));
         processedHiddenRef.current.add(sub.id);
@@ -329,10 +321,8 @@ export default function Faenas() {
     }
   };
 
-  // Cuando se abre el detalle de una faena, scrolleamos para que el panel
-  // entre en viewport — si la tarjeta clickeada estaba en la última fila el
-  // panel salía abajo del fold y daba la impresión que no había pasado nada.
-  // Esperamos un tick para que React renderice antes de medir.
+  // Al abrir el detalle de una faena, desplaza la vista hasta el panel. Espera
+  // un frame para que React lo dibuje antes de medir.
   const selectedDetailRef = useRef(null);
   useEffect(() => {
     if (!selectedId) return;
@@ -357,7 +347,7 @@ export default function Faenas() {
       setDropOverId(null);
       return;
     }
-    // Move drag's group to target's group if different
+    // Si cambia de grupo, la faena arrastrada pasa al grupo del destino.
     const targetGroup = layout.faenaGroup[targetId] || UNGROUPED_ID;
     const dragGroup = layout.faenaGroup[dragId] || UNGROUPED_ID;
     if (targetGroup !== dragGroup) {
@@ -383,7 +373,7 @@ export default function Faenas() {
     setDropOverGroupId(null);
   };
 
-  // Drop on group section (empty area or header) → assign drag's faena to that group
+  // Soltar sobre la sección de un grupo (zona vacía o encabezado) asigna la faena a ese grupo.
   const onGroupDragOver = (gid) => (e) => {
     if (!dragId) return;
     e.preventDefault();
@@ -404,13 +394,13 @@ export default function Faenas() {
     setDropOverGroupId(null);
   };
 
-  // ---------------- Group management ----------------
+  // ---------------- Grupos ----------------
   const newGroupId = () => `g_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 
   const addGroup = () => {
     const id = newGroupId();
     const newGroup = { id, name: "Nuevo grupo", color: null };
-    // Insert before ungrouped (which is always last)
+    // Se inserta antes de "sin grupo", que siempre va al final.
     const groups = [...layout.groups];
     const ungroupedIdx = groups.findIndex((g) => g.id === UNGROUPED_ID);
     groups.splice(ungroupedIdx, 0, newGroup);
@@ -426,7 +416,7 @@ export default function Faenas() {
 
   const removeGroup = (gid) => {
     if (gid === UNGROUPED_ID) return;
-    // Move its faenas back to "ungrouped"
+    // Sus faenas vuelven a "sin grupo".
     const nextFaenaGroup = { ...layout.faenaGroup };
     for (const fid in nextFaenaGroup) {
       if (nextFaenaGroup[fid] === gid) delete nextFaenaGroup[fid];
@@ -488,9 +478,8 @@ export default function Faenas() {
       setSubForm(null);
       await loadSubs(faenaId);
       toast.success(mode === "create" ? "Subfaena creada" : "Subfaena actualizada");
-      // Una subfaena sin ciclos no sirve para nada: lo primero que se hace
-      // después de crearla es abrirle el primer ciclo. Se encadena el form en
-      // vez de dejar al usuario buscando el botón, y es cancelable.
+      // Al crear una subfaena se ofrece abrir su primer ciclo (cancelable): sin
+      // ciclos no hay dónde anotar jornadas.
       if (creada?.id) setSubOfferCycle({ faenaId, subfaenaId: creada.id, name: data.name });
     } catch (err) {
       toast.error("Error al guardar la subfaena: " + (err.message || err));
@@ -516,20 +505,20 @@ export default function Faenas() {
       const existing = cyclesByFaena[faenaId] || [];
       const subs = subsByFaena[faenaId] || [];
       if (!data.subfaenaId && subs.length > 0) {
-        toast.warning("La faena tiene subfaenas. Seleccioná una subfaena para el ciclo.");
+        toast.warning("La faena tiene subfaenas. Selecciona una subfaena para el ciclo.");
         return;
       }
     }
     setBusy(true);
     try {
-      // Determinar labores y datos a importar desde el ciclo origen (si aplica).
+      // Labores y datos a importar desde el ciclo origen, si se pidió.
       let labors;
-      let importPlan = null; // { source, labors, sourceLaborById, oldToNewLaborId }
+      let importPlan = null; // { source, picked, oldToNewLaborId }
       if (mode === "create" && data.importEnabled && data.importSourceId) {
         const source = (data.importCandidates || []).find((c) => c.id === data.importSourceId);
         const picked = (source?.labors || []).filter((l) => (data.importLaborIds || new Set()).has(l.id));
         if (picked.length === 0) {
-          toast.warning("Marcá al menos una labor a clonar (o desactivá la importación).");
+          toast.warning("Marca al menos una labor a clonar (o desactiva la importación).");
           setBusy(false);
           return;
         }
@@ -537,8 +526,8 @@ export default function Faenas() {
         labors = picked.map((l) => {
           const id = newId();
           oldToNewLaborId.set(l.id, id);
-          // Copiamos la config completa (todo lo que no sea id) — el form
-          // de la labor en CycleDetail solo lee campos conocidos.
+          // Copia la configuración completa salvo el id; el form de la labor
+          // en CycleDetail solo lee los campos que conoce.
           const { id: _drop, ...rest } = l;
           return { ...rest, id };
         });
@@ -555,22 +544,20 @@ export default function Faenas() {
       const prefix = cyclePrefix(faenaId, data.subfaenaId);
       const suffix = (data.labelSuffix ?? data.label ?? "").trim();
 
-      // Días: los días marcados en `importDays` definen la lista del nuevo
-      // ciclo (y también restringen qué workdays/precios se importan).
+      // Días: los marcados en `importDays` definen la lista del nuevo ciclo y
+      // restringen qué jornadas y precios se importan.
       const importDaysSet = data.importDays || new Set();
       let nextDays = data.days || [];
       if (mode === "create" && importPlan) {
         nextDays = (importPlan.source.days || []).filter((d) => importDaysSet.has(d));
       } else if (mode === "create") {
-        // El form pide "Fecha inicio" y hasta acá se guardaba solo en
-        // `startDate`: el ciclo nacía con `days: []`, o sea sin ninguna columna
-        // en la grilla, y había que agregar a mano el primer día repitiendo la
-        // fecha que se acababa de escribir.
+        // El ciclo nace con la fecha de inicio como primer día, así la grilla
+        // abre con una columna.
         nextDays = [data.startDate || todayStr()];
       }
 
-      // dayPrices: si pidieron copiarlos, re-mapeamos las claves de laborId
-      // de las labores seleccionadas y filtramos por días seleccionados.
+      // dayPrices: si se pidió copiarlos, se re-mapean al laborId nuevo de cada
+      // labor seleccionada y se filtran por los días seleccionados.
       let nextDayPrices = undefined;
       if (mode === "create" && importPlan && data.importCopyDayPrices) {
         const src = importPlan.source.dayPrices || {};
@@ -607,10 +594,10 @@ export default function Faenas() {
         await cyclesService.update(data.id, payload);
       }
 
-      // Mover workdays: para cada labor importada, leemos sus workdays del
-      // origen y los re-creamos en el nuevo ciclo (nuevo cycleId/laborId).
-      // El docId encodea cycleId+laborId, así que es delete + create.
-      // Saltamos workdays con payrollId para no romper snapshots de nómina.
+      // Mover jornadas: por cada labor importada, se leen sus jornadas en el
+      // origen y se recrean en el ciclo nuevo. El docId codifica
+      // cycleId+laborId, así que es crear + borrar. Las jornadas con
+      // payrollId se saltan para no romper nóminas ya generadas.
       if (mode === "create" && importPlan && data.importMoveWorkdays && createdCycleId) {
         const oldCycleId = importPlan.source.id;
         let skippedPaid = 0;
@@ -622,10 +609,9 @@ export default function Faenas() {
           });
           for (const w of wds) {
             if (w.payrollId) { skippedPaid += 1; continue; }
-            // Solo movemos los workdays cuyo `date` está en la selección.
             if (!importDaysSet.has(w.date)) continue;
-            // Derivar comboKey del docId (5to segmento). Si solo hay 4,
-            // es "0_0" implícito (workday simple).
+            // El comboKey sale del docId, desde el 5.º segmento; con 4
+            // segmentos es "0_0" implícito (jornada simple).
             const parts = String(w.id || "").split("__");
             const ck = parts.length >= 5 ? parts.slice(4).join("__") : "0_0";
             const newDocId = workdayDocId(createdCycleId, newLaborId, w.workerRut, w.date, ck);
@@ -659,15 +645,14 @@ export default function Faenas() {
 
   const openCreateCycle = (faenaId, subfaenaId) => {
     if (!subfaenaId) {
-      toast.warning("Los ciclos se crean dentro de una subfaena. Creá primero una subfaena.");
+      toast.warning("Los ciclos se crean dentro de una subfaena. Crea primero una subfaena.");
       return;
     }
     const existing = cyclesByFaena[faenaId] || [];
     const scope = existing.filter((c) => c.subfaenaId === subfaenaId);
 
-    // Lista de ciclos abiertos (no cerrados) del mismo ámbito que sirven como
-    // posible fuente de import. Los presentamos ordenados por fecha más
-    // reciente primero.
+    // Ciclos abiertos de la misma subfaena que pueden servir de origen para
+    // importar, del más reciente al más antiguo.
     const sortKey = (c) => c.endDate || c.startDate || c.createdAt?.toDate?.()?.toISOString?.() || "";
     const openCandidates = scope
       .filter((c) => c.status !== "closed")
@@ -681,13 +666,12 @@ export default function Faenas() {
         subfaenaId,
         startDate: todayStr(),
         notes: "",
-        // Las labores se arman al guardar desde estas dos opciones, no acá:
-        // el tipo se elige en el form.
+        // Las labores se arman al guardar a partir de estas dos opciones; el
+        // tipo se elige en el form.
         laborType: "main",
         withSupervision: false,
-        // Import desde otro ciclo abierto. Opt-in: arranca apagado para no
-        // ensuciar la creación rápida. Al activarlo seleccionamos por defecto
-        // el más reciente con todas sus labores y todos sus días.
+        // Importar desde otro ciclo abierto: arranca apagado. Al activarlo
+        // queda elegido el más reciente, con todas sus labores y días.
         importCandidates: openCandidates,
         importEnabled: false,
         importSourceId: openCandidates[0]?.id || null,
@@ -764,8 +748,8 @@ export default function Faenas() {
         startDate: todayStr(),
         notes: "",
         status: "open",
-        // Mismo criterio que al crear desde el form: un ciclo sin días nace sin
-        // grilla y obliga a agregar el primero a mano.
+        // Como al crear desde el form, el ciclo nace con un primer día para
+        // que la grilla tenga una columna.
         days: [todayStr()],
         labors: newLabors,
       });
@@ -782,7 +766,7 @@ export default function Faenas() {
     try {
       try {
       if (confirm.kind === "faena") {
-        // Bypass cache for diagnostics
+        // Sin caché: los bloqueos y el log de diagnóstico salen de datos frescos.
         cyclesService.invalidate();
         subfaenasService.invalidate();
         const subs = await subfaenasService.list({ wheres: [["faenaId", "==", confirm.item.id]] });
@@ -801,9 +785,9 @@ export default function Faenas() {
             setConfirm(null);
             return;
           }
-          // Bloqueamos el cascade si algún workday del scope ya forma parte
-          // de una nómina — borrarlo dejaría la nómina huérfana. Mensaje
-          // explícito al admin para que elimine primero esas nóminas.
+          // La cascada se bloquea si alguna jornada ya forma parte de una
+          // nómina: borrarla dejaría la nómina huérfana. Primero hay que
+          // eliminar esas nóminas.
           const allCycleWds = [];
           for (const c of cyc) {
             const wds = await workdaysService.list({ wheres: [["cycleId", "==", c.id]] });
@@ -822,7 +806,7 @@ export default function Faenas() {
             toast.error(
               `${taggedCount} workday(s) ya forman parte de ${taggedPayrollIds.length} nómina(s):\n` +
                 `${names || "(nómina sin nombre)"}\n\n` +
-                `Eliminá primero esas nóminas y volvé a intentar.`,
+                `Elimina primero esas nóminas y vuelve a intentar.`,
               { title: "No se puede eliminar en cascada" },
             );
             setConfirm(null);
@@ -834,7 +818,7 @@ export default function Faenas() {
           );
           if (!ok) { setConfirm(null); return; }
 
-          // Reusamos los wds ya cargados arriba para no duplicar reads.
+          // Reusa las jornadas ya leídas arriba para no volver a leerlas.
           const wdsByCycle = new Map();
           for (const w of allCycleWds) {
             if (!wdsByCycle.has(w.cycleId)) wdsByCycle.set(w.cycleId, []);
@@ -866,12 +850,10 @@ export default function Faenas() {
             wheres: [["cycleId", "==", confirm.item.id]],
           });
           if (wds.length) {
-            // ANTES de proponer el cascade, bloqueamos si algún workday está
-            // taggeado con `payrollId`. Borrar el ciclo dejaría la nómina
-            // huérfana (los `workdayIds` apuntarían a docs inexistentes), lo
-            // que rompe los flujos de borrar/revertir/marcar pagada esa
-            // nómina. El admin tiene que eliminar primero esas nóminas y
-            // después puede borrar el ciclo.
+            // Antes de proponer la cascada, bloquea si alguna jornada tiene
+            // `payrollId`: borrar el ciclo dejaría los `workdayIds` de la
+            // nómina apuntando a docs inexistentes, y borrarla, revertirla o
+            // marcarla pagada fallaría. Primero hay que eliminar esas nóminas.
             const taggedPayrollIds = [...new Set(wds.map((w) => w.payrollId).filter(Boolean))];
             if (taggedPayrollIds.length > 0) {
               const payrolls = await Promise.all(
@@ -885,7 +867,7 @@ export default function Faenas() {
               toast.error(
                 `${taggedCount} workday(s) ya forman parte de ${taggedPayrollIds.length} nómina(s):\n` +
                   `${names || "(nómina sin nombre)"}\n\n` +
-                  `Eliminá primero esas nóminas y volvé a intentar.`,
+                  `Elimina primero esas nóminas y vuelve a intentar.`,
                 { title: `No se puede eliminar el ciclo "${confirm.item.label}"` },
               );
               setConfirm(null);
@@ -922,7 +904,7 @@ export default function Faenas() {
       setConfirm(null);
       } catch (err) {
         console.error("Error en eliminación:", err);
-        toast.error(`${err?.message || err}\nRevisá la consola para detalles.`, { title: "Error al eliminar" });
+        toast.error(`${err?.message || err}\nRevisa la consola para ver el detalle.`, { title: "Error al eliminar" });
         setConfirm(null);
       }
     } finally {
@@ -1022,7 +1004,7 @@ export default function Faenas() {
         <div className="space-y-6">
           {layout.groups.map((g) => {
             const groupFaenas = faenasByGroup[g.id] || [];
-            // Hide empty ungrouped section unless editing
+            // La sección "sin grupo" vacía solo se muestra al organizar.
             if (g.id === UNGROUPED_ID && groupFaenas.length === 0 && !editLayout) return null;
             const isDropTarget = dropOverGroupId === g.id;
             return (
@@ -1161,7 +1143,7 @@ export default function Faenas() {
         </div>
       )}
 
-      {/* Faena modal */}
+      {/* Modal de faena */}
       <Modal
         open={!!faenaForm}
         onClose={() => !busy && setFaenaForm(null)}
@@ -1207,7 +1189,7 @@ export default function Faenas() {
         )}
       </Modal>
 
-      {/* Subfaena modal */}
+      {/* Modal de subfaena */}
       <Modal
         open={!!subForm}
         onClose={() => !busy && setSubForm(null)}
@@ -1248,7 +1230,7 @@ export default function Faenas() {
         )}
       </Modal>
 
-      {/* Cycle modal */}
+      {/* Modal de ciclo */}
       <Modal
         open={!!cycleForm}
         onClose={() => !busy && setCycleForm(null)}
@@ -1333,7 +1315,7 @@ export default function Faenas() {
             )}
             <p className="text-xs text-[var(--color-muted)]">
               {cycleForm.mode === "create" && cycleForm.data.importEnabled
-                ? "Se clonarán las labores marcadas. Si activaste 'Mover workdays', se transferirán al nuevo ciclo y desaparecerán del origen."
+                ? "Se clonarán las labores marcadas. Si activaste 'Mover jornadas', se transferirán al nuevo ciclo y desaparecerán del origen."
                 : cycleForm.mode === "create"
                   ? `El ciclo arranca con la fecha de inicio como primer día y ${
                       cycleForm.data.withSupervision && cycleForm.data.laborType !== "supervision" ? "dos labores" : "una labor"
@@ -1393,7 +1375,7 @@ export default function Faenas() {
         </p>
       </Modal>
 
-      {/* Close cycle flow */}
+      {/* Cierre de ciclo */}
       <Modal
         open={!!closeFlow}
         onClose={() => !busy && setCloseFlow(null)}
@@ -1485,9 +1467,9 @@ export default function Faenas() {
 // ---------------------------------------------------------------------------
 
 // Sección del modal de creación de ciclo que ofrece importar desde otro
-// ciclo abierto del mismo ámbito. Se renderiza solo si hay al menos un
-// candidato. Permite elegir cuáles labores clonar y si copiar días/precios o
-// mover los workdays existentes al nuevo ciclo.
+// ciclo abierto de la misma subfaena. Se muestra solo si hay al menos un
+// candidato. Permite elegir qué labores clonar y si copiar días y precios o
+// mover las jornadas existentes al nuevo ciclo.
 function ImportSection({ data, onChange }) {
   const candidates = data.importCandidates || [];
   const source = candidates.find((c) => c.id === data.importSourceId) || null;
@@ -1623,7 +1605,7 @@ function ImportSection({ data, onChange }) {
               </div>
               <p className="mt-1 text-[10px] text-[var(--color-muted)]">
                 La lista de días del nuevo ciclo será solo las fechas marcadas.
-                Mover/copiar workdays y precios queda restringido a estas fechas.
+                Mover jornadas y copiar precios queda restringido a estas fechas.
               </p>
             </div>
           )}
@@ -1634,7 +1616,7 @@ function ImportSection({ data, onChange }) {
               onChange={(e) => onChange({ importCopyDayPrices: e.target.checked })}
               className="mt-0.5"
             />
-            <span>Copiar precios por día (combos/tiers/piso) de las labores y días marcados</span>
+            <span>Copiar precios por día (combos, precios múltiples y piso) de las labores y días marcados</span>
           </label>
           <label className="flex items-start gap-2 text-xs">
             <input
@@ -1644,7 +1626,7 @@ function ImportSection({ data, onChange }) {
               className="mt-0.5"
             />
             <span>
-              <b>Mover</b> los workdays de las labores seleccionadas al nuevo ciclo.{" "}
+              <b>Mover</b> las jornadas de las labores seleccionadas al nuevo ciclo.{" "}
               <span className="text-[var(--color-danger)]">
                 ⚠ Desaparecen del ciclo origen.
               </span>
@@ -1657,14 +1639,12 @@ function ImportSection({ data, onChange }) {
 }
 
 function CycleRow({ cycle, subName, onEdit, onOpenCloseFlow, onReopen, onDelete }) {
-  // Estado local del modal de resumen — cada CycleRow gestiona su propio
-  // modal porque no hay nada que compartir con el padre. Para el resumen
-  // a nivel faena (todos los ciclos) hay un modal aparte en SelectedDetail.
+  // Cada CycleRow maneja su propio modal de resumen; el resumen de la faena
+  // entera vive en SelectedDetail.
   const [resumenOpen, setResumenOpen] = useState(false);
-  // Solo tiene sentido mostrar el botón si el ciclo tiene al menos una labor
-  // de trato, cosecha, trato por etapas o pago al día (sino el modal saldría
-  // vacío). "main" es el tipo interno de las labores "Pago al día" — el
-  // label visible (ej. "Principal") es solo el nombre, no cambia el type.
+  // El botón aparece si el ciclo tiene al menos una labor de cosecha, trato,
+  // trato por etapas o pago al día (`main`); si no, el modal saldría vacío.
+  // "Principal" es solo el nombre de la labor `main`, no otro tipo.
   const hasProdLabor = (cycle.labors || []).some(
     (l) => l.type === "cosecha" || l.type === "trato" || l.type === "tratoEtapas" || l.type === "main",
   );
@@ -1783,22 +1763,19 @@ function SelectedDetail({
   const hasSubs = (subs || []).length > 0;
   const allCollapsed = hasSubs && (subs || []).every((s) => collapsedSubs?.has(s.id));
 
-  // Resumen de producción a nivel faena: arranca cerrado y el usuario lo
-  // abre con el botón. Cuando se abre, le pasamos TODOS los ciclos con
-  // labores de trato/cosecha/trato por etapas/pago al día (abiertos y
-  // cerrados). El modal por dentro tiene chips para togglear cuáles incluir
-  // — default arranca con los abiertos seleccionados, los cerrados quedan
-  // apagados.
+  // Resumen de producción de la faena: recibe todos los ciclos con labores
+  // de cosecha, trato, trato por etapas o pago al día, abiertos y cerrados.
+  // Adentro, unos chips eligen cuáles incluir; arrancan prendidos solo los
+  // abiertos.
   const [resumenOpen, setResumenOpen] = useState(false);
   const cyclesWithProd = (cycles || []).filter((c) =>
     (c.labors || []).some((l) => l.type === "cosecha" || l.type === "trato" || l.type === "tratoEtapas" || l.type === "main"),
   );
-  // Ordenamos: abiertos primero, después cerrados (más reciente primero).
+  // Abiertos primero, después cerrados; dentro de cada grupo, el más reciente primero.
   const cyclesForResumen = [...cyclesWithProd].sort((a, b) => {
     if (a.status !== b.status) return a.status === "closed" ? 1 : -1;
     return (b.startDate || "").localeCompare(a.startDate || "");
   });
-  // Defaults para el modal: solo los abiertos prendidos.
   const defaultEnabledIds = cyclesForResumen
     .filter((c) => c.status !== "closed")
     .map((c) => c.id);
@@ -1886,8 +1863,8 @@ function SelectedDetail({
           </button>
           {orphanCycles.length > 0 && (
             <div className="mt-4 rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-soft)] p-3 text-left text-xs text-[var(--color-warning)]">
-              <b>Atención:</b> esta faena tiene {orphanCycles.length} ciclo(s) legacy sin subfaena.
-              Bórralos desde la consola Firebase o usa el cascada admin al eliminar la faena.
+              <b>Atención:</b> esta faena tiene {orphanCycles.length} ciclo(s) antiguos sin subfaena.
+              Bórralos desde la consola de Firebase o con el borrado en cascada al eliminar la faena.
             </div>
           )}
         </div>
@@ -1916,9 +1893,8 @@ function SelectedDetail({
   );
 }
 
-// Renderiza la lista de subfaenas. Separa visibles (no hidden) y ocultas
-// (hidden), las ocultas van en un grupo colapsable al final para que no
-// ocupen espacio salvo que el usuario las pida ver.
+// Lista de subfaenas: las visibles primero y las ocultas (`hidden`) en un
+// grupo plegable al final.
 function SubfaenaListBody({
   subs,
   cyclesBySub,
@@ -1940,7 +1916,7 @@ function SubfaenaListBody({
 }) {
   const visibleSubs = subs.filter((s) => !s.hidden);
   const hiddenSubs = subs.filter((s) => s.hidden);
-  // Por sesión: el wrapper de ocultas arranca cerrado.
+  // El grupo de ocultas arranca plegado cada vez que se monta.
   const [hiddenGroupOpen, setHiddenGroupOpen] = useState(false);
 
   const renderSubCard = (s) => {
@@ -1988,10 +1964,8 @@ function SubfaenaListBody({
             )}
           </div>
           <div className="flex w-full shrink-0 flex-wrap gap-1.5 md:w-auto md:ml-auto">
-            {/* Botón Ocultar / Mostrar: aparece sólo cuando todos los
-                ciclos están cerrados (para marcar oculta) o cuando la
-                sub ya está oculta (para des-ocultar) — sino marcar
-                oculta una sub con producción activa sería confuso. */}
+            {/* Ocultar aparece solo si la subfaena tiene ciclos y están todos
+                cerrados; Mostrar, si ya está oculta. */}
             {onToggleHideSub && (s.hidden || (openCycles.length === 0 && subCycles.length > 0)) && (
               <button
                 onClick={() => onToggleHideSub(s)}
@@ -2092,10 +2066,9 @@ function SubfaenaListBody({
 
       {visibleSubs.map(renderSubCard)}
 
-      {/* Grupo colapsable de subfaenas ocultas. Por defecto cerrado para que
-          no ocupen espacio. Al expandir, cada sub adentro mantiene su propio
-          toggle de colapsar — pero entra al DOM ya colapsada igual (la lógica
-          de auto-colapso de hidden en processedHiddenRef sigue funcionando). */}
+      {/* Grupo plegable de subfaenas ocultas, plegado por defecto. Adentro,
+          cada subfaena conserva su propio plegado y llega plegada por el
+          plegado automático de processedHiddenRef. */}
       {hiddenSubs.length > 0 && (
         <div className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)]/30">
           <button
@@ -2123,7 +2096,7 @@ function SubfaenaListBody({
 }
 
 // ============================================================
-// Group sub-components
+// Componentes de grupos
 // ============================================================
 
 function GroupHeader({ group, count, editable, isUngrouped, collapsed, onToggleCollapsed, onUpdate, onRemove }) {
@@ -2326,13 +2299,13 @@ function ColorPalette({ onPick, onClose, selected }) {
         })}
       </div>
       <div className="mt-3 flex items-center gap-2 border-t border-[var(--color-border)] pt-3">
-        <label className="text-[11px] text-[var(--color-muted)]">Custom</label>
+        <label className="text-[11px] text-[var(--color-muted)]">Personalizado</label>
         <input
           type="color"
           value={selected || "#000000"}
           onChange={(e) => onPick(e.target.value)}
           className="h-6 w-10 cursor-pointer rounded border border-[var(--color-border)] bg-transparent p-0"
-          title="Elegí un color personalizado"
+          title="Elige un color personalizado"
         />
         <span className="ml-auto font-mono text-[10px] text-[var(--color-muted)]">
           {selected ? selected.toUpperCase() : "—"}

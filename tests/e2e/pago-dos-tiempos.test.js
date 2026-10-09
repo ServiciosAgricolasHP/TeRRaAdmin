@@ -159,8 +159,6 @@ describe("pago en dos tiempos", () => {
 
 describe("guards de edición con transferencias emitidas", () => {
   it("no deja sacar a un trabajador después de transferir", async () => {
-    // Sacarlo liberaría sus días y le restauraría anticipos a alguien que ya
-    // tiene la plata en la cuenta.
     const id = await nominaConDosBolsas();
     await markBankPaid(id);
     await expect(removeWorkerFromPayroll(id, ANA.id)).rejects.toThrow(/transferencias/i);
@@ -188,9 +186,8 @@ describe("guards de edición con transferencias emitidas", () => {
     expect(p.cashCount).toBe(1);
   });
 
-  // Las otras tres puertas de edición de una nómina. Las cuatro pasan por
-  // `assertEditable`, pero cada una la llama por su cuenta: si alguien agrega
-  // un camino nuevo y se olvida de la línea, solo lo caza un test por camino.
+  // Las otras tres puertas de edición de una nómina. Las cuatro llaman a
+  // `assertEditable` por su cuenta, así que hay un test por camino.
   it("no deja agregar ciclos después de transferir", async () => {
     const id = await nominaConDosBolsas();
     await markBankPaid(id);
@@ -220,8 +217,7 @@ describe("guards de edición con transferencias emitidas", () => {
   });
 
   it("nada de eso cambió la nómina", async () => {
-    // Un guard que tira pero deja escrito algo a medias sería peor que no
-    // tenerlo: lo que importa es que el documento quede intacto.
+    // Los rechazos no dejan nada escrito a medias: el documento queda intacto.
     const id = await nominaConDosBolsas();
     await markBankPaid(id);
     const antes = await get("payrolls", id);
@@ -244,7 +240,7 @@ describe("guards de edición con transferencias emitidas", () => {
 
 describe("guards de edición con la nómina pagada entera", () => {
   // La otra rama de `assertEditable`: `status === "paid"`, con su propio
-  // mensaje. Sin esto, un cambio que rompa solo esta rama pasaría.
+  // mensaje.
   it("pagada tampoco se agrega, ni se recalcula, ni se saca a nadie", async () => {
     const id = await nominaConDosBolsas();
     const p = await get("payrolls", id);
@@ -259,8 +255,7 @@ describe("guards de edición con la nómina pagada entera", () => {
 });
 
 describe("las mismas operaciones mientras la nómina sigue pendiente", () => {
-  // Control positivo. Sin esto, un guard que rechazara siempre —por el motivo
-  // equivocado— dejaría los tests de arriba en verde igual.
+  // Control positivo: con la nómina pendiente, los guards dejan pasar.
   it("agregar un ciclo suma sus ids y sus totales", async () => {
     const id = await nominaConDosBolsas();
     const p = await get("payrolls", id);

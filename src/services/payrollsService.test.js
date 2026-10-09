@@ -25,7 +25,6 @@ const banco = (rut, amount, over = {}) => item({ rut, amount, bankCode: "012", .
 const efectivo = (rut, amount, over = {}) => item({ rut, amount, bankCode: "EFE", ...over });
 
 describe("recalcPayrollAggregates", () => {
-  // Tres mutadores distintos escriben la salida de esto directo a Firestore.
   it("cumple la invariante total === bankTotal + cashTotal === suma de items", () => {
     const items = [banco("1-9", 100000), efectivo("2-7", 50000), banco("3-5", 25000)];
     const agg = recalcPayrollAggregates(items);
@@ -106,8 +105,8 @@ describe("bankWorkdayIdsOf / cashWorkdayIdsOf", () => {
 });
 
 describe("pendingCashOf / pendingCashItemsOf", () => {
-  // La deuda de efectivo se DERIVA siempre, nunca se guarda, justamente para
-  // que no exista un campo que pueda quedar desincronizado de los items.
+  // La deuda de efectivo se deriva siempre de los items: no hay un campo
+  // guardado que pueda quedar desincronizado.
   const conFlag = (over = {}) => ({
     status: "pending",
     bankPaidAt: "2026-09-20T10:00:00.000Z",
@@ -116,8 +115,7 @@ describe("pendingCashOf / pendingCashItemsOf", () => {
   });
 
   it("sin el flag no hay deuda: la nómina simplemente no se pagó todavía", () => {
-    // Esta es la distinción que justifica el flag. Una nómina recién generada
-    // tiene cashTotal > 0 pero eso no es plata adeudada.
+    // Una nómina recién generada tiene cashTotal > 0, pero eso no es deuda.
     expect(pendingCashOf(conFlag({ bankPaidAt: null }))).toBe(0);
     expect(pendingCashItemsOf(conFlag({ bankPaidAt: null }))).toEqual([]);
   });
@@ -154,8 +152,7 @@ describe("pendingCashOf / pendingCashItemsOf", () => {
 });
 
 describe("assertEditable", () => {
-  // Sacar a alguien de banco de una nómina ya transferida liberaría sus días y
-  // le restauraría anticipos a quien ya tiene la plata en la cuenta.
+  // Una nómina pagada, o con las transferencias hechas, no se puede editar.
   it("deja editar una nómina pendiente sin transferencias", () => {
     expect(() => assertEditable({ status: "pending" })).not.toThrow();
   });
