@@ -340,7 +340,9 @@ export default function Facturacion() {
     const searching = !!search.trim();
     if (periodoFilter && !searching) arr = arr.filter((d) => d.periodo === periodoFilter);
     if (tipoFilter) arr = arr.filter((d) => String(d.tipo) === String(tipoFilter));
-    if (!isRetencionesView && paymentFilter) {
+    // El estado de pago solo se lleva en ventas; en Compras los chips del
+    // filtro no se muestran, así que tampoco filtran.
+    if (kindTab === "venta" && paymentFilter) {
       arr = arr.filter((d) => (d.paymentStatus || "unpaid") === paymentFilter);
     }
     if (search.trim()) {

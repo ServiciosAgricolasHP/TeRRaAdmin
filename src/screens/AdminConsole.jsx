@@ -4,9 +4,11 @@ import { db } from "../firebase";
 import { faenasService, cyclesService, workersService } from "../services";
 import { advancesService } from "../services/advancesService";
 import { toProperName } from "../utils/nameUtils";
+import { isAdminRole } from "../utils/userAccounts";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { localIsoDate } from "../utils/dates";
 
 // Consola admin: diagnóstico, inspección de escala y migraciones únicas.
 // Los recuentos usan `getCountFromServer`, que cuesta ~1 lectura por cada
@@ -382,7 +384,7 @@ function AuthDebugSection() {
     <ConsoleCard id="debug-de-rol-admin" title="🕵️ Diagnóstico del rol admin">
       <p className="mb-3 text-xs text-[var(--color-muted)]">
         El AuthContext lee <code>users/{"{uid}"}</code> y toma el campo <code>role</code>.
-        Si dice <code>"admin"</code> exactamente, activa el modo admin.
+        Si dice <code>"admin"</code> (sin importar mayúsculas), activa el modo admin.
       </p>
 
       <div className="space-y-3 text-sm">
@@ -462,11 +464,10 @@ function AuthDebugSection() {
               <pre className="mt-1 overflow-auto rounded bg-[var(--color-surface)] p-2 text-[10px]">
                 {JSON.stringify(docState.data, null, 2)}
               </pre>
-              {docState.data?.role !== "admin" && (
+              {!isAdminRole(docState.data?.role) && (
                 <div className="mt-2 rounded bg-[var(--color-surface)] p-2 text-[10px] text-[var(--color-danger)]">
                   El campo <code>role</code> es <code>{JSON.stringify(docState.data?.role)}</code>,
-                  no <code>"admin"</code>. Corrígelo a exactamente{" "}
-                  <code>"admin"</code> en minúsculas y vuelve a iniciar sesión.
+                  no <code>"admin"</code>. Cámbialo a <code>"admin"</code> y vuelve a iniciar sesión.
                 </div>
               )}
             </>
@@ -733,7 +734,7 @@ function WorkdaysByMonthSection() {
 // Sección: workdays en un rango de fechas
 // ============================================================
 function WorkdaysByRangeSection() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localIsoDate();
   const monthStart = today.slice(0, 8) + "01";
   const [from, setFrom] = useState(monthStart);
   const [to, setTo] = useState(today);

@@ -17,12 +17,13 @@ import {
 import { faenasService, subfaenasService, cyclesService } from "../services";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useToast } from "../contexts/ToastContext";
+import { localIsoDate } from "../utils/dates";
 
 const DEFAULT_HISTORY_DAYS = 90;
 const isoDateNDaysAgo = (n) => {
   const d = new Date();
   d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
+  return localIsoDate(d);
 };
 
 const fmtCurrency = (v) =>
@@ -1749,7 +1750,7 @@ function PrintMultipleModal({
       const zipBlob = await zip.generateAsync({ type: "blob" });
       const url = URL.createObjectURL(zipBlob);
       const a = document.createElement("a");
-      const stamp = new Date().toISOString().slice(0, 10);
+      const stamp = localIsoDate();
       a.href = url;
       a.download = `resumenes_transportes_${stamp}.zip`;
       document.body.appendChild(a);
@@ -3407,7 +3408,7 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
     try {
       const updated = await paymentsService.addAbono(payment.id, {
         amount: amt,
-        date: newAbono.date || new Date().toISOString().slice(0, 10),
+        date: newAbono.date || localIsoDate(),
         notes: newAbono.notes,
       });
       setAbonos(updated.abonos || []);

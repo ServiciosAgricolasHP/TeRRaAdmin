@@ -24,12 +24,13 @@ import { useIsMobile } from "../hooks/useIsMobile";
 import { workdayDocId } from "../utils/cosechaCombos";
 import { LABOR_TYPES, initialLaborPlan } from "../utils/laborTypes";
 import ProductionSummaryModal from "../components/ProductionSummaryModal";
+import { localIsoDate } from "../utils/dates";
 
 const emptyFaena = { name: "", location: "", notes: "" };
 const emptySub = { name: "", notes: "" };
 
 const orderKey = (uid) => `af.faenaOrder.${uid || "anon"}`;
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr = () => localIsoDate();
 const newId = () => (crypto?.randomUUID?.() || `id_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`);
 
 // Primer y último día de la grilla del ciclo (`cycle.days`). Al cerrar el

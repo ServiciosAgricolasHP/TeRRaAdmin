@@ -199,6 +199,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 - ESLint: variables sin usar empezando con `A-Z_` son ignoradas.
 - `screens/` contiene lógica de rutas; data fetching en `services/`.
 - Strings UI en español; identificadores en código en inglés.
+- **La fecha de hoy (`YYYY-MM-DD`) sale de `localIsoDate()`** (`utils/dates.js`), nunca de `toISOString().slice(0, 10)`: esa da la fecha en UTC, y en Chile desde las 20 o 21 h ya es el día siguiente. Una marca de tiempo completa (`paidAt`, `createdAt`) sí va con `toISOString()`, porque es un instante y no un día.
 
 ## Tipos de Labor / Labor Types
 

@@ -70,6 +70,7 @@ import CycleSummaryModal from "../components/CycleSummaryModal";
 import { tripsService } from "../services/transportsService";
 import { qrLockedLaborsOf } from "../utils/harvestSync";
 import { LABOR_TYPES } from "../utils/laborTypes";
+import { localIsoDate } from "../utils/dates";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -136,7 +137,7 @@ function FormulaCellEditor({ initialValue, onValueChange, eventKey }) {
   );
 }
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr = () => localIsoDate();
 const newId = () => (crypto?.randomUUID?.() || `id_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`);
 
 // Primer y último día de cycle.days. Al cerrar el ciclo, startDate y endDate
@@ -6114,7 +6115,7 @@ function DayCalendarPicker({ viewMonth, setViewMonth, selectedDays, toggleDay, e
   while (cells.length % 7 !== 0) cells.push(null);
 
   const existingSet = new Set(existingDays);
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = localIsoDate();
 
   const prevMonth = () =>
     setViewMonth(({ year, month }) =>

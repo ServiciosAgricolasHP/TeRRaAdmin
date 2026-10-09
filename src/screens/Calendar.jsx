@@ -9,6 +9,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import { tratoTypeLabel, tratoUnitLabel, cosechaUnit, qualityLabel, containerLabel, getTratoTierTotals, getTratoTiers } from "../utils/cosechaCombos";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { localIsoDate } from "../utils/dates";
 
 // ============================================================================
 // CALENDARIO DE PRODUCCIÓN
@@ -662,7 +663,7 @@ function MonthGrid({ year, month, dayIndex, loading, onCellClick, onBarClick }) 
   const firstWeekday = new Date(year, month - 1, 1).getDay(); // 0=Domingo
   // Desfase con la semana empezando en lunes (dom=0 → 6, lun=1 → 0…)
   const offset = (firstWeekday + 6) % 7;
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = localIsoDate();
 
   const cells = [];
   for (let i = 0; i < offset; i++) cells.push({ empty: true, key: `e${i}` });

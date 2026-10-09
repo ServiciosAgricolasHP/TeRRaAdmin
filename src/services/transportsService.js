@@ -13,6 +13,7 @@ import {
 } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { logAction } from "./logger";
+import { localIsoDate } from "../utils/dates";
 
 const TRIPS = "transports";
 const PAYMENTS = "transportPayments";
@@ -371,7 +372,7 @@ export const paymentsService = {
         ? crypto.randomUUID()
         : `ab_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
       amount: amt,
-      date: date || new Date().toISOString().slice(0, 10),
+      date: date || localIsoDate(),
       notes: String(notes || "").trim(),
       createdAt: new Date().toISOString(),
       createdBy: auth.currentUser?.uid || null,

@@ -283,20 +283,21 @@ describe("extractRutFromFilename", () => {
     expect(extractRutFromFilename("")).toBe("");
   });
 
-  // Fija lo actual: los dos regex anclan con `\b`, y entre `_` y un dígito no
-  // hay borde de palabra, así que con guiones bajos (el formato del SII) no
-  // encuentra el RUT. Lo esperado sería extraerlo, para que el preview del
-  // import avise cuando no coincide con la empresa.
-  it("[bug conocido] no encuentra nada con guiones bajos, que es el formato del SII", () => {
-    expect(extractRutFromFilename("Detalle_VENTA_76123456-7_202405.csv")).toBe("");
-    expect(extractRutFromFilename("compras_76123456-k.csv")).toBe("");
+  // El formato del SII separa con guiones bajos; sin el RUT, el preview del
+  // import no puede avisar cuando el archivo es de otra empresa.
+  it("saca el RUT entre guiones bajos, que es el formato del SII", () => {
+    expect(extractRutFromFilename("Detalle_VENTA_76123456-7_202405.csv")).toBe("76123456-7");
+    expect(extractRutFromFilename("compras_76123456-k.csv")).toBe("76123456-K");
   });
 
-  // Fija lo actual: con puntos de miles, el primer regex empieza a calzar
-  // después de un `.` (ahí sí hay borde) y de "76.123.456-7" saca "123456-7",
-  // otro RUT. Lo esperado sería "76123456-7".
-  it("[bug conocido] trunca el RUT cuando viene con puntos y guion bajo delante", () => {
-    expect(extractRutFromFilename("RCV_76.123.456-7.csv")).toBe("123456-7");
+  it("saca el RUT completo cuando viene con puntos", () => {
+    expect(extractRutFromFilename("RCV_76.123.456-7.csv")).toBe("76123456-7");
+    expect(extractRutFromFilename("RCV 7.654.321-K.csv")).toBe("7654321-K");
+  });
+
+  it("no confunde el período ni otros números con un RUT", () => {
+    expect(extractRutFromFilename("RCV_202405-1.csv")).toBe("");
+    expect(extractRutFromFilename("RCV_123456789-1.csv")).toBe("");
   });
 });
 

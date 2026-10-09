@@ -214,9 +214,10 @@ function parseAmount(raw) {
 // Es heurística: un archivo renombrado puede no traerlo.
 export function extractRutFromFilename(name) {
   if (!name) return "";
-  // Captura `12345678-9` o `1234567-K` con o sin puntos.
-  const m = String(name).match(/\b(\d{1,3}(?:\.\d{3}){0,2})-([\dKk])\b/) ||
-            String(name).match(/\b(\d{7,8})-([\dKk])\b/);
+  // Captura `12345678-9` o `1234567-K`, con o sin puntos. Los bordes van con
+  // lookarounds y no con `\b`: el SII separa con `_`, que cuenta como parte de
+  // la palabra, y un `.` delante haría calzar el RUT a medias.
+  const m = String(name).match(/(?<![\d.])(\d{1,2}(?:\.\d{3}){2}|\d{7,8})-([\dKk])(?![\dA-Za-z])/);
   if (!m) return "";
   const num = m[1].replace(/\./g, "");
   return `${num}-${m[2].toUpperCase()}`;

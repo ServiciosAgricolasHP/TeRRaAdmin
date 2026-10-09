@@ -86,6 +86,7 @@ import Modal from "../components/Modal";
 import WorkerSummaryModal from "../components/WorkerSummaryModal";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { matchesSearchQuery } from "../utils/textSearch";
+import { localIsoDate } from "../utils/dates";
 
 const fmtCurrency = (v) =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
@@ -8468,9 +8469,9 @@ function formatWorkerDetailProd(r, catalogs) {
 const sixMonthsAgoISO = () => {
   const d = new Date();
   d.setMonth(d.getMonth() - 6);
-  return d.toISOString().slice(0, 10);
+  return localIsoDate(d);
 };
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = () => localIsoDate();
 
 const payrollDate = (p) => {
   if (p?.createdAt?.toDate) return p.createdAt.toDate();
@@ -8479,7 +8480,7 @@ const payrollDate = (p) => {
 };
 const payrollDateISO = (p) => {
   const d = payrollDate(p);
-  return isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+  return isNaN(d.getTime()) ? "" : localIsoDate(d);
 };
 
 const normRut = (r) => String(r || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
@@ -8738,8 +8739,8 @@ function WorkersHistory({ faenas }) {
     const today = new Date();
     const from = new Date(today);
     from.setMonth(from.getMonth() - months);
-    setDateFrom(from.toISOString().slice(0, 10));
-    setDateTo(today.toISOString().slice(0, 10));
+    setDateFrom(localIsoDate(from));
+    setDateTo(localIsoDate(today));
   };
 
   const handleExport = async () => {

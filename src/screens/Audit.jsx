@@ -10,6 +10,7 @@ import {
   diffLabelHint,
   resolveEntityLabel,
 } from "../utils/auditLabels";
+import { localIsoDate } from "../utils/dates";
 
 // Auditoría por sesiones de inactividad: lee los logs del rango elegido, los
 // agrupa por usuario y corta una sesión cada vez que la pausa entre dos
@@ -26,11 +27,11 @@ const HARD_CAP = 5000;
 // ampliar el rango queda como acción explícita.
 const DIAS_POR_DEFECTO = 3;
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = () => localIsoDate();
 const daysAgoISO = (n) => {
   const d = new Date();
   d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
+  return localIsoDate(d);
 };
 
 // Timestamp de Firestore → Date. Si viene `null` (log recién escrito cuyo

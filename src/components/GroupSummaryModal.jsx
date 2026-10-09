@@ -20,6 +20,7 @@ import {
   PrintableWorkerSummary,
 } from "./WorkerSummaryModal";
 import { formatRutForDisplay } from "../utils/rutUtils";
+import { localIsoDate } from "../utils/dates";
 
 const fmtCurrency = (v) =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
@@ -181,7 +182,7 @@ export default function GroupSummaryModal({ open, onClose }) {
       } else if (action === "download") {
         const dataUrl = await captureFullWidthDataUrl(matrixRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
         const link = document.createElement("a");
-        link.download = `grupo_matriz_${new Date().toISOString().slice(0, 10)}.png`;
+        link.download = `grupo_matriz_${localIsoDate()}.png`;
         link.href = dataUrl;
         link.click();
       }
@@ -238,7 +239,7 @@ export default function GroupSummaryModal({ open, onClose }) {
           pixelRatio: 2,
         });
         const link = document.createElement("a");
-        link.download = `grupo_completo_${new Date().toISOString().slice(0, 10)}.png`;
+        link.download = `grupo_completo_${localIsoDate()}.png`;
         link.href = dataUrl;
         link.click();
       }
@@ -298,6 +299,7 @@ export default function GroupSummaryModal({ open, onClose }) {
         />
       ) : (
         <ResultUI
+          catalogs={catalogs}
           selected={selected}
           workerData={workerData}
           activeCycles={activeCycles}
@@ -426,6 +428,7 @@ function ResultUI({
   captureIndividual,
   captureEverything,
   busy,
+  catalogs,
 }) {
   return (
     <div>

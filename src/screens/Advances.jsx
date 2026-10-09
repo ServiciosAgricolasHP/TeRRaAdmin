@@ -23,13 +23,14 @@ import WorkerAdvancesModal from "../components/WorkerAdvancesModal";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useToast } from "../contexts/ToastContext";
 import { matchesSearchQuery } from "../utils/textSearch";
+import { localIsoDate } from "../utils/dates";
 
 const fmtCurrency = (v) =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
     Number(v) || 0,
   );
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr = () => localIsoDate();
 
 const STATUS_LABEL = {
   pending: "Pendiente",
@@ -54,7 +55,7 @@ const matchesStatusFilter = (status, filter) =>
 const isoDateNDaysAgo = (n) => {
   const d = new Date();
   d.setDate(d.getDate() - n);
-  return d.toISOString().slice(0, 10);
+  return localIsoDate(d);
 };
 
 const APPLIED_DEFAULT_DAYS = 90;

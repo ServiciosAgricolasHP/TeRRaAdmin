@@ -19,6 +19,7 @@ import { useCatalogs } from "../contexts/CatalogsContext";
 import { useToast } from "../contexts/ToastContext";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { localIsoDate } from "../utils/dates";
 
 const fmtCurrency = (v) =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
@@ -240,11 +241,11 @@ function buildCycleRows(claves, cycle, workdaysByLabor, catalogs, payrollById) {
 
 // Rango por defecto del toggle "incluir ciclos cerrados": el último mes
 // (hoy - 1 mes → hoy).
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const todayISO = () => localIsoDate();
 const oneMonthAgoISO = () => {
   const d = new Date();
   d.setMonth(d.getMonth() - 1);
-  return d.toISOString().slice(0, 10);
+  return localIsoDate(d);
 };
 
 export default function WorkerSummaryModal({ open, onClose, worker }) {
