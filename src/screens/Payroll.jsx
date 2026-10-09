@@ -87,6 +87,7 @@ import WorkerSummaryModal from "../components/WorkerSummaryModal";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { matchesSearchQuery } from "../utils/textSearch";
 import { localIsoDate } from "../utils/dates";
+import { currentRutResolver } from "../utils/workerRut";
 
 const fmtCurrency = (v) =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
@@ -178,9 +179,15 @@ function downloadSnapshotJson(payrollName, snapshot) {
 // rut que tenía al crearse: se resuelve contra la ficha, con la lista de
 // trabajadores ya cargada (sin lecturas).
 const resolverRutVigente = (workers) => {
-  const porId = new Map((workers || []).map((w) => [w.id, w.rut || w.id]));
-  return (agg) => porId.get(agg.workerId || agg.rut) ?? agg.rut;
+  const rutOf = currentRutResolver(workers);
+  return (agg) => rutOf(agg.rut, agg.workerId);
 };
+
+// Copia de los items con el rut vigente, para exportar. Solo para archivos que
+// se leen afuera: dentro de la app los items conservan el rut guardado, que es
+// la clave con que se cruzan con jornadas y anticipos.
+const withCurrentRuts = (items, rutOf) =>
+  (items || []).map((it) => ({ ...it, rut: rutOf(it.rut, it.workerId) }));
 
 export default function Payroll() {
   const toast = useToast();
@@ -190,6 +197,8 @@ export default function Payroll() {
   const [subfaenas, setSubfaenas] = useState([]);
   const [cycles, setCycles] = useState([]);
   const [workers, setWorkers] = useState([]);
+  // Rut vigente para mostrar, ver utils/workerRut.js.
+  const rutOf = useMemo(() => currentRutResolver(workers), [workers]);
   const [payrolls, setPayrolls] = useState([]);
 
   const [selectedCycleIds, setSelectedCycleIds] = useState(loadSelection);
@@ -1110,11 +1119,11 @@ export default function Payroll() {
     if (cyclesForExport.length === 0 && p.cycleIds) {
       for (const id of p.cycleIds) cyclesForExport.push({ id, label: overrides[id] || id });
     }
-    await downloadBchileXlsx(p.items || [], p.name || "Nomina", cyclesForExport);
+    await downloadBchileXlsx(withCurrentRuts(p.items, rutOf), p.name || "Nomina", cyclesForExport);
   };
   const onDownloadNominaOnly = async (p) => {
     const filename = `${p.name || "Nomina"}_BChile`;
-    await downloadNominaOnlyXlsx(p.items || [], filename);
+    await downloadNominaOnlyXlsx(withCurrentRuts(p.items, rutOf), filename);
   };
   // Vuelve a bajar el JSON del snapshot de una nómina. Lo lee de
   // payrollSnapshots y, si no está, del campo `snapshot` embebido en la nómina.
@@ -1201,6 +1210,7 @@ export default function Payroll() {
           />
         ) : (
           <PreviewTable
+            rutOf={rutOf}
             items={previewItems}
             bankItems={bankSelected}
             cashGroups={cashGroups}
@@ -1236,6 +1246,7 @@ export default function Payroll() {
       ) : (
         <WorkersHistory
           faenas={faenas}
+          workers={workers}
         />
       )}
 
@@ -1864,6 +1875,7 @@ function CycleSelector({
 }
 
 function PreviewTable({
+  rutOf,
   items,
   bankItems,
   cashGroups,
@@ -2100,7 +2112,7 @@ function PreviewTable({
                       onChange={(e) => updatePreview(p.rut, { include: e.target.checked })}
                     />
                   </td>
-                  <td className="px-3 py-2 font-mono text-xs">{formatRutForDisplay(p.rut)}</td>
+                  <td className="px-3 py-2 font-mono text-xs">{formatRutForDisplay(rutOf(p.rut, p.workerId))}</td>
                   <td className="px-3 py-2">{p.name}</td>
                   <td className="px-3 py-2 text-xs text-[var(--color-muted)]">
                     {p.groupLeader || "—"}
@@ -3315,6 +3327,8 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
   const workdaysByGroup = options.workdaysByGroup || {}; // { leader: { cycleId: rows[] } }
   const cyclesById = options.cyclesById || {};
   const catalogs = options.catalogs || {};
+  // Rut vigente para mostrar (utils/workerRut.js); sin resolver, el guardado.
+  const rutOf = options.rutOf || ((r) => r);
   const mode = options.mode || "cash"; // "cash" | "detail"
   const isDetail = mode === "detail";
   const summaries = options.summaries || [];
@@ -3488,7 +3502,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
             <tr class="${keepWithSign ? "keep-with-sign" : ""}" style="background:${itemFill}">
               <td>${i + 1}</td>
               <td>${it.name}</td>
-              <td class="mono">${fmtRut(it.rut)}</td>
+              <td class="mono">${fmtRut(rutOf(it.rut, it.workerId))}</td>
               <td style="vertical-align:top">${renderDetalle(it)}</td>
               ${cellsByCycle}
               ${advanceCell}
@@ -3653,7 +3667,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
                 <tr style="background:${itemFill}">
                   <td>${i + 1}</td>
                   <td>${it.name}</td>
-                  <td class="mono">${fmtRut(it.rut)}</td>
+                  <td class="mono">${fmtRut(rutOf(it.rut, it.workerId))}</td>
                   <td style="font-size:10px;color:#555">${bankTag}</td>
                   ${cellsByCycle}
                   ${advanceCell}
@@ -4132,7 +4146,7 @@ function computeBonusAdvanceSummary(items) {
   };
 }
 
-async function printPaymentDetails(payroll, allGroups, titleOverrides = {}, summaries = [], catalogs = {}, subfaenaSummary = null, payrollData = null) {
+async function printPaymentDetails(payroll, allGroups, titleOverrides = {}, summaries = [], catalogs = {}, subfaenaSummary = null, payrollData = null, rutOf = undefined) {
   if (allGroups.length === 0) return;
   const allItems = allGroups.flatMap((g) => g.items);
   // `payrollData` viene memorizado desde el modal; si no llega, se lee acá.
@@ -4152,6 +4166,7 @@ async function printPaymentDetails(payroll, allGroups, titleOverrides = {}, summ
     subfaenaSummary,
     laborSummary,
     bonusAdvanceSummary,
+    rutOf,
   });
   const w = window.open("", "_blank", "width=900,height=700");
   if (!w) {
@@ -4318,7 +4333,7 @@ function printResumenTable(payroll, {
   w.document.close();
 }
 
-async function printCashReceipts(payroll, cashGroups, titleOverrides = {}, catalogs = {}, payrollData = null) {
+async function printCashReceipts(payroll, cashGroups, titleOverrides = {}, catalogs = {}, payrollData = null, rutOf = undefined) {
   // La hoja que firma el líder deja fuera a quien no cobra nada ni produjo:
   // los días de asistencia de un sueldo mensual, que entran a la nómina solo
   // para quedar etiquetados. El corte es por bruto: quien produjo y quedó en
@@ -4345,6 +4360,7 @@ async function printCashReceipts(payroll, cashGroups, titleOverrides = {}, catal
     workdaysByGroup,
     cyclesById,
     catalogs,
+    rutOf,
   });
   const w = window.open("", "_blank", "width=900,height=700");
   if (!w) {
@@ -4360,6 +4376,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
   const toast = useToast();
   const isMobile = useIsMobile();
   const items = payroll.items || [];
+  const rutOf = useMemo(() => currentRutResolver(workers), [workers]);
   const { bank, cash } = splitBankAndCash(items);
   const cashGroups = groupCashByLeader(cash);
   const allGroups = groupCashByLeader(items); // todos (banco y efectivo) agrupados por líder
@@ -4427,7 +4444,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     const q = search.trim();
     return items.filter((it) => {
       if (q) {
-        const hay = `${it.rut || ""} ${it.name || ""} ${it.groupLeader || ""}`;
+        const hay = `${it.rut || ""} ${rutOf(it.rut, it.workerId)} ${it.name || ""} ${it.groupLeader || ""}`;
         if (!matchesSearchQuery(hay, q)) return false;
       }
       const isCash = isCashBank(it.bankCode);
@@ -5620,7 +5637,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
   const handlePrint = async () => {
     setPrinting(true);
     try {
-      await printCashReceipts(payroll, cashGroups, cycleTitleOverrides, catalogs, await getPayrollData());
+      await printCashReceipts(payroll, cashGroups, cycleTitleOverrides, catalogs, await getPayrollData(), rutOf);
     } catch (err) {
       toast.error(err?.message || "Error al imprimir");
     } finally {
@@ -5631,7 +5648,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
   const handlePrintDetail = async () => {
     setPrintingDetail(true);
     try {
-      await printPaymentDetails(payroll, allGroups, cycleTitleOverrides, detailSummaries, catalogs, subfaenaSummary, await getPayrollData());
+      await printPaymentDetails(payroll, allGroups, cycleTitleOverrides, detailSummaries, catalogs, subfaenaSummary, await getPayrollData(), rutOf);
     } catch (err) {
       toast.error(err?.message || "Error al imprimir");
     } finally {
@@ -5646,7 +5663,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     const loadingKey = key || group.leader;
     setPrintingGroupLeader(loadingKey);
     try {
-      await printPaymentDetails(payroll, [group], cycleTitleOverrides, [], catalogs, null, await getPayrollData());
+      await printPaymentDetails(payroll, [group], cycleTitleOverrides, [], catalogs, null, await getPayrollData(), rutOf);
     } catch (err) {
       toast.error(err?.message || "Error al imprimir grupo");
     } finally {
@@ -6285,6 +6302,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                             {g.items.map((it) => (
                               <WorkerDetailRow
                                 key={it.rut}
+                                rutOf={rutOf}
                                 item={it}
                                 expanded={expandedRut === it.rut}
                                 onToggle={() => setExpandedRut((cur) => cur === it.rut ? null : it.rut)}
@@ -6321,6 +6339,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                               {g.items.map((it) => (
                                 <WorkerDetailRow
                                   key={it.rut}
+                                  rutOf={rutOf}
                                   item={it}
                                   expanded={expandedRut === it.rut}
                                   onToggle={() => setExpandedRut((cur) => cur === it.rut ? null : it.rut)}
@@ -6409,6 +6428,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                             {g.items.map((it) => (
                               <WorkerDetailRow
                                 key={it.rut}
+                                rutOf={rutOf}
                                 item={it}
                                 expanded={expandedRut === it.rut}
                                 onToggle={() => setExpandedRut((cur) => cur === it.rut ? null : it.rut)}
@@ -6435,6 +6455,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                               {g.items.map((it) => (
                                 <WorkerDetailRow
                                   key={it.rut}
+                                  rutOf={rutOf}
                                   item={it}
                                   expanded={expandedRut === it.rut}
                                   onToggle={() => setExpandedRut((cur) => cur === it.rut ? null : it.rut)}
@@ -7673,7 +7694,7 @@ function CashEstimationModal({ cashItems, payrollName, pendingExtra = [], onClos
 // persona en la nómina: tablas por ciclo y tarjetas de bruto, anticipos, bonos
 // y neto. "📅 Ver historial completo" abre el WorkerSummaryModal.
 function WorkerDetailRow({
-  item, expanded, onToggle, onShowSummary, cycleDetails, displayCycleLabel,
+  rutOf = (r) => r, item, expanded, onToggle, onShowSummary, cycleDetails, displayCycleLabel,
   editMode, editBusy, onRemoveWorker, cols, snapshot, snapshotLoading, catalogs, isMobile,
   cashPaidMode = false, cashPaid = false, onToggleCashPaid,
 }) {
@@ -7711,6 +7732,7 @@ function WorkerDetailRow({
       {/* Detalle por ciclo, como en Trabajadores: una tabla por ciclo con
           encabezado faena · subfaena · ciclo y filas labor × día. */}
       <WorkerPaidDetailTables
+        displayRut={rutOf(item.rut, item.workerId)}
         item={item}
         snapshot={snapshot}
         snapshotLoading={snapshotLoading}
@@ -7734,7 +7756,7 @@ function WorkerDetailRow({
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium">{item.name}</div>
             <div className="flex flex-wrap items-center gap-x-2 font-mono text-[11px] text-[var(--color-muted)]">
-              <span>{formatRutForDisplay(item.rut)}</span>
+              <span>{formatRutForDisplay(rutOf(item.rut, item.workerId))}</span>
               {isBank && (
                 <span className="truncate">{bankName(item.bankCode)} · {item.accountNumber} · {accountTypeShort(item.accountType)}</span>
               )}
@@ -7787,7 +7809,7 @@ function WorkerDetailRow({
         {isBank ? (
           <>
             <td className="px-2 py-1 text-center text-[var(--color-muted)]">{expanded ? "▾" : "▸"}</td>
-            <td className="px-2 py-1 font-mono text-xs">{formatRutForDisplay(item.rut)}</td>
+            <td className="px-2 py-1 font-mono text-xs">{formatRutForDisplay(rutOf(item.rut, item.workerId))}</td>
             <td className="px-2 py-1">{item.name}</td>
             <td className="px-2 py-1 text-xs">{bankName(item.bankCode)}</td>
             <td className="px-2 py-1 font-mono text-xs">{item.accountNumber}</td>
@@ -7797,7 +7819,7 @@ function WorkerDetailRow({
         ) : (
           <>
             <td className="px-2 py-1 text-center text-[var(--color-muted)]">{expanded ? "▾" : "▸"}</td>
-            <td className="px-2 py-1 font-mono text-xs">{formatRutForDisplay(item.rut)}</td>
+            <td className="px-2 py-1 font-mono text-xs">{formatRutForDisplay(rutOf(item.rut, item.workerId))}</td>
             <td className="px-2 py-1">{item.name}</td>
             <td className="px-2 py-1 text-right tabular-nums">{fmtCurrency(item.amount)}</td>
           </>
@@ -7888,7 +7910,7 @@ function WorkerPaySummaryCards({ item }) {
 // filas labor × día); vista "Cronológico": una sola tabla por fecha con los
 // ajustes intercalados. Sin snapshot, o sin jornadas de la persona en él,
 // muestra solo los montos por ciclo.
-function WorkerPaidDetailTables({ item, snapshot, snapshotLoading, cycleDetails, displayCycleLabel, catalogs }) {
+function WorkerPaidDetailTables({ displayRut, item, snapshot, snapshotLoading, cycleDetails, displayCycleLabel, catalogs }) {
   const toast = useToast();
   const [busy, setBusy] = useState("");
   // cronologico (default): una sola tabla ordenada por fecha, con los
@@ -8091,7 +8113,7 @@ function WorkerPaidDetailTables({ item, snapshot, snapshotLoading, cycleDetails,
   // Texto plano — cambia según viewMode.
   const buildPlainText = () => {
     const lines = [];
-    lines.push(`📅 ${item.name} (${formatRutForDisplay(item.rut)})`);
+    lines.push(`📅 ${item.name} (${formatRutForDisplay(displayRut || item.rut)})`);
     lines.push(`Bruto: ${fmtCurrency(bruto)} · Anticipos: -${fmtCurrency(anticiposTotal)} · Bonos: +${fmtCurrency(bonosTotal)} · Neto: ${fmtCurrency(neto)}`);
     lines.push("");
     if (viewMode === "cronologico") {
@@ -8214,7 +8236,7 @@ function WorkerPaidDetailTables({ item, snapshot, snapshotLoading, cycleDetails,
         {/* Encabezado del trabajador */}
         <div style={{ fontSize: 11, color: "#444", borderBottom: "1px solid #ddd", paddingBottom: 4 }}>
           <b style={{ color: "#000" }}>{item.name}</b>
-          <span style={{ marginLeft: 6, fontFamily: "ui-monospace, monospace" }}>{formatRutForDisplay(item.rut)}</span>
+          <span style={{ marginLeft: 6, fontFamily: "ui-monospace, monospace" }}>{formatRutForDisplay(displayRut || item.rut)}</span>
           <span style={{ marginLeft: 8, color: "#666" }}>Producción: <b style={{ color: "#000" }}>{fmtCurrency(totalAllCycles)}</b></span>
         </div>
 
@@ -8572,7 +8594,8 @@ function FaenaFilterPopover({ faenas, faenaFilter, setFaenaFilter, onClose }) {
   );
 }
 
-function WorkersHistory({ faenas }) {
+function WorkersHistory({ faenas, workers }) {
+  const rutOf = useMemo(() => currentRutResolver(workers), [workers]);
   const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [allPayrolls, setAllPayrolls] = useState([]);
@@ -8614,15 +8637,19 @@ function WorkersHistory({ faenas }) {
     });
   }, [allPayrolls, dateFrom, dateTo, classification]);
 
-  // 2) Índice por RUT con los pagos de cada trabajador.
+  // 2) Índice por trabajador con sus pagos. La clave es el workerId (estable
+  // aunque el rut se corrija); se muestra el rut vigente de la ficha.
   const workersIndex = useMemo(() => {
     const map = new Map();
     for (const p of filteredPayrolls) {
       for (const it of (p.items || [])) {
         if (!it.rut) continue;
-        if (!map.has(it.rut)) {
-          map.set(it.rut, {
-            rut: it.rut,
+        const key = it.workerId || it.rut;
+        if (!map.has(key)) {
+          map.set(key, {
+            key,
+            workerId: key,
+            rut: rutOf(it.rut, it.workerId),
             name: it.name || "",
             totalAmount: 0,
             totalGross: 0,
@@ -8631,7 +8658,7 @@ function WorkersHistory({ faenas }) {
             payments: [],
           });
         }
-        const w = map.get(it.rut);
+        const w = map.get(key);
         if (it.name && (!w.name || w.name === it.rut)) w.name = it.name;
         const amount = Number(it.amount) || 0;
         const gross = Number(it.grossAmount) || amount;
@@ -8674,7 +8701,7 @@ function WorkersHistory({ faenas }) {
       w.payments.sort((a, b) => b.payrollDate - a.payrollDate);
     }
     return map;
-  }, [filteredPayrolls]);
+  }, [filteredPayrolls, rutOf]);
 
   // 3) Filtro por faena, a nivel de pago: quedan los pagos con alguna faena del filtro.
   const workersAfterFaena = useMemo(() => {
@@ -8710,11 +8737,12 @@ function WorkersHistory({ faenas }) {
     const qNorm = normRut(q);
     return list.filter((w) =>
       normRut(w.rut).includes(qNorm) ||
+      normRut(w.workerId).includes(qNorm) ||
       matchesSearchQuery(w.name, q),
     );
   }, [workersAfterFaena, search]);
 
-  const selectedWorker = selectedRut ? filteredWorkers.find((w) => w.rut === selectedRut) || workersAfterFaena.find((w) => w.rut === selectedRut) : null;
+  const selectedWorker = selectedRut ? filteredWorkers.find((w) => w.key === selectedRut) || workersAfterFaena.find((w) => w.key === selectedRut) : null;
 
   // Faenas del filtro: las que aparecen en filteredPayrolls.
   const faenasInPayrolls = useMemo(() => {
@@ -8953,8 +8981,8 @@ function WorkersList({ workers, search, onSelect }) {
     <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
       {workers.map((w) => (
         <button
-          key={w.rut}
-          onClick={() => onSelect(w.rut)}
+          key={w.key}
+          onClick={() => onSelect(w.key)}
           className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2.5 text-left text-sm transition-colors hover:border-[var(--color-accent)] hover:bg-[var(--color-accent-soft)]"
         >
           <div className="min-w-0">
@@ -9012,7 +9040,7 @@ function WorkerPayrollDetailModal({ open, payment, worker, catalogs, onClose, on
   }, [open, payroll?.id]);
 
   if (!payroll) return null;
-  const item = (payroll.items || []).find((it) => it.rut === worker.rut) || null;
+  const item = (payroll.items || []).find((it) => (it.workerId || it.rut) === worker.workerId) || null;
   const cycleDetails = payroll.cycleDetails || [];
   const displayCycleLabel = (cycle) => payroll.cycleLabelOverrides?.[cycle.id] || cycle.label || cycle.id;
 
@@ -9046,6 +9074,7 @@ function WorkerPayrollDetailModal({ open, payment, worker, catalogs, onClose, on
           </div>
 
           <WorkerPaidDetailTables
+            displayRut={worker.rut}
             item={item}
             snapshot={snapshot}
             snapshotLoading={snapshotLoading}
@@ -9111,7 +9140,7 @@ function WorkerDetail({ worker, onBack, onExport, exporting }) {
 
       <WorkerSummaryModal
         open={summaryOpen}
-        worker={{ id: worker.workerId || worker.rut, rut: worker.rut, name: worker.name }}
+        worker={{ id: worker.workerId, rut: worker.rut, name: worker.name }}
         onClose={() => setSummaryOpen(false)}
       />
 

@@ -277,7 +277,7 @@ export default function CleanupPaidWorkdays() {
                     </td>
                     <td className="px-2 py-1 font-mono text-xs">{r.date}</td>
                     <td className="px-2 py-1">{w?.name || "—"}</td>
-                    <td className="px-2 py-1 font-mono text-xs">{r.workerRut}</td>
+                    <td className="px-2 py-1 font-mono text-xs">{w?.rut || r.workerRut}</td>
                     <td className="px-2 py-1 text-xs">
                       {labor?.name || r.laborId}
                       {labor?.type && <span className="text-[var(--color-muted)]"> · {labor.type}</span>}

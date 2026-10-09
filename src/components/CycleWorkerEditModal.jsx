@@ -908,7 +908,7 @@ export default function CycleWorkerEditModal({
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5 text-xs font-normal text-[var(--color-muted)]">
-                  <span className="font-mono">{formatRutForDisplay(workerRut)}</span>
+                  <span className="font-mono">{formatRutForDisplay(row._displayRut || workerRut)}</span>
                   <span>·</span>
                   <span className="font-semibold text-[var(--color-accent)]">{fmtCurrency(row.total || 0)}</span>
                 </div>

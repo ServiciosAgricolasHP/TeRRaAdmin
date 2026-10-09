@@ -71,6 +71,7 @@ import { tripsService } from "../services/transportsService";
 import { qrLockedLaborsOf } from "../utils/harvestSync";
 import { LABOR_TYPES } from "../utils/laborTypes";
 import { localIsoDate } from "../utils/dates";
+import { currentRutResolver } from "../utils/workerRut";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -1191,14 +1192,19 @@ export default function CycleDetail() {
     [resolvedWorkers, orphanWorkers],
   );
 
+  // Rut vigente de la ficha, para mostrar: la fila se identifica por el rut
+  // guardado en la labor (ver utils/workerRut.js).
+  const rutOf = useMemo(() => currentRutResolver(allWorkers), [allWorkers]);
   const rowDataRaw = useMemo(() => {
-    if (isCosechaLabor) return buildRowsCosecha(gridWorkers, days, wdMap, dayCombosByDate);
-    if (isTratoLabor) return buildRowsTrato(gridWorkers, days, wdMap, dayTiersByDate);
-    if (isTratoEtapasLabor) return buildRowsTratoEtapas(gridWorkers, days, wdMap, dayStagesByDate);
-    if (isTratoHELabor) return buildRowsTratoHE(gridWorkers, days, wdMap);
-    return buildRowsNormal(gridWorkers, days, wdMap);
+    let rows;
+    if (isCosechaLabor) rows = buildRowsCosecha(gridWorkers, days, wdMap, dayCombosByDate);
+    else if (isTratoLabor) rows = buildRowsTrato(gridWorkers, days, wdMap, dayTiersByDate);
+    else if (isTratoEtapasLabor) rows = buildRowsTratoEtapas(gridWorkers, days, wdMap, dayStagesByDate);
+    else if (isTratoHELabor) rows = buildRowsTratoHE(gridWorkers, days, wdMap);
+    else rows = buildRowsNormal(gridWorkers, days, wdMap);
+    return rows.map((r) => (r._isTemp ? r : { ...r, _displayRut: rutOf(r.rut) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gridWorkers, days, wdMap, isCosechaLabor, isTratoLabor, isTratoEtapasLabor, isTratoHELabor, dayCombosByDate, dayTiersByDate, dayStagesByDate]);
+  }, [gridWorkers, days, wdMap, isCosechaLabor, isTratoLabor, isTratoEtapasLabor, isTratoHELabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, rutOf]);
 
   // Orden alfabético — mismo criterio que CycleWorkerList.jsx — para que el
   // modal mobile pueda navegar "‹ Anterior/Siguiente ›" entre trabajadores
@@ -3045,7 +3051,7 @@ export default function CycleDetail() {
               className="cursor-pointer hover:underline"
               title="Doble click para editar el trabajador"
             >
-              {formatRutForDisplay(p.value)}
+              {formatRutForDisplay(p.data?._displayRut || p.value)}
             </span>
           );
         },

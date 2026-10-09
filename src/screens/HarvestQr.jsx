@@ -9,6 +9,7 @@ import { useCatalogs } from "../contexts/CatalogsContext";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useAuth } from "../contexts/AuthContext";
 import { comboKey, getDayCombos, workdayDocId, qualityLabel, containerLabel, mapHarvestCodes, invertHarvestCodes } from "../utils/cosechaCombos";
+import { currentRutResolver } from "../utils/workerRut";
 import Modal from "../components/Modal";
 import Select from "../components/Select";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -1140,6 +1141,8 @@ function WeightsExplorer({ prefixes, faenaById }) {
     }
     return map;
   }, [workers]);
+  // Rut vigente de la ficha, para mostrar (ver utils/workerRut.js).
+  const rutOf = useMemo(() => currentRutResolver(workers), [workers]);
 
   // Buscar por QR resuelve al trabajador y filtra por su RUT, no por el `idQr`
   // del pesaje: los códigos se reciclan y se reemplazan, y así aparecen
@@ -1265,9 +1268,10 @@ function WeightsExplorer({ prefixes, faenaById }) {
 
       const rut = w.rut || "—";
       const name = workerNames.get(rut) || "";
+      const displayRut = rut === "—" ? rut : rutOf(rut);
       if (qrMatch) {
         if (!qrMatch.keys.has(rut)) continue;
-      } else if (needle && !rut.toLowerCase().includes(needle) && !name.toLowerCase().includes(needle)) continue;
+      } else if (needle && !rut.toLowerCase().includes(needle) && !displayRut.toLowerCase().includes(needle) && !name.toLowerCase().includes(needle)) continue;
 
       const pfx = prefixById.get(prefixId) || null;
       const { x, y } = mapHarvestCodes(pfx, w);
@@ -1293,9 +1297,9 @@ function WeightsExplorer({ prefixes, faenaById }) {
         g.prefixes.add(prefixId);
         return g;
       };
-      const entry = { id: w.id, rut, name, date: w.dateKey, prefixId, comboLabel: combo.label, qty, x, y, idQr: w.idQr || "", supervisor: w.supervisor || "" };
+      const entry = { id: w.id, rut, displayRut, name, date: w.dateKey, prefixId, comboLabel: combo.label, qty, x, y, idQr: w.idQr || "", supervisor: w.supervisor || "" };
 
-      bucket(byWorker, rut, { rut, name, days: new Set() }).days.add(w.dateKey);
+      bucket(byWorker, rut, { rut, displayRut, name, days: new Set() }).days.add(w.dateKey);
       const dayGroup = bucket(byDay, w.dateKey, { date: w.dateKey, ruts: new Set(), entries: [] });
       dayGroup.ruts.add(rut);
       dayGroup.entries.push(entry);
@@ -1315,7 +1319,7 @@ function WeightsExplorer({ prefixes, faenaById }) {
         .sort((a, b) => b.date.localeCompare(a.date)),
       detail,
     };
-  }, [weights, prefixFilter, search, prefixById, catalogs, workerNames, qrMatch]);
+  }, [weights, prefixFilter, search, prefixById, catalogs, workerNames, qrMatch, rutOf]);
 
   const fmt = (n) => (n == null ? "—" : Number(n).toLocaleString("es-CL", { maximumFractionDigits: 2 }));
   const DETAIL_CAP = 500;
@@ -1450,7 +1454,7 @@ function WeightsExplorer({ prefixes, faenaById }) {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="truncate font-medium">{d.name || d.rut}</div>
-                  {d.name && <div className="font-mono text-xs text-[var(--color-muted)]">{d.rut}</div>}
+                  {d.name && <div className="font-mono text-xs text-[var(--color-muted)]">{d.displayRut}</div>}
                 </div>
                 <div className="shrink-0 text-right">
                   <div className="text-lg font-semibold leading-none">{fmt(d.qty)}</div>
@@ -1497,7 +1501,7 @@ function WeightsExplorer({ prefixes, faenaById }) {
                   <td className="px-3 py-2 whitespace-nowrap">{d.date}</td>
                   <td className="px-3 py-2">
                     <div>{d.name || d.rut}</div>
-                    {d.name && <div className="font-mono text-xs text-[var(--color-muted)]">{d.rut}</div>}
+                    {d.name && <div className="font-mono text-xs text-[var(--color-muted)]">{d.displayRut}</div>}
                   </td>
                   <td className="px-3 py-2 font-mono text-xs">{d.prefixId}</td>
                   <td className="px-3 py-2 font-mono text-xs">
@@ -1548,7 +1552,7 @@ function WeightsExplorer({ prefixes, faenaById }) {
                     {groupBy === "worker" ? (
                       <>
                         <div>{g.name || g.rut}</div>
-                        {g.name && <div className="font-mono text-xs text-[var(--color-muted)]">{g.rut}</div>}
+                        {g.name && <div className="font-mono text-xs text-[var(--color-muted)]">{g.displayRut}</div>}
                         <button
                           onClick={() => { setSearch(g.rut); setGroupBy("detail"); }}
                           className={`${TAP} mt-1 rounded-md border border-[var(--color-border)] px-2.5 text-xs hover:bg-[var(--color-accent-soft)]`}
@@ -1612,7 +1616,7 @@ function WeightsExplorer({ prefixes, faenaById }) {
                                 </td>
                                 <td className="py-1 pr-3" colSpan={2}>
                                   <span className="font-medium">{w.name || w.rut}</span>
-                                  {w.name && <span className="ml-2 font-mono text-[11px] text-[var(--color-muted)]">{w.rut}</span>}
+                                  {w.name && <span className="ml-2 font-mono text-[11px] text-[var(--color-muted)]">{w.displayRut}</span>}
                                   <span className="ml-2 text-[11px] text-[var(--color-muted)]">{w.entries.length} pesaje(s)</span>
                                 </td>
                                 <td className="py-1 pr-3 text-right font-semibold">{w.total == null ? "" : fmt(w.total)}</td>

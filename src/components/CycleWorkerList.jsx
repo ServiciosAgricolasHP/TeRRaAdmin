@@ -77,7 +77,7 @@ export default function CycleWorkerList({ rows, days, fmtCurrency, onSelectWorke
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium">{row.name}</div>
                   <div className="font-mono text-xs text-[var(--color-muted)]">
-                    {formatRutForDisplay(row.rut) || row.rut}
+                    {formatRutForDisplay(row._displayRut || row.rut) || row.rut}
                   </div>
                   {(row._isTemp || row._isOrphan || row._monthly) && (
                     <div className="mt-0.5 flex flex-wrap gap-1 text-[10px]">
