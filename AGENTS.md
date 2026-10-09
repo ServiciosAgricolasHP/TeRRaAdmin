@@ -323,6 +323,10 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
 - **Anotación por día**: click sobre el header de la fecha → modal que edita `cycle.dayNotes[date]`. Hover sobre el header muestra el texto. Compartida entre todas las labores del ciclo.
 - **Trabajadores temporales**: alta sin RUT (`isTemp: true` dentro de `labor.workers`). Aparecen con badge "T" y botón "Asignar RUT" que los reemplaza por el RUT real preservando los workdays.
 - **Sueldo mensual por trabajador-ciclo**: toggle "M" en la fila de la labor → guarda `monthly: true` en `labor.workers[i]`. Las celdas pasan a checkbox de asistencia (`amount: 0`, `attendanceOnly: true`); excluidos de la nómina; badge verde "M".
+  - Disponible en las labores al día (`main`, `supervision`, `extra`) y en `tratoHE` (`allowsMonthly` en `CycleDetail`, mismo criterio en el modal del teléfono). En `tratoHE` tampoco se pagan horas extras ni bonos: el día es solo asistencia, igual que en las demás.
+  - Una fila mensual no recibe montos por ningún camino: ni edición, ni rellenar hacia abajo, ni pegar, ni deshacer (`dispatchCellChange`).
+  - Marcar a alguien como mensual **no toca las jornadas que ya tenía**: si traía días con monto, esos días se siguen pagando hasta que se borren.
+- **Personas por día en las labores al día**: cada tarjeta de "Precios por día" muestra cuántas personas tienen jornada ese día, contando la asistencia de los mensuales.
 - **`rutToName`**: las celdas del grid muestran el nombre desde un map derivado del cache de workers, no desde el snapshot del ciclo — editar el nombre en `/workers` se refleja sin recargar.
 - **Loader de workdays trato**: `ck` se deriva del docId, no del payload. 5 segmentos → `ck = parts.slice(4).join("__")`; 4 segmentos + labor trato → `"t0"`; resto → `makeComboKey(qualityX, qualityY)`.
 - **Diálogos**: nunca usar `window.prompt/confirm/alert` dentro del grid — usar `<Modal>` + `<ConfirmDialog>` para mantener el estilo.

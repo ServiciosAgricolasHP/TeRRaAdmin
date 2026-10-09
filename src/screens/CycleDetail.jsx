@@ -384,10 +384,12 @@ function buildRowsCosecha(workers, days, wdMap, dayCombosByDate) {
 
 function buildRowsTratoHE(workers, days, wdMap) {
   return workers.map((w) => {
-    const row = { rut: w.rut, name: w.name, _isTemp: !!w.isTemp, _isOrphan: !!w.isOrphan };
+    const row = { rut: w.rut, name: w.name, _isTemp: !!w.isTemp, _isOrphan: !!w.isOrphan, _monthly: !!w.monthly };
     let total = 0;
     for (const d of days) {
       const wd = wdMap[workdayMapKey(w.rut, d, SINGLE_COMBO)];
+      // Marca si existe la jornada, para el ✓ de las celdas de sueldo mensual.
+      row[`${d}__present`] = !!wd;
       const qty = Number(wd?.qty) || 0;
       const he = Number(wd?.overtimeHours) || 0;
       const m = !!wd?.hasManejo;
@@ -966,9 +968,25 @@ export default function CycleDetail() {
   // No usan combos ni tiers — un único precio sugerido por día se persiste en
   // dayPrices y aparece como hint clickeable en la celda del trabajador.
   const isNormalLabor = !!activeLabor && !isQtyLabor;
+  // Labores donde un trabajador puede ser de sueldo mensual: sus días pasan a
+  // casillas de asistencia en $0.
+  const allowsMonthly = isNormalLabor || isTratoHELabor;
   const days = cycle?.days || [];
   const workers = activeLabor?.workers || [];
   const wdMap = (activeLabor && workdaysByLabor[activeLabor.id]) || {};
+  // Personas con jornada por fecha en la labor activa, para las tarjetas de
+  // precios de las labores al día. Cuenta también la asistencia de los
+  // trabajadores mensuales.
+  const shownLaborId = activeLabor?.id;
+  const peopleByDate = useMemo(() => {
+    const byDate = new Map();
+    for (const wd of Object.values(workdaysByLabor[shownLaborId] || {})) {
+      if (!wd?.date || !wd.workerRut) continue;
+      if (!byDate.has(wd.date)) byDate.set(wd.date, new Set());
+      byDate.get(wd.date).add(wd.workerRut);
+    }
+    return byDate;
+  }, [workdaysByLabor, shownLaborId]);
   // Fechas con al menos un workday de esta labor. El ciclo comparte `days`
   // entre todas sus labores; esto acota en qué fechas se ofrece anotar.
   const activeLaborDatesWithProduction = new Set(
@@ -2182,6 +2200,9 @@ export default function CycleDetail() {
   const dispatchCellChange = async (node, colDef, newValue) => {
     if (!node || !colDef) return;
     if (!isEditableField(colDef.field)) return;
+    // Una fila de sueldo mensual solo marca asistencia: rellenar, pegar o
+    // deshacer no le escriben montos.
+    if (node.data?._monthly) return;
     const oldValue = node.data?.[colDef.field];
     await onCellValueChanged({
       colDef,
@@ -2503,7 +2524,7 @@ export default function CycleDetail() {
   };
 
   // Toggle de sueldo mensual de un trabajador en la labor activa (`monthly:
-  // true` en su entrada de labor.workers). Solo en labores normales: las
+  // true` en su entrada de labor.workers). Solo donde `allowsMonthly`: las
   // celdas del día pasan a casilla de asistencia y el workday se guarda con
   // amount 0, así no suma a la transferencia de la nómina.
   const toggleMonthly = async (rut) => {
@@ -3013,25 +3034,50 @@ export default function CycleDetail() {
       valueFormatter: (p) => fmtCurrency(p.value),
       cellStyle: { fontWeight: 600, color: "var(--color-accent)" },
     };
-    const isNormalLaborForCol = !isCosechaLabor && !isTratoLabor && !isTratoHELabor;
+    // Celda del día de un trabajador de sueldo mensual: ✓ de asistencia en vez
+    // de monto. Un click crea o borra la jornada en $0.
+    const attendanceCell = (p, d) => {
+      const present = !!p.data?.[`${d}__present`];
+      if (readOnly || photoMode) {
+        return (
+          <span className={present ? "font-semibold text-emerald-600 dark:text-emerald-400" : "text-[var(--color-muted)]"}>
+            {present ? "✓" : ""}
+          </span>
+        );
+      }
+      return (
+        <div
+          role="button"
+          onClick={(e) => { e.stopPropagation(); toggleAttendance(p.data.rut, d, present); }}
+          className={`flex h-full w-full cursor-pointer items-center justify-center text-base font-bold transition-colors ${
+            present
+              ? "bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-300"
+              : "text-transparent hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)]"
+          }`}
+          title={present ? "Asistencia registrada (sin pago). Click para borrar." : "Marcar asistencia sin pago."}
+        >
+          {present ? "✓" : "+"}
+        </div>
+      );
+    };
+    const attendanceCellStyle = { textAlign: "center", padding: 0 };
     const actionsCol = photoMode ? [] : [{
       headerName: "", field: "_actions", editable: false,
-      // Ancho según los botones de la celda: ✕, más M en labores normales y los
-      // de líder en la vista por grupo.
+      // Ancho según los botones de la celda: ✕, más M en las labores que
+      // admiten sueldo mensual y los de líder en la vista por grupo.
       width: useGrouped
-        ? (isNormalLaborForCol ? 160 : 130)
-        : (isNormalLaborForCol ? 70 : 50),
+        ? (allowsMonthly ? 160 : 130)
+        : (allowsMonthly ? 70 : 50),
       pinned: "right",
       cellRenderer: (p) => {
         const rut = p.data?.rut;
         if (!rut || p.data?._isHeader) return null;
         const isTemp = !!p.data?._isTemp;
         const isMonthly = !!p.data?._monthly;
-        const isNormalLabor = !isCosechaLabor && !isTratoLabor && !isTratoHELabor;
         const showAssign = useGrouped && !rutToLeader.has(rut) && !readOnly && !isTemp;
         return (
           <div className="flex items-center gap-1.5">
-            {isNormalLabor && !readOnly && (
+            {allowsMonthly && !readOnly && (
               <button
                 type="button"
                 onClick={() => toggleMonthly(rut)}
@@ -3301,6 +3347,7 @@ export default function CycleDetail() {
             headerClass: red ? "ag-header-red-day" : undefined,
             valueFormatter: (p) => p.value ? fmtCurrency(p.value) : "",
             cellRenderer: (p) => {
+              if (p.data?._monthly) return attendanceCell(p, d);
               const amt = Number(p.value) || 0;
               if (!amt) return "";
               return (
@@ -3314,7 +3361,7 @@ export default function CycleDetail() {
                 </button>
               );
             },
-            cellStyle: { textAlign: "right" },
+            cellStyle: (p) => p.data?._monthly ? attendanceCellStyle : { textAlign: "right" },
           };
         });
         return [...baseLeft, ...dayCols, totalCol, ...actionsCol];
@@ -3335,8 +3382,9 @@ export default function CycleDetail() {
               headerName: "Base",
               field: `${d}__qty`,
               // Una celda vacía no es editable, así el click llega al botón de
-              // la base sugerida; con valor, se edita normalmente.
-              editable: (p) => !readOnly && !photoMode && Number(p.data?.[`${d}__qty`] || 0) > 0,
+              // la base sugerida; con valor, se edita normalmente. Las filas de
+              // sueldo mensual solo marcan asistencia.
+              editable: (p) => !readOnly && !photoMode && !p.data?._monthly && Number(p.data?.[`${d}__qty`] || 0) > 0,
               width: isMobile ? 85 : 130,
               type: "numericColumn",
               valueParser: (p) => parseAmount(p.newValue),
@@ -3345,6 +3393,7 @@ export default function CycleDetail() {
               headerTooltip: `Base del día (monto). Sugerido: ${fmtCurrency(effectiveDayPrice(labor, cfg))}. Abajo: bonos (M/S/+) y total del día — click para editar.`,
               cellStyle: { padding: 0 },
               cellRenderer: (p) => {
+                if (p.data?._monthly) return attendanceCell(p, d);
                 const v = Number(p.value) || 0;
                 const m = p.data?.[`${d}__m`];
                 const s = p.data?.[`${d}__s`];
@@ -3398,7 +3447,7 @@ export default function CycleDetail() {
             {
               headerName: "HE",
               field: `${d}__he`,
-              editable: !readOnly && !photoMode,
+              editable: (p) => !readOnly && !photoMode && !p.data?._monthly,
               width: 60,
               type: "numericColumn",
               valueParser: (p) => parseAmount(p.newValue),
@@ -3429,30 +3478,7 @@ export default function CycleDetail() {
         valueFormatter: (p) => fmtCurrency(p.value),
         headerTooltip: `${d} · Sugerido: ${fmtCurrency(suggested)}. Click en celda vacía para usarlo, doble click para editar.`,
         cellRenderer: (p) => {
-          if (p.data?._monthly) {
-            const present = !!p.data?.[`${d}__present`];
-            if (readOnly || photoMode) {
-              return (
-                <span className={present ? "font-semibold text-emerald-600 dark:text-emerald-400" : "text-[var(--color-muted)]"}>
-                  {present ? "✓" : ""}
-                </span>
-              );
-            }
-            return (
-              <div
-                role="button"
-                onClick={(e) => { e.stopPropagation(); toggleAttendance(p.data.rut, d, present); }}
-                className={`flex h-full w-full cursor-pointer items-center justify-center text-base font-bold transition-colors ${
-                  present
-                    ? "bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-300"
-                    : "text-transparent hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)]"
-                }`}
-                title={present ? "Asistencia registrada (sin pago). Click para borrar." : "Marcar asistencia sin pago."}
-              >
-                {present ? "✓" : "+"}
-              </div>
-            );
-          }
+          if (p.data?._monthly) return attendanceCell(p, d);
           const amt = Number(p.value) || 0;
           if (amt) {
             return (
@@ -3476,9 +3502,7 @@ export default function CycleDetail() {
             </button>
           );
         },
-        cellStyle: (p) => p.data?._monthly
-          ? { textAlign: "center", padding: 0 }
-          : { textAlign: "right" },
+        cellStyle: (p) => p.data?._monthly ? attendanceCellStyle : { textAlign: "right" },
       };
     });
     return [...baseLeft, ...dayCols, totalCol, ...actionsCol];
@@ -4621,6 +4645,7 @@ export default function CycleDetail() {
                       ? localVal
                       : (dayCfg.price ? dayCfg.price : "");
                     const hasCustom = Number(dayCfg.price) > 0;
+                    const people = peopleByDate.get(d)?.size || 0;
                     return (
                       <div
                         key={d}
@@ -4654,6 +4679,11 @@ export default function CycleDetail() {
                         {!hasCustom && (
                           <div className="text-[10px] text-[var(--color-muted)]">
                             usa base del ciclo · {fmtCurrency(fallback)}
+                          </div>
+                        )}
+                        {people > 0 && (
+                          <div className="text-[10px] text-[var(--color-muted)]">
+                            👥 {people} {people === 1 ? "persona" : "personas"}
                           </div>
                         )}
                       </div>

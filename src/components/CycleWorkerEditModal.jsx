@@ -170,6 +170,9 @@ export default function CycleWorkerEditModal({
   const isTrato = type === "trato";
   const isTratoEtapas = type === "tratoEtapas";
   const isTratoHE = type === "tratoHE";
+  // Mismo criterio que `allowsMonthly` en CycleDetail.jsx: labores al día y
+  // jornadas con horas extras.
+  const allowsMonthly = !isCosecha && !isTrato && !isTratoEtapas;
   const isTemp = !!row._isTemp;
 
   const doRemove = async () => {
@@ -189,7 +192,7 @@ export default function CycleWorkerEditModal({
   // removeWorkerByRut en CycleDetail.jsx).
   const renderTopActions = () => (
     <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-[var(--color-surface-2)] p-2.5">
-      {type === "normal" && !readOnly && (
+      {allowsMonthly && !readOnly && (
         <button
           type="button"
           onClick={() => toggleMonthly(workerRut)}
@@ -681,6 +684,7 @@ export default function CycleWorkerEditModal({
   };
 
   const renderTratoHEDay = (d) => {
+    if (row._monthly) return renderAttendanceDay(d);
     const cfg = getDaySingle(dayPrices, activeLabor.id, d, "normal");
     const suggested = effectiveDayPrice(activeLabor, cfg);
     const qtyField = `${d}__qty`;
@@ -774,32 +778,35 @@ export default function CycleWorkerEditModal({
     );
   };
 
+  // Día de un trabajador de sueldo mensual: solo la asistencia, en $0.
+  const renderAttendanceDay = (d) => {
+    const present = !!row[`${d}__present`];
+    return (
+      <div key={d} className={`flex items-center justify-between gap-2 ${cardAccentCls(present)}`}>
+        <div className="flex items-center gap-1.5">
+          <div className="text-sm font-semibold">{formatDayLabel(d)}</div>
+          {configureBtn(d)}
+        </div>
+        <button
+          type="button"
+          disabled={readOnly}
+          onClick={() => toggleAttendance(workerRut, d, present)}
+          className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+            present
+              ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+              : "border border-[var(--color-border)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
+          }`}
+        >
+          {present ? "✓ Presente" : "Marcar presente"}
+        </button>
+      </div>
+    );
+  };
+
   const renderNormalDay = (d) => {
     const dayCfg = getDaySingle(dayPrices, activeLabor.id, d, "normal");
     const suggested = effectiveDayPrice(activeLabor, dayCfg);
-    if (row._monthly) {
-      const present = !!row[`${d}__present`];
-      return (
-        <div key={d} className={`flex items-center justify-between gap-2 ${cardAccentCls(present)}`}>
-          <div className="flex items-center gap-1.5">
-            <div className="text-sm font-semibold">{formatDayLabel(d)}</div>
-            {configureBtn(d)}
-          </div>
-          <button
-            type="button"
-            disabled={readOnly}
-            onClick={() => toggleAttendance(workerRut, d, present)}
-            className={`rounded-full px-3 py-1.5 text-xs font-medium ${
-              present
-                ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-                : "border border-[var(--color-border)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
-            }`}
-          >
-            {present ? "✓ Presente" : "Marcar presente"}
-          </button>
-        </div>
-      );
-    }
+    if (row._monthly) return renderAttendanceDay(d);
     const field = d;
     const amt = Number(row[field]) || 0;
     return (
