@@ -327,7 +327,7 @@ function CarriersTab({ onViewTrips }) {
 
                   {!isOwn && c.defaultRate > 0 && (
                     <div className="mt-2 text-[10px] text-[var(--color-muted)]">
-                      Tarifa default · <span className="tabular-nums">{fmtCurrency(c.defaultRate)}</span>
+                      Tarifa por defecto · <span className="tabular-nums">{fmtCurrency(c.defaultRate)}</span>
                     </div>
                   )}
 
@@ -463,7 +463,7 @@ function CarrierEditModal({ open, onClose, carrier, onSave }) {
           options={CARRIER_TYPES.map((t) => ({ value: t.value, label: t.label }))}
         />
         {type !== "own" && (
-          <TextField label="Tarifa default" type="number" value={defaultRate} onChange={setDefaultRate} />
+          <TextField label="Tarifa por defecto" type="number" value={defaultRate} onChange={setDefaultRate} />
         )}
         <div className="col-span-2">
           <TextField label="Notas" value={notes} onChange={setNotes} />
@@ -3394,7 +3394,7 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
   const handleAddAbono = async () => {
     const amt = Number(newAbono.amount) || 0;
     if (amt <= 0) {
-      toast.error("Ingresá un monto mayor a 0");
+      toast.error("Ingresa un monto mayor a 0");
       return;
     }
     if (amt > pendingAmount) {
@@ -5239,7 +5239,7 @@ function PayrollsTab() {
         </div>
       ) : payrolls.length === 0 ? (
         <div className="rounded-lg border border-dashed border-[var(--color-border)] py-10 text-center text-sm text-[var(--color-muted)]">
-          Aún no hay quincenas. Creá la primera con + Nueva quincena.
+          Aún no hay quincenas. Crea la primera con + Nueva quincena.
         </div>
       ) : (
         <div className="space-y-2">
@@ -5418,7 +5418,7 @@ function TypeToConfirmModal({ word, title, message, confirmLabel, danger = false
     >
       <p className="mb-3 text-sm">{message}</p>
       <label className="block text-xs text-[var(--color-muted)]">
-        Para confirmar, escribí <b>{word}</b> abajo:
+        Para confirmar, escribe <b>{word}</b> abajo:
       </label>
       <input
         autoFocus
@@ -6291,7 +6291,7 @@ function PayrollDetailModal({
 
       {items.length === 0 ? (
         <div className="rounded-md border border-dashed border-[var(--color-border)] py-4 text-center text-xs text-[var(--color-muted)]">
-          La quincena está vacía. Agregá resúmenes con el botón de arriba.
+          La quincena está vacía. Agrega resúmenes con el botón de arriba.
         </div>
       ) : (
         <div className="overflow-x-auto rounded-md border border-[var(--color-border)]">

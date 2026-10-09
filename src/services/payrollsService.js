@@ -218,7 +218,7 @@ export async function revertBankPaid(payrollId, onProgress) {
   const p = await payrollsService.getById(payrollId);
   if (!p) throw new Error("Nómina no encontrada");
   if (p.status === "paid") {
-    throw new Error("La nómina está pagada entera — revertí el pago completo.");
+    throw new Error("La nómina está pagada entera — revierte el pago completo.");
   }
   await unmarkWorkdaysPaid(bankWorkdayIdsOf(p), onProgress);
   return payrollsService.update(payrollId, { bankPaidAt: null, bankPaidBy: null });
@@ -237,7 +237,7 @@ export async function setCashPaidRuts(payrollId, ruts) {
 // alguien que ya tiene la plata en la cuenta.
 export function assertEditable(p, verb = "editar") {
   if (p.status === "paid") {
-    throw new Error(`La nómina está pagada — revertí el pago antes de ${verb}.`);
+    throw new Error(`La nómina está pagada — revierte el pago antes de ${verb}.`);
   }
   if (p.bankPaidAt) {
     throw new Error(`Las transferencias de esta nómina ya se pagaron — revertilas antes de ${verb}.`);

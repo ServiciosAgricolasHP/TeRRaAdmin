@@ -321,7 +321,7 @@ function buildPisoChildCol(date, labor, dayPrices, disabled, togglePiso) {
       const title = !hasWd
         ? "Asigna primero producción este día"
         : eff === 0
-          ? "Configura el piso del día o el default de la labor"
+          ? "Configura el piso del día o el piso por defecto de la labor"
           : `${checked ? "Quitar piso" : "Asignar piso"} (${fmtCurrency(eff)})${breakdown}`;
       return (
         <button
@@ -505,11 +505,11 @@ function StagesEditor({ stages, onChange }) {
       </div>
       <p className="text-xs text-[var(--color-muted)]">
         Cada etapa: nombre y si cuenta para el conteo de unidades (✓). El precio
-        se configura por día abajo, igual que en trato. Marcá las que cuentan
+        se configura por día abajo, igual que en trato. Marca las que cuentan
         (ej. Instalación, Completo); las que no cuentan pagan pero no suman unidades.
       </p>
       {stages.length === 0 && (
-        <p className="text-xs text-[var(--color-danger)]">Agregá al menos una etapa.</p>
+        <p className="text-xs text-[var(--color-danger)]">Agrega al menos una etapa.</p>
       )}
       {stages.map((st, idx) => (
         <div key={st.id || idx} className="flex items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2">
@@ -1758,7 +1758,7 @@ export default function CycleDetail() {
     }
     const amount = effectivePiso(labor, dayPrices, date);
     if (!amount) {
-      toast.warning("Configurá primero el piso por día o el piso default en la labor.");
+      toast.warning("Configura primero el piso por día o el piso por defecto de la labor.");
       return;
     }
     const next = {
@@ -2616,7 +2616,7 @@ export default function CycleDetail() {
     if (real.isTemp) { setAssignTempRut(null); return; }
     if (real.rut === tempRut) { setAssignTempRut(null); return; }
     if (workers.some((w) => w.rut === real.rut)) {
-      toast.warning("Ese trabajador ya existe en este ciclo. Quitá primero la fila duplicada antes de asignar.");
+      toast.warning("Ese trabajador ya existe en este ciclo. Quita primero la fila duplicada antes de asignar.");
       return;
     }
     setAssignBusy(true);
@@ -2980,7 +2980,7 @@ export default function CycleDetail() {
               <span
                 key="monthly"
                 className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500/20 text-[10px] font-bold text-emerald-700 dark:text-emerald-300"
-                title="Pago mensual: las jornadas se registran como asistencia pero no entran al payroll"
+                title="Pago mensual: las jornadas se registran como asistencia pero no entran a la nómina"
               >
                 M
               </span>
@@ -2991,7 +2991,7 @@ export default function CycleDetail() {
               <span
                 key="orphan"
                 className="rounded border border-rose-500/50 bg-rose-500/15 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-300"
-                title="Tiene producción registrada pero ya no está en el listado del labor. Las métricas y el payroll lo siguen contando. Eliminar sus workdays o re-agregarlo al listado."
+                title="Tiene producción registrada pero ya no está en el listado de la labor. Las métricas y la nómina lo siguen contando. Elimina sus jornadas o vuelve a agregarlo al listado."
               >
                 Huérfano
               </span>
@@ -3042,7 +3042,7 @@ export default function CycleDetail() {
                 }`}
                 title={isMonthly
                   ? "Pago mensual activo. Click para volver a pago por día."
-                  : "Marcar como pago mensual (no entra al payroll)."}
+                  : "Marcar como pago mensual (no entra a la nómina)."}
               >
                 M
               </button>
@@ -3972,7 +3972,7 @@ export default function CycleDetail() {
               )}
               {isCosechaLabor && (
                 <span className="ml-3 text-[var(--color-muted)]/70">
-                  Cosecha · default {defaultMode === "flat" ? "día fijo" : "por unidad"} · agrega tipos por día abajo
+                  Cosecha · por defecto {defaultMode === "flat" ? "día fijo" : "por unidad"} · agrega tipos por día abajo
                 </span>
               )}
               {isTratoLabor && (
@@ -4484,7 +4484,7 @@ export default function CycleDetail() {
                                 true,
                               );
                             }}
-                            title="Unidad de medida — qué representa cada qty (Metro, Polín, Planta, etc.)"
+                            title="Unidad de medida — qué representa cada cantidad (Metro, Polín, Planta, etc.)"
                             className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-0.5 text-[10px] outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
                           >
                             <option value="">—</option>
@@ -4496,7 +4496,7 @@ export default function CycleDetail() {
                             <button
                               disabled={readOnly}
                               onClick={() => persistComboConfig(activeLabor.id, d, t.key, { mode: "unit" }, true)}
-                              title="Por unidad (qty × precio)"
+                              title="Por unidad (cantidad × precio)"
                               className={`px-1.5 py-0.5 transition-colors disabled:opacity-50 ${
                                 t.mode === "unit"
                                   ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
@@ -4508,7 +4508,7 @@ export default function CycleDetail() {
                             <button
                               disabled={readOnly}
                               onClick={() => persistComboConfig(activeLabor.id, d, t.key, { mode: "flat" }, true)}
-                              title="Pago al día (qty informativo)"
+                              title="Pago al día (la cantidad es informativa)"
                               className={`px-1.5 py-0.5 transition-colors disabled:opacity-50 border-l border-[var(--color-border)] ${
                                 t.mode === "flat"
                                   ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
@@ -4521,7 +4521,7 @@ export default function CycleDetail() {
                           {tt.qty > 0 && (
                             <span
                               className="ml-1 text-[10px] tabular-nums text-[var(--color-muted)]"
-                              title="Total de este tier en el día (cantidad · monto)"
+                              title="Total de este precio en el día (cantidad · monto)"
                             >
                               {tt.qty.toLocaleString("es-CL")} · {fmtCurrency(tt.amount)}
                             </span>
@@ -4673,7 +4673,7 @@ export default function CycleDetail() {
                 onClick={() => setShowDesktopGrid((v) => !v)}
                 className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-xs hover:bg-[var(--color-accent-soft)]"
               >
-                {showDesktopGrid ? "📋 Ver por trabajador" : "🗂 Ver grid completo"}
+                {showDesktopGrid ? "📋 Ver por trabajador" : "🗂 Ver grilla completa"}
               </button>
             </div>
           )}
@@ -4742,7 +4742,7 @@ export default function CycleDetail() {
 
           {/* Este bloque ocupa el alto libre del <main> (flex-1, min-h-0) y la
               grilla se desplaza por dentro. En mobile se muestra
-              CycleWorkerList en su lugar, salvo con "Ver grid completo". */}
+              CycleWorkerList en su lugar, salvo con "Ver grilla completa". */}
           <div className="flex min-h-0 flex-1 flex-col">
             {isMobile && !showDesktopGrid && !photoMode ? (
               <CycleWorkerList
@@ -5028,7 +5028,7 @@ export default function CycleDetail() {
             )}
             {["main", "supervision", "extra"].includes(laborForm.data.type) && (
               <TextField
-                label="Precio diario default ($)" type="number"
+                label="Precio diario por defecto ($)" type="number"
                 value={laborForm.data.baseDayDefault}
                 onChange={(v) => setLaborForm((s) => ({ ...s, data: { ...s.data, baseDayDefault: v } }))}
               />
@@ -5036,7 +5036,7 @@ export default function CycleDetail() {
             {laborForm.data.type === "tratoHE" && (
               <div className="grid gap-3 sm:grid-cols-2">
                 <TextField
-                  label="Base diaria default ($)" type="number"
+                  label="Base diaria por defecto ($)" type="number"
                   value={laborForm.data.baseDayDefault}
                   onChange={(v) => setLaborForm((s) => ({ ...s, data: { ...s.data, baseDayDefault: v } }))}
                 />
@@ -5495,7 +5495,7 @@ function CatalogsModal({ open, onClose, catalogs, onAddEntry, onRenameEntry }) {
     <Modal open={open} onClose={onClose} title="Catálogos globales" size="xl">
       <p className="mb-5 text-sm text-[var(--color-muted)]">
         Estos catálogos son compartidos por toda la aplicación. Cualquier supervisor puede
-        agregar entradas; renombrar afecta los datos históricos (los workdays guardan el
+        agregar entradas; renombrar afecta los datos históricos (las jornadas guardan el
         número de índice, no el label).
       </p>
 
@@ -5521,7 +5521,7 @@ function CatalogsModal({ open, onClose, catalogs, onAddEntry, onRenameEntry }) {
       <CatalogGroup
         emoji="✂️"
         title="Trato"
-        description="Definen qué se hace a trato (poda, amarre…) y cómo se cuenta el qty diario (por metro, por polín, por planta…). Aparecen en la configuración de la labor y, la unidad, junto al precio por día."
+        description="Definen qué se hace a trato (poda, amarre…) y cómo se cuenta la cantidad diaria (por metro, por polín, por planta…). Aparecen en la configuración de la labor y, la unidad, junto al precio por día."
       >
         <CatalogSection
           title="Tipos de trato"
@@ -5531,7 +5531,7 @@ function CatalogsModal({ open, onClose, catalogs, onAddEntry, onRenameEntry }) {
         />
         <CatalogSection
           title="Unidades de trato"
-          subtitle="Qué representa el qty cada día (Metro, Polín, Planta, Hilera…). Se elige junto al precio en el panel de Precios por día."
+          subtitle="Qué representa la cantidad de cada día (Metro, Polín, Planta, Hilera…). Se elige junto al precio en el panel de Precios por día."
           field="tratoUnits" entries={catalogs.tratoUnits || []}
           onAddEntry={onAddEntry} onRenameEntry={onRenameEntry}
         />
@@ -5875,7 +5875,7 @@ function DefaultLeadersModal({ open, onClose, labor, readOnly, onSave }) {
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Líderes y manejo (defaults)" size="lg">
+    <Modal open={open} onClose={onClose} title="Líderes y manejo (por defecto)" size="lg">
       <p className="mb-3 text-sm text-[var(--color-muted)]">
         Los trabajadores marcados reciben automáticamente el bono cuando se ingrese una jornada nueva.
         Para una excepción puntual, abre el bono de esa celda y desmárcalo manualmente.

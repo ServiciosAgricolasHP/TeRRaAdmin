@@ -237,7 +237,7 @@ export default function DayConfigContent({
                   const v = e.target.value;
                   persistComboConfig(laborId, date, t.key, { unit: v === "" ? null : Number(v) }, true);
                 }}
-                title="Unidad de medida — qué representa cada qty (Metro, Polín, Planta, etc.)"
+                title="Unidad de medida — qué representa cada cantidad (Metro, Polín, Planta, etc.)"
                 className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
               >
                 <option value="">Sin unidad</option>

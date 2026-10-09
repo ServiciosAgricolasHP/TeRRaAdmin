@@ -631,7 +631,7 @@ export default function Dashboard() {
                     ? "mes actual"
                     : `${ops.workdaysDelta >= 0 ? "+" : ""}${fmtPercent(ops.workdaysDelta, 0)} vs mes anterior`
                 }
-                title="Filas de workday del mes en curso. Incluye piso y asistencia de trabajadores mensuales, así que no es exactamente la cuenta de jornadas pagadas."
+                title="Registros de jornada del mes en curso. Incluye piso y asistencia de trabajadores mensuales, así que no es exactamente la cuenta de jornadas pagadas."
               />
               <MetricCard
                 label="Ciclos estancados"

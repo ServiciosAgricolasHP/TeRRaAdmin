@@ -2,8 +2,8 @@
 // Los catálogos vienen de la colección global de catálogos (vía CatalogsContext).
 
 export const COSECHA_MODES = [
-  { value: "unit", label: "Por unidad (qty × precio/día)" },
-  { value: "flat", label: "Por día fijo (mismo monto, qty informativo)" },
+  { value: "unit", label: "Por unidad (cantidad × precio/día)" },
+  { value: "flat", label: "Por día fijo (mismo monto, la cantidad es informativa)" },
 ];
 
 export const comboKey = (x, y) => `${x}_${y}`;

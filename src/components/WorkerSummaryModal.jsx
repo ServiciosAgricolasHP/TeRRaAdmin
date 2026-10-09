@@ -479,7 +479,7 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
         <button
           onClick={() => setIncludeClosed((v) => !v)}
           className={`rounded-md border px-2 py-1 text-xs ${includeClosed ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)]" : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"}`}
-          title="Anexa workdays de ciclos cerrados al resumen (limitado al rango de fechas)"
+          title="Suma al resumen las jornadas de ciclos cerrados (limitado al rango de fechas)"
         >
           {includeClosed ? "✓ " : ""}📂 Incluir ciclos cerrados
         </button>

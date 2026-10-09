@@ -1641,7 +1641,7 @@ export default function CycleSummaryModal({
 
           const HEADER_ROW = mode === "cobrar" ? 5 : 4;
           const headerCells = ["B", "C", "D", "E", "F"];
-          const headers = ["Fecha", isCosecha ? "Combo (Calidad / Envase)" : "Tier", "Cantidad", "Precio", "Total"];
+          const headers = ["Fecha", isCosecha ? "Combo (Calidad / Envase)" : "Tipo de precio", "Cantidad", "Precio", "Total"];
           headerCells.forEach((col, i) => {
             const c = ws.getCell(`${col}${HEADER_ROW}`);
             c.value = headers[i];
@@ -1670,7 +1670,7 @@ export default function CycleSummaryModal({
               const tiers = getTratoTiers(dayPrices, labor.id, wd.date);
               const tier = tiers.find((x) => x.key === key);
               const unitLabel = tier?.unit != null ? tratoUnitLabel(catalogs, tier.unit) : null;
-              label = unitLabel || `Tier ${key.replace(/^t/, "")}`;
+              label = unitLabel || `Precio ${Number(key.replace(/^t/, "")) + 1}`;
               qty = t.qty;
             }
             if (qty <= 0) continue;
@@ -2763,7 +2763,7 @@ function CobrarEditor({ labors, carriers, carrierById, onLaborChange, onCarrierC
               <th className="px-2 py-1">Incluir</th>
               <th className="px-2 py-1">Concepto</th>
               <th className="px-2 py-1 text-right">Cantidad</th>
-              <th className="px-2 py-1 text-right" title="Mediana del precio por día — robusta a outliers como una jornada mensual. Entre paréntesis el promedio simple cuando difiere.">
+              <th className="px-2 py-1 text-right" title="Mediana del precio por día — no la mueven los valores fuera de lo común, como una jornada mensual. Entre paréntesis el promedio simple cuando difiere.">
                 Pago tipo
               </th>
               <th className="px-2 py-1 text-right">Tarifa cobro</th>
@@ -2804,7 +2804,7 @@ function CobrarEditor({ labors, carriers, carrierById, onLaborChange, onCarrierC
                   {showMeanHint && (
                     <div
                       className="text-[10px] opacity-70"
-                      title="Promedio simple — sube/baja con outliers; la mediana es lo que ves arriba."
+                      title="Promedio simple — lo mueven los valores fuera de lo común; la mediana es lo que ves arriba."
                     >
                       prom. {fmtCurrency(l.meanRate)}
                     </div>
@@ -3300,7 +3300,7 @@ function LaborTable({
     if (same < 2 && (r.tierIdx ?? 0) === 0) return null;
     const unitLbl = r.unit != null ? tratoUnitLabel(catalogs, r.unit) : null;
     if (unitLbl) return unitLbl;
-    return `T${(r.tierIdx ?? 0) + 1}`;
+    return `P${(r.tierIdx ?? 0) + 1}`;
   };
   const handleDateChange = (r, raw) => {
     if (!onEditRow) return;
@@ -3396,7 +3396,7 @@ function LaborTable({
                               borderRadius: 4,
                               verticalAlign: "middle",
                             }}
-                            title="Tier de precio"
+                            title="Precio del día (P1, P2…)"
                           >
                             {tb}
                           </span>
@@ -3473,7 +3473,7 @@ function LaborTable({
                         value={inputVal(valorTotal)}
                         onChange={(e) => handleField(r, "amount", e.target.value)}
                         style={{ ...cobrarInputStyle, fontWeight: 600 }}
-                        title="Sobreescribe el cálculo qty × rate. Borrá para volver al auto."
+                        title="Reemplaza el cálculo cantidad × tarifa. Bórralo para volver al cálculo automático."
                       />
                     ) : fmtCurrency(valorTotal)}
                   </td>
@@ -3744,7 +3744,7 @@ function TransportTable({
                         value={inputVal(total)}
                         onChange={(e) => handleField(r, "amount", e.target.value)}
                         style={{ ...cobrarInputStyle, fontWeight: 600 }}
-                        title="Sobreescribe el cálculo vueltas × valor. Borrá para volver al auto."
+                        title="Reemplaza el cálculo vueltas × valor. Bórralo para volver al cálculo automático."
                       />
                     ) : fmtCurrency(total)}
                   </td>
@@ -3973,7 +3973,7 @@ function LaborWorkerGrid({
         combos = [...seen.keys()].map((key) => {
           const idx = key.startsWith("t") ? Number(key.slice(1)) : 0;
           const ttLabel = tratoTypeLabel(catalogs, labor?.tratoType ?? 0);
-          return { key, label: `T${idx + 1} ${ttLabel}`.trim() };
+          return { key, label: `P${idx + 1} ${ttLabel}`.trim() };
         }).sort((a, b) => a.key.localeCompare(b.key));
       }
 

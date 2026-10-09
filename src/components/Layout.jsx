@@ -215,7 +215,7 @@ function ProfileModal({ onClose }) {
             className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
           />
           <span className="mt-1 block text-xs text-[var(--color-muted)]">
-            Es el nombre con el que quedás firmando los registros que cargás a mano
+            Es el nombre con el que quedan firmados los registros que cargas a mano
             (por ejemplo, el supervisor de un pesaje). Sin alias se usa tu correo.
           </span>
         </label>

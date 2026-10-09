@@ -677,7 +677,7 @@ export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate
         <TextField label="Lugar (origen)" value={lugar} onChange={setLugar} placeholder="ej: C.ALTO/PURRANQUE" />
         <TextField label="Destino" value={destino} onChange={setDestino} placeholder="ej: FRESIA" />
         <TextField label="N° personas" type="number" value={personCount} onChange={setPersonCount} />
-        <TextField label="Vueltas (qty)" type="number" value={qty} onChange={setQty} />
+        <TextField label="Cantidad de vueltas" type="number" value={qty} onChange={setQty} />
         <TextField
           label={isOwn ? "Tarifa (propio = 0)" : "Tarifa por vuelta"}
           type="number"
@@ -736,7 +736,7 @@ function QuickCreateCarrierModal({ open, onClose, onCreated }) {
     e?.preventDefault?.();
     if (!alias.trim()) return setError("Alias requerido");
     if (!name.trim()) return setError("Nombre requerido");
-    if (!vehicleAlias.trim()) return setError("Agregá al menos un vehículo");
+    if (!vehicleAlias.trim()) return setError("Agrega al menos un vehículo");
     setBusy(true);
     try {
       const created = await addCarrier({
@@ -805,7 +805,7 @@ function QuickCreateCarrierModal({ open, onClose, onCreated }) {
         <TextField label="Patente" value={plate} onChange={setPlate} placeholder="opcional" />
         {error && <div className="col-span-2 text-sm text-[var(--color-danger)]">{error}</div>}
         <p className="col-span-2 text-[11px] text-[var(--color-muted)]">
-          Para agregar más vehículos o ajustar otros datos, editá el transportista desde el módulo de Transportes.
+          Para agregar más vehículos o ajustar otros datos, edita el transportista desde el módulo de Transportes.
         </p>
       </form>
     </Modal>

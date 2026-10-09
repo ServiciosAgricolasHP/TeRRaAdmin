@@ -149,7 +149,7 @@ export default function Advances() {
       confirmDelete.status === "partial" ||
       (Number(confirmDelete.amountPaid) || 0) > 0;
     if (deleteLocked) {
-      toast.warning("No se puede eliminar un anticipo/bono con pagos aplicados. Para perdonar el saldo, usá Editar y bajá el monto al ya pagado.");
+      toast.warning("No se puede eliminar un anticipo/bono con pagos aplicados. Para perdonar el saldo, usa Editar y baja el monto a lo ya pagado.");
       setConfirmDelete(null);
       return;
     }
@@ -317,7 +317,7 @@ export default function Advances() {
                     <button
                       onClick={() => setEditing({ ...a, mode: "edit" })}
                       disabled={editLocked}
-                      title={editLocked ? "No editable: totalmente aplicado" : (status === "partial" ? "Editar (parcial — podés bajar el monto para cerrar)" : "Editar")}
+                      title={editLocked ? "No editable: totalmente aplicado" : (status === "partial" ? "Editar (parcial — puedes bajar el monto para cerrar)" : "Editar")}
                       className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-40"
                     >
                       Editar
@@ -325,7 +325,7 @@ export default function Advances() {
                     <button
                       onClick={() => setConfirmDelete(a)}
                       disabled={deleteLocked}
-                      title={deleteLocked ? "Tiene pagos aplicados — usá Editar para cerrar el saldo" : "Eliminar"}
+                      title={deleteLocked ? "Tiene pagos aplicados — usa Editar para cerrar el saldo" : "Eliminar"}
                       className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:opacity-40"
                     >
                       Eliminar
@@ -406,7 +406,7 @@ export default function Advances() {
                             <button
                               onClick={() => setEditing({ ...a, mode: "edit" })}
                               disabled={editLocked}
-                              title={editLocked ? "No editable: totalmente aplicado" : (st === "partial" ? "Editar (parcial — podés bajar el monto para cerrar)" : "Editar")}
+                              title={editLocked ? "No editable: totalmente aplicado" : (st === "partial" ? "Editar (parcial — puedes bajar el monto para cerrar)" : "Editar")}
                               className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-40"
                             >
                               Editar
@@ -414,7 +414,7 @@ export default function Advances() {
                             <button
                               onClick={() => setConfirmDelete(a)}
                               disabled={deleteLocked}
-                              title={deleteLocked ? "Tiene pagos aplicados — usá Editar para cerrar el saldo" : "Eliminar"}
+                              title={deleteLocked ? "Tiene pagos aplicados — usa Editar para cerrar el saldo" : "Eliminar"}
                               className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:opacity-40"
                             >
                               Eliminar
@@ -561,11 +561,11 @@ function AdvanceFormModal({ open, item, items = [], onClose, onSaved }) {
   };
 
   const submit = async () => {
-    if (!form.workerRut) { toast.warning("Seleccioná un trabajador."); return; }
+    if (!form.workerRut) { toast.warning("Selecciona un trabajador."); return; }
     if (!form.amount || form.amount <= 0) { toast.warning("Monto debe ser mayor a 0."); return; }
     const newAmount = Math.round(Number(form.amount) || 0);
     if (isPartial && newAmount < amountPaid) {
-      { toast.warning(`El monto no puede ser menor a lo ya pagado (${fmtCurrency(amountPaid)}). Si querés cerrar el saldo, ponelo igual a ${fmtCurrency(amountPaid)}.`); return; }
+      { toast.warning(`El monto no puede ser menor a lo ya pagado (${fmtCurrency(amountPaid)}). Si quieres cerrar el saldo, déjalo igual a ${fmtCurrency(amountPaid)}.`); return; }
     }
     if (!isEdit && form.type === "anticipo" && form.useInstallments) {
       const n = Math.floor(Number(form.installmentCount) || 0);
@@ -643,7 +643,7 @@ function AdvanceFormModal({ open, item, items = [], onClose, onSaved }) {
               Resta: <span className="font-mono">{fmtCurrency(Math.max(0, (Number(item?.amount) || 0) - amountPaid))}</span>
             </div>
             <div className="mt-1 opacity-80">
-              Podés bajar el monto hasta <span className="font-mono">{fmtCurrency(amountPaid)}</span> para perdonar el saldo (queda cerrado).
+              Puedes bajar el monto hasta <span className="font-mono">{fmtCurrency(amountPaid)}</span> para perdonar el saldo (queda cerrado).
               No se puede cambiar el trabajador ni el tipo.
             </div>
           </div>
@@ -795,7 +795,7 @@ function AdvanceFormModal({ open, item, items = [], onClose, onSaved }) {
               Plan de cuotas: {item.installments.count} de {fmtCurrency(item.installments.amount)} · {cadenceMeta(item.installments.cadence).label}
             </div>
             <div className="mt-1 text-[var(--color-muted)]">
-              El plan no se edita. Para cambiarlo, eliminá y volvé a crear el anticipo (solo mientras sigue pendiente).
+              El plan no se edita. Para cambiarlo, elimina y vuelve a crear el anticipo (solo mientras sigue pendiente).
             </div>
           </div>
         )}

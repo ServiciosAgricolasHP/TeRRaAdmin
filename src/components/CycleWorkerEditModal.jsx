@@ -198,7 +198,7 @@ export default function CycleWorkerEditModal({
               ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
               : "border border-[var(--color-border)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
           }`}
-          title="Pago mensual: las jornadas se registran como asistencia pero no entran al payroll"
+          title="Pago mensual: las jornadas se registran como asistencia pero no entran a la nómina"
         >
           {row._monthly ? "✓ Mensual" : "Marcar mensual"}
         </button>
@@ -423,7 +423,7 @@ export default function CycleWorkerEditModal({
           type="button"
           disabled={!canToggle}
           onClick={() => togglePiso(activeLabor.id, d, workerRut)}
-          title={!hasWd ? "Asigná primero producción este día" : eff === 0 ? "Configurá el piso del día o el default de la labor" : ""}
+          title={!hasWd ? "Asigna primero producción a este día" : eff === 0 ? "Configura el piso del día o el piso por defecto de la labor" : ""}
           className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
             checked
               ? "bg-amber-500/20 text-amber-700 dark:text-amber-300"

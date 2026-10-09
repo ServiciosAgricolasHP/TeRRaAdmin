@@ -10,7 +10,7 @@ const emulador = import.meta.env.VITE_FIRESTORE_EMULATOR;
 if (!emulador) {
   throw new Error(
     "Los tests end-to-end exigen VITE_FIRESTORE_EMULATOR. Se aborta antes de " +
-      "abrir ninguna conexión. Corrélos con: npm run test:e2e",
+      "abrir ninguna conexión. Córrelos con: npm run test:e2e",
   );
 }
 if (!String(proyecto || "").startsWith("demo-")) {
@@ -38,14 +38,14 @@ async function vaciarEmulador() {
     // mensaje crudo no dice qué hacer, así que lo traducimos.
     throw new Error(
       `No hay emulador de Firestore escuchando en ${emulador}. ` +
-        "Corré los tests con: npm run test:e2e (levanta y apaga el emulador solo). " +
+        "Corre los tests con: npm run test:e2e (levanta y apaga el emulador solo). " +
         `Detalle: ${err?.message || err}`,
     );
   }
   if (!res.ok) {
     throw new Error(
       `No se pudo vaciar el emulador (${res.status}). ` +
-        "Corré los tests con: npm run test:e2e",
+        "Corre los tests con: npm run test:e2e",
     );
   }
 }

@@ -632,7 +632,7 @@ export default function Facturacion() {
 
   const openImport = () => {
     if (companies.length === 0) {
-      toast.warning("Tenés que registrar al menos una empresa antes de importar. Usá el botón 🏢 Empresas.");
+      toast.warning("Tienes que registrar al menos una empresa antes de importar. Usa el botón 🏢 Empresas.");
       return;
     }
     setImportCompanyId(selectedCompanyId || companies[0].id);
@@ -645,7 +645,7 @@ export default function Facturacion() {
   const onFilesPick = async (files) => {
     if (!files || files.length === 0) return;
     if (!importCompanyId) {
-      toast.warning("Seleccioná una empresa antes de elegir los archivos.");
+      toast.warning("Selecciona una empresa antes de elegir los archivos.");
       return;
     }
     const company = companiesById.get(importCompanyId);
@@ -1347,7 +1347,7 @@ export default function Facturacion() {
       };
 
       const writeGroupHeader = (r, label, count, isFuel, isManual) => {
-        ws.getCell(r, 2).value = `${isFuel ? "⛽ COMBUSTIBLES" : label} · ${count} doc${count === 1 ? "" : "s"}`;
+        ws.getCell(r, 2).value = `${isFuel ? "⛽ COMBUSTIBLES" : label} · ${count} documento${count === 1 ? "" : "s"}`;
         ws.getCell(r, 2).font = { bold: true };
         ws.mergeCells(r, 2, r, lastCol);
         const fillColor = isFuel ? "FFFDE2CC" : isManual ? "FFDCE6F1" : "FFE2EFDA";
@@ -1873,7 +1873,7 @@ export default function Facturacion() {
           <button
             onClick={openImport}
             disabled={noCompany}
-            title={noCompany ? "Registrá una empresa primero" : "Importar CSV del SII"}
+            title={noCompany ? "Registra una empresa primero" : "Importar CSV del SII"}
             className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] shadow-sm hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
           >
             📥 Importar CSV del SII
@@ -1946,7 +1946,7 @@ export default function Facturacion() {
           onChange={(e) => setPeriodoFilter(e.target.value)}
           disabled={!!search.trim()}
           title={search.trim()
-            ? "Ignorado mientras buscás — la búsqueda muestra todos los períodos de la empresa"
+            ? "Ignorado mientras buscas — la búsqueda muestra todos los períodos de la empresa"
             : "Filtrar por período"}
           className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs disabled:opacity-60"
         >
@@ -2285,7 +2285,7 @@ export default function Facturacion() {
             ? "Sin coincidencias para los filtros aplicados."
             : isRetencionesView
               ? "No hay facturas con estado \"Solo neto\" para esta empresa en este período."
-              : `No hay ${kindTab === "venta" ? "facturas" : "compras"} importadas para esta empresa en este período. Usá "📥 Importar CSV del SII".`}
+              : `No hay ${kindTab === "venta" ? "facturas" : "compras"} importadas para esta empresa en este período. Usa "📥 Importar CSV del SII".`}
         </div>
       ) : isRetencionesView ? (
         <>
@@ -2407,8 +2407,8 @@ export default function Facturacion() {
                   : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
               }`}
               title={groupByCostCenter
-                ? "Esta tabla y su export están agrupados por centro de costo (combustibles juntos, resto por proveedor). Click para volver a la vista plana."
-                : "Agrupar ESTA tabla y su export por centro de costo: combustibles como un grupo aparte y el resto por proveedor."}
+                ? "Esta tabla y su exportación están agrupadas por centro de costo (combustibles juntos, resto por proveedor). Click para volver a la vista plana."
+                : "Agrupar ESTA tabla y su exportación por centro de costo: combustibles como un grupo aparte y el resto por proveedor."}
             >
               {groupByCostCenter ? "🗂 Agrupar tabla por centro · ON" : "🗂 Agrupar tabla por centro"}
             </button>
@@ -2482,7 +2482,7 @@ export default function Facturacion() {
                       )}
                       {isFuel ? (
                         <span
-                          title="Ya agrupado automático como Combustible (código SII de otro impuesto)"
+                          title="Agrupado automáticamente como Combustible (código SII de otro impuesto)"
                           className="rounded-full bg-[var(--color-warning-soft)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-warning)]"
                         >
                           ⛽ auto
@@ -2544,7 +2544,7 @@ export default function Facturacion() {
                     {!g.isFuel && g.rut && (
                       <span className="ml-2 font-normal text-[var(--color-muted)]">· {formatRutForDisplay(g.rut)}</span>
                     )}
-                    <span className="ml-2 font-normal text-[var(--color-muted)]">· {g.docs.length} doc{g.docs.length === 1 ? "" : "s"}</span>
+                    <span className="ml-2 font-normal text-[var(--color-muted)]">· {g.docs.length} documento{g.docs.length === 1 ? "" : "s"}</span>
                   </div>
                   <div className="divide-y divide-[var(--color-border)]">
                     {g.docs.map(renderDocCard)}
@@ -2629,7 +2629,7 @@ export default function Facturacion() {
                     <td className="px-2 py-1.5">
                       {isFuel ? (
                         <span
-                          title="Ya agrupado automático como Combustible (código SII de otro impuesto)"
+                          title="Agrupado automáticamente como Combustible (código SII de otro impuesto)"
                           className="rounded-full bg-[var(--color-warning-soft)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-warning)]"
                         >
                           ⛽ auto
@@ -2700,7 +2700,7 @@ export default function Facturacion() {
                         {!g.isFuel && g.rut && (
                           <span className="ml-2 font-normal text-[var(--color-muted)]">· {formatRutForDisplay(g.rut)}</span>
                         )}
-                        <span className="ml-2 font-normal text-[var(--color-muted)]">· {g.docs.length} doc{g.docs.length === 1 ? "" : "s"}</span>
+                        <span className="ml-2 font-normal text-[var(--color-muted)]">· {g.docs.length} documento{g.docs.length === 1 ? "" : "s"}</span>
                       </td>
                     </tr>
                     {g.docs.map(renderDocRow)}
@@ -3312,7 +3312,7 @@ function CostCentersModal({ costCenters, docs, informalExpenses, companiesById, 
                 onChange={(e) => setSelectedId(e.target.value)}
                 className="w-full max-w-sm rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
               >
-                <option value="">Elegí un centro de costo…</option>
+                <option value="">Elige un centro de costo…</option>
                 <option value={FUEL_VIEW_ID}>⛽ Combustibles (automático)</option>
                 {costCenters.map((c) => (
                   <option key={c.id} value={c.id}>{c.emoji ? `${c.emoji} ${c.label}` : c.label}</option>
@@ -3377,7 +3377,7 @@ function CostCentersModal({ costCenters, docs, informalExpenses, companiesById, 
 
           {!selectedId ? (
             <div className="rounded-md border border-dashed border-[var(--color-border)] p-8 text-center text-sm text-[var(--color-muted)]">
-              Elegí un centro de costo arriba para ver todos sus documentos.
+              Elige un centro de costo arriba para ver todos sus documentos.
             </div>
           ) : (
             <div className="space-y-2 border-t border-[var(--color-border)] pt-3">
@@ -3710,8 +3710,8 @@ function InformalExpenseFormModal({ expense, costCenterId, companiesList, onClos
   const save = async () => {
     if (!date) { toast.warning("Falta la fecha."); return; }
     const amt = Number(amount);
-    if (!amt || amt <= 0) { toast.warning("Ingresá un monto válido."); return; }
-    if (!detail.trim()) { toast.warning("Agregá un detalle."); return; }
+    if (!amt || amt <= 0) { toast.warning("Ingresa un monto válido."); return; }
+    if (!detail.trim()) { toast.warning("Agrega un detalle."); return; }
     setBusy(true);
     try {
       const payload = { costCenterId, date, amount: amt, detail: detail.trim(), companyId: companyId || null };
@@ -4292,7 +4292,7 @@ const PrintableDocList = forwardRef(function PrintableDocList(
                     </span>
                   )}
                   <span style={{ marginLeft: 8, fontWeight: 400, color: "#555" }}>
-                    · {g.docs.length} doc{g.docs.length === 1 ? "" : "s"}
+                    · {g.docs.length} documento{g.docs.length === 1 ? "" : "s"}
                   </span>
                 </td>
               </tr>
@@ -4677,7 +4677,7 @@ function PaymentsSection({ dteDoc, payments, amountPaid, balance, onSavePayments
       );
       return;
     }
-    if (!newPay.date) { toast.warning("Tenés que indicar la fecha del pago."); return; }
+    if (!newPay.date) { toast.warning("Tienes que indicar la fecha del pago."); return; }
     const entry = {
       id: newPaymentId(),
       date: newPay.date,
@@ -4944,7 +4944,7 @@ function DocDetailModal({ dteDoc, candidateNcs = [], costCenters = [], onClose, 
               ))}
             </div>
             <div className="mt-1 text-[10px] text-[var(--color-muted)]">
-              Match por contraparte + total exacto. Verificá antes de aceptar — puede haber falso positivo.
+              Coincidencia por contraparte y total exacto. Verifica antes de aceptar — puede haber falso positivo.
             </div>
           </div>
         )}
@@ -5041,7 +5041,7 @@ function DocDetailModal({ dteDoc, candidateNcs = [], costCenters = [], onClose, 
             placeholder={
               isNC
                 ? 'Detalle libre. Ej: "Anula Factura 33-1234 por error en monto"'
-                : 'Detalle libre. El SII no trae la glosa en el CSV — usá este campo para registrar items, condiciones, OC, etc.'
+                : 'Detalle libre. El SII no trae la glosa en el CSV — usa este campo para registrar ítems, condiciones, OC, etc.'
             }
             className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
           />
@@ -5190,10 +5190,10 @@ function CompanySelectAndPickModal({ companies, companyId, onChange, onFilesPick
           </select>
         </div>
         <div className="rounded-md bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-muted)] space-y-1">
-          <div>Podés seleccionar <b>varios archivos a la vez</b> (Ctrl/Cmd+click en el picker).</div>
-          <div>Cada archivo se identifica como <b>ventas</b> o <b>compras</b> auto mirando los encabezados.</div>
-          <div>Si detectamos un RUT en el nombre del archivo distinto al de la empresa, te lo avisamos en el preview.</div>
-          <div>Reimportar un período reemplaza completo (docs huérfanos del mismo mes se eliminan).</div>
+          <div>Puedes seleccionar <b>varios archivos a la vez</b> (Ctrl/Cmd+click en el selector de archivos).</div>
+          <div>Cada archivo se identifica como <b>ventas</b> o <b>compras</b> automáticamente según sus encabezados.</div>
+          <div>Si detectamos un RUT en el nombre del archivo distinto al de la empresa, te lo avisamos en la vista previa.</div>
+          <div>Reimportar un período reemplaza completo (los documentos huérfanos del mismo mes se eliminan).</div>
         </div>
       </div>
     </Modal>
@@ -5249,7 +5249,7 @@ function ImportPreviewModal({ preview, existingIds, company, busy, onToggleFile,
             disabled={busy || agg.count === 0}
             className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
           >
-            {busy ? "Importando..." : `Confirmar (${agg.count} doc${agg.count === 1 ? "" : "s"} de ${included.length} archivo${included.length === 1 ? "" : "s"})`}
+            {busy ? "Importando..." : `Confirmar (${agg.count} documento${agg.count === 1 ? "" : "s"} de ${included.length} archivo${included.length === 1 ? "" : "s"})`}
           </button>
         </>
       }
@@ -5392,7 +5392,7 @@ function FileRow({ file, existingIds, companyRut, onToggle }) {
         )}
         {!isFailed && (
           <span className="text-xs tabular-nums">
-            {fmtNumber(file.records.length)} doc{file.records.length === 1 ? "" : "s"}
+            {fmtNumber(file.records.length)} documento{file.records.length === 1 ? "" : "s"}
             {dupCount > 0 && (
               <span className="ml-1 text-[var(--color-warning)]">({dupCount} sobreescriben)</span>
             )}
@@ -5414,12 +5414,12 @@ function FileRow({ file, existingIds, companyRut, onToggle }) {
       )}
       {showRutWarning && !file.excluded && (
         <div className="ml-6 text-[11px] font-medium text-[var(--color-warning)]">
-          ⚠ El archivo parece pertenecer al RUT <span className="font-mono">{file.detectedRut}</span>, distinto del seleccionado (<span className="font-mono">{normalizeRut(companyRut || "")}</span>). Excluí este archivo si fue un error.
+          ⚠ El archivo parece pertenecer al RUT <span className="font-mono">{file.detectedRut}</span>, distinto del seleccionado (<span className="font-mono">{normalizeRut(companyRut || "")}</span>). Excluye este archivo si fue un error.
         </div>
       )}
       {isFailed && (
         <div className="ml-6 text-[11px] font-medium text-[var(--color-danger)]">
-          ✕ No se pudo parsear: {file.errors[0]?.message || "error desconocido"}
+          ✕ No se pudo leer: {file.errors[0]?.message || "error desconocido"}
         </div>
       )}
       {!isFailed && file.errors.length > 0 && (
@@ -5444,7 +5444,7 @@ function CompaniesModal({ companies, onClose, onChanged }) {
 
   const save = async () => {
     if (!editing.rut.trim() || !editing.razonSocial.trim()) {
-      toast.warning("Completá RUT y Razón Social.");
+      toast.warning("Completa RUT y Razón Social.");
       return;
     }
     setBusy(true);
@@ -5503,7 +5503,7 @@ function CompaniesModal({ companies, onClose, onChanged }) {
             />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">Alias (display)</label>
+            <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">Alias (nombre visible)</label>
             <input
               value={editing.alias}
               onChange={(e) => setEditing({ ...editing, alias: e.target.value })}
@@ -5511,7 +5511,7 @@ function CompaniesModal({ companies, onClose, onChanged }) {
               className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
             />
             <p className="mt-1 text-[10px] text-[var(--color-muted)]">
-              Si lo dejás vacío, se usa la razón social.
+              Si lo dejas vacío, se usa la razón social.
             </p>
           </div>
           <div className="flex justify-end gap-2 pt-2">

@@ -5,8 +5,8 @@ const SLOT = GREETING_SLOTS.workerAlreadyInLabor;
 
 describe("greeting", () => {
   it("devuelve el saludo del usuario cuando lo tiene cargado", () => {
-    const user = { uid: "u1", greetings: { [SLOT]: "Hola vos" } };
-    expect(greeting(user, SLOT, "Ya en la labor")).toBe("Hola vos");
+    const user = { uid: "u1", greetings: { [SLOT]: "Hola de nuevo" } };
+    expect(greeting(user, SLOT, "Ya en la labor")).toBe("Hola de nuevo");
   });
 
   it("cae al fallback cuando el usuario no tiene ninguno", () => {

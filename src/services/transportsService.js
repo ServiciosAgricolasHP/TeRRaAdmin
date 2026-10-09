@@ -363,7 +363,7 @@ export const paymentsService = {
   async addAbono(paymentId, { amount, date, notes = "" }) {
     const before = await this.getById(paymentId);
     if (!before) throw new Error("Resumen no encontrado");
-    if (before.status === "paid") throw new Error("Resumen pagado — revertí el pago antes de cargar abonos");
+    if (before.status === "paid") throw new Error("Resumen pagado — revierte el pago antes de cargar abonos");
     const amt = Number(amount) || 0;
     if (amt <= 0) throw new Error("El monto del abono debe ser mayor a 0");
     const abono = {
@@ -392,7 +392,7 @@ export const paymentsService = {
   async removeAbono(paymentId, abonoId) {
     const before = await this.getById(paymentId);
     if (!before) throw new Error("Resumen no encontrado");
-    if (before.status === "paid") throw new Error("Resumen pagado — revertí el pago antes de modificar abonos");
+    if (before.status === "paid") throw new Error("Resumen pagado — revierte el pago antes de modificar abonos");
     const abonos = (before.abonos || []).filter((a) => a.id !== abonoId);
     if (abonos.length === (before.abonos || []).length) {
       throw new Error("Abono no encontrado");
@@ -576,7 +576,7 @@ export const transportPayrollsService = {
   async update(id, { name, periodFrom, periodTo, notes }) {
     const before = await this.getById(id);
     if (!before) throw new Error("Quincena no encontrada");
-    if (before.status === "paid") throw new Error("La quincena está pagada — revertí el pago antes de editar.");
+    if (before.status === "paid") throw new Error("La quincena está pagada — revierte el pago antes de editar.");
     const patch = { ...stamp() };
     if (name != null) patch.name = String(name).trim();
     if (periodFrom !== undefined) patch.periodFrom = periodFrom || null;
@@ -635,7 +635,7 @@ export const transportPayrollsService = {
   async delete(id) {
     const before = await this.getById(id);
     if (!before) return;
-    if (before.status === "paid") throw new Error("Solo se pueden eliminar quincenas pendientes — revertí el pago primero.");
+    if (before.status === "paid") throw new Error("Solo se pueden eliminar quincenas pendientes — revierte el pago primero.");
     const batch = writeBatch(db);
     for (const pid of before.paymentIds || []) {
       batch.update(doc(db, PAYMENTS, pid), { payrollId: null, ...stamp() });

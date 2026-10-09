@@ -50,7 +50,7 @@ const agoLabel = (ts) => {
 };
 
 // El prefijo de un código es lo que va antes del primer guion (`XX-0123` →
-// `XX`), la misma convención que usa la app de scan para saber a qué faena
+// `XX`), la misma convención que usa la app de escaneo para saber a qué faena
 // pertenece el pesaje.
 const prefixOfCode = (code) => {
   const raw = String(code || "").trim().toUpperCase();
@@ -379,7 +379,7 @@ export default function HarvestQr() {
             {tab === "sync"
               ? "A qué faena/ciclo/labor apunta cada prefijo QR físico (app scan_IS), y sincronización de sus pesajes hacia las jornadas."
               : tab === "weights"
-                ? "Lectura directa de los pesajes que escribe la app de scan, antes de sincronizarlos hacia las jornadas."
+                ? "Lectura directa de los pesajes que escribe la app de escaneo, antes de sincronizarlos hacia las jornadas."
                 : "Qué QR físico tiene asignado cada trabajador, agrupados por prefijo."}
           </p>
         </div>
@@ -676,7 +676,7 @@ function PrefixFormModal({ mode, initial, faenas, onClose, onSaved }) {
         />
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
-          Activo (visible como opción en el scan app)
+          Activo (visible como opción en la app de escaneo)
         </label>
       </form>
     </Modal>
@@ -719,7 +719,7 @@ function SyncModal({ prefix, cycle, onClose, onSynced }) {
 
       // Agrupa por (trabajador, día, combo calidad/envase) y suma los kilos.
       // Sin `qualityMap`/`containerMap` el mapeo es identidad: los catálogos
-      // usan la misma numeración que la app de scan.
+      // usan la misma numeración que la app de escaneo.
       const groups = new Map();
       for (const w of weights) {
         if (!w.rut || !w.dateKey) continue;
@@ -918,7 +918,7 @@ function SyncModal({ prefix, cycle, onClose, onSynced }) {
             )}
             {result.zeroPriceDays.length > 0 && (
               <div className="text-[var(--color-warning,#d97706)]">
-                ⚠ Días sin precio para ese combo: {result.zeroPriceDays.join(", ")} — esas jornadas quedaron en $0. Configurá el precio en el ciclo y volvé a sincronizar.
+                ⚠ Días sin precio para ese combo: {result.zeroPriceDays.join(", ")} — esas jornadas quedaron en $0. Configura el precio en el ciclo y vuelve a sincronizar.
               </div>
             )}
             {cycle?.id && (
@@ -1089,7 +1089,7 @@ async function mirrorWeightToWorkdays(prefixes, keys) {
   return reached ? total : null;
 }
 
-// Vista de `harvestWeights`, la colección cruda que escribe la app de scan.
+// Vista de `harvestWeights`, la colección cruda que escribe la app de escaneo.
 // Consulta y corrige pesajes; sincronizarlos hacia jornadas se hace desde la
 // pestaña de prefijos, que es donde se elige el ciclo y la labor destino.
 //
@@ -1472,7 +1472,7 @@ function WeightsExplorer({ prefixes, faenaById }) {
           ))}
           {view.detail.length > DETAIL_CAP && (
             <p className="rounded-md border border-dashed border-[var(--color-border)] p-3 text-center text-xs text-[var(--color-muted)]">
-              Mostrando {DETAIL_CAP} de {fmt(view.detail.length)} pesajes — achicá el rango o filtrá por prefijo para ver el resto.
+              Mostrando {DETAIL_CAP} de {fmt(view.detail.length)} pesajes — acota el rango o filtra por prefijo para ver el resto.
             </p>
           )}
         </div>
@@ -1522,7 +1522,7 @@ function WeightsExplorer({ prefixes, faenaById }) {
           </table>
           {view.detail.length > DETAIL_CAP && (
             <p className="border-t border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-muted)]">
-              Mostrando {DETAIL_CAP} de {fmt(view.detail.length)} pesajes — achicá el rango o filtrá por prefijo para ver el resto.
+              Mostrando {DETAIL_CAP} de {fmt(view.detail.length)} pesajes — acota el rango o filtra por prefijo para ver el resto.
             </p>
           )}
         </div>
@@ -1786,7 +1786,7 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, knownCode
 
   const pedirAsignacion = () => {
     const code = String(nuevoQr?.code || "").trim().toUpperCase();
-    if (!code) { toast.error("Escribí el código del QR"); return; }
+    if (!code) { toast.error("Escribe el código del QR"); return; }
     if (prefixOfCode(code) !== prefixId) {
       toast.error(`Ese código no es del prefijo ${prefixId}. Un QR pertenece a la cosecha que dice su prefijo.`);
       return;
@@ -1798,7 +1798,7 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, knownCode
   };
 
   const submit = async () => {
-    if (!worker) { toast.error("Elegí un trabajador de la lista"); return; }
+    if (!worker) { toast.error("Elige un trabajador de la lista"); return; }
     if (!prefixId) { toast.error("El prefijo es obligatorio: define cómo se leen la calidad y el envase"); return; }
     if (!dateKey) { toast.error("La fecha es obligatoria"); return; }
 
@@ -2094,7 +2094,7 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, knownCode
               </div>
               {!r.ok && (
                 <p className="text-xs text-[var(--color-danger)]">
-                  El prefijo {prefixId} remapea los códigos del scan y esta combinación no se puede representar. Elegí otra, u otro prefijo.
+                  El prefijo {prefixId} traduce los códigos del escáner y esta combinación no se puede representar. Elige otra, u otro prefijo.
                 </p>
               )}
             </div>
@@ -2131,7 +2131,7 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, knownCode
       title="Ese QR ya tiene dueño"
       message={
         confirmarRobo
-          ? `${confirmarRobo.code} es de ${confirmarRobo.from.name || confirmarRobo.from.id}.\n\nSi se lo asignás a ${worker?.name || worker?.id}, esa persona se queda sin ese código. Los pesajes que ya lo anotaron no se tocan: siguen siendo de su dueño de entonces, porque se resuelven por RUT.\n\n¿Pasárselo igual?`
+          ? `${confirmarRobo.code} es de ${confirmarRobo.from.name || confirmarRobo.from.id}.\n\nSi se lo asignas a ${worker?.name || worker?.id}, esa persona se queda sin ese código. Los pesajes que ya lo anotaron no se tocan: siguen siendo de su dueño de entonces, porque se resuelven por RUT.\n\n¿Pasárselo igual?`
           : ""
       }
       confirmLabel="Pasárselo"
@@ -2466,7 +2466,7 @@ function QrManager({ prefixes, onPrefixesChanged }) {
           <button
             onClick={rebuildPadrones}
             disabled={busy || loading}
-            title="Rehace el espejo que la app de scan lee para reconocer los QR sin señal"
+            title="Rehace el espejo que la app de escaneo lee para reconocer los QR sin señal"
             className={`${TAP} rounded-md border border-[var(--color-border)] px-3 text-sm hover:bg-[var(--color-accent-soft)] disabled:cursor-not-allowed disabled:opacity-40`}
           >
             Reconstruir padrones
@@ -2476,7 +2476,7 @@ function QrManager({ prefixes, onPrefixesChanged }) {
 
       {view.duplicated.length > 0 && (
         <p className="rounded-md border border-[var(--color-warning,#d97706)] bg-[var(--color-warning-soft,rgba(217,119,6,0.12))] p-2 text-xs text-[var(--color-warning,#d97706)]">
-          ⚠ {view.duplicated.length} código(s) asignados a más de un trabajador: {view.duplicated.join(", ")}. El scan los va a atribuir al primero que encuentre.
+          ⚠ {view.duplicated.length} código(s) asignados a más de un trabajador: {view.duplicated.join(", ")}. El escáner los va a atribuir al primero que encuentre.
         </p>
       )}
 
@@ -2607,7 +2607,7 @@ function QrManager({ prefixes, onPrefixesChanged }) {
           title={clearing.scope === "all" ? "Liberar todos los QR" : `Liberar los QR de ${clearing.prefixId}`}
           message={
             clearing.scope === "all"
-              ? `Se van a quitar ${clearing.codes.length} código(s) de todos los trabajadores que los tengan. Los QR físicos siguen existiendo, pero dejan de estar asociados a nadie y el scan no va a poder atribuir sus pesajes.`
+              ? `Se van a quitar ${clearing.codes.length} código(s) de todos los trabajadores que los tengan. Los QR físicos siguen existiendo, pero dejan de estar asociados a nadie y el escáner no va a poder atribuir sus pesajes.`
               : `Se van a quitar ${clearing.codes.length} código(s) del prefijo ${clearing.prefixId}. Los QR físicos siguen existiendo, pero dejan de estar asociados a nadie.`
           }
           confirmLabel="Liberar"
@@ -2773,7 +2773,7 @@ function TypeToConfirm({ word, title, message, confirmLabel, busy, progress, onC
         {busy && progress && <ProgressBar label="Liberando códigos…" done={progress.done} total={progress.total} />}
         <label className="block">
           <span className="mb-1 block text-sm text-[var(--color-muted)]">
-            Escribí <strong className="font-mono">{word}</strong> para confirmar
+            Escribe <strong className="font-mono">{word}</strong> para confirmar
           </span>
           <input
             type="text"

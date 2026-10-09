@@ -601,7 +601,7 @@ export default function ProductionSummaryModal({
       )}
 
       {loading && (
-        <div className="py-2 text-center text-xs text-[var(--color-muted)]">Cargando workdays...</div>
+        <div className="py-2 text-center text-xs text-[var(--color-muted)]">Cargando jornadas…</div>
       )}
 
       {columns.length === 0 ? (

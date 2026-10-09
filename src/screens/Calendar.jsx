@@ -533,7 +533,7 @@ export default function Calendar() {
           <p className="text-sm text-[var(--color-muted)]">
             Producción diaria por subfaena.
             {/* Contador de lecturas de Firestore, para diagnóstico; solo lo ve un admin. */}
-            {isAdmin && (fromCache ? " · resultado de caché" : ` · ${readCount} reads`)}
+            {isAdmin && (fromCache ? " · resultado de caché" : ` · ${readCount} lecturas`)}
           </p>
         </div>
         <div className="flex items-center gap-1">
@@ -568,7 +568,7 @@ export default function Calendar() {
             onClick={refresh}
             disabled={loading}
             className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
-            title="Forzar refresh (ignora cache)"
+            title="Forzar recarga (ignora la caché)"
           >
             ↻
           </button>

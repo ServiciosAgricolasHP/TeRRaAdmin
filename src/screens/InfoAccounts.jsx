@@ -264,7 +264,7 @@ export default function InfoAccounts() {
         <div className="py-10 text-center text-sm text-[var(--color-muted)]">Cargando…</div>
       ) : cards.length === 0 ? (
         <div className="rounded-lg border border-dashed border-[var(--color-border)] py-12 text-center text-sm text-[var(--color-muted)]">
-          Todavía no hay fichas. Creá la primera con “+ Nueva ficha”.
+          Todavía no hay fichas. Crea la primera con “+ Nueva ficha”.
         </div>
       ) : (
         <>
@@ -613,7 +613,7 @@ function ContactCardModal({ initial, onCancel, onSave }) {
 
   const submit = async () => {
     if (!form.name.trim()) {
-      toast.warning(`Ingresá ${meta.nameLabel.toLowerCase()}.`);
+      toast.warning(`Ingresa ${meta.nameLabel.toLowerCase()}.`);
       return;
     }
     setBusy(true);
@@ -722,7 +722,7 @@ function ContactCardModal({ initial, onCancel, onSave }) {
             </button>
           </div>
           {form.accounts.length === 0 && (
-            <p className="text-xs text-[var(--color-muted)]">Sin cuentas. Agregá una si querés guardar datos bancarios.</p>
+            <p className="text-xs text-[var(--color-muted)]">Sin cuentas. Agrega una si quieres guardar datos bancarios.</p>
           )}
           {form.accounts.map((acc, i) => (
             <div key={acc.id} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">

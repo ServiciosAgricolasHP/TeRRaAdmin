@@ -26,12 +26,12 @@ export const GREETING_FIELDS = [
   {
     slot: GREETING_SLOTS.workerAlreadyInLabor,
     label: "Trabajador ya en la labor",
-    note: 'Tag gris al intentar agregar a alguien que ya está. Default: "Ya en la labor".',
+    note: 'Etiqueta gris al intentar agregar a alguien que ya está. Por defecto: "Ya en la labor".',
   },
   {
     slot: GREETING_SLOTS.profileHover,
-    label: "Hover del nombre en el header",
-    note: 'Tooltip al pasar el mouse sobre el propio nombre. Default: "Mi perfil".',
+    label: "Al pasar el mouse por el nombre en el encabezado",
+    note: 'Texto que aparece al pasar el mouse sobre el propio nombre. Por defecto: "Mi perfil".',
   },
   {
     slot: GREETING_SLOTS.notFound,

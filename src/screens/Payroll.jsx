@@ -880,7 +880,7 @@ export default function Payroll() {
         const detailParts = [];
         if (allWorkdayIds.length > 0) detailParts.push(`Jornadas ${tagDone}/${tagTotal}`);
         if (allApplications.length > 0) detailParts.push(`Anticipos ${advancesDone ? "✓" : "…"}`);
-        detailParts.push(`Snapshot ${snapshotDone ? "✓" : "…"}`);
+        detailParts.push(`JSON ${snapshotDone ? "✓" : "…"}`);
         setProgress({
           step: "Guardando y aplicando descuentos en paralelo...",
           detail: detailParts.join(" · "),
@@ -1009,7 +1009,7 @@ export default function Payroll() {
     // desactive el botón.
     if (confirmDelete.status === "paid") {
       setConfirmDelete(null);
-      toast.error("No se puede eliminar una nómina pagada. Revertí primero a No pagado.");
+      toast.error("No se puede eliminar una nómina pagada. Revierte primero a No pagado.");
       return;
     }
     // Tampoco con las transferencias pagadas: borrarla liberaría los días y
@@ -1039,7 +1039,7 @@ export default function Payroll() {
         const detailParts = [];
         if (workdayIds.length > 0) detailParts.push(`Jornadas ${untagDone}/${untagTotal}`);
         if (advanceIds.length > 0) detailParts.push(`Anticipos ${advancesDone ? "✓" : "…"}`);
-        detailParts.push(`Snapshot ${snapDone ? "✓" : "…"}`);
+        detailParts.push(`JSON ${snapDone ? "✓" : "…"}`);
         setProgress({
           step: "Liberando jornadas y anticipos...",
           detail: detailParts.join(" · "),
@@ -1122,7 +1122,7 @@ export default function Payroll() {
     try {
       const snap = await readSnapshot(p);
       if (!snap) {
-        toast.warning("Esta nómina no tiene snapshot guardado (creada antes de la feature).");
+        toast.warning("Esta nómina no tiene JSON guardado (se creó antes de que existiera).");
         return;
       }
       downloadSnapshotJson(p.name || "Nomina", snap);
@@ -1143,7 +1143,7 @@ export default function Payroll() {
           <button
             onClick={refresh}
             disabled={refreshing || loading}
-            title="Forzar recarga desde el servidor (ignora la cache local). Útil si otro usuario agregó workers, labores o jornadas recién."
+            title="Forzar recarga desde el servidor (ignora la caché local). Útil si otro usuario acaba de agregar trabajadores, labores o jornadas."
             className="flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm text-[var(--color-fg)] hover:bg-[var(--color-surface-3)] disabled:opacity-50"
           >
             <span className={refreshing ? "inline-block animate-spin" : "inline-block"}>↻</span>
@@ -1363,9 +1363,9 @@ function ProgressOverlay({ info }) {
 }
 
 const PAY_SPLIT_HINT =
-  "Estimado en bruto, según el banco que tiene cargado cada trabajador. El monto definitivo por medio de pago sale en el preview, después de anticipos/bonos y de los cambios que hagas ahí.";
+  "Estimado en bruto, según el banco que tiene cargado cada trabajador. El monto definitivo por medio de pago sale en la vista previa, después de anticipos/bonos y de los cambios que hagas ahí.";
 const PAY_UNKNOWN_HINT =
-  "Trabajadores sin banco cargado o que no están en el catálogo. Se define su medio de pago en el preview.";
+  "Trabajadores sin banco cargado o que no están en el catálogo. Se define su medio de pago en la vista previa.";
 
 // Paso 1 de "Generar": elegir los ciclos de la nómina y, además o en vez de
 // eso, personas sueltas con sus días puntuales. Por defecto solo se listan los
@@ -1770,7 +1770,7 @@ function CycleSelector({
                             {isSelected && labors.length > 0 && !allLaborsOn && (
                               <div className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">
                                 {noneOn
-                                  ? "⚠ Sin labores seleccionadas — no entra al preview"
+                                  ? "⚠ Sin labores seleccionadas — no entra a la vista previa"
                                   : `Pagar ${selectedLabors.size} de ${labors.length} labores`}
                               </div>
                             )}
@@ -2166,7 +2166,7 @@ function PreviewTable({
                       className="w-28 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-right text-sm font-medium tabular-nums outline-none focus:border-[var(--color-accent)]"
                     />
                     {Number(p.amount) === 0 && Number(p.advance) > 0 && (
-                      <div className="mt-0.5 text-[10px] font-normal text-[var(--color-warning)]" title="El anticipo cubrió todo el bruto. Igual se incluye en la nómina para marcar workdays y anticipo como aplicados, pero no se transfiere.">
+                      <div className="mt-0.5 text-[10px] font-normal text-[var(--color-warning)]" title="El anticipo cubrió todo el bruto. Igual se incluye en la nómina para marcar sus jornadas y el anticipo como aplicados, pero no se transfiere.">
                         ↩ liquidado por anticipo
                       </div>
                     )}
@@ -2372,7 +2372,7 @@ function InstallmentConfirmModal({ state, onCancel, onConfirm }) {
     >
       <div className="space-y-3 text-sm">
         <p className="text-[var(--color-muted)]">
-          Estos anticipos tienen plan de cuotas. Revisá cuáles se descuentan en esta nómina — vienen todas marcadas por defecto.
+          Estos anticipos tienen plan de cuotas. Revisa cuáles se descuentan en esta nómina — vienen todas marcadas por defecto.
         </p>
         <div className="space-y-2">
           {state.candidates.map((c) => {
@@ -2790,7 +2790,7 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRe
                   onClick={() => onAskDelete(p)}
                   disabled={p.status === "paid" || !!p.bankPaidAt}
                   title={p.status === "paid"
-                    ? "No se puede eliminar una nómina pagada. Revertí primero a No pagado."
+                    ? "No se puede eliminar una nómina pagada. Revierte primero a No pagado."
                     : p.bankPaidAt
                       ? "Las transferencias ya se pagaron. Revertilas antes de eliminar."
                       : "Eliminar esta nómina"}
@@ -2920,7 +2920,7 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRe
                     onClick={() => onAskDelete(p)}
                     disabled={p.status === "paid" || !!p.bankPaidAt}
                     title={p.status === "paid"
-                      ? "No se puede eliminar una nómina pagada. Revertí primero a No pagado."
+                      ? "No se puede eliminar una nómina pagada. Revierte primero a No pagado."
                       : p.bankPaidAt
                         ? "Las transferencias ya se pagaron. Revertilas antes de eliminar."
                         : "Eliminar esta nómina"}
@@ -4595,7 +4595,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     setConfirmRemove({
       type: "worker",
       target: item,
-      message: `¿Sacar a ${label} de esta nómina?\n\nSe liberan sus workdays y se restauran sus anticipos aplicados. Se puede volver a sumar con "+ Agregar persona".`,
+      message: `¿Sacar a ${label} de esta nómina?\n\nSe liberan sus jornadas y se restauran sus anticipos aplicados. Se puede volver a sumar con "+ Agregar persona".`,
     });
   };
   const doRemoveWorker = async (item) => {
@@ -4618,7 +4618,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     setConfirmRemove({
       type: "cycle",
       target: cycle,
-      message: `¿Sacar el ciclo "${cycle.label}" (${fmtCurrency(cycleAmount)}) de esta nómina?\n\nSe liberan los workdays del ciclo. Los trabajadores que SOLO tenían producción en este ciclo salen también, y sus anticipos vuelven a quedar pendientes para la próxima nómina. Los que tenían producción en otros ciclos quedan con su monto reducido; si lo que les queda no alcanza para el anticipo ya descontado, la diferencia vuelve a quedar pendiente. No se puede deshacer.`,
+      message: `¿Sacar el ciclo "${cycle.label}" (${fmtCurrency(cycleAmount)}) de esta nómina?\n\nSe liberan las jornadas del ciclo. Los trabajadores que SOLO tenían producción en este ciclo salen también, y sus anticipos vuelven a quedar pendientes para la próxima nómina. Los que tenían producción en otros ciclos quedan con su monto reducido; si lo que les queda no alcanza para el anticipo ya descontado, la diferencia vuelve a quedar pendiente. No se puede deshacer.`,
     });
   };
   const doRemoveCycle = async (cycle) => {
@@ -5857,7 +5857,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                 </button>
               </div>
               <p className="mb-3 text-[11px] text-[var(--color-muted)]">
-                Personalizá cómo aparece cada ciclo en el XLSX, los comprobantes y el PDF de detalle.
+                Personaliza cómo aparece cada ciclo en el XLSX, los comprobantes y el PDF de detalle.
                 Dejar vacío para restaurar el nombre original. Los cambios se guardan automáticamente.
               </p>
               <div className="space-y-2">
@@ -8889,9 +8889,9 @@ function WorkersHistory({ faenas }) {
           <button
             onClick={resetFilters}
             className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)]"
-            title="Volver a defaults (6 meses, todas las clasif., sin faena)"
+            title="Volver a los filtros por defecto (6 meses, todas las clasif., sin faena)"
           >
-            ⟲ Reset
+            ⟲ Restablecer
           </button>
           {faenasInPayrolls.length > 0 && (
             <div className="relative">

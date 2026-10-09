@@ -324,7 +324,7 @@ function BuilderUI({ query, setQuery, searchResults, searching, selected, addWor
   return (
     <div className="space-y-3">
       <div className="text-sm text-[var(--color-muted)]">
-        Agregá trabajadores uno por uno. Al terminar tocá <b>Generar resumen</b> abajo.
+        Agrega trabajadores uno por uno. Al terminar toca <b>Generar resumen</b> abajo.
       </div>
 
       {/* Integrantes elegidos */}

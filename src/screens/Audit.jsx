@@ -426,7 +426,7 @@ function EntitySearchPanel() {
           <h2 className="text-sm font-semibold">🔍 Buscar por registro</h2>
           <p className="text-xs text-[var(--color-muted)]">
             Ver todo el historial de un registro (trabajador, ciclo, faena, transportista…) — sin límite de fecha.
-            Al buscar un trabajador se suman los cambios en sus jornadas (workdays); al buscar un transportista, los cambios en sus vueltas y en sus resúmenes de pago.
+            Al buscar un trabajador se suman los cambios en sus jornadas; al buscar un transportista, los cambios en sus vueltas y en sus resúmenes de pago.
           </p>
         </div>
         <span className="text-[var(--color-muted)]">{open ? "▾" : "▸"}</span>
@@ -689,13 +689,13 @@ export default function Audit() {
         </div>
         {ranAt && !loading && (
           <p className="mt-3 text-xs text-[var(--color-muted)]">
-            {fmtNumber(logs.length)} log{logs.length === 1 ? "" : "s"} leídos ·{" "}
+            {fmtNumber(logs.length)} registro{logs.length === 1 ? "" : "s"} leído{logs.length === 1 ? "" : "s"} ·{" "}
             {fmtNumber(sessions.length)} sesión{sessions.length === 1 ? "" : "es"} ·{" "}
             {fmtNumber(totalActions)} acciones ·{" "}
             {uniqueUsers} usuario{uniqueUsers === 1 ? "" : "s"} distinto{uniqueUsers === 1 ? "" : "s"}
             {capReached && (
               <span className="ml-2 rounded bg-[var(--color-danger)]/10 px-1.5 py-0.5 text-[var(--color-danger)]">
-                ⚠ tope de {HARD_CAP} logs alcanzado — reducí el rango
+                ⚠ tope de {HARD_CAP} registros alcanzado — reduce el rango
               </span>
             )}
           </p>

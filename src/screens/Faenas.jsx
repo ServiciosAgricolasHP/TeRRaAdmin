@@ -504,7 +504,7 @@ export default function Faenas() {
       const existing = cyclesByFaena[faenaId] || [];
       const subs = subsByFaena[faenaId] || [];
       if (!data.subfaenaId && subs.length > 0) {
-        toast.warning("La faena tiene subfaenas. Seleccioná una subfaena para el ciclo.");
+        toast.warning("La faena tiene subfaenas. Selecciona una subfaena para el ciclo.");
         return;
       }
     }
@@ -517,7 +517,7 @@ export default function Faenas() {
         const source = (data.importCandidates || []).find((c) => c.id === data.importSourceId);
         const picked = (source?.labors || []).filter((l) => (data.importLaborIds || new Set()).has(l.id));
         if (picked.length === 0) {
-          toast.warning("Marcá al menos una labor a clonar (o desactivá la importación).");
+          toast.warning("Marca al menos una labor a clonar (o desactiva la importación).");
           setBusy(false);
           return;
         }
@@ -644,7 +644,7 @@ export default function Faenas() {
 
   const openCreateCycle = (faenaId, subfaenaId) => {
     if (!subfaenaId) {
-      toast.warning("Los ciclos se crean dentro de una subfaena. Creá primero una subfaena.");
+      toast.warning("Los ciclos se crean dentro de una subfaena. Crea primero una subfaena.");
       return;
     }
     const existing = cyclesByFaena[faenaId] || [];
@@ -805,7 +805,7 @@ export default function Faenas() {
             toast.error(
               `${taggedCount} workday(s) ya forman parte de ${taggedPayrollIds.length} nómina(s):\n` +
                 `${names || "(nómina sin nombre)"}\n\n` +
-                `Eliminá primero esas nóminas y volvé a intentar.`,
+                `Elimina primero esas nóminas y vuelve a intentar.`,
               { title: "No se puede eliminar en cascada" },
             );
             setConfirm(null);
@@ -866,7 +866,7 @@ export default function Faenas() {
               toast.error(
                 `${taggedCount} workday(s) ya forman parte de ${taggedPayrollIds.length} nómina(s):\n` +
                   `${names || "(nómina sin nombre)"}\n\n` +
-                  `Eliminá primero esas nóminas y volvé a intentar.`,
+                  `Elimina primero esas nóminas y vuelve a intentar.`,
                 { title: `No se puede eliminar el ciclo "${confirm.item.label}"` },
               );
               setConfirm(null);
@@ -903,7 +903,7 @@ export default function Faenas() {
       setConfirm(null);
       } catch (err) {
         console.error("Error en eliminación:", err);
-        toast.error(`${err?.message || err}\nRevisá la consola para detalles.`, { title: "Error al eliminar" });
+        toast.error(`${err?.message || err}\nRevisa la consola para ver el detalle.`, { title: "Error al eliminar" });
         setConfirm(null);
       }
     } finally {
@@ -1314,7 +1314,7 @@ export default function Faenas() {
             )}
             <p className="text-xs text-[var(--color-muted)]">
               {cycleForm.mode === "create" && cycleForm.data.importEnabled
-                ? "Se clonarán las labores marcadas. Si activaste 'Mover workdays', se transferirán al nuevo ciclo y desaparecerán del origen."
+                ? "Se clonarán las labores marcadas. Si activaste 'Mover jornadas', se transferirán al nuevo ciclo y desaparecerán del origen."
                 : cycleForm.mode === "create"
                   ? `El ciclo arranca con la fecha de inicio como primer día y ${
                       cycleForm.data.withSupervision && cycleForm.data.laborType !== "supervision" ? "dos labores" : "una labor"
@@ -1604,7 +1604,7 @@ function ImportSection({ data, onChange }) {
               </div>
               <p className="mt-1 text-[10px] text-[var(--color-muted)]">
                 La lista de días del nuevo ciclo será solo las fechas marcadas.
-                Mover/copiar workdays y precios queda restringido a estas fechas.
+                Mover jornadas y copiar precios queda restringido a estas fechas.
               </p>
             </div>
           )}
@@ -1615,7 +1615,7 @@ function ImportSection({ data, onChange }) {
               onChange={(e) => onChange({ importCopyDayPrices: e.target.checked })}
               className="mt-0.5"
             />
-            <span>Copiar precios por día (combos/tiers/piso) de las labores y días marcados</span>
+            <span>Copiar precios por día (combos, precios múltiples y piso) de las labores y días marcados</span>
           </label>
           <label className="flex items-start gap-2 text-xs">
             <input
@@ -1625,7 +1625,7 @@ function ImportSection({ data, onChange }) {
               className="mt-0.5"
             />
             <span>
-              <b>Mover</b> los workdays de las labores seleccionadas al nuevo ciclo.{" "}
+              <b>Mover</b> las jornadas de las labores seleccionadas al nuevo ciclo.{" "}
               <span className="text-[var(--color-danger)]">
                 ⚠ Desaparecen del ciclo origen.
               </span>
@@ -1862,8 +1862,8 @@ function SelectedDetail({
           </button>
           {orphanCycles.length > 0 && (
             <div className="mt-4 rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-soft)] p-3 text-left text-xs text-[var(--color-warning)]">
-              <b>Atención:</b> esta faena tiene {orphanCycles.length} ciclo(s) legacy sin subfaena.
-              Bórralos desde la consola Firebase o usa el cascada admin al eliminar la faena.
+              <b>Atención:</b> esta faena tiene {orphanCycles.length} ciclo(s) antiguos sin subfaena.
+              Bórralos desde la consola de Firebase o con el borrado en cascada al eliminar la faena.
             </div>
           )}
         </div>
@@ -2298,13 +2298,13 @@ function ColorPalette({ onPick, onClose, selected }) {
         })}
       </div>
       <div className="mt-3 flex items-center gap-2 border-t border-[var(--color-border)] pt-3">
-        <label className="text-[11px] text-[var(--color-muted)]">Custom</label>
+        <label className="text-[11px] text-[var(--color-muted)]">Personalizado</label>
         <input
           type="color"
           value={selected || "#000000"}
           onChange={(e) => onPick(e.target.value)}
           className="h-6 w-10 cursor-pointer rounded border border-[var(--color-border)] bg-transparent p-0"
-          title="Elegí un color personalizado"
+          title="Elige un color personalizado"
         />
         <span className="ml-auto font-mono text-[10px] text-[var(--color-muted)]">
           {selected ? selected.toUpperCase() : "—"}
