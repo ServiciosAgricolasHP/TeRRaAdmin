@@ -18,7 +18,7 @@ export const BANKS = [
   { code: "031", name: "HSBC Bank (Chile)" },
   { code: "014", name: "Scotiabank / Sud Americano" },
   { code: "730", name: "Tempo" },
-  { code: "875", name: "MercadoLibre" },
+  { code: "875", name: "Mercado Pago" },
 ];
 
 export const ACCOUNT_TYPES = [
