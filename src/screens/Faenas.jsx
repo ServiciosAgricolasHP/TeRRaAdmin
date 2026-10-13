@@ -735,12 +735,13 @@ export default function Faenas() {
       );
       const nextNumber = scope.length + 1;
       const prevLabors = prev.labors || defaultLabors(prev.workers || []);
-      const newLabors = prevLabors.map((l) => ({
-        id: newId(),
-        name: l.name,
-        type: l.type,
-        workers: copy ? l.workers || [] : [],
-      }));
+      // Copia la configuración completa de cada labor (tipo de trato, base
+      // diaria, tarifa de HE, bonos, etapas…), igual que al importar desde
+      // otro ciclo. Los trabajadores solo si se pidió.
+      const newLabors = prevLabors.map((l) => {
+        const { id: _drop, ...rest } = l;
+        return { ...rest, id: newId(), workers: copy ? l.workers || [] : [] };
+      });
       await cyclesService.create({
         faenaId: closeFlow.faenaId,
         subfaenaId: prev.subfaenaId || null,

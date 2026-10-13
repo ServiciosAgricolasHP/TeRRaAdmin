@@ -276,6 +276,15 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
   // Filas sacadas a mano desde la columna "Filtrar". Viven solo en memoria
   // (no se persisten) y tampoco cuentan en los totales.
   const [hiddenRowKeys, setHiddenRowKeys] = useState(() => new Set());
+  // La clave de una fila es ciclo + labor + día, sin la persona: al cambiar de
+  // trabajador o volver a abrir el modal se vacían, para no ocultarle a otro
+  // los mismos días.
+  const hiddenScope = open ? worker?.id ?? null : null;
+  const [hiddenFor, setHiddenFor] = useState(hiddenScope);
+  if (hiddenFor !== hiddenScope) {
+    setHiddenFor(hiddenScope);
+    setHiddenRowKeys(new Set());
+  }
   const toggleHidden = (rowKey) => setHiddenRowKeys((prev) => {
     const next = new Set(prev);
     if (next.has(rowKey)) next.delete(rowKey); else next.add(rowKey);

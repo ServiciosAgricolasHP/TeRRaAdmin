@@ -19,6 +19,10 @@ export const GREETING_SLOTS = {
   profileHover: "profileHover",
   // Línea suelta en la pantalla de 404. Sin saludo no se renderiza nada.
   notFound: "notFound",
+  // Línea extra al final del aviso que impide quitar un día del ciclo, por
+  // jornadas o por vueltas de transporte (CycleDetail). Sin saludo, el aviso
+  // va solo.
+  removeDayBlocked: "removeDayBlocked",
 };
 
 // Ranuras con su descripción, para el editor de saludos de Usuarios.
@@ -37,6 +41,11 @@ export const GREETING_FIELDS = [
     slot: GREETING_SLOTS.notFound,
     label: "Página no encontrada (404)",
     note: "Línea suelta bajo el mensaje de error. Sin saludo no aparece nada.",
+  },
+  {
+    slot: GREETING_SLOTS.removeDayBlocked,
+    label: "No se puede quitar un día del ciclo",
+    note: "Línea extra al final del aviso que impide quitar un día, por jornadas o por vueltas de transporte. Sin saludo, el aviso va solo.",
   },
 ];
 

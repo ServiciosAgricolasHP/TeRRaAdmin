@@ -5869,10 +5869,10 @@ const PrintablePayrollTable = forwardRef(function PrintablePayrollTable(
 ) {
   const tripsCount = items.reduce((s, it) => s + (it.tripIds || []).length, 0);
   const total = items.reduce((s, it) => s + (Number(it.total) || 0), 0);
-  const totalPaid = items.reduce((s, it) => s + (it.status === "paid" ? (Number(it.total) || 0) : 0), 0);
-  const totalPending = total - totalPaid;
-  const paidCount = items.filter((it) => it.status === "paid").length;
-  const pendingCount = items.length - paidCount;
+  // Mismo reparto que el detalle de la quincena: los abonos cuentan como pagado.
+  const totalPaid = items.reduce((s, it) => s + paymentSplit(it).paid, 0);
+  const totalPending = items.reduce((s, it) => s + paymentSplit(it).pending, 0);
+  const pendingCount = items.filter((it) => it.status !== "paid").length;
   const isPaid = payroll.status === "paid";
   const period = (payroll.periodFrom || payroll.periodTo)
     ? `${payroll.periodFrom || "?"} → ${payroll.periodTo || "?"}`
@@ -5887,13 +5887,13 @@ const PrintablePayrollTable = forwardRef(function PrintablePayrollTable(
       </div>
       <div style={{ marginBottom: 8, display: "flex", gap: 12, fontSize: 12, color: "#000" }}>
         <span><strong>Total:</strong> {fmtCurrency(total)}</span>
-        {!isPaid && totalPending > 0 && pendingCount < items.length && (
+        {!isPaid && totalPending > 0 && totalPaid > 0 && (
           <>
             <span style={{ color: "#a16207" }}>
               <strong>Pendiente ({pendingCount}):</strong> {fmtCurrency(totalPending)}
             </span>
             <span style={{ color: "#15803d" }}>
-              <strong>Pagado ({paidCount}):</strong> {fmtCurrency(totalPaid)}
+              <strong>Pagado y abonado:</strong> {fmtCurrency(totalPaid)}
             </span>
           </>
         )}
@@ -5934,9 +5934,9 @@ const PrintablePayrollTable = forwardRef(function PrintablePayrollTable(
             <td style={cell} colSpan={2}></td>
             <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(total)}</td>
           </tr>
-          {paidCount > 0 && pendingCount > 0 && !isPaid && (
+          {totalPaid > 0 && totalPending > 0 && !isPaid && (
             <tr style={{ background: "#f3f4f6" }}>
-              <td style={{ ...cell, fontSize: 11, color: "#6b7280" }} colSpan={2}>Pagado ({paidCount})</td>
+              <td style={{ ...cell, fontSize: 11, color: "#6b7280" }} colSpan={2}>Pagado y abonado</td>
               <td style={cell} colSpan={3}></td>
               <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", fontSize: 11, color: "#6b7280" }}>
                 {fmtCurrency(totalPaid)}
@@ -5980,10 +5980,11 @@ function PayrollDetailModal({
   const [viewingPayment, setViewingPayment] = useState(null);
   const isPaid = payroll.status === "paid";
   // Totales por estado: una quincena pendiente puede tener resúmenes ya
-  // pagados uno por uno (botón "💰 Pagar"); el pendiente se muestra aparte.
+  // pagados uno por uno (botón "💰 Pagar") o con abonos; el pendiente se
+  // muestra aparte. El reparto lo hace paymentSplit, el mismo del balance.
   const totalAll = items.reduce((s, it) => s + (Number(it.total) || 0), 0);
-  const totalPaid = items.reduce((s, it) => s + (it.status === "paid" ? (Number(it.total) || 0) : 0), 0);
-  const totalPending = totalAll - totalPaid;
+  const totalPaid = items.reduce((s, it) => s + paymentSplit(it).paid, 0);
+  const totalPending = items.reduce((s, it) => s + paymentSplit(it).pending, 0);
   const paidCount = items.filter((it) => it.status === "paid").length;
   const pendingCount = items.length - paidCount;
 
@@ -6385,10 +6386,10 @@ function PayrollDetailModal({
                 </td>
                 {!isPaid && <td />}
               </tr>
-              {paidCount > 0 && pendingCount > 0 && (
+              {totalPaid > 0 && totalPending > 0 && (
                 <tr className="bg-[var(--color-surface)]">
                   <td className="px-2 py-1.5 text-xs text-[var(--color-muted)]" colSpan={2}>
-                    Pagado ({paidCount})
+                    Pagado y abonado
                   </td>
                   <td />
                   <td className="hidden md:table-cell" />

@@ -55,6 +55,8 @@ import {
 } from "../utils/tratoEtapas";
 import { useCatalogs } from "../contexts/CatalogsContext";
 import { useToast } from "../contexts/ToastContext";
+import { useAuth } from "../contexts/AuthContext";
+import { greeting, GREETING_SLOTS } from "../utils/greetings";
 import Modal from "../components/Modal";
 import TextField from "../components/TextField";
 import Select from "../components/Select";
@@ -550,6 +552,7 @@ export default function CycleDetail() {
   const navigate = useNavigate();
   const { catalogs, addEntry: addCatalogEntry, renameEntry: renameCatalogEntry } = useCatalogs();
   const toast = useToast();
+  const { user } = useAuth();
 
   const [cycle, setCycle] = useState(null);
   const [faena, setFaena] = useState(null);
@@ -2503,12 +2506,31 @@ export default function CycleDetail() {
     });
   };
 
+  // Un día se quita solo si no le queda nada: ni jornadas ni vueltas de
+  // transporte. Las vueltas no se borran con el día, y quedarían colgando de
+  // una fecha que el ciclo ya no muestra. El aviso dice todo lo que lo impide
+  // de una vez, con el saludo del usuario al final.
   const removeDay = async (date) => {
-    const wds = await workdaysService.list({
-      wheres: [["cycleId", "==", id], ["date", "==", date]], take: 1,
-    });
+    const [wds, cycleTrips] = await Promise.all([
+      workdaysService.list({ wheres: [["cycleId", "==", id], ["date", "==", date]], take: 1 }),
+      tripsService.listByCycle(id),
+    ]);
+    const trips = cycleTrips.filter((t) => t.date === date);
+    const reasons = [];
     if (wds.length) {
-      toast.warning(`No se puede quitar ${date}: hay producción registrada en alguna labor para ese día.`);
+      reasons.push("• Tiene producción registrada en alguna labor: bórrala primero desde la grilla.");
+    }
+    if (trips.length) {
+      reasons.push(
+        `• Tiene ${trips.length} vuelta${trips.length === 1 ? "" : "s"} de transporte: ` +
+        `elimína${trips.length === 1 ? "la" : "las"} primero desde 🚐 Transportes.`,
+      );
+    }
+    if (reasons.length) {
+      const saludo = greeting(user, GREETING_SLOTS.removeDayBlocked);
+      toast.warning(
+        [`No se puede quitar ${date}:`, ...reasons].join("\n") + (saludo ? `\n\n${saludo}` : ""),
+      );
       return;
     }
     setConfirmRemoveDay(date);
@@ -4193,7 +4215,7 @@ export default function CycleDetail() {
                   key={d}
                   onClick={() => removeDay(d)}
                   className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-0.5 text-xs text-[var(--color-muted)] hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
-                  title="Click para quitar columna (solo si ninguna labor tiene producción ese día)"
+                  title="Click para quitar el día (solo si ninguna labor tiene producción ni hay vueltas de transporte ese día)"
                 >
                   {d} ✕
                 </button>
