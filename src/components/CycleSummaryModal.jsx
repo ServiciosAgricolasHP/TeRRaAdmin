@@ -13,11 +13,14 @@ import {
   getTratoTiers,
   tratoUnitLabel,
   workdayMapKey,
+  workdayComboKeyOf,
   tratoTypeLabel,
   cosechaUnit,
   formatLaborDayPrice,
 } from "../utils/cosechaCombos";
 import { isRedDay } from "../utils/tratoHE";
+import { buildCobrarSections, mergedRows, mergedTotals, mergeFamilyOf } from "../utils/cobrarMerge";
+import { laborTypeLabel } from "../utils/laborTypes";
 import { stageById } from "../utils/tratoEtapas";
 import { tripsService } from "../services/transportsService";
 import { cyclesService, workdaysService, cycleSummariesService } from "../services";
@@ -637,6 +640,9 @@ export default function CycleSummaryModal({
   const [importOpen, setImportOpen] = useState(false);
   const [availableCycles, setAvailableCycles] = useState([]);
   const [selectedImportIds, setSelectedImportIds] = useState(new Set());
+  // Paso 2 de la importación: labores de los ciclos elegidos, para elegir cuáles
+  // traer y su labor destino. null = cerrado.
+  const [importPlan, setImportPlan] = useState(null);
   const printRef = useRef(null);
   const cycleId = cycle?.id;
 
@@ -645,7 +651,7 @@ export default function CycleSummaryModal({
     hydratedRef.current = false;
     let cancelled = false;
     // Valores por defecto para los campos que un resumen guardado no traiga.
-    const cobrarDefaults = { labors: {}, carriers: {}, withIva: true, discount: 0, discountNote: "", pendingBalance: 0, pendingBalanceNote: "" };
+    const cobrarDefaults = { labors: {}, carriers: {}, importedLabors: [], withIva: true, discount: 0, discountNote: "", pendingBalance: 0, pendingBalanceNote: "" };
     const titlesDefaults = {
       main: "DETALLE DE JORNADA",
       subtitle: [faena?.name, subfaena?.name, cycle.label].filter(Boolean).join(" · "),
@@ -911,17 +917,29 @@ export default function CycleSummaryModal({
   // ============================================================
   // Importar ciclos anteriores (modo cobrar)
   // ============================================================
-  // Ciclos ya importados, según el `sourceCycleId` de las filas extra de cada
-  // labor. El modal los muestra deshabilitados para no importarlos dos veces.
-  const importedCycleIds = useMemo(() => {
+  // Labores ya importadas (ciclo + labor de origen): las de
+  // `cobrar.importedLabors` y las que una versión anterior sumaba como filas
+  // extra. Esas filas viejas solo traen el ciclo, y en ese caso todas sus
+  // labores cuentan como importadas, para no duplicarlas. El paso de labores
+  // las muestra deshabilitadas.
+  const importedSources = useMemo(() => {
     const set = new Set();
+    for (const imp of cobrar.importedLabors || []) {
+      set.add(`${imp.sourceCycleId}|${imp.sourceLaborId}`);
+    }
     for (const laborCfg of Object.values(cobrar.labors || {})) {
       for (const er of laborCfg?.extraRows || []) {
-        if (er.sourceCycleId) set.add(er.sourceCycleId);
+        if (er.sourceCycleId) set.add(`${er.sourceCycleId}|${er.sourceLaborId || "*"}`);
       }
     }
     return set;
-  }, [cobrar.labors]);
+  }, [cobrar.labors, cobrar.importedLabors]);
+  const isLaborImported = (cycleId, laborId) =>
+    importedSources.has(`${cycleId}|${laborId}`) || importedSources.has(`${cycleId}|*`);
+  const importedCycleIds = useMemo(
+    () => new Set([...importedSources].map((k) => k.split("|")[0])),
+    [importedSources],
+  );
 
   // Lista los ciclos de la misma faena y subfaena, salvo el actual, en
   // cualquier estado (también se pueden sumar ciclos abiertos), con caché.
@@ -951,100 +969,139 @@ export default function CycleSummaryModal({
     }
   };
 
-  // Lee las jornadas de cada ciclo elegido, las agrupa por labor, empareja las
-  // labores por nombre (sin distinguir mayúsculas) con las del ciclo actual y
-  // agrega cada fila diaria a `cobrar.labors[laborId].extraRows`. Las labores
-  // sin par se listan en el aviso final.
-  const handleImportCycles = async () => {
-    // Descarta los ya importados aunque el modal los muestre deshabilitados.
-    const ids = [...selectedImportIds].filter((id) => !importedCycleIds.has(id));
+  // Paso 1 → 2: lee las jornadas de cada ciclo elegido y arma la lista de sus
+  // labores con días (`importPlan`), para elegir cuáles traer.
+  const prepareImport = async () => {
+    const ids = [...selectedImportIds];
     if (ids.length === 0) {
       setImportOpen(false);
       return;
     }
     setBusy("import");
     try {
-      const labors = cycle?.labors || [];
-      const nameToId = new Map(labors.map((l) => [String(l.name || "").trim().toLowerCase(), l.id]));
-
       const sourceCycles = await Promise.all(ids.map((id) => cyclesService.getById(id)));
       const allWds = await Promise.all(
         ids.map((id) => workdaysService.list({ wheres: [["cycleId", "==", id]] })),
       );
 
-      let importedRowCount = 0;
-      const skippedLabors = [];
+      const candidates = [];
+      for (let i = 0; i < sourceCycles.length; i++) {
+        const sCycle = sourceCycles[i];
+        if (!sCycle?.labors) continue;
+        const laborById = new Map(sCycle.labors.map((l) => [l.id, l]));
 
-      setCobrar((prev) => {
-        const nextLabors = { ...prev.labors };
-
-        for (let i = 0; i < sourceCycles.length; i++) {
-          const sCycle = sourceCycles[i];
-          const sWds = allWds[i] || [];
-          if (!sCycle?.labors) continue;
-
-          const wdsBy = new Map();
-          for (const wd of sWds) {
-            if (!wd?.laborId) continue;
-            if (!wdsBy.has(wd.laborId)) wdsBy.set(wd.laborId, {});
-            const key = wd.id || `${wd.workerRut || "?"}__${wd.date || "?"}`;
-            wdsBy.get(wd.laborId)[key] = wd;
-          }
-
-          for (const sLabor of sCycle.labors) {
-            const wdMap = wdsBy.get(sLabor.id) || {};
-            const { rows } = buildDailyRows(sLabor, wdMap, sCycle.dayPrices || {});
-            if (rows.length === 0) continue;
-
-            const targetId = nameToId.get(String(sLabor.name || "").trim().toLowerCase());
-            if (!targetId) {
-              skippedLabors.push(`${sCycle.label || sCycle.id}: ${sLabor.name}`);
-              continue;
-            }
-
-            const target = nextLabors[targetId] ? { ...nextLabors[targetId] } : {};
-            const extraRows = [...(target.extraRows || [])];
-            for (const r of rows) {
-              const id = (typeof crypto !== "undefined" && crypto.randomUUID)
-                ? crypto.randomUUID()
-                : `imp${Date.now()}${Math.random()}`;
-              const rate = (Number(r.qty) || 0) > 0
-                ? Math.round((Number(r.amount) || 0) / (Number(r.qty) || 1))
-                : 0;
-              extraRows.push({
-                id,
-                date: r.date,
-                qty: Number(r.qty) || 0,
-                overtimeHours: Number(r.overtimeHours) || 0,
-                rate,
-                amount: Number(r.amount) || 0,
-                sourceCycleId: sCycle.id,
-                sourceCycleLabel: sCycle.label || sCycle.id,
-              });
-              importedRowCount++;
-            }
-            target.extraRows = extraRows;
-            nextLabors[targetId] = target;
-          }
+        // Mismas claves que la grilla del ciclo (workdayMapKey), que es lo que
+        // buildDailyRows lee para separar los tiers de trato y las etapas.
+        const wdsBy = new Map();
+        for (const wd of allWds[i] || []) {
+          if (!wd?.laborId) continue;
+          if (!wdsBy.has(wd.laborId)) wdsBy.set(wd.laborId, {});
+          const ck = workdayComboKeyOf(wd, laborById.get(wd.laborId)?.type);
+          wdsBy.get(wd.laborId)[workdayMapKey(wd.workerRut, wd.date, ck)] = wd;
         }
 
-        const next = { ...prev, labors: nextLabors };
-        saveJSON(cobrarStorageKey(cycle?.id), next);
-        return next;
-      });
-
-      setImportOpen(false);
-      let msg = `${importedRowCount} días importados.`;
-      if (skippedLabors.length > 0) {
-        msg += `\n\nLabores no encontradas (nombre no coincide):\n${skippedLabors.slice(0, 10).join("\n")}`;
-        if (skippedLabors.length > 10) msg += `\n… +${skippedLabors.length - 10} más`;
+        for (const sLabor of sCycle.labors) {
+          const sDayPrices = sCycle.dayPrices || {};
+          const { rows, containers } = buildDailyRows(sLabor, wdsBy.get(sLabor.id) || {}, sDayPrices);
+          if (rows.length === 0) continue;
+          // Días en rojo de tratoHE con los feriados del ciclo de origen, que
+          // este resumen no tiene cargados.
+          const redDates = sLabor.type === "tratoHE"
+            ? [...new Set(rows
+              .filter((r) => r.date && isRedDay(r.date, getDaySingle(sDayPrices, sLabor.id, r.date, "normal")))
+              .map((r) => r.date))]
+            : [];
+          candidates.push({
+            key: `${sCycle.id}|${sLabor.id}`,
+            cycleId: sCycle.id,
+            cycleLabel: sCycle.label || sCycle.id,
+            labor: sLabor,
+            already: isLaborImported(sCycle.id, sLabor.id),
+            // Sin los Set de trabajadores: la copia se guarda en Firestore.
+            rows: rows.map((row) => {
+              const r = { ...row };
+              delete r.workersSet;
+              delete r.pisoWorkersSet;
+              return r;
+            }),
+            containers: [...(containers || [])],
+            redDates,
+          });
+        }
       }
-      toast.success(msg);
+
+      if (candidates.length === 0) {
+        toast.warning("Los ciclos elegidos no tienen jornadas cargadas: no hay nada que importar.");
+        return;
+      }
+      setImportOpen(false);
+      setImportPlan({ candidates });
     } catch (err) {
       toast.error("Error importando: " + (err.message || err));
     } finally {
       setBusy("");
     }
+  };
+
+  // Paso 2: cada labor elegida entra al resumen como labor propia
+  // (`cobrar.importedLabors`), con su tipo de tabla y sumando al total. Se
+  // guarda una copia de la definición —sin trabajadores— y de sus filas
+  // diarias. `keys` = claves de los candidatos elegidos.
+  const applyImport = (keys) => {
+    const picked = new Set(keys);
+    const newLabors = [];
+    for (const c of importPlan?.candidates || []) {
+      if (!picked.has(c.key) || c.already) continue;
+      const id = `imp_${(typeof crypto !== "undefined" && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `${Date.now()}${Math.random()}`}`;
+      const { workers: _workers, bonusDefaults: _bonus, ...laborDef } = c.labor;
+      // El nombre lleva el ciclo de origen (su último tramo) para distinguirla
+      // de una labor del ciclo actual con el mismo nombre. Se cambia en
+      // "Personalizar títulos".
+      const shortCycle = String(c.cycleLabel).split("/").filter(Boolean).pop() || c.cycleLabel;
+      newLabors.push({
+        id,
+        sourceCycleId: c.cycleId,
+        sourceCycleLabel: c.cycleLabel,
+        sourceLaborId: c.labor.id,
+        labor: { ...laborDef, id, name: `${c.labor.name} (${shortCycle})` },
+        rows: c.rows,
+        containers: c.containers,
+        redDates: c.redDates,
+      });
+    }
+    setImportPlan(null);
+    if (newLabors.length === 0) return;
+    setCobrar((prev) => {
+      const next = { ...prev, importedLabors: [...(prev.importedLabors || []), ...newLabors] };
+      saveJSON(cobrarStorageKey(cycle?.id), next);
+      return next;
+    });
+    const days = newLabors.reduce((s, l) => s + l.rows.length, 0);
+    toast.success(
+      `${newLabors.length} labor${newLabors.length === 1 ? "" : "es"} importada${newLabors.length === 1 ? "" : "s"} ` +
+      `(${days} día${days === 1 ? "" : "s"}). Se suman al total a facturar.`,
+    );
+  };
+
+  // Quita una labor importada del resumen, con sus tarifas y ajustes. Las
+  // labores que estaban juntas con ella vuelven a su tabla propia.
+  const removeImportedLabor = (id) => {
+    setCobrar((prev) => {
+      const labors = {};
+      for (const [k, v] of Object.entries(prev.labors || {})) {
+        if (k === id) continue;
+        labors[k] = v?.mergeInto === id ? { ...v, mergeInto: null } : v;
+      }
+      const next = {
+        ...prev,
+        labors,
+        importedLabors: (prev.importedLabors || []).filter((l) => l.id !== id),
+      };
+      saveJSON(cobrarStorageKey(cycle?.id), next);
+      return next;
+    });
   };
 
   const toggleImportCycle = (id) => {
@@ -1104,6 +1161,31 @@ export default function CycleSummaryModal({
     });
   }, [cycle?.labors, workdaysByLabor, catalogs, dayPrices]);
 
+  // Labores importadas de otros ciclos (solo cobrar). Cada una es una copia
+  // guardada en `cobrar.importedLabors` —definición de la labor y sus filas
+  // diarias— que se dibuja con su propio tipo de tabla y suma al total, como
+  // cualquier labor del ciclo. Su id es propio, así sus tarifas, ajustes y
+  // `mergeInto` viven en `cobrar.labors[id]` igual que los de las demás.
+  const importedLaborsData = useMemo(() => (cobrar.importedLabors || []).map((imp) => {
+    const rows = imp.rows || [];
+    const containers = new Set(imp.containers || []);
+    const tratoUnitsSet = imp.labor?.type === "trato"
+      ? new Set(rows.map((r) => r.unit).filter((u) => u != null))
+      : null;
+    return {
+      labor: imp.labor,
+      rows,
+      totals: laborTotals(rows),
+      unit: laborQtyUnit(imp.labor, catalogs, containers, tratoUnitsSet),
+      containers,
+      tratoUnitsSet,
+      importedFrom: {
+        cycleLabel: imp.sourceCycleLabel || "",
+        redDates: imp.redDates || [],
+      },
+    };
+  }), [cobrar.importedLabors, catalogs]);
+
   // Grilla trabajador × día por labor (segunda sección imprimible). Cada
   // labor tiene sus propios botones de copiar e imprimir.
   const laborWorkerGrids = useMemo(() => {
@@ -1153,7 +1235,7 @@ export default function CycleSummaryModal({
   // (`meanRate`) se muestra como referencia en el editor de tarifas cuando
   // difiere más de un 10%.
   const cobrarLabors = useMemo(() => {
-    return laborsData.map((ld) => {
+    return [...laborsData, ...importedLaborsData].map((ld) => {
       const cfg = cobrar.labors[ld.labor.id] || {};
       const include = cfg.include !== false;
       const meanRate = ld.totals.qty > 0 ? Math.round(ld.totals.amount / ld.totals.qty) : 0;
@@ -1281,6 +1363,9 @@ export default function CycleSummaryModal({
           rowKey: `extra:${ex.id}`,
           isExtra: true,
           extraId: ex.id,
+          // Origen de una fila importada, para el rótulo "(de ciclo · labor)".
+          sourceCycleLabel: ex.sourceCycleLabel || null,
+          sourceLaborName: ex.sourceLaborName || null,
         });
       }
       // Orden por fecha; las filas extra sin fecha van al final.
@@ -1327,9 +1412,10 @@ export default function CycleSummaryModal({
         activity,
         chargedRows,
         chargedTotals,
+        mergeInto: cfg.mergeInto || null,
       };
     });
-  }, [laborsData, cobrar.labors, catalogs]);
+  }, [laborsData, importedLaborsData, cobrar.labors, catalogs]);
 
   const cobrarCarriers = useMemo(() => {
     return transportData.map((tg) => {
@@ -1600,6 +1686,9 @@ export default function CycleSummaryModal({
       // ============ HOJAS DE LABORES ============
       for (const ld of laborsForMode) {
         if (mode === "cobrar" && !ld.include) continue;
+        // Las labores importadas de otro ciclo no van al Excel: su desglose
+        // por combo o tier se arma releyendo las jornadas de este ciclo.
+        if (ld.importedFrom) continue;
         const labor = ld.labor;
         if (!ld.rows || ld.rows.length === 0) continue;
         const displayName = titles.laborNames?.[labor.id] || labor.name;
@@ -2399,7 +2488,7 @@ export default function CycleSummaryModal({
       {(mode !== "cobrar" || editMode) && showTitleEditor && (
         <TitlesEditor
           titles={titles}
-          labors={cycle?.labors || []}
+          labors={[...(cycle?.labors || []), ...(cobrar.importedLabors || []).map((imp) => imp.labor)]}
           carriers={transportData.map((t) => ({ id: t.carrierId, label: carrierById.get(t.carrierId)?.alias || t.carrierId }))}
           onChange={updateTitles}
           onLaborNameChange={updateLaborName}
@@ -2414,6 +2503,7 @@ export default function CycleSummaryModal({
           carrierById={carrierById}
           onLaborChange={updateCobrarLabor}
           onCarrierChange={updateCobrarCarrier}
+          onRemoveImported={removeImportedLabor}
         />
       )}
 
@@ -2492,8 +2582,16 @@ export default function CycleSummaryModal({
           alreadyImported={importedCycleIds}
           selected={selectedImportIds}
           onToggle={toggleImportCycle}
-          onConfirm={handleImportCycles}
+          onConfirm={prepareImport}
           busy={busy === "import"}
+        />
+      )}
+
+      {importPlan && (
+        <ImportLaborsModal
+          candidates={importPlan.candidates}
+          onClose={() => setImportPlan(null)}
+          onConfirm={applyImport}
         />
       )}
     </Modal>
@@ -2590,9 +2688,8 @@ function ColumnsMenu({ anchorRef, hidden, onToggle, onReset, onClose }) {
 // ============================================================
 // Modal: Importar ciclos anteriores
 // ============================================================
-// Sub-modal de CycleSummaryModal (modo cobrar). Lista los ciclos de la misma
-// faena y subfaena para elegir cuáles importar; cada fila diaria de las
-// labores con par entra como fila extra, rotulada con su ciclo de origen.
+// Sub-modal de CycleSummaryModal (modo cobrar), paso 1: los ciclos de la misma
+// faena y subfaena. En el paso 2 (ImportLaborsModal) se eligen sus labores.
 function ImportCyclesModal({ open, onClose, cycles, alreadyImported, selected, onToggle, onConfirm, busy }) {
   if (!open) return null;
   return (
@@ -2608,7 +2705,7 @@ function ImportCyclesModal({ open, onClose, cycles, alreadyImported, selected, o
           <div>
             <h2 className="text-lg font-semibold">📥 Importar ciclos anteriores</h2>
             <p className="text-xs text-[var(--color-muted)]">
-              Misma faena/subfaena. Las labores se mergean por nombre. Los ya importados quedan deshabilitados.
+              Misma faena/subfaena. En el paso siguiente eliges qué labores traer; cada una entra con su propia tabla.
             </p>
           </div>
           <button onClick={onClose} className="text-[var(--color-muted)] hover:text-[var(--color-text)]">✕</button>
@@ -2627,26 +2724,26 @@ function ImportCyclesModal({ open, onClose, cycles, alreadyImported, selected, o
                 return (
                   <li key={c.id}>
                     <label
-                      className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${
-                        alreadyDone
-                          ? "cursor-not-allowed border-[var(--color-border)] bg-[var(--color-surface-2)] opacity-60"
-                          : checked
-                            ? "cursor-pointer border-[var(--color-accent)] bg-[var(--color-accent-soft)]"
-                            : "cursor-pointer border-[var(--color-border)] hover:bg-[var(--color-surface-2)]"
+                      className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm ${
+                        checked
+                          ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)]"
+                          : "border-[var(--color-border)] hover:bg-[var(--color-surface-2)]"
                       }`}
                     >
                       <input
                         type="checkbox"
                         checked={checked}
-                        disabled={alreadyDone}
                         onChange={() => onToggle(c.id)}
                       />
                       <div className="flex-1">
                         <div className="font-medium">
                           {c.label || c.id}
                           {alreadyDone && (
-                            <span className="ml-2 rounded bg-[var(--color-success-bg,#dcfce7)] px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-[var(--color-success,#166534)]">
-                              ✓ ya importado
+                            <span
+                              className="ml-2 rounded bg-[var(--color-success-bg,#dcfce7)] px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-[var(--color-success,#166534)]"
+                              title="Ya se importó alguna de sus labores; en el paso siguiente aparecen deshabilitadas."
+                            >
+                              ✓ con importaciones
                             </span>
                           )}
                         </div>
@@ -2674,7 +2771,96 @@ function ImportCyclesModal({ open, onClose, cycles, alreadyImported, selected, o
             disabled={busy || selected.size === 0}
             className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:opacity-90 disabled:opacity-50"
           >
-            {busy ? "Importando..." : `Importar ${selected.size} ciclo${selected.size === 1 ? "" : "s"}`}
+            {busy ? "Leyendo…" : `Siguiente: elegir labores (${selected.size} ciclo${selected.size === 1 ? "" : "s"})`}
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+// Paso 2: las labores con días de los ciclos elegidos, de cualquier tipo. Cada
+// una que se marque entra al resumen como labor propia, con su tabla, y suma
+// al total. Las ya importadas quedan deshabilitadas.
+function ImportLaborsModal({ candidates, onClose, onConfirm }) {
+  const [picked, setPicked] = useState(
+    () => new Set(candidates.filter((c) => !c.already).map((c) => c.key)),
+  );
+  const toggle = (key) => setPicked((prev) => {
+    const next = new Set(prev);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    return next;
+  });
+  const chosen = candidates.filter((c) => !c.already && picked.has(c.key));
+  const byCycle = new Map();
+  for (const c of candidates) {
+    if (!byCycle.has(c.cycleId)) byCycle.set(c.cycleId, { label: c.cycleLabel, items: [] });
+    byCycle.get(c.cycleId).items.push(c);
+  }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div
+        className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="flex shrink-0 items-baseline justify-between border-b border-[var(--color-border)] px-5 py-3">
+          <div>
+            <h2 className="text-lg font-semibold">📥 Elegir labores a importar</h2>
+            <p className="text-xs text-[var(--color-muted)]">
+              Cada labor entra al resumen con su propia tabla, sea del tipo que sea, y suma al total a facturar.
+            </p>
+          </div>
+          <button onClick={onClose} className="text-[var(--color-muted)] hover:text-[var(--color-text)]">✕</button>
+        </header>
+
+        <div className="flex-1 space-y-3 overflow-y-auto px-5 py-3">
+          {[...byCycle.entries()].map(([cycleId, group]) => (
+            <div key={cycleId}>
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">{group.label}</div>
+              <ul className="space-y-1">
+                {group.items.map((c) => {
+                  const total = c.rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+                  const on = !c.already && picked.has(c.key);
+                  return (
+                    <li key={c.key}>
+                      <label
+                        className={`flex min-h-10 items-center gap-2 rounded-md border px-3 py-2 text-sm ${
+                          c.already
+                            ? "cursor-not-allowed border-[var(--color-border)] bg-[var(--color-surface-2)] opacity-60"
+                            : on
+                              ? "cursor-pointer border-[var(--color-accent)] bg-[var(--color-accent-soft)]"
+                              : "cursor-pointer border-[var(--color-border)] hover:bg-[var(--color-surface-2)]"
+                        }`}
+                      >
+                        <input type="checkbox" checked={on} disabled={c.already} onChange={() => toggle(c.key)} />
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium">{c.labor.name}</div>
+                          <div className="text-[10px] text-[var(--color-muted)]">
+                            {laborTypeLabel(c.labor.type) || c.labor.type} · {c.rows.length} día{c.rows.length === 1 ? "" : "s"} · {fmtCurrency(total)}
+                            {c.already && " · ya importada"}
+                          </div>
+                        </div>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </div>
+
+        <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-[var(--color-border)] px-5 py-3">
+          <button onClick={onClose} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
+            Cancelar
+          </button>
+          <button
+            onClick={() => onConfirm(chosen.map((c) => c.key))}
+            disabled={chosen.length === 0}
+            className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:opacity-90 disabled:opacity-50"
+          >
+            Importar {chosen.length} labor{chosen.length === 1 ? "" : "es"}
           </button>
         </footer>
       </div>
@@ -2750,7 +2936,14 @@ function TitlesEditor({ titles, labors, carriers, onChange, onLaborNameChange, o
   );
 }
 
-function CobrarEditor({ labors, carriers, carrierById, onLaborChange, onCarrierChange }) {
+function CobrarEditor({ labors, carriers, carrierById, onLaborChange, onCarrierChange, onRemoveImported }) {
+  // Destinos posibles para "Juntar con": otra labor incluida, de la misma
+  // familia y que no esté a su vez fusionada (mismas reglas que mergeTargetOf).
+  const mergeTargetsFor = (l) => labors.filter(
+    (o) => o.labor.id !== l.labor.id && o.include && !o.mergeInto &&
+      mergeFamilyOf(o.labor.type) === mergeFamilyOf(l.labor.type),
+  );
+  const mergedInto = (l) => labors.filter((o) => o.include && o.mergeInto === l.labor.id);
   return (
     <div className="mb-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
       <div className="mb-2 text-xs font-medium uppercase tracking-wider text-[var(--color-muted)]">
@@ -2797,6 +2990,52 @@ function CobrarEditor({ labors, carriers, carrierById, onLaborChange, onCarrierC
                     <span className="font-medium">{l.labor.name}</span>
                     <span className="ml-1 text-[var(--color-muted)]">({l.unit.toLowerCase()})</span>
                   </div>
+                  {l.importedFrom && (
+                    <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[10px] text-[var(--color-muted)]">
+                      <span>📥 importada de {l.importedFrom.cycleLabel}</span>
+                      <button
+                        type="button"
+                        onClick={() => onRemoveImported(l.labor.id)}
+                        className="rounded border border-[var(--color-border)] px-1.5 py-0.5 hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
+                        title="Quita esta labor importada del resumen, con sus tarifas y ajustes"
+                      >
+                        ✕ Quitar
+                      </button>
+                    </div>
+                  )}
+                  {l.include && (() => {
+                    const joined = mergedInto(l);
+                    if (joined.length > 0) {
+                      return (
+                        <div className="mt-1 text-[10px] text-[var(--color-muted)]">
+                          En la misma tabla: {joined.map((o) => o.labor.name).join(", ")}
+                        </div>
+                      );
+                    }
+                    const targets = mergeTargetsFor(l);
+                    if (targets.length === 0 && !l.mergeInto) return null;
+                    const current = l.mergeInto || "";
+                    const currentValid = !current || targets.some((o) => o.labor.id === current);
+                    return (
+                      <label
+                        className="mt-1 flex items-center gap-1 text-[10px] text-[var(--color-muted)]"
+                        title="Muestra esta labor dentro de la tabla de otra, con un solo subtotal. No cambia el total a facturar."
+                      >
+                        Juntar con
+                        <select
+                          value={current}
+                          onChange={(e) => onLaborChange(l.labor.id, { mergeInto: e.target.value || null })}
+                          className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-0.5 text-[11px] text-[var(--color-text)]"
+                        >
+                          <option value="">— tabla propia —</option>
+                          {targets.map((o) => (
+                            <option key={o.labor.id} value={o.labor.id}>{o.labor.name}</option>
+                          ))}
+                          {!currentValid && <option value={current}>(destino no disponible)</option>}
+                        </select>
+                      </label>
+                    );
+                  })()}
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{fmtNumber(l.chargedTotals.qty)}</td>
                 <td className="px-2 py-1.5 text-right text-[var(--color-muted)] tabular-nums">
@@ -2961,31 +3200,49 @@ const PrintableSummary = forwardRef(function PrintableSummary(
         <div style={{ width: 90 }} />
       </div>
 
-      {/* Tablas día a día por labor */}
-      {labors.map((ld) => {
+      {/* Tablas día a día por labor. En cobrar, las labores fusionadas
+          (`mergeInto`) van dentro de la tabla de su destino (utils/cobrarMerge.js). */}
+      {(mode === "cobrar"
+        ? buildCobrarSections(labors)
+        : labors.map((ld) => ({ lead: ld, members: [ld] }))
+      ).map(({ lead: ld, members }) => {
         if (mode === "cobrar" && ld.include === false) return null;
-        const displayName = titles.laborNames?.[ld.labor.id] || ld.labor.name;
+        const nameOf = (m) => titles.laborNames?.[m.labor.id] || m.labor.name;
+        const merged = members.length > 1;
+        const displayName = merged ? members.map(nameOf).join(" + ") : nameOf(ld);
         // tratoHE: sábados, domingos y feriados en rojo en la columna Fecha,
         // con el mismo criterio que la grilla por trabajador.
         let redDates = null;
         if (ld.labor.type === "tratoHE") {
           redDates = new Set();
-          const sourceRows = mode === "cobrar" ? (ld.chargedRows || ld.rows) : ld.rows;
-          for (const r of sourceRows) {
-            if (!r.date) continue;
-            const cfg = getDaySingle(dayPrices, ld.labor.id, r.date, "normal");
-            if (isRedDay(r.date, cfg)) redDates.add(r.date);
+          for (const m of members) {
+            // Una labor importada trae sus días en rojo calculados con los
+            // feriados de su propio ciclo.
+            if (m.importedFrom) {
+              for (const d of m.importedFrom.redDates) redDates.add(d);
+              continue;
+            }
+            const sourceRows = mode === "cobrar" ? (m.chargedRows || m.rows) : m.rows;
+            for (const r of sourceRows) {
+              if (!r.date) continue;
+              const cfg = getDaySingle(dayPrices, m.labor.id, r.date, "normal");
+              if (isRedDay(r.date, cfg)) redDates.add(r.date);
+            }
           }
         }
         // En cobrar, chargedRows (con overrides y filas extra) y chargedTotals.
-        const tableRows = mode === "cobrar" ? (ld.chargedRows || ld.rows) : ld.rows;
-        const tableTotals = mode === "cobrar" ? (ld.chargedTotals || ld.totals) : ld.totals;
+        const tableRows = merged
+          ? mergedRows(members, nameOf)
+          : mode === "cobrar" ? (ld.chargedRows || ld.rows) : ld.rows;
+        const tableTotals = merged
+          ? mergedTotals(members)
+          : mode === "cobrar" ? (ld.chargedTotals || ld.totals) : ld.totals;
         return (
           <LaborTable
             key={ld.labor.id}
             laborId={ld.labor.id}
             displayName={displayName}
-            unit={ld.unit}
+            unit={merged && tableTotals.qty == null ? "Cantidad" : ld.unit}
             laborType={ld.labor.type}
             overtimeRate={Number(ld.labor.overtimeRate) > 0 ? Number(ld.labor.overtimeRate) : 3500}
             rows={tableRows}
@@ -3276,27 +3533,30 @@ function LaborTable({
   };
   const rowValorTotal = (r) => isCobrar ? r.chargedAmount : r.amount;
 
+  // En una tabla fusionada cada fila trae su labor de origen (`_laborId`,
+  // `_laborType`, `_laborName`): las ediciones vuelven a esa labor.
+  const laborOf = (r) => r._laborId || laborId;
+  const typeOf = (r) => r._laborType || laborType;
   const handleField = (r, field, raw) => {
     if (!onEditRow) return;
     const value = raw === "" ? "" : Number(raw);
-    onEditRow(laborId, r, { [field]: value });
+    onEditRow(laborOf(r), r, { [field]: value });
   };
   // Trato: badge junto a la fecha con la unidad del tier (Árbol, Metro…) o
   // "T1", "T2"… si no tiene unidad. La fila del primer tier lo lleva solo si
   // el día tiene más de una fila.
-  const isTrato = laborType === "trato";
   const rowCountByDate = (() => {
-    if (!isTrato) return new Map();
     const m = new Map();
     for (const r of rows) {
-      if (!r.date || r.isExtra) continue;
-      m.set(r.date, (m.get(r.date) || 0) + 1);
+      if (!r.date || r.isExtra || typeOf(r) !== "trato") continue;
+      const k = `${laborOf(r)}|${r.date}`;
+      m.set(k, (m.get(k) || 0) + 1);
     }
     return m;
   })();
   const tierBadgeFor = (r) => {
-    if (!isTrato || r.isExtra) return null;
-    const same = rowCountByDate.get(r.date) || 0;
+    if (typeOf(r) !== "trato" || r.isExtra) return null;
+    const same = rowCountByDate.get(`${laborOf(r)}|${r.date}`) || 0;
     if (same < 2 && (r.tierIdx ?? 0) === 0) return null;
     const unitLbl = r.unit != null ? tratoUnitLabel(catalogs, r.unit) : null;
     if (unitLbl) return unitLbl;
@@ -3304,10 +3564,10 @@ function LaborTable({
   };
   const handleDateChange = (r, raw) => {
     if (!onEditRow) return;
-    onEditRow(laborId, r, { date: raw });
+    onEditRow(laborOf(r), r, { date: raw });
   };
   const handleAdd = () => { if (onAddRow) onAddRow(laborId); };
-  const handleRemove = (extraId) => { if (onRemoveRow) onRemoveRow(laborId, extraId); };
+  const handleRemove = (r) => { if (onRemoveRow) onRemoveRow(laborOf(r), r.extraId); };
 
   return (
     <div style={{ marginBottom: 14 }}>
@@ -3359,14 +3619,16 @@ function LaborTable({
             const totalCol = isCobrar ? valorTotal + transport : valorTotal + piso;
             const dateIsRed = isHE && redDates && r.date && redDates.has(r.date);
             const dateCellStyle = dateIsRed ? { ...cell, color: "#c00", fontWeight: 700 } : cell;
-            const rowKey = r.rowKey || r.date || `r${Math.random()}`;
+            const rowKey = r._key || r.rowKey || r.date || `r${Math.random()}`;
             return (
               <tr key={rowKey}>
                 <td style={cell}>
-                  {displayName}
+                  {r._laborName || displayName}
                   {r.isExtra && editable && (
                     <span style={{ color: "#888", marginLeft: 4, fontSize: 10 }}>
-                      {r.sourceCycleLabel ? `(de ${r.sourceCycleLabel})` : "(ajuste)"}
+                      {r.sourceCycleLabel
+                        ? `(de ${r.sourceCycleLabel}${r.sourceLaborName ? ` · ${r.sourceLaborName}` : ""})`
+                        : "(ajuste)"}
                     </span>
                   )}
                 </td>
@@ -3446,7 +3708,7 @@ function LaborTable({
                       ) : (
                         // Se pasa el qty resuelto (chargedQty en cobrar, qty en pagar)
                         // para que la métrica refleje los overrides.
-                        formatRowMetric({ ...r, qty, overtimeHours: heHrs }, laborType, catalogs)
+                        formatRowMetric({ ...r, qty, overtimeHours: heHrs }, typeOf(r), catalogs)
                       )}
                     </td>
                   )
@@ -3529,7 +3791,7 @@ function LaborTable({
                     {r.isExtra && (
                       <button
                         type="button"
-                        onClick={() => handleRemove(r.extraId)}
+                        onClick={() => handleRemove(r)}
                         title="Eliminar fila"
                         style={{ background: "transparent", border: "none", cursor: "pointer", color: "#b91c1c", fontSize: 14, padding: 0 }}
                       >
@@ -3587,7 +3849,10 @@ function LaborTable({
               showCol("qty") && (
                 <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
                   {isCobrar
-                    ? (laborType === "tratoEtapas"
+                    ? (totals.qty == null
+                        // Tabla fusionada con medidas distintas: no se suman.
+                        ? ""
+                        : laborType === "tratoEtapas"
                         // Unidades deduplicadas (solo etapas que cuentan).
                         ? `${fmtNumber(totals.countedQty ?? totals.qty ?? 0)} unid.`
                         : fmtNumber(totals.qty || 0))

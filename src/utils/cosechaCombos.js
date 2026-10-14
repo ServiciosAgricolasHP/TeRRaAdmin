@@ -194,6 +194,16 @@ export const workdayDocId = (cycleId, laborId, rut, date, ck = "0_0") =>
 export const workdayMapKey = (rut, date, ck = "0_0") =>
   `${rut}__${date}__${ck}`;
 
+// Clave de combo/tier de una jornada leída de Firestore, para armar su
+// `workdayMapKey`. Sale del 5.º segmento del docId; sin él, en trato es el
+// tier "t0" y en el resto el combo calidad/envase guardado en el documento.
+export function workdayComboKeyOf(wd, laborType) {
+  const parts = String(wd?.id || "").split("__");
+  if (parts.length >= 5) return parts.slice(4).join("__");
+  if (laborType === "trato") return "t0";
+  return comboKey(Number(wd?.qualityX) || 0, Number(wd?.containerY) || 0);
+}
+
 // ============================================================
 // Tiers de precio para labores a trato
 // ============================================================
