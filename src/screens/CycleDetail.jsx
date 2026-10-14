@@ -12,6 +12,7 @@ import { AG_GRID_LOCALE_ES } from "../utils/agGridLocale";
 import {
   COSECHA_MODES,
   comboKey as makeComboKey,
+  workdayComboKeyOf,
   parseComboKey,
   qualityLabel,
   containerLabel,
@@ -754,23 +755,10 @@ export default function CycleDetail() {
       const labors = normalized.labors || [];
       for (const w of wds) {
         const lid = w.laborId || labors[0]?.id;
-        // Clave de combo/tier (ck) del mapa en memoria: el 5.º segmento del
-        // docId ("...__rut__date__ck"). Sin ese segmento, en trato es el tier
-        // "t0" y en el resto el combo de qualityX/containerY. Las filas de
-        // trato buscan sus jornadas por tier ("t0", "t1"…).
-        const parts = String(w.id || "").split("__");
+        // Clave de combo/tier (ck) del mapa en memoria (workdayComboKeyOf).
+        // Las filas de trato buscan sus jornadas por tier ("t0", "t1"…).
         const laborForDoc = labors.find((l) => l.id === lid);
-        const isTrato = laborForDoc?.type === "trato";
-        let ck;
-        if (parts.length >= 5) {
-          ck = parts.slice(4).join("__");
-        } else if (isTrato) {
-          ck = "t0";
-        } else {
-          const x = Number(w.qualityX) || 0;
-          const y = Number(w.containerY) || 0;
-          ck = makeComboKey(x, y);
-        }
+        const ck = workdayComboKeyOf(w, laborForDoc?.type);
         if (!byLabor[lid]) byLabor[lid] = {};
         // Los workdays de piso no se normalizan como trato: no tienen tiers.
         const normalizedWd = w.pisoOnly || ck === PISO_COMBO_KEY ? w : normalizeTratoWorkday(w);

@@ -424,7 +424,7 @@ Colección aparte y no un campo en `cycles` porque los docs de `cycles` se traen
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | ref→`cycles` | el cycleId |
-| `cobrar` | object | `{ labors, carriers, withIva, discount, discountNote, pendingBalance, pendingBalanceNote, hiddenColumns }` — ver `labors[laborId].rowOverrides/extraRows` en AGENTS.md |
+| `cobrar` | object | `{ labors, carriers, withIva, discount, discountNote, pendingBalance, pendingBalanceNote, hiddenColumns }` — ver `labors[laborId].rowOverrides/extraRows` en AGENTS.md. `labors[laborId].mergeInto?: laborId` muestra esa labor dentro de la tabla de otra (solo presentación). `importedLabors?: [{ id, sourceCycleId, sourceCycleLabel, sourceLaborId, labor, rows, containers, redDates }]` son labores de otros ciclos copiadas al resumen: la definición de la labor (sin `workers` ni `bonusDefaults`, con `id` propio `imp_…`) y sus filas diarias; sus tarifas y ajustes van en `labors[id]` como los de cualquier labor. Una versión anterior importaba como filas en `labors[laborId].extraRows[]` con `sourceCycleId`/`sourceCycleLabel`: esas filas siguen leyéndose |
 | `titles` | object | `{ main, subtitle, laborNames, carrierNames }` |
 | `updatedAt` | timestamp | escrito con `serverTimestamp()` en cada guardado debounced |
 | `updatedBy`, `updatedByEmail` | string \| null | quién lo tocó al final; se muestra en el header del modal |

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   comboKey,
+  workdayComboKeyOf,
   parseComboKey,
   cosechaUnit,
   getDayPiso,
@@ -358,5 +359,22 @@ describe("pisoAssigned", () => {
   it("sin pisos devuelve las dos listas vacías", () => {
     expect(pisoAssigned(mapa(prod("A", "2026-03-02")), "2026-03-02")).toEqual({ libres: [], liquidados: [] });
     expect(pisoAssigned(null, "2026-03-02")).toEqual({ libres: [], liquidados: [] });
+  });
+});
+
+describe("workdayComboKeyOf", () => {
+  it("toma el 5.º segmento del docId", () => {
+    expect(workdayComboKeyOf({ id: "c1__l1__11111111-1__2026-10-01__t1" }, "trato")).toBe("t1");
+    expect(workdayComboKeyOf({ id: "c1__l1__11111111-1__2026-10-01__2_3" }, "cosecha")).toBe("2_3");
+    expect(workdayComboKeyOf({ id: "c1__l1__11111111-1__2026-10-01___piso" }, "cosecha")).toBe("_piso");
+  });
+
+  it("sin 5.º segmento, en trato es el tier t0", () => {
+    expect(workdayComboKeyOf({ id: "c1__l1__11111111-1__2026-10-01" }, "trato")).toBe("t0");
+  });
+
+  it("sin 5.º segmento, en el resto sale de calidad y envase", () => {
+    expect(workdayComboKeyOf({ id: "c1__l1__11111111-1__2026-10-01", qualityX: 1, containerY: 2 }, "cosecha")).toBe("1_2");
+    expect(workdayComboKeyOf({ id: "c1__l1__11111111-1__2026-10-01" }, "main")).toBe("0_0");
   });
 });
