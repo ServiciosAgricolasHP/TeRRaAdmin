@@ -3319,6 +3319,8 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
   const [abonos, setAbonos] = useState(payment?.abonos || []);
   const [newAbono, setNewAbono] = useState({ amount: "", date: "", notes: "" });
   const [abonoBusy, setAbonoBusy] = useState(false);
+  // Abono en edición: { id, amount, date, notes } o null.
+  const [editingAbono, setEditingAbono] = useState(null);
   const [confirmRemoveAbono, setConfirmRemoveAbono] = useState(null); // abonoId o null
   // Confirmación para un abono mayor que el saldo: askConfirm devuelve una
   // promesa que handleAddAbono espera antes de seguir.
@@ -3416,6 +3418,41 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
       if (onChanged) await onChanged();
     } catch (err) {
       toast.error("Error al cargar abono: " + (err.message || err));
+    } finally {
+      setAbonoBusy(false);
+    }
+  };
+
+  const startEditAbono = (a) =>
+    setEditingAbono({ id: a.id, amount: String(a.amount ?? ""), date: a.date || "", notes: a.notes || "" });
+  const handleSaveAbonoEdit = async () => {
+    if (!editingAbono) return;
+    const amt = Number(editingAbono.amount) || 0;
+    if (amt <= 0) {
+      toast.error("Ingresa un monto mayor a 0");
+      return;
+    }
+    // Lo pendiente sin contar este abono, para avisar si el nuevo monto lo supera.
+    const prev = Number(abonos.find((a) => a.id === editingAbono.id)?.amount) || 0;
+    const pendingWithout = pendingAmount + prev;
+    if (amt > pendingWithout) {
+      const ok = await askConfirm(
+        `El abono (${fmtCurrency(amt)}) supera el monto pendiente (${fmtCurrency(pendingWithout)}). ¿Continuar igual?`,
+      );
+      if (!ok) return;
+    }
+    setAbonoBusy(true);
+    try {
+      const updated = await paymentsService.updateAbono(payment.id, editingAbono.id, {
+        amount: amt,
+        date: editingAbono.date,
+        notes: editingAbono.notes,
+      });
+      setAbonos(updated.abonos || []);
+      setEditingAbono(null);
+      if (onChanged) await onChanged();
+    } catch (err) {
+      toast.error("Error al editar el abono: " + (err.message || err));
     } finally {
       setAbonoBusy(false);
     }
@@ -3668,7 +3705,57 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
 
           {abonos.length > 0 && (
             <ul className="mb-2 space-y-1">
-              {abonos.map((a) => (
+              {abonos.map((a) => (editingAbono?.id === a.id ? (
+                <li
+                  key={a.id}
+                  className="flex flex-wrap items-end gap-2 rounded border border-[var(--color-accent)] bg-[var(--color-surface)] px-2 py-2 text-xs"
+                >
+                  <label className="flex flex-col gap-0.5 text-[10px] text-[var(--color-muted)]">
+                    Monto
+                    <input
+                      type="number"
+                      min="0"
+                      value={editingAbono.amount}
+                      onChange={(e) => setEditingAbono((ed) => ({ ...ed, amount: e.target.value }))}
+                      className="w-28 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-right text-sm tabular-nums outline-none focus:border-[var(--color-accent)]"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-0.5 text-[10px] text-[var(--color-muted)]">
+                    Fecha
+                    <input
+                      type="date"
+                      value={editingAbono.date}
+                      onChange={(e) => setEditingAbono((ed) => ({ ...ed, date: e.target.value }))}
+                      className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-sm outline-none focus:border-[var(--color-accent)]"
+                    />
+                  </label>
+                  <label className="flex min-w-[140px] flex-1 flex-col gap-0.5 text-[10px] text-[var(--color-muted)]">
+                    Nota
+                    <input
+                      type="text"
+                      value={editingAbono.notes}
+                      onChange={(e) => setEditingAbono((ed) => ({ ...ed, notes: e.target.value }))}
+                      className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-sm outline-none focus:border-[var(--color-accent)]"
+                    />
+                  </label>
+                  <div className="flex gap-1">
+                    <button
+                      onClick={() => setEditingAbono(null)}
+                      disabled={abonoBusy}
+                      className="min-h-8 rounded border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-surface-2)] disabled:opacity-50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      onClick={handleSaveAbonoEdit}
+                      disabled={abonoBusy}
+                      className="min-h-8 rounded bg-[var(--color-accent)] px-2 py-1 text-xs font-medium text-[var(--color-accent-fg)] hover:opacity-90 disabled:opacity-50"
+                    >
+                      {abonoBusy ? "Guardando…" : "Guardar"}
+                    </button>
+                  </div>
+                </li>
+              ) : (
                 <li
                   key={a.id}
                   className="flex flex-wrap items-center gap-2 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs"
@@ -3679,17 +3766,27 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
                     <span className="text-[var(--color-muted)] truncate">— {a.notes}</span>
                   )}
                   {!isPaid && (
-                    <button
-                      onClick={() => handleRemoveAbono(a.id)}
-                      disabled={abonoBusy}
-                      title="Eliminar este abono"
-                      className="ml-auto rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:opacity-50"
-                    >
-                      ✕
-                    </button>
+                    <span className="ml-auto flex gap-1">
+                      <button
+                        onClick={() => startEditAbono(a)}
+                        disabled={abonoBusy || !!editingAbono}
+                        title="Editar monto, fecha o nota de este abono"
+                        className="min-h-7 rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        onClick={() => handleRemoveAbono(a.id)}
+                        disabled={abonoBusy}
+                        title="Eliminar este abono"
+                        className="min-h-7 rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:opacity-50"
+                      >
+                        ✕
+                      </button>
+                    </span>
                   )}
                 </li>
-              ))}
+              )))}
             </ul>
           )}
 
@@ -3745,6 +3842,7 @@ function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], fa
           <PrintableSummary
             ref={printRef}
             payment={payment}
+            abonos={abonos}
             carrier={carrier}
             trips={trips}
             editable={editMode && !isPaid}
@@ -3889,7 +3987,7 @@ function monthOfTrips(trips) {
 }
 
 const PrintableSummary = forwardRef(function PrintableSummary(
-  { payment, carrier, trips, periodLabel, faenaById, subfaenaById, cycleById, editable = false, onEditTrip, onRemoveTrip, isTripLocked },
+  { payment, abonos: abonosProp, carrier, trips, periodLabel, faenaById, subfaenaById, cycleById, editable = false, onEditTrip, onRemoveTrip, isTripLocked },
   ref,
 ) {
   // En modo edición, con callbacks por vuelta, agrega la columna "Acciones",
@@ -3899,6 +3997,16 @@ const PrintableSummary = forwardRef(function PrintableSummary(
   const showActions = editable && (onEditTrip || onRemoveTrip);
   const month = monthOfTrips(trips);
   const total = trips.reduce((s, t) => s + (Number(t.amount) || 0), 0);
+  // Abonos del resumen y lo que queda pendiente, al pie de la tabla: es lo que
+  // ve el transportista. `abonosProp` llega del modal, que los edita en vivo;
+  // si no, salen del resumen. El pendiente se calcula contra el total de las
+  // vueltas, el mismo que muestra la tabla.
+  const abonos = abonosProp || payment?.abonos || [];
+  const abonado = abonos.reduce((s, a) => s + (Number(a.amount) || 0), 0);
+  const isPaid = payment?.status === "paid";
+  const pending = isPaid ? 0 : Math.max(0, total - abonado);
+  const labelSpan = 6;
+  const trailingCells = 1 + (showActions ? 1 : 0);
 
   return (
     <div ref={ref} style={{ background: "#ffffff", color: "#000", padding: 16, fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
@@ -4000,11 +4108,33 @@ const PrintableSummary = forwardRef(function PrintableSummary(
             );
           })}
           <tr style={{ background: "#c6efce" }}>
-            <td style={cell} colSpan={6}></td>
+            <td style={{ ...cell, fontWeight: 700 }} colSpan={labelSpan}>{abonos.length > 0 ? "TOTAL" : ""}</td>
             <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(total)}</td>
             <td style={cell}></td>
             {showActions && <td style={cell}></td>}
           </tr>
+          {abonos.map((a, i) => (
+            <tr key={a.id || i}>
+              <td style={{ ...cell, color: "#166534" }} colSpan={labelSpan}>
+                Abono {dateLabel(a.date)}
+              </td>
+              <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#166534" }}>
+                − {fmtCurrency(a.amount)}
+              </td>
+              <td style={cell} colSpan={trailingCells}>{a.notes || ""}</td>
+            </tr>
+          ))}
+          {abonos.length > 0 && (
+            <tr style={{ background: pending > 0 ? "#fef3c7" : "#c6efce" }}>
+              <td style={{ ...cell, fontWeight: 700 }} colSpan={labelSpan}>
+                {isPaid ? "PAGADO" : "PENDIENTE"}
+              </td>
+              <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums", color: pending > 0 ? "#a16207" : "#166534" }}>
+                {fmtCurrency(pending)}
+              </td>
+              <td style={cell} colSpan={trailingCells}></td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>
