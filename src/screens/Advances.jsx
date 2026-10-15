@@ -24,6 +24,7 @@ import { useIsMobile } from "../hooks/useIsMobile";
 import { useToast } from "../contexts/ToastContext";
 import { matchesSearchQuery } from "../utils/textSearch";
 import { localIsoDate } from "../utils/dates";
+import { toTitleName } from "../utils/textCase";
 
 const fmtCurrency = (v) =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
@@ -539,7 +540,8 @@ function AdvanceFormModal({ open, item, items = [], onClose, onSaved }) {
         workerName: form.workerName,
         amount: newAmount,
         date: form.date,
-        note: form.note,
+        // La nota de un anticipo o bono va como título ("Bono Producción Octubre").
+        note: toTitleName(form.note || ""),
         status,
       };
       if (!isEdit) {

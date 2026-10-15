@@ -75,6 +75,7 @@ import { qrLockedLaborsOf } from "../utils/harvestSync";
 import { LABOR_TYPES } from "../utils/laborTypes";
 import { localIsoDate } from "../utils/dates";
 import { currentRutResolver } from "../utils/workerRut";
+import { toTitleName, unshout } from "../utils/textCase";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -1134,7 +1135,7 @@ export default function CycleDetail() {
     const { laborId, date } = editingDayNote;
     setDayNoteBusy(true);
     try {
-      const text = String(editingDayNoteText || "").trim();
+      const text = unshout(String(editingDayNoteText || "").trim());
       const nextByLabor = { ...(cycle?.dayNotesByLabor || {}) };
       const nextForLabor = { ...(nextByLabor[laborId] || {}) };
       if (text) nextForLabor[date] = text;
@@ -2824,12 +2825,12 @@ export default function CycleDetail() {
     let laborGroupId = laborForm.data.laborGroupId || null;
     if (laborGroupId === "__new__") {
       if (!laborForm.data.newGroupName.trim()) {
-        toast.warning("Ponele un nombre a la agrupación nueva.");
+        toast.warning("Ponle un nombre a la agrupación nueva.");
         return;
       }
       const created = await laborGroupsService.create({
         subfaenaId: cycle.subfaenaId,
-        name: laborForm.data.newGroupName.trim(),
+        name: toTitleName(laborForm.data.newGroupName),
         active: true,
       });
       laborGroupId = created.id;
@@ -2838,7 +2839,7 @@ export default function CycleDetail() {
     const buildLabor = (existing = {}) => {
       const base = {
         ...existing,
-        name: laborForm.data.name.trim(),
+        name: toTitleName(laborForm.data.name),
         type: laborForm.data.type,
         laborGroupId: laborGroupId || null,
       };

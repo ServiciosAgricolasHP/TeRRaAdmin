@@ -14,6 +14,7 @@ import {
 import { db, auth } from "../firebase";
 import { logAction } from "./logger";
 import { localIsoDate } from "../utils/dates";
+import { toTitleName, unshout } from "../utils/textCase";
 
 const TRIPS = "transports";
 const PAYMENTS = "transportPayments";
@@ -72,7 +73,7 @@ function normalizeTrip(data) {
     lugar: titleCase(data.lugar),
     destino: titleCase(data.destino),
     personCount,
-    notes: data.notes ? String(data.notes).trim() : "",
+    notes: data.notes ? unshout(String(data.notes).trim()) : "",
     status: data.status || "pending",
     paymentId: data.paymentId || null,
   };
@@ -120,6 +121,21 @@ async function recalcPaymentTotal(paymentId, { pruneMissingTrips = false } = {})
     alive.push(tripIds[i]);
   });
   const prunes = pruneMissingTrips && alive.length !== tripIds.length;
+  // Un resumen pendiente que se quedó sin vueltas no tiene nada que cobrar: se
+  // elimina y sale de su quincena (que también se elimina si queda vacía). Si
+  // tiene abonos se conserva, porque esos pagos ya se hicieron.
+  if (prunes && alive.length === 0 && !(data.abonos || []).length) {
+    await deleteDoc(doc(db, PAYMENTS, paymentId));
+    await logAction({
+      action: "delete",
+      entity: "transportPayment",
+      entityId: paymentId,
+      before: data,
+      meta: carrierMeta(data.carrierId, { auto: "emptySummary" }),
+    });
+    await recalcPayrollTotal(data.payrollId, { pruneMissingPayments: true, dropIfEmpty: true });
+    return 0;
+  }
   // Sin cambio real no se escribe nada, ni el documento ni el log de auditoría.
   if (total === (Number(data.total) || 0) && !prunes) return total;
   const patch = { total, ...stamp() };
@@ -142,7 +158,11 @@ async function recalcPaymentTotal(paymentId, { pruneMissingTrips = false } = {})
 // Suma los totales de los resúmenes de la quincena y persiste el total.
 // recalcPaymentTotal lo llama cada vez que cambia el total de un resumen, así
 // la tarjeta de la quincena sigue al resumen.
-async function recalcPayrollTotal(payrollId) {
+//
+// `pruneMissingPayments` saca de `paymentIds` los resúmenes que ya no existen,
+// y `dropIfEmpty` elimina la quincena pendiente si se quedó sin ninguno. Los
+// usan los caminos que borran un resumen.
+async function recalcPayrollTotal(payrollId, { pruneMissingPayments = false, dropIfEmpty = false } = {}) {
   if (!payrollId) return null;
   const snap = await getDoc(doc(db, PAYROLLS, payrollId));
   if (!snap.exists()) return null;
@@ -150,15 +170,30 @@ async function recalcPayrollTotal(payrollId) {
   if (data.status === "paid") return null;
   const paymentIds = data.paymentIds || [];
   const paySnaps = await Promise.all(paymentIds.map((id) => getDoc(doc(db, PAYMENTS, id))));
+  const alive = paymentIds.filter((_, i) => paySnaps[i].exists());
+  if (dropIfEmpty && alive.length === 0) {
+    await deleteDoc(doc(db, PAYROLLS, payrollId));
+    await logAction({
+      action: "delete",
+      entity: "transportPayroll",
+      entityId: payrollId,
+      before: data,
+      meta: { auto: "emptyPayroll" },
+    });
+    return 0;
+  }
   const total = paySnaps.reduce((acc, d) => acc + (d.exists() ? Number(d.data().total) || 0 : 0), 0);
-  if (total === (Number(data.total) || 0)) return total;
-  await updateDoc(doc(db, PAYROLLS, payrollId), { total, ...stamp() });
+  const prunes = pruneMissingPayments && alive.length !== paymentIds.length;
+  if (total === (Number(data.total) || 0) && !prunes) return total;
+  const patch = { total, ...stamp() };
+  if (prunes) patch.paymentIds = alive;
+  await updateDoc(doc(db, PAYROLLS, payrollId), patch);
   await logAction({
     action: "update",
     entity: "transportPayroll",
     entityId: payrollId,
-    before: { total: Number(data.total) || 0 },
-    after: { total },
+    before: { total: Number(data.total) || 0, paymentIds },
+    after: { total, paymentIds: prunes ? alive : paymentIds },
     meta: { auto: "recalcTotal" },
   });
   return total;
@@ -309,7 +344,7 @@ export const paymentsService = {
       status: "pending",
       paidAt: null,
       paidBy: null,
-      notes,
+      notes: unshout(notes),
       ...withCreate(),
     };
     const ref = await addDoc(collection(db, PAYMENTS), payload);
@@ -373,7 +408,7 @@ export const paymentsService = {
         : `ab_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
       amount: amt,
       date: date || localIsoDate(),
-      notes: String(notes || "").trim(),
+      notes: unshout(String(notes || "").trim()),
       createdAt: new Date().toISOString(),
       createdBy: auth.currentUser?.uid || null,
     };
@@ -386,6 +421,38 @@ export const paymentsService = {
       before,
       after: { ...before, abonos },
       meta: carrierMeta(before.carrierId, { addedAbono: abono }),
+    });
+    return { ...before, abonos };
+  },
+
+  // Corrige un abono ya cargado: monto, fecha o nota. Conserva su `id` y su
+  // `createdAt`/`createdBy`, y registra quién lo editó. Mismas reglas que al
+  // cargarlo: el resumen no puede estar pagado y el monto va mayor a 0.
+  async updateAbono(paymentId, abonoId, { amount, date, notes }) {
+    const before = await this.getById(paymentId);
+    if (!before) throw new Error("Resumen no encontrado");
+    if (before.status === "paid") throw new Error("Resumen pagado — revierte el pago antes de modificar abonos");
+    const current = (before.abonos || []).find((a) => a.id === abonoId);
+    if (!current) throw new Error("Abono no encontrado");
+    const amt = amount !== undefined ? Number(amount) || 0 : Number(current.amount) || 0;
+    if (amt <= 0) throw new Error("El monto del abono debe ser mayor a 0");
+    const edited = {
+      ...current,
+      amount: amt,
+      date: date !== undefined ? date || current.date : current.date,
+      notes: notes !== undefined ? unshout(String(notes || "").trim()) : current.notes || "",
+      updatedAt: new Date().toISOString(),
+      updatedBy: auth.currentUser?.uid || null,
+    };
+    const abonos = (before.abonos || []).map((a) => (a.id === abonoId ? edited : a));
+    await updateDoc(doc(db, PAYMENTS, paymentId), { abonos, ...stamp() });
+    await logAction({
+      action: "update",
+      entity: "transportPayment",
+      entityId: paymentId,
+      before,
+      after: { ...before, abonos },
+      meta: carrierMeta(before.carrierId, { editedAbonoId: abonoId }),
     });
     return { ...before, abonos };
   },
@@ -446,7 +513,8 @@ export const paymentsService = {
     }
     batch.delete(doc(db, PAYMENTS, paymentId));
     await batch.commit();
-    await recalcPayrollTotal(before.payrollId);
+    // Sale de su quincena, que se elimina si queda vacía.
+    await recalcPayrollTotal(before.payrollId, { pruneMissingPayments: true, dropIfEmpty: true });
     await logAction({ action: "delete", entity: "transportPayment", entityId: paymentId, before, meta: carrierMeta(before.carrierId) });
   },
 
@@ -551,7 +619,8 @@ export const transportPayrollsService = {
       total += Number(d.total) || 0;
     }
     const payload = {
-      name: String(name).trim(),
+      // Nombre como título ("Quincena 16-31 de Octubre"), ver utils/textCase.js.
+      name: toTitleName(name),
       periodFrom: periodFrom || null,
       periodTo: periodTo || null,
       paymentIds: [...paymentIds],
@@ -559,7 +628,7 @@ export const transportPayrollsService = {
       status: "pending",
       paidAt: null,
       paidBy: null,
-      notes: String(notes || "").trim(),
+      notes: unshout(String(notes || "").trim()),
       ...withCreate(),
     };
     const ref = await addDoc(collection(db, PAYROLLS), payload);
@@ -579,10 +648,10 @@ export const transportPayrollsService = {
     if (!before) throw new Error("Quincena no encontrada");
     if (before.status === "paid") throw new Error("La quincena está pagada — revierte el pago antes de editar.");
     const patch = { ...stamp() };
-    if (name != null) patch.name = String(name).trim();
+    if (name != null) patch.name = toTitleName(name);
     if (periodFrom !== undefined) patch.periodFrom = periodFrom || null;
     if (periodTo !== undefined) patch.periodTo = periodTo || null;
-    if (notes !== undefined) patch.notes = String(notes || "").trim();
+    if (notes !== undefined) patch.notes = unshout(String(notes || "").trim());
     await updateDoc(doc(db, PAYROLLS, id), patch);
     await logAction({ action: "update", entity: "transportPayroll", entityId: id, before, after: { ...before, ...patch } });
   },

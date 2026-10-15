@@ -1849,7 +1849,7 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, knownCode
           : null;
         const mirror = await mirrorWeightToWorkdays(prefixes, vieja ? [vieja, ...nuevas] : nuevas);
         if (!mirror) {
-          toast.warning(`El prefijo ${prefixId} no tiene ciclo y labor asignados: el pesaje quedó guardado pero no llega a ninguna jornada. Configuralo en Sincronizar cosechas.`);
+          toast.warning(`El prefijo ${prefixId} no tiene ciclo y labor asignados: el pesaje quedó guardado pero no llega a ninguna jornada. Configúralo en Sincronizar cosechas.`);
         } else {
           const partes = [];
           if (mirror.written) partes.push(`${mirror.written} jornada(s) recalculada(s)`);
@@ -1861,7 +1861,7 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, knownCode
             toast.warning(`Sin ciclo/labor asignado: ${mirror.noTarget.join(", ")} — esos pesajes no llegan a ninguna jornada.`);
           }
           if (mirror.blocked.length) {
-            toast.warning(`No se tocaron jornadas ya liquidadas: ${mirror.blocked.join(", ")}. Corregilas desde la nómina.`);
+            toast.warning(`No se tocaron jornadas ya liquidadas: ${mirror.blocked.join(", ")}. Corrígelas desde la nómina.`);
           }
           if (mirror.unknownRuts.length) {
             toast.warning(`Sin ficha en Trabajadores: ${mirror.unknownRuts.join(", ")} — su jornada no se ve en la grilla.`);

@@ -217,7 +217,7 @@ Resumen de pago a un transportista (lote de `transports`).
 | `groupBy` | `"day"` \| ... | |
 | `tripIds` | ref→`transports`[] | |
 | `total` | number | **denormalizado** = Σ `amount` de las vueltas vivas. Lo mantiene el servicio (`recalcPaymentTotal`), no las pantallas — ver "Totales denormalizados" abajo |
-| `abonos` | `[{ id, amount, date, notes, createdAt, createdBy }]` | pagos parciales antes de marcar el resumen 100% pagado. El pendiente se calcula en cliente (`total − Σ abonos`); **no** descuenta de `total` |
+| `abonos` | `[{ id, amount, date, notes, createdAt, createdBy, updatedAt?, updatedBy? }]` | pagos parciales antes de marcar el resumen 100% pagado. El pendiente se calcula en cliente (`total − Σ abonos`); **no** descuenta de `total`. `updatedAt`/`updatedBy` aparecen cuando un abono se corrige (`updateAbono`), que conserva su `id` y su `createdAt` |
 | `payrollId` | ref→`transportPayrolls` \| null | null = resumen "suelto", disponible para entrar a una quincena |
 | `status` | `"pending"` \| `"paid"` | `paid` congela el doc: no se recalcula ni se edita |
 | `paidAt`, `paidBy` | ts?, string? | |
@@ -482,7 +482,8 @@ Auditoría — una fila por mutación.
 | `workerRut`, `cycleId` | `firestoreBase.js` → `extractRefMeta` (automático en cualquier colección que tenga esos campos) | ligar `workdays` y demás a su trabajador/ciclo |
 | `carrierId` | `transportsService.js` → `carrierMeta()` (a mano: ese servicio no usa `createService`) | ligar `transport` y `transportPayment` a su transportista |
 | `auto: "recalcTotal"` | `recalcPaymentTotal` / `recalcPayrollTotal` | distinguir un recálculo automático de total de una edición hecha por una persona |
-| `addedAbono`, `removedAbonoId` | `paymentsService` | detalle del abono tocado |
+| `auto: "emptySummary"`, `auto: "emptyPayroll"` | `recalcPaymentTotal` / `recalcPayrollTotal` | borrado automático de un resumen que se quedó sin vueltas, o de una quincena que se quedó sin resúmenes |
+| `addedAbono`, `editedAbonoId`, `removedAbonoId` | `paymentsService` | detalle del abono tocado |
 | `op: "applyAdvances"`, `count`, `total`, `advanceIds`, `sobrantes?` | `applyAdvancesToPayroll` | un log por nómina (`entity: "payroll"`) con los anticipos que descontó. `sobrantes: [{ advanceId, pedido, aplicado }]` son las aplicaciones recortadas |
 | `op: "restoreAdvances"`, `count`, `advanceIds` | `restoreAdvancesFromPayroll` | los anticipos que soltó la nómina |
 | `op: "setPayrollAdvances"`, `cambios` | `setPayrollAdvanceAmounts` | `cambios: [{ advanceId, antes, despues }]`: cuánto descontaba y cuánto descuenta la nómina de cada anticipo |

@@ -240,7 +240,7 @@ export function assertEditable(p, verb = "editar") {
     throw new Error(`La nómina está pagada — revierte el pago antes de ${verb}.`);
   }
   if (p.bankPaidAt) {
-    throw new Error(`Las transferencias de esta nómina ya se pagaron — revertilas antes de ${verb}.`);
+    throw new Error(`Las transferencias de esta nómina ya se pagaron — reviértelas antes de ${verb}.`);
   }
 }
 
