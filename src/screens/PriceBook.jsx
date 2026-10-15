@@ -5,6 +5,7 @@ import Modal from "../components/Modal";
 import Select from "../components/Select";
 import TextField from "../components/TextField";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { toTitleName, unshout } from "../utils/textCase";
 
 // Registro contable de precios por faena y labor, independiente de las
 // faenas, ciclos y labores reales: acepta faenas "dummy" (solo un nombre, sin
@@ -461,16 +462,17 @@ function EntryFormModal({ initial, faenas, hiddenFaenaIds, units, onClose, onSav
 
       const payload = {
         faenaId: isReal ? faenaId : null,
-        faenaLabel: resolvedFaenaLabel,
-        labor: labor.trim(),
+        // Nombres y lugar como título, notas sin gritar (utils/textCase.js).
+        faenaLabel: toTitleName(resolvedFaenaLabel),
+        labor: toTitleName(labor),
         prices: cleanLines,
         transportIncluded,
-        transportWhere: transportIncluded ? null : transportWhere.trim(),
+        transportWhere: transportIncluded ? null : toTitleName(transportWhere),
         transportCost: transportIncluded ? null : Number(transportCost),
         dateFrom,
         dateTo: dateTo || null,
-        periodNote: periodNote.trim() || null,
-        notes: notes.trim() || null,
+        periodNote: unshout(periodNote.trim()) || null,
+        notes: unshout(notes.trim()) || null,
       };
       if (isEdit) await priceBookService.update(initial.id, payload);
       else await priceBookService.create(payload);

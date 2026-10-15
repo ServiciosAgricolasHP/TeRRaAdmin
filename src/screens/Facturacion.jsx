@@ -12,6 +12,7 @@ import { companiesService, dteDocumentsService, costCentersService, informalExpe
 import { importDteRecords } from "../services/dteImportService";
 import { parseSiiRcvCsv, dteTypeLabel, buildDteDocId, normalizeRut, extractRutFromFilename, otroImpuestoLabel, otroImpuestoCategory, OTRO_IMP_CATEGORIES } from "../utils/siiCsvParser";
 import { formatRutForDisplay } from "../utils/rutUtils";
+import { toTitleName, unshout } from "../utils/textCase";
 import Modal from "../components/Modal";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { useToast } from "../contexts/ToastContext";
@@ -771,7 +772,8 @@ export default function Facturacion() {
 
   // Guarda notas o detalle libre de un DTE: la glosa que el SII no incluye en
   // el CSV o apuntes de seguimiento interno.
-  const saveDocNotes = async (dteDoc, notes) => {
+  const saveDocNotes = async (dteDoc, rawNotes) => {
+    const notes = unshout(rawNotes);
     try {
       await dteDocumentsService.update(dteDoc.id, { notes });
       setDocs((prev) => prev.map((d) => (d.id === dteDoc.id ? { ...d, notes } : d)));
@@ -2892,12 +2894,12 @@ function CostCentersModal({ costCenters, docs, informalExpenses, companiesById, 
 
   const save = async () => {
     if (!editing.label.trim()) {
-      toast.warning("Ponele un nombre al centro de costo.");
+      toast.warning("Ponle un nombre al centro de costo.");
       return;
     }
     setBusy(true);
     try {
-      const payload = { label: editing.label.trim(), emoji: (editing.emoji || "").trim() || null };
+      const payload = { label: toTitleName(editing.label), emoji: (editing.emoji || "").trim() || null };
       if (editing.id) {
         await costCentersService.update(editing.id, payload);
       } else {
@@ -4685,7 +4687,7 @@ function PaymentsSection({ dteDoc, payments, amountPaid, balance, onSavePayments
       date: newPay.date,
       kind: newPay.kind,
       amount,
-      notes: (newPay.notes || "").trim(),
+      notes: unshout((newPay.notes || "").trim()),
       recordedAt: new Date().toISOString(),
     };
     setBusy(true);
@@ -5454,7 +5456,9 @@ function CompaniesModal({ companies, onClose, onChanged }) {
       const payload = {
         rut: normalizeRut(editing.rut),
         razonSocial: editing.razonSocial.trim(),
-        alias: (editing.alias || "").trim() || editing.razonSocial.trim(),
+        // La razón social queda tal cual (es el nombre legal del SII); el alias
+        // es el nombre corto de la app y va como título.
+        alias: toTitleName((editing.alias || "").trim() || editing.razonSocial),
         enabled: true,
       };
       if (editing.id) {

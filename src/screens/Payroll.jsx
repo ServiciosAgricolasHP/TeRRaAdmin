@@ -1025,7 +1025,7 @@ export default function Payroll() {
     // restauraría anticipos de quienes ya tienen la plata en la cuenta.
     if (confirmDelete.bankPaidAt) {
       setConfirmDelete(null);
-      toast.error("Las transferencias de esta nómina ya se pagaron. Revertilas antes de eliminarla.");
+      toast.error("Las transferencias de esta nómina ya se pagaron. Reviértelas antes de eliminarla.");
       return;
     }
     const id = confirmDelete.id;
@@ -2802,7 +2802,7 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRe
                   title={p.status === "paid"
                     ? "No se puede eliminar una nómina pagada. Revierte primero a No pagado."
                     : p.bankPaidAt
-                      ? "Las transferencias ya se pagaron. Revertilas antes de eliminar."
+                      ? "Las transferencias ya se pagaron. Reviértelas antes de eliminar."
                       : "Eliminar esta nómina"}
                   className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[var(--color-surface-2)]"
                 >
@@ -2932,7 +2932,7 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRe
                     title={p.status === "paid"
                       ? "No se puede eliminar una nómina pagada. Revierte primero a No pagado."
                       : p.bankPaidAt
-                        ? "Las transferencias ya se pagaron. Revertilas antes de eliminar."
+                        ? "Las transferencias ya se pagaron. Reviértelas antes de eliminar."
                         : "Eliminar esta nómina"}
                     className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[var(--color-surface-2)]"
                   >

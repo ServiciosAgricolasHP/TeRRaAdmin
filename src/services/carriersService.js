@@ -2,6 +2,7 @@ import { collection, getDocs, doc, setDoc, updateDoc, serverTimestamp } from "fi
 import { db, auth } from "../firebase";
 import { logAction } from "./logger";
 import { createService } from "./firestoreBase";
+import { toTitleName, unshout } from "../utils/textCase";
 
 const COLLECTION = "carriers";
 
@@ -26,20 +27,23 @@ export const carriersService = {
 
   async createCarrier({ alias, name, type, defaultRate = 0, vehicles = [], notes = "" }) {
     return base.create({
-      alias: (alias || "").trim(),
-      name: (name || "").trim(),
+      // Nombre y alias como título (utils/textCase.js). Los alias de vehículos
+      // no: las vueltas los guardan como texto y dejarían de calzar.
+      alias: toTitleName(alias || ""),
+      name: toTitleName(name || ""),
       type: type || "contracted",
       defaultRate: Number(defaultRate) || 0,
       vehicles: vehicles.map(normalizeVehicle).filter(Boolean),
-      notes: notes || "",
+      notes: unshout(notes || ""),
       active: true,
     });
   },
 
   async updateCarrier(id, patch) {
     const data = { ...patch };
-    if ("alias" in data) data.alias = (data.alias || "").trim();
-    if ("name" in data) data.name = (data.name || "").trim();
+    if ("alias" in data) data.alias = toTitleName(data.alias || "");
+    if ("name" in data) data.name = toTitleName(data.name || "");
+    if ("notes" in data) data.notes = unshout(data.notes || "");
     if ("vehicles" in data) data.vehicles = (data.vehicles || []).map(normalizeVehicle).filter(Boolean);
     if ("defaultRate" in data) data.defaultRate = Number(data.defaultRate) || 0;
     return base.update(id, data);

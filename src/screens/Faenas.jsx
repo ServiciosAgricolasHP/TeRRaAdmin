@@ -25,6 +25,7 @@ import { workdayDocId } from "../utils/cosechaCombos";
 import { LABOR_TYPES, initialLaborPlan } from "../utils/laborTypes";
 import ProductionSummaryModal from "../components/ProductionSummaryModal";
 import { localIsoDate } from "../utils/dates";
+import { toTitleName, unshout } from "../utils/textCase";
 
 const emptyFaena = { name: "", location: "", notes: "" };
 const emptySub = { name: "", notes: "" };
@@ -447,9 +448,10 @@ export default function Faenas() {
     setBusy(true);
     try {
       const payload = {
-        name: faenaForm.data.name.trim(),
-        location: faenaForm.data.location || "",
-        notes: faenaForm.data.notes || "",
+        // Nombre y ubicación como título; notas sin gritar (utils/textCase.js).
+        name: toTitleName(faenaForm.data.name),
+        location: toTitleName(faenaForm.data.location || ""),
+        notes: unshout(faenaForm.data.notes || ""),
       };
       if (faenaForm.mode === "create") {
         const created = await faenasService.create(payload);
@@ -473,14 +475,15 @@ export default function Faenas() {
     setBusy(true);
     try {
       let creada = null;
-      if (mode === "create") creada = await subfaenasService.create({ ...data, faenaId });
-      else await subfaenasService.update(data.id, { name: data.name, notes: data.notes || "" });
+      const fields = { name: toTitleName(data.name || ""), notes: unshout(data.notes || "") };
+      if (mode === "create") creada = await subfaenasService.create({ ...data, ...fields, faenaId });
+      else await subfaenasService.update(data.id, fields);
       setSubForm(null);
       await loadSubs(faenaId);
       toast.success(mode === "create" ? "Subfaena creada" : "Subfaena actualizada");
       // Al crear una subfaena se ofrece abrir su primer ciclo (cancelable): sin
       // ciclos no hay dónde anotar jornadas.
-      if (creada?.id) setSubOfferCycle({ faenaId, subfaenaId: creada.id, name: data.name });
+      if (creada?.id) setSubOfferCycle({ faenaId, subfaenaId: creada.id, name: fields.name });
     } catch (err) {
       toast.error("Error al guardar la subfaena: " + (err.message || err));
     } finally {
@@ -579,7 +582,7 @@ export default function Faenas() {
         subfaenaId: data.subfaenaId || null,
         label: prefix + suffix,
         startDate: data.startDate || todayStr(),
-        notes: data.notes || "",
+        notes: unshout(data.notes || ""),
         status: data.status || "open",
         days: nextDays,
         labors,
@@ -685,7 +688,9 @@ export default function Faenas() {
 
   const openEditCycle = (cycle, faenaId) => {
     const prefix = cyclePrefix(faenaId, cycle.subfaenaId);
-    const suffix = (cycle.label || "").startsWith(prefix)
+    // Sin distinguir mayúsculas: los nombres de faena y subfaena se guardan
+    // como título, y un ciclo antiguo puede traer el prefijo en mayúsculas.
+    const suffix = (cycle.label || "").toLowerCase().startsWith(prefix.toLowerCase())
       ? (cycle.label || "").slice(prefix.length)
       : cycle.label || "";
     setCycleForm({

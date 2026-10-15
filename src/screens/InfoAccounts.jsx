@@ -13,6 +13,7 @@ import {
   ACCOUNT_TYPE_RUT,
 } from "../utils/banks";
 import { formatRutForDisplay, normalizeRut } from "../utils/rutUtils";
+import { toTitleName, unshout } from "../utils/textCase";
 
 // Módulo "Información y Cuentas": libreta compartida de fichas (persona o
 // empresa) con datos de contacto + varias cuentas bancarias. Pensada para
@@ -185,14 +186,16 @@ export default function InfoAccounts() {
   const saveCard = async (draft) => {
     const payload = {
       type: draft.type,
-      name: (draft.name || "").trim(),
+      // Nombre como título y nota sin gritar (utils/textCase.js). El titular de
+      // cada cuenta y el giro quedan tal cual: se copian al banco y al SII.
+      name: toTitleName(draft.name || ""),
       rut: draft.rut ? normalizeRut(draft.rut) : "",
       includeRut: draft.type === "persona" ? !!draft.includeRut : true,
       phone: (draft.phone || "").trim(),
       email: (draft.email || "").trim(),
       address: (draft.address || "").trim(),
       giro: draft.type === "empresa" ? (draft.giro || "").trim() : "",
-      note: (draft.note || "").trim(),
+      note: unshout((draft.note || "").trim()),
       favorite: !!draft.favorite,
       accounts: (draft.accounts || []).map((a) => ({
         id: a.id || newAccountId(),
