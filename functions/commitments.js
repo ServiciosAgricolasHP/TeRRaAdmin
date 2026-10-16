@@ -1,10 +1,12 @@
 // Avisos de "Cheques y pagos" (pantalla `src/screens/Commitments.jsx`).
 //
-// Una vez al día se leen los vencimientos pendientes (`commitments` con
-// `status == "pending"`) y se envía UN correo con lo que vence en los días
-// configurados en `commitmentConfig/main.offsets` (por defecto 3, 1 y el mismo
-// día), más los vencidos que nadie marcó. Si no hay nada que avisar, no se
-// envía nada.
+// Una vez al día se leen los vencimientos pendientes y aplazados
+// (`commitments` con `status` `pending` o `postponed`) y se envía UN correo
+// con lo que vence en los días configurados en `commitmentConfig/main.offsets`
+// (por defecto 3, 1 y el mismo día), más los vencidos que nadie marcó. El
+// correo trae además los próximos 7 días, con los aplazados al principio,
+// pero eso por sí solo no lo genera. Si no hay nada que avisar, no se envía
+// nada.
 //
 // `commitmentNotifications/{YYYY-MM-DD}` es el registro de cada envío y el
 // candado contra el doble envío: se crea con `create()` antes de mandar el
@@ -27,6 +29,8 @@ const LOGS = "logs";
 export const APP_URL = "https://serviciosagricolashp.github.io/TeRRaAdmin/cheques-pagos";
 export const TIME_ZONE = "America/Santiago";
 const RECURRING_HORIZON_DAYS = 60;
+// Días de "Próximos" en el correo, los mismos que en la pantalla.
+const UPCOMING_DAYS = 7;
 
 const DEFAULT_CONFIG = { recipients: [], offsets: [3, 1, 0], includeOverdue: true, sender: "" };
 
@@ -35,6 +39,7 @@ const KIND_LABELS = {
   chequeReceived: "Cheque recibido",
   payment: "Pago comprometido",
   installment: "Cuota de crédito",
+  personalDebt: "Deuda personal",
 };
 
 // Los mismos códigos de `src/utils/banks.js`.
@@ -92,9 +97,11 @@ function monthlyDate(startIso, offset, dayOfMonth) {
   return `${yy}-${pad(mm)}-${pad(Math.min(dayOfMonth, last))}`;
 }
 
-export function recurringDates({ firstDate, after = "", until }) {
+// El día del mes es el de `firstDate`, salvo que la serie traiga `dayOfMonth`
+// (se cambió después de crearla).
+export function recurringDates({ firstDate, after = "", until, dayOfMonth = null }) {
   if (Number.isNaN(dayNumber(firstDate)) || Number.isNaN(dayNumber(until))) return [];
-  const day = Number(String(firstDate).slice(8, 10));
+  const day = Number(dayOfMonth) || Number(String(firstDate).slice(8, 10));
   const out = [];
   for (let i = 0; i < 600; i++) {
     const d = monthlyDate(firstDate, i, day);
@@ -112,6 +119,10 @@ const fmtDate = (iso) => {
 const clp = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 });
 const fmtMoney = (v) => clp.format(Number(v) || 0);
 
+// Lo que falta pagar de un vencimiento: el monto original menos sus abonos.
+export const remainingOf = (c) =>
+  Math.max(0, (Number(c.amount) || 0) - (c.partialPayments || []).reduce((s, a) => s + (Number(a.amount) || 0), 0));
+
 const escapeHtml = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
@@ -124,8 +135,13 @@ function sectionTitle(offset) {
 }
 
 // Lo que hay que avisar hoy, agrupado: primero los vencidos (si se piden) y
-// después cada día de anticipación, del más cercano al más lejano.
-export function buildDigest(commitments, today, config) {
+// después cada día de anticipación, del más cercano al más lejano. Al final,
+// "Próximos 7 días", igual que en la pantalla: los aplazados (ya vencidos, sin
+// fecha de pago) y lo que vence en la semana sin estar ya en otra sección.
+// `count` y `total` son solo lo que hay que avisar: esa última sección se suma
+// a un correo que ya sale, pero no lo hace salir. El correo de prueba
+// (`test`) la trae siempre.
+export function buildDigest(commitments, today, config, { test = false } = {}) {
   const offsets = [...new Set((config.offsets || []).map(Number))].filter((n) => n >= 0).sort((a, b) => a - b);
   const pending = commitments.filter((c) => (c.status || "pending") === "pending");
   const byDate = (a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0);
@@ -138,19 +154,47 @@ export function buildDigest(commitments, today, config) {
     const items = pending.filter((c) => daysUntil(c.dueDate, today) === offset);
     if (items.length) sections.push({ key: `d${offset}`, title: sectionTitle(offset), items });
   }
-  const all = sections.flatMap((s) => s.items);
-  return { sections, count: all.length, total: all.reduce((s, c) => s + (Number(c.amount) || 0), 0) };
+  const notified = sections.flatMap((s) => s.items);
+
+  let postponed = [];
+  let upcoming = [];
+  if (notified.length || test) {
+    const listed = new Set(notified);
+    postponed = commitments.filter((c) => c.status === "postponed").sort(byDate);
+    upcoming = pending
+      .filter((c) => {
+        const days = daysUntil(c.dueDate, today);
+        return days >= 0 && days <= UPCOMING_DAYS && !listed.has(c);
+      })
+      .sort(byDate);
+    if (postponed.length || upcoming.length) {
+      sections.push({ key: "upcoming", title: `Próximos ${UPCOMING_DAYS} días`, items: [...postponed, ...upcoming] });
+    }
+  }
+
+  const sum = (list) => list.reduce((s, c) => s + remainingOf(c), 0);
+  return {
+    sections,
+    count: notified.length,
+    total: sum(notified),
+    upcomingCount: upcoming.length,
+    upcomingTotal: sum(upcoming),
+    postponedCount: postponed.length,
+    postponedTotal: sum(postponed),
+  };
 }
 
 function describe(c, companies) {
   const company = companies[c.companyId];
+  const remaining = remainingOf(c);
   return {
     kind: KIND_LABELS[c.kind] || "Pago",
     counterparty: c.counterparty || "",
-    amount: fmtMoney(c.amount),
+    amount: fmtMoney(remaining),
     dueDate: fmtDate(c.dueDate),
     detail: [
       c.installment?.of ? `Cuota ${c.installment.n}/${c.installment.of}` : "",
+      remaining < (Number(c.amount) || 0) ? `abonado ${fmtMoney((Number(c.amount) || 0) - remaining)} de ${fmtMoney(c.amount)}` : "",
       c.bank ? BANK_NAMES[c.bank] || c.bank : "",
       c.chequeNumber ? `N° ${c.chequeNumber}` : "",
       company ? company.alias || company.razonSocial : c.companyLabel || "",
@@ -159,15 +203,19 @@ function describe(c, companies) {
       .filter(Boolean)
       .join(" · "),
     incoming: c.kind === "chequeReceived",
+    tag: c.status === "postponed" ? "ya vencido" : "",
   };
 }
+
+const SECTION_COLORS = { overdue: "#b91c1c" };
 
 // Asunto, texto plano y HTML del correo.
 export function renderDigest(digest, today, companies = {}, { test = false } = {}) {
   const prefix = test ? "[Prueba] " : "";
   const overdue = digest.sections.find((s) => s.key === "overdue")?.items.length || 0;
+  const postponed = digest.postponedCount || 0;
   const subject = digest.count
-    ? `${prefix}Cheques y pagos: ${digest.count} vencimiento(s)${overdue ? `, ${overdue} vencido(s)` : ""} — ${fmtDate(today)}`
+    ? `${prefix}Cheques y pagos: ${digest.count} vencimiento(s)${overdue ? `, ${overdue} vencido(s)` : ""}${postponed ? `, ${postponed} aplazado(s)` : ""} — ${fmtDate(today)}`
     : `${prefix}Cheques y pagos: sin vencimientos para avisar — ${fmtDate(today)}`;
 
   const lines = [];
@@ -176,15 +224,17 @@ export function renderDigest(digest, today, companies = {}, { test = false } = {
     lines.push("", s.title.toUpperCase());
     const rows = s.items.map((c) => describe(c, companies));
     for (const r of rows) {
-      lines.push(`- ${r.dueDate} · ${r.kind} · ${r.counterparty} · ${r.incoming ? "+" : ""}${r.amount}${r.detail ? ` (${r.detail})` : ""}`);
+      lines.push(
+        `- ${r.dueDate}${r.tag ? ` (${r.tag})` : ""} · ${r.kind} · ${r.counterparty} · ${r.incoming ? "+" : ""}${r.amount}${r.detail ? ` (${r.detail})` : ""}`,
+      );
     }
     blocks.push(`
-      <h3 style="margin:18px 0 6px;font-size:15px;color:${s.key === "overdue" ? "#b91c1c" : "#111827"}">${escapeHtml(s.title)}</h3>
+      <h3 style="margin:18px 0 6px;font-size:15px;color:${SECTION_COLORS[s.key] || "#111827"}">${escapeHtml(s.title)}</h3>
       <table style="border-collapse:collapse;width:100%;font-size:13px">
         ${rows
           .map(
             (r) => `<tr>
-          <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap">${escapeHtml(r.dueDate)}</td>
+          <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap">${escapeHtml(r.dueDate)}${r.tag ? `<br><span style="color:#b45309;font-size:12px">${escapeHtml(r.tag)}</span>` : ""}</td>
           <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb"><b>${escapeHtml(r.counterparty)}</b><br><span style="color:#6b7280">${escapeHtml(r.kind)}${r.detail ? " · " + escapeHtml(r.detail) : ""}</span></td>
           <td style="padding:6px 8px;border-bottom:1px solid #e5e7eb;text-align:right;white-space:nowrap;font-weight:600">${r.incoming ? "+" : ""}${escapeHtml(r.amount)}</td>
         </tr>`,
@@ -193,9 +243,16 @@ export function renderDigest(digest, today, companies = {}, { test = false } = {
       </table>`);
   }
 
-  const intro = digest.count
-    ? `${digest.count} vencimiento(s) por ${fmtMoney(digest.total)}.`
-    : "Hoy no hay vencimientos para avisar.";
+  const also = [
+    digest.upcomingCount ? `${digest.upcomingCount} más en los próximos ${UPCOMING_DAYS} días por ${fmtMoney(digest.upcomingTotal)}` : "",
+    postponed ? `${postponed} aplazado(s) por ${fmtMoney(digest.postponedTotal)}, ya vencidos y sin fecha de pago` : "",
+  ].filter(Boolean);
+  const intro = [
+    digest.count ? `${digest.count} vencimiento(s) por ${fmtMoney(digest.total)}.` : "Hoy no hay vencimientos para avisar.",
+    also.length ? `Además: ${also.join("; ")}.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   const text = [intro, ...lines, "", `Ver en TeRRa: ${APP_URL}`].join("\n");
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;color:#111827;max-width:640px">
     ${test ? '<p style="background:#fef3c7;padding:8px;border-radius:6px">Correo de prueba enviado desde TeRRa.</p>' : ""}
@@ -236,7 +293,7 @@ export async function extendRecurringSeries(db, today) {
   for (const doc of snap.docs) {
     const s = doc.data();
     if (s.count != null || (s.generatedUntil && s.generatedUntil >= until)) continue;
-    const dates = recurringDates({ firstDate: s.firstDate, after: s.generatedUntil || "", until });
+    const dates = recurringDates({ firstDate: s.firstDate, after: s.generatedUntil || "", until, dayOfMonth: s.dayOfMonth });
     for (const dueDate of dates) {
       try {
         await db.collection(COMMITMENTS).doc(`${doc.id}_${dueDate}`).create({
@@ -288,11 +345,11 @@ export async function runCommitmentDigest(db, { password, now = new Date(), test
   const config = await readConfig(db);
   const extended = test ? 0 : await extendRecurringSeries(db, today);
 
-  const pendingSnap = await db.collection(COMMITMENTS).where("status", "==", "pending").get();
-  const pending = pendingSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  const digest = buildDigest(pending, today, config);
+  const openSnap = await db.collection(COMMITMENTS).where("status", "in", ["pending", "postponed"]).get();
+  const open = openSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const digest = buildDigest(open, today, config, { test });
   const recipients = (config.recipients || []).filter(Boolean);
-  const base = { today, count: digest.count, recipients, extended };
+  const base = { today, count: digest.count, postponed: digest.postponedCount, recipients, extended };
 
   if (!test && !digest.count) return { ...base, sent: false, reason: "empty" };
   if (!recipients.length || !config.sender) return { ...base, sent: false, reason: "no-config" };
