@@ -96,6 +96,7 @@ beforeEach(async () => {
     await setDoc(doc(db, "weights/2026-10-01/entry/e1"), { rut: "11111111-1" });
     await setDoc(doc(db, "logs/l1"), { uid: "admin1", action: "create" });
     await setDoc(doc(db, "functionJobs/j1"), { type: "ping", status: "done", requestedBy: "admin1" });
+    await setDoc(doc(db, "commitmentNotifications/2026-10-16"), { status: "sent", count: 1 });
   });
 });
 
@@ -265,6 +266,21 @@ describe("cola del backend (functionJobs)", () => {
     await assertFails(addDoc(collection(anon(), "functionJobs"), job(null)));
     await assertFails(getDoc(doc(as("sup1"), "functionJobs/j1")));
     await assertFails(updateDoc(doc(as("admin1"), "functionJobs/j1"), { status: "pending" }));
+  });
+});
+
+describe("avisos de Cheques y pagos (commitmentNotifications)", () => {
+  it("se leen con perfil, pero nadie los escribe desde la app", async () => {
+    await assertSucceeds(getDoc(doc(as("sup1"), "commitmentNotifications/2026-10-16")));
+    await assertFails(getDoc(doc(anon(), "commitmentNotifications/2026-10-16")));
+    await assertFails(setDoc(doc(as("admin1"), "commitmentNotifications/2026-10-17"), { status: "sent" }));
+    await assertFails(deleteDoc(doc(as("admin1"), "commitmentNotifications/2026-10-16")));
+  });
+
+  it("los vencimientos y su configuración son colecciones de la app", async () => {
+    await assertSucceeds(setDoc(doc(as("sup1"), "commitments/c1"), { kind: "chequeIssued", status: "pending" }));
+    await assertSucceeds(setDoc(doc(as("admin1"), "commitmentConfig/main"), { recipients: [] }));
+    await assertFails(setDoc(doc(anon(), "commitments/c2"), { kind: "payment" }));
   });
 });
 

@@ -23,6 +23,11 @@
 //      la auditoría, pida confirmación para un correo que ya tiene cuenta, y
 //      rechace un pedido que no viene de un admin, un rol desconocido o un
 //      correo inválido.
+//   5. Que el aviso de Cheques y pagos junte en un solo correo lo que vence en
+//      los días configurados y los vencidos, que no se repita el mismo día, que
+//      no se envíe nada si no hay vencimientos, que extienda los pagos
+//      recurrentes, y que el correo de prueba salga desde la cola solo para un
+//      admin. El correo no sale: se reemplaza el transporte.
 //
 // **Lo que este archivo NO puede probar**: que el trigger esté suscrito a la
 // base correcta. El emulador de Firestore no soporta bases múltiples —lo dice
@@ -36,6 +41,7 @@
 import { initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore } from "firebase-admin/firestore";
+import { runCommitmentDigest } from "./commitments.js";
 
 const PROJECT = "demo-terra-test";
 const DATABASE = "hpdatabase";
@@ -188,6 +194,83 @@ console.log("createUser");
 
   const correo = await pedir("verify-admin", { email: "no-es-correo", role: "user" });
   check("un correo inválido falla", correo?.errorCode === "invalid-email", correo);
+}
+
+console.log("");
+console.log("avisos de Cheques y pagos");
+{
+  const enviados = [];
+  const mailer = {
+    sendMail: async (m) => {
+      enviados.push(m);
+      return { messageId: "fake-" + enviados.length };
+    },
+  };
+  // 09:00 en Chile del 16 de octubre.
+  const now = new Date("2026-10-16T12:00:00Z");
+  await db.collection("commitmentConfig").doc("main").set({
+    recipients: ["avisos@terra.test"],
+    sender: "envia@terra.test",
+    offsets: [3, 1, 0],
+    includeOverdue: true,
+  });
+  const vencimiento = (id, data) =>
+    db.collection("commitments").doc(id).set({ kind: "chequeIssued", status: "pending", amount: 1000, counterparty: "Biosur", ...data });
+  await vencimiento("v-hoy", { dueDate: "2026-10-16" });
+  await vencimiento("v-en-3", { dueDate: "2026-10-19" });
+  await vencimiento("v-en-2", { dueDate: "2026-10-18" });
+  await vencimiento("v-vencido", { dueDate: "2026-10-10" });
+  await vencimiento("v-pagado", { dueDate: "2026-10-16", status: "paid" });
+  await db.collection("commitmentSeries").doc("serie-1").set({
+    kind: "payment",
+    counterparty: "Arriendo",
+    amount: 500,
+    firstDate: "2026-10-05",
+    count: null,
+    active: true,
+    generatedUntil: "2026-11-05",
+  });
+
+  const primero = await runCommitmentDigest(db, { now, mailer });
+  check("envía un solo correo", primero.sent === true && enviados.length === 1, primero);
+  check("avisa lo de hoy, lo de 3 días y lo vencido; no lo de 2 días ni lo pagado", primero.count === 3, primero.count);
+  check(
+    "el asunto cuenta vencimientos y vencidos",
+    (enviados[0]?.subject || "").includes("3 vencimiento(s), 1 vencido(s)"),
+    enviados[0]?.subject,
+  );
+  check("va a los destinatarios configurados", enviados[0]?.to === "avisos@terra.test", enviados[0]?.to);
+  const registro = (await db.collection("commitmentNotifications").doc("2026-10-16").get()).data();
+  check("deja registro del envío del día", registro?.status === "sent" && registro?.count === 3, registro);
+
+  const segundo = await runCommitmentDigest(db, { now, mailer });
+  check(
+    "no repite el correo el mismo día",
+    segundo.sent === false && segundo.reason === "already-sent" && enviados.length === 1,
+    segundo,
+  );
+
+  const serie = (await db.collection("commitmentSeries").doc("serie-1").get()).data();
+  check("extiende el pago recurrente hasta 60 días", serie?.generatedUntil === "2026-12-15", serie?.generatedUntil);
+  check("crea el vencimiento que faltaba", (await db.collection("commitments").doc("serie-1_2026-12-05").get()).exists);
+  check(
+    "no recrea lo que ya se había generado",
+    !(await db.collection("commitments").doc("serie-1_2026-11-05").get()).exists,
+  );
+
+  await db.collection("commitmentConfig").doc("main").update({ includeOverdue: false });
+  const vacio = await runCommitmentDigest(db, { now: new Date("2026-10-21T12:00:00Z"), mailer });
+  check(
+    "sin vencimientos no envía nada",
+    vacio.sent === false && vacio.reason === "empty" && enviados.length === 1,
+    vacio,
+  );
+
+  const prueba = await esperarResolucion(await encolar({ type: "sendCommitmentDigest", requestedBy: "verify-admin" }));
+  check("el correo de prueba sale desde la cola", prueba?.status === "done" && prueba?.result?.sent === true, prueba);
+  check("y va marcado como prueba", (prueba?.result?.subject || "").startsWith("[Prueba]"), prueba?.result?.subject);
+  const ajeno = await esperarResolucion(await encolar({ type: "sendCommitmentDigest", requestedBy: "verify-user" }));
+  check("solo un admin pide el correo de prueba", ajeno?.errorCode === "not-admin", ajeno);
 }
 
 console.log("");

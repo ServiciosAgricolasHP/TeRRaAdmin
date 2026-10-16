@@ -26,6 +26,7 @@ import Calendar from "./screens/Calendar";
 import Facturacion from "./screens/Facturacion";
 import HarvestQr from "./screens/HarvestQr";
 import PriceBook from "./screens/PriceBook";
+import Commitments from "./screens/Commitments";
 import Users from "./screens/Users";
 
 export default function App() {
@@ -65,6 +66,7 @@ export default function App() {
                 <Route path="admin/harvest-qr" element={<Navigate to="/harvest-qr" replace />} />
                 <Route path="facturacion" element={<Facturacion />} />
                 <Route path="price-book" element={<PriceBook />} />
+                <Route path="cheques-pagos" element={<Commitments />} />
                 <Route
                   path="audit"
                   element={

@@ -5,11 +5,18 @@ en la colección `functionJobs` y un trigger de Firestore lo levanta, lo ejecuta
 escribe el resultado en el mismo documento. La UI mira ese documento con un
 listener.
 
-Hay dos tipos de job:
+Hay tres tipos de job:
 
 - `ping` verifica el plomo de punta a punta (Consola admin → Ping al backend).
 - `createUser` crea una cuenta en Authentication y su perfil en `users/{uid}`
   (Usuarios → + Nueva cuenta).
+- `sendCommitmentDigest` envía ahora el correo de avisos de Cheques y pagos,
+  marcado como prueba (Cheques y pagos → ⚙ Avisos → 📧 Enviar prueba).
+
+Y una función programada, `commitmentsDaily` (`commitments.js`): todos los días
+a las 8:00 de Chile envía un correo con los cheques, cuotas y pagos que vencen
+en los días configurados, y extiende los pagos recurrentes. La dispara Cloud
+Scheduler con una cuenta de servicio, así que tampoco necesita invoker público.
 
 Los siguientes están como TODO al final de `index.js`: el backup en JSON y más
 jobs para Usuarios.
@@ -164,6 +171,28 @@ FUNCTIONS_DISCOVERY_TIMEOUT=60 firebase deploy --only functions
 PowerShell **no** entiende el prefijo `VAR=valor comando`: lo lee como el nombre
 de un ejecutable y falla con `CommandNotFoundException`. El límite de discovery
 solo hace falta para `deploy` — el emulador descubre las funciones sin él.
+
+### Correo de avisos (Cheques y pagos)
+
+Los avisos salen de una cuenta Gmail con **contraseña de aplicación** (la cuenta
+necesita verificación en dos pasos; la contraseña se crea en
+*Cuenta de Google → Seguridad → Contraseñas de aplicaciones*). Antes del primer
+deploy que incluya `commitmentsDaily`:
+
+```bash
+firebase functions:secrets:set SMTP_PASS   # pega la contraseña de aplicación
+```
+
+La contraseña queda en Secret Manager y no pasa por el repo. La dirección de esa
+cuenta se carga en la app (⚙ Avisos → "Cuenta que envía"), junto con los
+destinatarios. **`runFunctionJob` también usa el secreto**, así que sin él
+tampoco se puede volver a deployar.
+
+El primer deploy de `commitmentsDaily` habilita Cloud Scheduler y crea el
+trabajo programado. Después, el botón 📧 Enviar prueba confirma que el correo
+llega. Gmail permite unos 500 correos al día; acá sale uno.
+
+En el emulador el correo no sale: `createMailer` usa un transporte JSON.
 
 ### Después del primer deploy
 

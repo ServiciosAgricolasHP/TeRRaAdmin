@@ -300,6 +300,60 @@ Gastos sin respaldo tributario (sin factura/boleta, o con boleta nunca ingresada
 | `amount` | number | |
 | `detail` | string | |
 
+### `commitments`
+Un vencimiento de la pantalla **Cheques y pagos**: un cheque emitido o recibido, un pago comprometido, una cuota de crédito o un mes de un pago recurrente. De acá sale el correo diario de avisos (`functions/commitments.js`).
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | autoId; `chq_{banco}_{N°}` si vino de la planilla de cheques (reimportar no duplica); `{seriesId}_{dueDate}` si lo generó una serie |
+| `kind` | `"chequeIssued"` | `"chequeReceived"` | `"payment"` | `"installment"` | `chequeReceived` es plata que entra; el resto, plata que sale |
+| `dueDate` | string (YYYY-MM-DD) | fecha del cheque o del vencimiento; es la que dispara los avisos |
+| `issueDate` | string | opcional, solo cheques |
+| `amount` | number | CLP |
+| `counterparty` | string | beneficiario, quien entrega el cheque o acreedor (`toTitleName`) |
+| `concept`, `notes` | string | (`unshout`) |
+| `bank` | string | código de `utils/banks.js`, o el texto de la planilla si no se reconoció; vacío fuera de cheques |
+| `chequeNumber` | string | vacío fuera de cheques |
+| `companyId` | ref→`companies` | null | cuenta / empresa |
+| `companyLabel` | string | la empresa como venía en la planilla cuando no calzó con `companies` |
+| `status` | `"pending"` | `"paid"` | `"cancelled"` | **"vencido" no se guarda**: es `pending` con `dueDate` pasada |
+| `paidAt` | string (YYYY-MM-DD) | fecha en que se cobró o pagó; `""` si no |
+| `seriesId` | ref→`commitmentSeries`? | si lo generó un crédito o un pago recurrente |
+| `installment` | `{ n, of }` | null | número de cuota; `null` en un pago recurrente |
+| `source` | `"excel_import"`? | solo lo importado de la planilla |
+
+### `commitmentSeries`
+Un crédito en cuotas o un pago recurrente mensual. Los vencimientos son docs propios de `commitments`; la serie solo los genera.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | autoId |
+| `kind`, `counterparty`, `concept`, `notes`, `amount`, `companyId` | | se copian a cada vencimiento |
+| `frequency` | `"monthly"` | |
+| `firstDate` | string (YYYY-MM-DD) | primer vencimiento; los siguientes caen el mismo día de cada mes (recortado al largo del mes) |
+| `count` | number | null | cuotas de un crédito (se crean todas al principio); `null` = pago recurrente sin término |
+| `active` | bool | `false` al detener un recurrente: se borran sus pendientes futuros y no se generan más |
+| `generatedUntil` | string (YYYY-MM-DD)? | solo recurrentes: hasta dónde se generaron vencimientos. La función diaria lo extiende a hoy + 60 días; un vencimiento que alguien eliminó antes de esa fecha no se vuelve a crear |
+
+### `commitmentConfig`
+Un único doc `main` con la configuración de los avisos por correo.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `recipients` | string[] | correos en minúscula |
+| `offsets` | number[] | días de anticipación, de mayor a menor (default `[3, 1, 0]`) |
+| `includeOverdue` | bool | repetir cada día los vencidos sin marcar |
+| `sender` | string | cuenta Gmail que envía; su contraseña de aplicación es el secreto `SMTP_PASS` del backend |
+
+### `commitmentNotifications`
+Registro de los correos diarios. Lo escribe solo la función `commitmentsDaily`; la app lo lee (`firestore.rules`). El doc se crea **antes** de enviar y hace de candado: un reintento del mismo día no repite el correo. Si el envío falla, se borra para que el reintento pueda enviarlo.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string (YYYY-MM-DD) | día en Chile |
+| `status` | `"sending"` | `"sent"` | |
+| `recipients` | string[] | |
+| `count`, `total` | number | vencimientos avisados y su suma |
+| `sections` | `[{ key, ids[] }]` | qué se avisó en cada grupo (`overdue`, `d0`, `d1`, `d3`…) |
+| `subject`, `messageId` | string | |
+| `createdAt`, `sentAt` | ts | |
+
 ### `groupLeader`
 Listado curado de líderes de grupo disponibles para asignación. La idea es que la lista no crezca con valores ad-hoc.
 | Campo | Tipo | Notas |
@@ -483,6 +537,7 @@ Auditoría — una fila por mutación.
 | `carrierId` | `transportsService.js` → `carrierMeta()` (a mano: ese servicio no usa `createService`) | ligar `transport` y `transportPayment` a su transportista |
 | `auto: "recalcTotal"` | `recalcPaymentTotal` / `recalcPayrollTotal` | distinguir un recálculo automático de total de una edición hecha por una persona |
 | `auto: "emptySummary"`, `auto: "emptyPayroll"` | `recalcPaymentTotal` / `recalcPayrollTotal` | borrado automático de un resumen que se quedó sin vueltas, o de una quincena que se quedó sin resúmenes |
+| `auto: "extendRecurring"`, `dates` | `commitmentsDaily` (`functions/commitments.js`) | vencimientos que la función diaria le generó a un pago recurrente (`entity: "commitmentSeries"`, sin `uid`) |
 | `addedAbono`, `editedAbonoId`, `removedAbonoId` | `paymentsService` | detalle del abono tocado |
 | `op: "applyAdvances"`, `count`, `total`, `advanceIds`, `sobrantes?` | `applyAdvancesToPayroll` | un log por nómina (`entity: "payroll"`) con los anticipos que descontó. `sobrantes: [{ advanceId, pedido, aplicado }]` son las aplicaciones recortadas |
 | `op: "restoreAdvances"`, `count`, `advanceIds` | `restoreAdvancesFromPayroll` | los anticipos que soltó la nómina |
@@ -512,6 +567,8 @@ erDiagram
     TRANSPORT_PAYROLLS ||--o{ TRANSPORT_PAYMENTS : "agrupa (payrollId)"
     COMPANIES ||--o{ DTE_DOCUMENTS : "tiene (companyId)"
     COST_CENTERS ||--o{ INFORMAL_EXPENSES : "agrupa (costCenterId)"
+    COMMITMENT_SERIES ||--o{ COMMITMENTS : "genera (seriesId)"
+    COMPANIES ||--o{ COMMITMENTS : "cuenta (companyId)"
     QR_PREFIXES ||--o{ HARVEST_WEIGHTS : "origina (prefix)"
     HARVEST_WEIGHTS }o--|| WORKDAYS : "sincroniza hacia"
     USERS ||--o| FAENAS : "layout pref"
@@ -699,4 +756,5 @@ erDiagram
 - **qrPrefix → harvestWeights → workdays**: los pesajes los escribe una app externa contra un prefijo de QR; el prefijo dice a qué (ciclo, labor) sincronizarlos. La sincronización agrupa por (trabajador, día, combo) y escribe/actualiza `workdays` — flujo de una sola dirección. La app admin escribe `harvestWeights` solo por la vía manual de Cosecha QR → Pesajes, que no dispara la sincronización: queda a cargo del operador.
 - **costCenter → informalExpenses**: gastos sin respaldo tributario, deliberadamente separados de `dteDocuments` para no contaminar la data fiscal.
 - **company → dteDocuments** (`companyId`): los DTE cuelgan de una empresa. El docId es **determinístico** (no autoId) → reimportar el mismo período es idempotente; el "replace por período" borra huérfanos y preserva `paymentStatus`/`payments` existentes.
+- **commitmentSeries → commitments** (`seriesId`): un crédito crea todas sus cuotas de una; un recurrente se extiende día a día desde `generatedUntil`. Cada vencimiento se marca pagado o anulado por separado.
 - **catalogs / users**: docIds estables (nombre / uid), no autoId.
