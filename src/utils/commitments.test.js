@@ -12,6 +12,21 @@ import {
   matchCompany,
   mapExcelRow,
   statusLabel,
+  buildPaymentReport,
+  canPostpone,
+  canProtest,
+  extraOf,
+  groupUpcoming,
+  upcomingMonthEnd,
+  partialPaidOf,
+  remainingOf,
+  allocatePartialPayment,
+  shiftMonths,
+  withDayOfMonth,
+  seriesRows,
+  applySeriesTool,
+  seriesChanges,
+  seriesRowError,
 } from "./commitments";
 
 describe("vencimientos", () => {
@@ -24,11 +39,59 @@ describe("vencimientos", () => {
   });
 
   it("un pendiente con la fecha pasada se muestra vencido", () => {
-    const hoy = "2026-10-16";
-    expect(displayStatus({ status: "pending", dueDate: "2026-10-15" }, hoy)).toBe("overdue");
-    expect(displayStatus({ status: "pending", dueDate: "2026-10-16" }, hoy)).toBe("pending");
-    expect(displayStatus({ status: "paid", dueDate: "2026-10-01" }, hoy)).toBe("paid");
-    expect(displayStatus({ status: "cancelled", dueDate: "2026-10-01" }, hoy)).toBe("cancelled");
+    const today = "2026-10-16";
+    expect(displayStatus({ status: "pending", dueDate: "2026-10-15" }, today)).toBe("overdue");
+    expect(displayStatus({ status: "pending", dueDate: "2026-10-16" }, today)).toBe("pending");
+    expect(displayStatus({ status: "paid", dueDate: "2026-10-01" }, today)).toBe("paid");
+    expect(displayStatus({ status: "cancelled", dueDate: "2026-10-01" }, today)).toBe("cancelled");
+    expect(displayStatus({ status: "postponed", dueDate: "2026-10-01" }, today)).toBe("postponed");
+    expect(displayStatus({ status: "protested", dueDate: "2026-10-01" }, today)).toBe("protested");
+  });
+
+  it("se aplaza lo que ya venció y se protesta solo un cheque", () => {
+    const today = "2026-10-16";
+    expect(canPostpone({ status: "pending", dueDate: "2026-10-10" }, today)).toBe(true);
+    expect(canPostpone({ status: "pending", dueDate: "2026-10-16" }, today)).toBe(true);
+    expect(canPostpone({ status: "pending", dueDate: "2026-10-17" }, today)).toBe(false);
+    expect(canPostpone({ status: "paid", dueDate: "2026-10-10" }, today)).toBe(false);
+    expect(canProtest({ kind: "chequeIssued", status: "pending" })).toBe(true);
+    expect(canProtest({ kind: "chequeReceived", status: "paid" })).toBe(true);
+    expect(canProtest({ kind: "payment", status: "pending" })).toBe(false);
+    expect(canProtest({ kind: "chequeIssued", status: "cancelled" })).toBe(false);
+  });
+
+  it("Próximos: 7 días (con lo aplazado primero), próximo mes y más adelante", () => {
+    const today = "2026-10-16";
+    const g = groupUpcoming(
+      [
+        { id: "overdue", status: "pending", dueDate: "2026-10-10" },
+        { id: "protested", kind: "chequeIssued", status: "protested", dueDate: "2026-10-01" },
+        { id: "week", status: "pending", dueDate: "2026-10-23" },
+        { id: "postponed", status: "postponed", dueDate: "2026-09-01" },
+        { id: "month", status: "pending", dueDate: "2026-10-24" },
+        { id: "monthEnd", status: "pending", dueDate: "2026-11-16" },
+        { id: "later", status: "pending", dueDate: "2026-11-17" },
+        { id: "paid", status: "paid", dueDate: "2026-10-17" },
+      ],
+      today,
+    );
+    const ids = (list) => list.map((c) => c.id);
+    expect(upcomingMonthEnd(today)).toBe("2026-11-16");
+    expect(ids(g.overdue)).toEqual(["overdue"]);
+    expect(ids(g.protested)).toEqual(["protested"]);
+    expect(ids(g.week)).toEqual(["postponed", "week"]);
+    expect(ids(g.month)).toEqual(["month", "monthEnd"]);
+    expect(ids(g.later)).toEqual(["later"]);
+  });
+
+  it("el mes siguiente se corta en el último día de un mes corto", () => {
+    expect(upcomingMonthEnd("2027-01-31")).toBe("2027-02-28");
+  });
+
+  it("el interés solo cuenta en lo pagado", () => {
+    expect(extraOf({ status: "paid", amount: 100, extra: 3 })).toBe(3);
+    expect(extraOf({ status: "pending", amount: 100, extra: 3 })).toBe(0);
+    expect(extraOf({ status: "paid", amount: 100 })).toBe(0);
   });
 
   it("un cheque se cobra y un pago se paga", () => {
@@ -46,23 +109,23 @@ describe("cuotas y series mensuales", () => {
   });
 
   it("un crédito genera una cuota por mes, numerada", () => {
-    const cuotas = buildInstallments({ firstDate: "2026-11-30", count: 4 });
-    expect(cuotas.map((c) => c.dueDate)).toEqual(["2026-11-30", "2026-12-30", "2027-01-30", "2027-02-28"]);
-    expect(cuotas[3]).toMatchObject({ n: 4, of: 4 });
+    const installments = buildInstallments({ firstDate: "2026-11-30", count: 4 });
+    expect(installments.map((c) => c.dueDate)).toEqual(["2026-11-30", "2026-12-30", "2027-01-30", "2027-02-28"]);
+    expect(installments[3]).toMatchObject({ n: 4, of: 4 });
     expect(buildInstallments({ firstDate: "", count: 3 })).toEqual([]);
   });
 
   it("un pago recurrente solo genera lo que falta hasta el horizonte", () => {
-    const todas = recurringDates({ firstDate: "2026-10-05", until: "2026-12-31" });
-    expect(todas).toEqual(["2026-10-05", "2026-11-05", "2026-12-05"]);
-    const nuevas = recurringDates({ firstDate: "2026-10-05", after: "2026-11-05", until: "2027-01-10" });
-    expect(nuevas).toEqual(["2026-12-05", "2027-01-05"]);
+    const allDates = recurringDates({ firstDate: "2026-10-05", until: "2026-12-31" });
+    expect(allDates).toEqual(["2026-10-05", "2026-11-05", "2026-12-05"]);
+    const newDates = recurringDates({ firstDate: "2026-10-05", after: "2026-11-05", until: "2027-01-10" });
+    expect(newDates).toEqual(["2026-12-05", "2027-01-05"]);
   });
 });
 
 describe("resumen", () => {
   it("separa lo que se paga de lo que se cobra y no suma anulados", () => {
-    const hoy = "2026-10-16";
+    const today = "2026-10-16";
     const r = summarize(
       [
         { kind: "chequeIssued", status: "pending", dueDate: "2026-10-18", amount: 100 },
@@ -72,7 +135,7 @@ describe("resumen", () => {
         { kind: "chequeIssued", status: "paid", dueDate: "2026-09-01", paidAt: "2026-09-02", amount: 999 },
         { kind: "payment", status: "cancelled", dueDate: "2026-10-01", amount: 40 },
       ],
-      hoy,
+      today,
     );
     expect(r.out.pending).toEqual({ amount: 100, count: 1 });
     expect(r.out.overdue).toEqual({ amount: 50, count: 1 });
@@ -80,6 +143,234 @@ describe("resumen", () => {
     expect(r.in.pending).toEqual({ amount: 70, count: 1 });
     expect(r.paidThisMonth).toEqual({ amount: 30, count: 1 });
     expect(r.cancelled).toEqual({ amount: 40, count: 1 });
+  });
+
+  it("aplazado y protestado van aparte, y lo pagado suma su interés", () => {
+    const today = "2026-10-16";
+    const r = summarize(
+      [
+        { kind: "payment", status: "postponed", dueDate: "2026-09-01", amount: 200 },
+        { kind: "chequeIssued", status: "protested", dueDate: "2026-10-01", amount: 300 },
+        { kind: "chequeReceived", status: "protested", dueDate: "2026-10-01", amount: 70 },
+        { kind: "installment", status: "paid", dueDate: "2026-09-30", paidAt: "2026-10-05", amount: 100, extra: 3 },
+      ],
+      today,
+    );
+    expect(r.out.postponed).toEqual({ amount: 200, count: 1 });
+    expect(r.out.protested).toEqual({ amount: 300, count: 1 });
+    expect(r.in.protested).toEqual({ amount: 70, count: 1 });
+    expect(r.out.overdue).toEqual({ amount: 0, count: 0 });
+    expect(r.paidThisMonth).toEqual({ amount: 103, count: 1 });
+  });
+});
+
+describe("informe de pagos", () => {
+  const today = "2026-10-16";
+  const installment = (n, dueDate, status = "pending", extra = 0) => ({
+    id: `cr_${n}`,
+    kind: "installment",
+    status,
+    dueDate,
+    paidAt: status === "paid" ? dueDate : "",
+    amount: 100,
+    extra,
+    counterparty: "Banco Estado",
+    seriesId: "cr",
+    installment: { n, of: 4 },
+  });
+  const items = [
+    installment(1, "2026-09-30", "paid", 3),
+    installment(2, "2026-10-30"),
+    installment(3, "2026-11-30"),
+    installment(4, "2026-12-30"),
+    { id: "ch1", kind: "chequeIssued", status: "pending", dueDate: "2026-10-10", amount: 500, counterparty: "Biosur" },
+    { id: "ch2", kind: "chequeIssued", status: "pending", dueDate: "2026-11-05", amount: 300, counterparty: "BIOSUR " },
+    { id: "rec", kind: "payment", status: "pending", dueDate: "2027-01-05", amount: 50, counterparty: "Arriendo", seriesId: "arr", installment: null },
+    { id: "in", kind: "chequeReceived", status: "pending", dueDate: "2026-10-20", amount: 999, counterparty: "Cliente" },
+    { id: "nul", kind: "payment", status: "cancelled", dueDate: "2026-10-20", amount: 777, counterparty: "X" },
+  ];
+
+  it("lo que se debe va por el monto original, sin lo que se cobra ni lo anulado", () => {
+    const r = buildPaymentReport(items, { today: today });
+    expect(r.totals.pending).toEqual({ count: 6, amount: 1150, extra: 0, total: 1150 });
+    expect(r.totals.overdue.total).toBe(500);
+    expect(r.hasExtra).toBe(false);
+    expect(r.paid).toEqual([]);
+  });
+
+  it("cada crédito es una deuda, y lo suelto se agrupa por contraparte", () => {
+    const r = buildPaymentReport(items, { today: today });
+    const credit = r.debts.find((d) => d.key === "s:cr");
+    expect(credit).toMatchObject({ installments: 4, nextDue: "2026-10-30", payoffDate: "2026-12-30" });
+    expect(credit.pending).toMatchObject({ count: 3, total: 300 });
+    expect(credit.paid).toEqual({ count: 1, amount: 100, extra: 3, total: 103 });
+    const biosur = r.debts.find((d) => d.key === "c:biosur");
+    expect(biosur).toMatchObject({ nextDue: "2026-10-10", payoffDate: "2026-11-05" });
+    expect(biosur.overdue.total).toBe(500);
+  });
+
+  it("un pago recurrente no tiene fecha de término", () => {
+    const r = buildPaymentReport(items, { today: today });
+    expect(r.debts.find((d) => d.key === "s:arr")).toMatchObject({ recurring: true, payoffDate: "" });
+    expect(r.payoffDate).toBe("2026-12-30");
+    expect(r.hasRecurring).toBe(true);
+  });
+
+  it("por mes, con lo vencido primero y el saldo que queda", () => {
+    const r = buildPaymentReport(items, { today: today });
+    expect(r.months.map((m) => [m.month, m.total, m.remainingAfter])).toEqual([
+      ["overdue", 500, 650],
+      ["2026-10", 100, 550],
+      ["2026-11", 400, 150],
+      ["2026-12", 100, 50],
+      ["2027-01", 50, 0],
+    ]);
+  });
+
+  it("los pagos realizados solo si se piden, por fecha de pago y con su interés", () => {
+    const r = buildPaymentReport(items, { today: today, includePaid: true, paidFrom: "2026-09-01", paidTo: "2026-09-30" });
+    expect(r.paid.map((c) => c.id)).toEqual(["cr_1"]);
+    expect(r.totals.paid).toEqual({ count: 1, amount: 100, extra: 3, total: 103 });
+    expect(r.hasExtra).toBe(true);
+    const outOfRange = buildPaymentReport(items, { today: today, includePaid: true, paidFrom: "2026-10-01" });
+    expect(outOfRange.paid).toEqual([]);
+  });
+
+  it("cada deuda lleva su tipo, o ninguno si mezcla tipos", () => {
+    const r = buildPaymentReport(
+      [
+        { id: "d1", kind: "personalDebt", status: "pending", dueDate: "2026-11-01", amount: 100, counterparty: "Juan", seriesId: "dp", installment: { n: 1, of: 2 } },
+        { id: "d2", kind: "personalDebt", status: "pending", dueDate: "2026-12-01", amount: 100, counterparty: "Juan", seriesId: "dp", installment: { n: 2, of: 2 } },
+        { id: "x1", kind: "chequeIssued", status: "pending", dueDate: "2026-11-05", amount: 50, counterparty: "Biosur" },
+        { id: "x2", kind: "payment", status: "pending", dueDate: "2026-11-06", amount: 50, counterparty: "Biosur" },
+      ],
+      { today: today },
+    );
+    expect(r.debts.find((d) => d.key === "s:dp")).toMatchObject({ kind: "personalDebt", installments: 2, payoffDate: "2026-12-01" });
+    expect(r.debts.find((d) => d.key === "c:biosur").kind).toBe("");
+  });
+
+  it("un crédito con cuotas atrasadas queda pagado con su última cuota", () => {
+    const installment = (n, dueDate, status = "pending") => ({
+      id: `t_${n}`, kind: "installment", status, dueDate, amount: 100, counterparty: "Santander", seriesId: "toy", installment: { n, of: 5 },
+    });
+    const r = buildPaymentReport(
+      [installment(1, "2026-08-10", "paid"), installment(2, "2026-09-10", "postponed"), installment(3, "2026-10-10"), installment(4, "2026-11-10"), installment(5, "2026-12-10")],
+      { today: today },
+    );
+    const d = r.debts[0];
+    expect(d).toMatchObject({ nextDue: "2026-10-10", payoffDate: "2026-12-10" });
+    expect(d.behind).toMatchObject({ count: 2, total: 200 });
+    expect(r.totals.behind).toMatchObject({ count: 2, total: 200 });
+    expect(r.payoffDate).toBe("2026-12-10");
+  });
+
+  it("lo aplazado y lo protestado siguen debiéndose, con su fecha original", () => {
+    const r = buildPaymentReport(
+      [
+        { id: "a", kind: "payment", status: "postponed", dueDate: "2026-09-10", amount: 200, counterparty: "Ferretería" },
+        { id: "p", kind: "chequeIssued", status: "protested", dueDate: "2026-10-01", amount: 300, counterparty: "Biosur" },
+        { id: "q", kind: "chequeIssued", status: "pending", dueDate: "2026-11-05", amount: 100, counterparty: "Biosur" },
+        { id: "r", kind: "chequeReceived", status: "protested", dueDate: "2026-10-01", amount: 999, counterparty: "Cliente" },
+      ],
+      { today: today },
+    );
+    expect(r.totals.pending.total).toBe(600);
+    expect(r.totals.overdue.total).toBe(0);
+    expect(r.totals.postponed.total).toBe(200);
+    expect(r.totals.protested.total).toBe(300);
+    expect(r.months.map((m) => [m.month, m.total, m.remainingAfter])).toEqual([
+      ["protested", 300, 300],
+      ["2026-11", 100, 200],
+      ["postponed", 200, 0],
+    ]);
+    expect(r.debts.map((d) => d.key)).toEqual(["c:biosur", "c:ferreteria"]);
+    expect(r.debts[0]).toMatchObject({ nextDue: "2026-11-05", payoffDate: "2026-11-05" });
+    expect(r.debts[0].protested.total).toBe(300);
+    expect(r.debts[0].behind).toMatchObject({ count: 1, total: 300 });
+    expect(r.debts[1]).toMatchObject({ nextDue: "", payoffDate: "2026-09-10" });
+    expect(r.debts[1].behind).toMatchObject({ count: 1, total: 200 });
+    expect(r.payoffDate).toBe("2026-11-05");
+  });
+});
+
+describe("abonos", () => {
+  const debt = [
+    { id: "q2", status: "pending", dueDate: "2026-11-10", amount: 100, installment: { n: 2, of: 3 } },
+    { id: "q1", status: "pending", dueDate: "2026-10-10", amount: 100, installment: { n: 1, of: 3 }, partialPayments: [{ id: "a", amount: 30 }] },
+    { id: "q3", status: "pending", dueDate: "2026-12-10", amount: 100, installment: { n: 3, of: 3 } },
+    { id: "q0", status: "paid", dueDate: "2026-09-10", amount: 100, installment: { n: 0, of: 3 } },
+  ];
+
+  it("lo que falta es el monto original menos lo abonado, y solo en lo abierto", () => {
+    expect(partialPaidOf(debt[1])).toBe(30);
+    expect(remainingOf(debt[1])).toBe(70);
+    expect(remainingOf(debt[3])).toBe(0);
+    expect(remainingOf({ status: "pending", amount: 100, partialPayments: [{ amount: 150 }] })).toBe(0);
+  });
+
+  it("un abono a toda la deuda se reparte de la cuota más antigua a la más nueva", () => {
+    const { parts, leftover } = allocatePartialPayment(debt, 150);
+    expect(parts).toEqual([
+      { id: "q1", amount: 70, closes: true },
+      { id: "q2", amount: 80, closes: false },
+    ]);
+    expect(leftover).toBe(0);
+    expect(allocatePartialPayment(debt, 300).leftover).toBe(30);
+  });
+
+  it("los totales cuentan lo que falta, no el monto original", () => {
+    const s = summarize(debt, "2026-10-16");
+    expect(s.out.overdue.amount).toBe(70);
+    expect(s.out.pending.amount).toBe(200);
+    const r = buildPaymentReport(debt, { today: "2026-10-16" });
+    expect(r.totals.pending.total).toBe(270);
+  });
+});
+
+describe("ajuste de una serie", () => {
+  const items = [
+    { id: "s_1", status: "paid", dueDate: "2026-09-30", amount: 100, installment: { n: 1, of: 4 } },
+    { id: "s_2", status: "pending", dueDate: "2026-10-30", amount: 100, installment: { n: 2, of: 4 }, partialPayments: [{ amount: 40 }] },
+    { id: "s_3", status: "postponed", dueDate: "2026-11-30", amount: 100, installment: { n: 3, of: 4 } },
+    { id: "s_4", status: "pending", dueDate: "2026-12-31", amount: 100, installment: { n: 4, of: 4 } },
+  ];
+
+  it("corre meses y cambia el día recortando a meses cortos", () => {
+    expect(shiftMonths("2026-01-31", 1)).toBe("2026-02-28");
+    expect(shiftMonths("2026-03-15", -2)).toBe("2026-01-15");
+    expect(withDayOfMonth("2026-02-10", 31)).toBe("2026-02-28");
+  });
+
+  it("las herramientas tocan solo lo abierto desde el vencimiento elegido", () => {
+    const rows = seriesRows(items);
+    expect(rows.map((r) => r.editable)).toEqual([false, true, true, true]);
+    const moved = applySeriesTool(rows, { fromIndex: 2, months: 1 });
+    expect(moved.map((r) => r.dueDate)).toEqual(["2026-09-30", "2026-10-30", "2026-12-30", "2027-01-31"]);
+    const priced = applySeriesTool(rows, { fromIndex: 0, amount: 120, day: 5 });
+    expect(priced.map((r) => [r.dueDate, r.amount])).toEqual([
+      ["2026-09-30", 100],
+      ["2026-10-05", 120],
+      ["2026-11-05", 120],
+      ["2026-12-05", 120],
+    ]);
+  });
+
+  it("guarda solo lo que cambió, y no deja un monto menor que lo abonado", () => {
+    const rows = applySeriesTool(seriesRows(items), { fromIndex: 3, amount: 150 });
+    expect(seriesChanges(items, rows)).toEqual([{ id: "s_4", patch: { amount: 150 } }]);
+    expect(seriesRowError({ ...rows[1], amount: 30 }, items[1])).toBe("Es menos que lo ya abonado");
+    expect(seriesRowError({ ...rows[1], amount: 0 }, items[1])).toBe("El monto debe ser mayor a 0");
+    expect(seriesRowError({ ...rows[1], dueDate: "" }, items[1])).toBe("Falta la fecha");
+    expect(seriesRowError(rows[0], items[0])).toBe("");
+  });
+
+  it("un recurrente puede cambiar de día después de creado", () => {
+    expect(recurringDates({ firstDate: "2026-10-05", after: "2026-11-05", until: "2027-01-31", dayOfMonth: 20 })).toEqual([
+      "2026-11-20",
+      "2026-12-20",
+      "2027-01-20",
+    ]);
   });
 });
 
@@ -109,6 +400,8 @@ describe("import de la planilla de cheques", () => {
     expect(excelStatus("Anulado")).toBe("cancelled");
     expect(excelStatus("Vencido")).toBe("pending");
     expect(excelStatus("Pendiente")).toBe("pending");
+    expect(excelStatus("Protestado")).toBe("protested");
+    expect(excelStatus("Aplazado")).toBe("postponed");
     expect(excelStatus("")).toBe("pending");
   });
 
@@ -120,8 +413,8 @@ describe("import de la planilla de cheques", () => {
 
   it("mapea una fila de la planilla", () => {
     const companies = [{ id: "c1", alias: "Transporte HP" }];
-    const fila = [21, "21-10-26", "BICE ", 361431, "BIOSUR", "CUOTA N 10 CARRETE ", 3575568, null, "Pendiente", "TRANSPORTE HP", "CUOTA N.º 10 PENDIENTE DE COBRO"];
-    const r = mapExcelRow(fila, { companies });
+    const row = [21, "21-10-26", "BICE ", 361431, "BIOSUR", "CUOTA N 10 CARRETE ", 3575568, null, "Pendiente", "TRANSPORTE HP", "CUOTA N.º 10 PENDIENTE DE COBRO"];
+    const r = mapExcelRow(row, { companies });
     expect(r.id).toBe("chq_028_361431");
     expect(r.data).toMatchObject({
       kind: "chequeIssued",
@@ -139,8 +432,8 @@ describe("import de la planilla de cheques", () => {
   });
 
   it("una empresa sin match queda como texto y una fila vacía se salta", () => {
-    const fila = [30, new Date(Date.UTC(2026, 4, 6)), "bco chile ", 2485214, "EDWIN DIAZ ", "PAGO SERVICIO", 690000, null, "Cobrado", "SANTA SARA ", "PAGO TRANSPORTE "];
-    const r = mapExcelRow(fila, { companies: [] });
+    const row = [30, new Date(Date.UTC(2026, 4, 6)), "bco chile ", 2485214, "EDWIN DIAZ ", "PAGO SERVICIO", 690000, null, "Cobrado", "SANTA SARA ", "PAGO TRANSPORTE "];
+    const r = mapExcelRow(row, { companies: [] });
     expect(r.data).toMatchObject({ companyId: null, companyLabel: "SANTA SARA", status: "paid", bank: "001", dueDate: "2026-05-06" });
     expect(mapExcelRow([49, null, null, null, null, null, null, null, null, null, null])).toBe(null);
     expect(mapExcelRow([50, "pronto", "BICE", 1, "X", "", 100]).error).toMatch(/Fecha/);

@@ -305,33 +305,37 @@ Un vencimiento de la pantalla **Cheques y pagos**: un cheque emitido o recibido,
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | string | autoId; `chq_{banco}_{N°}` si vino de la planilla de cheques (reimportar no duplica); `{seriesId}_{dueDate}` si lo generó una serie |
-| `kind` | `"chequeIssued"` | `"chequeReceived"` | `"payment"` | `"installment"` | `chequeReceived` es plata que entra; el resto, plata que sale |
+| `kind` | `"chequeIssued"` | `"chequeReceived"` | `"payment"` | `"installment"` | `"personalDebt"` | `chequeReceived` es plata que entra; el resto, plata que sale. `personalDebt` (deuda personal) es un pago único o, en cuotas, una serie como la de un crédito |
 | `dueDate` | string (YYYY-MM-DD) | fecha del cheque o del vencimiento; es la que dispara los avisos |
 | `issueDate` | string | opcional, solo cheques |
-| `amount` | number | CLP |
+| `amount` | number | CLP; el monto original del vencimiento |
+| `extra` | number? | lo que se pagó por sobre `amount` (interés por atraso u otro recargo), en cualquier tipo. Se anota al marcar pagado y vuelve a `0` al pasar a cualquier otro estado; solo cuenta con `status: "paid"` (`extraOf`). Lo pagado es `amount + extra` |
 | `counterparty` | string | beneficiario, quien entrega el cheque o acreedor (`toTitleName`) |
 | `concept`, `notes` | string | (`unshout`) |
 | `bank` | string | código de `utils/banks.js`, o el texto de la planilla si no se reconoció; vacío fuera de cheques |
 | `chequeNumber` | string | vacío fuera de cheques |
 | `companyId` | ref→`companies` | null | cuenta / empresa |
 | `companyLabel` | string | la empresa como venía en la planilla cuando no calzó con `companies` |
-| `status` | `"pending"` | `"paid"` | `"cancelled"` | **"vencido" no se guarda**: es `pending` con `dueDate` pasada |
+| `status` | `"pending"` | `"postponed"` | `"protested"` | `"paid"` | `"cancelled"` | **"vencido" no se guarda**: es `pending` con `dueDate` pasada. `postponed` (aplazado): ya venció, se sigue debiendo y no tiene fecha de pago. `protested`: cheque rechazado por el banco, se sigue debiendo (o cobrando). Lo aplazado va en el correo de avisos junto a los próximos vencimientos, pero por sí solo no lo genera; lo protestado no va. "Reprogramar" los devuelve a `pending` con un `dueDate` nuevo |
 | `paidAt` | string (YYYY-MM-DD) | fecha en que se cobró o pagó; `""` si no |
+| `partialPayments` | `[{ id, date, amount, notes, groupId?, groupTotal?, createdAt, createdBy }]`? | abonos (pagos parciales), hoy solo en deudas personales. Lo que falta pagar de algo abierto es `amount` menos su suma (`remainingOf`), y es lo que cuentan los totales, el informe y el correo. Un abono a toda la deuda se reparte entre sus cuotas abiertas, de la más antigua a la más nueva, y cada parte lleva el mismo `groupId` (y en `groupTotal` el abono completo); se quita entero |
+| `closedByPartials` | bool? | `true` si quedó `paid` porque los abonos cubrieron el monto (con `paidAt` = fecha del último abono): quitar un abono lo devuelve a `pending`. Si se marcó pagado a mano es `false`, y sus abonos no se quitan sin volverlo antes a pendiente |
 | `seriesId` | ref→`commitmentSeries`? | si lo generó un crédito o un pago recurrente |
 | `installment` | `{ n, of }` | null | número de cuota; `null` en un pago recurrente |
 | `source` | `"excel_import"`? | solo lo importado de la planilla |
 
 ### `commitmentSeries`
-Un crédito en cuotas o un pago recurrente mensual. Los vencimientos son docs propios de `commitments`; la serie solo los genera.
+Un crédito en cuotas (`kind: "installment"`), una deuda personal en cuotas (`kind: "personalDebt"`) o un pago recurrente mensual (`kind: "payment"`). Los vencimientos son docs propios de `commitments`, con el mismo `kind` de la serie; la serie solo los genera.
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | string | autoId |
-| `kind`, `counterparty`, `concept`, `notes`, `amount`, `companyId` | | se copian a cada vencimiento |
+| `kind`, `counterparty`, `concept`, `notes`, `amount`, `companyId` | | se copian a cada vencimiento. En un recurrente, `amount` es el de los vencimientos que se generen de ahí en adelante y cambia al ajustar el monto de la serie |
 | `frequency` | `"monthly"` | |
 | `firstDate` | string (YYYY-MM-DD) | primer vencimiento; los siguientes caen el mismo día de cada mes (recortado al largo del mes) |
+| `dayOfMonth` | number? | solo recurrentes: el día de pago, si se cambió después de crear la serie ("Ajustar todos los vencimientos"). Sin el campo, vale el día de `firstDate` |
 | `count` | number | null | cuotas de un crédito (se crean todas al principio); `null` = pago recurrente sin término |
 | `active` | bool | `false` al detener un recurrente: se borran sus pendientes futuros y no se generan más |
-| `generatedUntil` | string (YYYY-MM-DD)? | solo recurrentes: hasta dónde se generaron vencimientos. La función diaria lo extiende a hoy + 60 días; un vencimiento que alguien eliminó antes de esa fecha no se vuelve a crear |
+| `generatedUntil` | string (YYYY-MM-DD)? | solo recurrentes: hasta dónde se generaron vencimientos. La función diaria lo extiende a hoy + 60 días; un vencimiento que alguien eliminó antes de esa fecha no se vuelve a crear. Al ajustar la serie se adelanta al último vencimiento, si quedó más allá, para no generar dos veces el mismo mes |
 
 ### `commitmentConfig`
 Un único doc `main` con la configuración de los avisos por correo.
@@ -349,8 +353,8 @@ Registro de los correos diarios. Lo escribe solo la función `commitmentsDaily`;
 | `id` (docId) | string (YYYY-MM-DD) | día en Chile |
 | `status` | `"sending"` | `"sent"` | |
 | `recipients` | string[] | |
-| `count`, `total` | number | vencimientos avisados y su suma |
-| `sections` | `[{ key, ids[] }]` | qué se avisó en cada grupo (`overdue`, `d0`, `d1`, `d3`…) |
+| `count`, `total` | number | vencimientos avisados y su suma, sin la sección de próximos |
+| `sections` | `[{ key, ids[] }]` | qué se avisó en cada grupo (`overdue`, `d0`, `d1`, `d3`…) y `upcoming`: los próximos 7 días que se sumaron, con los aplazados primero |
 | `subject`, `messageId` | string | |
 | `createdAt`, `sentAt` | ts | |
 

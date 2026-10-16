@@ -24,8 +24,9 @@
 //      rechace un pedido que no viene de un admin, un rol desconocido o un
 //      correo inválido.
 //   5. Que el aviso de Cheques y pagos junte en un solo correo lo que vence en
-//      los días configurados y los vencidos, que no se repita el mismo día, que
-//      no se envíe nada si no hay vencimientos, que extienda los pagos
+//      los días configurados y los vencidos, más los próximos 7 días con los
+//      aplazados, que no se repita el mismo día, que no se envíe nada si no hay
+//      vencimientos (aunque haya próximos o aplazados), que extienda los pagos
 //      recurrentes, y que el correo de prueba salga desde la cola solo para un
 //      admin. El correo no sale: se reemplaza el transporte.
 //
@@ -59,12 +60,12 @@ if (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_
 initializeApp({ projectId: PROJECT });
 const db = getFirestore(DATABASE);
 
-let fallos = 0;
+let failures = 0;
 function check(nombre, condicion, detalle) {
   if (condicion) {
     console.log(`  ok   ${nombre}`);
   } else {
-    fallos += 1;
+    failures += 1;
     console.log(`  FALLA ${nombre}`);
     if (detalle !== undefined) console.log(`        ${JSON.stringify(detalle)}`);
   }
@@ -73,26 +74,26 @@ function check(nombre, condicion, detalle) {
 // Espera a que el backend deje de considerar el job pendiente. Se hace por
 // sondeo y no con un listener porque un script que termina tiene que poder
 // cerrarse solo; un `onSnapshot` abierto deja el proceso colgado.
-async function esperarResolucion(ref, { timeout = TIMEOUT_MS } = {}) {
-  const hasta = Date.now() + timeout;
+async function waitForResolution(ref, { timeout = TIMEOUT_MS } = {}) {
+  const deadline = Date.now() + timeout;
   for (;;) {
     const snap = await ref.get();
     const data = snap.data();
     if (data && data.status !== "pending" && data.status !== "running") return data;
-    if (Date.now() > hasta) return data || null;
+    if (Date.now() > deadline) return data || null;
     await new Promise((r) => setTimeout(r, 250));
   }
 }
 
-async function encolar(job) {
+async function enqueue(job) {
   return db.collection(JOBS).add({ status: "pending", ...job });
 }
 
 console.log("ping");
 {
   const uid = `verify-${Date.now()}`;
-  const ref = await encolar({ type: "ping", requestedBy: uid });
-  const d = await esperarResolucion(ref);
+  const ref = await enqueue({ type: "ping", requestedBy: uid });
+  const d = await waitForResolution(ref);
 
   check("el job se resuelve de punta a punta", d?.status === "done", d);
   check("devuelve ok", d?.result?.ok === true, d?.result);
@@ -117,7 +118,7 @@ console.log("job ya tomado (entrega duplicada)");
   // cuando Eventarc le entrega dos veces el mismo evento: el reclamo
   // transaccional lo encuentra tomado y se retira. Crearlo así es la única
   // forma de ejercitar esa rama desde afuera.
-  const ref = await encolar({ type: "ping", status: "done", requestedBy: "ya-tomado" });
+  const ref = await enqueue({ type: "ping", status: "done", requestedBy: "ya-tomado" });
   await new Promise((r) => setTimeout(r, 3000));
   const d = (await ref.get()).data();
 
@@ -128,8 +129,8 @@ console.log("job ya tomado (entrega duplicada)");
 console.log("");
 console.log("tipo desconocido");
 {
-  const ref = await encolar({ type: "estoNoExiste" });
-  const d = await esperarResolucion(ref);
+  const ref = await enqueue({ type: "estoNoExiste" });
+  const d = await waitForResolution(ref);
 
   check("queda en error, no colgado en pending", d?.status === "error", d?.status);
   check("dice cuál era el tipo", typeof d?.error === "string" && d.error.includes("estoNoExiste"), d?.error);
@@ -142,24 +143,24 @@ console.log("createUser");
   const stamp = Date.now();
   await db.collection("users").doc("verify-admin").set({ role: "admin" });
   await db.collection("users").doc("verify-user").set({ role: "user" });
-  const pedir = async (requestedBy, params) =>
-    esperarResolucion(
-      await encolar({ type: "createUser", requestedBy, requestedByEmail: "admin@terra.test", params }),
+  const request = async (requestedBy, params) =>
+    waitForResolution(
+      await enqueue({ type: "createUser", requestedBy, requestedByEmail: "admin@terra.test", params }),
     );
-  const cuentaDe = (email) => auth.getUserByEmail(email).catch(() => null);
+  const accountOf = (email) => auth.getUserByEmail(email).catch(() => null);
 
   const email = `nueva-${stamp}@terra.test`;
-  const d = await pedir("verify-admin", { email, role: "user", alias: "Nueva" });
+  const d = await request("verify-admin", { email, role: "user", alias: "Nueva" });
   const uid = d?.result?.uid;
   check("crea la cuenta", d?.status === "done" && typeof uid === "string", d);
-  check("la cuenta queda en Authentication con ese UID", (await cuentaDe(email))?.uid === uid);
-  const perfil = uid ? (await db.collection("users").doc(uid).get()).data() : null;
+  check("la cuenta queda en Authentication con ese UID", (await accountOf(email))?.uid === uid);
+  const profile = uid ? (await db.collection("users").doc(uid).get()).data() : null;
   check(
     "crea el perfil con rol, correo y alias",
-    perfil?.role === "user" && perfil?.email === email && perfil?.alias === "Nueva",
-    perfil,
+    profile?.role === "user" && profile?.email === email && profile?.alias === "Nueva",
+    profile,
   );
-  check("el perfil registra quién lo creó", perfil?.createdBy === "verify-admin", perfil?.createdBy);
+  check("el perfil registra quién lo creó", profile?.createdBy === "verify-admin", profile?.createdBy);
   const logs = uid ? await db.collection("logs").where("entityId", "==", uid).get() : null;
   const log = logs?.docs[0]?.data();
   check(
@@ -168,42 +169,42 @@ console.log("createUser");
     log,
   );
 
-  const repetido = await pedir("verify-admin", { email, role: "user" });
-  check("un correo que ya tiene cuenta pide confirmación", repetido?.errorCode === "account-exists", repetido);
+  const duplicate = await request("verify-admin", { email, role: "user" });
+  check("un correo que ya tiene cuenta pide confirmación", duplicate?.errorCode === "account-exists", duplicate);
 
-  const conAcceso = await pedir("verify-admin", { email, role: "user", useExisting: true });
-  check("una cuenta que ya tiene perfil no se duplica", conAcceso?.errorCode === "profile-exists", conAcceso);
-  check("y esa cuenta sigue existiendo", (await cuentaDe(email))?.uid === uid);
+  const withAccess = await request("verify-admin", { email, role: "user", useExisting: true });
+  check("una cuenta que ya tiene perfil no se duplica", withAccess?.errorCode === "profile-exists", withAccess);
+  check("y esa cuenta sigue existiendo", (await accountOf(email))?.uid === uid);
 
-  const existente = `existente-${stamp}@terra.test`;
-  const previa = await auth.createUser({ email: existente, password: "clave-de-prueba" });
-  const dada = await pedir("verify-admin", { email: existente, role: "user", useExisting: true });
+  const existingEmail = `existente-${stamp}@terra.test`;
+  const previousAccount = await auth.createUser({ email: existingEmail, password: "clave-de-prueba" });
+  const granted = await request("verify-admin", { email: existingEmail, role: "user", useExisting: true });
   check(
     "con confirmación, le da acceso a una cuenta existente",
-    dada?.status === "done" && dada?.result?.uid === previa.uid && dada?.result?.existingAccount === true,
-    dada,
+    granted?.status === "done" && granted?.result?.uid === previousAccount.uid && granted?.result?.existingAccount === true,
+    granted,
   );
 
-  const ajeno = `ajeno-${stamp}@terra.test`;
-  const noAdmin = await pedir("verify-user", { email: ajeno, role: "user" });
+  const outsider = `ajeno-${stamp}@terra.test`;
+  const noAdmin = await request("verify-user", { email: outsider, role: "user" });
   check("si no lo pide un admin, falla", noAdmin?.errorCode === "not-admin", noAdmin);
-  check("y no crea la cuenta", (await cuentaDe(ajeno)) === null);
+  check("y no crea la cuenta", (await accountOf(outsider)) === null);
 
-  const rol = await pedir("verify-admin", { email: `rol-${stamp}@terra.test`, role: "root" });
-  check("un rol desconocido falla", rol?.errorCode === "invalid-role", rol);
+  const badRole = await request("verify-admin", { email: `rol-${stamp}@terra.test`, role: "root" });
+  check("un rol desconocido falla", badRole?.errorCode === "invalid-role", badRole);
 
-  const correo = await pedir("verify-admin", { email: "no-es-correo", role: "user" });
-  check("un correo inválido falla", correo?.errorCode === "invalid-email", correo);
+  const badEmail = await request("verify-admin", { email: "no-es-correo", role: "user" });
+  check("un correo inválido falla", badEmail?.errorCode === "invalid-email", badEmail);
 }
 
 console.log("");
 console.log("avisos de Cheques y pagos");
 {
-  const enviados = [];
+  const sent = [];
   const mailer = {
     sendMail: async (m) => {
-      enviados.push(m);
-      return { messageId: "fake-" + enviados.length };
+      sent.push(m);
+      return { messageId: "fake-" + sent.length };
     },
   };
   // 09:00 en Chile del 16 de octubre.
@@ -214,14 +215,25 @@ console.log("avisos de Cheques y pagos");
     offsets: [3, 1, 0],
     includeOverdue: true,
   });
-  const vencimiento = (id, data) =>
+  const dueItem = (id, data) =>
     db.collection("commitments").doc(id).set({ kind: "chequeIssued", status: "pending", amount: 1000, counterparty: "Biosur", ...data });
-  await vencimiento("v-hoy", { dueDate: "2026-10-16" });
-  await vencimiento("v-en-3", { dueDate: "2026-10-19" });
-  await vencimiento("v-en-2", { dueDate: "2026-10-18" });
-  await vencimiento("v-vencido", { dueDate: "2026-10-10" });
-  await vencimiento("v-pagado", { dueDate: "2026-10-16", status: "paid" });
-  await db.collection("commitmentSeries").doc("serie-1").set({
+  await dueItem("v-today", { dueDate: "2026-10-16" });
+  await dueItem("v-in-3", { dueDate: "2026-10-19", kind: "personalDebt", partialPayments: [{ id: "p1", amount: 400, date: "2026-10-01" }] });
+  await dueItem("v-in-2", { dueDate: "2026-10-18" });
+  await dueItem("v-overdue", { dueDate: "2026-10-10" });
+  await dueItem("v-paid", { dueDate: "2026-10-16", status: "paid" });
+  await dueItem("v-postponed", { dueDate: "2026-09-01", status: "postponed", counterparty: "Ferretería" });
+  await db.collection("commitmentSeries").doc("series-2").set({
+    kind: "payment",
+    counterparty: "Bodega",
+    amount: 700,
+    firstDate: "2026-09-05",
+    dayOfMonth: 20,
+    count: null,
+    active: true,
+    generatedUntil: "2026-10-20",
+  });
+  await db.collection("commitmentSeries").doc("series-1").set({
     kind: "payment",
     counterparty: "Arriendo",
     amount: 500,
@@ -231,51 +243,74 @@ console.log("avisos de Cheques y pagos");
     generatedUntil: "2026-11-05",
   });
 
-  const primero = await runCommitmentDigest(db, { now, mailer });
-  check("envía un solo correo", primero.sent === true && enviados.length === 1, primero);
-  check("avisa lo de hoy, lo de 3 días y lo vencido; no lo de 2 días ni lo pagado", primero.count === 3, primero.count);
+  const first = await runCommitmentDigest(db, { now, mailer });
+  check("envía un solo correo", first.sent === true && sent.length === 1, first);
+  check("avisa lo de hoy, lo de 3 días y lo vencido; no lo de 2 días ni lo pagado", first.count === 3, first.count);
   check(
     "el asunto cuenta vencimientos y vencidos",
-    (enviados[0]?.subject || "").includes("3 vencimiento(s), 1 vencido(s)"),
-    enviados[0]?.subject,
+    (sent[0]?.subject || "").includes("3 vencimiento(s), 1 vencido(s)"),
+    sent[0]?.subject,
   );
-  check("va a los destinatarios configurados", enviados[0]?.to === "avisos@terra.test", enviados[0]?.to);
-  const registro = (await db.collection("commitmentNotifications").doc("2026-10-16").get()).data();
-  check("deja registro del envío del día", registro?.status === "sent" && registro?.count === 3, registro);
+  check("va a los destinatarios configurados", sent[0]?.to === "avisos@terra.test", sent[0]?.to);
+  check(
+    "suma los aplazados al correo, rotulados como ya vencidos",
+    (sent[0]?.subject || "").includes("1 aplazado(s)") && (sent[0]?.text || "").includes("01-09-2026 (ya vencido)"),
+    sent[0]?.subject,
+  );
+  check(
+    "lo abonado se descuenta: avisa lo que falta, con lo abonado al lado",
+    (sent[0]?.text || "").includes("Deuda personal · Biosur · $600 (abonado $400 de $1.000"),
+    sent[0]?.text,
+  );
+  check(
+    "trae los próximos 7 días que no tocaba avisar hoy",
+    (sent[0]?.text || "").includes("PRÓXIMOS 7 DÍAS") && (sent[0]?.text || "").includes("18-10-2026"),
+    sent[0]?.text,
+  );
+  const record = (await db.collection("commitmentNotifications").doc("2026-10-16").get()).data();
+  check("deja registro del envío del día", record?.status === "sent" && record?.count === 3, record);
+  const upcomingIds = record?.sections?.find((s) => s.key === "upcoming")?.ids || [];
+  check(
+    "el registro incluye los próximos, con los aplazados primero y sin repetir lo ya avisado",
+    upcomingIds.join(",") === "v-postponed,v-in-2",
+    upcomingIds,
+  );
 
-  const segundo = await runCommitmentDigest(db, { now, mailer });
+  const second = await runCommitmentDigest(db, { now, mailer });
   check(
     "no repite el correo el mismo día",
-    segundo.sent === false && segundo.reason === "already-sent" && enviados.length === 1,
-    segundo,
+    second.sent === false && second.reason === "already-sent" && sent.length === 1,
+    second,
   );
 
-  const serie = (await db.collection("commitmentSeries").doc("serie-1").get()).data();
-  check("extiende el pago recurrente hasta 60 días", serie?.generatedUntil === "2026-12-15", serie?.generatedUntil);
-  check("crea el vencimiento que faltaba", (await db.collection("commitments").doc("serie-1_2026-12-05").get()).exists);
+  const series = (await db.collection("commitmentSeries").doc("series-1").get()).data();
+  check("extiende el pago recurrente hasta 60 días", series?.generatedUntil === "2026-12-15", series?.generatedUntil);
+  check("crea el vencimiento que faltaba", (await db.collection("commitments").doc("series-1_2026-12-05").get()).exists);
   check(
     "no recrea lo que ya se había generado",
-    !(await db.collection("commitments").doc("serie-1_2026-11-05").get()).exists,
+    !(await db.collection("commitments").doc("series-1_2026-11-05").get()).exists,
   );
+  const moved = (await db.collection("commitments").doc("series-2_2026-11-20").get()).data();
+  check("un recurrente con día cambiado se genera en el día nuevo y con su monto", moved?.amount === 700, moved);
 
   await db.collection("commitmentConfig").doc("main").update({ includeOverdue: false });
-  const vacio = await runCommitmentDigest(db, { now: new Date("2026-10-21T12:00:00Z"), mailer });
+  const empty = await runCommitmentDigest(db, { now: new Date("2026-10-21T12:00:00Z"), mailer });
   check(
-    "sin vencimientos no envía nada",
-    vacio.sent === false && vacio.reason === "empty" && enviados.length === 1,
-    vacio,
+    "sin vencimientos para avisar no envía nada, aunque haya próximos o aplazados",
+    empty.sent === false && empty.reason === "empty" && sent.length === 1,
+    empty,
   );
 
-  const prueba = await esperarResolucion(await encolar({ type: "sendCommitmentDigest", requestedBy: "verify-admin" }));
-  check("el correo de prueba sale desde la cola", prueba?.status === "done" && prueba?.result?.sent === true, prueba);
-  check("y va marcado como prueba", (prueba?.result?.subject || "").startsWith("[Prueba]"), prueba?.result?.subject);
-  const ajeno = await esperarResolucion(await encolar({ type: "sendCommitmentDigest", requestedBy: "verify-user" }));
-  check("solo un admin pide el correo de prueba", ajeno?.errorCode === "not-admin", ajeno);
+  const testRun = await waitForResolution(await enqueue({ type: "sendCommitmentDigest", requestedBy: "verify-admin" }));
+  check("el correo de prueba sale desde la cola", testRun?.status === "done" && testRun?.result?.sent === true, testRun);
+  check("y va marcado como prueba", (testRun?.result?.subject || "").startsWith("[Prueba]"), testRun?.result?.subject);
+  const outsider = await waitForResolution(await enqueue({ type: "sendCommitmentDigest", requestedBy: "verify-user" }));
+  check("solo un admin pide el correo de prueba", outsider?.errorCode === "not-admin", outsider);
 }
 
 console.log("");
-if (fallos) {
-  console.log(`${fallos} verificación(es) fallaron — no deployar.`);
+if (failures) {
+  console.log(`${failures} verificación(es) fallaron — no deployar.`);
   process.exit(1);
 }
 console.log("Todo OK. El backend está listo para deployar.");
