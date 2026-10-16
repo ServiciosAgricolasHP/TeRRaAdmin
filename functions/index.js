@@ -19,10 +19,13 @@
 
 import { randomBytes } from "node:crypto";
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { onSchedule } from "firebase-functions/v2/scheduler";
+import { defineSecret } from "firebase-functions/params";
 import { logger } from "firebase-functions/v2";
 import { initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { runCommitmentDigest, TIME_ZONE } from "./commitments.js";
 
 // La base NO se llama `(default)`: es `hpdatabase`. Un trigger que no la
 // declara queda suscrito a una base que no existe y nunca dispara, sin dar
@@ -41,6 +44,11 @@ const JOBS = "functionJobs";
 const USERS = "users";
 const LOGS = "logs";
 
+// Contraseña de aplicación de la cuenta Gmail que envía los avisos de Cheques
+// y pagos (`firebase functions:secrets:set SMTP_PASS`). La cuenta en sí está
+// en `commitmentConfig/main.sender`.
+const SMTP_PASS = defineSecret("SMTP_PASS");
+
 const ROLES = ["admin", "user"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -52,12 +60,12 @@ function jobError(code, message) {
 }
 
 // Lanza si `uid` no es un admin con acceso.
-async function assertAdmin(uid) {
+async function assertAdmin(uid, message = "Solo un admin puede crear cuentas.") {
   const snap = uid ? await db.collection(USERS).doc(uid).get() : null;
   const profile = snap?.exists ? snap.data() : null;
   const isAdmin =
     profile && profile.disabled !== true && String(profile.role || "").toLowerCase() === "admin";
-  if (!isAdmin) throw jobError("not-admin", "Solo un admin puede crear cuentas.");
+  if (!isAdmin) throw jobError("not-admin", message);
 }
 
 // Correo en minúsculas, rol de `ROLES` y alias de hasta 40 caracteres.
@@ -140,6 +148,17 @@ const handlers = {
 
     return { uid: account.uid, email, role, existingAccount: !!existing };
   },
+
+  // Envía ahora el correo de avisos de Cheques y pagos, aunque no haya nada
+  // que avisar, para probar la entrega. No cuenta como el aviso del día.
+  async sendCommitmentDigest(job) {
+    await assertAdmin(job.requestedBy, "Solo un admin puede enviar el correo de prueba.");
+    const result = await runCommitmentDigest(db, { password: SMTP_PASS.value(), test: true });
+    if (!result.sent) {
+      throw jobError(result.reason, "Faltan los destinatarios o la cuenta que envía.");
+    }
+    return result;
+  },
 };
 
 export const runFunctionJob = onDocumentCreated(
@@ -149,6 +168,7 @@ export const runFunctionJob = onDocumentCreated(
     region: REGION,
     memory: "256MiB",
     timeoutSeconds: 120,
+    secrets: [SMTP_PASS],
     // Sin reintento automático: un job que falló se vuelve a pedir a mano desde
     // la Consola. Reintentar solo es seguro cuando la operación es idempotente,
     // y eso hay que decidirlo por handler, no de entrada para todos.
@@ -205,6 +225,25 @@ export const runFunctionJob = onDocumentCreated(
         finishedAt: FieldValue.serverTimestamp(),
       });
     }
+  },
+);
+
+// Aviso diario de los vencimientos de Cheques y pagos (`./commitments.js`).
+// Lo dispara Cloud Scheduler con una cuenta de servicio, sin invoker público.
+// Si el envío falla se reintenta: el candado del día evita que llegue dos veces.
+export const commitmentsDaily = onSchedule(
+  {
+    schedule: "0 8 * * *",
+    timeZone: TIME_ZONE,
+    region: REGION,
+    memory: "256MiB",
+    timeoutSeconds: 120,
+    retryCount: 2,
+    secrets: [SMTP_PASS],
+  },
+  async () => {
+    const result = await runCommitmentDigest(db, { password: SMTP_PASS.value() });
+    logger.info("commitmentsDaily", result);
   },
 );
 

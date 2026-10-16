@@ -101,6 +101,7 @@ arreglas uno, el test se cae y eso es la señal de actualizar los dos.
 - **Cloud Functions quedan fuera del pipeline** — se deployan a mano (ver `functions/README.md`).
   - **El backend no se invoca por HTTP: se le escribe un documento.** La app crea un job en `functionJobs` y un **trigger de Firestore v2** lo levanta, lo ejecuta y escribe el resultado en el mismo doc; la UI lo mira con un `onSnapshot`. Del lado de la app, `services/functionJobsService.js` crea el job (`enqueueJob`) y espera el resultado (`waitForJob`).
   - **No hay funciones callable.** *(a)* Una callable **v2** corre sobre Cloud Run y necesita un binding IAM `allUsers`, que la org policy del proyecto prohíbe: responde **403 con cuerpo HTML** antes de llegar al código. *(b)* Cloud Functions **v1** no existe en `southamerica-west1`, y esa región tampoco tiene App Engine, que gen1 necesita para el staging. *(c)* Un **trigger de Firestore v1** solo dispara sobre la base `(default)`, que en este proyecto no existe. Un trigger v2 lo invoca Eventarc con una service account, sin invoker público.
+  - **Lo programado va con `onSchedule` (v2)**, que Cloud Scheduler invoca con una service account: tampoco necesita invoker público. Es el caso del aviso diario de Cheques y pagos (`commitmentsDaily`), en `us-central1` como el resto.
   - **Región `us-central1`, y no es negociable**: `hpdatabase` está en **`nam5`** (multi-región de EE.UU.) y un trigger de Firestore tiene que vivir en la ubicación de la base. Ver la nota de `nam5` en Arquitectura.
   - **`database: "hpdatabase"` en el trigger.** La base no es `(default)`. Si no coincide, la función queda suscrita a una base inexistente y **nunca dispara, sin dar error** — el peor modo de falla del diseño.
   - **La autorización está en las reglas**: la regla de Firestore decide quién crea un doc en `functionJobs` (`firestore.rules`, ver Tests). El `create` exige que lo pida un admin, con `status == "pending"` y `requestedBy == request.auth.uid`, y nadie edita ni borra un job desde el cliente (la función escribe con el admin SDK, que no pasa por reglas).
@@ -620,7 +621,7 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 
 - Pantalla: `src/screens/AdminConsole.jsx`. Ruta `/admin/console` (solo admin).
 - Secciones para inspección barata: conteos por colección, workdays por mes (12 reads para todo un año), workdays por rango, workdays por ciclo, más los backfills y el diagnóstico del rol admin.
-- **`MAIN_COLLECTIONS` lista las 30 colecciones de la app**, agrupadas por área. Es una lista a mano: al agregar una colección nueva hay que sumarla acá o queda invisible. El botón **📋 Copiar** baja los conteos ya ejecutados separados por tab, listos para pegar en una planilla.
+- **`MAIN_COLLECTIONS` lista las 34 colecciones de la app**, agrupadas por área. Es una lista a mano: al agregar una colección nueva hay que sumarla acá o queda invisible. El botón **📋 Copiar** baja los conteos ya ejecutados separados por tab, listos para pegar en una planilla.
 - **🧪 Ping al backend**: encola un job en `functionJobs` y espera la respuesta. No llama ningún endpoint porque no hay ninguno invocable (ver Despliegue); ejercita el mismo camino que usa cualquier job. Distingue los tres modos de falla a propósito, porque cada uno se arregla en otro lado: `permission-denied` es que las reglas publicadas no dejan crear el job (o quien aprieta no es admin), el timeout de 45 s es la función sin desplegar o mirando otra base, y un job en `error` es la función corriendo y fallando adentro. Es además el **único** chequeo que prueba que el trigger esté suscrito a `hpdatabase` — el emulador no puede.
 - Usa `getCountFromServer` de Firestore — 1 read por cada 1000 docs vs N con `getDocs`. Permite estimar costos sin descargar la colección.
 - **Composición de logs** (`LogsBreakdownSection`): desglosa `logs` por entidad (~1 lectura por entidad) y mide cuántos documentos borraría un TTL de 6/12/24 meses (3 lecturas), para decidir la retención con números. `LOG_ENTITIES` es una lista a mano: una entidad nueva que no se agregue queda invisible, y la fila "sin clasificar" del total es la que lo delata.
@@ -823,6 +824,17 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 - **El porcentaje va en UNA celda (`C4` de la hoja `Proyección`) y las filas la referencian** con `ROUND(D7*$C$4,0)`. Quien recibe el archivo mueve el supuesto en Excel y ve la temporada entera recalcularse, en vez de pedir otra corrida por cada escenario.
 - **`isAnalysisTab`** (`resumen` + `proyeccion`) apaga filtros, tarjetas y tabla del listado. La usan los cuatro lugares que dependen de eso, así un tab de análisis nuevo se suma solo ahí.
 
+## Cheques y pagos / Commitments
+
+- Pantalla: `src/screens/Commitments.jsx`. Ruta `/cheques-pagos`, para todas las cuentas. Servicio `services/commitmentsService.js`, lógica pura en `utils/commitments.js` (con tests). Colecciones `commitments`, `commitmentSeries`, `commitmentConfig/main` y `commitmentNotifications` (ver `docs/data-model.md`).
+- **Un documento por vencimiento**: cheque emitido, cheque recibido, pago comprometido o cuota de crédito. Los cheques recibidos son plata que entra y el resumen no los suma con lo que se paga.
+- **"Vencido" no se guarda**: es un `pending` con `dueDate` pasada (`displayStatus`). Los estados guardados son `pending`, `paid` (un cheque se "cobra", lo demás se "paga") y `cancelled`.
+- **Créditos y pagos recurrentes** son una serie (`commitmentSeries`) que genera vencimientos normales. Un crédito crea todas sus cuotas de una vez. Un recurrente se genera 60 días hacia adelante y la función diaria lo extiende desde `generatedUntil`, así un vencimiento eliminado a mano no reaparece. "Detener pago recurrente" (desde la edición de uno de sus vencimientos) borra los pendientes posteriores a hoy.
+- Las fechas son etiquetas `YYYY-MM-DD` y se calculan con enteros. El día 31 de una serie cae el último día de los meses cortos.
+- **📥 Importar Excel** (solo admin) lee la planilla "Control de Cheques" (`mapExcelRow`): reconoce fechas `Date`, `DD-MM-YY` y `DD-MM-YYYY`, el banco escrito a mano y la empresa por alias. La fecha de la planilla es la del cheque. El id es `chq_{banco}_{N°}` y una fila que ya existe se salta, así reimportar no pisa lo que se marcó en la app.
+- **Avisos por correo** (`functions/commitments.js`, función programada `commitmentsDaily`, 8:00 de Chile): un solo correo con lo que vence en los días de `commitmentConfig/main.offsets` (por defecto 3, 1 y el mismo día) más los vencidos sin marcar. Sin nada que avisar no se envía. `commitmentNotifications/{día}` se crea antes de enviar y evita el doble envío. ⚙ Avisos (solo admin) edita destinatarios, días y la cuenta que envía, y 📧 Enviar prueba manda el correo ya mismo por la cola `functionJobs`. La contraseña de Gmail es el secreto `SMTP_PASS` (ver `functions/README.md`).
+- La aritmética de fechas del backend es una copia de `utils/commitments.js`: el backend se despliega sin `src/`. Si cambia una, cambia la otra.
+
 ## Libro de Precios / PriceBook
 
 - Pantalla: `src/screens/PriceBook.jsx`. Ruta `/price-book`. Colecciones `priceBookEntries` + `priceBookConfig/main`.
@@ -877,7 +889,7 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 ## Layout
 
 - **Sidebar colapsable** (`layout.sidebarOpen` en `localStorage`): un solo botón ☰ funciona como toggle en desktop y abre drawer en mobile (decidido por `matchMedia("(min-width: 768px)")`).
-- Nav incluye: Dashboard, Faenas, Calendario, Trabajadores, Transportes, Anticipos / Bonos, Nómina, Facturación, Links útiles. Items admin (Usuarios, Auditoría, Migrar CSV, Limpiar pagados, Consola) se ven solo con `isAdmin`.
+- Nav incluye: Dashboard, Faenas, Calendario, Trabajadores, Transportes, Anticipos / Bonos, Nómina, Facturación, Cheques y pagos, Links útiles. Items admin (Usuarios, Auditoría, Migrar CSV, Limpiar pagados, Consola) se ven solo con `isAdmin`.
 - **Versión en el header** — `TeRRA v1.1.{commitCount}` autogenerado en build-time por `vite.config.js` (via `git rev-list --count ${VERSION_RESET_COMMIT}..HEAD`, inyectado como `__APP_VERSION__`). El conteo arranca desde un commit de reset, no desde el inicio del repo. Sirve para diagnosticar caché PWA viejo de un vistazo: si el header sigue mostrando una versión anterior tras un deploy, el SW tiene un bundle stale. Ojo en CI: sin `fetch-depth: 0` el conteo da 0.
 
 ## Env
@@ -898,6 +910,7 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 /advances                      Anticipos / Bonos
 /payroll                       Nómina
 /facturacion                   Facturación (import RCV del SII)
+/cheques-pagos                 Cheques y pagos (vencimientos y avisos por correo)
 /price-book                    Libro de Precios
 /info-cuentas                  Información y Cuentas (libreta de contactos)
 /links                         Links útiles

@@ -45,6 +45,11 @@ const MAIN_COLLECTIONS = [
   { id: "companies", group: "Facturación", label: "Empresas", note: "" },
   { id: "costCenters", group: "Facturación", label: "Centros de costo", note: "" },
   { id: "informalExpenses", group: "Facturación", label: "Gastos informales", note: "" },
+  // Cheques y pagos
+  { id: "commitments", group: "Cheques y pagos", label: "Vencimientos", note: "cheques, cuotas y pagos comprometidos" },
+  { id: "commitmentSeries", group: "Cheques y pagos", label: "Créditos y pagos recurrentes", note: "las series que generan vencimientos" },
+  { id: "commitmentConfig", group: "Cheques y pagos", label: "Config de avisos", note: "normalmente 1 documento" },
+  { id: "commitmentNotifications", group: "Cheques y pagos", label: "Avisos enviados", note: "1 por día con correo; la escribe la función diaria" },
 
   // Otros registros
   { id: "priceBookEntries", group: "Otros registros", label: "Libro de precios", note: "" },
@@ -89,6 +94,7 @@ const LOG_ENTITIES = [
   "carrier", "catalog", "qrPrefix", "harvestWeight", "dteDocument", "company",
   "costCenter", "informalExpense", "priceBookEntry", "priceBookConfig",
   "contactCard", "interestLink", "groupLeader", "laborGroup", "indicator",
+  "commitment", "commitmentSeries", "commitmentConfig",
   "user", "log",
 ];
 
