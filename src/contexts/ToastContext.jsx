@@ -2,9 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { createPortal } from "react-dom";
 
 // Notificaciones tipo toast, en lugar de `window.alert`. Cuatro niveles
-// (success/error/info/warning), cierre automático configurable, cierre con
-// click y mensajes multilínea (`\n` es salto de línea). Se apilan arriba a la
-// derecha.
+// (success/error/info/warning), cierre automático configurable y mensajes
+// multilínea (`\n` es salto de línea). Un click sobre el toast copia su texto,
+// para pegar un error tal cual; la × lo cierra. Se apilan arriba a la derecha.
 
 const ToastContext = createContext(null);
 
@@ -114,6 +114,7 @@ function ToastItem({ toast, onDismiss }) {
   const remainingRef = useRef(toast.duration);
   const startedRef = useRef(Date.now());
   const timerRef = useRef(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!toast.duration || toast.duration <= 0) return;
@@ -138,11 +139,21 @@ function ToastItem({ toast, onDismiss }) {
     timerRef.current = setTimeout(onDismiss, remainingRef.current);
   };
 
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText([toast.title, toast.message].filter(Boolean).join("\n"));
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  };
+
   return (
     <div
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      onClick={onDismiss}
+      onClick={copy}
+      title="Click para copiar el texto"
       role="alert"
       className={`pointer-events-auto cursor-pointer animate-[toastIn_180ms_ease-out] rounded-md border ${meta.border} ${meta.bg} bg-[var(--color-surface)] shadow-lg`}
       style={{ animation: "toastIn 180ms ease-out" }}
@@ -159,6 +170,7 @@ function ToastItem({ toast, onDismiss }) {
             {toast.message}
           </div>
         </div>
+        {copied && <span className={`mt-0.5 shrink-0 text-[11px] font-medium ${meta.text}`}>Copiado</span>}
         <button
           onClick={(e) => { e.stopPropagation(); onDismiss(); }}
           aria-label="Cerrar"
