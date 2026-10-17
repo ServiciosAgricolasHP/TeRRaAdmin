@@ -29,6 +29,10 @@
 //      vencimientos (aunque haya próximos o aplazados), que extienda los pagos
 //      recurrentes, y que el correo de prueba salga desde la cola solo para un
 //      admin. El correo no sale: se reemplaza el transporte.
+//   6. Que `publishPortal` deje una ficha por trabajador con solo lo suyo (la
+//      cuenta en 4 dígitos, sin correo ni RUT de pago), la cabecera con el
+//      nombre y el estado vivos de la nómina, borre las fichas de quienes ya
+//      no están y lo pida solo un admin.
 //
 // **Lo que este archivo NO puede probar**: que el trigger esté suscrito a la
 // base correcta. El emulador de Firestore no soporta bases múltiples —lo dice
@@ -61,13 +65,13 @@ initializeApp({ projectId: PROJECT });
 const db = getFirestore(DATABASE);
 
 let failures = 0;
-function check(nombre, condicion, detalle) {
-  if (condicion) {
-    console.log(`  ok   ${nombre}`);
+function check(name, condition, detail) {
+  if (condition) {
+    console.log(`  ok   ${name}`);
   } else {
     failures += 1;
-    console.log(`  FALLA ${nombre}`);
-    if (detalle !== undefined) console.log(`        ${JSON.stringify(detalle)}`);
+    console.log(`  FALLA ${name}`);
+    if (detail !== undefined) console.log(`        ${JSON.stringify(detail)}`);
   }
 }
 
@@ -306,6 +310,68 @@ console.log("avisos de Cheques y pagos");
   check("y va marcado como prueba", (testRun?.result?.subject || "").startsWith("[Prueba]"), testRun?.result?.subject);
   const outsider = await waitForResolution(await enqueue({ type: "sendCommitmentDigest", requestedBy: "verify-user" }));
   check("solo un admin pide el correo de prueba", outsider?.errorCode === "not-admin", outsider);
+}
+
+console.log("");
+console.log("portal de trabajadores");
+{
+  await db.collection("payrolls").doc("pay-42").set({ name: "Semana 42 Corregida", status: "paid" });
+  await db.collection("payrollSnapshots").doc("pay-42").set({
+    version: 1,
+    payrollId: "pay-42",
+    generatedAt: "2026-10-15T13:45:04.512Z",
+    payroll: { name: "Semana 42", status: "pending", total: 300 },
+    cycles: [
+      { id: "c1", label: "Fundo/Norte/Ciclo 1", faenaName: "Fundo", subfaenaName: "Norte", dayPrices: { l1: {} }, labors: [{ id: "l1", name: "Principal", type: "main" }] },
+      { id: "c2", label: "Fundo/Sur/Ciclo 2", faenaName: "Fundo", subfaenaName: "Sur", dayPrices: {}, labors: [{ id: "l2", name: "Poda", type: "trato" }] },
+    ],
+    workers: [
+      {
+        rut: "11111111-1", name: "Ana", groupLeader: "GRUPO A", bankCode: "012", accountType: 3, accountNumber: "000123456789",
+        email: "ana@terra.test", paymentRut: "22222222-2", grossAmount: 200, advance: 50, bonus: 0, amount: 150,
+        byCycle: { c1: 200 }, workdayIds: ["w1", "w2"], advanceIds: ["a1"], anticipoApplications: [{ advanceId: "a1", amount: 50 }], bonoApplications: [],
+      },
+      {
+        rut: "3.333.333-3", name: "Beto", bankCode: "EFE", accountNumber: "", grossAmount: 100, advance: 0, bonus: 0, amount: 100,
+        byCycle: { c2: 100 }, workdayIds: ["w3"],
+      },
+    ],
+    workdays: [
+      { id: "w1", cycleId: "c1", laborId: "l1", workerRut: "11111111-1", date: "2026-10-10", amount: 100 },
+      { id: "w2", cycleId: "c1", laborId: "l1", workerRut: "11.111.111-1", date: "2026-10-11", amount: 100 },
+      { id: "w3", cycleId: "c2", laborId: "l2", workerRut: "3333333-3", date: "2026-10-12", amount: 100, qty: 10 },
+    ],
+    advances: [{ id: "a1", workerRut: "11111111-1", type: "anticipo", amount: 50, date: "2026-10-01", note: "Adelanto" }],
+  });
+  await db.collection("portalPayslips").doc("99999999-9").set({ payrollId: "old" });
+
+  const done = await waitForResolution(await enqueue({ type: "publishPortal", requestedBy: "verify-admin", params: { payrollId: "pay-42" } }));
+  check("publica desde la cola", done?.status === "done" && done?.result?.published === 2, done);
+  check("borra las fichas de quienes ya no están", done?.result?.removed === 1 && !(await db.collection("portalPayslips").doc("99999999-9").get()).exists, done?.result);
+
+  const ana = (await db.collection("portalPayslips").doc("11111111-1").get()).data();
+  const worker = ana?.workers?.[0] || {};
+  check("una ficha por trabajador, con la forma del JSON", ana?.workers?.length === 1 && ana?.payrollId === "pay-42", ana);
+  check("la cuenta va en 4 dígitos, sin correo ni RUT de pago", worker.accountNumber === "6789" && !("email" in worker) && !("paymentRut" in worker), worker);
+  check(
+    "solo sus jornadas, también las guardadas con otro formato de RUT",
+    ana?.workdays?.map((w) => w.id).join(",") === "w1,w2" && ana.workdays.every((w) => w.workerRut === "11111111-1"),
+    ana?.workdays,
+  );
+  check("solo sus ciclos, sin los precios del día", ana?.cycles?.map((c) => c.id).join(",") === "c1" && !("dayPrices" in ana.cycles[0]), ana?.cycles);
+  check("solo sus anticipos", ana?.advances?.map((a) => a.id).join(",") === "a1", ana?.advances);
+  check("nombre y estado vivos de la nómina", ana?.payroll?.name === "Semana 42 Corregida" && ana?.payroll?.status === "paid", ana?.payroll);
+  check("el RUT con puntos queda como id normalizado", (await db.collection("portalPayslips").doc("3333333-3").get()).exists);
+
+  const meta = (await db.collection("portalMeta").doc("current").get()).data();
+  check("deja la cabecera de la nómina publicada", meta?.payrollId === "pay-42" && meta?.workerCount === 2 && !!meta?.publishedAt, meta);
+  const logs = await db.collection("logs").where("entity", "==", "portalMeta").get();
+  check("queda en la auditoría", logs.docs.some((d) => d.data().meta?.payrollId === "pay-42"));
+
+  const denied = await waitForResolution(await enqueue({ type: "publishPortal", requestedBy: "verify-user", params: { payrollId: "pay-42" } }));
+  check("solo un admin publica", denied?.errorCode === "not-admin", denied);
+  const missing = await waitForResolution(await enqueue({ type: "publishPortal", requestedBy: "verify-admin", params: { payrollId: "no-existe" } }));
+  check("una nómina que no existe falla sin tocar lo publicado", missing?.errorCode === "not-found" && (await db.collection("portalMeta").doc("current").get()).data()?.payrollId === "pay-42", missing);
 }
 
 console.log("");

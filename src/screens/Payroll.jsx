@@ -56,6 +56,8 @@ import { getTratoTierTotals, getDayCombos, getDaySingle, getTratoTiers, tratoTyp
 import { describeStage, normalizeStages, stageTag } from "../utils/tratoEtapas";
 import { useCatalogs } from "../contexts/CatalogsContext";
 import { useToast } from "../contexts/ToastContext";
+import { useAuth } from "../contexts/AuthContext";
+import { getPublishedPortal, publishPayrollToPortal } from "../services/portalService";
 import {
   aggregateWorkerAmounts,
   downloadBchileXlsx,
@@ -191,6 +193,11 @@ const withCurrentRuts = (items, rutOf) =>
 
 export default function Payroll() {
   const toast = useToast();
+  const { user, isAdmin } = useAuth();
+  // Cabecera de la nómina publicada en el portal de trabajadores.
+  const [portal, setPortal] = useState(null);
+  const [publishing, setPublishing] = useState(null);
+  const [publishBusy, setPublishBusy] = useState(false);
   const [tab, setTab] = useState("create"); // create | history | workers
   const [loading, setLoading] = useState(true);
   const [faenas, setFaenas] = useState([]);
@@ -387,8 +394,32 @@ export default function Payroll() {
 
   useEffect(() => {
     load();
+    getPublishedPortal().then(setPortal);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Publica la nómina elegida en el portal de trabajadores; reemplaza la que
+  // estaba publicada.
+  const runPublish = async () => {
+    if (!publishing) return;
+    setPublishBusy(true);
+    try {
+      const outcome = await publishPayrollToPortal(publishing.id, user);
+      if (outcome.status === "done") {
+        toast.success(`Publicada en el portal: ${outcome.result?.published ?? 0} trabajador(es)`);
+        setPublishing(null);
+        setPortal(await getPublishedPortal());
+      } else if (outcome.status === "timeout") {
+        toast.error("El backend no respondió. Pruébalo con el ping de la Consola admin.");
+      } else {
+        toast.error(outcome.error || "No se pudo publicar en el portal.");
+      }
+    } catch (err) {
+      toast.error(err?.message || String(err));
+    } finally {
+      setPublishBusy(false);
+    }
+  };
 
   // Relee desde Firestore sin la caché local (memoria y localStorage): invalida
   // lo que alimenta el armado de la nómina y recarga. Sirve cuando otro usuario
@@ -1242,6 +1273,7 @@ export default function Payroll() {
           onChangeClassification={onChangeClassification}
           onOpen={setDetailPayroll}
           onRename={setRenaming}
+          publishedPayrollId={portal?.payrollId || null}
         />
       ) : (
         <WorkersHistory
@@ -1326,6 +1358,8 @@ export default function Payroll() {
           onRedownload={onRedownload}
           onDownloadNominaOnly={onDownloadNominaOnly}
           onDownloadSnapshot={onDownloadSnapshot}
+          onPublishPortal={isAdmin ? setPublishing : null}
+          publishedPayrollId={portal?.payrollId || null}
           onChanged={async () => {
             // Relee la nómina para refrescar el modal y después recarga la lista.
             try {
@@ -1339,6 +1373,26 @@ export default function Payroll() {
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={!!publishing}
+        title="Publicar en el portal de trabajadores"
+        message={
+          publishing
+            ? `¿Publicar "${publishing.name || "Nómina"}" en el portal? ${
+                portal?.payrollId === publishing.id
+                  ? "Ya es la publicada: se actualiza con lo que tiene ahora."
+                  : portal?.payroll?.name
+                    ? `Reemplaza a "${portal.payroll.name}", que es la publicada ahora.`
+                    : "Hoy no hay ninguna publicada."
+              } Cada trabajador ve solo su detalle, buscando su RUT.`
+            : ""
+        }
+        confirmLabel="Publicar"
+        busy={publishBusy}
+        onConfirm={runPublish}
+        onCancel={() => setPublishing(null)}
+      />
 
       <ProgressOverlay info={progress} />
     </div>
@@ -2486,7 +2540,19 @@ const PAY_STATE_PILL = {
   pending: { label: "Pendiente", short: "⏳ Pendiente", cls: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]" },
 };
 
-function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRevertBank, onAskDelete, onRedownload, onDownloadNominaOnly, onDownloadSnapshot, onChangeClassification, onOpen, onRename }) {
+// Marca la nómina que está publicada en el portal de trabajadores.
+function PortalBadge() {
+  return (
+    <span
+      title="Es la nómina publicada en el portal de trabajadores"
+      className="shrink-0 rounded-full bg-[var(--color-accent-soft)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-accent)]"
+    >
+      🌐 Portal
+    </span>
+  );
+}
+
+function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRevertBank, onAskDelete, onRedownload, onDownloadNominaOnly, onDownloadSnapshot, onChangeClassification, onOpen, onRename, publishedPayrollId = null }) {
   const isMobile = useIsMobile();
   const [statusFilter, setStatusFilter] = useState("all"); // all | pending | paid | cashPending
   const [monthFilter, setMonthFilter] = useState("all"); // all | YYYY-MM
@@ -2713,6 +2779,7 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRe
                     >
                       {p.name}
                     </button>
+                    {p.id === publishedPayrollId && <PortalBadge />}
                     <button
                       onClick={() => onRename(p)}
                       title="Renombrar nómina"
@@ -2846,6 +2913,7 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRe
                   <button onClick={() => onOpen(p)} className="text-[var(--color-accent)] hover:underline">
                     {p.name}
                   </button>
+                  {p.id === publishedPayrollId && <PortalBadge />}
                   <button
                     onClick={() => onRename(p)}
                     title="Renombrar nómina"
@@ -4371,7 +4439,7 @@ async function printCashReceipts(payroll, cashGroups, titleOverrides = {}, catal
   w.document.close();
 }
 
-function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPayrolls = [], onClose, onRedownload, onDownloadNominaOnly, onDownloadSnapshot, onChanged }) {
+function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPayrolls = [], onClose, onRedownload, onDownloadNominaOnly, onDownloadSnapshot, onPublishPortal = null, publishedPayrollId = null, onChanged }) {
   const { catalogs } = useCatalogs();
   const toast = useToast();
   const isMobile = useIsMobile();
@@ -6532,6 +6600,15 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
           >
             📄 JSON
           </button>
+          {onPublishPortal && (
+            <button
+              onClick={() => onPublishPortal(payroll)}
+              title="Publicar esta nómina en el portal de trabajadores: cada uno ve su detalle buscando su RUT"
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm font-medium hover:bg-[var(--color-accent-soft)]"
+            >
+              {payroll.id === publishedPayrollId ? "🌐 Actualizar en portal" : "🌐 Publicar en portal"}
+            </button>
+          )}
           <button
             onClick={() => onRedownload(payroll)}
             title="XLSX completo (Nómina + Resumen + Transferencias + Efectivo)"

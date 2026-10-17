@@ -419,8 +419,20 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
 - Colección separada de `payrolls` para no inflar los docs del historial.
 - Lo escribe `payrollSnapshotsService` en el mismo flujo de "Generar y guardar".
 - Botón **📥 JSON** en la fila del historial vuelve a bajar el archivo.
-- El schema es **contrato externo**, pensado para el portal público de trabajadores (otra app): cambiarlo coordinadamente.
+- El schema es **contrato externo** con el portal público de trabajadores (otra app, ver "Portal de trabajadores"): cambiarlo coordinadamente.
 - **Escribir, borrar y releer el snapshot viven en `services/payrollSnapshots.js`** (`saveSnapshot`, `deleteSnapshot`, `readSnapshot`). Los `catch` silenciosos son deliberados: el snapshot es un derivado y que falle no puede tumbar la generación ni el borrado de la nómina, que son las operaciones que mueven la plata. `readSnapshot` saca el `id` que inyecta Firestore (el JSON es contrato externo) y, si el doc no existe, lee el campo `snapshot` embebido en la nómina. También viven ahí las formas de ciclo, jornada y anticipo (`snapshotCycleOf`, `snapshotWorkdayOf`, `snapshotAdvanceOf`), que usan todos los caminos que escriben el JSON, y los ajustes al achicar o agrandar la nómina (`pruneSnapshot`, `extendSnapshot`). Renombrar y el parche del recálculo siguen en `Payroll.jsx` como llamadas directas al servicio.
+
+### Portal de trabajadores
+
+- El portal (repo `portalTrabajadoresHP`, GitHub Pages) muestra **una nómina por vez**: cada trabajador ingresa su RUT y ve su detalle de pago.
+- **Se publica desde el detalle de una nómina: 🌐 Publicar en portal** (solo admin). El historial marca con **🌐 Portal** la nómina publicada, y el botón dice **🌐 Actualizar en portal** cuando ya lo está. Sirve para volver a publicarla después de editarla.
+- Lo hace el job `publishPortal` (`functions/portal.js`), que lee el snapshot de `payrollSnapshots` (o el embebido en la nómina) y el nombre y estado vivos de `payrolls`. Escribe:
+  - **una ficha por trabajador** en `portalPayslips/{rut}`, con el RUT normalizado (`12345678-9`) como id;
+  - la cabecera en `portalMeta/current`;
+  - y borra las fichas de quienes no están en la nómina nueva.
+- Cada ficha es el JSON de la nómina **recortado a esa persona**: sus jornadas (ligadas también por `workdayIds`, por si guardan un RUT anterior), sus anticipos y bonos, y los ciclos donde trabajó (sin `dayPrices`). No trae correo ni RUT de pago, y de la cuenta solo los últimos 4 dígitos (`buildPortalPayslips`).
+- **Reglas**: las dos colecciones se leen sin sesión y de a un documento (`get`). Listar queda para un admin, que es lo que usa la Consola para contarlas. Nadie las escribe desde la app: solo la función, con el admin SDK. Así el portal no expone la nómina entera, como pasaba con el `data.json` estático.
+- El portal las lee con la API REST de Firestore, sin SDK ni API key. Una ficha cuyo `payrollId` no es el de la cabecera cuenta como "no encontrado".
 
 ### Anticipos en comprobantes
 
@@ -621,7 +633,7 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 
 - Pantalla: `src/screens/AdminConsole.jsx`. Ruta `/admin/console` (solo admin).
 - Secciones para inspección barata: conteos por colección, workdays por mes (12 reads para todo un año), workdays por rango, workdays por ciclo, más los backfills y el diagnóstico del rol admin.
-- **`MAIN_COLLECTIONS` lista las 34 colecciones de la app**, agrupadas por área. Es una lista a mano: al agregar una colección nueva hay que sumarla acá o queda invisible. El botón **📋 Copiar** baja los conteos ya ejecutados separados por tab, listos para pegar en una planilla.
+- **`MAIN_COLLECTIONS` lista las 36 colecciones de la app**, agrupadas por área. Es una lista a mano: al agregar una colección nueva hay que sumarla acá o queda invisible. El botón **📋 Copiar** baja los conteos ya ejecutados separados por tab, listos para pegar en una planilla.
 - **🧪 Ping al backend**: encola un job en `functionJobs` y espera la respuesta. No llama ningún endpoint porque no hay ninguno invocable (ver Despliegue); ejercita el mismo camino que usa cualquier job. Distingue los tres modos de falla a propósito, porque cada uno se arregla en otro lado: `permission-denied` es que las reglas publicadas no dejan crear el job (o quien aprieta no es admin), el timeout de 45 s es la función sin desplegar o mirando otra base, y un job en `error` es la función corriendo y fallando adentro. Es además el **único** chequeo que prueba que el trigger esté suscrito a `hpdatabase` — el emulador no puede.
 - Usa `getCountFromServer` de Firestore — 1 read por cada 1000 docs vs N con `getDocs`. Permite estimar costos sin descargar la colección.
 - **Composición de logs** (`LogsBreakdownSection`): desglosa `logs` por entidad (~1 lectura por entidad) y mide cuántos documentos borraría un TTL de 6/12/24 meses (3 lecturas), para decidir la retención con números. `LOG_ENTITIES` es una lista a mano: una entidad nueva que no se agregue queda invisible, y la fila "sin clasificar" del total es la que lo delata.

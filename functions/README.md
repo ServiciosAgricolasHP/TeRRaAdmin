@@ -5,13 +5,16 @@ en la colección `functionJobs` y un trigger de Firestore lo levanta, lo ejecuta
 escribe el resultado en el mismo documento. La UI mira ese documento con un
 listener.
 
-Hay tres tipos de job:
+Hay cuatro tipos de job:
 
 - `ping` verifica el plomo de punta a punta (Consola admin → Ping al backend).
 - `createUser` crea una cuenta en Authentication y su perfil en `users/{uid}`
   (Usuarios → + Nueva cuenta).
 - `sendCommitmentDigest` envía ahora el correo de avisos de Cheques y pagos,
   marcado como prueba (Cheques y pagos → ⚙ Avisos → 📧 Enviar prueba).
+- `publishPortal` publica una nómina en el portal de trabajadores: una ficha
+  por RUT en `portalPayslips` y la cabecera en `portalMeta/current`
+  (`portal.js`; Nómina → detalle → 🌐 Publicar en portal).
 
 Y una función programada, `commitmentsDaily` (`commitments.js`): todos los días
 a las 8:00 de Chile envía un correo con los cheques, cuotas y pagos que vencen

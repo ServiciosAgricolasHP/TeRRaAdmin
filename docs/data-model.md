@@ -147,6 +147,31 @@ Snapshot JSON inmutable de cada nómina, separado del documento de `payrolls` pa
 
 > Se descarga como `.json` al generar y se puede volver a bajar desde la fila del historial ("📥 JSON").
 
+### `portalPayslips`
+Ficha de un trabajador en la nómina publicada en el portal de trabajadores. La escribe solo el job `publishPortal` (`functions/portal.js`); se lee sin sesión y de a un documento (`firestore.rules`).
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | RUT normalizado: sin puntos, en mayúsculas, con guion (`12345678-9`) |
+| `payrollId` | ref→`payrolls` | la nómina de la ficha. Si no es el de `portalMeta/current`, el portal la trata como no encontrada |
+| `version`, `generatedAt` | | del snapshot |
+| `payroll` | `{ name, status }` | vivos de `payrolls` al publicar |
+| `workers` | `[PayrollItem]` | **un solo** trabajador, solo con `rut`, `name`, `groupLeader`, `bankCode`, `accountType`, `accountNumber` (**últimos 4 dígitos**), `grossAmount`, `advance`, `bonus`, `amount`, `byCycle`, `anticipoApplications` y `bonoApplications` |
+| `cycles` | snapshot | solo los ciclos donde trabajó, sin `dayPrices` |
+| `workdays` | snapshot | solo sus jornadas, con `workerRut` igual al `rut` de la ficha |
+| `advances` | snapshot | solo sus anticipos y bonos |
+| `publishedAt` | string (ISO) | |
+
+### `portalMeta`
+Un solo documento, `current`: la cabecera de la nómina publicada en el portal. Lo escribe el job `publishPortal`.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `payrollId` | ref→`payrolls` | |
+| `version`, `generatedAt` | | del snapshot |
+| `payroll` | `{ name, status }` | |
+| `workerCount` | number | fichas publicadas |
+| `publishedAt` | string (ISO) | |
+| `publishedBy` | string | uid del admin que publicó |
+
 ### `interestLinks`
 Atajos a herramientas externas mostrados en `/links`. CRUD con reordenamiento drag-and-drop.
 | Campo | Tipo | Notas |
@@ -543,6 +568,7 @@ Auditoría — una fila por mutación.
 | `auto: "emptySummary"`, `auto: "emptyPayroll"` | `recalcPaymentTotal` / `recalcPayrollTotal` | borrado automático de un resumen que se quedó sin vueltas, o de una quincena que se quedó sin resúmenes |
 | `auto: "extendRecurring"`, `dates` | `commitmentsDaily` (`functions/commitments.js`) | vencimientos que la función diaria le generó a un pago recurrente (`entity: "commitmentSeries"`, sin `uid`) |
 | `addedAbono`, `editedAbonoId`, `removedAbonoId` | `paymentsService` | detalle del abono tocado |
+| `jobId`, `payrollId`, `workerCount`, `removed` | `publishPortal` (`functions/portal.js`) | qué nómina se publicó en el portal, cuántas fichas quedaron y cuántas se borraron (`entity: "portalMeta"`) |
 | `op: "applyAdvances"`, `count`, `total`, `advanceIds`, `sobrantes?` | `applyAdvancesToPayroll` | un log por nómina (`entity: "payroll"`) con los anticipos que descontó. `sobrantes: [{ advanceId, pedido, aplicado }]` son las aplicaciones recortadas |
 | `op: "restoreAdvances"`, `count`, `advanceIds` | `restoreAdvancesFromPayroll` | los anticipos que soltó la nómina |
 | `op: "setPayrollAdvances"`, `cambios` | `setPayrollAdvanceAmounts` | `cambios: [{ advanceId, antes, despues }]`: cuánto descontaba y cuánto descuenta la nómina de cada anticipo |

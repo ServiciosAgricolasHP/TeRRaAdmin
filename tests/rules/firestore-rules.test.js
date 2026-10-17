@@ -284,6 +284,36 @@ describe("avisos de Cheques y pagos (commitmentNotifications)", () => {
   });
 });
 
+describe("portal de trabajadores (portalPayslips, portalMeta)", () => {
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      const db = ctx.firestore();
+      await setDoc(doc(db, "portalPayslips/11111111-1"), { payrollId: "p1", workers: [{ rut: "11111111-1" }] });
+      await setDoc(doc(db, "portalMeta/current"), { payrollId: "p1" });
+    });
+  });
+
+  it("sin sesión se lee una ficha por RUT y la cabecera", async () => {
+    await assertSucceeds(getDoc(doc(anon(), "portalPayslips/11111111-1")));
+    await assertSucceeds(getDoc(doc(anon(), "portalPayslips/22222222-2")));
+    await assertSucceeds(getDoc(doc(anon(), "portalMeta/current")));
+  });
+
+  it("solo un admin lista las fichas", async () => {
+    await assertFails(getDocs(collection(anon(), "portalPayslips")));
+    await assertFails(getDocs(collection(as("sup1"), "portalPayslips")));
+    await assertFails(getDocs(query(collection(anon(), "portalPayslips"), where("payrollId", "==", "p1"))));
+    await assertSucceeds(getDocs(collection(as("admin1"), "portalPayslips")));
+  });
+
+  it("nadie las escribe desde la app: las publica la función", async () => {
+    await assertFails(setDoc(doc(as("admin1"), "portalPayslips/11111111-1"), { payrollId: "p2" }));
+    await assertFails(setDoc(doc(as("sup1"), "portalMeta/current"), { payrollId: "p2" }));
+    await assertFails(deleteDoc(doc(as("admin1"), "portalPayslips/11111111-1")));
+    await assertFails(setDoc(doc(anon(), "portalPayslips/33333333-3"), { payrollId: "p2" }));
+  });
+});
+
 describe("escáner y apps de cosecha, sin sesión", () => {
   it("leen lo que usan", async () => {
     const db = anon();
