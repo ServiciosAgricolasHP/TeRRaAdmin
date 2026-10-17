@@ -37,10 +37,11 @@ service cloud.firestore {
 
     // ── Colecciones de la app ──────────────────────────────────────────────
     // Lectura y escritura para cualquier cuenta con perfil. `users`, `logs`,
-    // `functionJobs` y `commitmentNotifications` tienen reglas propias.
+    // `functionJobs`, `commitmentNotifications` y las del portal de
+    // trabajadores tienen reglas propias.
     match /{coll}/{docId} {
       allow read, write: if hasProfile()
-        && !(coll in ['users', 'functionJobs', 'logs', 'commitmentNotifications']);
+        && !(coll in ['users', 'functionJobs', 'logs', 'commitmentNotifications', 'portalPayslips', 'portalMeta']);
     }
 
     // ── Perfiles ───────────────────────────────────────────────────────────
@@ -90,6 +91,20 @@ service cloud.firestore {
     // lo lee.
     match /commitmentNotifications/{day} {
       allow read: if hasProfile();
+    }
+
+    // ── Portal de trabajadores ─────────────────────────────────────────────
+    // La ficha de cada trabajador de la nómina publicada (id = RUT) y la
+    // cabecera de esa nómina. Se leen sin sesión y de a un documento; listar
+    // (y contar) queda para un admin. Las escribe solo la función
+    // `publishPortal`.
+    match /portalPayslips/{rut} {
+      allow get: if true;
+      allow list: if isAdmin();
+    }
+    match /portalMeta/{docId} {
+      allow get: if true;
+      allow list: if isAdmin();
     }
 
     // ── Sin sesión: escáner (scan_IS) y apps de cosechas y reportes ────────

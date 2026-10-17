@@ -32,6 +32,8 @@ const MAIN_COLLECTIONS = [
   { id: "groupLeader", group: "Personas y pagos", label: "Líderes de grupo", note: "lista curada" },
   { id: "payrolls", group: "Personas y pagos", label: "Nóminas", note: "" },
   { id: "payrollSnapshots", group: "Personas y pagos", label: "JSON de nóminas", note: "uno por nómina" },
+  { id: "portalPayslips", group: "Personas y pagos", label: "Portal: fichas", note: "una por trabajador de la nómina publicada" },
+  { id: "portalMeta", group: "Personas y pagos", label: "Portal: nómina publicada", note: "un solo documento" },
   { id: "advances", group: "Personas y pagos", label: "Anticipos / Bonos", note: "" },
 
   // Transporte
@@ -94,7 +96,7 @@ const LOG_ENTITIES = [
   "carrier", "catalog", "qrPrefix", "harvestWeight", "dteDocument", "company",
   "costCenter", "informalExpense", "priceBookEntry", "priceBookConfig",
   "contactCard", "interestLink", "groupLeader", "laborGroup", "indicator",
-  "commitment", "commitmentSeries", "commitmentConfig",
+  "commitment", "commitmentSeries", "commitmentConfig", "portalMeta",
   "user", "log",
 ];
 

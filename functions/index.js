@@ -26,6 +26,7 @@ import { initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { runCommitmentDigest, TIME_ZONE } from "./commitments.js";
+import { publishPortal } from "./portal.js";
 
 // La base NO se llama `(default)`: es `hpdatabase`. Un trigger que no la
 // declara queda suscrito a una base que no existe y nunca dispara, sin dar
@@ -158,6 +159,20 @@ const handlers = {
       throw jobError(result.reason, "Faltan los destinatarios o la cuenta que envía.");
     }
     return result;
+  },
+
+  // Publica una nómina en el portal de trabajadores: una ficha por RUT, que el
+  // portal lee sin sesión (`./portal.js`). Reemplaza la que estaba publicada.
+  async publishPortal(job, { jobId }) {
+    await assertAdmin(job.requestedBy, "Solo un admin puede publicar en el portal.");
+    const payrollId = String(job.params?.payrollId || "");
+    if (!payrollId) throw jobError("invalid-params", "Falta la nómina a publicar.");
+    return publishPortal(db, {
+      payrollId,
+      requestedBy: job.requestedBy,
+      requestedByEmail: job.requestedByEmail || null,
+      jobId,
+    });
   },
 };
 
