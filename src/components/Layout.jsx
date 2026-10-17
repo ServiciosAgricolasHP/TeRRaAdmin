@@ -92,7 +92,7 @@ const fmtCLP = (v) =>
     ? new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(Number(v))
     : "—";
 
-// Versión que inyecta Vite al compilar (v1.1.<commits desde VERSION_RESET_COMMIT>).
+// Versión que inyecta Vite al compilar (v<mayor>.<menor>.<commits>, ver vite.config.js).
 // Se muestra en el header: una versión menor a la desplegada indica un bundle
 // viejo en la caché del service worker.
 export const APP_VERSION = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev";

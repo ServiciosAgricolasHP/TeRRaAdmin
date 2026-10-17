@@ -97,7 +97,7 @@ arreglas uno, el test se cae y eso es la señal de actualizar los dos.
 - `.github/workflows/ci.yml` — corre en push/PR: `npm run lint` (**no bloqueante**, `continue-on-error`: el lint tiene ~65 errores sin resolver) y `npm run build` (**sí bloqueante**). Este build en Linux es lo que caza los imports con casing incorrecto que Windows esconde.
 - `.github/workflows/deploy.yml` — push a `main` → build → publica `dist/` en la rama `gh-pages`.
 - **Los secrets son obligatorios para el build de deploy**: las 6 `VITE_FIREBASE_*` viven en *Settings → Secrets and variables → Actions* del repo y se inyectan como `env` del paso de build. `.env` está gitignoreado, así que sin ellas el bundle sale con la config vacía y producción cae con `auth/invalid-api-key`.
-- **`fetch-depth: 0`** en el checkout del deploy: sin el historial completo, el `git rev-list --count` de `vite.config.js` devuelve 0 y la versión del header queda pegada en `.0`.
+- **`fetch-depth: 0`** en el checkout del deploy: sin el historial completo, el conteo de commits de `vite.config.js` no encuentra su punto de partida y la versión del header queda pegada en `.0`.
 - **Cloud Functions quedan fuera del pipeline** — se deployan a mano (ver `functions/README.md`).
   - **El backend no se invoca por HTTP: se le escribe un documento.** La app crea un job en `functionJobs` y un **trigger de Firestore v2** lo levanta, lo ejecuta y escribe el resultado en el mismo doc; la UI lo mira con un `onSnapshot`. Del lado de la app, `services/functionJobsService.js` crea el job (`enqueueJob`) y espera el resultado (`waitForJob`).
   - **No hay funciones callable.** *(a)* Una callable **v2** corre sobre Cloud Run y necesita un binding IAM `allUsers`, que la org policy del proyecto prohíbe: responde **403 con cuerpo HTML** antes de llegar al código. *(b)* Cloud Functions **v1** no existe en `southamerica-west1`, y esa región tampoco tiene App Engine, que gen1 necesita para el staging. *(c)* Un **trigger de Firestore v1** solo dispara sobre la base `(default)`, que en este proyecto no existe. Un trigger v2 lo invoca Eventarc con una service account, sin invoker público.
@@ -926,7 +926,11 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 
 - **Sidebar colapsable** (`layout.sidebarOpen` en `localStorage`): un solo botón ☰ funciona como toggle en desktop y abre drawer en mobile (decidido por `matchMedia("(min-width: 768px)")`).
 - Nav incluye: Dashboard, Faenas, Calendario, Trabajadores, Transportes, Anticipos / Bonos, Nómina, Facturación, Cheques y pagos, Links útiles. Items admin (Usuarios, Auditoría, Migrar CSV, Limpiar pagados, Consola) se ven solo con `isAdmin`.
-- **Versión en el header** — `TeRRA v1.1.{commitCount}` autogenerado en build-time por `vite.config.js` (via `git rev-list --count ${VERSION_RESET_COMMIT}..HEAD`, inyectado como `__APP_VERSION__`). El conteo arranca desde un commit de reset, no desde el inicio del repo. Sirve para diagnosticar caché PWA viejo de un vistazo: si el header sigue mostrando una versión anterior tras un deploy, el SW tiene un bundle stale. Ojo en CI: sin `fetch-depth: 0` el conteo da 0.
+- **Versión en el header** — `TeRRA v{mayor}.{menor}.{commits}`, armada en build-time por `vite.config.js` e inyectada como `__APP_VERSION__`. Sirve para diagnosticar caché PWA viejo de un vistazo: si el header sigue mostrando una versión anterior tras un deploy, el SW tiene un bundle stale.
+  - **Mayor y menor salen del `version` de `package.json`**; su tercer número no se usa.
+  - **El último número son los commits desde el último que cambió esa línea, sin contar merges** (`git log -G'"version":' -- package.json` + `git rev-list --count --no-merges`). Sin merges, cada PR no suma uno de más, y el mismo código muestra el mismo número en `develop` y en producción.
+  - **Subir de versión**: `npm version minor --no-git-tag-version` (actualiza `package.json` y el lock) y commit; el conteo vuelve a 0 solo. Un commit que reformatee la línea `"version"` también reinicia el conteo.
+  - Ojo en CI: sin `fetch-depth: 0` el conteo da 0.
 
 ## Env
 
