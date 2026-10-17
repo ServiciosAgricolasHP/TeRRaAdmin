@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import Modal from "./Modal";
+import Modal, { ModalCloseButton } from "./Modal";
 import TextField from "./TextField";
 import Select from "./Select";
 import { workersService } from "../services";
@@ -7,6 +7,7 @@ import { createWorker, findWorkerByRut } from "../services/workersService";
 import { formatRutForDisplay, normalizeRut, validateRut, isForeignRut } from "../utils/rutUtils";
 import { toProperName } from "../utils/nameUtils";
 import { findSimilarWorkers } from "../utils/similarity";
+import { hasChanges } from "../utils/formChanges";
 import {
   BANKS,
   ACCOUNT_TYPES,
@@ -21,6 +22,8 @@ import {
 export default function WorkerEditModal({ open, mode, worker, allWorkers = [], onClose, onSaved }) {
   const isCreate = mode === "create";
   const [form, setForm] = useState(null);
+  // Cómo se abrió la ficha, para avisar si se cierra con cambios sin guardar.
+  const [baseline, setBaseline] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [overrideSimilar, setOverrideSimilar] = useState(false);
@@ -30,8 +33,9 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
     setError("");
     setOverrideSimilar(false);
     setAllowNewLeader(false);
+    let initial;
     if (isCreate) {
-      setForm({
+      initial = {
         rut: "",
         name: "",
         email: "",
@@ -41,13 +45,13 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
         bd_accountNumber: "",
         bd_accountType: ACCOUNT_TYPE_RUT,
         bd_bankCode: DEFAULT_BANK_CODE,
-      });
+      };
     } else {
       const bd = worker?.bankDetails || [];
       // Muestra el rut actual (campo `rut`), no el id, que es el rut con que
       // se creó el trabajador y no cambia. Sin campo `rut`, usa el id.
       const rut = worker?.rut || worker?.id || "";
-      setForm({
+      initial = {
         rut,
         name: worker?.name || "",
         email: worker?.email || "",
@@ -57,8 +61,10 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
         bd_accountNumber: bd[1] || rutWithoutDv(rut),
         bd_accountType: bd[2] != null ? Number(bd[2]) : ACCOUNT_TYPE_RUT,
         bd_bankCode: bd[3] || DEFAULT_BANK_CODE,
-      });
+      };
     }
+    setForm(initial);
+    setBaseline(initial);
   }, [open, worker, isCreate]);
 
   const similarMatches = useMemo(() => {
@@ -85,6 +91,10 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
   const showSimilarBlock = isCreate && similarMatches.length > 0;
   const isForeign = form ? isForeignRut(form.rut) : false;
   const requireOverride = showSimilarBlock && (isForeign || similarMatches.some((m) => m.score >= 0.92));
+  // Los respaldos de la cuenta al pasar a efectivo no son datos de la ficha.
+  const dirty = hasChanges(baseline, form, {
+    ignore: ["bd_prevBankCode", "bd_prevAccountType", "bd_prevAccountNumber", "groupLeaderHistory"],
+  });
 
   if (!form) return <Modal open={open} onClose={onClose} title="..." />;
 
@@ -246,6 +256,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
       onClose={() => !busy && onClose()}
       title={isCreate ? "Nuevo trabajador" : `Editar ${formatRutForDisplay(worker?.rut || worker?.id)}`}
       size="lg"
+      dirty={dirty && !busy}
     >
       <form onSubmit={submit} className="space-y-5">
         <div className="grid gap-4 sm:grid-cols-2">
@@ -485,14 +496,12 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
         )}
 
         <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
+          <ModalCloseButton
             disabled={busy}
             className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
           >
             Cancelar
-          </button>
+          </ModalCloseButton>
           <button
             type="submit"
             disabled={busy}

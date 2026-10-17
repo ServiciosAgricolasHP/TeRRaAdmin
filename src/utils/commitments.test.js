@@ -27,6 +27,8 @@ import {
   applySeriesTool,
   seriesChanges,
   seriesRowError,
+  counterpartyOptions,
+  similarCounterparty,
 } from "./commitments";
 
 describe("vencimientos", () => {
@@ -371,6 +373,34 @@ describe("ajuste de una serie", () => {
       "2026-12-20",
       "2027-01-20",
     ]);
+  });
+});
+
+describe("contrapartes", () => {
+  const items = [
+    { counterparty: "Banco Estado" },
+    { counterparty: "Copec" },
+    { counterparty: "BANCO ESTADO" },
+    { counterparty: "Agrícola Los Robles" },
+    { counterparty: "" },
+  ];
+
+  it("lista cada nombre una vez, del más usado al menos usado", () => {
+    expect(counterpartyOptions(items)).toEqual(["Banco Estado", "Agrícola Los Robles", "Copec"]);
+  });
+
+  it("sugiere el nombre ya usado cuando se escribe una variante", () => {
+    const options = counterpartyOptions(items);
+    expect(similarCounterparty("Bancoestado", options)).toBe("Banco Estado");
+    expect(similarCounterparty("Agricola Los Roble", options)).toBe("Agrícola Los Robles");
+  });
+
+  it("no sugiere nada si el nombre ya existe o no se parece a ninguno", () => {
+    const options = counterpartyOptions(items);
+    expect(similarCounterparty("banco estado", options)).toBe(null);
+    expect(similarCounterparty("Agricola los robles", options)).toBe(null);
+    expect(similarCounterparty("Ferretería Central", options)).toBe(null);
+    expect(similarCounterparty("", options)).toBe(null);
   });
 });
 

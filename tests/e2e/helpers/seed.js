@@ -40,7 +40,12 @@ export async function seedWorker(w, { groupLeader = "GRUPO A" } = {}) {
 }
 
 // Un ciclo abierto con una labor de cosecha, que es el caso más común.
-export async function seedCycle({ id = CICLO, dias = ["2026-03-02", "2026-03-03"] } = {}) {
+// `labors` reemplaza esa labor (por ejemplo, para un ciclo con dos).
+export async function seedCycle({
+  id = CICLO,
+  dias = ["2026-03-02", "2026-03-03"],
+  labors = [{ id: LABOR, name: "Cosecha", type: "cosecha" }],
+} = {}) {
   await set("faenas", FAENA, { name: "Faena Uno" });
   await set("subfaenas", SUBFAENA, { name: "Sub Uno", faenaId: FAENA });
   await set("cycles", id, {
@@ -49,14 +54,7 @@ export async function seedCycle({ id = CICLO, dias = ["2026-03-02", "2026-03-03"
     subfaenaId: SUBFAENA,
     status: "open",
     days: dias,
-    labors: [
-      {
-        id: LABOR,
-        name: "Cosecha",
-        type: "cosecha",
-        workers: [],
-      },
-    ],
+    labors: labors.map((l) => ({ workers: [], ...l })),
     dayPrices: {},
   });
   return id;

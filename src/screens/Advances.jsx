@@ -18,7 +18,8 @@ import { searchWorkers } from "../services/workersService";
 import { logsService } from "../services";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import ConfirmDialog from "../components/ConfirmDialog";
-import Modal from "../components/Modal";
+import Modal, { ModalCloseButton } from "../components/Modal";
+import { hasChanges } from "../utils/formChanges";
 import WorkerAdvancesModal from "../components/WorkerAdvancesModal";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useToast } from "../contexts/ToastContext";
@@ -468,6 +469,24 @@ export default function Advances() {
 // se avisa como posible duplicado, con quién lo puso. No se bloquea.
 const PENDING_STATUSES = ["pending", "partial"];
 
+// El formulario de un anticipo o bono tal como se abre: vacío o con lo guardado.
+function advanceForm(item) {
+  return {
+    type: normalizeAdvanceType(item?.type) || "anticipo",
+    workerRut: item?.workerRut || "",
+    // `workerId` es el id del trabajador, que no cambia; sin ese campo,
+    // usa `workerRut`.
+    workerId: item?.workerId || item?.workerRut || "",
+    workerName: item?.workerName || "",
+    amount: item?.amount || 0,
+    date: item?.date || todayStr(),
+    note: item?.note || "",
+    useInstallments: !!item?.installments?.count,
+    installmentCount: Number(item?.installments?.count) || 2,
+    installmentCadence: item?.installments?.cadence || "porPago",
+  };
+}
+
 function AdvanceFormModal({ open, item, items = [], onClose, onSaved }) {
   const toast = useToast();
   const isEdit = item?.mode === "edit";
@@ -494,20 +513,7 @@ function AdvanceFormModal({ open, item, items = [], onClose, onSaved }) {
 
   useEffect(() => {
     if (open) {
-      setForm({
-        type: normalizeAdvanceType(item?.type) || "anticipo",
-        workerRut: item?.workerRut || "",
-        // `workerId` es el id del trabajador, que no cambia; sin ese campo,
-        // usa `workerRut`.
-        workerId: item?.workerId || item?.workerRut || "",
-        workerName: item?.workerName || "",
-        amount: item?.amount || 0,
-        date: item?.date || todayStr(),
-        note: item?.note || "",
-        useInstallments: !!item?.installments?.count,
-        installmentCount: Number(item?.installments?.count) || 2,
-        installmentCadence: item?.installments?.cadence || "porPago",
-      });
+      setForm(advanceForm(item));
       setPicker({ q: "", results: [], open: false });
     }
   }, [open, item]);
@@ -614,18 +620,23 @@ function AdvanceFormModal({ open, item, items = [], onClose, onSaved }) {
 
   if (!open) return null;
 
+  // El tipo es el del botón con que se abrió (anticipo o bono): cambiarlo sin
+  // escribir nada más no es un cambio que se pierda.
+  const dirty = !busy && hasChanges(advanceForm(item), form, { ignore: isEdit ? [] : ["type"] });
+
   return (
     <>
     <Modal
       open={open}
       onClose={onClose}
+      dirty={dirty}
       title={`${isEdit ? "Editar" : "Nuevo"} ${advanceTypeMeta(form.type).label.toLowerCase()}`}
       size="md"
       footer={
         <>
-          <button onClick={onClose} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm">
+          <ModalCloseButton className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm">
             Cancelar
-          </button>
+          </ModalCloseButton>
           <button
             onClick={submit}
             disabled={busy}

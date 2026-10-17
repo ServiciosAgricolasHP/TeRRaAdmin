@@ -2,23 +2,28 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
-import { execSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 
-// El patch de la versión es la cantidad de commits desde VERSION_RESET_COMMIT,
-// donde el versionado arranca en 1.1.0. Fuera de un repo git, o si ese commit
-// no está en el historial disponible (p. ej. un clone shallow en CI), vale "0"
-// y el build no falla.
-const VERSION_RESET_COMMIT = 'e3c61c818e237c7edc2c8ef13ada2adac0c8713d'
+// Versión del header: mayor y menor salen del "version" de package.json; el
+// último número es la cantidad de commits, sin contar merges, desde el último
+// commit que cambió esa línea. Así cada PR no suma un commit de más, y subir de
+// versión (`npm version minor --no-git-tag-version` + commit) reinicia el conteo
+// en 0. El tercer número de package.json no se usa. Fuera de un repo git, o con
+// un historial incompleto (p. ej. un clone shallow en CI), el conteo vale 0 y el
+// build no falla.
+const pkgVersion = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version
+const [major, minor] = pkgVersion.split('.')
+const git = (args) => execFileSync('git', args, { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
 const commitCount = (() => {
   try {
-    return execSync(`git rev-list --count ${VERSION_RESET_COMMIT}..HEAD`, { stdio: ['ignore', 'pipe', 'ignore'] })
-      .toString()
-      .trim() || '0'
+    const base = git(['log', '-1', '--format=%H', '-G"version":', '--', 'package.json'])
+    return (base && git(['rev-list', '--count', '--no-merges', `${base}..HEAD`])) || '0'
   } catch {
     return '0'
   }
 })()
-const APP_VERSION = `v1.1.${commitCount}`
+const APP_VERSION = `v${major}.${minor}.${commitCount}`
 
 export default defineConfig({
   base: '/TeRRaAdmin/',   // tiene que coincidir con el basename de src/App.jsx

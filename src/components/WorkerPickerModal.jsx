@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Modal from "./Modal";
+import { hasChanges } from "../utils/formChanges";
 import TextField from "./TextField";
 import Select from "./Select";
 import { workersService } from "../services";
@@ -227,7 +228,19 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={title} size={creating ? "lg" : "md"}>
+    <Modal
+      open={open}
+      onClose={onClose}
+      // Lo escrito en el alta de un trabajador o de un temporal se pierde al cerrar.
+      dirty={
+        !busy &&
+        (creatingTemp
+          ? hasChanges({ name: "", leader: LEADER_LOCAL }, { name: tempName, leader: tempLeader })
+          : creating && hasChanges(emptyNewWorker(), newWorker))
+      }
+      title={title}
+      size={creating ? "lg" : "md"}
+    >
       {creatingTemp ? (
         <form onSubmit={submitTemp} className="space-y-3">
           <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">

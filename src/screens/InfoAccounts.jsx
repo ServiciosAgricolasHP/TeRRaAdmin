@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import { captureFullWidthBlob, captureFullWidthDataUrl } from "../utils/imageCapture";
-import Modal from "../components/Modal";
+import Modal, { ModalCloseButton } from "../components/Modal";
+import { hasChanges } from "../utils/formChanges";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { contactCardsService } from "../services";
 import { useToast } from "../contexts/ToastContext";
@@ -604,7 +605,11 @@ function ContactCardModal({ initial, onCancel, onSave }) {
     // tiene RUT).
     return { ...base, includeRut: rutIncluded(base) };
   });
+  const [baseline] = useState(form);
   const [busy, setBusy] = useState(false);
+  // En una ficha nueva, elegir persona o empresa sin escribir nada más no es un
+  // cambio que se pierda.
+  const dirty = !busy && hasChanges(baseline, form, { ignore: form.id ? [] : ["type", "includeRut"] });
 
   const meta = TYPE_META[form.type] || TYPE_META.persona;
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
@@ -636,13 +641,14 @@ function ContactCardModal({ initial, onCancel, onSave }) {
     <Modal
       open
       onClose={onCancel}
+      dirty={dirty}
       size="lg"
       title={form.id ? "Editar ficha" : "Nueva ficha"}
       footer={
         <>
-          <button onClick={onCancel} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
+          <ModalCloseButton className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
             Cancelar
-          </button>
+          </ModalCloseButton>
           <button type="submit" form="contact-card-form" disabled={busy} className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-60">
             {busy ? "Guardando…" : "Guardar"}
           </button>

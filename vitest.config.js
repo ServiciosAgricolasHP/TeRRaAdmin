@@ -1,7 +1,7 @@
 import { defineConfig } from "vitest/config";
 
 // Config propia, separada de `vite.config.js`, que al cargarse corre
-// `execSync("git rev-list --count")` y monta VitePWA. Acá solo se copia el
+// git para contar commits y monta VitePWA. Acá solo se copia el
 // `define` de la versión, lo único de la app que los módulos pueden leer.
 export default defineConfig({
   define: {

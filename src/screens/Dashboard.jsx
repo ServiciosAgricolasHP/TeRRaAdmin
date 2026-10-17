@@ -5,6 +5,7 @@ import { db } from "../firebase";
 import { faenasService, cyclesService, transportPaymentsService, companiesService, dteDocumentsService } from "../services";
 import { payrollsService, pendingCashOf } from "../services/payrollsService";
 import { transportPayrollsService } from "../services/transportsService";
+import { commitmentsService } from "../services/commitmentsService";
 import { countedList } from "../services/cache";
 import { useAuth } from "../contexts/AuthContext";
 import { useCarriers } from "../contexts/CarriersContext";
@@ -12,6 +13,8 @@ import { useToast } from "../contexts/ToastContext";
 import MetricCard from "../components/MetricCard";
 import Modal from "../components/Modal";
 import { fmtCurrency, fmtMonthKey, fmtNumber, fmtPercent, fmtShortDate } from "../utils/format";
+import { localIsoDate } from "../utils/dates";
+import { summarize, groupUpcoming, kindMeta, directionOf, remainingOf, urgencyLabel, daysUntil } from "../utils/commitments";
 
 // Recharts se carga lazy, en su propio chunk: las tarjetas de KPI pintan sin
 // esperarlo.
@@ -22,6 +25,9 @@ const PERIODS = [
   { key: "3m", label: "3 meses", months: 3 },
   { key: "12m", label: "12 meses", months: 12 },
 ];
+
+// Vencimientos de Cheques y pagos que se listan en el tablero.
+const COMMITMENTS_SHOWN = 8;
 
 // Un ciclo abierto cuyo último día cargado tiene más días que esto se lista
 // como sin movimiento. El cierre de un ciclo es manual.
@@ -173,6 +179,8 @@ export default function Dashboard() {
   const [dteBusy, setDteBusy] = useState(false);
   const [dteReads, setDteReads] = useState(0);
   const [dteError, setDteError] = useState("");
+  const [commitments, setCommitments] = useState(null);
+  const [commitmentReads, setCommitmentReads] = useState(0);
 
   const period = PERIODS.find((p) => p.key === periodKey) || PERIODS[1];
   const periodMonths = period.months;
@@ -275,6 +283,28 @@ export default function Dashboard() {
     })();
     return () => { cancelled = true; };
   }, [dteCompanyId]);
+
+  // Cheques y pagos, aparte de la carga principal: si falla, el resto del
+  // tablero se muestra igual. Las opciones son las de `listCommitments`, así
+  // comparte la caché con la pantalla.
+  useEffect(() => {
+    let cancelled = false;
+    countedList(commitmentsService, { order: ["dueDate", "asc"], cache: true, ttl: 300_000 })
+      .then(({ data, reads }) => {
+        if (cancelled) return;
+        setCommitments(data);
+        setCommitmentReads(reads);
+      })
+      .catch((err) => console.error("[dashboard] cheques y pagos:", err));
+    return () => { cancelled = true; };
+  }, []);
+
+  const commitmentsWeek = useMemo(() => {
+    if (!commitments) return null;
+    const today = localIsoDate();
+    const groups = groupUpcoming(commitments, today);
+    return { today, summary: summarize(commitments, today), items: [...groups.overdue, ...groups.week] };
+  }, [commitments]);
 
   useEffect(() => {
     let cancelled = false;
@@ -547,9 +577,9 @@ export default function Dashboard() {
             Plata, operación y transporte de un vistazo.
             {isAdmin && !loading && (
               <span className="ml-1 text-xs">
-                {reads + countReads + dteReads === 0
+                {reads + countReads + dteReads + commitmentReads === 0
                   ? "· desde caché"
-                  : `· ${fmtNumber(reads + countReads + dteReads)} lecturas`}
+                  : `· ${fmtNumber(reads + countReads + dteReads + commitmentReads)} lecturas`}
               </span>
             )}
           </p>
@@ -682,6 +712,8 @@ export default function Dashboard() {
               />
             </div>
           </section>
+
+          {commitmentsWeek && <CommitmentsWeek data={commitmentsWeek} />}
 
           <Suspense
             fallback={
@@ -854,5 +886,95 @@ export default function Dashboard() {
         )}
       </Modal>
     </div>
+  );
+}
+
+// Cheques y pagos de la semana: lo que vence en 7 días, lo vencido, lo que
+// quedó sin fecha y los cheques por cobrar, más la lista de lo vencido y lo
+// que vence en la semana. Todo lleva a la pantalla de Cheques y pagos.
+function CommitmentsWeek({ data }) {
+  const { today, summary, items } = data;
+  const undated = {
+    amount: summary.out.postponed.amount + summary.out.protested.amount,
+    count: summary.out.postponed.count + summary.out.protested.count,
+  };
+  const docs = (n) => `${n} documento${n === 1 ? "" : "s"}`;
+  const chip = (c) => {
+    if (c.status === "postponed") return { text: "Aplazado", tone: "warning" };
+    const days = daysUntil(c.dueDate, today);
+    return { text: urgencyLabel(days), tone: days < 0 ? "danger" : days <= 1 ? "warning" : "muted" };
+  };
+  const toneCls = {
+    danger: "bg-[var(--color-danger-soft)] text-[var(--color-danger)]",
+    warning: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
+    muted: "bg-[var(--color-surface-2)] text-[var(--color-muted)]",
+  };
+
+  return (
+    <section>
+      <div className="mb-2 flex items-baseline justify-between gap-2">
+        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">Cheques y pagos</h2>
+        <Link to="/cheques-pagos" className="text-xs text-[var(--color-accent)] hover:underline">
+          Ver todo →
+        </Link>
+      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <MetricCard
+          label="Vence en 7 días"
+          value={fmtCurrency(summary.out.next7.amount)}
+          hint={summary.out.next7.count ? `${docs(summary.out.next7.count)} por pagar` : "nada por pagar"}
+          highlight
+        />
+        <MetricCard
+          label="Vencido sin marcar"
+          value={fmtCurrency(summary.out.overdue.amount)}
+          hint={summary.out.overdue.count ? docs(summary.out.overdue.count) : "ninguno"}
+          warning={summary.out.overdue.count > 0}
+        />
+        <MetricCard
+          label="Aplazado o protestado"
+          value={fmtCurrency(undated.amount)}
+          hint={undated.count ? `${docs(undated.count)} sin fecha de pago` : "ninguno"}
+          warning={undated.count > 0}
+        />
+        <MetricCard
+          label="Por cobrar en 7 días"
+          value={fmtCurrency(summary.in.next7.amount)}
+          hint={summary.in.next7.count ? `${summary.in.next7.count} cheque${summary.in.next7.count === 1 ? "" : "s"} recibido${summary.in.next7.count === 1 ? "" : "s"}` : "ninguno"}
+        />
+      </div>
+      {items.length > 0 && (
+        <div className="mt-3 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
+          {items.slice(0, COMMITMENTS_SHOWN).map((c) => {
+            const { text, tone } = chip(c);
+            const meta = kindMeta(c.kind);
+            return (
+              <Link
+                key={c.id}
+                to="/cheques-pagos"
+                className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-3 py-2 text-sm last:border-b-0 hover:bg-[var(--color-accent-soft)]"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate font-medium">{c.counterparty}</span>
+                  <span className="flex flex-wrap items-center gap-x-2 text-xs text-[var(--color-muted)]">
+                    <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${toneCls[tone]}`}>{text}</span>
+                    <span>{meta.icon} {meta.label}{c.dueDate ? ` · ${fmtShortDate(c.dueDate)}` : ""}</span>
+                  </span>
+                </span>
+                <span className="shrink-0 font-semibold tabular-nums">
+                  {directionOf(c.kind) === "in" ? "+" : ""}
+                  {fmtCurrency(remainingOf(c))}
+                </span>
+              </Link>
+            );
+          })}
+          {items.length > COMMITMENTS_SHOWN && (
+            <Link to="/cheques-pagos" className="block px-3 py-2 text-xs text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]">
+              +{items.length - COMMITMENTS_SHOWN} más
+            </Link>
+          )}
+        </div>
+      )}
+    </section>
   );
 }

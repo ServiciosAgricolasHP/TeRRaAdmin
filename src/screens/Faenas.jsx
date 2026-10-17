@@ -16,7 +16,7 @@ import {
 } from "../services/userPrefsService";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
-import Modal from "../components/Modal";
+import Modal, { ModalCloseButton } from "../components/Modal";
 import ConfirmDialog from "../components/ConfirmDialog";
 import TextField from "../components/TextField";
 import Select from "../components/Select";
@@ -26,6 +26,14 @@ import { LABOR_TYPES, initialLaborPlan } from "../utils/laborTypes";
 import ProductionSummaryModal from "../components/ProductionSummaryModal";
 import { localIsoDate } from "../utils/dates";
 import { toTitleName, unshout } from "../utils/textCase";
+import { hasChanges } from "../utils/formChanges";
+
+// Un formulario de faena, subfaena o ciclo con una copia de cómo se abrió
+// (`initial`), para avisar si se cierra con cambios sin guardar.
+const withInitial = (form) => ({ ...form, initial: form.data });
+// En el alta de un ciclo, lo que se ofrece para importar no es un dato del
+// formulario.
+const CYCLE_FORM_IGNORE = ["importCandidates", "labors", "days"];
 
 const emptyFaena = { name: "", location: "", notes: "" };
 const emptySub = { name: "", notes: "" };
@@ -661,7 +669,7 @@ export default function Faenas() {
       .filter((c) => c.status !== "closed")
       .sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
 
-    setCycleForm({
+    setCycleForm(withInitial({
       mode: "create",
       faenaId,
       data: {
@@ -683,7 +691,7 @@ export default function Faenas() {
         importCopyDayPrices: false,
         importMoveWorkdays: false,
       },
-    });
+    }));
   };
 
   const openEditCycle = (cycle, faenaId) => {
@@ -693,7 +701,7 @@ export default function Faenas() {
     const suffix = (cycle.label || "").toLowerCase().startsWith(prefix.toLowerCase())
       ? (cycle.label || "").slice(prefix.length)
       : cycle.label || "";
-    setCycleForm({
+    setCycleForm(withInitial({
       mode: "edit",
       faenaId,
       data: {
@@ -706,7 +714,7 @@ export default function Faenas() {
         days: cycle.days || [],
         status: cycle.status || "open",
       },
-    });
+    }));
   };
 
   const openCloseFlow = (cycle, faenaId) => {
@@ -935,8 +943,8 @@ export default function Faenas() {
         cardColor={colorOf(selected)}
         subs={selectedSubs}
         cycles={selectedCycles}
-        onCreateSub={() => setSubForm({ mode: "create", faenaId: selected.id, data: { ...emptySub } })}
-        onEditSub={(s) => setSubForm({ mode: "edit", faenaId: selected.id, data: { ...s } })}
+        onCreateSub={() => setSubForm(withInitial({ mode: "create", faenaId: selected.id, data: { ...emptySub } }))}
+        onEditSub={(s) => setSubForm(withInitial({ mode: "edit", faenaId: selected.id, data: { ...s } }))}
         onDeleteSub={(s) => setConfirm({ kind: "sub", item: s, message: `¿Eliminar la subfaena "${s.name}"?` })}
         onToggleHideSub={toggleHideSub}
         onCreateCycle={(subfaenaId) => openCreateCycle(selected.id, subfaenaId || "")}
@@ -992,7 +1000,7 @@ export default function Faenas() {
             </button>
           )}
           <button
-            onClick={() => setFaenaForm({ mode: "create", data: { ...emptyFaena } })}
+            onClick={() => setFaenaForm(withInitial({ mode: "create", data: { ...emptyFaena } }))}
             className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] shadow-sm hover:bg-[var(--color-accent-hover)]"
           >
             + Nueva faena
@@ -1117,7 +1125,7 @@ export default function Faenas() {
                             </div>
                             <div className="ml-auto flex shrink-0 gap-1 opacity-70 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
                               <button
-                                onClick={() => setFaenaForm({ mode: "edit", data: { ...f } })}
+                                onClick={() => setFaenaForm(withInitial({ mode: "edit", data: { ...f } }))}
                                 className="rounded-md px-2 py-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
                               >
                                 Editar
@@ -1153,6 +1161,7 @@ export default function Faenas() {
       <Modal
         open={!!faenaForm}
         onClose={() => !busy && setFaenaForm(null)}
+        dirty={!!faenaForm && !busy && hasChanges(faenaForm.initial, faenaForm.data)}
         title={faenaForm?.mode === "edit" ? "Editar faena" : "Nueva faena"}
       >
         {faenaForm && (
@@ -1175,14 +1184,12 @@ export default function Faenas() {
               onChange={(v) => setFaenaForm((f) => ({ ...f, data: { ...f.data, notes: v } }))}
             />
             <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setFaenaForm(null)}
+              <ModalCloseButton
                 disabled={busy}
                 className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
               >
                 Cancelar
-              </button>
+              </ModalCloseButton>
               <button
                 type="submit"
                 disabled={busy}
@@ -1199,6 +1206,7 @@ export default function Faenas() {
       <Modal
         open={!!subForm}
         onClose={() => !busy && setSubForm(null)}
+        dirty={!!subForm && !busy && hasChanges(subForm.initial, subForm.data)}
         title={subForm?.mode === "edit" ? "Editar subfaena" : "Nueva subfaena"}
       >
         {subForm && (
@@ -1216,14 +1224,12 @@ export default function Faenas() {
               onChange={(v) => setSubForm((s) => ({ ...s, data: { ...s.data, notes: v } }))}
             />
             <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setSubForm(null)}
+              <ModalCloseButton
                 disabled={busy}
                 className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
               >
                 Cancelar
-              </button>
+              </ModalCloseButton>
               <button
                 type="submit"
                 disabled={busy}
@@ -1240,6 +1246,7 @@ export default function Faenas() {
       <Modal
         open={!!cycleForm}
         onClose={() => !busy && setCycleForm(null)}
+        dirty={!!cycleForm && !busy && hasChanges(cycleForm.initial, cycleForm.data, { ignore: CYCLE_FORM_IGNORE })}
         title={cycleForm?.mode === "edit" ? "Editar ciclo" : "Nuevo ciclo"}
       >
         {cycleForm && (
@@ -1329,14 +1336,12 @@ export default function Faenas() {
                   : "Podrás agregar más labores al abrir el ciclo."}
             </p>
             <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setCycleForm(null)}
+              <ModalCloseButton
                 disabled={busy}
                 className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
               >
                 Cancelar
-              </button>
+              </ModalCloseButton>
               <button
                 type="submit"
                 disabled={busy}

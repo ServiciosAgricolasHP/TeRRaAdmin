@@ -3,8 +3,9 @@ import {
   payrollsService,
   tagWorkdaysWithPayroll,
   recalcPayrollAggregates,
-  removeCycleFromPayroll,
+  markBankPaid,
 } from "../../src/services/payrollsService";
+import { planPayrollRecalc, applyPayrollRecalc } from "../../src/services/payrollRecalc";
 import {
   listPendingForWorkers,
   applyAdvancesToPayroll,
@@ -14,15 +15,33 @@ import { workdaysService } from "../../src/services";
 import { aggregateWorkerAmounts } from "../../src/utils/payroll";
 import { saveSnapshot } from "../../src/services/payrollSnapshots";
 import { allocateAdvances } from "../../src/utils/payrollItem";
-import { ANA, BETO, LABOR, seedCycle, seedWorker, seedWorkday, seedAdvance, get } from "./helpers/seed";
+import { ANA, BETO, LABOR, seedCycle, seedWorker, seedWorkday, seedAdvance, get, all } from "./helpers/seed";
 
-// Sacar un ciclo de una nómina pendiente cuando hay anticipos de por medio: la
-// nómina queda como si se hubiera armado sin ese ciclo, y lo que no se retuvo
-// de un anticipo vuelve a quedar pendiente.
+// Sacar ciclos o labores de una nómina pendiente, como lo hace el detalle:
+// se destilda y se recalcula sin eso (`planPayrollRecalc` con `removed` y
+// `applyPayrollRecalc`). La nómina queda como si se hubiera armado sin lo
+// sacado, y lo que no se retuvo de un anticipo vuelve a quedar pendiente.
 
 const CICLO_A = "ciclo-A";
 const CICLO_B = "ciclo-B";
-const laborTypes = () => new Map([[LABOR, "cosecha"]]);
+const SUPERVISION = "labor-sup";
+const laborTypes = () => new Map([[LABOR, "cosecha"], [SUPERVISION, "main"]]);
+const DOS_LABORES = [
+  { id: LABOR, name: "Cosecha", type: "cosecha" },
+  { id: SUPERVISION, name: "Supervisión", type: "main" },
+];
+
+// Lo que hace la pantalla al apretar "Recalcular sin esto".
+async function sacar(payrollId, removed) {
+  const nomina = await get("payrolls", payrollId);
+  const plan = await planPayrollRecalc(nomina, {
+    cycles: await all("cycles"),
+    workers: await all("worker"),
+    removed,
+  });
+  await applyPayrollRecalc(payrollId, plan);
+  return plan;
+}
 
 // Arma la nómina como la pantalla: `byCycle` con una entrada por CADA ciclo de
 // la nómina, en $0 incluido (el helper de `nomina-ciclo-completo` no arma
@@ -66,7 +85,14 @@ async function armarNomina(cycleIds, { nombre = "Nómina" } = {}) {
   });
 
   const agg = recalcPayrollAggregates(items);
-  const nomina = await payrollsService.create({ name: nombre, status: "pending", cycleIds, ...agg });
+  const nomina = await payrollsService.create({
+    name: nombre,
+    status: "pending",
+    cycleIds,
+    cycleLabels: [...cycleIds],
+    cycleDetails: cycleIds.map((id) => ({ id, label: id })),
+    ...agg,
+  });
   await tagWorkdaysWithPayroll(agg.workdayIds, nomina.id);
   await applyAdvancesToPayroll(
     items.flatMap((it) => it.advanceApplications),
@@ -77,7 +103,7 @@ async function armarNomina(cycleIds, { nombre = "Nómina" } = {}) {
 
 const itemDe = (nomina, rut) => (nomina.items || []).find((it) => it.rut === rut);
 
-describe("sacar un ciclo de una nómina con anticipos", () => {
+describe("sacar un ciclo entero de una nómina con anticipos", () => {
   it("[el caso reportado] quien solo trabajó en ese ciclo sale y su anticipo vuelve a quedar pendiente", async () => {
     await seedCycle({ id: CICLO_A });
     await seedCycle({ id: CICLO_B });
@@ -95,7 +121,7 @@ describe("sacar un ciclo de una nómina con anticipos", () => {
     expect(itemDe(await get("payrolls", id), ANA.id)).toMatchObject({ advance: 100000, amount: 200000 });
     expect(await get("advances", "adv-ana")).toMatchObject({ status: "applied", amountPaid: 100000 });
 
-    await removeCycleFromPayroll(id, CICLO_A);
+    await sacar(id, new Map([[CICLO_A, true]]));
 
     // Ana ya no está en la nómina, y no queda rastro de su anticipo en ella.
     const nomina = await get("payrolls", id);
@@ -103,6 +129,8 @@ describe("sacar un ciclo de una nómina con anticipos", () => {
     expect(nomina.advanceIds || []).not.toContain("adv-ana");
     expect(nomina.advanceTotal).toBe(0);
     expect(nomina.total).toBe(150000);
+    expect(nomina.cycleIds).toEqual([CICLO_B]);
+    expect(nomina.cycleDetails.map((c) => c.id)).toEqual([CICLO_B]);
 
     // El anticipo volvió a estar pendiente, sin ninguna entrada de esta nómina.
     const adv = await get("advances", "adv-ana");
@@ -131,7 +159,7 @@ describe("sacar un ciclo de una nómina con anticipos", () => {
     await seedAdvance("adv-ana", { rut: ANA.id, amount: 100000 });
 
     const id = await armarNomina([CICLO_A, CICLO_B]);
-    await removeCycleFromPayroll(id, CICLO_A);
+    await sacar(id, new Map([[CICLO_A, true]]));
 
     // Quedan 50.000 de bruto: el anticipo se achica a 50.000, neto 0.
     const it = itemDe(await get("payrolls", id), ANA.id);
@@ -165,7 +193,7 @@ describe("sacar un ciclo de una nómina con anticipos", () => {
 
     const id = await armarNomina([CICLO_A, CICLO_B]);
     const antes = await get("advances", "adv-ana");
-    await removeCycleFromPayroll(id, CICLO_A);
+    await sacar(id, new Map([[CICLO_A, true]]));
 
     expect(itemDe(await get("payrolls", id), ANA.id)).toMatchObject({
       grossAmount: 200000,
@@ -174,10 +202,88 @@ describe("sacar un ciclo de una nómina con anticipos", () => {
     });
     expect(await get("advances", "adv-ana")).toEqual(antes);
   });
+
+  it("no deja la nómina sin ciclos: para eso se elimina", async () => {
+    await seedCycle({ id: CICLO_A });
+    await seedWorker(ANA);
+    await seedWorkday({ cycleId: CICLO_A, rut: ANA.id, date: "2026-03-02", amount: 100000 });
+    const id = await armarNomina([CICLO_A]);
+    await expect(sacar(id, new Map([[CICLO_A, true]]))).rejects.toThrow(/elimina la nómina/i);
+    expect((await get("payrolls", id)).total).toBe(100000);
+  });
+
+  it("con las transferencias emitidas no deja sacar nada", async () => {
+    await seedCycle({ id: CICLO_A });
+    await seedCycle({ id: CICLO_B });
+    await seedWorker(ANA);
+    await seedWorkday({ cycleId: CICLO_A, rut: ANA.id, date: "2026-03-02", amount: 100000 });
+    await seedWorkday({ cycleId: CICLO_B, rut: ANA.id, date: "2026-03-02", amount: 50000 });
+    const id = await armarNomina([CICLO_A, CICLO_B]);
+    await markBankPaid(id);
+    await expect(sacar(id, new Map([[CICLO_A, true]]))).rejects.toThrow(/transferencias/i);
+    expect((await get("payrolls", id)).cycleIds).toEqual([CICLO_A, CICLO_B]);
+  });
+});
+
+describe("sacar labores sueltas, y varias cosas a la vez", () => {
+  it("sacar una labor deja el resto del ciclo, y Recalcular no la vuelve a traer", async () => {
+    await seedCycle({ id: CICLO_A, labors: DOS_LABORES });
+    await seedWorker(ANA);
+    await seedWorker(BETO);
+    // Ana cosechó y supervisó; Beto solo supervisó.
+    await seedWorkday({ cycleId: CICLO_A, rut: ANA.id, date: "2026-03-02", amount: 200000 });
+    const supAna = await seedWorkday({ cycleId: CICLO_A, laborId: SUPERVISION, rut: ANA.id, date: "2026-03-02", amount: 30000 });
+    const supBeto = await seedWorkday({ cycleId: CICLO_A, laborId: SUPERVISION, rut: BETO.id, date: "2026-03-02", amount: 40000 });
+    await seedAdvance("adv-beto", { rut: BETO.id, amount: 25000 });
+
+    const id = await armarNomina([CICLO_A]);
+    const plan = await sacar(id, new Map([[CICLO_A, new Set([SUPERVISION])]]));
+    expect(plan.leavingWorkers.map((w) => w.rut)).toEqual([BETO.id]);
+    expect(plan.releasedCount).toBe(2);
+
+    const nomina = await get("payrolls", id);
+    expect(nomina.items.map((it) => it.rut)).toEqual([ANA.id]);
+    expect(itemDe(nomina, ANA.id)).toMatchObject({ grossAmount: 200000, amount: 200000 });
+    // El ciclo sigue, pero ya no abarca la supervisión.
+    expect(nomina.cycleIds).toEqual([CICLO_A]);
+    expect(nomina.cycleDetails[0].laborIds).toEqual([LABOR]);
+    // Las jornadas de supervisión quedaron libres y el anticipo de Beto, pendiente.
+    for (const wid of [supAna, supBeto]) expect((await get("workdays", wid)).payrollId ?? null).toBeNull();
+    expect(await get("advances", "adv-beto")).toMatchObject({ status: "pending", amountPaid: 0 });
+
+    // Un recálculo después no trae de vuelta la supervisión pendiente.
+    const despues = await planPayrollRecalc(nomina, { cycles: await all("cycles"), workers: await all("worker") });
+    expect(despues.newWorkers).toEqual([]);
+    expect(despues.amountChanges).toEqual([]);
+  });
+
+  it("un ciclo entero y una labor de otro, en un solo recálculo", async () => {
+    await seedCycle({ id: CICLO_A });
+    await seedCycle({ id: CICLO_B, labors: DOS_LABORES });
+    await seedWorker(ANA);
+    await seedWorker(BETO);
+    await seedWorkday({ cycleId: CICLO_A, rut: ANA.id, date: "2026-03-02", amount: 100000 });
+    await seedWorkday({ cycleId: CICLO_B, rut: ANA.id, date: "2026-03-02", amount: 80000 });
+    await seedWorkday({ cycleId: CICLO_B, laborId: SUPERVISION, rut: ANA.id, date: "2026-03-03", amount: 20000 });
+    await seedWorkday({ cycleId: CICLO_B, rut: BETO.id, date: "2026-03-02", amount: 60000 });
+
+    const id = await armarNomina([CICLO_A, CICLO_B]);
+    await sacar(id, new Map([
+      [CICLO_A, true],
+      [CICLO_B, new Set([SUPERVISION])],
+    ]));
+
+    const nomina = await get("payrolls", id);
+    expect(nomina.cycleIds).toEqual([CICLO_B]);
+    expect(nomina.cycleDetails).toEqual([{ id: CICLO_B, label: CICLO_B, laborIds: [LABOR] }]);
+    expect(itemDe(nomina, ANA.id)).toMatchObject({ grossAmount: 80000, byCycle: { [CICLO_B]: 80000 } });
+    expect(itemDe(nomina, BETO.id)).toMatchObject({ grossAmount: 60000 });
+    expect(nomina.total).toBe(140000);
+  });
 });
 
 describe("el snapshot de la nómina acompaña lo que se saca", () => {
-  it("al sacar un ciclo, quien salió deja de figurar en el JSON, con su anticipo y sus jornadas", async () => {
+  it("al sacar un ciclo, quien salió deja de figurar en el JSON, con su anticipo, sus jornadas y el ciclo", async () => {
     await seedCycle({ id: CICLO_A });
     await seedCycle({ id: CICLO_B });
     await seedWorker(ANA);
@@ -198,11 +304,11 @@ describe("el snapshot de la nómina acompaña lo que se saca", () => {
       advances: [{ id: "adv-ana", amount: 100000 }],
     });
 
-    await removeCycleFromPayroll(id, CICLO_A);
+    await sacar(id, new Map([[CICLO_A, true]]));
 
     const snap = await get("payrollSnapshots", id);
     expect(snap.workers.map((w) => w.rut)).toEqual([BETO.id]);
-    expect(snap.workdays).toEqual([{ id: diaBeto }]);
+    expect(snap.workdays.map((w) => w.id)).toEqual([diaBeto]);
     expect(snap.advances).toEqual([]);
     expect(snap.cycles).toEqual([{ id: CICLO_B }]);
     expect(snap.payroll).toMatchObject({ name: "Nómina", total: 150000, workerCount: 1, advanceTotal: 0 });

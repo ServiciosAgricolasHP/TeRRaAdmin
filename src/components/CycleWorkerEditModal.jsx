@@ -849,11 +849,15 @@ export default function CycleWorkerEditModal({
   };
 
   const visibleDays = onlyWithData ? days.filter((d) => dayHasData(row, d)) : days;
+  // Cada campo se guarda al salir de él; queda sin guardar lo que se está
+  // escribiendo y todavía no empezó a guardarse.
+  const dirty = Object.keys(drafts).some((field) => !savingFields[field]);
 
   return (
     <Modal
       open={open}
       onClose={onClose}
+      dirty={dirty}
       size="full"
       title={
         configuringDate ? (

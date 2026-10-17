@@ -3,7 +3,8 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-do
 import { useAuth } from "../contexts/AuthContext";
 import { greeting, GREETING_SLOTS } from "../utils/greetings";
 import { useTheme } from "../contexts/ThemeContext";
-import Modal from "./Modal";
+import Modal, { ModalCloseButton } from "./Modal";
+import { hasChanges } from "../utils/formChanges";
 import { indicatorsService } from "../services";
 
 const INDICATORS_DOC = "main";
@@ -91,7 +92,7 @@ const fmtCLP = (v) =>
     ? new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(Number(v))
     : "—";
 
-// Versión que inyecta Vite al compilar (v1.1.<commits desde VERSION_RESET_COMMIT>).
+// Versión que inyecta Vite al compilar (v<mayor>.<menor>.<commits>, ver vite.config.js).
 // Se muestra en el header: una versión menor a la desplegada indica un bundle
 // viejo en la caché del service worker.
 export const APP_VERSION = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev";
@@ -183,13 +184,14 @@ function ProfileModal({ onClose }) {
     <Modal
       open
       onClose={onClose}
+      dirty={!busy && hasChanges({ alias: user?.alias }, { alias })}
       title="Mi perfil"
       size="sm"
       footer={
         <>
-          <button onClick={onClose} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
+          <ModalCloseButton className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
             Cancelar
-          </button>
+          </ModalCloseButton>
           <button
             onClick={save}
             disabled={busy}
@@ -551,6 +553,7 @@ function IndicatorsModal({ indicators, onCancel, onSave }) {
     dia: indicators?.dia ?? "",
     hora: indicators?.hora ?? "",
   }));
+  const [baseline] = useState(form);
   const [busy, setBusy] = useState(false);
 
   const set = (key, raw) => {
@@ -578,13 +581,14 @@ function IndicatorsModal({ indicators, onCancel, onSave }) {
     <Modal
       open
       onClose={onCancel}
+      dirty={!busy && hasChanges(baseline, form)}
       size="sm"
       title="Editar indicadores"
       footer={
         <>
-          <button onClick={onCancel} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
+          <ModalCloseButton className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
             Cancelar
-          </button>
+          </ModalCloseButton>
           <button
             onClick={submit}
             disabled={busy}

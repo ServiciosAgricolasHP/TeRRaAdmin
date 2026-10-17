@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import Modal from "./Modal";
+import Modal, { ModalCloseButton } from "./Modal";
+import { hasChanges } from "../utils/formChanges";
 import TextField from "./TextField";
 import Select from "./Select";
 import ConfirmDialog from "./ConfirmDialog";
@@ -620,18 +621,38 @@ export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate
   const kindOptions = TRIP_KINDS.map((k) => ({ value: k.value, label: k.label }));
   const laborOptions = labors.map((l) => ({ value: l.id, label: l.name }));
   const amount = (Number(qty) || 0) * (Number(rate) || 0);
+  // Los mismos valores con que el efecto de arriba llena el formulario.
+  const baseline = trip
+    ? {
+        carrierId: trip.carrierId,
+        vehicleAlias: trip.vehicleAlias,
+        date: trip.date || defaultDate,
+        kind: trip.kind || "regular",
+        laborId: trip.laborId,
+        qty: trip.qty || 1,
+        rate: trip.rate || 0,
+        lugar: trip.lugar,
+        destino: trip.destino,
+        personCount: trip.personCount,
+        notes: trip.notes,
+      }
+    : { date: defaultDate, kind: "regular", qty: 1, rate: 0 };
+  const dirty =
+    !saving &&
+    hasChanges(baseline, { carrierId, vehicleAlias, date, kind, laborId, qty, rate, lugar, destino, personCount, notes });
 
   return (
     <Modal
       open={open}
       onClose={onClose}
+      dirty={dirty}
       title={trip ? "Editar vuelta" : "Agregar vuelta"}
       size="lg"
       footer={
         <>
-          <button onClick={onClose} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
+          <ModalCloseButton className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
             Cancelar
-          </button>
+          </ModalCloseButton>
           <button
             onClick={handleSubmit}
             disabled={saving}
@@ -760,23 +781,24 @@ function QuickCreateCarrierModal({ open, onClose, onCreated }) {
   };
 
   const typeOptions = CARRIER_TYPES.map((t) => ({ value: t.value, label: t.label }));
+  const dirty =
+    !busy && hasChanges({ type: "contracted" }, { alias, name, type, defaultRate, vehicleAlias, plate });
 
   return (
     <Modal
       open={open}
       onClose={busy ? undefined : onClose}
+      dirty={dirty}
       title="Nuevo transportista"
       size="md"
       footer={(
         <>
-          <button
-            type="button"
-            onClick={onClose}
+          <ModalCloseButton
             disabled={busy}
             className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-50"
           >
             Cancelar
-          </button>
+          </ModalCloseButton>
           <button
             type="button"
             onClick={submit}

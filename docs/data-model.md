@@ -118,7 +118,7 @@ Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
 | `cashPaidRuts` | string[] | ruts de efectivo que ya cobraron sueltos; se descuentan de la deuda. NO estampan `paidAt` en sus workdays |
 | `cycleIds` | string[] | refs a `cycles` |
 | `cycleLabels` | snapshot | |
-| `cycleDetails` | `{ id, label, faena…, firstDay, lastDay, laborIds? }[]` | `laborIds`: qué labores del ciclo le pertenecen a la nómina (lo que Recalcular puede traer). Sin el campo = el ciclo entero; `[]` = solo días puntuales de personas, elegidos a mano al generar o con "+ Agregar persona". Ver "Agrandar una nómina pendiente" en AGENTS.md |
+| `cycleDetails` | `{ id, label, faena…, firstDay, lastDay, laborIds? }[]` | `laborIds`: qué labores del ciclo le pertenecen a la nómina (lo que Recalcular puede traer). Sin el campo = el ciclo entero; `[]` = solo días puntuales de personas, elegidos a mano al generar o con "+ Agregar persona". Sacar labores en el detalle las quita de la lista, y un ciclo que estaba entero pasa a llevar la lista de las que le quedan; sacar el ciclo entero lo quita de `cycleIds`, `cycleLabels` y `cycleDetails`. Ver "Agrandar" y "Achicar una nómina pendiente" en AGENTS.md |
 | `items` | `PayrollItem[]` | snapshot por trabajador |
 | `total`, `bankTotal`, `cashTotal` | number | |
 | `workerCount`, `bankCount`, `cashCount` | number | |

@@ -10,7 +10,8 @@ import { useIsMobile } from "../hooks/useIsMobile";
 import { useAuth } from "../contexts/AuthContext";
 import { comboKey, getDayCombos, workdayDocId, qualityLabel, containerLabel, mapHarvestCodes, invertHarvestCodes } from "../utils/cosechaCombos";
 import { currentRutResolver } from "../utils/workerRut";
-import Modal from "../components/Modal";
+import Modal, { ModalCloseButton } from "../components/Modal";
+import { hasChanges } from "../utils/formChanges";
 import Select from "../components/Select";
 import ConfirmDialog from "../components/ConfirmDialog";
 
@@ -555,6 +556,8 @@ function PrefixFormModal({ mode, initial, faenas, onClose, onSaved }) {
   const [active, setActive] = useState(initial.active !== false);
   const [cycles, setCycles] = useState([]);
   const [busy, setBusy] = useState(false);
+  const values = { prefix, label, faenaId, cycleId, laborId, active };
+  const [baseline] = useState(values);
 
   useEffect(() => {
     if (!faenaId) { setCycles([]); return; }
@@ -605,13 +608,14 @@ function PrefixFormModal({ mode, initial, faenas, onClose, onSaved }) {
     <Modal
       open
       onClose={onClose}
+      dirty={!busy && hasChanges(baseline, values)}
       title={mode === "create" ? "Nuevo prefijo QR" : `Editar prefijo ${initial.id}`}
       size="sm"
       footer={
         <>
-          <button onClick={onClose} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
+          <ModalCloseButton className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
             Cancelar
-          </button>
+          </ModalCloseButton>
           <button
             type="submit"
             form="harvestqr-prefix-form"
@@ -1711,6 +1715,9 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, knownCode
     { uid: 1, x: initial?.x ?? 0, y: initial?.y ?? 0, amount: initial?.amount != null ? String(initial.amount) : "" },
   ]);
   const nextUid = useRef(2);
+  // `uid` solo identifica la fila en la pantalla.
+  const values = { rut, dateKey, prefixId, qrPick, rows: rows.map((r) => ({ x: r.x, y: r.y, amount: r.amount })) };
+  const [baseline] = useState(values);
 
   const addRow = () => {
     const last = rows[rows.length - 1];
@@ -1902,13 +1909,14 @@ function WeightFormModal({ mode, initial, prefixes, workers, catalogs, knownCode
     <Modal
       open
       onClose={onClose}
+      dirty={!busy && hasChanges(baseline, values)}
       title={isEdit ? "Editar pesaje" : "Nuevos pesajes"}
       size="lg"
       footer={
         <>
-          <button onClick={onClose} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
+          <ModalCloseButton className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
             Cancelar
-          </button>
+          </ModalCloseButton>
           <button
             type="submit"
             form="harvestqr-weight-form"

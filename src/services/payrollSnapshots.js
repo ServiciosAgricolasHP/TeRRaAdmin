@@ -122,9 +122,9 @@ function headerTotals(header, aggregates, items) {
   };
 }
 
-// Deja el snapshot alineado con una nómina que se achicó (se le sacó un ciclo o
-// un trabajador): saca a quien salió, sus jornadas y sus anticipos, y pone al
-// día la cabecera de totales.
+// Deja el snapshot alineado con una nómina a la que se le sacó un trabajador:
+// saca a quien salió, sus jornadas y sus anticipos, y pone al día la cabecera
+// de totales.
 //
 // Recibe lo que ya quedó guardado en la nómina: los items, los agregados y,
 // cuando corresponde, los ciclos que siguen y las jornadas que se soltaron.
@@ -147,6 +147,35 @@ export async function pruneSnapshot(payrollId, { items, aggregates, cycleIds = n
     return true;
   } catch (err) {
     console.warn("No se pudo alinear el snapshot con la nómina:", err);
+    return false;
+  }
+}
+
+// Deja el snapshot igual a una nómina recalculada (`applyPayrollRecalc`): los
+// trabajadores y sus jornadas, ya con la forma del snapshot, los anticipos que
+// la nómina sigue tocando más los que se le aplicaron ahora, y la cabecera al
+// día. Con `cycleIds` (se sacó algo), quedan solo esos ciclos. Nunca tira.
+export async function syncSnapshotAfterRecalc(payrollId, { items, aggregates, workdays = [], newAdvances = [], cycleIds = null }) {
+  try {
+    const snap = await payrollSnapshotsService.getById(payrollId);
+    if (!snap) return false;
+    const referenciados = new Set((items || []).flatMap((it) => it.advanceIds || []));
+    const siguen = (snap.advances || []).filter((a) => referenciados.has(a.id));
+    const ya = new Set(siguen.map((a) => a.id));
+    const patch = {
+      workers: items,
+      workdays,
+      advances: [...siguen, ...newAdvances.filter((a) => !ya.has(a.id))],
+    };
+    if (cycleIds && Array.isArray(snap.cycles)) {
+      const quedan = new Set(cycleIds);
+      patch.cycles = snap.cycles.filter((c) => quedan.has(c.id));
+    }
+    if (snap.payroll && aggregates) patch.payroll = headerTotals(snap.payroll, aggregates, items);
+    await payrollSnapshotsService.update(payrollId, patch);
+    return true;
+  } catch (err) {
+    console.warn("No se pudo actualizar el snapshot al recalcular:", err);
     return false;
   }
 }

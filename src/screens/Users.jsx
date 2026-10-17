@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import Modal from "../components/Modal";
+import Modal, { ModalCloseButton } from "../components/Modal";
+import { hasChanges } from "../utils/formChanges";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { usersService } from "../services";
 import { enqueueJob, waitForJob } from "../services/functionJobsService";
@@ -318,17 +319,16 @@ function NewAccountModal({ onClose, onCreated }) {
     <Modal
       open
       onClose={busy ? undefined : onClose}
+      dirty={!busy && hasChanges({ role: "user", sendReset: true }, form)}
       title="Nueva cuenta"
       footer={
         <>
-          <button
-            type="button"
-            onClick={onClose}
+          <ModalCloseButton
             disabled={busy}
             className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm disabled:opacity-60"
           >
             Cancelar
-          </button>
+          </ModalCloseButton>
           {confirmButton}
         </>
       }
@@ -540,16 +540,13 @@ function GreetingsModal({ profile, onClose, onSaved }) {
     <Modal
       open
       onClose={onClose}
+      dirty={!busy && hasChanges(profile.greetings || {}, drafts)}
       title={`Saludos · ${nameOf(profile)}`}
       footer={
         <>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm"
-          >
+          <ModalCloseButton className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
             Cancelar
-          </button>
+          </ModalCloseButton>
           <button
             type="button"
             onClick={save}

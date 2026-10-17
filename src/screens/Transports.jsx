@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
 import { captureFullWidthBlob, captureFullWidthDataUrl } from "../utils/imageCapture";
-import Modal from "../components/Modal";
+import Modal, { ModalCloseButton } from "../components/Modal";
+import { hasChanges } from "../utils/formChanges";
 import TextField from "../components/TextField";
 import Select from "../components/Select";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -434,17 +435,30 @@ function CarrierEditModal({ open, onClose, carrier, onSave }) {
     }
   };
 
+  const dirty = hasChanges(
+    {
+      alias: carrier?.alias,
+      name: carrier?.name,
+      type: carrier?.type || "contracted",
+      defaultRate: carrier?.defaultRate || 0,
+      vehicles: carrier?.vehicles || [],
+      notes: carrier?.notes,
+    },
+    { alias, name, type, defaultRate, vehicles, notes },
+  );
+
   return (
     <Modal
       open={open}
       onClose={onClose}
+      dirty={dirty}
       title={carrier ? "Editar transportista" : "Nuevo transportista"}
       size="lg"
       footer={
         <>
-          <button onClick={onClose} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
+          <ModalCloseButton className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
             Cancelar
-          </button>
+          </ModalCloseButton>
           <button
             onClick={handleSubmit}
             className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]"
@@ -5952,17 +5966,24 @@ function PayrollMetaEditModal({ payroll, onClose, onSave }) {
       setBusy(false);
     }
   };
+  const dirty =
+    !busy &&
+    hasChanges(
+      { name: payroll?.name, periodFrom: payroll?.periodFrom, periodTo: payroll?.periodTo, notes: payroll?.notes },
+      { name, periodFrom, periodTo, notes },
+    );
   return (
     <Modal
       open
       onClose={() => !busy && onClose()}
+      dirty={dirty}
       title="Editar quincena"
       size="md"
       footer={
         <>
-          <button onClick={() => !busy && onClose()} disabled={busy} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
+          <ModalCloseButton disabled={busy} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
             Cancelar
-          </button>
+          </ModalCloseButton>
           <button onClick={onSubmit} disabled={!name.trim() || busy} className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50">
             {busy ? "Guardando..." : "Guardar"}
           </button>
