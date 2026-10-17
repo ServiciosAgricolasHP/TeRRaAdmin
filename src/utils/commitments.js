@@ -4,6 +4,7 @@
 // al día de al lado.
 import { BANKS } from "./banks";
 import { toTitleName, unshout } from "./textCase";
+import { nameSimilarity } from "./similarity";
 
 export const COMMITMENT_KINDS = {
   chequeIssued: { label: "Cheque emitido", icon: "📤", direction: "out" },
@@ -196,6 +197,50 @@ export function summarize(commitments, today) {
     }
   }
   return acc;
+}
+
+// ── Contrapartes ────────────────────────────────────────────────────────────
+
+// Un nombre sin tildes, mayúsculas ni puntuación, para no repetir variantes.
+const counterpartyKey = (name) =>
+  String(name || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim();
+
+// Contrapartes ya usadas, una por nombre, de la más usada a la menos usada.
+// Alimenta el autocompletar del alta.
+export function counterpartyOptions(items) {
+  const byKey = new Map();
+  for (const c of items) {
+    const name = String(c.counterparty || "").trim();
+    const key = counterpartyKey(name);
+    if (!key) continue;
+    const entry = byKey.get(key) || { name, count: 0 };
+    entry.count += 1;
+    byKey.set(key, entry);
+  }
+  return [...byKey.values()]
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "es"))
+    .map((e) => e.name);
+}
+
+// La contraparte ya usada que se parece a `name` sin ser la misma
+// ("Bancoestado" → "Banco Estado"), o `null`. Si `name` ya es una de ellas
+// (aunque cambien mayúsculas o tildes), no hay nada que sugerir. El informe
+// agrupa las deudas sueltas por contraparte, así que dos variantes del mismo
+// nombre salen como dos deudas.
+export function similarCounterparty(name, options, threshold = 0.85) {
+  if (!counterpartyKey(name)) return null;
+  let best = null;
+  for (const option of options) {
+    const score = nameSimilarity(name, option);
+    if (score >= 1) return null;
+    if (score >= threshold && (!best || score > best.score)) best = { name: option, score };
+  }
+  return best ? best.name : null;
 }
 
 // ── Informe de pagos ────────────────────────────────────────────────────────

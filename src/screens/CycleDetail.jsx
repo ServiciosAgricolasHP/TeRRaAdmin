@@ -58,7 +58,8 @@ import { useCatalogs } from "../contexts/CatalogsContext";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
 import { greeting, GREETING_SLOTS } from "../utils/greetings";
-import Modal from "../components/Modal";
+import Modal, { ModalCloseButton } from "../components/Modal";
+import { hasChanges } from "../utils/formChanges";
 import TextField from "../components/TextField";
 import Select from "../components/Select";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -1117,6 +1118,10 @@ export default function CycleDetail() {
   const editingDayNoteIdx = editingDayNote ? days.indexOf(editingDayNote.date) : -1;
   const hasPrevDayNote = editingDayNoteIdx > 0 && days.slice(0, editingDayNoteIdx).some(dayHasContent);
   const hasNextDayNote = editingDayNoteIdx >= 0 && days.slice(editingDayNoteIdx + 1).some(dayHasContent);
+  // Con la anotación cambiada y sin guardar, ◀ ▶ quedan deshabilitados: pasar
+  // de día la descartaría.
+  const dayNoteDirty =
+    !!editingDayNote && !dayNoteBusy && hasChanges({ text: noteForDay(editingDayNote.date) }, { text: editingDayNoteText });
   const goToDayNote = (delta) => {
     if (!editingDayNote) return;
     let idx = editingDayNoteIdx;
@@ -2777,8 +2782,12 @@ export default function CycleDetail() {
   // Labor
   // ============================================================
 
+  // `initial`: cómo se abrió el formulario, para avisar si se cierra con
+  // cambios sin guardar.
+  const openLaborForm = (form) => setLaborForm({ ...form, initial: form.data });
+
   const openCreateLabor = () =>
-    setLaborForm({
+    openLaborForm({
       mode: "create",
       data: {
         name: "", type: "extra",
@@ -2796,7 +2805,7 @@ export default function CycleDetail() {
     });
 
   const openEditLabor = () =>
-    setLaborForm({
+    openLaborForm({
       mode: "edit",
       data: {
         id: activeLabor.id,
@@ -4880,14 +4889,15 @@ export default function CycleDetail() {
       <Modal
         open={!!editingDayNote}
         onClose={closeDayNote}
+        dirty={dayNoteDirty}
         size="lg"
         title={editingDayNote ? (
           <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={() => goToDayNote(-1)}
-              disabled={!hasPrevDayNote}
-              title="Día anterior"
+              disabled={!hasPrevDayNote || dayNoteDirty}
+              title={dayNoteDirty ? "Guarda la anotación antes de cambiar de día" : "Día anterior"}
               className="rounded px-1.5 py-0.5 text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] disabled:opacity-30 disabled:hover:bg-transparent"
             >
               ◀
@@ -4898,8 +4908,8 @@ export default function CycleDetail() {
             <button
               type="button"
               onClick={() => goToDayNote(1)}
-              disabled={!hasNextDayNote}
-              title="Día siguiente"
+              disabled={!hasNextDayNote || dayNoteDirty}
+              title={dayNoteDirty ? "Guarda la anotación antes de cambiar de día" : "Día siguiente"}
               className="rounded px-1.5 py-0.5 text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] disabled:opacity-30 disabled:hover:bg-transparent"
             >
               ▶
@@ -4908,14 +4918,12 @@ export default function CycleDetail() {
         ) : "Anotación"}
         footer={(
           <>
-            <button
-              type="button"
-              onClick={closeDayNote}
+            <ModalCloseButton
               disabled={dayNoteBusy}
               className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
             >
               Cancelar
-            </button>
+            </ModalCloseButton>
             <button
               type="button"
               onClick={saveDayNote}
@@ -5070,6 +5078,7 @@ export default function CycleDetail() {
       <Modal
         open={!!laborForm}
         onClose={() => setLaborForm(null)}
+        dirty={!!laborForm && hasChanges(laborForm.initial, laborForm.data)}
         title={laborForm?.mode === "edit" ? "Editar labor" : "Nueva labor"}
       >
         {laborForm && (
@@ -5175,9 +5184,9 @@ export default function CycleDetail() {
               </div>
             )}
             <div className="flex justify-end gap-2 pt-2">
-              <button type="button" onClick={() => setLaborForm(null)} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm hover:bg-[var(--color-accent-soft)]">
+              <ModalCloseButton className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm hover:bg-[var(--color-accent-soft)]">
                 Cancelar
-              </button>
+              </ModalCloseButton>
               <button type="submit" className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]">
                 Guardar
               </button>
@@ -5837,9 +5846,19 @@ function BonusEditModal({ open, onClose, labor, wd, workerName, date, readOnly, 
   if (!labor) return null;
   const bonusManejo = labor.bonusManejo ?? DEFAULT_BONUS_MANEJO;
   const bonusSupervision = labor.bonusSupervision ?? DEFAULT_BONUS_SUPERVISION;
+  // Los mismos valores con que el efecto de arriba llena el formulario.
+  const defaults = labor.bonusDefaults?.[wd?.workerRut] || {};
+  const dirty = hasChanges(
+    {
+      hasManejo: wd ? !!wd.hasManejo : !!defaults.manejo,
+      hasSupervision: wd ? !!wd.hasSupervision : !!defaults.supervision,
+      extras: wd?.extras ? String(wd.extras) : "",
+    },
+    { hasManejo, hasSupervision, extras },
+  );
 
   return (
-    <Modal open={open} onClose={onClose} title={`Bonos · ${date || ""}`}>
+    <Modal open={open} onClose={onClose} dirty={dirty} title={`Bonos · ${date || ""}`}>
       <div className="space-y-3">
         {workerName && <div className="text-sm text-[var(--color-muted)]">{workerName}</div>}
         <label className="flex items-center justify-between gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
@@ -5870,9 +5889,9 @@ function BonusEditModal({ open, onClose, labor, wd, workerName, date, readOnly, 
             className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)] disabled:opacity-50" />
         </div>
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm hover:bg-[var(--color-accent-soft)]">
+          <ModalCloseButton className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm hover:bg-[var(--color-accent-soft)]">
             Cancelar
-          </button>
+          </ModalCloseButton>
           <button onClick={() => onSave({ hasManejo, hasSupervision, extras: Number(extras) || 0 })}
             disabled={readOnly}
             className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50">
@@ -5982,9 +6001,19 @@ function DayModeModal({ open, onClose, date, labor, cfg, readOnly, onSave }) {
 
   if (!labor) return null;
   const weekend = isWeekendDate(date);
+  const dirty =
+    !!cfg &&
+    hasChanges(
+      {
+        price: cfg.price ? String(cfg.price) : String(labor.baseDayDefault ?? DEFAULT_BASE_DAY),
+        mode: cfg.mode || "normal",
+        isHoliday: !!cfg.isHoliday,
+      },
+      { price, mode, isHoliday },
+    );
 
   return (
-    <Modal open={open} onClose={onClose} title={`Configurar día · ${date || ""}`}>
+    <Modal open={open} onClose={onClose} dirty={dirty} title={`Configurar día · ${date || ""}`}>
       <div className="space-y-4">
         {weekend && (
           <div className="rounded-md border border-[var(--color-danger)] bg-[var(--color-danger-soft)] px-3 py-2 text-sm text-[var(--color-danger)]">
@@ -6021,9 +6050,9 @@ function DayModeModal({ open, onClose, date, labor, cfg, readOnly, onSave }) {
             className="h-5 w-5 accent-[var(--color-accent)]" />
         </label>
         <div className="flex justify-end gap-2 pt-2">
-          <button onClick={onClose} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm hover:bg-[var(--color-accent-soft)]">
+          <ModalCloseButton className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm hover:bg-[var(--color-accent-soft)]">
             Cancelar
-          </button>
+          </ModalCloseButton>
           <button onClick={() => onSave({ price: Number(price) || 0, mode, isHoliday })}
             disabled={readOnly}
             className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50">
@@ -6054,7 +6083,13 @@ function DefaultLeadersModal({ open, onClose, labor, readOnly, onSave }) {
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Líderes y manejo (por defecto)" size="lg">
+    <Modal
+      open={open}
+      onClose={onClose}
+      dirty={hasChanges(labor.bonusDefaults || {}, draft)}
+      title="Líderes y manejo (por defecto)"
+      size="lg"
+    >
       <p className="mb-3 text-sm text-[var(--color-muted)]">
         Los trabajadores marcados reciben automáticamente el bono cuando se ingrese una jornada nueva.
         Para una excepción puntual, abre el bono de esa celda y desmárcalo manualmente.
@@ -6099,9 +6134,9 @@ function DefaultLeadersModal({ open, onClose, labor, readOnly, onSave }) {
         </table>
       </div>
       <div className="mt-4 flex justify-end gap-2">
-        <button onClick={onClose} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm hover:bg-[var(--color-accent-soft)]">
+        <ModalCloseButton className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm hover:bg-[var(--color-accent-soft)]">
           Cancelar
-        </button>
+        </ModalCloseButton>
         <button onClick={() => onSave(draft)} disabled={readOnly}
           className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50">
           Guardar

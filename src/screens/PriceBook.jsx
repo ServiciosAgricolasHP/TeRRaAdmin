@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "../contexts/ToastContext";
 import { faenasService, priceBookService, priceBookConfigService } from "../services";
-import Modal from "../components/Modal";
+import Modal, { ModalCloseButton } from "../components/Modal";
+import { hasChanges } from "../utils/formChanges";
 import Select from "../components/Select";
 import TextField from "../components/TextField";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -407,6 +408,9 @@ function EntryFormModal({ initial, faenas, hiddenFaenaIds, units, onClose, onSav
   const [periodNote, setPeriodNote] = useState(initial.periodNote || "");
   const [notes, setNotes] = useState(initial.notes || "");
   const [busy, setBusy] = useState(false);
+  const values = { faenaId, faenaLabel, labor, priceLines, transportIncluded, transportWhere, transportCost, dateFrom, dateTo, periodNote, notes };
+  const [baseline] = useState(values);
+  const dirty = !busy && hasChanges(baseline, values);
 
   const visibleFaenas = faenas.filter((f) => !hiddenFaenaIds.has(f.id));
 
@@ -491,13 +495,14 @@ function EntryFormModal({ initial, faenas, hiddenFaenaIds, units, onClose, onSav
     <Modal
       open
       onClose={onClose}
+      dirty={dirty}
       title={isEdit ? "Editar entrada" : "Nueva entrada"}
       size="lg"
       footer={
         <>
-          <button onClick={onClose} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
+          <ModalCloseButton className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
             Cancelar
-          </button>
+          </ModalCloseButton>
           <button
             type="submit"
             form="pricebook-entry-form"
@@ -715,13 +720,14 @@ function HiddenFaenasModal({ faenas, hiddenFaenaIds, onClose, onSaved }) {
     <Modal
       open
       onClose={onClose}
+      dirty={!busy && hasChanges({ ids: [...hiddenFaenaIds].sort() }, { ids: [...hidden].sort() })}
       title="Faenas visibles en el selector"
       size="sm"
       footer={
         <>
-          <button onClick={onClose} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
+          <ModalCloseButton className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
             Cancelar
-          </button>
+          </ModalCloseButton>
           <button
             type="submit"
             form="pricebook-hidden-faenas-form"

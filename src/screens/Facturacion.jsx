@@ -13,7 +13,8 @@ import { importDteRecords } from "../services/dteImportService";
 import { parseSiiRcvCsv, dteTypeLabel, buildDteDocId, normalizeRut, extractRutFromFilename, otroImpuestoLabel, otroImpuestoCategory, OTRO_IMP_CATEGORIES } from "../utils/siiCsvParser";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import { toTitleName, unshout } from "../utils/textCase";
-import Modal from "../components/Modal";
+import Modal, { ModalCloseButton } from "../components/Modal";
+import { hasChanges } from "../utils/formChanges";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
@@ -3710,6 +3711,8 @@ function InformalExpenseFormModal({ expense, costCenterId, companiesList, onClos
   const [companyId, setCompanyId] = useState(expense?.companyId || "");
   const [busy, setBusy] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const values = { date, amount, detail, companyId };
+  const [baseline] = useState(values);
 
   const save = async () => {
     if (!date) { toast.warning("Falta la fecha."); return; }
@@ -3753,6 +3756,7 @@ function InformalExpenseFormModal({ expense, costCenterId, companiesList, onClos
     <Modal
       open
       onClose={onClose}
+      dirty={!busy && hasChanges(baseline, values)}
       size="md"
       title={expense ? "Editar gasto informal" : "Nuevo gasto informal"}
       footer={
@@ -3767,14 +3771,12 @@ function InformalExpenseFormModal({ expense, costCenterId, companiesList, onClos
               Eliminar
             </button>
           )}
-          <button
-            type="button"
-            onClick={onClose}
+          <ModalCloseButton
             disabled={busy}
             className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm"
           >
             Cancelar
-          </button>
+          </ModalCloseButton>
           <button
             type="submit"
             form="informal-expense-form"
@@ -4906,16 +4908,14 @@ function DocDetailModal({ dteDoc, candidateNcs = [], costCenters = [], onClose, 
     <Modal
       open
       onClose={onClose}
+      dirty={dirty}
       size="lg"
       title={`${dteDoc.tipoLabel} N° ${dteDoc.folio}`}
       footer={
         <>
-          <button
-            onClick={onClose}
-            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm"
-          >
+          <ModalCloseButton className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm">
             Cerrar
-          </button>
+          </ModalCloseButton>
           <button
             onClick={save}
             disabled={!dirty}

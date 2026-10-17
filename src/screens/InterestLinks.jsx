@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { interestLinksService } from "../services";
-import Modal from "../components/Modal";
+import Modal, { ModalCloseButton } from "../components/Modal";
+import { hasChanges } from "../utils/formChanges";
 import TextField from "../components/TextField";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { useToast } from "../contexts/ToastContext";
@@ -89,11 +90,16 @@ export default function InterestLinks() {
     }
   };
 
-  const openCreate = () =>
-    setForm({ mode: "create", data: { text: "", url: "" } });
+  // `initial`: cómo se abrió, para avisar si se cierra con cambios sin guardar.
+  const openCreate = () => {
+    const data = { text: "", url: "" };
+    setForm({ mode: "create", data, initial: data });
+  };
 
-  const openEdit = (link) =>
-    setForm({ mode: "edit", data: { id: link.id, text: link.text || "", url: link.url || "" } });
+  const openEdit = (link) => {
+    const data = { id: link.id, text: link.text || "", url: link.url || "" };
+    setForm({ mode: "edit", data, initial: data });
+  };
 
   const submitForm = async (e) => {
     e.preventDefault();
@@ -223,6 +229,7 @@ export default function InterestLinks() {
       <Modal
         open={!!form}
         onClose={() => !busy && setForm(null)}
+        dirty={!!form && !busy && hasChanges(form.initial, form.data)}
         title={form?.mode === "create" ? "Nuevo link" : "Editar link"}
       >
         {form && (
@@ -243,14 +250,12 @@ export default function InterestLinks() {
               onChange={(v) => setForm({ ...form, data: { ...form.data, url: v } })}
             />
             <div className="flex justify-end gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setForm(null)}
+              <ModalCloseButton
                 disabled={busy}
                 className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
               >
                 Cancelar
-              </button>
+              </ModalCloseButton>
               <button
                 type="submit"
                 disabled={busy}

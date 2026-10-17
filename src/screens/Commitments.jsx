@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import Modal from "../components/Modal";
+import Modal, { ModalCloseButton } from "../components/Modal";
 import ConfirmDialog from "../components/ConfirmDialog";
 import PaymentReportModal from "../components/PaymentReportModal";
 import { useToast } from "../contexts/ToastContext";
@@ -61,10 +61,13 @@ import {
   applySeriesTool,
   seriesChanges,
   seriesRowError,
+  counterpartyOptions,
+  similarCounterparty,
 } from "../utils/commitments";
 import { BANKS, bankName } from "../utils/banks";
 import { localIsoDate } from "../utils/dates";
 import { fmtCurrency } from "../utils/format";
+import { hasChanges } from "../utils/formChanges";
 
 const inputCls =
   "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]";
@@ -208,6 +211,7 @@ export default function Commitments() {
   };
 
   const summary = useMemo(() => summarize(items, today), [items, today]);
+  const counterparties = useMemo(() => counterpartyOptions(items), [items]);
 
   const upcomingGroups = useMemo(() => {
     const groups = groupUpcoming(items, today);
@@ -540,6 +544,7 @@ export default function Commitments() {
           initial={editing}
           today={today}
           companies={companies}
+          counterparties={counterparties}
           onCancel={() => setEditing(null)}
           onStopSeries={editing.seriesId && !editing.installment ? () => askStopSeries(editing) : null}
           onSave={async (draft, plan) => {
@@ -763,6 +768,8 @@ function PartialPaymentModal({ item, items, today, onClose, onSaved }) {
   const allocation = target === "debt" && value > 0 ? allocatePartialPayment(debt, value).parts : [];
   const error = value > available ? `Es más que lo que falta (${fmtCurrency(available)})` : "";
   const canSave = open.length > 0 && value > 0 && !!date && !error && (target === "debt" || isOpen(targetItem || {}));
+  // Un abono escrito y sin registrar.
+  const dirty = !busy && (String(amount).trim() !== "" || notes.trim() !== "");
 
   // Historial: un abono a toda la deuda se muestra una vez, con sus partes.
   const historyRows = new Map();
@@ -811,10 +818,11 @@ function PartialPaymentModal({ item, items, today, onClose, onSaved }) {
       open
       size="lg"
       onClose={onClose}
+      dirty={dirty}
       title={`Abonos · ${item.counterparty}`}
       footer={
         <>
-          <button type="button" className={btnCls} onClick={onClose}>Cerrar</button>
+          <ModalCloseButton className={btnCls}>Cerrar</ModalCloseButton>
           {open.length > 0 && (
             <button type="button" className={primaryCls} disabled={!canSave || busy} onClick={save}>
               {busy ? "Guardando…" : "Registrar abono"}
@@ -1017,6 +1025,7 @@ function SeriesEditModal({ item, items, today, onCancel, onSaved }) {
       open
       size="xl"
       onClose={onCancel}
+      dirty={dirty && !busy}
       title={`${recurring ? "Ajustar vencimientos" : "Ajustar cuotas"} · ${item.counterparty}`}
       footer={
         <>
@@ -1029,7 +1038,7 @@ function SeriesEditModal({ item, items, today, onCancel, onSaved }) {
               Deshacer cambios
             </button>
           )}
-          <button type="button" className={btnCls} onClick={onCancel}>Cancelar</button>
+          <ModalCloseButton className={btnCls}>Cancelar</ModalCloseButton>
           <button type="button" className={primaryCls} disabled={!dirty || hasErrors || busy} onClick={save}>
             {busy ? "Guardando…" : "Guardar"}
           </button>
@@ -1441,13 +1450,41 @@ function CommitmentList({
   );
 }
 
-// Campos comunes de contraparte, concepto, monto, empresa y notas.
-function CommonFields({ form, set, companies, counterpartyLabel, amountLabel = "Monto" }) {
+// Campos comunes de contraparte, concepto, monto, empresa y notas. La
+// contraparte se autocompleta con las ya usadas y, si lo escrito se parece a
+// una de ellas sin ser igual, ofrece usar esa.
+function CommonFields({ form, set, companies, counterparties = [], counterpartyLabel, amountLabel = "Monto" }) {
+  const similar = similarCounterparty(form.counterparty, counterparties);
   return (
     <>
       <div className="sm:col-span-2">
         <label className={labelCls}>{counterpartyLabel}</label>
-        <input value={form.counterparty || ""} onChange={(e) => set({ counterparty: e.target.value })} className={inputCls} />
+        <input
+          list="commitment-counterparties"
+          autoComplete="off"
+          value={form.counterparty || ""}
+          onChange={(e) => set({ counterparty: e.target.value })}
+          className={inputCls}
+        />
+        <datalist id="commitment-counterparties">
+          {counterparties.map((name) => (
+            <option key={name} value={name} />
+          ))}
+        </datalist>
+        {similar && (
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[var(--color-warning)]">
+            <span>
+              Se parece a <b>{similar}</b>, que ya está registrado.
+            </span>
+            <button
+              type="button"
+              onClick={() => set({ counterparty: similar })}
+              className="min-h-8 rounded-md border border-[var(--color-warning)] px-2 font-medium hover:bg-[var(--color-warning-soft)]"
+            >
+              Usar ese nombre
+            </button>
+          </div>
+        )}
       </div>
       <div>
         <label className={labelCls}>{amountLabel}</label>
@@ -1499,7 +1536,7 @@ const PLAN_TYPES = {
 // cuotas o un pago recurrente muestra los vencimientos que va a crear antes de
 // confirmar. Lo escrito se conserva al cambiar de tipo. Al editar, una cuota o
 // un vencimiento de una serie no cambia de tipo.
-function CommitmentModal({ initial, today, companies, onCancel, onSave, onStopSeries }) {
+function CommitmentModal({ initial, today, companies, counterparties, onCancel, onSave, onStopSeries }) {
   const toast = useToast();
   const isNew = !initial.id;
   const [form, setForm] = useState(() => ({
@@ -1508,6 +1545,7 @@ function CommitmentModal({ initial, today, companies, onCancel, onSave, onStopSe
     ...initial,
     extra: initial.status === "paid" ? Number(initial.extra) || 0 : 0,
   }));
+  const [baseline] = useState(form);
   const [plan, setPlan] = useState(null); // null | "installment" | "recurring"
   const [busy, setBusy] = useState(false);
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
@@ -1518,6 +1556,9 @@ function CommitmentModal({ initial, today, companies, onCancel, onSave, onStopSe
   const series = plan || (debtSplit ? "personalDebt" : null);
   const kindLocked = !!form.seriesId || form.kind === "installment";
   const knownBank = !form.bank || CHEQUE_BANKS.some((b) => b.code === form.bank);
+  // Al agregar, elegir el tipo o el número de cuotas sin escribir nada más no
+  // es un cambio que se pierda.
+  const dirty = !busy && hasChanges(baseline, form, { ignore: isNew ? ["kind", "count", "debtCount"] : [] });
 
   const dates = useMemo(() => {
     const count = plan === "installment" ? form.count : debtSplit ? form.debtCount : 0;
@@ -1580,6 +1621,7 @@ function CommitmentModal({ initial, today, companies, onCancel, onSave, onStopSe
       open
       size="lg"
       onClose={onCancel}
+      dirty={dirty}
       title={isNew ? "Agregar documento" : "Editar"}
       footer={
         <>
@@ -1588,7 +1630,7 @@ function CommitmentModal({ initial, today, companies, onCancel, onSave, onStopSe
               ⏹ Detener pago recurrente
             </button>
           )}
-          <button type="button" className={btnCls} onClick={onCancel}>Cancelar</button>
+          <ModalCloseButton className={btnCls}>Cancelar</ModalCloseButton>
           <button type="submit" form="commitment-form" className={primaryCls} disabled={busy || (series && !dates.length)}>
             {busy ? "Guardando…" : series ? `Crear ${dates.length} vencimiento(s)` : "Guardar"}
           </button>
@@ -1660,7 +1702,14 @@ function CommitmentModal({ initial, today, companies, onCancel, onSave, onStopSe
               </div>
             </>
           )}
-          <CommonFields form={form} set={set} companies={companies} counterpartyLabel={counterpartyLabel} amountLabel={amountLabel} />
+          <CommonFields
+            form={form}
+            set={set}
+            companies={companies}
+            counterparties={counterparties}
+            counterpartyLabel={counterpartyLabel}
+            amountLabel={amountLabel}
+          />
           {form.status === "paid" && (
             <div>
               <label className={labelCls}>Interés / extra pagado</label>
@@ -1705,6 +1754,8 @@ function ConfigModal({ onClose }) {
   const { user } = useAuth();
   const [config, setConfig] = useState(null);
   const [recipientsText, setRecipientsText] = useState("");
+  // La configuración guardada, para avisar si se cierra con cambios.
+  const [baseline, setBaseline] = useState(null);
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
 
@@ -1715,8 +1766,13 @@ function ConfigModal({ onClose }) {
         if (!alive) return;
         setConfig(c);
         setRecipientsText((c.recipients || []).join("\n"));
+        setBaseline({ ...c, recipients: c.recipients || [] });
       })
-      .catch(() => alive && setConfig({ ...DEFAULT_COMMITMENT_CONFIG }));
+      .catch(() => {
+        if (!alive) return;
+        setConfig({ ...DEFAULT_COMMITMENT_CONFIG });
+        setBaseline({ ...DEFAULT_COMMITMENT_CONFIG });
+      });
     return () => {
       alive = false;
     };
@@ -1724,10 +1780,13 @@ function ConfigModal({ onClose }) {
 
   const parsedRecipients = recipientsText.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean);
   const invalid = parsedRecipients.filter((e) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+  const current = config && { ...config, recipients: parsedRecipients };
+  const dirty = !busy && !testing && hasChanges(baseline, current);
 
   const persist = async () => {
     if (invalid.length) throw new Error(`Correo no válido: ${invalid.join(", ")}`);
-    await saveCommitmentConfig({ ...config, recipients: parsedRecipients });
+    await saveCommitmentConfig(current);
+    setBaseline(current);
   };
 
   const save = async () => {
@@ -1774,13 +1833,14 @@ function ConfigModal({ onClose }) {
       open
       size="md"
       onClose={onClose}
+      dirty={dirty}
       title="Avisos por correo"
       footer={
         <>
           <button type="button" className={`${btnCls} mr-auto`} onClick={sendTest} disabled={!config || testing || busy || !parsedRecipients.length}>
             {testing ? "Enviando…" : "📧 Enviar prueba"}
           </button>
-          <button type="button" className={btnCls} onClick={onClose}>Cancelar</button>
+          <ModalCloseButton className={btnCls}>Cancelar</ModalCloseButton>
           <button type="button" className={primaryCls} onClick={save} disabled={!config || busy}>
             {busy ? "Guardando…" : "Guardar"}
           </button>
