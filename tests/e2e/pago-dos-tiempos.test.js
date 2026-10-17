@@ -9,11 +9,10 @@ import {
   setCashPaidRuts,
   pendingCashOf,
   removeWorkerFromPayroll,
-  removeCycleFromPayroll,
   addCyclesToPayroll,
-  recalculatePayrollItems,
   recalcPayrollAggregates,
 } from "../../src/services/payrollsService";
+import { applyPayrollRecalc } from "../../src/services/payrollRecalc";
 import { ANA, BETO, CARO, CICLO, seedEscenarioNomina, get } from "./helpers/seed";
 import { workdaysService } from "../../src/services";
 import { workdayDocId } from "../../src/utils/cosechaCombos";
@@ -186,8 +185,9 @@ describe("guards de edición con transferencias emitidas", () => {
     expect(p.cashCount).toBe(1);
   });
 
-  // Las otras tres puertas de edición de una nómina. Las cuatro llaman a
-  // `assertEditable` por su cuenta, así que hay un test por camino.
+  // Las otras puertas de edición de una nómina. Cada una llama a
+  // `assertEditable` por su cuenta, así que hay un test por camino. Sacar
+  // ciclos o labores es recalcular sin ellos: pasa por el mismo guard.
   it("no deja agregar ciclos después de transferir", async () => {
     const id = await nominaConDosBolsas();
     await markBankPaid(id);
@@ -205,15 +205,15 @@ describe("guards de edición con transferencias emitidas", () => {
     await markBankPaid(id);
     const p = await get("payrolls", id);
     // El mensaje nombra la acción: `assertEditable` recibe el verbo.
-    await expect(recalculatePayrollItems(id, { items: p.items })).rejects.toThrow(
-      /recalcular/i,
-    );
+    await expect(applyPayrollRecalc(id, { mergedItems: p.items })).rejects.toThrow(/recalcular/i);
   });
 
   it("no deja sacar un ciclo después de transferir", async () => {
     const id = await nominaConDosBolsas();
     await markBankPaid(id);
-    await expect(removeCycleFromPayroll(id, CICLO)).rejects.toThrow(/transferencias/i);
+    const p = await get("payrolls", id);
+    const sinCiclo = { cycleIds: [], cycleLabels: [], cycleDetails: [] };
+    await expect(applyPayrollRecalc(id, { mergedItems: p.items, scope: sinCiclo })).rejects.toThrow(/transferencias/i);
   });
 
   it("nada de eso cambió la nómina", async () => {
@@ -224,8 +224,8 @@ describe("guards de edición con transferencias emitidas", () => {
 
     for (const intento of [
       () => addCyclesToPayroll(id, { items: antes.items, cycleDetailsToAdd: [{ id: "ciclo-2", label: "x" }] }),
-      () => recalculatePayrollItems(id, { items: antes.items }),
-      () => removeCycleFromPayroll(id, CICLO),
+      () => applyPayrollRecalc(id, { mergedItems: antes.items }),
+      () => applyPayrollRecalc(id, { mergedItems: antes.items, scope: { cycleIds: [], cycleLabels: [], cycleDetails: [] } }),
       () => removeWorkerFromPayroll(id, ANA.id),
     ]) {
       await expect(intento()).rejects.toThrow();
@@ -249,7 +249,7 @@ describe("guards de edición con la nómina pagada entera", () => {
     await expect(
       addCyclesToPayroll(id, { items: p.items, cycleDetailsToAdd: [{ id: "ciclo-2", label: "x" }] }),
     ).rejects.toThrow(/pagada/i);
-    await expect(recalculatePayrollItems(id, { items: p.items })).rejects.toThrow(/pagada/i);
+    await expect(applyPayrollRecalc(id, { mergedItems: p.items })).rejects.toThrow(/pagada/i);
     await expect(removeWorkerFromPayroll(id, ANA.id)).rejects.toThrow(/pagada/i);
   });
 });
@@ -288,7 +288,7 @@ describe("las mismas operaciones mientras la nómina sigue pendiente", () => {
     const corregidos = p.items.map((it) =>
       it.rut === ANA.id ? { ...it, amount: 120000 } : it,
     );
-    await recalculatePayrollItems(id, { items: corregidos });
+    await applyPayrollRecalc(id, { mergedItems: corregidos });
 
     const final = await get("payrolls", id);
     expect(final.total).toBe(170000);

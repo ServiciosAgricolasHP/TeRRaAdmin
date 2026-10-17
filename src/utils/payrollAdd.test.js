@@ -12,6 +12,9 @@ const {
   planAddWorkdays,
   workerDayRows,
   asPayrollWorker,
+  isRemovedFromPayroll,
+  cycleScopeAfterRemoval,
+  payrollCycleBreakdown,
 } = await import("./payrollItem");
 
 const tipos = new Map([
@@ -101,6 +104,137 @@ describe("qué trae Recalcular (alcance por labor)", () => {
 
   it("los trabajadores temporales no entran", () => {
     expect(inRecalcScope(wd("x", { cycleId: "C", rut: "TEMP-1" }), "N1", scope)).toBe(false);
+  });
+});
+
+describe("sacar ciclos o labores (lo destildado en el detalle)", () => {
+  const removed = new Map([
+    ["A", true],
+    ["B", new Set(["L2"])],
+  ]);
+
+  it("una jornada de un ciclo sacado entero, o de una labor sacada, queda afuera", () => {
+    expect(isRemovedFromPayroll(wd("x", { cycleId: "A", laborId: "L1" }), removed)).toBe(true);
+    expect(isRemovedFromPayroll(wd("x", { cycleId: "B", laborId: "L2" }), removed)).toBe(true);
+  });
+
+  it("el resto de las labores del ciclo y los otros ciclos siguen", () => {
+    expect(isRemovedFromPayroll(wd("x", { cycleId: "B", laborId: "L1" }), removed)).toBe(false);
+    expect(isRemovedFromPayroll(wd("x", { cycleId: "C", laborId: "L2" }), removed)).toBe(false);
+    expect(isRemovedFromPayroll(wd("x", { cycleId: "A" }), new Map())).toBe(false);
+  });
+
+  const laborIdsOf = (cid) => ({ A: ["L1", "L2"], B: ["L1", "L2", "LT"], C: ["L1"] })[cid] || [];
+  const detalles = [
+    { id: "A", label: "Ciclo A" },
+    { id: "B", label: "Ciclo B" },
+    { id: "C", label: "Ciclo C", laborIds: ["L1"] },
+  ];
+
+  it("un ciclo sacado entero sale de cycleIds, cycleLabels y cycleDetails", () => {
+    const r = cycleScopeAfterRemoval({
+      cycleDetails: detalles,
+      cycleIds: ["A", "B", "C"],
+      cycleLabels: ["Ciclo A", "Ciclo B", "Ciclo C"],
+      removed: new Map([["A", true]]),
+      laborIdsOf,
+    });
+    expect(r.cycleIds).toEqual(["B", "C"]);
+    expect(r.cycleLabels).toEqual(["Ciclo B", "Ciclo C"]);
+    expect(r.cycleDetails.map((c) => c.id)).toEqual(["B", "C"]);
+    expect(r.removedCycleIds).toEqual(["A"]);
+  });
+
+  it("a un ciclo entero que pierde labores le queda la lista de las otras: Recalcular no las vuelve a traer", () => {
+    const r = cycleScopeAfterRemoval({ cycleDetails: detalles, removed: new Map([["B", new Set(["L2"])]]), laborIdsOf });
+    expect(r.cycleDetails.find((c) => c.id === "B").laborIds).toEqual(["L1", "LT"]);
+    expect(r.cycleIds).toEqual(["A", "B", "C"]);
+  });
+
+  it("a un ciclo con lista de labores se le quitan las sacadas", () => {
+    const r = cycleScopeAfterRemoval({
+      cycleDetails: [{ id: "C", label: "Ciclo C", laborIds: ["L1", "L2"] }],
+      removed: new Map([["C", new Set(["L1"])]]),
+      laborIdsOf,
+    });
+    expect(r.cycleDetails[0].laborIds).toEqual(["L2"]);
+  });
+
+  it("sin nada sacado, todo queda igual", () => {
+    const r = cycleScopeAfterRemoval({ cycleDetails: detalles, cycleIds: ["A", "B", "C"], cycleLabels: ["a", "b", "c"], laborIdsOf });
+    expect(r.cycleDetails).toEqual(detalles);
+    expect(r.cycleLabels).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("payrollCycleBreakdown (lo que paga la nómina por ciclo y labor)", () => {
+  const id = (cycleId, laborId, rut, date, ck = "") => [cycleId, laborId, rut, date, ck].filter(Boolean).join("__");
+  const items = [
+    item({
+      rut: "ANA",
+      gross: 70000,
+      byCycle: { A: 70000 },
+      workdayIds: [id("A", "L1", "ANA", "2026-03-02", "1_1"), id("A", "L1", "ANA", "2026-03-02", "1_2"), id("A", "L2", "ANA", "2026-03-03")],
+    }),
+    item({ rut: "BETO", gross: 20000, byCycle: { A: 20000 }, workdayIds: [id("A", "L1", "BETO", "2026-03-02", "1_1")] }),
+  ];
+  const labors = [
+    { id: "L1", name: "Cosecha" },
+    { id: "L2", name: "Supervisión" },
+    { id: "L3", name: "Poda" },
+  ];
+  const montos = new Map([
+    [id("A", "L1", "ANA", "2026-03-02", "1_1"), 30000],
+    [id("A", "L1", "ANA", "2026-03-02", "1_2"), 10000],
+    [id("A", "L2", "ANA", "2026-03-03"), 30000],
+    [id("A", "L1", "BETO", "2026-03-02", "1_1"), 20000],
+  ]);
+
+  it("suma por labor desde las jornadas, con personas y jornadas (un día con varios combos cuenta una vez)", () => {
+    const [ciclo] = payrollCycleBreakdown({
+      cycleDetails: [{ id: "A", label: "Ciclo A", laborIds: ["L1", "L2"] }],
+      items,
+      laborsOf: () => labors,
+      workdayAmounts: montos,
+    });
+    expect(ciclo.amount).toBe(90000);
+    expect(ciclo.labors).toEqual([
+      { id: "L1", name: "Cosecha", jornadas: 2, people: 2, amount: 60000, inScope: true },
+      { id: "L2", name: "Supervisión", jornadas: 1, people: 1, amount: 30000, inScope: true },
+    ]);
+  });
+
+  it("un ciclo entero muestra también sus labores sin jornadas en esta nómina", () => {
+    const [ciclo] = payrollCycleBreakdown({ cycleDetails: [{ id: "A", label: "Ciclo A" }], items, laborsOf: () => labors, workdayAmounts: montos });
+    expect(ciclo.labors.map((l) => [l.id, l.jornadas, l.amount])).toEqual([
+      ["L1", 2, 60000],
+      ["L2", 1, 30000],
+      ["L3", 0, 0],
+    ]);
+  });
+
+  it("una labor fuera del alcance con días agregados a mano aparece marcada", () => {
+    const [ciclo] = payrollCycleBreakdown({
+      cycleDetails: [{ id: "A", label: "Ciclo A", laborIds: [] }],
+      items,
+      laborsOf: () => labors,
+      workdayAmounts: montos,
+    });
+    expect(ciclo.labors.map((l) => [l.id, l.inScope])).toEqual([
+      ["L1", false],
+      ["L2", false],
+    ]);
+  });
+
+  it("sin el monto de alguna jornada, el de esa labor queda en null en vez de un total incompleto", () => {
+    const [ciclo] = payrollCycleBreakdown({
+      cycleDetails: [{ id: "A", label: "Ciclo A" }],
+      items,
+      laborsOf: () => labors,
+      workdayAmounts: new Map([[id("A", "L2", "ANA", "2026-03-03"), 30000]]),
+    });
+    expect(ciclo.labors.find((l) => l.id === "L1").amount).toBe(null);
+    expect(ciclo.labors.find((l) => l.id === "L2").amount).toBe(30000);
   });
 });
 

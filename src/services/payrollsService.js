@@ -5,11 +5,9 @@ import { workdaysService, listWorkdaysByCycles } from "./index";
 import { isCashBank } from "../utils/banks";
 import {
   restoreAdvancesFromPayroll,
-  readPayrollApplications,
-  setPayrollAdvanceAmounts,
   applyAdvancesToPayroll,
 } from "./advancesService";
-import { planCycleRemoval, mergeCycleDetails, inChosenCycles, stillFreeWorkdays } from "../utils/payrollItem";
+import { mergeCycleDetails, inChosenCycles, stillFreeWorkdays } from "../utils/payrollItem";
 import { pruneSnapshot } from "./payrollSnapshots";
 
 export const PAYROLL_STATUSES = [
@@ -245,15 +243,14 @@ export function assertEditable(p, verb = "editar") {
 }
 
 // ───────────────────────── Edición parcial ─────────────────────────
-// "Achicar" una nómina pendiente sin eliminarla entera: sacar un trabajador o
-// todo lo que aporta un ciclo. La nómina tiene que estar `pending`; si está
-// pagada, primero se revierte el pago.
+// "Achicar" una nómina pendiente sin eliminarla entera: sacar un trabajador.
+// Sacar ciclos o labores es recalcular sin ellos (`services/payrollRecalc.js`).
+// La nómina tiene que estar `pending`; si está pagada, primero se revierte el
+// pago.
 //
 // Efectos:
-//   - Suelta los workdays involucrados (libera `payrollId`).
-//   - Sacar un trabajador suelta todos sus anticipos. Sacar un ciclo deja la
-//     nómina como si se hubiera armado sin ese ciclo: ver `planCycleRemoval`
-//     en `utils/payrollItem.js`, donde vive la regla con sus tests.
+//   - Suelta los workdays del trabajador (libera `payrollId`) y todos sus
+//     anticipos.
 //   - Recalcula `items`, `total`, `bankTotal`, `cashTotal`, `workerCount`,
 //     `bankCount`, `cashCount`, `workdayIds`, `advanceIds`, `advanceTotal`.
 
@@ -297,59 +294,8 @@ export async function removeWorkerFromPayroll(payrollId, workerRut) {
   });
 }
 
-export async function removeCycleFromPayroll(payrollId, cycleId) {
-  const p = await payrollsService.getById(payrollId);
-  if (!p) throw new Error("Nómina no encontrada");
-  assertEditable(p);
-  const items = Array.isArray(p.items) ? p.items : [];
-  // Los workday docIds llevan el cycleId como prefijo
-  // (`{cycleId}__{laborId}__{rut}__{date}[__{ck}]`), así que podemos
-  // identificar qué workdays son de este ciclo sin leer cada doc.
-  const prefix = `${cycleId}__`;
-
-  // Solo se leen los anticipos de quienes tocan el ciclo: el resto de la
-  // nómina queda igual y no paga lecturas.
-  const tocados = items.filter(
-    (it) =>
-      (Number(it.byCycle?.[cycleId]) || 0) !== 0 ||
-      (it.workdayIds || []).some((wid) => wid.startsWith(prefix)),
-  );
-  const appliedByAdvance = await readPayrollApplications(
-    payrollId,
-    tocados.flatMap((it) => it.advanceIds || []),
-  );
-  const plan = planCycleRemoval({ items, cycleId, appliedByAdvance });
-
-  await untagWorkdaysFromPayroll(plan.untagWorkdayIds);
-  await setPayrollAdvanceAmounts(payrollId, plan.advanceTargets);
-  const newItems = plan.items;
-
-  // Actualizar metadata de ciclos en la nómina.
-  const oldCycleIds = Array.isArray(p.cycleIds) ? p.cycleIds : [];
-  const oldCycleLabels = Array.isArray(p.cycleLabels) ? p.cycleLabels : [];
-  const cycleIdxToDrop = oldCycleIds.indexOf(cycleId);
-  const newCycleIds = oldCycleIds.filter((id) => id !== cycleId);
-  const newCycleLabels = oldCycleLabels.filter((_, i) => i !== cycleIdxToDrop);
-  const newCycleDetails = (p.cycleDetails || []).filter((c) => c.id !== cycleId);
-
-  const aggregates = recalcPayrollAggregates(newItems);
-  await payrollsService.update(payrollId, {
-    ...aggregates,
-    cycleIds: newCycleIds,
-    cycleLabels: newCycleLabels,
-    cycleDetails: newCycleDetails,
-  });
-  await pruneSnapshot(payrollId, {
-    items: newItems,
-    aggregates,
-    cycleIds: newCycleIds,
-    releasedWorkdayIds: plan.untagWorkdayIds,
-  });
-  return { salen: plan.salen, ajustados: plan.ajustados };
-}
-
-// Agrega ciclos a una nómina pendiente ya creada; inverso de
-// `removeCycleFromPayroll`. El llamador (Payroll.jsx) trae `items` ya
+// Agrega ciclos a una nómina pendiente ya creada (sacarlos es recalcular sin
+// ellos, ver `services/payrollRecalc.js`). El llamador (Payroll.jsx) trae `items` ya
 // recalculado (trabajadores existentes con su byCycle/grossAmount ampliado y
 // trabajadores nuevos con su anticipo/bono aplicado), porque esa cuenta
 // depende de datos cargados en pantalla (ciclos, trabajadores, catálogo). Acá
@@ -387,20 +333,6 @@ export async function addWorkdaysToPayroll(
   await tagWorkdaysWithPayroll(workdayIds, payrollId);
   if (advanceApplications.length) await applyAdvancesToPayroll(advanceApplications, payrollId);
   return aggregates;
-}
-
-// Guarda los items de una nómina pendiente recalculados contra la producción
-// actual. El llamador (Payroll.jsx) trae `items` armado desde los workdays
-// vigentes de las labores que la nómina abarca (ediciones, días nuevos,
-// trabajadores nuevos, datos de cuenta/grupo al día). Acá solo se persisten
-// los items y sus totales; no toca `cycleIds`/`cycleDetails` porque el set de
-// ciclos no cambia.
-export async function recalculatePayrollItems(payrollId, { items }) {
-  const p = await payrollsService.getById(payrollId);
-  if (!p) throw new Error("Nómina no encontrada");
-  assertEditable(p, "recalcular");
-  const aggregates = recalcPayrollAggregates(items);
-  await payrollsService.update(payrollId, aggregates);
 }
 
 export async function markPending(id, workdayIds = [], onProgress) {

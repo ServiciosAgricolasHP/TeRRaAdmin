@@ -1,7 +1,8 @@
 // Reparto de anticipos y bonos sobre el bruto de un trabajador.
 //
-// Lo usan los cuatro caminos de `Payroll.jsx`: armar la nómina, agregar
-// ciclos, recalcular y aplicar anticipos nuevos sobre alguien que ya está. El
+// Lo usan los cuatro caminos que arman o cambian una nómina: armar la nómina,
+// agregar ciclos, recalcular (services/payrollRecalc.js) y aplicar anticipos
+// nuevos sobre alguien que ya está. El
 // último parte de una base con descuentos ya aplicados (`alreadyAdvanced` /
 // `alreadyBonused`).
 //
@@ -93,8 +94,8 @@ export function advanceNote({ anticipoApplications = [], bonoApplications = [] }
 
 // ───────────────────────── Achicar una nómina ya armada ─────────────────────────
 //
-// Cuando una nómina pendiente pierde producción —se le saca un ciclo, o el
-// recálculo encuentra menos jornadas— lo que ya se había aplicado de anticipos
+// Cuando una nómina pendiente pierde producción —se le sacan ciclos o labores,
+// o el recálculo encuentra menos jornadas— lo que ya se había aplicado de anticipos
 // y bonos tiene que volver a caber en el bruto nuevo. La regla de estas
 // funciones es una sola: **la nómina tiene que quedar igual que si se hubiera
 // armado sin lo que se le sacó**, y cada anticipo tiene que reflejar
@@ -205,74 +206,6 @@ export function itemAdvanceFields(refit) {
   };
 }
 
-// Qué pasa con cada trabajador al sacar un ciclo de una nómina pendiente.
-//
-// Un trabajador SALE entero cuando el bruto que le queda es 0, no cuando se le
-// acaban las claves de `byCycle`: `byCycle` guarda una entrada por CADA ciclo,
-// aunque esté en $0. Es el mismo criterio que usa armar la nómina
-// (`a.total > 0`), así el resultado queda "como si se hubiera armado sin este
-// ciclo".
-//
-// El que sale suelta TODOS sus anticipos y bonos de esta nómina y todas sus
-// jornadas, incluidas las de $0 de otros ciclos: armada sin este ciclo, esa
-// persona no estaría. El que se queda pierde las jornadas del ciclo (también
-// las de $0) y re-encaja sus anticipos con `refitAppliedAdvances`.
-export function planCycleRemoval({ items = [], cycleId, appliedByAdvance = new Map() }) {
-  const prefix = `${cycleId}__`;
-  const nextItems = [];
-  const untagWorkdayIds = [];
-  const advanceTargets = [];
-  const salen = [];
-  const ajustados = [];
-
-  for (const it of items) {
-    const wds = it.workdayIds || [];
-    const delCiclo = wds.filter((id) => id.startsWith(prefix));
-    const aporte = Math.round(Number(it.byCycle?.[cycleId]) || 0);
-    if (delCiclo.length === 0 && aporte === 0) {
-      nextItems.push(it);
-      continue;
-    }
-
-    const brutoAntes = Math.round(Number(it.grossAmount || it.amount) || 0);
-    const brutoNuevo = Math.max(0, brutoAntes - aporte);
-    const aplicado = appliedFromItem(it, appliedByAdvance);
-
-    if (brutoNuevo <= 0) {
-      untagWorkdayIds.push(...wds);
-      for (const a of aplicado) {
-        if (!a.missing) advanceTargets.push({ advanceId: a.advanceId, amount: 0 });
-      }
-      salen.push({
-        rut: it.rut,
-        name: it.name,
-        liberado: aplicado.filter((a) => a.kind !== "bono").reduce((s, a) => s + a.amount, 0),
-      });
-      continue;
-    }
-
-    untagWorkdayIds.push(...delCiclo);
-    const refit = refitAppliedAdvances({ gross: brutoNuevo, applied: aplicado });
-    for (const t of refit.targets) {
-      if (!t.missing) advanceTargets.push({ advanceId: t.advanceId, amount: t.amount });
-    }
-    const byCycle = { ...(it.byCycle || {}) };
-    delete byCycle[cycleId];
-    nextItems.push({
-      ...it,
-      ...itemAdvanceFields(refit),
-      grossAmount: brutoNuevo,
-      byCycle,
-      workdayIds: wds.filter((id) => !id.startsWith(prefix)),
-    });
-    if (refit.devuelto > 0) {
-      ajustados.push({ rut: it.rut, name: it.name, devuelto: refit.devuelto });
-    }
-  }
-
-  return { items: nextItems, untagWorkdayIds, advanceTargets, salen, ajustados };
-}
-
 const brutoDe = (it) => Math.round(Number(it?.grossAmount || it?.amount) || 0);
 const idsDe = (ids) => [...(ids || [])].sort().join(",");
 
@@ -296,8 +229,8 @@ export function recalcNeedsRefit(it, fresh) {
   );
 }
 
-// El lado "achicar" del recálculo, con la misma regla que `planCycleRemoval`:
-// quien se quedó sin producción sale entero y suelta todo; quien sigue
+// El lado "achicar" del recálculo: quien se quedó sin producción sale entero
+// y suelta todo (también sus bonos y sus jornadas de $0); quien sigue
 // re-encaja lo ya aplicado en su bruto nuevo, y lo que no cabe vuelve al
 // mismo anticipo. Lo que el recálculo AGREGA (anticipos nuevos, trabajadores
 // nuevos, datos de cuenta) se resuelve después, en la pantalla, sobre lo que
@@ -412,6 +345,46 @@ export function inRecalcScope(wd, payrollId, scope = new Map()) {
   if (wd.payrollId) return wd.payrollId === payrollId;
   const labores = scope.get(wd.cycleId);
   return !labores || labores.has(wd.laborId);
+}
+
+// Lo que se saca de una nómina pendiente, elegido en su detalle: Map(cycleId →
+// `true` para el ciclo entero, o un Set con las labores que salen). Una jornada
+// sacada no entra al recálculo aunque esté etiquetada con la nómina, y el
+// recálculo la suelta.
+export function isRemovedFromPayroll(wd, removed = new Map()) {
+  const r = removed.get(wd?.cycleId);
+  return r === true || (r instanceof Set && r.has(wd.laborId));
+}
+
+// Los ciclos de la nómina después de sacar `removed`: un ciclo entero sale de
+// `cycleIds`, `cycleLabels` y `cycleDetails`; de uno al que se le sacan
+// labores, esas labores dejan de ser parte de su alcance, así Recalcular no las
+// vuelve a traer. Un ciclo que estaba entero pasa a llevar la lista de las que
+// le quedan (`laborIdsOf` da todas las del ciclo).
+export function cycleScopeAfterRemoval({ cycleDetails = [], cycleIds = null, cycleLabels = null, removed = new Map(), laborIdsOf = () => [] }) {
+  const out = [];
+  const salen = new Set();
+  for (const cd of cycleDetails || []) {
+    const r = removed.get(cd.id);
+    if (r === true) {
+      salen.add(cd.id);
+      continue;
+    }
+    if (!(r instanceof Set) || r.size === 0) {
+      out.push(cd);
+      continue;
+    }
+    const antes = Array.isArray(cd.laborIds) ? cd.laborIds : laborIdsOf(cd.id);
+    out.push(conLabores(cd, antes.filter((id) => !r.has(id))));
+  }
+  const ids = Array.isArray(cycleIds) ? cycleIds : (cycleDetails || []).map((cd) => cd.id);
+  const labels = Array.isArray(cycleLabels) ? cycleLabels : null;
+  return {
+    cycleDetails: out,
+    cycleIds: ids.filter((id) => !salen.has(id)),
+    cycleLabels: labels ? labels.filter((_, i) => !salen.has(ids[i])) : (cycleDetails || []).filter((cd) => !salen.has(cd.id)).map((cd) => cd.label),
+    removedCycleIds: [...salen],
+  };
 }
 
 // Firestore rechaza `undefined`: un ciclo entero se guarda SIN `laborIds`, no
@@ -677,6 +650,65 @@ export function workerDayRows(workdays = [], { laborTypeById = new Map(), payrol
       a.date.localeCompare(b.date) ||
       String(a.laborId).localeCompare(String(b.laborId)),
   );
+}
+
+// Lo que paga la nómina por ciclo y por labor, para el detalle. El total del
+// ciclo sale de `byCycle` de los items; el de cada labor, de sus jornadas: el id
+// de una jornada empieza con `{cycleId}__{laborId}__{rut}__{fecha}`, así que no
+// hace falta leerla para saber de qué labor es. El monto de cada jornada viene
+// de `workdayAmounts` (las del snapshot de la nómina). Si falta alguna, el monto
+// de esa labor queda en `null`: mostrar un total incompleto sería peor.
+//
+// Las labores salen en el orden del ciclo (`laborsOf`): las del alcance de la
+// nómina (`laborIds`, o todas si el ciclo está entero) y las que tienen
+// jornadas en ella aunque no estén en el alcance (días agregados a mano).
+export function payrollCycleBreakdown({ cycleDetails = [], items = [], laborsOf = () => [], workdayAmounts = new Map() }) {
+  const porCiclo = new Map((cycleDetails || []).map((cd) => [cd.id, { amount: 0, labors: new Map() }]));
+  for (const it of items || []) {
+    const persona = it.workerId || it.rut;
+    for (const [cid, amt] of Object.entries(it.byCycle || {})) {
+      const c = porCiclo.get(cid);
+      if (c) c.amount += Number(amt) || 0;
+    }
+    for (const wid of it.workdayIds || []) {
+      const [cid, lid, rut, date] = String(wid).split("__");
+      const c = porCiclo.get(cid);
+      if (!c || !lid) continue;
+      let l = c.labors.get(lid);
+      if (!l) {
+        l = { jornadas: new Set(), people: new Set(), amount: 0, missing: 0 };
+        c.labors.set(lid, l);
+      }
+      l.jornadas.add(`${rut}|${date}`);
+      l.people.add(persona);
+      if (workdayAmounts.has(wid)) l.amount += Number(workdayAmounts.get(wid)) || 0;
+      else l.missing += 1;
+    }
+  }
+  return (cycleDetails || []).map((cd) => {
+    const c = porCiclo.get(cd.id);
+    const delCiclo = laborsOf(cd.id) || [];
+    const alcance = new Set(Array.isArray(cd.laborIds) ? cd.laborIds : delCiclo.map((l) => l.id));
+    const ids = [
+      ...delCiclo.map((l) => l.id).filter((id) => alcance.has(id) || c.labors.has(id)),
+      ...[...c.labors.keys()].filter((id) => !delCiclo.some((l) => l.id === id)),
+    ];
+    return {
+      ...cd,
+      amount: Math.round(c.amount),
+      labors: ids.map((id) => {
+        const l = c.labors.get(id);
+        return {
+          id,
+          name: delCiclo.find((x) => x.id === id)?.name || "Labor borrada",
+          jornadas: l ? l.jornadas.size : 0,
+          people: l ? l.people.size : 0,
+          amount: !l ? 0 : l.missing ? null : Math.round(l.amount),
+          inScope: alcance.has(id),
+        };
+      }),
+    };
+  });
 }
 
 // ───────────────────────── Armar una nómina nueva ─────────────────────────
