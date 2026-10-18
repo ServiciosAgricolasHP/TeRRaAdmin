@@ -3,7 +3,7 @@ import { buildCycleRows } from "./workerSummary";
 
 const ANA = "11111111-1";
 const BETO = "12345678-5";
-const claves = new Set([ANA]);
+const rutKeys = new Set([ANA]);
 
 const cycleWith = (labors, extra = {}) => ({ id: "C1", labors, dayPrices: {}, ...extra });
 
@@ -17,8 +17,8 @@ describe("buildCycleRows", () => {
         c: { workerRut: BETO, date: "2026-10-01", amount: 99999 },
       },
     };
-    const { rows } = buildCycleRows(claves, cycle, workdays, {}, null);
-    expect(rows.map((r) => [r.date, r.jornadas, r.amount])).toEqual([
+    const { rows } = buildCycleRows(rutKeys, cycle, workdays, {}, null);
+    expect(rows.map((r) => [r.date, r.workdayCount, r.amount])).toEqual([
       ["2026-10-01", 1, 25000],
       ["2026-10-02", 1, 30000],
     ]);
@@ -34,11 +34,11 @@ describe("buildCycleRows", () => {
         b: { workerRut: ANA, date: "2026-10-01", qty: 12, amount: 6000, containerY: 2 },
       },
     };
-    const { rows, cosechaContainers } = buildCycleRows(claves, cycle, workdays, {}, null);
+    const { rows, harvestContainers } = buildCycleRows(rutKeys, cycle, workdays, {}, null);
     expect(rows).toHaveLength(1);
-    expect(rows[0].kilos).toBe(22);
+    expect(rows[0].harvestQty).toBe(22);
     expect(rows[0].amount).toBe(11000);
-    expect([...cosechaContainers].sort()).toEqual([1, 2]);
+    expect([...harvestContainers].sort()).toEqual([1, 2]);
   });
 
   it("el piso va aparte y no suma al monto de producción", () => {
@@ -49,9 +49,9 @@ describe("buildCycleRows", () => {
         p: { workerRut: ANA, date: "2026-10-01", pisoOnly: true, amount: 3000 },
       },
     };
-    const { rows } = buildCycleRows(claves, cycle, workdays, {}, null);
+    const { rows } = buildCycleRows(rutKeys, cycle, workdays, {}, null);
     expect(rows[0].amount).toBe(5000);
-    expect(rows[0].piso).toBe(3000);
+    expect(rows[0].floor).toBe(3000);
   });
 
   it("el estado de pago sale de las nóminas de las jornadas del día", () => {
@@ -67,7 +67,7 @@ describe("buildCycleRows", () => {
         c: { workerRut: ANA, date: "2026-10-03", amount: 1 },
       },
     };
-    const { rows } = buildCycleRows(claves, cycle, workdays, {}, payrollById);
+    const { rows } = buildCycleRows(rutKeys, cycle, workdays, {}, payrollById);
     expect(rows.map((r) => r.paymentStatus)).toEqual(["paid", "in_pending", "unpaid"]);
     expect(rows[0].payrollNames).toEqual(["Nómina pagada"]);
   });
@@ -80,9 +80,9 @@ describe("buildCycleRows", () => {
     const workdays = {
       L1: { a: { workerRut: ANA, date: "2026-10-01", qty: 30000, overtimeHours: 2, amount: 40000 } },
     };
-    const { rows } = buildCycleRows(claves, cycle, workdays, {}, null);
-    expect(rows[0].jornadas).toBe(30000);
+    const { rows } = buildCycleRows(rutKeys, cycle, workdays, {}, null);
+    expect(rows[0].workdayCount).toBe(30000);
     expect(rows[0].overtimeHours).toBe(2);
-    expect(rows[0].heAmount).toBe(10000);
+    expect(rows[0].overtimeAmount).toBe(10000);
   });
 });

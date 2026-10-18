@@ -21,12 +21,12 @@ import { buildCycleRows } from "../utils/workerSummary";
 //     cerrado sin workdays en el rango se omite.
 export async function loadWorkerSummaryData(worker, catalogs, options = {}) {
   const { includeClosed = false, closedFrom = null, closedTo = null } = options;
-  const claves = workerKeys(worker);
-  if (claves.length === 0) return { data: [], advances: [], grandTotal: 0, advancesSaldo: 0 };
-  const clavesSet = new Set(claves);
+  const rutKeys = workerKeys(worker);
+  if (rutKeys.length === 0) return { data: [], advances: [], grandTotal: 0, netAdvanceBalance: 0 };
+  const rutKeySet = new Set(rutKeys);
   const [wds, pendingAdvances] = await Promise.all([
-    workdaysService.list({ wheres: [["workerRut", "in", claves]] }),
-    listPendingForWorkers(claves).catch(() => []),
+    workdaysService.list({ wheres: [["workerRut", "in", rutKeys]] }),
+    listPendingForWorkers(rutKeys).catch(() => []),
   ]);
   const advances = [...pendingAdvances].sort((a, b) =>
     String(a.date || "").localeCompare(String(b.date || "")),
@@ -47,12 +47,12 @@ export async function loadWorkerSummaryData(worker, catalogs, options = {}) {
     if (c.status !== "closed") return true;
     return includeClosed;
   });
-  const faenaIds = [...new Set(cyclesToShow.map((c) => c.faenaId).filter(Boolean))];
-  const subIds = [...new Set(cyclesToShow.map((c) => c.subfaenaId).filter(Boolean))];
-  const faenas = await Promise.all(faenaIds.map((id) => jobsService.getById(id)));
-  const subs = await Promise.all(subIds.map((id) => subjobsService.getById(id)));
-  const faenaById = new Map(faenas.filter(Boolean).map((f) => [f.id, f]));
-  const subById = new Map(subs.filter(Boolean).map((s) => [s.id, s]));
+  const jobIds = [...new Set(cyclesToShow.map((c) => c.faenaId).filter(Boolean))];
+  const subjobIds = [...new Set(cyclesToShow.map((c) => c.subfaenaId).filter(Boolean))];
+  const jobs = await Promise.all(jobIds.map((id) => jobsService.getById(id)));
+  const subjobs = await Promise.all(subjobIds.map((id) => subjobsService.getById(id)));
+  const jobById = new Map(jobs.filter(Boolean).map((f) => [f.id, f]));
+  const subjobById = new Map(subjobs.filter(Boolean).map((s) => [s.id, s]));
 
   const inClosedRange = (wd) => {
     if (closedFrom && wd.date < closedFrom) return false;
@@ -92,60 +92,60 @@ export async function loadWorkerSummaryData(worker, catalogs, options = {}) {
     }
     // Omite los ciclos cerrados sin workdays dentro del rango.
     if (isClosed && Object.keys(wdMap).length === 0) return null;
-    const { rows, cosechaContainers } = buildCycleRows(clavesSet, c, wdMap, catalogs, payrollById);
+    const { rows, harvestContainers } = buildCycleRows(rutKeySet, c, wdMap, catalogs, payrollById);
     const totals = rows.reduce(
       (acc, r) => ({
-        kilos: acc.kilos + r.kilos,
-        jornadas: acc.jornadas + r.jornadas,
-        tratoQty: acc.tratoQty + r.tratoQty,
+        harvestQty: acc.harvestQty + r.harvestQty,
+        workdayCount: acc.workdayCount + r.workdayCount,
+        pieceworkQty: acc.pieceworkQty + r.pieceworkQty,
         overtimeHours: acc.overtimeHours + r.overtimeHours,
-        heAmount: acc.heAmount + r.heAmount,
+        overtimeAmount: acc.overtimeAmount + r.overtimeAmount,
         amount: acc.amount + r.amount,
-        piso: acc.piso + (r.piso || 0),
+        floor: acc.floor + (r.floor || 0),
       }),
-      { kilos: 0, jornadas: 0, tratoQty: 0, overtimeHours: 0, heAmount: 0, amount: 0, piso: 0 },
+      { harvestQty: 0, workdayCount: 0, pieceworkQty: 0, overtimeHours: 0, overtimeAmount: 0, amount: 0, floor: 0 },
     );
     const cols = {
-      kilos: rows.some((r) => r.kilos > 0),
-      jornadas: rows.some((r) => r.jornadas > 0),
-      he: rows.some((r) => r.overtimeHours > 0),
-      trato: rows.some((r) => r.tratoQty > 0),
-      piso: rows.some((r) => (r.piso || 0) > 0),
+      harvestQty: rows.some((r) => r.harvestQty > 0),
+      workdayCount: rows.some((r) => r.workdayCount > 0),
+      overtime: rows.some((r) => r.overtimeHours > 0),
+      piecework: rows.some((r) => r.pieceworkQty > 0),
+      floor: rows.some((r) => (r.floor || 0) > 0),
     };
     // Rótulo de la columna de trato: la unidad, si todos los días usan la
     // misma (Árbol, Metro, Polín…); si no, el tipo de trato, o "Trato" si hay
     // varios.
-    const tratoRows = rows.filter((r) => r.laborType === "trato");
+    const pieceworkRows = rows.filter((r) => r.laborType === "trato");
     const hasEtapas = rows.some((r) => r.laborType === "tratoEtapas");
-    const tratoUnits = new Set(tratoRows.map((r) => r.tratoUnit).filter((u) => u != null));
-    let tratoLabel;
-    if (hasEtapas && tratoRows.length === 0) {
+    const pieceworkUnits = new Set(pieceworkRows.map((r) => r.pieceworkUnit).filter((u) => u != null));
+    let pieceworkLabel;
+    if (hasEtapas && pieceworkRows.length === 0) {
       // Solo etapas → la columna de cantidad son "Unidades" producidas.
-      tratoLabel = "Unidades";
+      pieceworkLabel = "Unidades";
     } else if (hasEtapas) {
       // Trato y etapas juntos: el encabezado va neutro, porque la unidad del
       // trato rotularía también la producción por etapas ("4.737 poda"
       // incluyendo carpas). El desglose por fila dice cuál es cuál.
-      tratoLabel = "Unidades";
-    } else if (tratoUnits.size === 1) {
-      const u = [...tratoUnits][0];
-      tratoLabel = tratoUnitLabel(catalogs, u) || "Trato";
+      pieceworkLabel = "Unidades";
+    } else if (pieceworkUnits.size === 1) {
+      const u = [...pieceworkUnits][0];
+      pieceworkLabel = tratoUnitLabel(catalogs, u) || "Trato";
     } else {
-      const tratoTypes = new Set(tratoRows.map((r) => r.tratoType));
-      tratoLabel = tratoTypes.size === 1
-        ? tratoTypeLabel(catalogs, [...tratoTypes][0])
+      const pieceworkTypes = new Set(pieceworkRows.map((r) => r.tratoType));
+      pieceworkLabel = pieceworkTypes.size === 1
+        ? tratoTypeLabel(catalogs, [...pieceworkTypes][0])
         : "Trato";
     }
-    const kilosLabel = cosechaUnit(catalogs, cosechaContainers);
+    const harvestLabel = cosechaUnit(catalogs, harvestContainers);
     return {
       cycle: c,
-      faena: faenaById.get(c.faenaId),
-      subfaena: subById.get(c.subfaenaId),
+      job: jobById.get(c.faenaId),
+      subjob: subjobById.get(c.subfaenaId),
       rows,
       totals,
       cols,
-      tratoLabel,
-      kilosLabel,
+      pieceworkLabel,
+      harvestLabel,
       isClosed,
     };
   }).filter(Boolean);
@@ -155,12 +155,12 @@ export async function loadWorkerSummaryData(worker, catalogs, options = {}) {
     return (a.cycle.label || "").localeCompare(b.cycle.label || "");
   });
 
-  const grandTotal = data.reduce((s, d) => s + (d.totals.amount || 0) + (d.totals.piso || 0), 0);
-  let anticiposSaldo = 0, bonosSaldo = 0;
+  const grandTotal = data.reduce((s, d) => s + (d.totals.amount || 0) + (d.totals.floor || 0), 0);
+  let advanceBalance = 0, bonusBalance = 0;
   for (const a of advances) {
     const rem = advanceRemaining(a);
-    if (advanceSign(a) > 0) bonosSaldo += rem; else anticiposSaldo += rem;
+    if (advanceSign(a) > 0) bonusBalance += rem; else advanceBalance += rem;
   }
-  const advancesSaldo = anticiposSaldo - bonosSaldo;
-  return { data, advances, grandTotal, advancesSaldo, anticiposSaldo, bonosSaldo };
+  const netAdvanceBalance = advanceBalance - bonusBalance;
+  return { data, advances, grandTotal, netAdvanceBalance, advanceBalance, bonusBalance };
 }

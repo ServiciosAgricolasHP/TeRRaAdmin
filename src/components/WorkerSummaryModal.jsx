@@ -62,9 +62,9 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
   const [includeClosed, setIncludeClosed] = useState(false);
   const [closedFrom, setClosedFrom] = useState(oneMonthAgoISO());
   const [closedTo, setClosedTo] = useState(todayISO());
-  // Vista: "lineal" (por defecto; una sola tabla cronológica con columna
-  // Ciclo) o "por-ciclo" (una tabla por ciclo).
-  const [viewMode, setViewMode] = useState("lineal");
+  // Vista: "linear" (por defecto; una sola tabla cronológica con columna
+  // Ciclo) o "byCycle" (una tabla por ciclo).
+  const [viewMode, setViewMode] = useState("linear");
   // Filtro por estado de pago (pagado / en nómina / sin pagar); por defecto
   // muestra todos. Las filas ocultas no cuentan en los totales.
   const [statusFilter, setStatusFilter] = useState(() => new Set(["paid", "in_pending", "unpaid"]));
@@ -94,7 +94,7 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
   // Muestra la columna "Filtrar"; arranca apagada. Apagarla conserva las
   // filas ya sacadas. Las exportaciones nunca la incluyen: sus celdas llevan
   // `data-export-hide` y `cloneForExport` las quita.
-  const [showFiltrar, setShowFiltrar] = useState(false);
+  const [showFilter, setShowFilter] = useState(false);
   const isRowVisible = (r) => statusFilter.has(r.paymentStatus) && !hiddenRowKeys.has(r.rowKey);
   const printRef = useRef(null);
 
@@ -129,36 +129,36 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
       const filteredRows = d.rows.filter((r) => statusFilter.has(r.paymentStatus) && !hiddenRowKeys.has(r.rowKey));
       const totals = filteredRows.reduce(
         (acc, r) => ({
-          kilos: acc.kilos + (r.kilos || 0),
-          jornadas: acc.jornadas + (r.jornadas || 0),
-          tratoQty: acc.tratoQty + (r.tratoQty || 0),
+          harvestQty: acc.harvestQty + (r.harvestQty || 0),
+          workdayCount: acc.workdayCount + (r.workdayCount || 0),
+          pieceworkQty: acc.pieceworkQty + (r.pieceworkQty || 0),
           overtimeHours: acc.overtimeHours + (r.overtimeHours || 0),
-          heAmount: acc.heAmount + (r.heAmount || 0),
+          overtimeAmount: acc.overtimeAmount + (r.overtimeAmount || 0),
           amount: acc.amount + (r.amount || 0),
-          piso: acc.piso + (r.piso || 0),
+          floor: acc.floor + (r.floor || 0),
         }),
-        { kilos: 0, jornadas: 0, tratoQty: 0, overtimeHours: 0, heAmount: 0, amount: 0, piso: 0 },
+        { harvestQty: 0, workdayCount: 0, pieceworkQty: 0, overtimeHours: 0, overtimeAmount: 0, amount: 0, floor: 0 },
       );
       const totalsByStatus = { paid: 0, in_pending: 0, unpaid: 0 };
       for (const r of filteredRows) {
         const s = r.paymentStatus || "unpaid";
-        totalsByStatus[s] = (totalsByStatus[s] || 0) + (r.amount || 0) + (r.piso || 0);
+        totalsByStatus[s] = (totalsByStatus[s] || 0) + (r.amount || 0) + (r.floor || 0);
       }
       return { ...d, rows: filteredRows, totals, totalsByStatus };
     });
   }, [data, statusFilter, hiddenRowKeys]);
 
   const grandTotal = useMemo(
-    () => filteredData.reduce((s, d) => s + (d.totals.amount || 0) + (d.totals.piso || 0), 0),
+    () => filteredData.reduce((s, d) => s + (d.totals.amount || 0) + (d.totals.floor || 0), 0),
     [filteredData],
   );
-  const { anticiposSaldo, bonosSaldo, advancesSaldo } = useMemo(() => {
+  const { advanceBalance, bonusBalance, netAdvanceBalance } = useMemo(() => {
     let a = 0, b = 0;
     for (const adv of advances) {
       const rem = advanceRemaining(adv);
       if (advanceSign(adv) > 0) b += rem; else a += rem;
     }
-    return { anticiposSaldo: a, bonosSaldo: b, advancesSaldo: a - b };
+    return { advanceBalance: a, bonusBalance: b, netAdvanceBalance: a - b };
   }, [advances]);
 
   const updateTitles = (patch) => {
@@ -174,16 +174,16 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
   // Este par resuelve cuál se edita, así el panel "Personalizar títulos" sirve
   // para las dos. Vive fuera de `printRef` para que los controles no salgan en
   // la foto.
-  const tituloVista =
-    viewMode === "lineal"
+  const viewTitle =
+    viewMode === "linear"
       ? {
           main: titles?.linear?.main || "DETALLE DE JORNADA — CRONOLÓGICO",
           subtitle: titles?.linear?.subtitle ?? titles?.subtitle ?? "",
         }
       : { main: titles.main || "", subtitle: titles.subtitle || "" };
-  const updateTituloVista = (patch) => {
-    if (viewMode !== "lineal") return updateTitles(patch);
-    updateTitles({ linear: { ...(titles?.linear || {}), ...tituloVista, ...patch } });
+  const updateViewTitle = (patch) => {
+    if (viewMode !== "linear") return updateTitles(patch);
+    updateTitles({ linear: { ...(titles?.linear || {}), ...viewTitle, ...patch } });
   };
 
   const handleDownload = async () => {
@@ -231,7 +231,7 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
         th, td { border: 1px solid #888; padding: 6px 8px; font-size: 12px; }
         thead { display: table-header-group; }
         tr { page-break-inside: avoid; }
-        @media print { @page { size: ${viewMode === "lineal" ? "landscape" : "portrait"}; margin: 12mm; } }
+        @media print { @page { size: ${viewMode === "linear" ? "landscape" : "portrait"}; margin: 12mm; } }
       </style>
     </head><body>${html}</body></html>`);
     win.document.close();
@@ -267,14 +267,14 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="flex overflow-hidden rounded-md border border-[var(--color-border)] text-xs">
           <button
-            onClick={() => setViewMode("por-ciclo")}
-            className={`px-3 py-1.5 ${viewMode === "por-ciclo" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium" : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"}`}
+            onClick={() => setViewMode("byCycle")}
+            className={`px-3 py-1.5 ${viewMode === "byCycle" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium" : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"}`}
           >
             📂 Por ciclo
           </button>
           <button
-            onClick={() => setViewMode("lineal")}
-            className={`px-3 py-1.5 ${viewMode === "lineal" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium" : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"}`}
+            onClick={() => setViewMode("linear")}
+            className={`px-3 py-1.5 ${viewMode === "linear" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium" : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"}`}
             title="Una sola tabla con los días en orden cronológico (columna Ciclo identifica el origen)"
           >
             📜 Cronológico
@@ -317,19 +317,19 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
               <span className="text-[var(--color-muted)]">Total general: </span>
               <span className="font-semibold tabular-nums">{fmtCurrency(grandTotal)}</span>
             </span>
-            {anticiposSaldo > 0 && (
+            {advanceBalance > 0 && (
               <span>
                 <span className="text-[var(--color-muted)]">Saldo anticipos: </span>
                 <span className="font-semibold tabular-nums text-[#b45309]">
-                  − {fmtCurrency(anticiposSaldo)}
+                  − {fmtCurrency(advanceBalance)}
                 </span>
               </span>
             )}
-            {bonosSaldo > 0 && (
+            {bonusBalance > 0 && (
               <span>
                 <span className="text-[var(--color-muted)]">Saldo bonos: </span>
                 <span className="font-semibold tabular-nums text-[var(--color-success)]">
-                  + {fmtCurrency(bonosSaldo)}
+                  + {fmtCurrency(bonusBalance)}
                 </span>
               </span>
             )}
@@ -347,15 +347,15 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
           <StatusFilterPill status="unpaid" label="○ Sin pagar" active={statusFilter.has("unpaid")} onToggle={() => toggleStatus("unpaid")} />
           <span className="ml-2 text-[var(--color-muted)]">·</span>
           <button
-            onClick={() => setShowFiltrar((v) => !v)}
+            onClick={() => setShowFilter((v) => !v)}
             className={`rounded-md border px-2 py-0.5 transition-colors ${
-              showFiltrar
+              showFilter
                 ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
                 : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
             }`}
             title="Muestra una columna para sacar días del resumen a mano. No sale en las fotos ni al imprimir."
           >
-            {showFiltrar ? "✓ 👁 Filtrar: ON" : "👁 Filtrar"}
+            {showFilter ? "✓ 👁 Filtrar: ON" : "👁 Filtrar"}
           </button>
           {hiddenRowKeys.size > 0 && (
             <>
@@ -379,27 +379,27 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
             <label className="block">
               <span className="block text-[10px] text-[var(--color-muted)]">Título principal</span>
               <input
-                value={tituloVista.main}
-                onChange={(e) => updateTituloVista({ main: e.target.value })}
+                value={viewTitle.main}
+                onChange={(e) => updateViewTitle({ main: e.target.value })}
                 className="w-full rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-sm outline-none focus:border-[var(--color-accent)]"
               />
             </label>
             <label className="block">
               <span className="block text-[10px] text-[var(--color-muted)]">Subtítulo (nombre formal)</span>
               <input
-                value={tituloVista.subtitle}
-                onChange={(e) => updateTituloVista({ subtitle: e.target.value })}
+                value={viewTitle.subtitle}
+                onChange={(e) => updateViewTitle({ subtitle: e.target.value })}
                 className="w-full rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-sm outline-none focus:border-[var(--color-accent)]"
               />
             </label>
           </div>
-          {data.length > 0 && viewMode !== "lineal" && (
+          {data.length > 0 && viewMode !== "linear" && (
             <div className="space-y-1.5 border-t border-[var(--color-border)] pt-2">
               <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">
                 Encabezado por ciclo
               </div>
-              {data.map(({ cycle, faena, subfaena }) => {
-                const fallback = defaultCycleTitle({ faena, subfaena, cycle });
+              {data.map(({ cycle, job, subjob }) => {
+                const fallback = defaultCycleTitle({ job, subjob, cycle });
                 const current = titles.cycles?.[cycle.id] ?? "";
                 return (
                   <label key={cycle.id} className="block">
@@ -439,14 +439,14 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
         data={filteredData}
         grandTotal={grandTotal}
         advances={advances}
-        advancesSaldo={advancesSaldo}
-        anticiposSaldo={anticiposSaldo}
-        bonosSaldo={bonosSaldo}
+        netAdvanceBalance={netAdvanceBalance}
+        advanceBalance={advanceBalance}
+        bonusBalance={bonusBalance}
         titles={titles}
         viewMode={viewMode}
         onUpdateTitles={updateTitles}
         catalogs={catalogs}
-        onToggleHidden={showFiltrar ? toggleHidden : undefined}
+        onToggleHidden={showFilter ? toggleHidden : undefined}
       />
     </Modal>
   );

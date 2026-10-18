@@ -12,5 +12,5 @@ export const dateLabel = (dateStr) => {
 };
 
 // Título por defecto de un ciclo (lo que se muestra si el usuario no editó nada).
-export const defaultCycleTitle = ({ faena, subfaena, cycle }) =>
-  [faena?.name, subfaena?.name, cycle.label].filter(Boolean).join(" · ");
+export const defaultCycleTitle = ({ job, subjob, cycle }) =>
+  [job?.name, subjob?.name, cycle.label].filter(Boolean).join(" · ");

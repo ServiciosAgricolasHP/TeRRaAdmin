@@ -48,7 +48,7 @@ export default function GroupSummaryModal({ open, onClose }) {
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
-  // workerData: { [rut]: { data, advances, grandTotal, advancesSaldo, anticiposSaldo, bonosSaldo } }
+  // workerData: { [rut]: { data, advances, grandTotal, netAdvanceBalance, advanceBalance, bonusBalance } }
   const [workerData, setWorkerData] = useState({});
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState("");
@@ -132,14 +132,14 @@ export default function GroupSummaryModal({ open, onClose }) {
       const byCycle = {};
       let total = 0;
       for (const d of wd.data || []) {
-        const amt = (d.totals.amount || 0) + (d.totals.piso || 0);
+        const amt = (d.totals.amount || 0) + (d.totals.floor || 0);
         byCycle[d.cycle.id] = amt;
         total += amt;
       }
-      // Sin `anticiposSaldo`, usa `advancesSaldo` y todo el saldo cuenta como
+      // Sin `advanceBalance`, usa `netAdvanceBalance` y todo el saldo cuenta como
       // anticipo.
-      const advance = wd.anticiposSaldo != null ? wd.anticiposSaldo : (wd.advancesSaldo || 0);
-      const bonus = wd.bonosSaldo || 0;
+      const advance = wd.advanceBalance != null ? wd.advanceBalance : (wd.netAdvanceBalance || 0);
+      const bonus = wd.bonusBalance || 0;
       const neto = total - advance + bonus;
       return { worker: w, byCycle, advance, bonus, total, neto, index: i + 1 };
     });
@@ -541,9 +541,9 @@ function ResultUI({
                     data={wd.data || []}
                     grandTotal={wd.grandTotal || 0}
                     advances={wd.advances || []}
-                    advancesSaldo={wd.advancesSaldo || 0}
-                    anticiposSaldo={wd.anticiposSaldo || 0}
-                    bonosSaldo={wd.bonosSaldo || 0}
+                    netAdvanceBalance={wd.netAdvanceBalance || 0}
+                    advanceBalance={wd.advanceBalance || 0}
+                    bonusBalance={wd.bonusBalance || 0}
                     titles={{ main: "DETALLE DE JORNADA", subtitle: w.name || "" }}
                     catalogs={catalogs}
                   />
