@@ -33,36 +33,36 @@ export function CollectionCountsSection() {
   };
 
   const totalRuns = Object.values(results).filter((r) => r.count != null).length;
-  const [copiado, setCopiado] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // Copia como texto separado por tabs, para pegar en un mensaje o una
   // planilla. Solo las colecciones ya contadas: un guion se confundiría con
   // "colección vacía".
-  const copiarConteos = async () => {
-    const lineas = [];
+  const copyCounts = async () => {
+    const lines = [];
     let total = 0;
     for (const g of COLLECTION_GROUPS) {
-      const delGrupo = MAIN_COLLECTIONS.filter(
+      const groupCollections = MAIN_COLLECTIONS.filter(
         (c) => c.group === g && results[c.id]?.count != null,
       );
-      if (delGrupo.length === 0) continue;
-      lineas.push(`${g}`);
-      for (const c of delGrupo) {
+      if (groupCollections.length === 0) continue;
+      lines.push(`${g}`);
+      for (const c of groupCollections) {
         const n = results[c.id].count;
         total += n;
-        lineas.push(`  ${c.id}\t${n}`);
+        lines.push(`  ${c.id}\t${n}`);
       }
     }
-    if (lineas.length === 0) return;
-    lineas.push("", `TOTAL\t${total}`);
-    const texto = lineas.join("\n");
+    if (lines.length === 0) return;
+    lines.push("", `TOTAL\t${total}`);
+    const text = lines.join("\n");
     try {
-      await navigator.clipboard.writeText(texto);
-      setCopiado(true);
-      setTimeout(() => setCopiado(false), 2000);
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     } catch {
       // Sin acceso al portapapeles, muestra el texto para copiarlo a mano.
-      window.prompt("Copia los conteos:", texto);
+      window.prompt("Copia los conteos:", text);
     }
   };
 
@@ -79,12 +79,12 @@ export function CollectionCountsSection() {
         </button>
         <button
           type="button"
-          onClick={copiarConteos}
+          onClick={copyCounts}
           disabled={totalRuns === 0}
           title={totalRuns === 0 ? "Primero cuenta alguna colección" : `Copiar ${totalRuns} conteos`}
           className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
         >
-          {copiado ? "✓ Copiado" : `📋 Copiar${totalRuns ? ` (${totalRuns})` : ""}`}
+          {copied ? "✓ Copiado" : `📋 Copiar${totalRuns ? ` (${totalRuns})` : ""}`}
         </button></>}>
       <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
         <table className="w-full text-sm">

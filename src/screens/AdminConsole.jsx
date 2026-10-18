@@ -14,11 +14,11 @@ import { WorkdaysByRangeSection } from "./adminConsole/WorkdaysByRangeSection";
 // 1.000 documentos contados. Nada se ejecuta solo: cada botón dispara su
 // propia consulta.
 
-function Grupo({ titulo, children }) {
+function Group({ title, children }) {
   return (
     <div className="space-y-2">
       <h2 className="text-xs font-semibold uppercase tracking-wider text-[var(--color-muted)]">
-        {titulo}
+        {title}
       </h2>
       {children}
     </div>
@@ -36,26 +36,26 @@ export default function AdminConsole() {
         </p>
       </div>
 
-      <Grupo titulo="Diagnóstico">
+      <Group title="Diagnóstico">
         <AuthDebugSection />
         <PingSection />
-      </Grupo>
+      </Group>
 
-      <Grupo titulo="Inspección de escala">
+      <Group title="Inspección de escala">
         <CollectionCountsSection />
         <LogsBreakdownSection />
         <WorkdaysByMonthSection />
         <WorkdaysByRangeSection />
         <WorkdaysByCycleSection />
-      </Grupo>
+      </Group>
 
       {/* Migraciones de una sola corrida, juntas para ver de un vistazo qué
           queda pendiente de migrar. */}
-      <Grupo titulo="Migraciones únicas">
+      <Group title="Migraciones únicas">
         <NormalizeWorkerNamesSection />
         <BackfillWorkerRutFieldSection />
         <MigrateAdvanceRutsSection />
-      </Grupo>
+      </Group>
     </div>
   );
 }

@@ -15,9 +15,9 @@ export async function countLogsByEntity(entity) {
 }
 
 export async function countLogsOlderThan(months) {
-  const corte = new Date();
-  corte.setMonth(corte.getMonth() - months);
-  const q = query(collection(db, "logs"), where("timestamp", "<", corte));
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - months);
+  const q = query(collection(db, "logs"), where("timestamp", "<", cutoff));
   const snap = await getCountFromServer(q);
   return snap.data().count;
 }

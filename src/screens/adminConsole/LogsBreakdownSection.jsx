@@ -38,69 +38,69 @@ const LOG_HEAVY = {
 // borra logs y `firestore.rules` no deja editarlos ni borrarlos. Cada recuento
 // cuesta ~1 lectura por cada 1.000 documentos contados.
 export function LogsBreakdownSection() {
-  const [porEntidad, setPorEntidad] = useState({}); // entity → { count?, error?, busy? }
-  const [corriendo, setCorriendo] = useState(false);
-  const [antiguedad, setAntiguedad] = useState(null); // { 6, 12, 24 } | null
-  const [antBusy, setAntBusy] = useState(false);
+  const [byEntity, setByEntity] = useState({}); // entity → { count?, error?, busy? }
+  const [countingAll, setCountingAll] = useState(false);
+  const [ageCounts, setAgeCounts] = useState(null); // { 6, 12, 24 } | null
+  const [ageBusy, setAgeBusy] = useState(false);
   const [total, setTotal] = useState(null);
-  const [copiado, setCopiado] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  const contarTodas = async () => {
-    setCorriendo(true);
+  const countAll = async () => {
+    setCountingAll(true);
     try {
       // El total de la colección va aparte: sirve para ver si las entidades
       // listadas suman todo o si hay alguna que no está en LOG_ENTITIES.
       try { setTotal(await countCollection("logs")); } catch { /* el desglose igual sirve */ }
       for (const e of LOG_ENTITIES) {
-        setPorEntidad((r) => ({ ...r, [e]: { busy: true } }));
+        setByEntity((r) => ({ ...r, [e]: { busy: true } }));
         try {
           const count = await countLogsByEntity(e);
-          setPorEntidad((r) => ({ ...r, [e]: { count } }));
+          setByEntity((r) => ({ ...r, [e]: { count } }));
         } catch (err) {
-          setPorEntidad((r) => ({ ...r, [e]: { error: err.message || String(err) } }));
+          setByEntity((r) => ({ ...r, [e]: { error: err.message || String(err) } }));
         }
       }
     } finally {
-      setCorriendo(false);
+      setCountingAll(false);
     }
   };
 
-  const medirAntiguedad = async () => {
-    setAntBusy(true);
+  const measureAge = async () => {
+    setAgeBusy(true);
     try {
       const out = {};
       for (const m of [6, 12, 24]) out[m] = await countLogsOlderThan(m);
-      setAntiguedad(out);
+      setAgeCounts(out);
     } catch (err) {
-      setAntiguedad({ error: err.message || String(err) });
+      setAgeCounts({ error: err.message || String(err) });
     } finally {
-      setAntBusy(false);
+      setAgeBusy(false);
     }
   };
 
-  const contadas = LOG_ENTITIES.filter((e) => porEntidad[e]?.count != null);
-  const suma = contadas.reduce((a, e) => a + porEntidad[e].count, 0);
+  const countedEntities = LOG_ENTITIES.filter((e) => byEntity[e]?.count != null);
+  const countedSum = countedEntities.reduce((a, e) => a + byEntity[e].count, 0);
   // Logs de entidades que no están en LOG_ENTITIES: una que falta agregar, o
   // un nombre de entidad que ya no se escribe.
-  const sinClasificar = total != null ? total - suma : null;
+  const unclassified = total != null ? total - countedSum : null;
 
-  const ordenadas = [...contadas].sort((a, b) => porEntidad[b].count - porEntidad[a].count);
+  const sortedEntities = [...countedEntities].sort((a, b) => byEntity[b].count - byEntity[a].count);
 
-  const copiar = async () => {
-    if (ordenadas.length === 0) return;
-    const lineas = ordenadas.map((e) => `${e}\t${porEntidad[e].count}${LOG_HEAVY[e] ? "\tpesado" : ""}`);
-    if (sinClasificar != null && sinClasificar !== 0) lineas.push(`(sin clasificar)\t${sinClasificar}`);
-    lineas.push("", `TOTAL\t${total ?? suma}`);
-    if (antiguedad && !antiguedad.error) {
-      lineas.push("", "Anteriores a", ...[6, 12, 24].map((m) => `  ${m} meses\t${antiguedad[m]}`));
+  const copyBreakdown = async () => {
+    if (sortedEntities.length === 0) return;
+    const lines = sortedEntities.map((e) => `${e}\t${byEntity[e].count}${LOG_HEAVY[e] ? "\tpesado" : ""}`);
+    if (unclassified != null && unclassified !== 0) lines.push(`(sin clasificar)\t${unclassified}`);
+    lines.push("", `TOTAL\t${total ?? countedSum}`);
+    if (ageCounts && !ageCounts.error) {
+      lines.push("", "Anteriores a", ...[6, 12, 24].map((m) => `  ${m} meses\t${ageCounts[m]}`));
     }
-    const texto = lineas.join("\n");
+    const text = lines.join("\n");
     try {
-      await navigator.clipboard.writeText(texto);
-      setCopiado(true);
-      setTimeout(() => setCopiado(false), 2000);
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     } catch {
-      window.prompt("Copia el desglose:", texto);
+      window.prompt("Copia el desglose:", text);
     }
   };
 
@@ -120,36 +120,36 @@ export function LogsBreakdownSection() {
         <>
           <button
             type="button"
-            onClick={contarTodas}
-            disabled={corriendo}
+            onClick={countAll}
+            disabled={countingAll}
             className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
           >
-            {corriendo ? "Contando…" : `▶ Por entidad (~${LOG_ENTITIES.length + 1} lecturas)`}
+            {countingAll ? "Contando…" : `▶ Por entidad (~${LOG_ENTITIES.length + 1} lecturas)`}
           </button>
           <button
             type="button"
-            onClick={medirAntiguedad}
-            disabled={antBusy}
+            onClick={measureAge}
+            disabled={ageBusy}
             title="Cuántos registros borraría un TTL de 6, 12 o 24 meses"
             className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
           >
-            {antBusy ? "Midiendo…" : "▶ Antigüedad (3 lecturas)"}
+            {ageBusy ? "Midiendo…" : "▶ Antigüedad (3 lecturas)"}
           </button>
           <button
             type="button"
-            onClick={copiar}
-            disabled={ordenadas.length === 0}
+            onClick={copyBreakdown}
+            disabled={sortedEntities.length === 0}
             className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
           >
-            {copiado ? "✓ Copiado" : `📋 Copiar${ordenadas.length ? ` (${ordenadas.length})` : ""}`}
+            {copied ? "✓ Copiado" : `📋 Copiar${sortedEntities.length ? ` (${sortedEntities.length})` : ""}`}
           </button>
         </>
       }
     >
-      {antiguedad ? (
-        antiguedad.error ? (
+      {ageCounts ? (
+        ageCounts.error ? (
           <p className="mb-3 rounded-md bg-[var(--color-danger-soft)] px-3 py-2 text-xs text-[var(--color-danger)]">
-            {antiguedad.error}
+            {ageCounts.error}
           </p>
         ) : (
           <div className="mb-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-xs">
@@ -157,8 +157,8 @@ export function LogsBreakdownSection() {
             <div className="flex flex-wrap gap-4 tabular-nums">
               {[6, 12, 24].map((m) => (
                 <span key={m}>
-                  &gt; {m} meses: <b>{fmtNumber(antiguedad[m])}</b>
-                  {total ? ` (${Math.round((antiguedad[m] / total) * 100)}%)` : ""}
+                  &gt; {m} meses: <b>{fmtNumber(ageCounts[m])}</b>
+                  {total ? ` (${Math.round((ageCounts[m] / total) * 100)}%)` : ""}
                 </span>
               ))}
             </div>
@@ -181,8 +181,8 @@ export function LogsBreakdownSection() {
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--color-border)]">
-            {(ordenadas.length ? ordenadas : LOG_ENTITIES).map((e) => {
-              const r = porEntidad[e] || {};
+            {(sortedEntities.length ? sortedEntities : LOG_ENTITIES).map((e) => {
+              const r = byEntity[e] || {};
               return (
                 <tr key={e}>
                   <td className="px-3 py-1.5 font-mono text-xs">{e}</td>
@@ -209,8 +209,8 @@ export function LogsBreakdownSection() {
                 <td className="px-3 py-1.5">TOTAL en la colección</td>
                 <td className="px-3 py-1.5 text-right tabular-nums">{fmtNumber(total)}</td>
                 <td colSpan={2} className="px-3 py-1.5 text-xs text-[var(--color-muted)]">
-                  {sinClasificar != null && sinClasificar !== 0
-                    ? `${fmtNumber(sinClasificar)} sin clasificar — falta agregar esa entidad a LOG_ENTITIES`
+                  {unclassified != null && unclassified !== 0
+                    ? `${fmtNumber(unclassified)} sin clasificar — falta agregar esa entidad a LOG_ENTITIES`
                     : ""}
                 </td>
               </tr>

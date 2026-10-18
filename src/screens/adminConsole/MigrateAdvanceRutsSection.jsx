@@ -16,9 +16,9 @@ export function MigrateAdvanceRutsSection() {
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [msg, setMsg] = useState("");
-  const [cambian, setCambian] = useState(null);
-  const [huerfanos, setHuerfanos] = useState([]);
-  const [totales, setTotales] = useState(null);
+  const [toChange, setToChange] = useState(null);
+  const [orphans, setOrphans] = useState([]);
+  const [totals, setTotals] = useState(null);
 
   const preview = async () => {
     setLoading(true);
@@ -30,41 +30,41 @@ export function MigrateAdvanceRutsSection() {
       ]);
 
       // doc id -> rut vigente; sin campo `rut`, el rut es el doc id.
-      const rutActual = new Map(workers.map((w) => [w.id, w.rut || w.id]));
-      const nombre = new Map(workers.map((w) => [w.id, w.name || ""]));
-      const rutsVigentes = new Set(workers.map((w) => w.rut || w.id));
+      const currentRutById = new Map(workers.map((w) => [w.id, w.rut || w.id]));
+      const nameById = new Map(workers.map((w) => [w.id, w.name || ""]));
+      const currentRuts = new Set(workers.map((w) => w.rut || w.id));
 
-      const aCambiar = [];
-      const sinDueno = [];
+      const pendingChanges = [];
+      const ownerless = [];
 
       for (const a of advances) {
-        const actual = String(a.workerRut || "");
-        if (!actual) continue;
-        const destino = rutActual.get(actual);
+        const storedRut = String(a.workerRut || "");
+        if (!storedRut) continue;
+        const targetRut = currentRutById.get(storedRut);
 
-        if (destino === undefined) {
+        if (targetRut === undefined) {
           // Ni doc id ni rut vigente de nadie: o ya migró, o quedó huérfano.
-          if (!rutsVigentes.has(actual)) {
-            sinDueno.push({ id: a.id, nombre: a.workerName || "", rut: actual, status: a.status || "pending" });
+          if (!currentRuts.has(storedRut)) {
+            ownerless.push({ id: a.id, name: a.workerName || "", rut: storedRut, status: a.status || "pending" });
           }
           continue;
         }
-        if (destino !== actual) {
-          aCambiar.push({
+        if (targetRut !== storedRut) {
+          pendingChanges.push({
             id: a.id,
-            nombre: nombre.get(actual) || a.workerName || "",
-            desde: actual,
-            hacia: destino,
+            name: nameById.get(storedRut) || a.workerName || "",
+            from: storedRut,
+            to: targetRut,
             status: a.status || "pending",
           });
         }
       }
 
-      setCambian(aCambiar);
-      setHuerfanos(sinDueno);
-      setTotales({
+      setToChange(pendingChanges);
+      setOrphans(ownerless);
+      setTotals({
         advances: advances.length,
-        divergentes: workers.filter((w) => w.rut && w.rut !== w.id).length,
+        divergent: workers.filter((w) => w.rut && w.rut !== w.id).length,
       });
     } catch (err) {
       setMsg(`Error: ${err.message || err}`);
@@ -74,19 +74,19 @@ export function MigrateAdvanceRutsSection() {
   };
 
   const apply = async () => {
-    if (!cambian?.length) return;
+    if (!toChange?.length) return;
     setRunning(true);
     setMsg("");
     try {
-      for (let i = 0; i < cambian.length; i += 450) {
+      for (let i = 0; i < toChange.length; i += 450) {
         const batch = writeBatch(db);
-        for (const c of cambian.slice(i, i + 450)) {
-          batch.update(doc(db, "advances", c.id), { workerRut: c.hacia, updatedAt: serverTimestamp() });
+        for (const c of toChange.slice(i, i + 450)) {
+          batch.update(doc(db, "advances", c.id), { workerRut: c.to, updatedAt: serverTimestamp() });
         }
         await batch.commit();
       }
       advancesService.invalidate();
-      setMsg(`✓ Migrados ${cambian.length} anticipo(s).`);
+      setMsg(`✓ Migrados ${toChange.length} anticipo(s).`);
       await preview();
     } catch (err) {
       setMsg(`Error al migrar: ${err.message || err}`);
@@ -95,7 +95,7 @@ export function MigrateAdvanceRutsSection() {
     }
   };
 
-  const vigentes = (cambian || []).filter((c) => c.status === "pending" || c.status === "partial").length;
+  const openCount = (toChange || []).filter((c) => c.status === "pending" || c.status === "partial").length;
 
   return (
     <ConsoleCard
@@ -114,29 +114,29 @@ export function MigrateAdvanceRutsSection() {
         <button
           type="button"
           onClick={apply}
-          disabled={running || !cambian || cambian.length === 0}
+          disabled={running || !toChange || toChange.length === 0}
           className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
         >
-          {running ? "Migrando…" : `✔ Migrar ${cambian?.length || ""} anticipo(s)`}
+          {running ? "Migrando…" : `✔ Migrar ${toChange?.length || ""} anticipo(s)`}
         </button>
       </>}
     >
       {msg && <p className="mb-3 text-sm">{msg}</p>}
 
-      {totales && (
+      {totals && (
         <p className="mb-3 text-xs text-[var(--color-muted)]">
-          {totales.advances} anticipo(s) · {totales.divergentes} trabajador(es) con rut distinto del id
-          {cambian ? ` · ${cambian.length} a migrar (${vigentes} vigente(s))` : ""}
+          {totals.advances} anticipo(s) · {totals.divergent} trabajador(es) con rut distinto del id
+          {toChange ? ` · ${toChange.length} a migrar (${openCount} vigente(s))` : ""}
         </p>
       )}
 
-      {cambian && cambian.length === 0 && (
+      {toChange && toChange.length === 0 && (
         <p className="text-sm text-[var(--color-muted)]">
           Nada que migrar: todos los anticipos ya apuntan al rut vigente.
         </p>
       )}
 
-      {cambian && cambian.length > 0 && (
+      {toChange && toChange.length > 0 && (
         <div className="max-h-72 overflow-auto rounded-md border border-[var(--color-border)]">
           <table className="w-full text-sm">
             <thead className="sticky top-0 bg-[var(--color-surface-2)]">
@@ -148,11 +148,11 @@ export function MigrateAdvanceRutsSection() {
               </tr>
             </thead>
             <tbody>
-              {cambian.map((c) => (
+              {toChange.map((c) => (
                 <tr key={c.id} className="border-t border-[var(--color-border)]">
-                  <td className="px-3 py-2">{c.nombre || "—"}</td>
-                  <td className="px-3 py-2 font-mono text-xs">{c.desde}</td>
-                  <td className="px-3 py-2 font-mono text-xs font-semibold">{c.hacia}</td>
+                  <td className="px-3 py-2">{c.name || "—"}</td>
+                  <td className="px-3 py-2 font-mono text-xs">{c.from}</td>
+                  <td className="px-3 py-2 font-mono text-xs font-semibold">{c.to}</td>
                   <td className="px-3 py-2">{c.status}</td>
                 </tr>
               ))}
@@ -161,14 +161,14 @@ export function MigrateAdvanceRutsSection() {
         </div>
       )}
 
-      {huerfanos.length > 0 && (
+      {orphans.length > 0 && (
         <div className="mt-3 rounded-md border border-[var(--color-border)] p-3">
           <p className="text-xs font-semibold">
-            ⚠ {huerfanos.length} anticipo(s) sin trabajador que coincida — no se tocan
+            ⚠ {orphans.length} anticipo(s) sin trabajador que coincida — no se tocan
           </p>
           <ul className="mt-1 space-y-0.5 font-mono text-xs text-[var(--color-muted)]">
-            {huerfanos.map((h) => (
-              <li key={h.id}>{h.rut} · {h.nombre || "sin nombre"} · {h.status}</li>
+            {orphans.map((h) => (
+              <li key={h.id}>{h.rut} · {h.name || "sin nombre"} · {h.status}</li>
             ))}
           </ul>
         </div>

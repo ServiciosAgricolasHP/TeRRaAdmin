@@ -9,7 +9,7 @@ import { ConsoleCard } from "./ConsoleCard";
 // ============================================================
 export function WorkdaysByCycleSection() {
   const [cycles, setCycles] = useState([]);
-  const [faenas, setFaenas] = useState([]);
+  const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState(false);
   const [counts, setCounts] = useState({}); // cycleId → count | "err" | "..."
@@ -24,7 +24,7 @@ export function WorkdaysByCycleSection() {
           jobsService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
         ]);
         setCycles(c);
-        setFaenas(f);
+        setJobs(f);
       } finally {
         setLoading(false);
       }
@@ -33,14 +33,14 @@ export function WorkdaysByCycleSection() {
 
   const visibleCycles = useMemo(() => {
     const list = includeClosed ? cycles : cycles.filter((c) => c.status !== "closed");
-    const faenaName = (id) => faenas.find((f) => f.id === id)?.name || "—";
+    const jobName = (id) => jobs.find((f) => f.id === id)?.name || "—";
     return list
-      .map((c) => ({ ...c, faenaName: faenaName(c.faenaId) }))
+      .map((c) => ({ ...c, jobName: jobName(c.faenaId) }))
       .sort((a, b) =>
-        String(a.faenaName).localeCompare(b.faenaName) ||
+        String(a.jobName).localeCompare(b.jobName) ||
         String(a.label || "").localeCompare(b.label || ""),
       );
-  }, [cycles, faenas, includeClosed]);
+  }, [cycles, jobs, includeClosed]);
 
   const runAll = async () => {
     setRunning(true);
@@ -104,7 +104,7 @@ export function WorkdaysByCycleSection() {
                 const v = counts[c.id];
                 return (
                   <tr key={c.id} className="border-t border-[var(--color-border)]">
-                    <td className="px-3 py-1.5 text-xs text-[var(--color-muted)]">{c.faenaName}</td>
+                    <td className="px-3 py-1.5 text-xs text-[var(--color-muted)]">{c.jobName}</td>
                     <td className="px-3 py-1.5">{c.label}</td>
                     <td className="px-3 py-1.5 text-xs">
                       {c.status === "closed" ? (
