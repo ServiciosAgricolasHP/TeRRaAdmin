@@ -15,10 +15,8 @@ import Modal from "./Modal";
 import { useCatalogs } from "../contexts/CatalogsContext";
 import { useToast } from "../contexts/ToastContext";
 import { searchWorkers } from "../services/workersService";
-import {
-  loadWorkerSummaryData,
-  PrintableWorkerSummary,
-} from "./WorkerSummaryModal";
+import { loadWorkerSummaryData } from "../services/workerSummaryService";
+import { PrintableWorkerSummary } from "./workerSummaryModal/PrintableWorkerSummary";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import { localIsoDate } from "../utils/dates";
 
