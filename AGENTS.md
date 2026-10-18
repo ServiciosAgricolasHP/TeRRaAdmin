@@ -130,6 +130,7 @@ src/
                         (Dashboard, Faenas, CycleDetail, Workers, Transports, Payroll, Advances,
                          InterestLinks, Calendar, AdminConsole, Users, NoAccess, MigrateWorkers,
                          CleanupPaidWorkdays)
+    payroll/            ← las piezas de Nómina (ver "Pantallas divididas en carpetas")
   contexts/             ← AuthContext, ThemeContext, CatalogsContext, CarriersContext
   services/             ← capa de datos (Firestore CRUD + caché + auditoría)
                         firestoreBase, transportsService, carriersService,
@@ -197,6 +198,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 ## Convenciones / Conventions
 
 - Componentes en PascalCase; archivos coinciden con nombre del componente.
+- **Pantallas divididas en carpetas.** Una pantalla grande vive en `screens/<Pantalla>.jsx`, que conserva el componente de la ruta, y sus piezas en una carpeta en minúscula al lado (`screens/payroll/`). Un componente por archivo `.jsx`, con el nombre del componente y sus helpers privados chicos. Lo que no es componente (helpers compartidos, constantes, las impresiones en HTML) va en `.js`, así `react-refresh/only-export-components` no avisa. Dos archivos de la misma carpeta no pueden diferir solo en mayúsculas (`workerDetail.js` y `WorkerDetail.jsx`): Windows resuelve `./WorkerDetail` al que encuentre primero.
 - La carpeta es `components/`, en minúscula. Windows no distingue mayúsculas en las rutas, pero el build de Linux del CI sí: un import con la mayúscula equivocada compila local y falla en CI.
 - ESLint: variables sin usar empezando con `A-Z_` son ignoradas.
 - `screens/` contiene lógica de rutas; data fetching en `services/`.
@@ -410,7 +412,13 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
 
 ## Nómina / Payroll
 
-- Pantalla: `src/screens/Payroll.jsx`. Ruta `/payroll`.
+- Pantalla: `src/screens/Payroll.jsx` (el componente de la ruta y el paso Generar). Ruta `/payroll`.
+- Sus piezas, en `src/screens/payroll/`:
+  - **Generar:** `CycleSelector`, `PreviewTable`, `PayConfirmModal`, `InstallmentConfirmModal` y `ProgressOverlay`.
+  - **Historial:** `HistoryList`, `PayStatePill` y `payState.js`.
+  - **Detalle:** `PayrollDetailModal` y sus modales (`AddCyclesModal`, `AddWorkerDaysModal`, `RecalcModal`, `CashEstimationModal`, `RenamePayrollModal`), `WorkerDetailRow` y las tablas del detalle de pago de una persona.
+  - **Pagos anteriores:** `WorkersHistory` y `WorkerDetail`.
+  - **Impresiones en HTML:** `printCommon.js`, `printReceipts.js` (comprobantes de efectivo y detalle de pago) y `printResumenTable.js`.
 - Servicio: `services/payrollsService.js` (colección `payrolls`).
 - Helpers: `utils/payroll.js` — `aggregateWorkerAmounts`, `splitBankAndCash`, `groupCashByLeader`, `validateAccountNumber`, `downloadBchileXlsx`, `downloadNominaOnlyXlsx`.
 
