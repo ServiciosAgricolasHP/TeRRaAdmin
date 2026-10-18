@@ -70,7 +70,7 @@ import TransportsModal from "../components/TransportsModal";
 import CycleWorkerList from "../components/CycleWorkerList";
 import CycleWorkerEditModal from "../components/CycleWorkerEditModal";
 import { matchesSearchQuery } from "../utils/textSearch";
-import CycleSummaryModal from "../components/CycleSummaryModal";
+import CycleSummaryModal from "./cycleDetail/CycleSummaryModal";
 import { tripsService } from "../services/transportsService";
 import { qrLockedLaborsOf } from "../utils/harvestSync";
 import { LABOR_TYPES } from "../utils/laborTypes";
