@@ -431,6 +431,7 @@ Implementación en `submitCycle` (`Jobs.jsx`). El mapeo `oldLaborId → newLabor
   - **Grilla:** `FormulaCellEditor` (editor de las celdas numéricas), `DayHeader`, `GroupHeaderRowRenderer` y `rows.js` (filas por tipo de labor y `normalizeCycle`).
   - **Precios del día:** `FloorDayRow` (el piso del día), `AddComboModal` y `DayModeModal`.
   - **Modales:** `CatalogsModal` (con `CatalogSection`), `BonusEditModal`, `LeaderPickerModal`, `DefaultLeadersModal`, `StagesEditor` y `DayCalendarPicker` (el calendario de "+ Día").
+  - **Trabajadores:** `CycleWorkerList` (la lista del teléfono), `CycleWorkerEditModal` (la ficha de una persona en el ciclo, con `cycleWorkerEditModal/DayConfigContent`) y `WorkerPickerModal` (agregar a alguien a la labor, con alta rápida).
   - **Resumen:** `CycleSummaryModal`, con sus piezas en `cycleSummaryModal/` (ver Resúmenes).
 - **Undo (Ctrl+Z)**: stack en memoria (`undoStackRef`), pushea cada edición de celda, revierte y re-graba en Firestore.
 - **Navegación tipo Excel**: `singleClickEdit: false`. Flechas mueven el foco entre celdas; **Enter** entra a editar; al confirmar, salta a la fila siguiente (`enterNavigatesVertically*: true`).

@@ -141,7 +141,7 @@ function AddComboInline({ catalogs, existingCombos, disabled, onAdd }) {
   );
 }
 
-function PisoConfig({ date, activeLabor, dayPrices, readOnly, fmtCurrency, persistDayPiso }) {
+function FloorConfig({ date, activeLabor, dayPrices, readOnly, fmtCurrency, persistDayPiso }) {
   const current = getDayPiso(dayPrices, activeLabor.id, date) || 0;
   return (
     <div className="rounded-lg border border-[var(--color-border)] p-3.5">
@@ -210,7 +210,7 @@ export default function DayConfigContent({
           disabled={readOnly}
           onAdd={(x, y) => addComboToDay(laborId, date, x, y)}
         />
-        <PisoConfig date={date} activeLabor={activeLabor} dayPrices={dayPrices} readOnly={readOnly} fmtCurrency={fmtCurrency} persistDayPiso={persistDayPiso} />
+        <FloorConfig date={date} activeLabor={activeLabor} dayPrices={dayPrices} readOnly={readOnly} fmtCurrency={fmtCurrency} persistDayPiso={persistDayPiso} />
       </div>
     );
   }
@@ -257,7 +257,7 @@ export default function DayConfigContent({
             + Agregar precio
           </button>
         )}
-        <PisoConfig date={date} activeLabor={activeLabor} dayPrices={dayPrices} readOnly={readOnly} fmtCurrency={fmtCurrency} persistDayPiso={persistDayPiso} />
+        <FloorConfig date={date} activeLabor={activeLabor} dayPrices={dayPrices} readOnly={readOnly} fmtCurrency={fmtCurrency} persistDayPiso={persistDayPiso} />
       </div>
     );
   }

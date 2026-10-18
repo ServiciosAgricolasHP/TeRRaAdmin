@@ -90,7 +90,7 @@ export default function CycleWorkerEditModal({
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [bonusDate, setBonusDate] = useState(null);
-  const [bonusManejoChecked, setBonusManejoChecked] = useState(false);
+  const [drivingBonusChecked, setDrivingBonusChecked] = useState(false);
   const [bonusSupervisionChecked, setBonusSupervisionChecked] = useState(false);
   const [bonusExtras, setBonusExtras] = useState("");
   const [onlyWithData, setOnlyWithData] = useState(false);
@@ -121,7 +121,7 @@ export default function CycleWorkerEditModal({
       !(Number(row[`${bonusDate}__qty`]) || 0) &&
       !(Number(row[`${bonusDate}__he`]) || 0);
     const defaults = activeLabor.bonusDefaults?.[workerRut] || {};
-    setBonusManejoChecked(isBlankDay ? !!defaults.manejo : !!row[`${bonusDate}__m`]);
+    setDrivingBonusChecked(isBlankDay ? !!defaults.manejo : !!row[`${bonusDate}__m`]);
     setBonusSupervisionChecked(isBlankDay ? !!defaults.supervision : !!row[`${bonusDate}__s`]);
     setBonusExtras(row[`${bonusDate}__x`] ? String(row[`${bonusDate}__x`]) : "");
   }, [bonusDate, row, activeLabor, workerRut]);
@@ -166,13 +166,13 @@ export default function CycleWorkerEditModal({
   if (!open) return null;
 
   const type = activeLabor.type;
-  const isCosecha = type === "cosecha";
-  const isTrato = type === "trato";
-  const isTratoEtapas = type === "tratoEtapas";
-  const isTratoHE = type === "tratoHE";
+  const isHarvest = type === "cosecha";
+  const isPiecework = type === "trato";
+  const isPieceworkStages = type === "tratoEtapas";
+  const isOvertimeDay = type === "tratoHE";
   // Mismo criterio que `allowsMonthly` en CycleDetail.jsx: labores al día y
   // jornadas con horas extras.
-  const allowsMonthly = !isCosecha && !isTrato && !isTratoEtapas;
+  const allowsMonthly = !isHarvest && !isPiecework && !isPieceworkStages;
   const isTemp = !!row._isTemp;
 
   const doRemove = async () => {
@@ -350,9 +350,9 @@ export default function CycleWorkerEditModal({
           </div>
           <input
             type="checkbox"
-            checked={bonusManejoChecked}
+            checked={drivingBonusChecked}
             disabled={readOnly}
-            onChange={(e) => setBonusManejoChecked(e.target.checked)}
+            onChange={(e) => setDrivingBonusChecked(e.target.checked)}
             className="h-5 w-5 accent-[var(--color-accent)]"
           />
         </label>
@@ -397,7 +397,7 @@ export default function CycleWorkerEditModal({
             onClick={async () => {
               const date = bonusDate;
               await upsertTratoHEWorkday(activeLabor.id, date, workerRut, {
-                hasManejo: bonusManejoChecked,
+                hasManejo: drivingBonusChecked,
                 hasSupervision: bonusSupervisionChecked,
                 extras: Number(bonusExtras) || 0,
               });
@@ -412,7 +412,7 @@ export default function CycleWorkerEditModal({
     );
   };
 
-  const renderPisoRow = (d) => {
+  const renderFloorRow = (d) => {
     if (!daysWithPiso?.has(d)) return null;
     const eff = effectivePiso(activeLabor, dayPrices, d);
     const amt = Number(row[`${d}__piso`]) || 0;
@@ -475,7 +475,7 @@ export default function CycleWorkerEditModal({
     </div>
   );
 
-  const renderCosechaDay = (d) => {
+  const renderHarvestDay = (d) => {
     const combos = dayCombosByDate[d] || [];
     if (combos.length === 0 && !daysWithPiso?.has(d)) {
       return (
@@ -534,12 +534,12 @@ export default function CycleWorkerEditModal({
             );
           })}
         </div>
-        {renderPisoRow(d)}
+        {renderFloorRow(d)}
       </div>
     );
   };
 
-  const renderTratoDay = (d) => {
+  const renderPieceworkDay = (d) => {
     const tiers = dayTiersByDate[d] || [];
     if (tiers.length === 0 && !daysWithPiso?.has(d)) {
       return (
@@ -596,12 +596,12 @@ export default function CycleWorkerEditModal({
             );
           })}
         </div>
-        {renderPisoRow(d)}
+        {renderFloorRow(d)}
       </div>
     );
   };
 
-  const renderEtapasDay = (d) => {
+  const renderStagesDay = (d) => {
     const stages = dayStagesByDate[d] || [];
     if (stages.length === 0) {
       return (
@@ -664,7 +664,7 @@ export default function CycleWorkerEditModal({
   // Desglose del monto de tratoHE (base/HE/bonos/extras) como texto siempre
   // visible. En escritorio es el tooltip de `buildBreakdown` (CycleDetail.jsx),
   // que vive dentro del useMemo de columnas de la grilla y no se puede reusar.
-  const tratoHEBreakdown = (d, cfg, m, s, x) => {
+  const overtimeDayBreakdown = (d, cfg, m, s, x) => {
     const qty = Number(row[`${d}__qty`]) || 0;
     const he = Number(row[`${d}__he`]) || 0;
     const overtimeRate = activeLabor.overtimeRate ?? DEFAULT_OVERTIME_RATE;
@@ -683,7 +683,7 @@ export default function CycleWorkerEditModal({
     return parts;
   };
 
-  const renderTratoHEDay = (d) => {
+  const renderOvertimeDay = (d) => {
     if (row._monthly) return renderAttendanceDay(d);
     const cfg = getDaySingle(dayPrices, activeLabor.id, d, "normal");
     const suggested = effectiveDayPrice(activeLabor, cfg);
@@ -693,7 +693,7 @@ export default function CycleWorkerEditModal({
     const m = !!row[`${d}__m`];
     const s = !!row[`${d}__s`];
     const x = Number(row[`${d}__x`]) || 0;
-    const breakdownParts = tratoHEBreakdown(d, cfg, m, s, x);
+    const breakdownParts = overtimeDayBreakdown(d, cfg, m, s, x);
     return (
       <div key={d} className={cardAccentCls(Number(row[`${d}__amt`]) > 0)}>
         {dayHeader(d, `${d}__amt`)}
@@ -990,10 +990,10 @@ export default function CycleWorkerEditModal({
             </div>
           ) : (
             visibleDays.map((d) => {
-              if (isCosecha) return renderCosechaDay(d);
-              if (isTrato) return renderTratoDay(d);
-              if (isTratoEtapas) return renderEtapasDay(d);
-              if (isTratoHE) return renderTratoHEDay(d);
+              if (isHarvest) return renderHarvestDay(d);
+              if (isPiecework) return renderPieceworkDay(d);
+              if (isPieceworkStages) return renderStagesDay(d);
+              if (isOvertimeDay) return renderOvertimeDay(d);
               return renderNormalDay(d);
             })
           )}
