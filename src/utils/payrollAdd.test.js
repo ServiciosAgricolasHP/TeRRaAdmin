@@ -9,6 +9,9 @@ const {
   payrollLaborScope,
   inRecalcScope,
   mergeCycleDetails,
+  withPaidPeriods,
+  withLiveNames,
+  cycleDetailChanges,
   planAddWorkdays,
   workerDayRows,
   asPayrollWorker,
@@ -261,6 +264,79 @@ describe("mergeCycleDetails", () => {
     ]);
     expect(mergeCycleDetails([{ id: "B", laborIds: [] }], [{ id: "B", laborIds: ["L2"] }])).toEqual([
       { id: "B", laborIds: ["L2"] },
+    ]);
+  });
+});
+
+describe("withPaidPeriods", () => {
+  const day = (cycleId, date) => ({ id: `${cycleId}-${date}`, cycleId, date });
+
+  it("el período va del primer al último día que se paga, sin importar el orden", () => {
+    const out = withPaidPeriods(
+      [{ id: "A", firstDay: "2026-03-01", lastDay: "2026-03-15" }],
+      [day("A", "2026-03-12"), day("A", "2026-03-10"), day("A", "2026-03-11")],
+    );
+    expect(out).toEqual([{ id: "A", firstDay: "2026-03-10", lastDay: "2026-03-12" }]);
+  });
+
+  it("un ciclo sin jornadas en la lista conserva su período, y el que no cambia es el mismo objeto", () => {
+    const a = { id: "A", firstDay: "2026-03-02", lastDay: "2026-03-03" };
+    const b = { id: "B", firstDay: "2026-03-01", lastDay: "2026-03-05" };
+    const out = withPaidPeriods([a, b], [day("A", "2026-03-02"), day("A", "2026-03-03")]);
+    expect(out[0]).toBe(a);
+    expect(out[1]).toBe(b);
+  });
+
+  it("un ciclo sin período guardado lo toma de las jornadas", () => {
+    expect(withPaidPeriods([{ id: "A", label: "a" }], [day("A", "2026-03-04")])).toEqual([
+      { id: "A", label: "a", firstDay: "2026-03-04", lastDay: "2026-03-04" },
+    ]);
+  });
+
+  it("con `extend`, el período solo crece", () => {
+    const before = [{ id: "A", firstDay: "2026-03-02", lastDay: "2026-03-05" }];
+    expect(withPaidPeriods(before, [day("A", "2026-03-06")], { extend: true })).toEqual([
+      { id: "A", firstDay: "2026-03-02", lastDay: "2026-03-06" },
+    ]);
+    expect(withPaidPeriods(before, [day("A", "2026-03-03")], { extend: true })[0]).toBe(before[0]);
+  });
+});
+
+describe("withLiveNames", () => {
+  const stored = { id: "A", label: "F/Sub vieja/Ciclo 1", faenaId: "f", faenaName: "F", subfaenaId: "s", subfaenaName: "Sub vieja" };
+
+  it("trae la etiqueta del ciclo y los nombres vigentes de su faena y subfaena", () => {
+    const [cd] = withLiveNames([stored], {
+      cycles: [{ id: "A", label: "F/Sub nueva/Ciclo 2", faenaId: "f", subfaenaId: "s" }],
+      faenas: [{ id: "f", name: "F" }],
+      subfaenas: [{ id: "s", name: "Sub nueva" }],
+    });
+    expect(cd).toEqual({ ...stored, label: "F/Sub nueva/Ciclo 2", subfaenaName: "Sub nueva" });
+  });
+
+  it("lo que ya no está en las listas conserva lo guardado, y sin cambios es el mismo objeto", () => {
+    expect(withLiveNames([stored], {})[0]).toBe(stored);
+    expect(withLiveNames([stored], { cycles: [{ id: "A", label: stored.label }], subfaenas: [{ id: "s", name: "Sub vieja" }] })[0]).toBe(stored);
+  });
+});
+
+describe("cycleDetailChanges", () => {
+  it("lista el nombre, la subfaena y el período que cambiaron, por ciclo", () => {
+    const before = [
+      { id: "A", label: "F/S/1", subfaenaName: "S", firstDay: "2026-03-02", lastDay: "2026-03-03" },
+      { id: "B", label: "F/S/2" },
+    ];
+    const after = [{ ...before[0], label: "F/T/1", subfaenaName: "T", lastDay: "2026-03-04" }, before[1]];
+    expect(cycleDetailChanges(before, after)).toEqual([
+      {
+        cycleId: "A",
+        label: "F/T/1",
+        fields: [
+          { field: "label", label: "Ciclo", old: "F/S/1", new: "F/T/1" },
+          { field: "subfaenaName", label: "Subfaena", old: "S", new: "T" },
+          { field: "period", label: "Período", old: ["2026-03-02", "2026-03-03"], new: ["2026-03-02", "2026-03-04"] },
+        ],
+      },
     ]);
   });
 });

@@ -5,6 +5,7 @@
 // snapshot es un derivado, y que falle no puede tumbar la generación ni el
 // borrado de la nómina, que son las operaciones que mueven la plata.
 import { payrollSnapshotsService } from "./index";
+import { withPaidPeriods } from "../utils/payrollItem";
 
 // Devuelve `true` si quedó guardado. La nómina ya existe cuando esto corre,
 // así que un fallo acá deja una nómina sin snapshot, no una nómina rota.
@@ -154,8 +155,10 @@ export async function pruneSnapshot(payrollId, { items, aggregates, cycleIds = n
 // Deja el snapshot igual a una nómina recalculada (`applyPayrollRecalc`): los
 // trabajadores y sus jornadas, ya con la forma del snapshot, los anticipos que
 // la nómina sigue tocando más los que se le aplicaron ahora, y la cabecera al
-// día. Con `cycleIds` (se sacó algo), quedan solo esos ciclos. Nunca tira.
-export async function syncSnapshotAfterRecalc(payrollId, { items, aggregates, workdays = [], newAdvances = [], cycleIds = null }) {
+// día. Con `cycleIds` (se sacó algo), quedan solo esos ciclos. Con
+// `cycleDetails`, cada ciclo toma de ahí sus nombres vigentes; el período sale
+// de las jornadas (`withPaidPeriods`). Nunca tira.
+export async function syncSnapshotAfterRecalc(payrollId, { items, aggregates, workdays = [], newAdvances = [], cycleIds = null, cycleDetails = null }) {
   try {
     const snap = await payrollSnapshotsService.getById(payrollId);
     if (!snap) return false;
@@ -167,9 +170,17 @@ export async function syncSnapshotAfterRecalc(payrollId, { items, aggregates, wo
       workdays,
       advances: [...siguen, ...newAdvances.filter((a) => !ya.has(a.id))],
     };
-    if (cycleIds && Array.isArray(snap.cycles)) {
-      const quedan = new Set(cycleIds);
-      patch.cycles = snap.cycles.filter((c) => quedan.has(c.id));
+    if (Array.isArray(snap.cycles)) {
+      const kept = cycleIds ? new Set(cycleIds) : null;
+      const detailById = new Map((cycleDetails || []).map((cd) => [cd.id, cd]));
+      const keptCycles = (kept ? snap.cycles.filter((c) => kept.has(c.id)) : snap.cycles).map((c) => {
+        const cd = detailById.get(c.id);
+        if (!cd) return c;
+        const names = {};
+        for (const k of ["label", "faenaName", "subfaenaName"]) if (cd[k]) names[k] = cd[k];
+        return { ...c, ...names };
+      });
+      patch.cycles = withPaidPeriods(keptCycles, workdays);
     }
     if (snap.payroll && aggregates) patch.payroll = headerTotals(snap.payroll, aggregates, items);
     await payrollSnapshotsService.update(payrollId, patch);
@@ -182,8 +193,8 @@ export async function syncSnapshotAfterRecalc(payrollId, { items, aggregates, wo
 
 // Lo mismo para una nómina que creció (se le agregaron ciclos, labores o días
 // de una persona): suma lo que no estaba —ciclos, jornadas y anticipos, ya con
-// la forma del snapshot— y deja los trabajadores y la cabecera al día. Nunca
-// tira.
+// la forma del snapshot— y deja los trabajadores y la cabecera al día. El
+// período de un ciclo que ya estaba crece con los días nuevos. Nunca tira.
 export async function extendSnapshot(payrollId, { items, aggregates, cycles = [], workdays = [], advances = [] }) {
   try {
     const snap = await payrollSnapshotsService.getById(payrollId);
@@ -193,7 +204,9 @@ export async function extendSnapshot(payrollId, { items, aggregates, cycles = []
       return [...(antes || []), ...nuevos.filter((x) => !ya.has(x.id))];
     };
     const patch = { workers: items };
-    if (cycles.length) patch.cycles = sumar(snap.cycles, cycles);
+    if (cycles.length || (workdays.length && Array.isArray(snap.cycles))) {
+      patch.cycles = withPaidPeriods(sumar(snap.cycles, cycles), workdays, { extend: true });
+    }
     if (workdays.length) patch.workdays = sumar(snap.workdays, workdays);
     if (advances.length) patch.advances = sumar(snap.advances, advances);
     if (snap.payroll && aggregates) patch.payroll = headerTotals(snap.payroll, aggregates, items);

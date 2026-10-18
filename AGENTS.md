@@ -424,20 +424,24 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
    - Filtros: 🏦 Banco, 💵 Efectivo, ⚠ Datos faltantes, ⚠ Cuenta sospechosa, 👥 \<líder\>.
    - Bulk actions sobre el subset visible: incluir/excluir, → Efectivo / → Banco.
    - Columnas: Bruto (read-only), Anticipo (editable), A pagar (= bruto − anticipo, override manual), Pago (toggle banco/efectivo).
-3. **Generar y guardar** — crea la nómina, etiqueta workdays con `payrollId`, marca anticipos como `applied`, y escribe un **snapshot JSON** inmutable en `payrollSnapshots/{payrollId}` que se auto-descarga.
+3. **Generar y guardar** — crea la nómina, etiqueta workdays con `payrollId`, marca anticipos como `applied`, y escribe un **snapshot JSON** inmutable en `payrollSnapshots/{payrollId}`. El archivo no se descarga al generar: se baja cuando se quiere desde 📥 Descargar → JSON, en el detalle.
+
+**El período de cada ciclo en la nómina** (`cycleDetails[].firstDay/lastDay`, la columna Período de los resúmenes y del XLSX) va del primer al último día que la nómina le paga, sacado de sus jornadas (`withPaidPeriods`, `utils/payrollItem.js`), no del ciclo entero: un ciclo que se paga en dos nóminas muestra en cada una sus propios días. Se arma al generar y se pone al día al recalcular y al agregar ciclos o personas, donde solo crece. El snapshot acompaña.
+
+**Recalcular también trae los nombres vigentes** de cada ciclo: su etiqueta y los nombres de su faena y subfaena (`withLiveNames`), en `cycleDetails`, `cycleLabels` y el snapshot. La vista previa muestra lo que cambió en "Ciclos actualizados" (`cycleDetailChanges`), y eso solo ya cuenta como cambio. Los nombres que se editan en "📝 Editar encabezados" (`cycleLabelOverrides`) no se tocan. La etiqueta sale del ciclo, y renombrar una subfaena no cambia la de sus ciclos ya creados: el prefijo "Faena/Subfaena/" sigue con el nombre anterior hasta que se edita el ciclo.
 
 ### Snapshot JSON (`payrollSnapshots`)
 
 - Colección separada de `payrolls` para no inflar los docs del historial.
 - Lo escribe `payrollSnapshotsService` en el mismo flujo de "Generar y guardar".
-- Botón **📥 JSON** en la fila del historial vuelve a bajar el archivo.
+- Se baja desde el detalle de la nómina: **📥 Descargar → JSON**.
 - El schema es **contrato externo** con el portal público de trabajadores (otra app, ver "Portal de trabajadores"): cambiarlo coordinadamente.
 - **Escribir, borrar y releer el snapshot viven en `services/payrollSnapshots.js`** (`saveSnapshot`, `deleteSnapshot`, `readSnapshot`). Los `catch` silenciosos son deliberados: el snapshot es un derivado y que falle no puede tumbar la generación ni el borrado de la nómina, que son las operaciones que mueven la plata. `readSnapshot` saca el `id` que inyecta Firestore (el JSON es contrato externo) y, si el doc no existe, lee el campo `snapshot` embebido en la nómina. También viven ahí las formas de ciclo, jornada y anticipo (`snapshotCycleOf`, `snapshotWorkdayOf`, `snapshotAdvanceOf`), que usan todos los caminos que escriben el JSON, y los ajustes al achicar, agrandar o recalcular la nómina (`pruneSnapshot`, `extendSnapshot`, `syncSnapshotAfterRecalc`). Renombrar sigue en `Payroll.jsx` como llamada directa al servicio.
 
 ### Portal de trabajadores
 
 - El portal (repo `portalTrabajadoresHP`, GitHub Pages) muestra **una nómina por vez**: cada trabajador ingresa su RUT y ve su detalle de pago.
-- **Se publica desde el detalle de una nómina: 🌐 Publicar en portal** (solo admin). El historial marca con **🌐 Portal** la nómina publicada, y el botón dice **🌐 Actualizar en portal** cuando ya lo está. Sirve para volver a publicarla después de editarla.
+- **Se publica desde el detalle de una nómina: 🌐 Publicar en portal**, en el encabezado del detalle (solo admin). El historial marca con **🌐 Portal** la nómina publicada, y el botón dice **🌐 Actualizar en portal** cuando ya lo está. Sirve para volver a publicarla después de editarla.
 - Lo hace el job `publishPortal` (`functions/portal.js`), que lee el snapshot de `payrollSnapshots` (o el embebido en la nómina) y el nombre y estado vivos de `payrolls`. Escribe:
   - **una ficha por trabajador** en `portalPayslips/{rut}`, con el RUT normalizado (`12345678-9`) como id;
   - la cabecera en `portalMeta/current`;
@@ -473,7 +477,7 @@ Para cuando salen las transferencias y el efectivo queda debiéndose para la vue
 - **`cashPaidRuts`** registra a las personas de efectivo que cobraron sueltas (toggle por persona y por líder en `PayrollDetailModal`). Se descuentan de la deuda pero **no** estampan `paidAt` en sus workdays: ese campo significa "la nómina se marcó pagada" y darle un segundo significado obliga a un camino de des-estampado. `markPaid` los sella a todos al final.
 - **`markPaid` sobre una nómina con el flag** sella solo los workdays de efectivo (re-estampar los de banco les pisaría la fecha real de la transferencia). `bankPaidAt` **no se borra** al pagar: queda como registro. `markPending` sí lo borra, junto con `cashPaidRuts`.
 - **Guards**: con `bankPaidAt` puesto la nómina no se puede editar ni eliminar (`assertEditable` en el servicio + chequeo en `onDelete`). Sacar un trabajador de banco liberaría sus días y le restauraría anticipos a alguien que ya tiene la plata en la cuenta.
-- **Dónde se ve**: pill de 3 caras y filtro "💵 Efectivo pendiente" en el Historial (la barra de totales cuenta como pendiente solo lo realmente adeudado); "Falta entregar" en el tile 💵 del detalle; línea informativa en **Generar → paso 1**; y el `CashEstimationModal` puede sumar el efectivo pendiente de otras nóminas para que el conteo de billetes y sencillo cuadre. **Los sobres y detalles NO se fusionan** — cada nómina imprime lo suyo.
+- **Dónde se ve**: pill de 3 caras y filtro "💵 Efectivo pendiente" en el Historial, con el día en que salieron las transferencias (`bankPaidAt`) y el del pago final (`paidAt`), y lo mismo en el encabezado del detalle (la barra de totales cuenta como pendiente solo lo realmente adeudado); "Falta entregar" en el tile 💵 del detalle; línea informativa en **Generar → paso 1**; y el `CashEstimationModal` puede sumar el efectivo pendiente de otras nóminas para que el conteo de billetes y sencillo cuadre, igual que la tabla del Resumen del detalle (con el selector de efectivo pendiente). Una nómina ya pagada no ofrece ninguna de las dos: ya entregó su efectivo. **Los sobres y detalles NO se fusionan** — cada nómina imprime lo suyo.
 - Workdays con `payrollId` se filtran del preview (no entran a otra nómina).
 - Eliminar nómina → `untagWorkdaysFromPayroll` + `restoreAdvancesFromPayroll`. Workdays vuelven a estar disponibles. Achicarla (sacar ciclos, labores o un trabajador, recalcular) tiene sus propias reglas — ver la sección siguiente.
 - Marcar pagada → sello `paidAt` en los workdays. Revertir → quita `paidAt`.
@@ -487,11 +491,13 @@ Generado con ExcelJS (lazy import). Cuatro hojas:
 3. **Transferencias** — `RUT | NOMBRE | <Ciclo1> | ... | TOTAL` con totales por ciclo.
 4. **Efectivo** — agrupado por líder con paletas de color por grupo (8 paletas alternadas) y subtotales.
 
-Botones de descarga:
+Al pie del detalle de una nómina, junto al total, van dos menús (el mismo `RowMenu` del historial con un botón propio): **🖨 Imprimir** (detalle de pago y comprobantes de efectivo; no aparece si no hay nada que imprimir) y **📥 Descargar** (XLSX completo, Sólo Nómina y JSON). El detalle abre con el resumen desplegado y los ciclos plegados (se despliegan solos con "✂ Editar contenido"); los dos se pliegan y despliegan con un clic. Los filtros son un buscador, el medio de pago y un panel "Filtros" con Grupo y Ciclo, cuyos filtros activos se ven como etiquetas con ✕ aunque el panel esté cerrado. La sección "Ciclos de esta nómina" lleva en cada ciclo un enlace **Abrir ciclo ↗** a `/cycles/:id`.
+
+Descargas e impresiones:
 - **🏦 Sólo Nómina** → `downloadNominaOnlyXlsx` (1 hoja, para subir al banco).
 - **📥 XLSX completo** → 4 hojas.
-- **🖨 Comprobantes efectivo** → ventana de impresión, una página por líder con tabla firmable (RUT, Nombre, Monto, Firma) + líneas de firma final.
-- **🖨 Detalle de pago** → ventana de impresión más completa. Abre con un **Resumen por subfaena** (filas = subfaena, columnas `Faena | Subfaena | Con cuenta RUT | Efectivo | TOTAL`, la faena se imprime sólo en la primera fila del bloque); luego el **resumen por grupo** estructurado como 2 tablas grandes (`Con cuenta RUT` y `Otros grupos`) con columnas `Líder | Faena | TOTAL` y subtotal al pie de cada una; finalmente la tabla por líder con el detalle de producción por ciclo. En el header de cada grupo se incluye el nombre del líder con un `h1` más grande para que el inicio de cada grupo se vea claramente al imprimir.
+- **🖨 Imprimir → Comprobantes efectivo** → ventana de impresión, una página por líder con tabla firmable (RUT, Nombre, Monto, Firma) + líneas de firma final.
+- **🖨 Imprimir → Detalle de pago** → ventana de impresión más completa. Abre con un **Resumen por subfaena** (filas = subfaena, columnas `Faena | Subfaena | Con cuenta RUT | Efectivo | TOTAL`, la faena se imprime sólo en la primera fila del bloque); luego el **resumen por grupo** estructurado como 2 tablas grandes (`Con cuenta RUT` y `Otros grupos`) con columnas `Líder | Faena | TOTAL` y subtotal al pie de cada una; finalmente la tabla por líder con el detalle de producción por ciclo. En el header de cada grupo se incluye el nombre del líder con un `h1` más grande para que el inicio de cada grupo se vea claramente al imprimir.
 - **Catálogos en el detalle imprimible**: los precios bajo el día y los breakdowns de celda usan labels del catálogo (no `Q1/E2` ni `/jorn.`). Para cosecha: `Premium / Saco: $1000` (o `$1000/saco` en single-combo). Para trato: `$10000/poda` (la unidad = `tratoTypeLabel`). Para `tratoHE` no se muestra precio sugerido en el header del día (el monto del día lo define la planilla). `byCombo` se indexa por clave estructural `"x_y"` y el label visible se computa al render con `comboLabel(catalogs, x, y)`.
 - **paymentRut vs RUT del trabajador**: la hoja `Nomina` BChile usa **`it.paymentRut`** (de `bankDetails[0]`), no el RUT de la persona. `paymentRut` puede diferir cuando el pago va a una cuenta de un familiar; el portal del banco lo valida contra la titularidad. Preservado en `cleanItems` y en el snapshot.
 - **Email default BChile**: si el trabajador no tiene email se completa con `remuneracionesis@gmail.com` (constante `BCHILE_DEFAULT_EMAIL` en `utils/payroll.js`). El banco rechaza filas sin email.
@@ -541,7 +547,10 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 ### Historial
 
 - Filtros: estado, mes, búsqueda. Totales (Pendiente / Pagado) en header.
-- Acciones: re-descarga (sólo BChile / completo), marcar pagada, volver a pendiente, eliminar (con cascade que limpia workdays y restaura anticipos).
+- **Una acción principal según el estado** ("✓ Marcar pagada", o "💵 Pagar efectivo" si las transferencias ya salieron; una nómina pagada no lleva) y el resto en el menú ⋯ (`components/RowMenu.jsx`, el mismo de Cheques y pagos): solo transferencias, revertir transferencias, marcar como no pagada, mover a Diferencias, renombrar y eliminar (con cascade que limpia workdays y restaura anticipos).
+- Eliminar se ve siempre en el menú: apagado, dice qué hay que hacer antes.
+- Toda la fila (en el teléfono, la tarjeta) abre el detalle, que es donde están las descargas. La fecha de creación va bajo el nombre y el efectivo que falta entregar, bajo el estado. El día en que se marcó pagada (`paidAt`) o, en un pago en dos tiempos, el de las transferencias y el del pago final, van en una sola línea en la última columna, junto a las acciones; en el teléfono, bajo el estado de la tarjeta. El encabezado del detalle repite esas fechas.
+- El menú ⋯ sigue al botón al desplazar: tocar una fila que se ve a medias desplaza la lista, y si el menú se cerrara con eso no se podría abrir.
 
 ## Anticipos / Bonos
 

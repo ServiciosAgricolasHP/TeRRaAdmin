@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useEffect, useMemo, useState } from "react";
 import Modal, { ModalCloseButton } from "../components/Modal";
 import ConfirmDialog from "../components/ConfirmDialog";
 import PaymentReportModal from "../components/PaymentReportModal";
+import RowMenu from "../components/RowMenu";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
 import { companiesService } from "../services";
@@ -1186,124 +1186,6 @@ function SeriesEditModal({ item, items, today, onCancel, onSaved }) {
         })}
       </div>
     </Modal>
-  );
-}
-
-// Menú "⋯" con las acciones secundarias de una fila. Va en un portal con
-// posición fija: la tabla tiene overflow-x-auto y recortaría un desplegable
-// absoluto. Se cierra al hacer click afuera, con Escape, al desplazar o al
-// cambiar el tamaño de la ventana.
-function RowMenu({ items }) {
-  const [pos, setPos] = useState(null);
-  const btnRef = useRef(null);
-  const menuRef = useRef(null);
-  const open = !!pos;
-
-  const close = (refocus) => {
-    setPos(null);
-    if (refocus) btnRef.current?.focus();
-  };
-
-  // El menú mide a lo más ~320 px: si abajo no cabe y arriba hay más espacio,
-  // se ancla por abajo y crece hacia arriba.
-  const toggle = () => {
-    if (open) return close();
-    const r = btnRef.current.getBoundingClientRect();
-    const below = window.innerHeight - r.bottom;
-    const up = below < 320 && r.top > below;
-    setPos({ right: window.innerWidth - r.right, ...(up ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }) });
-  };
-
-  useEffect(() => {
-    if (!open) return;
-    menuRef.current?.focus({ preventScroll: true });
-    const onDown = (e) => {
-      if (!menuRef.current?.contains(e.target) && !btnRef.current?.contains(e.target)) setPos(null);
-    };
-    const onKey = (e) => {
-      if (e.key !== "Escape") return;
-      setPos(null);
-      btnRef.current?.focus();
-    };
-    const onMove = () => setPos(null);
-    document.addEventListener("pointerdown", onDown);
-    document.addEventListener("keydown", onKey);
-    window.addEventListener("scroll", onMove, true);
-    window.addEventListener("resize", onMove);
-    return () => {
-      document.removeEventListener("pointerdown", onDown);
-      document.removeEventListener("keydown", onKey);
-      window.removeEventListener("scroll", onMove, true);
-      window.removeEventListener("resize", onMove);
-    };
-  }, [open]);
-
-  // Flechas arriba/abajo recorren las opciones.
-  const onMenuKey = (e) => {
-    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-    e.preventDefault();
-    const els = [...menuRef.current.querySelectorAll("[role=menuitem]")];
-    const i = els.indexOf(document.activeElement);
-    const next = e.key === "ArrowDown" ? (i + 1) % els.length : i <= 0 ? els.length - 1 : i - 1;
-    els[next]?.focus();
-  };
-
-  return (
-    <>
-      <button
-        ref={btnRef}
-        type="button"
-        aria-label="Más acciones"
-        title="Más acciones"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={toggle}
-        className={`flex h-9 w-9 items-center justify-center rounded-md border text-lg leading-none md:h-8 md:w-8 ${
-          open
-            ? "border-[var(--color-border-strong)] bg-[var(--color-surface-2)] text-[var(--color-text)]"
-            : "border-[var(--color-border)] text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
-        }`}
-      >
-        ⋯
-      </button>
-      {open &&
-        createPortal(
-          <div
-            ref={menuRef}
-            role="menu"
-            tabIndex={-1}
-            onKeyDown={onMenuKey}
-            style={pos}
-            className="fixed z-50 w-60 max-w-[calc(100vw-16px)] rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] py-1 text-[var(--color-text)] shadow-xl outline-none"
-          >
-            {items.map((it, i) =>
-              it.divider ? (
-                <div key={`d${i}`} role="separator" className="my-1 border-t border-[var(--color-border)]" />
-              ) : (
-                <button
-                  key={it.label}
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    close();
-                    it.onClick();
-                  }}
-                  className={`flex min-h-10 w-full items-start gap-2.5 px-3 py-2 text-left text-sm outline-none hover:bg-[var(--color-surface-2)] focus:bg-[var(--color-surface-2)] md:min-h-9 ${
-                    it.danger ? "text-[var(--color-danger)]" : ""
-                  }`}
-                >
-                  <span className="w-5 shrink-0 text-center" aria-hidden="true">{it.icon}</span>
-                  <span className="min-w-0">
-                    <span className="block font-medium">{it.label}</span>
-                    {it.hint && <span className="block text-xs font-normal text-[var(--color-muted)]">{it.hint}</span>}
-                  </span>
-                </button>
-              )
-            )}
-          </div>,
-          document.body
-        )}
-    </>
   );
 }
 

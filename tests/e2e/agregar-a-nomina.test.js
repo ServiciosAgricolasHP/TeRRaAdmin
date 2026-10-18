@@ -88,6 +88,45 @@ const itemAna = (workdayId, gross) => ({
 
 const perfil = (w) => ({ name: w.name, bankCode: w.bankCode, accountNumber: "12345678", accountType: 3, paymentRut: w.id });
 
+describe("el período de los ciclos al agregar", () => {
+  it("un día nuevo de un ciclo que ya estaba estira su período, en la nómina y en el JSON", async () => {
+    await ciclo(CICLO_A, [COSECHA]);
+    await seedWorker(ANA);
+    const firstDay = await seedWorkday({ cycleId: CICLO_A, laborId: COSECHA, rut: ANA.id, date: "2026-03-02", amount: 100000 });
+    const id = await nominaCon({
+      items: [itemAna(firstDay, 100000)],
+      cycleDetails: [{ id: CICLO_A, label: "A", firstDay: "2026-03-02", lastDay: "2026-03-02" }],
+    });
+    await saveSnapshot(id, {
+      payroll: { name: "Nómina", total: 100000 },
+      cycles: [{ id: CICLO_A, firstDay: "2026-03-02", lastDay: "2026-03-02" }],
+      workers: [],
+      workdays: [],
+      advances: [],
+    });
+
+    await seedWorkday({ cycleId: CICLO_A, laborId: COSECHA, rut: ANA.id, date: "2026-03-03", amount: 40000 });
+    const added = (await workdaysService.list({ wheres: [["cycleId", "==", CICLO_A]] })).filter((wd) => !wd.payrollId);
+    const before = await get("payrolls", id);
+    const plan = planAddWorkdays({ items: before.items, workdays: added, laborTypeById: tipos, pendingAdvances: [], profileFor: () => perfil(ANA) });
+    const aggregates = await addWorkdaysToPayroll(id, {
+      items: plan.items,
+      cycleDetailsToAdd: [{ id: CICLO_A, label: "A", laborIds: [] }],
+      workdayIds: plan.workdayIds,
+      workdays: added,
+      advanceApplications: [],
+    });
+    await extendSnapshot(id, { items: plan.items, aggregates, workdays: added.map(snapshotWorkdayOf) });
+
+    expect((await get("payrolls", id)).cycleDetails).toEqual([
+      { id: CICLO_A, label: "A", firstDay: "2026-03-02", lastDay: "2026-03-03" },
+    ]);
+    expect((await get("payrollSnapshots", id)).cycles).toEqual([
+      { id: CICLO_A, firstDay: "2026-03-02", lastDay: "2026-03-03" },
+    ]);
+  });
+});
+
 describe("agregar a una nómina pendiente", () => {
   it("las labores que le faltaban a un ciclo: quien ya está suma y paga lo pendiente; quien no, entra", async () => {
     await ciclo(CICLO_A, [COSECHA, SUPERVISION]);

@@ -119,6 +119,15 @@ describe("newPayrollCycleDetails", () => {
     });
   });
 
+  it("el período de cada ciclo es el de los días que paga la nómina, no el del ciclo entero", () => {
+    const [detail] = newPayrollCycleDetails({
+      cycles: [{ ...ciclo("A"), days: ["2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05"] }],
+      chosen: new Map([["A", undefined]]),
+      workdays: [wd("1", "A", "L1", { date: "2026-03-04" }), wd("2", "A", "L2", { date: "2026-03-05" })],
+    });
+    expect(detail).toMatchObject({ firstDay: "2026-03-04", lastDay: "2026-03-05" });
+  });
+
   it("Recalcular sobre lo guardado no trae el resto de los días de la persona ni las labores destildadas", () => {
     const cycleDetails = newPayrollCycleDetails({
       cycles: CICLOS,
