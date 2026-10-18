@@ -18,6 +18,7 @@ import {
   extraOf,
   groupUpcoming,
   upcomingMonthEnd,
+  nextYearEnd,
   partialPaidOf,
   remainingOf,
   allocatePartialPayment,
@@ -84,6 +85,22 @@ describe("vencimientos", () => {
     expect(ids(g.week)).toEqual(["postponed", "week"]);
     expect(ids(g.month)).toEqual(["month", "monthEnd"]);
     expect(ids(g.later)).toEqual(["later"]);
+  });
+
+  it("más adelante llega por defecto hasta fin del año siguiente, y lo de después queda aparte", () => {
+    const today = "2026-10-16";
+    expect(nextYearEnd(today)).toBe("2027-12-31");
+    const items = [
+      { id: "month", status: "pending", dueDate: "2026-11-10" },
+      { id: "later", status: "pending", dueDate: "2027-12-31" },
+      { id: "beyond", status: "pending", dueDate: "2028-01-01" },
+    ];
+    const ids = (list) => list.map((c) => c.id);
+    const g = groupUpcoming(items, today, { until: nextYearEnd(today) });
+    expect(ids(g.month)).toEqual(["month"]);
+    expect(ids(g.later)).toEqual(["later"]);
+    expect(ids(g.beyond)).toEqual(["beyond"]);
+    expect(ids(groupUpcoming(items, today).later)).toEqual(["later", "beyond"]);
   });
 
   it("el mes siguiente se corta en el último día de un mes corto", () => {
@@ -166,7 +183,7 @@ describe("resumen", () => {
   });
 });
 
-describe("informe de pagos", () => {
+describe("informe de deudas", () => {
   const today = "2026-10-16";
   const installment = (n, dueDate, status = "pending", extra = 0) => ({
     id: `cr_${n}`,
@@ -218,15 +235,63 @@ describe("informe de pagos", () => {
     expect(r.hasRecurring).toBe(true);
   });
 
-  it("por mes, con lo vencido primero y el saldo que queda", () => {
+  it("por mes, con lo vencido primero", () => {
     const r = buildPaymentReport(items, { today: today });
-    expect(r.months.map((m) => [m.month, m.total, m.remainingAfter])).toEqual([
-      ["overdue", 500, 650],
-      ["2026-10", 100, 550],
-      ["2026-11", 400, 150],
-      ["2026-12", 100, 50],
-      ["2027-01", 50, 0],
+    expect(r.months.map((m) => [m.month, m.total])).toEqual([
+      ["overdue", 500],
+      ["2026-10", 100],
+      ["2026-11", 400],
+      ["2026-12", 100],
+      ["2027-01", 50],
     ]);
+  });
+
+  it("con una fecha de corte, lo de después va en una sola fila y fuera del detalle; el balance no cambia", () => {
+    const r = buildPaymentReport(items, { today: today, dueUntil: "2026-11-30" });
+    expect(r.months.map((m) => [m.month, m.total])).toEqual([
+      ["overdue", 500],
+      ["2026-10", 100],
+      ["2026-11", 400],
+      ["later", 150],
+    ]);
+    expect(r.totals.later).toMatchObject({ count: 2, total: 150 });
+    expect(r.laterEnd).toBe("2027-01-05");
+    expect(r.detail.map((c) => c.id)).toEqual(["ch1", "cr_2", "ch2", "cr_3"]);
+    expect(r.pending).toHaveLength(6);
+    expect(r.totals.pending.total).toBe(1150);
+    expect(r.debts.find((d) => d.key === "s:cr")).toMatchObject({ payoffDate: "2026-12-30" });
+    expect(r.payoffDate).toBe("2026-12-30");
+  });
+
+  it("lo vencido, aplazado o protestado no se corta aunque su fecha sea anterior a todo", () => {
+    const r = buildPaymentReport(
+      [
+        { id: "a", kind: "payment", status: "postponed", dueDate: "2026-09-01", amount: 10, counterparty: "A" },
+        { id: "b", kind: "payment", status: "pending", dueDate: "2026-09-02", amount: 20, counterparty: "B" },
+      ],
+      { today: today, dueUntil: "2026-08-31" },
+    );
+    expect(r.detail.map((c) => c.id)).toEqual(["a", "b"]);
+    expect(r.totals.later.count).toBe(0);
+  });
+
+  it("próximos 7 días (con lo aplazado primero) y próximo mes, como en Próximos", () => {
+    const r = buildPaymentReport(
+      [
+        ...items,
+        { id: "apl", kind: "payment", status: "postponed", dueDate: "2026-09-01", amount: 40, counterparty: "Ferretería" },
+        { id: "sem", kind: "payment", status: "pending", dueDate: "2026-10-23", amount: 60, counterparty: "Copec" },
+      ],
+      { today: today },
+    );
+    expect(r.upcoming.week.map((c) => c.id)).toEqual(["apl", "sem"]);
+    expect(r.upcoming.weekTotal.total).toBe(100);
+    expect(r.upcoming.weekEnd).toBe("2026-10-23");
+    expect(r.upcoming.month.map((c) => c.id)).toEqual(["cr_2", "ch2"]);
+    expect(r.upcoming.monthTotal.total).toBe(400);
+    expect(r.upcoming.monthEnd).toBe("2026-11-16");
+    expect(r.detail[0].id).toBe("apl");
+    expect(r.upcoming.week.some((c) => c.kind === "chequeReceived")).toBe(false);
   });
 
   it("los pagos realizados solo si se piden, por fecha de pago y con su interés", () => {
@@ -281,17 +346,17 @@ describe("informe de pagos", () => {
     expect(r.totals.overdue.total).toBe(0);
     expect(r.totals.postponed.total).toBe(200);
     expect(r.totals.protested.total).toBe(300);
-    expect(r.months.map((m) => [m.month, m.total, m.remainingAfter])).toEqual([
-      ["protested", 300, 300],
-      ["2026-11", 100, 200],
-      ["postponed", 200, 0],
+    expect(r.months.map((m) => [m.month, m.total])).toEqual([
+      ["postponed", 200],
+      ["protested", 300],
+      ["2026-11", 100],
     ]);
-    expect(r.debts.map((d) => d.key)).toEqual(["c:biosur", "c:ferreteria"]);
-    expect(r.debts[0]).toMatchObject({ nextDue: "2026-11-05", payoffDate: "2026-11-05" });
-    expect(r.debts[0].protested.total).toBe(300);
-    expect(r.debts[0].behind).toMatchObject({ count: 1, total: 300 });
-    expect(r.debts[1]).toMatchObject({ nextDue: "", payoffDate: "2026-09-10" });
-    expect(r.debts[1].behind).toMatchObject({ count: 1, total: 200 });
+    expect(r.debts.map((d) => d.key)).toEqual(["c:ferreteria", "c:biosur"]);
+    expect(r.debts[1]).toMatchObject({ nextDue: "2026-11-05", payoffDate: "2026-11-05" });
+    expect(r.debts[1].protested.total).toBe(300);
+    expect(r.debts[1].behind).toMatchObject({ count: 1, total: 300 });
+    expect(r.debts[0]).toMatchObject({ nextDue: "", payoffDate: "2026-09-10" });
+    expect(r.debts[0].behind).toMatchObject({ count: 1, total: 200 });
     expect(r.payoffDate).toBe("2026-11-05");
   });
 });

@@ -54,6 +54,7 @@ import {
   directionOf,
   groupUpcoming,
   upcomingMonthEnd,
+  nextYearEnd,
   partialPaidOf,
   remainingOf,
   allocatePartialPayment,
@@ -132,16 +133,23 @@ const TONE_CLS = {
   muted: "bg-[var(--color-surface-2)] text-[var(--color-muted)]",
 };
 
+const chipCls = (tone) => `whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${TONE_CLS[tone]}`;
+
+// Un aplazado lleva además el chip de cuánto hace que venció.
 function StatusChip({ c, today }) {
   const status = displayStatus(c, today);
+  if (status === "postponed") {
+    const days = daysUntil(c.dueDate, today);
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1">
+        <span className={chipCls("warning")}>Aplazado</span>
+        <span className={chipCls(days < 0 ? "danger" : "warning")}>{urgencyLabel(days)}</span>
+      </span>
+    );
+  }
   const tone = status === "paid" ? "success" : urgencyTone(c, today);
-  const text =
-    status === "pending" || status === "overdue"
-      ? urgencyLabel(daysUntil(c.dueDate, today))
-      : status === "postponed"
-        ? "Aplazado · ya vencido"
-        : statusLabel(c, today);
-  return <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${TONE_CLS[tone]}`}>{text}</span>;
+  const text = status === "pending" || status === "overdue" ? urgencyLabel(daysUntil(c.dueDate, today)) : statusLabel(c, today);
+  return <span className={chipCls(tone)}>{text}</span>;
 }
 
 const CARD_TONE = {
@@ -170,6 +178,7 @@ export default function Commitments() {
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("upcoming");
+  const [laterUntil, setLaterUntil] = useState(() => nextYearEnd(today));
   const [kindFilter, setKindFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [companyFilter, setCompanyFilter] = useState("");
@@ -213,12 +222,16 @@ export default function Commitments() {
   const summary = useMemo(() => summarize(items, today), [items, today]);
   const counterparties = useMemo(() => counterpartyOptions(items), [items]);
 
-  const upcomingGroups = useMemo(() => {
-    const groups = groupUpcoming(items, today);
-    return Object.entries(UPCOMING_TITLES)
-      .map(([key, title]) => ({ key, title, items: groups[key] }))
-      .filter((g) => g.items.length);
-  }, [items, today]);
+  // "Más adelante" llega hasta `laterUntil`; lo de después se resume en una
+  // línea. Vacío: sin límite.
+  const upcoming = useMemo(() => groupUpcoming(items, today, { until: laterUntil }), [items, today, laterUntil]);
+  const upcomingGroups = useMemo(
+    () =>
+      Object.entries(UPCOMING_TITLES)
+        .map(([key, title]) => ({ key, title, items: upcoming[key] }))
+        .filter((g) => g.items.length || (g.key === "later" && upcoming.beyond.length)),
+    [upcoming],
+  );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -419,7 +432,7 @@ export default function Commitments() {
             + Agregar documento
           </button>
           <button type="button" className={btnCls} onClick={() => setReportOpen(true)} disabled={loading}>
-            📄 Informe de pagos
+            📄 Informe de deudas
           </button>
           {isAdmin && (
             <>
@@ -486,10 +499,29 @@ export default function Commitments() {
             <section key={g.key}>
               <h2 className="mb-2 text-sm font-semibold text-[var(--color-muted)]">
                 {g.title}
-                {g.key === "month" && <span className="font-normal"> (hasta el {fmtDate(upcomingMonthEnd(today))})</span>} ·{" "}
-                {fmtCurrency(g.items.reduce((s, c) => s + remainingOf(c), 0))}
+                {g.key === "month" && <span className="font-normal"> (hasta el {fmtDate(upcomingMonthEnd(today))})</span>}
+                {g.key === "later" && (
+                  <span className="font-normal">
+                    {" "}(hasta el{" "}
+                    <input
+                      type="date"
+                      value={laterUntil}
+                      onChange={(e) => setLaterUntil(e.target.value)}
+                      className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-0.5 text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]"
+                      title="Vacío: sin límite"
+                    />
+                    )
+                  </span>
+                )}{" "}
+                · {fmtCurrency(g.items.reduce((s, c) => s + remainingOf(c), 0))}
               </h2>
-              <CommitmentList items={g.items} {...rowProps} />
+              {g.items.length > 0 && <CommitmentList items={g.items} {...rowProps} />}
+              {g.key === "later" && upcoming.beyond.length > 0 && (
+                <p className="mt-2 text-xs text-[var(--color-muted)]">
+                  Después del {fmtDate(laterUntil)}: {upcoming.beyond.length} vencimiento{upcoming.beyond.length === 1 ? "" : "s"} por{" "}
+                  {fmtCurrency(upcoming.beyond.reduce((s, c) => s + remainingOf(c), 0))}. Cambia la fecha para verlos.
+                </p>
+              )}
             </section>
           ))
         )
