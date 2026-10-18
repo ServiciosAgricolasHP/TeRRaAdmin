@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import {
-  faenasService,
-  subfaenasService,
+  jobsService,
+  subjobsService,
   cyclesService,
   workersService,
   listWorkdaysByCycles,
@@ -229,8 +229,8 @@ export default function Payroll() {
     setLoading(true);
     try {
       const [f, s, c, w, p] = await Promise.all([
-        faenasService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
-        subfaenasService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
+        jobsService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
+        subjobsService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
         cyclesService.list({ order: ["createdAt", "desc"], cache: true, persist: true, ttl: 5 * 60 * 1000 }),
         workersService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 2 * 60 * 60 * 1000 }),
         payrollsService.list({ order: ["createdAt", "desc"], take: 50, cache: true, persist: true, ttl: 5 * 60 * 1000 }),
@@ -351,8 +351,8 @@ export default function Payroll() {
     if (refreshing) return;
     setRefreshing(true);
     try {
-      faenasService.invalidate();
-      subfaenasService.invalidate();
+      jobsService.invalidate();
+      subjobsService.invalidate();
       cyclesService.invalidate();
       workersService.invalidate();
       workdaysService.invalidate();

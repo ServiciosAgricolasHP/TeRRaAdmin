@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { serverTimestamp, deleteField } from "firebase/firestore";
 import { Link } from "react-router-dom";
 import { useToast } from "../contexts/ToastContext";
-import { faenasService, cyclesService, workdaysService, harvestWeightsService, qrPrefixesService } from "../services";
+import { jobsService, cyclesService, workdaysService, harvestWeightsService, qrPrefixesService } from "../services";
 import { findWorkerByRut, workersService } from "../services/workersService";
 import { countedList } from "../services/cache";
 import { useCatalogs } from "../contexts/CatalogsContext";
@@ -330,7 +330,7 @@ export default function HarvestQr() {
       // que hay que reapuntar al abrir un ciclo, así que se muestra al día.
       const [px, fa] = await Promise.all([
         countedList(qrPrefixesService, { order: ["label", "asc"] }),
-        countedList(faenasService, { order: ["name", "asc"], cache: true, persist: true, ttl: FAENAS_TTL_MS }),
+        countedList(jobsService, { order: ["name", "asc"], cache: true, persist: true, ttl: FAENAS_TTL_MS }),
       ]);
       setPrefixes(px.data);
       setFaenas(fa.data);

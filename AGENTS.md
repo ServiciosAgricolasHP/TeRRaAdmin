@@ -128,10 +128,11 @@ src/
   components/           ← UI compartida (Layout, ProtectedRoute, Modal, ConfirmDialog, RowMenu, TransportsModal, WorkerEditModal, WorkerSummaryModal, etc.)
   hooks/                ← hooks que usan varias pantallas (useIsMobile)
   screens/              ← componentes de ruta / page-level route components
-                        (Dashboard, Faenas, CycleDetail, Workers, Transports, Payroll, Advances,
+                        (Dashboard, Jobs, CycleDetail, Workers, Transports, Payroll, Advances,
                          InterestLinks, Calendar, AdminConsole, Users, NoAccess, MigrateWorkers,
                          CleanupPaidWorkdays)
-    payroll/            ← las piezas de Nómina (ver "Componentes y archivos")
+    jobs/               ← las piezas de Faenas (ver "Componentes y archivos")
+    payroll/            ← las piezas de Nómina
     transports/         ← las piezas de Transportes
     billing/            ← las piezas de Facturación
     cycleDetail/        ← las piezas de CycleDetail (ver "CycleDetail — grid"); CycleSummaryModal, con las suyas en cycleSummaryModal/
@@ -263,7 +264,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 
 | En pantalla | En el código | Colección |
 |---|---|---|
-| Faena / Subfaena | `faena` / `subfaena` | `faenas` / `subfaenas` |
+| Faena / Subfaena | `job` / `subjob` | `faenas` / `subfaenas` |
 | Ciclo | `cycle` | `cycles` |
 | Labor | `labor` | dentro de `cycles.labors` |
 | Jornada | `workday` | `workdays` |
@@ -298,7 +299,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Cheques y pagos | `commitment` | `commitments` |
 | Tarea del backend (Cloud Functions) | `functionJob` | `functionJobs` |
 
-Los nombres guardados en Firestore se conservan aunque no calcen con la tabla (la colección `transportPayrolls`, el campo `payrollId` de un resumen, los campos en español de `dteDocuments`): el código los lee y escribe con su nombre guardado. La lista con el nombre propuesto para cada uno está en `docs/data-model.md` ("Nombres en español pendientes de migración"); un campo nuevo nace en inglés.
+Los nombres guardados en Firestore se conservan aunque no calcen con la tabla (las colecciones `faenas` y `transportPayrolls`, el campo `faenaId`, el campo `payrollId` de un resumen, los campos en español de `dteDocuments`): el código los lee y escribe con su nombre guardado. La lista con el nombre propuesto para cada uno está en `docs/data-model.md` ("Nombres en español pendientes de migración"); un campo nuevo nace en inglés.
 
 ## Tipos de Labor / Labor Types
 
@@ -374,6 +375,10 @@ Bono adicional configurable por día para trato y cosecha. Pensado para compensa
 
 ## Faenas / Ciclos / Cycles
 
+- Pantalla: `src/screens/Jobs.jsx` (el componente de la ruta `/faenas`, con las faenas, sus grupos y los formularios). Sus piezas, en `src/screens/jobs/`:
+  - **Grupos y colores:** `GroupHeader` (el encabezado de un grupo de faenas), `ColorPickerButton` y `ColorPalette`.
+  - **Detalle de la faena:** `SelectedDetail`, `SubjobListBody` (sus subfaenas) y `CycleRow`.
+  - **Alta de ciclo:** `ImportSection` (importar desde un ciclo abierto).
 - Jerarquía: Faena → Subfaena → Ciclo → Labors → Workdays.
 - Label de ciclo = prefijo bloqueado `Faena/Subfaena/` + sufijo editable.
 - Estados: `open` | `closed`. Se permiten **múltiples ciclos abiertos** por (faena, subfaena) — útil para correr varios frentes en paralelo o para "carve off" temporales.
@@ -412,7 +417,7 @@ Al crear un ciclo nuevo, si en la misma subfaena hay al menos un ciclo abierto, 
 - **Copiar precios por día** (opcional): copia las entradas de `dayPrices` re-keadas por el nuevo `laborId` y filtradas por días seleccionados.
 - **Mover jornadas** (opcional, destructivo): para cada (labor seleccionada × día seleccionado), lee los workdays del origen y los re-crea en el nuevo ciclo con el nuevo `docId` (que encodea cycleId+laborId), luego borra los originales. Workdays con `payrollId` se saltan para no romper snapshots de nómina ya generadas — el usuario recibe un alert con el count de skipped.
 
-Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLaborId` vive en un `Map` que sirve para re-keear tanto `dayPrices` como los `docId` de workdays movidos.
+Implementación en `submitCycle` (`Jobs.jsx`). El mapeo `oldLaborId → newLaborId` vive en un `Map` que sirve para re-keear tanto `dayPrices` como los `docId` de workdays movidos.
 
 ### CycleDetail — grid
 

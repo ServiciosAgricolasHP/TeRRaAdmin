@@ -1,7 +1,7 @@
 import { createService } from "./firestoreBase";
 
-export const faenasService = createService("faena", "faenas");
-export const subfaenasService = createService("subfaena", "subfaenas");
+export const jobsService = createService("faena", "faenas");
+export const subjobsService = createService("subfaena", "subfaenas");
 export const cyclesService = createService("cycle", "cycles");
 
 // Trabajadores: todas las mutaciones actualizan la caché en modo aditivo por

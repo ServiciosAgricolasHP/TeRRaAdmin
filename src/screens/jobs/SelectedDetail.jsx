@@ -1,37 +1,37 @@
 import { useState } from "react";
 import ProductionSummaryModal from "../../components/ProductionSummaryModal";
-import { SubfaenaListBody } from "./SubfaenaListBody";
+import { SubjobListBody } from "./SubjobListBody";
 
 export function SelectedDetail({
   selected,
   cardColor,
-  subs,
+  subjobs,
   cycles,
-  onCreateSub,
-  onEditSub,
-  onDeleteSub,
-  onToggleHideSub,
+  onCreateSubjob,
+  onEditSubjob,
+  onDeleteSubjob,
+  onToggleHideSubjob,
   onCreateCycle,
   onEditCycle,
   onOpenCloseFlow,
   onReopenCycle,
   onDeleteCycle,
-  collapsedSubs,
-  onToggleSubCollapse,
-  onCollapseAllSubs,
-  onExpandAllSubs,
-  showClosedInSub,
+  collapsedSubjobs,
+  onToggleSubjobCollapse,
+  onCollapseAllSubjobs,
+  onExpandAllSubjobs,
+  showClosedInSubjob,
   onToggleShowClosed,
 }) {
-  const cyclesBySub = (cycles || []).reduce((acc, c) => {
+  const cyclesBySubjob = (cycles || []).reduce((acc, c) => {
     if (!c.subfaenaId) return acc;
     (acc[c.subfaenaId] ||= []).push(c);
     return acc;
   }, {});
   const orphanCycles = (cycles || []).filter((c) => !c.subfaenaId);
 
-  const hasSubs = (subs || []).length > 0;
-  const allCollapsed = hasSubs && (subs || []).every((s) => collapsedSubs?.has(s.id));
+  const hasSubjobs = (subjobs || []).length > 0;
+  const allCollapsed = hasSubjobs && (subjobs || []).every((s) => collapsedSubjobs?.has(s.id));
 
   // Resumen de producción de la faena: recibe todos los ciclos con labores
   // de cosecha, trato, trato por etapas o pago al día, abiertos y cerrados.
@@ -98,7 +98,7 @@ export function SelectedDetail({
             </button>
           )}
           <button
-            onClick={onCreateSub}
+            onClick={onCreateSubjob}
             className="rounded-md px-3 py-1.5 text-xs font-medium text-[var(--color-accent-fg)] transition-colors hover:opacity-90"
             style={{ backgroundColor: cardColor || "var(--color-accent)" }}
           >
@@ -117,16 +117,16 @@ export function SelectedDetail({
         />
       )}
 
-      {!cycles || !subs ? (
+      {!cycles || !subjobs ? (
         <div className="px-5 py-4 text-sm text-[var(--color-muted)]">Cargando...</div>
-      ) : !hasSubs ? (
+      ) : !hasSubjobs ? (
         <div className="px-5 py-6 text-center text-sm text-[var(--color-muted)]">
           <p>Esta faena no tiene subfaenas.</p>
           <p className="mt-1 text-xs">
             Los ciclos se crean dentro de una subfaena. Crea la primera para comenzar.
           </p>
           <button
-            onClick={onCreateSub}
+            onClick={onCreateSubjob}
             className="mt-3 rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-xs font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]"
           >
             Crear subfaena
@@ -139,23 +139,23 @@ export function SelectedDetail({
           )}
         </div>
       ) : (
-        <SubfaenaListBody
-          subs={subs}
-          cyclesBySub={cyclesBySub}
-          collapsedSubs={collapsedSubs}
-          onToggleSubCollapse={onToggleSubCollapse}
+        <SubjobListBody
+          subjobs={subjobs}
+          cyclesBySubjob={cyclesBySubjob}
+          collapsedSubjobs={collapsedSubjobs}
+          onToggleSubjobCollapse={onToggleSubjobCollapse}
           allCollapsed={allCollapsed}
-          onExpandAllSubs={onExpandAllSubs}
-          onCollapseAllSubs={onCollapseAllSubs}
-          onEditSub={onEditSub}
-          onDeleteSub={onDeleteSub}
-          onToggleHideSub={onToggleHideSub}
+          onExpandAllSubjobs={onExpandAllSubjobs}
+          onCollapseAllSubjobs={onCollapseAllSubjobs}
+          onEditSubjob={onEditSubjob}
+          onDeleteSubjob={onDeleteSubjob}
+          onToggleHideSubjob={onToggleHideSubjob}
           onCreateCycle={onCreateCycle}
           onEditCycle={onEditCycle}
           onOpenCloseFlow={onOpenCloseFlow}
           onReopenCycle={onReopenCycle}
           onDeleteCycle={onDeleteCycle}
-          showClosedInSub={showClosedInSub}
+          showClosedInSubjob={showClosedInSubjob}
           onToggleShowClosed={onToggleShowClosed}
         />
       )}

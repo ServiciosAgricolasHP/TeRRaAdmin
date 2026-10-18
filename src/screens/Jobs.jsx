@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import { useSearchParams } from "react-router-dom";
-import { faenasService, subfaenasService, cyclesService, workdaysService } from "../services";
+import { jobsService, subjobsService, cyclesService, workdaysService } from "../services";
 import { payrollsService } from "../services/payrollsService";
 import { defaultLayout, userPrefsService, normalizeLayout, UNGROUPED_ID } from "../services/userPrefsService";
 import { useAuth } from "../contexts/AuthContext";
@@ -16,10 +16,10 @@ import { localIsoDate } from "../utils/dates";
 import { closedCyclePatch } from "../utils/cycleClosing";
 import { toTitleName, unshout } from "../utils/textCase";
 import { hasChanges } from "../utils/formChanges";
-import { ColorPickerButton } from "./faenas/ColorPickerButton";
-import { GroupHeader } from "./faenas/GroupHeader";
-import { ImportSection } from "./faenas/ImportSection";
-import { SelectedDetail } from "./faenas/SelectedDetail";
+import { ColorPickerButton } from "./jobs/ColorPickerButton";
+import { GroupHeader } from "./jobs/GroupHeader";
+import { ImportSection } from "./jobs/ImportSection";
+import { SelectedDetail } from "./jobs/SelectedDetail";
 
 // Un formulario de faena, subfaena o ciclo con una copia de cómo se abrió
 // (`initial`), para avisar si se cierra con cambios sin guardar.
@@ -29,9 +29,9 @@ const withInitial = (form) => ({ ...form, initial: form.data });
 // formulario.
 const CYCLE_FORM_IGNORE = ["importCandidates", "labors", "days"];
 
-const emptyFaena = { name: "", location: "", notes: "" };
+const emptyJob = { name: "", location: "", notes: "" };
 
-const emptySub = { name: "", notes: "" };
+const emptySubjob = { name: "", notes: "" };
 
 const orderKey = (uid) => `af.faenaOrder.${uid || "anon"}`;
 
@@ -60,19 +60,19 @@ function defaultLabors(workers = [], opts = {}) {
   }));
 }
 
-export default function Faenas() {
+export default function Jobs() {
   const toast = useToast();
   const isMobile = useIsMobile();
   const { user, isAdmin } = useAuth();
   const storageKey = orderKey(user?.uid);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [rawFaenas, setRawFaenas] = useState([]);
+  const [rawJobs, setRawJobs] = useState([]);
   const [order, setOrder] = useState(() => {
     try { return JSON.parse(localStorage.getItem(storageKey) || "[]"); } catch { return []; }
   });
-  const [subsByFaena, setSubsByFaena] = useState({});
-  const [cyclesByFaena, setCyclesByFaena] = useState({});
+  const [subjobsByJob, setSubjobsByJob] = useState({});
+  const [cyclesByJob, setCyclesByJob] = useState({});
   const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(() => searchParams.get("selected"));
 
@@ -94,10 +94,10 @@ export default function Faenas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
-  const [faenaForm, setFaenaForm] = useState(null);
-  const [subForm, setSubForm] = useState(null);
+  const [jobForm, setJobForm] = useState(null);
+  const [subjobForm, setSubjobForm] = useState(null);
   // Subfaena recién creada a la que se le ofrece abrir su primer ciclo.
-  const [subOfferCycle, setSubOfferCycle] = useState(null);
+  const [subjobOfferCycle, setSubjobOfferCycle] = useState(null);
   const [cycleForm, setCycleForm] = useState(null);
   const [closeFlow, setCloseFlow] = useState(null);
   const [confirm, setConfirm] = useState(null);
@@ -116,26 +116,26 @@ export default function Faenas() {
   // Guardado por usuario en localStorage. Las subfaenas arrancan expandidas;
   // los ciclos cerrados, ocultos cuando hay abiertos al lado (se muestran
   // con "Ver N cerrados").
-  const collapsedSubsKey = `af.collapsedSubs.${user?.uid || "anon"}`;
-  const [collapsedSubs, setCollapsedSubs] = useState(() => {
-    try { return new Set(JSON.parse(localStorage.getItem(collapsedSubsKey) || "[]")); } catch { return new Set(); }
+  const collapsedSubjobsKey = `af.collapsedSubs.${user?.uid || "anon"}`;
+  const [collapsedSubjobs, setCollapsedSubjobs] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(collapsedSubjobsKey) || "[]")); } catch { return new Set(); }
   });
   useEffect(() => {
-    try { localStorage.setItem(collapsedSubsKey, JSON.stringify([...collapsedSubs])); } catch { /* noop */ }
-  }, [collapsedSubs, collapsedSubsKey]);
+    try { localStorage.setItem(collapsedSubjobsKey, JSON.stringify([...collapsedSubjobs])); } catch { /* noop */ }
+  }, [collapsedSubjobs, collapsedSubjobsKey]);
 
   const showClosedKey = `af.showClosedInSub.${user?.uid || "anon"}`;
-  const [showClosedInSub, setShowClosedInSub] = useState(() => {
+  const [showClosedInSubjob, setShowClosedInSubjob] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem(showClosedKey) || "[]")); } catch { return new Set(); }
   });
   useEffect(() => {
-    try { localStorage.setItem(showClosedKey, JSON.stringify([...showClosedInSub])); } catch { /* noop */ }
-  }, [showClosedInSub, showClosedKey]);
+    try { localStorage.setItem(showClosedKey, JSON.stringify([...showClosedInSubjob])); } catch { /* noop */ }
+  }, [showClosedInSubjob, showClosedKey]);
 
-  const toggleSubCollapse = (subId) => {
-    setCollapsedSubs((prev) => {
+  const toggleSubjobCollapse = (subjobId) => {
+    setCollapsedSubjobs((prev) => {
       const n = new Set(prev);
-      if (n.has(subId)) n.delete(subId); else n.add(subId);
+      if (n.has(subjobId)) n.delete(subjobId); else n.add(subjobId);
       return n;
     });
   };
@@ -144,10 +144,10 @@ export default function Faenas() {
   // pliegan una vez por sesión: si el usuario expande una, queda expandida
   // hasta recargar la página.
   const processedHiddenRef = useRef(new Set());
-  const toggleShowClosed = (subId) => {
-    setShowClosedInSub((prev) => {
+  const toggleShowClosed = (subjobId) => {
+    setShowClosedInSubjob((prev) => {
       const n = new Set(prev);
-      if (n.has(subId)) n.delete(subId); else n.add(subId);
+      if (n.has(subjobId)) n.delete(subjobId); else n.add(subjobId);
       return n;
     });
   };
@@ -198,34 +198,34 @@ export default function Faenas() {
     }, 400);
   };
 
-  const faenas = useMemo(() => applyOrder(rawFaenas, order), [rawFaenas, order]);
+  const jobs = useMemo(() => applyOrder(rawJobs, order), [rawJobs, order]);
 
   // Faenas por grupo
-  const faenasByGroup = useMemo(() => {
+  const jobsByGroup = useMemo(() => {
     const out = {};
     for (const g of layout.groups) out[g.id] = [];
-    for (const f of faenas) {
+    for (const f of jobs) {
       const gid = layout.faenaGroup[f.id] && out[layout.faenaGroup[f.id]] ? layout.faenaGroup[f.id] : UNGROUPED_ID;
       out[gid].push(f);
     }
     return out;
-  }, [faenas, layout]);
+  }, [jobs, layout]);
 
   const persistOrder = (next) => {
     setOrder(next);
     try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch (e) { void e; }
   };
 
-  const loadFaenas = async () => {
+  const loadJobs = async () => {
     setLoading(true);
     try {
-      const list = await faenasService.list({
+      const list = await jobsService.list({
         order: ["name", "asc"],
         cache: true,
         persist: true,
         ttl: 10 * 60 * 1000,
       });
-      setRawFaenas(list);
+      setRawJobs(list);
       const ids = list.map((f) => f.id);
       const cleaned = order.filter((id) => ids.includes(id));
       const missing = ids.filter((id) => !cleaned.includes(id));
@@ -236,36 +236,36 @@ export default function Faenas() {
     }
   };
 
-  const loadSubs = async (faenaId) => {
-    const list = await subfaenasService.list({
-      wheres: [["faenaId", "==", faenaId]],
+  const loadSubjobs = async (jobId) => {
+    const list = await subjobsService.list({
+      wheres: [["faenaId", "==", jobId]],
       order: ["name", "asc"],
       cache: true,
       persist: true,
       ttl: 10 * 60 * 1000,
     });
-    setSubsByFaena((prev) => ({ ...prev, [faenaId]: list }));
+    setSubjobsByJob((prev) => ({ ...prev, [jobId]: list }));
   };
 
-  const loadCycles = async (faenaId) => {
+  const loadCycles = async (jobId) => {
     const list = await cyclesService.list({
-      wheres: [["faenaId", "==", faenaId]],
+      wheres: [["faenaId", "==", jobId]],
       order: ["createdAt", "desc"],
       cache: true,
       ttl: 2 * 60 * 1000,
     });
-    setCyclesByFaena((prev) => ({ ...prev, [faenaId]: list }));
+    setCyclesByJob((prev) => ({ ...prev, [jobId]: list }));
   };
 
   useEffect(() => {
-    loadFaenas();
+    loadJobs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (!selectedId) return;
-    if (!subsByFaena[selectedId]) loadSubs(selectedId);
-    if (!cyclesByFaena[selectedId]) loadCycles(selectedId);
+    if (!subjobsByJob[selectedId]) loadSubjobs(selectedId);
+    if (!cyclesByJob[selectedId]) loadCycles(selectedId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
@@ -273,36 +273,36 @@ export default function Faenas() {
   // sesión (ver processedHiddenRef), para respetar las que el usuario expanda.
   useEffect(() => {
     if (!selectedId) return;
-    const subs = subsByFaena[selectedId];
-    if (!subs) return;
+    const subjobs = subjobsByJob[selectedId];
+    if (!subjobs) return;
     const toCollapse = [];
-    for (const s of subs) {
+    for (const s of subjobs) {
       if (s.hidden && !processedHiddenRef.current.has(s.id)) {
         toCollapse.push(s.id);
         processedHiddenRef.current.add(s.id);
       }
     }
     if (toCollapse.length > 0) {
-      setCollapsedSubs((prev) => {
+      setCollapsedSubjobs((prev) => {
         const n = new Set(prev);
         for (const id of toCollapse) n.add(id);
         return n;
       });
     }
-  }, [selectedId, subsByFaena]);
+  }, [selectedId, subjobsByJob]);
 
   // Marca o desmarca una subfaena como oculta. Se guarda en el doc de la
   // subfaena, así que vale para todos los usuarios y dispositivos.
-  const toggleHideSub = async (sub) => {
+  const toggleHideSubjob = async (subjob) => {
     try {
-      await subfaenasService.update(sub.id, { hidden: !sub.hidden });
-      subfaenasService.invalidate();
+      await subjobsService.update(subjob.id, { hidden: !subjob.hidden });
+      subjobsService.invalidate();
       // Al ocultarla se pliega. Al mostrarla queda como esté, plegada o no.
-      if (!sub.hidden) {
-        setCollapsedSubs((prev) => new Set(prev).add(sub.id));
-        processedHiddenRef.current.add(sub.id);
+      if (!subjob.hidden) {
+        setCollapsedSubjobs((prev) => new Set(prev).add(subjob.id));
+        processedHiddenRef.current.add(subjob.id);
       }
-      if (sub.faenaId) await loadSubs(sub.faenaId);
+      if (subjob.faenaId) await loadSubjobs(subjob.faenaId);
     } catch (err) {
       toast.error("Error al ocultar/mostrar subfaena: " + (err.message || err));
     }
@@ -343,7 +343,7 @@ export default function Faenas() {
         faenaGroup: { ...layout.faenaGroup, [dragId]: targetGroup },
       });
     }
-    const ids = faenas.map((f) => f.id);
+    const ids = jobs.map((f) => f.id);
     const fromIdx = ids.indexOf(dragId);
     const toIdx = ids.indexOf(targetId);
     if (fromIdx < 0 || toIdx < 0) return;
@@ -404,50 +404,50 @@ export default function Faenas() {
   const removeGroup = (gid) => {
     if (gid === UNGROUPED_ID) return;
     // Sus faenas vuelven a "sin grupo".
-    const nextFaenaGroup = { ...layout.faenaGroup };
-    for (const fid in nextFaenaGroup) {
-      if (nextFaenaGroup[fid] === gid) delete nextFaenaGroup[fid];
+    const nextJobGroup = { ...layout.faenaGroup };
+    for (const fid in nextJobGroup) {
+      if (nextJobGroup[fid] === gid) delete nextJobGroup[fid];
     }
     persistLayout({
       ...layout,
       groups: layout.groups.filter((g) => g.id !== gid),
-      faenaGroup: nextFaenaGroup,
+      faenaGroup: nextJobGroup,
     });
   };
 
-  const setFaenaCardColor = (faenaId, color) => {
+  const setJobCardColor = (jobId, color) => {
     const next = { ...layout.faenaColor };
-    if (color == null) delete next[faenaId];
-    else next[faenaId] = color;
+    if (color == null) delete next[jobId];
+    else next[jobId] = color;
     persistLayout({ ...layout, faenaColor: next });
   };
 
-  const colorOf = (faena) => {
-    const override = layout.faenaColor[faena.id];
+  const colorOf = (job) => {
+    const override = layout.faenaColor[job.id];
     if (override) return override;
-    const gid = layout.faenaGroup[faena.id] || UNGROUPED_ID;
+    const gid = layout.faenaGroup[job.id] || UNGROUPED_ID;
     return layout.groups.find((g) => g.id === gid)?.color || null;
   };
 
-  const submitFaena = async (e) => {
+  const submitJob = async (e) => {
     e.preventDefault();
     setBusy(true);
     try {
       const payload = {
         // Nombre y ubicación como título; notas sin gritar (utils/textCase.js).
-        name: toTitleName(faenaForm.data.name),
-        location: toTitleName(faenaForm.data.location || ""),
-        notes: unshout(faenaForm.data.notes || ""),
+        name: toTitleName(jobForm.data.name),
+        location: toTitleName(jobForm.data.location || ""),
+        notes: unshout(jobForm.data.notes || ""),
       };
-      if (faenaForm.mode === "create") {
-        const created = await faenasService.create(payload);
+      if (jobForm.mode === "create") {
+        const created = await jobsService.create(payload);
         persistOrder([...order, created.id]);
       } else {
-        await faenasService.update(faenaForm.data.id, payload);
+        await jobsService.update(jobForm.data.id, payload);
       }
-      setFaenaForm(null);
-      await loadFaenas();
-      toast.success(faenaForm.mode === "create" ? "Faena creada" : "Faena actualizada");
+      setJobForm(null);
+      await loadJobs();
+      toast.success(jobForm.mode === "create" ? "Faena creada" : "Faena actualizada");
     } catch (err) {
       toast.error("Error al guardar la faena: " + (err.message || err));
     } finally {
@@ -455,21 +455,21 @@ export default function Faenas() {
     }
   };
 
-  const submitSub = async (e) => {
+  const submitSubjob = async (e) => {
     e.preventDefault();
-    const { mode, faenaId, data } = subForm;
+    const { mode, jobId, data } = subjobForm;
     setBusy(true);
     try {
       let creada = null;
       const fields = { name: toTitleName(data.name || ""), notes: unshout(data.notes || "") };
-      if (mode === "create") creada = await subfaenasService.create({ ...data, ...fields, faenaId });
-      else await subfaenasService.update(data.id, fields);
-      setSubForm(null);
-      await loadSubs(faenaId);
+      if (mode === "create") creada = await subjobsService.create({ ...data, ...fields, faenaId: jobId });
+      else await subjobsService.update(data.id, fields);
+      setSubjobForm(null);
+      await loadSubjobs(jobId);
       toast.success(mode === "create" ? "Subfaena creada" : "Subfaena actualizada");
       // Al crear una subfaena se ofrece abrir su primer ciclo (cancelable): sin
       // ciclos no hay dónde anotar jornadas.
-      if (creada?.id) setSubOfferCycle({ faenaId, subfaenaId: creada.id, name: fields.name });
+      if (creada?.id) setSubjobOfferCycle({ jobId, subjobId: creada.id, name: fields.name });
     } catch (err) {
       toast.error("Error al guardar la subfaena: " + (err.message || err));
     } finally {
@@ -477,10 +477,10 @@ export default function Faenas() {
     }
   };
 
-  const cyclePrefix = (faenaId, subfaenaId) => {
-    const f = faenas.find((x) => x.id === faenaId);
-    const subList = subsByFaena[faenaId] || [];
-    const s = subList.find((x) => x.id === subfaenaId);
+  const cyclePrefix = (jobId, subjobId) => {
+    const f = jobs.find((x) => x.id === jobId);
+    const subjobList = subjobsByJob[jobId] || [];
+    const s = subjobList.find((x) => x.id === subjobId);
     const parts = [];
     if (f?.name) parts.push(f.name);
     if (s?.name) parts.push(s.name);
@@ -489,11 +489,11 @@ export default function Faenas() {
 
   const submitCycle = async (e) => {
     e.preventDefault();
-    const { mode, faenaId, data } = cycleForm;
+    const { mode, jobId, data } = cycleForm;
     if (mode === "create") {
-      const existing = cyclesByFaena[faenaId] || [];
-      const subs = subsByFaena[faenaId] || [];
-      if (!data.subfaenaId && subs.length > 0) {
+      const existing = cyclesByJob[jobId] || [];
+      const subjobs = subjobsByJob[jobId] || [];
+      if (!data.subfaenaId && subjobs.length > 0) {
         toast.warning("La faena tiene subfaenas. Selecciona una subfaena para el ciclo.");
         return;
       }
@@ -530,7 +530,7 @@ export default function Faenas() {
         labors = data.labors && data.labors.length ? data.labors : defaultLabors();
       }
 
-      const prefix = cyclePrefix(faenaId, data.subfaenaId);
+      const prefix = cyclePrefix(jobId, data.subfaenaId);
       const suffix = (data.labelSuffix ?? data.label ?? "").trim();
 
       // Días: los marcados en `importDays` definen la lista del nuevo ciclo y
@@ -564,7 +564,7 @@ export default function Faenas() {
       }
 
       const payload = {
-        faenaId,
+        faenaId: jobId,
         subfaenaId: data.subfaenaId || null,
         label: prefix + suffix,
         startDate: data.startDate || todayStr(),
@@ -624,7 +624,7 @@ export default function Faenas() {
       }
 
       setCycleForm(null);
-      await loadCycles(faenaId);
+      await loadCycles(jobId);
     } catch (err) {
       toast.error("Error al guardar el ciclo: " + (err.message || err));
     } finally {
@@ -632,13 +632,13 @@ export default function Faenas() {
     }
   };
 
-  const openCreateCycle = (faenaId, subfaenaId) => {
-    if (!subfaenaId) {
+  const openCreateCycle = (jobId, subjobId) => {
+    if (!subjobId) {
       toast.warning("Los ciclos se crean dentro de una subfaena. Crea primero una subfaena.");
       return;
     }
-    const existing = cyclesByFaena[faenaId] || [];
-    const scope = existing.filter((c) => c.subfaenaId === subfaenaId);
+    const existing = cyclesByJob[jobId] || [];
+    const scope = existing.filter((c) => c.subfaenaId === subjobId);
 
     // Ciclos abiertos de la misma subfaena que pueden servir de origen para
     // importar, del más reciente al más antiguo.
@@ -649,10 +649,10 @@ export default function Faenas() {
 
     setCycleForm(withInitial({
       mode: "create",
-      faenaId,
+      jobId,
       data: {
         labelSuffix: `Ciclo ${scope.length + 1}`,
-        subfaenaId,
+        subfaenaId: subjobId,
         startDate: todayStr(),
         notes: "",
         // Las labores se arman al guardar a partir de estas dos opciones; el
@@ -672,8 +672,8 @@ export default function Faenas() {
     }));
   };
 
-  const openEditCycle = (cycle, faenaId) => {
-    const prefix = cyclePrefix(faenaId, cycle.subfaenaId);
+  const openEditCycle = (cycle, jobId) => {
+    const prefix = cyclePrefix(jobId, cycle.subfaenaId);
     // Sin distinguir mayúsculas: los nombres de faena y subfaena se guardan
     // como título, y un ciclo antiguo puede traer el prefijo en mayúsculas.
     const suffix = (cycle.label || "").toLowerCase().startsWith(prefix.toLowerCase())
@@ -681,7 +681,7 @@ export default function Faenas() {
       : cycle.label || "";
     setCycleForm(withInitial({
       mode: "edit",
-      faenaId,
+      jobId,
       data: {
         id: cycle.id,
         labelSuffix: suffix,
@@ -695,8 +695,8 @@ export default function Faenas() {
     }));
   };
 
-  const openCloseFlow = (cycle, faenaId) => {
-    setCloseFlow({ cycle, faenaId, askNext: false, copyWorkers: true });
+  const openCloseFlow = (cycle, jobId) => {
+    setCloseFlow({ cycle, jobId, askNext: false, copyWorkers: true });
   };
 
   const confirmCloseCycle = async () => {
@@ -705,7 +705,7 @@ export default function Faenas() {
     try {
       await cyclesService.update(closeFlow.cycle.id, closedCyclePatch(closeFlow.cycle));
       setCloseFlow((s) => ({ ...s, askNext: true }));
-      await loadCycles(closeFlow.faenaId);
+      await loadCycles(closeFlow.jobId);
     } finally {
       setBusy(false);
     }
@@ -716,7 +716,7 @@ export default function Faenas() {
     setBusy(true);
     try {
       const prev = closeFlow.cycle;
-      const cycles = cyclesByFaena[closeFlow.faenaId] || [];
+      const cycles = cyclesByJob[closeFlow.jobId] || [];
       const scope = cycles.filter((c) =>
         prev.subfaenaId ? c.subfaenaId === prev.subfaenaId : !c.subfaenaId,
       );
@@ -730,9 +730,9 @@ export default function Faenas() {
         return { ...rest, id: newId(), workers: copy ? l.workers || [] : [] };
       });
       await cyclesService.create({
-        faenaId: closeFlow.faenaId,
+        faenaId: closeFlow.jobId,
         subfaenaId: prev.subfaenaId || null,
-        label: cyclePrefix(closeFlow.faenaId, prev.subfaenaId) + `Ciclo ${nextNumber}`,
+        label: cyclePrefix(closeFlow.jobId, prev.subfaenaId) + `Ciclo ${nextNumber}`,
         startDate: todayStr(),
         notes: "",
         status: "open",
@@ -742,7 +742,7 @@ export default function Faenas() {
         labors: newLabors,
       });
       setCloseFlow(null);
-      await loadCycles(closeFlow.faenaId);
+      await loadCycles(closeFlow.jobId);
     } finally {
       setBusy(false);
     }
@@ -756,15 +756,15 @@ export default function Faenas() {
       if (confirm.kind === "faena") {
         // Sin caché: los bloqueos y el log de diagnóstico salen de datos frescos.
         cyclesService.invalidate();
-        subfaenasService.invalidate();
-        const subs = await subfaenasService.list({ wheres: [["faenaId", "==", confirm.item.id]] });
+        subjobsService.invalidate();
+        const subjobs = await subjobsService.list({ wheres: [["faenaId", "==", confirm.item.id]] });
         const cyc = await cyclesService.list({ wheres: [["faenaId", "==", confirm.item.id]] });
         console.log(`[Faena delete] Faena ${confirm.item.id} (${confirm.item.name})`);
-        console.log(`  Subfaenas asociadas (${subs.length}):`, subs.map((s) => ({ id: s.id, name: s.name })));
+        console.log(`  Subfaenas asociadas (${subjobs.length}):`, subjobs.map((s) => ({ id: s.id, name: s.name })));
         console.log(`  Ciclos asociados (${cyc.length}):`, cyc.map((c) => ({ id: c.id, label: c.label, status: c.status, subfaenaId: c.subfaenaId })));
 
         const blockers = [];
-        if (subs.length) blockers.push(`${subs.length} subfaena(s): ${subs.map((s) => s.name).join(", ")}`);
+        if (subjobs.length) blockers.push(`${subjobs.length} subfaena(s): ${subjobs.map((s) => s.name).join(", ")}`);
         if (cyc.length) blockers.push(`${cyc.length} ciclo(s): ${cyc.map((c) => c.label).join(", ")}`);
 
         if (blockers.length) {
@@ -818,20 +818,20 @@ export default function Faenas() {
             for (const w of wds) await workdaysService.remove(w.id);
             await cyclesService.remove(c.id);
           }
-          for (const s of subs) {
+          for (const s of subjobs) {
             console.log(`  Borrando subfaena ${s.id} (${s.name})`);
-            await subfaenasService.remove(s.id);
+            await subjobsService.remove(s.id);
           }
         }
 
         console.log(`  Borrando faena ${confirm.item.id}`);
-        await faenasService.remove(confirm.item.id);
+        await jobsService.remove(confirm.item.id);
         persistOrder(order.filter((id) => id !== confirm.item.id));
         if (selectedId === confirm.item.id) setSelectedId(null);
-        await loadFaenas();
+        await loadJobs();
       } else if (confirm.kind === "sub") {
-        await subfaenasService.remove(confirm.item.id);
-        await loadSubs(confirm.item.faenaId);
+        await subjobsService.remove(confirm.item.id);
+        await loadSubjobs(confirm.item.faenaId);
       } else if (confirm.kind === "cycle") {
         try {
           const wds = await workdaysService.list({
@@ -900,9 +900,9 @@ export default function Faenas() {
     }
   };
 
-  const selected = faenas.find((f) => f.id === selectedId);
-  const selectedSubs = selectedId ? subsByFaena[selectedId] : null;
-  const selectedCycles = selectedId ? cyclesByFaena[selectedId] : null;
+  const selected = jobs.find((f) => f.id === selectedId);
+  const selectedSubjobs = selectedId ? subjobsByJob[selectedId] : null;
+  const selectedCycles = selectedId ? cyclesByJob[selectedId] : null;
   const selectedGroupId = selectedId
     ? (layout.faenaGroup[selectedId] && layout.groups.some((g) => g.id === layout.faenaGroup[selectedId])
         ? layout.faenaGroup[selectedId]
@@ -915,13 +915,13 @@ export default function Faenas() {
       <SelectedDetail
         selected={selected}
         cardColor={colorOf(selected)}
-        subs={selectedSubs}
+        subjobs={selectedSubjobs}
         cycles={selectedCycles}
-        onCreateSub={() => setSubForm(withInitial({ mode: "create", faenaId: selected.id, data: { ...emptySub } }))}
-        onEditSub={(s) => setSubForm(withInitial({ mode: "edit", faenaId: selected.id, data: { ...s } }))}
-        onDeleteSub={(s) => setConfirm({ kind: "sub", item: s, message: `¿Eliminar la subfaena "${s.name}"?` })}
-        onToggleHideSub={toggleHideSub}
-        onCreateCycle={(subfaenaId) => openCreateCycle(selected.id, subfaenaId || "")}
+        onCreateSubjob={() => setSubjobForm(withInitial({ mode: "create", jobId: selected.id, data: { ...emptySubjob } }))}
+        onEditSubjob={(s) => setSubjobForm(withInitial({ mode: "edit", jobId: selected.id, data: { ...s } }))}
+        onDeleteSubjob={(s) => setConfirm({ kind: "sub", item: s, message: `¿Eliminar la subfaena "${s.name}"?` })}
+        onToggleHideSubjob={toggleHideSubjob}
+        onCreateCycle={(subjobId) => openCreateCycle(selected.id, subjobId || "")}
         onEditCycle={(c) => openEditCycle(c, selected.id)}
         onOpenCloseFlow={(c) => openCloseFlow(c, selected.id)}
         onReopenCycle={async (c) => {
@@ -935,11 +935,11 @@ export default function Faenas() {
             message: `¿Eliminar el ciclo "${c.label}"?`,
           })
         }
-        collapsedSubs={collapsedSubs}
-        onToggleSubCollapse={toggleSubCollapse}
-        onCollapseAllSubs={() => setCollapsedSubs(new Set((selectedSubs || []).map((s) => s.id)))}
-        onExpandAllSubs={() => setCollapsedSubs(new Set())}
-        showClosedInSub={showClosedInSub}
+        collapsedSubjobs={collapsedSubjobs}
+        onToggleSubjobCollapse={toggleSubjobCollapse}
+        onCollapseAllSubjobs={() => setCollapsedSubjobs(new Set((selectedSubjobs || []).map((s) => s.id)))}
+        onExpandAllSubjobs={() => setCollapsedSubjobs(new Set())}
+        showClosedInSubjob={showClosedInSubjob}
         onToggleShowClosed={toggleShowClosed}
       />
       </div>
@@ -974,7 +974,7 @@ export default function Faenas() {
             </button>
           )}
           <button
-            onClick={() => setFaenaForm(withInitial({ mode: "create", data: { ...emptyFaena } }))}
+            onClick={() => setJobForm(withInitial({ mode: "create", data: { ...emptyJob } }))}
             className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] shadow-sm hover:bg-[var(--color-accent-hover)]"
           >
             + Nueva faena
@@ -984,16 +984,16 @@ export default function Faenas() {
 
       {loading ? (
         <div className="text-[var(--color-muted)]">Cargando...</div>
-      ) : faenas.length === 0 ? (
+      ) : jobs.length === 0 ? (
         <div className="rounded-lg border border-dashed border-[var(--color-border)] p-10 text-center text-[var(--color-muted)]">
           No hay faenas. Crea la primera.
         </div>
       ) : (
         <div className="space-y-6">
           {layout.groups.map((g) => {
-            const groupFaenas = faenasByGroup[g.id] || [];
+            const groupJobs = jobsByGroup[g.id] || [];
             // La sección "sin grupo" vacía solo se muestra al organizar.
-            if (g.id === UNGROUPED_ID && groupFaenas.length === 0 && !editLayout) return null;
+            if (g.id === UNGROUPED_ID && groupJobs.length === 0 && !editLayout) return null;
             const isDropTarget = dropOverGroupId === g.id;
             return (
               <section
@@ -1007,7 +1007,7 @@ export default function Faenas() {
               >
                 <GroupHeader
                   group={g}
-                  count={groupFaenas.length}
+                  count={groupJobs.length}
                   editable={editLayout}
                   isUngrouped={g.id === UNGROUPED_ID}
                   collapsed={collapsedGroups.has(g.id)}
@@ -1015,15 +1015,15 @@ export default function Faenas() {
                   onUpdate={(patch) => updateGroup(g.id, patch)}
                   onRemove={() => removeGroup(g.id)}
                 />
-                {collapsedGroups.has(g.id) ? null : groupFaenas.length === 0 ? (
+                {collapsedGroups.has(g.id) ? null : groupJobs.length === 0 ? (
                   <div className={`rounded-lg border border-dashed border-[var(--color-border)] p-6 text-center text-xs text-[var(--color-muted)] ${editLayout ? "" : "hidden"}`}>
                     Arrastra una tarjeta aquí.
                   </div>
                 ) : (
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    {groupFaenas.map((f) => {
-                      const subsCount = subsByFaena[f.id]?.length;
-                      const cyclesCount = cyclesByFaena[f.id]?.length;
+                    {groupJobs.map((f) => {
+                      const subjobCount = subjobsByJob[f.id]?.length;
+                      const cyclesCount = cyclesByJob[f.id]?.length;
                       const isSelected = selectedId === f.id;
                       const cardColor = colorOf(f);
                       return (
@@ -1074,7 +1074,7 @@ export default function Faenas() {
                             <div onClick={(e) => e.stopPropagation()} className="shrink-0">
                               <ColorPickerButton
                                 value={layout.faenaColor[f.id] ?? null}
-                                onChange={(c) => setFaenaCardColor(f.id, c)}
+                                onChange={(c) => setJobCardColor(f.id, c)}
                               />
                             </div>
                           </div>
@@ -1082,7 +1082,7 @@ export default function Faenas() {
                           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border)] pt-3 text-xs">
                             <div className="flex flex-wrap gap-1.5">
                               <span className="rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-muted)]">
-                                {subsCount != null ? `${subsCount} sub` : "—"}
+                                {subjobCount != null ? `${subjobCount} sub` : "—"}
                               </span>
                               <span
                                 className="rounded-full px-2 py-0.5 text-[10px] font-medium"
@@ -1099,7 +1099,7 @@ export default function Faenas() {
                             </div>
                             <div className="ml-auto flex shrink-0 gap-1 opacity-70 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
                               <button
-                                onClick={() => setFaenaForm(withInitial({ mode: "edit", data: { ...f } }))}
+                                onClick={() => setJobForm(withInitial({ mode: "edit", data: { ...f } }))}
                                 className="rounded-md px-2 py-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
                               >
                                 Editar
@@ -1133,29 +1133,29 @@ export default function Faenas() {
 
       {/* Modal de faena */}
       <Modal
-        open={!!faenaForm}
-        onClose={() => !busy && setFaenaForm(null)}
-        dirty={!!faenaForm && !busy && hasChanges(faenaForm.initial, faenaForm.data)}
-        title={faenaForm?.mode === "edit" ? "Editar faena" : "Nueva faena"}
+        open={!!jobForm}
+        onClose={() => !busy && setJobForm(null)}
+        dirty={!!jobForm && !busy && hasChanges(jobForm.initial, jobForm.data)}
+        title={jobForm?.mode === "edit" ? "Editar faena" : "Nueva faena"}
       >
-        {faenaForm && (
-          <form onSubmit={submitFaena} className="space-y-4">
+        {jobForm && (
+          <form onSubmit={submitJob} className="space-y-4">
             <TextField
               label="Nombre"
               required
               autoFocus
-              value={faenaForm.data.name}
-              onChange={(v) => setFaenaForm((f) => ({ ...f, data: { ...f.data, name: v } }))}
+              value={jobForm.data.name}
+              onChange={(v) => setJobForm((f) => ({ ...f, data: { ...f.data, name: v } }))}
             />
             <TextField
               label="Ubicación"
-              value={faenaForm.data.location}
-              onChange={(v) => setFaenaForm((f) => ({ ...f, data: { ...f.data, location: v } }))}
+              value={jobForm.data.location}
+              onChange={(v) => setJobForm((f) => ({ ...f, data: { ...f.data, location: v } }))}
             />
             <TextField
               label="Notas"
-              value={faenaForm.data.notes}
-              onChange={(v) => setFaenaForm((f) => ({ ...f, data: { ...f.data, notes: v } }))}
+              value={jobForm.data.notes}
+              onChange={(v) => setJobForm((f) => ({ ...f, data: { ...f.data, notes: v } }))}
             />
             <div className="flex justify-end gap-2 pt-2">
               <ModalCloseButton
@@ -1178,24 +1178,24 @@ export default function Faenas() {
 
       {/* Modal de subfaena */}
       <Modal
-        open={!!subForm}
-        onClose={() => !busy && setSubForm(null)}
-        dirty={!!subForm && !busy && hasChanges(subForm.initial, subForm.data)}
-        title={subForm?.mode === "edit" ? "Editar subfaena" : "Nueva subfaena"}
+        open={!!subjobForm}
+        onClose={() => !busy && setSubjobForm(null)}
+        dirty={!!subjobForm && !busy && hasChanges(subjobForm.initial, subjobForm.data)}
+        title={subjobForm?.mode === "edit" ? "Editar subfaena" : "Nueva subfaena"}
       >
-        {subForm && (
-          <form onSubmit={submitSub} className="space-y-4">
+        {subjobForm && (
+          <form onSubmit={submitSubjob} className="space-y-4">
             <TextField
               label="Nombre"
               required
               autoFocus
-              value={subForm.data.name}
-              onChange={(v) => setSubForm((s) => ({ ...s, data: { ...s.data, name: v } }))}
+              value={subjobForm.data.name}
+              onChange={(v) => setSubjobForm((s) => ({ ...s, data: { ...s.data, name: v } }))}
             />
             <TextField
               label="Notas"
-              value={subForm.data.notes}
-              onChange={(v) => setSubForm((s) => ({ ...s, data: { ...s.data, notes: v } }))}
+              value={subjobForm.data.notes}
+              onChange={(v) => setSubjobForm((s) => ({ ...s, data: { ...s.data, notes: v } }))}
             />
             <div className="flex justify-end gap-2 pt-2">
               <ModalCloseButton
@@ -1231,7 +1231,7 @@ export default function Faenas() {
               </span>
               <div className="flex items-stretch overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)]">
                 <span className="flex items-center bg-[var(--color-surface)] px-2 text-xs text-[var(--color-muted)] border-r border-[var(--color-border)]">
-                  {cyclePrefix(cycleForm.faenaId, cycleForm.data.subfaenaId) || "—"}
+                  {cyclePrefix(cycleForm.jobId, cycleForm.data.subfaenaId) || "—"}
                 </span>
                 <input
                   required
@@ -1246,13 +1246,13 @@ export default function Faenas() {
                 El prefijo Faena/Subfaena/ es fijo
               </span>
             </label>
-            {selectedSubs && selectedSubs.length > 0 && (
+            {selectedSubjobs && selectedSubjobs.length > 0 && (
               <Select
                 label="Subfaena"
                 required
                 value={cycleForm.data.subfaenaId || ""}
                 onChange={(v) => setCycleForm((c) => ({ ...c, data: { ...c.data, subfaenaId: v } }))}
-                options={selectedSubs.map((s) => ({ value: s.id, label: s.name }))}
+                options={selectedSubjobs.map((s) => ({ value: s.id, label: s.name }))}
                 placeholder="Selecciona la subfaena"
               />
             )}
@@ -1330,22 +1330,22 @@ export default function Faenas() {
 
       {/* Recién creada una subfaena, se ofrece abrirle el primer ciclo. */}
       <Modal
-        open={!!subOfferCycle}
-        onClose={() => setSubOfferCycle(null)}
+        open={!!subjobOfferCycle}
+        onClose={() => setSubjobOfferCycle(null)}
         title="¿Crear el primer ciclo?"
         footer={
           <>
             <button
-              onClick={() => setSubOfferCycle(null)}
+              onClick={() => setSubjobOfferCycle(null)}
               className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]"
             >
               Después
             </button>
             <button
               onClick={() => {
-                const { faenaId, subfaenaId } = subOfferCycle;
-                setSubOfferCycle(null);
-                openCreateCycle(faenaId, subfaenaId);
+                const { jobId, subjobId } = subjobOfferCycle;
+                setSubjobOfferCycle(null);
+                openCreateCycle(jobId, subjobId);
               }}
               className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]"
             >
@@ -1355,7 +1355,7 @@ export default function Faenas() {
         }
       >
         <p className="text-sm">
-          La subfaena <strong>{subOfferCycle?.name}</strong> ya está creada. Las jornadas se cargan
+          La subfaena <strong>{subjobOfferCycle?.name}</strong> ya está creada. Las jornadas se cargan
           dentro de un ciclo, así que sin uno todavía no hay dónde anotar nada.
         </p>
       </Modal>

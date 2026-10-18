@@ -2,10 +2,6 @@ import { useState, useEffect } from "react";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { ColorPalette } from "./ColorPalette";
 
-// ============================================================
-// Componentes de grupos
-// ============================================================
-
 export function GroupHeader({ group, count, editable, isUngrouped, collapsed, onToggleCollapsed, onUpdate, onRemove }) {
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(group.name);

@@ -4,7 +4,7 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import { TripEditModal } from "../../components/TransportsModal";
 import { useCarriers } from "../../contexts/CarriersContext";
 import { tripsService, titleCase } from "../../services/transportsService";
-import { cyclesService, faenasService, subfaenasService } from "../../services";
+import { cyclesService, jobsService, subjobsService } from "../../services";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useToast } from "../../contexts/ToastContext";
 import { fmtCurrency } from "../../utils/format";
@@ -44,8 +44,8 @@ export function TripsTab({ initialCarrierId = null }) {
       const [tripList, cyc, fa, sub] = await Promise.all([
         tripPromise,
         cyclesService.list({ cache: true, persist: true, ttl: 5 * 60 * 1000 }),
-        faenasService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
-        subfaenasService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
+        jobsService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
+        subjobsService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
       ]);
       tripList.sort((a, b) => (a.date < b.date ? 1 : -1));
       setTrips(tripList);

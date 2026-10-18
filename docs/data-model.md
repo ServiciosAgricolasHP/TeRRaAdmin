@@ -582,10 +582,15 @@ Auditoría — una fila por mutación.
 
 Campos y valores guardados en Firestore con nombre en español. El código los lee y escribe con ese nombre hasta que se migren. Cada uno se migra reescribiendo los documentos existentes y cambiando a la vez todo el código que lo usa, y los que lee otra app (la de escaneo o el portal) se coordinan con ella. El nombre propuesto sigue el Glosario de AGENTS.md.
 
-`faena` y `subfaena` (`faenas`, `subfaenas`, `faenaId`, `subfaenaId`, `faenaLabel`, `hiddenFaenaIds`, `faenaLayout`) no están en la lista: el Glosario los usa como término del código.
-
 | Colección | Campo o valor | Propuesto | Notas |
 |---|---|---|---|
+| `faenas`, `subfaenas` | las colecciones | `jobs`, `subjobs` | |
+| `subfaenas`, `cycles`, `transports`, `qrPrefixes`, `priceBookEntries` | `faenaId`, `subfaenaId` | `jobId`, `subjobId` | `qrPrefixes` lo lee también la app de escaneo |
+| `priceBookEntries` | `faenaLabel` | `jobLabel` | |
+| `priceBookConfig` | `hiddenFaenaIds` | `hiddenJobIds` | |
+| `users` | `faenaLayout` (con `faenaGroup`, `faenaColor`), `faenaLayoutUpdatedAt` | `jobLayout` (`jobGroup`, `jobColor`), `jobLayoutUpdatedAt` | |
+| `payrolls`, `payrollSnapshots` | `cycleDetails[].faenaName`, `subfaenaName` | `jobName`, `subjobName` | el JSON de la nómina es contrato externo con el portal |
+| `logs` | `entity: "faena"`, `"subfaena"` | `"job"`, `"subjob"` | los logs no se reescriben: la Auditoría tendría que leer los dos valores |
 | `transportPayrolls` | la colección | `transportFortnights` | |
 | `transportPayments` | `payrollId` | `fortnightId` | |
 | `transportPayments` | `abonos` | `partialPayments` | mismo nombre que en `commitments` |

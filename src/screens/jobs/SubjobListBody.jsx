@@ -3,42 +3,42 @@ import { CycleRow } from "./CycleRow";
 
 // Lista de subfaenas: las visibles primero y las ocultas (`hidden`) en un
 // grupo plegable al final.
-export function SubfaenaListBody({
-  subs,
-  cyclesBySub,
-  collapsedSubs,
-  onToggleSubCollapse,
+export function SubjobListBody({
+  subjobs,
+  cyclesBySubjob,
+  collapsedSubjobs,
+  onToggleSubjobCollapse,
   allCollapsed,
-  onExpandAllSubs,
-  onCollapseAllSubs,
-  onEditSub,
-  onDeleteSub,
-  onToggleHideSub,
+  onExpandAllSubjobs,
+  onCollapseAllSubjobs,
+  onEditSubjob,
+  onDeleteSubjob,
+  onToggleHideSubjob,
   onCreateCycle,
   onEditCycle,
   onOpenCloseFlow,
   onReopenCycle,
   onDeleteCycle,
-  showClosedInSub,
+  showClosedInSubjob,
   onToggleShowClosed,
 }) {
-  const visibleSubs = subs.filter((s) => !s.hidden);
-  const hiddenSubs = subs.filter((s) => s.hidden);
+  const visibleSubjobs = subjobs.filter((s) => !s.hidden);
+  const hiddenSubjobs = subjobs.filter((s) => s.hidden);
   // El grupo de ocultas arranca plegado cada vez que se monta.
   const [hiddenGroupOpen, setHiddenGroupOpen] = useState(false);
 
-  const renderSubCard = (s) => {
-    const subCycles = cyclesBySub[s.id] || [];
-    const openCycles = subCycles.filter((c) => c.status !== "closed");
-    const closedCycles = subCycles.filter((c) => c.status === "closed");
-    const isCollapsed = !!collapsedSubs?.has(s.id);
+  const renderSubjobCard = (s) => {
+    const subjobCycles = cyclesBySubjob[s.id] || [];
+    const openCycles = subjobCycles.filter((c) => c.status !== "closed");
+    const closedCycles = subjobCycles.filter((c) => c.status === "closed");
+    const isCollapsed = !!collapsedSubjobs?.has(s.id);
     const closedHiddenByDefault = openCycles.length > 0;
-    const showClosed = !closedHiddenByDefault || !!showClosedInSub?.has(s.id);
+    const showClosed = !closedHiddenByDefault || !!showClosedInSubjob?.has(s.id);
     return (
       <div key={s.id} className="rounded-md border border-[var(--color-border)]">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
           <button
-            onClick={() => onToggleSubCollapse(s.id)}
+            onClick={() => onToggleSubjobCollapse(s.id)}
             aria-label={isCollapsed ? "Expandir" : "Colapsar"}
             className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)]"
           >
@@ -46,7 +46,7 @@ export function SubfaenaListBody({
           </button>
           <div
             className="min-w-0 flex-1 cursor-pointer"
-            onClick={() => onToggleSubCollapse(s.id)}
+            onClick={() => onToggleSubjobCollapse(s.id)}
           >
             <div className="flex flex-wrap items-center gap-1.5">
               <span className={`truncate text-sm font-medium ${s.hidden ? "text-[var(--color-muted)]" : ""}`}>
@@ -64,7 +64,7 @@ export function SubfaenaListBody({
                 {openCycles.length > 0 && <span className="text-[var(--color-accent)]">{openCycles.length} abierto{openCycles.length === 1 ? "" : "s"}</span>}
                 {openCycles.length > 0 && closedCycles.length > 0 && " · "}
                 {closedCycles.length > 0 && <span>{closedCycles.length} cerrado{closedCycles.length === 1 ? "" : "s"}</span>}
-                {subCycles.length === 0 && "sin ciclos"}
+                {subjobCycles.length === 0 && "sin ciclos"}
               </span>
             </div>
             {s.notes && !isCollapsed && (
@@ -74,9 +74,9 @@ export function SubfaenaListBody({
           <div className="flex w-full shrink-0 flex-wrap gap-1.5 md:w-auto md:ml-auto">
             {/* Ocultar aparece solo si la subfaena tiene ciclos y están todos
                 cerrados; Mostrar, si ya está oculta. */}
-            {onToggleHideSub && (s.hidden || (openCycles.length === 0 && subCycles.length > 0)) && (
+            {onToggleHideSubjob && (s.hidden || (openCycles.length === 0 && subjobCycles.length > 0)) && (
               <button
-                onClick={() => onToggleHideSub(s)}
+                onClick={() => onToggleHideSubjob(s)}
                 title={s.hidden
                   ? "Desmarcar como oculta (volverá a aparecer expandida arriba)"
                   : "Marcar como oculta (se mueve al grupo Ocultas al final)"}
@@ -92,13 +92,13 @@ export function SubfaenaListBody({
               + Ciclo
             </button>
             <button
-              onClick={() => onEditSub(s)}
+              onClick={() => onEditSubjob(s)}
               className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
             >
               Editar
             </button>
             <button
-              onClick={() => onDeleteSub(s)}
+              onClick={() => onDeleteSubjob(s)}
               className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
             >
               Eliminar
@@ -106,7 +106,7 @@ export function SubfaenaListBody({
           </div>
         </div>
         {!isCollapsed && (
-          subCycles.length === 0 ? (
+          subjobCycles.length === 0 ? (
             <div className="px-3 py-2 text-xs text-[var(--color-muted)]">Sin ciclos.</div>
           ) : (
             <>
@@ -153,17 +153,17 @@ export function SubfaenaListBody({
     <div className="space-y-3 px-5 py-4">
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs uppercase tracking-wider text-[var(--color-muted)]">
         <span>
-          Subfaenas ({visibleSubs.length}
-          {hiddenSubs.length > 0 && (
+          Subfaenas ({visibleSubjobs.length}
+          {hiddenSubjobs.length > 0 && (
             <span className="normal-case tracking-normal text-[var(--color-muted)]">
-              {" · "}{hiddenSubs.length} oculta{hiddenSubs.length === 1 ? "" : "s"}
+              {" · "}{hiddenSubjobs.length} oculta{hiddenSubjobs.length === 1 ? "" : "s"}
             </span>
           )}
           )
         </span>
         <div className="flex flex-wrap gap-1">
           <button
-            onClick={allCollapsed ? onExpandAllSubs : onCollapseAllSubs}
+            onClick={allCollapsed ? onExpandAllSubjobs : onCollapseAllSubjobs}
             title={allCollapsed ? "Expandir todas las subfaenas" : "Colapsar todas las subfaenas"}
             className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[10px] normal-case tracking-normal hover:bg-[var(--color-accent-soft)]"
           >
@@ -172,12 +172,12 @@ export function SubfaenaListBody({
         </div>
       </div>
 
-      {visibleSubs.map(renderSubCard)}
+      {visibleSubjobs.map(renderSubjobCard)}
 
       {/* Grupo plegable de subfaenas ocultas, plegado por defecto. Adentro,
           cada subfaena conserva su propio plegado y llega plegada por el
           plegado automático de processedHiddenRef. */}
-      {hiddenSubs.length > 0 && (
+      {hiddenSubjobs.length > 0 && (
         <div className="rounded-md border border-dashed border-[var(--color-border)] bg-[var(--color-surface-2)]/30">
           <button
             type="button"
@@ -186,7 +186,7 @@ export function SubfaenaListBody({
           >
             <span>{hiddenGroupOpen ? "▾" : "▸"}</span>
             <span className="font-medium uppercase tracking-wider">
-              Subfaenas ocultas ({hiddenSubs.length})
+              Subfaenas ocultas ({hiddenSubjobs.length})
             </span>
             <span className="normal-case opacity-70">
               {hiddenGroupOpen ? "click para ocultar" : "click para ver"}
@@ -194,7 +194,7 @@ export function SubfaenaListBody({
           </button>
           {hiddenGroupOpen && (
             <div className="space-y-3 border-t border-dashed border-[var(--color-border)] p-3">
-              {hiddenSubs.map(renderSubCard)}
+              {hiddenSubjobs.map(renderSubjobCard)}
             </div>
           )}
         </div>

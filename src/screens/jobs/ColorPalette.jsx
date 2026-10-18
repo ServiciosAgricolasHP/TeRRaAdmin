@@ -1,5 +1,5 @@
 import { useRef, useEffect } from "react";
-import { FAENA_PALETTE } from "../../services/userPrefsService";
+import { JOB_PALETTE } from "../../services/userPrefsService";
 
 export function ColorPalette({ onPick, onClose, selected }) {
   const ref = useRef(null);
@@ -35,7 +35,7 @@ export function ColorPalette({ onPick, onClose, selected }) {
         </button>
       </div>
       <div className="grid grid-cols-7 gap-1.5">
-        {FAENA_PALETTE.map((c) => {
+        {JOB_PALETTE.map((c) => {
           const isSelected =
             (c.value === null && !selected) ||
             (c.value && c.value.toLowerCase() === normalized);

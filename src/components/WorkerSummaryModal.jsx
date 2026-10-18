@@ -4,7 +4,7 @@ import Modal from "./Modal";
 import { workdayMapKey, getTratoTierTotals, getTratoTiers, containerLabel, tratoTypeLabel, tratoUnitLabel, cosechaUnit } from "../utils/cosechaCombos";
 import { DEFAULT_OVERTIME_RATE } from "../utils/tratoHE";
 import { describeStage, normalizeStages, stageTag } from "../utils/tratoEtapas";
-import { cyclesService, faenasService, subfaenasService, workdaysService } from "../services";
+import { cyclesService, jobsService, subjobsService, workdaysService } from "../services";
 import { payrollsService } from "../services/payrollsService";
 import { workerKeys } from "../services/workersService";
 import {
@@ -700,8 +700,8 @@ export async function loadWorkerSummaryData(worker, catalogs, options = {}) {
   });
   const faenaIds = [...new Set(cyclesToShow.map((c) => c.faenaId).filter(Boolean))];
   const subIds = [...new Set(cyclesToShow.map((c) => c.subfaenaId).filter(Boolean))];
-  const faenas = await Promise.all(faenaIds.map((id) => faenasService.getById(id)));
-  const subs = await Promise.all(subIds.map((id) => subfaenasService.getById(id)));
+  const faenas = await Promise.all(faenaIds.map((id) => jobsService.getById(id)));
+  const subs = await Promise.all(subIds.map((id) => subjobsService.getById(id)));
   const faenaById = new Map(faenas.filter(Boolean).map((f) => [f.id, f]));
   const subById = new Map(subs.filter(Boolean).map((s) => [s.id, s]));
 

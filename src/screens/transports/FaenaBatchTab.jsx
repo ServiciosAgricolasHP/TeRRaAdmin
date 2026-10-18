@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useCarriers } from "../../contexts/CarriersContext";
 import { tripsService, paymentsService, titleCase } from "../../services/transportsService";
-import { faenasService, subfaenasService, cyclesService } from "../../services";
+import { jobsService, subjobsService, cyclesService } from "../../services";
 import { useToast } from "../../contexts/ToastContext";
 import { fmtCurrency } from "../../utils/format";
 
@@ -28,8 +28,8 @@ export function FaenaBatchTab() {
     setLoading(true);
     try {
       const [f, s, c, pendingT] = await Promise.all([
-        faenasService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
-        subfaenasService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
+        jobsService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
+        subjobsService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
         cyclesService.list({ order: ["createdAt", "desc"], cache: true, persist: true, ttl: 5 * 60 * 1000 }),
         tripsService.listPendingUnlinked(),
       ]);

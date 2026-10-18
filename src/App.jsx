@@ -10,7 +10,7 @@ import Layout from "./components/Layout";
 import Login from "./screens/Login";
 import Dashboard from "./screens/Dashboard";
 import Placeholder from "./screens/Placeholder";
-import Faenas from "./screens/Faenas";
+import Jobs from "./screens/Jobs";
 import CycleDetail from "./screens/CycleDetail";
 import Workers from "./screens/Workers";
 import Transports from "./screens/Transports";
@@ -52,7 +52,7 @@ export default function App() {
                     ítem del menú quede activo. */}
                 <Route index element={<Navigate to="/faenas" replace />} />
                 <Route path="dashboard" element={<Dashboard />} />
-                <Route path="faenas" element={<Faenas />} />
+                <Route path="faenas" element={<Jobs />} />
                 <Route path="cycles/:id" element={<CycleDetail />} />
                 <Route path="workers" element={<Workers />} />
                 <Route path="transports" element={<Transports />} />

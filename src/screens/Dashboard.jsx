@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { collection, getCountFromServer, query, where } from "firebase/firestore";
 import { db } from "../firebase";
-import { faenasService, cyclesService, transportPaymentsService, companiesService, dteDocumentsService } from "../services";
+import { jobsService, cyclesService, transportPaymentsService, companiesService, dteDocumentsService } from "../services";
 import { payrollsService, pendingCashOf } from "../services/payrollsService";
 import { fortnightsService } from "../services/transportsService";
 import { commitmentsService } from "../services/commitmentsService";
@@ -321,7 +321,7 @@ export default function Dashboard() {
         const [f, c, p, q, pays] = await Promise.all([
           // Las tres primeras copian las opciones exactas de Faenas/Transporte/
           // Nóminas para compartir clave de caché y salir gratis.
-          countedList(faenasService, { order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
+          countedList(jobsService, { order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
           countedList(cyclesService, { cache: true, persist: true, ttl: 5 * 60 * 1000 }),
           countedList(payrollsService, { order: ["createdAt", "desc"], take: 50, cache: true, persist: true, ttl: 5 * 60 * 1000 }),
           fortnightsService.listAll(),

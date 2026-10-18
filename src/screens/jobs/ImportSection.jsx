@@ -1,5 +1,3 @@
-// ---------------------------------------------------------------------------
-
 // Sección del modal de creación de ciclo que ofrece importar desde otro
 // ciclo abierto de la misma subfaena. Se muestra solo si hay al menos un
 // candidato. Permite elegir qué labores clonar y si copiar días y precios o

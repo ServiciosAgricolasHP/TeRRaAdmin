@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import ProductionSummaryModal from "../../components/ProductionSummaryModal";
 
-export function CycleRow({ cycle, subName, onEdit, onOpenCloseFlow, onReopen, onDelete }) {
+export function CycleRow({ cycle, subjobName, onEdit, onOpenCloseFlow, onReopen, onDelete }) {
   // Cada CycleRow maneja su propio modal de resumen; el resumen de la faena
   // entera vive en SelectedDetail.
   const [resumenOpen, setResumenOpen] = useState(false);
@@ -30,7 +30,7 @@ export function CycleRow({ cycle, subName, onEdit, onOpenCloseFlow, onReopen, on
         <div className="text-xs text-[var(--color-muted)]">
           {cycle.startDate || "—"}
           {cycle.endDate && ` → ${cycle.endDate}`}
-          {subName && ` · ${subName}`}
+          {subjobName && ` · ${subjobName}`}
           {` · ${(cycle.labors || []).length} labores`}
         </div>
       </div>

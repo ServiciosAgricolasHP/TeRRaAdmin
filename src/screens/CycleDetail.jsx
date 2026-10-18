@@ -5,8 +5,8 @@ import { ModuleRegistry, AllCommunityModule } from "ag-grid-community";
 import { captureFullWidthDataUrl, captureFullWidthBlob } from "../utils/imageCapture";
 import {
   cyclesService,
-  faenasService,
-  subfaenasService,
+  jobsService,
+  subjobsService,
   laborGroupsService,
   workdaysService,
   qrPrefixesService,
@@ -356,9 +356,9 @@ export default function CycleDetail() {
       setDayPrices(normalizedDP);
       if (dpChanged) await cyclesService.update(id, { dayPrices: normalizedDP });
 
-      if (normalized.faenaId) setFaena(await faenasService.getById(normalized.faenaId));
+      if (normalized.faenaId) setFaena(await jobsService.getById(normalized.faenaId));
       if (normalized.subfaenaId) {
-        setSubfaena(await subfaenasService.getById(normalized.subfaenaId));
+        setSubfaena(await subjobsService.getById(normalized.subfaenaId));
         // Sin `order`: where(subfaenaId) + orderBy(name) pediría un índice
         // compuesto en Firestore. La lista es chica y se ordena en el cliente.
         const groups = await laborGroupsService.list({ wheres: [["subfaenaId", "==", normalized.subfaenaId]] });

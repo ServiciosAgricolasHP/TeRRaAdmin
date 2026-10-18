@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { collection, query, where, getCountFromServer, doc, getDoc, writeBatch, serverTimestamp, addDoc, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
-import { faenasService, cyclesService, workersService } from "../services";
+import { jobsService, cyclesService, workersService } from "../services";
 import { advancesService } from "../services/advancesService";
 import { toProperName } from "../utils/nameUtils";
 import { isAdminRole } from "../utils/userAccounts";
@@ -825,7 +825,7 @@ function WorkdaysByCycleSection() {
       try {
         const [c, f] = await Promise.all([
           cyclesService.list({ cache: true, ttl: 60_000 }),
-          faenasService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
+          jobsService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
         ]);
         setCycles(c);
         setFaenas(f);

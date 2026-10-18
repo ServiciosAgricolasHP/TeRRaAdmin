@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useToast } from "../contexts/ToastContext";
-import { faenasService, priceBookService, priceBookConfigService } from "../services";
+import { jobsService, priceBookService, priceBookConfigService } from "../services";
 import Modal, { ModalCloseButton } from "../components/Modal";
 import { hasChanges } from "../utils/formChanges";
 import Select from "../components/Select";
@@ -51,7 +51,7 @@ export default function PriceBook() {
     setLoading(true);
     try {
       const [fa, en, cfg] = await Promise.all([
-        faenasService.list({ order: ["name", "asc"], cache: true }),
+        jobsService.list({ order: ["name", "asc"], cache: true }),
         priceBookService.list({ order: ["dateFrom", "desc"] }),
         priceBookConfigService.getById("main"),
       ]);

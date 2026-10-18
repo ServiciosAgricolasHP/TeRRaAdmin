@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
-import { faenasService, subfaenasService, cyclesService, workersService } from "../services";
+import { jobsService, subjobsService, cyclesService, workersService } from "../services";
 import { tripsService } from "../services/transportsService";
 import { useCarriers } from "../contexts/CarriersContext";
 import { useCatalogs } from "../contexts/CatalogsContext";
@@ -261,8 +261,8 @@ export default function Calendar() {
       try {
         const [c, f, s, w] = await Promise.all([
           cyclesService.list({ cache: true, ttl: 5 * 60 * 1000 }),
-          faenasService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
-          subfaenasService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
+          jobsService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
+          subjobsService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
           workersService.list({
             order: ["name", "asc"],
             cache: true,
