@@ -814,7 +814,7 @@ export default function Facturacion() {
 
   // --- Export de Retenciones (infografía) ---
   // El printable se renderiza fuera de pantalla y los botones lo capturan con
-  // html-to-image, igual que en los otros resúmenes (PrintablePayrollTable,
+  // html-to-image, igual que en los otros resúmenes (PrintableFortnightTable,
   // PrintableSummary, etc.).
 
   const exportFileBase = useMemo(() => {

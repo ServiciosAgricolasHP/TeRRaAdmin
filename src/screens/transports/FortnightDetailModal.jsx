@@ -5,14 +5,14 @@ import { tripsService, paymentsService } from "../../services/transportsService"
 import { useToast } from "../../contexts/ToastContext";
 import { fmtCurrency } from "../../utils/format";
 import { PaymentDetailModal } from "./PaymentDetailModal";
-import { PrintablePayrollTable } from "./PrintablePayrollTable";
+import { PrintableFortnightTable } from "./PrintableFortnightTable";
 import { PrintableSummary } from "./PrintableSummary";
-import { paymentSplit } from "./transportPayrolls";
+import { paymentSplit } from "./fortnights";
 
-export function PayrollDetailModal({
-  payroll, items, carriers = [], carriersById, faenaById, subfaenaById, cycleById, looseSummaries,
-  onClose, onEditMeta, onDeletePayroll, onAddSummaries, onRemoveSummary,
-  onMarkPayrollPaid, onRevertPayroll, onMarkItemPaid, onRevertItem, onItemChanged,
+export function FortnightDetailModal({
+  fortnight, items, carriers = [], carriersById, faenaById, subfaenaById, cycleById, looseSummaries,
+  onClose, onEditMeta, onDeleteFortnight, onAddSummaries, onRemoveSummary,
+  onMarkFortnightPaid, onRevertFortnight, onMarkItemPaid, onRevertItem, onItemChanged,
 }) {
   const toast = useToast();
   const [addingOpen, setAddingOpen] = useState(false);
@@ -27,7 +27,7 @@ export function PayrollDetailModal({
   // Resumen abierto en detalle, para ver o editar sus vueltas sin salir de la
   // quincena.
   const [viewingPayment, setViewingPayment] = useState(null);
-  const isPaid = payroll.status === "paid";
+  const isPaid = fortnight.status === "paid";
   // Totales por estado: una quincena pendiente puede tener resúmenes ya
   // pagados uno por uno (botón "💰 Pagar") o con abonos; el pendiente se
   // muestra aparte. El reparto lo hace paymentSplit, el mismo del balance.
@@ -49,7 +49,7 @@ export function PayrollDetailModal({
     try {
       const dataUrl = await captureFullWidthDataUrl(printRef.current);
       const link = document.createElement("a");
-      link.download = `quincena_${payroll.name.replace(/[^\w-]+/g, "_")}.png`;
+      link.download = `quincena_${fortnight.name.replace(/[^\w-]+/g, "_")}.png`;
       link.href = dataUrl;
       link.click();
     } catch (err) {
@@ -82,7 +82,7 @@ export function PayrollDetailModal({
       toast.warning("Permite las ventanas emergentes para imprimir.");
       return;
     }
-    win.document.write(`<!DOCTYPE html><html><head><title>Quincena ${payroll.name}</title>
+    win.document.write(`<!DOCTYPE html><html><head><title>Quincena ${fortnight.name}</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
         body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; }
@@ -138,7 +138,7 @@ export function PayrollDetailModal({
         toast.warning("Permite las ventanas emergentes para imprimir.");
         return;
       }
-      win.document.write(`<!DOCTYPE html><html><head><title>Quincena ${payroll.name} — completa</title>
+      win.document.write(`<!DOCTYPE html><html><head><title>Quincena ${fortnight.name} — completa</title>
         <style>
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; box-sizing: border-box; }
           body { font-family: ui-sans-serif, system-ui, sans-serif; color: #000; margin: 0; padding: 0; }
@@ -169,7 +169,7 @@ export function PayrollDetailModal({
     <Modal
       open
       onClose={onClose}
-      title={`📅 ${payroll.name}`}
+      title={`📅 ${fortnight.name}`}
       size="xl"
       footer={
         <>
@@ -181,16 +181,16 @@ export function PayrollDetailModal({
               <button onClick={onEditMeta} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]">
                 ✏️ Editar
               </button>
-              <button onClick={onDeletePayroll} className="rounded-md border border-[var(--color-danger)] px-3 py-1.5 text-sm text-[var(--color-danger)]">
+              <button onClick={onDeleteFortnight} className="rounded-md border border-[var(--color-danger)] px-3 py-1.5 text-sm text-[var(--color-danger)]">
                 Eliminar
               </button>
-              <button onClick={onMarkPayrollPaid} className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]">
+              <button onClick={onMarkFortnightPaid} className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]">
                 💰 Marcar quincena pagada
               </button>
             </>
           )}
           {isPaid && (
-            <button onClick={onRevertPayroll} className="rounded-md border border-[var(--color-warning)] px-3 py-1.5 text-sm text-[var(--color-warning)]">
+            <button onClick={onRevertFortnight} className="rounded-md border border-[var(--color-warning)] px-3 py-1.5 text-sm text-[var(--color-warning)]">
               ↶ Revertir pago
             </button>
           )}
@@ -205,9 +205,9 @@ export function PayrollDetailModal({
         }`}>
           {isPaid ? "Pagada" : "Pendiente"}
         </span>
-        {(payroll.periodFrom || payroll.periodTo) && (
+        {(fortnight.periodFrom || fortnight.periodTo) && (
           <span className="text-[var(--color-muted)]">
-            {payroll.periodFrom || "?"} → {payroll.periodTo || "?"}
+            {fortnight.periodFrom || "?"} → {fortnight.periodTo || "?"}
           </span>
         )}
         <span className="ml-auto flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
@@ -228,9 +228,9 @@ export function PayrollDetailModal({
           )}
         </span>
       </div>
-      {payroll.notes && (
+      {fortnight.notes && (
         <div className="mb-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm">
-          {payroll.notes}
+          {fortnight.notes}
         </div>
       )}
 
@@ -238,7 +238,7 @@ export function PayrollDetailModal({
           Con "Imprimir quincena + resúmenes" se suma un PrintableSummary por
           resumen (refs en summaryRefs). */}
       <div style={{ position: "absolute", left: -99999, top: 0, pointerEvents: "none" }} aria-hidden>
-        <PrintablePayrollTable ref={printRef} payroll={payroll} items={items} carriersById={carriersById} />
+        <PrintableFortnightTable ref={printRef} fortnight={fortnight} items={items} carriersById={carriersById} />
         {printItems && printItems.map((it, i) => (
           <PrintableSummary
             key={it.payment.id}

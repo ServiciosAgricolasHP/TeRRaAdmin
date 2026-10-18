@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { fmtCurrency } from "../../utils/format";
 import { UnifiedSummaryModal } from "./UnifiedSummaryModal";
 
-export function PaymentSection({ title, payments, carrierById, transportPayrollById, faenaById, subfaenaById, cycleById, onView, empty, dim = false, carriers = [], onChanged }) {
+export function PaymentSection({ title, payments, carrierById, fortnightById, faenaById, subfaenaById, cycleById, onView, empty, dim = false, carriers = [], onChanged }) {
   // Resúmenes agrupados por transportista. Cada grupo se puede colapsar y
   // arranca expandido.
   const groups = useMemo(() => {
@@ -58,7 +58,7 @@ export function PaymentSection({ title, payments, carrierById, transportPayrollB
         onClick={() => onView(p)}
         className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-left text-sm hover:border-[var(--color-accent)]"
       >
-        {paymentCardContent(p, c, period, transportPayrollById)}
+        {paymentCardContent(p, c, period, fortnightById)}
       </button>
     );
   };
@@ -130,7 +130,7 @@ export function PaymentSection({ title, payments, carrierById, transportPayrollB
 
 // Contenido de la tarjeta de un resumen: período, quincena, cantidad de
 // vueltas, total y estado.
-function paymentCardContent(p, c, period, transportPayrollById) {
+function paymentCardContent(p, c, period, fortnightById) {
   return (
     <>
       <div className="min-w-0 flex-1">
@@ -144,7 +144,7 @@ function paymentCardContent(p, c, period, transportPayrollById) {
             <span className="text-[var(--color-muted)] italic">sin período</span>
           )}
           {(() => {
-            const tp = p.payrollId && transportPayrollById?.get(p.payrollId);
+            const tp = p.payrollId && fortnightById?.get(p.payrollId);
             if (tp) {
               const isPaid = tp.status === "paid";
               return (

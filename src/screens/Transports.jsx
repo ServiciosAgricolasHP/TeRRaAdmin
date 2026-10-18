@@ -2,7 +2,7 @@ import { useState } from "react";
 import { CarriersTab } from "./transports/CarriersTab";
 import { FaenaBatchTab } from "./transports/FaenaBatchTab";
 import { PaymentsTab } from "./transports/PaymentsTab";
-import { PayrollsTab } from "./transports/PayrollsTab";
+import { FortnightsTab } from "./transports/FortnightsTab";
 import { TripsTab } from "./transports/TripsTab";
 
 const TABS = [
@@ -10,7 +10,7 @@ const TABS = [
   { value: "trips", label: "Vueltas" },
   { value: "byFaena", label: "Pago por faena" },
   { value: "payments", label: "Resúmenes" },
-  { value: "payrolls", label: "Quincenas" },
+  { value: "fortnights", label: "Quincenas" },
 ];
 
 export default function Transports() {
@@ -53,7 +53,7 @@ export default function Transports() {
       {tab === "trips" && <TripsTab initialCarrierId={tripsCarrierPreset?.id || null} />}
       {tab === "byFaena" && <FaenaBatchTab />}
       {tab === "payments" && <PaymentsTab />}
-      {tab === "payrolls" && <PayrollsTab />}
+      {tab === "fortnights" && <FortnightsTab />}
     </div>
   );
 }

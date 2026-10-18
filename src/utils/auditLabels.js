@@ -23,7 +23,7 @@ import {
 import { payrollsService } from "../services/payrollsService";
 import { advancesService, normalizeAdvanceType } from "../services/advancesService";
 import { carriersService } from "../services/carriersService";
-import { tripsService, paymentsService, transportPayrollsService } from "../services/transportsService";
+import { tripsService, paymentsService, fortnightsService } from "../services/transportsService";
 
 // Fecha corta para los labels de vueltas/resúmenes ("2026-08-12" → "12-ago").
 const MONTHS_ABBR = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
@@ -99,7 +99,7 @@ export const ENTITY_META = {
         .join(" · ") || null;
     },
   },
-  transportPayroll: { labelEs: "Quincena de transporte", service: transportPayrollsService, labelOf: (d) => d?.name },
+  transportPayroll: { labelEs: "Quincena de transporte", service: fortnightsService, labelOf: (d) => d?.name },
   informalExpense: { labelEs: "Gasto informal", labelOf: (d) => d?.detail },
   contactCard: { labelEs: "Ficha de contacto" },
   dteDocument: { labelEs: "Documento SII" },

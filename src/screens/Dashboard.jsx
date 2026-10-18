@@ -4,7 +4,7 @@ import { collection, getCountFromServer, query, where } from "firebase/firestore
 import { db } from "../firebase";
 import { faenasService, cyclesService, transportPaymentsService, companiesService, dteDocumentsService } from "../services";
 import { payrollsService, pendingCashOf } from "../services/payrollsService";
-import { transportPayrollsService } from "../services/transportsService";
+import { fortnightsService } from "../services/transportsService";
 import { commitmentsService } from "../services/commitmentsService";
 import { countedList } from "../services/cache";
 import { useAuth } from "../contexts/AuthContext";
@@ -120,7 +120,7 @@ function DebtDetailList({ title, items, total, color }) {
               </div>
               <div className="mt-0.5 flex flex-wrap gap-x-3 text-[11px] text-[var(--color-muted)]">
                 <span>{it.period ? `Período ${it.period}` : "Sin período cargado"}</span>
-                <span>{it.quincena ? `Quincena: ${it.quincena}` : "Resumen suelto"}</span>
+                <span>{it.fortnight ? `Quincena: ${it.fortnight}` : "Resumen suelto"}</span>
                 {it.date && (
                   <span>
                     {it.marked ? "Marcado pagado el" : "Abonado el"} {fmtShortDate(it.date)}
@@ -165,7 +165,7 @@ export default function Dashboard() {
   const [faenas, setFaenas] = useState([]);
   const [cycles, setCycles] = useState([]);
   const [payrolls, setPayrolls] = useState([]);
-  const [quincenas, setQuincenas] = useState([]);
+  const [fortnights, setFortnights] = useState([]);
   const [payments, setPayments] = useState([]);
   const [workdayMonths, setWorkdayMonths] = useState([]);
   const [countReads, setCountReads] = useState(0);
@@ -324,14 +324,14 @@ export default function Dashboard() {
           countedList(faenasService, { order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
           countedList(cyclesService, { cache: true, persist: true, ttl: 5 * 60 * 1000 }),
           countedList(payrollsService, { order: ["createdAt", "desc"], take: 50, cache: true, persist: true, ttl: 5 * 60 * 1000 }),
-          transportPayrollsService.listAll(),
+          fortnightsService.listAll(),
           transportPaymentsService.listSince(new Date(historyStart)),
         ]);
         if (cancelled) return;
         setFaenas(f.data);
         setCycles(c.data);
         setPayrolls(p.data);
-        setQuincenas(q);
+        setFortnights(q);
         setPayments(pays);
         setReads(f.reads + c.reads + p.reads + q.length + pays.length);
       } catch (err) {
@@ -461,7 +461,7 @@ export default function Dashboard() {
 
     const spend = [...byCarrier.values()].sort((a, b) => b.total - a.total).slice(0, 8);
     const top3 = spend.slice(0, 3).reduce((s, r) => s + r.total, 0);
-    const pendingQuincenas = quincenas.filter((q) => q.status !== "paid");
+    const pendingFortnights = fortnights.filter((q) => q.status !== "paid");
     return {
       spend,
       months: [...byMonth.values()],
@@ -469,10 +469,10 @@ export default function Dashboard() {
       periodPending,
       concentration: periodSpend > 0 ? (top3 / periodSpend) * 100 : 0,
       carrierCount: byCarrier.size,
-      pendingQuincenaCount: pendingQuincenas.length,
-      pendingQuincenaTotal: pendingQuincenas.reduce((s, q) => s + (Number(q.total) || 0), 0),
+      pendingFortnightCount: pendingFortnights.length,
+      pendingFortnightTotal: pendingFortnights.reduce((s, q) => s + (Number(q.total) || 0), 0),
     };
-  }, [payments, quincenas, carriers, periodMonths]);
+  }, [payments, fortnights, carriers, periodMonths]);
 
   // Cómo fue variando la deuda con los transportistas.
   //
@@ -490,7 +490,7 @@ export default function Dashboard() {
   // vieja que eso no entra en el saldo.
   const debt = useMemo(() => {
     const alias = new Map(carriers.map((c) => [c.id, c.alias || c.name || c.id]));
-    const quincenaName = new Map(quincenas.map((q) => [q.id, q.name || q.id]));
+    const fortnightName = new Map(fortnights.map((q) => [q.id, q.name || q.id]));
     const keys = lastMonthKeys(12);
     const from = `${keys[0]}-01`;
     const rows = new Map(
@@ -525,7 +525,7 @@ export default function Dashboard() {
           p.periodFrom || p.periodTo
             ? [fmtShortDate(p.periodFrom), fmtShortDate(p.periodTo)].filter(Boolean).join(" → ")
             : "",
-        quincena: p.payrollId ? quincenaName.get(p.payrollId) || "" : "",
+        fortnight: p.payrollId ? fortnightName.get(p.payrollId) || "" : "",
       };
       apply(paymentPeriodDate(p), "generado", total, { ...ctx, amount: total, kind: "resumen" });
       let abonado = 0;
@@ -547,7 +547,7 @@ export default function Dashboard() {
       saldo += r.generado - r.pagado;
       return { ...r, pagos: r.pagos.sort(byAmount), nuevos: r.nuevos.sort(byAmount), saldo, neto: r.pagado - r.generado };
     });
-  }, [payments, carriers, quincenas]);
+  }, [payments, carriers, fortnights]);
 
   const margin = useMemo(() => {
     const rows = cycles
@@ -702,9 +702,9 @@ export default function Dashboard() {
               />
               <MetricCard
                 label="Quincenas pendientes"
-                value={fmtNumber(transport.pendingQuincenaCount)}
-                hint={transport.pendingQuincenaCount > 0 ? fmtCurrency(transport.pendingQuincenaTotal) : "ninguna"}
-                warning={transport.pendingQuincenaCount > 0}
+                value={fmtNumber(transport.pendingFortnightCount)}
+                hint={transport.pendingFortnightCount > 0 ? fmtCurrency(transport.pendingFortnightTotal) : "ninguna"}
+                warning={transport.pendingFortnightCount > 0}
               />
               <MetricCard
                 label="Concentración top 3"

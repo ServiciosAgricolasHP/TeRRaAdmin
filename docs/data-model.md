@@ -256,7 +256,7 @@ Agrupa N `transportPayments` de **varios** transportistas para pagar en bloque. 
 | `name` | string | obligatorio (ej. "Primera Quincena Agosto") |
 | `periodFrom`, `periodTo` | string (YYYY-MM-DD) \| null | referencial: el agrupamiento es lógico, no un filtro estricto por fecha |
 | `paymentIds` | ref→`transportPayments`[] | |
-| `total` | number | **denormalizado** = Σ `total` de sus resúmenes (`recalcPayrollTotal`) |
+| `total` | number | **denormalizado** = Σ `total` de sus resúmenes (`recalcFortnightTotal`) |
 | `status` | `"pending"` \| `"paid"` | |
 | `paidAt`, `paidBy` | ts?, string? | |
 | `notes` | string? | |
@@ -564,8 +564,8 @@ Auditoría — una fila por mutación.
 |---|---|---|
 | `workerRut`, `cycleId` | `firestoreBase.js` → `extractRefMeta` (automático en cualquier colección que tenga esos campos) | ligar `workdays` y demás a su trabajador/ciclo |
 | `carrierId` | `transportsService.js` → `carrierMeta()` (a mano: ese servicio no usa `createService`) | ligar `transport` y `transportPayment` a su transportista |
-| `auto: "recalcTotal"` | `recalcPaymentTotal` / `recalcPayrollTotal` | distinguir un recálculo automático de total de una edición hecha por una persona |
-| `auto: "emptySummary"`, `auto: "emptyPayroll"` | `recalcPaymentTotal` / `recalcPayrollTotal` | borrado automático de un resumen que se quedó sin vueltas, o de una quincena que se quedó sin resúmenes |
+| `auto: "recalcTotal"` | `recalcPaymentTotal` / `recalcFortnightTotal` | distinguir un recálculo automático de total de una edición hecha por una persona |
+| `auto: "emptySummary"`, `auto: "emptyPayroll"` | `recalcPaymentTotal` / `recalcFortnightTotal` | borrado automático de un resumen que se quedó sin vueltas, o de una quincena que se quedó sin resúmenes |
 | `auto: "extendRecurring"`, `dates` | `commitmentsDaily` (`functions/commitments.js`) | vencimientos que la función diaria le generó a un pago recurrente (`entity: "commitmentSeries"`, sin `uid`) |
 | `addedAbono`, `editedAbonoId`, `removedAbonoId` | `paymentsService` | detalle del abono tocado |
 | `jobId`, `payrollId`, `workerCount`, `removed` | `publishPortal` (`functions/portal.js`) | qué nómina se publicó en el portal, cuántas fichas quedaron y cuántas se borraron (`entity: "portalMeta"`) |
@@ -781,7 +781,7 @@ erDiagram
 - **workday.payrollId**: tag inverso. Una nómina "reclama" sus workdays vía `workdayIds[]` y a la vez cada workday queda apuntando a la nómina.
 - **advance.status / appliedPayrollId**: paralelo al de workdays — se "aplican" a una nómina y se "restauran" a `pending` si la nómina se borra.
 - **transport.paymentId ↔ transportPayment.tripIds**: misma idea de tag bidireccional para transportistas. Lo mismo un nivel más arriba con **transportPayment.payrollId ↔ transportPayroll.paymentIds**.
-- **Totales denormalizados (transporte)**: `transportPayments.total` y `transportPayrolls.total` son sumas guardadas, no calculadas al leer. El detalle imprimible suma las vueltas **en vivo**, mientras que el Balance de quincenas y la tarjeta de la quincena leen el campo — si divergen, es que algo escribió una vuelta sin propagar hacia arriba. La propagación vive en `transportsService.js` (`recalcPaymentTotal` → `recalcPayrollTotal`), disparada desde `tripsService.create/update/remove`, **no en las pantallas**. Los docs con `status: "paid"` quedan congelados y no se recalculan.
+- **Totales denormalizados (transporte)**: `transportPayments.total` y `transportPayrolls.total` son sumas guardadas, no calculadas al leer. El detalle imprimible suma las vueltas **en vivo**, mientras que el Balance de quincenas y la tarjeta de la quincena leen el campo — si divergen, es que algo escribió una vuelta sin propagar hacia arriba. La propagación vive en `transportsService.js` (`recalcPaymentTotal` → `recalcFortnightTotal`), disparada desde `tripsService.create/update/remove`, **no en las pantallas**. Los docs con `status: "paid"` quedan congelados y no se recalculan.
 - **advance.amountPaid ↔ advance.payments[]**: `amountPaid` es la suma de `payments[]` y el `status` se deriva de comparar contra `amount`. Revertir una nómina filtra de `payments[]` las entradas de esa nómina y recalcula ambos — por eso el array no queda ordenado por fecha.
 - **qrPrefix → harvestWeights → workdays**: los pesajes los escribe una app externa contra un prefijo de QR; el prefijo dice a qué (ciclo, labor) sincronizarlos. La sincronización agrupa por (trabajador, día, combo) y escribe/actualiza `workdays` — flujo de una sola dirección. La app admin escribe `harvestWeights` solo por la vía manual de Cosecha QR → Pesajes, que no dispara la sincronización: queda a cargo del operador.
 - **costCenter → informalExpenses**: gastos sin respaldo tributario, deliberadamente separados de `dteDocuments` para no contaminar la data fiscal.

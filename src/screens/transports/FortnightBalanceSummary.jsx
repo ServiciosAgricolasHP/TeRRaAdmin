@@ -4,7 +4,7 @@ import { useToast } from "../../contexts/ToastContext";
 import { fmtCurrency } from "../../utils/format";
 import { CarrierSummariesModal } from "./CarrierSummariesModal";
 import { cellH, cell } from "./printStyles";
-import { paymentSplit, comparePayrollPeriod, compactDate } from "./transportPayrolls";
+import { paymentSplit, compareFortnightPeriod, compactDate } from "./fortnights";
 
 // Columnas fijas del balance de quincenas: el transportista y el total quedan
 // quietos al desplazar el pivot. Se anclan al contenedor con `overflowX` que
@@ -30,11 +30,11 @@ const stickyRight = (background, zIndex = 1) => ({
 // desplazarse (8 × 92 + 150 del nombre + ~115 del total ≈ 1.000 px, con el
 // sidebar abierto desde 1280 px de pantalla). Las demás quedan detrás del
 // scroll, con las columnas de los extremos fijas.
-const QUINCENA_COL_W = 92;
+const FORTNIGHT_COL_W = 92;
 
 const CARRIER_COL_W = 150;
 
-export function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
+export function FortnightBalanceSummary({ carriers, fortnights, payments }) {
   const toast = useToast();
   const [expanded, setExpanded] = useState(true);
   const [busy, setBusy] = useState("");
@@ -69,11 +69,11 @@ export function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
   // están pagadas (status "paid") y tienen al menos un resumen pendiente. La
   // celda muestra el pendiente y, si hay algo pagado, una segunda línea
   // "pagado: $X" en verde.
-  const { pendingQuincenas, rows } = useMemo(() => {
+  const { pendingFortnights, rows } = useMemo(() => {
     const qList = [];
     const pendMap = new Map(); // carrierId → Map(quincenaId → amount)
     const paidMap = new Map(); // carrierId → Map(quincenaId → amount)
-    for (const q of payrolls) {
+    for (const q of fortnights) {
       if (q.status === "paid") continue;
       const pendByCarrier = new Map();
       const paidByCarrier = new Map();
@@ -98,7 +98,7 @@ export function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
         paidMap.get(cid).set(q.id, amt);
       }
     }
-    qList.sort(comparePayrollPeriod);
+    qList.sort(compareFortnightPeriod);
     // Filas: por defecto, solo los transportistas con algo pendiente. Con
     // `showAllSummaries` entran también los que ya cobraron todo lo suyo en
     // estas quincenas (filas con $0 pendiente). Las columnas son las mismas en
@@ -127,15 +127,15 @@ export function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
     }
     // Mayor pendiente primero; a igual pendiente, mayor pagado.
     carrierRows.sort((a, b) => (b.pendingTotal - a.pendingTotal) || (b.paidTotal - a.paidTotal));
-    return { pendingQuincenas: qList, rows: carrierRows };
-  }, [carriers, payrolls, paymentsById, showAllSummaries]);
+    return { pendingFortnights: qList, rows: carrierRows };
+  }, [carriers, fortnights, paymentsById, showAllSummaries]);
 
   const grandPending = rows.reduce((s, r) => s + r.pendingTotal, 0);
   const grandPaid = rows.reduce((s, r) => s + r.paidTotal, 0);
   // Totales por columna para el pie: pendiente y pagado por separado.
   const colTotals = useMemo(() => {
     const map = new Map();
-    for (const q of pendingQuincenas) {
+    for (const q of pendingFortnights) {
       let pend = 0;
       let paid = 0;
       for (const r of rows) {
@@ -145,8 +145,8 @@ export function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
       map.set(q.id, { pending: pend, paid });
     }
     return map;
-  }, [pendingQuincenas, rows]);
-  const quincenaCount = pendingQuincenas.length;
+  }, [pendingFortnights, rows]);
+  const fortnightCount = pendingFortnights.length;
 
   const handleCopyImage = async () => {
     if (!printRef.current) return;
@@ -238,7 +238,7 @@ export function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
         </span>
         <span className="flex items-baseline gap-2">
           <span className="text-xs text-[var(--color-muted)]">
-            {quincenaCount} quincena{quincenaCount === 1 ? "" : "s"} · {rows.length} transportista{rows.length === 1 ? "" : "s"}
+            {fortnightCount} quincena{fortnightCount === 1 ? "" : "s"} · {rows.length} transportista{rows.length === 1 ? "" : "s"}
           </span>
           <span className="font-semibold tabular-nums text-[var(--color-accent)]">
             {fmtCurrency(grandPending)}
@@ -366,7 +366,7 @@ export function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
                   {titulo}
                 </div>
                 <div style={{ fontSize: 11, color: "#555" }}>
-                  {quincenaCount} quincena{quincenaCount === 1 ? "" : "s"} · {rows.length} transportista{rows.length === 1 ? "" : "s"}
+                  {fortnightCount} quincena{fortnightCount === 1 ? "" : "s"} · {rows.length} transportista{rows.length === 1 ? "" : "s"}
                   {showAllSummaries && " · incluye a los que ya cobraron"}
                   {" · "}Generado{" "}
                   {new Date().toLocaleDateString("es-CL", {
@@ -382,10 +382,10 @@ export function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
                     <th style={{ ...cellH, minWidth: CARRIER_COL_W, ...stickyLeft("#9dc3e6", 3) }}>
                       Transportista
                     </th>
-                    {pendingQuincenas.map((q) => (
+                    {pendingFortnights.map((q) => (
                       <th
                         key={q.id}
-                        style={{ ...cellH, textAlign: "right", minWidth: QUINCENA_COL_W }}
+                        style={{ ...cellH, textAlign: "right", minWidth: FORTNIGHT_COL_W }}
                       >
                         <div style={{ overflowWrap: "break-word" }}>{q.name}</div>
                         {(q.periodFrom || q.periodTo) && (
@@ -440,7 +440,7 @@ export function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
                           )}
                         </button>
                       </td>
-                      {pendingQuincenas.map((q) => {
+                      {pendingFortnights.map((q) => {
                         const pend = r.pending.get(q.id) || 0;
                         const paid = r.paid.get(q.id) || 0;
                         return (
@@ -477,7 +477,7 @@ export function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
                   ))}
                   <tr style={{ background: "#c6efce" }}>
                     <td style={{ ...cell, fontWeight: 700, ...stickyLeft("#c6efce", 2) }}>Total pendiente</td>
-                    {pendingQuincenas.map((q) => (
+                    {pendingFortnights.map((q) => (
                       <td
                         key={q.id}
                         style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}
@@ -500,7 +500,7 @@ export function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
                   </tr>
                   <tr style={{ background: "#dcedc8" }}>
                     <td style={{ ...cell, fontWeight: 700, color: "#15803d", ...stickyLeft("#dcedc8", 2) }}>Total pagado</td>
-                    {pendingQuincenas.map((q) => {
+                    {pendingFortnights.map((q) => {
                       const paid = colTotals.get(q.id)?.paid || 0;
                       return (
                         <td
@@ -540,7 +540,7 @@ export function QuincenasBalanceSummary({ carriers, payrolls, payments }) {
         onClose={() => setDetalle(null)}
         row={detalle}
         payments={payments}
-        payrolls={payrolls}
+        fortnights={fortnights}
       />
     </div>
   );

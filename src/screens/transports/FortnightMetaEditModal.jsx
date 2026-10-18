@@ -2,11 +2,11 @@ import { useState } from "react";
 import Modal, { ModalCloseButton } from "../../components/Modal";
 import { hasChanges } from "../../utils/formChanges";
 
-export function PayrollMetaEditModal({ payroll, onClose, onSave }) {
-  const [name, setName] = useState(payroll?.name || "");
-  const [periodFrom, setPeriodFrom] = useState(payroll?.periodFrom || "");
-  const [periodTo, setPeriodTo] = useState(payroll?.periodTo || "");
-  const [notes, setNotes] = useState(payroll?.notes || "");
+export function FortnightMetaEditModal({ fortnight, onClose, onSave }) {
+  const [name, setName] = useState(fortnight?.name || "");
+  const [periodFrom, setPeriodFrom] = useState(fortnight?.periodFrom || "");
+  const [periodTo, setPeriodTo] = useState(fortnight?.periodTo || "");
+  const [notes, setNotes] = useState(fortnight?.notes || "");
   const [busy, setBusy] = useState(false);
   const onSubmit = async () => {
     if (!name.trim()) return;
@@ -20,7 +20,7 @@ export function PayrollMetaEditModal({ payroll, onClose, onSave }) {
   const dirty =
     !busy &&
     hasChanges(
-      { name: payroll?.name, periodFrom: payroll?.periodFrom, periodTo: payroll?.periodTo, notes: payroll?.notes },
+      { name: fortnight?.name, periodFrom: fortnight?.periodFrom, periodTo: fortnight?.periodTo, notes: fortnight?.notes },
       { name, periodFrom, periodTo, notes },
     );
   return (

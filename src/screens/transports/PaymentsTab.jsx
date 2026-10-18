@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { useCarriers } from "../../contexts/CarriersContext";
-import { paymentsService, transportPayrollsService } from "../../services/transportsService";
+import { paymentsService, fortnightsService } from "../../services/transportsService";
 import { faenasService, subfaenasService, cyclesService } from "../../services";
 import { useToast } from "../../contexts/ToastContext";
 import { BalanceSummary } from "./BalanceSummary";
@@ -24,7 +24,7 @@ export function PaymentsTab() {
   const [cycles, setCycles] = useState([]);
   // Quincenas (transportPayrolls): muestran a cuál pertenece cada resumen y
   // alimentan el filtro por quincena.
-  const [transportPayrolls, setTransportPayrolls] = useState([]);
+  const [fortnights, setFortnights] = useState([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [printingMany, setPrintingMany] = useState(false);
@@ -59,7 +59,7 @@ export function PaymentsTab() {
         faenasService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
         subfaenasService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
         cyclesService.list({ cache: true, persist: true, ttl: 5 * 60 * 1000 }),
-        transportPayrollsService.listAll(),
+        fortnightsService.listAll(),
       ]);
       list.sort((a, b) => {
         const aT = a.createdAt?.seconds || 0;
@@ -70,7 +70,7 @@ export function PaymentsTab() {
       setFaenas(fa);
       setSubfaenas(sub);
       setCycles(cyc);
-      setTransportPayrolls(tp);
+      setFortnights(tp);
     } finally {
       setLoading(false);
     }
@@ -93,14 +93,14 @@ export function PaymentsTab() {
   const faenaById = useMemo(() => new Map(faenas.map((f) => [f.id, f])), [faenas]);
   const subfaenaById = useMemo(() => new Map(subfaenas.map((s) => [s.id, s])), [subfaenas]);
   const cycleById = useMemo(() => new Map(cycles.map((c) => [c.id, c])), [cycles]);
-  const transportPayrollById = useMemo(
-    () => new Map(transportPayrolls.map((tp) => [tp.id, tp])),
-    [transportPayrolls],
+  const fortnightById = useMemo(
+    () => new Map(fortnights.map((tp) => [tp.id, tp])),
+    [fortnights],
   );
 
   // Filtro por quincena: "all" (todas), "none" (sin quincena) o el id de una
   // quincena.
-  const [payrollFilter, setPayrollFilter] = useState("all");
+  const [fortnightFilter, setFortnightFilter] = useState("all");
 
   // Búsqueda (alias o nombre del transportista), rango de fechas (cruce con el
   // período del resumen), quincena y orden. Se aplica antes de separar por
@@ -120,8 +120,8 @@ export function PaymentsTab() {
         if (filterFrom && pTo && pTo < filterFrom) return false;
         if (filterTo && pFrom && pFrom > filterTo) return false;
       }
-      if (payrollFilter === "none" && p.payrollId) return false;
-      if (payrollFilter !== "all" && payrollFilter !== "none" && p.payrollId !== payrollFilter) return false;
+      if (fortnightFilter === "none" && p.payrollId) return false;
+      if (fortnightFilter !== "all" && fortnightFilter !== "none" && p.payrollId !== fortnightFilter) return false;
       return true;
     });
     const cmpStr = (a, b) => String(a || "").localeCompare(String(b || ""), "es");
@@ -147,14 +147,14 @@ export function PaymentsTab() {
       }
     });
     return filtered;
-  }, [payments, carrierById, search, filterFrom, filterTo, sortBy, payrollFilter]);
+  }, [payments, carrierById, search, filterFrom, filterTo, sortBy, fortnightFilter]);
 
   const pending = filteredSorted.filter((p) => p.status === "pending");
   const paid = filteredSorted.filter((p) => p.status === "paid");
   const totalCount = filteredSorted.length;
   const totalAll = payments.length;
-  const hasActiveFilter = !!(search || filterFrom || filterTo || payrollFilter !== "all");
-  const clearFilters = () => { setSearch(""); setFilterFrom(""); setFilterTo(""); setPayrollFilter("all"); };
+  const hasActiveFilter = !!(search || filterFrom || filterTo || fortnightFilter !== "all");
+  const clearFilters = () => { setSearch(""); setFilterFrom(""); setFilterTo(""); setFortnightFilter("all"); };
 
   return (
     <div>
@@ -215,14 +215,14 @@ export function PaymentsTab() {
             />
           </div>
           <select
-            value={payrollFilter}
-            onChange={(e) => setPayrollFilter(e.target.value)}
+            value={fortnightFilter}
+            onChange={(e) => setFortnightFilter(e.target.value)}
             className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs outline-none focus:border-[var(--color-accent)]"
             title="Filtrar por quincena"
           >
             <option value="all">Todas las quincenas</option>
             <option value="none">⚠️ Sin quincena</option>
-            {transportPayrolls
+            {fortnights
               .slice()
               .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
               .map((tp) => (
@@ -267,7 +267,7 @@ export function PaymentsTab() {
             title="Pendientes"
             payments={pending}
             carrierById={carrierById}
-            transportPayrollById={transportPayrollById}
+            fortnightById={fortnightById}
             faenaById={faenaById}
             subfaenaById={subfaenaById}
             cycleById={cycleById}
@@ -281,7 +281,7 @@ export function PaymentsTab() {
               title="Pagados"
               payments={paid}
               carrierById={carrierById}
-              transportPayrollById={transportPayrollById}
+              fortnightById={fortnightById}
               faenaById={faenaById}
               subfaenaById={subfaenaById}
               cycleById={cycleById}

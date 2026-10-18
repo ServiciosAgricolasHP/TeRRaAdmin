@@ -1,31 +1,31 @@
 import { useMemo } from "react";
 import Modal from "../../components/Modal";
 import { fmtCurrency } from "../../utils/format";
-import { paymentSplit, comparePayrollPeriod, compactDate } from "./transportPayrolls";
+import { paymentSplit, compareFortnightPeriod, compactDate } from "./fortnights";
 
 // Todos los resúmenes de un transportista, agrupados por quincena, con lo
 // pagado, lo pendiente y los abonos de cada uno: el desglose de las celdas del
 // balance de quincenas. Incluye los resúmenes sueltos (sin quincena), que el
 // balance no muestra. Se abre desde el balance: en desktop con el nombre del
 // transportista, en mobile con su tarjeta.
-export function CarrierSummariesModal({ open, onClose, row, payments, payrolls }) {
+export function CarrierSummariesModal({ open, onClose, row, payments, fortnights }) {
   const grupos = useMemo(() => {
     if (!row) return [];
     const mios = payments.filter((p) => (p.carrierId || "__none__") === row.carrierId);
-    const porQuincena = new Map(); // payrollId | "__sueltos__" → resúmenes
+    const byFortnight = new Map(); // payrollId | "__sueltos__" → resúmenes
     for (const p of mios) {
       const k = p.payrollId || "__sueltos__";
-      if (!porQuincena.has(k)) porQuincena.set(k, []);
-      porQuincena.get(k).push(p);
+      if (!byFortnight.has(k)) byFortnight.set(k, []);
+      byFortnight.get(k).push(p);
     }
-    const byId = new Map(payrolls.map((q) => [q.id, q]));
+    const byId = new Map(fortnights.map((q) => [q.id, q]));
     const out = [];
-    for (const [k, items] of porQuincena) {
+    for (const [k, items] of byFortnight) {
       const q = k === "__sueltos__" ? null : byId.get(k);
       items.sort((a, b) => String(b.periodFrom || "").localeCompare(String(a.periodFrom || "")));
       out.push({
         key: k,
-        quincena: q,
+        fortnight: q,
         // Un payrollId que apunta a una quincena que ya no existe se rotula
         // "Quincena eliminada", no "Sin quincena".
         titulo: q ? q.name : k === "__sueltos__" ? "Sin quincena" : "Quincena eliminada",
@@ -36,10 +36,10 @@ export function CarrierSummariesModal({ open, onClose, row, payments, payrolls }
       });
     }
     // Mayor pendiente primero; a igual pendiente, la quincena más antigua arriba
-    // (comparePayrollPeriod con los argumentos invertidos).
-    out.sort((a, b) => (b.pending - a.pending) || (a.quincena && b.quincena ? comparePayrollPeriod(b.quincena, a.quincena) : 0));
+    // (compareFortnightPeriod con los argumentos invertidos).
+    out.sort((a, b) => (b.pending - a.pending) || (a.fortnight && b.fortnight ? compareFortnightPeriod(b.fortnight, a.fortnight) : 0));
     return out;
-  }, [row, payments, payrolls]);
+  }, [row, payments, fortnights]);
 
   const totalPend = grupos.reduce((s, g) => s + g.pending, 0);
   const totalPaid = grupos.reduce((s, g) => s + g.paid, 0);

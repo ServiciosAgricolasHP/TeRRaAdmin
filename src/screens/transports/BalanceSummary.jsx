@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { captureFullWidthBlob, captureFullWidthDataUrl } from "../../utils/imageCapture";
-import { tripsService, paymentsService, transportPayrollsService } from "../../services/transportsService";
+import { tripsService, paymentsService, fortnightsService } from "../../services/transportsService";
 import { useToast } from "../../contexts/ToastContext";
 import { fmtCurrency } from "../../utils/format";
 import { cellH, cell } from "./printStyles";
@@ -15,7 +15,7 @@ export function BalanceSummary({ carriers, reloadVersion }) {
   const [pendingPayments, setPendingPayments] = useState([]);
   // Quincenas pendientes. Un resumen que está en una quincena se suma en la
   // columna de quincenas y no en la de resúmenes, para no contarlo dos veces.
-  const [pendingPayrolls, setPendingPayrolls] = useState([]);
+  const [pendingFortnights, setPendingFortnights] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -28,15 +28,15 @@ export function BalanceSummary({ carriers, reloadVersion }) {
     (async () => {
       setLoading(true);
       try {
-        const [trips, allPayments, allPayrolls] = await Promise.all([
+        const [trips, allPayments, allFortnights] = await Promise.all([
           tripsService.listPendingUnlinked(),
           paymentsService.listAll(),
-          transportPayrollsService.listAll(),
+          fortnightsService.listAll(),
         ]);
         if (cancelled) return;
         setPendingTrips(trips);
         setPendingPayments(allPayments.filter((p) => p.status === "pending"));
-        setPendingPayrolls(allPayrolls.filter((p) => p.status === "pending"));
+        setPendingFortnights(allFortnights.filter((p) => p.status === "pending"));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -70,9 +70,9 @@ export function BalanceSummary({ carriers, reloadVersion }) {
 
   // Mismo filtro que los resúmenes: cruce de períodos, y una quincena sin
   // período entra igual.
-  const payrollsInRange = useMemo(
+  const fortnightsInRange = useMemo(
     () =>
-      pendingPayrolls.filter((q) => {
+      pendingFortnights.filter((q) => {
         if (!dateFrom && !dateTo) return true;
         const qFrom = q.periodFrom || q.periodTo || "";
         const qTo = q.periodTo || q.periodFrom || "";
@@ -81,7 +81,7 @@ export function BalanceSummary({ carriers, reloadVersion }) {
         if (dateTo && qFrom && qFrom > dateTo) return false;
         return true;
       }),
-    [pendingPayrolls, dateFrom, dateTo],
+    [pendingFortnights, dateFrom, dateTo],
   );
 
   // Resúmenes pendientes por id, para atribuir cada resumen de una quincena a
@@ -104,8 +104,8 @@ export function BalanceSummary({ carriers, reloadVersion }) {
           tripTotal: 0,
           paymentCount: 0,
           paymentTotal: 0,
-          quincenaCount: 0,
-          quincenaTotal: 0,
+          fortnightCount: 0,
+          fortnightTotal: 0,
         });
       }
       return map.get(carrierId);
@@ -132,7 +132,7 @@ export function BalanceSummary({ carriers, reloadVersion }) {
     }
     // Quincenas: el saldo de cada resumen se suma a su transportista, así una
     // quincena con varios transportistas se reparte entre ellos.
-    for (const q of payrollsInRange) {
+    for (const q of fortnightsInRange) {
       const totalsByCarrier = new Map();
       for (const pid of q.paymentIds || []) {
         const p = pendingPaymentsById.get(pid);
@@ -144,20 +144,20 @@ export function BalanceSummary({ carriers, reloadVersion }) {
       }
       for (const [cid, amt] of totalsByCarrier) {
         const e = ensure(cid);
-        e.quincenaCount += 1;
-        e.quincenaTotal += amt;
+        e.fortnightCount += 1;
+        e.fortnightTotal += amt;
       }
     }
     return [...map.values()]
-      .map((e) => ({ ...e, grandTotal: e.tripTotal + e.paymentTotal + e.quincenaTotal }))
-      .filter((e) => e.tripCount + e.paymentCount + e.quincenaCount > 0)
+      .map((e) => ({ ...e, grandTotal: e.tripTotal + e.paymentTotal + e.fortnightTotal }))
+      .filter((e) => e.tripCount + e.paymentCount + e.fortnightCount > 0)
       .sort((a, b) => b.grandTotal - a.grandTotal);
-  }, [carriers, tripsInRange, paymentsInRange, payrollsInRange, pendingPaymentsById]);
+  }, [carriers, tripsInRange, paymentsInRange, fortnightsInRange, pendingPaymentsById]);
 
   const grandTotal = rows.reduce((s, r) => s + r.grandTotal, 0);
   const tripsTotal = rows.reduce((s, r) => s + r.tripTotal, 0);
   const paymentsTotal = rows.reduce((s, r) => s + r.paymentTotal, 0);
-  const quincenasTotal = rows.reduce((s, r) => s + r.quincenaTotal, 0);
+  const fortnightsTotal = rows.reduce((s, r) => s + r.fortnightTotal, 0);
 
   const handleCopyImage = async () => {
     if (!printRef.current) return;
@@ -364,10 +364,10 @@ export function BalanceSummary({ carriers, reloadVersion }) {
                         {r.paymentTotal > 0 ? fmtCurrency(r.paymentTotal) : ""}
                       </td>
                       <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                        {r.quincenaCount || ""}
+                        {r.fortnightCount || ""}
                       </td>
                       <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                        {r.quincenaTotal > 0 ? fmtCurrency(r.quincenaTotal) : ""}
+                        {r.fortnightTotal > 0 ? fmtCurrency(r.fortnightTotal) : ""}
                       </td>
                       <td
                         style={{
@@ -393,7 +393,7 @@ export function BalanceSummary({ carriers, reloadVersion }) {
                     </td>
                     <td style={cell}></td>
                     <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                      {quincenasTotal > 0 ? fmtCurrency(quincenasTotal) : ""}
+                      {fortnightsTotal > 0 ? fmtCurrency(fortnightsTotal) : ""}
                     </td>
                     <td
                       style={{

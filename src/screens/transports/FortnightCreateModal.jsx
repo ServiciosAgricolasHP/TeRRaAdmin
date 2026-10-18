@@ -5,7 +5,7 @@ import { fmtCurrency } from "../../utils/format";
 // Alta de quincena: se eligen fechas, faenas y transportistas, y la quincena
 // se arma con un resumen nuevo por transportista (con sus vueltas sueltas de
 // ese alcance) más los resúmenes sueltos que se elijan importar.
-export function PayrollCreateModal({ carriers, carriersById, faenas, pendingTrips, looseSummaries, onClose, onCreate }) {
+export function FortnightCreateModal({ carriers, carriersById, faenas, pendingTrips, looseSummaries, onClose, onCreate }) {
   const [name, setName] = useState("");
   const [periodFrom, setPeriodFrom] = useState("");
   const [periodTo, setPeriodTo] = useState("");

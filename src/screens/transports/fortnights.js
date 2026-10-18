@@ -26,7 +26,7 @@ export function paymentSplit(p) {
 // fecha de creación: una quincena armada tarde queda en su lugar cronológico.
 // Las que no tienen período van después de las que sí; con el mismo
 // periodFrom, o sin período las dos, decide createdAt (la más nueva primero).
-export function comparePayrollPeriod(a, b) {
+export function compareFortnightPeriod(a, b) {
   if (a.periodFrom && b.periodFrom && a.periodFrom !== b.periodFrom) {
     return a.periodFrom < b.periodFrom ? 1 : -1; // desc: más reciente primero
   }

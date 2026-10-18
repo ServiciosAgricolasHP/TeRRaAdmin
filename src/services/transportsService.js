@@ -18,7 +18,7 @@ import { toTitleName, unshout } from "../utils/textCase";
 
 const TRIPS = "transports";
 const PAYMENTS = "transportPayments";
-const PAYROLLS = "transportPayrolls";
+const FORTNIGHTS = "transportPayrolls";
 
 export const TRIP_KINDS = [
   { value: "regular", label: "Vuelta" },
@@ -133,7 +133,7 @@ async function recalcPaymentTotal(paymentId, { pruneMissingTrips = false } = {})
       before: data,
       meta: carrierMeta(data.carrierId, { auto: "emptySummary" }),
     });
-    await recalcPayrollTotal(data.payrollId, { pruneMissingPayments: true, dropIfEmpty: true });
+    await recalcFortnightTotal(data.payrollId, { pruneMissingPayments: true, dropIfEmpty: true });
     return 0;
   }
   // Sin cambio real no se escribe nada, ni el documento ni el log de auditoría.
@@ -151,7 +151,7 @@ async function recalcPaymentTotal(paymentId, { pruneMissingTrips = false } = {})
     after: { total, tripIds: prunes ? alive : tripIds },
     meta: carrierMeta(data.carrierId, { auto: "recalcTotal" }),
   });
-  await recalcPayrollTotal(data.payrollId);
+  await recalcFortnightTotal(data.payrollId);
   return total;
 }
 
@@ -162,9 +162,9 @@ async function recalcPaymentTotal(paymentId, { pruneMissingTrips = false } = {})
 // `pruneMissingPayments` saca de `paymentIds` los resúmenes que ya no existen,
 // y `dropIfEmpty` elimina la quincena pendiente si se quedó sin ninguno. Los
 // usan los caminos que borran un resumen.
-async function recalcPayrollTotal(payrollId, { pruneMissingPayments = false, dropIfEmpty = false } = {}) {
+async function recalcFortnightTotal(payrollId, { pruneMissingPayments = false, dropIfEmpty = false } = {}) {
   if (!payrollId) return null;
-  const snap = await getDoc(doc(db, PAYROLLS, payrollId));
+  const snap = await getDoc(doc(db, FORTNIGHTS, payrollId));
   if (!snap.exists()) return null;
   const data = snap.data();
   if (data.status === "paid") return null;
@@ -172,7 +172,7 @@ async function recalcPayrollTotal(payrollId, { pruneMissingPayments = false, dro
   const paySnaps = await Promise.all(paymentIds.map((id) => getDoc(doc(db, PAYMENTS, id))));
   const alive = paymentIds.filter((_, i) => paySnaps[i].exists());
   if (dropIfEmpty && alive.length === 0) {
-    await deleteDoc(doc(db, PAYROLLS, payrollId));
+    await deleteDoc(doc(db, FORTNIGHTS, payrollId));
     await logAction({
       action: "delete",
       entity: "transportPayroll",
@@ -187,7 +187,7 @@ async function recalcPayrollTotal(payrollId, { pruneMissingPayments = false, dro
   if (total === (Number(data.total) || 0) && !prunes) return total;
   const patch = { total, ...stamp() };
   if (prunes) patch.paymentIds = alive;
-  await updateDoc(doc(db, PAYROLLS, payrollId), patch);
+  await updateDoc(doc(db, FORTNIGHTS, payrollId), patch);
   await logAction({
     action: "update",
     entity: "transportPayroll",
@@ -380,7 +380,7 @@ export const paymentsService = {
     for (const id of addTripIds) batch.update(doc(db, TRIPS, id), { paymentId, ...stamp() });
     for (const id of removeTripIds) batch.update(doc(db, TRIPS, id), { paymentId: null, ...stamp() });
     await batch.commit();
-    await recalcPayrollTotal(before.payrollId);
+    await recalcFortnightTotal(before.payrollId);
     await logAction({
       action: "update",
       entity: "transportPayment",
@@ -495,7 +495,7 @@ export const paymentsService = {
       after: { ...before, total: Number(total) || 0 },
       meta: carrierMeta(before.carrierId),
     });
-    await recalcPayrollTotal(before.payrollId);
+    await recalcFortnightTotal(before.payrollId);
   },
 
   // Elimina un resumen pendiente; sus vueltas quedan sueltas y siguen
@@ -514,7 +514,7 @@ export const paymentsService = {
     batch.delete(doc(db, PAYMENTS, paymentId));
     await batch.commit();
     // Sale de su quincena, que se elimina si queda vacía.
-    await recalcPayrollTotal(before.payrollId, { pruneMissingPayments: true, dropIfEmpty: true });
+    await recalcFortnightTotal(before.payrollId, { pruneMissingPayments: true, dropIfEmpty: true });
     await logAction({ action: "delete", entity: "transportPayment", entityId: paymentId, before, meta: carrierMeta(before.carrierId) });
   },
 
@@ -593,14 +593,14 @@ export const paymentsService = {
 //     sus vueltas; la quincena sigue en pending hasta que se marque pagada.
 //   - revertPaid → cascada inversa.
 
-export const transportPayrollsService = {
+export const fortnightsService = {
   async listAll() {
-    const snap = await getDocs(collection(db, PAYROLLS));
+    const snap = await getDocs(collection(db, FORTNIGHTS));
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   },
 
   async getById(id) {
-    const s = await getDoc(doc(db, PAYROLLS, id));
+    const s = await getDoc(doc(db, FORTNIGHTS, id));
     return s.exists() ? { id: s.id, ...s.data() } : null;
   },
 
@@ -631,7 +631,7 @@ export const transportPayrollsService = {
       notes: unshout(String(notes || "").trim()),
       ...withCreate(),
     };
-    const ref = await addDoc(collection(db, PAYROLLS), payload);
+    const ref = await addDoc(collection(db, FORTNIGHTS), payload);
     const batch = writeBatch(db);
     for (const pid of paymentIds) {
       batch.update(doc(db, PAYMENTS, pid), { payrollId: ref.id, ...stamp() });
@@ -652,7 +652,7 @@ export const transportPayrollsService = {
     if (periodFrom !== undefined) patch.periodFrom = periodFrom || null;
     if (periodTo !== undefined) patch.periodTo = periodTo || null;
     if (notes !== undefined) patch.notes = unshout(String(notes || "").trim());
-    await updateDoc(doc(db, PAYROLLS, id), patch);
+    await updateDoc(doc(db, FORTNIGHTS, id), patch);
     await logAction({ action: "update", entity: "transportPayroll", entityId: id, before, after: { ...before, ...patch } });
   },
 
@@ -673,7 +673,7 @@ export const transportPayrollsService = {
     const allDocs = await Promise.all(newIds.map((pid) => getDoc(doc(db, PAYMENTS, pid))));
     const total = allDocs.reduce((s, d) => s + (d.exists() ? (Number(d.data().total) || 0) : 0), 0);
     const batch = writeBatch(db);
-    batch.update(doc(db, PAYROLLS, id), { paymentIds: newIds, total, ...stamp() });
+    batch.update(doc(db, FORTNIGHTS, id), { paymentIds: newIds, total, ...stamp() });
     for (const pid of paymentIds) {
       batch.update(doc(db, PAYMENTS, pid), { payrollId: id, ...stamp() });
     }
@@ -692,7 +692,7 @@ export const transportPayrollsService = {
     const allDocs = await Promise.all(newIds.map((pid) => getDoc(doc(db, PAYMENTS, pid))));
     const total = allDocs.reduce((s, d) => s + (d.exists() ? (Number(d.data().total) || 0) : 0), 0);
     const batch = writeBatch(db);
-    batch.update(doc(db, PAYROLLS, id), { paymentIds: newIds, total, ...stamp() });
+    batch.update(doc(db, FORTNIGHTS, id), { paymentIds: newIds, total, ...stamp() });
     for (const pid of paymentIds) {
       batch.update(doc(db, PAYMENTS, pid), { payrollId: null, ...stamp() });
     }
@@ -710,7 +710,7 @@ export const transportPayrollsService = {
     for (const pid of before.paymentIds || []) {
       batch.update(doc(db, PAYMENTS, pid), { payrollId: null, ...stamp() });
     }
-    batch.delete(doc(db, PAYROLLS, id));
+    batch.delete(doc(db, FORTNIGHTS, id));
     await batch.commit();
     await logAction({ action: "delete", entity: "transportPayroll", entityId: id, before });
   },
@@ -728,7 +728,7 @@ export const transportPayrollsService = {
         await paymentsService.markPaid(pid);
       }
     }
-    await updateDoc(doc(db, PAYROLLS, id), {
+    await updateDoc(doc(db, FORTNIGHTS, id), {
       status: "paid",
       paidAt: serverTimestamp(),
       paidBy: auth.currentUser?.uid || null,
@@ -749,7 +749,7 @@ export const transportPayrollsService = {
         await paymentsService.revertPaid(pid);
       }
     }
-    await updateDoc(doc(db, PAYROLLS, id), {
+    await updateDoc(doc(db, FORTNIGHTS, id), {
       status: "pending",
       paidAt: null,
       paidBy: null,

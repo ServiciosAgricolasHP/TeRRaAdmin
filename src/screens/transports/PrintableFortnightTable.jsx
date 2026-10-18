@@ -1,10 +1,10 @@
 import { forwardRef } from "react";
 import { fmtCurrency } from "../../utils/format";
 import { cellH, cell } from "./printStyles";
-import { paymentSplit } from "./transportPayrolls";
+import { paymentSplit } from "./fortnights";
 
-export const PrintablePayrollTable = forwardRef(function PrintablePayrollTable(
-  { payroll, items, carriersById },
+export const PrintableFortnightTable = forwardRef(function PrintableFortnightTable(
+  { fortnight, items, carriersById },
   ref,
 ) {
   const tripsCount = items.reduce((s, it) => s + (it.tripIds || []).length, 0);
@@ -13,15 +13,15 @@ export const PrintablePayrollTable = forwardRef(function PrintablePayrollTable(
   const totalPaid = items.reduce((s, it) => s + paymentSplit(it).paid, 0);
   const totalPending = items.reduce((s, it) => s + paymentSplit(it).pending, 0);
   const pendingCount = items.filter((it) => it.status !== "paid").length;
-  const isPaid = payroll.status === "paid";
-  const period = (payroll.periodFrom || payroll.periodTo)
-    ? `${payroll.periodFrom || "?"} → ${payroll.periodTo || "?"}`
+  const isPaid = fortnight.status === "paid";
+  const period = (fortnight.periodFrom || fortnight.periodTo)
+    ? `${fortnight.periodFrom || "?"} → ${fortnight.periodTo || "?"}`
     : "—";
   return (
     <div ref={ref} style={{ background: "#ffffff", color: "#000", padding: 16, fontFamily: "ui-sans-serif, system-ui, sans-serif" }}>
       <div style={{ marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
         <div style={{ fontWeight: 700, fontSize: 15, textTransform: "uppercase" }}>
-          DETALLE QUINCENA — {payroll.name}
+          DETALLE QUINCENA — {fortnight.name}
         </div>
         <div style={{ fontSize: 12, color: "#444" }}>{period}</div>
       </div>

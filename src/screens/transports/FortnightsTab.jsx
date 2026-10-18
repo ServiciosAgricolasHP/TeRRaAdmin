@@ -1,15 +1,15 @@
 import { useMemo, useState, useEffect } from "react";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { useCarriers } from "../../contexts/CarriersContext";
-import { transportPayrollsService, paymentsService, tripsService } from "../../services/transportsService";
+import { fortnightsService, paymentsService, tripsService } from "../../services/transportsService";
 import { faenasService, subfaenasService, cyclesService } from "../../services";
 import { useToast } from "../../contexts/ToastContext";
 import { fmtCurrency } from "../../utils/format";
-import { PayrollCreateModal } from "./PayrollCreateModal";
-import { PayrollDetailModal } from "./PayrollDetailModal";
-import { PayrollMetaEditModal } from "./PayrollMetaEditModal";
-import { QuincenasBalanceSummary } from "./QuincenasBalanceSummary";
-import { comparePayrollPeriod } from "./transportPayrolls";
+import { FortnightCreateModal } from "./FortnightCreateModal";
+import { FortnightDetailModal } from "./FortnightDetailModal";
+import { FortnightMetaEditModal } from "./FortnightMetaEditModal";
+import { FortnightBalanceSummary } from "./FortnightBalanceSummary";
+import { compareFortnightPeriod } from "./fortnights";
 import { TypeToConfirmModal } from "./TypeToConfirmModal";
 
 // ============================================================
@@ -22,12 +22,12 @@ import { TypeToConfirmModal } from "./TypeToConfirmModal";
 // pagado por separado o todos juntos con "Marcar quincena pagada". Marcar
 // pagado y revertir piden escribir una palabra ("Pagada" o "Revertir").
 
-export function PayrollsTab() {
+export function FortnightsTab() {
   const toast = useToast();
   const { carriers } = useCarriers();
   const carriersById = useMemo(() => new Map(carriers.map((c) => [c.id, c])), [carriers]);
 
-  const [payrolls, setPayrolls] = useState([]);
+  const [fortnights, setFortnights] = useState([]);
   const [payments, setPayments] = useState([]);
   // "+ Nueva quincena" usa las faenas (chips de filtro) y las vueltas sueltas
   // (pendientes y sin resumen). Subfaenas y ciclos alimentan la columna Labor
@@ -47,14 +47,14 @@ export function PayrollsTab() {
     setLoading(true);
     try {
       const [pr, py, fa, sub, cyc, pt] = await Promise.all([
-        transportPayrollsService.listAll(),
+        fortnightsService.listAll(),
         paymentsService.listAll(),
         faenasService.list({ cache: true, ttl: 60_000 }),
         subfaenasService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
         cyclesService.list({ cache: true, persist: true, ttl: 5 * 60 * 1000 }),
         tripsService.listPendingUnlinked(),
       ]);
-      setPayrolls(pr.sort(comparePayrollPeriod));
+      setFortnights(pr.sort(compareFortnightPeriod));
       setPayments(py);
       setFaenas(fa.filter((f) => !f.deleted));
       setSubfaenas(sub);
@@ -79,23 +79,23 @@ export function PayrollsTab() {
     [payments],
   );
 
-  const askMarkPayrollPaid = (payroll) => {
+  const askMarkFortnightPaid = (fortnight) => {
     setConfirmPay({
       verb: "Pagada",
-      label: `Marcar la quincena "${payroll.name}" como PAGADA. Esto marca todos sus resúmenes (${(payroll.paymentIds || []).length}) y sus vueltas como pagados.`,
+      label: `Marcar la quincena "${fortnight.name}" como PAGADA. Esto marca todos sus resúmenes (${(fortnight.paymentIds || []).length}) y sus vueltas como pagados.`,
       onConfirm: async () => {
-        await transportPayrollsService.markPaid(payroll.id);
+        await fortnightsService.markPaid(fortnight.id);
         setConfirmPay(null);
         await load();
       },
     });
   };
-  const askRevertPayroll = (payroll) => {
+  const askRevertFortnight = (fortnight) => {
     setConfirmPay({
       verb: "Revertir",
-      label: `Revertir el pago de la quincena "${payroll.name}". Esto vuelve a pendiente todos los resúmenes y vueltas.`,
+      label: `Revertir el pago de la quincena "${fortnight.name}". Esto vuelve a pendiente todos los resúmenes y vueltas.`,
       onConfirm: async () => {
-        await transportPayrollsService.revertPaid(payroll.id);
+        await fortnightsService.revertPaid(fortnight.id);
         setConfirmPay(null);
         await load();
       },
@@ -124,7 +124,7 @@ export function PayrollsTab() {
     });
   };
 
-  const detail = detailId ? payrolls.find((p) => p.id === detailId) : null;
+  const detail = detailId ? fortnights.find((p) => p.id === detailId) : null;
 
   return (
     <div>
@@ -140,10 +140,10 @@ export function PayrollsTab() {
         </button>
       </div>
 
-      {!loading && payrolls.length > 0 && (
-        <QuincenasBalanceSummary
+      {!loading && fortnights.length > 0 && (
+        <FortnightBalanceSummary
           carriers={carriers}
-          payrolls={payrolls}
+          fortnights={fortnights}
           payments={payments}
         />
       )}
@@ -152,13 +152,13 @@ export function PayrollsTab() {
         <div className="rounded-lg border border-dashed border-[var(--color-border)] py-10 text-center text-sm text-[var(--color-muted)]">
           Cargando...
         </div>
-      ) : payrolls.length === 0 ? (
+      ) : fortnights.length === 0 ? (
         <div className="rounded-lg border border-dashed border-[var(--color-border)] py-10 text-center text-sm text-[var(--color-muted)]">
           Aún no hay quincenas. Crea la primera con + Nueva quincena.
         </div>
       ) : (
         <div className="space-y-2">
-          {payrolls.map((p) => {
+          {fortnights.map((p) => {
             const isPaid = p.status === "paid";
             const items = (p.paymentIds || []).map((pid) => paymentsById.get(pid)).filter(Boolean);
             const paidCount = items.filter((it) => it.status === "paid").length;
@@ -193,7 +193,7 @@ export function PayrollsTab() {
       )}
 
       {creating && (
-        <PayrollCreateModal
+        <FortnightCreateModal
           carriers={carriers}
           carriersById={carriersById}
           faenas={faenas}
@@ -204,7 +204,7 @@ export function PayrollsTab() {
             try {
               // 1) Crea un resumen por transportista con sus vueltas sueltas filtradas.
               // 2) Suma los resúmenes existentes elegidos para importar.
-              // 3) Crea la quincena con todos los paymentIds; transportPayrollsService.create
+              // 3) Crea la quincena con todos los paymentIds; fortnightsService.create
               //    les pone el payrollId.
               const created = [];
               for (const it of perCarrier) {
@@ -220,7 +220,7 @@ export function PayrollsTab() {
                 });
                 created.push(summary.id);
               }
-              await transportPayrollsService.create({
+              await fortnightsService.create({
                 name,
                 periodFrom,
                 periodTo,
@@ -235,8 +235,8 @@ export function PayrollsTab() {
       )}
 
       {detail && (
-        <PayrollDetailModal
-          payroll={detail}
+        <FortnightDetailModal
+          fortnight={detail}
           items={(detail.paymentIds || []).map((pid) => paymentsById.get(pid)).filter(Boolean)}
           carriers={carriers}
           carriersById={carriersById}
@@ -246,11 +246,11 @@ export function PayrollsTab() {
           looseSummaries={looseSummaries}
           onClose={() => setDetailId(null)}
           onEditMeta={() => setEditingId(detail.id)}
-          onDeletePayroll={() => setConfirmDelete(detail)}
-          onAddSummaries={async (ids) => { try { await transportPayrollsService.addPayments(detail.id, ids); await load(); } catch (err) { toast.error(err?.message || "Error"); } }}
-          onRemoveSummary={async (pid) => { try { await transportPayrollsService.removePayments(detail.id, [pid]); await load(); } catch (err) { toast.error(err?.message || "Error"); } }}
-          onMarkPayrollPaid={() => askMarkPayrollPaid(detail)}
-          onRevertPayroll={() => askRevertPayroll(detail)}
+          onDeleteFortnight={() => setConfirmDelete(detail)}
+          onAddSummaries={async (ids) => { try { await fortnightsService.addPayments(detail.id, ids); await load(); } catch (err) { toast.error(err?.message || "Error"); } }}
+          onRemoveSummary={async (pid) => { try { await fortnightsService.removePayments(detail.id, [pid]); await load(); } catch (err) { toast.error(err?.message || "Error"); } }}
+          onMarkFortnightPaid={() => askMarkFortnightPaid(detail)}
+          onRevertFortnight={() => askRevertFortnight(detail)}
           onMarkItemPaid={askMarkItemPaid}
           onRevertItem={askRevertItem}
           onItemChanged={async () => { await load(); }}
@@ -258,11 +258,11 @@ export function PayrollsTab() {
       )}
 
       {editingId && (
-        <PayrollMetaEditModal
-          payroll={payrolls.find((p) => p.id === editingId)}
+        <FortnightMetaEditModal
+          fortnight={fortnights.find((p) => p.id === editingId)}
           onClose={() => setEditingId(null)}
           onSave={async (patch) => {
-            try { await transportPayrollsService.update(editingId, patch); setEditingId(null); await load(); }
+            try { await fortnightsService.update(editingId, patch); setEditingId(null); await load(); }
             catch (err) { toast.error(err?.message || "Error"); }
           }}
         />
@@ -276,7 +276,7 @@ export function PayrollsTab() {
         danger
         onCancel={() => setConfirmDelete(null)}
         onConfirm={async () => {
-          try { await transportPayrollsService.delete(confirmDelete.id); setDetailId(null); setConfirmDelete(null); await load(); }
+          try { await fortnightsService.delete(confirmDelete.id); setDetailId(null); setConfirmDelete(null); await load(); }
           catch (err) { toast.error(err?.message || "Error"); }
         }}
       />
