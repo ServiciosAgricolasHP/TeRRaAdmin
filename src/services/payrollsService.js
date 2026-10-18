@@ -7,7 +7,7 @@ import {
   restoreAdvancesFromPayroll,
   applyAdvancesToPayroll,
 } from "./advancesService";
-import { mergeCycleDetails, inChosenCycles, stillFreeWorkdays } from "../utils/payrollItem";
+import { mergeCycleDetails, inChosenCycles, stillFreeWorkdays, withPaidPeriods } from "../utils/payrollItem";
 import { pruneSnapshot } from "./payrollSnapshots";
 
 export const PAYROLL_STATUSES = [
@@ -304,8 +304,10 @@ export async function removeWorkerFromPayroll(payrollId, workerRut) {
 //
 // Un ciclo que ya estaba en la nómina no se repite: se le suman las labores
 // (`mergeCycleDetails`). Pasa al agregar las labores que faltaban de un ciclo,
-// o días puntuales de una persona en un ciclo que ya estaba.
-export async function addCyclesToPayroll(payrollId, { items, cycleDetailsToAdd = [] }) {
+// o días puntuales de una persona en un ciclo que ya estaba. Con `workdays`
+// (las jornadas que se agregan), el período de esos ciclos crece hasta
+// cubrirlas.
+export async function addCyclesToPayroll(payrollId, { items, cycleDetailsToAdd = [], workdays = [] }) {
   const p = await payrollsService.getById(payrollId);
   if (!p) throw new Error("Nómina no encontrada");
   assertEditable(p);
@@ -314,7 +316,7 @@ export async function addCyclesToPayroll(payrollId, { items, cycleDetailsToAdd =
   const nuevos = cycleDetailsToAdd.filter((c) => !yaEstan.has(c.id));
   const cycleIds = [...(p.cycleIds || []), ...nuevos.map((c) => c.id)];
   const cycleLabels = [...(p.cycleLabels || []), ...nuevos.map((c) => c.label)];
-  const cycleDetails = mergeCycleDetails(p.cycleDetails || [], cycleDetailsToAdd);
+  const cycleDetails = withPaidPeriods(mergeCycleDetails(p.cycleDetails || [], cycleDetailsToAdd), workdays, { extend: true });
   await payrollsService.update(payrollId, { ...aggregates, cycleIds, cycleLabels, cycleDetails });
   return aggregates;
 }
@@ -327,9 +329,9 @@ export async function addCyclesToPayroll(payrollId, { items, cycleDetailsToAdd =
 // tocar nada.
 export async function addWorkdaysToPayroll(
   payrollId,
-  { items, cycleDetailsToAdd = [], workdayIds = [], advanceApplications = [] },
+  { items, cycleDetailsToAdd = [], workdayIds = [], workdays = [], advanceApplications = [] },
 ) {
-  const aggregates = await addCyclesToPayroll(payrollId, { items, cycleDetailsToAdd });
+  const aggregates = await addCyclesToPayroll(payrollId, { items, cycleDetailsToAdd, workdays });
   await tagWorkdaysWithPayroll(workdayIds, payrollId);
   if (advanceApplications.length) await applyAdvancesToPayroll(advanceApplications, payrollId);
   return aggregates;

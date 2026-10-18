@@ -34,6 +34,9 @@ import {
   inRecalcScope,
   isRemovedFromPayroll,
   cycleScopeAfterRemoval,
+  withPaidPeriods,
+  withLiveNames,
+  cycleDetailChanges,
 } from "../utils/payrollItem";
 import { currentRutResolver } from "../utils/workerRut";
 
@@ -67,14 +70,17 @@ const PROFILE_FIELDS = [
 // nómina, de las labores que abarca (`inRecalcScope`), menos lo que se saca, y
 // las compara con lo guardado: ediciones o días nuevos, trabajadores nuevos
 // con producción (entran como en "+ Agregar ciclo"), anticipos o bonos
-// cargados después y datos de cuenta o grupo que cambiaron en la ficha. Si el
+// cargados después, datos de cuenta o grupo que cambiaron en la ficha, y el
+// nombre, la faena, la subfaena y el período de cada ciclo (`cycleChanges`,
+// ver `withLiveNames` y `withPaidPeriods`). Si el
 // bruto de alguien baja, lo ya descontado se re-encaja y lo que no cabe vuelve
 // al mismo anticipo; quien se queda sin producción sale.
 //
-// `cycles` y `workers` son las listas ya cargadas en pantalla. Devuelve
+// `cycles`, `faenas`, `subfaenas` y `workers` son las listas ya cargadas en
+// pantalla. Devuelve
 // `empty: true` si no hay nada que cambiar. Tira si sacar `removed` deja la
 // nómina sin ciclos o sin nadie: para eso se elimina la nómina.
-export async function planPayrollRecalc(payroll, { cycles = [], workers = [], removed = new Map() } = {}) {
+export async function planPayrollRecalc(payroll, { cycles = [], faenas = [], subfaenas = [], workers = [], removed = new Map() } = {}) {
   const items = payroll.items || [];
   const cycleDetails = payroll.cycleDetails || [];
   const recalcCycleIds = payroll.cycleIds || cycleDetails.map((c) => c.id);
@@ -283,6 +289,21 @@ export async function planPayrollRecalc(payroll, { cycles = [], workers = [], re
     throw new Error("Eso deja la nómina sin nadie: para sacar todo, elimina la nómina.");
   }
 
+  // Los ciclos quedan con sus nombres vigentes (ciclo, faena y subfaena) y con
+  // el período de los días que la nómina paga después del recálculo: crece con
+  // un día nuevo y se achica si sale uno.
+  const paidIds = new Set(mergedItems.flatMap((it) => it.workdayIds || []));
+  const prevDetails = scope ? scope.cycleDetails : cycleDetails;
+  const nextCycleDetails = withPaidPeriods(
+    withLiveNames(prevDetails, { cycles, faenas, subfaenas }),
+    current.filter((wd) => paidIds.has(wd.id)),
+  );
+  const cycleChanges = cycleDetailChanges(prevDetails, nextCycleDetails);
+  const finalIds = scope ? scope.cycleIds : recalcCycleIds;
+  const prevLabels = scope ? scope.cycleLabels : payroll.cycleLabels || [];
+  const labelById = new Map(nextCycleDetails.map((cd) => [cd.id, cd.label]));
+  const nextCycleLabels = finalIds.map((id, i) => labelById.get(id) || prevLabels[i] || id);
+
   const empty =
     !scope &&
     !released.length &&
@@ -290,7 +311,8 @@ export async function planPayrollRecalc(payroll, { cycles = [], workers = [], re
     !profileChanges.length &&
     !newWorkers.length &&
     !advanceChanges.length &&
-    !leavingWorkers.length;
+    !leavingWorkers.length &&
+    !cycleChanges.length;
 
   return {
     empty,
@@ -308,12 +330,16 @@ export async function planPayrollRecalc(payroll, { cycles = [], workers = [], re
     advanceTargets,
     pendingAdvances,
     scope,
+    cycleDetails: nextCycleDetails,
+    cycleLabels: nextCycleLabels,
+    cycleChanges,
   };
 }
 
 // Guarda una vista previa de `planPayrollRecalc`. Mismo orden que "Generar":
 // primero el documento de la nómina (con los ciclos que le quedan, si se sacó
-// algo), después las jornadas, los anticipos y el snapshot.
+// algo, con sus nombres y su período al día), después las jornadas, los
+// anticipos y el snapshot.
 export async function applyPayrollRecalc(payrollId, plan) {
   const p = await payrollsService.getById(payrollId);
   if (!p) throw new Error("Nómina no encontrada");
@@ -325,12 +351,20 @@ export async function applyPayrollRecalc(payrollId, plan) {
     newAdvanceApplications = [],
     pendingAdvances = [],
     scope = null,
+    cycleDetails = null,
+    cycleLabels = null,
+    cycleChanges = [],
   } = plan;
 
   const aggregates = recalcPayrollAggregates(items);
+  const cyclesChanged = !!scope || cycleChanges.length > 0;
+  const nextDetails = cyclesChanged ? cycleDetails || scope?.cycleDetails || null : null;
+  const nextLabels = cyclesChanged ? cycleLabels || scope?.cycleLabels || null : null;
   await payrollsService.update(payrollId, {
     ...aggregates,
-    ...(scope ? { cycleIds: scope.cycleIds, cycleLabels: scope.cycleLabels, cycleDetails: scope.cycleDetails } : {}),
+    ...(scope ? { cycleIds: scope.cycleIds } : {}),
+    ...(nextLabels ? { cycleLabels: nextLabels } : {}),
+    ...(nextDetails ? { cycleDetails: nextDetails } : {}),
   });
   // Se etiqueta exactamente lo que contiene la nómina y se suelta lo que le
   // quedó etiquetado sin estar en ningún item: lo sacado, las jornadas de
@@ -355,6 +389,7 @@ export async function applyPayrollRecalc(payrollId, plan) {
     workdays: workdays.filter((wd) => enNomina.has(wd.id)).map(snapshotWorkdayOf),
     newAdvances: pendingAdvances.filter((a) => nuevos.has(a.id)).map(snapshotAdvanceOf),
     cycleIds: scope ? scope.cycleIds : null,
+    cycleDetails: nextDetails,
   });
   return aggregates;
 }

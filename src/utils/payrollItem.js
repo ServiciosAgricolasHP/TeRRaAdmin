@@ -300,7 +300,8 @@ export function planRecalcExisting({ items = [], freshByKey = new Map(), applied
 // nómina tiene que quedar como si se hubiera armado con eso adentro.
 
 // Los datos de un ciclo que la nómina guarda en `cycleDetails`. El período
-// sale de `cycle.days`, que son los días que se marcaron en el ciclo.
+// sale de `cycle.days`, que son los días que se marcaron en el ciclo; quien
+// arma la nómina lo ajusta a los días que paga con `withPaidPeriods`.
 export function cycleDetailOf(cycle, { faenas = [], subfaenas = [] } = {}) {
   const f = faenas.find((x) => x.id === cycle.faenaId);
   const s = subfaenas.find((x) => x.id === cycle.subfaenaId);
@@ -315,6 +316,81 @@ export function cycleDetailOf(cycle, { faenas = [], subfaenas = [] } = {}) {
     firstDay: days[0] || "",
     lastDay: days[days.length - 1] || "",
   };
+}
+
+// El período de cada ciclo en la nómina (`firstDay`/`lastDay`): del primer al
+// último día que la nómina le paga, sacado de las fechas de sus jornadas. Un
+// ciclo sin jornadas en la lista conserva el que tenía. Con `extend`, el
+// período solo crece: es lo que sirve al agregar días sin tener a mano el
+// resto de las jornadas de la nómina. Devuelve el mismo objeto para un ciclo
+// cuyo período no cambia.
+export function withPaidPeriods(cycleDetails = [], workdays = [], { extend = false } = {}) {
+  const ranges = new Map();
+  for (const wd of workdays || []) {
+    if (!wd?.cycleId || !wd.date) continue;
+    const r = ranges.get(wd.cycleId);
+    if (!r) {
+      ranges.set(wd.cycleId, { first: wd.date, last: wd.date });
+      continue;
+    }
+    if (wd.date < r.first) r.first = wd.date;
+    if (wd.date > r.last) r.last = wd.date;
+  }
+  return (cycleDetails || []).map((cd) => {
+    const r = ranges.get(cd?.id);
+    if (!r) return cd;
+    const firstDay = extend && cd.firstDay && cd.firstDay < r.first ? cd.firstDay : r.first;
+    const lastDay = extend && cd.lastDay && cd.lastDay > r.last ? cd.lastDay : r.last;
+    return firstDay === cd.firstDay && lastDay === cd.lastDay ? cd : { ...cd, firstDay, lastDay };
+  });
+}
+
+// Los nombres vigentes de cada ciclo de la nómina: la etiqueta del ciclo y los
+// nombres de su faena y subfaena, que pueden haber cambiado después de
+// generarla. Lo que ya no está en las listas conserva lo guardado. Devuelve
+// el mismo objeto para un ciclo sin cambios.
+export function withLiveNames(cycleDetails = [], { cycles = [], faenas = [], subfaenas = [] } = {}) {
+  const cycleById = new Map((cycles || []).map((c) => [c.id, c]));
+  const faenaById = new Map((faenas || []).map((f) => [f.id, f]));
+  const subfaenaById = new Map((subfaenas || []).map((s) => [s.id, s]));
+  return (cycleDetails || []).map((cd) => {
+    const c = cycleById.get(cd?.id);
+    const label = c?.label || cd.label;
+    const faenaName = faenaById.get(c?.faenaId || cd.faenaId)?.name || cd.faenaName;
+    const subfaenaName = subfaenaById.get(c?.subfaenaId || cd.subfaenaId)?.name || cd.subfaenaName;
+    if (label === cd.label && faenaName === cd.faenaName && subfaenaName === cd.subfaenaName) return cd;
+    return { ...cd, label, faenaName, subfaenaName };
+  });
+}
+
+// Lo que cambió en los ciclos de una nómina entre `before` y `after` (mismos
+// ciclos, por id): nombre, subfaena, faena y período. Es lo que muestra la
+// vista previa de Recalcular. El período va como [primer día, último día].
+const CYCLE_NAME_FIELDS = [
+  { field: "label", label: "Ciclo" },
+  { field: "subfaenaName", label: "Subfaena" },
+  { field: "faenaName", label: "Faena" },
+];
+export function cycleDetailChanges(before = [], after = []) {
+  const beforeById = new Map((before || []).map((cd) => [cd.id, cd]));
+  const out = [];
+  for (const cd of after || []) {
+    const prev = beforeById.get(cd.id);
+    if (!prev || prev === cd) continue;
+    const fields = CYCLE_NAME_FIELDS.filter(({ field }) => (prev[field] || "") !== (cd[field] || "")).map(
+      ({ field, label }) => ({ field, label, old: prev[field] || "", new: cd[field] || "" }),
+    );
+    if ((prev.firstDay || "") !== (cd.firstDay || "") || (prev.lastDay || "") !== (cd.lastDay || "")) {
+      fields.push({
+        field: "period",
+        label: "Período",
+        old: [prev.firstDay || "", prev.lastDay || ""],
+        new: [cd.firstDay || "", cd.lastDay || ""],
+      });
+    }
+    if (fields.length) out.push({ cycleId: cd.id, label: cd.label || cd.id, fields });
+  }
+  return out;
 }
 
 // Qué labores de cada ciclo le pertenecen a la nómina: las que Recalcular
@@ -736,7 +812,8 @@ export function inChosenCycles(wd, chosen = new Map()) {
 // persona.
 //
 // Va en el orden de `cycles`, el de la pantalla: las columnas por ciclo del
-// XLSX no dependen del orden en que se fue eligiendo cada cosa.
+// XLSX no dependen del orden en que se fue eligiendo cada cosa. El período de
+// cada ciclo es el de los días de `workdays` (ver `withPaidPeriods`).
 export function newPayrollCycleDetails({ cycles = [], chosen = new Map(), workdays = [], faenas = [], subfaenas = [] }) {
   const alcance = new Map();
   for (const [cycleId, laborIds] of chosen) {
@@ -746,9 +823,10 @@ export function newPayrollCycleDetails({ cycles = [], chosen = new Map(), workda
   for (const wd of workdays || []) {
     if (wd?.cycleId && !alcance.has(wd.cycleId)) alcance.set(wd.cycleId, []);
   }
-  return cycles
+  const details = cycles
     .filter((c) => alcance.has(c.id))
     .map((c) => conLabores(cycleDetailOf(c, { faenas, subfaenas }), alcance.get(c.id)));
+  return withPaidPeriods(details, workdays);
 }
 
 // De los días que se le eligieron a una persona, los que siguen libres al

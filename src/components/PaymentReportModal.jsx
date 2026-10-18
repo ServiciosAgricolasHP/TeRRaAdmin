@@ -1,27 +1,29 @@
-import { forwardRef, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import Modal from "./Modal";
 import { useToast } from "../contexts/ToastContext";
-import { captureFullWidthBlob, captureFullWidthDataUrl } from "../utils/imageCapture";
-import { buildPaymentReport, kindMeta, extraOf, paidTotalOf, debtState, partialPaidOf, remainingOf } from "../utils/commitments";
+import { buildPaymentReport, kindMeta, extraOf, paidTotalOf, debtState, partialPaidOf, remainingOf, nextYearEnd } from "../utils/commitments";
 import { bankName } from "../utils/banks";
 import { fmtCurrency } from "../utils/format";
 
-// Informe de pagos de Cheques y pagos: lo que se debe, el balance de cada
-// deuda con la fecha en que queda pagada y lo que vence cada mes.
-// Opcionalmente, los pagos ya hechos en un rango, con el interés pagado aparte.
-// La vista previa es el mismo nodo que se copia, descarga e imprime.
+// Informe de deudas de Cheques y pagos, como documento PDF: resumen, balance de
+// cada deuda con la fecha en que queda pagada, lo que vence en los próximos 7
+// días y el próximo mes, los vencimientos por mes (detallados hasta una fecha,
+// por defecto fin del año siguiente) y, si se piden, el detalle de cada pago
+// pendiente y los pagos hechos en un rango. El contenido lo arma una sola vez
+// `reportDocument`, y lo dibujan igual la vista previa (HTML) y el PDF.
 
 const MONTHS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
-// Filas de "Pagos por mes" que no son un mes.
+// Filas de "Vencimientos por mes" que no son un mes.
 const SPECIAL_ROWS = {
   overdue: "Vencido sin pagar",
   protested: "Cheques protestados",
   postponed: "Aplazado (sin fecha)",
 };
 
-// Cómo se rotula un pago que se debe sin fecha vigente.
+// Cómo se rotula un pago que se debe sin fecha vigente, y su color.
 const STATE_NOTE = { overdue: "vencido", protested: "protestado", postponed: "aplazado" };
+const STATE_TONE = { overdue: "danger", protested: "danger", postponed: "warn" };
 
 const fmtDate = (iso) => {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ""));
@@ -32,6 +34,7 @@ const monthLabel = (key) => {
   const [y, m] = String(key).split("-").map(Number);
   return `${MONTHS[m - 1] || key} ${y}`;
 };
+const money = (v) => fmtCurrency(v);
 
 const btnCls =
   "min-h-8 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-surface-2)] disabled:opacity-50";
@@ -66,24 +69,47 @@ function behindLabel(count, noun) {
 function behindTag(d) {
   return d.behind.count ? behindLabel(d.behind.count, d.installments ? "cuota" : "pago") : "";
 }
-
-// Lo que se debe de una deuda sin una fecha vigente: vencido, protestado o
-// aplazado.
-function debtNotes(d, money) {
-  return ["overdue", "protested", "postponed"]
-    .filter((k) => d[k].count > 0)
-    .map((k) => ({ key: k, text: `${STATE_NOTE[k]} ${money(d[k].total)}` }));
+// Rojo si hay algo vencido o protestado, ámbar si solo hay aplazados.
+function behindTone(sum) {
+  if (sum.overdue.count || sum.protested.count) return "danger";
+  return sum.postponed.count ? "warn" : "";
 }
 
-function payoffNote(report, money) {
+// Lo que se debe de una deuda sin una fecha vigente: aplazado, vencido o
+// protestado.
+function debtNotes(d) {
+  return ["postponed", "overdue", "protested"]
+    .filter((k) => d[k].count > 0)
+    .map((k) => `${STATE_NOTE[k]} ${money(d[k].total)}`)
+    .join(" · ");
+}
+
+function payoffNote(report) {
   const { totals, hasRecurring } = report;
   return [
     hasRecurring ? "sin contar los pagos recurrentes" : "",
     totals.behind.count ? `con ${behindLabel(totals.behind.count, "pago")} por ${money(totals.behind.total)}` : "",
   ]
     .filter(Boolean)
+    .join("; ");
+}
+
+// "Todas las empresas · al 17-10-2026 · vencimientos hasta el 31-12-2027".
+function reportSubtitle(report, { today, companyName }) {
+  return [companyName || "Todas las empresas", `al ${fmtDate(today)}`, report.dueUntil ? `vencimientos hasta el ${fmtDate(report.dueUntil)}` : ""]
+    .filter(Boolean)
     .join(" · ");
 }
+
+const paymentsLabel = (n) => `${n} pago${n === 1 ? "" : "s"}`;
+
+// Lo que vence después del corte: desde cuándo y hasta su último vencimiento.
+function laterCell(report) {
+  return { text: `Después del ${fmtDate(report.dueUntil)}`, sub: report.laterEnd ? `hasta el ${fmtDate(report.laterEnd)}` : "" };
+}
+const laterText = (report) => [laterCell(report).text, laterCell(report).sub].filter(Boolean).join(", ");
+// Fila del detalle: la fecha va en el detalle, que es la columna ancha.
+const laterDetail = (report) => `${paymentsLabel(report.totals.later.count)} ${laterText(report).replace(/^Después/, "después")}, sin detalle`;
 
 function itemDetail(c) {
   return [
@@ -97,13 +123,171 @@ function itemDetail(c) {
     .join(" · ");
 }
 
+// ── Contenido del documento ─────────────────────────────────────────────────
+
+// Bloques en orden: `h2` y `h3` (títulos), `p` (párrafo) y `table`. Una columna
+// puede fijar su ancho en mm (`width`), así las tablas iguales se alinean. Una celda es
+// texto o `{ text, sub, bold, tone, subTone, muted }`, donde `sub` es una
+// segunda línea más chica. Una fila puede ser `total`, `bold` o llevar `tone`
+// (fondo de color y la primera celda en ese color).
+const ITEM_COLUMNS = [
+  { label: "Vence", width: 24 },
+  { label: "Tipo", width: 32 },
+  { label: "A quién", width: 42 },
+  { label: "Detalle" },
+  { label: "Monto", num: true, width: 26 },
+];
+
+function itemRows(list, today) {
+  return list.map((c) => {
+    const state = debtState(c, today);
+    return {
+      cells: [
+        { text: fmtDate(c.dueDate), sub: STATE_NOTE[state] || "", tone: STATE_TONE[state] },
+        kindMeta(c.kind).label,
+        c.counterparty,
+        { text: itemDetail(c), muted: true },
+        money(remainingOf(c)),
+      ],
+    };
+  });
+}
+
+function reportDocument(report, { today, companyName, showDetail, includePaid, paidFrom, paidTo }) {
+  const { totals, debts, months, pending, detail, paid, hasExtra, payoffDate, upcoming } = report;
+  const blocks = [];
+  const h2 = (text) => blocks.push({ kind: "h2", text });
+  const h3 = (text) => blocks.push({ kind: "h3", text });
+  const p = (text, muted = false) => blocks.push({ kind: "p", text, muted });
+  const table = (columns, rows) => blocks.push({ kind: "table", columns, rows });
+  const totalRow = (cells) => ({ cells, total: true });
+  const sumRow = (label, sum, tone) => ({ cells: [label, String(sum.count), money(sum.total)], tone });
+  const paidRange = `${fmtDate(paidFrom) || "inicio"} a ${fmtDate(paidTo) || "hoy"}`;
+
+  h2("Resumen");
+  table(
+    [{ label: "Concepto" }, { label: "Pagos", num: true, width: 22 }, { label: "Monto", num: true, width: 32 }],
+    [
+      { ...sumRow("Pendiente por pagar", totals.pending), bold: true },
+      ...(totals.postponed.count ? [sumRow("Aplazado (sin fecha)", totals.postponed, "warn")] : []),
+      sumRow("Vencido sin pagar", totals.overdue, totals.overdue.count ? "danger" : undefined),
+      ...(totals.protested.count ? [sumRow("Cheques protestados", totals.protested, "danger")] : []),
+      ...(includePaid ? [sumRow(`Pagado del ${paidRange}`, totals.paid)] : []),
+    ],
+  );
+  if (pending.length === 0) p("No hay pagos pendientes.");
+  else if (payoffDate) p(`Todo queda pagado el ${fmtDate(payoffDate)}${payoffNote(report) ? ` (${payoffNote(report)})` : ""}.`);
+  if (includePaid && totals.paid.extra) p(`Lo pagado en el período incluye ${money(totals.paid.extra)} de interés.`, true);
+
+  if (debts.length > 0) {
+    h2("Balance de deudas");
+    table(
+      [
+        { label: "Deuda" },
+        { label: "Pendientes", num: true, width: 22 },
+        { label: "Saldo", num: true, width: 28 },
+        { label: "Próximo pago", width: 34 },
+        { label: "Queda pagada", width: 34 },
+      ],
+      [
+        ...debts.map((d) => ({
+          cells: [
+            { text: d.counterparty, sub: [debtLabel(d), d.concept].filter(Boolean).join(" · "), bold: true },
+            { text: debtCount(d), sub: d.paid.count ? `${d.paid.count} pagada(s)` : "" },
+            { text: money(d.pending.total), bold: true },
+            { text: fmtDate(d.nextDue) || "—", sub: debtNotes(d), subTone: behindTone(d) },
+            { text: debtPayoff(d), sub: behindTag(d), subTone: behindTone(d) },
+          ],
+        })),
+        totalRow([
+          "Total",
+          String(totals.pending.count),
+          money(totals.pending.total),
+          "",
+          { text: payoffDate ? fmtDate(payoffDate) : "", sub: totals.behind.count ? behindLabel(totals.behind.count, "pago") : "", subTone: behindTone(totals) },
+        ]),
+      ],
+    );
+  }
+
+  if (pending.length > 0) {
+    h2("Próximos vencimientos");
+    const nearGroup = (title, list, sum, emptyText) => {
+      h3(`${title} · ${money(sum.total)}`);
+      if (list.length === 0) p(emptyText, true);
+      else table(ITEM_COLUMNS, [...itemRows(list, today), totalRow(["Total", "", "", "", money(sum.total)])]);
+    };
+    nearGroup(`Próximos 7 días (hasta el ${fmtDate(upcoming.weekEnd)})`, upcoming.week, upcoming.weekTotal, "Nada vence en los próximos 7 días.");
+    nearGroup(`Próximo mes (hasta el ${fmtDate(upcoming.monthEnd)})`, upcoming.month, upcoming.monthTotal, "Nada más vence en el próximo mes.");
+  }
+
+  if (months.length > 0) {
+    h2("Vencimientos por mes");
+    table(
+      [{ label: "Mes" }, { label: "Pagos", num: true, width: 22 }, { label: "Total del mes", num: true, width: 34 }],
+      months.map((m) => ({
+        cells: [m.month === "later" ? laterCell(report) : monthLabel(m.month), String(m.count), { text: money(m.total), bold: true }],
+        tone: STATE_TONE[m.month],
+      })),
+    );
+  }
+
+  if (showDetail && pending.length > 0) {
+    h2("Detalle de pagos pendientes");
+    table(ITEM_COLUMNS, [
+      ...itemRows(detail, today),
+      ...(totals.later.count
+        ? [{ cells: ["Más adelante", "", "", { text: laterDetail(report), muted: true }, money(totals.later.total)] }]
+        : []),
+      totalRow(["Total", "", "", "", money(totals.pending.total)]),
+    ]);
+  }
+
+  if (includePaid) {
+    h2(`Pagos realizados · ${paidRange}`);
+    if (paid.length === 0) p("Sin pagos en el período.", true);
+    else
+      table(
+        [
+          { label: "Pagado el" },
+          { label: "Vencía" },
+          { label: "Tipo" },
+          { label: "A quién" },
+          { label: "Detalle" },
+          ...(hasExtra ? [{ label: "Monto original", num: true }, { label: "Interés / extra", num: true }] : []),
+          { label: hasExtra ? "Total pagado" : "Monto", num: true },
+        ],
+        [
+          ...paid.map((c) => ({
+            cells: [
+              fmtDate(c.paidAt) || "—",
+              fmtDate(c.dueDate),
+              kindMeta(c.kind).label,
+              c.counterparty,
+              { text: itemDetail(c), muted: true },
+              ...(hasExtra ? [money(c.amount), extraOf(c) ? money(extraOf(c)) : "—"] : []),
+              money(paidTotalOf(c)),
+            ],
+          })),
+          totalRow(["Total", "", "", "", "", ...(hasExtra ? [money(totals.paid.amount), money(totals.paid.extra)] : []), money(totals.paid.total)]),
+        ],
+      );
+  }
+
+  return { title: "Informe de deudas", subtitle: reportSubtitle(report, { today, companyName }), blocks };
+}
+
+const cellOf = (c) => (c && typeof c === "object" ? c : { text: c ?? "" });
+
+// ── Modal ───────────────────────────────────────────────────────────────────
+
 export default function PaymentReportModal({ items, companies, today, onClose }) {
   const toast = useToast();
-  const printRef = useRef(null);
   const [companyId, setCompanyId] = useState("");
   const [includePaid, setIncludePaid] = useState(false);
   const [paidFrom, setPaidFrom] = useState(`${today.slice(0, 7)}-01`);
   const [paidTo, setPaidTo] = useState(today);
+  const [dueUntil, setDueUntil] = useState(() => nextYearEnd(today));
   const [showDetail, setShowDetail] = useState(true);
   const [busy, setBusy] = useState("");
 
@@ -112,10 +296,15 @@ export default function PaymentReportModal({ items, companies, today, onClose })
 
   const report = useMemo(() => {
     const scoped = companyId ? items.filter((c) => c.companyId === companyId) : items;
-    return buildPaymentReport(scoped, { today, includePaid, paidFrom, paidTo });
-  }, [items, companyId, today, includePaid, paidFrom, paidTo]);
+    return buildPaymentReport(scoped, { today, includePaid, paidFrom, paidTo, dueUntil });
+  }, [items, companyId, today, includePaid, paidFrom, paidTo, dueUntil]);
 
-  const fileBase = `Informe_pagos_${(companyName || "todas").replace(/[^\w-]+/g, "_")}_${today}`;
+  const doc = useMemo(
+    () => reportDocument(report, { today, companyName, showDetail, includePaid, paidFrom, paidTo }),
+    [report, today, companyName, showDetail, includePaid, paidFrom, paidTo],
+  );
+
+  const fileBase = `Informe_deudas_${(companyName || "todas").replace(/[^\w-]+/g, "_")}_${today}`;
 
   const run = async (kind, fn) => {
     setBusy(kind);
@@ -128,45 +317,7 @@ export default function PaymentReportModal({ items, companies, today, onClose })
     }
   };
 
-  const copyImage = () =>
-    run("copy", async () => {
-      const blob = await captureFullWidthBlob(printRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada al portapapeles");
-    });
-
-  const downloadPng = () =>
-    run("png", async () => {
-      const dataUrl = await captureFullWidthDataUrl(printRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
-      const a = document.createElement("a");
-      a.download = `${fileBase}.png`;
-      a.href = dataUrl;
-      a.click();
-    });
-
-  const print = () => {
-    if (!printRef.current) return;
-    const win = window.open("", "_blank", "width=1000,height=700");
-    if (!win) {
-      toast.warning("Permite las ventanas emergentes para imprimir.");
-      return;
-    }
-    win.document.write(`<!DOCTYPE html><html><head><title>Informe de pagos</title>
-      <style>
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 16px; color: #000; }
-        table { page-break-inside: auto; }
-        tr { page-break-inside: avoid; }
-        thead { display: table-header-group; }
-        @media print { @page { margin: 12mm; } }
-      </style>
-    </head><body>${printRef.current.outerHTML}</body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => win.print(), 250);
-  };
-
+  const downloadPdf = () => run("pdf", () => writeReportPdf(doc, fileBase));
   const downloadXlsx = () => run("xlsx", () => writeReportXlsx(report, { today, companyName, includePaid, paidFrom, paidTo, fileBase }));
 
   return (
@@ -174,12 +325,17 @@ export default function PaymentReportModal({ items, companies, today, onClose })
       open
       size="2xl"
       onClose={onClose}
-      title="Informe de pagos"
+      title="Informe de deudas"
       footer={
         <>
-          <button type="button" className={btnCls} onClick={copyImage} disabled={!!busy}>📋 Copiar</button>
-          <button type="button" className={btnCls} onClick={downloadPng} disabled={!!busy}>📥 PNG</button>
-          <button type="button" className={btnCls} onClick={print} disabled={!!busy}>🖨 Imprimir</button>
+          <button
+            type="button"
+            className="min-h-8 rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            onClick={downloadPdf}
+            disabled={!!busy}
+          >
+            {busy === "pdf" ? "Generando…" : "📄 Descargar PDF"}
+          </button>
           <button type="button" className={btnCls} onClick={downloadXlsx} disabled={!!busy}>📊 Excel</button>
         </>
       }
@@ -193,6 +349,16 @@ export default function PaymentReportModal({ items, companies, today, onClose })
               <option key={c.id} value={c.id}>{c.alias || c.razonSocial}</option>
             ))}
           </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-[var(--color-muted)]">Vencimientos hasta</span>
+          <input
+            type="date"
+            value={dueUntil}
+            onChange={(e) => setDueUntil(e.target.value)}
+            className={inputCls}
+            title="Lo que vence después se resume en una fila. Vacío: sin límite."
+          />
         </label>
         <label className="flex min-h-8 items-center gap-2">
           <input type="checkbox" checked={showDetail} onChange={(e) => setShowDetail(e.target.checked)} />
@@ -210,294 +376,213 @@ export default function PaymentReportModal({ items, companies, today, onClose })
           </div>
         )}
       </div>
-      <div className="overflow-x-auto rounded-md border border-[var(--color-border)]">
-        <PaymentReport
-          ref={printRef}
-          report={report}
-          today={today}
-          companyName={companyName}
-          showDetail={showDetail}
-          includePaid={includePaid}
-          paidFrom={paidFrom}
-          paidTo={paidTo}
-        />
+      <div className="overflow-x-auto rounded-md border border-[var(--color-border)] bg-[#e5e7eb] p-2 sm:p-4">
+        <ReportPreview doc={doc} />
       </div>
     </Modal>
   );
 }
 
-// ── Vista imprimible ────────────────────────────────────────────────────────
+// ── Vista previa (HTML) ─────────────────────────────────────────────────────
 
+// Una hoja A4 aproximada, con la misma tipografía y colores que el PDF.
 const S = {
-  page: { background: "#ffffff", color: "#111827", padding: 20, fontFamily: "ui-sans-serif, system-ui, sans-serif", fontSize: 12, minWidth: 720 },
-  h1: { fontSize: 20, fontWeight: 800, margin: 0 },
+  page: {
+    background: "#ffffff",
+    color: "#111827",
+    padding: "28px 32px",
+    fontFamily: "Helvetica, Arial, sans-serif",
+    fontSize: 11,
+    minWidth: 640,
+    maxWidth: 800,
+    margin: "0 auto",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.15)",
+  },
+  h1: { fontSize: 20, fontWeight: 700, margin: 0 },
   sub: { color: "#4b5563", marginTop: 2 },
-  h2: { fontSize: 14, fontWeight: 700, margin: "18px 0 6px" },
+  h2: { fontSize: 14, fontWeight: 700, margin: "20px 0 6px" },
+  h3: { fontSize: 12, fontWeight: 700, margin: "12px 0 5px" },
+  p: { margin: "6px 0" },
   table: { borderCollapse: "collapse", width: "100%" },
-  th: { background: "#374151", color: "#ffffff", textAlign: "left", padding: "5px 8px", border: "1px solid #374151", fontWeight: 600 },
-  td: { padding: "5px 8px", border: "1px solid #d1d5db", verticalAlign: "top" },
+  th: { background: "#374151", color: "#ffffff", textAlign: "left", padding: "4px 6px", border: "1px solid #374151", fontWeight: 700 },
+  td: { padding: "4px 6px", border: "1px solid #d1d5db", verticalAlign: "top" },
   num: { textAlign: "right", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" },
   total: { background: "#f3f4f6", fontWeight: 700 },
-  small: { color: "#6b7280", fontSize: 11 },
-  danger: { color: "#b91c1c" },
-  warn: { color: "#b45309" },
-  cards: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 },
-  card: { border: "1px solid #d1d5db", borderRadius: 6, padding: "8px 12px", minWidth: 150 },
-  cardLabel: { fontSize: 10, textTransform: "uppercase", letterSpacing: 0.5, color: "#6b7280" },
-  cardValue: { fontSize: 16, fontWeight: 700 },
+  small: { color: "#6b7280", fontSize: 10 },
+};
+const TONE_COLOR = { danger: "#b91c1c", warn: "#b45309" };
+const TONE_TINT = { danger: "#fef2f2", warn: "#fffbeb" };
+
+function ReportPreview({ doc }) {
+  return (
+    <div style={S.page}>
+      <h1 style={S.h1}>{doc.title}</h1>
+      <div style={S.sub}>{doc.subtitle}</div>
+      {doc.blocks.map((b, i) => {
+        if (b.kind === "h2") return <h2 key={i} style={S.h2}>{b.text}</h2>;
+        if (b.kind === "h3") return <h3 key={i} style={S.h3}>{b.text}</h3>;
+        if (b.kind === "p") return <p key={i} style={{ ...S.p, ...(b.muted ? { color: "#6b7280" } : {}) }}>{b.text}</p>;
+        return <PreviewTable key={i} table={b} />;
+      })}
+    </div>
+  );
+}
+
+function PreviewTable({ table }) {
+  return (
+    <table style={S.table}>
+      <thead>
+        <tr>
+          {table.columns.map((col) => (
+            <th key={col.label} style={{ ...S.th, ...(col.num ? { textAlign: "right" } : {}), ...(col.width ? { width: `${col.width}mm` } : {}) }}>
+              {col.label}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {table.rows.map((row, r) => (
+          <tr key={r} style={row.total ? S.total : row.tone ? { background: TONE_TINT[row.tone] } : undefined}>
+            {row.cells.map((raw, i) => {
+              const cell = cellOf(raw);
+              const tone = cell.tone || (i === 0 ? row.tone : "");
+              const subTone = cell.subTone || cell.tone;
+              return (
+                <td key={i} style={{ ...S.td, ...(table.columns[i]?.num ? S.num : {}) }}>
+                  <span style={{ fontWeight: cell.bold || row.bold ? 700 : undefined, color: TONE_COLOR[tone] || (cell.muted ? "#6b7280" : undefined) }}>
+                    {cell.text}
+                  </span>
+                  {cell.sub && <div style={{ ...S.small, ...(TONE_COLOR[subTone] ? { color: TONE_COLOR[subTone] } : {}) }}>{cell.sub}</div>}
+                </td>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+// ── PDF ─────────────────────────────────────────────────────────────────────
+
+// A4 vertical con jsPDF + jspdf-autotable, cargados lazy: texto seleccionable,
+// el encabezado de cada tabla se repite al cambiar de hoja y cada hoja lleva al
+// pie el título y "Página N de M". Helvetica cubre tildes, ñ, "°" y "·".
+const RGB = {
+  text: [17, 24, 39],
+  muted: [107, 114, 128],
+  head: [55, 65, 81],
+  line: [209, 213, 219],
+  total: [243, 244, 246],
+  danger: [185, 28, 28],
+  warn: [180, 83, 9],
+  dangerTint: [254, 242, 242],
+  warnTint: [255, 251, 235],
 };
 
-// Color de lo que se debe sin fecha vigente: rojo lo vencido o protestado,
-// ámbar lo aplazado.
-const stateStyle = (key) => (key === "postponed" ? S.warn : key === "overdue" || key === "protested" ? S.danger : undefined);
-const ROW_TINT = { overdue: "#fef2f2", protested: "#fef2f2", postponed: "#fffbeb" };
+async function writeReportPdf(doc, fileBase) {
+  const [{ jsPDF }, { autoTable }] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
+  const pdf = new jsPDF({ unit: "mm", format: "a4" });
+  const M = 15;
+  const W = pdf.internal.pageSize.getWidth();
+  const H = pdf.internal.pageSize.getHeight();
+  const bottom = H - M - 6;
+  let y = M + 4;
 
-// Etiqueta de pagos atrasados bajo la fecha en que queda pagada una deuda:
-// roja si hay algo vencido o protestado, ámbar si solo hay aplazados.
-function BehindTag({ sum, children }) {
-  const red = sum.overdue.count > 0 || sum.protested.count > 0;
-  return (
-    <div>
-      <span
-        style={{
-          display: "inline-block",
-          marginTop: 3,
-          padding: "1px 7px",
-          borderRadius: 999,
-          fontSize: 10,
-          fontWeight: 600,
-          whiteSpace: "nowrap",
-          background: red ? "#fee2e2" : "#fef3c7",
-          color: red ? "#b91c1c" : "#92400e",
-        }}
-      >
-        ⚠ {children}
-      </span>
-    </div>
-  );
+  const font = (size, style = "normal", color = RGB.text) => {
+    pdf.setFont("helvetica", style);
+    pdf.setFontSize(size);
+    pdf.setTextColor(...color);
+  };
+  // Salta de hoja si no caben `mm` más; así un título no queda solo al pie.
+  const ensure = (mm) => {
+    if (y + mm > bottom) {
+      pdf.addPage();
+      y = M + 4;
+    }
+  };
+  const lines = (text, size) => {
+    font(size);
+    return pdf.splitTextToSize(text, W - 2 * M);
+  };
+
+  font(16, "bold");
+  pdf.text(doc.title, M, y);
+  y += 6;
+  const sub = lines(doc.subtitle, 9);
+  font(9, "normal", RGB.muted);
+  pdf.text(sub, M, y);
+  y += sub.length * 4 + 2;
+
+  for (const b of doc.blocks) {
+    if (b.kind === "h2") {
+      ensure(24);
+      y += 6;
+      font(12, "bold");
+      pdf.text(b.text, M, y);
+      y += 3;
+    } else if (b.kind === "h3") {
+      ensure(18);
+      y += 2;
+      font(10, "bold");
+      pdf.text(b.text, M, y);
+      y += 2.5;
+    } else if (b.kind === "p") {
+      const ls = lines(b.text, 9);
+      ensure(ls.length * 4 + 3);
+      y += 3;
+      font(9, "normal", b.muted ? RGB.muted : RGB.text);
+      pdf.text(ls, M, y);
+      y += (ls.length - 1) * 4 + 2;
+    } else {
+      autoTable(pdf, {
+        startY: y + 1,
+        margin: { left: M, right: M, top: M, bottom: M + 6 },
+        head: [b.columns.map((c) => c.label)],
+        body: b.rows.map((row) =>
+          row.cells.map((raw) => {
+            const cell = cellOf(raw);
+            return cell.sub ? `${cell.text}\n${cell.sub}` : String(cell.text);
+          }),
+        ),
+        theme: "grid",
+        styles: { font: "helvetica", fontSize: 8, cellPadding: 1.5, lineColor: RGB.line, lineWidth: 0.2, textColor: RGB.text, valign: "top" },
+        headStyles: { fillColor: RGB.head, textColor: 255, fontStyle: "bold" },
+        columnStyles: Object.fromEntries(
+          b.columns.map((c, i) => [i, { ...(c.num ? { halign: "right" } : {}), ...(c.width ? { cellWidth: c.width } : {}) }]),
+        ),
+        didParseCell: (data) => {
+          if (data.section === "head") {
+            if (b.columns[data.column.index]?.num) data.cell.styles.halign = "right";
+            return;
+          }
+          const row = b.rows[data.row.index];
+          const cell = cellOf(row.cells[data.column.index]);
+          if (row.total) {
+            data.cell.styles.fillColor = RGB.total;
+            data.cell.styles.fontStyle = "bold";
+          } else if (row.tone) {
+            data.cell.styles.fillColor = RGB[`${row.tone}Tint`];
+          }
+          if (row.bold || cell.bold) data.cell.styles.fontStyle = "bold";
+          const tone = cell.tone || cell.subTone || (data.column.index === 0 ? row.tone : "");
+          if (tone) data.cell.styles.textColor = RGB[tone];
+          else if (cell.muted) data.cell.styles.textColor = RGB.muted;
+        },
+      });
+      y = pdf.lastAutoTable.finalY + 2;
+    }
+  }
+
+  const pages = pdf.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    pdf.setPage(i);
+    font(8, "normal", RGB.muted);
+    pdf.text(`${doc.title} · ${doc.subtitle}`, M, H - 8, { maxWidth: W - 2 * M - 30 });
+    pdf.text(`Página ${i} de ${pages}`, W - M, H - 8, { align: "right" });
+  }
+  pdf.save(`${fileBase}.pdf`);
 }
-
-const Th = ({ children, num }) => <th style={{ ...S.th, ...(num ? { textAlign: "right" } : {}) }}>{children}</th>;
-const Td = ({ children, num, style }) => <td style={{ ...S.td, ...(num ? S.num : {}), ...style }}>{children}</td>;
-
-function Card({ label, value, note, tone }) {
-  return (
-    <div style={S.card}>
-      <div style={S.cardLabel}>{label}</div>
-      <div style={{ ...S.cardValue, ...(stateStyle(tone) || {}) }}>{value}</div>
-      {note && <div style={S.small}>{note}</div>}
-    </div>
-  );
-}
-
-const PaymentReport = forwardRef(function PaymentReport(
-  { report, today, companyName, showDetail, includePaid, paidFrom, paidTo },
-  ref,
-) {
-  const { totals, debts, months, pending, paid, hasExtra, payoffDate } = report;
-  const money = (v) => fmtCurrency(v);
-
-  return (
-    <div ref={ref} style={S.page}>
-      <h1 style={S.h1}>Informe de pagos</h1>
-      <div style={S.sub}>
-        {companyName || "Todas las empresas"} · al {fmtDate(today)}
-      </div>
-
-      <div style={S.cards}>
-        <Card label="Pendiente por pagar" value={money(totals.pending.total)} note={`${totals.pending.count} pago(s)`} />
-        <Card label="Vencido sin pagar" value={money(totals.overdue.total)} note={`${totals.overdue.count} pago(s)`} tone={totals.overdue.count ? "overdue" : ""} />
-        {totals.protested.count > 0 && (
-          <Card label="Cheques protestados" value={money(totals.protested.total)} note={`${totals.protested.count} cheque(s)`} tone="protested" />
-        )}
-        {totals.postponed.count > 0 && (
-          <Card label="Aplazado (sin fecha)" value={money(totals.postponed.total)} note={`${totals.postponed.count} pago(s)`} tone="postponed" />
-        )}
-        <Card label="Todo pagado al" value={payoffDate ? fmtDate(payoffDate) : "—"} note={payoffNote(report, money)} />
-        {includePaid && (
-          <Card
-            label="Pagado en el período"
-            value={money(totals.paid.total)}
-            note={`${fmtDate(paidFrom) || "inicio"} a ${fmtDate(paidTo) || "hoy"}${totals.paid.extra ? ` · incluye ${money(totals.paid.extra)} de interés` : ""}`}
-          />
-        )}
-      </div>
-
-      {pending.length === 0 && !includePaid ? (
-        <p style={{ marginTop: 16 }}>No hay pagos pendientes.</p>
-      ) : null}
-
-      {debts.length > 0 && (
-        <>
-          <h2 style={S.h2}>Balance de deudas</h2>
-          <table style={S.table}>
-            <thead>
-              <tr>
-                <Th>Deuda</Th>
-                <Th num>Pendientes</Th>
-                <Th num>Saldo</Th>
-                <Th>Próximo pago</Th>
-                <Th>Queda pagada</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {debts.map((d) => (
-                <tr key={d.key}>
-                  <Td>
-                    <b>{d.counterparty}</b>
-                    {(debtLabel(d) || d.concept) && <div style={S.small}>{[debtLabel(d), d.concept].filter(Boolean).join(" · ")}</div>}
-                  </Td>
-                  <Td num>
-                    {debtCount(d)}
-                    {d.paid.count > 0 && <div style={S.small}>{d.paid.count} pagada(s)</div>}
-                  </Td>
-                  <Td num><b>{money(d.pending.total)}</b></Td>
-                  <Td>
-                    {fmtDate(d.nextDue) || "—"}
-                    {debtNotes(d, money).map((n) => (
-                      <div key={n.key} style={{ ...S.small, ...stateStyle(n.key) }}>{n.text}</div>
-                    ))}
-                  </Td>
-                  <Td>
-                    {debtPayoff(d)}
-                    {behindTag(d) && <BehindTag sum={d}>{behindTag(d)}</BehindTag>}
-                  </Td>
-                </tr>
-              ))}
-              <tr style={S.total}>
-                <Td>Total</Td>
-                <Td num>{totals.pending.count}</Td>
-                <Td num>{money(totals.pending.total)}</Td>
-                <Td />
-                <Td>
-                  {payoffDate ? fmtDate(payoffDate) : ""}
-                  {totals.behind.count > 0 && <BehindTag sum={totals}>{behindLabel(totals.behind.count, "pago")}</BehindTag>}
-                </Td>
-              </tr>
-            </tbody>
-          </table>
-        </>
-      )}
-
-      {months.length > 0 && (
-        <>
-          <h2 style={S.h2}>Pagos por mes</h2>
-          <table style={S.table}>
-            <thead>
-              <tr>
-                <Th>Mes</Th>
-                <Th num>Pagos</Th>
-                <Th num>Total del mes</Th>
-                <Th num>Saldo después</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {months.map((m) => (
-                <tr key={m.month} style={ROW_TINT[m.month] ? { background: ROW_TINT[m.month] } : undefined}>
-                  <Td style={stateStyle(m.month)}>{monthLabel(m.month)}</Td>
-                  <Td num>{m.count}</Td>
-                  <Td num><b>{money(m.total)}</b></Td>
-                  <Td num>{money(m.remainingAfter)}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
-      )}
-
-      {showDetail && pending.length > 0 && (
-        <>
-          <h2 style={S.h2}>Detalle de pagos pendientes</h2>
-          <table style={S.table}>
-            <thead>
-              <tr>
-                <Th>Vence</Th>
-                <Th>Tipo</Th>
-                <Th>A quién</Th>
-                <Th>Detalle</Th>
-                <Th num>Monto</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {pending.map((c) => {
-                const state = debtState(c, today);
-                return (
-                  <tr key={c.id}>
-                    <Td style={stateStyle(state)}>
-                      {fmtDate(c.dueDate)}
-                      {STATE_NOTE[state] && <div style={S.small}>{STATE_NOTE[state]}</div>}
-                    </Td>
-                    <Td>{kindMeta(c.kind).label}</Td>
-                    <Td>{c.counterparty}</Td>
-                    <Td><span style={S.small}>{itemDetail(c)}</span></Td>
-                    <Td num>{money(remainingOf(c))}</Td>
-                  </tr>
-                );
-              })}
-              <tr style={S.total}>
-                <Td>Total</Td>
-                <Td />
-                <Td />
-                <Td />
-                <Td num>{money(totals.pending.total)}</Td>
-              </tr>
-            </tbody>
-          </table>
-        </>
-      )}
-
-      {includePaid && (
-        <>
-          <h2 style={S.h2}>
-            Pagos realizados · {fmtDate(paidFrom) || "inicio"} a {fmtDate(paidTo) || "hoy"}
-          </h2>
-          {paid.length === 0 ? (
-            <p>Sin pagos en el período.</p>
-          ) : (
-            <table style={S.table}>
-              <thead>
-                <tr>
-                  <Th>Pagado el</Th>
-                  <Th>Vencía</Th>
-                  <Th>Tipo</Th>
-                  <Th>A quién</Th>
-                  <Th>Detalle</Th>
-                  {hasExtra && <Th num>Monto original</Th>}
-                  {hasExtra && <Th num>Interés / extra</Th>}
-                  <Th num>{hasExtra ? "Total pagado" : "Monto"}</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {paid.map((c) => (
-                  <tr key={c.id}>
-                    <Td>{fmtDate(c.paidAt) || "—"}</Td>
-                    <Td>{fmtDate(c.dueDate)}</Td>
-                    <Td>{kindMeta(c.kind).label}</Td>
-                    <Td>{c.counterparty}</Td>
-                    <Td><span style={S.small}>{itemDetail(c)}</span></Td>
-                    {hasExtra && <Td num>{money(c.amount)}</Td>}
-                    {hasExtra && <Td num>{extraOf(c) ? money(extraOf(c)) : "—"}</Td>}
-                    <Td num>{money(paidTotalOf(c))}</Td>
-                  </tr>
-                ))}
-                <tr style={S.total}>
-                  <Td>Total</Td>
-                  <Td />
-                  <Td />
-                  <Td />
-                  <Td />
-                  {hasExtra && <Td num>{money(totals.paid.amount)}</Td>}
-                  {hasExtra && <Td num>{money(totals.paid.extra)}</Td>}
-                  <Td num>{money(totals.paid.total)}</Td>
-                </tr>
-              </tbody>
-            </table>
-          )}
-        </>
-      )}
-    </div>
-  );
-});
 
 // ── Excel ───────────────────────────────────────────────────────────────────
 
@@ -508,7 +593,7 @@ async function writeReportXlsx(report, { today, companyName, includePaid, paidFr
   const wb = new ExcelJS.Workbook();
   const MONEY = '"$"#,##0';
   const { totals } = report;
-  const subtitle = `${companyName || "Todas las empresas"} · al ${fmtDate(today)}`;
+  const subtitle = reportSubtitle(report, { today, companyName });
 
   const sheet = (name, title, columns, rows, totalRow) => {
     const ws = wb.addWorksheet(name);
@@ -538,7 +623,7 @@ async function writeReportXlsx(report, { today, companyName, includePaid, paidFr
   };
 
   // Columnas de lo que se debe sin fecha vigente, solo si hay algo.
-  const stateKeys = ["overdue", "protested", "postponed"].filter((k) => k === "overdue" || totals[k].count > 0);
+  const stateKeys = ["postponed", "overdue", "protested"].filter((k) => k === "overdue" || totals[k].count > 0);
   const STATE_HEAD = { overdue: "Vencido", protested: "Protestado", postponed: "Aplazado" };
 
   sheet(
@@ -577,9 +662,9 @@ async function writeReportXlsx(report, { today, companyName, includePaid, paidFr
 
   sheet(
     "Por mes",
-    "Pagos por mes",
-    [{ label: "Mes", width: 22 }, { label: "Pagos", width: 10 }, { label: "Total del mes", money: true, width: 16 }, { label: "Saldo después", money: true, width: 16 }],
-    report.months.map((m) => [monthLabel(m.month), m.count, m.total, m.remainingAfter]),
+    "Vencimientos por mes",
+    [{ label: "Mes", width: 22 }, { label: "Pagos", width: 10 }, { label: "Total del mes", money: true, width: 16 }],
+    report.months.map((m) => [m.month === "later" ? laterText(report) : monthLabel(m.month), m.count, m.total]),
   );
 
   sheet(
@@ -593,14 +678,19 @@ async function writeReportXlsx(report, { today, companyName, includePaid, paidFr
       { label: "Detalle", width: 36 },
       { label: "Monto", money: true, width: 16 },
     ],
-    report.pending.map((c) => [
-      fmtDate(c.dueDate),
-      STATE_NOTE[debtState(c, today)] || "",
-      kindMeta(c.kind).label,
-      c.counterparty,
-      itemDetail(c),
-      remainingOf(c),
-    ]),
+    [
+      ...report.detail.map((c) => [
+        fmtDate(c.dueDate),
+        STATE_NOTE[debtState(c, today)] || "",
+        kindMeta(c.kind).label,
+        c.counterparty,
+        itemDetail(c),
+        remainingOf(c),
+      ]),
+      ...(totals.later.count
+        ? [["Más adelante", "", "", "", laterDetail(report), totals.later.total]]
+        : []),
+    ],
     ["Total", "", "", "", "", totals.pending.total],
   );
 

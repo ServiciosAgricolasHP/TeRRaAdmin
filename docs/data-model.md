@@ -118,7 +118,7 @@ Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
 | `cashPaidRuts` | string[] | ruts de efectivo que ya cobraron sueltos; se descuentan de la deuda. NO estampan `paidAt` en sus workdays |
 | `cycleIds` | string[] | refs a `cycles` |
 | `cycleLabels` | snapshot | |
-| `cycleDetails` | `{ id, label, faena…, firstDay, lastDay, laborIds? }[]` | `laborIds`: qué labores del ciclo le pertenecen a la nómina (lo que Recalcular puede traer). Sin el campo = el ciclo entero; `[]` = solo días puntuales de personas, elegidos a mano al generar o con "+ Agregar persona". Sacar labores en el detalle las quita de la lista, y un ciclo que estaba entero pasa a llevar la lista de las que le quedan; sacar el ciclo entero lo quita de `cycleIds`, `cycleLabels` y `cycleDetails`. Ver "Agrandar" y "Achicar una nómina pendiente" en AGENTS.md |
+| `cycleDetails` | `{ id, label, faena…, firstDay, lastDay, laborIds? }[]` | `label`, `faenaName`, `subfaenaName`: los nombres al generar, que Recalcular pone al día. `firstDay`/`lastDay`: primer y último día que la nómina le paga al ciclo (de sus jornadas); se ponen al día al recalcular y al agregar. Las nóminas anteriores guardan el rango de `cycle.days` hasta que se recalculan. `laborIds`: qué labores del ciclo le pertenecen a la nómina (lo que Recalcular puede traer). Sin el campo = el ciclo entero; `[]` = solo días puntuales de personas, elegidos a mano al generar o con "+ Agregar persona". Sacar labores en el detalle las quita de la lista, y un ciclo que estaba entero pasa a llevar la lista de las que le quedan; sacar el ciclo entero lo quita de `cycleIds`, `cycleLabels` y `cycleDetails`. Ver "Agrandar" y "Achicar una nómina pendiente" en AGENTS.md |
 | `items` | `PayrollItem[]` | snapshot por trabajador |
 | `total`, `bankTotal`, `cashTotal` | number | |
 | `workerCount`, `bankCount`, `cashCount` | number | |
@@ -145,7 +145,7 @@ Snapshot JSON inmutable de cada nómina, separado del documento de `payrolls` pa
 | `total`, `bankTotal`, `cashTotal`, `advanceTotal` | number | |
 | `workerCount`, `bankCount`, `cashCount` | number | |
 
-> Se descarga como `.json` al generar y se puede volver a bajar desde la fila del historial ("📥 JSON").
+> Se baja como `.json` desde el detalle de la nómina (📥 Descargar → JSON).
 
 ### `portalPayslips`
 Ficha de un trabajador en la nómina publicada en el portal de trabajadores. La escribe solo el job `publishPortal` (`functions/portal.js`); se lee sin sesión y de a un documento (`firestore.rules`).

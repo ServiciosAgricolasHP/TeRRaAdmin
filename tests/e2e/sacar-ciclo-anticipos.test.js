@@ -15,7 +15,7 @@ import { workdaysService } from "../../src/services";
 import { aggregateWorkerAmounts } from "../../src/utils/payroll";
 import { saveSnapshot } from "../../src/services/payrollSnapshots";
 import { allocateAdvances } from "../../src/utils/payrollItem";
-import { ANA, BETO, LABOR, seedCycle, seedWorker, seedWorkday, seedAdvance, get, all } from "./helpers/seed";
+import { ANA, BETO, LABOR, FAENA, SUBFAENA, seedCycle, seedWorker, seedWorkday, seedAdvance, set, get, all } from "./helpers/seed";
 
 // Sacar ciclos o labores de una nómina pendiente, como lo hace el detalle:
 // se destilda y se recalcula sin eso (`planPayrollRecalc` con `removed` y
@@ -36,6 +36,8 @@ async function sacar(payrollId, removed) {
   const nomina = await get("payrolls", payrollId);
   const plan = await planPayrollRecalc(nomina, {
     cycles: await all("cycles"),
+    faenas: await all("faenas"),
+    subfaenas: await all("subfaenas"),
     workers: await all("worker"),
     removed,
   });
@@ -275,10 +277,127 @@ describe("sacar labores sueltas, y varias cosas a la vez", () => {
 
     const nomina = await get("payrolls", id);
     expect(nomina.cycleIds).toEqual([CICLO_B]);
-    expect(nomina.cycleDetails).toEqual([{ id: CICLO_B, label: CICLO_B, laborIds: [LABOR] }]);
+    expect(nomina.cycleDetails).toEqual([
+      {
+        id: CICLO_B,
+        label: `Faena Uno/Sub Uno/${CICLO_B}`,
+        faenaName: "Faena Uno",
+        subfaenaName: "Sub Uno",
+        laborIds: [LABOR],
+        firstDay: "2026-03-02",
+        lastDay: "2026-03-02",
+      },
+    ]);
     expect(itemDe(nomina, ANA.id)).toMatchObject({ grossAmount: 80000, byCycle: { [CICLO_B]: 80000 } });
     expect(itemDe(nomina, BETO.id)).toMatchObject({ grossAmount: 60000 });
     expect(nomina.total).toBe(140000);
+  });
+});
+
+describe("los ciclos de la nómina siguen a lo que paga y a sus nombres vigentes", () => {
+  const LIVE = {
+    label: `Faena Uno/Sub Uno/${CICLO_A}`,
+    faenaId: FAENA,
+    faenaName: "Faena Uno",
+    subfaenaId: SUBFAENA,
+    subfaenaName: "Sub Uno",
+  };
+  const storeDetails = (id, period) =>
+    payrollsService.update(id, { cycleDetails: [{ id: CICLO_A, ...LIVE, ...period }], cycleLabels: [LIVE.label] });
+
+  it("un día nuevo en el ciclo entra al recalcular y estira el período, también en el JSON", async () => {
+    await seedCycle({ id: CICLO_A });
+    await seedWorker(ANA);
+    await seedWorkday({ cycleId: CICLO_A, rut: ANA.id, date: "2026-03-02", amount: 100000 });
+    await seedWorkday({ cycleId: CICLO_A, rut: ANA.id, date: "2026-03-03", amount: 100000 });
+    const id = await armarNomina([CICLO_A]);
+    await storeDetails(id, { firstDay: "2026-03-02", lastDay: "2026-03-03" });
+    await saveSnapshot(id, {
+      payroll: { name: "Nómina", total: 200000 },
+      cycles: [{ id: CICLO_A, label: LIVE.label, firstDay: "2026-03-02", lastDay: "2026-03-03" }],
+      workers: (await get("payrolls", id)).items,
+      workdays: [],
+      advances: [],
+    });
+
+    // Se agrega el 4 de marzo al ciclo, con producción.
+    await seedWorkday({ cycleId: CICLO_A, rut: ANA.id, date: "2026-03-04", amount: 50000 });
+    const plan = await sacar(id, new Map());
+
+    expect(plan.cycleChanges).toEqual([
+      {
+        cycleId: CICLO_A,
+        label: LIVE.label,
+        fields: [{ field: "period", label: "Período", old: ["2026-03-02", "2026-03-03"], new: ["2026-03-02", "2026-03-04"] }],
+      },
+    ]);
+    const payroll = await get("payrolls", id);
+    expect(payroll.total).toBe(250000);
+    expect(payroll.cycleDetails).toEqual([{ id: CICLO_A, ...LIVE, firstDay: "2026-03-02", lastDay: "2026-03-04" }]);
+    expect((await get("payrollSnapshots", id)).cycles).toEqual([
+      {
+        id: CICLO_A,
+        label: LIVE.label,
+        faenaName: LIVE.faenaName,
+        subfaenaName: LIVE.subfaenaName,
+        firstDay: "2026-03-02",
+        lastDay: "2026-03-04",
+      },
+    ]);
+  });
+
+  it("trae el nombre nuevo del ciclo y de la subfaena, en la nómina y en el JSON", async () => {
+    await seedCycle({ id: CICLO_A });
+    await seedWorker(ANA);
+    await seedWorkday({ cycleId: CICLO_A, rut: ANA.id, date: "2026-03-02", amount: 100000 });
+    const id = await armarNomina([CICLO_A]);
+    await storeDetails(id, { firstDay: "2026-03-02", lastDay: "2026-03-02" });
+    await saveSnapshot(id, {
+      payroll: { name: "Nómina", total: 100000 },
+      cycles: [{ id: CICLO_A, label: LIVE.label, subfaenaName: LIVE.subfaenaName, firstDay: "2026-03-02", lastDay: "2026-03-02" }],
+      workers: [],
+      workdays: [],
+      advances: [],
+    });
+
+    // Se renombran la subfaena y el ciclo.
+    const newLabel = "Faena Uno/Sector Norte/Ciclo 7";
+    await set("subfaenas", SUBFAENA, { name: "Sector Norte", faenaId: FAENA });
+    const { id: _cycleId, ...cycle } = await get("cycles", CICLO_A);
+    await set("cycles", CICLO_A, { ...cycle, label: newLabel });
+    const plan = await sacar(id, new Map());
+
+    expect(plan.cycleChanges).toEqual([
+      {
+        cycleId: CICLO_A,
+        label: newLabel,
+        fields: [
+          { field: "label", label: "Ciclo", old: LIVE.label, new: newLabel },
+          { field: "subfaenaName", label: "Subfaena", old: "Sub Uno", new: "Sector Norte" },
+        ],
+      },
+    ]);
+    const payroll = await get("payrolls", id);
+    expect(payroll.cycleDetails[0]).toMatchObject({ label: newLabel, faenaName: "Faena Uno", subfaenaName: "Sector Norte" });
+    expect(payroll.cycleLabels).toEqual([newLabel]);
+    expect((await get("payrollSnapshots", id)).cycles[0]).toMatchObject({ label: newLabel, subfaenaName: "Sector Norte" });
+  });
+
+  it("si los ciclos ya están al día, recalcular no los cuenta como cambio", async () => {
+    await seedCycle({ id: CICLO_A });
+    await seedWorker(ANA);
+    await seedWorkday({ cycleId: CICLO_A, rut: ANA.id, date: "2026-03-02", amount: 100000 });
+    const id = await armarNomina([CICLO_A]);
+    await storeDetails(id, { firstDay: "2026-03-02", lastDay: "2026-03-02" });
+
+    const plan = await planPayrollRecalc(await get("payrolls", id), {
+      cycles: await all("cycles"),
+      faenas: await all("faenas"),
+      subfaenas: await all("subfaenas"),
+      workers: await all("worker"),
+    });
+    expect(plan.cycleChanges).toEqual([]);
+    expect(plan.cycleDetails).toEqual((await get("payrolls", id)).cycleDetails);
   });
 });
 
@@ -310,7 +429,16 @@ describe("el snapshot de la nómina acompaña lo que se saca", () => {
     expect(snap.workers.map((w) => w.rut)).toEqual([BETO.id]);
     expect(snap.workdays.map((w) => w.id)).toEqual([diaBeto]);
     expect(snap.advances).toEqual([]);
-    expect(snap.cycles).toEqual([{ id: CICLO_B }]);
+    expect(snap.cycles).toEqual([
+      {
+        id: CICLO_B,
+        label: `Faena Uno/Sub Uno/${CICLO_B}`,
+        faenaName: "Faena Uno",
+        subfaenaName: "Sub Uno",
+        firstDay: "2026-03-02",
+        lastDay: "2026-03-02",
+      },
+    ]);
     expect(snap.payroll).toMatchObject({ name: "Nómina", total: 150000, workerCount: 1, advanceTotal: 0 });
   });
 });

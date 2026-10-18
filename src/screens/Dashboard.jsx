@@ -19,6 +19,7 @@ import { summarize, groupUpcoming, kindMeta, directionOf, remainingOf, urgencyLa
 // Recharts se carga lazy, en su propio chunk: las tarjetas de KPI pintan sin
 // esperarlo.
 const DashboardCharts = lazy(() => import("../components/DashboardCharts"));
+const CommitmentsDonut = lazy(() => import("../components/DashboardCharts").then((m) => ({ default: m.CommitmentsDonut })));
 
 const PERIODS = [
   { key: "1m", label: "Mes actual", months: 1 },
@@ -303,7 +304,8 @@ export default function Dashboard() {
     if (!commitments) return null;
     const today = localIsoDate();
     const groups = groupUpcoming(commitments, today);
-    return { today, summary: summarize(commitments, today), items: [...groups.overdue, ...groups.week] };
+    const items = [...groups.overdue, ...groups.week].filter((c) => directionOf(c.kind) === "out");
+    return { today, summary: summarize(commitments, today), items };
   }, [commitments]);
 
   useEffect(() => {
@@ -889,20 +891,25 @@ export default function Dashboard() {
   );
 }
 
-// Cheques y pagos de la semana: lo que vence en 7 días, lo vencido, lo que
-// quedó sin fecha y los cheques por cobrar, más la lista de lo vencido y lo
-// que vence en la semana. Todo lleva a la pantalla de Cheques y pagos.
+// Cheques y pagos en el tablero: una dona con lo que se paga y ya venció
+// (vencido sin marcar y aplazado) y lo que vence en los próximos 7 días, con el
+// total de cada grupo al lado, más la lista de esos vencimientos. Sin cheques
+// recibidos ni protestados. Todo lleva a la pantalla de Cheques y pagos.
 function CommitmentsWeek({ data }) {
   const { today, summary, items } = data;
-  const undated = {
-    amount: summary.out.postponed.amount + summary.out.protested.amount,
-    count: summary.out.postponed.count + summary.out.protested.count,
-  };
+  const slice = (name, hint, color, { amount, count }) => ({ name, hint, color, value: amount, count });
+  const slices = [
+    slice("Vencido", "sin marcar", "var(--color-danger)", summary.out.overdue),
+    slice("Aplazado", "ya vencido, sin fecha", "var(--color-warning)", summary.out.postponed),
+    slice("Próximos 7 días", "por pagar", "var(--color-accent)", summary.out.next7),
+  ];
+  const total = slices.reduce((sum, s) => sum + s.value, 0);
   const docs = (n) => `${n} documento${n === 1 ? "" : "s"}`;
-  const chip = (c) => {
-    if (c.status === "postponed") return { text: "Aplazado", tone: "warning" };
+  // Un aplazado lleva además el chip de cuánto hace que venció.
+  const chips = (c) => {
     const days = daysUntil(c.dueDate, today);
-    return { text: urgencyLabel(days), tone: days < 0 ? "danger" : days <= 1 ? "warning" : "muted" };
+    const due = { text: urgencyLabel(days), tone: days < 0 ? "danger" : days <= 1 ? "warning" : "muted" };
+    return c.status === "postponed" ? [{ text: "Aplazado", tone: "warning" }, due] : [due];
   };
   const toneCls = {
     danger: "bg-[var(--color-danger-soft)] text-[var(--color-danger)]",
@@ -918,63 +925,73 @@ function CommitmentsWeek({ data }) {
           Ver todo →
         </Link>
       </div>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <MetricCard
-          label="Vence en 7 días"
-          value={fmtCurrency(summary.out.next7.amount)}
-          hint={summary.out.next7.count ? `${docs(summary.out.next7.count)} por pagar` : "nada por pagar"}
-          highlight
-        />
-        <MetricCard
-          label="Vencido sin marcar"
-          value={fmtCurrency(summary.out.overdue.amount)}
-          hint={summary.out.overdue.count ? docs(summary.out.overdue.count) : "ninguno"}
-          warning={summary.out.overdue.count > 0}
-        />
-        <MetricCard
-          label="Aplazado o protestado"
-          value={fmtCurrency(undated.amount)}
-          hint={undated.count ? `${docs(undated.count)} sin fecha de pago` : "ninguno"}
-          warning={undated.count > 0}
-        />
-        <MetricCard
-          label="Por cobrar en 7 días"
-          value={fmtCurrency(summary.in.next7.amount)}
-          hint={summary.in.next7.count ? `${summary.in.next7.count} cheque${summary.in.next7.count === 1 ? "" : "s"} recibido${summary.in.next7.count === 1 ? "" : "s"}` : "ninguno"}
-        />
-      </div>
-      {items.length > 0 && (
-        <div className="mt-3 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
-          {items.slice(0, COMMITMENTS_SHOWN).map((c) => {
-            const { text, tone } = chip(c);
-            const meta = kindMeta(c.kind);
-            return (
-              <Link
-                key={c.id}
-                to="/cheques-pagos"
-                className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-3 py-2 text-sm last:border-b-0 hover:bg-[var(--color-accent-soft)]"
-              >
-                <span className="min-w-0">
-                  <span className="block truncate font-medium">{c.counterparty}</span>
-                  <span className="flex flex-wrap items-center gap-x-2 text-xs text-[var(--color-muted)]">
-                    <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${toneCls[tone]}`}>{text}</span>
-                    <span>{meta.icon} {meta.label}{c.dueDate ? ` · ${fmtShortDate(c.dueDate)}` : ""}</span>
-                  </span>
-                </span>
-                <span className="shrink-0 font-semibold tabular-nums">
-                  {directionOf(c.kind) === "in" ? "+" : ""}
-                  {fmtCurrency(remainingOf(c))}
-                </span>
-              </Link>
-            );
-          })}
-          {items.length > COMMITMENTS_SHOWN && (
-            <Link to="/cheques-pagos" className="block px-3 py-2 text-xs text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]">
-              +{items.length - COMMITMENTS_SHOWN} más
-            </Link>
+      <div className={`grid gap-3 ${items.length > 0 ? "lg:grid-cols-2" : ""}`}>
+        <div className="flex flex-col justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
+          {total > 0 ? (
+            <div className="flex flex-col items-center gap-4 sm:flex-row">
+              <div className="relative h-[200px] w-[200px] shrink-0">
+                <Suspense fallback={null}>
+                  <CommitmentsDonut slices={slices} />
+                </Suspense>
+                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="text-[10px] uppercase tracking-wider text-[var(--color-muted)]">Total</span>
+                  <span className="text-sm font-semibold tabular-nums">{fmtCurrency(total)}</span>
+                </div>
+              </div>
+              <ul className="w-full min-w-0 flex-1 space-y-3">
+                {slices.map((s) => (
+                  <li key={s.name} className="flex items-start gap-2">
+                    <span className="mt-1 inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: s.color }} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-medium">{s.name}</span>
+                      <span className="block text-[11px] text-[var(--color-muted)]">
+                        {s.count ? `${docs(s.count)} · ${s.hint}` : "ninguno"}
+                      </span>
+                    </span>
+                    <span className="shrink-0 text-sm font-semibold tabular-nums">{fmtCurrency(s.value)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="py-6 text-center text-xs text-[var(--color-muted)]">
+              Nada vencido ni por vencer en los próximos 7 días.
+            </p>
           )}
         </div>
-      )}
+        {items.length > 0 && (
+          <div className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
+            {items.slice(0, COMMITMENTS_SHOWN).map((c) => {
+              const meta = kindMeta(c.kind);
+              return (
+                <Link
+                  key={c.id}
+                  to="/cheques-pagos"
+                  className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-3 py-2 text-sm last:border-b-0 hover:bg-[var(--color-accent-soft)]"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">{c.counterparty}</span>
+                    <span className="flex flex-wrap items-center gap-x-2 text-xs text-[var(--color-muted)]">
+                      {chips(c).map(({ text, tone }) => (
+                        <span key={text} className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${toneCls[tone]}`}>
+                          {text}
+                        </span>
+                      ))}
+                      <span>{meta.icon} {meta.label}{c.dueDate ? ` · ${fmtShortDate(c.dueDate)}` : ""}</span>
+                    </span>
+                  </span>
+                  <span className="shrink-0 font-semibold tabular-nums">{fmtCurrency(remainingOf(c))}</span>
+                </Link>
+              );
+            })}
+            {items.length > COMMITMENTS_SHOWN && (
+              <Link to="/cheques-pagos" className="block px-3 py-2 text-xs text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]">
+                +{items.length - COMMITMENTS_SHOWN} más
+              </Link>
+            )}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

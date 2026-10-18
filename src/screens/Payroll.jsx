@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { captureFullWidthBlob } from "../utils/imageCapture";
 import {
   faenasService,
@@ -68,6 +69,7 @@ import {
   allocateAdvances,
   advanceNote,
   cycleDetailOf,
+  withPaidPeriods,
   planAddWorkdays,
   workerDayRows,
   asPayrollWorker,
@@ -79,50 +81,19 @@ import {
 import ConfirmDialog from "../components/ConfirmDialog";
 import Modal from "../components/Modal";
 import WorkerSummaryModal from "../components/WorkerSummaryModal";
+import RowMenu from "../components/RowMenu";
+import CloseCyclesModal from "../components/CloseCyclesModal";
+import { settledOpenCycles, splitTaken, payrollStatusMap } from "../utils/cycleClosing";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { matchesSearchQuery } from "../utils/textSearch";
 import { localIsoDate } from "../utils/dates";
+import { CASH_DENOMINATIONS, DEFAULT_AVAILABLE, estimateCashBreakdown, isBill } from "../utils/cashBreakdown";
 import { currentRutResolver } from "../utils/workerRut";
 
 const fmtCurrency = (v) =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
     Number(v) || 0,
   );
-
-// Denominaciones CLP para pagar en efectivo, de mayor a menor porque la
-// descomposición es greedy (toma el billete más grande que entra y baja).
-// Con $100 como la más chica, todo múltiplo de $100 se descompone exacto.
-const CASH_DENOMINATIONS = [10000, 5000, 1000, 500, 100];
-
-// Para cada item de efectivo: redondea el monto hacia arriba al múltiplo de
-// $100 y lo descompone en billetes y monedas de cada denominación. Devuelve
-// `{ totalNeeded, totalOriginal, counts, perWorker }`, con counts como
-// Map(denominación → cantidad total).
-function estimateCashBreakdown(cashItems) {
-  const counts = new Map(CASH_DENOMINATIONS.map((d) => [d, 0]));
-  const perWorker = [];
-  let totalNeeded = 0;
-  let totalOriginal = 0;
-  for (const it of cashItems) {
-    const original = Number(it.amount) || 0;
-    const rounded = Math.ceil(original / 100) * 100;
-    const delta = rounded - original;
-    let remaining = rounded;
-    const breakdown = {};
-    for (const d of CASH_DENOMINATIONS) {
-      const n = Math.floor(remaining / d);
-      if (n > 0) {
-        counts.set(d, counts.get(d) + n);
-        breakdown[d] = n;
-        remaining -= n * d;
-      }
-    }
-    perWorker.push({ rut: it.rut, name: it.name, leader: it.groupLeader, original, rounded, delta, breakdown });
-    totalNeeded += rounded;
-    totalOriginal += original;
-  }
-  return { totalNeeded, totalOriginal, counts, perWorker };
-}
 
 // "2026-08-31" -> "31/08". Etiqueta de día corta para las tablas de resumen.
 const fmtDayShortEs = (d) => {
@@ -291,9 +262,12 @@ export default function Payroll() {
   // embebido, así la re-descarga del JSON trae el nombre nuevo.
   const [renaming, setRenaming] = useState(null);
 
-  // Totales por ciclo activo: { [cycleId]: { unpaid, paid, total, firstDay,
-  // lastDay, unpaidBank, unpaidCash, unpaidUnknown, unpaidByLabor } }, con
-  // `unpaidByLabor[laborId]` = { unpaid, bank, cash, unknown, ruts }.
+  // Totales por ciclo activo: { [cycleId]: { unpaid, taken, total, firstDay,
+  // lastDay, unpaidBank, unpaidCash, unpaidUnknown, unpaidByLabor,
+  // takenByPayroll } }, con `unpaidByLabor[laborId]` = { unpaid, bank, cash,
+  // unknown, ruts }. `taken` es lo que ya entró a alguna nómina y
+  // `takenByPayroll[payrollId]`, lo que se llevó cada una: cuánto de eso está
+  // pagado de verdad depende del estado de la nómina (`splitTaken`).
   const [cycleStats, setCycleStats] = useState({});
   // Separado de `loading`: al refrescar, el spinner va en el botón y no tapa
   // la pantalla con "Cargando…".
@@ -315,7 +289,7 @@ export default function Payroll() {
       setWorkers(w);
       setPayrolls(p);
 
-      // Totales pagado/pendiente y rango de fechas de los ciclos activos.
+      // Pendiente, lo que ya entró a nómina y rango de fechas de los ciclos activos.
       // firstDay/lastDay son el período que muestra CycleSelector.
       const activeIds = c.filter((x) => x.status !== "closed").map((x) => x.id);
       // Medio de pago por rut, para estimar sin lecturas extra cuánto de lo
@@ -330,9 +304,9 @@ export default function Payroll() {
       const stats = {};
       for (const id of activeIds) {
         stats[id] = {
-          unpaid: 0, paid: 0, total: 0, firstDay: "", lastDay: "",
+          unpaid: 0, taken: 0, total: 0, firstDay: "", lastDay: "",
           unpaidBank: 0, unpaidCash: 0, unpaidUnknown: 0,
-          unpaidByLabor: {},
+          unpaidByLabor: {}, takenByPayroll: {},
         };
       }
       const laborTypeMap = new Map();
@@ -354,7 +328,8 @@ export default function Payroll() {
         }
         stats[cid].total += amount;
         if (wd.payrollId) {
-          stats[cid].paid += amount;
+          stats[cid].taken += amount;
+          stats[cid].takenByPayroll[wd.payrollId] = (stats[cid].takenByPayroll[wd.payrollId] || 0) + amount;
         } else {
           stats[cid].unpaid += amount;
           // Un rut sin ficha o sin banco cargado queda aparte como "por
@@ -380,6 +355,7 @@ export default function Payroll() {
         }
       }
       setCycleStats(stats);
+      return { cycles: c, stats, payrolls: p };
     } catch (err) {
       toast.error("No se pudo cargar la nómina: " + (err.message || err));
     } finally {
@@ -471,6 +447,21 @@ export default function Payroll() {
 
   const subfaenaName = (id) => subfaenas.find((s) => s.id === id)?.name || "";
   const workerById = (rut) => workers.find((w) => w.id === rut);
+
+  // Ciclos abiertos ya pagados por completo, para cerrarlos de una vez desde
+  // Generar o justo después de marcar una nómina pagada. `closeCycles.ids`
+  // acota la lista a los ciclos de esa nómina.
+  const closable = useMemo(() => settledOpenCycles(cycles, cycleStats, payrolls), [cycles, cycleStats, payrolls]);
+  // Por ciclo, lo pagado de verdad y lo que está en una nómina sin pagar.
+  const takenSplit = useMemo(() => {
+    const statusOf = payrollStatusMap(payrolls);
+    return Object.fromEntries(Object.entries(cycleStats).map(([id, s]) => [id, splitTaken(s, statusOf)]));
+  }, [cycleStats, payrolls]);
+  const payrollNameOf = (id) => payrolls.find((p) => p.id === id)?.name || "";
+  const [closeCycles, setCloseCycles] = useState(null); // { ids: Set | null, payrollName }
+  const closeCandidates = closeCycles
+    ? closable.settled.filter((r) => !closeCycles.ids || closeCycles.ids.has(r.cycle.id))
+    : [];
 
   const toggleCycle = (id) => {
     const marcar = !selectedCycleIds.has(id);
@@ -891,11 +882,9 @@ export default function Payroll() {
         hasSnapshot: true,
       });
 
-      // Snapshot completo para guardar en `payrollSnapshots` (1:1 con payroll)
-      // y para auto-bajada como JSON local.
+      // Snapshot completo para guardar en `payrollSnapshots` (1:1 con payroll).
+      // El JSON se baja desde el menú de descargas del detalle.
       const fullSnapshot = { ...snapshot, payrollId: created.id };
-      // Bajada local inmediata del JSON (no toca red).
-      downloadSnapshotJson(finalName, fullSnapshot);
 
       // Los tres pasos siguientes solo necesitan `created.id` y corren en paralelo:
       //   • subir el snapshot (1 escritura, hasta 1 MB)       ~15% del progreso
@@ -1028,8 +1017,15 @@ export default function Payroll() {
       }
       setProgress({ step: "Actualizando lista...", detail: "", percent: 95 });
       setPayConfirm(null);
-      await load();
+      const fresh = await load();
       toast.success(PAY_DONE[mode] || "Listo");
+      // Los ciclos de esta nómina que con este pago quedaron pagados por
+      // completo se ofrecen para cerrar.
+      if (mode === "pay" && fresh) {
+        const ids = new Set(p.cycleIds || []);
+        const done = settledOpenCycles(fresh.cycles, fresh.stats, fresh.payrolls).settled.filter((r) => ids.has(r.cycle.id));
+        if (done.length) setCloseCycles({ ids: new Set(done.map((r) => r.cycle.id)), payrollName: p.name });
+      }
     } catch (err) {
       // El servicio lanza mensajes redactados para el usuario (ej. "La nómina
       // ya está pagada entera."): se muestran en un toast.
@@ -1233,6 +1229,10 @@ export default function Payroll() {
             onRemovePerson={removePerson}
             onNext={buildPreview}
             busy={busy}
+            takenSplit={takenSplit}
+            payrollNameOf={payrollNameOf}
+            closableCount={closable.settled.length}
+            onClosePaid={() => setCloseCycles({ ids: null, payrollName: "" })}
           />
         ) : (
           <PreviewTable
@@ -1274,6 +1274,24 @@ export default function Payroll() {
         <WorkersHistory
           faenas={faenas}
           workers={workers}
+        />
+      )}
+
+      {closeCycles && closeCandidates.length > 0 && (
+        <CloseCyclesModal
+          candidates={closeCandidates}
+          waitingCount={closeCycles.ids ? 0 : closable.waiting.length}
+          intro={
+            closeCycles.ids
+              ? `Con "${closeCycles.payrollName}" pagada, estos ciclos quedaron pagados por completo: no les queda nada pendiente. ¿Los cierras?`
+              : "Estos ciclos abiertos ya se pagaron por completo: no les queda nada pendiente y lo que entró a nómina está pagado."
+          }
+          faenaName={(id) => faenas.find((f) => f.id === id)?.name || ""}
+          onClose={() => setCloseCycles(null)}
+          onDone={async () => {
+            setCloseCycles(null);
+            await load();
+          }}
         />
       )}
 
@@ -1447,6 +1465,10 @@ function CycleSelector({
   onRemovePerson,
   onNext,
   busy,
+  takenSplit = {},
+  payrollNameOf = () => "",
+  closableCount = 0,
+  onClosePaid,
 }) {
   const [search, setSearch] = useState("");
   const [showEmpty, setShowEmpty] = useState(false);
@@ -1509,7 +1531,7 @@ function CycleSelector({
   } = useMemo(() => {
     const statOf = (id) =>
       cycleStats?.[id] || {
-        unpaid: 0, paid: 0, total: 0, firstDay: "", lastDay: "",
+        unpaid: 0, taken: 0, total: 0, firstDay: "", lastDay: "",
         unpaidBank: 0, unpaidCash: 0, unpaidUnknown: 0,
       };
     let empty = 0;
@@ -1611,6 +1633,16 @@ function CycleSelector({
         >
           {showEmpty ? "✓ " : ""}Sin pendientes ({emptyCount})
         </button>
+        {closableCount > 0 && (
+          <button
+            type="button"
+            onClick={onClosePaid}
+            title="Ciclos abiertos que ya se pagaron por completo: cerrarlos de una vez."
+            className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1 text-xs hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)]"
+          >
+            🔒 Cerrar pagados ({closableCount})
+          </button>
+        )}
         <button
           type="button"
           onClick={onAddPerson}
@@ -1796,6 +1828,10 @@ function CycleSelector({
                           PAY_SPLIT_HINT,
                         ].filter(Boolean).join("\n")
                       : undefined;
+                    // Estar en una nómina no es estar pagado: recién lo es cuando
+                    // esa nómina se marca pagada.
+                    const taken = takenSplit[c.id] || { paid: 0, inPayroll: 0, openPayrollIds: [] };
+                    const inPayrollTitle = `En nómina${taken.openPayrollIds.length === 1 ? "" : "s"} que todavía no se marca${taken.openPayrollIds.length === 1 ? "" : "n"} pagada${taken.openPayrollIds.length === 1 ? "" : "s"}: ${taken.openPayrollIds.map((id) => payrollNameOf(id) || id).join(", ")}`;
                     return (
                       <div
                         key={c.id}
@@ -1823,9 +1859,14 @@ function CycleSelector({
                                   📅 {periodLabel}
                                 </span>
                               )}
-                              {stat.paid > 0 && (
-                                <span className="tabular-nums" title="Ya pagado en nóminas anteriores">
-                                  ✓ {fmtCurrency(stat.paid)} pagado
+                              {taken.paid > 0 && (
+                                <span className="tabular-nums" title="En nóminas ya marcadas como pagadas">
+                                  ✓ {fmtCurrency(taken.paid)} pagado
+                                </span>
+                              )}
+                              {taken.inPayroll > 0 && (
+                                <span className="tabular-nums text-[var(--color-accent)]" title={inPayrollTitle}>
+                                  🕓 {fmtCurrency(taken.inPayroll)} en nómina
                                 </span>
                               )}
                             </div>
@@ -1847,6 +1888,10 @@ function CycleSelector({
                                   {partialLabors ? `de ${fmtCurrency(stat.unpaid)}` : "pendiente"}
                                 </div>
                               </>
+                            ) : taken.inPayroll > 0 ? (
+                              <span className="text-xs text-[var(--color-accent)]" title={inPayrollTitle}>En nómina</span>
+                            ) : taken.paid > 0 ? (
+                              <span className="text-xs text-[var(--color-muted)]">✓ Pagado</span>
                             ) : (
                               <span className="text-xs text-[var(--color-muted)]">Sin pendientes</span>
                             )}
@@ -2546,14 +2591,64 @@ function payStateOf(p) {
 }
 
 const PAY_STATE_PILL = {
-  paid: { label: "Pagada", short: "✓ Pagada", cls: "bg-[var(--color-success-soft)] text-[var(--color-success)]" },
-  bankPaid: {
-    label: "🏦 Transferencias pagadas",
-    short: "🏦 Transf. pagadas",
-    cls: "bg-[var(--color-accent-soft)] text-[var(--color-accent)]",
-  },
-  pending: { label: "Pendiente", short: "⏳ Pendiente", cls: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]" },
+  paid: { label: "✓ Pagada", cls: "bg-[var(--color-success-soft)] text-[var(--color-success)]" },
+  bankPaid: { label: "🏦 Transf. pagadas", cls: "bg-[var(--color-accent-soft)] text-[var(--color-accent)]" },
+  pending: { label: "⏳ Pendiente", cls: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]" },
 };
+
+// Estado de la nómina en una sola línea y, si las transferencias ya salieron,
+// el efectivo que falta entregar.
+// Cuándo se pagó la nómina: el día en que se marcó pagada y, en un pago en dos
+// tiempos, también el día en que salieron las transferencias. `short` es el
+// rótulo corto de la tabla del historial.
+function paymentDates(p) {
+  const out = [];
+  if (p?.bankPaidAt) out.push({ key: "bank", label: "Transferencias el", short: "Transf.", date: fmtDate(p.bankPaidAt) });
+  if (p?.status === "paid" && p.paidAt) {
+    out.push(
+      p.bankPaidAt
+        ? { key: "paid", label: "Pago final el", short: "Final", date: fmtDate(p.paidAt) }
+        : { key: "paid", label: "Pagada el", short: "Pagada", date: fmtDate(p.paidAt) },
+    );
+  }
+  return out;
+}
+
+// Las fechas de pago en una sola línea, para la tabla del historial.
+function PaymentDatesLine({ p }) {
+  const dates = paymentDates(p);
+  if (dates.length === 0) return null;
+  return (
+    <span
+      title={dates.map((d) => `${d.label} ${d.date}`).join(" · ")}
+      className="whitespace-nowrap text-[11px] tabular-nums text-[var(--color-muted)]"
+    >
+      {dates.map((d) => `${d.short} ${d.date}`).join(" · ")}
+    </span>
+  );
+}
+
+// `showDates`: las fechas de pago debajo del estado (en la tabla del
+// historial van en su propia columna, con `PaymentDatesLine`).
+function PayStatePill({ p, showDates = true }) {
+  const pill = PAY_STATE_PILL[payStateOf(p)];
+  const owed = pendingCashOf(p);
+  return (
+    <div>
+      <span className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-xs ${pill.cls}`}>{pill.label}</span>
+      {showDates && paymentDates(p).map((d) => (
+        <div key={d.key} className="mt-0.5 whitespace-nowrap text-[10px] tabular-nums text-[var(--color-muted)]">
+          {d.label} {d.date}
+        </div>
+      ))}
+      {owed > 0 && (
+        <div className="mt-0.5 whitespace-nowrap text-[10px] tabular-nums text-[var(--color-warning)]" title={`Falta entregar ${fmtCurrency(owed)} en efectivo`}>
+          💵 debe {fmtCurrency(owed)}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Marca la nómina que está publicada en el portal de trabajadores.
 function PortalBadge() {
@@ -2658,6 +2753,67 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRe
     }
     return out;
   }, [pageCount, currentPage]);
+
+  // Una acción principal según el estado de la nómina (ninguna si ya está
+  // pagada) y el resto en el menú ⋯. Eliminar se muestra siempre: apagado,
+  // dice qué hay que hacer antes.
+  const actionsOf = (p) => {
+    const state = payStateOf(p);
+    const move =
+      classify(p) === "diferencia"
+        ? { icon: "→", label: "Mover a Nóminas", onClick: () => onChangeClassification(p) }
+        : { icon: "→", label: "Mover a Diferencias", onClick: () => onChangeClassification(p) };
+    const rename = { icon: "✎", label: "Renombrar", onClick: () => onRename(p) };
+    const remove = {
+      icon: "🗑",
+      label: "Eliminar",
+      danger: true,
+      disabled: state !== "pending",
+      hint:
+        state === "paid"
+          ? "Primero márcala como no pagada."
+          : state === "bankPaid"
+            ? "Primero revierte las transferencias."
+            : "Libera los días y devuelve los anticipos.",
+      onClick: () => onAskDelete(p),
+    };
+    if (state === "paid") {
+      return {
+        primary: null,
+        menu: [
+          { icon: "↩", label: "Marcar como no pagada", hint: "Vuelve a pendiente y quita el sello de pago.", onClick: () => onMarkPending(p) },
+          move,
+          rename,
+          { divider: true },
+          remove,
+        ],
+      };
+    }
+    if (state === "bankPaid") {
+      return {
+        primary: { label: "💵 Pagar efectivo", title: "Cierra la nómina: sella el efectivo que faltaba entregar", onClick: () => onMarkPaid(p) },
+        menu: [
+          { icon: "↩", label: "Revertir transferencias", hint: "Deshace el sello de las transferencias.", onClick: () => onRevertBank(p) },
+          move,
+          rename,
+          { divider: true },
+          remove,
+        ],
+      };
+    }
+    return {
+      primary: { label: "✓ Marcar pagada", title: "Marcar la nómina entera como pagada", onClick: () => onMarkPaid(p) },
+      menu: [
+        ...((p.cashTotal || 0) > 0
+          ? [{ icon: "🏦", label: "Solo transferencias", hint: "Salieron las transferencias; el efectivo queda debiéndose.", onClick: () => onMarkBankPaid(p) }]
+          : []),
+        move,
+        rename,
+        { divider: true },
+        remove,
+      ],
+    };
+  };
 
   const pager = filtered.length > 0 && (
     <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 pt-1 text-xs">
@@ -2780,119 +2936,58 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRe
             Ninguna nómina coincide con el filtro.
           </div>
         ) : (
-          paged.map((p) => (
-            <div
-              key={p.id}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-3 space-y-2"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => onOpen(p)}
-                      className="text-left text-base font-medium text-[var(--color-accent)] hover:underline"
-                    >
-                      {p.name}
-                    </button>
-                    {p.id === publishedPayrollId && <PortalBadge />}
-                    <button
-                      onClick={() => onRename(p)}
-                      title="Renombrar nómina"
-                      className="shrink-0 rounded px-1 text-sm text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)]"
-                    >
-                      ✎
-                    </button>
+          paged.map((p) => {
+            const { primary, menu } = actionsOf(p);
+            return (
+              <div
+                key={p.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => onOpen(p)}
+                onKeyDown={(e) => e.key === "Enter" && e.target === e.currentTarget && onOpen(p)}
+                className="cursor-pointer rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-sm active:bg-[var(--color-surface-2)]"
+              >
+                <div className="flex items-start gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-semibold text-[var(--color-accent)] [overflow-wrap:anywhere]">{p.name}</span>
+                      {p.id === publishedPayrollId && <PortalBadge />}
+                    </div>
+                    <div className="mt-0.5 text-xs text-[var(--color-muted)]">
+                      {fmtDate(p.createdAt)} · {p.workerCount || (p.items?.length ?? 0)} trab.
+                    </div>
                   </div>
-                  <div className="text-xs text-[var(--color-muted)]">{fmtDate(p.createdAt)}</div>
-                </div>
-                <span
-                  title={pendingCashOf(p) > 0 ? `Falta entregar ${fmtCurrency(pendingCashOf(p))} en efectivo` : undefined}
-                  className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${PAY_STATE_PILL[payStateOf(p)].cls}`}
-                >
-                  {PAY_STATE_PILL[payStateOf(p)].short}
-                </span>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div>
-                  <div className="text-[var(--color-muted)]">Trabajadores</div>
-                  <div className="font-medium tabular-nums">
-                    {p.workerCount || (p.items?.length ?? 0)}
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <RowMenu items={menu} />
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-[var(--color-muted)]">Total</div>
-                  <div className="font-semibold tabular-nums">{fmtCurrency(p.total || 0)}</div>
+                <div className="mt-2 flex items-end justify-between gap-2">
+                  <PayStatePill p={p} />
+                  <div className="text-right">
+                    <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">Total</div>
+                    <div className="text-base font-semibold tabular-nums">{fmtCurrency(p.total || 0)}</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-[var(--color-muted)]">🏦 Banco ({p.bankCount || 0})</div>
-                  <div className="tabular-nums">{fmtCurrency(p.bankTotal || 0)}</div>
+                <div className="mt-2 flex justify-between gap-2 border-t border-[var(--color-border)] pt-2 text-xs tabular-nums text-[var(--color-muted)]">
+                  <span>🏦 {fmtCurrency(p.bankTotal || 0)} · {p.bankCount || 0}</span>
+                  <span>💵 {fmtCurrency(p.cashTotal || 0)} · {p.cashCount || 0}</span>
                 </div>
-                <div className="text-right">
-                  <div className="text-[var(--color-muted)]">💵 Efectivo ({p.cashCount || 0})</div>
-                  <div className="tabular-nums">{fmtCurrency(p.cashTotal || 0)}</div>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-1 pt-1">
-                {p.status === "paid" ? (
+                {primary && (
                   <button
-                    onClick={() => onMarkPending(p)}
-                    title="Revertir: marcar como No pagado"
-                    className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      primary.onClick();
+                    }}
+                    title={primary.title}
+                    className="mt-2 min-h-10 w-full rounded-md border border-[var(--color-accent)] text-sm font-medium text-[var(--color-accent)] hover:bg-[var(--color-accent-soft)]"
                   >
-                    ↩ No pagado
+                    {primary.label}
                   </button>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => onMarkPaid(p)}
-                      title={p.bankPaidAt ? "Cerrar la nómina: sella el efectivo que faltaba entregar" : "Marcar la nómina entera como pagada"}
-                      className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
-                    >
-                      {p.bankPaidAt ? "✓ Pagada (efectivo)" : "✓ Pagada"}
-                    </button>
-                    {p.bankPaidAt ? (
-                      <button
-                        onClick={() => onRevertBank(p)}
-                        title="Deshacer el sello de las transferencias"
-                        className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
-                      >
-                        ↩ Transferencias
-                      </button>
-                    ) : (
-                      (p.cashTotal || 0) > 0 && (
-                        <button
-                          onClick={() => onMarkBankPaid(p)}
-                          title="Salieron las transferencias pero el efectivo no. La nómina sigue pendiente y su efectivo pasa a contarse como deuda."
-                          className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
-                        >
-                          🏦 Solo transferencias
-                        </button>
-                      )
-                    )}
-                  </>
                 )}
-                <button
-                  onClick={() => onChangeClassification(p)}
-                  title={classify(p) === "diferencia" ? "Mover a Nóminas" : "Mover a Diferencias"}
-                  className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
-                >
-                  {classify(p) === "diferencia" ? "→ Nómina" : "→ Diferencia"}
-                </button>
-                <button
-                  onClick={() => onAskDelete(p)}
-                  disabled={p.status === "paid" || !!p.bankPaidAt}
-                  title={p.status === "paid"
-                    ? "No se puede eliminar una nómina pagada. Revierte primero a No pagado."
-                    : p.bankPaidAt
-                      ? "Las transferencias ya se pagaron. Reviértelas antes de eliminar."
-                      : "Eliminar esta nómina"}
-                  className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[var(--color-surface-2)]"
-                >
-                  Eliminar
-                </button>
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
       {pager}
@@ -2901,130 +2996,81 @@ function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRe
     <>
     <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
       <table className="w-full text-sm">
-        <thead className="sticky top-0 bg-[var(--color-surface-2)] text-left">
-          <tr>
+        <thead className="sticky top-0 z-10 bg-[var(--color-surface-2)] text-left">
+          <tr className="whitespace-nowrap">
             <th className="px-3 py-2">Nombre</th>
             <th className="px-3 py-2">Estado</th>
             <th className="px-3 py-2 text-right">Trab.</th>
             <th className="px-3 py-2 text-right">🏦 Banco</th>
             <th className="px-3 py-2 text-right">💵 Efectivo</th>
             <th className="px-3 py-2 text-right">Total</th>
-            <th className="px-3 py-2">Creada</th>
             <th className="px-3 py-2"></th>
           </tr>
         </thead>
         <tbody>
           {filtered.length === 0 && (
             <tr>
-              <td colSpan={8} className="px-3 py-6 text-center text-[var(--color-muted)]">
+              <td colSpan={7} className="px-3 py-6 text-center text-[var(--color-muted)]">
                 Ninguna nómina coincide con el filtro.
               </td>
             </tr>
           )}
-          {paged.map((p) => (
-            <tr key={p.id} className="border-t border-[var(--color-border)]">
-              <td className="px-3 py-2">
-                <div className="flex items-center gap-1">
-                  <button onClick={() => onOpen(p)} className="text-[var(--color-accent)] hover:underline">
-                    {p.name}
-                  </button>
-                  {p.id === publishedPayrollId && <PortalBadge />}
-                  <button
-                    onClick={() => onRename(p)}
-                    title="Renombrar nómina"
-                    className="shrink-0 rounded px-1 text-xs text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)]"
-                  >
-                    ✎
-                  </button>
-                </div>
-              </td>
-              <td className="px-3 py-2">
-                <span
-                  title={pendingCashOf(p) > 0 ? `Falta entregar ${fmtCurrency(pendingCashOf(p))} en efectivo` : undefined}
-                  className={`inline-block rounded-full px-2 py-0.5 text-xs ${PAY_STATE_PILL[payStateOf(p)].cls}`}
-                >
-                  {PAY_STATE_PILL[payStateOf(p)].label}
-                </span>
-                {pendingCashOf(p) > 0 && (
-                  <div className="mt-0.5 text-[10px] tabular-nums text-[var(--color-warning)]">
-                    💵 debe {fmtCurrency(pendingCashOf(p))}
-                  </div>
-                )}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums">{p.workerCount || (p.items?.length ?? 0)}</td>
-              <td className="px-3 py-2 text-right text-xs tabular-nums">
-                {fmtCurrency(p.bankTotal || 0)}
-                <div className="text-[10px] text-[var(--color-muted)]">{p.bankCount || 0}</div>
-              </td>
-              <td className="px-3 py-2 text-right text-xs tabular-nums">
-                {fmtCurrency(p.cashTotal || 0)}
-                <div className="text-[10px] text-[var(--color-muted)]">{p.cashCount || 0}</div>
-              </td>
-              <td className="px-3 py-2 text-right font-semibold tabular-nums">{fmtCurrency(p.total || 0)}</td>
-              <td className="px-3 py-2 text-xs text-[var(--color-muted)]">{fmtDate(p.createdAt)}</td>
-              <td className="px-3 py-2">
-                <div className="flex justify-end gap-1">
-                  {p.status === "paid" ? (
+          {paged.map((p) => {
+            const { primary, menu } = actionsOf(p);
+            return (
+              <tr
+                key={p.id}
+                onClick={() => onOpen(p)}
+                className="cursor-pointer border-t border-[var(--color-border)] hover:bg-[var(--color-surface-2)]"
+              >
+                <td className="px-3 py-2">
+                  <div className="flex items-center gap-1.5">
                     <button
-                      onClick={() => onMarkPending(p)}
-                      title="Revertir: marcar como No pagado (libera los días asociados)"
-                      className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpen(p);
+                      }}
+                      className="text-left font-medium text-[var(--color-accent)] hover:underline"
                     >
-                      ↩ No pagado
+                      {p.name}
                     </button>
-                  ) : (
-                    <>
+                    {p.id === publishedPayrollId && <PortalBadge />}
+                  </div>
+                  <div className="text-xs text-[var(--color-muted)]">{fmtDate(p.createdAt)}</div>
+                </td>
+                <td className="px-3 py-2">
+                  <PayStatePill p={p} showDates={false} />
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">{p.workerCount || (p.items?.length ?? 0)}</td>
+                <td className="px-3 py-2 text-right text-xs tabular-nums">
+                  {fmtCurrency(p.bankTotal || 0)}
+                  <div className="text-[10px] text-[var(--color-muted)]">{p.bankCount || 0} pers.</div>
+                </td>
+                <td className="px-3 py-2 text-right text-xs tabular-nums">
+                  {fmtCurrency(p.cashTotal || 0)}
+                  <div className="text-[10px] text-[var(--color-muted)]">{p.cashCount || 0} pers.</div>
+                </td>
+                <td className="px-3 py-2 text-right font-semibold tabular-nums">{fmtCurrency(p.total || 0)}</td>
+                <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-end gap-2">
+                    <PaymentDatesLine p={p} />
+                    {primary && (
                       <button
-                        onClick={() => onMarkPaid(p)}
-                        title={p.bankPaidAt ? "Cerrar la nómina: sella el efectivo que faltaba entregar" : "Marcar la nómina entera como pagada"}
-                        className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+                        type="button"
+                        onClick={primary.onClick}
+                        title={primary.title}
+                        className="whitespace-nowrap rounded-md border border-[var(--color-accent)] px-2.5 py-1 text-xs font-medium text-[var(--color-accent)] hover:bg-[var(--color-accent-soft)]"
                       >
-                        {p.bankPaidAt ? "✓ Pagada (efectivo)" : "✓ Pagada"}
+                        {primary.label}
                       </button>
-                      {p.bankPaidAt ? (
-                        <button
-                          onClick={() => onRevertBank(p)}
-                          title="Deshacer el sello de las transferencias"
-                          className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
-                        >
-                          ↩ Transferencias
-                        </button>
-                      ) : (
-                        (p.cashTotal || 0) > 0 && (
-                          <button
-                            onClick={() => onMarkBankPaid(p)}
-                            title="Salieron las transferencias pero el efectivo no. La nómina sigue pendiente y su efectivo pasa a contarse como deuda."
-                            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
-                          >
-                            🏦 Solo transferencias
-                          </button>
-                        )
-                      )}
-                    </>
-                  )}
-                  <button
-                    onClick={() => onChangeClassification(p)}
-                    title={classify(p) === "diferencia" ? "Mover a Nóminas" : "Mover a Diferencias"}
-                    className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
-                  >
-                    {classify(p) === "diferencia" ? "→ Nómina" : "→ Diferencia"}
-                  </button>
-                  <button
-                    onClick={() => onAskDelete(p)}
-                    disabled={p.status === "paid" || !!p.bankPaidAt}
-                    title={p.status === "paid"
-                      ? "No se puede eliminar una nómina pagada. Revierte primero a No pagado."
-                      : p.bankPaidAt
-                        ? "Las transferencias ya se pagaron. Reviértelas antes de eliminar."
-                        : "Eliminar esta nómina"}
-                    className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[var(--color-surface-2)]"
-                  >
-                    Eliminar
-                  </button>
-                </div>
-              </td>
-            </tr>
-          ))}
+                    )}
+                    <RowMenu items={menu} />
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -4454,6 +4500,53 @@ async function printCashReceipts(payroll, cashGroups, titleOverrides = {}, catal
   w.document.close();
 }
 
+// Fila de chips de un filtro múltiple (Grupo, Ciclo) del detalle de la nómina.
+function FilterChips({ label, options, active, onToggle }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+      <span className="w-12 shrink-0 text-[var(--color-muted)]">{label}</span>
+      {options.map((o) => {
+        const on = active.has(o.id);
+        return (
+          <button
+            key={o.id}
+            type="button"
+            onClick={() => onToggle(o.id)}
+            title={o.title}
+            aria-pressed={on}
+            className={`min-h-7 rounded-full border px-2.5 py-0.5 ${
+              on
+                ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] font-medium text-[var(--color-accent)]"
+                : "border-[var(--color-border)] bg-[var(--color-surface)] hover:border-[var(--color-accent)]"
+            }`}
+          >
+            {on ? "✓ " : ""}
+            {o.label}
+            {o.count != null && <span className="ml-1 opacity-60">{o.count}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Un filtro activo, con ✕ para quitarlo.
+function FilterToken({ label, onRemove }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-[var(--color-accent)] bg-[var(--color-accent-soft)] py-0.5 pl-2.5 pr-1 text-[var(--color-accent)]">
+      {label}
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Quitar ${label}`}
+        className="rounded-full px-1 leading-none hover:bg-[var(--color-accent)] hover:text-[var(--color-accent-fg)]"
+      >
+        ✕
+      </button>
+    </span>
+  );
+}
+
 function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPayrolls = [], onClose, onRedownload, onDownloadNominaOnly, onDownloadSnapshot, onPublishPortal = null, publishedPayrollId = null, onChanged }) {
   const { catalogs } = useCatalogs();
   const toast = useToast();
@@ -4470,18 +4563,20 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
   const [leaderFilter, setLeaderFilter] = useState(() => new Set());
   const [cycleFilter, setCycleFilter] = useState(() => new Set());
   const [expandedRut, setExpandedRut] = useState(null);
-  // Secciones colapsadas al abrir: en una nómina pagada, el resumen, los
-  // ciclos, los filtros y cada grupo por líder (banco y efectivo); en una
-  // pendiente, solo el resumen.
+  // Secciones colapsadas al abrir: los ciclos siempre (se despliegan solos al
+  // editar el contenido) y, en una nómina pagada, cada grupo por líder (banco
+  // y efectivo). El resumen abre siempre desplegado.
   const [collapsedSections, setCollapsedSections] = useState(() => {
-    if (payroll.status !== "paid") return new Set(["summary"]);
-    const set = new Set(["summary", "cycles", "filters"]);
+    const set = new Set(["cycles"]);
+    if (payroll.status !== "paid") return set;
     for (const g of groupCashByLeader(bank)) set.add(`bank_${g.leader}`);
     for (const g of cashGroups) set.add(`cash_${g.leader}`);
     return set;
   });
   const [printingGroupLeader, setPrintingGroupLeader] = useState(null);
   const [workerSummaryFor, setWorkerSummaryFor] = useState(null);
+  // Panel de los filtros de Grupo y Ciclo.
+  const [showFilters, setShowFilters] = useState(false);
 
   const toggleSection = (key) => setCollapsedSections((prev) => {
     const next = new Set(prev);
@@ -4603,9 +4698,13 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
 
   // Deuda de efectivo de OTRAS nóminas. No se mezcla con esta —son entregas
   // aparte, con su propio sobre— pero sí tiene que entrar al estimador: los
-  // billetes y el sencillo se sacan del banco una sola vez.
+  // billetes y el sencillo se sacan del banco una sola vez. Una nómina pagada
+  // ya entregó su efectivo: ni el resumen ni el estimador le ofrecen sumarle
+  // el de otras.
+  const isPaid = payroll.status === "paid";
   const otherPendingCash = useMemo(() => {
     const out = [];
+    if (isPaid) return out;
     for (const other of allPayrolls) {
       if (!other || other.id === payroll.id) continue;
       const pendItems = pendingCashItemsOf(other);
@@ -4621,9 +4720,10 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
       });
     }
     return out;
-  }, [allPayrolls, payroll.id]);
+  }, [allPayrolls, payroll.id, isPaid]);
 
   const hasActiveFilter = !!(search || paymentMethod !== "all" || activeLeaderFilter.size > 0 || activeCycleFilter.size > 0);
+  const moreFilterCount = activeLeaderFilter.size + activeCycleFilter.size;
   const clearFilters = () => {
     setSearch("");
     setPaymentMethod("all");
@@ -4760,7 +4860,11 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
         return;
       }
 
-      const cycleDetailsToAdd = selectedCycles.map((c) => {
+      // El período de cada ciclo es el de los días que se agregan; en uno que
+      // ya estaba, el servicio lo estira para cubrirlos.
+      const includedIds = new Set(plan.workdayIds);
+      const addedWorkdays = nuevas.filter((wd) => includedIds.has(wd.id));
+      const cycleDetailsToAdd = withPaidPeriods(selectedCycles.map((c) => {
         const detail = cycleDetailOf(c, { faenas, subfaenas });
         const todas = (c.labors || []).map((l) => l.id);
         const laborIds = todas.filter((id) => elegidas.get(c.id).has(id));
@@ -4768,21 +4872,21 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
         // labores; si no, Recalcular traería después lo que se dejó afuera.
         const yaEsta = cycleDetails.some((cd) => cd.id === c.id);
         return !yaEsta && laborIds.length === todas.length ? detail : { ...detail, laborIds };
-      });
+      }), addedWorkdays);
 
       const aggregates = await addWorkdaysToPayroll(payroll.id, {
         items: plan.items,
         cycleDetailsToAdd,
         workdayIds: plan.workdayIds,
+        workdays: addedWorkdays,
         advanceApplications: plan.newAdvanceApplications,
       });
-      const incluidas = new Set(plan.workdayIds);
       const anticipoPorId = new Map(pendingAdvances.map((a) => [a.id, a]));
       await extendSnapshot(payroll.id, {
         items: plan.items,
         aggregates,
         cycles: cycleDetailsToAdd.map((cd) => snapshotCycleOf(cd, selectedCycles.find((c) => c.id === cd.id))),
-        workdays: nuevas.filter((wd) => incluidas.has(wd.id)).map(snapshotWorkdayOf),
+        workdays: addedWorkdays.map(snapshotWorkdayOf),
         advances: plan.newAdvanceApplications
           .map((x) => anticipoPorId.get(x.advanceId))
           .filter(Boolean)
@@ -4843,21 +4947,26 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
         .filter((cid) => !yaEstan.has(cid))
         .map((cid) => cycles.find((c) => c.id === cid))
         .filter(Boolean);
-      const cycleDetailsToAdd = ciclosNuevos.map((c) => ({ ...cycleDetailOf(c, { faenas, subfaenas }), laborIds: [] }));
+      const includedIds = new Set(plan.workdayIds);
+      const addedWorkdays = libres.filter((wd) => includedIds.has(wd.id));
+      const cycleDetailsToAdd = withPaidPeriods(
+        ciclosNuevos.map((c) => ({ ...cycleDetailOf(c, { faenas, subfaenas }), laborIds: [] })),
+        addedWorkdays,
+      );
 
       const aggregates = await addWorkdaysToPayroll(payroll.id, {
         items: plan.items,
         cycleDetailsToAdd,
         workdayIds: plan.workdayIds,
+        workdays: addedWorkdays,
         advanceApplications: plan.newAdvanceApplications,
       });
-      const incluidas = new Set(plan.workdayIds);
       const anticipoPorId = new Map(persona.advances.map((a) => [a.id, a]));
       await extendSnapshot(payroll.id, {
         items: plan.items,
         aggregates,
         cycles: cycleDetailsToAdd.map((cd) => snapshotCycleOf(cd, ciclosNuevos.find((c) => c.id === cd.id))),
-        workdays: libres.filter((wd) => incluidas.has(wd.id)).map(snapshotWorkdayOf),
+        workdays: addedWorkdays.map(snapshotWorkdayOf),
         advances: plan.newAdvanceApplications
           .map((x) => anticipoPorId.get(x.advanceId))
           .filter(Boolean)
@@ -4889,7 +4998,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
   const computeRecalc = async (removed = new Map(), lines = []) => {
     setRecalcBusy(true);
     try {
-      const plan = await planPayrollRecalc(payroll, { cycles, workers, removed });
+      const plan = await planPayrollRecalc(payroll, { cycles, faenas, subfaenas, workers, removed });
       if (plan.empty) {
         toast.success("Sin cambios — la nómina ya está al día.");
         return;
@@ -5478,6 +5587,22 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
     }
   };
 
+  // Lo que se imprime y lo que se descarga de la nómina, en dos menús al pie.
+  const printItems = [
+    ...(allGroups.length > 0
+      ? [{ icon: "📄", label: "Detalle de pago", hint: "Todos los trabajadores, sin firma.", disabled: printingDetail, onClick: () => handlePrintDetail() }]
+      : []),
+    ...(cashGroups.length > 0
+      ? [{ icon: "💵", label: "Comprobantes efectivo", hint: "Una hoja por líder, para firmar.", disabled: printing, onClick: () => handlePrint() }]
+      : []),
+  ];
+  const downloadItems = [
+    { icon: "📥", label: "XLSX completo", hint: "Nómina, resumen, transferencias y efectivo.", onClick: () => onRedownload(payroll) },
+    { icon: "🏦", label: "Sólo Nómina", hint: "La hoja del banco, para subir las transferencias.", onClick: () => onDownloadNominaOnly(payroll) },
+    { divider: true },
+    { icon: "{ }", label: "JSON", hint: "Toda la información para reconstruir la nómina.", onClick: () => onDownloadSnapshot(payroll) },
+  ];
+
   // Imprime el detalle de pago de un solo grupo (un líder). `key` distingue
   // banco y efectivo del mismo líder en el estado de carga (ej. CHILENOS puede
   // tener gente en los dos).
@@ -5503,16 +5628,11 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="truncate text-base font-semibold sm:text-lg">{payroll.name}</h2>
-                <span
-                  className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                    payroll.status === "paid"
-                      ? "bg-[var(--color-success-soft)] text-[var(--color-success)]"
-                      : "bg-[var(--color-warning-soft)] text-[var(--color-warning)]"
-                  }`}
-                >
-                  {payroll.status === "paid" ? "✓ Pagada" : "⏳ Pendiente"}
+                <h2 className="min-w-0 text-base font-semibold [overflow-wrap:anywhere] sm:text-lg">{payroll.name}</h2>
+                <span className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${PAY_STATE_PILL[payStateOf(payroll)].cls}`}>
+                  {PAY_STATE_PILL[payStateOf(payroll)].label}
                 </span>
+                {payroll.id === publishedPayrollId && <PortalBadge />}
                 {payroll.classification === "diferencia" && (
                   <span className="shrink-0 rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-[10px] text-[var(--color-muted)]">
                     Diferencia
@@ -5524,14 +5644,31 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                   ? cycleDetails.map((c) => displayCycleLabel(c)).join(" · ")
                   : (payroll.cycleLabels || []).join(" · ") || "—"}
               </p>
+              {paymentDates(payroll).length > 0 && (
+                <p className="mt-0.5 text-xs tabular-nums text-[var(--color-muted)]">
+                  {paymentDates(payroll).map((d) => `${d.label} ${d.date}`).join(" · ")}
+                </p>
+              )}
             </div>
-            <button
-              onClick={onClose}
-              className="shrink-0 rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
-              aria-label="Cerrar"
-            >
-              ✕
-            </button>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {onPublishPortal && (
+                <button
+                  type="button"
+                  onClick={() => onPublishPortal(payroll)}
+                  title="Publicar esta nómina en el portal de trabajadores: cada uno ve su detalle buscando su RUT"
+                  className="min-h-8 whitespace-nowrap rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)]"
+                >
+                  🌐<span className="hidden sm:inline"> {payroll.id === publishedPayrollId ? "Actualizar en portal" : "Publicar en portal"}</span>
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="rounded p-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+                aria-label="Cerrar"
+              >
+                ✕
+              </button>
+            </div>
           </div>
           {(cycleDetails.length > 0 || isPending) && (
             <div className="mt-2 flex flex-wrap gap-1">
@@ -5580,17 +5717,21 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
           )}
         </div>
         {/* Barra de filtros fija, fuera del scroll, de borde a borde entre el
-            encabezado y el cuerpo. */}
+            encabezado y el cuerpo. Grupo y Ciclo van en un panel; lo que esté
+            activo se ve igual, como etiquetas que se quitan con ✕. */}
         <div className="shrink-0 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 sm:px-5 sm:py-2.5">
           <div className="flex flex-wrap items-center gap-2">
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="🔍 Buscar por RUT, nombre o líder…"
-              className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1.5 text-sm outline-none focus:border-[var(--color-accent)] sm:w-auto sm:min-w-[200px] sm:flex-1"
-            />
-            <div className="inline-flex overflow-hidden rounded-md border border-[var(--color-border)] text-xs">
+            <div className="relative w-full sm:w-auto sm:min-w-[220px] sm:flex-1">
+              <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-[var(--color-muted)]">🔍</span>
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar por RUT, nombre o líder"
+                className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1.5 pl-8 pr-2.5 text-sm outline-none focus:border-[var(--color-accent)] focus:bg-[var(--color-surface)]"
+              />
+            </div>
+            <div className="inline-flex rounded-lg bg-[var(--color-surface-2)] p-0.5 text-xs" role="group" aria-label="Medio de pago">
               {[
                 { v: "all", l: "Todos" },
                 { v: "bank", l: "🏦 Banco" },
@@ -5598,90 +5739,85 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
               ].map((o) => (
                 <button
                   key={o.v}
+                  type="button"
                   onClick={() => setPaymentMethod(o.v)}
-                  className={`border-l border-[var(--color-border)] px-2 py-1 first:border-l-0 ${
-                    paymentMethod === o.v ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
+                  aria-pressed={paymentMethod === o.v}
+                  className={`min-h-7 rounded-md px-2.5 py-1 ${
+                    paymentMethod === o.v
+                      ? "bg-[var(--color-surface)] font-medium text-[var(--color-text)] shadow-sm"
+                      : "text-[var(--color-muted)] hover:text-[var(--color-text)]"
                   }`}
                 >
                   {o.l}
                 </button>
               ))}
             </div>
-            {hasActiveFilter && (
+            {(allLeaders.length > 1 || cycleDetails.length > 1) && (
               <button
-                onClick={clearFilters}
-                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs text-[var(--color-muted)] hover:text-[var(--color-danger)]"
+                type="button"
+                onClick={() => setShowFilters((v) => !v)}
+                aria-expanded={showFilters}
+                className={`min-h-8 rounded-lg border px-2.5 py-1 text-xs ${
+                  showFilters || moreFilterCount > 0
+                    ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                    : "border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-text)]"
+                }`}
               >
-                ✕ Limpiar
+                Filtros{moreFilterCount > 0 ? ` (${moreFilterCount})` : ""} {showFilters ? "▴" : "▾"}
               </button>
             )}
-            <span className="ml-auto text-[10px] text-[var(--color-muted)] tabular-nums">
-              {hasActiveFilter ? `${filteredItems.length}/${items.length}` : items.length} trabajador{items.length === 1 ? "" : "es"}
-              {hasActiveFilter && ` · ${fmtCurrency(filteredItems.reduce((s, x) => s + (Number(x.amount) || 0), 0))}`}
+            <span className="ml-auto flex items-center gap-2 text-xs tabular-nums text-[var(--color-muted)]">
+              <span>
+                {hasActiveFilter ? `${filteredItems.length} de ${items.length}` : items.length} trabajador{items.length === 1 ? "" : "es"}
+                {hasActiveFilter && (
+                  <>
+                    {" · "}
+                    <b className="text-[var(--color-text)]">{fmtCurrency(filteredItems.reduce((s, x) => s + (Number(x.amount) || 0), 0))}</b>
+                  </>
+                )}
+              </span>
+              {hasActiveFilter && (
+                <button type="button" onClick={clearFilters} className="hover:text-[var(--color-danger)]">
+                  Limpiar
+                </button>
+              )}
             </span>
           </div>
-          {(allLeaders.length > 1 || cycleDetails.length > 1) && (
-            <button
-              type="button"
-              onClick={() => toggleSection("filters")}
-              className="mt-1.5 flex items-center gap-1 text-[11px] text-[var(--color-muted)] hover:text-[var(--color-fg)]"
-            >
-              <span>{isCollapsed("filters") ? "▸" : "▾"}</span>
-              Filtros
-            </button>
+          {!showFilters && moreFilterCount > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+              {[...activeLeaderFilter].map((l) => (
+                <FilterToken key={`g_${l}`} label={`Grupo: ${l}`} onRemove={() => toggleSetItem(setLeaderFilter, l)} />
+              ))}
+              {cycleDetails
+                .filter((c) => activeCycleFilter.has(c.id))
+                .map((c) => (
+                  <FilterToken key={`c_${c.id}`} label={displayCycleLabel(c)} onRemove={() => toggleSetItem(setCycleFilter, c.id)} />
+                ))}
+            </div>
           )}
-          {!isCollapsed("filters") && (
-            <>
+          {showFilters && (
+            <div className="mt-2 space-y-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2.5">
               {allLeaders.length > 1 && (
-                <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px]">
-                  <span className="text-[var(--color-muted)] mr-1">Grupo:</span>
-                  {allLeaders.map((g) => {
-                    const active = leaderFilter.has(g.leader);
-                    return (
-                      <button
-                        key={g.leader}
-                        onClick={() => toggleSetItem(setLeaderFilter, g.leader)}
-                        className={`rounded-full px-2 py-0.5 ${
-                          active
-                            ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]"
-                            : "bg-[var(--color-surface-2)] border border-[var(--color-border)] hover:bg-[var(--color-accent-soft)]"
-                        }`}
-                      >
-                        {g.leader} <span className="opacity-60">({g.count})</span>
-                      </button>
-                    );
-                  })}
-                  {activeLeaderFilter.size > 0 && (
-                    <button onClick={() => setLeaderFilter(new Set())} className="text-[var(--color-muted)] hover:text-[var(--color-danger)]">✕</button>
-                  )}
-                </div>
+                <FilterChips
+                  label="Grupo"
+                  options={allLeaders.map((g) => ({ id: g.leader, label: g.leader, count: g.count }))}
+                  active={activeLeaderFilter}
+                  onToggle={(id) => toggleSetItem(setLeaderFilter, id)}
+                />
               )}
               {cycleDetails.length > 1 && (
-                <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px]">
-                  <span className="text-[var(--color-muted)] mr-1">Ciclo:</span>
-                  {cycleDetails.map((c) => {
-                    const active = cycleFilter.has(c.id);
-                    return (
-                      <button
-                        key={c.id}
-                        onClick={() => toggleSetItem(setCycleFilter, c.id)}
-                        className={`rounded-full px-2 py-0.5 ${
-                          active
-                            ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]"
-                            : "bg-[var(--color-surface-2)] border border-[var(--color-border)] hover:bg-[var(--color-accent-soft)]"
-                        }`}
-                        title={c.faenaName ? `${c.faenaName}${c.subfaenaName ? " / " + c.subfaenaName : ""}` : c.label}
-                      >
-                        {displayCycleLabel(c)}
-                      </button>
-                    );
-                  })}
-                  {activeCycleFilter.size > 0 && (
-                    <button onClick={() => setCycleFilter(new Set())} className="text-[var(--color-muted)] hover:text-[var(--color-danger)]">✕</button>
-                  )}
-                </div>
+                <FilterChips
+                  label="Ciclo"
+                  options={cycleDetails.map((c) => ({
+                    id: c.id,
+                    label: displayCycleLabel(c),
+                    title: c.faenaName ? `${c.faenaName}${c.subfaenaName ? " / " + c.subfaenaName : ""}` : c.label,
+                  }))}
+                  active={activeCycleFilter}
+                  onToggle={(id) => toggleSetItem(setCycleFilter, id)}
+                />
               )}
-            </>
+            </div>
           )}
         </div>
 
@@ -5759,19 +5895,7 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                     <div className="text-[10px] text-[var(--color-muted)]">{bank.length} persona(s)</div>
                   </div>
                   <div>
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-xs text-[var(--color-muted)]">💵 Efectivo</div>
-                      {cash.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setShowCashEstimation(true)}
-                          title="Estimar cuántos billetes y monedas se necesitan para pagar el efectivo de esta nómina"
-                          className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-0.5 text-[10px] hover:bg-[var(--color-accent-soft)]"
-                        >
-                          💵 Estimar
-                        </button>
-                      )}
-                    </div>
+                    <div className="text-xs text-[var(--color-muted)]">💵 Efectivo</div>
                     <div className="text-lg font-semibold">{fmtCurrency(cashTotal)}</div>
                     <div className="text-[10px] text-[var(--color-muted)]">{cash.length} persona(s) · {cashGroups.length} grupo(s)</div>
                     {cashPaidMode && (
@@ -5781,6 +5905,16 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                       >
                         Falta entregar: {fmtCurrency(owedCash)}
                       </div>
+                    )}
+                    {cash.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowCashEstimation(true)}
+                        title="Estimar cuántos billetes y monedas se necesitan para pagar el efectivo de esta nómina"
+                        className="mt-1.5 flex min-h-8 w-full max-w-[220px] items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-3 py-1 text-xs font-medium text-[var(--color-accent)] hover:bg-[var(--color-accent)] hover:text-[var(--color-accent-fg)]"
+                      >
+                        🧮 Estimar efectivo
+                      </button>
                     )}
                   </div>
                   {advanceTotal > 0 && (
@@ -6010,8 +6144,11 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                   onClick={() => toggleSection("cycles")}
                   className="flex flex-1 items-center gap-2 text-left text-sm font-semibold hover:text-[var(--color-accent)]"
                 >
-                  <span>{isCollapsed("cycles") ? "▸" : "▾"}</span>
-                  <span>Ciclos / Faenas pagadas ({cycleDetails.length})</span>
+                  <span className="text-[var(--color-muted)]">{isCollapsed("cycles") ? "▸" : "▾"}</span>
+                  <span>Ciclos de esta nómina</span>
+                  <span className="rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-[11px] font-normal tabular-nums text-[var(--color-muted)]">
+                    {cycleDetails.length}
+                  </span>
                 </button>
                 {editMode && isPending && (
                   <div className="flex shrink-0 gap-1">
@@ -6044,19 +6181,20 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                       producción sale de la nómina, y lo que ya no alcance de sus anticipos vuelve a quedar pendiente.
                     </p>
                   )}
-                  <ul className="space-y-1.5 text-sm">
+                  <ul className="grid gap-2 text-sm">
                     {cycleBreakdown.map((c) => {
                       const r = activeRemoval.get(c.id);
                       const cycleOut = r === true;
                       const partial = r instanceof Set;
+                      const Head = editMode ? "label" : "div";
                       return (
                         <li
                           key={c.id}
-                          className={`rounded border bg-[var(--color-surface-2)] ${
+                          className={`overflow-hidden rounded-lg border bg-[var(--color-surface)] shadow-sm ${
                             r ? "border-[var(--color-danger)]" : "border-[var(--color-border)]"
                           }`}
                         >
-                          <label className={`flex items-start gap-2 px-3 py-1.5 ${editMode ? "cursor-pointer" : ""}`}>
+                          <Head className={`flex items-start gap-2.5 px-3 py-2.5 ${editMode ? "cursor-pointer" : ""}`}>
                             {editMode && (
                               <input
                                 type="checkbox"
@@ -6070,24 +6208,37 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
                               />
                             )}
                             <div className={`min-w-0 flex-1 ${cycleOut ? "line-through opacity-60" : ""}`}>
-                              <span className="font-medium">{c.label}</span>
-                              {c.faenaName && (
-                                <span className="ml-2 text-xs text-[var(--color-muted)]">
-                                  {c.faenaName}{c.subfaenaName ? ` / ${c.subfaenaName}` : ""}
-                                </span>
-                              )}
-                              {(c.firstDay || c.lastDay) && (
-                                <span className="ml-2 text-[10px] text-[var(--color-muted)] tabular-nums">
-                                  📅 {c.firstDay || "?"}{c.lastDay && c.firstDay !== c.lastDay ? ` → ${c.lastDay}` : ""}
-                                </span>
-                              )}
+                              <div className="font-medium [overflow-wrap:anywhere]">{c.label}</div>
+                              <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-[var(--color-muted)]">
+                                {c.faenaName && (
+                                  <span>
+                                    {c.faenaName}
+                                    {c.subfaenaName ? ` / ${c.subfaenaName}` : ""}
+                                  </span>
+                                )}
+                                {(c.firstDay || c.lastDay) && (
+                                  <span className="tabular-nums">
+                                    📅 {fmtDayShortEs(c.firstDay) || "?"}
+                                    {c.lastDay && c.firstDay !== c.lastDay ? ` → ${fmtDayShortEs(c.lastDay)}` : ""}
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                            <span className={`shrink-0 font-semibold tabular-nums ${cycleOut ? "line-through opacity-60" : ""}`}>
-                              {fmtCurrency(c.amount)}
-                            </span>
-                          </label>
+                            <div className="flex shrink-0 flex-col items-end gap-1">
+                              <span className={`font-semibold tabular-nums ${cycleOut ? "line-through opacity-60" : ""}`}>
+                                {fmtCurrency(c.amount)}
+                              </span>
+                              <Link
+                                to={`/cycles/${c.id}`}
+                                title="Abrir el ciclo (Ctrl+clic: en otra pestaña)"
+                                className="whitespace-nowrap text-xs text-[var(--color-accent)] hover:underline"
+                              >
+                                Abrir ciclo ↗
+                              </Link>
+                            </div>
+                          </Head>
                           {c.labors.length > 0 && (editMode || c.labors.length > 1 || Array.isArray(c.laborIds)) && (
-                            <ul className="border-t border-[var(--color-border)] px-3 py-1">
+                            <ul className="divide-y divide-[var(--color-border)] border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-3">
                               {c.labors.map((l) => {
                                 const out = cycleOut || (partial && r.has(l.id));
                                 const Row = editMode ? "label" : "div";
@@ -6397,69 +6548,31 @@ function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPa
             </section>
           )}
 
-          <div className="flex justify-end border-t border-[var(--color-border)] pt-3 text-sm font-semibold">
-            <span>TOTAL: {fmtCurrency(payroll.total || 0)}</span>
-          </div>
         </div>
-        <div className="flex shrink-0 flex-wrap justify-end gap-1.5 border-t border-[var(--color-border)] px-3 py-3 sm:gap-2 sm:px-5">
-          {cash.length > 0 && (
-            <button
-              onClick={() => setShowCashEstimation(true)}
-              title="Cuántos billetes y monedas de cada denominación se necesitan para pagar el efectivo de esta nómina"
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm font-medium hover:bg-[var(--color-accent-soft)]"
-            >
-              💵 Estimación efectivo
-            </button>
-          )}
-          {cashGroups.length > 0 && (
-            <button
-              onClick={handlePrint}
-              disabled={printing}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm font-medium hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
-            >
-              {printing ? "Cargando..." : "🖨 Comprobantes efectivo"}
-            </button>
-          )}
-          {allGroups.length > 0 && (
-            <button
-              onClick={handlePrintDetail}
-              disabled={printingDetail}
-              title="Detalle de pago de todos los trabajadores (efectivo + transferencia), sin firma ni copia"
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm font-medium hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
-            >
-              {printingDetail ? "Cargando..." : "📄 Detalle pago"}
-            </button>
-          )}
-          <button
-            onClick={() => onDownloadNominaOnly(payroll)}
-            title="Solo la hoja de Nómina BChile (para subir al banco)"
-            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm font-medium hover:bg-[var(--color-accent-soft)]"
-          >
-            🏦 Sólo Nómina
-          </button>
-          <button
-            onClick={() => onDownloadSnapshot(payroll)}
-            title="Descargar el JSON estático con toda la info para reconstruir esta nómina"
-            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm font-medium hover:bg-[var(--color-accent-soft)]"
-          >
-            📄 JSON
-          </button>
-          {onPublishPortal && (
-            <button
-              onClick={() => onPublishPortal(payroll)}
-              title="Publicar esta nómina en el portal de trabajadores: cada uno ve su detalle buscando su RUT"
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm font-medium hover:bg-[var(--color-accent-soft)]"
-            >
-              {payroll.id === publishedPayrollId ? "🌐 Actualizar en portal" : "🌐 Publicar en portal"}
-            </button>
-          )}
-          <button
-            onClick={() => onRedownload(payroll)}
-            title="XLSX completo (Nómina + Resumen + Transferencias + Efectivo)"
-            className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)]"
-          >
-            📥 XLSX completo
-          </button>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-t border-[var(--color-border)] px-3 py-2.5 sm:px-5">
+          <div className="min-w-0 text-sm">
+            <span className="text-[var(--color-muted)]">Total </span>
+            <span className="font-semibold tabular-nums">{fmtCurrency(payroll.total || 0)}</span>
+            <span className="ml-1 hidden text-xs text-[var(--color-muted)] sm:inline">
+              · {items.length} trabajador{items.length === 1 ? "" : "es"}
+            </span>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {printItems.length > 0 && (
+              <RowMenu
+                items={printItems}
+                trigger={printing || printingDetail ? "Preparando…" : "🖨 Imprimir ▾"}
+                triggerLabel="Imprimir"
+                triggerClassName="min-h-9 shrink-0 whitespace-nowrap rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm font-medium hover:bg-[var(--color-accent-soft)] sm:px-4"
+              />
+            )}
+            <RowMenu
+              items={downloadItems}
+              trigger="📥 Descargar ▾"
+              triggerLabel="Descargar"
+              triggerClassName="min-h-9 shrink-0 whitespace-nowrap rounded-md bg-[var(--color-accent)] px-3 py-2 text-sm font-medium text-[var(--color-accent-fg)] hover:opacity-90 sm:px-4"
+            />
+          </div>
         </div>
       </div>
       <WorkerSummaryModal
@@ -7178,7 +7291,10 @@ const formatProfileValue = (field, value) => {
 // cambiaron desde que se generó la nómina, antes de escribir nada.
 function RecalcModal({ preview, busy, onClose, onConfirm }) {
   if (!preview) return null;
-  const { amountChanges, profileChanges, advanceChanges, newWorkers, leavingWorkers = [], removalLines = [], releasedCount = 0 } = preview;
+  const { amountChanges, profileChanges, advanceChanges, newWorkers, leavingWorkers = [], removalLines = [], releasedCount = 0, cycleChanges = [] } = preview;
+  const fmtRange = ([first, last]) =>
+    first ? (last && last !== first ? `${fmtDayShortEs(first)} → ${fmtDayShortEs(last)}` : fmtDayShortEs(first)) : "sin período";
+  const fmtCycleValue = (field, value) => (field === "period" ? fmtRange(value) : value || "—");
   return (
     <Modal
       open={!!preview}
@@ -7368,69 +7484,154 @@ function RecalcModal({ preview, busy, onClose, onConfirm }) {
             </div>
           </div>
         )}
+
+        {cycleChanges.length > 0 && (
+          <div>
+            <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+              Ciclos actualizados ({cycleChanges.length})
+            </h4>
+            <p className="mb-1.5 text-xs text-[var(--color-muted)]">
+              Los nombres vigentes del ciclo, la faena y la subfaena, y el período: del primer al último día que la nómina paga en cada ciclo.
+            </p>
+            <div className="space-y-1.5">
+              {cycleChanges.map((c) => (
+                <div key={c.cycleId} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1.5 text-xs">
+                  <div className="font-medium break-words">{c.label}</div>
+                  {c.fields.map((f) => (
+                    <div key={f.field} className="break-words text-[var(--color-muted)]">
+                      {f.label}: {fmtCycleValue(f.field, f.old)} pasa a{" "}
+                      <span className="font-medium text-[var(--color-text)]">{fmtCycleValue(f.field, f.new)}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </Modal>
   );
 }
 
 // Modal de estimación de efectivo: cuántos billetes y monedas de cada
-// denominación hacen falta. Cada monto se redondea hacia arriba al múltiplo de
-// $100, así se descompone exacto (ver `estimateCashBreakdown`).
+// denominación hacen falta, usando solo los que se marcan como disponibles
+// (por defecto `DEFAULT_AVAILABLE`). Cada monto se arma con la menor cantidad
+// de piezas y, si no calza justo, se redondea hacia arriba (ver
+// `estimateCashBreakdown`). El resumen y la lista por trabajador se copian
+// como texto o como imagen, y las dos dicen de qué nómina son y cuánto
+// efectivo pendiente de otras incluyen.
 function CashEstimationModal({ cashItems, payrollName, pendingExtra = [], onClose }) {
   const toast = useToast();
   // El efectivo pendiente de otras nóminas se entrega aparte, pero la plata se
   // saca del banco de una sola vez — así que el desglose de billetes y sencillo
-  // tiene que poder cubrir todo junto.
-  const extraItems = useMemo(() => pendingExtra.flatMap((x) => x.items), [pendingExtra]);
+  // tiene que poder cubrir todo junto. Cada persona pendiente lleva el nombre
+  // de su nómina en `pendingFrom`.
+  const extraItems = useMemo(
+    () => pendingExtra.flatMap((x) => x.items.map((it) => ({ ...it, pendingFrom: x.name }))),
+    [pendingExtra],
+  );
   const extraTotal = useMemo(
     () => extraItems.reduce((s, it) => s + (Number(it.amount) || 0), 0),
     [extraItems],
   );
+  const ownTotal = useMemo(() => cashItems.reduce((s, it) => s + (Number(it.amount) || 0), 0), [cashItems]);
   const [includePending, setIncludePending] = useState(true);
   const usePending = includePending && extraItems.length > 0;
   const allItems = useMemo(
     () => (usePending ? [...cashItems, ...extraItems] : cashItems),
     [cashItems, extraItems, usePending],
   );
-  const est = useMemo(() => estimateCashBreakdown(allItems), [allItems]);
+  const [available, setAvailable] = useState(() => new Set(DEFAULT_AVAILABLE));
+  const toggleAvailable = (value) =>
+    setAvailable((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
+  const est = useMemo(() => estimateCashBreakdown(allItems, [...available]), [allItems, available]);
+  const denominations = [...est.counts.keys()];
   const [showDetail, setShowDetail] = useState(false);
   const [busy, setBusy] = useState("");
   const captureRef = useRef(null);
+  const listRef = useRef(null);
   const diff = est.totalNeeded - est.totalOriginal;
+  const totalPieces = [...est.counts.values()].reduce((s, v) => s + v, 0);
 
-  // Desglose principal en texto plano, sin el detalle por trabajador, para
-  // pegar en un chat o una nota. padStart alinea las cantidades en monospace.
-  const buildPlainText = () => {
+  // Las personas del desglose (`perWorker` va en el orden de `allItems`),
+  // agrupadas: primero las de esta nómina por líder y después las de cada
+  // nómina con efectivo pendiente.
+  const workerGroups = useMemo(() => {
+    const groups = new Map();
+    est.perWorker.forEach((w, i) => {
+      const from = allItems[i]?.pendingFrom || "";
+      const key = from ? `pending:${from}` : `own:${w.leader || ""}`;
+      if (!groups.has(key)) {
+        groups.set(key, { key, label: from ? `Pendiente de ${from}` : w.leader || "Sin grupo", pending: !!from, rows: [] });
+      }
+      groups.get(key).rows.push(w);
+    });
+    const list = [...groups.values()];
+    for (const g of list) g.rows.sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "es"));
+    return list.sort((a, b) => Number(a.pending) - Number(b.pending) || a.label.localeCompare(b.label, "es"));
+  }, [est, allItems]);
+
+  const pendingNote = usePending
+    ? `Incluye ${fmtCurrency(extraTotal)} de efectivo pendiente de otras nóminas (${pendingExtra.map((x) => x.name).join(", ")}), que se entrega aparte.`
+    : "";
+  // "3 × $10.000 + 1 × $5.000", de mayor a menor.
+  const piecesText = (breakdown) =>
+    denominations.filter((d) => breakdown[d]).map((d) => `${breakdown[d]} × ${fmtCurrency(d)}`).join(" + ");
+
+  // Desglose principal en texto plano, para pegar en un chat o una nota.
+  // padStart alinea las cantidades en monospace.
+  const buildSummaryText = () => {
     const lines = [];
     lines.push(`💵 Estimación de efectivo — ${payrollName}`);
     lines.push(`${allItems.length} trabajador(es) · Total: ${fmtCurrency(est.totalNeeded)}`);
     if (usePending) {
-      lines.push(`(incluye ${fmtCurrency(extraTotal)} de efectivo pendiente de nóminas anteriores)`);
+      lines.push(`Esta nómina: ${fmtCurrency(ownTotal)} · Pendiente de otras nóminas: ${fmtCurrency(extraTotal)}`);
+      lines.push(pendingNote);
     }
     if (diff > 0) {
       lines.push(`(Original ${fmtCurrency(est.totalOriginal)} + redondeo ${fmtCurrency(diff)})`);
     }
     lines.push("");
     lines.push("Billetes y monedas:");
-    for (const d of CASH_DENOMINATIONS) {
+    for (const d of denominations) {
       const n = est.counts.get(d) || 0;
       if (n === 0) continue;
-      const isBill = d >= 1000;
       const denomStr = fmtCurrency(d).padStart(9, " ");
       const qtyStr = String(n).padStart(4, " ");
       const subStr = fmtCurrency(n * d).padStart(11, " ");
-      lines.push(`  ${denomStr} ${isBill ? "billete" : " moneda"} × ${qtyStr} = ${subStr}`);
+      lines.push(`  ${denomStr} ${isBill(d) ? "billete" : " moneda"} × ${qtyStr} = ${subStr}`);
     }
     lines.push("");
-    const totalQty = [...est.counts.values()].reduce((s, v) => s + v, 0);
-    lines.push(`Total: ${totalQty} billetes/monedas · ${fmtCurrency(est.totalNeeded)}`);
+    lines.push(`Total: ${totalPieces} billetes/monedas · ${fmtCurrency(est.totalNeeded)}`);
     return lines.join("\n");
   };
 
-  const handleCopyText = async () => {
-    setBusy("text");
+  // La lista por trabajador en texto plano: cuánto recibe cada uno y con qué
+  // billetes y monedas, por grupo.
+  const buildListText = () => {
+    const lines = [`💵 Efectivo por trabajador — ${payrollName}`];
+    if (usePending) lines.push(pendingNote);
+    for (const g of workerGroups) {
+      lines.push("", g.label);
+      for (const w of g.rows) {
+        const amount = w.delta > 0 ? `${fmtCurrency(w.rounded)} (de ${fmtCurrency(w.original)})` : fmtCurrency(w.rounded);
+        lines.push(`  ${w.name}: ${amount} → ${piecesText(w.breakdown) || "sin efectivo"}`);
+      }
+    }
+    lines.push("", `Total: ${est.perWorker.length} trabajador(es) · ${fmtCurrency(est.totalNeeded)}`);
+    lines.push(`Billetes y monedas: ${piecesText(Object.fromEntries(est.counts))}`);
+    return lines.join("\n");
+  };
+
+  const copyText = async (kind, text) => {
+    setBusy(kind);
     try {
-      await navigator.clipboard.writeText(buildPlainText());
+      await navigator.clipboard.writeText(text);
       toast.success("Texto copiado");
     } catch (err) {
       toast.error("Error al copiar: " + (err.message || err));
@@ -7439,11 +7640,13 @@ function CashEstimationModal({ cashItems, payrollName, pendingExtra = [], onClos
     }
   };
 
-  const handleCopyImage = async () => {
-    if (!captureRef.current) return;
-    setBusy("image");
+  // `prepare` corre antes de capturar (por ejemplo, desplegar la lista).
+  const copyImage = async (kind, ref, prepare) => {
+    setBusy(kind);
     try {
-      const blob = await captureFullWidthBlob(captureRef.current);
+      if (prepare) await prepare();
+      if (!ref.current) throw new Error("No se pudo generar la imagen");
+      const blob = await captureFullWidthBlob(ref.current);
       if (!blob) throw new Error("No se pudo generar la imagen");
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       toast.success("Imagen copiada");
@@ -7453,29 +7656,38 @@ function CashEstimationModal({ cashItems, payrollName, pendingExtra = [], onClos
       setBusy("");
     }
   };
+  // La lista se despliega antes de capturarla; dos cuadros dan tiempo a que
+  // se pinte.
+  const showListForCapture = async () => {
+    if (showDetail) return;
+    setShowDetail(true);
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  };
+
+  const copyBtn = "rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-50";
+  const nothingAvailable = available.size === 0;
 
   return (
     <Modal open onClose={onClose} title="💵 Estimación de efectivo" size="lg">
       <div className="space-y-4 text-sm">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-xs text-[var(--color-muted)]">
-            Para <b>{payrollName}</b> · {cashItems.length} trabajador(es) en efectivo.
-            Cada monto se redondea hacia arriba al múltiplo de $100 más cercano.
+            Cada monto se arma con los billetes y monedas disponibles y, si no calza justo, se redondea hacia arriba.
           </p>
           <div className="flex gap-1">
             <button
-              onClick={handleCopyText}
-              disabled={busy === "text"}
-              className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
-              title="Copiar el desglose como texto plano (para pegar en chat o notas)"
+              onClick={() => copyText("text", buildSummaryText())}
+              disabled={busy === "text" || nothingAvailable}
+              className={copyBtn}
+              title="Copiar el resumen como texto plano (para pegar en chat o notas)"
             >
               {busy === "text" ? "..." : "📋 Texto"}
             </button>
             <button
-              onClick={handleCopyImage}
-              disabled={busy === "image"}
-              className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
-              title="Copiar el desglose como imagen al portapapeles"
+              onClick={() => copyImage("image", captureRef)}
+              disabled={busy === "image" || nothingAvailable}
+              className={copyBtn}
+              title="Copiar el resumen como imagen al portapapeles"
             >
               {busy === "image" ? "..." : "📋 Imagen"}
             </button>
@@ -7504,124 +7716,213 @@ function CashEstimationModal({ cashItems, payrollName, pendingExtra = [], onClos
             </span>
           </label>
         )}
-        <div ref={captureRef} className="space-y-4" style={{ background: "var(--color-surface)" }}>
-
-        {/* Total destacado */}
-        <div className="rounded-lg border border-[var(--color-accent)] bg-[var(--color-accent-soft)] p-3">
-          <div className="text-xs text-[var(--color-muted)]">Total efectivo a llevar</div>
-          <div className="text-2xl font-bold tabular-nums text-[var(--color-accent)]">
-            {fmtCurrency(est.totalNeeded)}
-          </div>
-          {diff > 0 && (
-            <div className="mt-1 text-[11px] text-[var(--color-muted)]">
-              Original: {fmtCurrency(est.totalOriginal)} · Redondeo hacia arriba: +{fmtCurrency(diff)}
+        <div className="space-y-1.5 rounded-md border border-[var(--color-border)] px-3 py-2">
+          <div className="text-xs font-semibold text-[var(--color-muted)]">Disponibles para pagar</div>
+          {[["bill", "Billetes"], ["coin", "Monedas"]].map(([kind, label]) => (
+            <div key={kind} className="flex flex-wrap items-center gap-1.5">
+              <span className="w-full text-[11px] text-[var(--color-muted)] sm:w-16">{label}</span>
+              {CASH_DENOMINATIONS.filter((d) => d.kind === kind).map(({ value }) => {
+                const on = available.has(value);
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => toggleAvailable(value)}
+                    title={on ? "Disponible: click para no usarlo" : "No disponible: click para usarlo"}
+                    className={`min-h-8 rounded-full border px-2.5 py-1 text-xs tabular-nums ${
+                      on
+                        ? "border-[var(--color-accent)] bg-[var(--color-accent)] font-medium text-[var(--color-accent-fg)]"
+                        : "border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-muted)] hover:bg-[var(--color-surface-2)]"
+                    }`}
+                  >
+                    {on ? "✓ " : ""}{fmtCurrency(value)}
+                  </button>
+                );
+              })}
             </div>
-          )}
+          ))}
         </div>
+        {nothingAvailable ? (
+          <p className="rounded-md border border-dashed border-[var(--color-warning)] px-3 py-3 text-center text-xs text-[var(--color-warning)]">
+            Marca al menos un billete o una moneda disponible.
+          </p>
+        ) : (
+          <>
+            {/* Lo que sale en la imagen del resumen. */}
+            <div ref={captureRef} className="space-y-4 p-1" style={{ background: "var(--color-surface)" }}>
+              <div>
+                <div className="font-semibold">💵 Efectivo — {payrollName}</div>
+                <div className="text-[11px] text-[var(--color-muted)]">{allItems.length} trabajador(es) en efectivo</div>
+              </div>
 
-        {/* Tabla de denominaciones */}
-        <div>
-          <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-            Billetes y monedas necesarios
-          </h4>
-          <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
-            <table className="w-full text-sm">
-              <thead className="bg-[var(--color-surface-2)] text-left text-[var(--color-muted)]">
-                <tr>
-                  <th className="px-3 py-1.5">Denominación</th>
-                  <th className="px-3 py-1.5 text-right">Cantidad</th>
-                  <th className="px-3 py-1.5 text-right">Subtotal</th>
-                </tr>
-              </thead>
-              <tbody>
-                {CASH_DENOMINATIONS.map((d) => {
-                  const n = est.counts.get(d) || 0;
-                  const isBill = d >= 1000;
-                  return (
-                    <tr key={d} className="border-t border-[var(--color-border)]">
-                      <td className="px-3 py-1.5">
-                        <span className="font-medium">{fmtCurrency(d)}</span>
-                        <span className="ml-2 text-[10px] text-[var(--color-muted)]">
-                          {isBill ? "billete" : "moneda"}
-                        </span>
-                      </td>
-                      <td className={`px-3 py-1.5 text-right tabular-nums ${n === 0 ? "text-[var(--color-muted)]" : "font-semibold"}`}>
-                        {n}
-                      </td>
-                      <td className={`px-3 py-1.5 text-right tabular-nums ${n === 0 ? "text-[var(--color-muted)]" : ""}`}>
-                        {fmtCurrency(n * d)}
-                      </td>
-                    </tr>
-                  );
-                })}
-                <tr className="border-t-2 border-[var(--color-border)] bg-[var(--color-surface-2)]/60 font-semibold">
-                  <td className="px-3 py-1.5">Total</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">
-                    {[...est.counts.values()].reduce((s, v) => s + v, 0)}
-                  </td>
-                  <td className="px-3 py-1.5 text-right tabular-nums text-[var(--color-accent)]">
-                    {fmtCurrency(est.totalNeeded)}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+              <div className="rounded-lg border border-[var(--color-accent)] bg-[var(--color-accent-soft)] p-3">
+                <div className="text-xs text-[var(--color-muted)]">Total efectivo a llevar</div>
+                <div className="text-2xl font-bold tabular-nums text-[var(--color-accent)]">
+                  {fmtCurrency(est.totalNeeded)}
+                </div>
+                {usePending && (
+                  <div className="mt-1 text-[11px] tabular-nums">
+                    Esta nómina: <b>{fmtCurrency(ownTotal)}</b> · Pendiente de otras nóminas: <b>{fmtCurrency(extraTotal)}</b>
+                  </div>
+                )}
+                {diff > 0 && (
+                  <div className="mt-1 text-[11px] text-[var(--color-muted)]">
+                    Original: {fmtCurrency(est.totalOriginal)} · Redondeo hacia arriba: +{fmtCurrency(diff)}
+                  </div>
+                )}
+              </div>
 
-        </div>
-
-        {/* Detalle por trabajador (colapsable) — fuera del captureRef para que
-            no entre en la imagen copiada (puede ser muy largo). */}
-        <div>
-          <button
-            type="button"
-            onClick={() => setShowDetail((v) => !v)}
-            className="flex w-full items-center gap-2 text-left text-xs font-semibold text-[var(--color-muted)] hover:text-[var(--color-accent)]"
-          >
-            <span>{showDetail ? "▾" : "▸"}</span>
-            <span>Detalle por trabajador ({est.perWorker.length})</span>
-          </button>
-          {showDetail && (
-            <div className="mt-2 overflow-x-auto rounded-md border border-[var(--color-border)]">
-              <table className="w-full text-xs">
-                <thead className="bg-[var(--color-surface-2)] text-left text-[var(--color-muted)]">
-                  <tr>
-                    <th className="px-2 py-1">Nombre</th>
-                    <th className="px-2 py-1 text-right">Original</th>
-                    <th className="px-2 py-1 text-right">Redondeado</th>
-                    {CASH_DENOMINATIONS.map((d) => (
-                      <th key={d} className="px-2 py-1 text-right">{fmtCurrency(d).replace("$", "")}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {est.perWorker.map((w) => (
-                    <tr key={w.rut} className="border-t border-[var(--color-border)]">
-                      <td className="px-2 py-1">
-                        <div className="font-medium">{w.name}</div>
-                        {w.leader && (
-                          <div className="text-[9px] text-[var(--color-muted)]">{w.leader}</div>
-                        )}
-                      </td>
-                      <td className="px-2 py-1 text-right tabular-nums">{fmtCurrency(w.original)}</td>
-                      <td className="px-2 py-1 text-right tabular-nums font-semibold">
-                        {fmtCurrency(w.rounded)}
-                        {w.delta > 0 && (
-                          <div className="text-[9px] text-[var(--color-muted)]">+{fmtCurrency(w.delta)}</div>
-                        )}
-                      </td>
-                      {CASH_DENOMINATIONS.map((d) => (
-                        <td key={d} className="px-2 py-1 text-right tabular-nums">
-                          {w.breakdown[d] || ""}
-                        </td>
-                      ))}
-                    </tr>
+              {usePending && (
+                <div className="rounded-md border border-dashed border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-3 py-2 text-[11px]">
+                  <div className="font-semibold">Incluye efectivo pendiente de otras nóminas, que se entrega aparte:</div>
+                  {pendingExtra.map((x) => (
+                    <div key={x.payrollId} className="tabular-nums">
+                      {x.name}: {fmtCurrency(x.amount)} · {x.items.length} persona(s)
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              )}
+
+              <div>
+                <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+                  Billetes y monedas necesarios
+                </h4>
+                <div className="overflow-hidden rounded-md border border-[var(--color-border)]">
+                  <table className="w-full text-sm">
+                    <thead className="bg-[var(--color-surface-2)] text-left text-[var(--color-muted)]">
+                      <tr>
+                        <th className="px-3 py-1.5">Denominación</th>
+                        <th className="px-3 py-1.5 text-right">Cantidad</th>
+                        <th className="px-3 py-1.5 text-right">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {denominations.map((d) => {
+                        const n = est.counts.get(d) || 0;
+                        return (
+                          <tr key={d} className="border-t border-[var(--color-border)]">
+                            <td className="px-3 py-1.5">
+                              <span className="font-medium">{fmtCurrency(d)}</span>
+                              <span className="ml-2 text-[10px] text-[var(--color-muted)]">
+                                {isBill(d) ? "billete" : "moneda"}
+                              </span>
+                            </td>
+                            <td className={`px-3 py-1.5 text-right tabular-nums ${n === 0 ? "text-[var(--color-muted)]" : "font-semibold"}`}>
+                              {n}
+                            </td>
+                            <td className={`px-3 py-1.5 text-right tabular-nums ${n === 0 ? "text-[var(--color-muted)]" : ""}`}>
+                              {fmtCurrency(n * d)}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      <tr className="border-t-2 border-[var(--color-border)] bg-[var(--color-surface-2)]/60 font-semibold">
+                        <td className="px-3 py-1.5">Total</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">{totalPieces}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums text-[var(--color-accent)]">
+                          {fmtCurrency(est.totalNeeded)}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
-          )}
-        </div>
+
+            {/* Lista por trabajador: plegable y con su propia copia, para que la
+                imagen del resumen no se alargue con ella. */}
+            <div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDetail((v) => !v)}
+                  aria-expanded={showDetail}
+                  className="flex items-center gap-2 text-left text-xs font-semibold text-[var(--color-muted)] hover:text-[var(--color-accent)]"
+                >
+                  <span>{showDetail ? "▾" : "▸"}</span>
+                  <span>Por trabajador ({est.perWorker.length})</span>
+                </button>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => copyText("listText", buildListText())}
+                    disabled={busy === "listText"}
+                    className={copyBtn}
+                    title="Copiar la lista por trabajador, con sus billetes y monedas, como texto"
+                  >
+                    {busy === "listText" ? "..." : "📋 Lista"}
+                  </button>
+                  <button
+                    onClick={() => copyImage("listImage", listRef, showListForCapture)}
+                    disabled={busy === "listImage"}
+                    className={copyBtn}
+                    title="Copiar la lista por trabajador como imagen"
+                  >
+                    {busy === "listImage" ? "..." : "📋 Imagen de la lista"}
+                  </button>
+                </div>
+              </div>
+              {showDetail && (
+                <div ref={listRef} className="mt-2 space-y-2 p-1" style={{ background: "var(--color-surface)" }}>
+                  <div>
+                    <div className="font-semibold">💵 Efectivo por trabajador — {payrollName}</div>
+                    {usePending && <div className="text-[11px] text-[var(--color-warning)]">{pendingNote}</div>}
+                  </div>
+                  <div className="overflow-x-auto rounded-md border border-[var(--color-border)]">
+                    <table className="w-full text-xs">
+                      <thead className="bg-[var(--color-surface-2)] text-left text-[var(--color-muted)]">
+                        <tr>
+                          <th className="px-2 py-1">Nombre</th>
+                          <th className="px-2 py-1 text-right">Monto</th>
+                          {denominations.map((d) => (
+                            <th key={d} className="px-2 py-1 text-right">{fmtCurrency(d)}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {workerGroups.map((g) => [
+                          <tr key={g.key} className="border-t border-[var(--color-border)] bg-[var(--color-surface-2)]/60">
+                            <td
+                              colSpan={2 + denominations.length}
+                              className={`px-2 py-1 text-[11px] font-semibold ${g.pending ? "text-[var(--color-warning)]" : ""}`}
+                            >
+                              {g.label} · {g.rows.length}
+                            </td>
+                          </tr>,
+                          ...g.rows.map((w, i) => (
+                            <tr key={`${g.key}|${w.rut}|${i}`} className="border-t border-[var(--color-border)]">
+                              <td className="px-2 py-1 font-medium">{w.name}</td>
+                              <td className="px-2 py-1 text-right tabular-nums font-semibold">
+                                {fmtCurrency(w.rounded)}
+                                {w.delta > 0 && (
+                                  <div className="text-[9px] font-normal text-[var(--color-muted)]">de {fmtCurrency(w.original)}</div>
+                                )}
+                              </td>
+                              {denominations.map((d) => (
+                                <td key={d} className="px-2 py-1 text-right tabular-nums">
+                                  {w.breakdown[d] || ""}
+                                </td>
+                              ))}
+                            </tr>
+                          )),
+                        ])}
+                        <tr className="border-t-2 border-[var(--color-border)] bg-[var(--color-surface-2)]/60 font-semibold">
+                          <td className="px-2 py-1">Total · {est.perWorker.length}</td>
+                          <td className="px-2 py-1 text-right tabular-nums">{fmtCurrency(est.totalNeeded)}</td>
+                          {denominations.map((d) => (
+                            <td key={d} className="px-2 py-1 text-right tabular-nums">
+                              {est.counts.get(d) || ""}
+                            </td>
+                          ))}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </Modal>
   );

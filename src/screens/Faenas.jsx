@@ -25,6 +25,7 @@ import { workdayDocId } from "../utils/cosechaCombos";
 import { LABOR_TYPES, initialLaborPlan } from "../utils/laborTypes";
 import ProductionSummaryModal from "../components/ProductionSummaryModal";
 import { localIsoDate } from "../utils/dates";
+import { closedCyclePatch } from "../utils/cycleClosing";
 import { toTitleName, unshout } from "../utils/textCase";
 import { hasChanges } from "../utils/formChanges";
 
@@ -41,25 +42,6 @@ const emptySub = { name: "", notes: "" };
 const orderKey = (uid) => `af.faenaOrder.${uid || "anon"}`;
 const todayStr = () => localIsoDate();
 const newId = () => (crypto?.randomUUID?.() || `id_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`);
-
-// Primer y último día de la grilla del ciclo (`cycle.days`). Al cerrar el
-// ciclo, startDate/endDate se recalculan con lo que efectivamente se trabajó,
-// no con lo que se tipeó al crearlo ni con la fecha del cierre. Sin días,
-// quedan las fechas que ya tenía (u hoy, si faltan).
-const firstWorkedDay = (cycle) => {
-  const days = cycle?.days;
-  if (Array.isArray(days) && days.length > 0) {
-    return days.reduce((min, d) => (d < min ? d : min), days[0]);
-  }
-  return cycle?.startDate || todayStr();
-};
-const lastWorkedDay = (cycle) => {
-  const days = cycle?.days;
-  if (Array.isArray(days) && days.length > 0) {
-    return days.reduce((max, d) => (d > max ? d : max), days[0]);
-  }
-  return cycle?.endDate || todayStr();
-};
 
 function applyOrder(items, order) {
   if (!order?.length) return items;
@@ -725,11 +707,7 @@ export default function Faenas() {
     if (!closeFlow) return;
     setBusy(true);
     try {
-      await cyclesService.update(closeFlow.cycle.id, {
-        status: "closed",
-        startDate: firstWorkedDay(closeFlow.cycle),
-        endDate: lastWorkedDay(closeFlow.cycle),
-      });
+      await cyclesService.update(closeFlow.cycle.id, closedCyclePatch(closeFlow.cycle));
       setCloseFlow((s) => ({ ...s, askNext: true }));
       await loadCycles(closeFlow.faenaId);
     } finally {
