@@ -4,10 +4,6 @@ import { cyclesService, harvestWeightsService, workdaysService } from "./index";
 import { findWorkerByRut } from "./workersService";
 import { comboKey, mapHarvestCodes, workdayDocId, getDayCombos } from "../utils/cosechaCombos";
 
-// ============================================================
-// Espejo pesaje → jornada
-// ============================================================
-//
 // Una jornada es el agregado de (trabajador × día × combo). Al guardar un
 // pesaje se conocen las claves afectadas —la de antes y la de después—, así
 // que alcanza con recalcular esas dos desde los pesajes que existen ahora; no
@@ -43,7 +39,7 @@ async function syncWorkdayKeys(prefixDoc, target, keys) {
     }
   }
 
-  const rosterKeys = new Set((labor.workers || []).flatMap((w) => [w.rut, w.id].filter(Boolean)));
+  const laborWorkerKeys = new Set((labor.workers || []).flatMap((w) => [w.rut, w.id].filter(Boolean)));
   const attachDays = new Set();
   const attachWorkers = new Map();
 
@@ -86,7 +82,7 @@ async function syncWorkdayKeys(prefixDoc, target, keys) {
     report.written += 1;
 
     if (!(cycle.days || []).includes(key.dateKey)) attachDays.add(key.dateKey);
-    if (!rosterKeys.has(key.rut)) {
+    if (!laborWorkerKeys.has(key.rut)) {
       if (!worker) report.unknownRuts.push(key.rut);
       else if (!attachWorkers.has(worker.id || key.rut)) {
         attachWorkers.set(worker.id || key.rut, { id: worker.id || key.rut, rut: key.rut, name: worker.name || key.rut });

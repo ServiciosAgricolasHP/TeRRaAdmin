@@ -5,23 +5,23 @@ import Modal, { ModalCloseButton } from "../../components/Modal";
 import { hasChanges } from "../../utils/formChanges";
 import Select from "../../components/Select";
 
-export function PrefixFormModal({ mode, initial, faenas, onClose, onSaved }) {
+export function PrefixFormModal({ mode, initial, jobs, onClose, onSaved }) {
   const toast = useToast();
   const [prefix, setPrefix] = useState(initial.id || "");
   const [label, setLabel] = useState(initial.label || "");
-  const [faenaId, setFaenaId] = useState(initial.faenaId || "");
+  const [jobId, setJobId] = useState(initial.faenaId || "");
   const [cycleId, setCycleId] = useState(initial.cycleId || "");
   const [laborId, setLaborId] = useState(initial.laborId || "");
   const [active, setActive] = useState(initial.active !== false);
   const [cycles, setCycles] = useState([]);
   const [busy, setBusy] = useState(false);
-  const values = { prefix, label, faenaId, cycleId, laborId, active };
+  const values = { prefix, label, faenaId: jobId, cycleId, laborId, active };
   const [baseline] = useState(values);
 
   useEffect(() => {
-    if (!faenaId) { setCycles([]); return; }
+    if (!jobId) { setCycles([]); return; }
     cyclesService
-      .list({ wheres: [["faenaId", "==", faenaId]], order: ["createdAt", "desc"] })
+      .list({ wheres: [["faenaId", "==", jobId]], order: ["createdAt", "desc"] })
       .then((list) => {
         setCycles(list.sort((a, b) => (a.status === b.status ? 0 : a.status === "open" ? -1 : 1)));
       })
@@ -32,7 +32,7 @@ export function PrefixFormModal({ mode, initial, faenas, onClose, onSaved }) {
         toast.error("No se pudieron cargar los ciclos de la faena: " + (err.message || err));
       });
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, [faenaId]);
+  }, [jobId]);
 
   const selectedCycle = cycles.find((c) => c.id === cycleId);
   const laborOptions = (selectedCycle?.labors || [])
@@ -41,7 +41,7 @@ export function PrefixFormModal({ mode, initial, faenas, onClose, onSaved }) {
 
   const submit = async () => {
     const prefixId = prefix.trim().toUpperCase();
-    if (!prefixId || !label.trim() || !faenaId) {
+    if (!prefixId || !label.trim() || !jobId) {
       toast.error("Prefijo, etiqueta y faena son obligatorios");
       return;
     }
@@ -49,7 +49,7 @@ export function PrefixFormModal({ mode, initial, faenas, onClose, onSaved }) {
     try {
       await qrPrefixesService.upsert(prefixId, {
         label: label.trim(),
-        faenaId,
+        faenaId: jobId,
         cycleId: cycleId || null,
         laborId: laborId || null,
         active,
@@ -116,16 +116,16 @@ export function PrefixFormModal({ mode, initial, faenas, onClose, onSaved }) {
         <Select
           label="Faena"
           required
-          value={faenaId}
-          onChange={(v) => { setFaenaId(v); setCycleId(""); setLaborId(""); }}
-          options={faenas.map((f) => ({ value: f.id, label: f.name }))}
+          value={jobId}
+          onChange={(v) => { setJobId(v); setCycleId(""); setLaborId(""); }}
+          options={jobs.map((f) => ({ value: f.id, label: f.name }))}
         />
         <Select
           label="Ciclo vigente"
           value={cycleId}
           onChange={(v) => { setCycleId(v); setLaborId(""); }}
-          disabled={!faenaId}
-          placeholder={faenaId ? "Sin ciclo asignado" : "Elige una faena primero"}
+          disabled={!jobId}
+          placeholder={jobId ? "Sin ciclo asignado" : "Elige una faena primero"}
           options={cycles.map((c) => ({ value: c.id, label: `${c.label || c.name || c.id}${c.status === "closed" ? " (cerrado)" : ""}` }))}
         />
         <Select

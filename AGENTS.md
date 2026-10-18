@@ -136,6 +136,7 @@ src/
     transports/         ← las piezas de Transportes
     billing/            ← las piezas de Facturación
     cycleDetail/        ← las piezas de CycleDetail (ver "CycleDetail — grid"); CycleSummaryModal, con las suyas en cycleSummaryModal/
+    harvestQr/          ← las piezas de Pesajes QR
   contexts/             ← AuthContext, ThemeContext, CatalogsContext, CarriersContext
   services/             ← capa de datos (Firestore CRUD + caché + auditoría)
                         firestoreBase, transportsService, carriersService,
@@ -284,6 +285,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Resumen de transporte | `transportPayment` (`payment` dentro de Transportes) | `transportPayments` |
 | Quincena | `fortnight` | `transportPayrolls` |
 | Pesaje | `harvestWeight` | `harvestWeights` |
+| Padrón de un prefijo QR | `roster` | dentro de `qrPrefixes` (guardado como `padron`) |
 | Facturación | `billing` | |
 | Factura (DTE) | `dteDocument` | `dteDocuments` |
 | Nota de crédito | `creditNote` | dentro de `dteDocuments` |
@@ -1031,12 +1033,18 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 
 ## Pesajes QR / HarvestQr
 
-- Pantalla: `src/screens/HarvestQr.jsx`. Ruta `/harvest-qr`, para todas las cuentas (`/admin/harvest-qr` redirige ahí). Colecciones `harvestWeights` + `qrPrefixes` (CRUD).
+- Pantalla: `src/screens/HarvestQr.jsx` (el componente de la ruta, con sus pestañas y la tabla de prefijos). Ruta `/harvest-qr`, para todas las cuentas (`/admin/harvest-qr` redirige ahí). Colecciones `harvestWeights` + `qrPrefixes` (CRUD).
+- Sus piezas, en `src/screens/harvestQr/`:
+  - **Prefijos:** `PrefixFormModal` y `SyncModal` (la sincronización hacia jornadas).
+  - **Pesajes:** `WeightsExplorer` y `WeightFormModal`.
+  - **IDs QR:** `QrManager`, `AssignQrModal` y `BackfillQrModal`.
+  - **Comunes:** `ProgressBar`, `TypeToConfirm` y `helpers.js` (TTL de las listas compartidas, contador de lecturas y fechas de la sincronización).
+- Fuera de la carpeta: `utils/qrCodes.js` (prefijo, número, dueño y códigos libres, con tests), `services/qrCodesService.js` (`assignQrCode` y el padrón, `syncRoster`) y `services/harvestSyncService.js` (`mirrorWeightToWorkdays`: el espejo pesaje → jornada al guardar un pesaje a mano).
 - `harvestWeights` la escribe una **app externa de escaneo** y es la fuente de verdad de la producción. Acá se lee para sincronizar hacia `workdays`, y además se puede corregir a mano desde el explorador: agregar o editar un pesaje (`WeightFormModal`, que firma con `supervisor`) y completar el `idQr` de pesajes viejos.
 - `qrPrefixes` (docId = el prefijo, ej. `"HP"`) es el puente entre un QR físico y el (faena, ciclo, labor) vigente al que hay que mandar sus pesajes. **Se reapunta a mano cada vez que se abre un ciclo nuevo** — semi-manual a propósito, no hay forma segura de adivinar el ciclo destino.
 - La sincronización agrupa los pesajes del rango por (trabajador, día, combo calidad/envase) sumando kilos, y escribe los `workdays` resultantes. Los ejes del combo se mapean con `qualityMap`/`containerMap` del prefijo; sin ellos el mapeo es identidad (los catálogos usan la misma numeración que la app de scan).
 - `healthOf()` marca un prefijo como roto si su ciclo/labor apuntado ya no existe, dejó de ser de cosecha **o el ciclo está cerrado**: detecta un prefijo que quedó sin reapuntar. El nivel `red` es el que deshabilita el botón de sincronizar, así que marcar ahí alcanza para bloquear.
-- **La sincronización paga una lectura por jornada, no dos.** Lee cada workday para saber si ya está liquidada (`payrollId`) y le pasa ese mismo documento al `upsert` como `before`, en vez de dejar que el servicio lo vuelva a leer. El `Map` `yaLeidas` existe para eso.
+- **La sincronización paga una lectura por jornada, no dos.** Lee cada workday para saber si ya está liquidada (`payrollId`) y le pasa ese mismo documento al `upsert` como `before`, en vez de dejar que el servicio lo vuelva a leer. El `Map` `alreadyRead` existe para eso.
 - **No se sincroniza contra un ciclo cerrado.** Ese ciclo ya se liquidó o está por liquidarse, y escribirle jornadas por detrás descuadra lo que se pagó. Hay dos chequeos a propósito: `healthOf` apaga el botón, y `run()` vuelve a mirar el `status` del doc fresco porque la lista de ciclos es cacheada y el cierre lo hace otra pantalla.
 - **La sincronización lee `harvestWeights` SIN caché, y tiene que seguir así.** De esos documentos salen las jornadas que se pagan; sincronizar sobre pesajes viejos escribe producción incompleta. Lo cacheado es solo el explorador, que es para mirar.
 

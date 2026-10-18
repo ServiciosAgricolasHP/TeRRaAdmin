@@ -8,7 +8,7 @@
 // escribe fija el vencimiento para todos: bajarlos aquí acorta la caché de
 // Trabajadores, Nómina y Calendario.
 export const WORKERS_TTL_MS = 2 * 60 * 60 * 1000;
-export const FAENAS_TTL_MS = 10 * 60 * 1000;
+export const JOBS_TTL_MS = 10 * 60 * 1000;
 
 // Contador de lecturas que ve el admin junto al título. Permite verificar que
 // las listas compartidas salen de la caché ("desde caché" = 0 lecturas).
@@ -40,11 +40,11 @@ const addDaysKey = (key, n) => {
 // previas, los últimos 14 días.
 export const nextSyncRange = (lastSync) => {
   const days = lastSync?.days || [];
-  const hoy = todayKey();
-  if (days.length === 0) return { from: daysAgoKey(14), to: hoy };
-  const ultimo = [...days].sort().at(-1);
-  const from = [addDaysKey(ultimo, 1), hoy].sort()[0];
-  const to = [addDaysKey(from, 14), hoy].sort()[0];
+  const today = todayKey();
+  if (days.length === 0) return { from: daysAgoKey(14), to: today };
+  const lastDay = [...days].sort().at(-1);
+  const from = [addDaysKey(lastDay, 1), today].sort()[0];
+  const to = [addDaysKey(from, 14), today].sort()[0];
   return { from, to };
 };
 

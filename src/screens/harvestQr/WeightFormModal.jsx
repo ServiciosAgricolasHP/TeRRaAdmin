@@ -35,9 +35,9 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
 
   // Asignación de QR sin salir a Gestión QRs. Si el código ya tiene dueño, se
   // pide confirmación antes de quitárselo.
-  const [nuevoQr, setNuevoQr] = useState(null); // null | { code }
-  const [confirmarRobo, setConfirmarRobo] = useState(null); // null | { code, from }
-  const [recienAsignado, setRecienAsignado] = useState("");
+  const [newQr, setNewQr] = useState(null); // null | { code }
+  const [confirmTakeover, setConfirmTakeover] = useState(null); // null | { code, from }
+  const [justAssigned, setJustAssigned] = useState("");
 
   // Una persona en la pesa descarga varios envases seguidos: mismo trabajador,
   // mismo día, mismo QR, y lo que cambia es el combo y los kilos. Por eso el
@@ -78,17 +78,17 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
     const original = isEdit && initial?.idQr && rut === initial.rut && prefixId === initial.prefix
       ? [String(initial.idQr).trim().toUpperCase()]
       : [];
-    const extra = recienAsignado && prefixOfCode(recienAsignado) === prefixId ? [recienAsignado] : [];
+    const extra = justAssigned && prefixOfCode(justAssigned) === prefixId ? [justAssigned] : [];
     return [...new Set([...original, ...workerCodes, ...extra])];
-  }, [isEdit, initial, rut, prefixId, workerCodes, recienAsignado]);
+  }, [isEdit, initial, rut, prefixId, workerCodes, justAssigned]);
 
   // Se deriva en el render: al cambiar de trabajador o de prefijo, una
   // selección que ya no está entre las opciones se descarta sola.
   const qrCode = qrOptions.includes(qrPick) ? qrPick : qrOptions.length === 1 ? qrOptions[0] : "";
 
-  const sugerencias = useMemo(
-    () => (nuevoQr ? suggestFreeCodes(workers, prefixId, knownCodes || new Set()) : []),
-    [nuevoQr, workers, prefixId, knownCodes],
+  const suggestions = useMemo(
+    () => (newQr ? suggestFreeCodes(workers, prefixId, knownCodes || new Set()) : []),
+    [newQr, workers, prefixId, knownCodes],
   );
 
   // Verificación de ida y vuelta: si el remapeo del prefijo no puede
@@ -96,23 +96,23 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
   const checked = useMemo(
     () =>
       rows.map((r) => {
-        const crudo = invertHarvestCodes(prefix, { x: r.x, y: r.y });
-        const vuelta = mapHarvestCodes(prefix, crudo);
-        return { ...r, crudo, ok: vuelta.x === r.x && vuelta.y === r.y, qty: Number(r.amount) };
+        const rawCodes = invertHarvestCodes(prefix, { x: r.x, y: r.y });
+        const roundTrip = mapHarvestCodes(prefix, rawCodes);
+        return { ...r, rawCodes, ok: roundTrip.x === r.x && roundTrip.y === r.y, qty: Number(r.amount) };
       }),
     [rows, prefix],
   );
 
   const totalQty = checked.reduce((s, r) => s + (Number.isFinite(r.qty) && r.qty > 0 ? r.qty : 0), 0);
 
-  const asignarQr = async (code, fromWorker) => {
+  const assignQr = async (code, fromWorker) => {
     setBusy(true);
     try {
       const { released } = await assignQrCode(code, worker, fromWorker);
-      setRecienAsignado(code);
+      setJustAssigned(code);
       setQrPick(code);
-      setNuevoQr(null);
-      setConfirmarRobo(null);
+      setNewQr(null);
+      setConfirmTakeover(null);
       toast.success(
         released.length
           ? `${code} → ${worker.name || worker.id} · ${released.join(", ")} liberado(s)`
@@ -126,17 +126,17 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
     }
   };
 
-  const pedirAsignacion = () => {
-    const code = String(nuevoQr?.code || "").trim().toUpperCase();
+  const requestAssignment = () => {
+    const code = String(newQr?.code || "").trim().toUpperCase();
     if (!code) { toast.error("Escribe el código del QR"); return; }
     if (prefixOfCode(code) !== prefixId) {
       toast.error(`Ese código no es del prefijo ${prefixId}. Un QR pertenece a la cosecha que dice su prefijo.`);
       return;
     }
-    const duenio = ownerOfCode(workers, code);
-    if (duenio && duenio.id === worker.id) { toast.info("Esa persona ya tiene ese QR"); setNuevoQr(null); return; }
-    if (duenio) { setConfirmarRobo({ code, from: duenio }); return; }
-    asignarQr(code, null);
+    const currentOwner = ownerOfCode(workers, code);
+    if (currentOwner && currentOwner.id === worker.id) { toast.info("Esa persona ya tiene ese QR"); setNewQr(null); return; }
+    if (currentOwner) { setConfirmTakeover({ code, from: currentOwner }); return; }
+    assignQr(code, null);
   };
 
   const submit = async () => {
@@ -162,8 +162,8 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
           rut: worker.id,
           dateKey,
           prefix: prefixId,
-          weightProcess: r.crudo.weightProcess,
-          weightType: r.crudo.weightType,
+          weightProcess: r.rawCodes.weightProcess,
+          weightType: r.rawCodes.weightType,
           amount: r.qty,
           idQr: qrCode,
         };
@@ -181,20 +181,20 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
       // El espejo va en su propio try: si falla, los pesajes ya quedaron
       // guardados y el aviso lo dice.
       try {
-        const nuevas = checked.map((r) => ({ prefixId, rut: worker.id, dateKey, x: r.x, y: r.y }));
-        const vieja = isEdit
+        const newKeys = checked.map((r) => ({ prefixId, rut: worker.id, dateKey, x: r.x, y: r.y }));
+        const oldKey = isEdit
           ? { prefixId: initial.prefix, rut: initial.rut, dateKey: initial.dateKey, x: initial.x, y: initial.y }
           : null;
-        const mirror = await mirrorWeightToWorkdays(prefixes, vieja ? [vieja, ...nuevas] : nuevas);
+        const mirror = await mirrorWeightToWorkdays(prefixes, oldKey ? [oldKey, ...newKeys] : newKeys);
         if (!mirror) {
           toast.warning(`El prefijo ${prefixId} no tiene ciclo y labor asignados: el pesaje quedó guardado pero no llega a ninguna jornada. Configúralo en Sincronizar cosechas.`);
         } else {
-          const partes = [];
-          if (mirror.written) partes.push(`${mirror.written} jornada(s) recalculada(s)`);
-          if (mirror.removed) partes.push(`${mirror.removed} sin pesajes, eliminada(s)`);
-          if (mirror.daysAdded.length) partes.push(`${mirror.daysAdded.length} día(s) agregado(s) al ciclo`);
-          if (mirror.workersAdded) partes.push(`${mirror.workersAdded} trabajador(es) agregado(s)`);
-          if (partes.length) toast.success("Jornadas al día: " + partes.join(" · "));
+          const parts = [];
+          if (mirror.written) parts.push(`${mirror.written} jornada(s) recalculada(s)`);
+          if (mirror.removed) parts.push(`${mirror.removed} sin pesajes, eliminada(s)`);
+          if (mirror.daysAdded.length) parts.push(`${mirror.daysAdded.length} día(s) agregado(s) al ciclo`);
+          if (mirror.workersAdded) parts.push(`${mirror.workersAdded} trabajador(es) agregado(s)`);
+          if (parts.length) toast.success("Jornadas al día: " + parts.join(" · "));
           if (mirror.noTarget.length) {
             toast.warning(`Sin ciclo/labor asignado: ${mirror.noTarget.join(", ")} — esos pesajes no llegan a ninguna jornada.`);
           }
@@ -335,20 +335,20 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
           )}
 
           {worker && prefixId && (
-            nuevoQr ? (
+            newQr ? (
               <span className="mt-2 flex flex-wrap items-center gap-2">
                 <input
                   type="text"
                   autoFocus
-                  value={nuevoQr.code}
-                  onChange={(e) => setNuevoQr({ code: e.target.value.toUpperCase() })}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); pedirAsignacion(); } }}
+                  value={newQr.code}
+                  onChange={(e) => setNewQr({ code: e.target.value.toUpperCase() })}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); requestAssignment(); } }}
                   placeholder={`${prefixId}-0123`}
                   className="w-36 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 font-mono text-sm"
                 />
                 <button
                   type="button"
-                  onClick={pedirAsignacion}
+                  onClick={requestAssignment}
                   disabled={busy}
                   className={`${TAP} rounded-md bg-[var(--color-accent)] px-2.5 text-xs font-medium text-[var(--color-accent-fg)] disabled:opacity-60`}
                 >
@@ -356,33 +356,33 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
                 </button>
                 <button
                   type="button"
-                  onClick={() => setNuevoQr(null)}
+                  onClick={() => setNewQr(null)}
                   className={`${TAP} rounded-md border border-[var(--color-border)] px-2.5 text-xs`}
                 >
                   Cancelar
                 </button>
-                {sugerencias.length > 0 && (
+                {suggestions.length > 0 && (
                   <span className="flex w-full flex-wrap items-center gap-1 text-xs text-[var(--color-muted)]">
                     <span>Libres:</span>
-                    {sugerencias.map((s) => (
+                    {suggestions.map((s) => (
                       <button
                         key={s.code}
                         type="button"
-                        onClick={() => setNuevoQr({ code: s.code })}
+                        onClick={() => setNewQr({ code: s.code })}
                         title={
-                          s.fueraDeRango
+                          s.outOfRange
                             ? "Nadie usó nunca este número en este prefijo — puede que el QR no esté impreso"
-                            : s.impreso
+                            : s.printed
                               ? "Se usó antes y hoy no es de nadie"
                               : "Nadie lo tiene asignado"
                         }
                         className={`${TAP} rounded-md border px-2 font-mono ${
-                          s.impreso
+                          s.printed
                             ? "border-[var(--color-success,#16a34a)] text-[var(--color-success,#16a34a)]"
                             : "border-[var(--color-border)]"
                         }`}
                       >
-                        {s.code}{s.fueraDeRango ? " ?" : ""}
+                        {s.code}{s.outOfRange ? " ?" : ""}
                       </button>
                     ))}
                   </span>
@@ -391,7 +391,7 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
             ) : (
               <button
                 type="button"
-                onClick={() => setNuevoQr({ code: `${prefixId}-` })}
+                onClick={() => setNewQr({ code: `${prefixId}-` })}
                 className="mt-2 text-xs underline decoration-dotted underline-offset-2 hover:text-[var(--color-accent)]"
               >
                 {qrOptions.length === 0 ? `Asignarle un QR de ${prefixId}` : "Asignarle otro QR"}
@@ -470,17 +470,17 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
     {/* Va DESPUÉS del formulario a propósito: los dos son `Modal` con `z-50`
         fijo y sin portal, así que puesto antes queda tapado por él. */}
     <ConfirmDialog
-      open={!!confirmarRobo}
+      open={!!confirmTakeover}
       title="Ese QR ya tiene dueño"
       message={
-        confirmarRobo
-          ? `${confirmarRobo.code} es de ${confirmarRobo.from.name || confirmarRobo.from.id}.\n\nSi se lo asignas a ${worker?.name || worker?.id}, esa persona se queda sin ese código. Los pesajes que ya lo anotaron no se tocan: siguen siendo de su dueño de entonces, porque se resuelven por RUT.\n\n¿Pasárselo igual?`
+        confirmTakeover
+          ? `${confirmTakeover.code} es de ${confirmTakeover.from.name || confirmTakeover.from.id}.\n\nSi se lo asignas a ${worker?.name || worker?.id}, esa persona se queda sin ese código. Los pesajes que ya lo anotaron no se tocan: siguen siendo de su dueño de entonces, porque se resuelven por RUT.\n\n¿Pasárselo igual?`
           : ""
       }
       confirmLabel="Pasárselo"
       busy={busy}
-      onConfirm={() => asignarQr(confirmarRobo.code, confirmarRobo.from)}
-      onCancel={() => setConfirmarRobo(null)}
+      onConfirm={() => assignQr(confirmTakeover.code, confirmTakeover.from)}
+      onCancel={() => setConfirmTakeover(null)}
     />
     </>
   );

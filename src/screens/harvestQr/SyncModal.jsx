@@ -10,9 +10,9 @@ import { ProgressBar } from "./ProgressBar";
 
 export function SyncModal({ prefix, cycle, onClose, onSynced }) {
   const toast = useToast();
-  const sugerido = useRef(nextSyncRange(prefix.lastSync)).current;
-  const [dateFrom, setDateFrom] = useState(sugerido.from);
-  const [dateTo, setDateTo] = useState(sugerido.to);
+  const suggested = useRef(nextSyncRange(prefix.lastSync)).current;
+  const [dateFrom, setDateFrom] = useState(suggested.from);
+  const [dateTo, setDateTo] = useState(suggested.to);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
   const [progress, setProgress] = useState(null);
@@ -80,10 +80,10 @@ export function SyncModal({ prefix, cycle, onClose, onSynced }) {
       // una sola actualización del ciclo.
       const neededDays = [...new Set([...groups.values()].map((g) => g.dateKey))];
       const neededRuts = [...new Set([...groups.values()].map((g) => g.rut))];
-      const rosterKeys = new Set((labor.workers || []).flatMap((w) => [w.rut, w.id].filter(Boolean)));
+      const laborWorkerKeys = new Set((labor.workers || []).flatMap((w) => [w.rut, w.id].filter(Boolean)));
 
       const daysAdded = neededDays.filter((d) => !(fresh.days || []).includes(d)).sort();
-      const rutsToAdd = neededRuts.filter((r) => !rosterKeys.has(r));
+      const rutsToAdd = neededRuts.filter((r) => !laborWorkerKeys.has(r));
       // Sin ficha en `worker` no hay con qué armar la entrada de la labor: esos
       // RUT se reportan.
       const unknownRuts = rutsToAdd.filter((r) => !workerByRut.get(r));
@@ -97,7 +97,7 @@ export function SyncModal({ prefix, cycle, onClose, onSynced }) {
         const w = workerByRut.get(r);
         if (!w) continue;
         const entryId = w.id || r;
-        if (seenWorkerIds.has(entryId) || rosterKeys.has(entryId)) continue;
+        if (seenWorkerIds.has(entryId) || laborWorkerKeys.has(entryId)) continue;
         seenWorkerIds.add(entryId);
         workersToAdd.push({ id: entryId, rut: r, name: w.name || r });
       }
@@ -116,32 +116,32 @@ export function SyncModal({ prefix, cycle, onClose, onSynced }) {
       //
       // Se leen por id, en tandas de 25 en paralelo.
       setProgress({ label: "Revisando jornadas ya liquidadas…", done: 0, total: groups.size });
-      const claves = [...groups.values()].map((g) => ({
+      const workdayKeys = [...groups.values()].map((g) => ({
         g,
         docId: workdayDocId(fresh.id, labor.id, g.rut, g.dateKey, g.ck),
       }));
-      const bloqueadas = new Set();
+      const blockedIds = new Set();
       const blocked = [];
       // Guarda cada doc leído para pasárselo a `upsert` como `before`, así el
       // servicio no lo vuelve a leer: una lectura por jornada.
-      const yaLeidas = new Map();
-      for (let i = 0; i < claves.length; i += 25) {
-        const tanda = claves.slice(i, i + 25);
-        const docs = await Promise.all(tanda.map((k) => workdaysService.getById(k.docId)));
+      const alreadyRead = new Map();
+      for (let i = 0; i < workdayKeys.length; i += 25) {
+        const batch = workdayKeys.slice(i, i + 25);
+        const docs = await Promise.all(batch.map((k) => workdaysService.getById(k.docId)));
         docs.forEach((doc, j) => {
-          yaLeidas.set(tanda[j].docId, doc ?? null);
+          alreadyRead.set(batch[j].docId, doc ?? null);
           if (!doc?.payrollId) return;
-          bloqueadas.add(tanda[j].docId);
-          blocked.push(`${tanda[j].g.rut} · ${tanda[j].g.dateKey}`);
+          blockedIds.add(batch[j].docId);
+          blocked.push(`${batch[j].g.rut} · ${batch[j].g.dateKey}`);
         });
-        setProgress({ label: "Revisando jornadas ya liquidadas…", done: Math.min(i + 25, claves.length), total: claves.length });
+        setProgress({ label: "Revisando jornadas ya liquidadas…", done: Math.min(i + 25, workdayKeys.length), total: workdayKeys.length });
       }
 
       let written = 0;
       const zeroPriceDays = new Set();
       setProgress({ label: "Escribiendo jornadas…", done: 0, total: groups.size });
-      for (const { g, docId } of claves) {
-        if (bloqueadas.has(docId)) continue;
+      for (const { g, docId } of workdayKeys) {
+        if (blockedIds.has(docId)) continue;
         const combos = getDayCombos(fresh.dayPrices, labor.id, g.dateKey, "unit");
         const combo = combos.find((c) => c.key === g.ck) || { price: 0, mode: "unit" };
         const amount = combo.mode === "flat" ? combo.price : g.qty * combo.price;
@@ -159,9 +159,9 @@ export function SyncModal({ prefix, cycle, onClose, onSynced }) {
           amount,
           harvestSynced: true,
           harvestPrefix: prefix.id,
-        }, { before: yaLeidas.get(docId) ?? null });
+        }, { before: alreadyRead.get(docId) ?? null });
         written++;
-        setProgress({ label: "Escribiendo jornadas…", done: written, total: claves.length });
+        setProgress({ label: "Escribiendo jornadas…", done: written, total: workdayKeys.length });
       }
 
       setProgress({ label: "Guardando el resultado…" });

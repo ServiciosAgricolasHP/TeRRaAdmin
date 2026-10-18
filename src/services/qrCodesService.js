@@ -28,13 +28,13 @@ export async function assignQrCode(code, toWorker, fromWorker) {
 
   // El padrón se actualiza después de `worker`, y un fallo ahí no deshace la
   // asignación. La entrada del código se sobrescribe con el dueño nuevo.
-  await syncPadron({
+  await syncRoster({
     assigned: [clean],
     released: [...released, ...(fromWorker ? [] : [])],
     worker: toWorker,
   });
   if (fromWorker) {
-    await syncPadron({ assigned: [], released: [], worker: fromWorker });
+    await syncRoster({ assigned: [], released: [], worker: fromWorker });
   }
 
   return { released, code: clean };
@@ -50,22 +50,22 @@ export async function assignQrCode(code, toWorker, fromWorker) {
 //
 // Vive dentro del prefijo porque el prefijo es la cosecha: al liberar los QR
 // de la temporada, el padrón se va con él.
-async function syncPadron({ assigned = [], released = [], worker }) {
-  const porPrefijo = new Map();
-  const anotar = (code, valor) => {
+async function syncRoster({ assigned = [], released = [], worker }) {
+  const patchesByPrefix = new Map();
+  const setEntry = (code, entry) => {
     const pfx = prefixOfCode(code);
     if (!pfx) return;
-    if (!porPrefijo.has(pfx)) porPrefijo.set(pfx, {});
-    porPrefijo.get(pfx)[`padron.${code}`] = valor;
+    if (!patchesByPrefix.has(pfx)) patchesByPrefix.set(pfx, {});
+    patchesByPrefix.get(pfx)[`padron.${code}`] = entry;
   };
 
-  for (const c of released) anotar(c, deleteField());
+  for (const c of released) setEntry(c, deleteField());
   for (const c of assigned) {
-    anotar(c, { rut: worker.id, name: worker.name || "" });
+    setEntry(c, { rut: worker.id, name: worker.name || "" });
   }
 
   await Promise.all(
-    [...porPrefijo.entries()].map(([pfx, patch]) =>
+    [...patchesByPrefix.entries()].map(([pfx, patch]) =>
       qrPrefixesService.update(pfx, patch).catch((e) => {
         // Que falle el espejo no invalida la asignación, que ya quedó hecha en
         // `worker`. Se avisa y se sigue: el padrón se puede reconstruir.

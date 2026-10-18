@@ -37,14 +37,14 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
       // Mismas opciones que la pestaña de pesajes y que Trabajadores, Nómina y
       // Calendario: comparten clave de caché, así que la primera pantalla que
       // se abre paga y el resto sale de la caché.
-      const { data, reads: pagadas } = await countedList(workersService, {
+      const { data, reads: readCount } = await countedList(workersService, {
         order: ["name", "asc"],
         cache: true,
         persist: true,
         ttl: WORKERS_TTL_MS,
       });
       setWorkers(data);
-      setReads(pagadas);
+      setReads(readCount);
     } catch (err) {
       toast.error("No se pudieron cargar los trabajadores: " + (err.message || err));
     } finally {
@@ -70,59 +70,59 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
   // Conviene correrlo al abrir cada temporada.
   //
   // No cuesta lecturas de trabajadores: usa la lista ya cargada.
-  const rebuildPadrones = async () => {
+  const rebuildRosters = async () => {
     setBusy(true);
     try {
-      const esperado = new Map(); // prefijo -> { code: {rut, name} }
+      const expected = new Map(); // prefijo -> { code: {rut, name} }
 
       for (const w of workers) {
         for (const code of codesOfWorker(w)) {
           const pfx = prefixOfCode(code);
           if (!pfx) continue;
-          if (!esperado.has(pfx)) esperado.set(pfx, {});
-          esperado.get(pfx)[code] = { rut: w.id, name: w.name || "" };
+          if (!expected.has(pfx)) expected.set(pfx, {});
+          expected.get(pfx)[code] = { rut: w.id, name: w.name || "" };
         }
       }
 
       // Los prefijos configurados que quedaron sin ningún código también hay
       // que vaciarlos, o conservarían asignaciones de la temporada pasada.
-      for (const p of prefixes) if (!esperado.has(p.id)) esperado.set(p.id, {});
+      for (const p of prefixes) if (!expected.has(p.id)) expected.set(p.id, {});
 
-      let agregados = 0;
-      let quitados = 0;
-      let cambiados = 0;
+      let added = 0;
+      let removed = 0;
+      let changed = 0;
 
-      // `esperado` puede traer prefijos de `worker.idQr` sin doc en
+      // `expected` puede traer prefijos de `worker.idQr` sin doc en
       // `qrPrefixes` (la vista los marca "sin prefijo configurado"). `update`
       // usa `updateDoc`, que falla si el doc no existe: esos se saltan y se
       // reportan como huérfanos.
-      const conocidos = new Set(prefixes.map((p) => p.id));
-      const huerfanos = [];
+      const knownPrefixes = new Set(prefixes.map((p) => p.id));
+      const orphans = [];
 
-      for (const [pfx, mapa] of esperado) {
-        if (!conocidos.has(pfx)) { huerfanos.push(pfx); continue; }
-        const actual = prefixes.find((p) => p.id === pfx)?.padron || {};
+      for (const [pfx, codeMap] of expected) {
+        if (!knownPrefixes.has(pfx)) { orphans.push(pfx); continue; }
+        const currentRoster = prefixes.find((p) => p.id === pfx)?.padron || {};
 
-        for (const [code, info] of Object.entries(mapa)) {
-          if (!actual[code]) agregados += 1;
-          else if (actual[code].rut !== info.rut) cambiados += 1;
+        for (const [code, info] of Object.entries(codeMap)) {
+          if (!currentRoster[code]) added += 1;
+          else if (currentRoster[code].rut !== info.rut) changed += 1;
         }
-        for (const code of Object.keys(actual)) if (!mapa[code]) quitados += 1;
+        for (const code of Object.keys(currentRoster)) if (!codeMap[code]) removed += 1;
 
         // Se escribe el mapa entero, no un merge: el merge nunca borraría los
         // códigos que dejaron de estar asignados.
-        await qrPrefixesService.update(pfx, { padron: mapa });
+        await qrPrefixesService.update(pfx, { padron: codeMap });
       }
 
-      const partes = [];
-      if (agregados) partes.push(`${agregados} agregado(s)`);
-      if (quitados) partes.push(`${quitados} quitado(s)`);
-      if (cambiados) partes.push(`${cambiados} con otro dueño`);
-      if (huerfanos.length) partes.push(`${huerfanos.length} sin prefijo configurado: ${huerfanos.join(", ")}`);
+      const parts = [];
+      if (added) parts.push(`${added} agregado(s)`);
+      if (removed) parts.push(`${removed} quitado(s)`);
+      if (changed) parts.push(`${changed} con otro dueño`);
+      if (orphans.length) parts.push(`${orphans.length} sin prefijo configurado: ${orphans.join(", ")}`);
 
       toast.success(
-        partes.length
-          ? `Padrones reconstruidos · ${partes.join(" · ")}`
+        parts.length
+          ? `Padrones reconstruidos · ${parts.join(" · ")}`
           : "Padrones reconstruidos · ya estaban al día",
       );
 
@@ -332,7 +332,7 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
           </button>
 
           <button
-            onClick={rebuildPadrones}
+            onClick={rebuildRosters}
             disabled={busy || loading}
             title="Rehace el espejo que la app de escaneo lee para reconocer los QR sin señal"
             className={`${TAP} rounded-md border border-[var(--color-border)] px-3 text-sm hover:bg-[var(--color-accent-soft)] disabled:cursor-not-allowed disabled:opacity-40`}

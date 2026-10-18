@@ -53,14 +53,14 @@ describe("suggestFreeCodes", () => {
   it("ofrece los huecos de la serie con el relleno más usado y marca los que tienen pesajes", () => {
     const workers = [{ idQr: ["XX-001"] }, { idQr: ["XX-003", "YY-002"] }];
     expect(suggestFreeCodes(workers, "XX", new Set(["XX-004"]))).toEqual([
-      { code: "XX-002", impreso: false },
-      { code: "XX-004", impreso: true },
+      { code: "XX-002", printed: false },
+      { code: "XX-004", printed: true },
     ]);
   });
 
   it("sin huecos sugiere el siguiente al mayor, fuera de rango", () => {
     const workers = [{ idQr: ["XX-1"] }, { idQr: ["XX-2"] }];
-    expect(suggestFreeCodes(workers, "XX", new Set())).toEqual([{ code: "XX-3", impreso: false, fueraDeRango: true }]);
+    expect(suggestFreeCodes(workers, "XX", new Set())).toEqual([{ code: "XX-3", printed: false, outOfRange: true }]);
   });
 
   it("no ofrece más de `max` códigos", () => {

@@ -51,7 +51,7 @@ const groupDayByWorker = (entries) => {
 // No hay "total general": los envases no son comparables entre sí (kilos +
 // bandejas + capachos no da nada), así que los totales van siempre
 // desglosados por combo calidad/envase.
-export function WeightsExplorer({ prefixes, faenaById }) {
+export function WeightsExplorer({ prefixes, jobById }) {
   const toast = useToast();
   const { catalogs } = useCatalogs();
   const [dateFrom, setDateFrom] = useState(daysAgoKey(14));
@@ -69,7 +69,7 @@ export function WeightsExplorer({ prefixes, faenaById }) {
   const [reads, setReads] = useState(null);
   // Se prende si Firestore rechaza la consulta acotada por falta de índice; a
   // partir de ahí el filtro por prefijo se aplica en memoria.
-  const [sinIndice, setSinIndice] = useState(false);
+  const [missingIndex, setMissingIndex] = useState(false);
   const { isAdmin } = useAuth();
 
   const isMobile = useIsMobile();
@@ -156,12 +156,12 @@ export function WeightsExplorer({ prefixes, faenaById }) {
     // El prefijo filtra en la consulta, así elegir uno baja las lecturas.
     // Necesita el índice compuesto (prefix, dateKey), el mismo que usa la
     // sincronización. Si falta, Firestore responde `failed-precondition`: se
-    // recuerda en `sinIndice` y se vuelve a pedir sin el filtro, que entonces
+    // recuerda en `missingIndex` y se vuelve a pedir sin el filtro, que entonces
     // se aplica en memoria.
-    const acotar = !!prefixFilter && !sinIndice;
+    const filterByPrefix = !!prefixFilter && !missingIndex;
     const opts = {
       wheres: [
-        ...(acotar ? [["prefix", "==", prefixFilter]] : []),
+        ...(filterByPrefix ? [["prefix", "==", prefixFilter]] : []),
         ["dateKey", ">=", from],
         ["dateKey", "<=", to],
       ],
@@ -175,15 +175,15 @@ export function WeightsExplorer({ prefixes, faenaById }) {
 
     (async () => {
       try {
-        const { data, reads: pagadas } = await countedList(harvestWeightsService, opts);
+        const { data, reads: readCount } = await countedList(harvestWeightsService, opts);
         if (cancelled) return;
         setWeights(data);
-        setReads(pagadas);
+        setReads(readCount);
         setFetchedAt(Date.now());
       } catch (err) {
         if (cancelled) return;
-        if (acotar && err?.code === "failed-precondition") {
-          setSinIndice(true);
+        if (filterByPrefix && err?.code === "failed-precondition") {
+          setMissingIndex(true);
           return;
         }
         toast.error("No se pudieron leer los pesajes: " + (err.message || err));
@@ -194,17 +194,17 @@ export function WeightsExplorer({ prefixes, faenaById }) {
 
     return () => { cancelled = true; };
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, [range, reloadKey, prefixFilter, sinIndice]);
+  }, [range, reloadKey, prefixFilter, missingIndex]);
 
   // Descarta la caché de pesajes y vuelve a leer: con TTL largo, refrescar es
   // una decisión de quien mira.
-  const refrescar = () => {
+  const refresh = () => {
     harvestWeightsService.invalidate();
     setReloadKey((k) => k + 1);
   };
 
   // La búsqueda filtra en cliente. El filtro por prefijo se repite aquí para
-  // cuando la consulta va sin él (`sinIndice`).
+  // cuando la consulta va sin él (`missingIndex`).
   const view = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const combos = new Map();
@@ -309,7 +309,7 @@ export function WeightsExplorer({ prefixes, faenaById }) {
             <option value="">Todos</option>
             {prefixes.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.id} — {faenaById.get(p.faenaId)?.name || p.label}
+                {p.id} — {jobById.get(p.faenaId)?.name || p.label}
               </option>
             ))}
           </select>
@@ -356,7 +356,7 @@ export function WeightsExplorer({ prefixes, faenaById }) {
             {!busy && fetchedAt ? ` · ${agoLabel(fetchedAt)}` : ""}
             {!busy && isAdmin && reads != null ? ` ${readsLabel(reads)}` : ""}
           </span>
-          {sinIndice && prefixFilter ? (
+          {missingIndex && prefixFilter ? (
             <span
               title="Falta el índice compuesto (prefix, dateKey) en Firestore"
               className="text-xs text-[var(--color-warning,#d97706)]"
@@ -365,7 +365,7 @@ export function WeightsExplorer({ prefixes, faenaById }) {
             </span>
           ) : null}
           <button
-            onClick={refrescar}
+            onClick={refresh}
             disabled={busy}
             title="Vuelve a leer los pesajes del rango desde Firestore"
             className="rounded-md border border-[var(--color-border)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-40"

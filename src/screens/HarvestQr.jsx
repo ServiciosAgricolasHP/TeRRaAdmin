@@ -4,7 +4,7 @@ import { qrPrefixesService, jobsService, cyclesService } from "../services";
 import { countedList } from "../services/cache";
 import { useAuth } from "../contexts/AuthContext";
 import ConfirmDialog from "../components/ConfirmDialog";
-import { FAENAS_TTL_MS, readsLabel, TAP, lastSyncLabel, dayMonth } from "./harvestQr/helpers";
+import { JOBS_TTL_MS, readsLabel, TAP, lastSyncLabel, dayMonth } from "./harvestQr/helpers";
 import { PrefixFormModal } from "./harvestQr/PrefixFormModal";
 import { QrManager } from "./harvestQr/QrManager";
 import { SyncModal } from "./harvestQr/SyncModal";
@@ -29,16 +29,16 @@ function healthOf(prefix, cyclesById) {
   if (cycle.status === "closed") {
     return { level: "red", label: "El ciclo vigente está cerrado — reapunta el prefijo al ciclo abierto" };
   }
-  const cosechaLabors = (cycle.labors || []).filter((l) => l.type === "cosecha");
-  const labor = cosechaLabors.find((l) => l.id === prefix.laborId);
+  const harvestLabors = (cycle.labors || []).filter((l) => l.type === "cosecha");
+  const labor = harvestLabors.find((l) => l.id === prefix.laborId);
   if (!labor) {
-    if (cosechaLabors.length === 0) {
+    if (harvestLabors.length === 0) {
       return { level: "red", label: "El ciclo vigente no tiene ninguna labor de cosecha" };
     }
     return { level: "red", label: "La labor configurada ya no es de tipo cosecha en este ciclo" };
   }
-  if (cosechaLabors.length > 1) {
-    return { level: "yellow", label: `Hay ${cosechaLabors.length} labores de cosecha en este ciclo — verifica que sea la correcta` };
+  if (harvestLabors.length > 1) {
+    return { level: "yellow", label: `Hay ${harvestLabors.length} labores de cosecha en este ciclo — verifica que sea la correcta` };
   }
   return { level: "green", label: "OK" };
 }
@@ -55,7 +55,7 @@ export default function HarvestQr() {
   const [reads, setReads] = useState(null);
   const [tab, setTab] = useState("sync"); // sync | weights | qr
   const [prefixes, setPrefixes] = useState([]);
-  const [faenas, setFaenas] = useState([]);
+  const [jobs, setJobs] = useState([]);
   const [cyclesById, setCyclesById] = useState(new Map());
   const [loading, setLoading] = useState(true);
   const [formState, setFormState] = useState(null); // null | { mode: "create" | "edit", data }
@@ -68,16 +68,16 @@ export default function HarvestQr() {
     try {
       // `qrPrefixes` va sin caché: son pocos documentos y es la configuración
       // que hay que reapuntar al abrir un ciclo, así que se muestra al día.
-      const [px, fa] = await Promise.all([
+      const [px, jobsResult] = await Promise.all([
         countedList(qrPrefixesService, { order: ["label", "asc"] }),
-        countedList(jobsService, { order: ["name", "asc"], cache: true, persist: true, ttl: FAENAS_TTL_MS }),
+        countedList(jobsService, { order: ["name", "asc"], cache: true, persist: true, ttl: JOBS_TTL_MS }),
       ]);
       setPrefixes(px.data);
-      setFaenas(fa.data);
+      setJobs(jobsResult.data);
       const cycleIds = [...new Set(px.data.map((p) => p.cycleId).filter(Boolean))];
       const cycles = await Promise.all(cycleIds.map((id) => cyclesService.getById(id)));
       // Los ciclos van por `getById`, que nunca cachea: 1 lectura por ciclo apuntado.
-      setReads(px.reads + fa.reads + cycleIds.length);
+      setReads(px.reads + jobsResult.reads + cycleIds.length);
       const map = new Map();
       cycles.forEach((c) => { if (c) map.set(c.id, c); });
       setCyclesById(map);
@@ -90,7 +90,7 @@ export default function HarvestQr() {
 
   useEffect(() => { reload(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
 
-  const faenaById = useMemo(() => new Map(faenas.map((f) => [f.id, f])), [faenas]);
+  const jobById = useMemo(() => new Map(jobs.map((f) => [f.id, f])), [jobs]);
 
   const handleDelete = async () => {
     if (!confirmDelete) return;
@@ -192,7 +192,7 @@ export default function HarvestQr() {
                   <tr key={p.id}>
                     <td className="px-3 py-2 font-mono font-semibold">{p.id}</td>
                     <td className="px-3 py-2">
-                      <div>{faenaById.get(p.faenaId)?.name || "—"}</div>
+                      <div>{jobById.get(p.faenaId)?.name || "—"}</div>
                       <div className="text-xs text-[var(--color-muted)]">{p.label}</div>
                     </td>
                     <td className="px-3 py-2 text-xs">
@@ -249,7 +249,7 @@ export default function HarvestQr() {
         </div>
       ))}
 
-      {tab === "weights" && <WeightsExplorer prefixes={prefixes} faenaById={faenaById} />}
+      {tab === "weights" && <WeightsExplorer prefixes={prefixes} jobById={jobById} />}
 
       {tab === "qr" && <QrManager prefixes={prefixes} onPrefixesChanged={reload} />}
 
@@ -257,7 +257,7 @@ export default function HarvestQr() {
         <PrefixFormModal
           mode={formState.mode}
           initial={formState.data}
-          faenas={faenas}
+          jobs={jobs}
           onClose={() => setFormState(null)}
           onSaved={() => { setFormState(null); reload(); }}
         />

@@ -35,16 +35,16 @@ const numberOfCode = (code) => {
 
 // Hasta `max` códigos del prefijo que hoy no tiene nadie. Como no hay catálogo
 // de QR impresos, "libre" es un número que falta en la serie asignada, hasta
-// el mayor visto entre los asignados y los pesajes (`knownCodes`). `impreso`
+// el mayor visto entre los asignados y los pesajes (`knownCodes`). `printed`
 // marca los que aparecen en pesajes, que existen físicamente. Si no queda
-// ningún hueco, sugiere el siguiente al mayor (`fueraDeRango`), que quizá
+// ningún hueco, sugiere el siguiente al mayor (`outOfRange`), que quizá
 // nunca se imprimió.
 export function suggestFreeCodes(workers, prefixId, knownCodes, max = 3) {
   if (!prefixId) return [];
   const taken = new Set();
   const pads = new Map();
   let top = 0;
-  const contar = (code) => {
+  const countCode = (code) => {
     if (prefixOfCode(code) !== prefixId) return null;
     const parsed = numberOfCode(code);
     if (!parsed) return null;
@@ -54,11 +54,11 @@ export function suggestFreeCodes(workers, prefixId, knownCodes, max = 3) {
   };
   for (const w of workers) {
     for (const c of codesOfWorker(w)) {
-      const parsed = contar(c);
+      const parsed = countCode(c);
       if (parsed) taken.add(parsed.n);
     }
   }
-  for (const c of knownCodes) contar(c);
+  for (const c of knownCodes) countCode(c);
 
   const pad = [...pads.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]?.[0] || 1;
   const fmt = (n) => `${prefixId}-${String(n).padStart(pad, "0")}`;
@@ -67,8 +67,8 @@ export function suggestFreeCodes(workers, prefixId, knownCodes, max = 3) {
   for (let i = 1; i <= top && out.length < max; i++) {
     if (taken.has(i)) continue;
     const code = fmt(i);
-    out.push({ code, impreso: knownCodes.has(code) });
+    out.push({ code, printed: knownCodes.has(code) });
   }
-  if (out.length === 0) out.push({ code: fmt(top + 1), impreso: false, fueraDeRango: true });
+  if (out.length === 0) out.push({ code: fmt(top + 1), printed: false, outOfRange: true });
   return out;
 }
