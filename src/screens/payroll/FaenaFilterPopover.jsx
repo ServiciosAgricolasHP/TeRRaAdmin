@@ -1,4 +1,7 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useLayoutEffect } from "react";
+
+// Margen mínimo entre el popover y el borde de la pantalla.
+const VIEWPORT_MARGIN = 8;
 
 // Popover del filtro de faena, con buscador. Se cierra con click afuera o
 // Escape, igual que ColorPalette (Faenas.jsx).
@@ -15,6 +18,21 @@ export function FaenaFilterPopover({ faenas, faenaFilter, setFaenaFilter, onClos
       document.removeEventListener("keydown", onKey);
     };
   }, [onClose]);
+
+  // Se alinea a la derecha del botón y, si así no cabe en la pantalla, se
+  // corre hacia adentro: en el teléfono el botón puede quedar a la izquierda
+  // de su fila.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.transform = "";
+    const rect = el.getBoundingClientRect();
+    const viewportWidth = document.documentElement.clientWidth;
+    let shift = 0;
+    if (rect.left < VIEWPORT_MARGIN) shift = VIEWPORT_MARGIN - rect.left;
+    else if (rect.right > viewportWidth - VIEWPORT_MARGIN) shift = viewportWidth - VIEWPORT_MARGIN - rect.right;
+    el.style.transform = shift ? `translateX(${shift}px)` : "";
+  }, []);
 
   const filtered = faenas.filter((f) => f.name.toLowerCase().includes(q.trim().toLowerCase()));
 
