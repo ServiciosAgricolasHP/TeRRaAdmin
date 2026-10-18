@@ -146,11 +146,11 @@ export default function ProductionSummaryModal({
   // Agrupaciones de labor (laborGroups) de las subfaenas involucradas, para
   // nombrar los grupos al totalizar por laborGroupId. Se leen por subfaena y
   // no por ciclo: varios ciclos comparten subfaena.
-  const [laborGroupsBySubfaena, setLaborGroupsBySubfaena] = useState({});
+  const [laborGroupsBySubjob, setLaborGroupsBySubjob] = useState({});
   useEffect(() => {
     if (!open) return;
     const subIds = [...new Set(cycles.map((c) => c.subfaenaId).filter(Boolean))];
-    const missing = subIds.filter((sid) => !laborGroupsBySubfaena[sid]);
+    const missing = subIds.filter((sid) => !laborGroupsBySubjob[sid]);
     if (missing.length === 0) return;
     let cancelled = false;
     (async () => {
@@ -159,7 +159,7 @@ export default function ProductionSummaryModal({
           missing.map(async (sid) => [sid, await laborGroupsService.list({ wheres: [["subfaenaId", "==", sid]] })]),
         );
         if (cancelled) return;
-        setLaborGroupsBySubfaena((prev) => {
+        setLaborGroupsBySubjob((prev) => {
           const next = { ...prev };
           for (const [sid, list] of fetched) next[sid] = list;
           return next;
@@ -171,11 +171,11 @@ export default function ProductionSummaryModal({
   }, [open, cycles.map((c) => c.id).join(",")]);
   const laborGroupsById = useMemo(() => {
     const m = new Map();
-    for (const list of Object.values(laborGroupsBySubfaena)) {
+    for (const list of Object.values(laborGroupsBySubjob)) {
       for (const g of list) m.set(g.id, g);
     }
     return m;
-  }, [laborGroupsBySubfaena]);
+  }, [laborGroupsBySubjob]);
 
   // Orden de columnas y chips: agrupados por subfaena y, dentro de cada
   // grupo, del más viejo al más nuevo por el primer día de `days` (el mismo

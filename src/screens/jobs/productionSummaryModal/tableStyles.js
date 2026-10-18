@@ -11,10 +11,10 @@ export const ROW_HIGHLIGHT = "#fffbeb";   // amarillo pálido — fila con el no
 // Rampa de verdes para el bloque TOTAL/GANANCIAS/TOTAL GENERAL/IVA/BRUTO de
 // la tabla general — mismo tono base que el resto, pero cada fila con un
 // matiz distinto para que no se vea como un solo bloque sólido pegado.
-export const ROW_GANANCIAS = "#93c47d";      // verde más claro que TOTAL — fila GANANCIAS
+export const ROW_PROFIT = "#93c47d";      // verde más claro que TOTAL — fila GANANCIAS
 export const ROW_TOTAL_GENERAL = "#38761d";  // verde bosque — fila TOTAL GENERAL
-export const ROW_IVA = "#d9ead3";            // verde muy pálido — fila IVA (informativa, texto oscuro)
-export const ROW_BRUTO = "#274e13";          // verde más oscuro — fila BRUTO (el total final)
+export const ROW_VAT = "#d9ead3";            // verde muy pálido — fila IVA (informativa, texto oscuro)
+export const ROW_GROSS = "#274e13";          // verde más oscuro — fila BRUTO (el total final)
 
 // Reusa la misma paleta hex de arriba como fill de ExcelJS, así el XLSX
 // exportado queda visualmente alineado con la tabla en pantalla/impresión.

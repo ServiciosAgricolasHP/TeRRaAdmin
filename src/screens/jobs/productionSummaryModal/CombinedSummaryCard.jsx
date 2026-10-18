@@ -9,10 +9,10 @@ import {
   XLSX_BORDER,
   XLSX_MONEY_FMT,
   ROW_TOTAL_DARK,
-  ROW_GANANCIAS,
-  ROW_IVA,
+  ROW_PROFIT,
+  ROW_VAT,
   ROW_TOTAL_GENERAL,
-  ROW_BRUTO,
+  ROW_GROSS,
   cellH,
   ROW_HIGHLIGHT,
   cell,
@@ -44,17 +44,17 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
   useEffect(() => { saveJSON("workersPaid", workersPaid); }, [workersPaid]);
   // Con IVA se agregan las filas IVA (19% del TOTAL GENERAL) y BRUTO, con
   // valor solo en la columna de total; las columnas por labor quedan en blanco.
-  const [ivaEnabled, setIvaEnabled] = useState(() => loadJSON("ivaEnabled", false));
-  useEffect(() => { saveJSON("ivaEnabled", ivaEnabled); }, [ivaEnabled]);
+  const [vatEnabled, setVatEnabled] = useState(() => loadJSON("ivaEnabled", false));
+  useEffect(() => { saveJSON("ivaEnabled", vatEnabled); }, [vatEnabled]);
 
-  const isJornadaCol = (col) => col.labor.type === "main";
+  const isWorkdayCol = (col) => col.labor.type === "main";
   // Supervisión no se cobra aparte: su monto se descuenta entero de la
   // ganancia (ganancia negativa) y su total general es $0. Es un costo interno
   // que cubre el margen de las demás labores.
   const isSupervisionCol = (col) => col.labor.type === "supervision";
   const effectivePct = (colKey) => pctOverrides[colKey] ?? generalPct;
-  const gananciaFor = (col, totalAmount) => {
-    if (isJornadaCol(col)) {
+  const profitFor = (col, totalAmount) => {
+    if (isWorkdayCol(col)) {
       const paid = Number(paidToUs[col.key]) || 0;
       if (workersPaid[col.key]) return paid;
       return paid - totalAmount;
@@ -68,10 +68,10 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
   // solo como descuento informativo en la fila MONTO LIBRE.
   const totalGeneralFor = (col, totalAmount) => {
     if (isSupervisionCol(col)) return 0;
-    if (isJornadaCol(col) && workersPaid[col.key]) {
+    if (isWorkdayCol(col) && workersPaid[col.key]) {
       return Number(paidToUs[col.key]) || 0;
     }
-    return totalAmount + gananciaFor(col, totalAmount);
+    return totalAmount + profitFor(col, totalAmount);
   };
   const handleGeneralPctChange = (v) => {
     setGeneralPct(v);
@@ -114,21 +114,21 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
     [dataByColumn],
   );
 
-  const totalGanancia = useMemo(
-    () => dataByColumn.reduce((s, d) => s + gananciaFor(d.col, d.totalAmount), 0),
+  const totalProfit = useMemo(
+    () => dataByColumn.reduce((s, d) => s + profitFor(d.col, d.totalAmount), 0),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [dataByColumn, generalPct, pctOverrides, paidToUs, workersPaid],
   );
   // GANANCIAS muestra el margen de las labores facturables, sin el descuento
   // de supervisión. La fila MONTO LIBRE muestra ese descuento por columna y,
   // en el total, ganancia − supervisión con los dos montos de la resta.
-  const totalGananciaBillable = useMemo(
-    () => dataByColumn.reduce((s, d) => s + (isSupervisionCol(d.col) ? 0 : gananciaFor(d.col, d.totalAmount)), 0),
+  const totalProfitBillable = useMemo(
+    () => dataByColumn.reduce((s, d) => s + (isSupervisionCol(d.col) ? 0 : profitFor(d.col, d.totalAmount)), 0),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [dataByColumn, generalPct, pctOverrides, paidToUs, workersPaid],
   );
   const totalSupervisionDeduction = useMemo(
-    () => dataByColumn.reduce((s, d) => s + (isSupervisionCol(d.col) ? gananciaFor(d.col, d.totalAmount) : 0), 0),
+    () => dataByColumn.reduce((s, d) => s + (isSupervisionCol(d.col) ? profitFor(d.col, d.totalAmount) : 0), 0),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [dataByColumn, generalPct, pctOverrides, paidToUs, workersPaid],
   );
@@ -138,8 +138,8 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [dataByColumn, generalPct, pctOverrides, paidToUs, workersPaid],
   );
-  const grandTotalIva = grandTotalGeneral * 0.19;
-  const grandTotalBruto = grandTotalGeneral + grandTotalIva;
+  const grandTotalVat = grandTotalGeneral * 0.19;
+  const grandTotalGross = grandTotalGeneral + grandTotalVat;
 
   const buildPlainText = () => {
     const lines = [];
@@ -162,7 +162,7 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
     }
     const totalRow = ["TOTAL A PAGAR"];
     for (const d of dataByColumn) {
-      const paidTag = isJornadaCol(d.col) && workersPaid[d.col.key] ? " [ya pagado]" : "";
+      const paidTag = isWorkdayCol(d.col) && workersPaid[d.col.key] ? " [ya pagado]" : "";
       totalRow.push(`${fmtNum(d.totalQty)}${d.unit ? " " + d.unit : ""} · ${fmtCLP(d.totalAmount)}${paidTag}`);
     }
     totalRow.push(fmtCLP(grandTotal));
@@ -171,13 +171,13 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
     lines.push("💰 GANANCIAS");
     for (const d of dataByColumn) {
       if (isSupervisionCol(d.col)) continue;
-      const g = gananciaFor(d.col, d.totalAmount);
-      const detail = isJornadaCol(d.col)
+      const g = profitFor(d.col, d.totalAmount);
+      const detail = isWorkdayCol(d.col)
         ? (workersPaid[d.col.key] ? `pagan ${fmtCLP(Number(paidToUs[d.col.key]) || 0)}, ya pagado` : `pagan ${fmtCLP(Number(paidToUs[d.col.key]) || 0)}`)
         : `${effectivePct(d.col.key)}%`;
       lines.push(`${d.col.labor.name} (${d.col.cycleLabel}) [${detail}]: ${fmtCLP(g)}`);
     }
-    lines.push(`TOTAL GANANCIAS: ${fmtCLP(totalGananciaBillable)}`);
+    lines.push(`TOTAL GANANCIAS: ${fmtCLP(totalProfitBillable)}`);
     lines.push("");
     if (includeTransport) {
       lines.push("🚐 TRANSPORTE (por ciclo)");
@@ -196,24 +196,24 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
       lines.push("➖ MONTO LIBRE (descuento por supervisión, informativo, no afecta lo facturado)");
       for (const d of dataByColumn) {
         if (!isSupervisionCol(d.col)) continue;
-        lines.push(`${d.col.labor.name} (${d.col.cycleLabel}): ${fmtCLP(gananciaFor(d.col, d.totalAmount))}`);
+        lines.push(`${d.col.labor.name} (${d.col.cycleLabel}): ${fmtCLP(profitFor(d.col, d.totalAmount))}`);
       }
       lines.push(`TOTAL SUPERVISIÓN: ${fmtCLP(totalSupervisionDeduction)}`);
-      lines.push(`MONTO LIBRE (${fmtCLP(totalGananciaBillable)} − ${fmtCLP(Math.abs(totalSupervisionDeduction))}): ${fmtCLP(totalGanancia)}`);
+      lines.push(`MONTO LIBRE (${fmtCLP(totalProfitBillable)} − ${fmtCLP(Math.abs(totalSupervisionDeduction))}): ${fmtCLP(totalProfit)}`);
       lines.push("");
     }
     if (includeTransport && grandTotalTransport !== 0) {
-      lines.push(`MONTO LIBRE NETO (${fmtCLP(totalGanancia)} − ${fmtCLP(grandTotalTransport)}, descuenta también transporte): ${fmtCLP(totalGanancia - grandTotalTransport)}`);
+      lines.push(`MONTO LIBRE NETO (${fmtCLP(totalProfit)} − ${fmtCLP(grandTotalTransport)}, descuenta también transporte): ${fmtCLP(totalProfit - grandTotalTransport)}`);
       lines.push("");
     }
     const generalRow = ["TOTAL GENERAL"];
     for (const d of dataByColumn) generalRow.push(fmtCLP(totalGeneralFor(d.col, d.totalAmount)));
     generalRow.push(fmtCLP(grandTotalGeneral));
     lines.push(generalRow.join(" | "));
-    if (ivaEnabled) {
+    if (vatEnabled) {
       lines.push("");
-      lines.push(`IVA (19%): ${fmtCLP(grandTotalIva)}`);
-      lines.push(`BRUTO: ${fmtCLP(grandTotalBruto)}`);
+      lines.push(`IVA (19%): ${fmtCLP(grandTotalVat)}`);
+      lines.push(`BRUTO: ${fmtCLP(grandTotalGross)}`);
     }
     return lines.join("\n");
   };
@@ -305,12 +305,12 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
         r++;
       }
 
-      const writeTotalRow = (label, fill, fontArgb, montoForCol, totalValue, { qtyToo = false } = {}) => {
+      const writeTotalRow = (label, fill, fontArgb, amountForCol, totalValue, { qtyToo = false } = {}) => {
         ws.getCell(r, COL_DAY).value = label;
         dataByColumn.forEach((d, i) => {
           const c0 = COL_FIRST_LABOR + i * 2;
           if (qtyToo) ws.getCell(r, c0).value = `${fmtNum(d.totalQty)}${d.unit ? " " + d.unit : ""}`;
-          const v = montoForCol(d);
+          const v = amountForCol(d);
           if (v != null) {
             ws.getCell(r, c0 + 1).value = v;
             ws.getCell(r, c0 + 1).numFmt = XLSX_MONEY_FMT;
@@ -329,9 +329,9 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
 
       writeTotalRow("TOTAL A PAGAR", ROW_TOTAL_DARK, "FFFFFFFF", (d) => d.totalAmount, grandTotal, { qtyToo: true });
       writeTotalRow(
-        "GANANCIAS", ROW_GANANCIAS, "FF1A2E0F",
-        (d) => (isSupervisionCol(d.col) ? null : gananciaFor(d.col, d.totalAmount)),
-        totalGananciaBillable,
+        "GANANCIAS", ROW_PROFIT, "FF1A2E0F",
+        (d) => (isSupervisionCol(d.col) ? null : profitFor(d.col, d.totalAmount)),
+        totalProfitBillable,
       );
       if (includeTransport) {
         writeTotalRow(
@@ -342,22 +342,22 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
       }
       if (hasSupervisionCols) {
         writeTotalRow(
-          "MONTO LIBRE", ROW_IVA, "FF274E13",
-          (d) => (isSupervisionCol(d.col) ? gananciaFor(d.col, d.totalAmount) : null),
-          totalGanancia,
+          "MONTO LIBRE", ROW_VAT, "FF274E13",
+          (d) => (isSupervisionCol(d.col) ? profitFor(d.col, d.totalAmount) : null),
+          totalProfit,
         );
       }
       if (includeTransport && grandTotalTransport !== 0) {
-        writeTotalRow("MONTO LIBRE NETO", ROW_IVA, "FF274E13", () => null, totalGanancia - grandTotalTransport);
+        writeTotalRow("MONTO LIBRE NETO", ROW_VAT, "FF274E13", () => null, totalProfit - grandTotalTransport);
       }
       writeTotalRow(
         "TOTAL GENERAL", ROW_TOTAL_GENERAL, "FFFFFFFF",
         (d) => totalGeneralFor(d.col, d.totalAmount),
         grandTotalGeneral,
       );
-      if (ivaEnabled) {
-        writeTotalRow("IVA (19%)", ROW_IVA, "FF274E13", () => null, grandTotalIva);
-        writeTotalRow("BRUTO", ROW_BRUTO, "FFFFFFFF", () => null, grandTotalBruto);
+      if (vatEnabled) {
+        writeTotalRow("IVA (19%)", ROW_VAT, "FF274E13", () => null, grandTotalVat);
+        writeTotalRow("BRUTO", ROW_GROSS, "FFFFFFFF", () => null, grandTotalGross);
       }
 
       ws.getColumn(COL_DAY).width = 12;
@@ -498,7 +498,7 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
                         {fmtNum(d.totalQty)}{d.unit ? ` ${d.unit}` : ""}
                       </div>
                       <div>{fmtCLP(d.totalAmount)}</div>
-                      {isJornadaCol(d.col) && workersPaid[d.col.key] && (
+                      {isWorkdayCol(d.col) && workersPaid[d.col.key] && (
                         <div style={{ fontSize: 9, fontWeight: 400, marginTop: 1, color: "#d4f5d4" }}>✅ ya pagado</div>
                       )}
                       {isSupervisionCol(d.col) && (
@@ -510,15 +510,15 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
                     {fmtCLP(grandTotal)}
                   </td>
                 </tr>
-                <tr style={{ background: ROW_GANANCIAS, color: "#1a2e0f", fontWeight: 700 }}>
+                <tr style={{ background: ROW_PROFIT, color: "#1a2e0f", fontWeight: 700 }}>
                   <td style={{ ...cell, borderColor: "#6aa84f" }}>GANANCIAS</td>
                   {dataByColumn.map((d) => (
                     <td key={d.col.key} style={{ ...cell, textAlign: "right", borderColor: "#6aa84f" }}>
-                      {isSupervisionCol(d.col) ? "—" : fmtCLP(gananciaFor(d.col, d.totalAmount))}
+                      {isSupervisionCol(d.col) ? "—" : fmtCLP(profitFor(d.col, d.totalAmount))}
                     </td>
                   ))}
                   <td style={{ ...cell, textAlign: "right", borderColor: "#6aa84f", fontSize: 13 }}>
-                    {fmtCLP(totalGananciaBillable)}
+                    {fmtCLP(totalProfitBillable)}
                   </td>
                 </tr>
                 {includeTransport && (
@@ -549,32 +549,32 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
                   </tr>
                 )}
                 {hasSupervisionCols && (
-                  <tr style={{ background: ROW_IVA, color: "#274e13", fontWeight: 700 }}>
+                  <tr style={{ background: ROW_VAT, color: "#274e13", fontWeight: 700 }}>
                     <td style={{ ...cell, borderColor: "#93c47d" }}>MONTO LIBRE</td>
                     {dataByColumn.map((d) => (
                       <td key={d.col.key} style={{ ...cell, textAlign: "right", borderColor: "#93c47d" }}>
-                        {isSupervisionCol(d.col) ? fmtCLP(gananciaFor(d.col, d.totalAmount)) : "—"}
+                        {isSupervisionCol(d.col) ? fmtCLP(profitFor(d.col, d.totalAmount)) : "—"}
                       </td>
                     ))}
                     <td style={{ ...cell, textAlign: "right", borderColor: "#93c47d", fontSize: 13 }}>
                       <div style={{ fontSize: 9, fontWeight: 400 }}>
-                        {fmtCLP(totalGananciaBillable)} − {fmtCLP(Math.abs(totalSupervisionDeduction))}
+                        {fmtCLP(totalProfitBillable)} − {fmtCLP(Math.abs(totalSupervisionDeduction))}
                       </div>
-                      <div>{fmtCLP(totalGanancia)}</div>
+                      <div>{fmtCLP(totalProfit)}</div>
                     </td>
                   </tr>
                 )}
                 {includeTransport && grandTotalTransport !== 0 && (
-                  <tr style={{ background: ROW_IVA, color: "#274e13", fontWeight: 700 }}>
+                  <tr style={{ background: ROW_VAT, color: "#274e13", fontWeight: 700 }}>
                     <td style={{ ...cell, borderColor: "#93c47d" }}>MONTO LIBRE NETO</td>
                     {dataByColumn.map((d) => (
                       <td key={d.col.key} style={{ ...cell, borderColor: "#93c47d" }}></td>
                     ))}
                     <td style={{ ...cell, textAlign: "right", borderColor: "#93c47d", fontSize: 13 }}>
                       <div style={{ fontSize: 9, fontWeight: 400 }}>
-                        {fmtCLP(totalGanancia)} − {fmtCLP(grandTotalTransport)}
+                        {fmtCLP(totalProfit)} − {fmtCLP(grandTotalTransport)}
                       </div>
-                      <div>{fmtCLP(totalGanancia - grandTotalTransport)}</div>
+                      <div>{fmtCLP(totalProfit - grandTotalTransport)}</div>
                     </td>
                   </tr>
                 )}
@@ -592,24 +592,24 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
                     {fmtCLP(grandTotalGeneral)}
                   </td>
                 </tr>
-                {ivaEnabled && (
+                {vatEnabled && (
                   <>
-                    <tr style={{ background: ROW_IVA, color: "#274e13", fontWeight: 700 }}>
+                    <tr style={{ background: ROW_VAT, color: "#274e13", fontWeight: 700 }}>
                       <td style={{ ...cell, borderColor: "#93c47d" }}>IVA (19%)</td>
                       {dataByColumn.map((d) => (
                         <td key={d.col.key} style={{ ...cell, borderColor: "#93c47d" }}></td>
                       ))}
                       <td style={{ ...cell, textAlign: "right", borderColor: "#93c47d", fontSize: 13 }}>
-                        {fmtCLP(grandTotalIva)}
+                        {fmtCLP(grandTotalVat)}
                       </td>
                     </tr>
-                    <tr style={{ background: ROW_BRUTO, color: "#fff", fontWeight: 700 }}>
+                    <tr style={{ background: ROW_GROSS, color: "#fff", fontWeight: 700 }}>
                       <td style={{ ...cell, borderColor: "#16260a" }}>BRUTO</td>
                       {dataByColumn.map((d) => (
                         <td key={d.col.key} style={{ ...cell, borderColor: "#16260a" }}></td>
                       ))}
                       <td style={{ ...cell, textAlign: "right", borderColor: "#16260a", fontSize: 13 }}>
-                        {fmtCLP(grandTotalBruto)}
+                        {fmtCLP(grandTotalGross)}
                       </td>
                     </tr>
                   </>
@@ -640,8 +640,8 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
               <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 400, color: "#444", marginLeft: 8, cursor: "pointer" }}>
                 <input
                   type="checkbox"
-                  checked={ivaEnabled}
-                  onChange={(e) => setIvaEnabled(e.target.checked)}
+                  checked={vatEnabled}
+                  onChange={(e) => setVatEnabled(e.target.checked)}
                 />
                 Resumen con IVA (19%)
               </label>
@@ -658,7 +658,7 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
                       <span style={{ color: "#666" }}>Monto</span>
                       <span>{fmtCLP(d.totalAmount)}</span>
                     </div>
-                    {isJornadaCol(d.col) && workersPaid[d.col.key] && (
+                    {isWorkdayCol(d.col) && workersPaid[d.col.key] && (
                       <div style={{ fontSize: 9, fontWeight: 700, color: "#2e7d32", marginTop: 2 }}>
                         ✅ ya pagado <span style={{ fontWeight: 400, color: "#666" }}>(solo informativo)</span>
                       </div>
@@ -673,7 +673,7 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
                         <span style={{ fontSize: 10, color: "#666", fontStyle: "italic" }}>
                           % / pagan: −100% (automático)
                         </span>
-                      ) : isJornadaCol(d.col) ? (
+                      ) : isWorkdayCol(d.col) ? (
                         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                           <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
                             <span style={{ color: "#666" }}>Nos pagan</span>
@@ -718,13 +718,13 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontWeight: 700, borderTop: "1px solid #ddd", paddingTop: 4 }}>
                       <span>Ganancia</span>
-                      <span>{fmtCLP(gananciaFor(d.col, d.totalAmount))}</span>
+                      <span>{fmtCLP(profitFor(d.col, d.totalAmount))}</span>
                     </div>
                   </div>
                 ))}
                 <div style={{ background: ROW_TOTAL_DARK, color: "#fff", fontWeight: 700, borderRadius: 6, padding: 8, display: "flex", justifyContent: "space-between", fontSize: 13 }}>
                   <span>TOTAL — {fmtCLP(grandTotal)}</span>
-                  <span>{fmtCLP(totalGanancia)}</span>
+                  <span>{fmtCLP(totalProfit)}</span>
                 </div>
               </div>
             ) : (
@@ -747,7 +747,7 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
                       </td>
                       <td style={{ ...cell, textAlign: "right" }}>
                         {fmtCLP(d.totalAmount)}
-                        {isJornadaCol(d.col) && workersPaid[d.col.key] && (
+                        {isWorkdayCol(d.col) && workersPaid[d.col.key] && (
                           <div style={{ fontSize: 9, fontWeight: 700, color: "#2e7d32", marginTop: 1 }}>
                             ✅ ya pagado <span style={{ fontWeight: 400, color: "#666" }}>(solo informativo)</span>
                           </div>
@@ -763,7 +763,7 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
                           <span style={{ fontSize: 10, color: "#666", fontStyle: "italic" }}>
                             −100% (automático)
                           </span>
-                        ) : isJornadaCol(d.col) ? (
+                        ) : isWorkdayCol(d.col) ? (
                           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
                             <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
                               $
@@ -801,7 +801,7 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
                         )}
                       </td>
                       <td style={{ ...cell, textAlign: "right", fontWeight: 600 }}>
-                        {fmtCLP(gananciaFor(d.col, d.totalAmount))}
+                        {fmtCLP(profitFor(d.col, d.totalAmount))}
                       </td>
                     </tr>
                   ))}
@@ -810,7 +810,7 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
                     <td style={{ ...cell, textAlign: "right", borderColor: "#3d6b2e" }}>{fmtCLP(grandTotal)}</td>
                     <td style={{ ...cell, borderColor: "#3d6b2e" }}></td>
                     <td style={{ ...cell, textAlign: "right", borderColor: "#3d6b2e", fontSize: 13 }}>
-                      {fmtCLP(totalGanancia)}
+                      {fmtCLP(totalProfit)}
                     </td>
                   </tr>
                 </tbody>

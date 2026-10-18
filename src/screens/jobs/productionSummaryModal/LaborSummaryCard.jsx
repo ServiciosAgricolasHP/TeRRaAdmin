@@ -51,9 +51,9 @@ export function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
       const prod = `${fmtNum(cell.qty)}${cell.unit ? " " + cell.unit : ""}`;
       const price = cell.priceLabel || "—";
       const amt = fmtCLP(cell.amount);
-      const rend = cell.persons > 0 ? `${cell.persons} pers · prom ${fmtNum(cell.avg)}` : "—";
+      const yieldText = cell.persons > 0 ? `${cell.persons} pers · prom ${fmtNum(cell.avg)}` : "—";
       lines.push(
-        `${day.padEnd(10, " ")} | ${prod.padEnd(21, " ")} | ${price.padEnd(19, " ")} | ${amt.padEnd(11, " ")} | ${rend}`,
+        `${day.padEnd(10, " ")} | ${prod.padEnd(21, " ")} | ${price.padEnd(19, " ")} | ${amt.padEnd(11, " ")} | ${yieldText}`,
       );
     }
     return lines.join("\n");

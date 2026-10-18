@@ -382,6 +382,7 @@ Bono adicional configurable por día para trato y cosecha. Pensado para compensa
   - **Grupos y colores:** `GroupHeader` (el encabezado de un grupo de faenas), `ColorPickerButton` y `ColorPalette`.
   - **Detalle de la faena:** `SelectedDetail`, `SubjobListBody` (sus subfaenas) y `CycleRow`.
   - **Alta de ciclo:** `ImportSection` (importar desde un ciclo abierto).
+  - **Resumen de producción:** `ProductionSummaryModal` (lo abren el ciclo y la faena), con sus piezas en `productionSummaryModal/`: `CombinedSummaryCard` (la tabla general), `LaborSummaryCard`, `LaborGroupTotalsCard`, `buildCell.js` (los datos de una celda), `tableStyles.js` y `helpers.js`.
 - Jerarquía: Faena → Subfaena → Ciclo → Labors → Workdays.
 - Label de ciclo = prefijo bloqueado `Faena/Subfaena/` + sufijo editable.
 - Estados: `open` | `closed`. Se permiten **múltiples ciclos abiertos** por (faena, subfaena) — útil para correr varios frentes en paralelo o para "carve off" temporales.
