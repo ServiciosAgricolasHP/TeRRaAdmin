@@ -134,7 +134,7 @@ src/
     payroll/            ← las piezas de Nómina (ver "Componentes y archivos")
     transports/         ← las piezas de Transportes
     billing/            ← las piezas de Facturación
-    cycleDetail/        ← las piezas de CycleDetail (CycleSummaryModal, con las suyas en cycleSummaryModal/)
+    cycleDetail/        ← las piezas de CycleDetail (ver "CycleDetail — grid"); CycleSummaryModal, con las suyas en cycleSummaryModal/
   contexts/             ← AuthContext, ThemeContext, CatalogsContext, CarriersContext
   services/             ← capa de datos (Firestore CRUD + caché + auditoría)
                         firestoreBase, transportsService, carriersService,
@@ -410,6 +410,11 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
 
 ### CycleDetail — grid
 
+- Pantalla: `src/screens/CycleDetail.jsx` (el componente de la ruta, con la grilla, sus columnas y las escrituras). Sus piezas, en `src/screens/cycleDetail/`:
+  - **Grilla:** `FormulaCellEditor` (editor de las celdas numéricas), `DayHeader`, `GroupHeaderRowRenderer` y `rows.js` (filas por tipo de labor y `normalizeCycle`).
+  - **Precios del día:** `PisoDayRow`, `AddComboModal` y `DayModeModal`.
+  - **Modales:** `CatalogsModal` (con `CatalogSection`), `BonusEditModal`, `LeaderPickerModal`, `DefaultLeadersModal`, `StagesEditor` y `DayCalendarPicker` (el calendario de "+ Día").
+  - **Resumen:** `CycleSummaryModal`, con sus piezas en `cycleSummaryModal/` (ver Resúmenes).
 - **Undo (Ctrl+Z)**: stack en memoria (`undoStackRef`), pushea cada edición de celda, revierte y re-graba en Firestore.
 - **Navegación tipo Excel**: `singleClickEdit: false`. Flechas mueven el foco entre celdas; **Enter** entra a editar; al confirmar, salta a la fila siguiente (`enterNavigatesVertically*: true`).
 - **Secciones colapsables** persistidas en `localStorage` para liberar espacio vertical: métricas (`cycleDetail.metricsCollapsed`), precios (`cycleDetail.pricesCollapsed`), sidebar global (`layout.sidebarOpen`).
