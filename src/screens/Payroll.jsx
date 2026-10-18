@@ -79,6 +79,8 @@ import {
 import ConfirmDialog from "../components/ConfirmDialog";
 import Modal from "../components/Modal";
 import WorkerSummaryModal from "../components/WorkerSummaryModal";
+import CloseCyclesModal from "../components/CloseCyclesModal";
+import { settledOpenCycles, splitTaken, payrollStatusMap } from "../utils/cycleClosing";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { matchesSearchQuery } from "../utils/textSearch";
 import { localIsoDate } from "../utils/dates";
@@ -291,9 +293,12 @@ export default function Payroll() {
   // embebido, así la re-descarga del JSON trae el nombre nuevo.
   const [renaming, setRenaming] = useState(null);
 
-  // Totales por ciclo activo: { [cycleId]: { unpaid, paid, total, firstDay,
-  // lastDay, unpaidBank, unpaidCash, unpaidUnknown, unpaidByLabor } }, con
-  // `unpaidByLabor[laborId]` = { unpaid, bank, cash, unknown, ruts }.
+  // Totales por ciclo activo: { [cycleId]: { unpaid, taken, total, firstDay,
+  // lastDay, unpaidBank, unpaidCash, unpaidUnknown, unpaidByLabor,
+  // takenByPayroll } }, con `unpaidByLabor[laborId]` = { unpaid, bank, cash,
+  // unknown, ruts }. `taken` es lo que ya entró a alguna nómina y
+  // `takenByPayroll[payrollId]`, lo que se llevó cada una: cuánto de eso está
+  // pagado de verdad depende del estado de la nómina (`splitTaken`).
   const [cycleStats, setCycleStats] = useState({});
   // Separado de `loading`: al refrescar, el spinner va en el botón y no tapa
   // la pantalla con "Cargando…".
@@ -315,7 +320,7 @@ export default function Payroll() {
       setWorkers(w);
       setPayrolls(p);
 
-      // Totales pagado/pendiente y rango de fechas de los ciclos activos.
+      // Pendiente, lo que ya entró a nómina y rango de fechas de los ciclos activos.
       // firstDay/lastDay son el período que muestra CycleSelector.
       const activeIds = c.filter((x) => x.status !== "closed").map((x) => x.id);
       // Medio de pago por rut, para estimar sin lecturas extra cuánto de lo
@@ -330,9 +335,9 @@ export default function Payroll() {
       const stats = {};
       for (const id of activeIds) {
         stats[id] = {
-          unpaid: 0, paid: 0, total: 0, firstDay: "", lastDay: "",
+          unpaid: 0, taken: 0, total: 0, firstDay: "", lastDay: "",
           unpaidBank: 0, unpaidCash: 0, unpaidUnknown: 0,
-          unpaidByLabor: {},
+          unpaidByLabor: {}, takenByPayroll: {},
         };
       }
       const laborTypeMap = new Map();
@@ -354,7 +359,8 @@ export default function Payroll() {
         }
         stats[cid].total += amount;
         if (wd.payrollId) {
-          stats[cid].paid += amount;
+          stats[cid].taken += amount;
+          stats[cid].takenByPayroll[wd.payrollId] = (stats[cid].takenByPayroll[wd.payrollId] || 0) + amount;
         } else {
           stats[cid].unpaid += amount;
           // Un rut sin ficha o sin banco cargado queda aparte como "por
@@ -380,6 +386,7 @@ export default function Payroll() {
         }
       }
       setCycleStats(stats);
+      return { cycles: c, stats, payrolls: p };
     } catch (err) {
       toast.error("No se pudo cargar la nómina: " + (err.message || err));
     } finally {
@@ -471,6 +478,21 @@ export default function Payroll() {
 
   const subfaenaName = (id) => subfaenas.find((s) => s.id === id)?.name || "";
   const workerById = (rut) => workers.find((w) => w.id === rut);
+
+  // Ciclos abiertos ya pagados por completo, para cerrarlos de una vez desde
+  // Generar o justo después de marcar una nómina pagada. `closeCycles.ids`
+  // acota la lista a los ciclos de esa nómina.
+  const closable = useMemo(() => settledOpenCycles(cycles, cycleStats, payrolls), [cycles, cycleStats, payrolls]);
+  // Por ciclo, lo pagado de verdad y lo que está en una nómina sin pagar.
+  const takenSplit = useMemo(() => {
+    const statusOf = payrollStatusMap(payrolls);
+    return Object.fromEntries(Object.entries(cycleStats).map(([id, s]) => [id, splitTaken(s, statusOf)]));
+  }, [cycleStats, payrolls]);
+  const payrollNameOf = (id) => payrolls.find((p) => p.id === id)?.name || "";
+  const [closeCycles, setCloseCycles] = useState(null); // { ids: Set | null, payrollName }
+  const closeCandidates = closeCycles
+    ? closable.settled.filter((r) => !closeCycles.ids || closeCycles.ids.has(r.cycle.id))
+    : [];
 
   const toggleCycle = (id) => {
     const marcar = !selectedCycleIds.has(id);
@@ -1028,8 +1050,15 @@ export default function Payroll() {
       }
       setProgress({ step: "Actualizando lista...", detail: "", percent: 95 });
       setPayConfirm(null);
-      await load();
+      const fresh = await load();
       toast.success(PAY_DONE[mode] || "Listo");
+      // Los ciclos de esta nómina que con este pago quedaron pagados por
+      // completo se ofrecen para cerrar.
+      if (mode === "pay" && fresh) {
+        const ids = new Set(p.cycleIds || []);
+        const done = settledOpenCycles(fresh.cycles, fresh.stats, fresh.payrolls).settled.filter((r) => ids.has(r.cycle.id));
+        if (done.length) setCloseCycles({ ids: new Set(done.map((r) => r.cycle.id)), payrollName: p.name });
+      }
     } catch (err) {
       // El servicio lanza mensajes redactados para el usuario (ej. "La nómina
       // ya está pagada entera."): se muestran en un toast.
@@ -1233,6 +1262,10 @@ export default function Payroll() {
             onRemovePerson={removePerson}
             onNext={buildPreview}
             busy={busy}
+            takenSplit={takenSplit}
+            payrollNameOf={payrollNameOf}
+            closableCount={closable.settled.length}
+            onClosePaid={() => setCloseCycles({ ids: null, payrollName: "" })}
           />
         ) : (
           <PreviewTable
@@ -1274,6 +1307,24 @@ export default function Payroll() {
         <WorkersHistory
           faenas={faenas}
           workers={workers}
+        />
+      )}
+
+      {closeCycles && closeCandidates.length > 0 && (
+        <CloseCyclesModal
+          candidates={closeCandidates}
+          waitingCount={closeCycles.ids ? 0 : closable.waiting.length}
+          intro={
+            closeCycles.ids
+              ? `Con "${closeCycles.payrollName}" pagada, estos ciclos quedaron pagados por completo: no les queda nada pendiente. ¿Los cierras?`
+              : "Estos ciclos abiertos ya se pagaron por completo: no les queda nada pendiente y lo que entró a nómina está pagado."
+          }
+          faenaName={(id) => faenas.find((f) => f.id === id)?.name || ""}
+          onClose={() => setCloseCycles(null)}
+          onDone={async () => {
+            setCloseCycles(null);
+            await load();
+          }}
         />
       )}
 
@@ -1447,6 +1498,10 @@ function CycleSelector({
   onRemovePerson,
   onNext,
   busy,
+  takenSplit = {},
+  payrollNameOf = () => "",
+  closableCount = 0,
+  onClosePaid,
 }) {
   const [search, setSearch] = useState("");
   const [showEmpty, setShowEmpty] = useState(false);
@@ -1509,7 +1564,7 @@ function CycleSelector({
   } = useMemo(() => {
     const statOf = (id) =>
       cycleStats?.[id] || {
-        unpaid: 0, paid: 0, total: 0, firstDay: "", lastDay: "",
+        unpaid: 0, taken: 0, total: 0, firstDay: "", lastDay: "",
         unpaidBank: 0, unpaidCash: 0, unpaidUnknown: 0,
       };
     let empty = 0;
@@ -1611,6 +1666,16 @@ function CycleSelector({
         >
           {showEmpty ? "✓ " : ""}Sin pendientes ({emptyCount})
         </button>
+        {closableCount > 0 && (
+          <button
+            type="button"
+            onClick={onClosePaid}
+            title="Ciclos abiertos que ya se pagaron por completo: cerrarlos de una vez."
+            className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1 text-xs hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)]"
+          >
+            🔒 Cerrar pagados ({closableCount})
+          </button>
+        )}
         <button
           type="button"
           onClick={onAddPerson}
@@ -1796,6 +1861,10 @@ function CycleSelector({
                           PAY_SPLIT_HINT,
                         ].filter(Boolean).join("\n")
                       : undefined;
+                    // Estar en una nómina no es estar pagado: recién lo es cuando
+                    // esa nómina se marca pagada.
+                    const taken = takenSplit[c.id] || { paid: 0, inPayroll: 0, openPayrollIds: [] };
+                    const inPayrollTitle = `En nómina${taken.openPayrollIds.length === 1 ? "" : "s"} que todavía no se marca${taken.openPayrollIds.length === 1 ? "" : "n"} pagada${taken.openPayrollIds.length === 1 ? "" : "s"}: ${taken.openPayrollIds.map((id) => payrollNameOf(id) || id).join(", ")}`;
                     return (
                       <div
                         key={c.id}
@@ -1823,9 +1892,14 @@ function CycleSelector({
                                   📅 {periodLabel}
                                 </span>
                               )}
-                              {stat.paid > 0 && (
-                                <span className="tabular-nums" title="Ya pagado en nóminas anteriores">
-                                  ✓ {fmtCurrency(stat.paid)} pagado
+                              {taken.paid > 0 && (
+                                <span className="tabular-nums" title="En nóminas ya marcadas como pagadas">
+                                  ✓ {fmtCurrency(taken.paid)} pagado
+                                </span>
+                              )}
+                              {taken.inPayroll > 0 && (
+                                <span className="tabular-nums text-[var(--color-accent)]" title={inPayrollTitle}>
+                                  🕓 {fmtCurrency(taken.inPayroll)} en nómina
                                 </span>
                               )}
                             </div>
@@ -1847,6 +1921,10 @@ function CycleSelector({
                                   {partialLabors ? `de ${fmtCurrency(stat.unpaid)}` : "pendiente"}
                                 </div>
                               </>
+                            ) : taken.inPayroll > 0 ? (
+                              <span className="text-xs text-[var(--color-accent)]" title={inPayrollTitle}>En nómina</span>
+                            ) : taken.paid > 0 ? (
+                              <span className="text-xs text-[var(--color-muted)]">✓ Pagado</span>
                             ) : (
                               <span className="text-xs text-[var(--color-muted)]">Sin pendientes</span>
                             )}

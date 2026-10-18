@@ -75,6 +75,7 @@ import { tripsService } from "../services/transportsService";
 import { qrLockedLaborsOf } from "../utils/harvestSync";
 import { LABOR_TYPES } from "../utils/laborTypes";
 import { localIsoDate } from "../utils/dates";
+import { closedCyclePatch } from "../utils/cycleClosing";
 import { currentRutResolver } from "../utils/workerRut";
 import { toTitleName, unshout } from "../utils/textCase";
 
@@ -145,24 +146,6 @@ function FormulaCellEditor({ initialValue, onValueChange, eventKey }) {
 
 const todayStr = () => localIsoDate();
 const newId = () => (crypto?.randomUUID?.() || `id_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`);
-
-// Primer y último día de cycle.days. Al cerrar el ciclo, startDate y endDate
-// toman estos valores: el rango de lo trabajado, no la fecha de creación ni
-// la del cierre. Sin días, devuelven startDate/endDate (o hoy si faltan).
-const firstWorkedDay = (cycle) => {
-  const days = cycle?.days;
-  if (Array.isArray(days) && days.length > 0) {
-    return days.reduce((min, d) => (d < min ? d : min), days[0]);
-  }
-  return cycle?.startDate || todayStr();
-};
-const lastWorkedDay = (cycle) => {
-  const days = cycle?.days;
-  if (Array.isArray(days) && days.length > 0) {
-    return days.reduce((max, d) => (d > max ? d : max), days[0]);
-  }
-  return cycle?.endDate || todayStr();
-};
 
 const fmtCurrency = (value) =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
@@ -2950,10 +2933,9 @@ export default function CycleDetail() {
   const handleCloseCycle = async () => {
     setCloseBusy(true);
     try {
-      const startDate = firstWorkedDay(cycle);
-      const endDate = lastWorkedDay(cycle);
-      await cyclesService.update(id, { status: "closed", startDate, endDate });
-      setCycle((c) => ({ ...c, status: "closed", startDate, endDate }));
+      const patch = closedCyclePatch(cycle);
+      await cyclesService.update(id, patch);
+      setCycle((c) => ({ ...c, ...patch }));
       setCloseFlow(false);
       showToast("Ciclo cerrado");
     } finally {
