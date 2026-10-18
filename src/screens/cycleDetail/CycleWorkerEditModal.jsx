@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
-import Modal from "./Modal";
-import DayConfigContent from "./DayConfigContent";
-import { formatRutForDisplay } from "../utils/rutUtils";
-import { parseAmount } from "../utils/formula";
-import { containerLabel, comboLabel, getDaySingle, effectivePiso, tratoUnitLabel } from "../utils/cosechaCombos";
-import { DEFAULT_BASE_DAY, DEFAULT_BONUS_MANEJO, DEFAULT_BONUS_SUPERVISION, DEFAULT_OVERTIME_RATE } from "../utils/tratoHE";
-import { matchesSearchQuery } from "../utils/textSearch";
-import { initials } from "../utils/nameUtils";
-import { dayHasData } from "../utils/cycleRowUtils";
+import Modal from "../../components/Modal";
+import DayConfigContent from "./cycleWorkerEditModal/DayConfigContent";
+import { formatRutForDisplay } from "../../utils/rutUtils";
+import { parseAmount } from "../../utils/formula";
+import { containerLabel, comboLabel, getDaySingle, effectivePiso, tratoUnitLabel } from "../../utils/cosechaCombos";
+import { DEFAULT_BASE_DAY, DEFAULT_BONUS_MANEJO, DEFAULT_BONUS_SUPERVISION, DEFAULT_OVERTIME_RATE } from "../../utils/tratoHE";
+import { matchesSearchQuery } from "../../utils/textSearch";
+import { initials } from "../../utils/nameUtils";
+import { dayHasData } from "../../utils/cycleRowUtils";
 
 function effectiveDayPrice(labor, dayCfg) {
   return Number(dayCfg?.price) || Number(labor?.baseDayDefault) || DEFAULT_BASE_DAY;

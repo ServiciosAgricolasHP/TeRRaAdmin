@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
-import { formatRutForDisplay } from "../utils/rutUtils";
-import { matchesSearchQuery } from "../utils/textSearch";
-import { initials } from "../utils/nameUtils";
-import { dayHasData } from "../utils/cycleRowUtils";
+import { formatRutForDisplay } from "../../utils/rutUtils";
+import { matchesSearchQuery } from "../../utils/textSearch";
+import { initials } from "../../utils/nameUtils";
+import { dayHasData } from "../../utils/cycleRowUtils";
 
 function countDaysWithData(row, days) {
   let count = 0;

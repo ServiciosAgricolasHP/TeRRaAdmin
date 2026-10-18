@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import Modal from "./Modal";
-import { hasChanges } from "../utils/formChanges";
-import TextField from "./TextField";
-import Select from "./Select";
-import { workersService } from "../services";
-import { findWorkerByRut, createWorker } from "../services/workersService";
-import { formatRutForDisplay, normalizeRut, validateRut, isForeignRut } from "../utils/rutUtils";
-import { useAuth } from "../contexts/AuthContext";
+import Modal from "../../components/Modal";
+import { hasChanges } from "../../utils/formChanges";
+import TextField from "../../components/TextField";
+import Select from "../../components/Select";
+import { workersService } from "../../services";
+import { findWorkerByRut, createWorker } from "../../services/workersService";
+import { formatRutForDisplay, normalizeRut, validateRut, isForeignRut } from "../../utils/rutUtils";
+import { useAuth } from "../../contexts/AuthContext";
 import {
   BANKS,
   ACCOUNT_TYPES,
@@ -14,9 +14,9 @@ import {
   CASH_BANK_CODE,
   DEFAULT_BANK_CODE,
   rutWithoutDv,
-} from "../utils/banks";
-import { matchesSearchQuery } from "../utils/textSearch";
-import { greeting, GREETING_SLOTS } from "../utils/greetings";
+} from "../../utils/banks";
+import { matchesSearchQuery } from "../../utils/textSearch";
+import { greeting, GREETING_SLOTS } from "../../utils/greetings";
 
 const MIN_SEARCH = 3;
 const WORKERS_TTL_MS = 2 * 60 * 60 * 1000;

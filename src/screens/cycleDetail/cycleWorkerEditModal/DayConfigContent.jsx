@@ -1,7 +1,7 @@
 import { useState } from "react";
-import Select from "./Select";
-import { parseAmount } from "../utils/formula";
-import { comboLabel, getDayPiso, getDaySingle } from "../utils/cosechaCombos";
+import Select from "../../../components/Select";
+import { parseAmount } from "../../../utils/formula";
+import { comboLabel, getDayPiso, getDaySingle } from "../../../utils/cosechaCombos";
 
 const priceInputCls =
   "w-24 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-right text-sm outline-none focus:border-[var(--color-accent)] disabled:opacity-50";
