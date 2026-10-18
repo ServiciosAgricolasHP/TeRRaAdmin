@@ -23,7 +23,7 @@ export function DebtDetailList({ title, items, total, color }) {
                 <span className="min-w-0 truncate">{it.name}</span>
                 <span
                   className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                    it.kind === "abono"
+                    it.kind === "partialPayment"
                       ? "bg-[var(--color-warning-soft)] text-[var(--color-warning)]"
                       : "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
                   }`}

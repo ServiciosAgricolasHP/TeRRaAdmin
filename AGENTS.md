@@ -115,7 +115,7 @@ React 19 · Vite 7 · Tailwind CSS 4 · Firebase (Firestore + Auth) · ag-grid �
 - **React Compiler** habilitado via `babel-plugin-react-compiler`.
 - Variables de entorno con prefijo `VITE_`.
 - `exceljs` se importa **lazy** (`await import("exceljs")`) solo al exportar — chunk separado de ~937 KB.
-- `recharts` idem, vía `React.lazy` sobre `components/DashboardCharts.jsx` — chunk separado de ~372 KB. El chunk principal ya está sobre el límite de Vite, así que toda librería pesada nueva va lazy.
+- `recharts` idem, vía `React.lazy` sobre `screens/dashboard/DashboardCharts.jsx` y la dona `CommitmentsDonut`, en un chunk separado de ~340 KB. El chunk principal ya está sobre el límite de Vite, así que toda librería pesada nueva va lazy.
 - `jspdf` + `jspdf-autotable` también se importan lazy, solo al descargar el PDF del Informe de deudas.
 
 ## Arquitectura / Architecture
@@ -140,6 +140,7 @@ src/
     commitments/        ← las piezas de Cheques y pagos
     adminConsole/       ← las secciones de la Consola admin
     calendar/           ← las piezas del Calendario
+    dashboard/          ← las piezas del Dashboard
   contexts/             ← AuthContext, ThemeContext, CatalogsContext, CarriersContext
   services/             ← capa de datos (Firestore CRUD + caché + auditoría)
                         firestoreBase, transportsService, carriersService,
@@ -759,6 +760,7 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 ## Dashboard
 
 - Pantalla: `src/screens/Dashboard.jsx`, ruta `/dashboard`. **La home (`/`) redirige a `/faenas`**, no acá: abrir la app es la acción más frecuente del día y montar Faenas cuesta ~21 lecturas contra ~270 del Dashboard (medido con los conteos reales de septiembre 2026). El ahorro es real solo si no se entra igual al Dashboard — `faenas`, `cycles` y `payrolls` comparten clave de caché entre las dos pantallas. Tres bloques de KPIs (plata pagada a trabajadores, operación, transporte) + gráficos + dos tablas accionables. Selector de período global: mes actual / 3 meses / 12 meses.
+- Sus piezas, en `src/screens/dashboard/`: `CommitmentsWeek` (Cheques y pagos de la semana), `DebtDetailList` (el desglose de la deuda con transportistas), `MetricCard` y `DashboardCharts`. La actividad por mes sale de `countWorkdaysInRange` (`services/countsService.js`).
 - **La restricción de diseño es el costo de lecturas.** Nada acá escanea `workdays`, `logs`, `transports` ni `dteDocuments`. El truco es que casi todo ya viene pre-agregado:
   - Los docs de `payrolls` traen `total`/`bankTotal`/`cashTotal`/`workerCount`/`advanceTotal` ya sumados → toda la serie de "pagado por mes" sale de ahí.
   - `transportPayments.total` y `transportPayrolls.total` están denormalizados por el servicio.
@@ -768,7 +770,7 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 - Contador de lecturas visible solo para admin en el subtítulo (`· N lecturas` / `· desde caché`), mismo criterio que el de Calendario. Es lo que hace verificable la restricción.
 - **Cheques y pagos** (`CommitmentsWeek`): una dona con lo que se paga y está atrasado o por vencer —vencido sin marcar, aplazado y lo que vence en los próximos 7 días—, con el total de cada grupo al lado y la suma en el centro, más la lista de esos vencimientos, que lleva a la pantalla. No incluye cheques recibidos ni protestados. La dona (`CommitmentsDonut`) vive en el chunk lazy de Recharts; los montos se ven aunque todavía no haya cargado. Se carga aparte de lo demás (si falla, el tablero se muestra igual) y con las opciones de `listCommitments`, así comparte la caché con Cheques y pagos.
 - **Tabla "ciclos abiertos sin movimiento"**: ciclos `open` cuyo último día en `cycle.days[]` quedó a más de 14 días. Sale gratis de la lista de ciclos y es lo más accionable del tablero.
-- Gráficos en `src/components/DashboardCharts.jsx` (Recharts, lazy). Ocho, en este orden: pagado por mes (barras apiladas banco/efectivo, el tooltip suma el total), deuda con transportistas en el tiempo, actividad por mes (área, 12 meses fijos), ciclos abiertos por faena, composición de lo devengado (dona con la leyenda al costado, con monto y porcentaje por categoría), gasto por transportista, gasto de transporte por mes (ventana fija de 6 meses) y compras vs ventas por empresa.
+- Gráficos en `src/screens/dashboard/DashboardCharts.jsx` (Recharts, lazy), con sus partes en `dashboardCharts/` (`ChartCard`, `ChartDefs`, `ChartTooltip`, `Legend`, `CommitmentsDonut` y `chartTheme.js`). Todo lo que usa Recharts se importa solo desde ahí, para que quede fuera del chunk principal. Ocho, en este orden: pagado por mes (barras apiladas banco/efectivo, el tooltip suma el total), deuda con transportistas en el tiempo, actividad por mes (área, 12 meses fijos), ciclos abiertos por faena, composición de lo devengado (dona con la leyenda al costado, con monto y porcentaje por categoría), gasto por transportista, gasto de transporte por mes (ventana fija de 6 meses) y compras vs ventas por empresa.
   - **Compras vs ventas**: barras agrupadas mes a mes (6 meses) de una empresa a la vez, elegida en un selector de la propia tarjeta. Carga sola con la primera empresa y se rehace al cambiar. Suma el campo `total` (IVA incluido) y **resta las notas de crédito** (tipos 61/112, mismo `CREDIT_NOTE_TYPES` que Facturación) para que los números calcen con esa pantalla. Va por `dteDocumentsService` con `cache+persist` a 10 min.
     - Acotar a una empresa no es cosmético: `dteDocuments` es la colección más grande del sistema y mezcla todas las empresas y todos los períodos. **El costo no se le muestra al usuario** — eso es información de desarrollo y vive en el contador admin del encabezado.
     - La query cruza `companyId` (igualdad) con `periodo` (`in`), o sea **dos campos**: puede requerir un índice compuesto. No hay `firestore.indexes.json` en el repo (los índices se manejan en la consola), así que si falta, falla en runtime con `failed-precondition`. Está contemplado: la tarjeta muestra un mensaje corto y el link para crear el índice queda en la consola del navegador.
@@ -777,13 +779,13 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
   - **Atribución de mes**: un resumen se cuenta en el mes del **período que cubre**, no en el de `createdAt` — el resumen de la segunda semana de agosto suele armarse recién en septiembre, y fecharlo por creación corre el gasto de mes. `paymentPeriodDate()` toma el punto medio de `[periodFrom, periodTo]`, que cuando el período cruza el cambio de mes cae en el mes con la mayoría de los días (28-ago a 3-sep → 31-ago → agosto); si el resumen no trae período, cae a `createdAt`. Los pagos y abonos **no** se reatribuyen: van por su fecha real, que es cuando la plata se movió.
   - Limitación conocida: los resúmenes se piden por `createdAt` de los últimos 12 meses, así que una deuda más vieja que eso y todavía impaga no entra en el saldo inicial de la curva.
   - Los colores salen de `var(--color-*)`; **no hardcodear verde como "bueno"** — el accent es naranja en donDiego y violeta en sheridan/aetiskPastel. Gradientes y sombras se declaran en `<defs>` con id prefijado por gráfico (los ids de SVG son globales al documento).
-- `src/components/MetricCard.jsx` es la tarjeta de KPI compartida. Facturación (`SummaryCard`), Payroll (`MetricCard`) y Calendar (`Stat`) tienen versiones locales propias.
+- `screens/dashboard/MetricCard.jsx` es la tarjeta de KPI del Dashboard. Facturación (`SummaryCard`), Payroll (`MetricCard`) y Calendar (`Stat`) tienen versiones locales propias.
 - `src/utils/format.js` centraliza `fmtCurrency`/`fmtNumber`/`fmtPercent`/`fmtMonthKey`. El código nuevo usa este módulo; varias pantallas tienen copias locales (~11).
 
 ## Consola admin / AdminConsole
 
 - Pantalla: `src/screens/AdminConsole.jsx` (arma la página con sus secciones). Ruta `/admin/console` (solo admin).
-- Sus piezas, en `src/screens/adminConsole/`: una sección por archivo (`PingSection`, `AuthDebugSection`, `CollectionCountsSection`, `LogsBreakdownSection`, `WorkdaysByMonthSection`, `WorkdaysByRangeSection`, `WorkdaysByCycleSection`, `NormalizeWorkerNamesSection`, `BackfillWorkerRutFieldSection` y `MigrateAdvanceRutsSection`), la tarjeta plegable `ConsoleCard` y `collections.js` (`MAIN_COLLECTIONS`). Los recuentos están en `services/adminCountsService.js`.
+- Sus piezas, en `src/screens/adminConsole/`: una sección por archivo (`PingSection`, `AuthDebugSection`, `CollectionCountsSection`, `LogsBreakdownSection`, `WorkdaysByMonthSection`, `WorkdaysByRangeSection`, `WorkdaysByCycleSection`, `NormalizeWorkerNamesSection`, `BackfillWorkerRutFieldSection` y `MigrateAdvanceRutsSection`), la tarjeta plegable `ConsoleCard` y `collections.js` (`MAIN_COLLECTIONS`). Los recuentos están en `services/countsService.js`.
 - Secciones para inspección barata: conteos por colección, workdays por mes (12 reads para todo un año), workdays por rango, workdays por ciclo, más los backfills y el diagnóstico del rol admin.
 - **`MAIN_COLLECTIONS` lista las 36 colecciones de la app**, agrupadas por área. Es una lista a mano: al agregar una colección nueva hay que sumarla acá o queda invisible. El botón **📋 Copiar** baja los conteos ya ejecutados separados por tab, listos para pegar en una planilla.
 - **🧪 Ping al backend**: encola un job en `functionJobs` y espera la respuesta. No llama ningún endpoint porque no hay ninguno invocable (ver Despliegue); ejercita el mismo camino que usa cualquier job. Distingue los tres modos de falla a propósito, porque cada uno se arregla en otro lado: `permission-denied` es que las reglas publicadas no dejan crear el job (o quien aprieta no es admin), el timeout de 45 s es la función sin desplegar o mirando otra base, y un job en `error` es la función corriendo y fallando adentro. Es además el **único** chequeo que prueba que el trigger esté suscrito a `hpdatabase` — el emulador no puede.

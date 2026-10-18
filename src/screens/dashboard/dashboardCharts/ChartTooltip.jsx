@@ -75,25 +75,25 @@ export function ChartTooltip({ active, payload, label, valueFormatter, showTotal
 export function DebtTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   const row = payload[0].payload;
-  const neto = Number(row.neto) || 0;
+  const net = Number(row.net) || 0;
   return (
     <TooltipBox label={label} wide>
-      <TooltipRow color={WARNING} name="Deuda generada" value={fmtCurrency(row.generado)} />
-      <TooltipDetail items={row.nuevos} />
+      <TooltipRow color={WARNING} name="Deuda generada" value={fmtCurrency(row.generated)} />
+      <TooltipDetail items={row.createdItems} />
       <div className="mt-1" />
-      <TooltipRow color={ACCENT} name="Pagado" value={fmtCurrency(row.pagado)} />
-      <TooltipDetail items={row.pagos} />
+      <TooltipRow color={ACCENT} name="Pagado" value={fmtCurrency(row.paid)} />
+      <TooltipDetail items={row.paidItems} />
       <div className="mt-1.5 border-t border-[var(--color-border)] pt-1.5">
-        <TooltipRow name="Saldo al cierre" value={fmtCurrency(row.saldo)} />
+        <TooltipRow name="Saldo al cierre" value={fmtCurrency(row.balance)} />
         <div
           className={`mt-1 text-[11px] font-medium ${
-            neto > 0 ? "text-[var(--color-accent)]" : neto < 0 ? "text-[var(--color-warning)]" : "text-[var(--color-muted)]"
+            net > 0 ? "text-[var(--color-accent)]" : net < 0 ? "text-[var(--color-warning)]" : "text-[var(--color-muted)]"
           }`}
         >
-          {neto > 0
-            ? `Se pagó ${fmtCurrency(neto)} más de lo generado`
-            : neto < 0
-              ? `Se pagó ${fmtCurrency(-neto)} menos de lo generado`
+          {net > 0
+            ? `Se pagó ${fmtCurrency(net)} más de lo generado`
+            : net < 0
+              ? `Se pagó ${fmtCurrency(-net)} menos de lo generado`
               : "Se pagó exactamente lo generado"}
         </div>
         <div className="mt-1 text-[10px] text-[var(--color-muted)] opacity-80">
@@ -107,13 +107,13 @@ export function DebtTooltip({ active, payload, label }) {
 export function DteTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   const row = payload[0].payload;
-  const dif = Number(row.diferencia) || 0;
+  const diff = Number(row.difference) || 0;
   return (
     <TooltipBox label={label}>
-      <TooltipRow color={ACCENT} name="Ventas" value={fmtCurrency(row.ventas)} />
-      <TooltipRow color={WARNING} name="Compras" value={fmtCurrency(row.compras)} />
+      <TooltipRow color={ACCENT} name="Ventas" value={fmtCurrency(row.sales)} />
+      <TooltipRow color={WARNING} name="Compras" value={fmtCurrency(row.purchases)} />
       <div className="mt-1.5 border-t border-[var(--color-border)] pt-1.5">
-        <TooltipRow name="Diferencia" value={fmtCurrency(dif)} />
+        <TooltipRow name="Diferencia" value={fmtCurrency(diff)} />
         <div className="mt-0.5 text-[10px] text-[var(--color-muted)]">Montos con IVA incluido, netos de notas de crédito.</div>
       </div>
     </TooltipBox>

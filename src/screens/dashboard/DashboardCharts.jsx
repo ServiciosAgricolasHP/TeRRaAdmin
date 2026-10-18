@@ -24,7 +24,7 @@ import { Legend } from "./dashboardCharts/Legend";
 export default function DashboardCharts({
   payrollMonths = [],
   payMix = [],
-  cyclesByFaena = [],
+  cyclesByJob = [],
   carrierSpend = [],
   transportMonths = [],
   debtMonths = [],
@@ -48,11 +48,11 @@ export default function DashboardCharts({
               cursor={{ fill: "var(--color-accent-soft)", radius: 6 }}
               content={<ChartTooltip valueFormatter={fmtCurrency} showTotal />}
             />
-            <Bar dataKey="banco" name="Banco" stackId="pago" fill="url(#pay-fill)" />
+            <Bar dataKey="bank" name="Banco" stackId="payment" fill="url(#pay-fill)" />
             <Bar
-              dataKey="efectivo"
+              dataKey="cash"
               name="Efectivo"
-              stackId="pago"
+              stackId="payment"
               fill="url(#pay-alt)"
               radius={[5, 5, 0, 0]}
               filter="url(#pay-shadow)"
@@ -91,13 +91,13 @@ export default function DashboardCharts({
             <XAxis dataKey="label" tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: GRID_STROKE }} dy={4} />
             <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} width={56} tickFormatter={fmtCompactCLP} />
             <Tooltip cursor={{ fill: "var(--color-accent-soft)", radius: 6 }} content={<DebtTooltip />} />
-            <Bar dataKey="generado" name="Deuda generada" fill="url(#debt-alt)" radius={[4, 4, 0, 0]} />
-            <Bar dataKey="pagado" name="Pagado" fill="url(#debt-fill)" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="generated" name="Deuda generada" fill="url(#debt-alt)" radius={[4, 4, 0, 0]} />
+            <Bar dataKey="paid" name="Pagado" fill="url(#debt-fill)" radius={[4, 4, 0, 0]} />
             {/* El saldo acumulado arranca del saldo real anterior a la ventana,
                 así que la línea es la deuda vigente, no el flujo del período. */}
             <Line
               type="monotone"
-              dataKey="saldo"
+              dataKey="balance"
               name="Saldo acumulado"
               stroke={MUTED}
               strokeWidth={2}
@@ -131,7 +131,7 @@ export default function DashboardCharts({
             <Tooltip cursor={{ stroke: ACCENT, strokeWidth: 1 }} content={<ChartTooltip valueFormatter={fmtNumber} />} />
             <Area
               type="monotone"
-              dataKey="jornadas"
+              dataKey="workdayCount"
               name="Registros"
               stroke={ACCENT}
               strokeWidth={2}
@@ -143,9 +143,9 @@ export default function DashboardCharts({
         </ResponsiveContainer>
       </ChartCard>
 
-      <ChartCard title="Ciclos abiertos por faena" empty={cyclesByFaena.length === 0}>
-        <ResponsiveContainer width="100%" height={Math.max(190, cyclesByFaena.length * 34)}>
-          <BarChart data={cyclesByFaena} layout="vertical" margin={{ top: 0, right: 20, bottom: 0, left: 0 }} barCategoryGap="26%">
+      <ChartCard title="Ciclos abiertos por faena" empty={cyclesByJob.length === 0}>
+        <ResponsiveContainer width="100%" height={Math.max(190, cyclesByJob.length * 34)}>
+          <BarChart data={cyclesByJob} layout="vertical" margin={{ top: 0, right: 20, bottom: 0, left: 0 }} barCategoryGap="26%">
             <ChartDefs id="cyc" color={ACCENT} />
             <CartesianGrid stroke={GRID_STROKE} strokeDasharray="2 5" horizontal={false} />
             <XAxis type="number" tick={AXIS_TICK} tickLine={false} axisLine={false} allowDecimals={false} />
@@ -154,7 +154,7 @@ export default function DashboardCharts({
               cursor={{ fill: "var(--color-accent-soft)", radius: 6 }}
               content={<ChartTooltip valueFormatter={fmtNumber} />}
             />
-            <Bar dataKey="ciclos" name="Ciclos abiertos" fill="url(#cyc-fill-h)" radius={[0, 5, 5, 0]} filter="url(#cyc-shadow)" />
+            <Bar dataKey="cycleCount" name="Ciclos abiertos" fill="url(#cyc-fill-h)" radius={[0, 5, 5, 0]} filter="url(#cyc-shadow)" />
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -247,7 +247,7 @@ export default function DashboardCharts({
             <Tooltip cursor={{ stroke: WARNING, strokeWidth: 1 }} content={<ChartTooltip valueFormatter={fmtCurrency} />} />
             <Area
               type="monotone"
-              dataKey="gasto"
+              dataKey="spent"
               name="Gasto"
               stroke={WARNING}
               strokeWidth={2}
@@ -297,8 +297,8 @@ export default function DashboardCharts({
                   <XAxis dataKey="label" tick={AXIS_TICK} tickLine={false} axisLine={{ stroke: GRID_STROKE }} dy={4} />
                   <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} width={56} tickFormatter={fmtCompactCLP} />
                   <Tooltip cursor={{ fill: "var(--color-accent-soft)", radius: 6 }} content={<DteTooltip />} />
-                  <Bar dataKey="ventas" name="Ventas" fill="url(#dte-fill)" radius={[5, 5, 0, 0]} filter="url(#dte-shadow)" />
-                  <Bar dataKey="compras" name="Compras" fill="url(#dte-alt)" radius={[5, 5, 0, 0]} filter="url(#dte-shadow)" />
+                  <Bar dataKey="sales" name="Ventas" fill="url(#dte-fill)" radius={[5, 5, 0, 0]} filter="url(#dte-shadow)" />
+                  <Bar dataKey="purchases" name="Compras" fill="url(#dte-alt)" radius={[5, 5, 0, 0]} filter="url(#dte-shadow)" />
                 </BarChart>
               </ResponsiveContainer>
               <Legend items={[{ label: "Ventas", color: ACCENT }, { label: "Compras", color: WARNING }]} />

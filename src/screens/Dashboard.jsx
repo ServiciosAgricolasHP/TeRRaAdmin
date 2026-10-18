@@ -92,8 +92,8 @@ function payrollMonthKey(p) {
 
 const pendingOfPayment = (p) => {
   const total = Number(p?.total) || 0;
-  const abonado = (p?.abonos || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
-  return Math.max(0, total - abonado);
+  const partiallyPaid = (p?.abonos || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
+  return Math.max(0, total - partiallyPaid);
 };
 
 // Notas de crédito: restan del total del período. Copia de CREDIT_NOTE_TYPES
@@ -111,7 +111,7 @@ export default function Dashboard() {
   const [periodKey, setPeriodKey] = useState("3m");
   const [loading, setLoading] = useState(true);
   const [reads, setReads] = useState(0);
-  const [faenas, setFaenas] = useState([]);
+  const [jobs, setJobs] = useState([]);
   const [cycles, setCycles] = useState([]);
   const [payrolls, setPayrolls] = useState([]);
   const [fortnights, setFortnights] = useState([]);
@@ -151,7 +151,7 @@ export default function Dashboard() {
           }),
         );
         if (cancelled) return;
-        setWorkdayMonths(keys.map((k, i) => ({ key: k, label: fmtMonthKey(k), jornadas: counts[i] })));
+        setWorkdayMonths(keys.map((k, i) => ({ key: k, label: fmtMonthKey(k), workdayCount: counts[i] })));
         setCountReads(keys.length);
       } catch (err) {
         if (!cancelled) console.error("[dashboard] conteo de jornadas:", err);
@@ -204,17 +204,17 @@ export default function Dashboard() {
         });
         if (cancelled) return;
         const byMonth = new Map(
-          lastMonthKeys(DTE_MONTHS).map((k) => [k, { key: k, label: fmtMonthKey(k), ventas: 0, compras: 0 }]),
+          lastMonthKeys(DTE_MONTHS).map((k) => [k, { key: k, label: fmtMonthKey(k), sales: 0, purchases: 0 }]),
         );
         for (const d of data) {
           const row = byMonth.get(d.periodo);
           if (!row) continue;
           // `total` ya viene con IVA incluido. Las notas de crédito restan.
           const amount = (CREDIT_NOTE_TYPES.has(Number(d.tipo)) ? -1 : 1) * (Number(d.total) || 0);
-          if (d.kind === "venta") row.ventas += amount;
-          else row.compras += amount;
+          if (d.kind === "venta") row.sales += amount;
+          else row.purchases += amount;
         }
-        setDteRows([...byMonth.values()].map((r) => ({ ...r, diferencia: r.ventas - r.compras })));
+        setDteRows([...byMonth.values()].map((r) => ({ ...r, difference: r.sales - r.purchases })));
         setDteReads((r) => r + reads);
       } catch (err) {
         if (cancelled) return;
@@ -277,7 +277,7 @@ export default function Dashboard() {
           transportPaymentsService.listSince(new Date(historyStart)),
         ]);
         if (cancelled) return;
-        setFaenas(f.data);
+        setJobs(f.data);
         setCycles(c.data);
         setPayrolls(p.data);
         setFortnights(q);
@@ -299,7 +299,7 @@ export default function Dashboard() {
   const money = useMemo(() => {
     const keys = lastMonthKeys(periodMonths);
     const keySet = new Set(keys);
-    const byMonth = new Map(keys.map((k) => [k, { key: k, label: fmtMonthKey(k), banco: 0, efectivo: 0, total: 0 }]));
+    const byMonth = new Map(keys.map((k) => [k, { key: k, label: fmtMonthKey(k), bank: 0, cash: 0, total: 0 }]));
     let periodTotal = 0, periodCash = 0, periodAdvances = 0, periodCount = 0;
     let pendingCount = 0, pendingTotal = 0;
     for (const p of payrolls) {
@@ -311,8 +311,8 @@ export default function Dashboard() {
       const mk = payrollMonthKey(p);
       if (!mk || !keySet.has(mk)) continue;
       const row = byMonth.get(mk);
-      row.banco += Number(p.bankTotal) || 0;
-      row.efectivo += Number(p.cashTotal) || 0;
+      row.bank += Number(p.bankTotal) || 0;
+      row.cash += Number(p.cashTotal) || 0;
       row.total += Number(p.total) || 0;
       periodTotal += Number(p.total) || 0;
       periodCash += Number(p.cashTotal) || 0;
@@ -341,15 +341,15 @@ export default function Dashboard() {
   }, [payrolls, periodMonths]);
 
   const ops = useMemo(() => {
-    const faenaName = new Map(faenas.map((f) => [f.id, f.name]));
+    const jobName = new Map(jobs.map((f) => [f.id, f.name]));
     const open = cycles.filter((c) => c.status !== "closed");
-    const byFaena = new Map();
+    const byJob = new Map();
     for (const c of open) {
-      byFaena.set(c.faenaId, (byFaena.get(c.faenaId) || 0) + 1);
+      byJob.set(c.faenaId, (byJob.get(c.faenaId) || 0) + 1);
     }
-    const cyclesByFaena = [...byFaena.entries()]
-      .map(([id, ciclos]) => ({ name: faenaName.get(id) || "(sin faena)", ciclos }))
-      .sort((a, b) => b.ciclos - a.ciclos)
+    const cyclesByJob = [...byJob.entries()]
+      .map(([id, cycleCount]) => ({ name: jobName.get(id) || "(sin faena)", cycleCount }))
+      .sort((a, b) => b.cycleCount - a.cycleCount)
       .slice(0, 8);
 
     // Última actividad = el día más reciente cargado en el ciclo. Si nunca se
@@ -359,24 +359,24 @@ export default function Dashboard() {
       .map((c) => {
         const days = Array.isArray(c.days) ? c.days : [];
         const last = days.length ? days.reduce((a, b) => (a > b ? a : b)) : (c.startDate || "");
-        return { cycle: c, last, faena: faenaName.get(c.faenaId) || "" };
+        return { cycle: c, last, job: jobName.get(c.faenaId) || "" };
       })
       .filter((x) => x.last && x.last < cutoff)
       .sort((a, b) => (a.last < b.last ? -1 : 1));
 
-    const current = workdayMonths.at(-1)?.jornadas ?? null;
-    const previous = workdayMonths.at(-2)?.jornadas ?? null;
+    const current = workdayMonths.at(-1)?.workdayCount ?? null;
+    const previous = workdayMonths.at(-2)?.workdayCount ?? null;
     const delta = previous > 0 ? ((current - previous) / previous) * 100 : null;
     return {
       openCount: open.length,
       closedCount: cycles.length - open.length,
-      activeFaenas: byFaena.size,
-      cyclesByFaena,
+      activeJobs: byJob.size,
+      cyclesByJob,
       stale,
       workdaysCurrent: current,
       workdaysDelta: delta,
     };
-  }, [cycles, faenas, workdayMonths]);
+  }, [cycles, jobs, workdayMonths]);
 
   const transport = useMemo(() => {
     const alias = new Map(carriers.map((c) => [c.id, c.alias || c.name || c.id]));
@@ -393,19 +393,19 @@ export default function Dashboard() {
       row.total += total;
       periodSpend += total;
       if (p.status !== "paid") {
-        const pend = pendingOfPayment(p);
-        row.pending += pend;
-        periodPending += pend;
+        const pendingAmount = pendingOfPayment(p);
+        row.pending += pendingAmount;
+        periodPending += pendingAmount;
       }
       byCarrier.set(id, row);
     }
     // Gasto mes a mes, fechado por el período que cubre el resumen. Ventana
     // fija de 6 meses: deja ver tendencia sin que las barras se aplasten.
     const keys = lastMonthKeys(6);
-    const byMonth = new Map(keys.map((k) => [k, { key: k, label: fmtMonthKey(k), gasto: 0 }]));
+    const byMonth = new Map(keys.map((k) => [k, { key: k, label: fmtMonthKey(k), spent: 0 }]));
     for (const p of payments) {
       const mk = paymentPeriodDate(p).slice(0, 7);
-      if (byMonth.has(mk)) byMonth.get(mk).gasto += Number(p.total) || 0;
+      if (byMonth.has(mk)) byMonth.get(mk).spent += Number(p.total) || 0;
     }
 
     const spend = [...byCarrier.values()].sort((a, b) => b.total - a.total).slice(0, 8);
@@ -445,23 +445,23 @@ export default function Dashboard() {
     const rows = new Map(
       keys.map((k) => [
         k,
-        { key: k, label: fmtMonthKey(k), generado: 0, pagado: 0, pagos: [], nuevos: [] },
+        { key: k, label: fmtMonthKey(k), generated: 0, paid: 0, paidItems: [], createdItems: [] },
       ]),
     );
-    let saldo = 0;
+    let balance = 0;
     // `detail` alimenta el desglose del tooltip: qué resúmenes y qué abonos
     // componen la barra de ese mes.
     const apply = (date, field, amount, detail) => {
       if (!date || amount <= 0) return;
       if (date < from) {
-        saldo += field === "generado" ? amount : -amount;
+        balance += field === "generated" ? amount : -amount;
         return;
       }
       const row = rows.get(date.slice(0, 7));
       if (!row) return;
       row[field] += amount;
-      if (field === "generado") row.nuevos.push(detail);
-      else row.pagos.push(detail);
+      if (field === "generated") row.createdItems.push(detail);
+      else row.paidItems.push(detail);
     };
     for (const p of payments) {
       const total = Number(p.total) || 0;
@@ -476,25 +476,25 @@ export default function Dashboard() {
             : "",
         fortnight: p.payrollId ? fortnightName.get(p.payrollId) || "" : "",
       };
-      apply(paymentPeriodDate(p), "generado", total, { ...ctx, amount: total, kind: "resumen" });
-      let abonado = 0;
+      apply(paymentPeriodDate(p), "generated", total, { ...ctx, amount: total, kind: "summary" });
+      let partiallyPaid = 0;
       for (const a of p.abonos || []) {
         const amt = Number(a.amount) || 0;
-        abonado += amt;
+        partiallyPaid += amt;
         const date = String(a.date || "").slice(0, 10);
-        apply(date, "pagado", amt, { ...ctx, amount: amt, kind: "abono", date, notes: a.notes || "" });
+        apply(date, "paid", amt, { ...ctx, amount: amt, kind: "partialPayment", date, notes: a.notes || "" });
       }
       if (p.status === "paid") {
-        const resto = Math.max(0, total - abonado);
+        const remainder = Math.max(0, total - partiallyPaid);
         const date = tsToIso(p.paidAt);
-        apply(date, "pagado", resto, { ...ctx, amount: resto, kind: "resumen", date, marked: true });
+        apply(date, "paid", remainder, { ...ctx, amount: remainder, kind: "summary", date, marked: true });
       }
     }
     const byAmount = (a, b) => b.amount - a.amount;
     return keys.map((k) => {
       const r = rows.get(k);
-      saldo += r.generado - r.pagado;
-      return { ...r, pagos: r.pagos.sort(byAmount), nuevos: r.nuevos.sort(byAmount), saldo, neto: r.pagado - r.generado };
+      balance += r.generated - r.paid;
+      return { ...r, paidItems: r.paidItems.sort(byAmount), createdItems: r.createdItems.sort(byAmount), balance, net: r.paid - r.generated };
     });
   }, [payments, carriers, fortnights]);
 
@@ -502,20 +502,20 @@ export default function Dashboard() {
     const rows = cycles
       .filter((c) => Number(c.summaryTotals?.cobrar) > 0)
       .map((c) => {
-        const cobrar = Number(c.summaryTotals.cobrar) || 0;
-        const pagar = Number(c.summaryTotals.pagar) || 0;
-        return { cycle: c, cobrar, pagar, margen: cobrar - pagar, pct: ((cobrar - pagar) / cobrar) * 100 };
+        const charge = Number(c.summaryTotals.cobrar) || 0;
+        const pay = Number(c.summaryTotals.pagar) || 0;
+        return { cycle: c, cobrar: charge, pagar: pay, marginAmount: charge - pay, pct: ((charge - pay) / charge) * 100 };
       })
-      .sort((a, b) => b.margen - a.margen);
-    const cobrarSum = rows.reduce((s, r) => s + r.cobrar, 0);
-    const margenSum = rows.reduce((s, r) => s + r.margen, 0);
+      .sort((a, b) => b.marginAmount - a.marginAmount);
+    const chargeSum = rows.reduce((s, r) => s + r.cobrar, 0);
+    const marginSum = rows.reduce((s, r) => s + r.marginAmount, 0);
     return {
       rows,
       covered: rows.length,
       total: cycles.length,
       missing: cycles.length - rows.length,
-      margenSum,
-      pct: cobrarSum > 0 ? (margenSum / cobrarSum) * 100 : 0,
+      marginSum,
+      pct: chargeSum > 0 ? (marginSum / chargeSum) * 100 : 0,
     };
   }, [cycles]);
 
@@ -603,7 +603,7 @@ export default function Dashboard() {
                 hint={`${ops.closedCount} cerrados`}
                 highlight
               />
-              <MetricCard label="Faenas con actividad" value={fmtNumber(ops.activeFaenas)} hint={`de ${faenas.length}`} />
+              <MetricCard label="Faenas con actividad" value={fmtNumber(ops.activeJobs)} hint={`de ${jobs.length}`} />
               <MetricCard
                 label="Registros de jornada"
                 value={ops.workdaysCurrent == null ? "—" : fmtNumber(ops.workdaysCurrent)}
@@ -622,7 +622,7 @@ export default function Dashboard() {
               />
               <MetricCard
                 label="Margen de ciclos"
-                value={margin.covered > 0 ? fmtCurrency(margin.margenSum) : "—"}
+                value={margin.covered > 0 ? fmtCurrency(margin.marginSum) : "—"}
                 hint={
                   margin.covered > 0
                     ? `${fmtPercent(margin.pct, 1)} · ${margin.missing} sin tarifas`
@@ -676,7 +676,7 @@ export default function Dashboard() {
             <DashboardCharts
               payrollMonths={money.months}
               payMix={money.mix}
-              cyclesByFaena={ops.cyclesByFaena}
+              cyclesByJob={ops.cyclesByJob}
               carrierSpend={transport.spend}
               transportMonths={transport.months}
               debtMonths={debt}
@@ -700,7 +700,7 @@ export default function Dashboard() {
                 Ciclos abiertos sin movimiento
               </h2>
               <div className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
-                {ops.stale.slice(0, 10).map(({ cycle, last, faena }) => (
+                {ops.stale.slice(0, 10).map(({ cycle, last, job }) => (
                   <Link
                     key={cycle.id}
                     to={`/cycles/${cycle.id}`}
@@ -708,7 +708,7 @@ export default function Dashboard() {
                   >
                     <span className="min-w-0 truncate">
                       <span className="font-medium">{cycle.label}</span>
-                      {faena && <span className="ml-2 text-xs text-[var(--color-muted)]">{faena}</span>}
+                      {job && <span className="ml-2 text-xs text-[var(--color-muted)]">{job}</span>}
                     </span>
                     <span className="shrink-0 text-xs tabular-nums text-[var(--color-muted)]">último día {last}</span>
                   </Link>
@@ -748,10 +748,10 @@ export default function Dashboard() {
                         <td className="px-3 py-1.5 text-right tabular-nums">{fmtCurrency(r.pagar)}</td>
                         <td
                           className={`px-3 py-1.5 text-right font-medium tabular-nums ${
-                            r.margen < 0 ? "text-[var(--color-danger)]" : ""
+                            r.marginAmount < 0 ? "text-[var(--color-danger)]" : ""
                           }`}
                         >
-                          {fmtCurrency(r.margen)}
+                          {fmtCurrency(r.marginAmount)}
                         </td>
                         <td className="px-3 py-1.5 text-right tabular-nums text-[var(--color-muted)]">
                           {fmtPercent(r.pct, 1)}
@@ -788,18 +788,18 @@ export default function Dashboard() {
           <div className="space-y-4">
             <DebtDetailList
               title="Deuda generada"
-              items={debtDetail.nuevos}
-              total={debtDetail.generado}
+              items={debtDetail.createdItems}
+              total={debtDetail.generated}
               color="var(--color-warning)"
             />
             <div>
               <DebtDetailList
                 title="Pagado"
-                items={debtDetail.pagos}
-                total={debtDetail.pagado}
+                items={debtDetail.paidItems}
+                total={debtDetail.paid}
                 color="var(--color-accent)"
               />
-              {debtDetail.pagos.length > 0 && (
+              {debtDetail.paidItems.length > 0 && (
                 <p className="mt-1.5 rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-3 py-2 text-[11px] text-[var(--color-warning)]">
                   ⚠ La fecha de pago es la del día en que se marcó como pagado en el sistema, no necesariamente la del
                   día en que se entregó la plata. Si un resumen se marcó días después, ese pago aparece en la fecha en
@@ -810,21 +810,21 @@ export default function Dashboard() {
             <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm">
               <div className="flex items-baseline gap-2">
                 <span className="text-[var(--color-muted)]">Saldo al cierre del mes</span>
-                <span className="ml-auto font-semibold tabular-nums">{fmtCurrency(debtDetail.saldo)}</span>
+                <span className="ml-auto font-semibold tabular-nums">{fmtCurrency(debtDetail.balance)}</span>
               </div>
               <div
                 className={`mt-1 text-xs font-medium ${
-                  debtDetail.neto > 0
+                  debtDetail.net > 0
                     ? "text-[var(--color-accent)]"
-                    : debtDetail.neto < 0
+                    : debtDetail.net < 0
                       ? "text-[var(--color-warning)]"
                       : "text-[var(--color-muted)]"
                 }`}
               >
-                {debtDetail.neto > 0
-                  ? `Se pagó ${fmtCurrency(debtDetail.neto)} más de lo generado`
-                  : debtDetail.neto < 0
-                    ? `Se pagó ${fmtCurrency(-debtDetail.neto)} menos de lo generado`
+                {debtDetail.net > 0
+                  ? `Se pagó ${fmtCurrency(debtDetail.net)} más de lo generado`
+                  : debtDetail.net < 0
+                    ? `Se pagó ${fmtCurrency(-debtDetail.net)} menos de lo generado`
                     : "Se pagó exactamente lo generado"}
               </div>
               <p className="mt-2 text-[11px] text-[var(--color-muted)]">
