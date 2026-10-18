@@ -133,6 +133,7 @@ src/
                          CleanupPaidWorkdays)
     payroll/            ← las piezas de Nómina (ver "Componentes y archivos")
     transports/         ← las piezas de Transportes
+    facturacion/        ← las piezas de Facturación
   contexts/             ← AuthContext, ThemeContext, CatalogsContext, CarriersContext
   services/             ← capa de datos (Firestore CRUD + caché + auditoría)
                         firestoreBase, transportsService, carriersService,
@@ -777,7 +778,17 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 
 ## Facturación / Billing
 
-- Pantalla: `src/screens/Facturacion.jsx`. Ruta `/facturacion`. Nav label: "Facturación" (icono 🧾). Acceso para todas las cuentas.
+- Pantalla: `src/screens/Facturacion.jsx` (el componente de la ruta, con sus pestañas y exportaciones). Ruta `/facturacion`. Nav label: "Facturación" (icono 🧾). Acceso para todas las cuentas.
+- Sus piezas, en `src/screens/facturacion/`:
+  - **Listado:** `SummaryCard`, `SortHeader`, `OtroImpChip`, `PaymentStatusSelect`, `CostCenterSelect` y `PrintableDocList`.
+  - **Documento:** `DocDetailModal` y `PaymentsSection` (sus pagos).
+  - **Importar:** `CompanySelectAndPickModal`, `ImportPreviewModal` y `FileRow`.
+  - **Empresas:** `CompaniesModal`.
+  - **Centros de costo:** `CostCentersModal`, `PrintableCostCenterDocs` e `InformalExpenseFormModal`.
+  - **Retenciones:** `RetencionesView`, `PrintableRetenciones` y `PrintableRetencionesGroup`.
+  - **Pendientes:** `PendientesModal` y `PrintablePendientes`.
+  - **Resumen anual:** `PrintableResumen`.
+  - **Comunes:** `docs.js` (período, estados de pago, categorías de lo pendiente, agrupado por centro de costo) y `printStyles.js` (celdas de las tablas imprimibles).
 - Servicios: `companiesService` (colección `companies`) + `dteDocumentsService` (colección `dteDocuments`) en `services/index.js`. TTL del list = **10 min** (`ttl: 600_000`) — las mutaciones locales (status, notas, pagos, import) actualizan el state en memoria, así que el TTL solo afecta al re-entrar a la pantalla.
 - **Multi-empresa**: el sistema soporta N empresas (probado con 3). Cada empresa tiene `{ rut, razonSocial, alias, enabled }`. CRUD inline desde el modal **🏢 Empresas**. Los DTE quedan namespaceados por `companyId` así no se colisionan folios entre empresas (mismo proveedor puede facturar a varias empresas con el mismo folio).
 - **Empresa elegida persiste en localStorage** (`facturacion.selectedCompanyId`). Si la empresa guardada fue borrada, cae a la primera.
