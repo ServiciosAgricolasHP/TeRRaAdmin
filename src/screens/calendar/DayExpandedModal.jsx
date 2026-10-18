@@ -8,22 +8,22 @@ import { isWeekendDate, humanDate } from "./helpers";
 // Se abre con un click en la celda (en mobile, también en una barra). Muestra
 // todas las subfaenas del día, incluidas las que no caben en la celda, como
 // botones agrupados por faena; cada una abre su detalle del día.
-export function DayExpandedModal({ date, subfaenasOfDay, subfaenaById, faenaById, onClose, onPickSubfaena }) {
-  const groupedByFaena = useMemo(() => {
+export function DayExpandedModal({ date, subjobsOfDay, subjobById, jobById, onClose, onPickSubjob }) {
+  const groupedByJob = useMemo(() => {
     const map = new Map();
-    for (const s of subfaenasOfDay) {
-      const sub = subfaenaById.get(s.subfaenaId);
-      const faena = sub ? faenaById.get(sub.faenaId) : null;
-      const faenaId = faena?.id || "(sin-faena)";
-      if (!map.has(faenaId)) {
-        map.set(faenaId, { faena, items: [] });
+    for (const s of subjobsOfDay) {
+      const subjob = subjobById.get(s.subjobId);
+      const job = subjob ? jobById.get(subjob.faenaId) : null;
+      const jobId = job?.id || "(sin-faena)";
+      if (!map.has(jobId)) {
+        map.set(jobId, { job, items: [] });
       }
-      map.get(faenaId).items.push(s);
+      map.get(jobId).items.push(s);
     }
     return [...map.values()].sort((a, b) =>
-      (a.faena?.name || "").localeCompare(b.faena?.name || ""),
+      (a.job?.name || "").localeCompare(b.job?.name || ""),
     );
-  }, [subfaenasOfDay, subfaenaById, faenaById]);
+  }, [subjobsOfDay, subjobById, jobById]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
@@ -37,7 +37,7 @@ export function DayExpandedModal({ date, subfaenasOfDay, subfaenaById, faenaById
               {humanDate(date)}
             </h2>
             <p className="text-xs text-[var(--color-muted)]">
-              {subfaenasOfDay.length} subfaena{subfaenasOfDay.length === 1 ? "" : "s"} activa{subfaenasOfDay.length === 1 ? "" : "s"}
+              {subjobsOfDay.length} subfaena{subjobsOfDay.length === 1 ? "" : "s"} activa{subjobsOfDay.length === 1 ? "" : "s"}
             </p>
           </div>
           <button
@@ -49,22 +49,22 @@ export function DayExpandedModal({ date, subfaenasOfDay, subfaenaById, faenaById
         </header>
 
         <div className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
-          {groupedByFaena.length === 0 ? (
+          {groupedByJob.length === 0 ? (
             <p className="rounded-md border border-dashed border-[var(--color-border)] py-6 text-center text-sm text-[var(--color-muted)]">
               Sin actividad registrada este día.
             </p>
           ) : (
-            groupedByFaena.map((g) => (
-              <section key={g.faena?.id || "(sin-faena)"}>
+            groupedByJob.map((g) => (
+              <section key={g.job?.id || "(sin-faena)"}>
                 <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">
-                  {g.faena?.name || "Sin faena"}
+                  {g.job?.name || "Sin faena"}
                 </h3>
                 <div className="space-y-1.5">
                   {g.items.map((s) => (
                     <button
-                      key={s.subfaenaId}
+                      key={s.subjobId}
                       type="button"
-                      onClick={() => onPickSubfaena(s.subfaenaId)}
+                      onClick={() => onPickSubjob(s.subjobId)}
                       className="flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm font-medium text-white shadow-sm hover:opacity-90"
                       style={{ backgroundColor: s.color }}
                     >

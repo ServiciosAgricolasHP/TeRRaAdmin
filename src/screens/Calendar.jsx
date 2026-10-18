@@ -34,8 +34,8 @@ const COLOR_PALETTE = [
 ];
 
 // Color estable derivado de un hash del id de la subfaena.
-function colorForSubfaena(subfaenaId) {
-  const s = String(subfaenaId || "");
+function colorForSubjob(subjobId) {
+  const s = String(subjobId || "");
   let hash = 0;
   for (let i = 0; i < s.length; i++) {
     hash = (hash * 31 + s.charCodeAt(i)) | 0;
@@ -99,8 +99,8 @@ export default function Calendar() {
   const [workdays, setWorkdays] = useState([]);
   const [trips, setTrips] = useState([]);
   const [cycles, setCycles] = useState([]);
-  const [faenas, setFaenas] = useState([]);
-  const [subfaenas, setSubfaenas] = useState([]);
+  const [jobs, setJobs] = useState([]);
+  const [subjobs, setSubjobs] = useState([]);
   // Lista completa de trabajadores, para los nombres del detalle del día.
   // Comparte con Trabajadores la caché de 2 h en localStorage: la primera
   // carga cuesta ~500-2.000 lecturas y las siguientes, ninguna.
@@ -111,12 +111,12 @@ export default function Calendar() {
   const [readCount, setReadCount] = useState(0); // lecturas de workdays del mes, para el contador
   const [fromCache, setFromCache] = useState(false);
 
-  const [selectedDay, setSelectedDay] = useState(null); // { date, mode: "all" | "subfaena", subfaenaId?, from? }
+  const [selectedDay, setSelectedDay] = useState(null); // { date, mode: "all" | "subjob", subjobId?, from? }
 
   // Subfaenas ocultas (vacío = todas visibles), guardadas en localStorage. No
   // cambia la consulta a Firestore: oculta sus barras en la grilla, el modal
   // del día y la impresión; la leyenda las muestra tachadas.
-  const [excludedSubfaenas, setExcludedSubfaenas] = useState(() => {
+  const [excludedSubjobs, setExcludedSubjobs] = useState(() => {
     try {
       const raw = localStorage.getItem("calendar.excludedSubfaenas");
       return raw ? new Set(JSON.parse(raw)) : new Set();
@@ -124,23 +124,23 @@ export default function Calendar() {
   });
   useEffect(() => {
     try {
-      localStorage.setItem("calendar.excludedSubfaenas", JSON.stringify([...excludedSubfaenas]));
+      localStorage.setItem("calendar.excludedSubfaenas", JSON.stringify([...excludedSubjobs]));
     } catch { /* noop */ }
-  }, [excludedSubfaenas]);
-  const toggleSubfaenaFilter = (id) => {
-    setExcludedSubfaenas((prev) => {
+  }, [excludedSubjobs]);
+  const toggleSubjobFilter = (id) => {
+    setExcludedSubjobs((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   };
-  const clearSubfaenaFilter = () => setExcludedSubfaenas(new Set());
+  const clearSubjobFilter = () => setExcludedSubjobs(new Set());
   // Deja visible solo `idToKeep`. `allIds` son las subfaenas del mes, que
   // entrega la leyenda.
-  const isolateSubfaena = (idToKeep, allIds) => {
+  const isolateSubjob = (idToKeep, allIds) => {
     const next = new Set();
     for (const id of allIds) if (id !== idToKeep) next.add(id);
-    setExcludedSubfaenas(next);
+    setExcludedSubjobs(next);
   };
 
   const isMobile = useIsMobile();
@@ -164,8 +164,8 @@ export default function Calendar() {
         ]);
         if (cancelled) return;
         setCycles(c);
-        setFaenas(f);
-        setSubfaenas(s);
+        setJobs(f);
+        setSubjobs(s);
         setWorkers(w);
       } catch (err) {
         if (!cancelled) setError(err.message || String(err));
@@ -218,17 +218,17 @@ export default function Calendar() {
     return m;
   }, [cycles]);
 
-  const faenaById = useMemo(() => {
+  const jobById = useMemo(() => {
     const m = new Map();
-    for (const f of faenas) m.set(f.id, f);
+    for (const f of jobs) m.set(f.id, f);
     return m;
-  }, [faenas]);
+  }, [jobs]);
 
-  const subfaenaById = useMemo(() => {
+  const subjobById = useMemo(() => {
     const m = new Map();
-    for (const s of subfaenas) m.set(s.id, s);
+    for (const s of subjobs) m.set(s.id, s);
     return m;
-  }, [subfaenas]);
+  }, [subjobs]);
 
   const carrierById = useMemo(() => {
     const m = new Map();
@@ -243,7 +243,7 @@ export default function Calendar() {
   }, [workers]);
 
   // Para cada día, qué subfaenas trabajaron y con cuánta actividad.
-  // Forma: { [date]: [{ subfaenaId, name, faenaName, color, workerCount, kilos, jornadas, amount }] },
+  // Forma: { [date]: [{ subjobId, name, jobName, color, workerCount, harvestQty, workdayCount, amount }] },
   // cada día ordenado por workerCount descendente.
   const dayIndex = useMemo(() => {
     const idx = {};
@@ -252,31 +252,31 @@ export default function Calendar() {
       if (!date) continue;
       const cycle = cycleById.get(wd.cycleId);
       if (!cycle) continue;
-      const subfaenaId = cycle.subfaenaId || "(sin-subfaena)";
+      const subjobId = cycle.subfaenaId || "(sin-subfaena)";
       if (!idx[date]) idx[date] = {};
-      if (!idx[date][subfaenaId]) {
-        const sub = subfaenaById.get(subfaenaId);
-        const faena = sub ? faenaById.get(sub.faenaId) : null;
-        idx[date][subfaenaId] = {
-          subfaenaId,
-          name: sub?.name || "Sin subfaena",
-          faenaName: faena?.name || "",
-          color: colorForSubfaena(subfaenaId),
+      if (!idx[date][subjobId]) {
+        const subjob = subjobById.get(subjobId);
+        const job = subjob ? jobById.get(subjob.faenaId) : null;
+        idx[date][subjobId] = {
+          subjobId,
+          name: subjob?.name || "Sin subfaena",
+          jobName: job?.name || "",
+          color: colorForSubjob(subjobId),
           workers: new Set(),
-          kilos: 0,
-          jornadas: 0,
+          harvestQty: 0,
+          workdayCount: 0,
           amount: 0,
         };
       }
-      const e = idx[date][subfaenaId];
+      const e = idx[date][subjobId];
       e.workers.add(wd.workerId || wd.workerRut);
-      e.kilos += Number(wd.qty) || 0;
+      e.harvestQty += Number(wd.qty) || 0;
       e.amount += Number(wd.amount) || 0;
       // jornadas: qty en tratoHE y 1 por workday en las labores al día; cosecha y trato no suman
       const labor = (cycle.labors || []).find((l) => l.id === wd.laborId);
       const t = labor?.type;
-      if (t === "tratoHE") e.jornadas += Number(wd.qty) || 0;
-      else if (t === "main" || t === "supervision" || t === "extra") e.jornadas += 1;
+      if (t === "tratoHE") e.workdayCount += Number(wd.qty) || 0;
+      else if (t === "main" || t === "supervision" || t === "extra") e.workdayCount += 1;
     }
     // Convierte los Sets en conteos y cada día en un array.
     const out = {};
@@ -286,19 +286,19 @@ export default function Calendar() {
         .sort((a, b) => b.workerCount - a.workerCount);
     }
     return out;
-  }, [workdays, cycleById, subfaenaById, faenaById]);
+  }, [workdays, cycleById, subjobById, jobById]);
 
   // dayIndex sin las subfaenas ocultas. Lo usan la grilla, el modal del día y
   // la impresión; la leyenda usa el dayIndex completo.
   const visibleDayIndex = useMemo(() => {
-    if (!excludedSubfaenas || excludedSubfaenas.size === 0) return dayIndex;
+    if (!excludedSubjobs || excludedSubjobs.size === 0) return dayIndex;
     const out = {};
     for (const date in dayIndex) {
-      const arr = dayIndex[date].filter((it) => !excludedSubfaenas.has(it.subfaenaId));
+      const arr = dayIndex[date].filter((it) => !excludedSubjobs.has(it.subjobId));
       if (arr.length > 0) out[date] = arr;
     }
     return out;
-  }, [dayIndex, excludedSubfaenas]);
+  }, [dayIndex, excludedSubjobs]);
 
   // ─── Navegación de mes ───────────────────────────────────────────────────
 
@@ -353,10 +353,10 @@ export default function Calendar() {
       const weekend = isWeekendDate(c.date);
       const pills = items
         .map((it) => {
-          const faena = it.faenaName ? `<span class="f">${escapeHtml(it.faenaName)}</span>` : "";
-          const sub = `<span class="s">${escapeHtml(it.name)}</span>`;
+          const job = it.jobName ? `<span class="f">${escapeHtml(it.jobName)}</span>` : "";
+          const subjob = `<span class="s">${escapeHtml(it.name)}</span>`;
           const count = it.workerCount ? `<span class="n">${it.workerCount}</span>` : "";
-          return `<div class="pill" style="background:${it.color}">${faena}${sub}${count}</div>`;
+          return `<div class="pill" style="background:${it.color}">${job}${subjob}${count}</div>`;
         })
         .join("");
       return `<td class="day"><div class="dnum ${weekend ? "wknd" : ""}">${c.day}</div>${pills}</td>`;
@@ -494,27 +494,27 @@ export default function Calendar() {
         onBarClick={
           isMobile
             ? (date) => setSelectedDay({ date, mode: "all" })
-            : (date, subfaenaId) => setSelectedDay({ date, mode: "subfaena", subfaenaId })
+            : (date, subjobId) => setSelectedDay({ date, mode: "subjob", subjobId })
         }
       />
 
       <Legend
         dayIndex={dayIndex}
-        excludedSubfaenas={excludedSubfaenas}
-        onToggle={toggleSubfaenaFilter}
-        onIsolate={isolateSubfaena}
-        onClear={clearSubfaenaFilter}
+        excludedSubjobs={excludedSubjobs}
+        onToggle={toggleSubjobFilter}
+        onIsolate={isolateSubjob}
+        onClear={clearSubjobFilter}
       />
 
-      {selectedDay && selectedDay.mode === "subfaena" && (
+      {selectedDay && selectedDay.mode === "subjob" && (
         <DayDetailDrawer
           date={selectedDay.date}
-          subfaenaId={selectedDay.subfaenaId}
+          subjobId={selectedDay.subjobId}
           workdays={workdays.filter((wd) => wd.date === selectedDay.date)}
           trips={trips.filter((t) => t.date === selectedDay.date)}
           cycleById={cycleById}
-          subfaenaById={subfaenaById}
-          faenaById={faenaById}
+          subjobById={subjobById}
+          jobById={jobById}
           carrierById={carrierById}
           workerById={workerById}
           catalogs={catalogs}
@@ -533,12 +533,12 @@ export default function Calendar() {
       {selectedDay && selectedDay.mode === "all" && (
         <DayExpandedModal
           date={selectedDay.date}
-          subfaenasOfDay={visibleDayIndex[selectedDay.date] || []}
-          subfaenaById={subfaenaById}
-          faenaById={faenaById}
+          subjobsOfDay={visibleDayIndex[selectedDay.date] || []}
+          subjobById={subjobById}
+          jobById={jobById}
           onClose={() => setSelectedDay(null)}
-          onPickSubfaena={(subfaenaId) =>
-            setSelectedDay({ date: selectedDay.date, mode: "subfaena", subfaenaId, from: "all" })
+          onPickSubjob={(subjobId) =>
+            setSelectedDay({ date: selectedDay.date, mode: "subjob", subjobId, from: "all" })
           }
         />
       )}

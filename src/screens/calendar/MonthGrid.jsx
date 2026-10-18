@@ -56,15 +56,15 @@ export function MonthGrid({ year, month, dayIndex, loading, onCellClick, onBarCl
               <div className="mt-1 flex-1 space-y-0.5 overflow-hidden">
                 {items.slice(0, 4).map((it) => (
                   <button
-                    key={it.subfaenaId}
+                    key={it.subjobId}
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onBarClick(c.date, it.subfaenaId);
+                      onBarClick(c.date, it.subjobId);
                     }}
                     className="block w-full truncate rounded px-1 py-0.5 text-left text-[10px] font-medium leading-tight text-white hover:opacity-90"
                     style={{ backgroundColor: it.color }}
-                    title={`${it.faenaName ? it.faenaName + " · " : ""}${it.name} · ${it.workerCount} trabajador${it.workerCount === 1 ? "" : "es"}`}
+                    title={`${it.jobName ? it.jobName + " · " : ""}${it.name} · ${it.workerCount} trabajador${it.workerCount === 1 ? "" : "es"}`}
                   >
                     {it.name}
                   </button>

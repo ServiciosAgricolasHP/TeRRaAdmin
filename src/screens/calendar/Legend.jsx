@@ -8,16 +8,16 @@ import { useMemo, useRef, useEffect } from "react";
 // grilla y el modal del día; doble click la aísla. "Mostrar todas" aparece solo
 // con un filtro activo. El click espera ~220 ms antes de aplicarse, para no
 // alternar el chip cuando en realidad es un doble click.
-export function Legend({ dayIndex, excludedSubfaenas, onToggle, onIsolate, onClear }) {
-  const subfaenas = useMemo(() => {
+export function Legend({ dayIndex, excludedSubjobs, onToggle, onIsolate, onClear }) {
+  const subjobs = useMemo(() => {
     const seen = new Map();
     for (const date in dayIndex) {
       for (const it of dayIndex[date]) {
-        if (!seen.has(it.subfaenaId)) {
-          seen.set(it.subfaenaId, {
-            subfaenaId: it.subfaenaId,
+        if (!seen.has(it.subjobId)) {
+          seen.set(it.subjobId, {
+            subjobId: it.subjobId,
             name: it.name,
-            faenaName: it.faenaName,
+            jobName: it.jobName,
             color: it.color,
           });
         }
@@ -26,7 +26,7 @@ export function Legend({ dayIndex, excludedSubfaenas, onToggle, onIsolate, onCle
     return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [dayIndex]);
 
-  const allIds = useMemo(() => subfaenas.map((s) => s.subfaenaId), [subfaenas]);
+  const allIds = useMemo(() => subjobs.map((s) => s.subjobId), [subjobs]);
   const clickTimer = useRef(null);
   const cancelPendingClick = () => {
     if (clickTimer.current) {
@@ -47,22 +47,22 @@ export function Legend({ dayIndex, excludedSubfaenas, onToggle, onIsolate, onCle
   };
   useEffect(() => () => cancelPendingClick(), []);
 
-  if (subfaenas.length === 0) return null;
-  const hasFilter = excludedSubfaenas && excludedSubfaenas.size > 0;
+  if (subjobs.length === 0) return null;
+  const hasFilter = excludedSubjobs && excludedSubjobs.size > 0;
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-2 text-[11px]">
       <span className="text-[var(--color-muted)]">
         Subfaenas{hasFilter ? " (click para mostrar/ocultar · doble-click para aislar)" : " (doble-click para aislar)"}:
       </span>
-      {subfaenas.map((s) => {
-        const excluded = excludedSubfaenas?.has(s.subfaenaId);
+      {subjobs.map((s) => {
+        const excluded = excludedSubjobs?.has(s.subjobId);
         return (
           <button
             type="button"
-            key={s.subfaenaId}
-            onClick={() => handleClick(s.subfaenaId)}
-            onDoubleClick={() => handleDoubleClick(s.subfaenaId)}
+            key={s.subjobId}
+            onClick={() => handleClick(s.subjobId)}
+            onDoubleClick={() => handleDoubleClick(s.subjobId)}
             title={excluded ? "Click: mostrar · doble-click: aislar" : "Click: ocultar · doble-click: aislar"}
             className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 transition-opacity ${
               excluded
@@ -72,7 +72,7 @@ export function Legend({ dayIndex, excludedSubfaenas, onToggle, onIsolate, onCle
           >
             <span className="inline-block h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
             <span className={excluded ? "line-through" : ""}>{s.name}</span>
-            {s.faenaName && <span className="text-[var(--color-muted)]">· {s.faenaName}</span>}
+            {s.jobName && <span className="text-[var(--color-muted)]">· {s.jobName}</span>}
           </button>
         );
       })}

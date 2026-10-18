@@ -26,10 +26,6 @@ export function humanDate(dateStr) {
   return `${WEEKDAY_SHORT[d.getDay()]} ${String(d.getDate()).padStart(2, "0")}-${MONTH_SHORT_LIST[d.getMonth()]}-${d.getFullYear()}`;
 }
 
-// ============================================================================
-// Carga de datos
-// ============================================================================
-
 export function monthBounds(year, month) {
   const start = `${year}-${String(month).padStart(2, "0")}-01`;
   const lastDay = new Date(year, month, 0).getDate();
