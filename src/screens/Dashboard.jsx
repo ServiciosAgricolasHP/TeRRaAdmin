@@ -1,8 +1,12 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, useState, useEffect, useMemo, Suspense } from "react";
 import { Link } from "react-router-dom";
-import { collection, getCountFromServer, query, where } from "firebase/firestore";
-import { db } from "../firebase";
-import { jobsService, cyclesService, transportPaymentsService, companiesService, dteDocumentsService } from "../services";
+import {
+  companiesService,
+  dteDocumentsService,
+  jobsService,
+  cyclesService,
+  transportPaymentsService,
+} from "../services";
 import { payrollsService, pendingCashOf } from "../services/payrollsService";
 import { fortnightsService } from "../services/transportsService";
 import { commitmentsService } from "../services/commitmentsService";
@@ -10,16 +14,18 @@ import { countedList } from "../services/cache";
 import { useAuth } from "../contexts/AuthContext";
 import { useCarriers } from "../contexts/CarriersContext";
 import { useToast } from "../contexts/ToastContext";
-import MetricCard from "../components/MetricCard";
+import MetricCard from "./dashboard/MetricCard";
 import Modal from "../components/Modal";
-import { fmtCurrency, fmtMonthKey, fmtNumber, fmtPercent, fmtShortDate } from "../utils/format";
+import { fmtMonthKey, fmtShortDate, fmtNumber, fmtCurrency, fmtPercent } from "../utils/format";
 import { localIsoDate } from "../utils/dates";
-import { summarize, groupUpcoming, kindMeta, directionOf, remainingOf, urgencyLabel, daysUntil } from "../utils/commitments";
+import { groupUpcoming, directionOf, summarize } from "../utils/commitments";
+import { countWorkdaysInRange } from "../services/countsService";
+import { CommitmentsWeek } from "./dashboard/CommitmentsWeek";
+import { DebtDetailList } from "./dashboard/DebtDetailList";
 
 // Recharts se carga lazy, en su propio chunk: las tarjetas de KPI pintan sin
 // esperarlo.
-const DashboardCharts = lazy(() => import("../components/DashboardCharts"));
-const CommitmentsDonut = lazy(() => import("../components/DashboardCharts").then((m) => ({ default: m.CommitmentsDonut })));
+const DashboardCharts = lazy(() => import("./dashboard/DashboardCharts"));
 
 const PERIODS = [
   { key: "1m", label: "Mes actual", months: 1 },
@@ -27,14 +33,12 @@ const PERIODS = [
   { key: "12m", label: "12 meses", months: 12 },
 ];
 
-// Vencimientos de Cheques y pagos que se listan en el tablero.
-const COMMITMENTS_SHOWN = 8;
-
 // Un ciclo abierto cuyo último día cargado tiene más días que esto se lista
 // como sin movimiento. El cierre de un ciclo es manual.
 const STALE_DAYS = 14;
 
 const monthKeyOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
 const isoOf = (d) => `${monthKeyOf(d)}-${String(d.getDate()).padStart(2, "0")}`;
 
 // Últimas N claves de mes, de la más vieja a la más nueva.
@@ -86,56 +90,6 @@ function payrollMonthKey(p) {
   return d ? monthKeyOf(d) : null;
 }
 
-// Listado completo de los movimientos de un mes en el modal de detalle. En el
-// tooltip del gráfico solo entran los más grandes; acá va todo.
-function DebtDetailList({ title, items, total, color }) {
-  return (
-    <div>
-      <div className="mb-1.5 flex items-baseline gap-2">
-        <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: color }} />
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">{title}</h3>
-        <span className="ml-auto font-semibold tabular-nums">{fmtCurrency(total)}</span>
-      </div>
-      {items.length === 0 ? (
-        <p className="px-2 py-1.5 text-xs text-[var(--color-muted)]">Sin movimientos este mes.</p>
-      ) : (
-        <ul className="rounded-md border border-[var(--color-border)]">
-          {items.map((it, i) => (
-            <li
-              key={`${it.name}-${it.kind}-${i}`}
-              className="border-b border-[var(--color-border)] px-3 py-2 last:border-b-0"
-            >
-              <div className="flex items-center gap-2 text-sm">
-                <span className="min-w-0 truncate">{it.name}</span>
-                <span
-                  className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                    it.kind === "abono"
-                      ? "bg-[var(--color-warning-soft)] text-[var(--color-warning)]"
-                      : "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-                  }`}
-                >
-                  {it.kind}
-                </span>
-                <span className="ml-auto shrink-0 tabular-nums">{fmtCurrency(it.amount)}</span>
-              </div>
-              <div className="mt-0.5 flex flex-wrap gap-x-3 text-[11px] text-[var(--color-muted)]">
-                <span>{it.period ? `Período ${it.period}` : "Sin período cargado"}</span>
-                <span>{it.fortnight ? `Quincena: ${it.fortnight}` : "Resumen suelto"}</span>
-                {it.date && (
-                  <span>
-                    {it.marked ? "Marcado pagado el" : "Abonado el"} {fmtShortDate(it.date)}
-                  </span>
-                )}
-              </div>
-              {it.notes && <div className="mt-0.5 text-[11px] italic text-[var(--color-muted)]">{it.notes}</div>}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 const pendingOfPayment = (p) => {
   const total = Number(p?.total) || 0;
   const abonado = (p?.abonos || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
@@ -145,15 +99,10 @@ const pendingOfPayment = (p) => {
 // Notas de crédito: restan del total del período. Copia de CREDIT_NOTE_TYPES
 // de utils/cashFlowProjection.js (el que usa Facturación): tienen que coincidir.
 const CREDIT_NOTE_TYPES = new Set([61, 112]);
+
 // Ventana de la comparativa de facturación. 6 meses entra cómodo en el límite
 // de 30 valores del operador `in`.
 const DTE_MONTHS = 6;
-
-async function countWorkdaysInRange(from, to) {
-  const q = query(collection(db, "workdays"), where("date", ">=", from), where("date", "<=", to));
-  const snap = await getCountFromServer(q);
-  return snap.data().count;
-}
 
 export default function Dashboard() {
   const { isAdmin } = useAuth();
@@ -888,110 +837,5 @@ export default function Dashboard() {
         )}
       </Modal>
     </div>
-  );
-}
-
-// Cheques y pagos en el tablero: una dona con lo que se paga y ya venció
-// (vencido sin marcar y aplazado) y lo que vence en los próximos 7 días, con el
-// total de cada grupo al lado, más la lista de esos vencimientos. Sin cheques
-// recibidos ni protestados. Todo lleva a la pantalla de Cheques y pagos.
-function CommitmentsWeek({ data }) {
-  const { today, summary, items } = data;
-  const slice = (name, hint, color, { amount, count }) => ({ name, hint, color, value: amount, count });
-  const slices = [
-    slice("Vencido", "sin marcar", "var(--color-danger)", summary.out.overdue),
-    slice("Aplazado", "ya vencido, sin fecha", "var(--color-warning)", summary.out.postponed),
-    slice("Próximos 7 días", "por pagar", "var(--color-accent)", summary.out.next7),
-  ];
-  const total = slices.reduce((sum, s) => sum + s.value, 0);
-  const docs = (n) => `${n} documento${n === 1 ? "" : "s"}`;
-  // Un aplazado lleva además el chip de cuánto hace que venció.
-  const chips = (c) => {
-    const days = daysUntil(c.dueDate, today);
-    const due = { text: urgencyLabel(days), tone: days < 0 ? "danger" : days <= 1 ? "warning" : "muted" };
-    return c.status === "postponed" ? [{ text: "Aplazado", tone: "warning" }, due] : [due];
-  };
-  const toneCls = {
-    danger: "bg-[var(--color-danger-soft)] text-[var(--color-danger)]",
-    warning: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
-    muted: "bg-[var(--color-surface-2)] text-[var(--color-muted)]",
-  };
-
-  return (
-    <section>
-      <div className="mb-2 flex items-baseline justify-between gap-2">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">Cheques y pagos</h2>
-        <Link to="/cheques-pagos" className="text-xs text-[var(--color-accent)] hover:underline">
-          Ver todo →
-        </Link>
-      </div>
-      <div className={`grid gap-3 ${items.length > 0 ? "lg:grid-cols-2" : ""}`}>
-        <div className="flex flex-col justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
-          {total > 0 ? (
-            <div className="flex flex-col items-center gap-4 sm:flex-row">
-              <div className="relative h-[200px] w-[200px] shrink-0">
-                <Suspense fallback={null}>
-                  <CommitmentsDonut slices={slices} />
-                </Suspense>
-                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-[10px] uppercase tracking-wider text-[var(--color-muted)]">Total</span>
-                  <span className="text-sm font-semibold tabular-nums">{fmtCurrency(total)}</span>
-                </div>
-              </div>
-              <ul className="w-full min-w-0 flex-1 space-y-3">
-                {slices.map((s) => (
-                  <li key={s.name} className="flex items-start gap-2">
-                    <span className="mt-1 inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: s.color }} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-xs font-medium">{s.name}</span>
-                      <span className="block text-[11px] text-[var(--color-muted)]">
-                        {s.count ? `${docs(s.count)} · ${s.hint}` : "ninguno"}
-                      </span>
-                    </span>
-                    <span className="shrink-0 text-sm font-semibold tabular-nums">{fmtCurrency(s.value)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : (
-            <p className="py-6 text-center text-xs text-[var(--color-muted)]">
-              Nada vencido ni por vencer en los próximos 7 días.
-            </p>
-          )}
-        </div>
-        {items.length > 0 && (
-          <div className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
-            {items.slice(0, COMMITMENTS_SHOWN).map((c) => {
-              const meta = kindMeta(c.kind);
-              return (
-                <Link
-                  key={c.id}
-                  to="/cheques-pagos"
-                  className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-3 py-2 text-sm last:border-b-0 hover:bg-[var(--color-accent-soft)]"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate font-medium">{c.counterparty}</span>
-                    <span className="flex flex-wrap items-center gap-x-2 text-xs text-[var(--color-muted)]">
-                      {chips(c).map(({ text, tone }) => (
-                        <span key={text} className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${toneCls[tone]}`}>
-                          {text}
-                        </span>
-                      ))}
-                      <span>{meta.icon} {meta.label}{c.dueDate ? ` · ${fmtShortDate(c.dueDate)}` : ""}</span>
-                    </span>
-                  </span>
-                  <span className="shrink-0 font-semibold tabular-nums">{fmtCurrency(remainingOf(c))}</span>
-                </Link>
-              );
-            })}
-            {items.length > COMMITMENTS_SHOWN && (
-              <Link to="/cheques-pagos" className="block px-3 py-2 text-xs text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]">
-                +{items.length - COMMITMENTS_SHOWN} más
-              </Link>
-            )}
-          </div>
-        )}
-      </div>
-    </section>
   );
 }

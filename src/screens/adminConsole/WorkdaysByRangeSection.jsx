@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { localIsoDate } from "../../utils/dates";
-import { countWorkdaysInRange } from "../../services/adminCountsService";
+import { countWorkdaysInRange } from "../../services/countsService";
 import { fmtNumber } from "../../utils/format";
 import { ConsoleCard } from "./ConsoleCard";
 

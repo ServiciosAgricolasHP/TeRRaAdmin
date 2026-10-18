@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { countWorkdaysInRange } from "../../services/adminCountsService";
+import { countWorkdaysInRange } from "../../services/countsService";
 import { fmtNumber } from "../../utils/format";
 import { ConsoleCard } from "./ConsoleCard";
 

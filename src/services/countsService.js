@@ -1,5 +1,5 @@
-// Recuentos de la Consola admin con `getCountFromServer`, que cuesta ~1 lectura
-// por cada 1.000 documentos contados.
+// Recuentos con `getCountFromServer`, que cuesta ~1 lectura por cada 1.000
+// documentos contados. Los usan la Consola admin y el Dashboard.
 import { getCountFromServer, collection, query, where } from "firebase/firestore";
 import { db } from "../firebase";
 

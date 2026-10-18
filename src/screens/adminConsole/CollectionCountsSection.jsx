@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { countCollection } from "../../services/adminCountsService";
+import { countCollection } from "../../services/countsService";
 import { fmtNumber } from "../../utils/format";
 import { MAIN_COLLECTIONS, COLLECTION_GROUPS } from "./collections";
 import { ConsoleCard } from "./ConsoleCard";

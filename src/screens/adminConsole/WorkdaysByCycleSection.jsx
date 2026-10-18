@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { cyclesService, jobsService } from "../../services";
-import { countWorkdaysByCycle } from "../../services/adminCountsService";
+import { countWorkdaysByCycle } from "../../services/countsService";
 import { fmtNumber } from "../../utils/format";
 import { ConsoleCard } from "./ConsoleCard";
 

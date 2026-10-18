@@ -1,238 +1,25 @@
 import {
-  Area,
-  AreaChart,
-  Bar,
+  ResponsiveContainer,
   BarChart,
   CartesianGrid,
-  Cell,
-  ComposedChart,
-  Line,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
   XAxis,
   YAxis,
+  Tooltip,
+  Bar,
+  ComposedChart,
+  Line,
+  AreaChart,
+  Area,
+  PieChart,
+  Pie,
+  Cell,
 } from "recharts";
-import { fmtCompactCLP, fmtCurrency, fmtNumber, fmtPercent } from "../utils/format";
-
-// Todos los gráficos del Dashboard viven acá y el Dashboard importa este
-// módulo con React.lazy — así Recharts queda en su propio chunk y las
-// tarjetas de KPI pintan sin esperar a que baje la librería.
-//
-// Los colores salen de las variables del tema (`var(--color-*)`), que viven en
-// <html>, así que los gráficos siguen el cambio de tema solos. Nada de verde
-// hardcodeado: el accent es naranja en donDiego y violeta en sheridan.
-
-const AXIS_TICK = { fill: "var(--color-muted)", fontSize: 11 };
-const GRID_STROKE = "var(--color-border)";
-const ACCENT = "var(--color-accent)";
-const WARNING = "var(--color-warning)";
-const MUTED = "var(--color-muted)";
-
-// Los ids de <defs> son globales al documento, así que cada gradiente/filtro
-// lleva prefijo propio para no pisarse entre gráficos de la misma página.
-function ChartDefs({ id, color, altColor }) {
-  return (
-    <defs>
-      <linearGradient id={`${id}-fill`} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor={color} stopOpacity={0.95} />
-        <stop offset="100%" stopColor={color} stopOpacity={0.55} />
-      </linearGradient>
-      <linearGradient id={`${id}-area`} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor={color} stopOpacity={0.55} />
-        <stop offset="100%" stopColor={color} stopOpacity={0.04} />
-      </linearGradient>
-      <linearGradient id={`${id}-fill-h`} x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0%" stopColor={color} stopOpacity={0.6} />
-        <stop offset="100%" stopColor={color} stopOpacity={0.95} />
-      </linearGradient>
-      {altColor && (
-        <>
-          <linearGradient id={`${id}-alt`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={altColor} stopOpacity={0.95} />
-            <stop offset="100%" stopColor={altColor} stopOpacity={0.55} />
-          </linearGradient>
-          <linearGradient id={`${id}-alt-h`} x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor={altColor} stopOpacity={0.6} />
-            <stop offset="100%" stopColor={altColor} stopOpacity={0.95} />
-          </linearGradient>
-        </>
-      )}
-      <filter id={`${id}-shadow`} x="-30%" y="-30%" width="160%" height="160%">
-        <feDropShadow dx="0" dy="1.5" stdDeviation="2.5" floodOpacity="0.22" />
-      </filter>
-    </defs>
-  );
-}
-
-function TooltipBox({ label, wide = false, children }) {
-  return (
-    <div
-      className={`rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-xs shadow-xl ${
-        wide ? "min-w-[250px]" : "min-w-[170px]"
-      }`}
-    >
-      <div className="mb-1.5 font-semibold">{label}</div>
-      {children}
-    </div>
-  );
-}
-
-// Desglose de las entradas que componen una barra del gráfico de deuda.
-// Se listan las más grandes primero; el resto se resume en una línea.
-function TooltipDetail({ items, max = 4 }) {
-  if (!items?.length) return null;
-  const shown = items.slice(0, max);
-  const rest = items.slice(max);
-  const restSum = rest.reduce((s, i) => s + i.amount, 0);
-  return (
-    <div className="mt-0.5 space-y-0.5 pl-4">
-      {shown.map((it, i) => (
-        <div key={`${it.name}-${it.kind}-${i}`} className="flex items-center gap-2 text-[10px]">
-          <span className="truncate text-[var(--color-muted)]">
-            {it.name}
-            <span className="ml-1 opacity-70">· {it.kind}</span>
-          </span>
-          <span className="ml-auto shrink-0 tabular-nums text-[var(--color-muted)]">{fmtCurrency(it.amount)}</span>
-        </div>
-      ))}
-      {rest.length > 0 && (
-        <div className="flex items-center gap-2 text-[10px] text-[var(--color-muted)]">
-          <span className="opacity-70">+{rest.length} más</span>
-          <span className="ml-auto shrink-0 tabular-nums opacity-70">{fmtCurrency(restSum)}</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TooltipRow({ color, name, value }) {
-  return (
-    <div className="flex items-center gap-2 py-0.5">
-      {color && <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: color }} />}
-      <span className="text-[var(--color-muted)]">{name}</span>
-      <span className="ml-auto font-medium tabular-nums">{value}</span>
-    </div>
-  );
-}
-
-function ChartTooltip({ active, payload, label, valueFormatter, showTotal = false }) {
-  if (!active || !payload?.length) return null;
-  const total = payload.reduce((s, p) => s + (Number(p.value) || 0), 0);
-  return (
-    <TooltipBox label={label}>
-      {payload.map((p) => (
-        <TooltipRow key={p.dataKey} color={p.color} name={p.name} value={valueFormatter(p.value)} />
-      ))}
-      {showTotal && payload.length > 1 && (
-        <div className="mt-1.5 flex items-center gap-2 border-t border-[var(--color-border)] pt-1.5">
-          <span className="font-medium">Total</span>
-          <span className="ml-auto font-semibold tabular-nums">{valueFormatter(total)}</span>
-        </div>
-      )}
-    </TooltipBox>
-  );
-}
-
-// Tooltip de la deuda: lo generado y lo pagado en el mes, el saldo al cierre
-// y si se pagó más o menos de lo generado.
-function DebtTooltip({ active, payload, label }) {
-  if (!active || !payload?.length) return null;
-  const row = payload[0].payload;
-  const neto = Number(row.neto) || 0;
-  return (
-    <TooltipBox label={label} wide>
-      <TooltipRow color={WARNING} name="Deuda generada" value={fmtCurrency(row.generado)} />
-      <TooltipDetail items={row.nuevos} />
-      <div className="mt-1" />
-      <TooltipRow color={ACCENT} name="Pagado" value={fmtCurrency(row.pagado)} />
-      <TooltipDetail items={row.pagos} />
-      <div className="mt-1.5 border-t border-[var(--color-border)] pt-1.5">
-        <TooltipRow name="Saldo al cierre" value={fmtCurrency(row.saldo)} />
-        <div
-          className={`mt-1 text-[11px] font-medium ${
-            neto > 0 ? "text-[var(--color-accent)]" : neto < 0 ? "text-[var(--color-warning)]" : "text-[var(--color-muted)]"
-          }`}
-        >
-          {neto > 0
-            ? `Se pagó ${fmtCurrency(neto)} más de lo generado`
-            : neto < 0
-              ? `Se pagó ${fmtCurrency(-neto)} menos de lo generado`
-              : "Se pagó exactamente lo generado"}
-        </div>
-        <div className="mt-1 text-[10px] text-[var(--color-muted)] opacity-80">
-          Clic para ver todos los movimientos del mes
-        </div>
-      </div>
-    </TooltipBox>
-  );
-}
-
-function DteTooltip({ active, payload, label }) {
-  if (!active || !payload?.length) return null;
-  const row = payload[0].payload;
-  const dif = Number(row.diferencia) || 0;
-  return (
-    <TooltipBox label={label}>
-      <TooltipRow color={ACCENT} name="Ventas" value={fmtCurrency(row.ventas)} />
-      <TooltipRow color={WARNING} name="Compras" value={fmtCurrency(row.compras)} />
-      <div className="mt-1.5 border-t border-[var(--color-border)] pt-1.5">
-        <TooltipRow name="Diferencia" value={fmtCurrency(dif)} />
-        <div className="mt-0.5 text-[10px] text-[var(--color-muted)]">Montos con IVA incluido, netos de notas de crédito.</div>
-      </div>
-    </TooltipBox>
-  );
-}
-
-function PieTooltip({ active, payload, total }) {
-  if (!active || !payload?.length) return null;
-  const p = payload[0];
-  return (
-    <TooltipBox label={p.name}>
-      <TooltipRow color={p.payload.fill} name="Monto" value={fmtCurrency(p.value)} />
-      <TooltipRow name="Del total" value={total > 0 ? fmtPercent((p.value / total) * 100, 1) : "—"} />
-    </TooltipBox>
-  );
-}
-
-function ChartCard({ title, hint, empty, wide = false, children }) {
-  return (
-    <div
-      className={`rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-md ${
-        wide ? "lg:col-span-2" : ""
-      }`}
-    >
-      <div className="mb-3 flex items-baseline justify-between gap-2">
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">{title}</h3>
-        {hint && <span className="text-[10px] text-[var(--color-muted)]">{hint}</span>}
-      </div>
-      {empty ? (
-        <div className="flex h-[200px] items-center justify-center text-xs text-[var(--color-muted)]">
-          Sin datos en el período.
-        </div>
-      ) : (
-        children
-      )}
-    </div>
-  );
-}
-
-function Legend({ items }) {
-  return (
-    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-[var(--color-muted)]">
-      {items.map((it) => (
-        <span key={it.label} className="inline-flex items-center gap-1.5">
-          <span
-            className={`inline-block ${it.line ? "h-0.5 w-3.5 rounded-full" : "h-2.5 w-2.5 rounded-sm"}`}
-            style={{ background: it.color }}
-          />
-          {it.label}
-        </span>
-      ))}
-    </div>
-  );
-}
+import { fmtCompactCLP, fmtCurrency, fmtNumber, fmtPercent } from "../../utils/format";
+import { ChartCard } from "./dashboardCharts/ChartCard";
+import { ChartDefs } from "./dashboardCharts/ChartDefs";
+import { ACCENT, WARNING, MUTED, GRID_STROKE, AXIS_TICK } from "./dashboardCharts/chartTheme";
+import { ChartTooltip, DebtTooltip, PieTooltip, DteTooltip } from "./dashboardCharts/ChartTooltip";
+import { Legend } from "./dashboardCharts/Legend";
 
 export default function DashboardCharts({
   payrollMonths = [],
@@ -520,40 +307,5 @@ export default function DashboardCharts({
         </ChartCard>
       )}
     </div>
-  );
-}
-
-// Dona de Cheques y pagos del Dashboard, una porción por grupo. La leyenda con
-// los montos la arma el Dashboard, así se ve aunque Recharts no haya cargado.
-// Ocupa el alto y el ancho del contenedor.
-export function CommitmentsDonut({ slices }) {
-  const data = slices.filter((s) => s.value > 0);
-  const total = data.reduce((sum, s) => sum + s.value, 0);
-  return (
-    <ResponsiveContainer width="100%" height="100%">
-      <PieChart>
-        <defs>
-          <filter id="cmt-shadow" x="-30%" y="-30%" width="160%" height="160%">
-            <feDropShadow dx="0" dy="2" stdDeviation="3" floodOpacity="0.22" />
-          </filter>
-        </defs>
-        <Tooltip content={<PieTooltip total={total} />} />
-        <Pie
-          data={data}
-          dataKey="value"
-          nameKey="name"
-          innerRadius={62}
-          outerRadius={92}
-          paddingAngle={data.length > 1 ? 2 : 0}
-          stroke="var(--color-surface)"
-          strokeWidth={2}
-          filter="url(#cmt-shadow)"
-        >
-          {data.map((s) => (
-            <Cell key={s.name} fill={s.color} />
-          ))}
-        </Pie>
-      </PieChart>
-    </ResponsiveContainer>
   );
 }
