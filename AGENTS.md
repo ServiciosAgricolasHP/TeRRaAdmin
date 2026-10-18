@@ -455,7 +455,7 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
   - **Historial:** `HistoryList`, `PayStatePill` (con `PaymentDatesLine` y `PortalBadge`) y `payState.js`.
   - **Detalle:** `PayrollDetailModal`, sus filtros (`FilterChips`) y sus modales (`AddCyclesModal`, `AddWorkerDaysModal`, `RecalcModal`, `CashEstimationModal`, `RenamePayrollModal`). El detalle de pago de una persona: `WorkerDetailRow`, `WorkerPaySummaryCards` y `WorkerPaidDetailTables`, con `workerDetailLabels.js`.
   - **Pagos anteriores:** `WorkersHistory` (con `FaenaFilterPopover`), `WorkerDetail` y `WorkerPayrollDetailModal`.
-  - **Impresiones en HTML:** `printCommon.js`, `printReceipts.js` (comprobantes de efectivo y detalle de pago) y `printResumenTable.js`.
+  - **Impresiones en HTML:** `printCommon.js`, `printReceipts.js` (comprobantes de efectivo y detalle de pago) y `printSummaryTable.js`.
   - **Comunes:** `helpers.js` (formatos de fecha y de cuenta, RUT vigente).
 - Servicio: `services/payrollsService.js` (colección `payrolls`).
 - Helpers: `utils/payroll.js` — `aggregateWorkerAmounts`, `splitBankAndCash`, `groupCashByLeader`, `validateAccountNumber`, `downloadBchileXlsx`, `downloadNominaOnlyXlsx`.

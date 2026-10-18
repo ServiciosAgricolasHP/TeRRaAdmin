@@ -42,7 +42,7 @@ import { AddCyclesModal } from "./AddCyclesModal";
 import { AddWorkerDaysModal } from "./AddWorkerDaysModal";
 import { CashEstimationModal } from "./CashEstimationModal";
 import { FilterToken, FilterChips } from "./FilterChips";
-import { resolverRutVigente, fmtDayShortEs } from "./helpers";
+import { resolveCurrentRut, fmtDayShortEs } from "./helpers";
 import { PAY_STATE_PILL, payStateOf, paymentDates } from "./payState";
 import { PortalBadge } from "./PayStatePill";
 import {
@@ -52,7 +52,7 @@ import {
   computeLaborSummary,
 } from "./printCommon";
 import { printCashReceipts, printPaymentDetails } from "./printReceipts";
-import { printResumenTable } from "./printResumenTable";
+import { printSummaryTable } from "./printSummaryTable";
 import { RecalcModal } from "./RecalcModal";
 import { WorkerDetailRow } from "./WorkerDetailRow";
 
@@ -355,7 +355,7 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
         }
       }
       const pendingAdvances = await listPendingForWorkers(
-        aggregateWorkerAmounts(nuevas, laborTypeById).map(resolverRutVigente(workers)),
+        aggregateWorkerAmounts(nuevas, laborTypeById).map(resolveCurrentRut(workers)),
       );
       const plan = planAddWorkdays({
         items,
@@ -404,7 +404,7 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
 
       setAddCyclesOpen(false);
       await onChanged?.();
-      toast.success(resumenAgregado(`${selectedCycles.length} ciclo(s) agregado(s) a la nómina.`, plan.added));
+      toast.success(additionSummary(`${selectedCycles.length} ciclo(s) agregado(s) a la nómina.`, plan.added));
     } catch (err) {
       toast.error(`Error al agregar ciclos: ${err?.message || err}`);
     } finally {
@@ -486,7 +486,7 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
       await onChanged?.();
       const dias = new Set(libres.map((wd) => `${wd.cycleId}|${wd.laborId}|${wd.date}`)).size;
       toast.success(
-        resumenAgregado(`${dias} día(s) de ${worker.name || "la persona"} agregado(s) a la nómina.`, plan.added) +
+        additionSummary(`${dias} día(s) de ${worker.name || "la persona"} agregado(s) a la nómina.`, plan.added) +
           (tomadas > 0 ? ` ${tomadas} jornada(s) ya no estaban disponibles y quedaron afuera.` : ""),
       );
     } catch (err) {
@@ -740,7 +740,7 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
   const handlePrintResumen = () => {
     if (!activeSummary) return;
     try {
-      printResumenTable(payroll, {
+      printSummaryTable(payroll, {
         showLabor: summaryShowLabor,
         subfaenaSummary,
         laborSummary: laborSummaryData,
@@ -2152,15 +2152,15 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
 }
 
 // Lo que pasó con la plata al agregar algo a una nómina, para el aviso.
-function resumenAgregado(inicio, added = []) {
-  const partes = [inicio];
-  const nuevos = added.filter((x) => x.isNew).length;
-  const suman = added.length - nuevos;
-  if (nuevos) partes.push(`${nuevos} trabajador(es) nuevo(s).`);
-  if (suman) partes.push(`${suman} ya estaba(n) y suma(n) producción.`);
-  const anticipos = added.reduce((s, x) => s + (x.anticipos || 0), 0);
-  const bonos = added.reduce((s, x) => s + (x.bonos || 0), 0);
-  if (anticipos > 0) partes.push(`Se descuentan ${fmtCurrency(anticipos)} de anticipos pendientes.`);
-  if (bonos > 0) partes.push(`Se suman ${fmtCurrency(bonos)} de bonos pendientes.`);
-  return partes.join(" ");
+function additionSummary(lead, added = []) {
+  const parts = [lead];
+  const newCount = added.filter((x) => x.isNew).length;
+  const existingCount = added.length - newCount;
+  if (newCount) parts.push(`${newCount} trabajador(es) nuevo(s).`);
+  if (existingCount) parts.push(`${existingCount} ya estaba(n) y suma(n) producción.`);
+  const advances = added.reduce((s, x) => s + (x.anticipos || 0), 0);
+  const bonuses = added.reduce((s, x) => s + (x.bonos || 0), 0);
+  if (advances > 0) parts.push(`Se descuentan ${fmtCurrency(advances)} de anticipos pendientes.`);
+  if (bonuses > 0) parts.push(`Se suman ${fmtCurrency(bonuses)} de bonos pendientes.`);
+  return parts.join(" ");
 }

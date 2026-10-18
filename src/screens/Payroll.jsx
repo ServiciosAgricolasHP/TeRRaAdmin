@@ -58,7 +58,7 @@ import { settledOpenCycles, payrollStatusMap, splitTaken } from "../utils/cycleC
 import { currentRutResolver } from "../utils/workerRut";
 import { AddWorkerDaysModal } from "./payroll/AddWorkerDaysModal";
 import { CycleSelector } from "./payroll/CycleSelector";
-import { resolverRutVigente } from "./payroll/helpers";
+import { resolveCurrentRut } from "./payroll/helpers";
 import { HistoryList } from "./payroll/HistoryList";
 import { InstallmentConfirmModal } from "./payroll/InstallmentConfirmModal";
 import { PayConfirmModal } from "./payroll/PayConfirmModal";
@@ -523,7 +523,7 @@ export default function Payroll() {
 
       // Anticipos vigentes de todos los de la vista previa; el servidor
       // devuelve solo pending/partial.
-      const claveDe = resolverRutVigente(workers);
+      const claveDe = resolveCurrentRut(workers);
       const candidateIds = aggregates.filter((a) => a.total > 0).map(claveDe);
       const pendingAdvances = await listPendingForWorkers(candidateIds);
       previewWorkdaysRef.current = allWorkdays;

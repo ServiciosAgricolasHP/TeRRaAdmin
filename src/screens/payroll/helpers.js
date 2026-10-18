@@ -20,7 +20,7 @@ export const accountTypeShort = (v) => ACCOUNT_TYPES.find((t) => t.value === Num
 // Los anticipos cuelgan del rut vigente del trabajador, y un workday guarda el
 // rut que tenía al crearse: se resuelve contra la ficha, con la lista de
 // trabajadores ya cargada (sin lecturas).
-export const resolverRutVigente = (workers) => {
+export const resolveCurrentRut = (workers) => {
   const rutOf = currentRutResolver(workers);
   return (agg) => rutOf(agg.rut, agg.workerId);
 };

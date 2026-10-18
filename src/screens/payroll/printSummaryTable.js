@@ -2,7 +2,7 @@
 // Imprime solo la tabla de resumen, por subfaena o por labor según el toggle
 // del Resumen en pantalla: las mismas tablas del "Detalle de pago", sin los
 // comprobantes de cada grupo.
-export function printResumenTable(payroll, {
+export function printSummaryTable(payroll, {
   showLabor, subfaenaSummary, laborSummary, bonusAdvanceSummary,
   pendingRows = [], pendingMode = "none",
 }) {
