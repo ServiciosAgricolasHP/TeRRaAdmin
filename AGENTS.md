@@ -133,7 +133,7 @@ src/
                          CleanupPaidWorkdays)
     payroll/            ← las piezas de Nómina (ver "Componentes y archivos")
     transports/         ← las piezas de Transportes
-    facturacion/        ← las piezas de Facturación
+    billing/            ← las piezas de Facturación
   contexts/             ← AuthContext, ThemeContext, CatalogsContext, CarriersContext
   services/             ← capa de datos (Firestore CRUD + caché + auditoría)
                         firestoreBase, transportsService, carriersService,
@@ -269,17 +269,28 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Trabajador | `worker` | `worker` |
 | Líder de grupo | `groupLeader` | `groupLeader` |
 | Nómina | `payroll` | `payrolls` |
+| Bono de manejo (conducir) | `drivingBonus` | dentro de `cycles.labors` (guardado como `bonusManejo`) |
 | Anticipo / Bono | `advance` / `bonus` | `advances` (`type: "anticipo"` o `"bono"`) |
 | Transportista | `carrier` | `carriers` |
 | Vuelta | `trip` | `transports` |
 | Resumen de transporte | `transportPayment` (`payment` dentro de Transportes) | `transportPayments` |
 | Quincena | `fortnight` | `transportPayrolls` |
 | Pesaje | `harvestWeight` | `harvestWeights` |
+| Facturación | `billing` | |
 | Factura (DTE) | `dteDocument` | `dteDocuments` |
+| Nota de crédito | `creditNote` | dentro de `dteDocuments` |
+| IVA | `vat` | |
+| Retención de IVA | `withholding` | |
+| Pendiente de cobro | `receivable` | |
+| Otro impuesto | `otherTax` | |
+| Contraparte | `counterparty` | |
+| Centro de costo | `costCenter` | `costCenters` |
+| Gasto informal | `informalExpense` | `informalExpenses` |
+| Resumen anual / Proyección (Facturación) | `annualSummary` / `projection` | |
 | Empresa | `company` | `companies` |
 | Cheques y pagos | `commitment` | `commitments` |
 
-Los nombres guardados en Firestore se conservan aunque no calcen con la tabla: la colección `transportPayrolls`, el campo `payrollId` de un resumen (la quincena a la que pertenece) y los nombres de entidad de la auditoría (`transportPayroll`).
+Los nombres guardados en Firestore se conservan aunque no calcen con la tabla (la colección `transportPayrolls`, el campo `payrollId` de un resumen, los campos en español de `dteDocuments`): el código los lee y escribe con su nombre guardado. La lista con el nombre propuesto para cada uno está en `docs/data-model.md` ("Nombres en español pendientes de migración"); un campo nuevo nace en inglés.
 
 ## Tipos de Labor / Labor Types
 
@@ -778,16 +789,16 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 
 ## Facturación / Billing
 
-- Pantalla: `src/screens/Facturacion.jsx` (el componente de la ruta, con sus pestañas y exportaciones). Ruta `/facturacion`. Nav label: "Facturación" (icono 🧾). Acceso para todas las cuentas.
-- Sus piezas, en `src/screens/facturacion/`:
-  - **Listado:** `SummaryCard`, `SortHeader`, `OtroImpChip`, `PaymentStatusSelect`, `CostCenterSelect` y `PrintableDocList`.
+- Pantalla: `src/screens/Billing.jsx` (el componente de la ruta, con sus pestañas y exportaciones). Ruta `/facturacion`. Nav label: "Facturación" (icono 🧾). Acceso para todas las cuentas.
+- Sus piezas, en `src/screens/billing/`:
+  - **Listado:** `SummaryCard`, `SortHeader`, `OtherTaxChip`, `PaymentStatusSelect`, `CostCenterSelect` y `PrintableDocList`.
   - **Documento:** `DocDetailModal` y `PaymentsSection` (sus pagos).
   - **Importar:** `CompanySelectAndPickModal`, `ImportPreviewModal` y `FileRow`.
   - **Empresas:** `CompaniesModal`.
   - **Centros de costo:** `CostCentersModal`, `PrintableCostCenterDocs` e `InformalExpenseFormModal`.
-  - **Retenciones:** `RetencionesView`, `PrintableRetenciones` y `PrintableRetencionesGroup`.
-  - **Pendientes:** `PendientesModal` y `PrintablePendientes`.
-  - **Resumen anual:** `PrintableResumen`.
+  - **Retenciones:** `WithholdingsView`, `PrintableWithholdings` y `PrintableWithholdingsGroup`.
+  - **Pendientes:** `ReceivablesModal` y `PrintableReceivables`.
+  - **Resumen anual:** `PrintableAnnualSummary`.
   - **Comunes:** `docs.js` (período, estados de pago, categorías de lo pendiente, agrupado por centro de costo) y `printStyles.js` (celdas de las tablas imprimibles).
 - Servicios: `companiesService` (colección `companies`) + `dteDocumentsService` (colección `dteDocuments`) en `services/index.js`. TTL del list = **10 min** (`ttl: 600_000`) — las mutaciones locales (status, notas, pagos, import) actualizan el state en memoria, así que el TTL solo afecta al re-entrar a la pantalla.
 - **Multi-empresa**: el sistema soporta N empresas (probado con 3). Cada empresa tiene `{ rut, razonSocial, alias, enabled }`. CRUD inline desde el modal **🏢 Empresas**. Los DTE quedan namespaceados por `companyId` así no se colisionan folios entre empresas (mismo proveedor puede facturar a varias empresas con el mismo folio).
@@ -841,7 +852,7 @@ Exporta: `parseSiiRcvCsv(buffer, { companyRut })`, `dteTypeLabel(tipo)`, `normal
 ### UI
 
 - Tabs **📤 Facturas** (kind=venta), **📥 Compras**, **📑 Retenciones**, **📊 Resumen** (resumen anual + balance de IVA).
-- **Vista default = mes actual** (`periodoFilter`); el selector de período cambia de mes. Buscar por texto ignora el período y muestra todos los de la empresa.
+- **Vista default = mes actual** (`periodFilter`); el selector de período cambia de mes. Buscar por texto ignora el período y muestra todos los de la empresa.
 - Filtros: período, tipo de DTE, **estado de pago** (chips: Todos / No pagado / Pagado / Solo neto / Solo IVA / Anulada), búsqueda libre con `<datalist>` autocomplete de contrapartes únicas.
 - Cards de totales: Documentos, Neto, IVA, Total. **NCs (tipos 61/112) restan con signo** en los totales y se cuentan aparte en una card específica. Para vista normal: cards adicionales de No pagado del período / Solo neto / Cedidas. Para Retenciones: Facturas con retención / IVA retenido / Total facturado.
 - **Tabla principal sortable**: click en cualquier header (Fecha, Tipo, Folio, Cliente/Proveedor, RUT, Neto, IVA, Total, Abonos, Estado) alterna asc/desc con flecha ▲/▼. Default `fechaEmision desc`. Sort sobre "estado" empuja NCs al final (clave virtual `zz_anulada`).
@@ -880,7 +891,7 @@ El select nativo lleva colores explícitos `var(--color-surface)` / `var(--color
 
 ### Retenciones (tab + exports)
 
-Tab **📑 Retenciones** muestra todas las facturas con `paymentStatus === "net_only"` agrupadas por contraparte (sin restricción de kind). `retencionesByContraparte` agrupa por RUT, suma neto/iva/total, ordena por IVA desc. Lista expandible (▸/▾) en `RetencionesView`.
+Tab **📑 Retenciones** muestra todas las facturas con `paymentStatus === "net_only"` agrupadas por contraparte (sin restricción de kind). `withholdingsByCounterparty` agrupa por RUT, suma neto/iva/total, ordena por IVA desc. Lista expandible (▸/▾) en `WithholdingsView`.
 
 **Exports** (4 botones en toolbar global, mismo set por contraparte individual):
 - 📋 Copiar (toBlob al clipboard como PNG)
@@ -888,15 +899,15 @@ Tab **📑 Retenciones** muestra todas las facturas con `paymentStatus === "net_
 - 🖨 Imprimir (ventana print landscape con color-adjust: exact)
 - 📊 XLSX (ExcelJS lazy, layout convención col A vacía width 6 + fila 1 vacía)
 
-**`PrintableRetenciones`** (general): banner amarillo destacado con **IVA Retenido total del período** (font 22, weight 800), tabla resumen por contraparte, y sección **Detalle de facturas** agrupada por contraparte con subtotales por grupo + total general. Sin columna `Tipo` (solo `Documento` con el label) — el número de tipo es ruido visual.
+**`PrintableWithholdings`** (general): banner amarillo destacado con **IVA Retenido total del período** (font 22, weight 800), tabla resumen por contraparte, y sección **Detalle de facturas** agrupada por contraparte con subtotales por grupo + total general. Sin columna `Tipo` (solo `Documento` con el label) — el número de tipo es ruido visual.
 
-**`PrintableRetencionesGroup`** (individual): un printable por contraparte renderizado off-screen, mismo estilo pero limitado a una sola contraparte. Cada grupo en la vista tiene su propia toolbar de 4 botones (📋📥🖨📊) con `stopPropagation` para que no expanda el grupo. Filename: `Retencion_{empresa}_{contraparte}_{periodo}`.
+**`PrintableWithholdingsGroup`** (individual): un printable por contraparte renderizado off-screen, mismo estilo pero limitado a una sola contraparte. Cada grupo en la vista tiene su propia toolbar de 4 botones (📋📥🖨📊) con `stopPropagation` para que no expanda el grupo. Filename: `Retencion_{empresa}_{contraparte}_{periodo}`.
 
 **XLSX por grupo**: una hoja con banner explícito de IVA retenido (fila 4 destacada amarilla con monto grande) + tabla de facturas + total con fórmulas SUM. Las celdas IVA llevan `bold: true`.
 
 ### Ver pendientes (modal global)
 
-Botón **⏳ Ver pendientes**, con badge contador. Abre `PendientesModal` con las **ventas** (kind=`venta` — no compras, son flujo distinto) de la empresa seleccionada **(cualquier período)** que tengan saldo pendiente, categorizadas:
+Botón **⏳ Ver pendientes**, con badge contador. Abre `ReceivablesModal` con las **ventas** (kind=`venta` — no compras, son flujo distinto) de la empresa seleccionada **(cualquier período)** que tengan saldo pendiente, categorizadas:
 
 | Categoría | Criterio |
 |---|---|
@@ -908,7 +919,7 @@ Skip: NCs, `paid`, `cancelled`, **`factored`** (Solo IVA / cedida — se conside
 
 UI: summary cards por categoría + tabla agrupada con sub-headers de color (`#ffd6d6`/`#fff2cc`/`#dde9ff`), subtotales por grupo, total general destacado al final. Cada fila tiene ℹ para abrir el detalle. Misma toolbar de 4 exports.
 
-**`PrintablePendientes`** off-screen replica el layout para captura. **XLSX** baja workbook con secciones por categoría, subtotales con fórmulas y total general en verde.
+**`PrintableReceivables`** off-screen replica el layout para captura. **XLSX** baja workbook con secciones por categoría, subtotales con fórmulas y total general en verde.
 
 ### Exports de Facturas / Compras + centro de costo
 
@@ -921,16 +932,16 @@ Las tabs Facturas y Compras tienen la misma toolbar de 4 exports (📋📥🖨�
 
 ### Detección de combustibles (Otros Impuestos del SII)
 
-`siiCsvParser.js` lee el campo **`Codigo Otro Impuesto`** del RCV. Mapa `OTRO_IMP_CODES` + categorías `OTRO_IMP_CATEGORIES`; códigos **28 / 35 / 271 / 272 = combustible**. El doc queda con `otroImpuestoCodigo` (number) y `otroImpuestoCategory` (string). En la tabla se muestra un `OtroImpChip` y alimenta el agrupado por centro de costo. Helpers: `otroImpuestoLabel(code)`, `otroImpuestoCategory(code)`.
+`siiCsvParser.js` lee el campo **`Codigo Otro Impuesto`** del RCV. Mapa `OTRO_IMP_CODES` + categorías `OTRO_IMP_CATEGORIES`; códigos **28 / 35 / 271 / 272 = combustible**. El doc queda con `otroImpuestoCodigo` (number) y `otroImpuestoCategory` (string). En la tabla se muestra un `OtherTaxChip` y alimenta el agrupado por centro de costo. Helpers: `otroImpuestoLabel(code)`, `otroImpuestoCategory(code)`.
 
 ### Resumen anual (tab + balance de IVA)
 
-Tab **📊 Resumen**: vista que **cruza los 12 meses** de un año para la empresa seleccionada, con **selector de año propio** (`resumenYear`, default año actual; opciones derivadas de los períodos de la empresa). Ignora el filtro de mes; en esta tab se ocultan Ver pendientes, los sub-filtros y las cards operativas.
+Tab **📊 Resumen**: vista que **cruza los 12 meses** de un año para la empresa seleccionada, con **selector de año propio** (`summaryYear`, default año actual; opciones derivadas de los períodos de la empresa). Ignora el filtro de mes; en esta tab se ocultan Ver pendientes, los sub-filtros y las cards operativas.
 
-- Memo `resumenData`: por mes acumula ventas/compras **con signo** (NCs restan) separando **IVA Débito** (ventas) de **IVA Crédito** (compras). El IVA de facturas "Solo neto" (`net_only`) **se suma normalmente** al débito/crédito que corresponde — no se trackea aparte.
+- Memo `summaryData`: por mes acumula ventas/compras **con signo** (NCs restan) separando **IVA Débito** (ventas) de **IVA Crédito** (compras). El IVA de facturas "Solo neto" (`net_only`) **se suma normalmente** al débito/crédito que corresponde — no se trackea aparte.
 - **Métricas explícitas (KPI cards)**: IVA Débito, IVA Crédito, **IVA a pagar (año) = débito − crédito** (highlight; si es negativo → "IVA a favor (remanente)" en verde), + Ventas netas / Compras netas / Documentos.
 - **Tabla mensual** (Ene–Dic + TOTAL): Ventas Neto · IVA Débito · Compras Neto · IVA Crédito · **IVA a pagar del mes**. Meses sin actividad atenuados.
-- Exports: misma toolbar 📋📥🖨📊. `PrintableResumen` (forwardRef) off-screen. XLSX respeta la convención col A vacía width 6 + fila 1 vacía, con el balance de IVA en el encabezado. Filename `Resumen_{empresa}_{año}`.
+- Exports: misma toolbar 📋📥🖨📊. `PrintableAnnualSummary` (forwardRef) off-screen. XLSX respeta la convención col A vacía width 6 + fila 1 vacía, con el balance de IVA en el encabezado. Filename `Resumen_{empresa}_{año}`.
 
 ### Proyección de flujo de caja (tab, solo admin)
 
@@ -952,7 +963,7 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 - **El redondeo va por mes y el total es la suma de los meses redondeados**, no el redondeo de la suma. El Excel imprime la columna, así que el total al pie tiene que ser el de la columna o no cuadra a ojo.
 - **Cuesta 0 lecturas**: sale entero de `docs`, que ya tiene la colección completa en memoria (TTL 10 min).
 - **Lógica pura en `utils/cashFlowProjection.js`** (`projectCashFlow`, `netSalesByPeriod`, `groupByCounterparty`, `shiftPeriod`, `periodWindow`, `windowLabel`), con tests en `cashFlowProjection.test.js`. La aritmética de meses va con **enteros, nunca con `Date`**: un período es la etiqueta `YYYY-MM` del RCV, no un instante, y con `Date` una zona horaria corre un documento al mes de al lado.
-- **`CREDIT_NOTE_TYPES` vive ahí** y `Facturacion.jsx` lo importa. La proyección y la pantalla tienen que coincidir en que una NC resta; si divergen, la base sale inflada. `Dashboard.jsx` tiene su propia copia, que tiene que coincidir con esta.
+- **`CREDIT_NOTE_TYPES` vive ahí** y `Billing.jsx` lo importa. La proyección y la pantalla tienen que coincidir en que una NC resta; si divergen, la base sale inflada. `Dashboard.jsx` tiene su propia copia, que tiene que coincidir con esta.
 - **Export XLSX de dos hojas**: `Ventas netas` (banner con el neto de la base, bloque **por cliente** ordenado por monto, y el detalle documento por documento con fecha/período/tipo DTE/folio/cliente/RUT/neto, NC en rojo) y `Proyección` (12 filas mes a mes + total). El bloque por cliente muestra de dónde viene la base: una proyección sostenida por dos clientes no se lee igual que una repartida entre veinte.
 - **El porcentaje va en UNA celda (`C4` de la hoja `Proyección`) y las filas la referencian** con `ROUND(D7*$C$4,0)`. Quien recibe el archivo mueve el supuesto en Excel y ve la temporada entera recalcularse, en vez de pedir otra corrida por cada escenario.
 - **`isAnalysisTab`** (`resumen` + `proyeccion`) apaga filtros, tarjetas y tabla del listado. La usan los cuatro lugares que dependen de eso, así un tab de análisis nuevo se suma solo ahí.

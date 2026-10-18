@@ -5,8 +5,8 @@ import Modal, { ModalCloseButton } from "../../components/Modal";
 import { CREDIT_NOTE_TYPES } from "../../utils/cashFlowProjection";
 import { fmtCurrency } from "../../utils/format";
 import { CostCenterSelect } from "./CostCenterSelect";
-import { NC_STATE } from "./docs";
-import { OtroImpChip } from "./OtroImpChip";
+import { CREDIT_NOTE_STATE } from "./docs";
+import { OtherTaxChip } from "./OtherTaxChip";
 import { PaymentsSection } from "./PaymentsSection";
 import { PaymentStatusSelect } from "./PaymentStatusSelect";
 import { SummaryCard } from "./SummaryCard";
@@ -112,7 +112,7 @@ export function DocDetailModal({ dteDoc, candidateNcs = [], costCenters = [], on
           <div>
             <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">Estado</div>
             {isNC ? (
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${NC_STATE.chip}`}>{NC_STATE.label}</span>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${CREDIT_NOTE_STATE.chip}`}>{CREDIT_NOTE_STATE.label}</span>
             ) : (
               <PaymentStatusSelect value={st} onChange={onSetStatus} />
             )}
@@ -140,7 +140,7 @@ export function DocDetailModal({ dteDoc, candidateNcs = [], costCenters = [], on
                 <span className="font-mono text-xs">Cód. {dteDoc.otroImpuestoCodigo}</span>
                 <span>·</span>
                 <span>{otroImpuestoLabel(dteDoc.otroImpuestoCodigo)}</span>
-                <OtroImpChip code={dteDoc.otroImpuestoCodigo} tasa={dteDoc.retencionTasa} />
+                <OtherTaxChip code={dteDoc.otroImpuestoCodigo} tasa={dteDoc.retencionTasa} />
                 {dteDoc.otrosImpuestos > 0 && (
                   <span className="ml-auto text-xs text-[var(--color-muted)]">
                     Valor: <span className="tabular-nums text-[var(--color-text)]">{fmtCurrency(dteDoc.otrosImpuestos)}</span>

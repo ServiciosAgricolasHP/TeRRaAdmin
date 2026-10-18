@@ -23,7 +23,7 @@ import InfoAccounts from "./screens/InfoAccounts";
 import AdminConsole from "./screens/AdminConsole";
 import Audit from "./screens/Audit";
 import Calendar from "./screens/Calendar";
-import Facturacion from "./screens/Facturacion";
+import Billing from "./screens/Billing";
 import HarvestQr from "./screens/HarvestQr";
 import PriceBook from "./screens/PriceBook";
 import Commitments from "./screens/Commitments";
@@ -64,7 +64,7 @@ export default function App() {
                 <Route path="harvest-qr" element={<HarvestQr />} />
                 {/* `/admin/harvest-qr` redirige a Pesajes QR: la usan marcadores y links compartidos. */}
                 <Route path="admin/harvest-qr" element={<Navigate to="/harvest-qr" replace />} />
-                <Route path="facturacion" element={<Facturacion />} />
+                <Route path="facturacion" element={<Billing />} />
                 <Route path="price-book" element={<PriceBook />} />
                 <Route path="cheques-pagos" element={<Commitments />} />
                 <Route

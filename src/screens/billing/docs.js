@@ -47,7 +47,7 @@ export const PAYMENT_STATUSES = {
   cancelled: { label: "Anulada", chip: "bg-[var(--color-danger-soft)] text-[var(--color-danger)]" },
 };
 
-export const NC_STATE = { label: "Anulada", chip: "bg-[var(--color-danger-soft)] text-[var(--color-danger)]" };
+export const CREDIT_NOTE_STATE = { label: "Anulada", chip: "bg-[var(--color-danger-soft)] text-[var(--color-danger)]" };
 
 export function todayIso() {
   const d = new Date();
@@ -61,7 +61,7 @@ export function todayIso() {
 //   - partial: estado "unpaid" con abonos pero saldo > 0.
 //   - iva:     estado "net_only" → IVA pendiente (el IVA menos lo que ya
 //              cubren los pagos registrados por encima del neto).
-export const PENDIENTE_CATS = {
+export const RECEIVABLE_CATEGORIES = {
   full:    { key: "full",    label: "Factura completa pendiente", order: 1, hex: "#ffd6d6" },
   partial: { key: "partial", label: "Abono parcial",              order: 2, hex: "#fff2cc" },
   iva:     { key: "iva",     label: "IVA pendiente",              order: 3, hex: "#dde9ff" },

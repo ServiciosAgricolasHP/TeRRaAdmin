@@ -578,6 +578,45 @@ Auditoría — una fila por mutación.
 
 ---
 
+## Nombres en español pendientes de migración
+
+Campos y valores guardados en Firestore con nombre en español. El código los lee y escribe con ese nombre hasta que se migren. Cada uno se migra reescribiendo los documentos existentes y cambiando a la vez todo el código que lo usa, y los que lee otra app (la de escaneo o el portal) se coordinan con ella. El nombre propuesto sigue el Glosario de AGENTS.md.
+
+`faena` y `subfaena` (`faenas`, `subfaenas`, `faenaId`, `subfaenaId`, `faenaLabel`, `hiddenFaenaIds`, `faenaLayout`) no están en la lista: el Glosario los usa como término del código.
+
+| Colección | Campo o valor | Propuesto | Notas |
+|---|---|---|---|
+| `transportPayrolls` | la colección | `transportFortnights` | |
+| `transportPayments` | `payrollId` | `fortnightId` | |
+| `transportPayments` | `abonos` | `partialPayments` | mismo nombre que en `commitments` |
+| `transports` | `lugar`, `destino` | `place`, `destination` | |
+| `dteDocuments` | `kind`: `"venta"`, `"compra"` | `"sale"`, `"purchase"` | también va en el id del documento (`_V_`, `_C_`) |
+| `dteDocuments` | `tipo`, `tipoLabel` | `dteType`, `dteTypeLabel` | |
+| `dteDocuments` | `fechaEmision`, `periodo` | `issueDate`, `period` | |
+| `dteDocuments` | `rutEmisor`, `razonSocialEmisor` | `issuerRut`, `issuerName` | |
+| `dteDocuments` | `rutReceptor`, `razonSocialReceptor` | `receiverRut`, `receiverName` | |
+| `dteDocuments` | `exento`, `neto`, `iva`, `otrosImpuestos` | `exempt`, `net`, `vat`, `otherTaxes` | |
+| `dteDocuments` | `otroImpuestoCodigo`, `otroImpuestoCategory` (valor `"combustible"`) | `otherTaxCode`, `otherTaxCategory` (`"fuel"`) | |
+| `dteDocuments` | `ivaRetenido`, `ivaRetenidoTipo`, `ivaNoRetenido`, `retencionTasa` | `withheldVat`, `withheldVatType`, `nonWithheldVat`, `withholdingRate` | los escribe el import del RCV y no están en la tabla de la colección |
+| `dteDocuments` | `payments[].kind`: `"abono"`, `"neto"`, `"iva"` | `"partial"`, `"net"`, `"vat"` | `"total"` ya está en inglés |
+| `companies` | `razonSocial` | `legalName` | |
+| `contactCards` | `giro` | `businessActivity` | |
+| `groupLeader` | `habilitado` | `enabled` | |
+| `indicators` | `sueldoBase`, `dia`, `hora` | `baseSalary`, `dayValue`, `overtimeHourValue` | |
+| `advances` | `type`: `"anticipo"`, `"bono"` (y el antiguo `"adelanto"`) | `"advance"`, `"bonus"` | |
+| `advances` | `installments.cadence`: `"porPago"`, `"quincenal"`, `"mensual"` | `"perPayment"`, `"fortnightly"`, `"monthly"` | |
+| `cycles` | `labors[].type`: `"cosecha"`, `"trato"`, `"tratoHE"` | `"harvest"`, `"piecework"`, `"pieceworkOvertime"` | los otros tipos ya están en inglés |
+| `cycles` | `labors[].tratoType` | `pieceworkType` | |
+| `cycles` | `labors[].bonusManejo` | `drivingBonus` | el bono "M" (manejo: conducir) de las jornadas con horas extras |
+| `cycles` | `dayPrices[laborId][date].piso` | `floor` | |
+| `cycles` | `summaryTotals.pagar`, `summaryTotals.cobrar` | `pay`, `charge` | |
+| `cycleSummaries` | `cobrar` | `charge` | |
+| `workdays` | `hasManejo` | `hasDriving` | va con `labors[].bonusManejo` |
+| `workdays` | `pisoOnly`, `comboKey: "_piso"` | `floorOnly`, `"_floor"` | el `comboKey` también va en el id del documento |
+| `catalogs` | el doc `tratoTypes` | `pieceworkTypes` | el id del doc es el nombre del catálogo |
+| `qrPrefixes` | `padron` | `roster` | lo lee también la app de escaneo |
+| `logs` | `entity: "transportPayroll"`, `meta.auto: "emptyPayroll"` | `"transportFortnight"`, `"emptyFortnight"` | los logs no se reescriben: la Auditoría tendría que leer los dos valores |
+
 ## Diagrama (Mermaid)
 
 ```mermaid

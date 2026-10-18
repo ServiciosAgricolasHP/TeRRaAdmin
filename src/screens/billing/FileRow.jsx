@@ -8,7 +8,7 @@ import { fmtNumber, fmtCurrency } from "../../utils/format";
 export function FileRow({ file, existingIds, companyRut, onToggle }) {
   const dupCount = file.records.filter((r) => existingIds.has(r.id)).length;
   const newCount = file.records.length - dupCount;
-  const periodos = useMemo(() => {
+  const periods = useMemo(() => {
     const set = new Set();
     for (const r of file.records) if (r.periodo) set.add(r.periodo);
     return [...set].sort().join(", ") || "—";
@@ -54,7 +54,7 @@ export function FileRow({ file, existingIds, companyRut, onToggle }) {
       </div>
       {!isFailed && (
         <div className="ml-6 text-[10px] text-[var(--color-muted)]">
-          Período: <span className="font-mono">{periodos}</span>
+          Período: <span className="font-mono">{periods}</span>
           {" · "}
           Total: <span className="tabular-nums">{fmtCurrency(file.stats.totalAmount)}</span>
           {file.detectedRut && (

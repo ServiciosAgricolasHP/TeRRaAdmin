@@ -17,7 +17,7 @@ export function ImportPreviewModal({ preview, existingIds, company, busy, onTogg
   const included = files.filter((f) => !f.excluded && !f.parseFailed);
 
   const agg = useMemo(() => {
-    const a = { count: 0, total: 0, newCount: 0, dupCount: 0, byTipo: {}, periodos: new Set(), kinds: new Set() };
+    const a = { count: 0, total: 0, newCount: 0, dupCount: 0, byTipo: {}, periods: new Set(), kinds: new Set() };
     for (const f of included) {
       for (const r of f.records) {
         a.count++;
@@ -25,7 +25,7 @@ export function ImportPreviewModal({ preview, existingIds, company, busy, onTogg
         if (existingIds.has(r.id)) a.dupCount++;
         else a.newCount++;
         a.byTipo[r.tipo] = (a.byTipo[r.tipo] || 0) + 1;
-        if (r.periodo) a.periodos.add(r.periodo);
+        if (r.periodo) a.periods.add(r.periodo);
       }
       if (f.kind) a.kinds.add(f.kind);
     }
@@ -65,7 +65,7 @@ export function ImportPreviewModal({ preview, existingIds, company, busy, onTogg
           🏢 {company?.alias || company?.razonSocial} · {company?.rut}
         </div>
         <div className="mt-0.5 text-[var(--color-muted)]">
-          Período(s): <span className="font-mono">{[...agg.periodos].sort().join(", ") || "—"}</span>
+          Período(s): <span className="font-mono">{[...agg.periods].sort().join(", ") || "—"}</span>
           {" · "}
           Kind(s): <span className="font-mono">{[...agg.kinds].join(", ") || "—"}</span>
         </div>

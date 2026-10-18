@@ -5,15 +5,15 @@ import { formatRutForDisplay } from "../../utils/rutUtils";
 import Modal from "../../components/Modal";
 import { useToast } from "../../contexts/ToastContext";
 import { fmtCurrency, fmtNumber } from "../../utils/format";
-import { todayIso, PENDIENTE_CATS } from "./docs";
-import { PrintablePendientes } from "./PrintablePendientes";
+import { todayIso, RECEIVABLE_CATEGORIES } from "./docs";
+import { PrintableReceivables } from "./PrintableReceivables";
 import { SummaryCard } from "./SummaryCard";
 
 // Modal con todas las facturas de venta pendientes (cualquier período) de la
 // empresa seleccionada. Las separa en tres bloques (factura completa / abono
 // parcial / IVA pendiente) con subtotales y un total general. Toolbar de
 // export idéntica a la de Retenciones: Copiar / PNG / Imprimir / XLSX.
-export function PendientesModal({ items, totals, company, onClose, onSelectDoc }) {
+export function ReceivablesModal({ items, totals, company, onClose, onSelectDoc }) {
   const toast = useToast();
   const printRef = useRef(null);
   const [busy, setBusy] = useState("");
@@ -125,7 +125,7 @@ export function PendientesModal({ items, totals, company, onClose, onSelectDoc }
         const list = byCategory[cat];
         if (list.length === 0) continue;
         // Subencabezado por categoría
-        const meta = PENDIENTE_CATS[cat];
+        const meta = RECEIVABLE_CATEGORIES[cat];
         const subHexClean = meta.hex.replace("#", "");
         const argb = `FF${subHexClean.toUpperCase()}`;
         ws.getCell(r, 2).value = `${meta.label} (${list.length})`;
@@ -281,7 +281,7 @@ export function PendientesModal({ items, totals, company, onClose, onSelectDoc }
                 {["full", "partial", "iva"].map((cat) => {
                   const list = byCategory[cat];
                   if (list.length === 0) return null;
-                  const meta = PENDIENTE_CATS[cat];
+                  const meta = RECEIVABLE_CATEGORIES[cat];
                   return (
                     <React.Fragment key={cat}>
                       <tr style={{ background: meta.hex }}>
@@ -334,7 +334,7 @@ export function PendientesModal({ items, totals, company, onClose, onSelectDoc }
 
           {/* Printable fuera de pantalla para html-to-image e impresión. */}
           <div style={{ position: "absolute", left: -99999, top: 0, pointerEvents: "none" }} aria-hidden>
-            <PrintablePendientes
+            <PrintableReceivables
               ref={printRef}
               items={items}
               byCategory={byCategory}

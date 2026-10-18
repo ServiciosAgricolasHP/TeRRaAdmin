@@ -2,13 +2,13 @@ import React, { forwardRef } from "react";
 import { dteTypeLabel } from "../../utils/siiCsvParser";
 import { formatRutForDisplay } from "../../utils/rutUtils";
 import { fmtCurrency } from "../../utils/format";
-import { todayIso, PENDIENTE_CATS } from "./docs";
+import { todayIso, RECEIVABLE_CATEGORIES } from "./docs";
 import { pCellH, pCell } from "./printStyles";
 
 // Printable de pendientes, sin controles. Agrupa por categoría con un
 // subencabezado de color y un subtotal por categoría, con el mismo estilo
 // tipo Excel del resto de los exports del proyecto.
-export const PrintablePendientes = forwardRef(function PrintablePendientes(
+export const PrintableReceivables = forwardRef(function PrintableReceivables(
   { items, byCategory, totals, company },
   ref,
 ) {
@@ -65,7 +65,7 @@ export const PrintablePendientes = forwardRef(function PrintablePendientes(
           {["full", "partial", "iva"].map((cat) => {
             const list = byCategory[cat];
             if (list.length === 0) return null;
-            const meta = PENDIENTE_CATS[cat];
+            const meta = RECEIVABLE_CATEGORIES[cat];
             return (
               <React.Fragment key={`pcat_${cat}`}>
                 <tr style={{ background: meta.hex }}>

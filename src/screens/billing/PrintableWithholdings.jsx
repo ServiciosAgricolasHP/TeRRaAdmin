@@ -10,7 +10,7 @@ import { pCellH, pCell } from "./printStyles";
 // agrupada por contraparte con subtotales. Estilo tipo Excel (verde #92d050
 // en el encabezado, verde claro #c6efce en totales, verde muy claro #e2efda
 // en el encabezado de cada grupo).
-export const PrintableRetenciones = forwardRef(function PrintableRetenciones(
+export const PrintableWithholdings = forwardRef(function PrintableWithholdings(
   { groups, company, periodo, totals },
   ref,
 ) {

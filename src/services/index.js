@@ -101,13 +101,13 @@ export const priceBookConfigService = createService("priceBookConfig", "priceBoo
 // (compartido entre empresas) para etiquetar manualmente documentos que no
 // calzan con la agrupación por proveedor (ej. "Arriendo", "Mantención").
 // "Combustibles" es aparte: se arma solo por el código SII de "otro impuesto"
-// y no vive en esta colección. Ver Facturacion.jsx.
+// y no vive en esta colección. Ver Billing.jsx.
 export const costCentersService = createService("costCenter", "costCenters");
 
 // Gastos informales por centro de costo — plata sin factura/boleta formal
 // (o con boleta pedida pero nunca ingresada al SII). Puramente informativo:
 // NO son dteDocuments, no se mezclan con la data fiscal real, solo se
-// muestran dentro de la vista de un centro de costo en Facturacion.jsx.
+// muestran dentro de la vista de un centro de costo en Billing.jsx.
 export const informalExpensesService = createService("informalExpense", "informalExpenses");
 
 // Grupos de labores entre ciclos, dentro de una subfaena (puede haber varios

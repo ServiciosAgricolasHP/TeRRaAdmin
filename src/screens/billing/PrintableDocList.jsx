@@ -3,7 +3,7 @@ import { dteTypeLabel } from "../../utils/siiCsvParser";
 import { formatRutForDisplay } from "../../utils/rutUtils";
 import { CREDIT_NOTE_TYPES } from "../../utils/cashFlowProjection";
 import { fmtCurrency } from "../../utils/format";
-import { formatPeriodPretty, kindTitleLabel, groupDocsByCostCenter, NC_STATE, PAYMENT_STATUSES } from "./docs";
+import { formatPeriodPretty, kindTitleLabel, groupDocsByCostCenter, CREDIT_NOTE_STATE, PAYMENT_STATUSES } from "./docs";
 import { pCell, pCellH } from "./printStyles";
 
 // Printable plano del listado de Facturas o Compras. Respeta los filtros y el
@@ -30,7 +30,7 @@ export const PrintableDocList = forwardRef(function PrintableDocList(
     const rut = d.kind === "venta" ? d.rutReceptor : d.rutEmisor;
     const paid = Number(d.amountPaid) || 0;
     const estadoLabel = isNC
-      ? NC_STATE.label
+      ? CREDIT_NOTE_STATE.label
       : (PAYMENT_STATUSES[d.paymentStatus || "unpaid"]?.label || "—");
     const ncColor = isNC ? { color: "#cc0000" } : null;
     return (

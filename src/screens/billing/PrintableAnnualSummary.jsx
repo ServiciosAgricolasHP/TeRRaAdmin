@@ -6,12 +6,12 @@ import { pCellH, pCell } from "./printStyles";
 // Printable del Resumen anual (fuera de pantalla, fondo blanco). Misma tabla
 // mensual que la vista en pantalla, con el balance de IVA arriba como
 // métricas explícitas. El IVA a pagar = débito − crédito.
-export const PrintableResumen = forwardRef(function PrintableResumen(
+export const PrintableAnnualSummary = forwardRef(function PrintableAnnualSummary(
   { data, year, company },
   ref,
 ) {
   const { months, total } = data;
-  const ivaAnual = total.ivaDebito - total.ivaCredito;
+  const annualVat = total.vatDebit - total.vatCredit;
   const metric = (label, value, opts = {}) => (
     <div style={{ border: "1px solid #999", borderRadius: 6, padding: "8px 10px", background: opts.bg || "#f7f7f7", minWidth: 150 }}>
       <div style={{ fontSize: 11, color: "#555" }}>{label}</div>
@@ -33,12 +33,12 @@ export const PrintableResumen = forwardRef(function PrintableResumen(
         Resumen {year} — {(company?.alias || company?.razonSocial || "—").toString().toUpperCase()}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-        {metric("IVA Débito (ventas)", fmtCurrency(total.ivaDebito))}
-        {metric("IVA Crédito (compras)", fmtCurrency(total.ivaCredito))}
+        {metric("IVA Débito (ventas)", fmtCurrency(total.vatDebit))}
+        {metric("IVA Crédito (compras)", fmtCurrency(total.vatCredit))}
         {metric(
-          ivaAnual >= 0 ? "IVA a pagar (año)" : "IVA a favor (remanente)",
-          fmtCurrency(Math.abs(ivaAnual)),
-          { bg: "#fff4ce", color: ivaAnual < 0 ? "#1f7a1f" : "#000" },
+          annualVat >= 0 ? "IVA a pagar (año)" : "IVA a favor (remanente)",
+          fmtCurrency(Math.abs(annualVat)),
+          { bg: "#fff4ce", color: annualVat < 0 ? "#1f7a1f" : "#000" },
         )}
       </div>
       <table style={{ borderCollapse: "collapse", width: "100%" }}>
@@ -54,26 +54,26 @@ export const PrintableResumen = forwardRef(function PrintableResumen(
         </thead>
         <tbody>
           {months.map((m, idx) => {
-            const ivaMes = m.ivaDebito - m.ivaCredito;
+            const monthVat = m.vatDebit - m.vatCredit;
             const numCell = { ...pCell, textAlign: "right", fontVariantNumeric: "tabular-nums" };
             return (
               <tr key={idx}>
                 <td style={pCell}>{MONTH_NAMES_ES[idx]}</td>
-                <td style={numCell}>{fmtCurrency(m.ventasNeto)}</td>
-                <td style={numCell}>{fmtCurrency(m.ivaDebito)}</td>
-                <td style={numCell}>{fmtCurrency(m.comprasNeto)}</td>
-                <td style={numCell}>{fmtCurrency(m.ivaCredito)}</td>
-                <td style={{ ...numCell, fontWeight: 700, color: ivaMes < 0 ? "#1f7a1f" : "#000" }}>{fmtCurrency(ivaMes)}</td>
+                <td style={numCell}>{fmtCurrency(m.salesNet)}</td>
+                <td style={numCell}>{fmtCurrency(m.vatDebit)}</td>
+                <td style={numCell}>{fmtCurrency(m.purchasesNet)}</td>
+                <td style={numCell}>{fmtCurrency(m.vatCredit)}</td>
+                <td style={{ ...numCell, fontWeight: 700, color: monthVat < 0 ? "#1f7a1f" : "#000" }}>{fmtCurrency(monthVat)}</td>
               </tr>
             );
           })}
           <tr style={{ background: "#c6efce" }}>
             <td style={{ ...pCell, fontWeight: 700 }}>TOTAL {year}</td>
-            <td style={{ ...pCell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(total.ventasNeto)}</td>
-            <td style={{ ...pCell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(total.ivaDebito)}</td>
-            <td style={{ ...pCell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(total.comprasNeto)}</td>
-            <td style={{ ...pCell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(total.ivaCredito)}</td>
-            <td style={{ ...pCell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums", color: ivaAnual < 0 ? "#1f7a1f" : "#000" }}>{fmtCurrency(ivaAnual)}</td>
+            <td style={{ ...pCell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(total.salesNet)}</td>
+            <td style={{ ...pCell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(total.vatDebit)}</td>
+            <td style={{ ...pCell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(total.purchasesNet)}</td>
+            <td style={{ ...pCell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(total.vatCredit)}</td>
+            <td style={{ ...pCell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums", color: annualVat < 0 ? "#1f7a1f" : "#000" }}>{fmtCurrency(annualVat)}</td>
           </tr>
         </tbody>
       </table>

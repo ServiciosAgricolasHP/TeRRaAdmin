@@ -9,7 +9,7 @@ import { otroImpuestoCategory, OTRO_IMP_CATEGORIES, otroImpuestoLabel } from "..
 // —eso ya se sabe— sino si fue el 19% completo o una parcial del 14%. El
 // `Monto Total` del RCV ya viene con la retención descontada, así que mirando
 // la fila no se puede deducir.
-export function OtroImpChip({ code, tasa }) {
+export function OtherTaxChip({ code, tasa }) {
   if (!code) return null;
   const cat = otroImpuestoCategory(code);
   const meta = cat ? OTRO_IMP_CATEGORIES[cat] : null;

@@ -7,7 +7,7 @@ import { pCellH, pCell } from "./printStyles";
 // Printable de una sola contraparte (resumen individual). Se renderiza uno por
 // grupo, fuera de pantalla, para copiar, descargar o imprimir cada uno por
 // separado.
-export const PrintableRetencionesGroup = forwardRef(function PrintableRetencionesGroup(
+export const PrintableWithholdingsGroup = forwardRef(function PrintableWithholdingsGroup(
   { group, company, periodo },
   ref,
 ) {

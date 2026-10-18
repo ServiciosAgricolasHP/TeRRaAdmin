@@ -24,31 +24,31 @@ import {
   formatPeriod,
 } from "../utils/cashFlowProjection";
 import { fmtCurrency, fmtNumber } from "../utils/format";
-import { CompaniesModal } from "./facturacion/CompaniesModal";
-import { CompanySelectAndPickModal } from "./facturacion/CompanySelectAndPickModal";
-import { CostCenterSelect } from "./facturacion/CostCenterSelect";
-import { CostCentersModal } from "./facturacion/CostCentersModal";
-import { DocDetailModal } from "./facturacion/DocDetailModal";
+import { CompaniesModal } from "./billing/CompaniesModal";
+import { CompanySelectAndPickModal } from "./billing/CompanySelectAndPickModal";
+import { CostCenterSelect } from "./billing/CostCenterSelect";
+import { CostCentersModal } from "./billing/CostCentersModal";
+import { DocDetailModal } from "./billing/DocDetailModal";
 import {
-  PENDIENTE_CATS,
+  RECEIVABLE_CATEGORIES,
   PAYMENT_STATUSES,
   kindTitleLabel,
   formatPeriodPretty,
-  NC_STATE,
+  CREDIT_NOTE_STATE,
   groupDocsByCostCenter,
   MONTH_NAMES_ES,
-} from "./facturacion/docs";
-import { ImportPreviewModal } from "./facturacion/ImportPreviewModal";
-import { OtroImpChip } from "./facturacion/OtroImpChip";
-import { PaymentStatusSelect } from "./facturacion/PaymentStatusSelect";
-import { PendientesModal } from "./facturacion/PendientesModal";
-import { PrintableDocList } from "./facturacion/PrintableDocList";
-import { PrintableResumen } from "./facturacion/PrintableResumen";
-import { PrintableRetenciones } from "./facturacion/PrintableRetenciones";
-import { PrintableRetencionesGroup } from "./facturacion/PrintableRetencionesGroup";
-import { RetencionesView } from "./facturacion/RetencionesView";
-import { SortHeader } from "./facturacion/SortHeader";
-import { SummaryCard } from "./facturacion/SummaryCard";
+} from "./billing/docs";
+import { ImportPreviewModal } from "./billing/ImportPreviewModal";
+import { OtherTaxChip } from "./billing/OtherTaxChip";
+import { PaymentStatusSelect } from "./billing/PaymentStatusSelect";
+import { ReceivablesModal } from "./billing/ReceivablesModal";
+import { PrintableDocList } from "./billing/PrintableDocList";
+import { PrintableAnnualSummary } from "./billing/PrintableAnnualSummary";
+import { PrintableWithholdings } from "./billing/PrintableWithholdings";
+import { PrintableWithholdingsGroup } from "./billing/PrintableWithholdingsGroup";
+import { WithholdingsView } from "./billing/WithholdingsView";
+import { SortHeader } from "./billing/SortHeader";
+import { SummaryCard } from "./billing/SummaryCard";
 
 // Los tipos de DTE que restan (notas de crédito) viven en
 // `utils/cashFlowProjection` junto con la proyección, que necesita el mismo
@@ -82,8 +82,8 @@ function pendingFor(d) {
   }
   if (st === "net_only") {
     // Lo que ya está cubierto por pagos por encima del neto se imputa al IVA.
-    const ivaCovered = Math.max(0, paid - neto);
-    const pending = Math.max(0, iva - ivaCovered);
+    const vatCovered = Math.max(0, paid - neto);
+    const pending = Math.max(0, iva - vatCovered);
     if (pending <= 0.5) return null;
     return { category: "iva", amount: pending };
   }
@@ -99,15 +99,15 @@ function findCancellingNcs(dteDoc, allDocs) {
   if (CREDIT_NOTE_TYPES.has(Number(dteDoc.tipo))) return [];
   const total = Number(dteDoc.total) || 0;
   if (total <= 0) return [];
-  const contraparteRut = dteDoc.kind === "venta" ? dteDoc.rutReceptor : dteDoc.rutEmisor;
-  if (!contraparteRut) return [];
+  const counterpartyRut = dteDoc.kind === "venta" ? dteDoc.rutReceptor : dteDoc.rutEmisor;
+  if (!counterpartyRut) return [];
   const out = [];
   for (const d of allDocs) {
     if (!CREDIT_NOTE_TYPES.has(Number(d.tipo))) continue;
     if (d.companyId !== dteDoc.companyId) continue;
     if (d.kind !== dteDoc.kind) continue;
     const dRut = d.kind === "venta" ? d.rutReceptor : d.rutEmisor;
-    if (dRut !== contraparteRut) continue;
+    if (dRut !== counterpartyRut) continue;
     if ((Number(d.total) || 0) !== total) continue;
     if (d.fechaEmision && dteDoc.fechaEmision && d.fechaEmision < dteDoc.fechaEmision) continue;
     out.push(d);
@@ -123,7 +123,7 @@ const LS_SELECTED_COMPANY = "facturacion.selectedCompanyId";
 // o no búsqueda, para que meses con cientos de docs no rendericen todo.
 const PAGE_SIZE = 20;
 
-export default function Facturacion() {
+export default function Billing() {
   const toast = useToast();
   const isMobile = useIsMobile();
   const { isAdmin } = useAuth();
@@ -136,8 +136,8 @@ export default function Facturacion() {
   const [kindTab, setKindTab] = useState("venta");
   // Vista por defecto = mes actual. El selector de período permite ir a
   // cualquier mes pasado o pedir "Todos los períodos".
-  const [periodoFilter, setPeriodoFilter] = useState(currentPeriod());
-  const [tipoFilter, setTipoFilter] = useState("");
+  const [periodFilter, setPeriodFilter] = useState(currentPeriod());
+  const [typeFilter, setTypeFilter] = useState("");
   const [paymentFilter, setPaymentFilter] = useState(""); // "" | "unpaid" | "paid" | "net_only" | "factored"
   const [search, setSearch] = useState("");
   // Orden de la tabla principal: click en un encabezado alterna asc/desc; por
@@ -148,7 +148,7 @@ export default function Facturacion() {
   const [importCompanyId, setImportCompanyId] = useState("");
   const [importing, setImporting] = useState(false);
   const [companiesModalOpen, setCompaniesModalOpen] = useState(false);
-  const [pendientesModalOpen, setPendientesModalOpen] = useState(false);
+  const [receivablesModalOpen, setReceivablesModalOpen] = useState(false);
   // Catálogo manual de centros de costo ficticios (ver costCentersService),
   // global para todas las empresas. "Combustibles" no está aquí: sale
   // automáticamente del código de impuesto del SII.
@@ -167,23 +167,23 @@ export default function Facturacion() {
   const [detailDoc, setDetailDoc] = useState(null);
   // Refs de los printables fuera de pantalla (retenciones, listado, resumen)
   // para html-to-image e impresión.
-  const retencionesPrintRef = useRef(null);
+  const withholdingsPrintRef = useRef(null);
   const docListPrintRef = useRef(null);
-  const resumenPrintRef = useRef(null);
+  const summaryPrintRef = useRef(null);
   const [exportBusy, setExportBusy] = useState("");
   const [docListBusy, setDocListBusy] = useState("");
-  const [resumenBusy, setResumenBusy] = useState("");
+  const [summaryBusy, setSummaryBusy] = useState("");
   // Año de la pestaña "Resumen", con selector propio, independiente del filtro
   // de mes (que ahí no aplica: el resumen cruza los 12 meses del año elegido).
-  const [resumenYear, setResumenYear] = useState(() => String(new Date().getFullYear()));
-  // Pestaña "Proyección" (solo admin). `proyeccionStart` es el PRIMER mes
+  const [summaryYear, setSummaryYear] = useState(() => String(new Date().getFullYear()));
+  // Pestaña "Proyección" (solo admin). `projectionStart` es el PRIMER mes
   // proyectado; la base son los 12 meses anteriores. Arranca en el mes actual:
   // proyecta la temporada que viene a partir de hoy.
-  const [proyeccionStart, setProyeccionStart] = useState(() => currentPeriod());
+  const [projectionStart, setProjectionStart] = useState(() => currentPeriod());
   // Se guarda como texto para que el input se pueda vaciar mientras se tipea
   // sin que el valor salte a 0 y la tabla parpadee en cero.
-  const [proyeccionPercent, setProyeccionPercent] = useState(String(DEFAULT_PROJECTION_PERCENT));
-  const [proyeccionBusy, setProyeccionBusy] = useState("");
+  const [projectionPercent, setProjectionPercent] = useState(String(DEFAULT_PROJECTION_PERCENT));
+  const [projectionBusy, setProjectionBusy] = useState("");
   // Toggle "Agrupar tabla por centro": agrupa la tabla y el export por centro
   // de costo (o por contraparte si el documento no tiene uno), con los
   // combustibles juntos arriba. Se guarda en localStorage (una sola clave para
@@ -250,7 +250,7 @@ export default function Facturacion() {
   // La pestaña "Retenciones" muestra todos los DTE (ventas y compras) con
   // estado `net_only`, agrupados por contraparte. No es un `kind`, pero va como
   // un valor más de `kindTab` para que las pestañas usen un solo estado.
-  const isRetencionesView = kindTab === "retenciones";
+  const isWithholdingsView = kindTab === "retenciones";
   // Las pestañas de análisis cruzan varios meses por su cuenta, así que apagan
   // los filtros, las tarjetas y la tabla del listado. Todos esos lugares leen
   // este predicado: una pestaña de análisis nueva se agrega solo aquí.
@@ -259,7 +259,7 @@ export default function Facturacion() {
   // Filtros del listado.
   const filtered = useMemo(() => {
     let arr = docs;
-    if (isRetencionesView) {
+    if (isWithholdingsView) {
       // En retenciones: filtro implícito por estado, sin restringir kind.
       arr = arr.filter((d) => (d.paymentStatus || "unpaid") === "net_only");
     } else {
@@ -270,8 +270,8 @@ export default function Facturacion() {
     // búsqueda responde "todas las facturas de esa empresa", no solo las del
     // mes elegido. Al limpiar la búsqueda el filtro de período vuelve a regir.
     const searching = !!search.trim();
-    if (periodoFilter && !searching) arr = arr.filter((d) => d.periodo === periodoFilter);
-    if (tipoFilter) arr = arr.filter((d) => String(d.tipo) === String(tipoFilter));
+    if (periodFilter && !searching) arr = arr.filter((d) => d.periodo === periodFilter);
+    if (typeFilter) arr = arr.filter((d) => String(d.tipo) === String(typeFilter));
     // El estado de pago solo se lleva en ventas; en Compras los chips del
     // filtro no se muestran, así que tampoco filtran.
     if (kindTab === "venta" && paymentFilter) {
@@ -292,7 +292,7 @@ export default function Facturacion() {
       });
     }
     return arr;
-  }, [docs, kindTab, isRetencionesView, selectedCompanyId, periodoFilter, tipoFilter, paymentFilter, search]);
+  }, [docs, kindTab, isWithholdingsView, selectedCompanyId, periodFilter, typeFilter, paymentFilter, search]);
 
   // Orden de la tabla principal (facturas y compras); la vista de retenciones
   // agrupa por su cuenta. Al ordenar por estado, las NC usan la clave
@@ -336,7 +336,7 @@ export default function Facturacion() {
   const [page, setPage] = useState(1);
   useEffect(() => {
     setPage(1);
-  }, [kindTab, selectedCompanyId, periodoFilter, tipoFilter, paymentFilter, search, sortBy]);
+  }, [kindTab, selectedCompanyId, periodFilter, typeFilter, paymentFilter, search, sortBy]);
   const pageCount = Math.max(1, Math.ceil(sortedFiltered.length / PAGE_SIZE));
   // Acota la página al total: si la lista se achica (p. ej. al cambiar de
   // empresa) antes de que corra el reset, no muestra una página vacía.
@@ -363,21 +363,21 @@ export default function Facturacion() {
   // Lista de contrapartes únicas (razón social) para el datalist del buscador.
   // Sale de los docs filtrados solo por empresa y kind, sin el resto de los
   // filtros, para que el dropdown muestre todas las opciones posibles.
-  const contrapartesAutocomplete = useMemo(() => {
+  const counterpartySuggestions = useMemo(() => {
     const set = new Set();
     for (const d of docs) {
-      if (!isRetencionesView && d.kind !== kindTab) continue;
+      if (!isWithholdingsView && d.kind !== kindTab) continue;
       if (selectedCompanyId && d.companyId !== selectedCompanyId) continue;
       const razon = d.kind === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
       if (razon) set.add(razon);
     }
     return [...set].sort();
-  }, [docs, kindTab, isRetencionesView, selectedCompanyId]);
+  }, [docs, kindTab, isWithholdingsView, selectedCompanyId]);
 
   // Retenciones agrupadas por contraparte (RUT) → suma neto/iva/total + lista
   // de docs. Para la pestaña Retenciones.
-  const retencionesByContraparte = useMemo(() => {
-    if (!isRetencionesView) return [];
+  const withholdingsByCounterparty = useMemo(() => {
+    if (!isWithholdingsView) return [];
     const map = new Map();
     for (const d of filtered) {
       const rutContra = d.kind === "venta" ? d.rutReceptor : d.rutEmisor;
@@ -397,15 +397,15 @@ export default function Facturacion() {
       g.docs.push(d);
     }
     return [...map.values()].sort((a, b) => b.iva - a.iva);
-  }, [filtered, isRetencionesView]);
+  }, [filtered, isWithholdingsView]);
 
-  const periodoOptions = useMemo(() => {
+  const periodOptions = useMemo(() => {
     const set = new Set();
     for (const d of docs) {
       // En retenciones la pestaña no corresponde a un `kind` (venta/compra),
       // así que se toma cualquier doc con estado net_only para que el dropdown
       // ofrezca los meses pasados que tienen retenciones.
-      const matchesTab = isRetencionesView
+      const matchesTab = isWithholdingsView
         ? (d.paymentStatus || "unpaid") === "net_only"
         : d.kind === kindTab;
       if (matchesTab && d.periodo) {
@@ -414,9 +414,9 @@ export default function Facturacion() {
     }
     set.add(currentPeriod());
     return [...set].sort().reverse();
-  }, [docs, kindTab, isRetencionesView, selectedCompanyId]);
+  }, [docs, kindTab, isWithholdingsView, selectedCompanyId]);
 
-  const tipoOptions = useMemo(() => {
+  const typeOptions = useMemo(() => {
     const set = new Set();
     for (const d of docs) {
       if (d.kind === kindTab) {
@@ -479,7 +479,7 @@ export default function Facturacion() {
   // cuentas por cobrar no se mezclan con las cuentas por pagar.
   // Cada item lleva `_category` y `_pending` calculados por `pendingFor`.
   // Ordenado por categoría (full → partial → iva) y luego por fecha ascendente.
-  const pendientesList = useMemo(() => {
+  const receivablesList = useMemo(() => {
     const arr = [];
     for (const d of docs) {
       if (d.kind !== "venta") continue;
@@ -489,28 +489,28 @@ export default function Facturacion() {
       arr.push({ ...d, _category: p.category, _pending: p.amount });
     }
     arr.sort((a, b) => {
-      const oa = PENDIENTE_CATS[a._category].order;
-      const ob = PENDIENTE_CATS[b._category].order;
+      const oa = RECEIVABLE_CATEGORIES[a._category].order;
+      const ob = RECEIVABLE_CATEGORIES[b._category].order;
       if (oa !== ob) return oa - ob;
       return String(a.fechaEmision || "").localeCompare(String(b.fechaEmision || ""));
     });
     return arr;
   }, [docs, selectedCompanyId]);
 
-  const pendientesTotals = useMemo(() => {
+  const receivablesTotals = useMemo(() => {
     const t = { full: 0, partial: 0, iva: 0, total: 0, count: { full: 0, partial: 0, iva: 0 } };
-    for (const d of pendientesList) {
+    for (const d of receivablesList) {
       t[d._category] += d._pending;
       t.total += d._pending;
       t.count[d._category]++;
     }
     return t;
-  }, [pendientesList]);
+  }, [receivablesList]);
 
   // ===== Resumen anual (pestaña "Resumen") =====
   // Años disponibles para el selector — derivados de los períodos de la empresa
   // seleccionada. Siempre incluye el año actual aunque no tenga docs todavía.
-  const resumenYears = useMemo(() => {
+  const summaryYears = useMemo(() => {
     const set = new Set();
     for (const d of docs) {
       if (selectedCompanyId && d.companyId !== selectedCompanyId) continue;
@@ -526,16 +526,16 @@ export default function Facturacion() {
   // de IVA crédito (compras). El IVA de las facturas "Solo neto" (net_only) se
   // suma normalmente al débito/crédito que corresponda, sin separarlo.
   // IVA a pagar del mes = débito − crédito.
-  const resumenData = useMemo(() => {
+  const summaryData = useMemo(() => {
     const mk = () => ({
-      ventasNeto: 0, ivaDebito: 0, ventasTotal: 0, ventasCount: 0,
-      comprasNeto: 0, ivaCredito: 0, comprasTotal: 0, comprasCount: 0,
+      salesNet: 0, vatDebit: 0, salesTotal: 0, salesCount: 0,
+      purchasesNet: 0, vatCredit: 0, purchasesTotal: 0, purchasesCount: 0,
     });
     const months = Array.from({ length: 12 }, mk);
     for (const d of docs) {
       if (selectedCompanyId && d.companyId !== selectedCompanyId) continue;
       const p = String(d.periodo || "");
-      if (p.slice(0, 4) !== resumenYear) continue;
+      if (p.slice(0, 4) !== summaryYear) continue;
       const mi = Number(p.slice(5, 7)) - 1;
       if (mi < 0 || mi > 11) continue;
       const m = months[mi];
@@ -544,15 +544,15 @@ export default function Facturacion() {
       const iva = Number(d.iva) || 0;
       const total = Number(d.total) || 0;
       if (d.kind === "venta") {
-        m.ventasNeto += sign * neto;
-        m.ivaDebito += sign * iva;
-        m.ventasTotal += sign * total;
-        m.ventasCount++;
+        m.salesNet += sign * neto;
+        m.vatDebit += sign * iva;
+        m.salesTotal += sign * total;
+        m.salesCount++;
       } else if (d.kind === "compra") {
-        m.comprasNeto += sign * neto;
-        m.ivaCredito += sign * iva;
-        m.comprasTotal += sign * total;
-        m.comprasCount++;
+        m.purchasesNet += sign * neto;
+        m.vatCredit += sign * iva;
+        m.purchasesTotal += sign * total;
+        m.purchasesCount++;
       }
     }
     const total = mk();
@@ -560,7 +560,7 @@ export default function Facturacion() {
       for (const k of Object.keys(total)) total[k] += m[k];
     }
     return { months, total };
-  }, [docs, selectedCompanyId, resumenYear]);
+  }, [docs, selectedCompanyId, summaryYear]);
 
   // --- IMPORTACIÓN ---
 
@@ -750,15 +750,15 @@ export default function Facturacion() {
   const exportFileBase = useMemo(() => {
     const company = companiesById.get(selectedCompanyId);
     const alias = (company?.alias || company?.razonSocial || "empresa").replace(/[^\w-]+/g, "_");
-    const period = periodoFilter || "todos";
+    const period = periodFilter || "todos";
     return `Retenciones_${alias}_${period}`;
-  }, [companiesById, selectedCompanyId, periodoFilter]);
+  }, [companiesById, selectedCompanyId, periodFilter]);
 
-  const handleRetencionesCopy = async () => {
-    if (!retencionesPrintRef.current) return;
+  const handleWithholdingsCopy = async () => {
+    if (!withholdingsPrintRef.current) return;
     setExportBusy("copy");
     try {
-      const blob = await captureFullWidthBlob(retencionesPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const blob = await captureFullWidthBlob(withholdingsPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
       if (!blob) throw new Error("No se pudo generar la imagen");
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       toast.success("Imagen copiada al portapapeles");
@@ -769,11 +769,11 @@ export default function Facturacion() {
     }
   };
 
-  const handleRetencionesDownload = async () => {
-    if (!retencionesPrintRef.current) return;
+  const handleWithholdingsDownload = async () => {
+    if (!withholdingsPrintRef.current) return;
     setExportBusy("png");
     try {
-      const dataUrl = await captureFullWidthDataUrl(retencionesPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const dataUrl = await captureFullWidthDataUrl(withholdingsPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
       const link = document.createElement("a");
       link.download = `${exportFileBase}.png`;
       link.href = dataUrl;
@@ -785,9 +785,9 @@ export default function Facturacion() {
     }
   };
 
-  const handleRetencionesPrint = () => {
-    if (!retencionesPrintRef.current) return;
-    const html = retencionesPrintRef.current.outerHTML;
+  const handleWithholdingsPrint = () => {
+    if (!withholdingsPrintRef.current) return;
+    const html = withholdingsPrintRef.current.outerHTML;
     const win = window.open("", "_blank", "width=1000,height=700");
     if (!win) {
       toast.warning("Permite las ventanas emergentes para imprimir.");
@@ -811,13 +811,13 @@ export default function Facturacion() {
   // XLSX con la convención del proyecto: col A vacía de ancho 6, fila 1 vacía,
   // datos desde B2. Dos hojas: "Resumen", con una fila por contraparte, y
   // "Detalle", con cada factura.
-  const handleRetencionesXlsx = async () => {
+  const handleWithholdingsXlsx = async () => {
     setExportBusy("xlsx");
     try {
       const ExcelJS = (await import("exceljs")).default || (await import("exceljs"));
       const wb = new ExcelJS.Workbook();
       const company = companiesById.get(selectedCompanyId);
-      const period = periodoFilter || "Todos los períodos";
+      const period = periodFilter || "Todos los períodos";
 
       // ============ Hoja Resumen ============
       const ws = wb.addWorksheet("Resumen");
@@ -849,8 +849,8 @@ export default function Facturacion() {
 
       const dataStart = HR + 1;
       let r = dataStart;
-      for (let i = 0; i < retencionesByContraparte.length; i++) {
-        const g = retencionesByContraparte[i];
+      for (let i = 0; i < withholdingsByCounterparty.length; i++) {
+        const g = withholdingsByCounterparty[i];
         const row = [i + 1, g.razon || "—", formatRutForDisplay(g.rut) || "—", g.count, g.neto, g.iva, g.total];
         row.forEach((v, j) => {
           const c = ws.getCell(r, 2 + j);
@@ -879,8 +879,8 @@ export default function Facturacion() {
         c.font = { bold: true };
       }
       // Conteo + sumas con fórmulas (referencia las celdas E/F/G/H del rango).
-      if (retencionesByContraparte.length > 0) {
-        ws.getCell(totalRow, 5).value = { formula: `SUM(E${dataStart}:E${lastDataRow})`, result: retencionesByContraparte.reduce((s, g) => s + g.count, 0) };
+      if (withholdingsByCounterparty.length > 0) {
+        ws.getCell(totalRow, 5).value = { formula: `SUM(E${dataStart}:E${lastDataRow})`, result: withholdingsByCounterparty.reduce((s, g) => s + g.count, 0) };
         ws.getCell(totalRow, 6).value = { formula: `SUM(F${dataStart}:F${lastDataRow})`, result: totals.netOnlyTotal - totals.netOnlyIva };
         ws.getCell(totalRow, 7).value = { formula: `SUM(G${dataStart}:G${lastDataRow})`, result: totals.netOnlyIva };
         ws.getCell(totalRow, 8).value = { formula: `SUM(H${dataStart}:H${lastDataRow})`, result: totals.netOnlyTotal };
@@ -918,7 +918,7 @@ export default function Facturacion() {
         c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
       });
       let dr = 5;
-      for (const g of retencionesByContraparte) {
+      for (const g of withholdingsByCounterparty) {
         for (const d of g.docs) {
           const cells = [
             d.fechaEmision || "",
@@ -964,7 +964,7 @@ export default function Facturacion() {
   const groupFileBase = (g) => {
     const alias = (selectedCompany?.alias || selectedCompany?.razonSocial || "empresa").replace(/[^\w-]+/g, "_");
     const contra = (g.razon || "contraparte").replace(/[^\w-]+/g, "_").slice(0, 40);
-    const period = periodoFilter || "todos";
+    const period = periodFilter || "todos";
     return `Retencion_${alias}_${contra}_${period}`;
   };
 
@@ -1035,7 +1035,7 @@ export default function Facturacion() {
       const ExcelJS = (await import("exceljs")).default || (await import("exceljs"));
       const wb = new ExcelJS.Workbook();
       const company = selectedCompany;
-      const period = periodoFilter || "Todos los períodos";
+      const period = periodFilter || "Todos los períodos";
       const ws = wb.addWorksheet("Retención");
       ws.getColumn(1).width = 6;  // col A vacía de medio ancho (convención)
       ws.getColumn(2).width = 12; // Fecha
@@ -1149,9 +1149,9 @@ export default function Facturacion() {
   const docListFileBase = useMemo(() => {
     const alias = (selectedCompany?.alias || selectedCompany?.razonSocial || "empresa").replace(/[^\w-]+/g, "_");
     const kindLabel = kindTab === "venta" ? "Ventas-Facturas" : "Compras";
-    const period = periodoFilter || "todos";
+    const period = periodFilter || "todos";
     return `${kindLabel}_${alias}_${period}`;
-  }, [selectedCompany, kindTab, periodoFilter]);
+  }, [selectedCompany, kindTab, periodFilter]);
 
   const handleDocListCopy = async () => {
     if (!docListPrintRef.current) return;
@@ -1189,7 +1189,7 @@ export default function Facturacion() {
     const html = docListPrintRef.current.outerHTML;
     const win = window.open("", "_blank", "width=1000,height=700");
     if (!win) { toast.warning("Permite las ventanas emergentes para imprimir."); return; }
-    const titleLabel = `${kindTitleLabel(kindTab)} — ${selectedCompany?.alias || selectedCompany?.razonSocial || ""} — ${formatPeriodPretty(periodoFilter)}`;
+    const titleLabel = `${kindTitleLabel(kindTab)} — ${selectedCompany?.alias || selectedCompany?.razonSocial || ""} — ${formatPeriodPretty(periodFilter)}`;
     win.document.write(`<!DOCTYPE html><html><head><title>${titleLabel}</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
@@ -1211,7 +1211,7 @@ export default function Facturacion() {
       const ExcelJS = (await import("exceljs")).default || (await import("exceljs"));
       const wb = new ExcelJS.Workbook();
       const company = selectedCompany;
-      const period = formatPeriodPretty(periodoFilter);
+      const period = formatPeriodPretty(periodFilter);
       const kindLabel = kindTitleLabel(kindTab).toUpperCase();
       const contraLabel = kindTab === "venta" ? "Cliente" : "Proveedor";
       const showEstado = kindTab === "venta";
@@ -1257,7 +1257,7 @@ export default function Facturacion() {
         const rut = d.kind === "venta" ? d.rutReceptor : d.rutEmisor;
         const paid = Number(d.amountPaid) || 0;
         const estadoLabel = isNC
-          ? NC_STATE.label
+          ? CREDIT_NOTE_STATE.label
           : (PAYMENT_STATUSES[d.paymentStatus || "unpaid"]?.label || "—");
         const cells = [
           d.fechaEmision || "",
@@ -1374,48 +1374,48 @@ export default function Facturacion() {
   };
 
   // ===== Export del Resumen anual =====
-  const resumenFileBase = useMemo(() => {
+  const summaryFileBase = useMemo(() => {
     const alias = (selectedCompany?.alias || selectedCompany?.razonSocial || "empresa").replace(/[^\w-]+/g, "_");
-    return `Resumen_${alias}_${resumenYear}`;
-  }, [selectedCompany, resumenYear]);
+    return `Resumen_${alias}_${summaryYear}`;
+  }, [selectedCompany, summaryYear]);
 
-  const handleResumenCopy = async () => {
-    if (!resumenPrintRef.current) return;
-    setResumenBusy("copy");
+  const handleSummaryCopy = async () => {
+    if (!summaryPrintRef.current) return;
+    setSummaryBusy("copy");
     try {
-      const blob = await captureFullWidthBlob(resumenPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const blob = await captureFullWidthBlob(summaryPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
       if (!blob) throw new Error("No se pudo generar la imagen");
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       toast.success("Imagen copiada al portapapeles");
     } catch (err) {
       toast.error("Error al copiar: " + (err.message || err));
     } finally {
-      setResumenBusy("");
+      setSummaryBusy("");
     }
   };
 
-  const handleResumenPng = async () => {
-    if (!resumenPrintRef.current) return;
-    setResumenBusy("png");
+  const handleSummaryPng = async () => {
+    if (!summaryPrintRef.current) return;
+    setSummaryBusy("png");
     try {
-      const dataUrl = await captureFullWidthDataUrl(resumenPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const dataUrl = await captureFullWidthDataUrl(summaryPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
       const link = document.createElement("a");
-      link.download = `${resumenFileBase}.png`;
+      link.download = `${summaryFileBase}.png`;
       link.href = dataUrl;
       link.click();
     } catch (err) {
       toast.error("Error al generar PNG: " + (err.message || err));
     } finally {
-      setResumenBusy("");
+      setSummaryBusy("");
     }
   };
 
-  const handleResumenPrint = () => {
-    if (!resumenPrintRef.current) return;
-    const html = resumenPrintRef.current.outerHTML;
+  const handleSummaryPrint = () => {
+    if (!summaryPrintRef.current) return;
+    const html = summaryPrintRef.current.outerHTML;
     const win = window.open("", "_blank", "width=1000,height=700");
     if (!win) { toast.warning("Permite las ventanas emergentes para imprimir."); return; }
-    const titleLabel = `Resumen ${resumenYear} — ${selectedCompany?.alias || selectedCompany?.razonSocial || ""}`;
+    const titleLabel = `Resumen ${summaryYear} — ${selectedCompany?.alias || selectedCompany?.razonSocial || ""}`;
     win.document.write(`<!DOCTYPE html><html><head><title>${titleLabel}</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
@@ -1431,14 +1431,14 @@ export default function Facturacion() {
     setTimeout(() => { win.print(); }, 250);
   };
 
-  const handleResumenXlsx = async () => {
-    setResumenBusy("xlsx");
+  const handleSummaryXlsx = async () => {
+    setSummaryBusy("xlsx");
     try {
       const ExcelJS = (await import("exceljs")).default || (await import("exceljs"));
       const wb = new ExcelJS.Workbook();
       const company = selectedCompany;
-      const { months, total } = resumenData;
-      const ws = wb.addWorksheet(`Resumen ${resumenYear}`);
+      const { months, total } = summaryData;
+      const ws = wb.addWorksheet(`Resumen ${summaryYear}`);
       // Convención del proyecto: col A vacía (media), fila 1 vacía.
       ws.getColumn(1).width = 6;
       ws.getColumn(2).width = 14; // Mes
@@ -1448,11 +1448,11 @@ export default function Facturacion() {
       ws.getColumn(6).width = 16; // IVA Crédito
       ws.getColumn(7).width = 16; // IVA a pagar
 
-      ws.getCell("B2").value = `RESUMEN ${resumenYear} — ${company?.alias || company?.razonSocial || ""}`;
+      ws.getCell("B2").value = `RESUMEN ${summaryYear} — ${company?.alias || company?.razonSocial || ""}`;
       ws.getCell("B2").font = { bold: true, size: 14 };
       ws.mergeCells(`B2:G2`);
-      const ivaAnual = total.ivaDebito - total.ivaCredito;
-      ws.getCell("B3").value = `IVA Débito ${fmtCurrency(total.ivaDebito)} · IVA Crédito ${fmtCurrency(total.ivaCredito)} · IVA ${ivaAnual >= 0 ? "a pagar" : "a favor"} ${fmtCurrency(Math.abs(ivaAnual))}`;
+      const annualVat = total.vatDebit - total.vatCredit;
+      ws.getCell("B3").value = `IVA Débito ${fmtCurrency(total.vatDebit)} · IVA Crédito ${fmtCurrency(total.vatCredit)} · IVA ${annualVat >= 0 ? "a pagar" : "a favor"} ${fmtCurrency(Math.abs(annualVat))}`;
       ws.getCell("B3").font = { italic: true, color: { argb: "FF555555" } };
       ws.mergeCells(`B3:G3`);
 
@@ -1469,26 +1469,26 @@ export default function Facturacion() {
 
       let r = HR + 1;
       months.forEach((m, idx) => {
-        const ivaMes = m.ivaDebito - m.ivaCredito;
-        const cells = [MONTH_NAMES_ES[idx], m.ventasNeto, m.ivaDebito, m.comprasNeto, m.ivaCredito, ivaMes];
+        const monthVat = m.vatDebit - m.vatCredit;
+        const cells = [MONTH_NAMES_ES[idx], m.salesNet, m.vatDebit, m.purchasesNet, m.vatCredit, monthVat];
         cells.forEach((v, j) => {
           const c = ws.getCell(r, 2 + j);
           c.value = v;
           c.alignment = { horizontal: j === 0 ? "left" : "right" };
           c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
           if (j >= 1) c.numFmt = '"$"#,##0';
-          if (j === 5) c.font = { bold: true, color: { argb: ivaMes < 0 ? "FF1F7A1F" : "FF000000" } };
+          if (j === 5) c.font = { bold: true, color: { argb: monthVat < 0 ? "FF1F7A1F" : "FF000000" } };
         });
         r++;
       });
 
       const totalRow = r;
-      const ivaAnualVal = total.ivaDebito - total.ivaCredito;
-      const tCells = ["TOTAL", total.ventasNeto, total.ivaDebito, total.comprasNeto, total.ivaCredito, ivaAnualVal];
+      const annualVatValue = total.vatDebit - total.vatCredit;
+      const tCells = ["TOTAL", total.salesNet, total.vatDebit, total.purchasesNet, total.vatCredit, annualVatValue];
       tCells.forEach((v, j) => {
         const c = ws.getCell(totalRow, 2 + j);
         c.value = v;
-        c.font = { bold: true, ...(j === 5 ? { color: { argb: ivaAnualVal < 0 ? "FF1F7A1F" : "FF000000" } } : {}) };
+        c.font = { bold: true, ...(j === 5 ? { color: { argb: annualVatValue < 0 ? "FF1F7A1F" : "FF000000" } } : {}) };
         c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
         c.alignment = { horizontal: j === 0 ? "left" : "right" };
         c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
@@ -1499,13 +1499,13 @@ export default function Facturacion() {
       const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = `${resumenFileBase}.xlsx`;
+      link.download = `${summaryFileBase}.xlsx`;
       link.click();
       URL.revokeObjectURL(link.href);
     } catch (err) {
       toast.error("Error al generar XLSX: " + (err.message || err));
     } finally {
-      setResumenBusy("");
+      setSummaryBusy("");
     }
   };
 
@@ -1515,7 +1515,7 @@ export default function Facturacion() {
   // ventas de los 12 meses previos, mes a mes, por un porcentaje. Sale entera
   // de `docs`, que ya está en memoria con toda la colección: la proyección no
   // cuesta lecturas.
-  const proyeccionYears = useMemo(() => {
+  const projectionYears = useMemo(() => {
     const now = new Date().getFullYear();
     const set = new Set([now, now + 1, now + 2].map(String));
     for (const d of docs) {
@@ -1528,33 +1528,33 @@ export default function Facturacion() {
     return [...set].sort().reverse();
   }, [docs, selectedCompanyId]);
 
-  const proyeccion = useMemo(
+  const projection = useMemo(
     () => projectCashFlow(docs, {
       companyId: selectedCompanyId,
-      startPeriod: proyeccionStart,
-      percent: Number(proyeccionPercent) || 0,
+      startPeriod: projectionStart,
+      percent: Number(projectionPercent) || 0,
     }),
-    [docs, selectedCompanyId, proyeccionStart, proyeccionPercent],
+    [docs, selectedCompanyId, projectionStart, projectionPercent],
   );
 
-  const proyeccionPorCliente = useMemo(() => groupByCounterparty(proyeccion.detail), [proyeccion.detail]);
+  const projectionByClient = useMemo(() => groupByCounterparty(projection.detail), [projection.detail]);
 
-  const proyeccionFileBase = useMemo(() => {
+  const projectionFileBase = useMemo(() => {
     const alias = (selectedCompany?.alias || selectedCompany?.razonSocial || "empresa").replace(/[^\w-]+/g, "_");
-    return `Proyeccion_${alias}_${(proyeccion.targetLabel || proyeccionStart).replace(/[^\w-]+/g, "_")}`;
-  }, [selectedCompany, proyeccion.targetLabel, proyeccionStart]);
+    return `Proyeccion_${alias}_${(projection.targetLabel || projectionStart).replace(/[^\w-]+/g, "_")}`;
+  }, [selectedCompany, projection.targetLabel, projectionStart]);
 
   // ===== Export de la Proyección =====
   // Dos hojas: la base con el detalle que la sostiene, y la proyección aparte.
   // El porcentaje va en UNA celda y las filas la referencian (`$C$4`): quien
   // recibe el archivo cambia el supuesto en Excel y la temporada entera se
   // recalcula.
-  const handleProyeccionXlsx = async () => {
-    setProyeccionBusy("xlsx");
+  const handleProjectionXlsx = async () => {
+    setProjectionBusy("xlsx");
     try {
       const ExcelJS = (await import("exceljs")).default || (await import("exceljs"));
       const wb = new ExcelJS.Workbook();
-      const empresa = selectedCompany?.alias || selectedCompany?.razonSocial || "";
+      const companyName = selectedCompany?.alias || selectedCompany?.razonSocial || "";
       const money = '"$"#,##0';
       const thin = { style: "thin" };
       const box = { top: thin, left: thin, right: thin, bottom: thin };
@@ -1572,18 +1572,18 @@ export default function Facturacion() {
       ws1.getColumn(1).width = 6; // convención del proyecto: col A vacía
       [13, 11, 26, 10, 32, 15, 15, 13, 15, 15].forEach((w, i) => { ws1.getColumn(2 + i).width = w; });
 
-      ws1.getCell("B2").value = `INGRESOS — ${proyeccion.baseLabel}`;
+      ws1.getCell("B2").value = `INGRESOS — ${projection.baseLabel}`;
       ws1.getCell("B2").font = { bold: true, size: 14 };
       ws1.mergeCells("B2:K2");
       ws1.getCell("B3").value =
-        `${empresa} · ${proyeccion.baseCount} documentos de venta · solo entradas (las compras no entran)` +
+        `${companyName} · ${projection.baseCount} documentos de venta · solo entradas (las compras no entran)` +
         ` · las facturas de compra entran solo por el neto porque el IVA lo retiene el cliente`;
       ws1.getCell("B3").font = { italic: true, color: { argb: "FF555555" } };
       ws1.mergeCells("B3:K3");
 
       ws1.getCell("B5").value = "INGRESOS DEL PERÍODO BASE";
       ws1.mergeCells("B5:H5");
-      ws1.getCell("I5").value = proyeccion.baseTotal;
+      ws1.getCell("I5").value = projection.baseTotal;
       ws1.mergeCells("I5:K5");
       for (const ref of ["B5", "I5"]) {
         const c = ws1.getCell(ref);
@@ -1602,7 +1602,7 @@ export default function Facturacion() {
       ["RUT", "Razón social", "Documentos", "Neto", "Ingreso"].forEach((h, i) =>
         header(ws1, 8, 2 + i, h, i >= 2 ? "right" : "left"));
       let r1 = 9;
-      for (const g of proyeccionPorCliente) {
+      for (const g of projectionByClient) {
         const vals = [formatRutForDisplay(g.rut) || g.rut, g.razonSocial, g.count, g.neto, g.monto];
         vals.forEach((v, j) => {
           const c = ws1.getCell(r1, 2 + j);
@@ -1614,15 +1614,15 @@ export default function Facturacion() {
         });
         r1++;
       }
-      if (proyeccionPorCliente.length > 0) {
+      if (projectionByClient.length > 0) {
         const tr = r1;
         ws1.getCell(tr, 2).value = "TOTAL";
-        ws1.getCell(tr, 4).value = { formula: `SUM(D9:D${r1 - 1})`, result: proyeccion.baseCount };
+        ws1.getCell(tr, 4).value = { formula: `SUM(D9:D${r1 - 1})`, result: projection.baseCount };
         ws1.getCell(tr, 5).value = {
           formula: `SUM(E9:E${r1 - 1})`,
-          result: proyeccionPorCliente.reduce((acc, g) => acc + g.neto, 0),
+          result: projectionByClient.reduce((acc, g) => acc + g.neto, 0),
         };
-        ws1.getCell(tr, 6).value = { formula: `SUM(F9:F${r1 - 1})`, result: proyeccion.baseTotal };
+        ws1.getCell(tr, 6).value = { formula: `SUM(F9:F${r1 - 1})`, result: projection.baseTotal };
         for (let col = 2; col <= 6; col++) {
           const c = ws1.getCell(tr, col);
           c.font = { bold: true };
@@ -1644,7 +1644,7 @@ export default function Facturacion() {
       ["Fecha", "Período", "Tipo de documento", "Folio", "Cliente", "RUT", "Neto", "IVA", "Total SII", "Ingreso"]
         .forEach((h, i) => header(ws1, detStart, 2 + i, h, DET_NUM.has(i) ? "right" : "left"));
       let dr = detStart + 1;
-      for (const d of proyeccion.detail) {
+      for (const d of projection.detail) {
         const vals = [
           d.fechaEmision,
           d.periodo,
@@ -1677,10 +1677,10 @@ export default function Facturacion() {
         });
         dr++;
       }
-      if (proyeccion.detail.length > 0) {
+      if (projection.detail.length > 0) {
         const tr = dr;
         ws1.getCell(tr, 2).value = "TOTAL";
-        ws1.getCell(tr, 11).value = { formula: `SUM(K${detStart + 1}:K${dr - 1})`, result: proyeccion.baseTotal };
+        ws1.getCell(tr, 11).value = { formula: `SUM(K${detStart + 1}:K${dr - 1})`, result: projection.baseTotal };
         for (let col = 2; col <= 11; col++) {
           const c = ws1.getCell(tr, col);
           c.font = { bold: true };
@@ -1696,13 +1696,13 @@ export default function Facturacion() {
       ws2.getColumn(1).width = 6;
       [20, 14, 20, 20].forEach((w, i) => { ws2.getColumn(2 + i).width = w; });
 
-      ws2.getCell("B2").value = `PROYECCIÓN DE FLUJO DE CAJA — ${proyeccion.targetLabel}`;
+      ws2.getCell("B2").value = `PROYECCIÓN DE FLUJO DE CAJA — ${projection.targetLabel}`;
       ws2.getCell("B2").font = { bold: true, size: 14 };
       ws2.mergeCells("B2:E2");
       ws2.getCell("B3").value =
-        `${empresa} · base: ingresos de ${proyeccion.baseLabel}` +
-        ` · ${proyeccion.mesesReales} ${proyeccion.mesesReales === 1 ? "mes real" : "meses reales"}` +
-        ` y ${proyeccion.mesesEstimados} ${proyeccion.mesesEstimados === 1 ? "estimado" : "estimados"}`;
+        `${companyName} · base: ingresos de ${projection.baseLabel}` +
+        ` · ${projection.mesesReales} ${projection.mesesReales === 1 ? "mes real" : "meses reales"}` +
+        ` y ${projection.mesesEstimados} ${projection.mesesEstimados === 1 ? "estimado" : "estimados"}`;
       ws2.getCell("B3").font = { italic: true, color: { argb: "FF555555" } };
       ws2.mergeCells("B3:E3");
 
@@ -1711,7 +1711,7 @@ export default function Facturacion() {
       ws2.getCell("B4").value = "Porcentaje aplicado";
       ws2.getCell("B4").font = { bold: true };
       const pctCell = ws2.getCell("C4");
-      pctCell.value = proyeccion.factor;
+      pctCell.value = projection.factor;
       pctCell.numFmt = "0.0%";
       pctCell.font = { bold: true };
       pctCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF2CC" } };
@@ -1722,10 +1722,10 @@ export default function Facturacion() {
       ["Mes proyectado", "Origen", "Ingreso base", "Monto"]
         .forEach((h, i) => header(ws2, HR2, 2 + i, h, i >= 2 ? "right" : "left"));
       let r2 = HR2 + 1;
-      for (const row of proyeccion.rows) {
+      for (const row of projection.rows) {
         const origen = row.esReal
           ? `Real · ${row.realCount} doc.`
-          : `${row.basePeriodo} × ${proyeccion.percent}%`;
+          : `${row.basePeriodo} × ${projection.percent}%`;
         const vals = [formatPeriod(row.periodo), origen, row.esReal ? null : row.baseMonto, null];
         vals.forEach((v, j) => {
           const c = ws2.getCell(r2, 2 + j);
@@ -1745,14 +1745,14 @@ export default function Facturacion() {
         r2++;
       }
       const totalRow2 = r2;
-      ws2.getCell(totalRow2, 2).value = `TOTAL ${proyeccion.targetLabel}`;
+      ws2.getCell(totalRow2, 2).value = `TOTAL ${projection.targetLabel}`;
       // Solo suma las bases de los meses estimados: los reales dejan la celda
       // vacía porque su base no se usó para nada.
       ws2.getCell(totalRow2, 4).value = {
         formula: `SUM(D${HR2 + 1}:D${r2 - 1})`,
-        result: proyeccion.rows.reduce((acc, row) => acc + (row.esReal ? 0 : row.baseMonto), 0),
+        result: projection.rows.reduce((acc, row) => acc + (row.esReal ? 0 : row.baseMonto), 0),
       };
-      ws2.getCell(totalRow2, 5).value = { formula: `SUM(E${HR2 + 1}:E${r2 - 1})`, result: proyeccion.total };
+      ws2.getCell(totalRow2, 5).value = { formula: `SUM(E${HR2 + 1}:E${r2 - 1})`, result: projection.total };
       for (let col = 2; col <= 5; col++) {
         const c = ws2.getCell(totalRow2, col);
         c.font = { bold: true, size: col === 5 ? 13 : 11 };
@@ -1779,13 +1779,13 @@ export default function Facturacion() {
       const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = `${proyeccionFileBase}.xlsx`;
+      link.download = `${projectionFileBase}.xlsx`;
       link.click();
       URL.revokeObjectURL(link.href);
     } catch (err) {
       toast.error("Error al generar XLSX: " + (err.message || err));
     } finally {
-      setProyeccionBusy("");
+      setProjectionBusy("");
     }
   };
 
@@ -1858,15 +1858,15 @@ export default function Facturacion() {
 
         {!isAnalysisTab && (<>
         <button
-          onClick={() => setPendientesModalOpen(true)}
+          onClick={() => setReceivablesModalOpen(true)}
           disabled={noCompany}
           title="Ver todas las facturas con saldo pendiente (cualquier período): factura completa, abonos parciales o IVA pendiente."
           className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
         >
           ⏳ Ver pendientes
-          {pendientesList.length > 0 && (
+          {receivablesList.length > 0 && (
             <span className="ml-1.5 rounded-full bg-[var(--color-warning-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-warning)]">
-              {pendientesList.length}
+              {receivablesList.length}
             </span>
           )}
         </button>
@@ -1877,8 +1877,8 @@ export default function Facturacion() {
       {!isAnalysisTab && (
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <select
-          value={search.trim() ? "" : periodoFilter}
-          onChange={(e) => setPeriodoFilter(e.target.value)}
+          value={search.trim() ? "" : periodFilter}
+          onChange={(e) => setPeriodFilter(e.target.value)}
           disabled={!!search.trim()}
           title={search.trim()
             ? "Ignorado mientras buscas — la búsqueda muestra todos los períodos de la empresa"
@@ -1886,23 +1886,23 @@ export default function Facturacion() {
           className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs disabled:opacity-60"
         >
           <option value="">Todos los períodos</option>
-          {periodoOptions.map((p) => (
+          {periodOptions.map((p) => (
             <option key={p} value={p}>
               {p === currentPeriod() ? `${p} (actual)` : p}
             </option>
           ))}
         </select>
         <select
-          value={tipoFilter}
-          onChange={(e) => setTipoFilter(e.target.value)}
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
           className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs"
         >
           <option value="">Todos los tipos</option>
-          {tipoOptions.map((t) => (
+          {typeOptions.map((t) => (
             <option key={t} value={t}>{t} · {dteTypeLabel(t)}</option>
           ))}
         </select>
-        {!isRetencionesView && kindTab === "venta" && (
+        {!isWithholdingsView && kindTab === "venta" && (
           <div className="flex flex-wrap gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-0.5 text-xs">
             {[
               { v: "", label: "Todos" },
@@ -1930,7 +1930,7 @@ export default function Facturacion() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder={
-            isRetencionesView
+            isWithholdingsView
               ? "Buscar por contraparte, RUT o folio..."
               : `Buscar por ${kindTab === "venta" ? "cliente" : "proveedor"}, RUT o folio...`
           }
@@ -1938,7 +1938,7 @@ export default function Facturacion() {
           className="flex-1 min-w-[200px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm outline-none focus:border-[var(--color-accent)]"
         />
         <datalist id="dte-contrapartes">
-          {contrapartesAutocomplete.map((name) => (
+          {counterpartySuggestions.map((name) => (
             <option key={name} value={name} />
           ))}
         </datalist>
@@ -1959,14 +1959,14 @@ export default function Facturacion() {
       </div>
       )}
 
-      {selectedCompany && !isRetencionesView && !isAnalysisTab && (
+      {selectedCompany && !isWithholdingsView && !isAnalysisTab && (
         <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
           <SummaryCard label="No pagado del período" value={fmtCurrency(totals.unpaidTotal)} warning />
           <SummaryCard label="Solo neto (IVA retenido)" value={fmtCurrency(totals.netOnlyTotal)} />
           <SummaryCard label="Cedidas / Solo IVA" value={fmtCurrency(totals.factoredTotal)} />
         </div>
       )}
-      {isRetencionesView && (
+      {isWithholdingsView && (
         <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
           <SummaryCard label="Facturas con retención" value={fmtNumber(totals.count)} />
           <SummaryCard label="IVA retenido" value={fmtCurrency(totals.netOnlyIva)} highlight />
@@ -1990,51 +1990,51 @@ export default function Facturacion() {
         </div>
       ) : kindTab === "resumen" ? (
         (() => {
-          const { months, total } = resumenData;
-          const ivaAnual = total.ivaDebito - total.ivaCredito;
-          const exportDisabled = total.ventasCount === 0 && total.comprasCount === 0;
+          const { months, total } = summaryData;
+          const annualVat = total.vatDebit - total.vatCredit;
+          const exportDisabled = total.salesCount === 0 && total.purchasesCount === 0;
           return (
             <div className="flex flex-col gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <label className="text-xs text-[var(--color-muted)]">Año</label>
                 <select
-                  value={resumenYear}
-                  onChange={(e) => setResumenYear(e.target.value)}
+                  value={summaryYear}
+                  onChange={(e) => setSummaryYear(e.target.value)}
                   className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
                 >
-                  {resumenYears.map((y) => (
+                  {summaryYears.map((y) => (
                     <option key={y} value={y}>{y}</option>
                   ))}
                 </select>
                 <div className="ml-auto flex flex-wrap gap-1">
-                  <button onClick={handleResumenCopy} disabled={resumenBusy === "copy" || exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Copiar como imagen">
-                    {resumenBusy === "copy" ? "Copiando..." : "📋 Copiar"}
+                  <button onClick={handleSummaryCopy} disabled={summaryBusy === "copy" || exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Copiar como imagen">
+                    {summaryBusy === "copy" ? "Copiando..." : "📋 Copiar"}
                   </button>
-                  <button onClick={handleResumenPng} disabled={resumenBusy === "png" || exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Descargar PNG">
-                    {resumenBusy === "png" ? "..." : "📥 PNG"}
+                  <button onClick={handleSummaryPng} disabled={summaryBusy === "png" || exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Descargar PNG">
+                    {summaryBusy === "png" ? "..." : "📥 PNG"}
                   </button>
-                  <button onClick={handleResumenPrint} disabled={exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Imprimir">
+                  <button onClick={handleSummaryPrint} disabled={exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Imprimir">
                     🖨 Imprimir
                   </button>
-                  <button onClick={handleResumenXlsx} disabled={resumenBusy === "xlsx" || exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Exportar XLSX">
-                    {resumenBusy === "xlsx" ? "..." : "📊 XLSX"}
+                  <button onClick={handleSummaryXlsx} disabled={summaryBusy === "xlsx" || exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Exportar XLSX">
+                    {summaryBusy === "xlsx" ? "..." : "📊 XLSX"}
                   </button>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <SummaryCard label="IVA Débito (ventas)" value={fmtCurrency(total.ivaDebito)} />
-                <SummaryCard label="IVA Crédito (compras)" value={fmtCurrency(total.ivaCredito)} />
-                <SummaryCard label={ivaAnual >= 0 ? "IVA a pagar (año)" : "IVA a favor (remanente)"} value={fmtCurrency(Math.abs(ivaAnual))} highlight />
+                <SummaryCard label="IVA Débito (ventas)" value={fmtCurrency(total.vatDebit)} />
+                <SummaryCard label="IVA Crédito (compras)" value={fmtCurrency(total.vatCredit)} />
+                <SummaryCard label={annualVat >= 0 ? "IVA a pagar (año)" : "IVA a favor (remanente)"} value={fmtCurrency(Math.abs(annualVat))} highlight />
               </div>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <SummaryCard label="Ventas netas (año)" value={fmtCurrency(total.ventasNeto)} />
-                <SummaryCard label="Compras netas (año)" value={fmtCurrency(total.comprasNeto)} />
-                <SummaryCard label="Documentos" value={fmtNumber(total.ventasCount + total.comprasCount)} subtle />
+                <SummaryCard label="Ventas netas (año)" value={fmtCurrency(total.salesNet)} />
+                <SummaryCard label="Compras netas (año)" value={fmtCurrency(total.purchasesNet)} />
+                <SummaryCard label="Documentos" value={fmtNumber(total.salesCount + total.purchasesCount)} subtle />
               </div>
 
               <div style={{ position: "absolute", left: -99999, top: 0, pointerEvents: "none" }} aria-hidden>
-                <PrintableResumen ref={resumenPrintRef} data={resumenData} year={resumenYear} company={selectedCompany} />
+                <PrintableAnnualSummary ref={summaryPrintRef} data={summaryData} year={summaryYear} company={selectedCompany} />
               </div>
 
               <div className="overflow-auto rounded-md border border-[var(--color-border)]">
@@ -2051,28 +2051,28 @@ export default function Facturacion() {
                   </thead>
                   <tbody>
                     {months.map((m, idx) => {
-                      const ivaMes = m.ivaDebito - m.ivaCredito;
-                      const empty = m.ventasCount === 0 && m.comprasCount === 0;
+                      const monthVat = m.vatDebit - m.vatCredit;
+                      const empty = m.salesCount === 0 && m.purchasesCount === 0;
                       return (
                         <tr key={idx} className={`border-t border-[var(--color-border)] ${empty ? "text-[var(--color-muted)]" : ""}`}>
                           <td className="px-2 py-1.5">{MONTH_NAMES_ES[idx]}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(m.ventasNeto)}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(m.ivaDebito)}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(m.comprasNeto)}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(m.ivaCredito)}</td>
-                          <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${ivaMes < 0 ? "text-[var(--color-success)]" : ""}`}>{fmtCurrency(ivaMes)}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(m.salesNet)}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(m.vatDebit)}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(m.purchasesNet)}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(m.vatCredit)}</td>
+                          <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${monthVat < 0 ? "text-[var(--color-success)]" : ""}`}>{fmtCurrency(monthVat)}</td>
                         </tr>
                       );
                     })}
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 border-[var(--color-border)] bg-[var(--color-surface-2)] font-semibold">
-                      <td className="px-2 py-2">TOTAL {resumenYear}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(total.ventasNeto)}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(total.ivaDebito)}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(total.comprasNeto)}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(total.ivaCredito)}</td>
-                      <td className={`px-2 py-2 text-right tabular-nums ${ivaAnual < 0 ? "text-[var(--color-success)]" : ""}`}>{fmtCurrency(ivaAnual)}</td>
+                      <td className="px-2 py-2">TOTAL {summaryYear}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(total.salesNet)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(total.vatDebit)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(total.purchasesNet)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(total.vatCredit)}</td>
+                      <td className={`px-2 py-2 text-right tabular-nums ${annualVat < 0 ? "text-[var(--color-success)]" : ""}`}>{fmtCurrency(annualVat)}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -2082,14 +2082,14 @@ export default function Facturacion() {
         })()
       ) : kindTab === "proyeccion" && isAdmin ? (
         (() => {
-          const sinBase = proyeccion.baseCount === 0;
+          const emptyBase = projection.baseCount === 0;
           return (
             <div className="flex flex-col gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <label className="text-xs text-[var(--color-muted)]">Proyectar desde</label>
                 <select
-                  value={proyeccionStart.slice(5, 7)}
-                  onChange={(e) => setProyeccionStart(`${proyeccionStart.slice(0, 4)}-${e.target.value}`)}
+                  value={projectionStart.slice(5, 7)}
+                  onChange={(e) => setProjectionStart(`${projectionStart.slice(0, 4)}-${e.target.value}`)}
                   className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
                 >
                   {MONTH_NAMES_ES.map((m, i) => (
@@ -2097,11 +2097,11 @@ export default function Facturacion() {
                   ))}
                 </select>
                 <select
-                  value={proyeccionStart.slice(0, 4)}
-                  onChange={(e) => setProyeccionStart(`${e.target.value}-${proyeccionStart.slice(5, 7)}`)}
+                  value={projectionStart.slice(0, 4)}
+                  onChange={(e) => setProjectionStart(`${e.target.value}-${projectionStart.slice(5, 7)}`)}
                   className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
                 >
-                  {proyeccionYears.map((y) => (
+                  {projectionYears.map((y) => (
                     <option key={y} value={y}>{y}</option>
                   ))}
                 </select>
@@ -2110,32 +2110,32 @@ export default function Facturacion() {
                   type="number"
                   min="0"
                   step="1"
-                  value={proyeccionPercent}
-                  onChange={(e) => setProyeccionPercent(e.target.value)}
+                  value={projectionPercent}
+                  onChange={(e) => setProjectionPercent(e.target.value)}
                   className="min-h-[32px] w-20 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-right text-sm tabular-nums"
                 />
                 <div className="ml-auto">
                   <button
-                    onClick={handleProyeccionXlsx}
-                    disabled={proyeccionBusy === "xlsx" || sinBase}
-                    title={sinBase ? "No hay ventas en el período base" : "Descargar el reporte en Excel"}
+                    onClick={handleProjectionXlsx}
+                    disabled={projectionBusy === "xlsx" || emptyBase}
+                    title={emptyBase ? "No hay ventas en el período base" : "Descargar el reporte en Excel"}
                     className="min-h-[32px] rounded-md bg-[var(--color-accent)] px-3 py-1 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
                   >
-                    {proyeccionBusy === "xlsx" ? "Generando..." : "📊 Descargar Excel"}
+                    {projectionBusy === "xlsx" ? "Generando..." : "📊 Descargar Excel"}
                   </button>
                 </div>
               </div>
 
               <p className="text-xs text-[var(--color-muted)]">
-                Proyección <strong>{proyeccion.targetLabel}</strong> — cada mes se estima desde el mismo mes de{" "}
-                <strong>{proyeccion.baseLabel}</strong> multiplicado por el porcentaje, <strong>salvo los meses
+                Proyección <strong>{projection.targetLabel}</strong> — cada mes se estima desde el mismo mes de{" "}
+                <strong>{projection.baseLabel}</strong> multiplicado por el porcentaje, <strong>salvo los meses
                 que ya tienen ventas cargadas</strong>, que valen su dato real. Solo entran las{" "}
                 <strong>ventas</strong> (las compras son salidas y quedan fuera); las notas de crédito restan.
                 Una <strong>factura de compra entra solo por su neto</strong> —el IVA lo retiene el cliente y
                 nunca se cobra—; el resto entra con IVA incluido.
               </p>
 
-              {proyeccion.rows.some((r) => r.esReal && r.periodo === currentPeriod()) && (
+              {projection.rows.some((r) => r.esReal && r.periodo === currentPeriod()) && (
                 <p className="rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-3 py-2 text-xs text-[var(--color-warning)]">
                   ⚠ {formatPeriod(currentPeriod())} es el mes en curso: su dato real puede estar incompleto y
                   arrastrar el total para abajo.
@@ -2143,21 +2143,21 @@ export default function Facturacion() {
               )}
 
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <SummaryCard label={`Ingresos ${proyeccion.baseLabel}`} value={fmtCurrency(proyeccion.baseTotal)} subtle />
+                <SummaryCard label={`Ingresos ${projection.baseLabel}`} value={fmtCurrency(projection.baseTotal)} subtle />
                 <SummaryCard
-                  label={`Real · ${proyeccion.mesesReales} ${proyeccion.mesesReales === 1 ? "mes" : "meses"}`}
-                  value={fmtCurrency(proyeccion.totalReal)}
+                  label={`Real · ${projection.mesesReales} ${projection.mesesReales === 1 ? "mes" : "meses"}`}
+                  value={fmtCurrency(projection.totalReal)}
                 />
                 <SummaryCard
-                  label={`Estimado · ${proyeccion.mesesEstimados} ${proyeccion.mesesEstimados === 1 ? "mes" : "meses"} al ${proyeccion.percent}%`}
-                  value={fmtCurrency(proyeccion.totalProyectado)}
+                  label={`Estimado · ${projection.mesesEstimados} ${projection.mesesEstimados === 1 ? "mes" : "meses"} al ${projection.percent}%`}
+                  value={fmtCurrency(projection.totalProyectado)}
                 />
-                <SummaryCard label={`Total ${proyeccion.targetLabel}`} value={fmtCurrency(proyeccion.total)} highlight />
+                <SummaryCard label={`Total ${projection.targetLabel}`} value={fmtCurrency(projection.total)} highlight />
               </div>
 
-              {sinBase && proyeccion.mesesReales === 0 ? (
+              {emptyBase && projection.mesesReales === 0 ? (
                 <div className="flex h-40 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-[var(--color-border)] px-4 text-center text-sm text-[var(--color-muted)]">
-                  <div>No hay ventas importadas en {proyeccion.baseLabel}.</div>
+                  <div>No hay ventas importadas en {projection.baseLabel}.</div>
                   <div className="text-xs">
                     La proyección se calcula sobre esos 12 meses — sin ellos no hay nada que escalar.
                   </div>
@@ -2174,7 +2174,7 @@ export default function Facturacion() {
                       </tr>
                     </thead>
                     <tbody>
-                      {proyeccion.rows.map((row) => (
+                      {projection.rows.map((row) => (
                         <tr
                           key={row.periodo}
                           className={`border-t border-[var(--color-border)] ${
@@ -2189,7 +2189,7 @@ export default function Facturacion() {
                               </span>
                             ) : (
                               <span className="text-[var(--color-muted)]">
-                                {row.basePeriodo} × {proyeccion.percent}%
+                                {row.basePeriodo} × {projection.percent}%
                               </span>
                             )}
                           </td>
@@ -2204,8 +2204,8 @@ export default function Facturacion() {
                     </tbody>
                     <tfoot>
                       <tr className="border-t-2 border-[var(--color-border)] bg-[var(--color-surface-2)] font-semibold">
-                        <td className="px-2 py-2" colSpan={3}>TOTAL {proyeccion.targetLabel}</td>
-                        <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(proyeccion.total)}</td>
+                        <td className="px-2 py-2" colSpan={3}>TOTAL {projection.targetLabel}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(projection.total)}</td>
                       </tr>
                     </tfoot>
                   </table>
@@ -2216,44 +2216,44 @@ export default function Facturacion() {
         })()
       ) : filtered.length === 0 ? (
         <div className="flex h-40 items-center justify-center rounded-md border border-dashed border-[var(--color-border)] text-sm text-[var(--color-muted)]">
-          {docs.some((d) => (isRetencionesView || d.kind === kindTab) && d.companyId === selectedCompanyId)
+          {docs.some((d) => (isWithholdingsView || d.kind === kindTab) && d.companyId === selectedCompanyId)
             ? "Sin coincidencias para los filtros aplicados."
-            : isRetencionesView
+            : isWithholdingsView
               ? "No hay facturas con estado \"Solo neto\" para esta empresa en este período."
               : `No hay ${kindTab === "venta" ? "facturas" : "compras"} importadas para esta empresa en este período. Usa "📥 Importar CSV del SII".`}
         </div>
-      ) : isRetencionesView ? (
+      ) : isWithholdingsView ? (
         <>
           {/* Toolbar de export para la infografía. Mismo patrón visual que el
               resto de los resúmenes del proyecto (Cobrar, Quincenas, Worker). */}
           <div className="mb-2 flex flex-wrap gap-1">
             <button
-              onClick={handleRetencionesCopy}
-              disabled={exportBusy === "copy" || retencionesByContraparte.length === 0}
+              onClick={handleWithholdingsCopy}
+              disabled={exportBusy === "copy" || withholdingsByCounterparty.length === 0}
               className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
               title="Copiar tabla como imagen"
             >
               {exportBusy === "copy" ? "Copiando..." : "📋 Copiar"}
             </button>
             <button
-              onClick={handleRetencionesDownload}
-              disabled={exportBusy === "png" || retencionesByContraparte.length === 0}
+              onClick={handleWithholdingsDownload}
+              disabled={exportBusy === "png" || withholdingsByCounterparty.length === 0}
               className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
               title="Descargar como PNG"
             >
               {exportBusy === "png" ? "..." : "📥 PNG"}
             </button>
             <button
-              onClick={handleRetencionesPrint}
-              disabled={retencionesByContraparte.length === 0}
+              onClick={handleWithholdingsPrint}
+              disabled={withholdingsByCounterparty.length === 0}
               className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
               title="Imprimir"
             >
               🖨 Imprimir
             </button>
             <button
-              onClick={handleRetencionesXlsx}
-              disabled={exportBusy === "xlsx" || retencionesByContraparte.length === 0}
+              onClick={handleWithholdingsXlsx}
+              disabled={exportBusy === "xlsx" || withholdingsByCounterparty.length === 0}
               className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
               title="Exportar XLSX (Resumen + Detalle)"
             >
@@ -2264,17 +2264,17 @@ export default function Facturacion() {
           {/* Printables fuera de pantalla para html-to-image: el resumen general
               y uno por contraparte, para exportarlos uno a uno. */}
           <div style={{ position: "absolute", left: -99999, top: 0, pointerEvents: "none" }} aria-hidden>
-            <PrintableRetenciones
-              ref={retencionesPrintRef}
-              groups={retencionesByContraparte}
+            <PrintableWithholdings
+              ref={withholdingsPrintRef}
+              groups={withholdingsByCounterparty}
               company={selectedCompany}
-              periodo={periodoFilter}
+              periodo={periodFilter}
               totals={totals}
             />
-            {retencionesByContraparte.map((g) => {
+            {withholdingsByCounterparty.map((g) => {
               const k = groupKey(g);
               return (
-                <PrintableRetencionesGroup
+                <PrintableWithholdingsGroup
                   key={`pg_${k}`}
                   ref={(el) => {
                     if (el) groupPrintRefs.current.set(k, el);
@@ -2282,14 +2282,14 @@ export default function Facturacion() {
                   }}
                   group={g}
                   company={selectedCompany}
-                  periodo={periodoFilter}
+                  periodo={periodFilter}
                 />
               );
             })}
           </div>
 
-          <RetencionesView
-            groups={retencionesByContraparte}
+          <WithholdingsView
+            groups={withholdingsByCounterparty}
             onSelectDoc={(d) => setDetailDoc(d)}
             onSetStatus={setPaymentStatus}
             onGroupExport={groupExport}
@@ -2363,7 +2363,7 @@ export default function Facturacion() {
               kind={kindTab}
               docs={sortedFiltered}
               company={selectedCompany}
-              periodo={periodoFilter}
+              periodo={periodFilter}
               totals={totals}
               groupByCostCenter={groupByCostCenter}
               costCentersById={costCentersById}
@@ -2394,7 +2394,7 @@ export default function Facturacion() {
                           <span className={isNC ? "rounded px-1.5 py-0.5 bg-[var(--color-danger-soft)] text-[var(--color-danger)]" : ""}>
                             {d.tipoLabel || dteTypeLabel(d.tipo)}
                           </span>
-                          <OtroImpChip code={d.otroImpuestoCodigo} tasa={d.retencionTasa} />
+                          <OtherTaxChip code={d.otroImpuestoCodigo} tasa={d.retencionTasa} />
                           <span className="font-mono">· Folio {d.folio}</span>
                         </div>
                         <div className="mt-0.5 truncate text-sm font-medium">{razon || "—"}</div>
@@ -2431,8 +2431,8 @@ export default function Facturacion() {
                       )}
                       {kindTab === "venta" && (
                         isNC ? (
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${NC_STATE.chip}`}>
-                            {NC_STATE.label}
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${CREDIT_NOTE_STATE.chip}`}>
+                            {CREDIT_NOTE_STATE.label}
                           </span>
                         ) : (
                           <>
@@ -2529,7 +2529,7 @@ export default function Facturacion() {
                       <span className={isNC ? "rounded px-1.5 py-0.5 bg-[var(--color-danger-soft)] text-[var(--color-danger)]" : ""}>
                         {d.tipoLabel || dteTypeLabel(d.tipo)}
                       </span>
-                      <OtroImpChip code={d.otroImpuestoCodigo} tasa={d.retencionTasa} />
+                      <OtherTaxChip code={d.otroImpuestoCodigo} tasa={d.retencionTasa} />
                     </td>
                     <td className="px-2 py-1.5 text-right font-mono tabular-nums">{d.folio}</td>
                     <td className="px-2 py-1.5 truncate max-w-[260px]">{razon || "—"}</td>
@@ -2580,8 +2580,8 @@ export default function Facturacion() {
                     {kindTab === "venta" && (
                       <td className="px-2 py-1.5 text-center">
                         {isNC ? (
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${NC_STATE.chip}`}>
-                            {NC_STATE.label}
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${CREDIT_NOTE_STATE.chip}`}>
+                            {CREDIT_NOTE_STATE.label}
                           </span>
                         ) : (
                           <div className="flex items-center justify-center gap-1">
@@ -2734,13 +2734,13 @@ export default function Facturacion() {
         />
       )}
 
-      {pendientesModalOpen && (
-        <PendientesModal
-          items={pendientesList}
-          totals={pendientesTotals}
+      {receivablesModalOpen && (
+        <ReceivablesModal
+          items={receivablesList}
+          totals={receivablesTotals}
           company={selectedCompany}
-          onClose={() => setPendientesModalOpen(false)}
-          onSelectDoc={(d) => { setPendientesModalOpen(false); setDetailDoc(d); }}
+          onClose={() => setReceivablesModalOpen(false)}
+          onSelectDoc={(d) => { setReceivablesModalOpen(false); setDetailDoc(d); }}
         />
       )}
 

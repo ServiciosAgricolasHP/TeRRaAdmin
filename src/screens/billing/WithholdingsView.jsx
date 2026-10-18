@@ -9,7 +9,7 @@ import { PaymentStatusSelect } from "./PaymentStatusSelect";
 // estado por si el usuario quiere revertir el "solo neto" a otro estado.
 // Cada grupo tiene su propia toolbar de export (📋📥🖨📊) para que se pueda
 // compartir el resumen de una sola contraparte sin armar uno general.
-export function RetencionesView({ groups, onSelectDoc, onSetStatus, onGroupExport, groupBusy = {}, groupKeyOf = (g) => g?.rut || "__sin_rut__" }) {
+export function WithholdingsView({ groups, onSelectDoc, onSetStatus, onGroupExport, groupBusy = {}, groupKeyOf = (g) => g?.rut || "__sin_rut__" }) {
   const isMobile = useIsMobile();
   const [expanded, setExpanded] = useState(() => new Set());
   const toggle = (rut) => {
