@@ -93,9 +93,9 @@ delicado (un respaldo, por ejemplo) solo se suma si esa regla está publicada**.
   calendario en https://cloud.google.com/run/docs/runtime-support.
 - **Versión de Functions**: **v2** (`firebase-functions/v2`).
 - **Un job nuevo** es una entrada más en el objeto `handlers` de `index.js`: una
-  función `async` que recibe el job y `{ jobId }`, y devuelve lo que va al campo
+  función `async` que recibe el job y `{ functionJobId }`, y devuelve lo que va al campo
   `result`. Si lanza, el job queda en `error` con el mensaje; si el error viene
-  de `jobError(code, message)`, queda además `errorCode`, que la app puede
+  de `functionJobError(code, message)`, queda además `errorCode`, que la app puede
   reconocer. No hay que tocar el trigger.
 - **Entrega al menos una vez**: Eventarc puede entregar el mismo evento dos
   veces. El job se reclama con una transacción antes de ejecutarse — eso es lo
@@ -268,7 +268,7 @@ const handlers = {
 ```
 
 Del lado del cliente, `src/services/functionJobsService.js` crea el job
-(`enqueueJob(type, params, user)`) y espera el resultado (`waitForJob(ref)`, que
+(`enqueueFunctionJob(type, params, user)`) y espera el resultado (`waitForFunctionJob(ref)`, que
 resuelve con `done`, `error` o `timeout`). `NewAccountModal` en
 `src/screens/Users.jsx` es el ejemplo completo, incluido un `errorCode` que pide
 confirmación antes de reintentar.

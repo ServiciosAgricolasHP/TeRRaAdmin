@@ -244,7 +244,7 @@ describe("auditoría (logs)", () => {
 
 describe("cola del backend (functionJobs)", () => {
   // Job con la forma que encola la Consola admin.
-  const job = (requestedBy, extra = {}) => ({
+  const functionJob = (requestedBy, extra = {}) => ({
     type: "ping",
     status: "pending",
     requestedBy,
@@ -255,15 +255,15 @@ describe("cola del backend (functionJobs)", () => {
 
   it("un admin encola a su nombre y en pending", async () => {
     const db = as("admin1");
-    await assertSucceeds(addDoc(collection(db, "functionJobs"), job("admin1")));
-    await assertFails(addDoc(collection(db, "functionJobs"), job("admin1", { status: "done" })));
-    await assertFails(addDoc(collection(db, "functionJobs"), job("sup1")));
+    await assertSucceeds(addDoc(collection(db, "functionJobs"), functionJob("admin1")));
+    await assertFails(addDoc(collection(db, "functionJobs"), functionJob("admin1", { status: "done" })));
+    await assertFails(addDoc(collection(db, "functionJobs"), functionJob("sup1")));
     await assertSucceeds(getDoc(doc(db, "functionJobs/j1")));
   });
 
   it("nadie más encola, lee ni toca un job", async () => {
-    await assertFails(addDoc(collection(as("sup1"), "functionJobs"), job("sup1")));
-    await assertFails(addDoc(collection(anon(), "functionJobs"), job(null)));
+    await assertFails(addDoc(collection(as("sup1"), "functionJobs"), functionJob("sup1")));
+    await assertFails(addDoc(collection(anon(), "functionJobs"), functionJob(null)));
     await assertFails(getDoc(doc(as("sup1"), "functionJobs/j1")));
     await assertFails(updateDoc(doc(as("admin1"), "functionJobs/j1"), { status: "pending" }));
   });

@@ -5,11 +5,11 @@ import { db } from "../firebase";
 // el job y el trigger de Cloud Functions lo ejecuta y escribe el resultado en
 // el mismo documento.
 
-const JOBS = "functionJobs";
+const FUNCTION_JOBS = "functionJobs";
 
 // Crea un job `pending` a nombre de `user` y devuelve su referencia.
-export function enqueueJob(type, params, user) {
-  return addDoc(collection(db, JOBS), {
+export function enqueueFunctionJob(type, params, user) {
+  return addDoc(collection(db, FUNCTION_JOBS), {
     type,
     status: "pending",
     requestedBy: user?.uid || null,
@@ -21,7 +21,7 @@ export function enqueueJob(type, params, user) {
 
 // Espera a que el job termine. Resuelve con `{ status, result, error, errorCode }`,
 // o con `{ status: "timeout" }` si pasan `timeoutMs` sin respuesta.
-export function waitForJob(ref, { timeoutMs = 45_000 } = {}) {
+export function waitForFunctionJob(ref, { timeoutMs = 45_000 } = {}) {
   return new Promise((resolve) => {
     let finished = false;
     let unsub = null;

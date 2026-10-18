@@ -99,7 +99,7 @@ arreglas uno, el test se cae y eso es la señal de actualizar los dos.
 - **Los secrets son obligatorios para el build de deploy**: las 6 `VITE_FIREBASE_*` viven en *Settings → Secrets and variables → Actions* del repo y se inyectan como `env` del paso de build. `.env` está gitignoreado, así que sin ellas el bundle sale con la config vacía y producción cae con `auth/invalid-api-key`.
 - **`fetch-depth: 0`** en el checkout del deploy: sin el historial completo, el conteo de commits de `vite.config.js` no encuentra su punto de partida y la versión del header queda pegada en `.0`.
 - **Cloud Functions quedan fuera del pipeline** — se deployan a mano (ver `functions/README.md`).
-  - **El backend no se invoca por HTTP: se le escribe un documento.** La app crea un job en `functionJobs` y un **trigger de Firestore v2** lo levanta, lo ejecuta y escribe el resultado en el mismo doc; la UI lo mira con un `onSnapshot`. Del lado de la app, `services/functionJobsService.js` crea el job (`enqueueJob`) y espera el resultado (`waitForJob`).
+  - **El backend no se invoca por HTTP: se le escribe un documento.** La app crea un job en `functionJobs` y un **trigger de Firestore v2** lo levanta, lo ejecuta y escribe el resultado en el mismo doc; la UI lo mira con un `onSnapshot`. Del lado de la app, `services/functionJobsService.js` crea el job (`enqueueFunctionJob`) y espera el resultado (`waitForFunctionJob`).
   - **No hay funciones callable.** *(a)* Una callable **v2** corre sobre Cloud Run y necesita un binding IAM `allUsers`, que la org policy del proyecto prohíbe: responde **403 con cuerpo HTML** antes de llegar al código. *(b)* Cloud Functions **v1** no existe en `southamerica-west1`, y esa región tampoco tiene App Engine, que gen1 necesita para el staging. *(c)* Un **trigger de Firestore v1** solo dispara sobre la base `(default)`, que en este proyecto no existe. Un trigger v2 lo invoca Eventarc con una service account, sin invoker público.
   - **Lo programado va con `onSchedule` (v2)**, que Cloud Scheduler invoca con una service account: tampoco necesita invoker público. Es el caso del aviso diario de Cheques y pagos (`commitmentsDaily`), en `us-central1` como el resto.
   - **Región `us-central1`, y no es negociable**: `hpdatabase` está en **`nam5`** (multi-región de EE.UU.) y un trigger de Firestore tiene que vivir en la ubicación de la base. Ver la nota de `nam5` en Arquitectura.
@@ -296,6 +296,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Resumen anual / Proyección (Facturación) | `annualSummary` / `projection` | |
 | Empresa | `company` | `companies` |
 | Cheques y pagos | `commitment` | `commitments` |
+| Tarea del backend (Cloud Functions) | `functionJob` | `functionJobs` |
 
 Los nombres guardados en Firestore se conservan aunque no calcen con la tabla (la colección `transportPayrolls`, el campo `payrollId` de un resumen, los campos en español de `dteDocuments`): el código los lee y escribe con su nombre guardado. La lista con el nombre propuesto para cada uno está en `docs/data-model.md` ("Nombres en español pendientes de migración"); un campo nuevo nace en inglés.
 

@@ -50,7 +50,7 @@ import { runCommitmentDigest } from "./commitments.js";
 
 const PROJECT = "demo-terra-test";
 const DATABASE = "hpdatabase";
-const JOBS = "functionJobs";
+const FUNCTION_JOBS = "functionJobs";
 const TIMEOUT_MS = 30_000;
 
 if (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_HOST) {
@@ -89,8 +89,8 @@ async function waitForResolution(ref, { timeout = TIMEOUT_MS } = {}) {
   }
 }
 
-async function enqueue(job) {
-  return db.collection(JOBS).add({ status: "pending", ...job });
+async function enqueue(functionJob) {
+  return db.collection(FUNCTION_JOBS).add({ status: "pending", ...functionJob });
 }
 
 console.log("ping");

@@ -242,7 +242,7 @@ export default function AdminConsole() {
 // `permission-denied` (las reglas no dejan crear el job), timeout (la función
 // no está desplegada o mira otra base) y job en `error` (la función corrió y
 // falló adentro).
-const JOBS_COLLECTION = "functionJobs";
+const FUNCTION_JOBS_COLLECTION = "functionJobs";
 
 function PingSection() {
   const { user } = useAuth();
@@ -274,7 +274,7 @@ function PingSection() {
 
     let ref;
     try {
-      ref = await addDoc(collection(db, JOBS_COLLECTION), {
+      ref = await addDoc(collection(db, FUNCTION_JOBS_COLLECTION), {
         type: "ping",
         status: "pending",
         requestedBy: user?.uid || null,
@@ -323,7 +323,7 @@ function PingSection() {
   return (
     <ConsoleCard id="ping-al-backend" title="🧪 Ping al backend">
       <p className="mb-3 text-xs text-[var(--color-muted)]">
-        Encola una tarea en <code>{JOBS_COLLECTION}</code> y espera la respuesta del
+        Encola una tarea en <code>{FUNCTION_JOBS_COLLECTION}</code> y espera la respuesta del
         backend. Es el mismo camino que usa el backup.
       </p>
       <button

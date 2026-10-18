@@ -29,7 +29,7 @@ import {
   saveCommitmentConfig,
   DEFAULT_COMMITMENT_CONFIG,
 } from "../services/commitmentsService";
-import { enqueueJob, waitForJob } from "../services/functionJobsService";
+import { enqueueFunctionJob, waitForFunctionJob } from "../services/functionJobsService";
 import {
   COMMITMENT_KINDS,
   kindMeta,
@@ -1720,8 +1720,8 @@ function ConfigModal({ onClose }) {
     setTesting(true);
     try {
       await persist();
-      const ref = await enqueueJob("sendCommitmentDigest", null, user);
-      const outcome = await waitForJob(ref, { timeoutMs: 60_000 });
+      const ref = await enqueueFunctionJob("sendCommitmentDigest", null, user);
+      const outcome = await waitForFunctionJob(ref, { timeoutMs: 60_000 });
       if (outcome.status === "done") {
         toast.success(`Correo de prueba enviado a ${(outcome.result?.recipients || []).join(", ")}`);
       } else if (outcome.status === "timeout") {

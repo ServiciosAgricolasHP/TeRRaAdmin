@@ -36,7 +36,7 @@ const WORKER_FIELDS = [
 
 function codeError(code, message) {
   const err = new Error(message);
-  err.jobCode = code;
+  err.functionJobCode = code;
   return err;
 }
 
@@ -123,7 +123,7 @@ async function inBatches(db, items, apply) {
 // Publica la nómina `payrollId`: escribe sus fichas, después la cabecera y al
 // final borra las fichas de quienes no están en ella. Mientras tanto, una
 // ficha vieja no se muestra porque su `payrollId` no calza con la cabecera.
-export async function publishPortal(db, { payrollId, requestedBy = null, requestedByEmail = null, jobId = null }) {
+export async function publishPortal(db, { payrollId, requestedBy = null, requestedByEmail = null, functionJobId = null }) {
   const payrollSnap = await db.collection(PAYROLLS).doc(payrollId).get();
   if (!payrollSnap.exists) throw codeError("not-found", "La nómina no existe.");
   const payroll = { id: payrollId, ...payrollSnap.data() };
@@ -154,7 +154,7 @@ export async function publishPortal(db, { payrollId, requestedBy = null, request
     changes: { payrollId: { from: previous?.payrollId || null, to: payrollId } },
     before: null,
     after: null,
-    meta: { jobId, payrollId, workerCount: payslips.size, removed: stale.length },
+    meta: { jobId: functionJobId, payrollId, workerCount: payslips.size, removed: stale.length },
     timestamp: FieldValue.serverTimestamp(),
   });
 

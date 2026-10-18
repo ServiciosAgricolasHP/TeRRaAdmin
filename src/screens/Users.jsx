@@ -3,7 +3,7 @@ import Modal, { ModalCloseButton } from "../components/Modal";
 import { hasChanges } from "../utils/formChanges";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { usersService } from "../services";
-import { enqueueJob, waitForJob } from "../services/functionJobsService";
+import { enqueueFunctionJob, waitForFunctionJob } from "../services/functionJobsService";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import { GREETING_FIELDS } from "../utils/greetings";
@@ -257,8 +257,8 @@ function NewAccountModal({ onClose, onCreated }) {
     setBusy(true);
     setError("");
     try {
-      const ref = await enqueueJob("createUser", { ...parsed.value, ...(useExisting ? { useExisting: true } : {}) }, user);
-      const outcome = await waitForJob(ref);
+      const ref = await enqueueFunctionJob("createUser", { ...parsed.value, ...(useExisting ? { useExisting: true } : {}) }, user);
+      const outcome = await waitForFunctionJob(ref);
 
       if (outcome.status === "done") {
         let resetSent = false;
