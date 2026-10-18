@@ -11,6 +11,29 @@ import { toBlob, toPng } from "html-to-image";
 // Las options pasan a html-to-image (backgroundColor, pixelRatio, cacheBust…).
 // Por defecto: fondo blanco y pixelRatio 2.
 
+// Paleta del tema claro, la de `:root` en src/index.css. Una imagen sale
+// siempre con estos colores, sea cual sea el tema de quien la copia: el clon
+// redefine las variables y todo lo que pinta con `var(--color-*)` las toma.
+// Si cambia el tema claro, cambia esta lista.
+export const LIGHT_PALETTE = {
+  "--color-bg": "#f7f8f7",
+  "--color-surface": "#ffffff",
+  "--color-surface-2": "#f1f3f1",
+  "--color-border": "#e2e6e3",
+  "--color-border-strong": "#cfd6d1",
+  "--color-text": "#0f1a14",
+  "--color-muted": "#5a6b60",
+  "--color-accent": "#15803d",
+  "--color-accent-hover": "#166534",
+  "--color-accent-soft": "#dcfce7",
+  "--color-accent-fg": "#ffffff",
+  "--color-danger": "#b91c1c",
+  "--color-danger-soft": "#fee2e2",
+  "--color-success": "#15803d",
+  "--color-warning": "#b45309",
+  "--color-warning-soft": "#fef3c7",
+};
+
 // Atributo de los controles que no van en una exportación (botones de filtrar,
 // toggles, cualquier cosa que solo sirve en pantalla). Se pone en el JSX
 // —también en la celda de encabezado de su columna, o la tabla queda
@@ -31,8 +54,12 @@ async function _captureExpanded(node, captureFn, options = {}) {
   const wrapper = document.createElement("div");
   wrapper.style.cssText =
     "position: fixed; left: -99999px; top: 0; pointer-events: none; background: #ffffff; z-index: -1;";
-  // Fondo explícito: el nodo original puede heredar el de un padre oscuro.
+  // Fondo y colores explícitos: el nodo original puede heredar los de un tema
+  // oscuro. El color del texto se fija aparte porque se hereda ya resuelto.
   clone.style.background = options.backgroundColor || "#ffffff";
+  for (const [name, value] of Object.entries(LIGHT_PALETTE)) clone.style.setProperty(name, value);
+  clone.style.color = LIGHT_PALETTE["--color-text"];
+  clone.style.colorScheme = "light";
   clone.style.maxWidth = "none";
   clone.style.width = "max-content";
   wrapper.appendChild(clone);
