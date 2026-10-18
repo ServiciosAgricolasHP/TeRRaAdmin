@@ -1,7 +1,7 @@
 import { tratoUnitLabel } from "../../../utils/cosechaCombos";
 import { dateLabel, fmtNumber, formatRowMetric, formatTotalsMetric } from "../../../utils/cycleSummary";
 import { fmtCurrency } from "../../../utils/format";
-import { cellH, cell, cobrarDateInputStyle, inputVal, cobrarInputStyle } from "./tableStyles";
+import { cellH, cell, chargeDateInputStyle, inputVal, chargeInputStyle } from "./tableStyles";
 
 export function LaborTable({
   laborId,
@@ -21,9 +21,9 @@ export function LaborTable({
   onAddRow,
   onRemoveRow,
 }) {
-  const isCobrar = mode === "cobrar";
-  const editable = isCobrar && editMode;
-  if (rows.length === 0 && !isCobrar) return null;
+  const isCharge = mode === "charge";
+  const editable = isCharge && editMode;
+  if (rows.length === 0 && !isCharge) return null;
   const showPiso = (totals.pisoAmount || 0) > 0;
   const isHE = laborType === "tratoHE";
   const showCol = (key) => !hiddenColumns.has(key);
@@ -31,17 +31,17 @@ export function LaborTable({
   // En cobrar las filas traen chargedQty, chargedOvertimeHours, chargedRate y
   // chargedAmount, con los overrides aplicados; en pagar se leen los campos de
   // la fila agregada.
-  const rowQty = (r) => isCobrar ? r.chargedQty : r.qty;
-  const rowHE = (r) => isCobrar ? r.chargedOvertimeHours : r.overtimeHours;
+  const rowQty = (r) => isCharge ? r.chargedQty : r.qty;
+  const rowHE = (r) => isCharge ? r.chargedOvertimeHours : r.overtimeHours;
   // Columna "Valor": en tratoHE, el Total HE (horas × tarifa HE de la labor);
   // en el resto, el precio por unidad.
   const rowHeTotal = (r) => (Number(rowHE(r)) || 0) * overtimeRate;
   const rowRate = (r) => {
     if (isHE) return rowHeTotal(r);
-    if (isCobrar) return r.chargedRate;
+    if (isCharge) return r.chargedRate;
     return r.qty > 0 ? Math.round(r.amount / r.qty) : 0;
   };
-  const rowValorTotal = (r) => isCobrar ? r.chargedAmount : r.amount;
+  const rowValorTotal = (r) => isCharge ? r.chargedAmount : r.amount;
 
   // En una tabla fusionada cada fila trae su labor de origen (`_laborId`,
   // `_laborType`, `_laborName`): las ediciones vuelven a esa labor.
@@ -125,8 +125,8 @@ export function LaborTable({
             const heHrs = rowHE(r);
             const rate = rowRate(r);
             const valorTotal = rowValorTotal(r);
-            const transport = isCobrar ? Number(r.chargedTransport) || 0 : 0;
-            const totalCol = isCobrar ? valorTotal + transport : valorTotal + piso;
+            const transport = isCharge ? Number(r.chargedTransport) || 0 : 0;
+            const totalCol = isCharge ? valorTotal + transport : valorTotal + piso;
             const dateIsRed = isHE && redDates && r.date && redDates.has(r.date);
             const dateCellStyle = dateIsRed ? { ...cell, color: "#c00", fontWeight: 700 } : cell;
             const rowKey = r._key || r.rowKey || r.date || `r${Math.random()}`;
@@ -148,7 +148,7 @@ export function LaborTable({
                       type="date"
                       value={r.date || ""}
                       onChange={(e) => handleDateChange(r, e.target.value)}
-                      style={cobrarDateInputStyle}
+                      style={chargeDateInputStyle}
                     />
                   ) : (
                     <>
@@ -186,7 +186,7 @@ export function LaborTable({
                             type="number"
                             value={inputVal(qty)}
                             onChange={(e) => handleField(r, "qty", e.target.value)}
-                            style={cobrarInputStyle}
+                            style={chargeInputStyle}
                           />
                         ) : (qty > 0 ? fmtCurrency(qty) : "")}
                       </td>
@@ -199,7 +199,7 @@ export function LaborTable({
                             step="0.25"
                             value={inputVal(heHrs)}
                             onChange={(e) => handleField(r, "overtimeHours", e.target.value)}
-                            style={cobrarInputStyle}
+                            style={chargeInputStyle}
                           />
                         ) : (heHrs > 0 ? fmtNumber(heHrs) : "")}
                       </td>
@@ -213,7 +213,7 @@ export function LaborTable({
                           type="number"
                           value={inputVal(qty)}
                           onChange={(e) => handleField(r, "qty", e.target.value)}
-                          style={cobrarInputStyle}
+                          style={chargeInputStyle}
                         />
                       ) : (
                         // Se pasa el qty resuelto (chargedQty en cobrar, qty en pagar)
@@ -232,7 +232,7 @@ export function LaborTable({
                         type="number"
                         value={inputVal(rate)}
                         onChange={(e) => handleField(r, "rate", e.target.value)}
-                        style={cobrarInputStyle}
+                        style={chargeInputStyle}
                       />
                     ) : (rate > 0 ? fmtCurrency(rate) : "")}
                   </td>
@@ -244,7 +244,7 @@ export function LaborTable({
                         type="number"
                         value={inputVal(valorTotal)}
                         onChange={(e) => handleField(r, "amount", e.target.value)}
-                        style={{ ...cobrarInputStyle, fontWeight: 600 }}
+                        style={{ ...chargeInputStyle, fontWeight: 600 }}
                         title="Reemplaza el cálculo cantidad × tarifa. Bórralo para volver al cálculo automático."
                       />
                     ) : fmtCurrency(valorTotal)}
@@ -262,7 +262,7 @@ export function LaborTable({
                         type="number"
                         value={inputVal(transport)}
                         onChange={(e) => handleField(r, "transport", e.target.value)}
-                        style={cobrarInputStyle}
+                        style={chargeInputStyle}
                         title="Monto de transporte del día — SUMA al Total de la fila y al total a cobrar"
                       />
                     ) : transport > 0 ? (
@@ -280,13 +280,13 @@ export function LaborTable({
                     {editable ? (
                       <input
                         type="number"
-                        value={inputVal(isCobrar ? r.chargedWorkerCount : r.workerCount)}
+                        value={inputVal(isCharge ? r.chargedWorkerCount : r.workerCount)}
                         onChange={(e) => handleField(r, "workerCount", e.target.value)}
-                        style={cobrarInputStyle}
+                        style={chargeInputStyle}
                         title="Cantidad de personas del día — informativo, no afecta montos"
                       />
                     ) : (() => {
-                      const wc = isCobrar ? Number(r.chargedWorkerCount) || 0 : Number(r.workerCount) || 0;
+                      const wc = isCharge ? Number(r.chargedWorkerCount) || 0 : Number(r.workerCount) || 0;
                       return wc > 0 ? wc : (r.isExtra ? "—" : 0);
                     })()}
                   </td>
@@ -358,7 +358,7 @@ export function LaborTable({
             ) : (
               showCol("qty") && (
                 <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                  {isCobrar
+                  {isCharge
                     ? (totals.qty == null
                         // Tabla fusionada con medidas distintas: no se suman.
                         ? ""
@@ -385,12 +385,12 @@ export function LaborTable({
             )}
             {showCol("transport") && (
               <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                {isCobrar && (totals.transport || 0) > 0 ? fmtCurrency(totals.transport) : ""}
+                {isCharge && (totals.transport || 0) > 0 ? fmtCurrency(totals.transport) : ""}
               </td>
             )}
             {showCol("total") && (
               <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                {fmtCurrency(isCobrar ? totals.amount + (totals.transport || 0) : totals.amount + (totals.pisoAmount || 0))}
+                {fmtCurrency(isCharge ? totals.amount + (totals.transport || 0) : totals.amount + (totals.pisoAmount || 0))}
               </td>
             )}
             {showCol("personas") && (

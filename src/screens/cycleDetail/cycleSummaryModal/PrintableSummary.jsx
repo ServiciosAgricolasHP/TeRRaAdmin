@@ -1,11 +1,11 @@
 import { forwardRef } from "react";
 import { getDaySingle } from "../../../utils/cosechaCombos";
 import { isRedDay } from "../../../utils/tratoHE";
-import { buildCobrarSections, mergedRows, mergedTotals } from "../../../utils/cobrarMerge";
+import { buildChargeSections, mergedRows, mergedTotals } from "../../../utils/chargeMerge";
 import { fmtCurrency } from "../../../utils/format";
 import { DayNotesTable } from "./DayNotesTable";
 import { LaborTable } from "./LaborTable";
-import { cell, cobrarDateInputStyle, cobrarInputStyle } from "./tableStyles";
+import { cell, chargeDateInputStyle, chargeInputStyle } from "./tableStyles";
 import { TransportTable } from "./TransportTable";
 
 const LOGO_URL = `${import.meta.env.BASE_URL}logo.png`;
@@ -57,12 +57,12 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
       </div>
 
       {/* Tablas día a día por labor. En cobrar, las labores fusionadas
-          (`mergeInto`) van dentro de la tabla de su destino (utils/cobrarMerge.js). */}
-      {(mode === "cobrar"
-        ? buildCobrarSections(labors)
+          (`mergeInto`) van dentro de la tabla de su destino (utils/chargeMerge.js). */}
+      {(mode === "charge"
+        ? buildChargeSections(labors)
         : labors.map((ld) => ({ lead: ld, members: [ld] }))
       ).map(({ lead: ld, members }) => {
-        if (mode === "cobrar" && ld.include === false) return null;
+        if (mode === "charge" && ld.include === false) return null;
         const nameOf = (m) => titles.laborNames?.[m.labor.id] || m.labor.name;
         const merged = members.length > 1;
         const displayName = merged ? members.map(nameOf).join(" + ") : nameOf(ld);
@@ -78,7 +78,7 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
               for (const d of m.importedFrom.redDates) redDates.add(d);
               continue;
             }
-            const sourceRows = mode === "cobrar" ? (m.chargedRows || m.rows) : m.rows;
+            const sourceRows = mode === "charge" ? (m.chargedRows || m.rows) : m.rows;
             for (const r of sourceRows) {
               if (!r.date) continue;
               const cfg = getDaySingle(dayPrices, m.labor.id, r.date, "normal");
@@ -89,10 +89,10 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
         // En cobrar, chargedRows (con overrides y filas extra) y chargedTotals.
         const tableRows = merged
           ? mergedRows(members, nameOf)
-          : mode === "cobrar" ? (ld.chargedRows || ld.rows) : ld.rows;
+          : mode === "charge" ? (ld.chargedRows || ld.rows) : ld.rows;
         const tableTotals = merged
           ? mergedTotals(members)
-          : mode === "cobrar" ? (ld.chargedTotals || ld.totals) : ld.totals;
+          : mode === "charge" ? (ld.chargedTotals || ld.totals) : ld.totals;
         return (
           <LaborTable
             key={ld.labor.id}
@@ -106,7 +106,7 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
             mode={mode}
             editMode={editMode}
             hiddenColumns={hiddenColumns}
-            chargeRate={mode === "cobrar" ? ld.rate : null}
+            chargeRate={mode === "charge" ? ld.rate : null}
             catalogs={catalogs}
             redDates={redDates}
             onEditRow={editLaborRow}
@@ -118,13 +118,13 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
 
       {/* Tablas de transporte (una por transportista) */}
       {carriers.map((tg) => {
-        if (mode === "cobrar" && tg.include === false) return null;
+        if (mode === "charge" && tg.include === false) return null;
         const c = carrierById.get(tg.carrierId);
         const fallbackName = c?.alias || c?.name || "(transportista eliminado)";
         const displayName = titles.carrierNames?.[tg.carrierId] || fallbackName;
-        const tableRows = mode === "cobrar" ? (tg.chargedRows || tg.rows) : tg.rows;
-        const totalCount = mode === "cobrar" ? (tg.chargedTotalCount ?? tg.totalCount) : tg.totalCount;
-        const totalAmount = mode === "cobrar" ? (tg.chargedTotalAmount ?? tg.totalAmount) : tg.totalAmount;
+        const tableRows = mode === "charge" ? (tg.chargedRows || tg.rows) : tg.rows;
+        const totalCount = mode === "charge" ? (tg.chargedTotalCount ?? tg.totalCount) : tg.totalCount;
+        const totalAmount = mode === "charge" ? (tg.chargedTotalAmount ?? tg.totalAmount) : tg.totalAmount;
         return (
           <TransportTable
             key={tg.carrierId}
@@ -136,7 +136,7 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
             mode={mode}
             editMode={editMode}
             hiddenColumns={hiddenColumns}
-            chargeRate={mode === "cobrar" ? tg.rate : null}
+            chargeRate={mode === "charge" ? tg.rate : null}
             onEditRow={editCarrierRow}
             onAddRow={addCarrierRow}
             onRemoveRow={removeCarrierRow}
@@ -150,7 +150,7 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
         <tbody>
           {/* Subtotal antes del descuento: en cobrar, con descuento o saldo
               pendiente, o en edición. */}
-          {mode === "cobrar" && (discount > 0 || pendingBalance > 0 || editMode) && subtotal != null && (
+          {mode === "charge" && (discount > 0 || pendingBalance > 0 || editMode) && subtotal != null && (
             <tr style={{ background: "#fff" }}>
               <td style={{ ...cell, fontWeight: 600 }}>Subtotal</td>
               <td style={{ ...cell, textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
@@ -161,7 +161,7 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
           {/* Descuento — visible cuando hay valor o cuando se está editando.
               En editMode pone inputs (monto + motivo). Fuera de editMode lo
               muestra como texto con signo negativo. */}
-          {mode === "cobrar" && (discount > 0 || editMode) && (
+          {mode === "charge" && (discount > 0 || editMode) && (
             <tr style={{ background: "#fffbeb" }}>
               <td style={{ ...cell, fontWeight: 600 }}>
                 Descuento
@@ -171,7 +171,7 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
                     placeholder="motivo (opcional)"
                     value={discountNote || ""}
                     onChange={(e) => onChangeDiscount && onChangeDiscount({ note: e.target.value })}
-                    style={{ ...cobrarDateInputStyle, marginLeft: 8, width: 220 }}
+                    style={{ ...chargeDateInputStyle, marginLeft: 8, width: 220 }}
                   />
                 ) : (
                   discountNote ? <span style={{ marginLeft: 8, fontWeight: 400, color: "#666" }}>· {discountNote}</span> : null
@@ -184,7 +184,7 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
                     value={discount > 0 ? discount : ""}
                     placeholder="0"
                     onChange={(e) => onChangeDiscount && onChangeDiscount({ amount: e.target.value })}
-                    style={{ ...cobrarInputStyle, width: 120 }}
+                    style={{ ...chargeInputStyle, width: 120 }}
                   />
                 ) : (
                   `− ${fmtCurrency(discount)}`
@@ -194,7 +194,7 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
           )}
           <tr style={{ background: "#a9d08e" }}>
             <td style={{ ...cell, fontWeight: 700, fontSize: 14 }}>
-              {mode === "cobrar"
+              {mode === "charge"
                 ? (withIva ? "TOTAL A FACTURAR" : "TOTAL A COBRAR (sin IVA)")
                 : "TOTAL GENERAL"}
             </td>
@@ -202,7 +202,7 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
               {fmtCurrency(grandTotal)}
             </td>
           </tr>
-          {mode === "cobrar" && withIva && (
+          {mode === "charge" && withIva && (
             <>
               <tr style={{ background: "#fff" }}>
                 <td style={{ ...cell, fontWeight: 600 }}>Valor IVA (19%)</td>
@@ -220,7 +220,7 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
           )}
           {/* Saldo pendiente — se aplica DESPUÉS del IVA, así que sale debajo
               del "IVA incluido" (o del total neto si no hay IVA). */}
-          {mode === "cobrar" && (pendingBalance > 0 || editMode) && (() => {
+          {mode === "charge" && (pendingBalance > 0 || editMode) && (() => {
             const postIvaTotal = withIva
               ? Math.round((Number(grandTotal) || 0) * 1.19)
               : (Number(grandTotal) || 0);
@@ -236,7 +236,7 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
                         placeholder="motivo (opcional)"
                         value={pendingBalanceNote || ""}
                         onChange={(e) => onChangePendingBalance && onChangePendingBalance({ note: e.target.value })}
-                        style={{ ...cobrarDateInputStyle, marginLeft: 8, width: 220 }}
+                        style={{ ...chargeDateInputStyle, marginLeft: 8, width: 220 }}
                       />
                     ) : (
                       pendingBalanceNote ? <span style={{ marginLeft: 8, fontWeight: 400, color: "#666" }}>· {pendingBalanceNote}</span> : null
@@ -249,7 +249,7 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
                         value={pendingBalance > 0 ? pendingBalance : ""}
                         placeholder="0"
                         onChange={(e) => onChangePendingBalance && onChangePendingBalance({ amount: e.target.value })}
-                        style={{ ...cobrarInputStyle, width: 120 }}
+                        style={{ ...chargeInputStyle, width: 120 }}
                       />
                     ) : (
                       `+ ${fmtCurrency(pendingBalance)}`
@@ -273,7 +273,7 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
       {/* Observaciones por día — anexo, después del total: es contexto de la
           jornada, no parte del cálculo. Solo en pagar: son apuntes internos y
           el resumen de cobrar es el que se manda al cliente. */}
-      {mode === "pagar" && dayNotes.length > 0 && (
+      {mode === "pay" && dayNotes.length > 0 && (
         <DayNotesTable notes={dayNotes} showLaborNames={labors.length > 1} />
       )}
     </div>

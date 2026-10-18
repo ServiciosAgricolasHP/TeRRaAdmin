@@ -29,7 +29,7 @@ import {
   dateLabel,
 } from "../../utils/cycleSummary";
 import { fmtCurrency } from "../../utils/format";
-import { CobrarEditor } from "./cycleSummaryModal/CobrarEditor";
+import { ChargeEditor } from "./cycleSummaryModal/ChargeEditor";
 import { ColumnsMenu } from "./cycleSummaryModal/ColumnsMenu";
 import { EditingWatermark } from "./cycleSummaryModal/EditingWatermark";
 import { ImportCyclesModal } from "./cycleSummaryModal/ImportCyclesModal";
@@ -157,7 +157,7 @@ function buildExpandedRows(labor, wdMap, dayPrices = {}) {
 // migración cuando el ciclo no tiene doc en Firestore.
 // ============================================================
 
-const cobrarStorageKey = (cycleId) => `cobrar_${cycleId}`;
+const chargeStorageKey = (cycleId) => `cobrar_${cycleId}`;
 
 const titlesStorageKey = (cycleId) => `summary_titles_${cycleId}`;
 
@@ -189,14 +189,14 @@ export default function CycleSummaryModal({
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState("");
-  const [mode, setMode] = useState("pagar"); // pagar | cobrar
+  const [mode, setMode] = useState("pay"); // pay | charge
   // `withIva` (true por defecto) decide si el imprimible y el XLSX de cobrar
   // muestran las filas de IVA 19%. Se guarda por ciclo: hay cobros sin IVA
   // (servicios exentos, boletas, acuerdos netos).
-  const [cobrar, setCobrar] = useState({ labors: {}, carriers: {}, withIva: true, discount: 0, discountNote: "", pendingBalance: 0, pendingBalanceNote: "" });
+  const [charge, setCharge] = useState({ labors: {}, carriers: {}, withIva: true, discount: 0, discountNote: "", pendingBalance: 0, pendingBalanceNote: "" });
   const [titles, setTitles] = useState({ main: "DETALLE DE JORNADA", subtitle: "", laborNames: {}, carrierNames: {} });
   const [showTitleEditor, setShowTitleEditor] = useState(false);
-  const [showCobrarEditor, setShowCobrarEditor] = useState(true);
+  const [showChargeEditor, setShowChargeEditor] = useState(true);
   // Candado de edición del modo cobrar. En false oculta los inputs, los
   // botones + y ✕ y los paneles de edición, y deja el resumen listo para
   // copiar, imprimir o exportar. Arranca bloqueado.
@@ -239,7 +239,7 @@ export default function CycleSummaryModal({
     hydratedRef.current = false;
     let cancelled = false;
     // Valores por defecto para los campos que un resumen guardado no traiga.
-    const cobrarDefaults = { labors: {}, carriers: {}, importedLabors: [], withIva: true, discount: 0, discountNote: "", pendingBalance: 0, pendingBalanceNote: "" };
+    const chargeDefaults = { labors: {}, carriers: {}, importedLabors: [], withIva: true, discount: 0, discountNote: "", pendingBalance: 0, pendingBalanceNote: "" };
     const titlesDefaults = {
       main: "DETALLE DE JORNADA",
       subtitle: [faena?.name, subfaena?.name, cycle.label].filter(Boolean).join(" · "),
@@ -259,22 +259,22 @@ export default function CycleSummaryModal({
         ]);
         if (cancelled) return;
         setTrips(list);
-        const localCobrar = loadJSON(cobrarStorageKey(cycleId), null);
+        const localCharge = loadJSON(chargeStorageKey(cycleId), null);
         const localTitles = loadJSON(titlesStorageKey(cycleId), null);
-        const nextCobrar = { ...cobrarDefaults, ...(remote?.cobrar || localCobrar || {}) };
+        const nextCharge = { ...chargeDefaults, ...(remote?.cobrar || localCharge || {}) };
         const nextTitles = { ...titlesDefaults, ...(remote?.titles || localTitles || {}) };
-        setCobrar(nextCobrar);
+        setCharge(nextCharge);
         setTitles(nextTitles);
-        lastSavedRef.current = { cobrar: JSON.stringify(nextCobrar), titles: JSON.stringify(nextTitles) };
+        lastSavedRef.current = { cobrar: JSON.stringify(nextCharge), titles: JSON.stringify(nextTitles) };
         lastTotalsRef.current = cycle.summaryTotals
           ? { pagar: Number(cycle.summaryTotals.pagar) || 0, cobrar: Number(cycle.summaryTotals.cobrar) || 0 }
           : null;
         setSummaryMeta(remote?.updatedAt ? { email: remote.updatedByEmail, at: remote.updatedAt.toDate?.() || null } : null);
         // Migración: si el ciclo no tiene doc en Firestore pero sí copia local,
         // la sube tal cual, sin avisar.
-        if (!remote && (localCobrar || localTitles)) {
+        if (!remote && (localCharge || localTitles)) {
           cycleSummariesService
-            .save(cycleId, { cobrar: nextCobrar, titles: nextTitles })
+            .save(cycleId, { cobrar: nextCharge, titles: nextTitles })
             .catch((err) => console.error("[resumen] migración:", err));
         }
       } catch (err) {
@@ -297,12 +297,12 @@ export default function CycleSummaryModal({
   // por tecla. localStorage se escribe en cada cambio (ver `saveJSON`).
   useEffect(() => {
     if (!open || !cycleId || !hydratedRef.current) return;
-    const serialized = JSON.stringify(cobrar);
+    const serialized = JSON.stringify(charge);
     if (serialized === lastSavedRef.current.cobrar) return;
     const t = setTimeout(() => {
       lastSavedRef.current.cobrar = serialized;
       cycleSummariesService
-        .save(cycleId, { cobrar })
+        .save(cycleId, { cobrar: charge })
         .then(() => setSummaryMeta({ email: user?.email || null, at: new Date() }))
         .catch((err) => {
           // Así el próximo cambio, o el guardado al cerrar, reintenta en vez
@@ -314,7 +314,7 @@ export default function CycleSummaryModal({
     }, 600);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cobrar, open, cycleId]);
+  }, [charge, open, cycleId]);
 
   useEffect(() => {
     if (!open || !cycleId || !hydratedRef.current) return;
@@ -357,10 +357,10 @@ export default function CycleSummaryModal({
     });
   };
 
-  const setCobrarWithIva = (next) => {
-    setCobrar((prev) => {
+  const setChargeWithVat = (next) => {
+    setCharge((prev) => {
       const n = { ...prev, withIva: !!next };
-      saveJSON(cobrarStorageKey(cycle?.id), n);
+      saveJSON(chargeStorageKey(cycle?.id), n);
       return n;
     });
   };
@@ -368,39 +368,39 @@ export default function CycleSummaryModal({
   // Descuento global sobre el neto del cobro (antes del IVA, si está activo).
   // `patch` puede traer `amount` (number) y/o `note` (string). Se guarda con el
   // resto del estado de cobrar del ciclo.
-  const setCobrarDiscount = (patch) => {
-    setCobrar((prev) => {
+  const setChargeDiscount = (patch) => {
+    setCharge((prev) => {
       const n = { ...prev };
       if (patch.amount !== undefined) n.discount = Math.max(0, Number(patch.amount) || 0);
       if (patch.note !== undefined) n.discountNote = String(patch.note || "");
-      saveJSON(cobrarStorageKey(cycle?.id), n);
+      saveJSON(chargeStorageKey(cycle?.id), n);
       return n;
     });
   };
 
   // Saldo pendiente global: se suma al total del cobro después del IVA. Igual
   // que en el descuento, `patch` puede traer `amount` y/o `note`.
-  const setCobrarPendingBalance = (patch) => {
-    setCobrar((prev) => {
+  const setChargePendingBalance = (patch) => {
+    setCharge((prev) => {
       const n = { ...prev };
       if (patch.amount !== undefined) n.pendingBalance = Math.max(0, Number(patch.amount) || 0);
       if (patch.note !== undefined) n.pendingBalanceNote = String(patch.note || "");
-      saveJSON(cobrarStorageKey(cycle?.id), n);
+      saveJSON(chargeStorageKey(cycle?.id), n);
       return n;
     });
   };
 
-  const updateCobrarLabor = (laborId, patch) => {
-    setCobrar((prev) => {
+  const updateChargeLabor = (laborId, patch) => {
+    setCharge((prev) => {
       const next = { ...prev, labors: { ...prev.labors, [laborId]: { ...prev.labors[laborId], ...patch } } };
-      saveJSON(cobrarStorageKey(cycle?.id), next);
+      saveJSON(chargeStorageKey(cycle?.id), next);
       return next;
     });
   };
-  const updateCobrarCarrier = (carrierId, patch) => {
-    setCobrar((prev) => {
+  const updateChargeCarrier = (carrierId, patch) => {
+    setCharge((prev) => {
       const next = { ...prev, carriers: { ...prev.carriers, [carrierId]: { ...prev.carriers[carrierId], ...patch } } };
-      saveJSON(cobrarStorageKey(cycle?.id), next);
+      saveJSON(chargeStorageKey(cycle?.id), next);
       return next;
     });
   };
@@ -410,8 +410,8 @@ export default function CycleSummaryModal({
   // y tratoEtapas. El patch puede traer qty, overtimeHours, rate, amount,
   // transport o workerCount, todos opcionales; los que faltan toman el valor
   // base. Las filas extra se editan en `extraRows`.
-  const updateCobrarLaborRow = (laborId, rowKey, patch) => {
-    setCobrar((prev) => {
+  const updateChargeLaborRow = (laborId, rowKey, patch) => {
+    setCharge((prev) => {
       const labor = prev.labors[laborId] || {};
       const rowOverrides = { ...(labor.rowOverrides || {}) };
       const existing = rowOverrides[rowKey] || {};
@@ -421,12 +421,12 @@ export default function CycleSummaryModal({
       if (allEmpty) delete rowOverrides[rowKey];
       else rowOverrides[rowKey] = merged;
       const next = { ...prev, labors: { ...prev.labors, [laborId]: { ...labor, rowOverrides } } };
-      saveJSON(cobrarStorageKey(cycle?.id), next);
+      saveJSON(chargeStorageKey(cycle?.id), next);
       return next;
     });
   };
-  const addCobrarLaborExtraRow = (laborId) => {
-    setCobrar((prev) => {
+  const addChargeLaborExtraRow = (laborId) => {
+    setCharge((prev) => {
       const labor = prev.labors[laborId] || {};
       const extraRows = [...(labor.extraRows || [])];
       const id = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `x${Date.now()}${Math.random()}`;
@@ -434,31 +434,31 @@ export default function CycleSummaryModal({
       // calcule (qty × rate) al tipear.
       extraRows.push({ id, date: "", qty: "", overtimeHours: "", rate: "", amount: "" });
       const next = { ...prev, labors: { ...prev.labors, [laborId]: { ...labor, extraRows } } };
-      saveJSON(cobrarStorageKey(cycle?.id), next);
+      saveJSON(chargeStorageKey(cycle?.id), next);
       return next;
     });
   };
-  const updateCobrarLaborExtraRow = (laborId, id, patch) => {
-    setCobrar((prev) => {
+  const updateChargeLaborExtraRow = (laborId, id, patch) => {
+    setCharge((prev) => {
       const labor = prev.labors[laborId] || {};
       const extraRows = (labor.extraRows || []).map((r) => (r.id === id ? { ...r, ...patch } : r));
       const next = { ...prev, labors: { ...prev.labors, [laborId]: { ...labor, extraRows } } };
-      saveJSON(cobrarStorageKey(cycle?.id), next);
+      saveJSON(chargeStorageKey(cycle?.id), next);
       return next;
     });
   };
-  const removeCobrarLaborExtraRow = (laborId, id) => {
-    setCobrar((prev) => {
+  const removeChargeLaborExtraRow = (laborId, id) => {
+    setCharge((prev) => {
       const labor = prev.labors[laborId] || {};
       const extraRows = (labor.extraRows || []).filter((r) => r.id !== id);
       const next = { ...prev, labors: { ...prev.labors, [laborId]: { ...labor, extraRows } } };
-      saveJSON(cobrarStorageKey(cycle?.id), next);
+      saveJSON(chargeStorageKey(cycle?.id), next);
       return next;
     });
   };
   // Mismo modelo para transportistas.
-  const updateCobrarCarrierRow = (carrierId, rowKey, patch) => {
-    setCobrar((prev) => {
+  const updateChargeCarrierRow = (carrierId, rowKey, patch) => {
+    setCharge((prev) => {
       const carrier = prev.carriers[carrierId] || {};
       const rowOverrides = { ...(carrier.rowOverrides || {}) };
       const existing = rowOverrides[rowKey] || {};
@@ -467,37 +467,37 @@ export default function CycleSummaryModal({
       if (allEmpty) delete rowOverrides[rowKey];
       else rowOverrides[rowKey] = merged;
       const next = { ...prev, carriers: { ...prev.carriers, [carrierId]: { ...carrier, rowOverrides } } };
-      saveJSON(cobrarStorageKey(cycle?.id), next);
+      saveJSON(chargeStorageKey(cycle?.id), next);
       return next;
     });
   };
-  const addCobrarCarrierExtraRow = (carrierId) => {
-    setCobrar((prev) => {
+  const addChargeCarrierExtraRow = (carrierId) => {
+    setCharge((prev) => {
       const carrier = prev.carriers[carrierId] || {};
       const extraRows = [...(carrier.extraRows || [])];
       const id = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : `x${Date.now()}${Math.random()}`;
       // Campos vacíos, igual que en addCobrarLaborExtraRow.
       extraRows.push({ id, date: "", count: "", rate: "", amount: "" });
       const next = { ...prev, carriers: { ...prev.carriers, [carrierId]: { ...carrier, extraRows } } };
-      saveJSON(cobrarStorageKey(cycle?.id), next);
+      saveJSON(chargeStorageKey(cycle?.id), next);
       return next;
     });
   };
-  const updateCobrarCarrierExtraRow = (carrierId, id, patch) => {
-    setCobrar((prev) => {
+  const updateChargeCarrierExtraRow = (carrierId, id, patch) => {
+    setCharge((prev) => {
       const carrier = prev.carriers[carrierId] || {};
       const extraRows = (carrier.extraRows || []).map((r) => (r.id === id ? { ...r, ...patch } : r));
       const next = { ...prev, carriers: { ...prev.carriers, [carrierId]: { ...carrier, extraRows } } };
-      saveJSON(cobrarStorageKey(cycle?.id), next);
+      saveJSON(chargeStorageKey(cycle?.id), next);
       return next;
     });
   };
-  const removeCobrarCarrierExtraRow = (carrierId, id) => {
-    setCobrar((prev) => {
+  const removeChargeCarrierExtraRow = (carrierId, id) => {
+    setCharge((prev) => {
       const carrier = prev.carriers[carrierId] || {};
       const extraRows = (carrier.extraRows || []).filter((r) => r.id !== id);
       const next = { ...prev, carriers: { ...prev.carriers, [carrierId]: { ...carrier, extraRows } } };
-      saveJSON(cobrarStorageKey(cycle?.id), next);
+      saveJSON(chargeStorageKey(cycle?.id), next);
       return next;
     });
   };
@@ -512,16 +512,16 @@ export default function CycleSummaryModal({
   // deshabilitadas.
   const importedSources = useMemo(() => {
     const set = new Set();
-    for (const imp of cobrar.importedLabors || []) {
+    for (const imp of charge.importedLabors || []) {
       set.add(`${imp.sourceCycleId}|${imp.sourceLaborId}`);
     }
-    for (const laborCfg of Object.values(cobrar.labors || {})) {
+    for (const laborCfg of Object.values(charge.labors || {})) {
       for (const er of laborCfg?.extraRows || []) {
         if (er.sourceCycleId) set.add(`${er.sourceCycleId}|${er.sourceLaborId || "*"}`);
       }
     }
     return set;
-  }, [cobrar.labors, cobrar.importedLabors]);
+  }, [charge.labors, charge.importedLabors]);
   const isLaborImported = (cycleId, laborId) =>
     importedSources.has(`${cycleId}|${laborId}`) || importedSources.has(`${cycleId}|*`);
   const importedCycleIds = useMemo(
@@ -661,9 +661,9 @@ export default function CycleSummaryModal({
     }
     setImportPlan(null);
     if (newLabors.length === 0) return;
-    setCobrar((prev) => {
+    setCharge((prev) => {
       const next = { ...prev, importedLabors: [...(prev.importedLabors || []), ...newLabors] };
-      saveJSON(cobrarStorageKey(cycle?.id), next);
+      saveJSON(chargeStorageKey(cycle?.id), next);
       return next;
     });
     const days = newLabors.reduce((s, l) => s + l.rows.length, 0);
@@ -676,7 +676,7 @@ export default function CycleSummaryModal({
   // Quita una labor importada del resumen, con sus tarifas y ajustes. Las
   // labores que estaban juntas con ella vuelven a su tabla propia.
   const removeImportedLabor = (id) => {
-    setCobrar((prev) => {
+    setCharge((prev) => {
       const labors = {};
       for (const [k, v] of Object.entries(prev.labors || {})) {
         if (k === id) continue;
@@ -687,7 +687,7 @@ export default function CycleSummaryModal({
         labors,
         importedLabors: (prev.importedLabors || []).filter((l) => l.id !== id),
       };
-      saveJSON(cobrarStorageKey(cycle?.id), next);
+      saveJSON(chargeStorageKey(cycle?.id), next);
       return next;
     });
   };
@@ -705,23 +705,23 @@ export default function CycleSummaryModal({
   // guarda en `cobrar.hiddenColumns: string[]`, con las claves de columna de
   // LaborTable y TransportTable.
   const toggleColumn = (key) => {
-    setCobrar((prev) => {
+    setCharge((prev) => {
       const set = new Set(prev.hiddenColumns || []);
       if (set.has(key)) set.delete(key);
       else set.add(key);
       const next = { ...prev, hiddenColumns: [...set] };
-      saveJSON(cobrarStorageKey(cycle?.id), next);
+      saveJSON(chargeStorageKey(cycle?.id), next);
       return next;
     });
   };
   const resetColumns = () => {
-    setCobrar((prev) => {
+    setCharge((prev) => {
       const next = { ...prev, hiddenColumns: [] };
-      saveJSON(cobrarStorageKey(cycle?.id), next);
+      saveJSON(chargeStorageKey(cycle?.id), next);
       return next;
     });
   };
-  const hiddenColumns = useMemo(() => new Set(cobrar.hiddenColumns || []), [cobrar.hiddenColumns]);
+  const hiddenColumns = useMemo(() => new Set(charge.hiddenColumns || []), [charge.hiddenColumns]);
 
   // ============================================================
   // Datos por labor
@@ -754,7 +754,7 @@ export default function CycleSummaryModal({
   // diarias— que se dibuja con su propio tipo de tabla y suma al total, como
   // cualquier labor del ciclo. Su id es propio, así sus tarifas, ajustes y
   // `mergeInto` viven en `cobrar.labors[id]` igual que los de las demás.
-  const importedLaborsData = useMemo(() => (cobrar.importedLabors || []).map((imp) => {
+  const importedLaborsData = useMemo(() => (charge.importedLabors || []).map((imp) => {
     const rows = imp.rows || [];
     const containers = new Set(imp.containers || []);
     const tratoUnitsSet = imp.labor?.type === "trato"
@@ -772,7 +772,7 @@ export default function CycleSummaryModal({
         redDates: imp.redDates || [],
       },
     };
-  }), [cobrar.importedLabors, catalogs]);
+  }), [charge.importedLabors, catalogs]);
 
   // Grilla trabajador × día por labor (segunda sección imprimible). Cada
   // labor tiene sus propios botones de copiar e imprimir.
@@ -807,7 +807,7 @@ export default function CycleSummaryModal({
 
   const carrierById = useMemo(() => new Map(carriers.map((c) => [c.id, c])), [carriers]);
 
-  const grandTotalPagar = useMemo(() => {
+  const grandTotalPay = useMemo(() => {
     let sum = 0;
     for (const ld of laborsData) sum += ld.totals.amount + (ld.totals.pisoAmount || 0);
     for (const tg of transportData) sum += tg.totalAmount;
@@ -822,9 +822,9 @@ export default function CycleSummaryModal({
   // atípico (una jornada mensual, por ejemplo) no la corra. El promedio
   // (`meanRate`) se muestra como referencia en el editor de tarifas cuando
   // difiere más de un 10%.
-  const cobrarLabors = useMemo(() => {
+  const chargeLabors = useMemo(() => {
     return [...laborsData, ...importedLaborsData].map((ld) => {
-      const cfg = cobrar.labors[ld.labor.id] || {};
+      const cfg = charge.labors[ld.labor.id] || {};
       const include = cfg.include !== false;
       const meanRate = ld.totals.qty > 0 ? Math.round(ld.totals.amount / ld.totals.qty) : 0;
       const perDayRates = (ld.rows || [])
@@ -1003,11 +1003,11 @@ export default function CycleSummaryModal({
         mergeInto: cfg.mergeInto || null,
       };
     });
-  }, [laborsData, importedLaborsData, cobrar.labors, catalogs]);
+  }, [laborsData, importedLaborsData, charge.labors, catalogs]);
 
-  const cobrarCarriers = useMemo(() => {
+  const chargeCarriers = useMemo(() => {
     return transportData.map((tg) => {
-      const cfg = cobrar.carriers[tg.carrierId] || {};
+      const cfg = charge.carriers[tg.carrierId] || {};
       const include = cfg.include !== false;
       const defaultRate = tg.totalCount > 0 ? Math.round(tg.totalAmount / tg.totalCount) : 0;
       const rate = cfg.chargeRate != null ? Number(cfg.chargeRate) : defaultRate;
@@ -1062,7 +1062,7 @@ export default function CycleSummaryModal({
       }
       return { ...tg, include, rate, defaultRate, chargedRows, chargedTotalAmount, chargedTotalCount };
     });
-  }, [transportData, cobrar.carriers]);
+  }, [transportData, charge.carriers]);
 
   // Observaciones por día: las notas de cycle.dayNotesByLabor[laborId][date]
   // y, para las labores sin nota propia ese día, la compartida de
@@ -1072,7 +1072,7 @@ export default function CycleSummaryModal({
   // Solo en pagar: son apuntes internos, y el resumen de cobrar es el que se
   // manda al cliente.
   const dayNotesSummary = useMemo(() => {
-    if (mode !== "pagar") return [];
+    if (mode !== "pay") return [];
     const byLabor = cycle?.dayNotesByLabor || {};
     const legacy = cycle?.dayNotes || {};
     const byDate = new Map();
@@ -1104,20 +1104,20 @@ export default function CycleSummaryModal({
 
   // Subtotal del cobro: labores y transportistas incluidos, sin descuento. Es
   // la fila "Subtotal" del desglose.
-  const subtotalCobrar = useMemo(() => {
+  const subtotalCharge = useMemo(() => {
     let sum = 0;
     // El transporte manual por fila (chargedTotals.transport) suma al cobro
     // junto con la producción de la labor.
-    for (const cl of cobrarLabors) if (cl.include) sum += (cl.chargedTotals?.amount || 0) + (cl.chargedTotals?.transport || 0);
-    for (const cc of cobrarCarriers) if (cc.include) sum += cc.chargedTotalAmount || 0;
+    for (const cl of chargeLabors) if (cl.include) sum += (cl.chargedTotals?.amount || 0) + (cl.chargedTotals?.transport || 0);
+    for (const cc of chargeCarriers) if (cc.include) sum += cc.chargedTotalAmount || 0;
     return sum;
-  }, [cobrarLabors, cobrarCarriers]);
+  }, [chargeLabors, chargeCarriers]);
   // Neto del cobro: subtotal − descuento, sin bajar de 0. Sobre él se calculan
   // el IVA (19%) y el total con IVA. El saldo pendiente no entra acá: se suma
   // después del IVA (ver el XLSX y PrintableSummary).
-  const grandTotalCobrar = useMemo(
-    () => Math.max(0, subtotalCobrar - (Number(cobrar.discount) || 0)),
-    [subtotalCobrar, cobrar.discount],
+  const grandTotalCharge = useMemo(
+    () => Math.max(0, subtotalCharge - (Number(charge.discount) || 0)),
+    [subtotalCharge, charge.discount],
   );
 
   // LaborTable y TransportTable editan una fila con `onEditRow(id, row, patch)`;
@@ -1129,17 +1129,17 @@ export default function CycleSummaryModal({
     const editsFactor = factorKeys.some((k) => k in patch);
     return editsFactor && !("amount" in patch) ? { ...patch, amount: "" } : patch;
   };
-  const editCobrarLaborRow = (laborId, row, patch) => {
+  const editChargeLaborRow = (laborId, row, patch) => {
     const finalPatch = clearAmountIfFactorEdit(patch, ["qty", "rate", "overtimeHours"]);
-    if (row?.isExtra) updateCobrarLaborExtraRow(laborId, row.extraId, finalPatch);
+    if (row?.isExtra) updateChargeLaborExtraRow(laborId, row.extraId, finalPatch);
     // La clave del override es el rowKey de la fila: la fecha, o fecha y
     // tier/etapa en trato y tratoEtapas, así cada tier tiene su override.
-    else updateCobrarLaborRow(laborId, row.rowKey || row.date, finalPatch);
+    else updateChargeLaborRow(laborId, row.rowKey || row.date, finalPatch);
   };
-  const editCobrarCarrierRow = (carrierId, row, patch) => {
+  const editChargeCarrierRow = (carrierId, row, patch) => {
     const finalPatch = clearAmountIfFactorEdit(patch, ["count", "rate"]);
-    if (row?.isExtra) updateCobrarCarrierExtraRow(carrierId, row.extraId, finalPatch);
-    else updateCobrarCarrierRow(carrierId, row.date, finalPatch);
+    if (row?.isExtra) updateChargeCarrierExtraRow(carrierId, row.extraId, finalPatch);
+    else updateChargeCarrierRow(carrierId, row.date, finalPatch);
   };
 
   // Guarda los totales de pagar y cobrar en `cycle.summaryTotals`, de donde el
@@ -1149,14 +1149,14 @@ export default function CycleSummaryModal({
   // `additive: true` actualiza la caché de `cycles` en vez de invalidarla, así
   // las demás pantallas no vuelven a leer la colección.
   const saveCycleTotals = () => {
-    const pagar = Math.round(grandTotalPagar);
-    const cobrar = Math.round(grandTotalCobrar);
-    if (pagar <= 0 && cobrar <= 0) return; // modal cerrado antes de cargar
+    const pay = Math.round(grandTotalPay);
+    const charge = Math.round(grandTotalCharge);
+    if (pay <= 0 && charge <= 0) return; // modal cerrado antes de cargar
     const prev = lastTotalsRef.current;
-    if (prev && prev.pagar === pagar && prev.cobrar === cobrar) return;
-    lastTotalsRef.current = { pagar, cobrar };
+    if (prev && prev.pagar === pay && prev.cobrar === charge) return;
+    lastTotalsRef.current = { pagar: pay, cobrar: charge };
     cyclesService
-      .update(cycleId, { summaryTotals: { pagar, cobrar, at: new Date().toISOString() } }, { additive: true })
+      .update(cycleId, { summaryTotals: { pagar: pay, cobrar: charge, at: new Date().toISOString() } }, { additive: true })
       .catch((err) => {
         lastTotalsRef.current = prev;
         console.error("[resumen] totales del ciclo:", err);
@@ -1169,10 +1169,10 @@ export default function CycleSummaryModal({
   useEffect(() => {
     flushRef.current = () => {
       if (!cycleId || !hydratedRef.current) return;
-      const c = JSON.stringify(cobrar);
+      const c = JSON.stringify(charge);
       const t = JSON.stringify(titles);
       const patch = {};
-      if (c !== lastSavedRef.current.cobrar) { patch.cobrar = cobrar; lastSavedRef.current.cobrar = c; }
+      if (c !== lastSavedRef.current.cobrar) { patch.cobrar = charge; lastSavedRef.current.cobrar = c; }
       if (t !== lastSavedRef.current.titles) { patch.titles = titles; lastSavedRef.current.titles = t; }
       if (Object.keys(patch).length) {
         cycleSummariesService.save(cycleId, patch).catch((err) => {
@@ -1265,15 +1265,15 @@ export default function CycleSummaryModal({
       const transportFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFBE5D6" } };
       const titleFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFA9D08E" } };
 
-      const laborsForMode = mode === "cobrar" ? cobrarLabors : laborsData;
-      const carriersForMode = mode === "cobrar" ? cobrarCarriers : transportData;
+      const laborsForMode = mode === "charge" ? chargeLabors : laborsData;
+      const carriersForMode = mode === "charge" ? chargeCarriers : transportData;
 
       // Para la hoja Total: { displayName, sheetName, totalRef, fallback } por hoja.
       const sheetTotals = [];
 
       // ============ HOJAS DE LABORES ============
       for (const ld of laborsForMode) {
-        if (mode === "cobrar" && !ld.include) continue;
+        if (mode === "charge" && !ld.include) continue;
         // Las labores importadas de otro ciclo no van al Excel: su desglose
         // por combo o tier se arma releyendo las jornadas de este ciclo.
         if (ld.importedFrom) continue;
@@ -1306,7 +1306,7 @@ export default function CycleSummaryModal({
           // Estructura: B Fecha | C Combo/Tier | D Cantidad | E Precio | F Total
           // En cobrar, una sola tarifa editable en C3 que todas las filas referencian.
           let chargeRef = null;
-          if (mode === "cobrar") {
+          if (mode === "charge") {
             ws.getCell("B3").value = "Tarifa cobro:";
             ws.getCell("B3").font = { bold: true };
             const c3 = ws.getCell("C3");
@@ -1316,7 +1316,7 @@ export default function CycleSummaryModal({
             chargeRef = "$C$3";
           }
 
-          const HEADER_ROW = mode === "cobrar" ? 5 : 4;
+          const HEADER_ROW = mode === "charge" ? 5 : 4;
           const headerCells = ["B", "C", "D", "E", "F"];
           const headers = ["Fecha", isCosecha ? "Combo (Calidad / Envase)" : "Tipo de precio", "Cantidad", "Precio", "Total"];
           headerCells.forEach((col, i) => {
@@ -1371,7 +1371,7 @@ export default function CycleSummaryModal({
               qCell.numFmt = "#,##0.##";
               qCell.alignment = { horizontal: "right" };
               const pCell = ws.getCell(`E${curRow}`);
-              if (mode === "cobrar") {
+              if (mode === "charge") {
                 pCell.value = { formula: chargeRef, result: Number(ld.rate) || 0 };
               } else {
                 let price = 0;
@@ -1389,7 +1389,7 @@ export default function CycleSummaryModal({
               }
               pCell.numFmt = moneyFmt;
               const tCell = ws.getCell(`F${curRow}`);
-              const priceResult = mode === "cobrar"
+              const priceResult = mode === "charge"
                 ? Number(ld.rate) || 0
                 : Number(pCell.value) || 0;
               tCell.value = { formula: `D${curRow}*E${curRow}`, result: it.qty * priceResult };
@@ -1412,7 +1412,7 @@ export default function CycleSummaryModal({
             ws.getCell(`F${subRow}`).value = { formula: `SUM(F${dataStartRow}:F${dataEndRow})`, result: ld.totals.amount };
             ws.getCell(`F${subRow}`).numFmt = moneyFmt;
           }
-          const fallbackCos = mode === "cobrar" ? (ld.chargedTotals?.amount ?? ld.totals.amount) : ld.totals.amount;
+          const fallbackCos = mode === "charge" ? (ld.chargedTotals?.amount ?? ld.totals.amount) : ld.totals.amount;
           sheetTotals.push({ displayName, sheetName, totalRef: `'${sheetName}'!$F$${subRow}`, fallback: fallbackCos });
 
           ws.getColumn(2).width = 14;
@@ -1450,17 +1450,17 @@ export default function CycleSummaryModal({
           let curRow = HEADER_ROW + 1;
           const dataStartRow = curRow;
           // En cobrar, chargedRows (con overrides y filas extra).
-          const heRows = mode === "cobrar" ? (ld.chargedRows || ld.rows) : ld.rows;
+          const heRows = mode === "charge" ? (ld.chargedRows || ld.rows) : ld.rows;
           for (const r of heRows) {
             const isRed = redDates.has(r.date);
             const dCell = ws.getCell(`B${curRow}`);
             dCell.value = r.date ? dateLabel(r.date) : (r.isExtra ? "(ajuste)" : "");
             if (isRed) dCell.font = { bold: true, color: { argb: "FFCC0000" } };
 
-            const baseV = mode === "cobrar" ? Number(r.chargedQty) || 0 : Number(r.qty) || 0;
-            const heHrs = mode === "cobrar" ? Number(r.chargedOvertimeHours) || 0 : Number(r.overtimeHours) || 0;
+            const baseV = mode === "charge" ? Number(r.chargedQty) || 0 : Number(r.qty) || 0;
+            const heHrs = mode === "charge" ? Number(r.chargedOvertimeHours) || 0 : Number(r.overtimeHours) || 0;
             const heAmt = heHrs * (Number(c3.value) || 0);
-            const amountForExtras = mode === "cobrar" ? Number(r.chargedAmount) || 0 : Number(r.amount) || 0;
+            const amountForExtras = mode === "charge" ? Number(r.chargedAmount) || 0 : Number(r.amount) || 0;
             const extras = Math.max(0, amountForExtras - baseV - heAmt);
 
             const base = ws.getCell(`C${curRow}`);
@@ -1502,7 +1502,7 @@ export default function CycleSummaryModal({
             ws.getCell(`G${subRow}`).value = { formula: `SUM(G${dataStartRow}:G${dataEndRow})`, result: ld.totals.amount };
             ws.getCell(`G${subRow}`).numFmt = moneyFmt;
           }
-          const fallbackHE = mode === "cobrar" ? (ld.chargedTotals?.amount ?? ld.totals.amount) : ld.totals.amount;
+          const fallbackHE = mode === "charge" ? (ld.chargedTotals?.amount ?? ld.totals.amount) : ld.totals.amount;
           sheetTotals.push({ displayName, sheetName, totalRef: `'${sheetName}'!$G$${subRow}`, fallback: fallbackHE });
 
           ws.getColumn(2).width = 14;
@@ -1517,7 +1517,7 @@ export default function CycleSummaryModal({
           // main / supervision / extra (y tratoEtapas): B Fecha | C Jornadas | D $ jornada | E Total
           // En cobrar, C3 muestra la tarifa de la labor y cada fila lleva la suya.
           let chargeRef = null;
-          if (mode === "cobrar") {
+          if (mode === "charge") {
             ws.getCell("B3").value = "Tarifa cobro:";
             ws.getCell("B3").font = { bold: true };
             const c3 = ws.getCell("C3");
@@ -1527,7 +1527,7 @@ export default function CycleSummaryModal({
             chargeRef = "$C$3";
           }
 
-          const HEADER_ROW = mode === "cobrar" ? 5 : 4;
+          const HEADER_ROW = mode === "charge" ? 5 : 4;
           const cols = ["B", "C", "D", "E"];
           const headers = ["Fecha", "Jornadas", "$ por jornada", "Total"];
           cols.forEach((col, i) => {
@@ -1541,15 +1541,15 @@ export default function CycleSummaryModal({
           let curRow = HEADER_ROW + 1;
           const dataStartRow = curRow;
           // En cobrar, chargedRows (con overrides y filas extra).
-          const simpleRows = mode === "cobrar" ? (ld.chargedRows || ld.rows) : ld.rows;
+          const simpleRows = mode === "charge" ? (ld.chargedRows || ld.rows) : ld.rows;
           for (const r of simpleRows) {
             ws.getCell(`B${curRow}`).value = r.date ? dateLabel(r.date) : (r.isExtra ? "(ajuste)" : "");
             const qCell = ws.getCell(`C${curRow}`);
-            const qtyV = mode === "cobrar" ? Number(r.chargedQty) || 0 : Number(r.qty) || 0;
+            const qtyV = mode === "charge" ? Number(r.chargedQty) || 0 : Number(r.qty) || 0;
             qCell.value = qtyV;
             qCell.numFmt = "#,##0";
             const pCell = ws.getCell(`D${curRow}`);
-            if (mode === "cobrar") {
+            if (mode === "charge") {
               // En cobrar la tarifa puede tener override por fila: va el valor
               // literal, sin referenciar $C$3.
               pCell.value = Number(r.chargedRate) || 0;
@@ -1561,7 +1561,7 @@ export default function CycleSummaryModal({
             }
             pCell.numFmt = moneyFmt;
             const tCell = ws.getCell(`E${curRow}`);
-            const amountResult = mode === "cobrar" ? Number(r.chargedAmount) || 0 : Number(r.amount) || 0;
+            const amountResult = mode === "charge" ? Number(r.chargedAmount) || 0 : Number(r.amount) || 0;
             tCell.value = { formula: `C${curRow}*D${curRow}`, result: amountResult };
             tCell.numFmt = moneyFmt;
             curRow++;
@@ -1580,7 +1580,7 @@ export default function CycleSummaryModal({
             ws.getCell(`E${subRow}`).value = { formula: `SUM(E${dataStartRow}:E${dataEndRow})`, result: ld.totals.amount };
             ws.getCell(`E${subRow}`).numFmt = moneyFmt;
           }
-          const fallbackSimple = mode === "cobrar" ? (ld.chargedTotals?.amount ?? ld.totals.amount) : ld.totals.amount;
+          const fallbackSimple = mode === "charge" ? (ld.chargedTotals?.amount ?? ld.totals.amount) : ld.totals.amount;
           sheetTotals.push({ displayName, sheetName, totalRef: `'${sheetName}'!$E$${subRow}`, fallback: fallbackSimple });
 
           ws.getColumn(2).width = 14;
@@ -1593,7 +1593,7 @@ export default function CycleSummaryModal({
 
       // ============ HOJAS DE TRANSPORTE ============
       for (const tg of carriersForMode) {
-        if (mode === "cobrar" && !tg.include) continue;
+        if (mode === "charge" && !tg.include) continue;
         if (!tg.rows || tg.rows.length === 0) continue;
         const fallbackName = carrierById.get(tg.carrierId)?.alias || carrierById.get(tg.carrierId)?.name || "(transportista)";
         const displayName = titles.carrierNames?.[tg.carrierId] || fallbackName;
@@ -1605,7 +1605,7 @@ export default function CycleSummaryModal({
         ws.getCell("B2").font = { bold: true, size: 14 };
 
         let chargeRef = null;
-        if (mode === "cobrar") {
+        if (mode === "charge") {
           ws.getCell("B3").value = "Tarifa cobro:";
           ws.getCell("B3").font = { bold: true };
           const c3 = ws.getCell("C3");
@@ -1615,7 +1615,7 @@ export default function CycleSummaryModal({
           chargeRef = "$C$3";
         }
 
-        const HEADER_ROW = mode === "cobrar" ? 5 : 4;
+        const HEADER_ROW = mode === "charge" ? 5 : 4;
         const cols = ["B", "C", "D", "E"];
         const headers = ["Fecha", "Vueltas", "Precio", "Total"];
         cols.forEach((col, i) => {
@@ -1628,15 +1628,15 @@ export default function CycleSummaryModal({
 
         let curRow = HEADER_ROW + 1;
         const dataStartRow = curRow;
-        const carrierRows = mode === "cobrar" ? (tg.chargedRows || tg.rows) : tg.rows;
+        const carrierRows = mode === "charge" ? (tg.chargedRows || tg.rows) : tg.rows;
         for (const r of carrierRows) {
           ws.getCell(`B${curRow}`).value = r.date ? dateLabel(r.date) : (r.isExtra ? "(ajuste)" : "");
           const qCell = ws.getCell(`C${curRow}`);
-          const countV = mode === "cobrar" ? Number(r.chargedCount) || 0 : Number(r.count) || 0;
+          const countV = mode === "charge" ? Number(r.chargedCount) || 0 : Number(r.count) || 0;
           qCell.value = countV;
           qCell.numFmt = "#,##0";
           const pCell = ws.getCell(`D${curRow}`);
-          if (mode === "cobrar") {
+          if (mode === "charge") {
             pCell.value = Number(r.chargedRate) || 0;
             pCell.fill = editableFill;
           } else {
@@ -1646,7 +1646,7 @@ export default function CycleSummaryModal({
           }
           pCell.numFmt = moneyFmt;
           const tCell = ws.getCell(`E${curRow}`);
-          const amountV = mode === "cobrar" ? Number(r.chargedAmount) || 0 : Number(r.amount) || 0;
+          const amountV = mode === "charge" ? Number(r.chargedAmount) || 0 : Number(r.amount) || 0;
           tCell.value = { formula: `C${curRow}*D${curRow}`, result: amountV };
           tCell.numFmt = moneyFmt;
           curRow++;
@@ -1659,14 +1659,14 @@ export default function CycleSummaryModal({
           ws.getCell(`${col}${subRow}`).font = { bold: true };
         }
         ws.getCell(`B${subRow}`).value = "Subtotal";
-        const totalAmountForSheet = mode === "cobrar" ? (tg.chargedTotalAmount || 0) : tg.totalAmount;
+        const totalAmountForSheet = mode === "charge" ? (tg.chargedTotalAmount || 0) : tg.totalAmount;
         if (dataEndRow >= dataStartRow) {
           ws.getCell(`C${subRow}`).value = { formula: `SUM(C${dataStartRow}:C${dataEndRow})`, result: 0 };
           ws.getCell(`C${subRow}`).numFmt = "#,##0";
           ws.getCell(`E${subRow}`).value = { formula: `SUM(E${dataStartRow}:E${dataEndRow})`, result: totalAmountForSheet };
           ws.getCell(`E${subRow}`).numFmt = moneyFmt;
         }
-        const fallbackTotal = mode === "cobrar" ? (tg.chargedTotalAmount || 0) : tg.totalAmount;
+        const fallbackTotal = mode === "charge" ? (tg.chargedTotalAmount || 0) : tg.totalAmount;
         sheetTotals.push({ displayName: `🚐 ${displayName}`, sheetName, totalRef: `'${sheetName}'!$E$${subRow}`, fallback: fallbackTotal });
 
         ws.getColumn(2).width = 14;
@@ -1680,7 +1680,7 @@ export default function CycleSummaryModal({
       // Transporte manual por fila (cobrar): las hojas por labor no tienen esa
       // columna, así que va como línea propia en el Total, igual que en
       // subtotalCobrar.
-      if (mode === "cobrar") {
+      if (mode === "charge") {
         let laborTransportSum = 0;
         for (const ld of laborsForMode) {
           if (!ld.include) continue;
@@ -1692,8 +1692,8 @@ export default function CycleSummaryModal({
       }
       const wsTotal = wb.addWorksheet(safeName("Total"));
       wsTotal.getColumn(1).width = 6;
-      wsTotal.getCell("B2").value = mode === "cobrar"
-        ? (cobrar.withIva !== false ? "TOTAL A FACTURAR" : "TOTAL A COBRAR (sin IVA)")
+      wsTotal.getCell("B2").value = mode === "charge"
+        ? (charge.withIva !== false ? "TOTAL A FACTURAR" : "TOTAL A COBRAR (sin IVA)")
         : "TOTAL GENERAL";
       wsTotal.getCell("B2").font = { bold: true, size: 14 };
 
@@ -1722,10 +1722,10 @@ export default function CycleSummaryModal({
       // Con descuento (cobrar) van las filas Subtotal y Descuento antes del
       // total, que queda en subtotal − descuento. El IVA, si está activo, se
       // calcula sobre ese total.
-      const discountValue = mode === "cobrar" ? Math.max(0, Number(cobrar.discount) || 0) : 0;
-      const discountNoteValue = mode === "cobrar" ? (cobrar.discountNote || "") : "";
-      const pendingValue = mode === "cobrar" ? Math.max(0, Number(cobrar.pendingBalance) || 0) : 0;
-      const pendingNoteValue = mode === "cobrar" ? (cobrar.pendingBalanceNote || "") : "";
+      const discountValue = mode === "charge" ? Math.max(0, Number(charge.discount) || 0) : 0;
+      const discountNoteValue = mode === "charge" ? (charge.discountNote || "") : "";
+      const pendingValue = mode === "charge" ? Math.max(0, Number(charge.pendingBalance) || 0) : 0;
+      const pendingNoteValue = mode === "charge" ? (charge.pendingBalanceNote || "") : "";
       let subtotalRow = null;
       let discountRow = null;
       // Antes del total solo entra el descuento; el saldo pendiente se suma
@@ -1736,7 +1736,7 @@ export default function CycleSummaryModal({
         wsTotal.getCell(`B${subtotalRow}`).font = { bold: true };
         const sub = wsTotal.getCell(`C${subtotalRow}`);
         if (totalEnd >= totalStart) {
-          sub.value = { formula: `SUM(C${totalStart}:C${totalEnd})`, result: subtotalCobrar };
+          sub.value = { formula: `SUM(C${totalStart}:C${totalEnd})`, result: subtotalCharge };
         } else {
           sub.value = 0;
         }
@@ -1757,13 +1757,13 @@ export default function CycleSummaryModal({
       }
 
       const grandRow = totalRow;
-      wsTotal.getCell(`B${grandRow}`).value = mode === "cobrar"
-        ? (cobrar.withIva !== false ? "TOTAL A FACTURAR" : "TOTAL A COBRAR (sin IVA)")
+      wsTotal.getCell(`B${grandRow}`).value = mode === "charge"
+        ? (charge.withIva !== false ? "TOTAL A FACTURAR" : "TOTAL A COBRAR (sin IVA)")
         : "TOTAL GENERAL";
       wsTotal.getCell(`B${grandRow}`).font = { bold: true };
       wsTotal.getCell(`B${grandRow}`).fill = titleFill;
       const grand = wsTotal.getCell(`C${grandRow}`);
-      const grandFallback = mode === "cobrar" ? grandTotalCobrar : grandTotalPagar;
+      const grandFallback = mode === "charge" ? grandTotalCharge : grandTotalPay;
       if (subtotalRow != null && discountRow != null) {
         grand.value = { formula: `C${subtotalRow}+C${discountRow}`, result: grandFallback };
       } else if (totalEnd >= totalStart) {
@@ -1777,10 +1777,10 @@ export default function CycleSummaryModal({
 
       // En cobrar con IVA van debajo las filas Valor IVA (19%) e IVA incluido.
       let postIvaRow = grandRow; // fila a la que se suma el saldo pendiente
-      const postIvaFallback = (cobrar.withIva !== false)
+      const postIvaFallback = (charge.withIva !== false)
         ? Math.round((Number(grandFallback) || 0) * 1.19)
         : Number(grandFallback) || 0;
-      if (mode === "cobrar" && cobrar.withIva !== false) {
+      if (mode === "charge" && charge.withIva !== false) {
         const ivaRow = grandRow + 1;
         wsTotal.getCell(`B${ivaRow}`).value = "Valor IVA (19%)";
         wsTotal.getCell(`B${ivaRow}`).font = { bold: true };
@@ -1806,7 +1806,7 @@ export default function CycleSummaryModal({
 
       // Saldo pendiente, después del IVA: con saldo > 0 van la fila del saldo y
       // TOTAL FINAL = total con IVA (o neto, sin IVA) + saldo.
-      if (mode === "cobrar" && pendingValue > 0) {
+      if (mode === "charge" && pendingValue > 0) {
         const pendingRow = totalRow;
         wsTotal.getCell(`B${pendingRow}`).value = pendingNoteValue
           ? `Saldo pendiente · ${pendingNoteValue}`
@@ -1910,7 +1910,7 @@ export default function CycleSummaryModal({
         .join(" · ")
     : "";
 
-  const captureLocked = mode === "cobrar" && editMode;
+  const captureLocked = mode === "charge" && editMode;
   const lockedHint = "El resumen está en modo edición — se va a pedir bloquearlo antes de generar la imagen.";
   const requestCapture = (kind) => {
     if (captureLocked) {
@@ -1968,19 +1968,19 @@ export default function CycleSummaryModal({
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="flex rounded-md overflow-hidden border border-[var(--color-border)] text-xs">
           <button
-            onClick={() => setMode("pagar")}
-            className={`px-3 py-1.5 ${mode === "pagar" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium" : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"}`}
+            onClick={() => setMode("pay")}
+            className={`px-3 py-1.5 ${mode === "pay" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium" : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"}`}
           >
             Para pagar
           </button>
           <button
-            onClick={() => setMode("cobrar")}
-            className={`px-3 py-1.5 ${mode === "cobrar" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium" : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"}`}
+            onClick={() => setMode("charge")}
+            className={`px-3 py-1.5 ${mode === "charge" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium" : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"}`}
           >
             Para cobrar
           </button>
         </div>
-        {mode === "cobrar" && (
+        {mode === "charge" && (
           <div className="flex rounded-md overflow-hidden border border-[var(--color-border)] text-xs">
             <button
               onClick={() => setEditMode(false)}
@@ -2000,7 +2000,7 @@ export default function CycleSummaryModal({
         )}
         {/* Los controles de edición siguen al candado: con el resumen
             bloqueado no se muestra ninguno. En pagar no hay candado. */}
-        {(mode !== "cobrar" || editMode) && (
+        {(mode !== "charge" || editMode) && (
           <button
             onClick={() => setShowTitleEditor((v) => !v)}
             className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
@@ -2008,15 +2008,15 @@ export default function CycleSummaryModal({
             {showTitleEditor ? "▾" : "▸"} Personalizar títulos
           </button>
         )}
-        {mode === "cobrar" && editMode && (
+        {mode === "charge" && editMode && (
           <button
-            onClick={() => setShowCobrarEditor((v) => !v)}
+            onClick={() => setShowChargeEditor((v) => !v)}
             className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
           >
-            {showCobrarEditor ? "▾" : "▸"} Editar tarifas cobro
+            {showChargeEditor ? "▾" : "▸"} Editar tarifas cobro
           </button>
         )}
-        {mode === "cobrar" && editMode && (
+        {mode === "charge" && editMode && (
           <button
             onClick={openImportModal}
             className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
@@ -2025,18 +2025,18 @@ export default function CycleSummaryModal({
             📥 Importar ciclos anteriores
           </button>
         )}
-        {mode === "cobrar" && (
+        {mode === "charge" && (
           <button
-            onClick={() => setCobrarWithIva(!cobrar.withIva)}
-            className={`rounded-md border px-2 py-1 text-xs ${cobrar.withIva ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]" : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"}`}
-            title={cobrar.withIva
+            onClick={() => setChargeWithVat(!charge.withIva)}
+            className={`rounded-md border px-2 py-1 text-xs ${charge.withIva ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]" : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"}`}
+            title={charge.withIva
               ? "El total se cobra con IVA (19% calculado abajo). Click para cambiar a sin IVA."
               : "El total se cobra sin IVA (servicios exentos / acuerdos netos). Click para activar IVA."}
           >
-            {cobrar.withIva ? "💰 Con IVA" : "🚫 Sin IVA"}
+            {charge.withIva ? "💰 Con IVA" : "🚫 Sin IVA"}
           </button>
         )}
-        {mode === "cobrar" && (
+        {mode === "charge" && (
           <>
             <button
               ref={colsBtnRef}
@@ -2067,16 +2067,16 @@ export default function CycleSummaryModal({
           <span>
             <span className="text-[var(--color-muted)]">Total: </span>
             <span className="font-semibold tabular-nums">
-              {fmtCurrency(mode === "cobrar" ? grandTotalCobrar : grandTotalPagar)}
+              {fmtCurrency(mode === "charge" ? grandTotalCharge : grandTotalPay)}
             </span>
           </span>
         </span>
       </div>
 
-      {(mode !== "cobrar" || editMode) && showTitleEditor && (
+      {(mode !== "charge" || editMode) && showTitleEditor && (
         <TitlesEditor
           titles={titles}
-          labors={[...(cycle?.labors || []), ...(cobrar.importedLabors || []).map((imp) => imp.labor)]}
+          labors={[...(cycle?.labors || []), ...(charge.importedLabors || []).map((imp) => imp.labor)]}
           carriers={transportData.map((t) => ({ id: t.carrierId, label: carrierById.get(t.carrierId)?.alias || t.carrierId }))}
           onChange={updateTitles}
           onLaborNameChange={updateLaborName}
@@ -2084,13 +2084,13 @@ export default function CycleSummaryModal({
         />
       )}
 
-      {mode === "cobrar" && editMode && showCobrarEditor && (
-        <CobrarEditor
-          labors={cobrarLabors}
-          carriers={cobrarCarriers}
+      {mode === "charge" && editMode && showChargeEditor && (
+        <ChargeEditor
+          labors={chargeLabors}
+          carriers={chargeCarriers}
           carrierById={carrierById}
-          onLaborChange={updateCobrarLabor}
-          onCarrierChange={updateCobrarCarrier}
+          onLaborChange={updateChargeLabor}
+          onCarrierChange={updateChargeCarrier}
           onRemoveImported={removeImportedLabor}
         />
       )}
@@ -2104,34 +2104,34 @@ export default function CycleSummaryModal({
         <PrintableSummary
           mode={mode}
           editMode={editMode}
-          withIva={cobrar.withIva !== false}
+          withIva={charge.withIva !== false}
           hiddenColumns={hiddenColumns}
           titles={titles}
-          labors={mode === "cobrar" ? cobrarLabors : laborsData}
-          carriers={mode === "cobrar" ? cobrarCarriers : transportData}
+          labors={mode === "charge" ? chargeLabors : laborsData}
+          carriers={mode === "charge" ? chargeCarriers : transportData}
           carrierById={carrierById}
-          grandTotal={mode === "cobrar" ? grandTotalCobrar : grandTotalPagar}
-          subtotal={mode === "cobrar" ? subtotalCobrar : null}
-          discount={mode === "cobrar" ? (Number(cobrar.discount) || 0) : 0}
-          discountNote={mode === "cobrar" ? (cobrar.discountNote || "") : ""}
-          onChangeDiscount={mode === "cobrar" ? setCobrarDiscount : undefined}
-          pendingBalance={mode === "cobrar" ? (Number(cobrar.pendingBalance) || 0) : 0}
-          pendingBalanceNote={mode === "cobrar" ? (cobrar.pendingBalanceNote || "") : ""}
-          onChangePendingBalance={mode === "cobrar" ? setCobrarPendingBalance : undefined}
+          grandTotal={mode === "charge" ? grandTotalCharge : grandTotalPay}
+          subtotal={mode === "charge" ? subtotalCharge : null}
+          discount={mode === "charge" ? (Number(charge.discount) || 0) : 0}
+          discountNote={mode === "charge" ? (charge.discountNote || "") : ""}
+          onChangeDiscount={mode === "charge" ? setChargeDiscount : undefined}
+          pendingBalance={mode === "charge" ? (Number(charge.pendingBalance) || 0) : 0}
+          pendingBalanceNote={mode === "charge" ? (charge.pendingBalanceNote || "") : ""}
+          onChangePendingBalance={mode === "charge" ? setChargePendingBalance : undefined}
           catalogs={catalogs}
           dayPrices={dayPrices}
           dayNotes={dayNotesSummary}
-          editLaborRow={editCobrarLaborRow}
-          addLaborRow={addCobrarLaborExtraRow}
-          removeLaborRow={removeCobrarLaborExtraRow}
-          editCarrierRow={editCobrarCarrierRow}
-          addCarrierRow={addCobrarCarrierExtraRow}
-          removeCarrierRow={removeCobrarCarrierExtraRow}
+          editLaborRow={editChargeLaborRow}
+          addLaborRow={addChargeLaborExtraRow}
+          removeLaborRow={removeChargeLaborExtraRow}
+          editCarrierRow={editChargeCarrierRow}
+          addCarrierRow={addChargeCarrierExtraRow}
+          removeCarrierRow={removeChargeCarrierExtraRow}
         />
         {/* Resumen por trabajador (trabajador × día), una infografía por
             labor. Solo en pagar: el cobro es por tarifa pactada, no por
             trabajador. */}
-        {mode === "pagar" && laborWorkerGrids.map((g) => (
+        {mode === "pay" && laborWorkerGrids.map((g) => (
           <LaborWorkerGrid
             key={g.labor.id}
             labor={g.labor}

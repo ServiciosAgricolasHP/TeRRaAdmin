@@ -2,7 +2,7 @@
 // filas editables del modo cobrar.
 // Estilos compartidos para los inputs editables en modo cobrar. Fondo amarillo
 // para señalar visualmente las celdas modificables (igual que en el XLSX).
-export const cobrarInputStyle = {
+export const chargeInputStyle = {
   width: 90,
   textAlign: "right",
   fontVariantNumeric: "tabular-nums",
@@ -13,7 +13,7 @@ export const cobrarInputStyle = {
   fontSize: 12,
 };
 
-export const cobrarDateInputStyle = {
+export const chargeDateInputStyle = {
   border: "1px solid #ccc",
   borderRadius: 3,
   padding: "1px 4px",

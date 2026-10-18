@@ -1,6 +1,6 @@
 import { dateLabel } from "../../../utils/cycleSummary";
 import { fmtCurrency } from "../../../utils/format";
-import { cellH, cell, cobrarDateInputStyle, inputVal, cobrarInputStyle } from "./tableStyles";
+import { cellH, cell, chargeDateInputStyle, inputVal, chargeInputStyle } from "./tableStyles";
 
 export function TransportTable({
   carrierId,
@@ -16,16 +16,16 @@ export function TransportTable({
   onAddRow,
   onRemoveRow,
 }) {
-  const isCobrar = mode === "cobrar";
-  const editable = isCobrar && editMode;
-  if (rows.length === 0 && !isCobrar) return null;
+  const isCharge = mode === "charge";
+  const editable = isCharge && editMode;
+  if (rows.length === 0 && !isCharge) return null;
   const showCol = (key) => !hiddenColumns.has(key);
 
-  const rowCount = (r) => isCobrar ? r.chargedCount : r.count;
-  const rowRate = (r) => isCobrar
+  const rowCount = (r) => isCharge ? r.chargedCount : r.count;
+  const rowRate = (r) => isCharge
     ? r.chargedRate
     : (r.count > 0 ? Math.round(r.amount / r.count) : 0);
-  const rowTotal = (r) => isCobrar ? r.chargedAmount : r.amount;
+  const rowTotal = (r) => isCharge ? r.chargedAmount : r.amount;
 
   const handleField = (r, field, raw) => {
     if (!onEditRow) return;
@@ -72,7 +72,7 @@ export function TransportTable({
                       type="date"
                       value={r.date || ""}
                       onChange={(e) => handleDateChange(r, e.target.value)}
-                      style={cobrarDateInputStyle}
+                      style={chargeDateInputStyle}
                     />
                   ) : (
                     dateLabel(r.date)
@@ -85,7 +85,7 @@ export function TransportTable({
                         type="number"
                         value={inputVal(count)}
                         onChange={(e) => handleField(r, "count", e.target.value)}
-                        style={cobrarInputStyle}
+                        style={chargeInputStyle}
                       />
                     ) : count}
                   </td>
@@ -97,7 +97,7 @@ export function TransportTable({
                         type="number"
                         value={inputVal(rate)}
                         onChange={(e) => handleField(r, "rate", e.target.value)}
-                        style={cobrarInputStyle}
+                        style={chargeInputStyle}
                       />
                     ) : (rate > 0 ? fmtCurrency(rate) : "")}
                   </td>
@@ -109,7 +109,7 @@ export function TransportTable({
                         type="number"
                         value={inputVal(total)}
                         onChange={(e) => handleField(r, "amount", e.target.value)}
-                        style={{ ...cobrarInputStyle, fontWeight: 600 }}
+                        style={{ ...chargeInputStyle, fontWeight: 600 }}
                         title="Reemplaza el cálculo vueltas × valor. Bórralo para volver al cálculo automático."
                       />
                     ) : fmtCurrency(total)}

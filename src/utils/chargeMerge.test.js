@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildCobrarSections, mergeTargetOf, mergedRows, mergedTotals } from "./cobrarMerge";
+import { buildChargeSections, mergeTargetOf, mergedRows, mergedTotals } from "./chargeMerge";
 
 const labor = (id, type = "main", over = {}) => ({
   labor: { id, name: id.toUpperCase(), type },
@@ -51,19 +51,19 @@ describe("mergeTargetOf", () => {
   });
 });
 
-describe("buildCobrarSections", () => {
+describe("buildChargeSections", () => {
   it("agrupa las fusionadas bajo su destino y conserva el orden", () => {
     const a = labor("a");
     const b = labor("b");
     const c = labor("c", "extra", { mergeInto: "a" });
-    const sections = buildCobrarSections([a, b, c]);
+    const sections = buildChargeSections([a, b, c]);
     expect(sections.map((s) => s.lead.labor.id)).toEqual(["a", "b"]);
     expect(sections[0].members.map((m) => m.labor.id)).toEqual(["a", "c"]);
     expect(sections[1].members.map((m) => m.labor.id)).toEqual(["b"]);
   });
 
   it("sin fusiones, una sección por labor", () => {
-    const sections = buildCobrarSections([labor("a"), labor("b")]);
+    const sections = buildChargeSections([labor("a"), labor("b")]);
     expect(sections.map((s) => s.members.length)).toEqual([1, 1]);
   });
 });

@@ -1,8 +1,8 @@
-import { mergeFamilyOf } from "../../../utils/cobrarMerge";
+import { mergeFamilyOf } from "../../../utils/chargeMerge";
 import { fmtNumber } from "../../../utils/cycleSummary";
 import { fmtCurrency } from "../../../utils/format";
 
-export function CobrarEditor({ labors, carriers, carrierById, onLaborChange, onCarrierChange, onRemoveImported }) {
+export function ChargeEditor({ labors, carriers, carrierById, onLaborChange, onCarrierChange, onRemoveImported }) {
   // Destinos posibles para "Juntar con": otra labor incluida, de la misma
   // familia y que no esté a su vez fusionada (mismas reglas que mergeTargetOf).
   const mergeTargetsFor = (l) => labors.filter(

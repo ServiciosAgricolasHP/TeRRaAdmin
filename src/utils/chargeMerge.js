@@ -25,7 +25,7 @@ export function mergeTargetOf(ld, byId) {
 // Secciones a dibujar, en el orden de las labores: cada una con su labor
 // principal y las que se le fusionaron. Las labores no incluidas quedan como
 // secciones propias (el render las salta igual que hoy).
-export function buildCobrarSections(labors) {
+export function buildChargeSections(labors) {
   const byId = new Map(labors.map((ld) => [ld.labor.id, ld]));
   const membersOf = new Map();
   for (const ld of labors) {
