@@ -20,8 +20,6 @@ const btnCls =
 const inputCls =
   "rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm outline-none focus:border-[var(--color-accent)]";
 
-// ── Modal ───────────────────────────────────────────────────────────────────
-
 export default function PaymentReportModal({ items, companies, today, onClose }) {
   const toast = useToast();
   const [companyId, setCompanyId] = useState("");

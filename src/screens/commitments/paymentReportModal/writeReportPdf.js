@@ -1,7 +1,5 @@
 import { cellOf } from "./reportDocument";
 
-// ── PDF ─────────────────────────────────────────────────────────────────────
-
 // A4 vertical con jsPDF + jspdf-autotable, cargados lazy: texto seleccionable,
 // el encabezado de cada tabla se repite al cambiar de hoja y cada hoja lleva al
 // pie el título y "Página N de M". Helvetica cubre tildes, ñ, "°" y "·".

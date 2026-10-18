@@ -14,8 +14,6 @@ import {
   laterDetail,
 } from "./reportDocument";
 
-// ── Excel ───────────────────────────────────────────────────────────────────
-
 // Convención del proyecto: columna A vacía de ancho 6 y fila 1 vacía. Cada
 // hoja abre con su título en B2, el subtítulo en B3 y la tabla desde la fila 5.
 export async function writeReportXlsx(report, { today, companyName, includePaid, paidFrom, paidTo, fileBase }) {

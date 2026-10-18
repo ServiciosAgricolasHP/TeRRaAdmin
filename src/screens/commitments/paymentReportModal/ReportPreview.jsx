@@ -1,7 +1,5 @@
 import { cellOf } from "./reportDocument";
 
-// ── Vista previa (HTML) ─────────────────────────────────────────────────────
-
 // Una hoja A4 aproximada, con la misma tipografía y colores que el PDF.
 const S = {
   page: {
