@@ -21,7 +21,7 @@ export function normalizeCycle(c) {
   return { ...c, days, labors };
 }
 
-export function buildRowsCosecha(workers, days, wdMap, dayCombosByDate) {
+export function buildRowsHarvest(workers, days, wdMap, dayCombosByDate) {
   return workers.map((w) => {
     const row = { rut: w.rut, name: w.name, _isTemp: !!w.isTemp, _isOrphan: !!w.isOrphan };
     let total = 0;
@@ -51,7 +51,7 @@ export function buildRowsCosecha(workers, days, wdMap, dayCombosByDate) {
   });
 }
 
-export function buildRowsTratoHE(workers, days, wdMap) {
+export function buildRowsOvertimeDay(workers, days, wdMap) {
   return workers.map((w) => {
     const row = { rut: w.rut, name: w.name, _isTemp: !!w.isTemp, _isOrphan: !!w.isOrphan, _monthly: !!w.monthly };
     let total = 0;
@@ -78,7 +78,7 @@ export function buildRowsTratoHE(workers, days, wdMap) {
   });
 }
 
-export function buildRowsTrato(workers, days, wdMap, dayTiersByDate) {
+export function buildRowsPiecework(workers, days, wdMap, dayTiersByDate) {
   return workers.map((w) => {
     const row = { rut: w.rut, name: w.name, _isTemp: !!w.isTemp, _isOrphan: !!w.isOrphan };
     let total = 0;
@@ -112,7 +112,7 @@ export function buildRowsTrato(workers, days, wdMap, dayTiersByDate) {
 // visibles ese día (las que tienen precio configurado o ya tienen producción),
 // y la key del workday es el stageId. `row[${d}__${stageId}]` = qty, `__amt` =
 // monto ya calculado (qty × precio del día).
-export function buildRowsTratoEtapas(workers, days, wdMap, dayStagesByDate) {
+export function buildRowsPieceworkStages(workers, days, wdMap, dayStagesByDate) {
   return workers.map((w) => {
     const row = { rut: w.rut, name: w.name, _isTemp: !!w.isTemp, _isOrphan: !!w.isOrphan };
     let total = 0;

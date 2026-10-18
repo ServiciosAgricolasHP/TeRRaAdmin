@@ -5,7 +5,7 @@ import { fmtCurrency } from "../../utils/format";
 // Piso opcional por día. Sin piso configurado muestra solo el botón "+ piso",
 // que abre la edición. Con piso, muestra el monto y las acciones editar,
 // asignar a todos y quitar.
-export function PisoDayRow({ labor, dayPrices, date, readOnly, onPersist, pendingCount = 0, onApplyAll }) {
+export function FloorDayRow({ labor, dayPrices, date, readOnly, onPersist, pendingCount = 0, onApplyAll }) {
   const dayPiso = getDayPiso(dayPrices, labor.id, date);
   const hasPiso = dayPiso != null && dayPiso > 0;
   const [editing, setEditing] = useState(false);

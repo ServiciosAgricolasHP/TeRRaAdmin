@@ -267,6 +267,11 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Ciclo | `cycle` | `cycles` |
 | Labor | `labor` | dentro de `cycles.labors` |
 | Jornada | `workday` | `workdays` |
+| Piso (bono del día) | `floor` | dentro de `cycles.dayPrices` y `workdays` (guardado como `piso`, `pisoOnly`) |
+| Cosecha | `harvest` | tipo de labor (guardado como `"cosecha"`) |
+| Trato | `piecework` | tipo de labor (guardado como `"trato"`) |
+| Trato por etapas | `pieceworkStages` | tipo de labor (guardado como `"tratoEtapas"`) |
+| Jornada con horas extras | `overtimeDay` | tipo de labor (guardado como `"tratoHE"`) |
 | Trabajador | `worker` | `worker` |
 | Líder de grupo | `groupLeader` | `groupLeader` |
 | Nómina | `payroll` | `payrolls` |
@@ -412,7 +417,7 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
 
 - Pantalla: `src/screens/CycleDetail.jsx` (el componente de la ruta, con la grilla, sus columnas y las escrituras). Sus piezas, en `src/screens/cycleDetail/`:
   - **Grilla:** `FormulaCellEditor` (editor de las celdas numéricas), `DayHeader`, `GroupHeaderRowRenderer` y `rows.js` (filas por tipo de labor y `normalizeCycle`).
-  - **Precios del día:** `PisoDayRow`, `AddComboModal` y `DayModeModal`.
+  - **Precios del día:** `FloorDayRow` (el piso del día), `AddComboModal` y `DayModeModal`.
   - **Modales:** `CatalogsModal` (con `CatalogSection`), `BonusEditModal`, `LeaderPickerModal`, `DefaultLeadersModal`, `StagesEditor` y `DayCalendarPicker` (el calendario de "+ Día").
   - **Resumen:** `CycleSummaryModal`, con sus piezas en `cycleSummaryModal/` (ver Resúmenes).
 - **Undo (Ctrl+Z)**: stack en memoria (`undoStackRef`), pushea cada edición de celda, revierte y re-graba en Firestore.

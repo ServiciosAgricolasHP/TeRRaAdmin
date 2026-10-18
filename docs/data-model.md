@@ -605,7 +605,7 @@ Campos y valores guardados en Firestore con nombre en español. El código los l
 | `indicators` | `sueldoBase`, `dia`, `hora` | `baseSalary`, `dayValue`, `overtimeHourValue` | |
 | `advances` | `type`: `"anticipo"`, `"bono"` (y el antiguo `"adelanto"`) | `"advance"`, `"bonus"` | |
 | `advances` | `installments.cadence`: `"porPago"`, `"quincenal"`, `"mensual"` | `"perPayment"`, `"fortnightly"`, `"monthly"` | |
-| `cycles` | `labors[].type`: `"cosecha"`, `"trato"`, `"tratoHE"` | `"harvest"`, `"piecework"`, `"pieceworkOvertime"` | los otros tipos ya están en inglés |
+| `cycles` | `labors[].type`: `"cosecha"`, `"trato"`, `"tratoEtapas"`, `"tratoHE"` | `"harvest"`, `"piecework"`, `"pieceworkStages"`, `"overtimeDay"` | los otros tipos ya están en inglés |
 | `cycles` | `labors[].tratoType` | `pieceworkType` | |
 | `cycles` | `labors[].bonusManejo` | `drivingBonus` | el bono "M" (manejo: conducir) de las jornadas con horas extras |
 | `cycles` | `dayPrices[laborId][date].piso` | `floor` | |

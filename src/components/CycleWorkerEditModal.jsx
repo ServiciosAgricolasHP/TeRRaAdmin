@@ -464,7 +464,7 @@ export default function CycleWorkerEditModal({
 
   // `amountField`: el total del día está en `${d}__total` en
   // cosecha/trato/tratoEtapas y en `${d}__amt` en tratoHE, que no tiene
-  // `__total` (ver buildRowsTratoHE).
+  // `__total` (ver buildRowsOvertimeDay).
   const dayHeader = (d, amountField = `${d}__total`) => (
     <div className="mb-2 flex items-center justify-between gap-2">
       <div className="flex items-center gap-1.5">

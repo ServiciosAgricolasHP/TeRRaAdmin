@@ -91,13 +91,13 @@ import { DefaultLeadersModal } from "./cycleDetail/DefaultLeadersModal";
 import { FormulaCellEditor } from "./cycleDetail/FormulaCellEditor";
 import { GroupHeaderRowRenderer } from "./cycleDetail/GroupHeaderRowRenderer";
 import { LeaderPickerModal } from "./cycleDetail/LeaderPickerModal";
-import { PisoDayRow } from "./cycleDetail/PisoDayRow";
+import { FloorDayRow } from "./cycleDetail/FloorDayRow";
 import {
   normalizeCycle,
-  buildRowsCosecha,
-  buildRowsTrato,
-  buildRowsTratoEtapas,
-  buildRowsTratoHE,
+  buildRowsHarvest,
+  buildRowsPiecework,
+  buildRowsPieceworkStages,
+  buildRowsOvertimeDay,
   buildRowsNormal,
   SINGLE_COMBO,
   newId,
@@ -807,10 +807,10 @@ export default function CycleDetail() {
   const rutOf = useMemo(() => currentRutResolver(allWorkers), [allWorkers]);
   const rowDataRaw = useMemo(() => {
     let rows;
-    if (isCosechaLabor) rows = buildRowsCosecha(gridWorkers, days, wdMap, dayCombosByDate);
-    else if (isTratoLabor) rows = buildRowsTrato(gridWorkers, days, wdMap, dayTiersByDate);
-    else if (isTratoEtapasLabor) rows = buildRowsTratoEtapas(gridWorkers, days, wdMap, dayStagesByDate);
-    else if (isTratoHELabor) rows = buildRowsTratoHE(gridWorkers, days, wdMap);
+    if (isCosechaLabor) rows = buildRowsHarvest(gridWorkers, days, wdMap, dayCombosByDate);
+    else if (isTratoLabor) rows = buildRowsPiecework(gridWorkers, days, wdMap, dayTiersByDate);
+    else if (isTratoEtapasLabor) rows = buildRowsPieceworkStages(gridWorkers, days, wdMap, dayStagesByDate);
+    else if (isTratoHELabor) rows = buildRowsOvertimeDay(gridWorkers, days, wdMap);
     else rows = buildRowsNormal(gridWorkers, days, wdMap);
     return rows.map((r) => (r._isTemp ? r : { ...r, _displayRut: rutOf(r.rut) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3949,7 +3949,7 @@ export default function CycleDetail() {
                       >
                         + tipo
                       </button>
-                      <PisoDayRow
+                      <FloorDayRow
                         labor={activeLabor}
                         dayPrices={dayPrices}
                         date={d}
@@ -4306,7 +4306,7 @@ export default function CycleDetail() {
                           = {fmtCurrency(totalAmt)}
                         </div>
                       )}
-                      <PisoDayRow
+                      <FloorDayRow
                         labor={activeLabor}
                         dayPrices={dayPrices}
                         date={d}
