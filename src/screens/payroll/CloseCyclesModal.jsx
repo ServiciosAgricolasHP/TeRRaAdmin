@@ -1,9 +1,9 @@
 import { useState } from "react";
-import Modal, { ModalCloseButton } from "./Modal";
-import { cyclesService } from "../services";
-import { useToast } from "../contexts/ToastContext";
-import { closedCyclePatch } from "../utils/cycleClosing";
-import { fmtCurrency, fmtShortDate } from "../utils/format";
+import Modal, { ModalCloseButton } from "../../components/Modal";
+import { cyclesService } from "../../services";
+import { useToast } from "../../contexts/ToastContext";
+import { closedCyclePatch } from "../../utils/cycleClosing";
+import { fmtCurrency, fmtShortDate } from "../../utils/format";
 
 // Cierra de una vez ciclos que ya se pagaron por completo (`settledOpenCycles`).
 // Todos vienen marcados. Cerrar es el mismo cambio que el botón del ciclo

@@ -53,7 +53,7 @@ import {
 } from "../utils/payroll";
 import { newPayrollCycleDetails, allocateAdvances, advanceNote } from "../utils/payrollItem";
 import ConfirmDialog from "../components/ConfirmDialog";
-import CloseCyclesModal from "../components/CloseCyclesModal";
+import CloseCyclesModal from "./payroll/CloseCyclesModal";
 import { settledOpenCycles, payrollStatusMap, splitTaken } from "../utils/cycleClosing";
 import { currentRutResolver } from "../utils/workerRut";
 import { AddWorkerDaysModal } from "./payroll/AddWorkerDaysModal";

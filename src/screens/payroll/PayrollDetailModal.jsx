@@ -41,7 +41,7 @@ import { fmtCurrency } from "../../utils/format";
 import { AddCyclesModal } from "./AddCyclesModal";
 import { AddWorkerDaysModal } from "./AddWorkerDaysModal";
 import { CashEstimationModal } from "./CashEstimationModal";
-import { FilterToken, FilterChips } from "./DetailFilters";
+import { FilterToken, FilterChips } from "./FilterChips";
 import { resolverRutVigente, fmtDayShortEs } from "./helpers";
 import { PAY_STATE_PILL, payStateOf, paymentDates } from "./payState";
 import { PortalBadge } from "./PayStatePill";

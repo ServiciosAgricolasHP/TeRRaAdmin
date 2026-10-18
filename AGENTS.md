@@ -125,12 +125,13 @@ src/
   main.jsx              ← punto de entrada / entry point
   App.jsx               ← router (react-router-dom)
   firebase.js           ← Firebase init (Firestore db = "hpdatabase")
-  components/           ← UI compartida (Layout, Modal, ProtectedRoute, TransportsModal, WorkerEditModal, WorkerSummaryModal, CycleSummaryModal, etc.)
+  components/           ← UI compartida (Layout, ProtectedRoute, Modal, ConfirmDialog, RowMenu, TransportsModal, WorkerEditModal, WorkerSummaryModal, etc.)
+  hooks/                ← hooks que usan varias pantallas (useIsMobile)
   screens/              ← componentes de ruta / page-level route components
                         (Dashboard, Faenas, CycleDetail, Workers, Transports, Payroll, Advances,
                          InterestLinks, Calendar, AdminConsole, Users, NoAccess, MigrateWorkers,
                          CleanupPaidWorkdays)
-    payroll/            ← las piezas de Nómina (ver "Pantallas divididas en carpetas")
+    payroll/            ← las piezas de Nómina (ver "Componentes y archivos")
   contexts/             ← AuthContext, ThemeContext, CatalogsContext, CarriersContext
   services/             ← capa de datos (Firestore CRUD + caché + auditoría)
                         firestoreBase, transportsService, carriersService,
@@ -138,6 +139,44 @@ src/
   utils/                ← helpers de dominio (rutUtils, banks, payroll, cosechaCombos,
                         agGridLocale, similarity, etc.)
 ```
+
+### Componentes y archivos
+
+El código de la interfaz se organiza **por funcionalidad** (*feature folders*): las carpetas llevan el nombre de lo que hace la app (`payroll/`), no del tipo de archivo (`modals/`, `helpers/`). Cada pieza vive lo más cerca posible de donde se usa (*colocation*), y la interfaz, la lógica, el cálculo y los datos van en capas separadas. Vale para todo lo que se crea y para lo que se toca.
+
+Un componente se ubica según quién lo usa:
+
+| Tipo | Dónde va |
+|---|---|
+| **Pantalla**: el componente de una ruta | `screens/<Pantalla>.jsx` |
+| **Pieza**: lo usa una sola pantalla | En la carpeta de su pantalla: `screens/<pantalla>/<Pieza>.jsx` |
+| **Compartido**: lo usan dos o más pantallas, o es la estructura de la app (`Layout`, `ProtectedRoute`) | `components/<Componente>.jsx` |
+
+- **La carpeta aparece cuando hay piezas que separar.** Una pantalla o un componente que cabe en un archivo no lleva carpeta (`Login.jsx`, `Modal.jsx`).
+  - Cuando la lleva, la carpeta va al lado del archivo y se llama como él, con la primera letra en minúscula (`Payroll.jsx` → `payroll/`). El archivo conserva el componente principal.
+  - Una pieza con piezas propias repite el esquema dentro de la carpeta de su pantalla.
+- **Una pieza cambia de lugar cuando cambia quién la usa.** Si otra pantalla la necesita, pasa a `components/`. Un componente de `components/` que usa una sola pantalla va en la carpeta de esa pantalla.
+- **El resto del código:**
+  - `hooks/`: los hooks que usan dos o más pantallas. Los de una sola pantalla van en su carpeta, o en el archivo de la pantalla si no la tiene.
+  - `utils/`: cálculo puro, sin React ni Firestore, con su `*.test.js` al lado.
+  - `services/`: las lecturas y escrituras de Firestore.
+- **Un componente por archivo `.jsx`**, con el nombre del componente en PascalCase. Los helpers chicos que solo él usa van en el mismo archivo, sin exportar.
+  - Componentes chicos (unas 50 líneas o menos) e intrínsecamente relacionados pueden compartir archivo, exportados o no: `PayStatePill.jsx` reúne las insignias del estado de pago y `WorkerDetail.jsx` guarda su `MetricCard`. El archivo lleva el nombre del principal.
+  - Un componente más grande va en su propio archivo, aunque lo use uno solo.
+- **Lo que no es componente va en `.js`**: helpers compartidos, constantes, hooks y las impresiones en HTML. Si un `.jsx` exporta algo más que componentes, Fast Refresh recarga la página entera en vez del componente (`react-refresh/only-export-components`).
+- **Un componente dibuja; la lógica va aparte.**
+  - El estado y los efectos que forman una unidad (un flujo, una carga, una edición) van en un hook `use<Algo>.js`. El prefijo `use` es obligatorio: el linter de hooks y React Compiler reconocen los hooks por él.
+  - El cálculo sin estado va en `utils/`, con tests.
+  - Los datos, en `services/`.
+- **El estado vive en el componente más bajo que lo necesita**, y sube al padre solo si lo comparten dos hermanos. El buscador o los filtros de una sección son estado de esa sección: si viven arriba, cada tecla vuelve a dibujar el componente entero.
+- **Un componente no se define dentro de otro.** Se crea de nuevo en cada render, y React lo desmonta y lo vuelve a montar: pierde su estado y el foco.
+- **Tamaños de referencia:** un archivo de más de ~800 líneas o un componente de más de ~400 está haciendo varias cosas. Una sección, un modal o un flujo nuevo que caería en uno así va en un archivo propio de la carpeta.
+- **Más de ~10 props desde el padre indican un mal corte**: el estado que usa la pieza debería vivir en ella, o la lógica compartida en un hook o un contexto.
+- **Las piezas se importan desde su archivo**, sin un `index.js` que reexporte la carpeta. `services/index.js` es la excepción: reúne los servicios.
+- **Dos archivos de una carpeta no difieren solo en mayúsculas** (`workerDetail.js` y `WorkerDetail.jsx`): Windows resuelve `./WorkerDetail` al que encuentre primero.
+- **La mayúscula de un import tiene que ser exacta.** Windows no distingue mayúsculas en las rutas, pero el build de Linux del CI sí: un import con la mayúscula equivocada compila local y falla en CI. La carpeta es `components/`, en minúscula.
+- **Separar un archivo va en un commit aparte.** El código se mueve tal cual y solo cambian imports y exports, así el diff se revisa como movimiento. Un cambio de lógica va en otro commit.
+- **Las piezas de cada pantalla se listan en su sección de este archivo**, agrupadas por área (ver Nómina). Un archivo nuevo en una de esas carpetas se suma a la lista.
 
 ### Dónde viven los datos
 
@@ -197,14 +236,12 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 
 ## Convenciones / Conventions
 
-- Componentes en PascalCase; archivos coinciden con nombre del componente.
-- **Pantallas divididas en carpetas.** Una pantalla grande vive en `screens/<Pantalla>.jsx`, que conserva el componente de la ruta, y sus piezas en una carpeta en minúscula al lado (`screens/payroll/`). Un componente por archivo `.jsx`, con el nombre del componente y sus helpers privados chicos. Lo que no es componente (helpers compartidos, constantes, las impresiones en HTML) va en `.js`, así `react-refresh/only-export-components` no avisa. Dos archivos de la misma carpeta no pueden diferir solo en mayúsculas (`workerDetail.js` y `WorkerDetail.jsx`): Windows resuelve `./WorkerDetail` al que encuentre primero.
-- La carpeta es `components/`, en minúscula. Windows no distingue mayúsculas en las rutas, pero el build de Linux del CI sí: un import con la mayúscula equivocada compila local y falla en CI.
+- Organización de componentes, hooks y archivos: ver "Componentes y archivos" en Arquitectura.
 - ESLint: variables sin usar empezando con `A-Z_` son ignoradas.
-- `screens/` contiene lógica de rutas; data fetching en `services/`.
-- Strings UI en español; identificadores en código en inglés.
+- **Idioma.** Los textos de la interfaz, los comentarios y las descripciones de los tests (`describe`/`it`) van en español neutro, sin voseo. Los identificadores, nombres de archivo, claves y valores técnicos y los campos nuevos de Firestore van en inglés, aunque el código de alrededor use nombres en español. Los campos ya guardados (`faenaId`, `padron`) conservan su nombre.
+- **Los comentarios y la documentación describen lo que hace el código, como si siempre hubiera sido así.** No cuentan la historia (el error que motivó un cambio, la versión anterior, lo que se descartó), ni planes o estados transitorios, ni fases o tareas por nombre. Si el código ya lo dice, no se comenta. Una restricción se escribe como comportamiento ("compara el rol sin distinguir mayúsculas"). Vale también para este archivo y los README.
 - **Mayúsculas de lo que se escribe a mano** (`utils/textCase.js`, con tests). Se corrigen al guardar, no mientras se escribe:
-  - **Nombres de registros como título** (`toTitleName`): faena, ubicación, subfaena, labor y su agrupación, quincena, transportista (nombre y alias), centro de costo, alias de empresa, ficha de Información y Cuentas, faena, labor y lugar del Libro de Precios, y la nota de anticipos y bonos. Los conectores van en minúscula ("Poda y Amarre de Parrones") y los artículos solo después de "de"/"del" ("Fundo Los Robles", "Quincena de la Cosecha"). Lugar y destino de las vueltas ya pasaban por `titleCase` en `transportsService`.
+  - **Nombres de registros como título** (`toTitleName`): faena, ubicación, subfaena, labor y su agrupación, quincena, transportista (nombre y alias), centro de costo, alias de empresa, ficha de Información y Cuentas, faena, labor y lugar del Libro de Precios, y la nota de anticipos y bonos. Los conectores van en minúscula ("Poda y Amarre de Parrones") y los artículos solo después de "de"/"del" ("Fundo Los Robles", "Quincena de la Cosecha"). Lugar y destino de las vueltas pasan por `titleCase` en `transportsService`.
   - **Notas libres**: `unshout` solo las corrige si vienen **enteras en mayúsculas** (pasan a oración). Si tienen alguna minúscula, se respetan. Cubre las notas de faena, subfaena, ciclo, día del ciclo, transportista, vuelta, abono, resumen, quincena, factura y pago de factura, ficha y Libro de Precios.
   - **Quedan fuera a propósito**: la razón social (es el nombre legal del SII), el titular y el giro de las fichas (se copian al banco y al SII), el alias de los vehículos (las vueltas lo guardan como texto y dejarían de calzar), los líderes de grupo (se comparan como texto: `CHILENOS`, `EXTRANJEROS`) y los nombres de trabajadores (`toProperName`, con su propio flujo).
   - Al editar un ciclo, el prefijo "Faena/Subfaena/" de su etiqueta se reconoce sin distinguir mayúsculas, porque un ciclo antiguo puede traerlo en mayúsculas.
@@ -314,7 +351,7 @@ Bono adicional configurable por día para trato y cosecha. Pensado para compensa
 - Quedan fuera del guard a propósito, y son las únicas cuatro: las dos escrituras de normalización del loader (corren al montar, no son edición del usuario) y cerrar/reabrir el ciclo, que es el gesto que levanta el candado.
 - Banner 🔒 sobre la grilla explicando que está congelado y cómo reabrirlo. La línea del encabezado dice `🔒 ciclo cerrado (solo lectura)`, sin distinguir rol.
 - **Reabrir no está restringido a admin**: cualquiera que vea el botón levanta el candado. El cierre evita ediciones por accidente; no es un permiso.
-- **Cerrar de una vez lo ya pagado** (desde Nómina, `components/CloseCyclesModal.jsx`): al marcar una nómina pagada, si alguno de sus ciclos quedó pagado por completo se ofrece cerrarlo ahí mismo; y en Generar, "🔒 Cerrar pagados (N)" junta todos los ciclos abiertos en esa situación. Vienen todos marcados y se puede destildar.
+- **Cerrar de una vez lo ya pagado** (desde Nómina, `screens/payroll/CloseCyclesModal.jsx`): al marcar una nómina pagada, si alguno de sus ciclos quedó pagado por completo se ofrece cerrarlo ahí mismo; y en Generar, "🔒 Cerrar pagados (N)" junta todos los ciclos abiertos en esa situación. Vienen todos marcados y se puede destildar.
   - **Pagado por completo** (`settledOpenCycles`, `utils/cycleClosing.js`, con tests): algo pagado, nada pendiente, y todo lo que entró a nómina está en nóminas pagadas. Sale de los totales que Nómina ya calcula por ciclo (`takenByPayroll` + `splitTaken`), sin lecturas extra.
   - **Un ciclo que sigue en una nómina sin pagar no se ofrece**: si después se sacara de esa nómina, su plata volvería a quedar pendiente dentro de un ciclo cerrado, que Generar ya no muestra. Se ofrece al marcar esa nómina pagada.
   - Cerrar escribe lo mismo desde las tres pantallas (Faenas, el ciclo y Nómina): `closedCyclePatch`, el estado y las fechas de lo trabajado.
@@ -414,11 +451,12 @@ Implementación en `submitCycle` (Faenas.jsx). El mapeo `oldLaborId → newLabor
 
 - Pantalla: `src/screens/Payroll.jsx` (el componente de la ruta y el paso Generar). Ruta `/payroll`.
 - Sus piezas, en `src/screens/payroll/`:
-  - **Generar:** `CycleSelector`, `PreviewTable`, `PayConfirmModal`, `InstallmentConfirmModal` y `ProgressOverlay`.
-  - **Historial:** `HistoryList`, `PayStatePill` y `payState.js`.
-  - **Detalle:** `PayrollDetailModal` y sus modales (`AddCyclesModal`, `AddWorkerDaysModal`, `RecalcModal`, `CashEstimationModal`, `RenamePayrollModal`), `WorkerDetailRow` y las tablas del detalle de pago de una persona.
-  - **Pagos anteriores:** `WorkersHistory` y `WorkerDetail`.
+  - **Generar:** `CycleSelector`, `PreviewTable`, `PayConfirmModal`, `InstallmentConfirmModal`, `ProgressOverlay` y `CloseCyclesModal` (cerrar los ciclos ya pagados).
+  - **Historial:** `HistoryList`, `PayStatePill` (con `PaymentDatesLine` y `PortalBadge`) y `payState.js`.
+  - **Detalle:** `PayrollDetailModal`, sus filtros (`FilterChips`) y sus modales (`AddCyclesModal`, `AddWorkerDaysModal`, `RecalcModal`, `CashEstimationModal`, `RenamePayrollModal`). El detalle de pago de una persona: `WorkerDetailRow`, `WorkerPaySummaryCards` y `WorkerPaidDetailTables`, con `workerDetailLabels.js`.
+  - **Pagos anteriores:** `WorkersHistory` (con `FaenaFilterPopover`), `WorkerDetail` y `WorkerPayrollDetailModal`.
   - **Impresiones en HTML:** `printCommon.js`, `printReceipts.js` (comprobantes de efectivo y detalle de pago) y `printResumenTable.js`.
+  - **Comunes:** `helpers.js` (formatos de fecha y de cuenta, RUT vigente).
 - Servicio: `services/payrollsService.js` (colección `payrolls`).
 - Helpers: `utils/payroll.js` — `aggregateWorkerAmounts`, `splitBankAndCash`, `groupCashByLeader`, `validateAccountNumber`, `downloadBchileXlsx`, `downloadNominaOnlyXlsx`.
 
@@ -619,7 +657,7 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
     - Es una **copia**: si después cambian las jornadas del ciclo de origen, el resumen no se entera. Para actualizarla se quita (✕ Quitar en el editor de tarifas) y se vuelve a importar.
     - Lleva su ciclo de origen en el nombre, que se cambia en "Personalizar títulos". En tratoHE guarda los días en rojo calculados con los feriados del ciclo de origen.
     - **No va al 📊 Excel**: su desglose por combo o tier se arma releyendo las jornadas del ciclo actual.
-    - Lo ya importado se detecta por ciclo + labor. Una versión anterior importaba como filas extra de una labor del ciclo; esas filas siguen viéndose, y bloquean su ciclo de origen entero para no duplicar.
+    - Lo ya importado se detecta por ciclo + labor, en `cobrar.importedLabors` y en las filas extra que traen `sourceCycleId`. Una fila extra con ciclo y sin labor de origen bloquea ese ciclo entero, para no duplicar.
     - Las jornadas del origen se indexan con `workdayMapKey` + `workdayComboKeyOf`, las mismas claves de la grilla, que es lo que `buildDailyRows` lee para separar tiers y etapas.
   - **🔗 Juntar labores en una sola tabla (solo cobrar)**: en el editor de tarifas, "Juntar con" pone `mergeInto` en una labor y esta se muestra dentro de la tabla de la otra, con un subtotal único. Es **solo presentación**: cada labor conserva sus overrides y filas extra, y cada fila fusionada lleva `_laborId` para que la edición vuelva a su labor. El total a facturar no cambia. Reglas en `utils/cobrarMerge.js` (con tests): mismo tipo de familia, destino incluido y sin cadenas. La cantidad del subtotal solo se suma si todas las labores miden lo mismo. **El Excel consolidado sigue armando una hoja por labor**: la fusión se ve en pantalla, en la imagen y en la impresión.
   - **Total a facturar + IVA**: en el printable de cobrar el grand total se rotula **TOTAL A FACTURAR** y debajo se muestran dos filas: **Valor IVA (19%)** = `round(total × 0.19)` e **IVA incluido** = `round(total × 1.19)`. La hoja `Total` del XLSX las reproduce con fórmulas vivas (`ROUND(C*0.19,0)` y `=C+C`).

@@ -918,10 +918,10 @@ export default function CycleSummaryModal({
   // Importar ciclos anteriores (modo cobrar)
   // ============================================================
   // Labores ya importadas (ciclo + labor de origen): las de
-  // `cobrar.importedLabors` y las que una versión anterior sumaba como filas
-  // extra. Esas filas viejas solo traen el ciclo, y en ese caso todas sus
-  // labores cuentan como importadas, para no duplicarlas. El paso de labores
-  // las muestra deshabilitadas.
+  // `cobrar.importedLabors` y las filas extra que traen `sourceCycleId`. Una
+  // fila extra con ciclo y sin labor de origen cuenta todas las labores de ese
+  // ciclo como importadas, para no duplicarlas. El paso de labores las muestra
+  // deshabilitadas.
   const importedSources = useMemo(() => {
     const set = new Set();
     for (const imp of cobrar.importedLabors || []) {
