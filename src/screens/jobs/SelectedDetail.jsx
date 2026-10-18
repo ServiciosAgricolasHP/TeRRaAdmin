@@ -1,5 +1,5 @@
 import { useState } from "react";
-import ProductionSummaryModal from "../../components/ProductionSummaryModal";
+import ProductionSummaryModal from "./ProductionSummaryModal";
 import { SubjobListBody } from "./SubjobListBody";
 
 export function SelectedDetail({

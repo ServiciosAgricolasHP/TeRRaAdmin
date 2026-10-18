@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import ProductionSummaryModal from "../../components/ProductionSummaryModal";
+import ProductionSummaryModal from "./ProductionSummaryModal";
 
 export function CycleRow({ cycle, subjobName, onEdit, onOpenCloseFlow, onReopen, onDelete }) {
   // Cada CycleRow maneja su propio modal de resumen; el resumen de la faena
