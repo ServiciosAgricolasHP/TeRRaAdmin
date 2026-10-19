@@ -4,8 +4,6 @@ import { AgGridReact } from "ag-grid-react";
 import { ModuleRegistry, AllCommunityModule } from "ag-grid-community";
 import {
   cyclesService,
-  jobsService,
-  subjobsService,
   laborGroupsService,
   workdaysService,
   qrPrefixesService,
@@ -16,11 +14,8 @@ import { parseAmount } from "../utils/formula";
 import { AG_GRID_LOCALE_ES } from "../utils/agGridLocale";
 import {
   effectivePiso,
-  normalizeTratoDayPrices,
   normalizeDayPricesEntry,
-  workdayComboKeyOf,
   PISO_COMBO_KEY,
-  normalizeTratoWorkday,
   workdayMapKey,
   getDayCombos,
   comboKey as makeComboKey,
@@ -98,7 +93,6 @@ import { GroupHeaderRowRenderer } from "./cycleDetail/GroupHeaderRowRenderer";
 import { LeaderPickerModal } from "./cycleDetail/LeaderPickerModal";
 import { FloorDayRow } from "./cycleDetail/FloorDayRow";
 import {
-  normalizeCycle,
   buildRowsHarvest,
   buildRowsPiecework,
   buildRowsPieceworkStages,
@@ -128,6 +122,7 @@ import { useSiblingCycles } from "./cycleDetail/useSiblingCycles";
 import { useLeaderGrouping } from "./cycleDetail/useLeaderGrouping";
 import { usePhotoExport } from "./cycleDetail/usePhotoExport";
 import { useCycleWriteGuard } from "./cycleDetail/useCycleWriteGuard";
+import { useCycleLoader } from "./cycleDetail/useCycleLoader";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -140,17 +135,22 @@ export default function CycleDetail() {
   const toast = useToast();
   const { user } = useAuth();
 
-  const [cycle, setCycle] = useState(null);
-  const [job, setJob] = useState(null);
-  const [subjob, setSubjob] = useState(null);
-  // Agrupaciones de labor de esta subfaena (Poda, Riego, etc.), para hilar
-  // labores del mismo tipo a través de ciclos. Ver laborGroupsService.
-  const [laborGroups, setLaborGroups] = useState([]);
-  const [workdaysByLabor, setWorkdaysByLabor] = useState({});
-  // Última versión de las jornadas, para los handlers que las columnas de la
-  // grilla capturan en un render anterior.
-  const workdaysRef = useRef(workdaysByLabor);
-  useEffect(() => { workdaysRef.current = workdaysByLabor; }, [workdaysByLabor]);
+  const {
+    activeLaborId,
+    cycle,
+    dayPrices,
+    job,
+    laborGroups,
+    loading,
+    setActiveLaborId,
+    setCycle,
+    setDayPrices,
+    setLaborGroups,
+    setWorkdaysByLabor,
+    subjob,
+    workdaysByLabor,
+    workdaysRef,
+  } = useCycleLoader({ id });
 
   // Prefijos QR apuntados a este ciclo. Ver `qrLockedLabors` más abajo.
   const [qrPrefixes, setQrPrefixes] = useState([]);
@@ -160,8 +160,6 @@ export default function CycleDetail() {
   // Confirmación de quitar el piso del día: { laborId, date, libres, liquidados }.
   const [floorRemove, setFloorRemove] = useState(null);
   const [floorRemoveBusy, setFloorRemoveBusy] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [activeLaborId, setActiveLaborId] = useState(null);
 
   const [addDayOpen, setAddDayOpen] = useState(false);
   const [newDay, setNewDay] = useState(todayStr());
@@ -225,7 +223,6 @@ export default function CycleDetail() {
   const [closeFlow, setCloseFlow] = useState(false);
   const [closeBusy, setCloseBusy] = useState(false);
 
-  const [dayPrices, setDayPrices] = useState({});
   const [localPriceInputs, setLocalPriceInputs] = useState({});
 
   const [addComboFor, setAddComboFor] = useState(null);
@@ -273,68 +270,6 @@ export default function CycleDetail() {
   const isUndoingRef = useRef(false);
   const pendingBatchRef = useRef(null);
   const UNDO_LIMIT = 50;
-
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const c = await cyclesService.getById(id);
-      if (!c) { setLoading(false); return; }
-      const normalized = normalizeCycle(c);
-      const needsPersist =
-        !c.labors || !c.labors.length || !Array.isArray(c.days) || (c.labors || []).some((l) => Array.isArray(l.days));
-      if (needsPersist) {
-        await cyclesService.update(id, { days: normalized.days, labors: normalized.labors });
-      }
-      setCycle(normalized);
-      setActiveLaborId(normalized.labors[0]?.id || null);
-
-      const rawDP = c.dayPrices || {};
-      const normalizedDP = {};
-      let dpChanged = false;
-      for (const lid of Object.keys(rawDP)) {
-        normalizedDP[lid] = {};
-        const labor = (c.labors || []).find((l) => l.id === lid);
-        const laborDefaultMode = labor?.tratoMode || "unit";
-        for (const date of Object.keys(rawDP[lid])) {
-          const before = rawDP[lid][date];
-          const isTratoType = labor?.type === "trato";
-          const after = isTratoType
-            ? normalizeTratoDayPrices(before, laborDefaultMode)
-            : normalizeDayPricesEntry(before);
-          normalizedDP[lid][date] = after;
-          if (JSON.stringify(before) !== JSON.stringify(after)) dpChanged = true;
-        }
-      }
-      setDayPrices(normalizedDP);
-      if (dpChanged) await cyclesService.update(id, { dayPrices: normalizedDP });
-
-      if (normalized.faenaId) setJob(await jobsService.getById(normalized.faenaId));
-      if (normalized.subfaenaId) {
-        setSubjob(await subjobsService.getById(normalized.subfaenaId));
-        // Sin `order`: where(subfaenaId) + orderBy(name) pediría un índice
-        // compuesto en Firestore. La lista es chica y se ordena en el cliente.
-        const groups = await laborGroupsService.list({ wheres: [["subfaenaId", "==", normalized.subfaenaId]] });
-        setLaborGroups([...groups].sort((a, b) => a.name.localeCompare(b.name)));
-      }
-
-      const wds = await workdaysService.list({ wheres: [["cycleId", "==", id]] });
-      const byLabor = {};
-      const labors = normalized.labors || [];
-      for (const w of wds) {
-        const lid = w.laborId || labors[0]?.id;
-        // Clave de combo/tier (ck) del mapa en memoria (workdayComboKeyOf).
-        // Las filas de trato buscan sus jornadas por tier ("t0", "t1"…).
-        const laborForDoc = labors.find((l) => l.id === lid);
-        const ck = workdayComboKeyOf(w, laborForDoc?.type);
-        if (!byLabor[lid]) byLabor[lid] = {};
-        // Los workdays de piso no se normalizan como trato: no tienen tiers.
-        const normalizedWd = w.pisoOnly || ck === PISO_COMBO_KEY ? w : normalizeTratoWorkday(w);
-        byLabor[lid][workdayMapKey(w.workerRut, w.date, ck)] = normalizedWd;
-      }
-      setWorkdaysByLabor(byLabor);
-      setLoading(false);
-    })();
-  }, [id]);
 
   const { closed, cycleWrite, readOnly, wdWrite } = useCycleWriteGuard({ cycle, id, toast });
 
