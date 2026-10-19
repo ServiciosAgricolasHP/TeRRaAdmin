@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { AgGridReact } from "ag-grid-react";
 import { ModuleRegistry, AllCommunityModule } from "ag-grid-community";
-import { captureFullWidthDataUrl, captureFullWidthBlob } from "../utils/imageCapture";
 import {
   cyclesService,
   jobsService,
@@ -124,6 +123,10 @@ import { LaborFormModal } from "./cycleDetail/LaborFormModal";
 import { CycleConfirmDialogs } from "./cycleDetail/CycleConfirmDialogs";
 import { MonthlyConfirmModal } from "./cycleDetail/MonthlyConfirmModal";
 import { buildColumnDefs } from "./cycleDetail/columns";
+import { useCollapsedSections } from "./cycleDetail/useCollapsedSections";
+import { useSiblingCycles } from "./cycleDetail/useSiblingCycles";
+import { useLeaderGrouping } from "./cycleDetail/useLeaderGrouping";
+import { usePhotoExport } from "./cycleDetail/usePhotoExport";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -179,31 +182,14 @@ export default function CycleDetail() {
   // forma: { laborId, date, nextKey, defaultMode, value }
   const [addPriceBusy, setAddPriceBusy] = useState(false);
 
-  // Secciones colapsables (métricas y precios), persistidas por dispositivo,
-  // para dejarle más alto a la grilla.
-  const [metricsCollapsed, setMetricsCollapsed] = useState(() => {
-    try { return localStorage.getItem("cycleDetail.metricsCollapsed") === "true"; } catch { return false; }
-  });
-  useEffect(() => {
-    try { localStorage.setItem("cycleDetail.metricsCollapsed", String(metricsCollapsed)); } catch { /* noop */ }
-  }, [metricsCollapsed]);
-  const [pricesCollapsed, setPricesCollapsed] = useState(() => {
-    try { return localStorage.getItem("cycleDetail.pricesCollapsed") === "true"; } catch { return false; }
-  });
-  // Toggle maestro: colapsa TODO el bloque de controles (título+botones,
-  // métricas, tabs de labor, barra de la labor activa, chips de días,
-  // precios) en una sola línea, para maximizar el alto de la grilla. Los
-  // toggles individuales (metricsCollapsed/pricesCollapsed) siguen aplicando
-  // cuando este está expandido.
-  const [toolbarCollapsed, setToolbarCollapsed] = useState(() => {
-    try { return localStorage.getItem("cycleDetail.toolbarCollapsed") === "true"; } catch { return false; }
-  });
-  useEffect(() => {
-    try { localStorage.setItem("cycleDetail.toolbarCollapsed", String(toolbarCollapsed)); } catch { /* noop */ }
-  }, [toolbarCollapsed]);
-  useEffect(() => {
-    try { localStorage.setItem("cycleDetail.pricesCollapsed", String(pricesCollapsed)); } catch { /* noop */ }
-  }, [pricesCollapsed]);
+  const {
+    metricsCollapsed,
+    pricesCollapsed,
+    setMetricsCollapsed,
+    setPricesCollapsed,
+    setToolbarCollapsed,
+    toolbarCollapsed,
+  } = useCollapsedSections();
 
   const [pickerOpen, setPickerOpen] = useState(false);
   // RUT sintético (TEMP-*) del temporal al que se le está asignando un RUT
@@ -237,7 +223,6 @@ export default function CycleDetail() {
   const [copyToast, setCopyToast] = useState("");
   const [closeFlow, setCloseFlow] = useState(false);
   const [closeBusy, setCloseBusy] = useState(false);
-  const [exporting, setExporting] = useState(false);
 
   const [dayPrices, setDayPrices] = useState({});
   const [localPriceInputs, setLocalPriceInputs] = useState({});
@@ -407,43 +392,7 @@ export default function CycleDetail() {
   const qrPrefixForActive = activeLaborId ? qrLockedLabors.get(activeLaborId) : null;
   const qrLocked = !!qrPrefixForActive;
 
-  // Navegación entre ciclos hermanos (misma faena y subfaena), ordenados por
-  // su primer día trabajado (mínimo de cycle.days), no por el número del
-  // label. Se recarga solo cuando cambia la faena o la subfaena.
-  const [siblingCycles, setSiblingCycles] = useState(null);
-  useEffect(() => {
-    const faenaId = cycle?.faenaId;
-    if (!faenaId) { setSiblingCycles(null); return; }
-    const subfaenaId = cycle?.subfaenaId || null;
-    let cancelled = false;
-    (async () => {
-      const list = await cyclesService.list({
-        wheres: [["faenaId", "==", faenaId]],
-        cache: true,
-        ttl: 2 * 60 * 1000,
-      });
-      if (cancelled) return;
-      const scope = list.filter((c) => (c.subfaenaId || null) === subfaenaId);
-      // Un ciclo sin días se ordena por startDate o createdAt, nunca por hoy
-      // (a diferencia de firstWorkedDay).
-      const firstDayForSort = (c) => {
-        const days = c.days;
-        if (Array.isArray(days) && days.length > 0) {
-          return days.reduce((min, d) => (d < min ? d : min), days[0]);
-        }
-        return c.startDate || c.createdAt?.toDate?.()?.toISOString?.() || "";
-      };
-      scope.sort((a, b) => firstDayForSort(a).localeCompare(firstDayForSort(b)));
-      setSiblingCycles(scope.map((c) => ({ id: c.id, label: c.label })));
-    })();
-    return () => { cancelled = true; };
-  }, [cycle?.faenaId, cycle?.subfaenaId]);
-
-  const cycleNavIndex = siblingCycles ? siblingCycles.findIndex((c) => c.id === id) : -1;
-  const prevCycle = cycleNavIndex > 0 ? siblingCycles[cycleNavIndex - 1] : null;
-  const nextCycle = cycleNavIndex >= 0 && cycleNavIndex < (siblingCycles?.length || 0) - 1
-    ? siblingCycles[cycleNavIndex + 1]
-    : null;
+  const { nextCycle, prevCycle } = useSiblingCycles({ cycle, id });
 
   const loadAllWorkers = async () => {
     const list = await workersService.list({
@@ -507,24 +456,6 @@ export default function CycleDetail() {
     }
     return m;
   }, [allWorkers]);
-
-  const LEADER_LOCAL = "CHILENOS";
-  const LEADER_FOREIGN = "EXTRANJEROS";
-  const LEADER_NONE = "__NONE__";
-
-  const orderLeaders = (leaders) => {
-    const arr = [...leaders];
-    return arr.sort((a, b) => {
-      if (a === b) return 0;
-      if (a === LEADER_LOCAL) return -1;
-      if (b === LEADER_LOCAL) return 1;
-      if (a === LEADER_FOREIGN) return -1;
-      if (b === LEADER_FOREIGN) return 1;
-      if (a === LEADER_NONE) return 1;
-      if (b === LEADER_NONE) return -1;
-      return a.localeCompare(b);
-    });
-  };
 
   const activeLabor = useMemo(
     () => cycle?.labors?.find((l) => l.id === activeLaborId) || cycle?.labors?.[0] || null,
@@ -685,70 +616,25 @@ export default function CycleDetail() {
     setEditingCycleWorkerRut(sortedWorkerRuts[nextIndex]);
   };
 
-  const groupBuckets = useMemo(() => {
-    const buckets = new Map();
-    for (const row of rowDataRaw) {
-      const leader = rutToLeader.get(row.rut) || LEADER_NONE;
-      if (!buckets.has(leader)) buckets.set(leader, []);
-      buckets.get(leader).push(row);
-    }
-    for (const [, rows] of buckets) rows.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
-    return buckets;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowDataRaw, rutToLeader]);
-
-  const orderedGroups = useMemo(() => {
-    const keys = orderLeaders([...groupBuckets.keys()]);
-    return keys.map((k) => ({
-      key: k,
-      label: k === LEADER_NONE ? "SIN GRUPO" : k,
-      count: groupBuckets.get(k)?.length || 0,
-      rows: groupBuckets.get(k) || [],
-    }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupBuckets]);
-
-  const isGroupedView = groupView === "group" && !photoMode;
-
-  const rowData = useMemo(() => {
-    if (!isGroupedView) return rowDataRaw;
-    const out = [];
-    for (const g of orderedGroups) {
-      out.push({
-        rut: `__group__${g.key}`,
-        _isHeader: true,
-        _leader: g.label,
-        _leaderKey: g.key,
-        _count: g.count,
-      });
-      for (const r of g.rows) out.push(r);
-    }
-    return out;
-  }, [isGroupedView, rowDataRaw, orderedGroups]);
-
-  // "Solo con producción" es un filtro externo de AG-Grid (no recorta
-  // `rowData`), así convive con el orden y la selección de la grilla. Con un
-  // filtro de columna activo deja pasar todo: la búsqueda muestra a todos los
-  // que calzan, tengan o no producción.
-  const isExternalFilterPresent = () => onlyWithProduction;
-  const doesExternalFilterPass = (node) => {
-    if (node.data?._isHeader) return true;
-    if (gridRef.current?.api?.isColumnFilterPresent()) return true;
-    return Number(node.data?.total) > 0;
-  };
-  useEffect(() => {
-    gridRef.current?.api?.onFilterChanged();
-  }, [onlyWithProduction]);
-  const handleGridFilterChanged = () => {
-    setColumnFilterActive(!!gridRef.current?.api?.isColumnFilterPresent());
-  };
-
-  const scrollToGroup = (key) => {
-    const api = gridRef.current?.api;
-    if (!api) return;
-    const node = api.getRowNode(`__group__${key}`);
-    if (node) api.ensureNodeVisible(node, "top");
-  };
+  const {
+    doesExternalFilterPass,
+    handleGridFilterChanged,
+    isExternalFilterPresent,
+    isGroupedView,
+    LEADER_LOCAL,
+    LEADER_NONE,
+    orderedGroups,
+    rowData,
+    scrollToGroup,
+  } = useLeaderGrouping({
+    gridRef,
+    groupView,
+    onlyWithProduction,
+    photoMode,
+    rowDataRaw,
+    rutToLeader,
+    setColumnFilterActive,
+  });
 
   const assignLeaderToWorker = async (rut, leader) => {
     const w = allWorkers.find((x) => x.id === rut);
@@ -2258,71 +2144,13 @@ export default function CycleDetail() {
     showToast("Ciclo reabierto");
   };
 
-  const exportPng = async () => {
-    if (!photoRef.current) return;
-    setExporting(true);
-    try {
-      const bg = getComputedStyle(document.body).backgroundColor || "#ffffff";
-      const dataUrl = await captureFullWidthDataUrl(photoRef.current, { backgroundColor: bg, pixelRatio: 2, cacheBust: true });
-      const link = document.createElement("a");
-      link.download = `${cycle.label}_${activeLabor?.name || "labor"}_${todayStr()}.png`.replace(/\s+/g, "_");
-      link.href = dataUrl;
-      link.click();
-      showToast("PNG descargado");
-    } catch (err) {
-      console.error(err);
-      showToast("No se pudo generar el PNG");
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const copyImage = async () => {
-    if (!photoRef.current) return;
-    setExporting(true);
-    try {
-      const bg = getComputedStyle(document.body).backgroundColor || "#ffffff";
-      const blob = await captureFullWidthBlob(photoRef.current, { backgroundColor: bg, pixelRatio: 2, cacheBust: true });
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      showToast("Imagen copiada");
-    } catch (err) {
-      console.error(err);
-      showToast("No se pudo copiar la imagen");
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const printPhoto = async () => {
-    if (!photoRef.current) return;
-    setExporting(true);
-    try {
-      const bg = getComputedStyle(document.body).backgroundColor || "#ffffff";
-      const dataUrl = await captureFullWidthDataUrl(photoRef.current, { backgroundColor: bg, pixelRatio: 2, cacheBust: true });
-      const win = window.open("", "_blank", "width=1100,height=800");
-      if (!win) {
-        toast.warning("Permite las ventanas emergentes para imprimir.");
-        return;
-      }
-      win.document.write(`<!DOCTYPE html><html><head><title>${cycle.label} · ${activeLabor?.name || ""}</title>
-        <style>
-          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-          body { margin: 0; padding: 16px; background: #fff; }
-          img { max-width: 100%; height: auto; display: block; }
-          @media print { @page { size: landscape; margin: 8mm; } body { padding: 0; } }
-        </style>
-      </head><body><img src="${dataUrl}" /></body></html>`);
-      win.document.close();
-      win.focus();
-      setTimeout(() => { win.print(); }, 300);
-    } catch (err) {
-      console.error(err);
-      showToast("No se pudo imprimir");
-    } finally {
-      setExporting(false);
-    }
-  };
+  const { copyImage, exporting, exportPng, printPhoto } = usePhotoExport({
+    activeLabor,
+    cycle,
+    photoRef,
+    showToast,
+    toast,
+  });
 
   // ============================================================
   // Columnas de la grilla
