@@ -27,8 +27,8 @@ export function peopleByDateOf(workdaysByLabor, shownLaborId) {
 
 // Días de la labor activa que muestran la columna "Piso": los que tienen
 // piso configurado en `dayPrices` o algún workday pisoOnly.
-export function daysWithFloorOf(activeLabor, isCosechaLabor, isTratoLabor, dayPrices, wdMap) {
-  if (!activeLabor || (!isCosechaLabor && !isTratoLabor)) return new Set();
+export function daysWithFloorOf(activeLabor, isHarvestLabor, isPieceworkLabor, dayPrices, wdMap) {
+  if (!activeLabor || (!isHarvestLabor && !isPieceworkLabor)) return new Set();
   const s = new Set();
   const dp = dayPrices[activeLabor.id] || {};
   for (const d in dp) {
@@ -41,8 +41,8 @@ export function daysWithFloorOf(activeLabor, isCosechaLabor, isTratoLabor, dayPr
   return s;
 }
 
-export function dayCombosOf(isCosechaLabor, activeLabor, days, dayPrices, defaultMode, workdaysByLabor) {
-  if (!isCosechaLabor || !activeLabor) return {};
+export function dayCombosOf(isHarvestLabor, activeLabor, days, dayPrices, defaultMode, workdaysByLabor) {
+  if (!isHarvestLabor || !activeLabor) return {};
   const wdMapForLabor = workdaysByLabor[activeLabor.id] || {};
   const out = {};
   for (const d of days) {
@@ -66,8 +66,8 @@ export function dayCombosOf(isCosechaLabor, activeLabor, days, dayPrices, defaul
   return out;
 }
 
-export function dayTiersOf(isTratoLabor, activeLabor, days, dayPrices, defaultMode, workdaysByLabor) {
-  if (!isTratoLabor || !activeLabor) return {};
+export function dayTiersOf(isPieceworkLabor, activeLabor, days, dayPrices, defaultMode, workdaysByLabor) {
+  if (!isPieceworkLabor || !activeLabor) return {};
   const wdMapForLabor = workdaysByLabor[activeLabor.id] || {};
   const out = {};
   for (const d of days) {
@@ -96,8 +96,8 @@ export function dayTiersOf(isTratoLabor, activeLabor, days, dayPrices, defaultMo
 // Etapas visibles por día en tratoEtapas: las etapas fijas de la labor que
 // tienen precio ese día o producción, con el precio y el modo del día
 // resueltos. Cada entrada: { id, name, counts, price, mode }.
-export function dayStagesOf(isTratoEtapasLabor, activeLabor, days, dayPrices, workdaysByLabor) {
-  if (!isTratoEtapasLabor || !activeLabor) return {};
+export function dayStagesOf(isPieceworkStagesLabor, activeLabor, days, dayPrices, workdaysByLabor) {
+  if (!isPieceworkStagesLabor || !activeLabor) return {};
   const wdMapForLabor = workdaysByLabor[activeLabor.id] || {};
   const out = {};
   for (const d of days) {
@@ -189,8 +189,8 @@ export function laborQtyTotals(labors, workdaysByLabor) {
 // Resumen por día de la labor tratoEtapas activa, para la barra de precios:
 // unidades de las etapas que cuentan, personas (ruts únicos con qty > 0 en
 // cualquier etapa) y monto del día. { [date]: { counted, people, amount } }.
-export function stagesDaySummaryOf(isTratoEtapasLabor, activeLabor, workdaysByLabor) {
-  if (!isTratoEtapasLabor || !activeLabor) return {};
+export function stagesDaySummaryOf(isPieceworkStagesLabor, activeLabor, workdaysByLabor) {
+  if (!isPieceworkStagesLabor || !activeLabor) return {};
   const counting = countingStageIds(activeLabor);
   const m = workdaysByLabor[activeLabor.id] || {};
   const acc = {};
@@ -261,7 +261,7 @@ export function overtimeDayMetricsOf(labors, workdaysByLabor, dayPrices) {
     if (l.type !== "tratoHE") continue;
     const m = workdaysByLabor[l.id] || {};
     let normalQty = 0, holidayQty = 0;
-    let normalHE = 0, holidayHE = 0;
+    let normalOvertimeHours = 0, holidayOvertimeHours = 0;
     let workersWithBonus = 0;
     const seenWorkers = new Set();
     for (const k in m) {
@@ -269,21 +269,21 @@ export function overtimeDayMetricsOf(labors, workdaysByLabor, dayPrices) {
       const cfg = getDaySingle(dayPrices, l.id, wd.date, "normal");
       const red = isRedDay(wd.date, cfg);
       const qty = Number(wd.qty) || 0;
-      const he = Number(wd.overtimeHours) || 0;
-      if (red) { holidayQty += qty; holidayHE += he; }
-      else { normalQty += qty; normalHE += he; }
+      const hours = Number(wd.overtimeHours) || 0;
+      if (red) { holidayQty += qty; holidayOvertimeHours += hours; }
+      else { normalQty += qty; normalOvertimeHours += hours; }
       if ((wd.hasManejo || wd.hasSupervision) && !seenWorkers.has(wd.workerRut)) {
         seenWorkers.add(wd.workerRut);
         workersWithBonus++;
       }
     }
-    out[l.id] = { normalQty, holidayQty, normalHE, holidayHE, workersWithBonus };
+    out[l.id] = { normalQty, holidayQty, normalOvertimeHours, holidayOvertimeHours, workersWithBonus };
   }
   return out;
 }
 
-export function harvestQtyByDayCombo(isCosechaLabor, activeLabor, workdaysByLabor, days, workers, dayCombosByDate) {
-  if (!isCosechaLabor || !activeLabor) return {};
+export function harvestQtyByDayCombo(isHarvestLabor, activeLabor, workdaysByLabor, days, workers, dayCombosByDate) {
+  if (!isHarvestLabor || !activeLabor) return {};
   const m = workdaysByLabor[activeLabor.id] || {};
   const out = {};
   for (const d of days) {

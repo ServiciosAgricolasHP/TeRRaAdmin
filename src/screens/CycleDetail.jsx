@@ -618,7 +618,7 @@ export default function CycleDetail() {
     return labor?.workers?.find((w) => w.rut === rut)?.id || rut;
   };
 
-  const daysWithPiso = useMemo(() => daysWithFloorOf(activeLabor, isCosechaLabor, isTratoLabor, dayPrices, wdMap), [activeLabor, isCosechaLabor, isTratoLabor, dayPrices, wdMap]);
+  const daysWithFloor = useMemo(() => daysWithFloorOf(activeLabor, isCosechaLabor, isTratoLabor, dayPrices, wdMap), [activeLabor, isCosechaLabor, isTratoLabor, dayPrices, wdMap]);
 
   const dayCombosByDate = useMemo(() => dayCombosOf(isCosechaLabor, activeLabor, days, dayPrices, defaultMode, workdaysByLabor), [isCosechaLabor, activeLabor, days, dayPrices, defaultMode, workdaysByLabor]);
 
@@ -817,17 +817,17 @@ export default function CycleDetail() {
 
   const totalQtyByLabor = useMemo(() => laborQtyTotals(cycle?.labors, workdaysByLabor), [cycle?.labors, workdaysByLabor]);
 
-  const etapasDaySummary = useMemo(() => stagesDaySummaryOf(isTratoEtapasLabor, activeLabor, workdaysByLabor), [isTratoEtapasLabor, activeLabor, workdaysByLabor]);
+  const stagesDaySummary = useMemo(() => stagesDaySummaryOf(isTratoEtapasLabor, activeLabor, workdaysByLabor), [isTratoEtapasLabor, activeLabor, workdaysByLabor]);
 
-  const tratoPeopleCountByLabor = useMemo(() => pieceworkPeopleCounts(cycle?.labors, workdaysByLabor), [cycle?.labors, workdaysByLabor]);
+  const pieceworkPeopleCountByLabor = useMemo(() => pieceworkPeopleCounts(cycle?.labors, workdaysByLabor), [cycle?.labors, workdaysByLabor]);
 
-  const pisoMetricsByLabor = useMemo(() => floorMetricsOf(cycle?.labors, workdaysByLabor), [cycle?.labors, workdaysByLabor]);
+  const floorMetricsByLabor = useMemo(() => floorMetricsOf(cycle?.labors, workdaysByLabor), [cycle?.labors, workdaysByLabor]);
 
-  const tratoHEMetricsByLabor = useMemo(() => overtimeDayMetricsOf(cycle?.labors, workdaysByLabor, dayPrices), [cycle?.labors, workdaysByLabor, dayPrices]);
+  const overtimeDayMetricsByLabor = useMemo(() => overtimeDayMetricsOf(cycle?.labors, workdaysByLabor, dayPrices), [cycle?.labors, workdaysByLabor, dayPrices]);
 
   const totalQtyByDayCombo = useMemo(() => harvestQtyByDayCombo(isCosechaLabor, activeLabor, workdaysByLabor, days, workers, dayCombosByDate), [isCosechaLabor, activeLabor, workdaysByLabor, days, workers, dayCombosByDate]);
 
-  const tratoTierMetricsByLabor = useMemo(() => pieceworkTierMetricsOf(cycle?.labors, workdaysByLabor), [cycle?.labors, workdaysByLabor]);
+  const pieceworkTierMetricsByLabor = useMemo(() => pieceworkTierMetricsOf(cycle?.labors, workdaysByLabor), [cycle?.labors, workdaysByLabor]);
 
   const transportTotal = useMemo(
     () => cycleTrips.reduce((s, t) => s + (Number(t.amount) || 0), 0),
@@ -2622,7 +2622,7 @@ export default function CycleDetail() {
             );
           },
         }));
-        if (daysWithPiso.has(d)) {
+        if (daysWithFloor.has(d)) {
           children.push(buildPisoChildCol(d, activeLabor, dayPrices, readOnly || photoMode, togglePiso));
         }
         return {
@@ -2678,7 +2678,7 @@ export default function CycleDetail() {
             );
           },
         }));
-        if (daysWithPiso.has(d)) {
+        if (daysWithFloor.has(d)) {
           children.push(buildPisoChildCol(d, activeLabor, dayPrices, readOnly || photoMode, togglePiso));
         }
         return {
@@ -2939,7 +2939,7 @@ export default function CycleDetail() {
     });
     return [...baseLeft, ...dayCols, totalCol, ...actionsCol];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [days, readOnly, photoMode, qrLocked, isCosechaLabor, isTratoLabor, isTratoEtapasLabor, isTratoHELabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, catalogs, dayPrices, activeLabor, tratoHEView, cosechaView, tratoView, activeLaborDayNotes, legacyDayNotes, activeLaborDatesWithProduction, daysWithPiso, isMobile]);
+  }, [days, readOnly, photoMode, qrLocked, isCosechaLabor, isTratoLabor, isTratoEtapasLabor, isTratoHELabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, catalogs, dayPrices, activeLabor, tratoHEView, cosechaView, tratoView, activeLaborDayNotes, legacyDayNotes, activeLaborDatesWithProduction, daysWithFloor, isMobile]);
 
   if (loading) return <div className="text-[var(--color-muted)]">Cargando...</div>;
   if (!cycle) return <div className="text-[var(--color-muted)]">Ciclo no encontrado.</div>;
@@ -3177,8 +3177,8 @@ export default function CycleDetail() {
           const totalAmt = totalsByLabor[l.id] || 0;
           const qtyByContainer = totalQtyByContainerByLabor[l.id] || {};
           const totalQty = totalQtyByLabor[l.id] || 0;
-          const heMetrics = tratoHEMetricsByLabor[l.id];
-          const pisoMetrics = pisoMetricsByLabor[l.id] || { count: 0, amount: 0 };
+          const heMetrics = overtimeDayMetricsByLabor[l.id];
+          const pisoMetrics = floorMetricsByLabor[l.id] || { count: 0, amount: 0 };
           const tag = isCo ? "cosecha" : isTr ? "trato" : isEt ? "por etapas" : isHE ? "jornadas+HE" : l.type === "main" ? "al día" : l.type;
           const tagClass = isCo
             ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
@@ -3227,7 +3227,7 @@ export default function CycleDetail() {
                     {tratoTypeLabel(catalogs, l.tratoType ?? 0)} · {totalQty.toLocaleString("es-CL")} unid.
                   </div>
                   {(() => {
-                    const n = tratoPeopleCountByLabor[l.id] || 0;
+                    const n = pieceworkPeopleCountByLabor[l.id] || 0;
                     if (n === 0) return null;
                     const avg = totalQty / n;
                     return (
@@ -3237,9 +3237,9 @@ export default function CycleDetail() {
                       </div>
                     );
                   })()}
-                  {tratoTierMetricsByLabor[l.id] && Object.keys(tratoTierMetricsByLabor[l.id]).length > 1 && (
+                  {pieceworkTierMetricsByLabor[l.id] && Object.keys(pieceworkTierMetricsByLabor[l.id]).length > 1 && (
                     <div className="mt-0.5 space-y-0">
-                      {Object.entries(tratoTierMetricsByLabor[l.id])
+                      {Object.entries(pieceworkTierMetricsByLabor[l.id])
                         .sort(([a], [b]) => Number(a) - Number(b))
                         .map(([idx, tm]) => (
                           <div key={idx} className="flex justify-between gap-2 text-[var(--color-muted)]">
@@ -3286,11 +3286,11 @@ export default function CycleDetail() {
                   <div className="flex justify-between gap-2">
                     <span className="text-[var(--color-muted)]">Horas extras:</span>
                     <span>
-                      <span className="font-medium">{heMetrics.normalHE.toLocaleString("es-CL")}h</span>
+                      <span className="font-medium">{heMetrics.normalOvertimeHours.toLocaleString("es-CL")}h</span>
                       <span className="text-[var(--color-muted)]"> norm.</span>
-                      {heMetrics.holidayHE > 0 && (
+                      {heMetrics.holidayOvertimeHours > 0 && (
                         <span className="ml-1 text-[var(--color-danger)]">
-                          + {heMetrics.holidayHE.toLocaleString("es-CL")}h fer.
+                          + {heMetrics.holidayOvertimeHours.toLocaleString("es-CL")}h fer.
                         </span>
                       )}
                     </span>
@@ -3762,7 +3762,7 @@ export default function CycleDetail() {
                       );
                     })}
                     {(() => {
-                      const s = etapasDaySummary[d];
+                      const s = stagesDaySummary[d];
                       if (!s || (s.counted === 0 && s.people === 0)) return null;
                       const avg = s.people > 0 ? s.counted / s.people : 0;
                       return (
@@ -4713,7 +4713,7 @@ export default function CycleDetail() {
         dayCombosByDate={dayCombosByDate}
         dayTiersByDate={dayTiersByDate}
         dayStagesByDate={dayStagesByDate}
-        daysWithPiso={daysWithPiso}
+        daysWithFloor={daysWithFloor}
         catalogs={catalogs}
         readOnly={readOnly}
         fmtCurrency={fmtCurrency}

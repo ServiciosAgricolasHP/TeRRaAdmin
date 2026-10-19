@@ -53,7 +53,7 @@ export default function CycleWorkerEditModal({
   dayCombosByDate,
   dayTiersByDate,
   dayStagesByDate,
-  daysWithPiso,
+  daysWithFloor,
   catalogs,
   readOnly,
   fmtCurrency,
@@ -413,7 +413,7 @@ export default function CycleWorkerEditModal({
   };
 
   const renderFloorRow = (d) => {
-    if (!daysWithPiso?.has(d)) return null;
+    if (!daysWithFloor?.has(d)) return null;
     const eff = effectivePiso(activeLabor, dayPrices, d);
     const amt = Number(row[`${d}__piso`]) || 0;
     const checked = amt > 0;
@@ -477,7 +477,7 @@ export default function CycleWorkerEditModal({
 
   const renderHarvestDay = (d) => {
     const combos = dayCombosByDate[d] || [];
-    if (combos.length === 0 && !daysWithPiso?.has(d)) {
+    if (combos.length === 0 && !daysWithFloor?.has(d)) {
       return (
         <div key={d} className="rounded-lg border border-dashed border-[var(--color-border)] p-3.5">
           <div className="mb-1 flex items-center justify-between gap-2">
@@ -541,7 +541,7 @@ export default function CycleWorkerEditModal({
 
   const renderPieceworkDay = (d) => {
     const tiers = dayTiersByDate[d] || [];
-    if (tiers.length === 0 && !daysWithPiso?.has(d)) {
+    if (tiers.length === 0 && !daysWithFloor?.has(d)) {
       return (
         <div key={d} className="rounded-lg border border-dashed border-[var(--color-border)] p-3.5">
           <div className="mb-1 flex items-center justify-between gap-2">

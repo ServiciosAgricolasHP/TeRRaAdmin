@@ -118,7 +118,7 @@ describe("totales por labor", () => {
 
   it("separa las jornadas y horas extras normales de las del feriado", () => {
     expect(overtimeDayMetricsOf(labors, workdaysByLabor, dayPrices)).toEqual({
-      LH: { normalQty: 30000, holidayQty: 35000, normalHE: 2, holidayHE: 1, workersWithBonus: 2 },
+      LH: { normalQty: 30000, holidayQty: 35000, normalOvertimeHours: 2, holidayOvertimeHours: 1, workersWithBonus: 2 },
     });
   });
 
