@@ -3,39 +3,21 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { AgGridReact } from "ag-grid-react";
 import { ModuleRegistry, AllCommunityModule } from "ag-grid-community";
 import {
-  cyclesService,
-  laborGroupsService,
-  workdaysService,
   qrPrefixesService,
   workersService,
   groupLeadersService,
 } from "../services";
 import { AG_GRID_LOCALE_ES } from "../utils/agGridLocale";
 import {
-  PISO_COMBO_KEY,
   workdayMapKey,
   getDaySingle,
-  workdayDocId,
-  COSECHA_MODES,
 } from "../utils/cosechaCombos";
 import {
-  DEFAULT_BONUS_MANEJO,
-  DEFAULT_BONUS_SUPERVISION,
-  DEFAULT_OVERTIME_RATE,
-  DEFAULT_BASE_DAY,
-} from "../utils/tratoHE";
-import {
   normalizeStages,
-  defaultStages,
 } from "../utils/tratoEtapas";
 import { useCatalogs } from "../contexts/CatalogsContext";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
-import Modal, { ModalCloseButton } from "../components/Modal";
-import { hasChanges } from "../utils/formChanges";
-import TextField from "../components/TextField";
-import Select from "../components/Select";
-import ConfirmDialog from "../components/ConfirmDialog";
 import { useIsMobile } from "../hooks/useIsMobile";
 import WorkerPickerModal from "./cycleDetail/WorkerPickerModal";
 import WorkerEditModal from "../components/WorkerEditModal";
@@ -45,8 +27,6 @@ import CycleWorkerEditModal from "./cycleDetail/CycleWorkerEditModal";
 import CycleSummaryModal from "./cycleDetail/CycleSummaryModal";
 import { tripsService } from "../services/transportsService";
 import { qrLockedLaborsOf } from "../utils/harvestSync";
-import { LABOR_TYPES } from "../utils/laborTypes";
-import { closedCyclePatch } from "../utils/cycleClosing";
 import { currentRutResolver } from "../utils/workerRut";
 import {
   peopleByDateOf,
@@ -65,19 +45,14 @@ import {
   harvestQtyByDayCombo,
   pieceworkTierMetricsOf,
 } from "../utils/cycleMetrics";
-import { unshout, toTitleName } from "../utils/textCase";
 import { fmtCurrency } from "../utils/format";
 import { AddComboModal } from "./cycleDetail/AddComboModal";
 import { BonusEditModal } from "./cycleDetail/BonusEditModal";
 import { CatalogsModal } from "./cycleDetail/CatalogsModal";
-import { DayCalendarPicker } from "./cycleDetail/DayCalendarPicker";
-import { DayHeader } from "./cycleDetail/DayHeader";
 import { DayModeModal } from "./cycleDetail/DayModeModal";
 import { DefaultLeadersModal } from "./cycleDetail/DefaultLeadersModal";
-import { FormulaCellEditor } from "./cycleDetail/FormulaCellEditor";
 import { GroupHeaderRowRenderer } from "./cycleDetail/GroupHeaderRowRenderer";
 import { LeaderPickerModal } from "./cycleDetail/LeaderPickerModal";
-import { FloorDayRow } from "./cycleDetail/FloorDayRow";
 import {
   buildRowsHarvest,
   buildRowsPiecework,
@@ -85,9 +60,7 @@ import {
   buildRowsOvertimeDay,
   buildRowsNormal,
   SINGLE_COMBO,
-  newId,
 } from "./cycleDetail/rows";
-import { StagesEditor } from "./cycleDetail/StagesEditor";
 import { CycleDetailContext } from "./cycleDetail/CycleDetailContext";
 import { CycleHeader } from "./cycleDetail/CycleHeader";
 import { CycleTitleBar } from "./cycleDetail/CycleTitleBar";
@@ -114,6 +87,9 @@ import { useFloorBonus } from "./cycleDetail/useFloorBonus";
 import { useCellEdits } from "./cycleDetail/useCellEdits";
 import { useLaborWorkers } from "./cycleDetail/useLaborWorkers";
 import { useCycleDays } from "./cycleDetail/useCycleDays";
+import { useDayNotes } from "./cycleDetail/useDayNotes";
+import { useLaborForm } from "./cycleDetail/useLaborForm";
+import { useCycleClosing } from "./cycleDetail/useCycleClosing";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -144,14 +120,6 @@ export default function CycleDetail() {
   // Prefijos QR apuntados a este ciclo. Ver `qrLockedLabors` más abajo.
   const [qrPrefixes, setQrPrefixes] = useState([]);
 
-  // Anotaciones por (labor, día) en cycle.dayNotesByLabor = { [laborId]:
-  // { "YYYY-MM-DD": "texto" } }. cycle.dayNotes (compartido entre labores)
-  // solo se lee, cuando la labor no tiene anotación propia para ese día. Se
-  // editan en un modal que abre el encabezado de la fecha (DayHeader).
-  const [editingDayNote, setEditingDayNote] = useState(null); // { laborId, date } o null
-  const [editingDayNoteText, setEditingDayNoteText] = useState("");
-  const [dayNoteBusy, setDayNoteBusy] = useState(false);
-
   // Modal para agregar un precio (tier) a un día de trato.
   const [addPriceModal, setAddPriceModal] = useState(null);
   // forma: { laborId, date, nextKey, defaultMode, value }
@@ -171,9 +139,6 @@ export default function CycleDetail() {
   // a temporales (no existen como doc en `worker`).
   const [editingWorkerRut, setEditingWorkerRut] = useState(null);
 
-  const [laborForm, setLaborForm] = useState(null);
-  const [removeLabor, setRemoveLabor] = useState(null);
-
   const [photoMode, setPhotoMode] = useState(false);
   // En mobile se muestra la lista de trabajadores (CycleWorkerList) en vez de
   // la grilla, que obliga a desplazarse por decenas de columnas de día. Este
@@ -183,10 +148,7 @@ export default function CycleDetail() {
   // al cambiar de labor, donde ese rut puede no existir.
   const [editingCycleWorkerRut, setEditingCycleWorkerRut] = useState(null);
   const [copyToast, setCopyToast] = useState("");
-  const [closeFlow, setCloseFlow] = useState(false);
-  const [closeBusy, setCloseBusy] = useState(false);
 
-  const [confirmReopen, setConfirmReopen] = useState(false);
   const [catalogsOpen, setCatalogsOpen] = useState(false);
   const [defaultLeadersOpen, setDefaultLeadersOpen] = useState(false);
   const [overtimeDayView, setOvertimeDayView] = useState("detalle"); // "detalle" | "resumen"
@@ -359,67 +321,30 @@ export default function CycleDetail() {
 
   const dayStagesByDate = useMemo(() => dayStagesOf(isPieceworkStagesLabor, activeLabor, days, dayPrices, workdaysByLabor), [isPieceworkStagesLabor, activeLabor, days, dayPrices, workdaysByLabor]);
 
-  const legacyDayNotes = cycle?.dayNotes || {};
-  const dayNotesByLabor = cycle?.dayNotesByLabor || {};
-  const activeLaborDayNotes = (activeLabor && dayNotesByLabor[activeLabor.id]) || {};
-  // Manda la anotación de la labor; si no tiene una para ese día, se usa la
-  // compartida del ciclo.
-  const noteForDay = (d) => activeLaborDayNotes[d] ?? legacyDayNotes[d] ?? "";
-  // Se puede anotar un día con producción de esta labor o que ya tenga
-  // anotación.
-  const dayHasContent = (d) => activeLaborDatesWithProduction.has(d) || !!noteForDay(d);
-
-  const openDayNote = (date) => {
-    if (!activeLabor || !dayHasContent(date)) return;
-    setEditingDayNote({ laborId: activeLabor.id, date });
-    setEditingDayNoteText(String(noteForDay(date) || ""));
-  };
-
-  const closeDayNote = () => {
-    if (dayNoteBusy) return;
-    setEditingDayNote(null);
-    setEditingDayNoteText("");
-  };
-
-  const editingDayNoteIdx = editingDayNote ? days.indexOf(editingDayNote.date) : -1;
-  const hasPrevDayNote = editingDayNoteIdx > 0 && days.slice(0, editingDayNoteIdx).some(dayHasContent);
-  const hasNextDayNote = editingDayNoteIdx >= 0 && days.slice(editingDayNoteIdx + 1).some(dayHasContent);
-  // Con la anotación cambiada y sin guardar, ◀ ▶ quedan deshabilitados: pasar
-  // de día la descartaría.
-  const dayNoteDirty =
-    !!editingDayNote && !dayNoteBusy && hasChanges({ text: noteForDay(editingDayNote.date) }, { text: editingDayNoteText });
-  const goToDayNote = (delta) => {
-    if (!editingDayNote) return;
-    let idx = editingDayNoteIdx;
-    while (true) {
-      idx += delta;
-      if (idx < 0 || idx >= days.length) return;
-      if (dayHasContent(days[idx])) break;
-    }
-    const nextDate = days[idx];
-    setEditingDayNote({ ...editingDayNote, date: nextDate });
-    setEditingDayNoteText(String(noteForDay(nextDate) || ""));
-  };
-
-  const saveDayNote = async () => {
-    if (!editingDayNote) return;
-    const { laborId, date } = editingDayNote;
-    setDayNoteBusy(true);
-    try {
-      const text = unshout(String(editingDayNoteText || "").trim());
-      const nextByLabor = { ...(cycle?.dayNotesByLabor || {}) };
-      const nextForLabor = { ...(nextByLabor[laborId] || {}) };
-      if (text) nextForLabor[date] = text;
-      else delete nextForLabor[date];
-      nextByLabor[laborId] = nextForLabor;
-      await cycleWrite({ dayNotesByLabor: nextByLabor });
-      setCycle((c) => (c ? { ...c, dayNotesByLabor: nextByLabor } : c));
-      setEditingDayNote(null);
-      setEditingDayNoteText("");
-    } finally {
-      setDayNoteBusy(false);
-    }
-  };
+  const {
+    activeLaborDayNotes,
+    closeDayNote,
+    dayHasContent,
+    dayNoteBusy,
+    dayNoteDirty,
+    editingDayNote,
+    editingDayNoteText,
+    goToDayNote,
+    hasNextDayNote,
+    hasPrevDayNote,
+    legacyDayNotes,
+    noteForDay,
+    openDayNote,
+    saveDayNote,
+    setEditingDayNoteText,
+  } = useDayNotes({
+    activeLabor,
+    activeLaborDatesWithProduction,
+    cycle,
+    cycleWrite,
+    days,
+    setCycle,
+  });
 
   // Nombre vigente de cada trabajador según la caché; si no está, el guardado
   // en labor.workers (temporales, o mientras carga la caché).
@@ -654,165 +579,33 @@ export default function CycleDetail() {
     workerIdFor,
   });
 
-  // ============================================================
-  // Labor
-  // ============================================================
-
-  // `initial`: cómo se abrió el formulario, para avisar si se cierra con
-  // cambios sin guardar.
-  const openLaborForm = (form) => setLaborForm({ ...form, initial: form.data });
-
-  const openCreateLabor = () =>
-    openLaborForm({
-      mode: "create",
-      data: {
-        name: "", type: "extra",
-        laborGroupId: "",
-        newGroupName: "",
-        cosechaMode: "unit",
-        tratoMode: "unit",
-        tratoType: catalogs.tratoTypes?.[0]?.value ?? 0,
-        stages: defaultStages(),
-        baseDayDefault: DEFAULT_BASE_DAY,
-        bonusManejo: DEFAULT_BONUS_MANEJO,
-        bonusSupervision: DEFAULT_BONUS_SUPERVISION,
-        overtimeRate: DEFAULT_OVERTIME_RATE,
-      },
-    });
-
-  const openEditLabor = () =>
-    openLaborForm({
-      mode: "edit",
-      data: {
-        id: activeLabor.id,
-        name: activeLabor.name,
-        type: activeLabor.type,
-        laborGroupId: activeLabor.laborGroupId || "",
-        newGroupName: "",
-        cosechaMode: activeLabor.cosechaMode || "unit",
-        tratoMode: activeLabor.tratoMode || "unit",
-        tratoType: activeLabor.tratoType ?? (catalogs.tratoTypes?.[0]?.value ?? 0),
-        stages: (activeLabor.stages && activeLabor.stages.length)
-          ? activeLabor.stages.map((s) => ({ ...s }))
-          : defaultStages(),
-        baseDayDefault: activeLabor.baseDayDefault ?? DEFAULT_BASE_DAY,
-        bonusManejo: activeLabor.bonusManejo ?? DEFAULT_BONUS_MANEJO,
-        bonusSupervision: activeLabor.bonusSupervision ?? DEFAULT_BONUS_SUPERVISION,
-        overtimeRate: activeLabor.overtimeRate ?? DEFAULT_OVERTIME_RATE,
-      },
-    });
-
-  const submitLabor = async (e) => {
-    e.preventDefault();
-    if (!laborForm.data.name.trim()) return;
-    // "__new__": se crea la agrupación nueva en laborGroups antes de armar la
-    // labor.
-    let laborGroupId = laborForm.data.laborGroupId || null;
-    if (laborGroupId === "__new__") {
-      if (!laborForm.data.newGroupName.trim()) {
-        toast.warning("Ponle un nombre a la agrupación nueva.");
-        return;
-      }
-      const created = await laborGroupsService.create({
-        subfaenaId: cycle.subfaenaId,
-        name: toTitleName(laborForm.data.newGroupName),
-        active: true,
-      });
-      laborGroupId = created.id;
-      setLaborGroups((prev) => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
-    }
-    const buildLabor = (existing = {}) => {
-      const base = {
-        ...existing,
-        name: toTitleName(laborForm.data.name),
-        type: laborForm.data.type,
-        laborGroupId: laborGroupId || null,
-      };
-      if (laborForm.data.type === "cosecha") {
-        base.cosechaMode = laborForm.data.cosechaMode;
-      }
-      if (laborForm.data.type === "trato") {
-        base.tratoMode = laborForm.data.tratoMode;
-        base.tratoType = Number(laborForm.data.tratoType);
-      }
-      if (laborForm.data.type === "tratoEtapas") {
-        base.stages = normalizeStages(laborForm.data.stages);
-      }
-      if (laborForm.data.type === "tratoHE") {
-        base.baseDayDefault = Number(laborForm.data.baseDayDefault) || DEFAULT_BASE_DAY;
-        base.bonusManejo = Number(laborForm.data.bonusManejo) || DEFAULT_BONUS_MANEJO;
-        base.bonusSupervision = Number(laborForm.data.bonusSupervision) || DEFAULT_BONUS_SUPERVISION;
-        base.overtimeRate = Number(laborForm.data.overtimeRate) || DEFAULT_OVERTIME_RATE;
-      }
-      if (["main", "supervision", "extra"].includes(laborForm.data.type)) {
-        base.baseDayDefault = Number(laborForm.data.baseDayDefault) || DEFAULT_BASE_DAY;
-      }
-      return base;
-    };
-    if (laborForm.mode === "create") {
-      const labor = { id: newId(), ...buildLabor(), workers: [] };
-      const nextLabors = [...cycle.labors, labor];
-      await cycleWrite({ labors: nextLabors });
-      setCycle((c) => ({ ...c, labors: nextLabors }));
-      setActiveLaborId(labor.id);
-    } else {
-      const nextLabors = cycle.labors.map((l) =>
-        l.id === laborForm.data.id ? buildLabor(l) : l,
-      );
-      await cycleWrite({ labors: nextLabors });
-      setCycle((c) => ({ ...c, labors: nextLabors }));
-      // En tratoHE recalcula los workdays con las tarifas nuevas.
-      if (laborForm.data.type === "tratoHE") {
-        // Calcula con `nextLabors`: el estado `cycle` todavía tiene las
-        // tarifas anteriores.
-        const updatedLabor = nextLabors.find((l) => l.id === laborForm.data.id);
-        const wdMapForLabor = workdaysByLabor[updatedLabor.id] || {};
-        const updates = {};
-        for (const k in wdMapForLabor) {
-          const wd = wdMapForLabor[k];
-          const dayCfg = getDaySingle(dayPrices, updatedLabor.id, wd.date, "normal");
-          const amount = computeTratoHEAmount(updatedLabor, dayCfg, wd);
-          if (amount === wd.amount) continue;
-          const docId = workdayDocId(id, updatedLabor.id, wd.workerRut, wd.date, SINGLE_COMBO);
-          const next = { ...wd, amount, workerId: workerIdFor(updatedLabor.id, wd.workerRut) };
-          await wdWrite.upsert(docId, next);
-          updates[k] = next;
-        }
-        if (Object.keys(updates).length > 0) {
-          setWorkdaysByLabor((prev) => ({
-            ...prev,
-            [updatedLabor.id]: { ...(prev[updatedLabor.id] || {}), ...updates },
-          }));
-        }
-      }
-      // tratoEtapas: el precio es por día (no de la labor), así que cambiar
-      // las etapas (nombre/counts) no recalcula montos de workdays.
-    }
-    setLaborForm(null);
-  };
-
-  const askRemoveLabor = () => setRemoveLabor(activeLabor);
-  const confirmRemoveLabor = async () => {
-    if (!removeLabor) return;
-    const wds = await workdaysService.list({
-      wheres: [["cycleId", "==", id], ["laborId", "==", removeLabor.id]], take: 1,
-    });
-    if (wds.length) {
-      toast.warning("No se puede quitar: la labor tiene producción registrada.");
-      setRemoveLabor(null);
-      return;
-    }
-    if (cycle.labors.length === 1) {
-      toast.warning("Debe existir al menos una labor.");
-      setRemoveLabor(null);
-      return;
-    }
-    const nextLabors = cycle.labors.filter((l) => l.id !== removeLabor.id);
-    await cycleWrite({ labors: nextLabors });
-    setCycle((c) => ({ ...c, labors: nextLabors }));
-    setActiveLaborId(nextLabors[0]?.id || null);
-    setRemoveLabor(null);
-  };
+  const {
+    askRemoveLabor,
+    confirmRemoveLabor,
+    laborForm,
+    openCreateLabor,
+    openEditLabor,
+    removeLabor,
+    setLaborForm,
+    setRemoveLabor,
+    submitLabor,
+  } = useLaborForm({
+    activeLabor,
+    catalogs,
+    computeTratoHEAmount,
+    cycle,
+    cycleWrite,
+    dayPrices,
+    id,
+    setActiveLaborId,
+    setCycle,
+    setLaborGroups,
+    setWorkdaysByLabor,
+    toast,
+    wdWrite,
+    workdaysByLabor,
+    workerIdFor,
+  });
 
   // ============================================================
   // Varios
@@ -881,25 +674,16 @@ export default function CycleDetail() {
     toast,
     user,
   });
-  const handleCloseCycle = async () => {
-    setCloseBusy(true);
-    try {
-      const patch = closedCyclePatch(cycle);
-      await cyclesService.update(id, patch);
-      setCycle((c) => ({ ...c, ...patch }));
-      setCloseFlow(false);
-      showToast("Ciclo cerrado");
-    } finally {
-      setCloseBusy(false);
-    }
-  };
-
-  const handleReopenCycle = () => setConfirmReopen(true);
-  const doReopenCycle = async () => {
-    await cyclesService.update(id, { status: "open", endDate: null });
-    setCycle((c) => ({ ...c, status: "open", endDate: null }));
-    showToast("Ciclo reabierto");
-  };
+  const {
+    closeBusy,
+    closeFlow,
+    confirmReopen,
+    doReopenCycle,
+    handleCloseCycle,
+    handleReopenCycle,
+    setCloseFlow,
+    setConfirmReopen,
+  } = useCycleClosing({ cycle, id, setCycle, showToast });
 
   const { copyImage, exporting, exportPng, printPhoto } = usePhotoExport({
     activeLabor,
