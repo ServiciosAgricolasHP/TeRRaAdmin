@@ -2,7 +2,7 @@ import { useMemo, useEffect } from "react";
 
 // Vista por grupo de la grilla: las filas agrupadas por líder (con sus
 // encabezados), el filtro de "solo con producción" y el salto a cada grupo.
-export function useLeaderGrouping({ gridRef, groupView, onlyWithProduction, photoMode, rowDataRaw, rutToLeader, setColumnFilterActive }) {
+export function useLeaderGrouping({ gridRef, groupView, onlyWithProduction, rowDataRaw, rutToLeader, setColumnFilterActive }) {
   "use no memo";
   const LEADER_LOCAL = "CHILENOS";
   const LEADER_FOREIGN = "EXTRANJEROS";
@@ -41,7 +41,7 @@ export function useLeaderGrouping({ gridRef, groupView, onlyWithProduction, phot
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupBuckets]);
-  const isGroupedView = groupView === "group" && !photoMode;
+  const isGroupedView = groupView === "group";
   const rowData = useMemo(() => {
     if (!isGroupedView) return rowDataRaw;
     const out = [];

@@ -95,7 +95,6 @@ export function buildColumnDefs(ctx) {
     noteForDay,
     openDayNote,
     overtimeDayView,
-    photoMode,
     pieceworkView,
     qrLocked,
     readOnly,
@@ -204,7 +203,7 @@ export function buildColumnDefs(ctx) {
   // de monto. Un click crea o borra la jornada en $0.
   const attendanceCell = (p, d) => {
     const present = !!p.data?.[`${d}__present`];
-    if (readOnly || photoMode) {
+    if (readOnly) {
       return (
         <span className={present ? "font-semibold text-emerald-600 dark:text-emerald-400" : "text-[var(--color-muted)]"}>
           {present ? "✓" : ""}
@@ -227,7 +226,7 @@ export function buildColumnDefs(ctx) {
     );
   };
   const attendanceCellStyle = { textAlign: "center", padding: 0 };
-  const actionsCol = photoMode ? [] : [{
+  const actionsCol = [{
     headerName: "", field: "_actions", editable: false,
     // Ancho según los botones de la celda: ✕, más M en las labores que
     // admiten sueldo mensual y los de líder en la vista por grupo.
@@ -335,7 +334,7 @@ export function buildColumnDefs(ctx) {
         // `qrLocked`: la sincronización de Pesajes QR hace `upsert` sobre este
         // mismo docId y pisa `qty` y `amount`. El piso sigue editable: es un
         // bono manual que la sincronización no toca.
-        editable: !readOnly && !photoMode && !qrLocked,
+        editable: !readOnly && !qrLocked,
         width: isMobile ? 78 : 120,
         type: "numericColumn",
         valueParser: (p) => parseAmount(p.newValue),
@@ -357,7 +356,7 @@ export function buildColumnDefs(ctx) {
         },
       }));
       if (daysWithFloor.has(d)) {
-        children.push(buildFloorChildCol(d, activeLabor, dayPrices, readOnly || photoMode, toggleFloor));
+        children.push(buildFloorChildCol(d, activeLabor, dayPrices, readOnly, toggleFloor));
       }
       return {
         headerName: d, groupId: `g_${d}`,
@@ -393,7 +392,7 @@ export function buildColumnDefs(ctx) {
       const children = tiers.map((t) => ({
         headerName: `${fmtCurrency(t.price)} ${t.mode === "flat" ? "/día" : "/unid"}`,
         field: `${d}__${t.key}`,
-        editable: !readOnly && !photoMode,
+        editable: !readOnly,
         width: isMobile ? 78 : 120,
         type: "numericColumn",
         valueParser: (p) => parseAmount(p.newValue),
@@ -413,7 +412,7 @@ export function buildColumnDefs(ctx) {
         },
       }));
       if (daysWithFloor.has(d)) {
-        children.push(buildFloorChildCol(d, activeLabor, dayPrices, readOnly || photoMode, toggleFloor));
+        children.push(buildFloorChildCol(d, activeLabor, dayPrices, readOnly, toggleFloor));
       }
       return {
         headerName: d, groupId: `g_${d}`,
@@ -437,7 +436,7 @@ export function buildColumnDefs(ctx) {
         headerName: `${st.name}${st.counts ? " ✓" : ""}`,
         headerTooltip: `${st.name} · ${fmtCurrency(st.price)}${st.mode === "flat" ? "/día" : "/unid"}${st.counts ? " · cuenta para producción" : " · no cuenta unidades"}`,
         field: `${d}__${st.id}`,
-        editable: !readOnly && !photoMode,
+        editable: !readOnly,
         width: isMobile ? 84 : 130,
         type: "numericColumn",
         valueParser: (p) => parseAmount(p.newValue),
@@ -550,7 +549,7 @@ export function buildColumnDefs(ctx) {
             // Una celda vacía no es editable, así el click llega al botón de
             // la base sugerida; con valor, se edita normalmente. Las filas de
             // sueldo mensual solo marcan asistencia.
-            editable: (p) => !readOnly && !photoMode && !p.data?._monthly && Number(p.data?.[`${d}__qty`] || 0) > 0,
+            editable: (p) => !readOnly && !p.data?._monthly && Number(p.data?.[`${d}__qty`] || 0) > 0,
             width: isMobile ? 85 : 130,
             type: "numericColumn",
             valueParser: (p) => parseAmount(p.newValue),
@@ -574,7 +573,7 @@ export function buildColumnDefs(ctx) {
                         {fmtCurrency(v)}
                       </span>
                     ) : (
-                      !readOnly && !photoMode && cfg.mode !== "overtimeOnly" && (
+                      !readOnly && cfg.mode !== "overtimeOnly" && (
                         <button
                           onClick={async (e) => {
                             e.stopPropagation();
@@ -613,7 +612,7 @@ export function buildColumnDefs(ctx) {
           {
             headerName: "HE",
             field: `${d}__he`,
-            editable: (p) => !readOnly && !photoMode && !p.data?._monthly,
+            editable: (p) => !readOnly && !p.data?._monthly,
             width: 60,
             type: "numericColumn",
             valueParser: (p) => parseAmount(p.newValue),
@@ -636,7 +635,7 @@ export function buildColumnDefs(ctx) {
       // Las filas de sueldo mensual no se editan: solo marcan asistencia con
       // un click. Una celda vacía tampoco, así el click llega al botón del
       // precio sugerido; con valor, se edita con doble click.
-      editable: (p) => !readOnly && !photoMode && !p.data?._monthly && Number(p.data?.[d] || 0) > 0,
+      editable: (p) => !readOnly && !p.data?._monthly && Number(p.data?.[d] || 0) > 0,
       width: isMobile ? 70 : 110,
       type: "numericColumn",
       valueParser: (p) => parseAmount(p.newValue),
@@ -653,7 +652,7 @@ export function buildColumnDefs(ctx) {
             </span>
           );
         }
-        if (readOnly || photoMode || !suggested) return "";
+        if (readOnly || !suggested) return "";
         return (
           <button
             onClick={async (e) => {

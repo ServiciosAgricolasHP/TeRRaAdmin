@@ -78,7 +78,6 @@ import { buildColumnDefs } from "./cycleDetail/columns";
 import { useCollapsedSections } from "./cycleDetail/useCollapsedSections";
 import { useSiblingCycles } from "./cycleDetail/useSiblingCycles";
 import { useLeaderGrouping } from "./cycleDetail/useLeaderGrouping";
-import { usePhotoExport } from "./cycleDetail/usePhotoExport";
 import { useCycleWriteGuard } from "./cycleDetail/useCycleWriteGuard";
 import { useCycleLoader } from "./cycleDetail/useCycleLoader";
 import { useDayPrices } from "./cycleDetail/useDayPrices";
@@ -139,7 +138,6 @@ export default function CycleDetail() {
   // a temporales (no existen como doc en `worker`).
   const [editingWorkerRut, setEditingWorkerRut] = useState(null);
 
-  const [photoMode, setPhotoMode] = useState(false);
   // En mobile se muestra la lista de trabajadores (CycleWorkerList) en vez de
   // la grilla, que obliga a desplazarse por decenas de columnas de día. Este
   // toggle muestra la grilla completa.
@@ -171,7 +169,6 @@ export default function CycleDetail() {
   const [columnFilterActive, setColumnFilterActive] = useState(false);
 
   const gridRef = useRef(null);
-  const photoRef = useRef(null);
   // Modo mobile (<768px): oculta la columna RUT y angosta las columnas para
   // que entren más días en pantalla.
   const isMobile = useIsMobile();
@@ -402,7 +399,6 @@ export default function CycleDetail() {
     gridRef,
     groupView,
     onlyWithProduction,
-    photoMode,
     rowDataRaw,
     rutToLeader,
     setColumnFilterActive,
@@ -548,7 +544,6 @@ export default function CycleDetail() {
     isOvertimeDayLabor,
     isPieceworkLabor,
     isPieceworkStagesLabor,
-    photoMode,
     qrLocked,
     readOnly,
     setCopyToast,
@@ -666,14 +661,6 @@ export default function CycleDetail() {
     setConfirmReopen,
   } = useCycleClosing({ cycle, id, setCycle, showToast });
 
-  const { copyImage, exporting, exportPng, printPhoto } = usePhotoExport({
-    activeLabor,
-    cycle,
-    photoRef,
-    showToast,
-    toast,
-  });
-
   // ============================================================
   // Columnas de la grilla
   // ============================================================
@@ -707,7 +694,6 @@ export default function CycleDetail() {
       noteForDay,
       openDayNote,
       overtimeDayView,
-      photoMode,
       pieceworkView,
       qrLocked,
       readOnly,
@@ -722,7 +708,7 @@ export default function CycleDetail() {
       upsertOvertimeDayWorkday,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [days, readOnly, photoMode, qrLocked, isHarvestLabor, isPieceworkLabor, isPieceworkStagesLabor, isOvertimeDayLabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, catalogs, dayPrices, activeLabor, overtimeDayView, harvestView, pieceworkView, activeLaborDayNotes, legacyDayNotes, activeLaborDatesWithProduction, daysWithFloor, isMobile],
+    [days, readOnly, qrLocked, isHarvestLabor, isPieceworkLabor, isPieceworkStagesLabor, isOvertimeDayLabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, catalogs, dayPrices, activeLabor, overtimeDayView, harvestView, pieceworkView, activeLaborDayNotes, legacyDayNotes, activeLaborDatesWithProduction, daysWithFloor, isMobile],
   );
 
   if (loading) return <div className="text-[var(--color-muted)]">Cargando...</div>;
@@ -762,43 +748,6 @@ export default function CycleDetail() {
       )}
     </div>
   );
-
-  if (photoMode) {
-    return (
-      <div className="fixed inset-0 z-50 flex flex-col bg-[var(--color-bg)] p-6">
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          <button onClick={copyImage} disabled={exporting} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
-            {exporting ? "..." : "🖼 Copiar imagen"}
-          </button>
-          <button onClick={exportPng} disabled={exporting} className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-60">
-            {exporting ? "Generando..." : "📥 Descargar PNG"}
-          </button>
-          <button onClick={printPhoto} disabled={exporting} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
-            🖨 Imprimir
-          </button>
-          <button onClick={() => setPhotoMode(false)} className="ml-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]">
-            Salir modo foto
-          </button>
-        </div>
-        <div ref={photoRef} className="flex flex-1 flex-col bg-[var(--color-bg)] p-4">
-          <div className="mb-3">
-            <h1 className="text-xl font-semibold tracking-tight">{cycle.label} · {activeLabor?.name}</h1>
-            <p className="text-xs text-[var(--color-muted)]">
-              {job?.name || "—"}
-              {subjob && ` · ${subjob.name}`}
-              {` · ${workers.length} trabajadores · ${days.length} días`}
-            </p>
-          </div>
-          <div className="flex-1">{grid}</div>
-        </div>
-        {copyToast && (
-          <div className="pointer-events-none fixed bottom-6 left-1/2 -translate-x-1/2 rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] shadow-lg">
-            {copyToast}
-          </div>
-        )}
-      </div>
-    );
-  }
 
   // Lo que leen las secciones de la pantalla (ver CycleDetailContext).
   const cycleDetailContext = {
@@ -894,7 +843,6 @@ export default function CycleDetail() {
     persistNormalDayPrice,
     persistOvertimeDayConfig,
     persistStagePrice,
-    photoMode,
     pieceworkPeopleCountByLabor,
     pieceworkTierMetricsByLabor,
     pieceworkView,
@@ -1019,7 +967,7 @@ export default function CycleDetail() {
             </>
             )}
 
-            {!photoMode && isMobile && workers.length > 0 && (
+            {isMobile && workers.length > 0 && (
               <div className="mb-2">
                 <button
                   type="button"
@@ -1037,7 +985,7 @@ export default function CycleDetail() {
                 grilla se desplaza por dentro. En mobile se muestra
                 CycleWorkerList en su lugar, salvo con "Ver grilla completa". */}
             <div className="flex min-h-0 flex-1 flex-col">
-              {isMobile && !showDesktopGrid && !photoMode ? (
+              {isMobile && !showDesktopGrid ? (
                 <CycleWorkerList
                   rows={rowDataRaw}
                   days={days}

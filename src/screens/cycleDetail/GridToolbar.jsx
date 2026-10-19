@@ -11,7 +11,6 @@ export function GridToolbar() {
     LEADER_NONE,
     onlyWithProduction,
     orderedGroups,
-    photoMode,
     scrollToGroup,
     setGroupView,
     setOnlyWithProduction,
@@ -20,7 +19,7 @@ export function GridToolbar() {
   } = useCycleDetail();
   return (
     <>
-      {!photoMode && workers.length > 0 && (
+      {workers.length > 0 && (
         <div className="mb-2 flex flex-wrap items-center gap-2">
           {gridVisible && (
             <div className="inline-flex overflow-hidden rounded-md border border-[var(--color-border)] text-xs">

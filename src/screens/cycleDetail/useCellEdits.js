@@ -8,7 +8,7 @@ import { getStageDayPrice, computeStageDayAmount } from "../../utils/tratoEtapas
 // Edición de las celdas de la grilla: guardar el monto o la cantidad de cada
 // tipo de labor, rellenar hacia abajo (Ctrl+D), pegar (Ctrl+V) y deshacer
 // (Ctrl+Z).
-export function useCellEdits({ activeLabor, computeOvertimeDayAmount, cycle, dayCombosByDate, dayPrices, days, dayStagesByDate, dayTiersByDate, getCombo, gridRef, id, isHarvestLabor, isOvertimeDayLabor, isPieceworkLabor, isPieceworkStagesLabor, photoMode, qrLocked, readOnly, setCopyToast, setWorkdaysByLabor, toast, wdMap, wdWrite, workdaysByLabor, workerIdFor }) {
+export function useCellEdits({ activeLabor, computeOvertimeDayAmount, cycle, dayCombosByDate, dayPrices, days, dayStagesByDate, dayTiersByDate, getCombo, gridRef, id, isHarvestLabor, isOvertimeDayLabor, isPieceworkLabor, isPieceworkStagesLabor, qrLocked, readOnly, setCopyToast, setWorkdaysByLabor, toast, wdMap, wdWrite, workdaysByLabor, workerIdFor }) {
   "use no memo";
   // Modales de tratoHE
   const [bonusEdit, setBonusEdit] = useState(null);   // { laborId, date, workerRut }
@@ -269,7 +269,7 @@ export function useCellEdits({ activeLabor, computeOvertimeDayAmount, cycle, day
   // Ctrl+D (rellenar hacia abajo): copia el valor de la celda con foco a la
   // misma columna de cada fila seleccionada (api.getSelectedNodes()).
   const fillDown = async (params) => {
-    if (readOnly || photoMode || qrLocked) return;
+    if (readOnly || qrLocked) return;
     const api = gridRef.current?.api;
     if (!api) return;
     const colDef = params.colDef;
@@ -306,7 +306,7 @@ export function useCellEdits({ activeLabor, computeOvertimeDayAmount, cycle, day
   // fila con foco hacia abajo y saltando los encabezados de grupo. De un
   // copiado con varias columnas (tabs) solo se usa la primera.
   const pasteFromClipboard = async (params) => {
-    if (readOnly || photoMode || qrLocked) return;
+    if (readOnly || qrLocked) return;
     const api = gridRef.current?.api;
     if (!api) return;
     const colDef = params.colDef;
@@ -354,7 +354,7 @@ export function useCellEdits({ activeLabor, computeOvertimeDayAmount, cycle, day
   // anteriores. Mientras tanto, isUndoingRef evita que onCellValueChanged
   // apile la reversión.
   const undoLast = async () => {
-    if (readOnly || photoMode) return;
+    if (readOnly) return;
     const batch = undoStackRef.current.pop();
     if (!batch || batch.length === 0) {
       setCopyToast("Nada que deshacer");
