@@ -13,15 +13,11 @@ import {
 import { parseAmount } from "../utils/formula";
 import { AG_GRID_LOCALE_ES } from "../utils/agGridLocale";
 import {
-  effectivePiso,
-  normalizeDayPricesEntry,
   PISO_COMBO_KEY,
   workdayMapKey,
   getDaySingle,
   parseComboKey,
   workdayDocId,
-  pisoAssigned,
-  pisoTargets,
   COSECHA_MODES,
 } from "../utils/cosechaCombos";
 import {
@@ -121,6 +117,7 @@ import { usePhotoExport } from "./cycleDetail/usePhotoExport";
 import { useCycleWriteGuard } from "./cycleDetail/useCycleWriteGuard";
 import { useCycleLoader } from "./cycleDetail/useCycleLoader";
 import { useDayPrices } from "./cycleDetail/useDayPrices";
+import { useFloorBonus } from "./cycleDetail/useFloorBonus";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -152,12 +149,6 @@ export default function CycleDetail() {
 
   // Prefijos QR apuntados a este ciclo. Ver `qrLockedLabors` más abajo.
   const [qrPrefixes, setQrPrefixes] = useState([]);
-  // Confirmación del piso masivo: { laborId, date, ruts, amount }.
-  const [floorBulk, setFloorBulk] = useState(null);
-  const [floorBulkBusy, setFloorBulkBusy] = useState(false);
-  // Confirmación de quitar el piso del día: { laborId, date, libres, liquidados }.
-  const [floorRemove, setFloorRemove] = useState(null);
-  const [floorRemoveBusy, setFloorRemoveBusy] = useState(false);
 
   const [addDayOpen, setAddDayOpen] = useState(false);
   const [newDay, setNewDay] = useState(todayStr());
@@ -661,165 +652,32 @@ export default function CycleDetail() {
     workerIdFor,
   });
 
-  // Piso: monto fijo por día, guardado como campo `piso` de
-  // `dayPrices[laborId][date]`, junto a los combos o tiers. En 0 se quita el
-  // campo.
-  const writeDayPiso = async (laborId, date, value) => {
-    const dayEntry = normalizeDayPricesEntry(dayPrices[laborId]?.[date]);
-    const nextDay = { ...dayEntry, piso: Number(value) || 0 };
-    if (!nextDay.piso) delete nextDay.piso;
-    const next = { ...dayPrices, [laborId]: { ...(dayPrices[laborId] || {}), [date]: nextDay } };
-    setDayPrices(next);
-    await cycleWrite({ dayPrices: next });
-  };
-
-  // Quitar el piso del día (el ✕, o dejar el monto en cero) también borra los
-  // bonos de ese día que no están en una nómina. Si hay bonos asignados, antes
-  // pide confirmación.
-  const persistDayFloor = async (laborId, date, value) => {
-    const monto = Number(value) || 0;
-    if (!monto) {
-      const { libres, liquidados } = pisoAssigned(workdaysByLabor[laborId] || {}, date);
-      if (libres.length || liquidados.length) {
-        setFloorRemove({ laborId, date, libres, liquidados });
-        return;
-      }
-    }
-    await writeDayPiso(laborId, date, monto);
-  };
-
-  const removeDayFloor = async () => {
-    if (!floorRemove) return;
-    const { laborId, date, libres } = floorRemove;
-    setFloorRemoveBusy(true);
-    try {
-      const borradas = [];
-      for (const wd of libres) {
-        const docId = wd.id || workdayDocId(id, laborId, wd.workerRut, date, PISO_COMBO_KEY);
-        await wdWrite.remove(docId);
-        borradas.push(workdayMapKey(wd.workerRut, date, PISO_COMBO_KEY));
-      }
-      setWorkdaysByLabor((prev) => {
-        const lab = { ...(prev[laborId] || {}) };
-        for (const k of borradas) delete lab[k];
-        return { ...prev, [laborId]: lab };
-      });
-      await writeDayPiso(laborId, date, 0);
-      setFloorRemove(null);
-      toast.success(
-        borradas.length
-          ? `Piso del día quitado · ${borradas.length} bono${borradas.length === 1 ? "" : "s"} eliminado${borradas.length === 1 ? "" : "s"}.`
-          : "Piso del día quitado.",
-      );
-    } catch (err) {
-      toast.error("No se pudo quitar el piso: " + (err.message || err));
-    } finally {
-      setFloorRemoveBusy(false);
-    }
-  };
-
-  // Cuántos trabajadores con producción quedan sin piso, por día. Alimenta el
-  // contador del botón "a todos" del panel de precios.
-  const floorPendingByDate = useMemo(() => {
-    const out = {};
-    if (!activeLabor) return out;
-    const wds = workdaysByLabor[activeLabor.id] || {};
-    const fechas = new Set(Object.values(wds).map((wd) => wd?.date).filter(Boolean));
-    for (const d of fechas) out[d] = pisoTargets(wds, d).length;
-    return out;
-  }, [activeLabor, workdaysByLabor]);
-
-  // Abre la confirmación del piso masivo, con la cantidad de personas y el
-  // total. No escribe nada.
-  const askApplyFloorToAll = (laborId, date) => {
-    const labor = cycle.labors.find((l) => l.id === laborId);
-    if (!labor) return;
-    const amount = effectivePiso(labor, dayPrices, date);
-    if (!amount) {
-      toast.warning("Configura primero el piso de este día.");
-      return;
-    }
-    const ruts = pisoTargets(workdaysByLabor[laborId] || {}, date);
-    if (ruts.length === 0) {
-      toast.info("Todos los que tienen producción ese día ya tienen el piso.");
-      return;
-    }
-    setFloorBulk({ laborId, date, ruts, amount });
-  };
-
-  // Escribe un workday `_piso` por cada trabajador pendiente. Es exactamente lo
-  // mismo que apretar el toggle de cada uno en la columna 🪙, en lote.
-  const applyFloorToAll = async () => {
-    if (!floorBulk) return;
-    const { laborId, date, ruts, amount } = floorBulk;
-    setFloorBulkBusy(true);
-    try {
-      const escritos = {};
-      for (const rut of ruts) {
-        const mapKey = workdayMapKey(rut, date, PISO_COMBO_KEY);
-        const docId = workdayDocId(id, laborId, rut, date, PISO_COMBO_KEY);
-        const next = {
-          cycleId: id, laborId, workerRut: rut, date,
-          qty: 0, amount,
-          pisoOnly: true,
-          workerId: workerIdFor(laborId, rut),
-        };
-        await wdWrite.upsert(docId, next);
-        escritos[mapKey] = { id: docId, ...next };
-      }
-      setWorkdaysByLabor((prev) => ({
-        ...prev,
-        [laborId]: { ...(prev[laborId] || {}), ...escritos },
-      }));
-      setFloorBulk(null);
-      toast.success(`Piso asignado a ${ruts.length} trabajador${ruts.length === 1 ? "" : "es"}.`);
-    } catch (err) {
-      toast.error("No se pudo asignar el piso: " + (err.message || err));
-    } finally {
-      setFloorBulkBusy(false);
-    }
-  };
-
-  // Toggle del piso de un trabajador en un día: crea o borra su workday `_piso`
-  // (`pisoOnly: true`) con el piso configurado para ese día.
-  const toggleFloor = async (laborId, date, workerRut) => {
-    const labor = cycle.labors.find((l) => l.id === laborId);
-    if (!labor) return;
-    const mapKey = workdayMapKey(workerRut, date, PISO_COMBO_KEY);
-    const docId = workdayDocId(id, laborId, workerRut, date, PISO_COMBO_KEY);
-    const existing = (workdaysByLabor[laborId] || {})[mapKey];
-    if (existing) {
-      // Un piso que ya está en una nómina no se borra: le descuadraría el total.
-      if (existing.payrollId) {
-        toast.warning("Ese piso ya está en una nómina. Hay que eliminar o editar la nómina para poder quitarlo.");
-        return;
-      }
-      await wdWrite.remove(docId);
-      setWorkdaysByLabor((prev) => {
-        const lab = { ...(prev[laborId] || {}) };
-        delete lab[mapKey];
-        return { ...prev, [laborId]: lab };
-      });
-      return;
-    }
-    const amount = effectivePiso(labor, dayPrices, date);
-    if (!amount) {
-      toast.warning("Configura primero el piso por día o el piso por defecto de la labor.");
-      return;
-    }
-    const next = {
-      cycleId: id, laborId, workerRut, date,
-      qty: 0, amount,
-      pisoOnly: true,
-      workerId: workerIdFor(laborId, workerRut),
-    };
-    await wdWrite.upsert(docId, next);
-    setWorkdaysByLabor((prev) => {
-      const lab = { ...(prev[laborId] || {}) };
-      lab[mapKey] = { id: docId, ...next };
-      return { ...prev, [laborId]: lab };
-    });
-  };
+  const {
+    applyFloorToAll,
+    askApplyFloorToAll,
+    floorBulk,
+    floorBulkBusy,
+    floorPendingByDate,
+    floorRemove,
+    floorRemoveBusy,
+    persistDayFloor,
+    removeDayFloor,
+    setFloorBulk,
+    setFloorRemove,
+    toggleFloor,
+  } = useFloorBonus({
+    activeLabor,
+    cycle,
+    cycleWrite,
+    dayPrices,
+    id,
+    setDayPrices,
+    setWorkdaysByLabor,
+    toast,
+    wdWrite,
+    workdaysByLabor,
+    workerIdFor,
+  });
 
   // Guarda el monto del día de un trabajador en labores main/supervision/extra.
   // Lo usan la grilla (onCellValueChanged), el botón del precio sugerido y el
