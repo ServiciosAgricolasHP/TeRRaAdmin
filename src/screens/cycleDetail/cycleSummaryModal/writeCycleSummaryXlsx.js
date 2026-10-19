@@ -11,15 +11,6 @@ import { dateLabel } from "../../../utils/cycleSummary";
 export async function writeCycleSummaryXlsx({ carrierById, catalogs, charge, chargeCarriers, chargeLabors, cycle, dayPrices, grandTotalCharge, grandTotalPay, laborsData, mode, subtotalCharge, titles, transportData, workdaysByLabor }) {
   const ExcelJS = (await import("exceljs")).default;
   const wb = new ExcelJS.Workbook();
-  const colLetter = (n) => {
-    let s = "";
-    while (n > 0) {
-      const m = (n - 1) % 26;
-      s = String.fromCharCode(65 + m) + s;
-      n = Math.floor((n - 1) / 26);
-    }
-    return s;
-  };
   const usedNames = new Set();
   const safeName = (s) => {
     let base = String(s || "Hoja").substring(0, 28).replace(/[\\/?*[\]]/g, "_");
@@ -289,7 +280,6 @@ export async function writeCycleSummaryXlsx({ carrierById, catalogs, charge, cha
     else {
       // main / supervision / extra (y tratoEtapas): B Fecha | C Jornadas | D $ jornada | E Total
       // En cobrar, C3 muestra la tarifa de la labor y cada fila lleva la suya.
-      let chargeRef = null;
       if (mode === "charge") {
         ws.getCell("B3").value = "Tarifa cobro:";
         ws.getCell("B3").font = { bold: true };
@@ -297,7 +287,6 @@ export async function writeCycleSummaryXlsx({ carrierById, catalogs, charge, cha
         c3.value = Number(ld.rate) || 0;
         c3.numFmt = moneyFmt;
         c3.fill = editableFill;
-        chargeRef = "$C$3";
       }
 
       const HEADER_ROW = mode === "charge" ? 5 : 4;
@@ -377,7 +366,6 @@ export async function writeCycleSummaryXlsx({ carrierById, catalogs, charge, cha
     ws.getCell("B2").value = `🚐 ${displayName}`;
     ws.getCell("B2").font = { bold: true, size: 14 };
 
-    let chargeRef = null;
     if (mode === "charge") {
       ws.getCell("B3").value = "Tarifa cobro:";
       ws.getCell("B3").font = { bold: true };
@@ -385,7 +373,6 @@ export async function writeCycleSummaryXlsx({ carrierById, catalogs, charge, cha
       c3.value = Number(tg.rate) || 0;
       c3.numFmt = moneyFmt;
       c3.fill = editableFill;
-      chargeRef = "$C$3";
     }
 
     const HEADER_ROW = mode === "charge" ? 5 : 4;

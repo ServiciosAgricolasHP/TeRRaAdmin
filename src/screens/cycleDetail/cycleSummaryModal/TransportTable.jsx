@@ -11,7 +11,6 @@ export function TransportTable({
   mode,
   editMode = true,
   hiddenColumns = new Set(),
-  chargeRate,
   onEditRow,
   onAddRow,
   onRemoveRow,

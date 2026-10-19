@@ -14,7 +14,6 @@ export function LaborTable({
   mode,
   editMode = true,
   hiddenColumns = new Set(),
-  chargeRate,
   catalogs,
   redDates,
   onEditRow,

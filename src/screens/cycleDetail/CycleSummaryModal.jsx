@@ -1,10 +1,6 @@
 import { useState, useRef, useMemo } from "react";
 import Modal from "../../components/Modal";
 import ConfirmDialog from "../../components/ConfirmDialog";
-import {
-  getTratoTiers,
-  getTratoTierTotals,
-} from "../../utils/cosechaCombos";
 import { useCarriers } from "../../contexts/CarriersContext";
 import { useToast } from "../../contexts/ToastContext";
 import { useAuth } from "../../contexts/AuthContext";
@@ -30,116 +26,6 @@ import { useSummarySettings } from "./cycleSummaryModal/useSummarySettings";
 import { useSummaryFlush } from "./cycleSummaryModal/useSummaryFlush";
 import { useImportCycles } from "./cycleSummaryModal/useImportCycles";
 import { useSummaryCapture } from "./cycleSummaryModal/useSummaryCapture";
-
-// Índice de columna (desde 1) a letra de Excel: 1 → "A", 27 → "AA".
-function colLetterX(n) {
-  let s = "";
-  while (n > 0) {
-    const r = (n - 1) % 26;
-    s = String.fromCharCode(65 + r) + s;
-    n = Math.floor((n - 1) / 26);
-  }
-  return s;
-}
-
-// Expande wdMap a filas por (día, combo): en cosecha una por calidad × envase
-// (`qx_cy`) y en trato una por tier (`tX`), con el piso en una fila propia;
-// el resto, una fila por día.
-//
-// Campos comunes: { date, comboKey, amount, pisoAmount }. Además:
-//   - cosecha: { qx, cy, qty, isPiso }
-//   - trato: { tierIdx, unit, qty, isPiso }
-//   - tratoHE: { base, overtimeHours, extras }
-//   - main/sup/extra (y tratoEtapas): qty = n° de jornadas
-function buildExpandedRows(labor, wdMap, dayPrices = {}) {
-  const type = labor?.type;
-  const byKey = new Map();
-  const bonusManejoLabor = Number(labor?.bonusManejo) || 0;
-  const bonusSupLabor = Number(labor?.bonusSupervision) || 0;
-
-  for (const k in wdMap) {
-    const wd = wdMap[k];
-    if (!wd?.date) continue;
-    const date = wd.date;
-
-    if (type === "cosecha") {
-      const qx = Number(wd.qualityX) || 0;
-      const cy = Number(wd.containerY) || 0;
-      const comboKey = wd.pisoOnly ? `${date}|piso` : `${qx}_${cy}`;
-      const mapKey = `${date}|${comboKey}`;
-      if (!byKey.has(mapKey)) {
-        byKey.set(mapKey, { date, comboKey, qx, cy, qty: 0, amount: 0, pisoAmount: 0, isPiso: !!wd.pisoOnly });
-      }
-      const r = byKey.get(mapKey);
-      if (wd.pisoOnly) {
-        r.pisoAmount += Number(wd.amount) || 0;
-      } else {
-        r.qty += Number(wd.qty) || 0;
-        r.amount += Number(wd.amount) || 0;
-      }
-    } else if (type === "trato") {
-      const parts = String(k).split("__");
-      const tierKey = wd.pisoOnly ? "piso" : (parts[2] || "t0");
-      const mapKey = `${date}|${tierKey}`;
-      if (!byKey.has(mapKey)) {
-        const tiers = getTratoTiers(dayPrices, labor.id, date);
-        const tierIdx = tierKey.startsWith("t") ? Number(tierKey.slice(1)) || 0 : 0;
-        byKey.set(mapKey, {
-          date,
-          comboKey: tierKey,
-          tierIdx,
-          unit: tiers[tierIdx]?.unit ?? null,
-          qty: 0,
-          amount: 0,
-          pisoAmount: 0,
-          isPiso: !!wd.pisoOnly,
-        });
-      }
-      const r = byKey.get(mapKey);
-      if (wd.pisoOnly) {
-        r.pisoAmount += Number(wd.amount) || 0;
-      } else {
-        const t = getTratoTierTotals(wd);
-        r.qty += t.qty;
-        r.amount += t.amount;
-      }
-    } else if (type === "tratoHE") {
-      const mapKey = date;
-      if (!byKey.has(mapKey)) {
-        byKey.set(mapKey, { date, comboKey: "he", base: 0, overtimeHours: 0, extras: 0, amount: 0, pisoAmount: 0 });
-      }
-      const r = byKey.get(mapKey);
-      if (wd.pisoOnly) {
-        r.pisoAmount += Number(wd.amount) || 0;
-      } else {
-        r.base += Number(wd.qty) || 0;
-        r.overtimeHours += Number(wd.overtimeHours) || 0;
-        const manejoAmt = wd.hasManejo ? bonusManejoLabor : 0;
-        const supAmt = wd.hasSupervision ? bonusSupLabor : 0;
-        r.extras += manejoAmt + supAmt + (Number(wd.extras) || 0);
-        r.amount += Number(wd.amount) || 0;
-      }
-    } else {
-      // main/supervision/extra: 1 fila por día, qty = n° de jornadas
-      const mapKey = date;
-      if (!byKey.has(mapKey)) {
-        byKey.set(mapKey, { date, comboKey: "j", qty: 0, amount: 0, pisoAmount: 0 });
-      }
-      const r = byKey.get(mapKey);
-      if (wd.pisoOnly) {
-        r.pisoAmount += Number(wd.amount) || 0;
-      } else {
-        r.qty += 1;
-        r.amount += Number(wd.amount) || 0;
-      }
-    }
-  }
-
-  return [...byKey.values()].sort((a, b) => {
-    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
-    return String(a.comboKey || "").localeCompare(String(b.comboKey || ""));
-  });
-}
 
 // ============================================================
 // Componente principal

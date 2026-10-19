@@ -106,7 +106,6 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
             mode={mode}
             editMode={editMode}
             hiddenColumns={hiddenColumns}
-            chargeRate={mode === "charge" ? ld.rate : null}
             catalogs={catalogs}
             redDates={redDates}
             onEditRow={editLaborRow}
@@ -136,7 +135,6 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
             mode={mode}
             editMode={editMode}
             hiddenColumns={hiddenColumns}
-            chargeRate={mode === "charge" ? tg.rate : null}
             onEditRow={editCarrierRow}
             onAddRow={addCarrierRow}
             onRemoveRow={removeCarrierRow}
