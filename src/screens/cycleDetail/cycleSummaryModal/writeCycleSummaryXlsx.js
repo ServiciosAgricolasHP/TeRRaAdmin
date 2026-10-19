@@ -61,8 +61,8 @@ export async function writeCycleSummaryXlsx({ carrierById, catalogs, charge, cha
     ws.getCell("B2").value = displayName;
     ws.getCell("B2").font = { bold: true, size: 14 };
 
-    const isCosecha = labor.type === "cosecha";
-    const isTrato = labor.type === "trato";
+    const isHarvest = labor.type === "cosecha";
+    const isPiecework = labor.type === "trato";
     const isHE = labor.type === "tratoHE";
 
     // Días en rojo en la columna Fecha (solo tratoHE): fines de semana y
@@ -75,7 +75,7 @@ export async function writeCycleSummaryXlsx({ carrierById, catalogs, charge, cha
       }
     }
 
-    if (isCosecha || isTrato) {
+    if (isHarvest || isPiecework) {
       // Estructura: B Fecha | C Combo/Tier | D Cantidad | E Precio | F Total
       // En cobrar, una sola tarifa editable en C3 que todas las filas referencian.
       let chargeRef = null;
@@ -91,7 +91,7 @@ export async function writeCycleSummaryXlsx({ carrierById, catalogs, charge, cha
 
       const HEADER_ROW = mode === "charge" ? 5 : 4;
       const headerCells = ["B", "C", "D", "E", "F"];
-      const headers = ["Fecha", isCosecha ? "Combo (Calidad / Envase)" : "Tipo de precio", "Cantidad", "Precio", "Total"];
+      const headers = ["Fecha", isHarvest ? "Combo (Calidad / Envase)" : "Tipo de precio", "Cantidad", "Precio", "Total"];
       headerCells.forEach((col, i) => {
         const c = ws.getCell(`${col}${HEADER_ROW}`);
         c.value = headers[i];
@@ -107,7 +107,7 @@ export async function writeCycleSummaryXlsx({ carrierById, catalogs, charge, cha
         const wd = wdMap[k];
         if (wd?.pisoOnly) continue;
         let key, label, qty;
-        if (isCosecha) {
+        if (isHarvest) {
           const qx = Number(wd.qualityX) || 0;
           const cy = Number(wd.containerY) || 0;
           key = `${qx}_${cy}`;
@@ -148,7 +148,7 @@ export async function writeCycleSummaryXlsx({ carrierById, catalogs, charge, cha
             pCell.value = { formula: chargeRef, result: Number(ld.rate) || 0 };
           } else {
             let price = 0;
-            if (isCosecha) {
+            if (isHarvest) {
               const list = getDayCombos(dayPrices, labor.id, date, "unit");
               const hit = list.find((c) => c.key === it.key);
               price = Number(hit?.price) || 0;
@@ -185,8 +185,8 @@ export async function writeCycleSummaryXlsx({ carrierById, catalogs, charge, cha
         ws.getCell(`F${subRow}`).value = { formula: `SUM(F${dataStartRow}:F${dataEndRow})`, result: ld.totals.amount };
         ws.getCell(`F${subRow}`).numFmt = moneyFmt;
       }
-      const fallbackCos = mode === "charge" ? (ld.chargedTotals?.amount ?? ld.totals.amount) : ld.totals.amount;
-      sheetTotals.push({ displayName, sheetName, totalRef: `'${sheetName}'!$F$${subRow}`, fallback: fallbackCos });
+      const fallbackCombo = mode === "charge" ? (ld.chargedTotals?.amount ?? ld.totals.amount) : ld.totals.amount;
+      sheetTotals.push({ displayName, sheetName, totalRef: `'${sheetName}'!$F$${subRow}`, fallback: fallbackCombo });
 
       ws.getColumn(2).width = 14;
       ws.getColumn(3).width = 30;
@@ -549,30 +549,30 @@ export async function writeCycleSummaryXlsx({ carrierById, catalogs, charge, cha
   grand.fill = titleFill;
 
   // En cobrar con IVA van debajo las filas Valor IVA (19%) e IVA incluido.
-  let postIvaRow = grandRow; // fila a la que se suma el saldo pendiente
-  const postIvaFallback = (charge.withIva !== false)
+  let afterVatRow = grandRow; // fila a la que se suma el saldo pendiente
+  const afterVatFallback = (charge.withIva !== false)
     ? Math.round((Number(grandFallback) || 0) * 1.19)
     : Number(grandFallback) || 0;
   if (mode === "charge" && charge.withIva !== false) {
-    const ivaRow = grandRow + 1;
-    wsTotal.getCell(`B${ivaRow}`).value = "Valor IVA (19%)";
-    wsTotal.getCell(`B${ivaRow}`).font = { bold: true };
-    const iva = wsTotal.getCell(`C${ivaRow}`);
-    iva.value = { formula: `ROUND(C${grandRow}*0.19,0)`, result: Math.round((Number(grandFallback) || 0) * 0.19) };
-    iva.numFmt = moneyFmt;
-    iva.font = { bold: true };
+    const vatRow = grandRow + 1;
+    wsTotal.getCell(`B${vatRow}`).value = "Valor IVA (19%)";
+    wsTotal.getCell(`B${vatRow}`).font = { bold: true };
+    const vatCell = wsTotal.getCell(`C${vatRow}`);
+    vatCell.value = { formula: `ROUND(C${grandRow}*0.19,0)`, result: Math.round((Number(grandFallback) || 0) * 0.19) };
+    vatCell.numFmt = moneyFmt;
+    vatCell.font = { bold: true };
 
-    const totIvaRow = grandRow + 2;
-    wsTotal.getCell(`B${totIvaRow}`).value = "IVA incluido";
-    wsTotal.getCell(`B${totIvaRow}`).font = { bold: true, size: 12 };
-    wsTotal.getCell(`B${totIvaRow}`).fill = titleFill;
-    const totIva = wsTotal.getCell(`C${totIvaRow}`);
-    totIva.value = { formula: `C${grandRow}+C${ivaRow}`, result: postIvaFallback };
-    totIva.numFmt = moneyFmt;
-    totIva.font = { bold: true, size: 12 };
-    totIva.fill = titleFill;
-    postIvaRow = totIvaRow;
-    totalRow = totIvaRow + 1;
+    const withVatRow = grandRow + 2;
+    wsTotal.getCell(`B${withVatRow}`).value = "IVA incluido";
+    wsTotal.getCell(`B${withVatRow}`).font = { bold: true, size: 12 };
+    wsTotal.getCell(`B${withVatRow}`).fill = titleFill;
+    const withVatCell = wsTotal.getCell(`C${withVatRow}`);
+    withVatCell.value = { formula: `C${grandRow}+C${vatRow}`, result: afterVatFallback };
+    withVatCell.numFmt = moneyFmt;
+    withVatCell.font = { bold: true, size: 12 };
+    withVatCell.fill = titleFill;
+    afterVatRow = withVatRow;
+    totalRow = withVatRow + 1;
   } else {
     totalRow = grandRow + 1;
   }
@@ -585,10 +585,10 @@ export async function writeCycleSummaryXlsx({ carrierById, catalogs, charge, cha
       ? `Saldo pendiente · ${pendingNoteValue}`
       : "Saldo pendiente";
     wsTotal.getCell(`B${pendingRow}`).font = { bold: true, color: { argb: "FF0A7D3B" } };
-    const pend = wsTotal.getCell(`C${pendingRow}`);
-    pend.value = pendingValue;
-    pend.numFmt = moneyFmt;
-    pend.font = { bold: true, color: { argb: "FF0A7D3B" } };
+    const pendingCell = wsTotal.getCell(`C${pendingRow}`);
+    pendingCell.value = pendingValue;
+    pendingCell.numFmt = moneyFmt;
+    pendingCell.font = { bold: true, color: { argb: "FF0A7D3B" } };
     totalRow++;
 
     const finalRow = totalRow;
@@ -599,11 +599,11 @@ export async function writeCycleSummaryXlsx({ carrierById, catalogs, charge, cha
       pattern: "solid",
       fgColor: { argb: "FF6AA84F" },
     };
-    const fin = wsTotal.getCell(`C${finalRow}`);
-    fin.value = { formula: `C${postIvaRow}+C${pendingRow}`, result: postIvaFallback + pendingValue };
-    fin.numFmt = moneyFmt;
-    fin.font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } };
-    fin.fill = {
+    const finalCell = wsTotal.getCell(`C${finalRow}`);
+    finalCell.value = { formula: `C${afterVatRow}+C${pendingRow}`, result: afterVatFallback + pendingValue };
+    finalCell.numFmt = moneyFmt;
+    finalCell.font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } };
+    finalCell.fill = {
       type: "pattern",
       pattern: "solid",
       fgColor: { argb: "FF6AA84F" },
