@@ -25,7 +25,6 @@ import TransportsModal from "../components/TransportsModal";
 import CycleWorkerList from "./cycleDetail/CycleWorkerList";
 import CycleWorkerEditModal from "./cycleDetail/CycleWorkerEditModal";
 import CycleSummaryModal from "./cycleDetail/CycleSummaryModal";
-import { tripsService } from "../services/transportsService";
 import { qrLockedLaborsOf } from "../utils/harvestSync";
 import { currentRutResolver } from "../utils/workerRut";
 import {
@@ -90,6 +89,7 @@ import { useCycleDays } from "./cycleDetail/useCycleDays";
 import { useDayNotes } from "./cycleDetail/useDayNotes";
 import { useLaborForm } from "./cycleDetail/useLaborForm";
 import { useCycleClosing } from "./cycleDetail/useCycleClosing";
+import { useCycleTransports } from "./cycleDetail/useCycleTransports";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -155,7 +155,6 @@ export default function CycleDetail() {
   const [harvestView, setHarvestView] = useState("detalle"); // "detalle" | "resumen"
   const [pieceworkView, setPieceworkView] = useState("detalle"); // "detalle" | "resumen"
   const [transportsOpen, setTransportsOpen] = useState(false);
-  const [cycleTrips, setCycleTrips] = useState([]);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [groupView, setGroupView] = useState(() => {
     try { return localStorage.getItem("cycleDetail.groupView") === "group" ? "group" : "all"; }
@@ -442,10 +441,7 @@ export default function CycleDetail() {
 
   const pieceworkTierMetricsByLabor = useMemo(() => pieceworkTierMetricsOf(cycle?.labors, workdaysByLabor), [cycle?.labors, workdaysByLabor]);
 
-  const transportTotal = useMemo(
-    () => cycleTrips.reduce((s, t) => s + (Number(t.amount) || 0), 0),
-    [cycleTrips],
-  );
+  const { cycleTrips, reloadTransports, transportTotal } = useCycleTransports({ id });
 
   // "Total ciclo" = suma cruda de labores (sin transporte). El transporte
   // se muestra aparte y se suma en "Balance con transporte".
@@ -458,21 +454,6 @@ export default function CycleDetail() {
     () => laborsTotal + transportTotal,
     [laborsTotal, transportTotal],
   );
-
-  const reloadTransports = async () => {
-    if (!id) return;
-    try {
-      const list = await tripsService.listByCycle(id);
-      setCycleTrips(list);
-    } catch (err) {
-      console.error("[Transports] load failed:", err);
-    }
-  };
-
-  useEffect(() => {
-    reloadTransports();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
 
   const {
     addComboFor,
