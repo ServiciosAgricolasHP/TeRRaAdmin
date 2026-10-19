@@ -28,12 +28,12 @@ export function useDetailFilters({ items, payroll, rutOf }) {
   // descarta al leer y no al editar, así cubre sacar ciclos o labores, sacar un
   // trabajador y recalcular.
   const activeLeaderFilter = useMemo(() => {
-    const vigentes = new Set(allLeaders.map((g) => g.leader));
-    return new Set([...leaderFilter].filter((l) => vigentes.has(l)));
+    const current = new Set(allLeaders.map((g) => g.leader));
+    return new Set([...leaderFilter].filter((l) => current.has(l)));
   }, [leaderFilter, allLeaders]);
   const activeCycleFilter = useMemo(() => {
-    const vigentes = new Set((payroll.cycleDetails || []).map((c) => c.id));
-    return new Set([...cycleFilter].filter((id) => vigentes.has(id)));
+    const current = new Set((payroll.cycleDetails || []).map((c) => c.id));
+    return new Set([...cycleFilter].filter((id) => current.has(id)));
   }, [cycleFilter, payroll.cycleDetails]);
 
   const filteredItems = useMemo(() => filterPayrollItems(items, { search, paymentMethod, activeLeaderFilter, activeCycleFilter, rutOf }), [items, search, paymentMethod, activeLeaderFilter, activeCycleFilter]);

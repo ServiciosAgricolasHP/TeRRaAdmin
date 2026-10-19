@@ -78,32 +78,32 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
     if (!selection?.length || editBusy) return;
     setEditBusy(true);
     try {
-      const elegidas = new Map(selection.map((s) => [s.cycleId, new Set(s.laborIds)]));
-      const cycleIdsToAdd = [...elegidas.keys()];
-      const selectedCycles = cycles.filter((c) => elegidas.has(c.id));
+      const chosenLabors = new Map(selection.map((s) => [s.cycleId, new Set(s.laborIds)]));
+      const cycleIdsToAdd = [...chosenLabors.keys()];
+      const selectedCycles = cycles.filter((c) => chosenLabors.has(c.id));
       const laborTypeById = new Map();
       for (const cycle of selectedCycles) {
         for (const labor of cycle.labors || []) laborTypeById.set(labor.id, labor.type);
       }
 
       // Directo de Firestore, sin caché: de acá sale lo que se etiqueta.
-      const nuevas = [];
+      const newWorkdays = [];
       for (let i = 0; i < cycleIdsToAdd.length; i += 10) {
         const chunk = cycleIdsToAdd.slice(i, i + 10);
         const wds = await workdaysService.list({ wheres: [["cycleId", "in", chunk]] });
         for (const wd of wds) {
           if (wd.payrollId) continue;
           if (String(wd.workerRut || "").startsWith("TEMP-")) continue;
-          if (!elegidas.get(wd.cycleId)?.has(wd.laborId)) continue;
-          nuevas.push(wd);
+          if (!chosenLabors.get(wd.cycleId)?.has(wd.laborId)) continue;
+          newWorkdays.push(wd);
         }
       }
       const pendingAdvances = await listPendingForWorkers(
-        aggregateWorkerAmounts(nuevas, laborTypeById).map(resolveCurrentRut(workers)),
+        aggregateWorkerAmounts(newWorkdays, laborTypeById).map(resolveCurrentRut(workers)),
       );
       const plan = planAddWorkdays({
         items,
-        workdays: nuevas,
+        workdays: newWorkdays,
         laborTypeById,
         pendingAdvances,
         profileFor: profileForAgg,
@@ -116,15 +116,15 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
       // El período de cada ciclo es el de los días que se agregan; en uno que
       // ya estaba, el servicio lo estira para cubrirlos.
       const includedIds = new Set(plan.workdayIds);
-      const addedWorkdays = nuevas.filter((wd) => includedIds.has(wd.id));
+      const addedWorkdays = newWorkdays.filter((wd) => includedIds.has(wd.id));
       const cycleDetailsToAdd = withPaidPeriods(selectedCycles.map((c) => {
         const detail = cycleDetailOf(c, { faenas, subfaenas });
-        const todas = (c.labors || []).map((l) => l.id);
-        const laborIds = todas.filter((id) => elegidas.get(c.id).has(id));
+        const allLaborIds = (c.labors || []).map((l) => l.id);
+        const laborIds = allLaborIds.filter((id) => chosenLabors.get(c.id).has(id));
         // Entero solo si es nuevo en la nómina y se eligieron todas sus
         // labores; si no, Recalcular traería después lo que se dejó afuera.
-        const yaEsta = cycleDetails.some((cd) => cd.id === c.id);
-        return !yaEsta && laborIds.length === todas.length ? detail : { ...detail, laborIds };
+        const alreadyIn = cycleDetails.some((cd) => cd.id === c.id);
+        return !alreadyIn && laborIds.length === allLaborIds.length ? detail : { ...detail, laborIds };
       }), addedWorkdays);
 
       const aggregates = await addWorkdaysToPayroll(payroll.id, {
@@ -134,14 +134,14 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
         workdays: addedWorkdays,
         advanceApplications: plan.newAdvanceApplications,
       });
-      const anticipoPorId = new Map(pendingAdvances.map((a) => [a.id, a]));
+      const advanceById = new Map(pendingAdvances.map((a) => [a.id, a]));
       await extendSnapshot(payroll.id, {
         items: plan.items,
         aggregates,
         cycles: cycleDetailsToAdd.map((cd) => snapshotCycleOf(cd, selectedCycles.find((c) => c.id === cd.id))),
         workdays: addedWorkdays.map(snapshotWorkdayOf),
         advances: plan.newAdvanceApplications
-          .map((x) => anticipoPorId.get(x.advanceId))
+          .map((x) => advanceById.get(x.advanceId))
           .filter(Boolean)
           .map(snapshotAdvanceOf),
       });
@@ -165,29 +165,29 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
     if (!worker || !workdayIds?.length || editBusy) return;
     setEditBusy(true);
     try {
-      const claves = workerKeys(worker);
+      const keys = workerKeys(worker);
       // Se releen: entre que se abrió el modal y ahora, otra nómina pudo
       // tomar alguno de esos días.
-      const frescas = await workdaysService.list({ wheres: [["workerRut", "in", claves]] });
-      const { libres, tomadas } = stillFreeWorkdays(frescas, workdayIds);
-      if (libres.length === 0) {
+      const freshWorkdays = await workdaysService.list({ wheres: [["workerRut", "in", keys]] });
+      const { libres: freeWorkdays, tomadas: takenCount } = stillFreeWorkdays(freshWorkdays, workdayIds);
+      if (freeWorkdays.length === 0) {
         toast.error("Esos días ya no están disponibles: los tomó otra nómina.");
         return;
       }
-      const persona = asPayrollWorker({
+      const person = asPayrollWorker({
         items,
-        keys: claves,
+        keys: keys,
         fallbackKey: worker.id,
         rut: worker.rut || worker.id,
-        workdays: libres,
-        advances: await listPendingForWorkers(claves),
+        workdays: freeWorkdays,
+        advances: await listPendingForWorkers(keys),
       });
       const laborTypeById = new Map(cycles.flatMap((c) => (c.labors || []).map((l) => [l.id, l.type])));
       const plan = planAddWorkdays({
         items,
-        workdays: persona.workdays,
+        workdays: person.workdays,
         laborTypeById,
-        pendingAdvances: persona.advances,
+        pendingAdvances: person.advances,
         profileFor: () => liveProfileOf(worker),
       });
       if (plan.workdayIds.length === 0) {
@@ -195,15 +195,15 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
         return;
       }
 
-      const yaEstan = new Set([...cycleDetails.map((c) => c.id), ...(payroll.cycleIds || [])]);
-      const ciclosNuevos = [...new Set(libres.map((wd) => wd.cycleId))]
-        .filter((cid) => !yaEstan.has(cid))
+      const alreadyInIds = new Set([...cycleDetails.map((c) => c.id), ...(payroll.cycleIds || [])]);
+      const newCycles = [...new Set(freeWorkdays.map((wd) => wd.cycleId))]
+        .filter((cid) => !alreadyInIds.has(cid))
         .map((cid) => cycles.find((c) => c.id === cid))
         .filter(Boolean);
       const includedIds = new Set(plan.workdayIds);
-      const addedWorkdays = libres.filter((wd) => includedIds.has(wd.id));
+      const addedWorkdays = freeWorkdays.filter((wd) => includedIds.has(wd.id));
       const cycleDetailsToAdd = withPaidPeriods(
-        ciclosNuevos.map((c) => ({ ...cycleDetailOf(c, { faenas, subfaenas }), laborIds: [] })),
+        newCycles.map((c) => ({ ...cycleDetailOf(c, { faenas, subfaenas }), laborIds: [] })),
         addedWorkdays,
       );
 
@@ -214,24 +214,24 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
         workdays: addedWorkdays,
         advanceApplications: plan.newAdvanceApplications,
       });
-      const anticipoPorId = new Map(persona.advances.map((a) => [a.id, a]));
+      const advanceById = new Map(person.advances.map((a) => [a.id, a]));
       await extendSnapshot(payroll.id, {
         items: plan.items,
         aggregates,
-        cycles: cycleDetailsToAdd.map((cd) => snapshotCycleOf(cd, ciclosNuevos.find((c) => c.id === cd.id))),
+        cycles: cycleDetailsToAdd.map((cd) => snapshotCycleOf(cd, newCycles.find((c) => c.id === cd.id))),
         workdays: addedWorkdays.map(snapshotWorkdayOf),
         advances: plan.newAdvanceApplications
-          .map((x) => anticipoPorId.get(x.advanceId))
+          .map((x) => advanceById.get(x.advanceId))
           .filter(Boolean)
           .map(snapshotAdvanceOf),
       });
 
       setAddWorkerOpen(false);
       await onChanged?.();
-      const dias = new Set(libres.map((wd) => `${wd.cycleId}|${wd.laborId}|${wd.date}`)).size;
+      const dayCount = new Set(freeWorkdays.map((wd) => `${wd.cycleId}|${wd.laborId}|${wd.date}`)).size;
       toast.success(
-        additionSummary(`${dias} día(s) de ${worker.name || "la persona"} agregado(s) a la nómina.`, plan.added) +
-          (tomadas > 0 ? ` ${tomadas} jornada(s) ya no estaban disponibles y quedaron afuera.` : ""),
+        additionSummary(`${dayCount} día(s) de ${worker.name || "la persona"} agregado(s) a la nómina.`, plan.added) +
+          (takenCount > 0 ? ` ${takenCount} jornada(s) ya no estaban disponibles y quedaron afuera.` : ""),
       );
     } catch (err) {
       toast.error(`Error al agregar a la persona: ${err?.message || err}`);

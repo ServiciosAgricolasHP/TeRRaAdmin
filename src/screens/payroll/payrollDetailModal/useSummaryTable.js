@@ -95,9 +95,9 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
 
   const summaryDisplayRows = useMemo(() => summaryDisplayRowsOf(activeSummary, summaryShowLabor), [activeSummary, summaryShowLabor]);
 
-  const resumenCaptureRef = useRef(null);
-  const [resumenBusy, setResumenBusy] = useState("");
-  const handlePrintResumen = () => {
+  const summaryCaptureRef = useRef(null);
+  const [summaryBusy, setSummaryBusy] = useState("");
+  const handlePrintSummary = () => {
     if (!activeSummary) return;
     try {
       printSummaryTable(payroll, {
@@ -112,43 +112,43 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
       toast.error(err?.message || String(err));
     }
   };
-  const handleCopyResumenImage = async () => {
-    if (!resumenCaptureRef.current) return;
-    setResumenBusy("image");
+  const handleCopySummaryImage = async () => {
+    if (!summaryCaptureRef.current) return;
+    setSummaryBusy("image");
     try {
-      const blob = await captureFullWidthBlob(resumenCaptureRef.current);
+      const blob = await captureFullWidthBlob(summaryCaptureRef.current);
       if (!blob) throw new Error("No se pudo generar la imagen");
       await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
       toast.success("Imagen copiada");
     } catch (err) {
       toast.error("Error al copiar: " + (err.message || err));
     } finally {
-      setResumenBusy("");
+      setSummaryBusy("");
     }
   };
-  const handleDownloadResumenXlsx = async () => {
+  const handleDownloadSummaryXlsx = async () => {
     if (!activeSummary) return;
-    setResumenBusy("xlsx");
+    setSummaryBusy("xlsx");
     try {
       await writePayrollSummaryXlsx({ bonusAdvanceSummary, cyclesPeriod, deferredCash, grandTotals, payroll, pendingMode, pendingSummaryRows, summaryDisplayRows, summaryShowLabor });
     } catch (err) {
       toast.error("Error al generar Excel: " + (err.message || err));
     } finally {
-      setResumenBusy("");
+      setSummaryBusy("");
     }
   };
   return {
     activeSummary,
     deferredCash,
     grandTotals,
-    handleCopyResumenImage,
-    handleDownloadResumenXlsx,
-    handlePrintResumen,
+    handleCopySummaryImage,
+    handleDownloadSummaryXlsx,
+    handlePrintSummary,
     laborSummaryLoading,
     pendingMode,
     pendingSummaryRows,
-    resumenBusy,
-    resumenCaptureRef,
+    summaryBusy,
+    summaryCaptureRef,
     setSummaryPending,
     setSummaryShowLabor,
     summaryDisplayRows,

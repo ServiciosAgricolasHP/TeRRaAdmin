@@ -35,11 +35,11 @@ export function usePayrollRecalc({ cycleBreakdown, cycles, faenas, onChanged, pa
     setRecalcBusy(true);
     try {
       await applyPayrollRecalc(payroll.id, recalcPreview);
-      const sacado = recalcPreview.removalLines.length > 0;
+      const removedSome = recalcPreview.removalLines.length > 0;
       setRecalcPreview(null);
       setRemoval(new Map());
       await onChanged?.();
-      toast.success(sacado ? "Listo: se sacó lo elegido y la nómina quedó recalculada." : "Nómina recalculada.");
+      toast.success(removedSome ? "Listo: se sacó lo elegido y la nómina quedó recalculada." : "Nómina recalculada.");
     } catch (err) {
       toast.error(`Error al aplicar el recálculo: ${err?.message || err}`);
     } finally {
@@ -69,14 +69,14 @@ export function usePayrollRecalc({ cycleBreakdown, cycles, faenas, onChanged, pa
   const toggleLaborRemoval = (cycle, laborId) =>
     setRemoval((prev) => {
       const next = new Map(prev);
-      const todas = cycle.labors.map((l) => l.id);
-      const antes = prev.get(cycle.id);
-      const fuera = new Set(antes === true ? todas : antes || []);
-      if (fuera.has(laborId)) fuera.delete(laborId);
-      else fuera.add(laborId);
-      if (fuera.size === 0) next.delete(cycle.id);
-      else if (todas.every((id) => fuera.has(id))) next.set(cycle.id, true);
-      else next.set(cycle.id, fuera);
+      const allLaborIds = cycle.labors.map((l) => l.id);
+      const before = prev.get(cycle.id);
+      const removedLabors = new Set(before === true ? allLaborIds : before || []);
+      if (removedLabors.has(laborId)) removedLabors.delete(laborId);
+      else removedLabors.add(laborId);
+      if (removedLabors.size === 0) next.delete(cycle.id);
+      else if (allLaborIds.every((id) => removedLabors.has(id))) next.set(cycle.id, true);
+      else next.set(cycle.id, removedLabors);
       return next;
     });
   return {

@@ -5,7 +5,7 @@ import { fmtDayShortEs } from "../helpers";
 // pendiente de otras nóminas y sus acciones de copiar, descargar e imprimir.
 export function SummaryTable({ bonusAdvanceSummary, cyclesPeriod, payroll, table }) {
   "use no memo";
-  const { activeSummary, deferredCash, grandTotals, handleCopyResumenImage, handleDownloadResumenXlsx, handlePrintResumen, laborSummaryLoading, pendingMode, pendingSummaryRows, resumenBusy, resumenCaptureRef, setSummaryPending, setSummaryShowLabor, summaryDisplayRows, summaryPending, summaryShowLabor } = table;
+  const { activeSummary, deferredCash, grandTotals, handleCopySummaryImage, handleDownloadSummaryXlsx, handlePrintSummary, laborSummaryLoading, pendingMode, pendingSummaryRows, summaryBusy, summaryCaptureRef, setSummaryPending, setSummaryShowLabor, summaryDisplayRows, summaryPending, summaryShowLabor } = table;
   return (
     <div className="mt-4">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -53,23 +53,23 @@ export function SummaryTable({ bonusAdvanceSummary, cyclesPeriod, payroll, table
         )}
         <div className="flex gap-1">
           <button
-            onClick={handleCopyResumenImage}
-            disabled={resumenBusy === "image" || !activeSummary}
+            onClick={handleCopySummaryImage}
+            disabled={summaryBusy === "image" || !activeSummary}
             title="Copiar como imagen"
             className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-[10px] hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
           >
-            {resumenBusy === "image" ? "..." : "📋 Copiar"}
+            {summaryBusy === "image" ? "..." : "📋 Copiar"}
           </button>
           <button
-            onClick={handleDownloadResumenXlsx}
-            disabled={resumenBusy === "xlsx" || !activeSummary}
+            onClick={handleDownloadSummaryXlsx}
+            disabled={summaryBusy === "xlsx" || !activeSummary}
             title="Descargar como Excel"
             className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-[10px] hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
           >
-            {resumenBusy === "xlsx" ? "..." : "📥 Descargar"}
+            {summaryBusy === "xlsx" ? "..." : "📥 Descargar"}
           </button>
           <button
-            onClick={handlePrintResumen}
+            onClick={handlePrintSummary}
             disabled={!activeSummary}
             title="Imprimir"
             className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-[10px] hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
@@ -84,7 +84,7 @@ export function SummaryTable({ bonusAdvanceSummary, cyclesPeriod, payroll, table
           Cargando desglose por labor…
         </div>
       ) : (
-        <div ref={resumenCaptureRef} className="rounded-md border border-[var(--color-border)]" style={{ background: "#fff" }}>
+        <div ref={summaryCaptureRef} className="rounded-md border border-[var(--color-border)]" style={{ background: "#fff" }}>
         <div className="px-3 pt-2.5" style={{ color: "#222" }}>
           <div className="text-sm font-semibold">{payroll.name}</div>
           <div className="text-[11px]" style={{ color: "#666" }}>
