@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { estimateCashBreakdown, DEFAULT_AVAILABLE, isBill } from "./cashBreakdown";
+import { estimateCashBreakdown, DEFAULT_AVAILABLE, isBill, cashWorkerGroupsOf, cashPiecesText, cashSummaryText, cashListText } from "./cashBreakdown";
 
 const item = (amount, rut = "1-9") => ({ rut, name: rut, amount });
 const total = (counts) => [...counts].reduce((s, [d, n]) => s + d * n, 0);
@@ -63,5 +63,77 @@ describe("isBill", () => {
   it("distingue billetes de monedas", () => {
     expect(isBill(2000)).toBe(true);
     expect(isBill(500)).toBe(false);
+  });
+});
+
+describe("textos y grupos del estimador", () => {
+  const own = [
+    { rut: "1", name: "Zoe", groupLeader: "GRUPO B", amount: 15000 },
+    { rut: "2", name: "Ana", groupLeader: "GRUPO B", amount: 37650 },
+    { rut: "3", name: "Beto", groupLeader: "", amount: 5000 },
+  ];
+  const pending = [{ rut: "4", name: "Caro", groupLeader: "GRUPO A", amount: 20000, pendingFrom: "Nómina vieja" }];
+  const allItems = [...own, ...pending];
+  const est = estimateCashBreakdown(allItems, [10000, 5000, 1000, 500, 100]);
+  const denominations = [...est.counts.keys()];
+
+  it("agrupa por líder y deja al final, por nómina, a quienes vienen de otra; cada grupo por nombre", () => {
+    const groups = cashWorkerGroupsOf(est, allItems);
+    expect(groups.map((g) => [g.label, g.pending, g.rows.map((r) => r.name)])).toEqual([
+      ["GRUPO B", false, ["Ana", "Zoe"]],
+      ["Sin grupo", false, ["Beto"]],
+      ["Pendiente de Nómina vieja", true, ["Caro"]],
+    ]);
+  });
+
+  it("las piezas van de mayor a menor y sin las que no se usan", () => {
+    expect(cashPiecesText({ 10000: 3, 5000: 1, 100: 2 }, denominations)).toBe("3 × $10.000 + 1 × $5.000 + 2 × $100");
+    expect(cashPiecesText({}, denominations)).toBe("");
+  });
+
+  it("el resumen dice la nómina, lo pendiente de otras, el redondeo y las piezas alineadas", () => {
+    const text = cashSummaryText({
+      payrollName: "Nómina 1", allItems, est, usePending: true, ownTotal: 57650, extraTotal: 20000,
+      pendingNote: "Incluye $20.000 de efectivo pendiente.", diff: est.totalNeeded - est.totalOriginal, denominations,
+      totalPieces: [...est.counts.values()].reduce((s, v) => s + v, 0),
+    });
+    expect(text.split("\n")).toEqual([
+      "💵 Estimación de efectivo — Nómina 1",
+      "4 trabajador(es) · Total: $77.700",
+      "Esta nómina: $57.650 · Pendiente de otras nóminas: $20.000",
+      "Incluye $20.000 de efectivo pendiente.",
+      "(Original $77.650 + redondeo $50)",
+      "",
+      "Billetes y monedas:",
+      "    $10.000 billete ×    6 =     $60.000",
+      "     $5.000 billete ×    3 =     $15.000",
+      "     $1.000 billete ×    2 =      $2.000",
+      "       $500  moneda ×    1 =        $500",
+      "       $100  moneda ×    2 =        $200",
+      "",
+      "Total: 14 billetes/monedas · $77.700",
+    ]);
+  });
+
+  it("la lista dice cuánto recibe cada uno, con el monto original si se redondeó", () => {
+    const text = cashListText({
+      payrollName: "Nómina 1", usePending: false, pendingNote: "", workerGroups: cashWorkerGroupsOf(est, allItems), est, denominations,
+    });
+    expect(text.split("\n")).toEqual([
+      "💵 Efectivo por trabajador — Nómina 1",
+      "",
+      "GRUPO B",
+      "  Ana: $37.700 (de $37.650) → 3 × $10.000 + 1 × $5.000 + 2 × $1.000 + 1 × $500 + 2 × $100",
+      "  Zoe: $15.000 → 1 × $10.000 + 1 × $5.000",
+      "",
+      "Sin grupo",
+      "  Beto: $5.000 → 1 × $5.000",
+      "",
+      "Pendiente de Nómina vieja",
+      "  Caro: $20.000 → 2 × $10.000",
+      "",
+      "Total: 4 trabajador(es) · $77.700",
+      "Billetes y monedas: 6 × $10.000 + 3 × $5.000 + 2 × $1.000 + 1 × $500 + 2 × $100",
+    ]);
   });
 });
