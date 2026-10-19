@@ -1056,7 +1056,7 @@ export default function CycleDetail() {
 
   // Toggle del piso de un trabajador en un día: crea o borra su workday `_piso`
   // (`pisoOnly: true`) con el piso configurado para ese día.
-  const togglePiso = async (laborId, date, workerRut) => {
+  const toggleFloor = async (laborId, date, workerRut) => {
     const labor = cycle.labors.find((l) => l.id === laborId);
     if (!labor) return;
     const mapKey = workdayMapKey(workerRut, date, PISO_COMBO_KEY);
@@ -1180,7 +1180,7 @@ export default function CycleDetail() {
       ...tratoHERates(labor),
     });
 
-  const upsertTratoHEWorkday = async (laborId, date, workerRut, patch) => {
+  const upsertOvertimeDayWorkday = async (laborId, date, workerRut, patch) => {
     const labor = cycle.labors.find((l) => l.id === laborId);
     if (!labor) return { amount: 0 };
     const mapKey = workdayMapKey(workerRut, date, SINGLE_COMBO);
@@ -1696,7 +1696,7 @@ export default function CycleDetail() {
       const workerRut = params.data.rut;
       const newVal = parseAmount(params.newValue) || 0;
       const patch = kind === "qty" ? { qty: newVal } : { overtimeHours: newVal };
-      const result = await upsertTratoHEWorkday(activeLabor.id, date, workerRut, patch);
+      const result = await upsertOvertimeDayWorkday(activeLabor.id, date, workerRut, patch);
       // Esta rama pinta el campo con `newVal`, no con lo que devuelve la
       // función; si el guardado falló (`ok: false`) vuelve a `oldValue`.
       params.node.setDataValue(field, result.ok === false ? oldValue : newVal);
@@ -2368,8 +2368,8 @@ export default function CycleDetail() {
       setLeaderPickerFor,
       toggleAttendance,
       toggleMonthly,
-      togglePiso,
-      upsertTratoHEWorkday,
+      toggleFloor,
+      upsertOvertimeDayWorkday,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [days, readOnly, photoMode, qrLocked, isHarvestLabor, isPieceworkLabor, isPieceworkStagesLabor, isOvertimeDayLabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, catalogs, dayPrices, activeLabor, overtimeDayView, harvestView, pieceworkView, activeLaborDayNotes, legacyDayNotes, activeLaborDatesWithProduction, daysWithFloor, isMobile],
@@ -2761,7 +2761,7 @@ export default function CycleDetail() {
           readOnly={readOnly}
           onSave={async (patch) => {
             if (!bonusEdit) return;
-            await upsertTratoHEWorkday(bonusEdit.laborId, bonusEdit.date, bonusEdit.workerRut, patch);
+            await upsertOvertimeDayWorkday(bonusEdit.laborId, bonusEdit.date, bonusEdit.workerRut, patch);
             setBonusEdit(null);
           }}
         />
@@ -2784,9 +2784,9 @@ export default function CycleDetail() {
           commitTratoTier={commitTratoTier}
           commitEtapaQty={commitEtapaQty}
           commitNormalAmount={commitNormalAmount}
-          upsertTratoHEWorkday={upsertTratoHEWorkday}
+          upsertOvertimeDayWorkday={upsertOvertimeDayWorkday}
           toggleAttendance={toggleAttendance}
-          togglePiso={togglePiso}
+          toggleFloor={toggleFloor}
           persistComboConfig={persistComboConfig}
           addComboToDay={addComboToDay}
           removeComboFromDay={removeComboFromDay}

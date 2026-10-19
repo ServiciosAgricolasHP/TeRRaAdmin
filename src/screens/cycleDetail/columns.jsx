@@ -10,7 +10,7 @@ import { DEFAULT_BONUS_MANEJO, DEFAULT_BONUS_SUPERVISION, DEFAULT_OVERTIME_RATE,
 // el workday `_piso` del trabajador en ese día. Se habilita si el día tiene
 // piso configurado y el trabajador ya tiene producción ese día. Muestra el
 // piso y el total del día (producción + piso); el tooltip desglosa la suma.
-function buildPisoChildCol(date, labor, dayPrices, disabled, togglePiso) {
+function buildFloorChildCol(date, labor, dayPrices, disabled, toggleFloor) {
   const eff = effectivePiso(labor, dayPrices, date);
   return {
     headerName: "Piso",
@@ -36,7 +36,7 @@ function buildPisoChildCol(date, labor, dayPrices, disabled, togglePiso) {
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (canToggle) togglePiso(labor.id, date, p.data.rut);
+            if (canToggle) toggleFloor(labor.id, date, p.data.rut);
           }}
           disabled={!canToggle}
           title={title}
@@ -106,8 +106,8 @@ export function buildColumnDefs(ctx) {
     setLeaderPickerFor,
     toggleAttendance,
     toggleMonthly,
-    togglePiso,
-    upsertTratoHEWorkday,
+    toggleFloor,
+    upsertOvertimeDayWorkday,
   } = ctx;
   const baseLeft = [
     {
@@ -357,7 +357,7 @@ export function buildColumnDefs(ctx) {
         },
       }));
       if (daysWithFloor.has(d)) {
-        children.push(buildPisoChildCol(d, activeLabor, dayPrices, readOnly || photoMode, togglePiso));
+        children.push(buildFloorChildCol(d, activeLabor, dayPrices, readOnly || photoMode, toggleFloor));
       }
       return {
         headerName: d, groupId: `g_${d}`,
@@ -413,7 +413,7 @@ export function buildColumnDefs(ctx) {
         },
       }));
       if (daysWithFloor.has(d)) {
-        children.push(buildPisoChildCol(d, activeLabor, dayPrices, readOnly || photoMode, togglePiso));
+        children.push(buildFloorChildCol(d, activeLabor, dayPrices, readOnly || photoMode, toggleFloor));
       }
       return {
         headerName: d, groupId: `g_${d}`,
@@ -476,7 +476,7 @@ export function buildColumnDefs(ctx) {
     };
     const buildBreakdown = (data, d, cfg) => {
       const qty = Number(data?.[`${d}__qty`]) || 0;
-      const he = Number(data?.[`${d}__he`]) || 0;
+      const overtimeHours = Number(data?.[`${d}__he`]) || 0;
       const m = !!data?.[`${d}__m`];
       const s = !!data?.[`${d}__s`];
       const x = Number(data?.[`${d}__x`]) || 0;
@@ -487,7 +487,7 @@ export function buildColumnDefs(ctx) {
       } else if (qty > 0) {
         lines.push(`Base: ${fmtCurrency(base)}`);
       }
-      if (he > 0) lines.push(`HE: ${he}h × ${fmtCurrency(rates.overtimeRate)} = ${fmtCurrency(he * rates.overtimeRate)}`);
+      if (overtimeHours > 0) lines.push(`HE: ${overtimeHours}h × ${fmtCurrency(rates.overtimeRate)} = ${fmtCurrency(overtimeHours * rates.overtimeRate)}`);
       if (m) lines.push(`Manejo: ${fmtCurrency(rates.bonusManejo)}`);
       if (s) lines.push(`Supervisión: ${fmtCurrency(rates.bonusSupervision)}`);
       if (x !== 0) lines.push(`Extras: ${fmtCurrency(x)}`);
@@ -578,7 +578,7 @@ export function buildColumnDefs(ctx) {
                         <button
                           onClick={async (e) => {
                             e.stopPropagation();
-                            await upsertTratoHEWorkday(activeLabor.id, d, p.data.rut, { qty: suggested });
+                            await upsertOvertimeDayWorkday(activeLabor.id, d, p.data.rut, { qty: suggested });
                           }}
                           className="flex h-full w-full items-center justify-end gap-1 text-[10px] italic text-[var(--color-muted)] hover:not-italic hover:text-[var(--color-accent)]"
                           title={`Click: usar base sugerida ${fmtCurrency(suggested)}. Doble click después para modificar.`}

@@ -36,7 +36,7 @@ const cardAccentCls = (hasValue) =>
 // Modal mobile: edita un trabajador a la vez, una tarjeta por día (en vez de
 // una columna por día como la grilla). Escribe con las mismas funciones que la
 // grilla de CycleDetail.jsx (commitCosechaCombo/commitTratoTier/
-// commitEtapaQty/commitNormalAmount/upsertTratoHEWorkday): el camino a
+// commitEtapaQty/commitNormalAmount/upsertOvertimeDayWorkday): el camino a
 // Firestore y el cálculo de montos son los mismos.
 //
 // Configurar un combo/tier/etapa o el precio del día afecta a todos los
@@ -61,9 +61,9 @@ export default function CycleWorkerEditModal({
   commitTratoTier,
   commitEtapaQty,
   commitNormalAmount,
-  upsertTratoHEWorkday,
+  upsertOvertimeDayWorkday,
   toggleAttendance,
-  togglePiso,
+  toggleFloor,
   persistComboConfig,
   addComboToDay,
   removeComboFromDay,
@@ -396,7 +396,7 @@ export default function CycleWorkerEditModal({
             disabled={readOnly}
             onClick={async () => {
               const date = bonusDate;
-              await upsertTratoHEWorkday(activeLabor.id, date, workerRut, {
+              await upsertOvertimeDayWorkday(activeLabor.id, date, workerRut, {
                 hasManejo: drivingBonusChecked,
                 hasSupervision: bonusSupervisionChecked,
                 extras: Number(bonusExtras) || 0,
@@ -425,7 +425,7 @@ export default function CycleWorkerEditModal({
         <button
           type="button"
           disabled={!canToggle}
-          onClick={() => togglePiso(activeLabor.id, d, workerRut)}
+          onClick={() => toggleFloor(activeLabor.id, d, workerRut)}
           title={!hasWd ? "Asigna primero producción a este día" : eff === 0 ? "Configura el piso del día o el piso por defecto de la labor" : ""}
           className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
             checked
@@ -710,7 +710,7 @@ export default function CycleWorkerEditModal({
               onBlur={async () => {
                 if (!(qtyField in drafts)) return;
                 const v = parseAmount(drafts[qtyField]) || 0;
-                await runWithSaving(qtyField, () => upsertTratoHEWorkday(activeLabor.id, d, workerRut, { qty: v }));
+                await runWithSaving(qtyField, () => upsertOvertimeDayWorkday(activeLabor.id, d, workerRut, { qty: v }));
                 clearDraft(qtyField);
               }}
               className={inputCls}
@@ -718,7 +718,7 @@ export default function CycleWorkerEditModal({
             {!readOnly && cfg.mode !== "overtimeOnly" && !qty && !!suggested && drafts[qtyField] === undefined && (
               <button
                 type="button"
-                onClick={() => runWithSaving(qtyField, () => upsertTratoHEWorkday(activeLabor.id, d, workerRut, { qty: suggested }))}
+                onClick={() => runWithSaving(qtyField, () => upsertOvertimeDayWorkday(activeLabor.id, d, workerRut, { qty: suggested }))}
                 className="text-[10px] italic text-[var(--color-muted)] hover:text-[var(--color-accent)]"
               >
                 usar {fmtCurrency(suggested)}
@@ -739,7 +739,7 @@ export default function CycleWorkerEditModal({
               onBlur={async () => {
                 if (!(heField in drafts)) return;
                 const v = parseAmount(drafts[heField]) || 0;
-                await runWithSaving(heField, () => upsertTratoHEWorkday(activeLabor.id, d, workerRut, { overtimeHours: v }));
+                await runWithSaving(heField, () => upsertOvertimeDayWorkday(activeLabor.id, d, workerRut, { overtimeHours: v }));
                 clearDraft(heField);
               }}
               className="w-16 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-right text-sm outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
