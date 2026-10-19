@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import { captureFullWidthBlob } from "../../utils/imageCapture";
 import { workdaysService, payrollSnapshotsService } from "../../services";
 import {
-  setCashPaidRuts,
   pendingCashItemsOf,
   removeWorkerFromPayroll,
   addWorkdaysToPayroll,
@@ -61,6 +60,7 @@ import { RecalcModal } from "./RecalcModal";
 import { WorkerDetailRow } from "./WorkerDetailRow";
 import { writePayrollSummaryXlsx } from "./payrollDetailModal/writePayrollSummaryXlsx";
 import { useDetailFilters } from "./payrollDetailModal/useDetailFilters";
+import { useCashPaid } from "./payrollDetailModal/useCashPaid";
 
 export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPayrolls = [], onClose, onRedownload, onDownloadNominaOnly, onDownloadSnapshot, onPublishPortal = null, publishedPayrollId = null, onChanged }) {
   const { catalogs } = useCatalogs();
@@ -121,52 +121,13 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
   // cualquier conjunto de items, no solo los de efectivo.
   const filteredBankGroups = useMemo(() => groupCashByLeader(filteredBank), [filteredBank]);
 
-  // Entrega del efectivo persona por persona. Solo tiene sentido cuando las
-  // transferencias ya se pagaron y el efectivo quedó debiéndose: antes de eso
-  // no hay deuda que descontar, y después de pagar la nómina ya no importa.
-  const cashPaidMode = !!payroll.bankPaidAt && payroll.status !== "paid";
-  const [cashPaidSet, setCashPaidSet] = useState(() => new Set(payroll.cashPaidRuts || []));
-  // Guardado diferido (700 ms): marcar varias personas seguidas es una sola escritura.
-  const cashSaveRef = useRef(null);
-  const flushCashPaid = useRef(() => {});
-  const toggleCashPaid = (rut) => {
-    setCashPaidSet((prev) => {
-      const next = new Set(prev);
-      if (next.has(rut)) next.delete(rut); else next.add(rut);
-      const ruts = [...next];
-      flushCashPaid.current = () => setCashPaidRuts(payroll.id, ruts).catch((err) => {
-        console.error("[nómina] no se pudo guardar quién cobró:", err);
-        toast.error("No se pudo guardar quién cobró el efectivo.");
-      });
-      if (cashSaveRef.current) clearTimeout(cashSaveRef.current);
-      cashSaveRef.current = setTimeout(() => { cashSaveRef.current = null; flushCashPaid.current(); }, 700);
-      return next;
-    });
-  };
-  const setGroupCashPaid = (groupItems, paid) => {
-    setCashPaidSet((prev) => {
-      const next = new Set(prev);
-      for (const it of groupItems) {
-        if (paid) next.add(it.rut); else next.delete(it.rut);
-      }
-      const ruts = [...next];
-      flushCashPaid.current = () => setCashPaidRuts(payroll.id, ruts).catch((err) => {
-        console.error("[nómina] no se pudo guardar quién cobró:", err);
-        toast.error("No se pudo guardar quién cobró el efectivo.");
-      });
-      if (cashSaveRef.current) clearTimeout(cashSaveRef.current);
-      cashSaveRef.current = setTimeout(() => { cashSaveRef.current = null; flushCashPaid.current(); }, 700);
-      return next;
-    });
-  };
-  // Si el modal se cierra antes de que corra el debounce, igual se guarda.
-  useEffect(() => () => {
-    if (cashSaveRef.current) { clearTimeout(cashSaveRef.current); flushCashPaid.current(); }
-  }, []);
-  // Efectivo que todavía se debe, en vivo (sin esperar el refetch del doc).
-  const owedCash = cashPaidMode
-    ? cash.reduce((s, it) => s + (cashPaidSet.has(it.rut) ? 0 : Number(it.amount) || 0), 0)
-    : 0;
+  const {
+    cashPaidMode,
+    cashPaidSet,
+    owedCash,
+    setGroupCashPaid,
+    toggleCashPaid,
+  } = useCashPaid({ cash, payroll, toast });
 
   // Deuda de efectivo de OTRAS nóminas. No se mezcla con esta —son entregas
   // aparte, con su propio sobre— pero sí tiene que entrar al estimador: los
