@@ -10,6 +10,11 @@ import {
   buildDailyRows,
   laborTotals,
   buildWorkerLaborGrid,
+  laborsDataOf,
+  laborWorkerGridsOf,
+  transportByCarrier,
+  payTotal,
+  dayNotesSummaryOf,
 } from "./cycleSummary";
 
 const catalogs = {
@@ -218,5 +223,81 @@ describe("buildWorkerLaborGrid", () => {
     expect(cell.byCombo.get("1_2")).toEqual({ qx: 1, cy: 2, kilos: 40 });
     expect(anyPiso).toBe(true);
     expect([...containers]).toEqual([2]);
+  });
+});
+
+describe("datos del resumen por labor y transportista", () => {
+  const labors = [
+    { id: "L1", name: "Principal", type: "main", workers: [] },
+    { id: "LT", name: "Poda", type: "trato", tratoType: 0, workers: [] },
+  ];
+  const workdaysByLabor = {
+    L1: { "1-9__2026-10-01__0_0": { date: D1, workerRut: "1-9", amount: 30000 } },
+    LT: { "1-9__2026-10-02__t0": { date: D2, workerRut: "1-9", qty: 10, amount: 3000 } },
+  };
+  const dayPrices = { LT: { [D2]: { t0: { price: 300, mode: "unit", unit: 1 } } } };
+
+  it("laborsDataOf arma las filas, los totales y la unidad de cada labor", () => {
+    const [main, trato] = laborsDataOf(labors, workdaysByLabor, dayPrices, catalogs);
+    expect(main.totals.amount).toBe(30000);
+    expect(main.unit).toBe("Jornadas");
+    expect(main.tratoUnitsSet).toBe(null);
+    expect([...trato.tratoUnitsSet]).toEqual([1]);
+    expect(trato.unit).toBe("Metro");
+    expect(laborsDataOf(undefined, {}, {}, catalogs)).toEqual([]);
+  });
+
+  it("laborWorkerGridsOf arma la grilla trabajador × día de cada labor", () => {
+    const [grid] = laborWorkerGridsOf(labors, workdaysByLabor);
+    expect(grid.labor.id).toBe("L1");
+    expect(grid.dates).toEqual([D1]);
+    expect(grid.workers.map((w) => w.rut)).toEqual(["1-9"]);
+    expect(laborWorkerGridsOf(undefined, {})).toEqual([]);
+  });
+
+  it("transportByCarrier agrupa por transportista y fecha, con una vuelta si no dice cuántas", () => {
+    const groups = transportByCarrier([
+      { carrierId: "K1", date: D2, qty: 2, amount: 40000 },
+      { carrierId: "K2", date: D1, amount: 15000 },
+      { carrierId: "K1", date: D1, qty: 1, amount: 20000 },
+      { carrierId: "K1", date: D2, amount: 20000 },
+    ]);
+    expect(groups.map((g) => [g.carrierId, g.totalCount, g.totalAmount])).toEqual([["K1", 4, 80000], ["K2", 1, 15000]]);
+    expect(groups[0].rows).toEqual([
+      { date: D1, count: 1, amount: 20000 },
+      { date: D2, count: 3, amount: 60000 },
+    ]);
+  });
+
+  it("payTotal suma lo pagado de cada labor, su piso y el transporte", () => {
+    const laborsData = [{ totals: { amount: 1000, pisoAmount: 200 } }, { totals: { amount: 50 } }];
+    expect(payTotal(laborsData, [{ totalAmount: 7 }])).toBe(1257);
+  });
+});
+
+describe("dayNotesSummaryOf", () => {
+  const laborsData = [
+    { labor: { id: "L1", name: "Principal" }, rows: [{ date: D1 }, { date: D2 }] },
+    { labor: { id: "L2", name: "Riego" }, rows: [{ date: D1 }] },
+  ];
+
+  it("junta las notas de cada labor y la compartida del día, una sola vez", () => {
+    const notes = dayNotesSummaryOf(
+      "pay",
+      laborsData,
+      { L1: { [D1]: "  Llovió  ", "2026-10-03": "Sin gente" } },
+      { [D1]: "Corte de luz", [D2]: "Feriado" },
+      { L1: "Principal Norte" },
+    );
+    expect(notes).toEqual([
+      { date: D1, shared: "Corte de luz", entries: [{ laborId: "L1", name: "Principal Norte", text: "Llovió" }] },
+      { date: D2, shared: "Feriado", entries: [] },
+      // Un día sin producción también lleva su observación.
+      { date: "2026-10-03", shared: "", entries: [{ laborId: "L1", name: "Principal Norte", text: "Sin gente" }] },
+    ]);
+  });
+
+  it("en cobrar no hay observaciones", () => {
+    expect(dayNotesSummaryOf("charge", laborsData, { L1: { [D1]: "x" } }, {}, {})).toEqual([]);
   });
 });

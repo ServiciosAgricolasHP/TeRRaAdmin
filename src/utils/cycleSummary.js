@@ -429,3 +429,105 @@ export function buildWorkerLaborGrid(labor, wdMap) {
   );
   return { workers, dates, containers, anyPiso };
 }
+
+// ============================================================
+// Datos por labor
+// ============================================================
+export function laborsDataOf(labors, workdaysByLabor, dayPrices, catalogs) {
+  if (!labors) return [];
+  return labors.map((l) => {
+    const wdMap = workdaysByLabor[l.id] || {};
+    const { rows, containers } = buildDailyRows(l, wdMap, dayPrices);
+    const totals = laborTotals(rows);
+    // Unidades de trato usadas en la labor: si hay una sola, laborQtyUnit la
+    // usa como encabezado de columna en vez del tipo de trato.
+    const tratoUnitsSet =
+      l.type === "trato"
+        ? new Set(rows.map((r) => r.unit).filter((u) => u != null))
+        : null;
+    return {
+      labor: l,
+      rows,
+      totals,
+      unit: laborQtyUnit(l, catalogs, containers, tratoUnitsSet),
+      containers,
+      tratoUnitsSet,
+    };
+  });
+}
+
+// Grilla trabajador × día por labor (segunda sección imprimible). Cada
+// labor tiene sus propios botones de copiar e imprimir.
+export function laborWorkerGridsOf(labors, workdaysByLabor) {
+  if (!labors) return [];
+  return labors.map((l) => {
+    const wdMap = workdaysByLabor[l.id] || {};
+    const grid = buildWorkerLaborGrid(l, wdMap);
+    return { labor: l, ...grid };
+  });
+}
+
+// Transporte agrupado por transportista y fecha.
+export function transportByCarrier(trips) {
+  const byCarrier = new Map();
+  for (const t of trips) {
+    const cid = t.carrierId;
+    if (!byCarrier.has(cid)) byCarrier.set(cid, { carrierId: cid, byDate: new Map(), totalCount: 0, totalAmount: 0 });
+    const g = byCarrier.get(cid);
+    if (!g.byDate.has(t.date)) g.byDate.set(t.date, { date: t.date, count: 0, amount: 0 });
+    const d = g.byDate.get(t.date);
+    d.count += Number(t.qty) || 1;
+    d.amount += Number(t.amount) || 0;
+    g.totalCount += Number(t.qty) || 1;
+    g.totalAmount += Number(t.amount) || 0;
+  }
+  return [...byCarrier.values()].map((g) => ({
+    ...g,
+    rows: [...g.byDate.values()].sort((a, b) => (a.date < b.date ? -1 : 1)),
+  }));
+}
+
+export function payTotal(laborsData, transportData) {
+  let sum = 0;
+  for (const ld of laborsData) sum += ld.totals.amount + (ld.totals.pisoAmount || 0);
+  for (const tg of transportData) sum += tg.totalAmount;
+  return sum;
+}
+
+// Observaciones por día: las notas de cycle.dayNotesByLabor[laborId][date]
+// y, para las labores sin nota propia ese día, la compartida de
+// cycle.dayNotes[date] (ver CycleDetail). La compartida se emite una vez por
+// día (`shared`), no una vez por labor.
+//
+// Solo en pagar: son apuntes internos, y el resumen de cobrar es el que se
+// manda al cliente.
+export function dayNotesSummaryOf(mode, laborsData, dayNotesByLabor, dayNotes, laborNames) {
+  if (mode !== "pay") return [];
+  const byLabor = dayNotesByLabor || {};
+  const legacy = dayNotes || {};
+  const byDate = new Map();
+  const bucket = (date) => {
+    if (!byDate.has(date)) byDate.set(date, { date, shared: "", entries: [] });
+    return byDate.get(date);
+  };
+  for (const cl of laborsData) {
+    const laborId = cl.labor.id;
+    const name = laborNames?.[laborId] || cl.labor.name;
+    const own = byLabor[laborId] || {};
+    // Fechas con producción más las que solo tienen nota propia: un día sin
+    // producción también puede llevar una observación.
+    const dates = new Set(Object.keys(own));
+    for (const r of cl.rows || []) if (r.date) dates.add(r.date);
+    for (const date of dates) {
+      const propia = String(own[date] || "").trim();
+      if (propia) bucket(date).entries.push({ laborId, name, text: propia });
+      else {
+        const compartida = String(legacy[date] || "").trim();
+        if (compartida) bucket(date).shared = compartida;
+      }
+    }
+  }
+  return [...byDate.values()]
+    .filter((g) => g.shared || g.entries.length > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
