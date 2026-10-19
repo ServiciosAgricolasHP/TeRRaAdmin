@@ -2,6 +2,8 @@ import { useState } from "react";
 import Select from "../../../components/Select";
 import { parseAmount } from "../../../utils/formula";
 import { comboLabel, getDayPiso, getDaySingle } from "../../../utils/cosechaCombos";
+import { useCycleDetail } from "../CycleDetailContext";
+import { fmtCurrency } from "../../../utils/format";
 
 const priceInputCls =
   "w-24 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-right text-sm outline-none focus:border-[var(--color-accent)] disabled:opacity-50";
@@ -160,23 +162,24 @@ function FloorConfig({ date, activeLabor, dayPrices, readOnly, fmtCurrency, pers
 // eso es una vista aparte de los valores por trabajador de CycleWorkerEditModal.
 export default function DayConfigContent({
   date,
-  activeLabor,
-  dayPrices,
-  dayCombosByDate,
-  dayTiersByDate,
-  dayStagesByDate,
-  catalogs,
-  readOnly,
-  fmtCurrency,
-  persistComboConfig,
-  addComboToDay,
-  removeComboFromDay,
-  persistStagePrice,
-  persistDayFloor,
-  persistNormalDayPrice,
-  persistOvertimeDayConfig,
   onBack,
 }) {
+  const {
+    activeLabor,
+    dayPrices,
+    dayCombosByDate,
+    dayTiersByDate,
+    dayStagesByDate,
+    catalogs,
+    readOnly,
+    persistComboConfig,
+    addComboToDay,
+    removeComboFromDay,
+    persistStagePrice,
+    persistDayFloor,
+    persistNormalDayPrice,
+    persistOvertimeDayConfig,
+  } = useCycleDetail();
   const laborId = activeLabor.id;
   const type = activeLabor.type;
 

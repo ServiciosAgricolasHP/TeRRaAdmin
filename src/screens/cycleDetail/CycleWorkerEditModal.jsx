@@ -8,6 +8,8 @@ import { DEFAULT_BASE_DAY, DEFAULT_BONUS_MANEJO, DEFAULT_BONUS_SUPERVISION, DEFA
 import { matchesSearchQuery } from "../../utils/textSearch";
 import { initials } from "../../utils/nameUtils";
 import { dayHasData } from "../../utils/cycleRowUtils";
+import { useCycleDetail } from "./CycleDetailContext";
+import { fmtCurrency } from "../../utils/format";
 
 function effectiveDayPrice(labor, dayCfg) {
   return Number(dayCfg?.price) || Number(labor?.baseDayDefault) || DEFAULT_BASE_DAY;
@@ -46,43 +48,37 @@ const cardAccentCls = (hasValue) =>
 export default function CycleWorkerEditModal({
   workerRut,
   onClose,
-  activeLabor,
   row,
-  days,
-  dayPrices,
-  dayCombosByDate,
-  dayTiersByDate,
-  dayStagesByDate,
-  daysWithFloor,
-  catalogs,
-  readOnly,
-  fmtCurrency,
-  commitHarvestCombo,
-  commitPieceworkTier,
-  commitStageQty,
-  commitNormalAmount,
-  upsertOvertimeDayWorkday,
-  toggleAttendance,
-  toggleFloor,
-  persistComboConfig,
-  addComboToDay,
-  removeComboFromDay,
-  persistStagePrice,
-  persistDayFloor,
-  persistNormalDayPrice,
-  persistOvertimeDayConfig,
-  toggleMonthly,
   onRemoveWorker,
-  isGroupedView,
   currentLeader,
-  enabledLeaders,
   leaderBusy,
-  assignLeaderToWorker,
-  LEADER_LOCAL,
   onNavigate,
   canGoPrev,
   canGoNext,
 }) {
+  const {
+    activeLabor,
+    days,
+    dayPrices,
+    dayCombosByDate,
+    dayTiersByDate,
+    dayStagesByDate,
+    daysWithFloor,
+    catalogs,
+    readOnly,
+    commitHarvestCombo,
+    commitPieceworkTier,
+    commitStageQty,
+    commitNormalAmount,
+    upsertOvertimeDayWorkday,
+    toggleAttendance,
+    toggleFloor,
+    toggleMonthly,
+    isGroupedView,
+    enabledLeaders,
+    assignLeaderToWorker,
+    LEADER_LOCAL,
+  } = useCycleDetail();
   const [drafts, setDrafts] = useState({});
   const [configuringDate, setConfiguringDate] = useState(null);
   const [pickingLeader, setPickingLeader] = useState(false);
@@ -936,21 +932,6 @@ export default function CycleWorkerEditModal({
       {configuringDate ? (
         <DayConfigContent
           date={configuringDate}
-          activeLabor={activeLabor}
-          dayPrices={dayPrices}
-          dayCombosByDate={dayCombosByDate}
-          dayTiersByDate={dayTiersByDate}
-          dayStagesByDate={dayStagesByDate}
-          catalogs={catalogs}
-          readOnly={readOnly}
-          fmtCurrency={fmtCurrency}
-          persistComboConfig={persistComboConfig}
-          addComboToDay={addComboToDay}
-          removeComboFromDay={removeComboFromDay}
-          persistStagePrice={persistStagePrice}
-          persistDayFloor={persistDayFloor}
-          persistNormalDayPrice={persistNormalDayPrice}
-          persistOvertimeDayConfig={persistOvertimeDayConfig}
           onBack={() => setConfiguringDate(null)}
         />
       ) : pickingLeader ? (

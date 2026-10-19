@@ -821,8 +821,9 @@ export default function CycleDetail() {
 
   // Lo que leen las secciones de la pantalla (ver CycleDetailContext).
   const cycleDetailContext = {
-    LEADER_NONE,
     activeLabor,
+    activeStages,
+    addComboToDay,
     addDayOpen,
     addPriceBusy,
     addPriceModal,
@@ -830,19 +831,23 @@ export default function CycleDetail() {
     applyFloorToAll,
     askApplyFloorToAll,
     askRemoveLabor,
+    assignLeaderToWorker,
     balanceWithTransport,
     catalogs,
     closeBusy,
+    closed,
     closeDayNote,
     closeFlow,
-    closed,
     columnFilterActive,
+    commitHarvestCombo,
+    commitNormalAmount,
+    commitPieceworkTier,
+    commitStageQty,
     confirmMonthly,
     confirmRemoveDay,
     confirmRemoveLabor,
     confirmRemoveWorker,
     confirmReopen,
-    harvestView,
     cycle,
     cycleTrips,
     cycleWrite,
@@ -850,16 +855,22 @@ export default function CycleDetail() {
     dayNoteBusy,
     dayNoteDirty,
     dayPrices,
-    dayTiersByDate,
     days,
+    dayStagesByDate,
+    daysWithFloor,
+    dayTiersByDate,
     defaultMode,
     doRemoveDay,
     doReopenCycle,
     editingDayNote,
     editingDayNoteText,
-    activeStages,
-    job,
+    enabledLeaders,
+    floorBulk,
+    floorBulkBusy,
     floorMetricsByLabor,
+    floorPendingByDate,
+    floorRemove,
+    floorRemoveBusy,
     getPriceInputValue,
     goToDayNote,
     grandTotal,
@@ -868,17 +879,22 @@ export default function CycleDetail() {
     handleCloseCycle,
     handlePriceBlur,
     handleReopenCycle,
+    harvestView,
     hasNextDayNote,
     hasPrevDayNote,
     inputKey,
+    isGroupedView,
     isHarvestLabor,
     isNormalLabor,
-    isQtyLabor,
-    isPieceworkStagesLabor,
     isOvertimeDayLabor,
     isPieceworkLabor,
+    isPieceworkStagesLabor,
+    isQtyLabor,
+    job,
     laborForm,
     laborGroups,
+    LEADER_LOCAL,
+    LEADER_NONE,
     localPriceInputs,
     metricsCollapsed,
     monthlyBusy,
@@ -890,19 +906,17 @@ export default function CycleDetail() {
     openEditLabor,
     orderedGroups,
     overtimeDayMetricsByLabor,
+    overtimeDayView,
     peopleByDate,
     persistComboConfig,
     persistDayFloor,
     persistNormalDayPrice,
+    persistOvertimeDayConfig,
     persistStagePrice,
     photoMode,
     pieceworkPeopleCountByLabor,
     pieceworkTierMetricsByLabor,
-    floorBulk,
-    floorBulkBusy,
-    floorPendingByDate,
-    floorRemove,
-    floorRemoveBusy,
+    pieceworkView,
     prevCycle,
     pricesCollapsed,
     qrLockedLabors,
@@ -926,20 +940,22 @@ export default function CycleDetail() {
     setCloseFlow,
     setConfirmRemoveDay,
     setConfirmReopen,
-    setHarvestView,
     setDayModeEdit,
     setDayPrices,
     setDefaultLeadersOpen,
     setEditingDayNoteText,
+    setFloorBulk,
+    setFloorRemove,
     setGroupView,
+    setHarvestView,
     setLaborForm,
     setLocalPriceInputs,
     setMetricsCollapsed,
     setMonthlyConfirm,
     setOnlyWithProduction,
+    setOvertimeDayView,
     setPickerOpen,
-    setFloorBulk,
-    setFloorRemove,
+    setPieceworkView,
     setPricesCollapsed,
     setRemoveCombo,
     setRemoveLabor,
@@ -948,12 +964,13 @@ export default function CycleDetail() {
     setSummaryOpen,
     setToolbarCollapsed,
     setTransportsOpen,
-    setOvertimeDayView,
-    setPieceworkView,
     setViewMonth,
     stagesDaySummary,
     subjob,
     submitLabor,
+    toggleAttendance,
+    toggleFloor,
+    toggleMonthly,
     toggleSelectedDay,
     toolbarCollapsed,
     totalQtyByContainerByLabor,
@@ -961,9 +978,7 @@ export default function CycleDetail() {
     totalQtyByLabor,
     totalsByLabor,
     transportTotal,
-    overtimeDayView,
-    pieceworkView,
-    isGroupedView,
+    upsertOvertimeDayWorkday,
     viewMonth,
     wdMap,
     workers,
@@ -1138,39 +1153,10 @@ export default function CycleDetail() {
         <CycleWorkerEditModal
           workerRut={editingCycleWorkerRut}
           onClose={() => setEditingCycleWorkerRut(null)}
-          activeLabor={activeLabor}
           row={editingCycleWorkerRut ? rowDataRaw.find((r) => r.rut === editingCycleWorkerRut) : null}
-          days={days}
-          dayPrices={dayPrices}
-          dayCombosByDate={dayCombosByDate}
-          dayTiersByDate={dayTiersByDate}
-          dayStagesByDate={dayStagesByDate}
-          daysWithFloor={daysWithFloor}
-          catalogs={catalogs}
-          readOnly={readOnly}
-          fmtCurrency={fmtCurrency}
-          commitHarvestCombo={commitHarvestCombo}
-          commitPieceworkTier={commitPieceworkTier}
-          commitStageQty={commitStageQty}
-          commitNormalAmount={commitNormalAmount}
-          upsertOvertimeDayWorkday={upsertOvertimeDayWorkday}
-          toggleAttendance={toggleAttendance}
-          toggleFloor={toggleFloor}
-          persistComboConfig={persistComboConfig}
-          addComboToDay={addComboToDay}
-          removeComboFromDay={removeComboFromDay}
-          persistStagePrice={persistStagePrice}
-          persistDayFloor={persistDayFloor}
-          persistNormalDayPrice={persistNormalDayPrice}
-          persistOvertimeDayConfig={persistOvertimeDayConfig}
-          toggleMonthly={toggleMonthly}
           onRemoveWorker={removeWorkerByRut}
-          isGroupedView={isGroupedView}
           currentLeader={editingCycleWorkerRut ? rutToLeader.get(editingCycleWorkerRut) || null : null}
-          enabledLeaders={enabledLeaders}
           leaderBusy={groupBusy}
-          assignLeaderToWorker={assignLeaderToWorker}
-          LEADER_LOCAL={LEADER_LOCAL}
           onNavigate={navigateCycleWorker}
           canGoPrev={editingWorkerIndex > 0}
           canGoNext={editingWorkerIndex !== -1 && editingWorkerIndex < sortedWorkerRuts.length - 1}
