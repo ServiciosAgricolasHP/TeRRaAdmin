@@ -125,15 +125,19 @@ describe("chargeLaborsOf: por tipo de labor", () => {
     expect(cl.chargedTotals.countedQty).toBe(30);
   });
 
-  // [bug conocido] En tratoHE la tarifa sugerida sale de monto / base (~1),
-  // no de la tarifa de horas extras de la labor: sin una tarifa de cobro
-  // puesta, cada hora extra se cobra a $1 y los bonos no entran.
-  it("en tratoHE cobra base + horas × tarifa [bug conocido: la tarifa sugerida queda en ~1]", () => {
+  it("en tratoHE sugiere la tarifa HE de la labor y cobra base + horas × tarifa, sin los bonos", () => {
     const LH = { id: "LH", name: "Jornadas HE", type: "tratoHE", overtimeRate: 5000, bonusManejo: 4000 };
     const days = [["0_0", wd(ANA, D1, { qty: 30000, overtimeHours: 2, hasManejo: true, amount: 44000 })]];
     const suggested = chargeOf(LH, days);
-    expect(suggested.rate).toBe(1);
-    expect(suggested.chargedRows[0].chargedAmount).toBe(30002);
+    expect(suggested.defaultRate).toBe(5000);
+    expect(suggested.rate).toBe(5000);
+    expect(suggested.chargedRows[0].chargedAmount).toBe(30000 + 2 * 5000);
+    // Sin mediana ni promedio: el editor de tarifas no muestra "prom.".
+    expect([suggested.medianRate, suggested.meanRate]).toEqual([0, 0]);
+    // Sin tarifa HE en la labor, la de la grilla por defecto.
+    const noRate = chargeOf({ ...LH, overtimeRate: "" }, days, { LH: { extraRows: [{ id: "x1", date: D2, qty: 25000, overtimeHours: 1, rate: "", amount: "" }] } });
+    expect(noRate.rate).toBe(3500);
+    expect(noRate.chargedRows.map((r) => r.chargedAmount)).toEqual([30000 + 2 * 3500, 25000 + 3500]);
     const fixed = chargeOf(LH, days, { LH: { chargeRate: 6000, rowOverrides: { [D1]: { overtimeHours: 3 } } } });
     expect(fixed.chargedRows[0].chargedAmount).toBe(30000 + 3 * 6000);
     expect(fixed.chargedTotals.overtimeHours).toBe(3);

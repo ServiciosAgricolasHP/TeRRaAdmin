@@ -2,6 +2,7 @@
 // otros ciclos, las filas de cobro de cada labor y transportista (tarifas,
 // ajustes por fila y filas manuales) y el subtotal.
 import { activityLabel, laborQtyUnit, laborTotals, medianOf } from "./cycleSummary";
+import { DEFAULT_OVERTIME_RATE } from "./tratoHE";
 
 // Labores importadas de otros ciclos (solo cobrar). Cada una es una copia
 // guardada en `cobrar.importedLabors` —definición de la labor y sus filas
@@ -38,16 +39,23 @@ export function importedLaborsDataOf(importedLabors, catalogs) {
 // atípico (una jornada mensual, por ejemplo) no la corra. El promedio
 // (`meanRate`) se muestra como referencia en el editor de tarifas cuando
 // difiere más de un 10%.
+//
+// En tratoHE la tarifa es la de la hora extra: cada fila se cobra como su
+// base más las horas por la tarifa. La sugerida es la tarifa HE de la labor,
+// la misma de la columna "Total HE", y no lleva mediana ni promedio.
 export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, catalogs) {
   return [...laborsData, ...importedLaborsData].map((ld) => {
     const cfg = laborCharges[ld.labor.id] || {};
     const include = cfg.include !== false;
-    const meanRate = ld.totals.qty > 0 ? Math.round(ld.totals.amount / ld.totals.qty) : 0;
-    const perDayRates = (ld.rows || [])
+    const isHE = ld.labor.type === "tratoHE";
+    const meanRate = !isHE && ld.totals.qty > 0 ? Math.round(ld.totals.amount / ld.totals.qty) : 0;
+    const perDayRates = isHE ? [] : (ld.rows || [])
       .filter((r) => (Number(r.qty) || 0) > 0)
       .map((r) => (Number(r.amount) || 0) / (Number(r.qty) || 1));
     const medianRate = Math.round(medianOf(perDayRates));
-    const defaultRate = medianRate || meanRate;
+    const defaultRate = isHE
+      ? (Number(ld.labor.overtimeRate) > 0 ? Number(ld.labor.overtimeRate) : DEFAULT_OVERTIME_RATE)
+      : medianRate || meanRate;
     const rate = cfg.chargeRate != null ? Number(cfg.chargeRate) : defaultRate;
 
     // En trato con varios tiers se sugiere una mediana por tier, porque
@@ -75,7 +83,6 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
     // chargedAmount…), que leen los inputs, los totales y el XLSX.
     const rowOverrides = cfg.rowOverrides || {};
     const extraRows = cfg.extraRows || [];
-    const isHE = ld.labor.type === "tratoHE";
     // tratoHE: total = base $ + HE × tarifa HE. Otros: total = qty × rate.
     const computeAmount = (qty, hours, rowRate) =>
       isHE ? Number(qty) + Number(hours) * Number(rowRate) : Number(qty) * Number(rowRate);

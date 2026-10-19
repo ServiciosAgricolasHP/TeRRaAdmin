@@ -32,8 +32,8 @@ export function ChargeEditor({ labors, carriers, carrierById, onLaborChange, onC
           <tbody>
             {labors.map((l) => {
               const showMeanHint =
-                l.meanRate &&
-                l.medianRate &&
+                l.meanRate > 0 &&
+                l.medianRate > 0 &&
                 Math.abs(l.meanRate - l.medianRate) / Math.max(1, l.medianRate) > 0.1;
               return (
               <tr key={l.labor.id} className="border-t border-[var(--color-border)]">
