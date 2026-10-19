@@ -434,6 +434,7 @@ Implementación en `submitCycle` (`Jobs.jsx`). El mapeo `oldLaborId → newLabor
   - **Modales:** `CatalogsModal` (con `CatalogSection`), `BonusEditModal`, `LeaderPickerModal`, `DefaultLeadersModal`, `StagesEditor` y `DayCalendarPicker` (el calendario de "+ Día").
   - **Trabajadores:** `CycleWorkerList` (la lista del teléfono), `CycleWorkerEditModal` (la ficha de una persona en el ciclo, con `cycleWorkerEditModal/DayConfigContent`) y `WorkerPickerModal` (agregar a alguien a la labor, con alta rápida).
   - **Resumen:** `CycleSummaryModal`, con sus piezas en `cycleSummaryModal/` (ver Resúmenes).
+  - **El cálculo** de las métricas de cada labor y de lo que muestra cada día (combos, tiers, etapas, piso, huérfanos) vive en `utils/cycleMetrics.js`, con tests.
 - **Undo (Ctrl+Z)**: stack en memoria (`undoStackRef`), pushea cada edición de celda, revierte y re-graba en Firestore.
 - **Navegación tipo Excel**: `singleClickEdit: false`. Flechas mueven el foco entre celdas; **Enter** entra a editar; al confirmar, salta a la fila siguiente (`enterNavigatesVertically*: true`).
 - **Secciones colapsables** persistidas en `localStorage` para liberar espacio vertical: métricas (`cycleDetail.metricsCollapsed`), precios (`cycleDetail.pricesCollapsed`), sidebar global (`layout.sidebarOpen`).
