@@ -107,8 +107,8 @@ export function useCellEdits({ activeLabor, computeOvertimeDayAmount, cycle, day
   const commitHarvestCombo = async (date, comboKey, workerRut, rawQty) => {
     const laborId = activeLabor.id;
     const { x, y } = parseComboKey(comboKey);
-    const docId = workdayDocId(id, laborId, workerRut, date, comboKey);
     const mapKey = workdayMapKey(workerRut, date, comboKey);
+    const docId = wdMap[mapKey]?.id || workdayDocId(id, laborId, workerRut, date, comboKey);
     const qty = parseAmount(rawQty) || 0;
     const combo = getCombo(laborId, date, comboKey);
     const amount = combo.mode === "flat" ? combo.price : qty * combo.price;
@@ -146,8 +146,10 @@ export function useCellEdits({ activeLabor, computeOvertimeDayAmount, cycle, day
   // trato; qty 0 borra el workday.
   const commitPieceworkTier = async (date, tierKey, workerRut, rawQty) => {
     const laborId = activeLabor.id;
-    const docId = workdayDocId(id, laborId, workerRut, date, tierKey);
     const mapKey = workdayMapKey(workerRut, date, tierKey);
+    // Una jornada ya cargada se escribe en su propio documento: las de trato
+    // con id de 4 segmentos no llevan el sufijo del tier.
+    const docId = wdMap[mapKey]?.id || workdayDocId(id, laborId, workerRut, date, tierKey);
     const qty = parseAmount(rawQty) || 0;
 
     const tiers = dayTiersByDate[date] || [];

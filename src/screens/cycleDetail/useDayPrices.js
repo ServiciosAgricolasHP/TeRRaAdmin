@@ -41,7 +41,9 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
       const qty = Number(wd.qty) || 0;
       if (qty === 0) continue;
       const amount = mode === "flat" ? price : qty * price;
-      const docId = workdayDocId(id, laborId, w.rut, date, ck);
+      // Se escribe en el documento cargado, aunque su id no lleve el sufijo
+      // del tier o del combo (jornadas de trato con id de 4 segmentos).
+      const docId = wd.id || workdayDocId(id, laborId, w.rut, date, ck);
       // En trato también se reescriben `tiers["0"]` y `totalAmount`, la copia
       // del monto que guarda el workday (igual que commitPieceworkTier).
       const patch = isPiecework
