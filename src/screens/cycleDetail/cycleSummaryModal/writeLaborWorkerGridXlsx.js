@@ -22,9 +22,9 @@ export async function writeLaborWorkerGridXlsx({ catalogs, dates, dayPrices, dis
 
   const t = labor?.type;
   const isHE = t === "tratoHE";
-  const isCosecha = t === "cosecha";
-  const isTrato = t === "trato";
-  const isMoneyOnly = !isCosecha && !isTrato && !isHE;
+  const isHarvest = t === "cosecha";
+  const isPiecework = t === "trato";
+  const isMoneyOnly = !isHarvest && !isPiecework && !isHE;
 
   const colLetter = (n) => {
     let s = "";
@@ -55,7 +55,7 @@ export async function writeLaborWorkerGridXlsx({ catalogs, dates, dayPrices, dis
   // (fecha, key): sale de `dayPrices` y va en una fila de precios dentro
   // del encabezado, una celda por día y combo.
   let combos = [];
-  if (isCosecha) {
+  if (isHarvest) {
     const seen = new Map(); // key -> { qx, cy }
     for (const w of workers) {
       for (const c of w.byDate.values()) {
@@ -69,7 +69,7 @@ export async function writeLaborWorkerGridXlsx({ catalogs, dates, dayPrices, dis
       qx: m.qx, cy: m.cy,
       label: `${qualityLabel(catalogs, m.qx)}/${containerLabel(catalogs, m.cy)}`.toLowerCase(),
     })).sort((a, b) => a.key.localeCompare(b.key));
-  } else if (isTrato) {
+  } else if (isPiecework) {
     const seen = new Map();
     for (const w of workers) {
       for (const c of w.byDate.values()) {
@@ -91,12 +91,12 @@ export async function writeLaborWorkerGridXlsx({ catalogs, dates, dayPrices, dis
   //   - trato:   getTratoTiers devuelve [{ key:"tN", price }, ...]
   const priceFor = (date, key) => {
     if (!labor?.id) return 0;
-    if (isCosecha) {
+    if (isHarvest) {
       const list = getDayCombos(dayPrices, labor.id, date, "unit");
       const hit = list.find((c) => c.key === key);
       return Number(hit?.price) || 0;
     }
-    if (isTrato) {
+    if (isPiecework) {
       const list = getTratoTiers(dayPrices, labor.id, date, "unit");
       const hit = list.find((c) => c.key === key);
       return Number(hit?.price) || 0;
@@ -127,11 +127,11 @@ export async function writeLaborWorkerGridXlsx({ catalogs, dates, dayPrices, dis
     COL_TOTAL_HORAS = COL_AFTER_DAYS + 1;
     COL_TOTAL_EXTRAS = COL_AFTER_DAYS + 2;
     COL_TOTAL_AMT = COL_AFTER_DAYS + 3;
-  } else if ((isCosecha || isTrato) && combos.length > 0) {
+  } else if ((isHarvest || isPiecework) && combos.length > 0) {
     // Una col total por combo + Total $.
     for (let i = 0; i < combos.length; i++) COL_TOTAL_QTY_BY_COMBO.push(COL_AFTER_DAYS + i);
     COL_TOTAL_AMT = COL_AFTER_DAYS + combos.length;
-  } else if (isCosecha || isTrato) {
+  } else if (isHarvest || isPiecework) {
     // Sin combos (raro): total de cantidad y, en la columna siguiente, Total $.
     COL_TOTAL_AMT = COL_AFTER_DAYS;
   } else {
@@ -147,7 +147,7 @@ export async function writeLaborWorkerGridXlsx({ catalogs, dates, dayPrices, dis
   //   2: nombre del combo / tier y "$" para el subtotal
   //   3: precio por combo (editable) y "$" en la columna del subtotal
   // tratoHE y el resto usan un encabezado de una fila.
-  const useDoubleHeader = (isCosecha || isTrato) && combos.length > 0;
+  const useDoubleHeader = (isHarvest || isPiecework) && combos.length > 0;
   const HEADER_ROW_2 = useDoubleHeader ? HEADER_ROW + 1 : null;
   const PRICE_HEADER_ROW = useDoubleHeader ? HEADER_ROW + 2 : null;
   const subHeaderRow = useDoubleHeader ? ws.getRow(HEADER_ROW_2) : null;
@@ -193,7 +193,7 @@ export async function writeLaborWorkerGridXlsx({ catalogs, dates, dayPrices, dis
       subAmtPriceCell.value = "$";
       subAmtPriceCell.font = { italic: true, color: { argb: "FF888888" } };
       subAmtPriceCell.alignment = { horizontal: "center" };
-    } else if (isCosecha || isTrato) {
+    } else if (isHarvest || isPiecework) {
       headerRow.getCell(baseCol).value = `${lbl} (${unit || "u"})`;
     } else {
       headerRow.getCell(baseCol).value = `${lbl} ($)`;
@@ -206,12 +206,12 @@ export async function writeLaborWorkerGridXlsx({ catalogs, dates, dayPrices, dis
     headerRow.getCell(COL_TOTAL_HORAS).value = "Total Horas";
     headerRow.getCell(COL_TOTAL_EXTRAS).value = "Total Extras";
     headerRow.getCell(COL_TOTAL_AMT).value = "Total $";
-  } else if ((isCosecha || isTrato) && combos.length > 0) {
+  } else if ((isHarvest || isPiecework) && combos.length > 0) {
     combos.forEach((cb, ci) => {
       headerRow.getCell(COL_TOTAL_QTY_BY_COMBO[ci]).value = `Total ${cb.label}`;
     });
     headerRow.getCell(COL_TOTAL_AMT).value = "Total $";
-  } else if (isCosecha || isTrato) {
+  } else if (isHarvest || isPiecework) {
     headerRow.getCell(COL_TOTAL_AMT).value = `Total ${unit || "u"}`;
     const nextCol = COL_TOTAL_AMT + 1;
     headerRow.getCell(nextCol).value = "Total $";
@@ -255,12 +255,12 @@ export async function writeLaborWorkerGridXlsx({ catalogs, dates, dayPrices, dis
         row.getCell(baseCol).value = Number(c?.base) || 0;
         row.getCell(baseCol + 1).value = Number(c?.overtimeHours) || 0;
         row.getCell(baseCol + 2).value = Number(c?.extras) || 0;
-      } else if ((isCosecha || isTrato) && combos.length > 0) {
+      } else if ((isHarvest || isPiecework) && combos.length > 0) {
         // Por combo: cantidad en cada columna y subtotal $ (fórmula) en la última.
         const qtyCells = [];
         combos.forEach((cb, ci) => {
           const qtyCell = row.getCell(baseCol + ci);
-          const qty = isCosecha
+          const qty = isHarvest
             ? Number(c?.byCombo?.get(cb.key)?.kilos) || 0
             : Number(c?.byTier?.get(cb.key)?.qty) || 0;
           qtyCell.value = qty;
@@ -276,7 +276,7 @@ export async function writeLaborWorkerGridXlsx({ catalogs, dates, dayPrices, dis
         // Fórmula: qty1*price1_dia + qty2*price2_dia + ...
         const parts = qtyCells.map((x) => `${x.ref}*${x.priceRef}`);
         subAmtCell.value = { formula: parts.join("+"), result: Number(c?.amount) || 0 };
-      } else if (isCosecha || isTrato) {
+      } else if (isHarvest || isPiecework) {
         row.getCell(baseCol).value = Number(c?.qty) || 0;
       } else {
         row.getCell(baseCol).value = Number(c?.amount) || 0;
@@ -286,18 +286,18 @@ export async function writeLaborWorkerGridXlsx({ catalogs, dates, dayPrices, dis
     // Totales por fila.
     if (isHE) {
       const baseCells = dates.map((_, di) => `${colLetter(COL_FIRST_DAY + di * 3)}${rowNum}`).join(",");
-      const horasCells = dates.map((_, di) => `${colLetter(COL_FIRST_DAY + di * 3 + 1)}${rowNum}`).join(",");
+      const hoursCells = dates.map((_, di) => `${colLetter(COL_FIRST_DAY + di * 3 + 1)}${rowNum}`).join(",");
       const extrasCells = dates.map((_, di) => `${colLetter(COL_FIRST_DAY + di * 3 + 2)}${rowNum}`).join(",");
       row.getCell(COL_TOTAL_BASE).value = { formula: `SUM(${baseCells})`, result: Number(w.totals.base) || 0 };
-      row.getCell(COL_TOTAL_HORAS).value = { formula: `SUM(${horasCells})`, result: Number(w.totals.overtimeHours) || 0 };
+      row.getCell(COL_TOTAL_HORAS).value = { formula: `SUM(${hoursCells})`, result: Number(w.totals.overtimeHours) || 0 };
       row.getCell(COL_TOTAL_EXTRAS).value = { formula: `SUM(${extrasCells})`, result: Number(w.totals.extras) || 0 };
       // Total $ se escribe más abajo, después de la celda de tarifa HE.
       row.getCell(COL_TOTAL_AMT).value = Number(w.totals.amount) || 0;
-    } else if ((isCosecha || isTrato) && combos.length > 0) {
+    } else if ((isHarvest || isPiecework) && combos.length > 0) {
       // Total por combo: SUM hacia la derecha tomando solo las cols de ese combo.
       combos.forEach((cb, ci) => {
         const cells = dates.map((_, di) => `${colLetter(COL_FIRST_DAY + di * cellsPerDay + ci)}${rowNum}`).join(",");
-        const totQty = isCosecha
+        const totQty = isHarvest
           ? [...w.byDate.values()].reduce((s, c) => s + (Number(c.byCombo?.get(cb.key)?.kilos) || 0), 0)
           : [...w.byDate.values()].reduce((s, c) => s + (Number(c.byTier?.get(cb.key)?.qty) || 0), 0);
         row.getCell(COL_TOTAL_QTY_BY_COMBO[ci]).value = { formula: `SUM(${cells})`, result: totQty };
@@ -305,7 +305,7 @@ export async function writeLaborWorkerGridXlsx({ catalogs, dates, dayPrices, dis
       // Total $: suma de los subtotales por día.
       const subAmtCells = dates.map((_, di) => `${colLetter(COL_FIRST_DAY + di * cellsPerDay + combos.length)}${rowNum}`).join(",");
       row.getCell(COL_TOTAL_AMT).value = { formula: `SUM(${subAmtCells})`, result: Number(w.totals.amount) || 0 };
-    } else if (isCosecha || isTrato) {
+    } else if (isHarvest || isPiecework) {
       const dayCells = dates.map((_, di) => `${colLetter(COL_FIRST_DAY + di)}${rowNum}`).join(",");
       row.getCell(COL_TOTAL_AMT).value = { formula: `SUM(${dayCells})`, result: Number(w.totals.qty) || 0 };
       row.getCell(COL_TOTAL_AMT + 1).value = Number(w.totals.amount) || 0;
@@ -335,7 +335,7 @@ export async function writeLaborWorkerGridXlsx({ catalogs, dates, dayPrices, dis
         } else {
           cell.numFmt = '"$"#,##0';
         }
-      } else if ((isCosecha || isTrato) && combos.length > 0) {
+      } else if ((isHarvest || isPiecework) && combos.length > 0) {
         const offset = colNumber - COL_FIRST_DAY;
         if (offset >= 0 && offset < dates.length * cellsPerDay) {
           const slot = offset % cellsPerDay;
@@ -369,17 +369,17 @@ export async function writeLaborWorkerGridXlsx({ catalogs, dates, dayPrices, dis
     totalRow.getCell(COL_TOTAL_BASE).value = { formula: sumDown(COL_TOTAL_BASE), result: 0 };
     totalRow.getCell(COL_TOTAL_HORAS).value = { formula: sumDown(COL_TOTAL_HORAS), result: 0 };
     totalRow.getCell(COL_TOTAL_EXTRAS).value = { formula: sumDown(COL_TOTAL_EXTRAS), result: 0 };
-  } else if ((isCosecha || isTrato) && combos.length > 0) {
+  } else if ((isHarvest || isPiecework) && combos.length > 0) {
     COL_TOTAL_QTY_BY_COMBO.forEach((col) => {
       totalRow.getCell(col).value = { formula: sumDown(col), result: 0 };
     });
-  } else if (isCosecha || isTrato) {
+  } else if (isHarvest || isPiecework) {
     totalRow.getCell(COL_TOTAL_AMT + 1).value = { formula: sumDown(COL_TOTAL_AMT + 1), result: 0 };
   }
   totalRow.getCell(COL_TOTAL_AMT).value = { formula: sumDown(COL_TOTAL_AMT), result: 0 };
 
   // Estilo de la fila de totales.
-  const lastTotalCol = (isCosecha || isTrato) && combos.length === 0 ? COL_TOTAL_AMT + 1 : COL_TOTAL_AMT;
+  const lastTotalCol = (isHarvest || isPiecework) && combos.length === 0 ? COL_TOTAL_AMT + 1 : COL_TOTAL_AMT;
   for (let col = COL_FIXED_START; col <= lastTotalCol; col++) {
     const cell = totalRow.getCell(col);
     cell.font = { bold: true };
@@ -397,7 +397,7 @@ export async function writeLaborWorkerGridXlsx({ catalogs, dates, dayPrices, dis
       } else {
         cell.numFmt = '"$"#,##0';
       }
-    } else if ((isCosecha || isTrato) && combos.length > 0) {
+    } else if ((isHarvest || isPiecework) && combos.length > 0) {
       const offset = col - COL_FIRST_DAY;
       if (offset >= 0 && offset < dates.length * cellsPerDay) {
         const slot = offset % cellsPerDay;
@@ -427,10 +427,10 @@ export async function writeLaborWorkerGridXlsx({ catalogs, dates, dayPrices, dis
     workers.forEach((w, wi) => {
       const rowNum = DATA_START_ROW + wi;
       const baseRef = `${colLetter(COL_TOTAL_BASE)}${rowNum}`;
-      const horasRef = `${colLetter(COL_TOTAL_HORAS)}${rowNum}`;
+      const hoursRef = `${colLetter(COL_TOTAL_HORAS)}${rowNum}`;
       const extrasRef = `${colLetter(COL_TOTAL_EXTRAS)}${rowNum}`;
       ws.getRow(rowNum).getCell(COL_TOTAL_AMT).value = {
-        formula: `${baseRef}+${horasRef}*${heRef}+${extrasRef}`,
+        formula: `${baseRef}+${hoursRef}*${heRef}+${extrasRef}`,
         result: Number(w.totals.amount) || 0,
       };
     });
