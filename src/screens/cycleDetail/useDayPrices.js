@@ -28,7 +28,7 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
     return combos.find((c) => c.key === ck) || { key: ck, x: 0, y: 0, price: 0, mode: defaultMode };
   };
 
-  const recalcDayCombo = async (laborId, date, ck, price, mode, isTrato) => {
+  const recalcDayCombo = async (laborId, date, ck, price, mode, isPiecework) => {
     const labor = cycle.labors.find((l) => l.id === laborId);
     if (!labor || (labor.type !== "cosecha" && labor.type !== "trato")) return;
     const wdMapForLabor = workdaysByLabor[laborId] || {};
@@ -43,8 +43,8 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
       const amount = mode === "flat" ? price : qty * price;
       const docId = workdayDocId(id, laborId, w.rut, date, ck);
       // En trato también se reescriben `tiers["0"]` y `totalAmount`, la copia
-      // del monto que guarda el workday (igual que commitTratoTier).
-      const patch = isTrato
+      // del monto que guarda el workday (igual que commitPieceworkTier).
+      const patch = isPiecework
         ? { ...wd, amount, tiers: { "0": { qty, amount } }, totalAmount: amount, workerId: w.id || w.rut }
         : { ...wd, qualityX: x, containerY: y, amount, workerId: w.id || w.rut };
       await wdWrite.upsert(docId, patch);
@@ -58,7 +58,7 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
     }
   };
 
-  const persistComboConfig = async (laborId, date, ck, patch, isTrato = false) => {
+  const persistComboConfig = async (laborId, date, ck, patch, isPiecework = false) => {
     const dayEntry = normalizeDayPricesEntry(dayPrices[laborId]?.[date]);
     const current = dayEntry[ck] || { price: 0, mode: defaultMode };
     const merged = { ...current, ...patch };
@@ -66,7 +66,7 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
     const next = { ...dayPrices, [laborId]: { ...(dayPrices[laborId] || {}), [date]: nextDay } };
     setDayPrices(next);
     await cycleWrite({ dayPrices: next });
-    await recalcDayCombo(laborId, date, ck, merged.price, merged.mode, isTrato);
+    await recalcDayCombo(laborId, date, ck, merged.price, merged.mode, isPiecework);
   };
 
   // tratoEtapas: recalcula el amount de los workdays de una etapa en un día
@@ -125,7 +125,7 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
   // Helpers de tratoHE
   // ============================================================
 
-  const tratoHERates = (labor) => ({
+  const overtimeDayRates = (labor) => ({
     bonusManejo: labor?.bonusManejo ?? DEFAULT_BONUS_MANEJO,
     bonusSupervision: labor?.bonusSupervision ?? DEFAULT_BONUS_SUPERVISION,
     overtimeRate: labor?.overtimeRate ?? DEFAULT_OVERTIME_RATE,
@@ -148,7 +148,7 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
     await cycleWrite({ dayPrices: next });
   };
 
-  const computeTratoHEAmount = (labor, dayCfg, wd) =>
+  const computeOvertimeDayAmount = (labor, dayCfg, wd) =>
     calcTratoHEAmount({
       qty: wd.qty,
       overtimeHours: wd.overtimeHours,
@@ -157,10 +157,10 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
       extras: wd.extras,
       dayPrice: effectiveDayPrice(labor, dayCfg),
       dayMode: dayCfg?.mode || "normal",
-      ...tratoHERates(labor),
+      ...overtimeDayRates(labor),
     });
 
-  const recalcDayTratoHE = async (laborId, date) => {
+  const recalcOvertimeDay = async (laborId, date) => {
     const labor = cycle.labors.find((l) => l.id === laborId);
     if (!labor || labor.type !== "tratoHE") return;
     const dayCfg = getDaySingle(dayPrices, laborId, date, "normal");
@@ -170,7 +170,7 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
       const mapKey = workdayMapKey(w.rut, date, SINGLE_COMBO);
       const wd = wdMapForLabor[mapKey];
       if (!wd) continue;
-      const amount = computeTratoHEAmount(labor, dayCfg, wd);
+      const amount = computeOvertimeDayAmount(labor, dayCfg, wd);
       if (amount === wd.amount) continue;
       const docId = workdayDocId(id, laborId, w.rut, date, SINGLE_COMBO);
       const next = { ...wd, amount, workerId: w.id || w.rut };
@@ -185,7 +185,7 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
     }
   };
 
-  const recalcAllTratoHE = async (laborId) => {
+  const recalcAllOvertimeDays = async (laborId) => {
     const labor = cycle.labors.find((l) => l.id === laborId);
     if (!labor || labor.type !== "tratoHE") return;
     const wdMapForLabor = workdaysByLabor[laborId] || {};
@@ -193,7 +193,7 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
     for (const k in wdMapForLabor) {
       const wd = wdMapForLabor[k];
       const dayCfg = getDaySingle(dayPrices, laborId, wd.date, "normal");
-      const amount = computeTratoHEAmount(labor, dayCfg, wd);
+      const amount = computeOvertimeDayAmount(labor, dayCfg, wd);
       if (amount === wd.amount) continue;
       const docId = workdayDocId(id, laborId, wd.workerRut, wd.date, SINGLE_COMBO);
       const next = { ...wd, amount, workerId: workerIdFor(laborId, wd.workerRut) };
@@ -208,7 +208,7 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
     }
   };
 
-  const persistTratoHEDay = async (laborId, date, patch) => {
+  const persistOvertimeDayConfig = async (laborId, date, patch) => {
     const dayEntry = normalizeDayPricesEntry(dayPrices[laborId]?.[date]);
     const current = dayEntry["0_0"] || {
       price: cycle.labors.find((l) => l.id === laborId)?.baseDayDefault ?? DEFAULT_BASE_DAY,
@@ -220,10 +220,10 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
     const next = { ...dayPrices, [laborId]: { ...(dayPrices[laborId] || {}), [date]: nextDay } };
     setDayPrices(next);
     await cycleWrite({ dayPrices: next });
-    await recalcDayTratoHE(laborId, date);
+    await recalcOvertimeDay(laborId, date);
   };
 
-  const persistTratoHEBonusDefaults = async (laborId, defaults) => {
+  const persistOvertimeBonusDefaults = async (laborId, defaults) => {
     const nextLabors = cycle.labors.map((l) =>
       l.id === laborId ? { ...l, bonusDefaults: defaults } : l,
     );
@@ -251,14 +251,14 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
 
   const inputKey = (laborId, date, ck) => `${laborId}__${date}__${ck}`;
 
-  const handlePriceBlur = (laborId, date, ck, isTrato = false) => {
+  const handlePriceBlur = (laborId, date, ck, isPiecework = false) => {
     const k = inputKey(laborId, date, ck);
     const raw = localPriceInputs[k];
     if (raw === undefined) return;
     const price = parseAmount(String(raw)) || 0;
     setLocalPriceInputs((prev) => { const n = { ...prev }; delete n[k]; return n; });
     // Los tiers (t0, t1…) pasan por persistComboConfig, que recalcula los workdays existentes.
-    if (isTrato && typeof ck === "string" && ck.startsWith("t")) {
+    if (isPiecework && typeof ck === "string" && ck.startsWith("t")) {
       const entry = dayPrices?.[laborId]?.[date];
       const cur = entry?.[ck];
       if (!cur || price !== Number(cur.price)) {
@@ -266,24 +266,24 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
       }
       return;
     }
-    const cur = isTrato
+    const cur = isPiecework
       ? getDaySingle(dayPrices, laborId, date, defaultMode)
       : getCombo(laborId, date, ck);
     if (price !== cur.price) {
-      persistComboConfig(laborId, date, ck, { price }, isTrato);
+      persistComboConfig(laborId, date, ck, { price }, isPiecework);
     }
   };
 
-  const getPriceInputValue = (laborId, date, ck, isTrato = false) => {
+  const getPriceInputValue = (laborId, date, ck, isPiecework = false) => {
     const k = inputKey(laborId, date, ck);
     if (k in localPriceInputs) return localPriceInputs[k];
     // Tiers (t0, t1…)
-    if (isTrato && typeof ck === "string" && ck.startsWith("t")) {
+    if (isPiecework && typeof ck === "string" && ck.startsWith("t")) {
       const entry = dayPrices?.[laborId]?.[date];
       const tier = entry?.[ck];
       return tier?.price || "";
     }
-    const cur = isTrato
+    const cur = isPiecework
       ? getDaySingle(dayPrices, laborId, date, defaultMode)
       : getCombo(laborId, date, ck);
     return cur.price || "";
@@ -291,7 +291,7 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
   return {
     addComboFor,
     addComboToDay,
-    computeTratoHEAmount,
+    computeOvertimeDayAmount,
     dayModeEdit,
     effectiveDayPrice,
     getCombo,
@@ -302,8 +302,8 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
     persistComboConfig,
     persistNormalDayPrice,
     persistStagePrice,
-    persistTratoHEBonusDefaults,
-    persistTratoHEDay,
+    persistOvertimeBonusDefaults,
+    persistOvertimeDayConfig,
     removeCombo,
     removeComboFromDay,
     setAddComboFor,

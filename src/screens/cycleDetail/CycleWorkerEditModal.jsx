@@ -35,8 +35,8 @@ const cardAccentCls = (hasValue) =>
 
 // Modal mobile: edita un trabajador a la vez, una tarjeta por día (en vez de
 // una columna por día como la grilla). Escribe con las mismas funciones que la
-// grilla de CycleDetail.jsx (commitCosechaCombo/commitTratoTier/
-// commitEtapaQty/commitNormalAmount/upsertOvertimeDayWorkday): el camino a
+// grilla (las de useCellEdits.js: commitHarvestCombo/commitPieceworkTier/
+// commitStageQty/commitNormalAmount/upsertOvertimeDayWorkday): el camino a
 // Firestore y el cálculo de montos son los mismos.
 //
 // Configurar un combo/tier/etapa o el precio del día afecta a todos los
@@ -57,9 +57,9 @@ export default function CycleWorkerEditModal({
   catalogs,
   readOnly,
   fmtCurrency,
-  commitCosechaCombo,
-  commitTratoTier,
-  commitEtapaQty,
+  commitHarvestCombo,
+  commitPieceworkTier,
+  commitStageQty,
   commitNormalAmount,
   upsertOvertimeDayWorkday,
   toggleAttendance,
@@ -70,7 +70,7 @@ export default function CycleWorkerEditModal({
   persistStagePrice,
   persistDayFloor,
   persistNormalDayPrice,
-  persistTratoHEDay,
+  persistOvertimeDayConfig,
   toggleMonthly,
   onRemoveWorker,
   isGroupedView,
@@ -517,7 +517,7 @@ export default function CycleWorkerEditModal({
                     onBlur={async () => {
                       if (!(field in drafts)) return;
                       const v = drafts[field];
-                      await runWithSaving(field, () => commitCosechaCombo(d, c.key, workerRut, v));
+                      await runWithSaving(field, () => commitHarvestCombo(d, c.key, workerRut, v));
                       clearDraft(field);
                     }}
                     className={inputCls}
@@ -579,7 +579,7 @@ export default function CycleWorkerEditModal({
                     onBlur={async () => {
                       if (!(field in drafts)) return;
                       const v = drafts[field];
-                      await runWithSaving(field, () => commitTratoTier(d, t.key, workerRut, v));
+                      await runWithSaving(field, () => commitPieceworkTier(d, t.key, workerRut, v));
                       clearDraft(field);
                     }}
                     className={inputCls}
@@ -640,7 +640,7 @@ export default function CycleWorkerEditModal({
                     onBlur={async () => {
                       if (!(field in drafts)) return;
                       const v = drafts[field];
-                      await runWithSaving(field, () => commitEtapaQty(d, st.id, workerRut, v));
+                      await runWithSaving(field, () => commitStageQty(d, st.id, workerRut, v));
                       clearDraft(field);
                     }}
                     className={inputCls}
@@ -950,7 +950,7 @@ export default function CycleWorkerEditModal({
           persistStagePrice={persistStagePrice}
           persistDayFloor={persistDayFloor}
           persistNormalDayPrice={persistNormalDayPrice}
-          persistTratoHEDay={persistTratoHEDay}
+          persistOvertimeDayConfig={persistOvertimeDayConfig}
           onBack={() => setConfiguringDate(null)}
         />
       ) : pickingLeader ? (

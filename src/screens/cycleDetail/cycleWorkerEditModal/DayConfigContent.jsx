@@ -174,7 +174,7 @@ export default function DayConfigContent({
   persistStagePrice,
   persistDayFloor,
   persistNormalDayPrice,
-  persistTratoHEDay,
+  persistOvertimeDayConfig,
   onBack,
 }) {
   const laborId = activeLabor.id;
@@ -292,11 +292,11 @@ export default function DayConfigContent({
         <div className="rounded-lg border border-[var(--color-border)] p-3.5">
           <div className="mb-2 text-sm font-medium">Base del día</div>
           <div className="flex flex-wrap items-center gap-2">
-            <PriceInput value={cfg.price} disabled={readOnly} onCommit={(v) => persistTratoHEDay(laborId, date, { price: v })} />
+            <PriceInput value={cfg.price} disabled={readOnly} onCommit={(v) => persistOvertimeDayConfig(laborId, date, { price: v })} />
             <Select
               value={cfg.mode || "normal"}
               disabled={readOnly}
-              onChange={(mode) => persistTratoHEDay(laborId, date, { mode })}
+              onChange={(mode) => persistOvertimeDayConfig(laborId, date, { mode })}
               options={[
                 { value: "normal", label: "Normal" },
                 { value: "overtimeOnly", label: "Solo horas extra" },
@@ -308,7 +308,7 @@ export default function DayConfigContent({
               type="checkbox"
               disabled={readOnly}
               checked={!!cfg.isHoliday}
-              onChange={(e) => persistTratoHEDay(laborId, date, { isHoliday: e.target.checked })}
+              onChange={(e) => persistOvertimeDayConfig(laborId, date, { isHoliday: e.target.checked })}
               className="h-5 w-5 accent-[var(--color-accent)]"
             />
             Feriado / día rojo

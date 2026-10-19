@@ -48,8 +48,8 @@ export function useCycleLoader({ id }) {
         const laborDefaultMode = labor?.tratoMode || "unit";
         for (const date of Object.keys(rawDP[lid])) {
           const before = rawDP[lid][date];
-          const isTratoType = labor?.type === "trato";
-          const after = isTratoType
+          const isPieceworkType = labor?.type === "trato";
+          const after = isPieceworkType
             ? normalizeTratoDayPrices(before, laborDefaultMode)
             : normalizeDayPricesEntry(before);
           normalizedDP[lid][date] = after;

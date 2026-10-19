@@ -8,7 +8,7 @@ import { getStageDayPrice, computeStageDayAmount } from "../../utils/tratoEtapas
 // Edición de las celdas de la grilla: guardar el monto o la cantidad de cada
 // tipo de labor, rellenar hacia abajo (Ctrl+D), pegar (Ctrl+V) y deshacer
 // (Ctrl+Z).
-export function useCellEdits({ activeLabor, computeTratoHEAmount, cycle, dayCombosByDate, dayPrices, days, dayStagesByDate, dayTiersByDate, getCombo, gridRef, id, isHarvestLabor, isOvertimeDayLabor, isPieceworkLabor, isPieceworkStagesLabor, photoMode, qrLocked, readOnly, setCopyToast, setWorkdaysByLabor, toast, wdMap, wdWrite, workdaysByLabor, workerIdFor }) {
+export function useCellEdits({ activeLabor, computeOvertimeDayAmount, cycle, dayCombosByDate, dayPrices, days, dayStagesByDate, dayTiersByDate, getCombo, gridRef, id, isHarvestLabor, isOvertimeDayLabor, isPieceworkLabor, isPieceworkStagesLabor, photoMode, qrLocked, readOnly, setCopyToast, setWorkdaysByLabor, toast, wdMap, wdWrite, workdaysByLabor, workerIdFor }) {
   "use no memo";
   // Modales de tratoHE
   const [bonusEdit, setBonusEdit] = useState(null);   // { laborId, date, workerRut }
@@ -70,7 +70,7 @@ export function useCellEdits({ activeLabor, computeTratoHEAmount, cycle, dayComb
       : { qty: 0, overtimeHours: 0, extras: 0, hasManejo: !!defaults.manejo, hasSupervision: !!defaults.supervision };
     const merged = { ...seed, ...patch };
     const dayCfg = getDaySingle(dayPrices, laborId, date, "normal");
-    const amount = computeTratoHEAmount(labor, dayCfg, merged);
+    const amount = computeOvertimeDayAmount(labor, dayCfg, merged);
     const wd = { cycleId: id, laborId, workerRut, date, ...merged, amount, workerId: workerIdFor(laborId, workerRut) };
 
     // Si falla devuelve `ok: false`: la rama tratoHE de onCellValueChanged pinta
@@ -104,7 +104,7 @@ export function useCellEdits({ activeLabor, computeTratoHEAmount, cycle, dayComb
   // Guarda la cantidad de un combo (calidad×envase) de un trabajador en un día
   // de cosecha; qty 0 borra el workday. Lo usan la grilla
   // (onCellValueChanged) y el modal de edición por trabajador.
-  const commitCosechaCombo = async (date, comboKey, workerRut, rawQty) => {
+  const commitHarvestCombo = async (date, comboKey, workerRut, rawQty) => {
     const laborId = activeLabor.id;
     const { x, y } = parseComboKey(comboKey);
     const docId = workdayDocId(id, laborId, workerRut, date, comboKey);
@@ -144,7 +144,7 @@ export function useCellEdits({ activeLabor, computeTratoHEAmount, cycle, dayComb
 
   // Guarda la cantidad de un tier de precio de un trabajador en un día de
   // trato; qty 0 borra el workday.
-  const commitTratoTier = async (date, tierKey, workerRut, rawQty) => {
+  const commitPieceworkTier = async (date, tierKey, workerRut, rawQty) => {
     const laborId = activeLabor.id;
     const docId = workdayDocId(id, laborId, workerRut, date, tierKey);
     const mapKey = workdayMapKey(workerRut, date, tierKey);
@@ -193,7 +193,7 @@ export function useCellEdits({ activeLabor, computeTratoHEAmount, cycle, dayComb
 
   // Guarda la cantidad de una etapa de un trabajador en un día de
   // tratoEtapas; qty 0 borra el workday.
-  const commitEtapaQty = async (date, stageId, workerRut, rawQty) => {
+  const commitStageQty = async (date, stageId, workerRut, rawQty) => {
     const laborId = activeLabor.id;
     const docId = workdayDocId(id, laborId, workerRut, date, stageId);
     const mapKey = workdayMapKey(workerRut, date, stageId);
@@ -421,7 +421,7 @@ export function useCellEdits({ activeLabor, computeTratoHEAmount, cycle, dayComb
       const [date, ...rest] = field.split("__");
       const ck = rest.join("_");
       const workerRut = params.data.rut;
-      const { qty, amount } = await commitCosechaCombo(date, ck, workerRut, params.newValue);
+      const { qty, amount } = await commitHarvestCombo(date, ck, workerRut, params.newValue);
       params.node.setDataValue(field, qty);
       params.node.setDataValue(`${field}__amt`, amount);
 
@@ -463,7 +463,7 @@ export function useCellEdits({ activeLabor, computeTratoHEAmount, cycle, dayComb
       const [date, ...rest] = field.split("__");
       const tierKey = rest.join("_"); // p. ej. "t0", "t1"
       const workerRut = params.data.rut;
-      const { qty, amount } = await commitTratoTier(date, tierKey, workerRut, params.newValue);
+      const { qty, amount } = await commitPieceworkTier(date, tierKey, workerRut, params.newValue);
       params.node.setDataValue(field, qty);
       params.node.setDataValue(`${field}__amt`, amount);
 
@@ -485,7 +485,7 @@ export function useCellEdits({ activeLabor, computeTratoHEAmount, cycle, dayComb
       const [date, ...rest] = field.split("__");
       const stageId = rest.join("_");
       const workerRut = params.data.rut;
-      const { qty, amount } = await commitEtapaQty(date, stageId, workerRut, params.newValue);
+      const { qty, amount } = await commitStageQty(date, stageId, workerRut, params.newValue);
       params.node.setDataValue(field, qty);
       params.node.setDataValue(`${field}__amt`, amount);
 
@@ -511,10 +511,10 @@ export function useCellEdits({ activeLabor, computeTratoHEAmount, cycle, dayComb
   };
   return {
     bonusEdit,
-    commitCosechaCombo,
-    commitEtapaQty,
+    commitHarvestCombo,
+    commitStageQty,
     commitNormalAmount,
-    commitTratoTier,
+    commitPieceworkTier,
     onCellKeyDown,
     onCellValueChanged,
     setBonusEdit,

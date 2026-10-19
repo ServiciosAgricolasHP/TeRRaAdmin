@@ -16,7 +16,7 @@ export function useFloorBonus({ activeLabor, cycle, cycleWrite, dayPrices, id, s
   // Piso: monto fijo por día, guardado como campo `piso` de
   // `dayPrices[laborId][date]`, junto a los combos o tiers. En 0 se quita el
   // campo.
-  const writeDayPiso = async (laborId, date, value) => {
+  const writeDayFloor = async (laborId, date, value) => {
     const dayEntry = normalizeDayPricesEntry(dayPrices[laborId]?.[date]);
     const nextDay = { ...dayEntry, piso: Number(value) || 0 };
     if (!nextDay.piso) delete nextDay.piso;
@@ -29,15 +29,15 @@ export function useFloorBonus({ activeLabor, cycle, cycleWrite, dayPrices, id, s
   // bonos de ese día que no están en una nómina. Si hay bonos asignados, antes
   // pide confirmación.
   const persistDayFloor = async (laborId, date, value) => {
-    const monto = Number(value) || 0;
-    if (!monto) {
+    const floorAmount = Number(value) || 0;
+    if (!floorAmount) {
       const { libres, liquidados } = pisoAssigned(workdaysByLabor[laborId] || {}, date);
       if (libres.length || liquidados.length) {
         setFloorRemove({ laborId, date, libres, liquidados });
         return;
       }
     }
-    await writeDayPiso(laborId, date, monto);
+    await writeDayFloor(laborId, date, floorAmount);
   };
 
   const removeDayFloor = async () => {
@@ -45,22 +45,22 @@ export function useFloorBonus({ activeLabor, cycle, cycleWrite, dayPrices, id, s
     const { laborId, date, libres } = floorRemove;
     setFloorRemoveBusy(true);
     try {
-      const borradas = [];
+      const removedKeys = [];
       for (const wd of libres) {
         const docId = wd.id || workdayDocId(id, laborId, wd.workerRut, date, PISO_COMBO_KEY);
         await wdWrite.remove(docId);
-        borradas.push(workdayMapKey(wd.workerRut, date, PISO_COMBO_KEY));
+        removedKeys.push(workdayMapKey(wd.workerRut, date, PISO_COMBO_KEY));
       }
       setWorkdaysByLabor((prev) => {
         const lab = { ...(prev[laborId] || {}) };
-        for (const k of borradas) delete lab[k];
+        for (const k of removedKeys) delete lab[k];
         return { ...prev, [laborId]: lab };
       });
-      await writeDayPiso(laborId, date, 0);
+      await writeDayFloor(laborId, date, 0);
       setFloorRemove(null);
       toast.success(
-        borradas.length
-          ? `Piso del día quitado · ${borradas.length} bono${borradas.length === 1 ? "" : "s"} eliminado${borradas.length === 1 ? "" : "s"}.`
+        removedKeys.length
+          ? `Piso del día quitado · ${removedKeys.length} bono${removedKeys.length === 1 ? "" : "s"} eliminado${removedKeys.length === 1 ? "" : "s"}.`
           : "Piso del día quitado.",
       );
     } catch (err) {
@@ -76,8 +76,8 @@ export function useFloorBonus({ activeLabor, cycle, cycleWrite, dayPrices, id, s
     const out = {};
     if (!activeLabor) return out;
     const wds = workdaysByLabor[activeLabor.id] || {};
-    const fechas = new Set(Object.values(wds).map((wd) => wd?.date).filter(Boolean));
-    for (const d of fechas) out[d] = pisoTargets(wds, d).length;
+    const dates = new Set(Object.values(wds).map((wd) => wd?.date).filter(Boolean));
+    for (const d of dates) out[d] = pisoTargets(wds, d).length;
     return out;
   }, [activeLabor, workdaysByLabor]);
 
@@ -106,7 +106,7 @@ export function useFloorBonus({ activeLabor, cycle, cycleWrite, dayPrices, id, s
     const { laborId, date, ruts, amount } = floorBulk;
     setFloorBulkBusy(true);
     try {
-      const escritos = {};
+      const written = {};
       for (const rut of ruts) {
         const mapKey = workdayMapKey(rut, date, PISO_COMBO_KEY);
         const docId = workdayDocId(id, laborId, rut, date, PISO_COMBO_KEY);
@@ -117,11 +117,11 @@ export function useFloorBonus({ activeLabor, cycle, cycleWrite, dayPrices, id, s
           workerId: workerIdFor(laborId, rut),
         };
         await wdWrite.upsert(docId, next);
-        escritos[mapKey] = { id: docId, ...next };
+        written[mapKey] = { id: docId, ...next };
       }
       setWorkdaysByLabor((prev) => ({
         ...prev,
-        [laborId]: { ...(prev[laborId] || {}), ...escritos },
+        [laborId]: { ...(prev[laborId] || {}), ...written },
       }));
       setFloorBulk(null);
       toast.success(`Piso asignado a ${ruts.length} trabajador${ruts.length === 1 ? "" : "es"}.`);

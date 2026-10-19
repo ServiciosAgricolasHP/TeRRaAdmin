@@ -85,9 +85,9 @@ export function useCycleDays({ cycleWrite, days, id, setCycle, showToast, toast,
       );
     }
     if (reasons.length) {
-      const saludo = greeting(user, GREETING_SLOTS.removeDayBlocked);
+      const greetingText = greeting(user, GREETING_SLOTS.removeDayBlocked);
       toast.warning(
-        [`No se puede quitar ${date}:`, ...reasons].join("\n") + (saludo ? `\n\n${saludo}` : ""),
+        [`No se puede quitar ${date}:`, ...reasons].join("\n") + (greetingText ? `\n\n${greetingText}` : ""),
       );
       return;
     }

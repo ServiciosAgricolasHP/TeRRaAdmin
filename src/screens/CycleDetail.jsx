@@ -477,7 +477,7 @@ export default function CycleDetail() {
   const {
     addComboFor,
     addComboToDay,
-    computeTratoHEAmount,
+    computeOvertimeDayAmount,
     dayModeEdit,
     effectiveDayPrice,
     getCombo,
@@ -488,8 +488,8 @@ export default function CycleDetail() {
     persistComboConfig,
     persistNormalDayPrice,
     persistStagePrice,
-    persistTratoHEBonusDefaults,
-    persistTratoHEDay,
+    persistOvertimeBonusDefaults,
+    persistOvertimeDayConfig,
     removeCombo,
     removeComboFromDay,
     setAddComboFor,
@@ -543,17 +543,17 @@ export default function CycleDetail() {
 
   const {
     bonusEdit,
-    commitCosechaCombo,
-    commitEtapaQty,
+    commitHarvestCombo,
+    commitStageQty,
     commitNormalAmount,
-    commitTratoTier,
+    commitPieceworkTier,
     onCellKeyDown,
     onCellValueChanged,
     setBonusEdit,
     upsertOvertimeDayWorkday,
   } = useCellEdits({
     activeLabor,
-    computeTratoHEAmount,
+    computeOvertimeDayAmount,
     cycle,
     dayCombosByDate,
     dayPrices,
@@ -592,7 +592,7 @@ export default function CycleDetail() {
   } = useLaborForm({
     activeLabor,
     catalogs,
-    computeTratoHEAmount,
+    computeOvertimeDayAmount,
     cycle,
     cycleWrite,
     dayPrices,
@@ -1149,9 +1149,9 @@ export default function CycleDetail() {
           catalogs={catalogs}
           readOnly={readOnly}
           fmtCurrency={fmtCurrency}
-          commitCosechaCombo={commitCosechaCombo}
-          commitTratoTier={commitTratoTier}
-          commitEtapaQty={commitEtapaQty}
+          commitHarvestCombo={commitHarvestCombo}
+          commitPieceworkTier={commitPieceworkTier}
+          commitStageQty={commitStageQty}
           commitNormalAmount={commitNormalAmount}
           upsertOvertimeDayWorkday={upsertOvertimeDayWorkday}
           toggleAttendance={toggleAttendance}
@@ -1162,7 +1162,7 @@ export default function CycleDetail() {
           persistStagePrice={persistStagePrice}
           persistDayFloor={persistDayFloor}
           persistNormalDayPrice={persistNormalDayPrice}
-          persistTratoHEDay={persistTratoHEDay}
+          persistOvertimeDayConfig={persistOvertimeDayConfig}
           toggleMonthly={toggleMonthly}
           onRemoveWorker={removeWorkerByRut}
           isGroupedView={isGroupedView}
@@ -1189,7 +1189,7 @@ export default function CycleDetail() {
           readOnly={readOnly}
           onSave={async (patch) => {
             if (!dayModeEdit) return;
-            await persistTratoHEDay(dayModeEdit.laborId, dayModeEdit.date, patch);
+            await persistOvertimeDayConfig(dayModeEdit.laborId, dayModeEdit.date, patch);
             setDayModeEdit(null);
           }}
         />
@@ -1201,7 +1201,7 @@ export default function CycleDetail() {
           readOnly={readOnly}
           onSave={async (defaults) => {
             if (!activeLabor) return;
-            await persistTratoHEBonusDefaults(activeLabor.id, defaults);
+            await persistOvertimeBonusDefaults(activeLabor.id, defaults);
             setDefaultLeadersOpen(false);
           }}
         />

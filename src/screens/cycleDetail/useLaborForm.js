@@ -8,7 +8,7 @@ import { getDaySingle, workdayDocId } from "../../utils/cosechaCombos";
 
 // Crear, editar y quitar labores del ciclo. Editar una de horas extras
 // recalcula sus jornadas con las tarifas nuevas.
-export function useLaborForm({ activeLabor, catalogs, computeTratoHEAmount, cycle, cycleWrite, dayPrices, id, setActiveLaborId, setCycle, setLaborGroups, setWorkdaysByLabor, toast, wdWrite, workdaysByLabor, workerIdFor }) {
+export function useLaborForm({ activeLabor, catalogs, computeOvertimeDayAmount, cycle, cycleWrite, dayPrices, id, setActiveLaborId, setCycle, setLaborGroups, setWorkdaysByLabor, toast, wdWrite, workdaysByLabor, workerIdFor }) {
   "use no memo";
   const [laborForm, setLaborForm] = useState(null);
   const [removeLabor, setRemoveLabor] = useState(null);
@@ -130,7 +130,7 @@ export function useLaborForm({ activeLabor, catalogs, computeTratoHEAmount, cycl
         for (const k in wdMapForLabor) {
           const wd = wdMapForLabor[k];
           const dayCfg = getDaySingle(dayPrices, updatedLabor.id, wd.date, "normal");
-          const amount = computeTratoHEAmount(updatedLabor, dayCfg, wd);
+          const amount = computeOvertimeDayAmount(updatedLabor, dayCfg, wd);
           if (amount === wd.amount) continue;
           const docId = workdayDocId(id, updatedLabor.id, wd.workerRut, wd.date, SINGLE_COMBO);
           const next = { ...wd, amount, workerId: workerIdFor(updatedLabor.id, wd.workerRut) };
