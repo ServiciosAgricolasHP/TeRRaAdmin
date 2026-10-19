@@ -430,7 +430,7 @@ Implementación en `submitCycle` (`Jobs.jsx`). El mapeo `oldLaborId → newLabor
 
 - Pantalla: `src/screens/CycleDetail.jsx` (el componente de la ruta, con el estado de la grilla y las escrituras). Sus piezas, en `src/screens/cycleDetail/`:
   - **Secciones de la pantalla:** `CycleHeader` (migas y barra plegada), `CycleTitleBar`, `LaborMetrics`, `LaborTabs`, `LaborToolbar`, `GridToolbar` y `CycleConfirmDialogs`. Leen lo que necesitan de `CycleDetailContext`, que arma `CycleDetail`.
-  - **Carga y escrituras:** `useCycleLoader` (el ciclo, sus precios por día y sus jornadas) y `useCycleWriteGuard` (el candado del ciclo cerrado).
+  - **Carga y escrituras:** `useCycleLoader` (el ciclo, sus precios por día y sus jornadas), `useCycleWriteGuard` (el candado del ciclo cerrado) y `useDayPrices` (los precios por día de cada tipo de labor y el recálculo de las jornadas que los usan).
   - **Hooks de la vista:** `useCollapsedSections` (la barra, las métricas y los precios plegados), `useSiblingCycles` (ciclo anterior y siguiente), `useLeaderGrouping` (la vista por grupo, el filtro "con producción" y los saltos a cada grupo) y `usePhotoExport` (las salidas del modo foto).
   - **Grilla:** `columns.jsx` (`buildColumnDefs`, las columnas según el tipo de labor), `FormulaCellEditor` (editor de las celdas numéricas), `DayHeader`, `GroupHeaderRowRenderer` y `rows.js` (filas por tipo de labor y `normalizeCycle`).
   - **Precios del día:** `PricesPanel`, con una barra por tipo de labor en `pricesPanel/` (`HarvestPrices`, `PieceworkPrices`, `PieceworkStagesPrices`, `OvertimeDayConfig` y `NormalDayPrices`); `FloorDayRow` (el piso del día), `AddComboModal`, `AddPriceModal` y `DayModeModal`.
