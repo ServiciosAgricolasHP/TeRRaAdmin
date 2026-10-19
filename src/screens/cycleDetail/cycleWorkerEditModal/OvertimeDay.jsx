@@ -27,9 +27,9 @@ export function OvertimeDay({ d }) {
   // que vive dentro del useMemo de columnas de la grilla y no se puede reusar.
   const overtimeDayBreakdown = (d, cfg, m, s, x) => {
     const qty = Number(row[`${d}__qty`]) || 0;
-    const he = Number(row[`${d}__he`]) || 0;
+    const hours = Number(row[`${d}__he`]) || 0;
     const overtimeRate = activeLabor.overtimeRate ?? DEFAULT_OVERTIME_RATE;
-    const bonusManejo = activeLabor.bonusManejo ?? DEFAULT_BONUS_MANEJO;
+    const drivingBonus = activeLabor.bonusManejo ?? DEFAULT_BONUS_MANEJO;
     const bonusSupervision = activeLabor.bonusSupervision ?? DEFAULT_BONUS_SUPERVISION;
     const parts = [];
     if (cfg.mode === "overtimeOnly") {
@@ -37,8 +37,8 @@ export function OvertimeDay({ d }) {
     } else if (qty > 0) {
       parts.push(`Base ${fmtCurrency(qty)}`);
     }
-    if (he > 0) parts.push(`HE ${he}h (${fmtCurrency(he * overtimeRate)})`);
-    if (m) parts.push(`Manejo ${fmtCurrency(bonusManejo)}`);
+    if (hours > 0) parts.push(`HE ${hours}h (${fmtCurrency(hours * overtimeRate)})`);
+    if (m) parts.push(`Manejo ${fmtCurrency(drivingBonus)}`);
     if (s) parts.push(`Supervisión ${fmtCurrency(bonusSupervision)}`);
     if (x !== 0) parts.push(`Extras ${fmtCurrency(x)}`);
     return parts;

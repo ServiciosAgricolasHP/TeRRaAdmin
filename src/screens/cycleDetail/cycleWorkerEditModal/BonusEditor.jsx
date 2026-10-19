@@ -20,7 +20,7 @@ export function BonusEditor() {
     setDrivingBonusChecked,
     workerRut,
   } = useWorkerEdit();
-  const bonusManejo = activeLabor.bonusManejo ?? DEFAULT_BONUS_MANEJO;
+  const drivingBonus = activeLabor.bonusManejo ?? DEFAULT_BONUS_MANEJO;
   const bonusSupervision = activeLabor.bonusSupervision ?? DEFAULT_BONUS_SUPERVISION;
   return (
     <div className="space-y-3">
@@ -34,7 +34,7 @@ export function BonusEditor() {
       <label className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
         <div>
           <div className="text-sm font-medium">Bono manejo</div>
-          <div className="text-xs text-[var(--color-muted)]">{fmtCurrency(bonusManejo)}</div>
+          <div className="text-xs text-[var(--color-muted)]">{fmtCurrency(drivingBonus)}</div>
         </div>
         <input
           type="checkbox"
