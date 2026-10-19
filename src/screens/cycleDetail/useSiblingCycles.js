@@ -10,18 +10,18 @@ export function useSiblingCycles({ cycle, id }) {
   // label. Se recarga solo cuando cambia la faena o la subfaena.
   const [siblingCycles, setSiblingCycles] = useState(null);
   useEffect(() => {
-    const faenaId = cycle?.faenaId;
-    if (!faenaId) { setSiblingCycles(null); return; }
-    const subfaenaId = cycle?.subfaenaId || null;
+    const jobId = cycle?.faenaId;
+    if (!jobId) { setSiblingCycles(null); return; }
+    const subjobId = cycle?.subfaenaId || null;
     let cancelled = false;
     (async () => {
       const list = await cyclesService.list({
-        wheres: [["faenaId", "==", faenaId]],
+        wheres: [["faenaId", "==", jobId]],
         cache: true,
         ttl: 2 * 60 * 1000,
       });
       if (cancelled) return;
-      const scope = list.filter((c) => (c.subfaenaId || null) === subfaenaId);
+      const scope = list.filter((c) => (c.subfaenaId || null) === subjobId);
       // Un ciclo sin días se ordena por startDate o createdAt, nunca por hoy
       // (a diferencia de firstWorkedDay).
       const firstDayForSort = (c) => {
