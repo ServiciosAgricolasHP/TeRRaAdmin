@@ -1,5 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
-import { captureFullWidthDataUrl, captureFullWidthBlob } from "../../utils/imageCapture";
+import { useState, useRef, useMemo } from "react";
 import Modal from "../../components/Modal";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import {
@@ -30,6 +29,7 @@ import { writeCycleSummaryXlsx } from "./cycleSummaryModal/writeCycleSummaryXlsx
 import { useSummarySettings } from "./cycleSummaryModal/useSummarySettings";
 import { useSummaryFlush } from "./cycleSummaryModal/useSummaryFlush";
 import { useImportCycles } from "./cycleSummaryModal/useImportCycles";
+import { useSummaryCapture } from "./cycleSummaryModal/useSummaryCapture";
 
 // Índice de columna (desde 1) a letra de Excel: 1 → "A", 27 → "AA".
 function colLetterX(n) {
@@ -161,11 +161,6 @@ export default function CycleSummaryModal({
   // botones + y ✕ y los paneles de edición, y deja el resumen listo para
   // copiar, imprimir o exportar. Arranca bloqueado.
   const [editMode, setEditMode] = useState(false);
-  // Captura pedida mientras el resumen estaba en edición. `captureAsk` abre el
-  // diálogo de confirmación; `pendingCapture` es la acción que corre después
-  // de bloquear (ver el efecto más abajo — hay que esperar el repintado).
-  const [captureAsk, setCaptureAsk] = useState(null);
-  const [pendingCapture, setPendingCapture] = useState(null);
   // Popover de columnas visibles (modo cobrar). El botón ancla va como ref
   // para posicionar el popover por portal, sin que el overflow del Modal
   // padre lo recorte.
@@ -272,42 +267,23 @@ export default function CycleSummaryModal({
     titles,
   });
 
-  // ============================================================
-  // Imagen e impresión
-  // ============================================================
-  const filename = `resumen_${mode}_${(cycle?.label || "ciclo").replace(/[/\s]+/g, "_")}.png`;
-  // Captura con `scrollWidth`/`scrollHeight`: con tablas anchas, el
-  // `offsetWidth` que usaría html-to-image queda cortado al ancho visible del
-  // contenedor con scroll.
-  const fullCaptureOpts = () => ({
-    backgroundColor: "#ffffff",
-    pixelRatio: 2,
-    width: printRef.current?.scrollWidth || undefined,
-    height: printRef.current?.scrollHeight || undefined,
+  const {
+    CAPTURE_LABELS,
+    captureAsk,
+    captureLocked,
+    lockedHint,
+    requestCapture,
+    setCaptureAsk,
+    setPendingCapture,
+  } = useSummaryCapture({
+    cycle,
+    editMode,
+    mode,
+    printRef,
+    setBusy,
+    titles,
+    toast,
   });
-  const runDownload = async () => {
-    if (!printRef.current) return;
-    setBusy("download");
-    try {
-      const dataUrl = await captureFullWidthDataUrl(printRef.current, fullCaptureOpts());
-      const link = document.createElement("a");
-      link.download = filename;
-      link.href = dataUrl;
-      link.click();
-    } finally { setBusy(""); }
-  };
-  const runCopy = async () => {
-    if (!printRef.current) return;
-    setBusy("copy");
-    try {
-      const blob = await captureFullWidthBlob(printRef.current, fullCaptureOpts());
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada al portapapeles");
-    } catch (err) {
-      toast.error("Error: " + (err.message || err));
-    } finally { setBusy(""); }
-  };
   const handleXlsxSummary = async () => {
     setBusy("xlsx");
     try {
@@ -335,47 +311,6 @@ export default function CycleSummaryModal({
     }
   };
 
-  const runPrint = () => {
-    if (!printRef.current) return;
-    const html = printRef.current.outerHTML;
-    const win = window.open("", "_blank", "width=900,height=700");
-    if (!win) {
-      toast.warning("Permite las ventanas emergentes para imprimir.");
-      return;
-    }
-    win.document.write(`<!DOCTYPE html><html><head><title>${titles.main} — ${cycle?.label || ""}</title>
-      <style>
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; margin: 0; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #888; padding: 6px 8px; font-size: 12px; }
-        /* Repetir el encabezado de la tabla en cada hoja nueva cuando la
-           tabla excede la página (Chrome/Firefox). */
-        thead { display: table-header-group; }
-        tfoot { display: table-row-group; }
-        tr { page-break-inside: avoid; }
-        @media print { @page { size: landscape; margin: 10mm; } }
-      </style>
-    </head><body>${html}</body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); }, 350);
-  };
-
-  // Copiar / PNG / Imprimir rasterizan o imprimen el nodo `printRef` tal como
-  // está, así que en modo edición saldrían con los inputs, los botones +/✕ y
-  // la marca de agua. El Excel no pasa por acá: se arma desde los datos, sale
-  // limpio esté como esté la pantalla.
-  const CAPTURE_LABELS = {
-    copy: { verb: "copiar la imagen", confirm: "Bloquear y copiar" },
-    download: { verb: "descargar el PNG", confirm: "Bloquear y descargar" },
-    print: { verb: "imprimir", confirm: "Bloquear e imprimir" },
-  };
-  const runCapture = (kind) => {
-    if (kind === "copy") return runCopy();
-    if (kind === "download") return runDownload();
-    return runPrint();
-  };
   // El resumen es compartido: conviene ver quién lo dejó como está.
   const lastEditLabel = summaryMeta?.at
     ? [
@@ -385,35 +320,6 @@ export default function CycleSummaryModal({
         .filter(Boolean)
         .join(" · ")
     : "";
-
-  const captureLocked = mode === "charge" && editMode;
-  const lockedHint = "El resumen está en modo edición — se va a pedir bloquearlo antes de generar la imagen.";
-  const requestCapture = (kind) => {
-    if (captureLocked) {
-      setCaptureAsk(kind);
-      return;
-    }
-    runCapture(kind);
-  };
-
-  // Tras "Bloquear y …", espera dos requestAnimationFrame antes de capturar:
-  // el DOM tiene que reflejar el modo bloqueado.
-  useEffect(() => {
-    if (!pendingCapture || editMode) return;
-    let cancelled = false;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(async () => {
-        if (cancelled) return;
-        try {
-          await runCapture(pendingCapture);
-        } finally {
-          setPendingCapture(null);
-        }
-      });
-    });
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingCapture, editMode]);
 
   return (
     <Modal
