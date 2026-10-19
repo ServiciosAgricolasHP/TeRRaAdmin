@@ -1,7 +1,7 @@
 import { useMemo, useState, useRef, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { captureFullWidthBlob } from "../../utils/imageCapture";
-import { workdaysService, payrollSnapshotsService } from "../../services";
+import { workdaysService } from "../../services";
 import {
   pendingCashItemsOf,
   removeWorkerFromPayroll,
@@ -61,6 +61,7 @@ import { writePayrollSummaryXlsx } from "./payrollDetailModal/writePayrollSummar
 import { useDetailFilters } from "./payrollDetailModal/useDetailFilters";
 import { useCashPaid } from "./payrollDetailModal/useCashPaid";
 import { useCycleTitles } from "./payrollDetailModal/useCycleTitles";
+import { usePayrollSnapshot } from "./payrollDetailModal/usePayrollSnapshot";
 
 export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPayrolls = [], onClose, onRedownload, onDownloadNominaOnly, onDownloadSnapshot, onPublishPortal = null, publishedPayrollId = null, onChanged }) {
   const { catalogs } = useCatalogs();
@@ -573,36 +574,7 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
   const [printingDetail, setPrintingDetail] = useState(false);
   const [showCashEstimation, setShowCashEstimation] = useState(false);
 
-  // Snapshot que se carga al abrir, para el detalle por trabajador (días
-  // pagados por ciclo, como en Trabajadores). Sin snapshot, el detalle muestra
-  // solo las 4 métricas básicas.
-  const [snapshot, setSnapshot] = useState(null);
-  const [snapshotLoading, setSnapshotLoading] = useState(false);
-  useEffect(() => {
-    if (!payroll?.id) return;
-    let cancelled = false;
-    setSnapshotLoading(true);
-    payrollSnapshotsService.getById(payroll.id)
-      .then((doc) => {
-        if (cancelled) return;
-        if (doc) {
-          const { id: _omit, ...rest } = doc;
-          setSnapshot(rest);
-        } else if (payroll.snapshot) {
-          setSnapshot(payroll.snapshot);
-        } else {
-          setSnapshot(null);
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          console.warn("No se pudo cargar snapshot:", err);
-          setSnapshot(payroll.snapshot || null);
-        }
-      })
-      .finally(() => { if (!cancelled) setSnapshotLoading(false); });
-    return () => { cancelled = true; };
-  }, [payroll?.id]);
+  const { snapshot, snapshotLoading } = usePayrollSnapshot({ payroll });
 
   // Lo que paga la nómina por ciclo y por labor. El monto de cada labor sale
   // de las jornadas del snapshot; sin snapshot quedan las jornadas y personas.
