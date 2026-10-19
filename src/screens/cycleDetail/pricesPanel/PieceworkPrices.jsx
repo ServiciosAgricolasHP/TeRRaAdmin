@@ -8,7 +8,7 @@ export function PieceworkPrices() {
   "use no memo";
   const {
     activeLabor,
-    askApplyPisoToAll,
+    askApplyFloorToAll,
     catalogs,
     cycleWrite,
     dayPrices,
@@ -18,10 +18,10 @@ export function PieceworkPrices() {
     getPriceInputValue,
     handlePriceBlur,
     inputKey,
-    isTratoLabor,
+    isPieceworkLabor,
     persistComboConfig,
-    persistDayPiso,
-    pisoPendingByDate,
+    persistDayFloor,
+    floorPendingByDate,
     pricesCollapsed,
     readOnly,
     setAddPriceModal,
@@ -33,7 +33,7 @@ export function PieceworkPrices() {
   } = useCycleDetail();
   return (
     <>
-      {isTratoLabor && days.length > 0 && (
+      {isPieceworkLabor && days.length > 0 && (
         <div className={`mb-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] ${pricesCollapsed ? "px-3 py-1.5" : "p-2"}`}>
           <button
             type="button"
@@ -226,9 +226,9 @@ export function PieceworkPrices() {
                     dayPrices={dayPrices}
                     date={d}
                     readOnly={readOnly}
-                    pendingCount={pisoPendingByDate[d] || 0}
-                    onApplyAll={() => askApplyPisoToAll(activeLabor.id, d)}
-                    onPersist={(v) => persistDayPiso(activeLabor.id, d, v)}
+                    pendingCount={floorPendingByDate[d] || 0}
+                    onApplyAll={() => askApplyFloorToAll(activeLabor.id, d)}
+                    onPersist={(v) => persistDayFloor(activeLabor.id, d, v)}
                   />
                 </div>
               );

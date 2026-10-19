@@ -9,7 +9,7 @@ export function OvertimeDayConfig() {
     activeLabor,
     dayPrices,
     days,
-    isTratoHELabor,
+    isOvertimeDayLabor,
     pricesCollapsed,
     readOnly,
     setDayModeEdit,
@@ -17,7 +17,7 @@ export function OvertimeDayConfig() {
   } = useCycleDetail();
   return (
     <>
-      {isTratoHELabor && days.length > 0 && (
+      {isOvertimeDayLabor && days.length > 0 && (
         <div className={`mb-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] ${pricesCollapsed ? "px-3 py-1.5" : "p-2"}`}>
           <button
             type="button"

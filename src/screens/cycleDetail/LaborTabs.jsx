@@ -18,15 +18,15 @@ export function LaborTabs() {
         const isActive = l.id === activeLabor?.id;
         const isCo = l.type === "cosecha";
         const isTr = l.type === "trato";
-        const isHE = l.type === "tratoHE";
+        const isOvertimeDay = l.type === "tratoHE";
         const tagClass = isCo
           ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
           : isTr
             ? "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400"
-            : isHE
+            : isOvertimeDay
               ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
               : "bg-[var(--color-surface-2)] text-[var(--color-muted)]";
-        const tagIcon = isCo ? "🌾" : isTr ? "🛠" : isHE ? "⏱" : l.type === "main" ? "al día" : l.type;
+        const tagIcon = isCo ? "🌾" : isTr ? "🛠" : isOvertimeDay ? "⏱" : l.type === "main" ? "al día" : l.type;
         return (
           <button
             key={l.id}

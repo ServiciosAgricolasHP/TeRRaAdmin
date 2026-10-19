@@ -9,7 +9,7 @@ export function CycleConfirmDialogs() {
   "use no memo";
   const {
     activeLabor,
-    applyPisoToAll,
+    applyFloorToAll,
     closeBusy,
     closeFlow,
     confirmRemoveDay,
@@ -20,21 +20,21 @@ export function CycleConfirmDialogs() {
     doRemoveDay,
     doReopenCycle,
     handleCloseCycle,
-    pisoBulk,
-    pisoBulkBusy,
-    pisoRemove,
-    pisoRemoveBusy,
+    floorBulk,
+    floorBulkBusy,
+    floorRemove,
+    floorRemoveBusy,
     removeBusy,
     removeCombo,
     removeComboFromDay,
-    removeDayPiso,
+    removeDayFloor,
     removeLabor,
     removeWorker,
     setCloseFlow,
     setConfirmRemoveDay,
     setConfirmReopen,
-    setPisoBulk,
-    setPisoRemove,
+    setFloorBulk,
+    setFloorRemove,
     setRemoveCombo,
     setRemoveLabor,
     setRemoveWorker,
@@ -42,18 +42,18 @@ export function CycleConfirmDialogs() {
   return (
     <>
       <ConfirmDialog
-        open={!!pisoRemove}
+        open={!!floorRemove}
         title="Quitar el piso del día"
         message={
-          pisoRemove
+          floorRemove
             ? [
-                pisoRemove.libres.length
-                  ? `Se quitará el piso del ${pisoRemove.date} y se eliminará el bono de ` +
-                    `${pisoRemove.libres.length} trabajador${pisoRemove.libres.length === 1 ? "" : "es"} ` +
-                    `(${fmtCurrency(pisoRemove.libres.reduce((a, w) => a + (Number(w.amount) || 0), 0))}).`
-                  : `Se quitará el piso del ${pisoRemove.date}.`,
-                pisoRemove.liquidados.length
-                  ? `${pisoRemove.liquidados.length} bono${pisoRemove.liquidados.length === 1 ? " ya está" : "s ya están"} ` +
+                floorRemove.libres.length
+                  ? `Se quitará el piso del ${floorRemove.date} y se eliminará el bono de ` +
+                    `${floorRemove.libres.length} trabajador${floorRemove.libres.length === 1 ? "" : "es"} ` +
+                    `(${fmtCurrency(floorRemove.libres.reduce((a, w) => a + (Number(w.amount) || 0), 0))}).`
+                  : `Se quitará el piso del ${floorRemove.date}.`,
+                floorRemove.liquidados.length
+                  ? `${floorRemove.liquidados.length} bono${floorRemove.liquidados.length === 1 ? " ya está" : "s ya están"} ` +
                     "en una nómina y se mantienen: hay que eliminar o editar esa nómina para tocarlos."
                   : "",
               ]
@@ -62,26 +62,26 @@ export function CycleConfirmDialogs() {
             : ""
         }
         confirmLabel="Quitar piso"
-        danger busy={pisoRemoveBusy}
-        onCancel={() => !pisoRemoveBusy && setPisoRemove(null)}
-        onConfirm={removeDayPiso}
+        danger busy={floorRemoveBusy}
+        onCancel={() => !floorRemoveBusy && setFloorRemove(null)}
+        onConfirm={removeDayFloor}
       />
 
       <ConfirmDialog
-        open={!!pisoBulk}
+        open={!!floorBulk}
         title="Asignar piso a todos"
         message={
-          pisoBulk
-            ? `Se le asignará el piso de ${fmtCurrency(pisoBulk.amount)} a ${pisoBulk.ruts.length} ` +
-              `trabajador${pisoBulk.ruts.length === 1 ? "" : "es"} con producción del ${pisoBulk.date} ` +
-              `que todavía no lo tienen. Total: ${fmtCurrency(pisoBulk.amount * pisoBulk.ruts.length)}. ` +
+          floorBulk
+            ? `Se le asignará el piso de ${fmtCurrency(floorBulk.amount)} a ${floorBulk.ruts.length} ` +
+              `trabajador${floorBulk.ruts.length === 1 ? "" : "es"} con producción del ${floorBulk.date} ` +
+              `que todavía no lo tienen. Total: ${fmtCurrency(floorBulk.amount * floorBulk.ruts.length)}. ` +
               "Los que ya tienen piso quedan como están, y después se puede quitar uno por uno desde la columna 🪙."
             : ""
         }
         confirmLabel="Asignar piso"
-        busy={pisoBulkBusy}
-        onCancel={() => !pisoBulkBusy && setPisoBulk(null)}
-        onConfirm={applyPisoToAll}
+        busy={floorBulkBusy}
+        onCancel={() => !floorBulkBusy && setFloorBulk(null)}
+        onConfirm={applyFloorToAll}
       />
 
       <ConfirmDialog

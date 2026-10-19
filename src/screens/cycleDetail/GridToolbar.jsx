@@ -15,7 +15,7 @@ export function GridToolbar() {
     scrollToGroup,
     setGroupView,
     setOnlyWithProduction,
-    useGrouped,
+    isGroupedView,
     workers,
   } = useCycleDetail();
   return (
@@ -58,7 +58,7 @@ export function GridToolbar() {
               {onlyWithProduction && columnFilterActive && <span className="ml-1 opacity-70">(pausado)</span>}
             </button>
           </div>
-          {gridVisible && useGrouped && orderedGroups.length > 0 && (
+          {gridVisible && isGroupedView && orderedGroups.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
               {orderedGroups.map((g) => {
                 const isNone = g.key === LEADER_NONE;

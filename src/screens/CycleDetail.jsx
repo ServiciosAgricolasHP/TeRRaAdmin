@@ -195,8 +195,8 @@ export default function CycleDetail() {
   const { user } = useAuth();
 
   const [cycle, setCycle] = useState(null);
-  const [faena, setFaena] = useState(null);
-  const [subfaena, setSubfaena] = useState(null);
+  const [job, setJob] = useState(null);
+  const [subjob, setSubjob] = useState(null);
   // Agrupaciones de labor de esta subfaena (Poda, Riego, etc.), para hilar
   // labores del mismo tipo a través de ciclos. Ver laborGroupsService.
   const [laborGroups, setLaborGroups] = useState([]);
@@ -209,11 +209,11 @@ export default function CycleDetail() {
   // Prefijos QR apuntados a este ciclo. Ver `qrLockedLabors` más abajo.
   const [qrPrefixes, setQrPrefixes] = useState([]);
   // Confirmación del piso masivo: { laborId, date, ruts, amount }.
-  const [pisoBulk, setPisoBulk] = useState(null);
-  const [pisoBulkBusy, setPisoBulkBusy] = useState(false);
+  const [floorBulk, setFloorBulk] = useState(null);
+  const [floorBulkBusy, setFloorBulkBusy] = useState(false);
   // Confirmación de quitar el piso del día: { laborId, date, libres, liquidados }.
-  const [pisoRemove, setPisoRemove] = useState(null);
-  const [pisoRemoveBusy, setPisoRemoveBusy] = useState(false);
+  const [floorRemove, setFloorRemove] = useState(null);
+  const [floorRemoveBusy, setFloorRemoveBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeLaborId, setActiveLaborId] = useState(null);
 
@@ -309,9 +309,9 @@ export default function CycleDetail() {
   const [bonusEdit, setBonusEdit] = useState(null);   // { laborId, date, workerRut }
   const [dayModeEdit, setDayModeEdit] = useState(null); // { laborId, date }
   const [defaultLeadersOpen, setDefaultLeadersOpen] = useState(false);
-  const [tratoHEView, setTratoHEView] = useState("detalle"); // "detalle" | "resumen"
-  const [cosechaView, setCosechaView] = useState("detalle"); // "detalle" | "resumen"
-  const [tratoView, setTratoView] = useState("detalle"); // "detalle" | "resumen"
+  const [overtimeDayView, setOvertimeDayView] = useState("detalle"); // "detalle" | "resumen"
+  const [harvestView, setHarvestView] = useState("detalle"); // "detalle" | "resumen"
+  const [pieceworkView, setPieceworkView] = useState("detalle"); // "detalle" | "resumen"
   const [transportsOpen, setTransportsOpen] = useState(false);
   const [cycleTrips, setCycleTrips] = useState([]);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -380,9 +380,9 @@ export default function CycleDetail() {
       setDayPrices(normalizedDP);
       if (dpChanged) await cyclesService.update(id, { dayPrices: normalizedDP });
 
-      if (normalized.faenaId) setFaena(await jobsService.getById(normalized.faenaId));
+      if (normalized.faenaId) setJob(await jobsService.getById(normalized.faenaId));
       if (normalized.subfaenaId) {
-        setSubfaena(await subjobsService.getById(normalized.subfaenaId));
+        setSubjob(await subjobsService.getById(normalized.subfaenaId));
         // Sin `order`: where(subfaenaId) + orderBy(name) pediría un índice
         // compuesto en Firestore. La lista es chica y se ordena en el cliente.
         const groups = await laborGroupsService.list({ wheres: [["subfaenaId", "==", normalized.subfaenaId]] });
@@ -593,15 +593,15 @@ export default function CycleDetail() {
     setEditingCycleWorkerRut(null);
   }, [activeLabor?.id]);
 
-  const isCosechaLabor = activeLabor?.type === "cosecha";
-  const isTratoLabor = activeLabor?.type === "trato";
-  const isTratoEtapasLabor = activeLabor?.type === "tratoEtapas";
-  const isTratoHELabor = activeLabor?.type === "tratoHE";
-  const isQtyLabor = isCosechaLabor || isTratoLabor || isTratoEtapasLabor || isTratoHELabor;
+  const isHarvestLabor = activeLabor?.type === "cosecha";
+  const isPieceworkLabor = activeLabor?.type === "trato";
+  const isPieceworkStagesLabor = activeLabor?.type === "tratoEtapas";
+  const isOvertimeDayLabor = activeLabor?.type === "tratoHE";
+  const isQtyLabor = isHarvestLabor || isPieceworkLabor || isPieceworkStagesLabor || isOvertimeDayLabor;
   // Etapas de la labor por etapas (fijas, no por día), normalizadas.
-  const etapas = useMemo(
-    () => (isTratoEtapasLabor ? normalizeStages(activeLabor?.stages) : []),
-    [isTratoEtapasLabor, activeLabor],
+  const activeStages = useMemo(
+    () => (isPieceworkStagesLabor ? normalizeStages(activeLabor?.stages) : []),
+    [isPieceworkStagesLabor, activeLabor],
   );
   // Labores que pagan un monto por día por trabajador (main/supervision/extra).
   // No usan combos ni tiers — un único precio sugerido por día se persiste en
@@ -609,7 +609,7 @@ export default function CycleDetail() {
   const isNormalLabor = !!activeLabor && !isQtyLabor;
   // Labores donde un trabajador puede ser de sueldo mensual: sus días pasan a
   // casillas de asistencia en $0.
-  const allowsMonthly = isNormalLabor || isTratoHELabor;
+  const allowsMonthly = isNormalLabor || isOvertimeDayLabor;
   const days = cycle?.days || [];
   const workers = activeLabor?.workers || [];
   const wdMap = (activeLabor && workdaysByLabor[activeLabor.id]) || {};
@@ -630,13 +630,13 @@ export default function CycleDetail() {
     return labor?.workers?.find((w) => w.rut === rut)?.id || rut;
   };
 
-  const daysWithFloor = useMemo(() => daysWithFloorOf(activeLabor, isCosechaLabor, isTratoLabor, dayPrices, wdMap), [activeLabor, isCosechaLabor, isTratoLabor, dayPrices, wdMap]);
+  const daysWithFloor = useMemo(() => daysWithFloorOf(activeLabor, isHarvestLabor, isPieceworkLabor, dayPrices, wdMap), [activeLabor, isHarvestLabor, isPieceworkLabor, dayPrices, wdMap]);
 
-  const dayCombosByDate = useMemo(() => dayCombosOf(isCosechaLabor, activeLabor, days, dayPrices, defaultMode, workdaysByLabor), [isCosechaLabor, activeLabor, days, dayPrices, defaultMode, workdaysByLabor]);
+  const dayCombosByDate = useMemo(() => dayCombosOf(isHarvestLabor, activeLabor, days, dayPrices, defaultMode, workdaysByLabor), [isHarvestLabor, activeLabor, days, dayPrices, defaultMode, workdaysByLabor]);
 
-  const dayTiersByDate = useMemo(() => dayTiersOf(isTratoLabor, activeLabor, days, dayPrices, defaultMode, workdaysByLabor), [isTratoLabor, activeLabor, days, dayPrices, defaultMode, workdaysByLabor]);
+  const dayTiersByDate = useMemo(() => dayTiersOf(isPieceworkLabor, activeLabor, days, dayPrices, defaultMode, workdaysByLabor), [isPieceworkLabor, activeLabor, days, dayPrices, defaultMode, workdaysByLabor]);
 
-  const dayStagesByDate = useMemo(() => dayStagesOf(isTratoEtapasLabor, activeLabor, days, dayPrices, workdaysByLabor), [isTratoEtapasLabor, activeLabor, days, dayPrices, workdaysByLabor]);
+  const dayStagesByDate = useMemo(() => dayStagesOf(isPieceworkStagesLabor, activeLabor, days, dayPrices, workdaysByLabor), [isPieceworkStagesLabor, activeLabor, days, dayPrices, workdaysByLabor]);
 
   const legacyDayNotes = cycle?.dayNotes || {};
   const dayNotesByLabor = cycle?.dayNotesByLabor || {};
@@ -719,14 +719,14 @@ export default function CycleDetail() {
   const rutOf = useMemo(() => currentRutResolver(allWorkers), [allWorkers]);
   const rowDataRaw = useMemo(() => {
     let rows;
-    if (isCosechaLabor) rows = buildRowsHarvest(gridWorkers, days, wdMap, dayCombosByDate);
-    else if (isTratoLabor) rows = buildRowsPiecework(gridWorkers, days, wdMap, dayTiersByDate);
-    else if (isTratoEtapasLabor) rows = buildRowsPieceworkStages(gridWorkers, days, wdMap, dayStagesByDate);
-    else if (isTratoHELabor) rows = buildRowsOvertimeDay(gridWorkers, days, wdMap);
+    if (isHarvestLabor) rows = buildRowsHarvest(gridWorkers, days, wdMap, dayCombosByDate);
+    else if (isPieceworkLabor) rows = buildRowsPiecework(gridWorkers, days, wdMap, dayTiersByDate);
+    else if (isPieceworkStagesLabor) rows = buildRowsPieceworkStages(gridWorkers, days, wdMap, dayStagesByDate);
+    else if (isOvertimeDayLabor) rows = buildRowsOvertimeDay(gridWorkers, days, wdMap);
     else rows = buildRowsNormal(gridWorkers, days, wdMap);
     return rows.map((r) => (r._isTemp ? r : { ...r, _displayRut: rutOf(r.rut) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gridWorkers, days, wdMap, isCosechaLabor, isTratoLabor, isTratoEtapasLabor, isTratoHELabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, rutOf]);
+  }, [gridWorkers, days, wdMap, isHarvestLabor, isPieceworkLabor, isPieceworkStagesLabor, isOvertimeDayLabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, rutOf]);
 
   // Orden alfabético — mismo criterio que CycleWorkerList.jsx — para que el
   // modal mobile pueda navegar "‹ Anterior/Siguiente ›" entre trabajadores
@@ -766,10 +766,10 @@ export default function CycleDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupBuckets]);
 
-  const useGrouped = groupView === "group" && !photoMode;
+  const isGroupedView = groupView === "group" && !photoMode;
 
   const rowData = useMemo(() => {
-    if (!useGrouped) return rowDataRaw;
+    if (!isGroupedView) return rowDataRaw;
     const out = [];
     for (const g of orderedGroups) {
       out.push({
@@ -782,7 +782,7 @@ export default function CycleDetail() {
       for (const r of g.rows) out.push(r);
     }
     return out;
-  }, [useGrouped, rowDataRaw, orderedGroups]);
+  }, [isGroupedView, rowDataRaw, orderedGroups]);
 
   // "Solo con producción" es un filtro externo de AG-Grid (no recorta
   // `rowData`), así convive con el orden y la selección de la grilla. Con un
@@ -829,7 +829,7 @@ export default function CycleDetail() {
 
   const totalQtyByLabor = useMemo(() => laborQtyTotals(cycle?.labors, workdaysByLabor), [cycle?.labors, workdaysByLabor]);
 
-  const stagesDaySummary = useMemo(() => stagesDaySummaryOf(isTratoEtapasLabor, activeLabor, workdaysByLabor), [isTratoEtapasLabor, activeLabor, workdaysByLabor]);
+  const stagesDaySummary = useMemo(() => stagesDaySummaryOf(isPieceworkStagesLabor, activeLabor, workdaysByLabor), [isPieceworkStagesLabor, activeLabor, workdaysByLabor]);
 
   const pieceworkPeopleCountByLabor = useMemo(() => pieceworkPeopleCounts(cycle?.labors, workdaysByLabor), [cycle?.labors, workdaysByLabor]);
 
@@ -837,7 +837,7 @@ export default function CycleDetail() {
 
   const overtimeDayMetricsByLabor = useMemo(() => overtimeDayMetricsOf(cycle?.labors, workdaysByLabor, dayPrices), [cycle?.labors, workdaysByLabor, dayPrices]);
 
-  const totalQtyByDayCombo = useMemo(() => harvestQtyByDayCombo(isCosechaLabor, activeLabor, workdaysByLabor, days, workers, dayCombosByDate), [isCosechaLabor, activeLabor, workdaysByLabor, days, workers, dayCombosByDate]);
+  const totalQtyByDayCombo = useMemo(() => harvestQtyByDayCombo(isHarvestLabor, activeLabor, workdaysByLabor, days, workers, dayCombosByDate), [isHarvestLabor, activeLabor, workdaysByLabor, days, workers, dayCombosByDate]);
 
   const pieceworkTierMetricsByLabor = useMemo(() => pieceworkTierMetricsOf(cycle?.labors, workdaysByLabor), [cycle?.labors, workdaysByLabor]);
 
@@ -904,7 +904,7 @@ export default function CycleDetail() {
   // ============================================================
 
   const getCombo = (laborId, date, ck) => {
-    const combos = laborId === activeLabor?.id && isCosechaLabor
+    const combos = laborId === activeLabor?.id && isHarvestLabor
       ? (dayCombosByDate[date] || [])
       : getDayCombos(dayPrices, laborId, date, defaultMode);
     return combos.find((c) => c.key === ck) || { key: ck, x: 0, y: 0, price: 0, mode: defaultMode };
@@ -1008,22 +1008,22 @@ export default function CycleDetail() {
   // Quitar el piso del día (el ✕, o dejar el monto en cero) también borra los
   // bonos de ese día que no están en una nómina. Si hay bonos asignados, antes
   // pide confirmación.
-  const persistDayPiso = async (laborId, date, value) => {
+  const persistDayFloor = async (laborId, date, value) => {
     const monto = Number(value) || 0;
     if (!monto) {
       const { libres, liquidados } = pisoAssigned(workdaysByLabor[laborId] || {}, date);
       if (libres.length || liquidados.length) {
-        setPisoRemove({ laborId, date, libres, liquidados });
+        setFloorRemove({ laborId, date, libres, liquidados });
         return;
       }
     }
     await writeDayPiso(laborId, date, monto);
   };
 
-  const removeDayPiso = async () => {
-    if (!pisoRemove) return;
-    const { laborId, date, libres } = pisoRemove;
-    setPisoRemoveBusy(true);
+  const removeDayFloor = async () => {
+    if (!floorRemove) return;
+    const { laborId, date, libres } = floorRemove;
+    setFloorRemoveBusy(true);
     try {
       const borradas = [];
       for (const wd of libres) {
@@ -1037,7 +1037,7 @@ export default function CycleDetail() {
         return { ...prev, [laborId]: lab };
       });
       await writeDayPiso(laborId, date, 0);
-      setPisoRemove(null);
+      setFloorRemove(null);
       toast.success(
         borradas.length
           ? `Piso del día quitado · ${borradas.length} bono${borradas.length === 1 ? "" : "s"} eliminado${borradas.length === 1 ? "" : "s"}.`
@@ -1046,13 +1046,13 @@ export default function CycleDetail() {
     } catch (err) {
       toast.error("No se pudo quitar el piso: " + (err.message || err));
     } finally {
-      setPisoRemoveBusy(false);
+      setFloorRemoveBusy(false);
     }
   };
 
   // Cuántos trabajadores con producción quedan sin piso, por día. Alimenta el
   // contador del botón "a todos" del panel de precios.
-  const pisoPendingByDate = useMemo(() => {
+  const floorPendingByDate = useMemo(() => {
     const out = {};
     if (!activeLabor) return out;
     const wds = workdaysByLabor[activeLabor.id] || {};
@@ -1063,7 +1063,7 @@ export default function CycleDetail() {
 
   // Abre la confirmación del piso masivo, con la cantidad de personas y el
   // total. No escribe nada.
-  const askApplyPisoToAll = (laborId, date) => {
+  const askApplyFloorToAll = (laborId, date) => {
     const labor = cycle.labors.find((l) => l.id === laborId);
     if (!labor) return;
     const amount = effectivePiso(labor, dayPrices, date);
@@ -1076,15 +1076,15 @@ export default function CycleDetail() {
       toast.info("Todos los que tienen producción ese día ya tienen el piso.");
       return;
     }
-    setPisoBulk({ laborId, date, ruts, amount });
+    setFloorBulk({ laborId, date, ruts, amount });
   };
 
   // Escribe un workday `_piso` por cada trabajador pendiente. Es exactamente lo
   // mismo que apretar el toggle de cada uno en la columna 🪙, en lote.
-  const applyPisoToAll = async () => {
-    if (!pisoBulk) return;
-    const { laborId, date, ruts, amount } = pisoBulk;
-    setPisoBulkBusy(true);
+  const applyFloorToAll = async () => {
+    if (!floorBulk) return;
+    const { laborId, date, ruts, amount } = floorBulk;
+    setFloorBulkBusy(true);
     try {
       const escritos = {};
       for (const rut of ruts) {
@@ -1103,12 +1103,12 @@ export default function CycleDetail() {
         ...prev,
         [laborId]: { ...(prev[laborId] || {}), ...escritos },
       }));
-      setPisoBulk(null);
+      setFloorBulk(null);
       toast.success(`Piso asignado a ${ruts.length} trabajador${ruts.length === 1 ? "" : "es"}.`);
     } catch (err) {
       toast.error("No se pudo asignar el piso: " + (err.message || err));
     } finally {
-      setPisoBulkBusy(false);
+      setFloorBulkBusy(false);
     }
   };
 
@@ -1726,7 +1726,7 @@ export default function CycleDetail() {
       }
     }
 
-    if (isCosechaLabor) {
+    if (isHarvestLabor) {
       const [date, ...rest] = field.split("__");
       const ck = rest.join("_");
       const workerRut = params.data.rut;
@@ -1747,7 +1747,7 @@ export default function CycleDetail() {
       return;
     }
 
-    if (isTratoHELabor) {
+    if (isOvertimeDayLabor) {
       const m = field.match(/^(\d{4}-\d{2}-\d{2})__(qty|he)$/);
       if (!m) return;
       const [, date, kind] = m;
@@ -1768,7 +1768,7 @@ export default function CycleDetail() {
       return;
     }
 
-    if (isTratoLabor) {
+    if (isPieceworkLabor) {
       const [date, ...rest] = field.split("__");
       const tierKey = rest.join("_"); // p. ej. "t0", "t1"
       const workerRut = params.data.rut;
@@ -1790,7 +1790,7 @@ export default function CycleDetail() {
       return;
     }
 
-    if (isTratoEtapasLabor) {
+    if (isPieceworkStagesLabor) {
       const [date, ...rest] = field.split("__");
       const stageId = rest.join("_");
       const workerRut = params.data.rut;
@@ -1952,7 +1952,7 @@ export default function CycleDetail() {
     try {
       if (convert) {
         const patch = { amount: 0, attendanceOnly: true };
-        if (isTratoHELabor) {
+        if (isOvertimeDayLabor) {
           Object.assign(patch, { qty: 0, overtimeHours: 0, extras: 0, hasManejo: false, hasSupervision: false });
         }
         for (const [, wd] of req.free) {
@@ -2509,7 +2509,7 @@ export default function CycleDetail() {
       headerName: "", field: "_actions", editable: false,
       // Ancho según los botones de la celda: ✕, más M en las labores que
       // admiten sueldo mensual y los de líder en la vista por grupo.
-      width: useGrouped
+      width: isGroupedView
         ? (allowsMonthly ? 160 : 130)
         : (allowsMonthly ? 70 : 50),
       pinned: "right",
@@ -2518,7 +2518,7 @@ export default function CycleDetail() {
         if (!rut || p.data?._isHeader) return null;
         const isTemp = !!p.data?._isTemp;
         const isMonthly = !!p.data?._monthly;
-        const showAssign = useGrouped && !rutToLeader.has(rut) && !readOnly && !isTemp;
+        const showAssign = isGroupedView && !rutToLeader.has(rut) && !readOnly && !isTemp;
         return (
           <div className="flex items-center gap-1.5">
             {allowsMonthly && !readOnly && (
@@ -2587,8 +2587,8 @@ export default function CycleDetail() {
       headerGroupComponentParams: dayHdrParams(d),
     });
 
-    if (isCosechaLabor) {
-      if (cosechaView === "resumen") {
+    if (isHarvestLabor) {
+      if (harvestView === "resumen") {
         const dayCols = days.map((d) => ({
           headerName: d,
           field: `${d}__total`,
@@ -2648,8 +2648,8 @@ export default function CycleDetail() {
       return [...baseLeft, ...dayGroups, totalCol, ...actionsCol];
     }
 
-    if (isTratoLabor) {
-      if (tratoView === "resumen") {
+    if (isPieceworkLabor) {
+      if (pieceworkView === "resumen") {
         const dayCols = days.map((d) => ({
           headerName: d,
           field: `${d}__total`,
@@ -2704,7 +2704,7 @@ export default function CycleDetail() {
       return [...baseLeft, ...dayGroups, totalCol, ...actionsCol];
     }
 
-    if (isTratoEtapasLabor) {
+    if (isPieceworkStagesLabor) {
       // Cada día es un grupo; sus columnas hijas son las etapas visibles ese
       // día (con precio configurado o con producción). El precio del día va en
       // el tooltip del encabezado. La celda edita la cantidad y muestra el
@@ -2745,7 +2745,7 @@ export default function CycleDetail() {
       return [...baseLeft, ...dayGroups, totalCol, ...actionsCol];
     }
 
-    if (isTratoHELabor) {
+    if (isOvertimeDayLabor) {
       const labor = activeLabor;
       const rates = {
         bonusManejo: labor?.bonusManejo ?? DEFAULT_BONUS_MANEJO,
@@ -2776,7 +2776,7 @@ export default function CycleDetail() {
       };
 
       // Modo resumen: una columna de $ por día
-      if (tratoHEView === "resumen") {
+      if (overtimeDayView === "resumen") {
         const dayCols = days.map((d) => {
           const cfg = getDaySingle(dayPrices, activeLabor.id, d, "normal");
           const red = isRedDay(d, cfg);
@@ -2951,7 +2951,7 @@ export default function CycleDetail() {
     });
     return [...baseLeft, ...dayCols, totalCol, ...actionsCol];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [days, readOnly, photoMode, qrLocked, isCosechaLabor, isTratoLabor, isTratoEtapasLabor, isTratoHELabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, catalogs, dayPrices, activeLabor, tratoHEView, cosechaView, tratoView, activeLaborDayNotes, legacyDayNotes, activeLaborDatesWithProduction, daysWithFloor, isMobile]);
+  }, [days, readOnly, photoMode, qrLocked, isHarvestLabor, isPieceworkLabor, isPieceworkStagesLabor, isOvertimeDayLabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, catalogs, dayPrices, activeLabor, overtimeDayView, harvestView, pieceworkView, activeLaborDayNotes, legacyDayNotes, activeLaborDatesWithProduction, daysWithFloor, isMobile]);
 
   if (loading) return <div className="text-[var(--color-muted)]">Cargando...</div>;
   if (!cycle) return <div className="text-[var(--color-muted)]">Ciclo no encontrado.</div>;
@@ -2982,7 +2982,7 @@ export default function CycleDetail() {
           ensureDomOrder
           localeText={AG_GRID_LOCALE_ES}
           defaultColDef={{ resizable: true, sortable: true, filter: true }}
-          rowHeight={isTratoHELabor ? 58 : (isQtyLabor ? 44 : undefined)}
+          rowHeight={isOvertimeDayLabor ? 58 : (isQtyLabor ? 44 : undefined)}
           isFullWidthRow={(p) => !!p.rowNode.data?._isHeader}
           fullWidthCellRenderer={GroupHeaderRowRenderer}
           getRowClass={(p) => (p.data?._isHeader ? "ag-group-header-row" : "")}
@@ -3012,8 +3012,8 @@ export default function CycleDetail() {
           <div className="mb-3">
             <h1 className="text-xl font-semibold tracking-tight">{cycle.label} · {activeLabor?.name}</h1>
             <p className="text-xs text-[var(--color-muted)]">
-              {faena?.name || "—"}
-              {subfaena && ` · ${subfaena.name}`}
+              {job?.name || "—"}
+              {subjob && ` · ${subjob.name}`}
               {` · ${workers.length} trabajadores · ${days.length} días`}
             </p>
           </div>
@@ -3036,8 +3036,8 @@ export default function CycleDetail() {
     addPriceBusy,
     addPriceModal,
     addSelectedDays,
-    applyPisoToAll,
-    askApplyPisoToAll,
+    applyFloorToAll,
+    askApplyFloorToAll,
     askRemoveLabor,
     balanceWithTransport,
     catalogs,
@@ -3051,7 +3051,7 @@ export default function CycleDetail() {
     confirmRemoveLabor,
     confirmRemoveWorker,
     confirmReopen,
-    cosechaView,
+    harvestView,
     cycle,
     cycleTrips,
     cycleWrite,
@@ -3066,8 +3066,8 @@ export default function CycleDetail() {
     doReopenCycle,
     editingDayNote,
     editingDayNoteText,
-    etapas,
-    faena,
+    activeStages,
+    job,
     floorMetricsByLabor,
     getPriceInputValue,
     goToDayNote,
@@ -3080,12 +3080,12 @@ export default function CycleDetail() {
     hasNextDayNote,
     hasPrevDayNote,
     inputKey,
-    isCosechaLabor,
+    isHarvestLabor,
     isNormalLabor,
     isQtyLabor,
-    isTratoEtapasLabor,
-    isTratoHELabor,
-    isTratoLabor,
+    isPieceworkStagesLabor,
+    isOvertimeDayLabor,
+    isPieceworkLabor,
     laborForm,
     laborGroups,
     localPriceInputs,
@@ -3101,17 +3101,17 @@ export default function CycleDetail() {
     overtimeDayMetricsByLabor,
     peopleByDate,
     persistComboConfig,
-    persistDayPiso,
+    persistDayFloor,
     persistNormalDayPrice,
     persistStagePrice,
     photoMode,
     pieceworkPeopleCountByLabor,
     pieceworkTierMetricsByLabor,
-    pisoBulk,
-    pisoBulkBusy,
-    pisoPendingByDate,
-    pisoRemove,
-    pisoRemoveBusy,
+    floorBulk,
+    floorBulkBusy,
+    floorPendingByDate,
+    floorRemove,
+    floorRemoveBusy,
     prevCycle,
     pricesCollapsed,
     qrLockedLabors,
@@ -3120,7 +3120,7 @@ export default function CycleDetail() {
     removeCombo,
     removeComboFromDay,
     removeDay,
-    removeDayPiso,
+    removeDayFloor,
     removeLabor,
     removeWorker,
     saveDayNote,
@@ -3135,7 +3135,7 @@ export default function CycleDetail() {
     setCloseFlow,
     setConfirmRemoveDay,
     setConfirmReopen,
-    setCosechaView,
+    setHarvestView,
     setDayModeEdit,
     setDayPrices,
     setDefaultLeadersOpen,
@@ -3147,8 +3147,8 @@ export default function CycleDetail() {
     setMonthlyConfirm,
     setOnlyWithProduction,
     setPickerOpen,
-    setPisoBulk,
-    setPisoRemove,
+    setFloorBulk,
+    setFloorRemove,
     setPricesCollapsed,
     setRemoveCombo,
     setRemoveLabor,
@@ -3157,11 +3157,11 @@ export default function CycleDetail() {
     setSummaryOpen,
     setToolbarCollapsed,
     setTransportsOpen,
-    setTratoHEView,
-    setTratoView,
+    setOvertimeDayView,
+    setPieceworkView,
     setViewMonth,
     stagesDaySummary,
-    subfaena,
+    subjob,
     submitLabor,
     toggleSelectedDay,
     toolbarCollapsed,
@@ -3170,9 +3170,9 @@ export default function CycleDetail() {
     totalQtyByLabor,
     totalsByLabor,
     transportTotal,
-    tratoHEView,
-    tratoView,
-    useGrouped,
+    overtimeDayView,
+    pieceworkView,
+    isGroupedView,
     viewMonth,
     wdMap,
     workers,
@@ -3369,12 +3369,12 @@ export default function CycleDetail() {
           addComboToDay={addComboToDay}
           removeComboFromDay={removeComboFromDay}
           persistStagePrice={persistStagePrice}
-          persistDayPiso={persistDayPiso}
+          persistDayFloor={persistDayFloor}
           persistNormalDayPrice={persistNormalDayPrice}
           persistTratoHEDay={persistTratoHEDay}
           toggleMonthly={toggleMonthly}
           onRemoveWorker={removeWorkerByRut}
-          useGrouped={useGrouped}
+          isGroupedView={isGroupedView}
           currentLeader={editingCycleWorkerRut ? rutToLeader.get(editingCycleWorkerRut) || null : null}
           enabledLeaders={enabledLeaders}
           leaderBusy={groupBusy}
@@ -3422,8 +3422,8 @@ export default function CycleDetail() {
             await reloadTransports();
           }}
           cycle={cycle}
-          faena={faena}
-          subfaena={subfaena}
+          faena={job}
+          subfaena={subjob}
           days={days}
           readOnly={readOnly}
         />
@@ -3435,8 +3435,8 @@ export default function CycleDetail() {
           workdaysByLabor={workdaysByLabor}
           dayPrices={dayPrices}
           catalogs={catalogs}
-          faena={faena}
-          subfaena={subfaena}
+          faena={job}
+          subfaena={subjob}
         />
 
         <WorkerEditModal

@@ -11,28 +11,28 @@ export function LaborToolbar() {
     activeLabor,
     askRemoveLabor,
     catalogs,
-    cosechaView,
+    harvestView,
     cycle,
     days,
     defaultMode,
-    etapas,
+    activeStages,
     gridVisible,
-    isCosechaLabor,
+    isHarvestLabor,
     isQtyLabor,
-    isTratoEtapasLabor,
-    isTratoHELabor,
-    isTratoLabor,
+    isPieceworkStagesLabor,
+    isOvertimeDayLabor,
+    isPieceworkLabor,
     openEditLabor,
     readOnly,
     removeDay,
     setAddDayOpen,
-    setCosechaView,
+    setHarvestView,
     setDefaultLeadersOpen,
     setPickerOpen,
-    setTratoHEView,
-    setTratoView,
-    tratoHEView,
-    tratoView,
+    setOvertimeDayView,
+    setPieceworkView,
+    overtimeDayView,
+    pieceworkView,
     workers,
   } = useCycleDetail();
   return (
@@ -45,36 +45,36 @@ export function LaborToolbar() {
               Tip: usa <code className="rounded bg-[var(--color-surface-2)] px-1">=350*54</code> para fórmulas.
             </span>
           )}
-          {isCosechaLabor && (
+          {isHarvestLabor && (
             <span className="ml-3 text-[var(--color-muted)]/70">
               Cosecha · por defecto {defaultMode === "flat" ? "día fijo" : "por unidad"} · agrega tipos por día abajo
             </span>
           )}
-          {isTratoLabor && (
+          {isPieceworkLabor && (
             <span className="ml-3 text-[var(--color-muted)]/70">
               Trato · {tratoTypeLabel(catalogs, activeLabor.tratoType ?? 0)} · ingresa cantidad y precio del día
             </span>
           )}
-          {isTratoEtapasLabor && (
+          {isPieceworkStagesLabor && (
             <span className="ml-3 text-[var(--color-muted)]/70">
-              Por etapas · {etapas.map((s) => `${s.name}${s.counts ? " ✓" : ""}`).join(" · ")} · ✓ = cuenta unidades
+              Por etapas · {activeStages.map((s) => `${s.name}${s.counts ? " ✓" : ""}`).join(" · ")} · ✓ = cuenta unidades
             </span>
           )}
-          {isTratoHELabor && (
+          {isOvertimeDayLabor && (
             <span className="ml-3 text-[var(--color-muted)]/70">
               Trato + HE · base ${(activeLabor.baseDayDefault ?? DEFAULT_BASE_DAY).toLocaleString("es-CL")} · HE ${(activeLabor.overtimeRate ?? DEFAULT_OVERTIME_RATE).toLocaleString("es-CL")}/h · bonos M ${(activeLabor.bonusManejo ?? DEFAULT_BONUS_MANEJO).toLocaleString("es-CL")} / S ${(activeLabor.bonusSupervision ?? DEFAULT_BONUS_SUPERVISION).toLocaleString("es-CL")}
             </span>
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          {isTratoHELabor && (
+          {isOvertimeDayLabor && (
             <>
               {gridVisible && (
                 <div className="flex rounded-md overflow-hidden border border-[var(--color-border)] text-xs">
                   <button
-                    onClick={() => setTratoHEView("detalle")}
+                    onClick={() => setOvertimeDayView("detalle")}
                     className={`px-3 py-1.5 transition-colors ${
-                      tratoHEView === "detalle"
+                      overtimeDayView === "detalle"
                         ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
                         : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
                     }`}
@@ -82,9 +82,9 @@ export function LaborToolbar() {
                     Detalle
                   </button>
                   <button
-                    onClick={() => setTratoHEView("resumen")}
+                    onClick={() => setOvertimeDayView("resumen")}
                     className={`px-3 py-1.5 transition-colors ${
-                      tratoHEView === "resumen"
+                      overtimeDayView === "resumen"
                         ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
                         : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
                     }`}
@@ -98,12 +98,12 @@ export function LaborToolbar() {
               </button>
             </>
           )}
-          {isCosechaLabor && gridVisible && (
+          {isHarvestLabor && gridVisible && (
             <div className="flex rounded-md overflow-hidden border border-[var(--color-border)] text-xs">
               <button
-                onClick={() => setCosechaView("detalle")}
+                onClick={() => setHarvestView("detalle")}
                 className={`px-3 py-1.5 transition-colors ${
-                  cosechaView === "detalle"
+                  harvestView === "detalle"
                     ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
                     : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
                 }`}
@@ -111,9 +111,9 @@ export function LaborToolbar() {
                 Detalle
               </button>
               <button
-                onClick={() => setCosechaView("resumen")}
+                onClick={() => setHarvestView("resumen")}
                 className={`px-3 py-1.5 transition-colors ${
-                  cosechaView === "resumen"
+                  harvestView === "resumen"
                     ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
                     : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
                 }`}
@@ -122,12 +122,12 @@ export function LaborToolbar() {
               </button>
             </div>
           )}
-          {isTratoLabor && gridVisible && (
+          {isPieceworkLabor && gridVisible && (
             <div className="flex rounded-md overflow-hidden border border-[var(--color-border)] text-xs">
               <button
-                onClick={() => setTratoView("detalle")}
+                onClick={() => setPieceworkView("detalle")}
                 className={`px-3 py-1.5 transition-colors ${
-                  tratoView === "detalle"
+                  pieceworkView === "detalle"
                     ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
                     : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
                 }`}
@@ -135,9 +135,9 @@ export function LaborToolbar() {
                 Detalle
               </button>
               <button
-                onClick={() => setTratoView("resumen")}
+                onClick={() => setPieceworkView("resumen")}
                 className={`px-3 py-1.5 transition-colors ${
-                  tratoView === "resumen"
+                  pieceworkView === "resumen"
                     ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
                     : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
                 }`}

@@ -68,12 +68,12 @@ export default function CycleWorkerEditModal({
   addComboToDay,
   removeComboFromDay,
   persistStagePrice,
-  persistDayPiso,
+  persistDayFloor,
   persistNormalDayPrice,
   persistTratoHEDay,
   toggleMonthly,
   onRemoveWorker,
-  useGrouped,
+  isGroupedView,
   currentLeader,
   enabledLeaders,
   leaderBusy,
@@ -206,7 +206,7 @@ export default function CycleWorkerEditModal({
           {row._monthly ? "✓ Mensual" : "Marcar mensual"}
         </button>
       )}
-      {useGrouped && !isTemp && (
+      {isGroupedView && !isTemp && (
         currentLeader ? (
           <button
             type="button"
@@ -948,7 +948,7 @@ export default function CycleWorkerEditModal({
           addComboToDay={addComboToDay}
           removeComboFromDay={removeComboFromDay}
           persistStagePrice={persistStagePrice}
-          persistDayPiso={persistDayPiso}
+          persistDayFloor={persistDayFloor}
           persistNormalDayPrice={persistNormalDayPrice}
           persistTratoHEDay={persistTratoHEDay}
           onBack={() => setConfiguringDate(null)}

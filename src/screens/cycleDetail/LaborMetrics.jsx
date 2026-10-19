@@ -44,20 +44,20 @@ export function LaborMetrics() {
           const isCo = l.type === "cosecha";
           const isTr = l.type === "trato";
           const isEt = l.type === "tratoEtapas";
-          const isHE = l.type === "tratoHE";
+          const isOvertimeDay = l.type === "tratoHE";
           const totalAmt = totalsByLabor[l.id] || 0;
           const qtyByContainer = totalQtyByContainerByLabor[l.id] || {};
           const totalQty = totalQtyByLabor[l.id] || 0;
-          const heMetrics = overtimeDayMetricsByLabor[l.id];
-          const pisoMetrics = floorMetricsByLabor[l.id] || { count: 0, amount: 0 };
-          const tag = isCo ? "cosecha" : isTr ? "trato" : isEt ? "por etapas" : isHE ? "jornadas+HE" : l.type === "main" ? "al día" : l.type;
+          const overtimeMetrics = overtimeDayMetricsByLabor[l.id];
+          const floorMetrics = floorMetricsByLabor[l.id] || { count: 0, amount: 0 };
+          const tag = isCo ? "cosecha" : isTr ? "trato" : isEt ? "por etapas" : isOvertimeDay ? "jornadas+HE" : l.type === "main" ? "al día" : l.type;
           const tagClass = isCo
             ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
             : isTr
               ? "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400"
               : isEt
                 ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
-                : isHE
+                : isOvertimeDay
                   ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
                   : "bg-[var(--color-surface-2)]";
           return (
@@ -130,26 +130,26 @@ export function LaborMetrics() {
                   <span className="ml-1 opacity-70">(etapas que cuentan)</span>
                 </div>
               )}
-              {(isCo || isTr) && pisoMetrics.count > 0 && (
+              {(isCo || isTr) && floorMetrics.count > 0 && (
                 <div className="mt-1 flex justify-between gap-2 text-[11px] tabular-nums">
                   <span className="text-[var(--color-muted)]">🪙 Pisos:</span>
                   <span>
-                    <span className="font-medium">{pisoMetrics.count}</span>
+                    <span className="font-medium">{floorMetrics.count}</span>
                     <span className="text-[var(--color-muted)]"> jorn. · </span>
-                    <span className="font-medium">{fmtCurrency(pisoMetrics.amount)}</span>
+                    <span className="font-medium">{fmtCurrency(floorMetrics.amount)}</span>
                   </span>
                 </div>
               )}
-              {isHE && heMetrics && (
+              {isOvertimeDay && overtimeMetrics && (
                 <div className="mt-1 space-y-0.5 text-[11px] tabular-nums">
                   <div className="flex justify-between gap-2">
                     <span className="text-[var(--color-muted)]">Base:</span>
                     <span>
-                      <span className="font-medium">{fmtCurrency(heMetrics.normalQty)}</span>
+                      <span className="font-medium">{fmtCurrency(overtimeMetrics.normalQty)}</span>
                       <span className="text-[var(--color-muted)]"> norm.</span>
-                      {heMetrics.holidayQty > 0 && (
+                      {overtimeMetrics.holidayQty > 0 && (
                         <span className="ml-1 text-[var(--color-danger)]">
-                          + {fmtCurrency(heMetrics.holidayQty)} fer.
+                          + {fmtCurrency(overtimeMetrics.holidayQty)} fer.
                         </span>
                       )}
                     </span>
@@ -157,19 +157,19 @@ export function LaborMetrics() {
                   <div className="flex justify-between gap-2">
                     <span className="text-[var(--color-muted)]">Horas extras:</span>
                     <span>
-                      <span className="font-medium">{heMetrics.normalOvertimeHours.toLocaleString("es-CL")}h</span>
+                      <span className="font-medium">{overtimeMetrics.normalOvertimeHours.toLocaleString("es-CL")}h</span>
                       <span className="text-[var(--color-muted)]"> norm.</span>
-                      {heMetrics.holidayOvertimeHours > 0 && (
+                      {overtimeMetrics.holidayOvertimeHours > 0 && (
                         <span className="ml-1 text-[var(--color-danger)]">
-                          + {heMetrics.holidayOvertimeHours.toLocaleString("es-CL")}h fer.
+                          + {overtimeMetrics.holidayOvertimeHours.toLocaleString("es-CL")}h fer.
                         </span>
                       )}
                     </span>
                   </div>
-                  {heMetrics.workersWithBonus > 0 && (
+                  {overtimeMetrics.workersWithBonus > 0 && (
                     <div className="flex justify-between gap-2 text-[var(--color-muted)]">
                       <span>Con bonos:</span>
-                      <span>{heMetrics.workersWithBonus} trab.</span>
+                      <span>{overtimeMetrics.workersWithBonus} trab.</span>
                     </div>
                   )}
                 </div>

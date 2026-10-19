@@ -8,8 +8,8 @@ export function PieceworkStagesPrices() {
     activeLabor,
     dayPrices,
     days,
-    etapas,
-    isTratoEtapasLabor,
+    activeStages,
+    isPieceworkStagesLabor,
     persistStagePrice,
     pricesCollapsed,
     readOnly,
@@ -18,7 +18,7 @@ export function PieceworkStagesPrices() {
   } = useCycleDetail();
   return (
     <>
-      {isTratoEtapasLabor && days.length > 0 && (
+      {isPieceworkStagesLabor && days.length > 0 && (
         <div className={`mb-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] ${pricesCollapsed ? "px-3 py-1.5" : "p-2"}`}>
           <button
             type="button"
@@ -36,7 +36,7 @@ export function PieceworkStagesPrices() {
             {days.map((d) => (
               <div key={d} className="flex flex-col gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1.5 text-xs min-w-[210px]">
                 <div className="font-medium text-[var(--color-muted)]">{d}</div>
-                {etapas.map((st) => {
+                {activeStages.map((st) => {
                   const { price, mode } = getStageDayPrice(dayPrices, activeLabor.id, d, st.id);
                   return (
                     <div

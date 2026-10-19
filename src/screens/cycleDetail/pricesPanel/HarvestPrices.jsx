@@ -8,7 +8,7 @@ export function HarvestPrices() {
   "use no memo";
   const {
     activeLabor,
-    askApplyPisoToAll,
+    askApplyFloorToAll,
     catalogs,
     dayCombosByDate,
     dayPrices,
@@ -16,10 +16,10 @@ export function HarvestPrices() {
     getPriceInputValue,
     handlePriceBlur,
     inputKey,
-    isCosechaLabor,
+    isHarvestLabor,
     persistComboConfig,
-    persistDayPiso,
-    pisoPendingByDate,
+    persistDayFloor,
+    floorPendingByDate,
     pricesCollapsed,
     readOnly,
     setAddComboFor,
@@ -32,7 +32,7 @@ export function HarvestPrices() {
   } = useCycleDetail();
   return (
     <>
-      {isCosechaLabor && days.length > 0 && (
+      {isHarvestLabor && days.length > 0 && (
         <div className={`mb-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] ${pricesCollapsed ? "px-3 py-1.5" : "p-2"}`}>
           <button
             type="button"
@@ -152,9 +152,9 @@ export function HarvestPrices() {
                     dayPrices={dayPrices}
                     date={d}
                     readOnly={readOnly}
-                    pendingCount={pisoPendingByDate[d] || 0}
-                    onApplyAll={() => askApplyPisoToAll(activeLabor.id, d)}
-                    onPersist={(v) => persistDayPiso(activeLabor.id, d, v)}
+                    pendingCount={floorPendingByDate[d] || 0}
+                    onApplyAll={() => askApplyFloorToAll(activeLabor.id, d)}
+                    onPersist={(v) => persistDayFloor(activeLabor.id, d, v)}
                   />
                 </div>
               );

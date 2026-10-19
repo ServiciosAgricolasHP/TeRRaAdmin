@@ -141,7 +141,7 @@ function AddComboInline({ catalogs, existingCombos, disabled, onAdd }) {
   );
 }
 
-function FloorConfig({ date, activeLabor, dayPrices, readOnly, fmtCurrency, persistDayPiso }) {
+function FloorConfig({ date, activeLabor, dayPrices, readOnly, fmtCurrency, persistDayFloor }) {
   const current = getDayPiso(dayPrices, activeLabor.id, date) || 0;
   return (
     <div className="rounded-lg border border-[var(--color-border)] p-3.5">
@@ -149,7 +149,7 @@ function FloorConfig({ date, activeLabor, dayPrices, readOnly, fmtCurrency, pers
         <span className="text-sm font-medium">🪙 Piso del día</span>
         {current > 0 && <span className="text-xs text-[var(--color-muted)]">{fmtCurrency(current)}</span>}
       </div>
-      <PriceInput value={current} disabled={readOnly} onCommit={(v) => persistDayPiso(activeLabor.id, date, v)} />
+      <PriceInput value={current} disabled={readOnly} onCommit={(v) => persistDayFloor(activeLabor.id, date, v)} />
     </div>
   );
 }
@@ -172,7 +172,7 @@ export default function DayConfigContent({
   addComboToDay,
   removeComboFromDay,
   persistStagePrice,
-  persistDayPiso,
+  persistDayFloor,
   persistNormalDayPrice,
   persistTratoHEDay,
   onBack,
@@ -210,7 +210,7 @@ export default function DayConfigContent({
           disabled={readOnly}
           onAdd={(x, y) => addComboToDay(laborId, date, x, y)}
         />
-        <FloorConfig date={date} activeLabor={activeLabor} dayPrices={dayPrices} readOnly={readOnly} fmtCurrency={fmtCurrency} persistDayPiso={persistDayPiso} />
+        <FloorConfig date={date} activeLabor={activeLabor} dayPrices={dayPrices} readOnly={readOnly} fmtCurrency={fmtCurrency} persistDayFloor={persistDayFloor} />
       </div>
     );
   }
@@ -257,7 +257,7 @@ export default function DayConfigContent({
             + Agregar precio
           </button>
         )}
-        <FloorConfig date={date} activeLabor={activeLabor} dayPrices={dayPrices} readOnly={readOnly} fmtCurrency={fmtCurrency} persistDayPiso={persistDayPiso} />
+        <FloorConfig date={date} activeLabor={activeLabor} dayPrices={dayPrices} readOnly={readOnly} fmtCurrency={fmtCurrency} persistDayFloor={persistDayFloor} />
       </div>
     );
   }

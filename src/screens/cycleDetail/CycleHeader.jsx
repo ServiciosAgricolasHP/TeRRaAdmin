@@ -9,12 +9,12 @@ export function CycleHeader() {
     activeLabor,
     cycle,
     days,
-    faena,
+    job,
     navigate,
     nextCycle,
     prevCycle,
     setToolbarCollapsed,
-    subfaena,
+    subjob,
     toolbarCollapsed,
     workers,
   } = useCycleDetail();
@@ -23,24 +23,24 @@ export function CycleHeader() {
       <div className="mb-2 flex items-center gap-2 text-sm text-[var(--color-muted)]">
         <Link to="/faenas" className="hover:text-[var(--color-accent)]">Faenas</Link>
         <span>/</span>
-        {faena ? (
+        {job ? (
           <Link
-            to={`/faenas?selected=${faena.id}`}
+            to={`/faenas?selected=${job.id}`}
             className="hover:text-[var(--color-accent)]"
           >
-            {faena.name}
+            {job.name}
           </Link>
         ) : (
           <span>—</span>
         )}
-        {subfaena && (
+        {subjob && (
           <>
             <span>/</span>
             <Link
-              to={`/faenas?selected=${faena?.id || ""}&sub=${subfaena.id}`}
+              to={`/faenas?selected=${job?.id || ""}&sub=${subjob.id}`}
               className="hover:text-[var(--color-accent)]"
             >
-              {subfaena.name}
+              {subjob.name}
             </Link>
           </>
         )}
