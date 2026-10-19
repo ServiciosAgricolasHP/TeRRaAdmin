@@ -12,14 +12,14 @@ export function useSummaryFlush({ charge, cycleId, grandTotalCharge, grandTotalP
   // `additive: true` actualiza la caché de `cycles` en vez de invalidarla, así
   // las demás pantallas no vuelven a leer la colección.
   const saveCycleTotals = () => {
-    const pay = Math.round(grandTotalPay);
-    const charge = Math.round(grandTotalCharge);
-    if (pay <= 0 && charge <= 0) return; // modal cerrado antes de cargar
+    const payAmount = Math.round(grandTotalPay);
+    const chargeAmount = Math.round(grandTotalCharge);
+    if (payAmount <= 0 && chargeAmount <= 0) return; // modal cerrado antes de cargar
     const prev = lastTotalsRef.current;
-    if (prev && prev.pagar === pay && prev.cobrar === charge) return;
-    lastTotalsRef.current = { pagar: pay, cobrar: charge };
+    if (prev && prev.pagar === payAmount && prev.cobrar === chargeAmount) return;
+    lastTotalsRef.current = { pagar: payAmount, cobrar: chargeAmount };
     cyclesService
-      .update(cycleId, { summaryTotals: { pagar: pay, cobrar: charge, at: new Date().toISOString() } }, { additive: true })
+      .update(cycleId, { summaryTotals: { pagar: payAmount, cobrar: chargeAmount, at: new Date().toISOString() } }, { additive: true })
       .catch((err) => {
         lastTotalsRef.current = prev;
         console.error("[resumen] totales del ciclo:", err);
