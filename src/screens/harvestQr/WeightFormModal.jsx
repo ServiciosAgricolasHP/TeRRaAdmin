@@ -462,7 +462,7 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
         </div>
 
         <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2 text-xs text-[var(--color-muted)]">
-          Esto escribe los pesajes crudos y recalcula las jornadas del ciclo, creando el día o el trabajador si hacía falta. Firmás como <strong>{displayName}</strong>.
+          Esto escribe los pesajes crudos y recalcula las jornadas del ciclo, creando el día o el trabajador si hacía falta. Firmas como <strong>{displayName}</strong>.
         </p>
       </form>
     </Modal>

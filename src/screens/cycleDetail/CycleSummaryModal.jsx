@@ -534,7 +534,7 @@ export default function CycleSummaryModal({
       <ConfirmDialog
         open={!!captureAsk}
         title="El resumen está en modo edición"
-        message={`Así como está, la imagen saldría con los cuadros de edición y la marca de agua "EDITANDO — NO ENVIAR".\n\n¿Bloqueás el resumen y seguimos con ${CAPTURE_LABELS[captureAsk]?.verb || "la copia"}?`}
+        message={`Así como está, la imagen saldría con los cuadros de edición y la marca de agua "EDITANDO — NO ENVIAR".\n\n¿Bloqueas el resumen y seguimos con ${CAPTURE_LABELS[captureAsk]?.verb || "la copia"}?`}
         confirmLabel={CAPTURE_LABELS[captureAsk]?.confirm || "Bloquear y continuar"}
         onConfirm={() => {
           setEditMode(false);
