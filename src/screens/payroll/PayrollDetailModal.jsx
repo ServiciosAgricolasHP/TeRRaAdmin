@@ -40,7 +40,6 @@ import {
   buildWorkdaysByGroup,
   computeLaborSummary,
 } from "./printCommon";
-import { printCashReceipts, printPaymentDetails } from "./printReceipts";
 import { printSummaryTable } from "./printSummaryTable";
 import { RecalcModal } from "./RecalcModal";
 import { WorkerDetailRow } from "./WorkerDetailRow";
@@ -51,6 +50,7 @@ import { useCycleTitles } from "./payrollDetailModal/useCycleTitles";
 import { usePayrollSnapshot } from "./payrollDetailModal/usePayrollSnapshot";
 import { useContentEdit } from "./payrollDetailModal/useContentEdit";
 import { usePayrollRecalc } from "./payrollDetailModal/usePayrollRecalc";
+import { usePayrollPrints } from "./payrollDetailModal/usePayrollPrints";
 
 export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPayrolls = [], onClose, onRedownload, onDownloadNominaOnly, onDownloadSnapshot, onPublishPortal = null, publishedPayrollId = null, onChanged }) {
   const { catalogs } = useCatalogs();
@@ -91,7 +91,6 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
     for (const g of cashGroups) set.add(`cash_${g.leader}`);
     return set;
   });
-  const [printingGroupLeader, setPrintingGroupLeader] = useState(null);
   const [workerSummaryFor, setWorkerSummaryFor] = useState(null);
 
   const toggleSection = (key) => setCollapsedSections((prev) => {
@@ -328,8 +327,6 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
   };
 
   const [showTitleEditor, setShowTitleEditor] = useState(false);
-  const [printing, setPrinting] = useState(false);
-  const [printingDetail, setPrintingDetail] = useState(false);
   const [showCashEstimation, setShowCashEstimation] = useState(false);
 
   const { snapshot, snapshotLoading } = usePayrollSnapshot({ payroll });
@@ -373,27 +370,25 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
 
   const { cycleTitleOverrides, displayCycleLabel, setCycleTitle } = useCycleTitles({ payroll });
 
-  const handlePrint = async () => {
-    setPrinting(true);
-    try {
-      await printCashReceipts(payroll, cashGroups, cycleTitleOverrides, catalogs, await getPayrollData(), rutOf);
-    } catch (err) {
-      toast.error(err?.message || "Error al imprimir");
-    } finally {
-      setPrinting(false);
-    }
-  };
-
-  const handlePrintDetail = async () => {
-    setPrintingDetail(true);
-    try {
-      await printPaymentDetails(payroll, allGroups, cycleTitleOverrides, detailSummaries, catalogs, subfaenaSummary, await getPayrollData(), rutOf);
-    } catch (err) {
-      toast.error(err?.message || "Error al imprimir");
-    } finally {
-      setPrintingDetail(false);
-    }
-  };
+  const {
+    handlePrint,
+    handlePrintDetail,
+    handlePrintGroupDetail,
+    printing,
+    printingDetail,
+    printingGroupLeader,
+  } = usePayrollPrints({
+    allGroups,
+    cashGroups,
+    catalogs,
+    cycleTitleOverrides,
+    detailSummaries,
+    getPayrollData,
+    payroll,
+    rutOf,
+    subfaenaSummary,
+    toast,
+  });
 
   // Lo que se imprime y lo que se descarga de la nómina, en dos menús al pie.
   const printItems = [
@@ -410,21 +405,6 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
     { divider: true },
     { icon: "{ }", label: "JSON", hint: "Toda la información para reconstruir la nómina.", onClick: () => onDownloadSnapshot(payroll) },
   ];
-
-  // Imprime el detalle de pago de un solo grupo (un líder). `key` distingue
-  // banco y efectivo del mismo líder en el estado de carga (ej. CHILENOS puede
-  // tener gente en los dos).
-  const handlePrintGroupDetail = async (group, key) => {
-    const loadingKey = key || group.leader;
-    setPrintingGroupLeader(loadingKey);
-    try {
-      await printPaymentDetails(payroll, [group], cycleTitleOverrides, [], catalogs, null, await getPayrollData(), rutOf);
-    } catch (err) {
-      toast.error(err?.message || "Error al imprimir grupo");
-    } finally {
-      setPrintingGroupLeader(null);
-    }
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-2 py-3 sm:px-4 sm:py-6" onClick={onClose}>
