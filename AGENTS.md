@@ -430,7 +430,7 @@ Implementación en `submitCycle` (`Jobs.jsx`). El mapeo `oldLaborId → newLabor
 
 - Pantalla: `src/screens/CycleDetail.jsx` (el componente de la ruta, con el estado de la grilla y las escrituras). Sus piezas, en `src/screens/cycleDetail/`:
   - **Secciones de la pantalla:** `CycleHeader` (migas y barra plegada), `CycleTitleBar`, `LaborMetrics`, `LaborTabs`, `LaborToolbar`, `GridToolbar` y `CycleConfirmDialogs`. Leen lo que necesitan de `CycleDetailContext`, que arma `CycleDetail`.
-  - **Carga y escrituras:** `useCycleLoader` (el ciclo, sus precios por día y sus jornadas), `useCycleWriteGuard` (el candado del ciclo cerrado), `useDayPrices` (los precios por día de cada tipo de labor y el recálculo de las jornadas que los usan) y `useFloorBonus` (el piso del día y sus bonos).
+  - **Carga y escrituras:** `useCycleLoader` (el ciclo, sus precios por día y sus jornadas), `useCycleWriteGuard` (el candado del ciclo cerrado), `useDayPrices` (los precios por día de cada tipo de labor y el recálculo de las jornadas que los usan), `useFloorBonus` (el piso del día y sus bonos) y `useCellEdits` (guardar cada celda, rellenar, pegar y deshacer).
   - **Hooks de la vista:** `useCollapsedSections` (la barra, las métricas y los precios plegados), `useSiblingCycles` (ciclo anterior y siguiente), `useLeaderGrouping` (la vista por grupo, el filtro "con producción" y los saltos a cada grupo) y `usePhotoExport` (las salidas del modo foto).
   - **Grilla:** `columns.jsx` (`buildColumnDefs`, las columnas según el tipo de labor), `FormulaCellEditor` (editor de las celdas numéricas), `DayHeader`, `GroupHeaderRowRenderer` y `rows.js` (filas por tipo de labor y `normalizeCycle`).
   - **Precios del día:** `PricesPanel`, con una barra por tipo de labor en `pricesPanel/` (`HarvestPrices`, `PieceworkPrices`, `PieceworkStagesPrices`, `OvertimeDayConfig` y `NormalDayPrices`); `FloorDayRow` (el piso del día), `AddComboModal`, `AddPriceModal` y `DayModeModal`.
@@ -438,7 +438,7 @@ Implementación en `submitCycle` (`Jobs.jsx`). El mapeo `oldLaborId → newLabor
   - **Trabajadores:** `CycleWorkerList` (la lista del teléfono), `CycleWorkerEditModal` (la ficha de una persona en el ciclo, con `cycleWorkerEditModal/DayConfigContent`) y `WorkerPickerModal` (agregar a alguien a la labor, con alta rápida).
   - **Resumen:** `CycleSummaryModal`, con sus piezas en `cycleSummaryModal/` (ver Resúmenes).
   - **El cálculo** de las métricas de cada labor y de lo que muestra cada día (combos, tiers, etapas, piso, huérfanos) vive en `utils/cycleMetrics.js`, con tests.
-- **Undo (Ctrl+Z)**: stack en memoria (`undoStackRef`), pushea cada edición de celda, revierte y re-graba en Firestore.
+- **Undo (Ctrl+Z)**: stack en memoria (`undoStackRef`, en `useCellEdits`), pushea cada edición de celda, revierte y re-graba en Firestore.
 - **Navegación tipo Excel**: `singleClickEdit: false`. Flechas mueven el foco entre celdas; **Enter** entra a editar; al confirmar, salta a la fila siguiente (`enterNavigatesVertically*: true`).
 - **Secciones colapsables** persistidas en `localStorage` para liberar espacio vertical: métricas (`cycleDetail.metricsCollapsed`), precios (`cycleDetail.pricesCollapsed`), sidebar global (`layout.sidebarOpen`).
 
