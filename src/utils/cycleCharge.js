@@ -107,13 +107,13 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
       // (amount/qty) → mediana del tier (trato) → tarifa sugerida de la
       // labor.
       const tierDefault = r.tierIdx != null ? tierRateMedians.get(r.tierIdx) : null;
-      const etapaRealRate = ld.labor.type === "tratoEtapas" && Number(r.qty) > 0
+      const stageRealRate = ld.labor.type === "tratoEtapas" && Number(r.qty) > 0
         ? (Number(r.amount) || 0) / Number(r.qty)
         : null;
       const baseRate = cfg.chargeRate != null
         ? Number(cfg.chargeRate)
-        : etapaRealRate != null
-          ? etapaRealRate
+        : stageRealRate != null
+          ? stageRealRate
           : (tierDefault != null && tierDefault > 0 ? tierDefault : rate);
       const rowRate = ov.rate != null && ov.rate !== "" ? Number(ov.rate) : baseRate;
       const computedAmount = computeAmount(qty, overtimeHours, rowRate);

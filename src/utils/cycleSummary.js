@@ -519,11 +519,11 @@ export function dayNotesSummaryOf(mode, laborsData, dayNotesByLabor, dayNotes, l
     const dates = new Set(Object.keys(own));
     for (const r of cl.rows || []) if (r.date) dates.add(r.date);
     for (const date of dates) {
-      const propia = String(own[date] || "").trim();
-      if (propia) bucket(date).entries.push({ laborId, name, text: propia });
+      const ownNote = String(own[date] || "").trim();
+      if (ownNote) bucket(date).entries.push({ laborId, name, text: ownNote });
       else {
-        const compartida = String(legacy[date] || "").trim();
-        if (compartida) bucket(date).shared = compartida;
+        const sharedNote = String(legacy[date] || "").trim();
+        if (sharedNote) bucket(date).shared = sharedNote;
       }
     }
   }
