@@ -35,8 +35,6 @@ import RowMenu from "../../components/RowMenu";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { currentRutResolver } from "../../utils/workerRut";
 import {
-  payrollLeadersOf,
-  filterPayrollItems,
   detailSummariesOf,
   subfaenaSummaryOf,
   cyclesPeriodOf,
@@ -62,6 +60,7 @@ import { printSummaryTable } from "./printSummaryTable";
 import { RecalcModal } from "./RecalcModal";
 import { WorkerDetailRow } from "./WorkerDetailRow";
 import { writePayrollSummaryXlsx } from "./payrollDetailModal/writePayrollSummaryXlsx";
+import { useDetailFilters } from "./payrollDetailModal/useDetailFilters";
 
 export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPayrolls = [], onClose, onRedownload, onDownloadNominaOnly, onDownloadSnapshot, onPublishPortal = null, publishedPayrollId = null, onChanged }) {
   const { catalogs } = useCatalogs();
@@ -73,11 +72,24 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
   const cashGroups = groupCashByLeader(cash);
   const allGroups = groupCashByLeader(items); // todos (banco y efectivo) agrupados por líder
 
-  // Filtros y estado de la UI del detalle.
-  const [search, setSearch] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("all"); // all | bank | cash
-  const [leaderFilter, setLeaderFilter] = useState(() => new Set());
-  const [cycleFilter, setCycleFilter] = useState(() => new Set());
+  const {
+    activeCycleFilter,
+    activeLeaderFilter,
+    allLeaders,
+    clearFilters,
+    filteredItems,
+    hasActiveFilter,
+    moreFilterCount,
+    paymentMethod,
+    search,
+    setCycleFilter,
+    setLeaderFilter,
+    setPaymentMethod,
+    setSearch,
+    setShowFilters,
+    showFilters,
+    toggleSetItem,
+  } = useDetailFilters({ items, payroll, rutOf });
   const [expandedRut, setExpandedRut] = useState(null);
   // Secciones colapsadas al abrir: los ciclos siempre (se despliegan solos al
   // editar el contenido) y, en una nómina pagada, cada grupo por líder (banco
@@ -91,8 +103,6 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
   });
   const [printingGroupLeader, setPrintingGroupLeader] = useState(null);
   const [workerSummaryFor, setWorkerSummaryFor] = useState(null);
-  // Panel de los filtros de Grupo y Ciclo.
-  const [showFilters, setShowFilters] = useState(false);
 
   const toggleSection = (key) => setCollapsedSections((prev) => {
     const next = new Set(prev);
@@ -101,29 +111,6 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
     return next;
   });
   const isCollapsed = (key) => collapsedSections.has(key);
-  const toggleSetItem = (setter, value) => setter((prev) => {
-    const next = new Set(prev);
-    if (next.has(value)) next.delete(value);
-    else next.add(value);
-    return next;
-  });
-
-  const allLeaders = useMemo(() => payrollLeadersOf(items), [items]);
-
-  // Filtros vigentes: se ignora el grupo o el ciclo que ya no está en la
-  // nómina (un ciclo que se sacó, un grupo cuyo último trabajador salió). Se
-  // descarta al leer y no al editar, así cubre sacar ciclos o labores, sacar un
-  // trabajador y recalcular.
-  const activeLeaderFilter = useMemo(() => {
-    const vigentes = new Set(allLeaders.map((g) => g.leader));
-    return new Set([...leaderFilter].filter((l) => vigentes.has(l)));
-  }, [leaderFilter, allLeaders]);
-  const activeCycleFilter = useMemo(() => {
-    const vigentes = new Set((payroll.cycleDetails || []).map((c) => c.id));
-    return new Set([...cycleFilter].filter((id) => vigentes.has(id)));
-  }, [cycleFilter, payroll.cycleDetails]);
-
-  const filteredItems = useMemo(() => filterPayrollItems(items, { search, paymentMethod, activeLeaderFilter, activeCycleFilter, rutOf }), [items, search, paymentMethod, activeLeaderFilter, activeCycleFilter]);
 
   const filteredSplit = useMemo(() => splitBankAndCash(filteredItems), [filteredItems]);
   const filteredBank = filteredSplit.bank;
@@ -206,15 +193,6 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
     }
     return out;
   }, [allPayrolls, payroll.id, isPaid]);
-
-  const hasActiveFilter = !!(search || paymentMethod !== "all" || activeLeaderFilter.size > 0 || activeCycleFilter.size > 0);
-  const moreFilterCount = activeLeaderFilter.size + activeCycleFilter.size;
-  const clearFilters = () => {
-    setSearch("");
-    setPaymentMethod("all");
-    setLeaderFilter(new Set());
-    setCycleFilter(new Set());
-  };
 
   const detailSummaries = detailSummariesOf(allGroups, payroll.cycleDetails);
 
