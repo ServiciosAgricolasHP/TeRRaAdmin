@@ -33,7 +33,6 @@ import {
   pisoTargets,
   comboLabel,
   containerLabel,
-  tratoTypeLabel,
   COSECHA_MODES,
 } from "../utils/cosechaCombos";
 import {
@@ -44,7 +43,6 @@ import {
   DEFAULT_BASE_DAY,
   calcTratoHEAmount,
   workdayHasData,
-  isWeekendDate,
 } from "../utils/tratoHE";
 import {
   normalizeStages,
@@ -115,6 +113,20 @@ import {
   newId,
 } from "./cycleDetail/rows";
 import { StagesEditor } from "./cycleDetail/StagesEditor";
+import { CycleDetailContext } from "./cycleDetail/CycleDetailContext";
+import { CycleHeader } from "./cycleDetail/CycleHeader";
+import { CycleTitleBar } from "./cycleDetail/CycleTitleBar";
+import { LaborMetrics } from "./cycleDetail/LaborMetrics";
+import { LaborTabs } from "./cycleDetail/LaborTabs";
+import { LaborToolbar } from "./cycleDetail/LaborToolbar";
+import { PricesPanel } from "./cycleDetail/PricesPanel";
+import { GridToolbar } from "./cycleDetail/GridToolbar";
+import { DayNoteModal } from "./cycleDetail/DayNoteModal";
+import { AddPriceModal } from "./cycleDetail/AddPriceModal";
+import { AddDaysModal } from "./cycleDetail/AddDaysModal";
+import { LaborFormModal } from "./cycleDetail/LaborFormModal";
+import { CycleConfirmDialogs } from "./cycleDetail/CycleConfirmDialogs";
+import { MonthlyConfirmModal } from "./cycleDetail/MonthlyConfirmModal";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -3016,1880 +3028,452 @@ export default function CycleDetail() {
     );
   }
 
+  // Lo que leen las secciones de la pantalla (ver CycleDetailContext).
+  const cycleDetailContext = {
+    LEADER_NONE,
+    activeLabor,
+    addDayOpen,
+    addPriceBusy,
+    addPriceModal,
+    addSelectedDays,
+    applyPisoToAll,
+    askApplyPisoToAll,
+    askRemoveLabor,
+    balanceWithTransport,
+    catalogs,
+    closeBusy,
+    closeDayNote,
+    closeFlow,
+    closed,
+    columnFilterActive,
+    confirmMonthly,
+    confirmRemoveDay,
+    confirmRemoveLabor,
+    confirmRemoveWorker,
+    confirmReopen,
+    cosechaView,
+    cycle,
+    cycleTrips,
+    cycleWrite,
+    dayCombosByDate,
+    dayNoteBusy,
+    dayNoteDirty,
+    dayPrices,
+    dayTiersByDate,
+    days,
+    defaultMode,
+    doRemoveDay,
+    doReopenCycle,
+    editingDayNote,
+    editingDayNoteText,
+    etapas,
+    faena,
+    floorMetricsByLabor,
+    getPriceInputValue,
+    goToDayNote,
+    grandTotal,
+    gridVisible,
+    groupView,
+    handleCloseCycle,
+    handlePriceBlur,
+    handleReopenCycle,
+    hasNextDayNote,
+    hasPrevDayNote,
+    inputKey,
+    isCosechaLabor,
+    isNormalLabor,
+    isQtyLabor,
+    isTratoEtapasLabor,
+    isTratoHELabor,
+    isTratoLabor,
+    laborForm,
+    laborGroups,
+    localPriceInputs,
+    metricsCollapsed,
+    monthlyBusy,
+    monthlyConfirm,
+    navigate,
+    nextCycle,
+    onlyWithProduction,
+    openCreateLabor,
+    openEditLabor,
+    orderedGroups,
+    overtimeDayMetricsByLabor,
+    peopleByDate,
+    persistComboConfig,
+    persistDayPiso,
+    persistNormalDayPrice,
+    persistStagePrice,
+    photoMode,
+    pieceworkPeopleCountByLabor,
+    pieceworkTierMetricsByLabor,
+    pisoBulk,
+    pisoBulkBusy,
+    pisoPendingByDate,
+    pisoRemove,
+    pisoRemoveBusy,
+    prevCycle,
+    pricesCollapsed,
+    qrLockedLabors,
+    readOnly,
+    removeBusy,
+    removeCombo,
+    removeComboFromDay,
+    removeDay,
+    removeDayPiso,
+    removeLabor,
+    removeWorker,
+    saveDayNote,
+    scrollToGroup,
+    selectedDays,
+    setActiveLaborId,
+    setAddComboFor,
+    setAddDayOpen,
+    setAddPriceBusy,
+    setAddPriceModal,
+    setCatalogsOpen,
+    setCloseFlow,
+    setConfirmRemoveDay,
+    setConfirmReopen,
+    setCosechaView,
+    setDayModeEdit,
+    setDayPrices,
+    setDefaultLeadersOpen,
+    setEditingDayNoteText,
+    setGroupView,
+    setLaborForm,
+    setLocalPriceInputs,
+    setMetricsCollapsed,
+    setMonthlyConfirm,
+    setOnlyWithProduction,
+    setPickerOpen,
+    setPisoBulk,
+    setPisoRemove,
+    setPricesCollapsed,
+    setRemoveCombo,
+    setRemoveLabor,
+    setRemoveWorker,
+    setSelectedDays,
+    setSummaryOpen,
+    setToolbarCollapsed,
+    setTransportsOpen,
+    setTratoHEView,
+    setTratoView,
+    setViewMonth,
+    stagesDaySummary,
+    subfaena,
+    submitLabor,
+    toggleSelectedDay,
+    toolbarCollapsed,
+    totalQtyByContainerByLabor,
+    totalQtyByDayCombo,
+    totalQtyByLabor,
+    totalsByLabor,
+    transportTotal,
+    tratoHEView,
+    tratoView,
+    useGrouped,
+    viewMonth,
+    wdMap,
+    workers,
+  };
+
   return (
-    <div className="flex h-full flex-col">
-      <div className="mb-2 flex items-center gap-2 text-sm text-[var(--color-muted)]">
-        <Link to="/faenas" className="hover:text-[var(--color-accent)]">Faenas</Link>
-        <span>/</span>
-        {faena ? (
-          <Link
-            to={`/faenas?selected=${faena.id}`}
-            className="hover:text-[var(--color-accent)]"
-          >
-            {faena.name}
-          </Link>
-        ) : (
-          <span>—</span>
-        )}
-        {subfaena && (
-          <>
-            <span>/</span>
-            <Link
-              to={`/faenas?selected=${faena?.id || ""}&sub=${subfaena.id}`}
-              className="hover:text-[var(--color-accent)]"
-            >
-              {subfaena.name}
-            </Link>
-          </>
-        )}
-        <span>/</span>
-        <span className="text-[var(--color-text)]">{cycle.label}</span>
-      </div>
+    <CycleDetailContext value={cycleDetailContext}>
+      <div className="flex h-full flex-col">
+        <CycleHeader />
 
-      {toolbarCollapsed && (
-        <div className="mb-2 flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setToolbarCollapsed(false)}
-            title="Mostrar controles del ciclo"
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-[var(--color-border)] text-xs text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
-          >
-            ▶
-          </button>
-          <button
-            type="button"
-            onClick={() => prevCycle && navigate(`/cycles/${prevCycle.id}`)}
-            disabled={!prevCycle}
-            title={prevCycle ? `Ciclo anterior: ${prevCycle.label}` : "No hay ciclo anterior"}
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-[var(--color-border)] text-xs text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:opacity-30 disabled:pointer-events-none"
-          >
-            ‹
-          </button>
-          <span className="text-lg font-semibold tracking-tight">{cycle.label}</span>
-          <button
-            type="button"
-            onClick={() => nextCycle && navigate(`/cycles/${nextCycle.id}`)}
-            disabled={!nextCycle}
-            title={nextCycle ? `Ciclo siguiente: ${nextCycle.label}` : "No hay ciclo siguiente"}
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-[var(--color-border)] text-xs text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:opacity-30 disabled:pointer-events-none"
-          >
-            ›
-          </button>
-          {activeLabor && (
-            <span className="ml-1 truncate text-xs text-[var(--color-muted)]">
-              {activeLabor.name} · {workers.length} trab. · {days.length} días
-            </span>
-          )}
-        </div>
-      )}
-
-      {!toolbarCollapsed && (
-      <>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setToolbarCollapsed(true)}
-              title="Ocultar controles del ciclo (más espacio para la grilla)"
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-[var(--color-border)] text-xs text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
-            >
-              ▼
-            </button>
-            <button
-              type="button"
-              onClick={() => prevCycle && navigate(`/cycles/${prevCycle.id}`)}
-              disabled={!prevCycle}
-              title={prevCycle ? `Ciclo anterior: ${prevCycle.label}` : "No hay ciclo anterior"}
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-[var(--color-border)] text-xs text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:opacity-30 disabled:pointer-events-none"
-            >
-              ‹
-            </button>
-            <h1 className="text-2xl font-semibold tracking-tight">{cycle.label}</h1>
-            <button
-              type="button"
-              onClick={() => nextCycle && navigate(`/cycles/${nextCycle.id}`)}
-              disabled={!nextCycle}
-              title={nextCycle ? `Ciclo siguiente: ${nextCycle.label}` : "No hay ciclo siguiente"}
-              className="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-[var(--color-border)] text-xs text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:opacity-30 disabled:pointer-events-none"
-            >
-              ›
-            </button>
-          </div>
-          <p className="text-sm text-[var(--color-muted)]">
-            {cycle.labors.length} labor{cycle.labors.length === 1 ? "" : "es"} · {days.length} días
-            {closed && " · 🔒 ciclo cerrado (solo lectura)"}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button onClick={() => setCatalogsOpen(true)} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]">
-            ⚙ Catálogos
-          </button>
-          <button onClick={() => setTransportsOpen(true)} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]">
-            🚐 Transportes
-          </button>
-          <button onClick={() => setSummaryOpen(true)} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]">
-            📊 Resumen ciclo
-          </button>
-          {!closed && (
-            <button onClick={() => setCloseFlow(true)} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]">
-              Cerrar ciclo
-            </button>
-          )}
-          {closed && (
-            <button onClick={handleReopenCycle} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]">
-              Reabrir ciclo
-            </button>
-          )}
-          <span
-            className="hidden sm:inline-flex items-center gap-1 rounded-md border border-dashed border-[var(--color-border)] px-2 py-1 text-[10px] text-[var(--color-muted)]"
-            title={
-              "Atajos en el grid:\n" +
-              "  Esc → salir de edición\n" +
-              "  Shift+Click en filas → seleccionar rango\n" +
-              "  Ctrl+D → copiar valor de la celda focuseada a las filas seleccionadas\n" +
-              "  Ctrl+V → pegar columna desde portapapeles (una línea por fila)\n" +
-              "  Ctrl+Z → deshacer último cambio (Ctrl+D y Ctrl+V se deshacen como uno)"
-            }
-          >
-            ⌨ Atajos
-          </span>
-        </div>
-      </div>
-
-      {/* Métricas */}
-      <button
-        type="button"
-        onClick={() => setMetricsCollapsed((v) => !v)}
-        className="mb-1 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wider text-[var(--color-muted)] hover:text-[var(--color-accent)]"
-        title={metricsCollapsed ? "Mostrar métricas" : "Ocultar métricas"}
-      >
-        <span>{metricsCollapsed ? "▶" : "▼"}</span>
-        <span>Métricas</span>
-      </button>
-      {!metricsCollapsed && (
-      <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        {cycle.labors.map((l) => {
-          const isCo = l.type === "cosecha";
-          const isTr = l.type === "trato";
-          const isEt = l.type === "tratoEtapas";
-          const isHE = l.type === "tratoHE";
-          const totalAmt = totalsByLabor[l.id] || 0;
-          const qtyByContainer = totalQtyByContainerByLabor[l.id] || {};
-          const totalQty = totalQtyByLabor[l.id] || 0;
-          const heMetrics = overtimeDayMetricsByLabor[l.id];
-          const pisoMetrics = floorMetricsByLabor[l.id] || { count: 0, amount: 0 };
-          const tag = isCo ? "cosecha" : isTr ? "trato" : isEt ? "por etapas" : isHE ? "jornadas+HE" : l.type === "main" ? "al día" : l.type;
-          const tagClass = isCo
-            ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-            : isTr
-              ? "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400"
-              : isEt
-                ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400"
-                : isHE
-                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                  : "bg-[var(--color-surface-2)]";
-          return (
-            <button
-              type="button"
-              key={l.id}
-              onClick={() => setActiveLaborId(l.id)}
-              className={`rounded-lg border bg-[var(--color-surface)] p-3 shadow-sm text-left transition-all hover:border-[var(--color-accent)] hover:shadow-md ${
-                l.id === activeLabor?.id ? "border-[var(--color-accent)] ring-2 ring-[var(--color-accent-soft)]" : "border-[var(--color-border)]"
-              }`}
-            >
-              <div className="flex items-center justify-between text-xs text-[var(--color-muted)]">
-                <span>{l.name}</span>
-                <span className="flex items-center gap-1">
-                  {qrLockedLabors.has(l.id) && (
-                    <span
-                      title={`Cosecha sincronizada desde los pesajes QR del prefijo ${qrLockedLabors.get(l.id).id}`}
-                      className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"
-                    >
-                      📱 {qrLockedLabors.get(l.id).id}
-                    </span>
-                  )}
-                  <span className={`rounded px-1.5 py-0.5 text-[10px] ${tagClass}`}>{tag}</span>
-                </span>
-              </div>
-              <div className="mt-1 text-lg font-semibold tabular-nums">{fmtCurrency(totalAmt)}</div>
-              {isCo && Object.keys(qtyByContainer).length > 0 && (
-                <div className="mt-0.5 text-[11px] text-[var(--color-muted)] tabular-nums">
-                  {Object.entries(qtyByContainer)
-                    .filter(([, qty]) => qty > 0)
-                    .map(([y, qty]) => `${qty.toLocaleString("es-CL")} ${containerLabel(catalogs, Number(y))}`)
-                    .join(" · ")}
-                </div>
-              )}
-              {isTr && (
-                <div className="mt-1 space-y-0.5 text-[11px] tabular-nums">
-                  <div className="text-[var(--color-muted)]">
-                    {tratoTypeLabel(catalogs, l.tratoType ?? 0)} · {totalQty.toLocaleString("es-CL")} unid.
-                  </div>
-                  {(() => {
-                    const n = pieceworkPeopleCountByLabor[l.id] || 0;
-                    if (n === 0) return null;
-                    const avg = totalQty / n;
-                    return (
-                      <div className="text-[var(--color-muted)]">
-                        {n} persona{n === 1 ? "" : "s"} · prom{" "}
-                        {avg.toLocaleString("es-CL", { maximumFractionDigits: 1 })}/persona
-                      </div>
-                    );
-                  })()}
-                  {pieceworkTierMetricsByLabor[l.id] && Object.keys(pieceworkTierMetricsByLabor[l.id]).length > 1 && (
-                    <div className="mt-0.5 space-y-0">
-                      {Object.entries(pieceworkTierMetricsByLabor[l.id])
-                        .sort(([a], [b]) => Number(a) - Number(b))
-                        .map(([idx, tm]) => (
-                          <div key={idx} className="flex justify-between gap-2 text-[var(--color-muted)]">
-                            <span>Precio {Number(idx) + 1}:</span>
-                            <span>
-                              {tm.qty.toLocaleString("es-CL")} unid. · {fmtCurrency(tm.amount)}
-                            </span>
-                          </div>
-                        ))}
-                    </div>
-                  )}
-                </div>
-              )}
-              {isEt && (
-                <div className="mt-1 text-[11px] tabular-nums text-[var(--color-muted)]">
-                  {totalQty.toLocaleString("es-CL")} unid. producidas
-                  <span className="ml-1 opacity-70">(etapas que cuentan)</span>
-                </div>
-              )}
-              {(isCo || isTr) && pisoMetrics.count > 0 && (
-                <div className="mt-1 flex justify-between gap-2 text-[11px] tabular-nums">
-                  <span className="text-[var(--color-muted)]">🪙 Pisos:</span>
-                  <span>
-                    <span className="font-medium">{pisoMetrics.count}</span>
-                    <span className="text-[var(--color-muted)]"> jorn. · </span>
-                    <span className="font-medium">{fmtCurrency(pisoMetrics.amount)}</span>
-                  </span>
-                </div>
-              )}
-              {isHE && heMetrics && (
-                <div className="mt-1 space-y-0.5 text-[11px] tabular-nums">
-                  <div className="flex justify-between gap-2">
-                    <span className="text-[var(--color-muted)]">Base:</span>
-                    <span>
-                      <span className="font-medium">{fmtCurrency(heMetrics.normalQty)}</span>
-                      <span className="text-[var(--color-muted)]"> norm.</span>
-                      {heMetrics.holidayQty > 0 && (
-                        <span className="ml-1 text-[var(--color-danger)]">
-                          + {fmtCurrency(heMetrics.holidayQty)} fer.
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                  <div className="flex justify-between gap-2">
-                    <span className="text-[var(--color-muted)]">Horas extras:</span>
-                    <span>
-                      <span className="font-medium">{heMetrics.normalOvertimeHours.toLocaleString("es-CL")}h</span>
-                      <span className="text-[var(--color-muted)]"> norm.</span>
-                      {heMetrics.holidayOvertimeHours > 0 && (
-                        <span className="ml-1 text-[var(--color-danger)]">
-                          + {heMetrics.holidayOvertimeHours.toLocaleString("es-CL")}h fer.
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                  {heMetrics.workersWithBonus > 0 && (
-                    <div className="flex justify-between gap-2 text-[var(--color-muted)]">
-                      <span>Con bonos:</span>
-                      <span>{heMetrics.workersWithBonus} trab.</span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </button>
-          );
-        })}
-        <div className="rounded-lg border border-[var(--color-accent)] bg-[var(--color-accent-soft)] p-3 shadow-sm">
-          <div className="text-xs font-medium uppercase tracking-wider text-[var(--color-accent)]">Total ciclo</div>
-          <div className="mt-1 text-lg font-bold tabular-nums text-[var(--color-accent)]">{fmtCurrency(grandTotal)}</div>
-          <div className="mt-0.5 text-[10px] text-[var(--color-muted)]">Suma de labores</div>
-        </div>
-        {(transportTotal > 0 || cycleTrips.length > 0) && (
-          <button
-            type="button"
-            onClick={() => setTransportsOpen(true)}
-            className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 shadow-sm text-left transition-all hover:border-[var(--color-accent)] hover:shadow-md"
-          >
-            <div className="flex items-center justify-between text-xs text-[var(--color-muted)]">
-              <span>Transporte</span>
-              <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-700 dark:bg-violet-900/30 dark:text-violet-400">🚐 transp.</span>
-            </div>
-            <div className="mt-1 text-lg font-semibold tabular-nums">{fmtCurrency(transportTotal)}</div>
-            <div className="mt-0.5 text-[11px] text-[var(--color-muted)] tabular-nums">
-              {cycleTrips.length} vuelta{cycleTrips.length === 1 ? "" : "s"}
-            </div>
-          </button>
-        )}
-        {(transportTotal > 0 || cycleTrips.length > 0) && (
-          <div className="rounded-lg border border-[var(--color-success)] bg-[var(--color-success-soft)] p-3 shadow-sm">
-            <div className="text-xs font-medium uppercase tracking-wider text-[var(--color-success)]">Balance con transporte</div>
-            <div className="mt-1 text-lg font-bold tabular-nums text-[var(--color-success)]">{fmtCurrency(balanceWithTransport)}</div>
-            <div className="mt-0.5 text-[10px] text-[var(--color-muted)]">Total ciclo + transporte</div>
-          </div>
-        )}
-      </div>
-      )}
-
-      {/* Pestañas de labor */}
-      <div className="mb-2 flex flex-wrap items-center gap-1 border-b border-[var(--color-border)]">
-        {cycle.labors.map((l) => {
-          const isActive = l.id === activeLabor?.id;
-          const isCo = l.type === "cosecha";
-          const isTr = l.type === "trato";
-          const isHE = l.type === "tratoHE";
-          const tagClass = isCo
-            ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-            : isTr
-              ? "bg-sky-100 text-sky-700 dark:bg-sky-900/30 dark:text-sky-400"
-              : isHE
-                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                : "bg-[var(--color-surface-2)] text-[var(--color-muted)]";
-          const tagIcon = isCo ? "🌾" : isTr ? "🛠" : isHE ? "⏱" : l.type === "main" ? "al día" : l.type;
-          return (
-            <button
-              key={l.id}
-              onClick={() => setActiveLaborId(l.id)}
-              className={`relative px-4 py-1.5 text-sm transition-colors ${
-                isActive ? "font-medium text-[var(--color-accent)]" : "text-[var(--color-muted)] hover:text-[var(--color-text)]"
-              }`}
-            >
-              {l.name}
-              <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] ${tagClass}`}>{tagIcon}</span>
-              {qrLockedLabors.has(l.id) && (
-                <span
-                  title={`Cosecha sincronizada desde los pesajes QR del prefijo ${qrLockedLabors.get(l.id).id}`}
-                  className="ml-1 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] text-violet-700 dark:bg-violet-900/30 dark:text-violet-400"
-                >
-                  📱 {qrLockedLabors.get(l.id).id}
-                </span>
-              )}
-              {isActive && <span className="absolute inset-x-0 -bottom-px h-0.5 bg-[var(--color-accent)]" />}
-            </button>
-          );
-        })}
-        <button
-          onClick={openCreateLabor}
-          disabled={readOnly}
-          className="ml-2 rounded-md border border-dashed border-[var(--color-border)] px-3 py-1 text-xs text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:opacity-40"
-        >
-          + Labor
-        </button>
-      </div>
-      </>
-      )}
-
-      {activeLabor && (
+        {!toolbarCollapsed && (
         <>
-          {closed && (
-            <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-3 py-2 text-xs text-[var(--color-text)]">
-              <span className="font-semibold text-[var(--color-warning)]">🔒 Ciclo cerrado</span>
-              <span>
-                Está congelado: no se puede editar nada de la grilla, los precios ni las labores.
-                Para corregir algo hay que <strong>reabrirlo</strong> con el botón de arriba, y
-                volver a cerrarlo después.
-              </span>
-            </div>
-          )}
-          {/* Colores del tema (accent), no un violeta fijo: el accent cambia
-              con el tema (ver la nota de colores en AGENTS.md). */}
-          {qrLocked && (
-            <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-3 py-2 text-xs text-[var(--color-text)]">
-              <span className="font-semibold text-[var(--color-accent)]">📱 Cosecha sincronizada desde QR</span>
-              <span>
-                La producción de esta labor la escribe la app de escaneo del prefijo{" "}
-                <span className="font-mono font-semibold">{qrPrefixForActive.id}</span>
-                {qrPrefixForActive.label ? ` (${qrPrefixForActive.label})` : ""}, así que las celdas
-                no se editan a mano: la próxima sincronización las sobrescribe. El piso sí se puede cargar.
-              </span>
-              <Link
-                to="/admin/harvest-qr"
-                className="font-medium text-[var(--color-accent)] underline hover:no-underline"
-              >
-                Ir a Pesajes QR
-              </Link>
-            </div>
-          )}
-          {!toolbarCollapsed && (
-          <>
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <div className="text-xs text-[var(--color-muted)]">
-              {workers.length} trabajadores · {days.length} días
-              {!isQtyLabor && (
-                <span className="ml-3 text-[var(--color-muted)]/70">
-                  Tip: usa <code className="rounded bg-[var(--color-surface-2)] px-1">=350*54</code> para fórmulas.
-                </span>
-              )}
-              {isCosechaLabor && (
-                <span className="ml-3 text-[var(--color-muted)]/70">
-                  Cosecha · por defecto {defaultMode === "flat" ? "día fijo" : "por unidad"} · agrega tipos por día abajo
-                </span>
-              )}
-              {isTratoLabor && (
-                <span className="ml-3 text-[var(--color-muted)]/70">
-                  Trato · {tratoTypeLabel(catalogs, activeLabor.tratoType ?? 0)} · ingresa cantidad y precio del día
-                </span>
-              )}
-              {isTratoEtapasLabor && (
-                <span className="ml-3 text-[var(--color-muted)]/70">
-                  Por etapas · {etapas.map((s) => `${s.name}${s.counts ? " ✓" : ""}`).join(" · ")} · ✓ = cuenta unidades
-                </span>
-              )}
-              {isTratoHELabor && (
-                <span className="ml-3 text-[var(--color-muted)]/70">
-                  Trato + HE · base ${(activeLabor.baseDayDefault ?? DEFAULT_BASE_DAY).toLocaleString("es-CL")} · HE ${(activeLabor.overtimeRate ?? DEFAULT_OVERTIME_RATE).toLocaleString("es-CL")}/h · bonos M ${(activeLabor.bonusManejo ?? DEFAULT_BONUS_MANEJO).toLocaleString("es-CL")} / S ${(activeLabor.bonusSupervision ?? DEFAULT_BONUS_SUPERVISION).toLocaleString("es-CL")}
-                </span>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {isTratoHELabor && (
-                <>
-                  {gridVisible && (
-                    <div className="flex rounded-md overflow-hidden border border-[var(--color-border)] text-xs">
-                      <button
-                        onClick={() => setTratoHEView("detalle")}
-                        className={`px-3 py-1.5 transition-colors ${
-                          tratoHEView === "detalle"
-                            ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
-                            : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
-                        }`}
-                      >
-                        Detalle
-                      </button>
-                      <button
-                        onClick={() => setTratoHEView("resumen")}
-                        className={`px-3 py-1.5 transition-colors ${
-                          tratoHEView === "resumen"
-                            ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
-                            : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
-                        }`}
-                      >
-                        Resumen
-                      </button>
-                    </div>
-                  )}
-                  <button onClick={() => setDefaultLeadersOpen(true)} disabled={readOnly} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-40">
-                    ⚑ Líderes / Manejo
-                  </button>
-                </>
-              )}
-              {isCosechaLabor && gridVisible && (
-                <div className="flex rounded-md overflow-hidden border border-[var(--color-border)] text-xs">
-                  <button
-                    onClick={() => setCosechaView("detalle")}
-                    className={`px-3 py-1.5 transition-colors ${
-                      cosechaView === "detalle"
-                        ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
-                        : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
-                    }`}
-                  >
-                    Detalle
-                  </button>
-                  <button
-                    onClick={() => setCosechaView("resumen")}
-                    className={`px-3 py-1.5 transition-colors ${
-                      cosechaView === "resumen"
-                        ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
-                        : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
-                    }`}
-                  >
-                    Resumen
-                  </button>
-                </div>
-              )}
-              {isTratoLabor && gridVisible && (
-                <div className="flex rounded-md overflow-hidden border border-[var(--color-border)] text-xs">
-                  <button
-                    onClick={() => setTratoView("detalle")}
-                    className={`px-3 py-1.5 transition-colors ${
-                      tratoView === "detalle"
-                        ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
-                        : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
-                    }`}
-                  >
-                    Detalle
-                  </button>
-                  <button
-                    onClick={() => setTratoView("resumen")}
-                    className={`px-3 py-1.5 transition-colors ${
-                      tratoView === "resumen"
-                        ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
-                        : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
-                    }`}
-                  >
-                    Resumen
-                  </button>
-                </div>
-              )}
-              <button onClick={openEditLabor} disabled={readOnly} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-40">
-                Editar labor
-              </button>
-              <button onClick={askRemoveLabor} disabled={readOnly || cycle.labors.length === 1} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:opacity-40">
-                Quitar labor
-              </button>
-              <button onClick={() => setAddDayOpen(true)} disabled={readOnly} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50">
-                + Día
-              </button>
-              <button onClick={() => setPickerOpen(true)} disabled={readOnly} className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] shadow-sm hover:bg-[var(--color-accent-hover)] disabled:opacity-50">
-                + Trabajador
-              </button>
-            </div>
-          </div>
+        <CycleTitleBar />
 
-          {days.length > 0 && !readOnly && (
-            <div className="mb-2 flex flex-wrap gap-1">
-              {days.map((d) => (
-                <button
-                  key={d}
-                  onClick={() => removeDay(d)}
-                  className="rounded-full border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-0.5 text-xs text-[var(--color-muted)] hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
-                  title="Click para quitar el día (solo si ninguna labor tiene producción ni hay vueltas de transporte ese día)"
-                >
-                  {d} ✕
-                </button>
-              ))}
-            </div>
-          )}
+        <LaborMetrics />
 
-          {/* Barra de precios de cosecha */}
-          {isCosechaLabor && days.length > 0 && (
-            <div className={`mb-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] ${pricesCollapsed ? "px-3 py-1.5" : "p-2"}`}>
-              <button
-                type="button"
-                onClick={() => setPricesCollapsed((v) => !v)}
-                className="flex w-full items-center gap-2 text-left text-xs font-medium text-[var(--color-muted)] uppercase tracking-wider hover:text-[var(--color-accent)]"
-                title={pricesCollapsed ? "Mostrar precios" : "Ocultar precios"}
-              >
-                <span>{pricesCollapsed ? "▶" : "▼"}</span>
-                <span>🌾</span>
-                <span>Precios por día y tipo</span>
-                {readOnly && <span className="text-[var(--color-warning)]">solo lectura</span>}
-              </button>
-              {!pricesCollapsed && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {days.map((d) => {
-                  const combos = dayCombosByDate[d] || [];
-                  return (
-                    <div key={d} className="flex flex-col gap-1.5 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2 text-xs min-w-[200px]">
-                      <div className="font-medium text-[var(--color-text)]">{d}</div>
-                      {combos.map((c) => {
-                        const totalQty = totalQtyByDayCombo[d]?.[c.key] || 0;
-                        const workersWithQty = workers.filter(
-                          (w) => (wdMap[workdayMapKey(w.rut, d, c.key)]?.qty || 0) > 0,
-                        ).length;
-                        const totalAmt = c.mode === "flat" ? c.price * workersWithQty : totalQty * c.price;
-                        return (
-                          <div
-                            key={c.key}
-                            className={`flex flex-col gap-1 rounded-md border px-2 py-1.5 ${
-                              c.price > 0
-                                ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)]"
-                                : "border-[var(--color-border)] bg-[var(--color-surface)]"
-                            }`}
-                          >
-                            <div className="flex items-center justify-between gap-1">
-                              <span className="font-medium text-[var(--color-text)]">
-                                {comboLabel(catalogs, c.x, c.y)}
-                              </span>
-                              {!readOnly && (
-                                <button
-                                  onClick={() =>
-                                    setRemoveCombo({
-                                      laborId: activeLabor.id, date: d, comboKey: c.key,
-                                      label: comboLabel(catalogs, c.x, c.y),
-                                    })
-                                  }
-                                  className="text-[10px] text-[var(--color-muted)] hover:text-[var(--color-danger)]"
-                                  title="Quitar tipo"
-                                >
-                                  ✕
-                                </button>
-                              )}
-                            </div>
-                            <div className="text-[10px] text-[var(--color-muted)]">
-                              {totalQty.toLocaleString("es-CL")} {containerLabel(catalogs, c.y)}
-                            </div>
-                            <div className="flex rounded-md overflow-hidden border border-[var(--color-border)] text-[10px]">
-                              <button
-                                disabled={readOnly}
-                                onClick={() => persistComboConfig(activeLabor.id, d, c.key, { mode: "unit" }, false)}
-                                className={`flex-1 px-1 py-0.5 transition-colors ${
-                                  c.mode === "unit"
-                                    ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
-                                    : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
-                                } disabled:opacity-50`}
-                              >
-                                $/unidad
-                              </button>
-                              <button
-                                disabled={readOnly}
-                                onClick={() => persistComboConfig(activeLabor.id, d, c.key, { mode: "flat" }, false)}
-                                className={`flex-1 px-1 py-0.5 transition-colors ${
-                                  c.mode === "flat"
-                                    ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
-                                    : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
-                                } disabled:opacity-50`}
-                              >
-                                $/día
-                              </button>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <span className="text-[var(--color-muted)]">$</span>
-                              <input
-                                type="number" min="0" disabled={readOnly}
-                                value={getPriceInputValue(activeLabor.id, d, c.key)}
-                                onChange={(e) =>
-                                  setLocalPriceInputs((prev) => ({
-                                    ...prev,
-                                    [inputKey(activeLabor.id, d, c.key)]: e.target.value,
-                                  }))
-                                }
-                                onBlur={() => handlePriceBlur(activeLabor.id, d, c.key)}
-                                placeholder={c.mode === "flat" ? "tarifa/trab." : `precio/${containerLabel(catalogs, c.y)}`}
-                                className="w-full rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-0.5 text-right tabular-nums outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
-                              />
-                            </div>
-                            {totalAmt > 0 && (
-                              <div className="text-[var(--color-accent)] text-[10px] font-medium tabular-nums">
-                                = {fmtCurrency(totalAmt)}
-                                {c.mode === "flat" && workersWithQty > 0 && (
-                                  <span className="ml-1 font-normal text-[var(--color-muted)]">({workersWithQty} trab.)</span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                      <button
-                        onClick={() => setAddComboFor({ laborId: activeLabor.id, date: d })}
-                        disabled={readOnly}
-                        className="rounded-md border border-dashed border-[var(--color-border)] px-2 py-1 text-[10px] text-[var(--color-muted)] hover:border-[var(--color-accent)] hover:text-[var(--color-accent)] disabled:opacity-40"
-                      >
-                        + tipo
-                      </button>
-                      <FloorDayRow
-                        labor={activeLabor}
-                        dayPrices={dayPrices}
-                        date={d}
-                        readOnly={readOnly}
-                        pendingCount={pisoPendingByDate[d] || 0}
-                        onApplyAll={() => askApplyPisoToAll(activeLabor.id, d)}
-                        onPersist={(v) => persistDayPiso(activeLabor.id, d, v)}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-              )}
-            </div>
-          )}
-
-          {/* Barra de precios de tratoEtapas: precio por día de cada etapa (fijas de la labor) */}
-          {isTratoEtapasLabor && days.length > 0 && (
-            <div className={`mb-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] ${pricesCollapsed ? "px-3 py-1.5" : "p-2"}`}>
-              <button
-                type="button"
-                onClick={() => setPricesCollapsed((v) => !v)}
-                className="flex w-full items-center gap-2 text-left text-xs font-medium text-[var(--color-muted)] uppercase tracking-wider hover:text-[var(--color-accent)]"
-                title={pricesCollapsed ? "Mostrar precios" : "Ocultar precios"}
-              >
-                <span>{pricesCollapsed ? "▶" : "▼"}</span>
-                <span>🏕</span>
-                <span>Precios por día y etapa</span>
-                {readOnly && <span className="text-[var(--color-warning)]">solo lectura</span>}
-              </button>
-              {!pricesCollapsed && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {days.map((d) => (
-                  <div key={d} className="flex flex-col gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1.5 text-xs min-w-[210px]">
-                    <div className="font-medium text-[var(--color-muted)]">{d}</div>
-                    {etapas.map((st) => {
-                      const { price, mode } = getStageDayPrice(dayPrices, activeLabor.id, d, st.id);
-                      return (
-                        <div
-                          key={st.id}
-                          className={`flex flex-col gap-0.5 rounded-md border px-1.5 py-1 ${
-                            price > 0
-                              ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)]"
-                              : "border-[var(--color-border)] bg-[var(--color-surface)]"
-                          }`}
-                        >
-                          <span className="truncate font-medium text-[var(--color-text)]">
-                            {st.name}
-                            {st.counts && <span className="ml-1 text-[10px] text-[var(--color-accent)]" title="cuenta para el conteo de unidades">✓</span>}
-                          </span>
-                          <div className="flex items-center gap-1">
-                            <div className="flex shrink-0 rounded overflow-hidden border border-[var(--color-border)] text-[9px]">
-                              <button
-                                disabled={readOnly}
-                                onClick={() => persistStagePrice(activeLabor.id, d, st.id, { mode: "unit" })}
-                                title="Precio por unidad"
-                                className={`px-1 py-0.5 transition-colors ${mode === "unit" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium" : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"} disabled:opacity-50`}
-                              >
-                                u
-                              </button>
-                              <button
-                                disabled={readOnly}
-                                onClick={() => persistStagePrice(activeLabor.id, d, st.id, { mode: "flat" })}
-                                title="Precio fijo por día"
-                                className={`px-1 py-0.5 transition-colors ${mode === "flat" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium" : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"} disabled:opacity-50`}
-                              >
-                                d
-                              </button>
-                            </div>
-                            <div className="flex min-w-0 flex-1 items-center gap-0.5">
-                              <span className="text-[var(--color-muted)]">$</span>
-                              <input
-                                key={`${d}_${st.id}_${price}_${mode}`}
-                                type="number" min="0" disabled={readOnly}
-                                defaultValue={price > 0 ? price : ""}
-                                onBlur={(e) => {
-                                  const v = Number(e.target.value) || 0;
-                                  if (v !== price) persistStagePrice(activeLabor.id, d, st.id, { price: v });
-                                }}
-                                placeholder={mode === "flat" ? "día" : "unid"}
-                                className="w-full min-w-0 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-0.5 text-right tabular-nums outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {(() => {
-                      const s = stagesDaySummary[d];
-                      if (!s || (s.counted === 0 && s.people === 0)) return null;
-                      const avg = s.people > 0 ? s.counted / s.people : 0;
-                      return (
-                        <div
-                          className="flex items-center justify-between gap-1 rounded-md border border-[var(--color-accent)]/40 bg-[var(--color-accent-soft)] px-1.5 py-1 text-[10px] tabular-nums"
-                          title={`Producción del día: ${s.counted.toLocaleString("es-CL")} unid. que cuentan · ${s.people} persona${s.people === 1 ? "" : "s"} · promedio ${avg.toLocaleString("es-CL", { maximumFractionDigits: 1 })} por persona`}
-                        >
-                          <span className="font-semibold text-[var(--color-accent)]">{s.counted.toLocaleString("es-CL")} unid.</span>
-                          <span className="text-[var(--color-muted)]">{s.people} pers.</span>
-                          <span className="text-[var(--color-text)]">prom {avg.toLocaleString("es-CL", { maximumFractionDigits: 1 })}</span>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                ))}
-              </div>
-              )}
-            </div>
-          )}
-
-          {/* Barra de configuración por día de tratoHE */}
-          {isTratoHELabor && days.length > 0 && (
-            <div className={`mb-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] ${pricesCollapsed ? "px-3 py-1.5" : "p-2"}`}>
-              <button
-                type="button"
-                onClick={() => setPricesCollapsed((v) => !v)}
-                className="flex w-full items-center gap-2 text-left text-xs font-medium text-[var(--color-muted)] uppercase tracking-wider hover:text-[var(--color-accent)]"
-                title={pricesCollapsed ? "Mostrar precios" : "Ocultar precios"}
-              >
-                <span>{pricesCollapsed ? "▶" : "▼"}</span>
-                <span>🛠</span>
-                <span>Configuración por día</span>
-                {readOnly && <span className="text-[var(--color-warning)]">solo lectura</span>}
-              </button>
-              {!pricesCollapsed && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {days.map((d) => {
-                  const cfg = getDaySingle(dayPrices, activeLabor.id, d, "normal");
-                  const red = isRedDay(d, cfg);
-                  const isWeekend = isWeekendDate(d);
-                  return (
-                    <div
-                      key={d}
-                      className={`flex flex-col gap-1.5 rounded-lg border px-3 py-2 text-xs min-w-[200px] ${
-                        red ? "border-[var(--color-danger)] bg-[var(--color-danger-soft)]" : "border-[var(--color-border)] bg-[var(--color-surface-2)]"
-                      }`}
-                    >
-                      <button
-                        onClick={() => !readOnly && setDayModeEdit({ laborId: activeLabor.id, date: d })}
-                        disabled={readOnly}
-                        className="flex items-center justify-between gap-2 text-left disabled:opacity-60"
-                        title="Editar configuración del día"
-                      >
-                        <span className="font-medium text-[var(--color-text)]">
-                          {d}
-                          {cfg.isHoliday && <span className="ml-1">🎉</span>}
-                          {!cfg.isHoliday && isWeekend && <span className="ml-1 text-[var(--color-danger)]">·</span>}
-                        </span>
-                        <span className="text-[10px] text-[var(--color-muted)] hover:text-[var(--color-accent)]">editar</span>
-                      </button>
-                      <div className="text-[10px] text-[var(--color-muted)]">
-                        Base: ${(cfg.price || activeLabor.baseDayDefault || DEFAULT_BASE_DAY).toLocaleString("es-CL")}
-                      </div>
-                      <div className="text-[10px]">
-                        {cfg.mode === "overtimeOnly" ? (
-                          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">solo HE</span>
-                        ) : (
-                          <span className="text-[var(--color-muted)]">jornada normal</span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              )}
-            </div>
-          )}
-
-          {/* Barra de precios de trato */}
-          {isTratoLabor && days.length > 0 && (
-            <div className={`mb-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] ${pricesCollapsed ? "px-3 py-1.5" : "p-2"}`}>
-              <button
-                type="button"
-                onClick={() => setPricesCollapsed((v) => !v)}
-                className="flex w-full items-center gap-2 text-left text-xs font-medium text-[var(--color-muted)] uppercase tracking-wider hover:text-[var(--color-accent)]"
-                title={pricesCollapsed ? "Mostrar precios" : "Ocultar precios"}
-              >
-                <span>{pricesCollapsed ? "▶" : "▼"}</span>
-                <span>🛠</span>
-                <span>Precios por día · {tratoTypeLabel(catalogs, activeLabor.tratoType ?? 0)}</span>
-                {readOnly && <span className="text-[var(--color-warning)]">solo lectura</span>}
-              </button>
-              {!pricesCollapsed && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {days.map((d) => {
-                  const tiers = dayTiersByDate[d] || [];
-                  // Suma de qty y monto de cada tier en este día.
-                  const tierTotals = tiers.map((t) => {
-                    let q = 0, a = 0;
-                    for (const w of workers) {
-                      const wd = wdMap[workdayMapKey(w.rut, d, t.key)];
-                      q += Number(wd?.qty) || 0;
-                      a += Number(wd?.amount) || 0;
-                    }
-                    return { qty: q, amount: a };
-                  });
-                  const totalQty = tierTotals.reduce((s, x) => s + x.qty, 0);
-                  const totalAmt = tierTotals.reduce((s, x) => s + x.amount, 0);
-                  // El desglose por tier se muestra con 2 o más tiers con
-                  // producción; con uno basta la línea "= $X".
-                  const tiersWithQty = tierTotals.filter((x) => x.qty > 0).length;
-                  // Personas con producción ese día (algún tier con qty > 0),
-                  // para el "N pers · prom X".
-                  const peopleCount = workers.reduce((acc, w) => {
-                    const hasProd = tiers.some(
-                      (t) => Number(wdMap[workdayMapKey(w.rut, d, t.key)]?.qty) > 0,
-                    );
-                    return acc + (hasProd ? 1 : 0);
-                  }, 0);
-                  const avgPerPerson = peopleCount > 0 ? totalQty / peopleCount : 0;
-                  return (
-                    <div
-                      key={d}
-                      className={`flex flex-col gap-1.5 rounded-lg border px-3 py-2 text-xs ${
-                        tiers.length > 0 && tiers.some((t) => t.price > 0)
-                          ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)]"
-                          : "border-[var(--color-border)] bg-[var(--color-surface-2)]"
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <span className="font-medium text-[var(--color-text)]">{d}</span>
-                        {totalQty > 0 && (
-                          <div className="flex flex-col items-end leading-tight">
-                            <span className="text-[var(--color-muted)]">{totalQty.toLocaleString("es-CL")}</span>
-                            {peopleCount > 0 && (
-                              <span className="text-[10px] text-[var(--color-muted)]">
-                                {peopleCount} pers · prom{" "}
-                                {avgPerPerson.toLocaleString("es-CL", { maximumFractionDigits: 1 })}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      {tiers.map((t, i) => {
-                        const tt = tierTotals[i] || { qty: 0, amount: 0 };
-                        return (
-                        <div key={t.key} className="flex items-center gap-1 rounded-md bg-[var(--color-surface)] px-2 py-1">
-                          <span className="text-[var(--color-muted)] text-[10px] w-12">P{i + 1}</span>
-                          <span className="text-[var(--color-muted)]">$</span>
-                          <input
-                            type="number" min="0" disabled={readOnly}
-                            value={getPriceInputValue(activeLabor.id, d, t.key, true)}
-                            onChange={(e) =>
-                              setLocalPriceInputs((prev) => ({
-                                ...prev,
-                                [inputKey(activeLabor.id, d, t.key)]: e.target.value,
-                              }))
-                            }
-                            onBlur={() => handlePriceBlur(activeLabor.id, d, t.key, true)}
-                            placeholder="precio"
-                            className="w-20 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-0.5 text-right text-[10px] tabular-nums outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
-                          />
-                          {/* Unidad del tier, guardada junto a su precio.
-                              "—" = sin unidad. */}
-                          <select
-                            disabled={readOnly}
-                            value={t.unit == null ? "" : String(t.unit)}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              persistComboConfig(
-                                activeLabor.id,
-                                d,
-                                t.key,
-                                { unit: v === "" ? null : Number(v) },
-                                true,
-                              );
-                            }}
-                            title="Unidad de medida — qué representa cada cantidad (Metro, Polín, Planta, etc.)"
-                            className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-0.5 text-[10px] outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
-                          >
-                            <option value="">—</option>
-                            {(catalogs.tratoUnits || []).map((u) => (
-                              <option key={u.value} value={u.value}>{u.label}</option>
-                            ))}
-                          </select>
-                          <div className="flex overflow-hidden rounded border border-[var(--color-border)] text-[10px]">
-                            <button
-                              disabled={readOnly}
-                              onClick={() => persistComboConfig(activeLabor.id, d, t.key, { mode: "unit" }, true)}
-                              title="Por unidad (cantidad × precio)"
-                              className={`px-1.5 py-0.5 transition-colors disabled:opacity-50 ${
-                                t.mode === "unit"
-                                  ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
-                                  : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
-                              }`}
-                            >
-                              /unid
-                            </button>
-                            <button
-                              disabled={readOnly}
-                              onClick={() => persistComboConfig(activeLabor.id, d, t.key, { mode: "flat" }, true)}
-                              title="Pago al día (la cantidad es informativa)"
-                              className={`px-1.5 py-0.5 transition-colors disabled:opacity-50 border-l border-[var(--color-border)] ${
-                                t.mode === "flat"
-                                  ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
-                                  : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
-                              }`}
-                            >
-                              /día
-                            </button>
-                          </div>
-                          {tt.qty > 0 && (
-                            <span
-                              className="ml-1 text-[10px] tabular-nums text-[var(--color-muted)]"
-                              title="Total de este precio en el día (cantidad · monto)"
-                            >
-                              {tt.qty.toLocaleString("es-CL")} · {fmtCurrency(tt.amount)}
-                            </span>
-                          )}
-                          {tiers.length > 1 && (
-                            <button
-                              disabled={readOnly}
-                              onClick={async () => {
-                                const newEntry = { ...dayPrices };
-                                const dayEntry = { ...(newEntry[activeLabor.id]?.[d] || {}) };
-                                delete dayEntry[t.key];
-                                newEntry[activeLabor.id] = { ...(newEntry[activeLabor.id] || {}), [d]: dayEntry };
-                                setDayPrices(newEntry);
-                                await cycleWrite({ dayPrices: newEntry });
-                              }}
-                              className="ml-auto text-[var(--color-danger)] text-[10px] hover:underline disabled:opacity-40"
-                            >
-                              ✕
-                            </button>
-                          )}
-                        </div>
-                        );
-                      })}
-                      {!readOnly && (
-                        <button
-                          onClick={() =>
-                            setAddPriceModal({
-                              laborId: activeLabor.id,
-                              date: d,
-                              nextKey: `t${tiers.length}`,
-                              defaultMode,
-                              value: "",
-                            })
-                          }
-                          className="text-[var(--color-accent)] text-[10px] hover:underline"
-                        >
-                          + Agregar precio
-                        </button>
-                      )}
-                      {totalAmt > 0 && (
-                        <div className="text-[var(--color-accent)] font-medium tabular-nums text-[11px]">
-                          {tiersWithQty > 1 && (
-                            <div className="mb-0.5 text-[10px] font-normal text-[var(--color-muted)]">
-                              {tierTotals
-                                .map((tt, i) => (tt.qty > 0 ? `P${i + 1} ${fmtCurrency(tt.amount)}` : null))
-                                .filter(Boolean)
-                                .join(" · ")}
-                            </div>
-                          )}
-                          = {fmtCurrency(totalAmt)}
-                        </div>
-                      )}
-                      <FloorDayRow
-                        labor={activeLabor}
-                        dayPrices={dayPrices}
-                        date={d}
-                        readOnly={readOnly}
-                        pendingCount={pisoPendingByDate[d] || 0}
-                        onApplyAll={() => askApplyPisoToAll(activeLabor.id, d)}
-                        onPersist={(v) => persistDayPiso(activeLabor.id, d, v)}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-              )}
-            </div>
-          )}
-
-          {/* Barra de precios de labores normales (main/supervision/extra): un
-              precio sugerido por día, que las celdas vacías de la grilla
-              ofrecen con un click. Se guarda en dayPrices del ciclo. */}
-          {isNormalLabor && days.length > 0 && (
-            <div className={`mb-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] ${pricesCollapsed ? "px-3 py-1.5" : "p-2"}`}>
-              <button
-                type="button"
-                onClick={() => setPricesCollapsed((v) => !v)}
-                className="flex w-full items-center gap-2 text-left text-xs font-medium text-[var(--color-muted)] uppercase tracking-wider hover:text-[var(--color-accent)]"
-                title={pricesCollapsed ? "Mostrar precios" : "Ocultar precios"}
-              >
-                <span>{pricesCollapsed ? "▶" : "▼"}</span>
-                <span>💵</span>
-                <span>Precios por día</span>
-                <span className="ml-1 normal-case text-[10px] tracking-normal text-[var(--color-muted)]">
-                  (un click en la celda del trabajador lo aplica al día)
-                </span>
-                {readOnly && <span className="text-[var(--color-warning)]">solo lectura</span>}
-              </button>
-              {!pricesCollapsed && (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {days.map((d) => {
-                    const dayCfg = getDaySingle(dayPrices, activeLabor.id, d, "normal");
-                    const fallback = activeLabor.baseDayDefault ?? DEFAULT_BASE_DAY;
-                    const k = inputKey(activeLabor.id, d, "0_0");
-                    const localVal = localPriceInputs[k];
-                    const displayVal = localVal !== undefined
-                      ? localVal
-                      : (dayCfg.price ? dayCfg.price : "");
-                    const hasCustom = Number(dayCfg.price) > 0;
-                    const people = peopleByDate.get(d)?.size || 0;
-                    return (
-                      <div
-                        key={d}
-                        className={`flex flex-col gap-1 rounded-lg border px-3 py-2 text-xs min-w-[180px] ${
-                          hasCustom
-                            ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)]"
-                            : "border-[var(--color-border)] bg-[var(--color-surface-2)]"
-                        }`}
-                      >
-                        <div className="font-medium text-[var(--color-text)]">{d}</div>
-                        <div className="flex items-center gap-1">
-                          <span className="text-[var(--color-muted)]">$</span>
-                          <input
-                            type="number" min="0" disabled={readOnly}
-                            value={displayVal}
-                            onChange={(e) =>
-                              setLocalPriceInputs((prev) => ({ ...prev, [k]: e.target.value }))
-                            }
-                            onBlur={async () => {
-                              if (localVal === undefined) return;
-                              const price = parseAmount(String(localVal)) || 0;
-                              setLocalPriceInputs((prev) => { const n = { ...prev }; delete n[k]; return n; });
-                              if (price !== Number(dayCfg.price || 0)) {
-                                await persistNormalDayPrice(activeLabor.id, d, price);
-                              }
-                            }}
-                            placeholder={`sugerido ${fallback.toLocaleString("es-CL")}`}
-                            className="w-full rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-0.5 text-right tabular-nums outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
-                          />
-                        </div>
-                        {!hasCustom && (
-                          <div className="text-[10px] text-[var(--color-muted)]">
-                            usa base del ciclo · {fmtCurrency(fallback)}
-                          </div>
-                        )}
-                        {people > 0 && (
-                          <div className="text-[10px] text-[var(--color-muted)]">
-                            👥 {people} {people === 1 ? "persona" : "personas"}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-          </>
-          )}
-
-          {!photoMode && isMobile && workers.length > 0 && (
-            <div className="mb-2">
-              <button
-                type="button"
-                onClick={() => setShowDesktopGrid((v) => !v)}
-                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-xs hover:bg-[var(--color-accent-soft)]"
-              >
-                {showDesktopGrid ? "📋 Ver por trabajador" : "🗂 Ver grilla completa"}
-              </button>
-            </div>
-          )}
-
-          {!photoMode && workers.length > 0 && (
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              {gridVisible && (
-                <div className="inline-flex overflow-hidden rounded-md border border-[var(--color-border)] text-xs">
-                  <button
-                    onClick={() => setGroupView("all")}
-                    className={`px-3 py-1.5 ${groupView === "all" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
-                  >
-                    Todos
-                  </button>
-                  <button
-                    onClick={() => setGroupView("group")}
-                    className={`px-3 py-1.5 ${groupView === "group" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
-                  >
-                    Por grupo
-                  </button>
-                </div>
-              )}
-              <div
-                className="inline-flex overflow-hidden rounded-md border border-[var(--color-border)] text-xs"
-                title="Oculta a los trabajadores con $0 en esta labor este ciclo. Se pausa solo mientras haya una búsqueda/filtro de nombre activo, para que encontrar a alguien puntual siga mostrando resultados."
-              >
-                <button
-                  type="button"
-                  onClick={() => setOnlyWithProduction(false)}
-                  className={`px-3 py-1.5 ${!onlyWithProduction ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
-                >
-                  Todos
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOnlyWithProduction(true)}
-                  className={`border-l border-[var(--color-border)] px-3 py-1.5 ${onlyWithProduction ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
-                >
-                  Con producción
-                  {onlyWithProduction && columnFilterActive && <span className="ml-1 opacity-70">(pausado)</span>}
-                </button>
-              </div>
-              {gridVisible && useGrouped && orderedGroups.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {orderedGroups.map((g) => {
-                    const isNone = g.key === LEADER_NONE;
-                    return (
-                      <button
-                        key={g.key}
-                        type="button"
-                        onClick={() => scrollToGroup(g.key)}
-                        className={`rounded-full border px-2.5 py-1 text-xs ${
-                          isNone
-                            ? "border-[var(--color-warning)] bg-[var(--color-warning-soft)] text-[var(--color-warning)]"
-                            : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
-                        }`}
-                      >
-                        {g.label} · {g.count}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Este bloque ocupa el alto libre del <main> (flex-1, min-h-0) y la
-              grilla se desplaza por dentro. En mobile se muestra
-              CycleWorkerList en su lugar, salvo con "Ver grilla completa". */}
-          <div className="flex min-h-0 flex-1 flex-col">
-            {isMobile && !showDesktopGrid && !photoMode ? (
-              <CycleWorkerList
-                rows={rowDataRaw}
-                days={days}
-                fmtCurrency={fmtCurrency}
-                onSelectWorker={setEditingCycleWorkerRut}
-                onlyWithProduction={onlyWithProduction}
-              />
-            ) : (
-              grid
-            )}
-          </div>
+        <LaborTabs />
         </>
-      )}
-
-      {/* Modales */}
-      <Modal
-        open={!!editingDayNote}
-        onClose={closeDayNote}
-        dirty={dayNoteDirty}
-        size="lg"
-        title={editingDayNote ? (
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => goToDayNote(-1)}
-              disabled={!hasPrevDayNote || dayNoteDirty}
-              title={dayNoteDirty ? "Guarda la anotación antes de cambiar de día" : "Día anterior"}
-              className="rounded px-1.5 py-0.5 text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] disabled:opacity-30 disabled:hover:bg-transparent"
-            >
-              ◀
-            </button>
-            <span>
-              Anotación del {editingDayNote.date} · {cycle?.labors?.find((l) => l.id === editingDayNote.laborId)?.name || ""}
-            </span>
-            <button
-              type="button"
-              onClick={() => goToDayNote(1)}
-              disabled={!hasNextDayNote || dayNoteDirty}
-              title={dayNoteDirty ? "Guarda la anotación antes de cambiar de día" : "Día siguiente"}
-              className="rounded px-1.5 py-0.5 text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)] disabled:opacity-30 disabled:hover:bg-transparent"
-            >
-              ▶
-            </button>
-          </div>
-        ) : "Anotación"}
-        footer={(
-          <>
-            <ModalCloseButton
-              disabled={dayNoteBusy}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
-            >
-              Cancelar
-            </ModalCloseButton>
-            <button
-              type="button"
-              onClick={saveDayNote}
-              disabled={dayNoteBusy || readOnly}
-              className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
-            >
-              {dayNoteBusy ? "..." : "Guardar"}
-            </button>
-          </>
         )}
-      >
-        <textarea
-          value={editingDayNoteText}
-          onChange={(e) => setEditingDayNoteText(e.target.value)}
-          disabled={readOnly}
-          autoFocus
-          placeholder="Ej: día con lluvia leve, solo media jornada, etc."
-          rows={5}
-          className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)] disabled:opacity-70"
-        />
-        <p className="mt-1 text-[11px] text-[var(--color-muted)]">
-          La anotación es propia de esta labor — otras labores del mismo día no la ven. Dejar el campo vacío y guardar la elimina.
-        </p>
-      </Modal>
 
-      <Modal
-        open={!!addPriceModal}
-        onClose={() => !addPriceBusy && setAddPriceModal(null)}
-        title={addPriceModal ? `Nuevo precio · ${addPriceModal.date}` : "Nuevo precio"}
-        size="sm"
-        footer={(
+        {activeLabor && (
           <>
-            <button
-              type="button"
-              onClick={() => setAddPriceModal(null)}
-              disabled={addPriceBusy}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={async () => {
-                if (!addPriceModal) return;
-                const price = parseAmount(addPriceModal.value) || 0;
-                if (price === 0) return;
-                setAddPriceBusy(true);
-                try {
-                  await persistComboConfig(
-                    addPriceModal.laborId,
-                    addPriceModal.date,
-                    addPriceModal.nextKey,
-                    { price, mode: addPriceModal.defaultMode },
-                    true,
-                  );
-                  setAddPriceModal(null);
-                } finally {
-                  setAddPriceBusy(false);
-                }
-              }}
-              disabled={addPriceBusy || !(parseAmount(addPriceModal?.value) > 0)}
-              className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
-            >
-              {addPriceBusy ? "..." : "Agregar"}
-            </button>
-          </>
-        )}
-      >
-        {addPriceModal && (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const price = parseAmount(addPriceModal.value) || 0;
-              if (price === 0 || addPriceBusy) return;
-              (async () => {
-                setAddPriceBusy(true);
-                try {
-                  await persistComboConfig(
-                    addPriceModal.laborId,
-                    addPriceModal.date,
-                    addPriceModal.nextKey,
-                    { price, mode: addPriceModal.defaultMode },
-                    true,
-                  );
-                  setAddPriceModal(null);
-                } finally {
-                  setAddPriceBusy(false);
-                }
-              })();
-            }}
-            className="space-y-2"
-          >
-            <TextField
-              label="Precio"
-              required
-              autoFocus
-              placeholder="Ej: 1500"
-              value={addPriceModal.value}
-              onChange={(v) => setAddPriceModal((s) => (s ? { ...s, value: v } : s))}
-            />
-            <p className="text-[11px] text-[var(--color-muted)]">
-              Se agrega como un nuevo tramo de precio para este día. Modo por defecto: {addPriceModal.defaultMode === "flat" ? "pago al día" : "por unidad"}.
-            </p>
-          </form>
-        )}
-      </Modal>
-
-      <LeaderPickerModal
-        open={!!leaderPickerFor}
-        onClose={() => setLeaderPickerFor(null)}
-        leaders={enabledLeaders}
-        workerName={leaderPickerFor ? (allWorkers.find((w) => w.id === leaderPickerFor)?.name || leaderPickerFor) : ""}
-        busy={groupBusy}
-        onPick={async (leader) => {
-          const rut = leaderPickerFor;
-          setLeaderPickerFor(null);
-          if (rut && leader) await assignLeaderToWorker(rut, leader);
-        }}
-      />
-      <Modal
-        open={addDayOpen}
-        onClose={() => { setAddDayOpen(false); setSelectedDays(new Set()); }}
-        title="Agregar días"
-        size="md"
-        footer={
-          <>
-            <button onClick={() => { setAddDayOpen(false); setSelectedDays(new Set()); }} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]">
-              Cancelar
-            </button>
-            <button
-              onClick={addSelectedDays}
-              disabled={selectedDays.size === 0}
-              className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
-            >
-              {selectedDays.size === 0 ? "Agregar" : `Agregar ${selectedDays.size} día${selectedDays.size > 1 ? "s" : ""}`}
-            </button>
-          </>
-        }
-      >
-        <DayCalendarPicker
-          viewMonth={viewMonth}
-          setViewMonth={setViewMonth}
-          selectedDays={selectedDays}
-          toggleDay={toggleSelectedDay}
-          existingDays={days}
-        />
-        <p className="mt-3 text-xs text-[var(--color-muted)]">
-          Click sobre los días para seleccionar varios a la vez. Los días ya agregados aparecen en gris.
-        </p>
-      </Modal>
-
-      <Modal
-        open={!!laborForm}
-        onClose={() => setLaborForm(null)}
-        dirty={!!laborForm && hasChanges(laborForm.initial, laborForm.data)}
-        title={laborForm?.mode === "edit" ? "Editar labor" : "Nueva labor"}
-      >
-        {laborForm && (
-          <form onSubmit={submitLabor} className="space-y-4">
-            <TextField
-              label="Nombre" required autoFocus
-              value={laborForm.data.name}
-              onChange={(v) => setLaborForm((s) => ({ ...s, data: { ...s.data, name: v } }))}
-            />
-            <Select
-              label="Tipo" required
-              value={laborForm.data.type}
-              onChange={(v) => setLaborForm((s) => ({ ...s, data: { ...s.data, type: v } }))}
-              options={LABOR_TYPES}
-            />
-            <div>
-              <Select
-                label="Grupo de labor (opcional)"
-                value={laborForm.data.laborGroupId}
-                onChange={(v) => setLaborForm((s) => ({ ...s, data: { ...s.data, laborGroupId: v } }))}
-                placeholder="Sin grupo"
-                options={[
-                  ...laborGroups.map((g) => ({ value: g.id, label: g.name })),
-                  { value: "__new__", label: "+ Crear grupo nuevo…" },
-                ]}
-              />
-              <p className="mt-1 text-xs text-[var(--color-muted)]">
-                Hila esta labor con las de mismo nombre en otros ciclos de esta subfaena (ej. "Poda" del ciclo pasado
-                con "Poda" del actual), para poder ver su historial junto.
-              </p>
-              {laborForm.data.laborGroupId === "__new__" && (
-                <div className="mt-2">
-                  <TextField
-                    label="Nombre del grupo nuevo" required autoFocus
-                    value={laborForm.data.newGroupName}
-                    onChange={(v) => setLaborForm((s) => ({ ...s, data: { ...s.data, newGroupName: v } }))}
-                  />
-                </div>
-              )}
-            </div>
-            {laborForm.data.type === "cosecha" && (
-              <Select
-                label="Modo por defecto al agregar tipos"
-                value={laborForm.data.cosechaMode}
-                onChange={(v) => setLaborForm((s) => ({ ...s, data: { ...s.data, cosechaMode: v } }))}
-                options={COSECHA_MODES}
-              />
-            )}
-            {laborForm.data.type === "trato" && (
-              <>
-                <Select
-                  label="Tipo de trato"
-                  value={laborForm.data.tratoType}
-                  onChange={(v) => setLaborForm((s) => ({ ...s, data: { ...s.data, tratoType: Number(v) } }))}
-                  options={(catalogs.tratoTypes || []).map((t) => ({ value: t.value, label: t.label }))}
-                />
-                <p className="text-xs text-[var(--color-muted)]">
-                  ¿No está en la lista? Agrégalo desde el botón ⚙ Catálogos.
-                </p>
-                <Select
-                  label="Modo por defecto"
-                  value={laborForm.data.tratoMode}
-                  onChange={(v) => setLaborForm((s) => ({ ...s, data: { ...s.data, tratoMode: v } }))}
-                  options={COSECHA_MODES}
-                />
-              </>
-            )}
-            {laborForm.data.type === "tratoEtapas" && (
-              <StagesEditor
-                stages={laborForm.data.stages || []}
-                onChange={(next) => setLaborForm((s) => ({ ...s, data: { ...s.data, stages: next } }))}
-              />
-            )}
-            {["main", "supervision", "extra"].includes(laborForm.data.type) && (
-              <TextField
-                label="Precio diario por defecto ($)" type="number"
-                value={laborForm.data.baseDayDefault}
-                onChange={(v) => setLaborForm((s) => ({ ...s, data: { ...s.data, baseDayDefault: v } }))}
-              />
-            )}
-            {laborForm.data.type === "tratoHE" && (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <TextField
-                  label="Base diaria por defecto ($)" type="number"
-                  value={laborForm.data.baseDayDefault}
-                  onChange={(v) => setLaborForm((s) => ({ ...s, data: { ...s.data, baseDayDefault: v } }))}
-                />
-                <TextField
-                  label="Tarifa hora extra ($/h)" type="number"
-                  value={laborForm.data.overtimeRate}
-                  onChange={(v) => setLaborForm((s) => ({ ...s, data: { ...s.data, overtimeRate: v } }))}
-                />
-                <TextField
-                  label="Bono manejo ($)" type="number"
-                  value={laborForm.data.bonusManejo}
-                  onChange={(v) => setLaborForm((s) => ({ ...s, data: { ...s.data, bonusManejo: v } }))}
-                />
-                <TextField
-                  label="Bono supervisión/líder ($)" type="number"
-                  value={laborForm.data.bonusSupervision}
-                  onChange={(v) => setLaborForm((s) => ({ ...s, data: { ...s.data, bonusSupervision: v } }))}
-                />
+            {closed && (
+              <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-3 py-2 text-xs text-[var(--color-text)]">
+                <span className="font-semibold text-[var(--color-warning)]">🔒 Ciclo cerrado</span>
+                <span>
+                  Está congelado: no se puede editar nada de la grilla, los precios ni las labores.
+                  Para corregir algo hay que <strong>reabrirlo</strong> con el botón de arriba, y
+                  volver a cerrarlo después.
+                </span>
               </div>
             )}
-            <div className="flex justify-end gap-2 pt-2">
-              <ModalCloseButton className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm hover:bg-[var(--color-accent-soft)]">
-                Cancelar
-              </ModalCloseButton>
-              <button type="submit" className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]">
-                Guardar
-              </button>
-            </div>
-          </form>
-        )}
-      </Modal>
-
-      <WorkerPickerModal
-        open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        onPick={pickWorker}
-        excludeRuts={workers.map((w) => w.id || w.rut)}
-        allowTemp
-        availableLeaders={enabledLeaders}
-      />
-
-      <WorkerPickerModal
-        open={!!assignTempRut}
-        onClose={() => !assignBusy && setAssignTempRut(null)}
-        onPick={convertTempToReal}
-        excludeRuts={workers.filter((w) => w.rut !== assignTempRut).map((w) => w.id || w.rut)}
-        allowTemp={false}
-        title="Asignar RUT al trabajador temporal"
-        availableLeaders={enabledLeaders}
-      />
-
-      <ConfirmDialog
-        open={!!pisoRemove}
-        title="Quitar el piso del día"
-        message={
-          pisoRemove
-            ? [
-                pisoRemove.libres.length
-                  ? `Se quitará el piso del ${pisoRemove.date} y se eliminará el bono de ` +
-                    `${pisoRemove.libres.length} trabajador${pisoRemove.libres.length === 1 ? "" : "es"} ` +
-                    `(${fmtCurrency(pisoRemove.libres.reduce((a, w) => a + (Number(w.amount) || 0), 0))}).`
-                  : `Se quitará el piso del ${pisoRemove.date}.`,
-                pisoRemove.liquidados.length
-                  ? `${pisoRemove.liquidados.length} bono${pisoRemove.liquidados.length === 1 ? " ya está" : "s ya están"} ` +
-                    "en una nómina y se mantienen: hay que eliminar o editar esa nómina para tocarlos."
-                  : "",
-              ]
-                .filter(Boolean)
-                .join(" ")
-            : ""
-        }
-        confirmLabel="Quitar piso"
-        danger busy={pisoRemoveBusy}
-        onCancel={() => !pisoRemoveBusy && setPisoRemove(null)}
-        onConfirm={removeDayPiso}
-      />
-
-      <ConfirmDialog
-        open={!!pisoBulk}
-        title="Asignar piso a todos"
-        message={
-          pisoBulk
-            ? `Se le asignará el piso de ${fmtCurrency(pisoBulk.amount)} a ${pisoBulk.ruts.length} ` +
-              `trabajador${pisoBulk.ruts.length === 1 ? "" : "es"} con producción del ${pisoBulk.date} ` +
-              `que todavía no lo tienen. Total: ${fmtCurrency(pisoBulk.amount * pisoBulk.ruts.length)}. ` +
-              "Los que ya tienen piso quedan como están, y después se puede quitar uno por uno desde la columna 🪙."
-            : ""
-        }
-        confirmLabel="Asignar piso"
-        busy={pisoBulkBusy}
-        onCancel={() => !pisoBulkBusy && setPisoBulk(null)}
-        onConfirm={applyPisoToAll}
-      />
-
-      <ConfirmDialog
-        open={!!removeWorker}
-        title="Quitar trabajador"
-        message={
-          removeWorker
-            ? removeWorker.isTemp
-              ? `¿Eliminar al trabajador temporal "${removeWorker.name}"? Se borrará junto con toda la producción cargada en este ciclo.`
-              : `¿Quitar a ${removeWorker.name} de "${activeLabor?.name}"?`
-            : ""
-        }
-        confirmLabel="Quitar"
-        danger busy={removeBusy}
-        onCancel={() => !removeBusy && setRemoveWorker(null)}
-        onConfirm={confirmRemoveWorker}
-      />
-
-      <ConfirmDialog
-        open={!!removeLabor}
-        title="Quitar labor"
-        message={removeLabor ? `¿Quitar la labor "${removeLabor.name}"? Solo si no tiene producción.` : ""}
-        confirmLabel="Quitar"
-        danger
-        onCancel={() => setRemoveLabor(null)}
-        onConfirm={confirmRemoveLabor}
-      />
-
-      <ConfirmDialog
-        open={closeFlow}
-        title="Cerrar ciclo"
-        message={`¿Cerrar "${cycle.label}"? No se podrá editar a menos que seas admin.`}
-        confirmLabel="Cerrar ciclo"
-        danger busy={closeBusy}
-        onCancel={() => !closeBusy && setCloseFlow(false)}
-        onConfirm={handleCloseCycle}
-      />
-
-      <ConfirmDialog
-        open={!!confirmRemoveDay}
-        title="Quitar día"
-        message={confirmRemoveDay ? `¿Quitar la columna ${confirmRemoveDay}?` : ""}
-        confirmLabel="Quitar"
-        danger
-        onCancel={() => setConfirmRemoveDay(null)}
-        onConfirm={() => {
-          const d = confirmRemoveDay;
-          setConfirmRemoveDay(null);
-          doRemoveDay(d);
-        }}
-      />
-
-      <ConfirmDialog
-        open={confirmReopen}
-        title="Reabrir ciclo"
-        message="¿Reabrir el ciclo?"
-        confirmLabel="Reabrir"
-        onCancel={() => setConfirmReopen(false)}
-        onConfirm={() => { setConfirmReopen(false); doReopenCycle(); }}
-      />
-
-      <ConfirmDialog
-        open={!!removeCombo}
-        title="Quitar tipo de cosecha"
-        message={removeCombo ? `¿Quitar "${removeCombo.label}" del día ${removeCombo.date}?` : ""}
-        confirmLabel="Quitar"
-        danger
-        onCancel={() => setRemoveCombo(null)}
-        onConfirm={async () => {
-          if (!removeCombo) return;
-          await removeComboFromDay(removeCombo.laborId, removeCombo.date, removeCombo.comboKey);
-          setRemoveCombo(null);
-        }}
-      />
-
-      <AddComboModal
-        open={!!addComboFor}
-        onClose={() => setAddComboFor(null)}
-        catalogs={catalogs}
-        existingCombos={addComboFor ? (dayCombosByDate[addComboFor.date] || []) : []}
-        date={addComboFor?.date}
-        onAddCatalogEntry={addCatalogEntry}
-        onAdd={async (x, y) => {
-          if (!addComboFor) return;
-          await addComboToDay(addComboFor.laborId, addComboFor.date, x, y);
-          setAddComboFor(null);
-        }}
-      />
-
-      <CatalogsModal
-        open={catalogsOpen}
-        onClose={() => setCatalogsOpen(false)}
-        catalogs={catalogs}
-        onAddEntry={addCatalogEntry}
-        onRenameEntry={renameCatalogEntry}
-      />
-
-      <BonusEditModal
-        open={!!bonusEdit}
-        onClose={() => setBonusEdit(null)}
-        labor={activeLabor}
-        wd={bonusEdit ? (workdaysByLabor[bonusEdit.laborId] || {})[workdayMapKey(bonusEdit.workerRut, bonusEdit.date, SINGLE_COMBO)] : null}
-        workerName={bonusEdit ? workers.find((w) => w.rut === bonusEdit.workerRut)?.name : ""}
-        date={bonusEdit?.date}
-        readOnly={readOnly}
-        onSave={async (patch) => {
-          if (!bonusEdit) return;
-          await upsertTratoHEWorkday(bonusEdit.laborId, bonusEdit.date, bonusEdit.workerRut, patch);
-          setBonusEdit(null);
-        }}
-      />
-
-      <CycleWorkerEditModal
-        workerRut={editingCycleWorkerRut}
-        onClose={() => setEditingCycleWorkerRut(null)}
-        activeLabor={activeLabor}
-        row={editingCycleWorkerRut ? rowDataRaw.find((r) => r.rut === editingCycleWorkerRut) : null}
-        days={days}
-        dayPrices={dayPrices}
-        dayCombosByDate={dayCombosByDate}
-        dayTiersByDate={dayTiersByDate}
-        dayStagesByDate={dayStagesByDate}
-        daysWithFloor={daysWithFloor}
-        catalogs={catalogs}
-        readOnly={readOnly}
-        fmtCurrency={fmtCurrency}
-        commitCosechaCombo={commitCosechaCombo}
-        commitTratoTier={commitTratoTier}
-        commitEtapaQty={commitEtapaQty}
-        commitNormalAmount={commitNormalAmount}
-        upsertTratoHEWorkday={upsertTratoHEWorkday}
-        toggleAttendance={toggleAttendance}
-        togglePiso={togglePiso}
-        persistComboConfig={persistComboConfig}
-        addComboToDay={addComboToDay}
-        removeComboFromDay={removeComboFromDay}
-        persistStagePrice={persistStagePrice}
-        persistDayPiso={persistDayPiso}
-        persistNormalDayPrice={persistNormalDayPrice}
-        persistTratoHEDay={persistTratoHEDay}
-        toggleMonthly={toggleMonthly}
-        onRemoveWorker={removeWorkerByRut}
-        useGrouped={useGrouped}
-        currentLeader={editingCycleWorkerRut ? rutToLeader.get(editingCycleWorkerRut) || null : null}
-        enabledLeaders={enabledLeaders}
-        leaderBusy={groupBusy}
-        assignLeaderToWorker={assignLeaderToWorker}
-        LEADER_LOCAL={LEADER_LOCAL}
-        onNavigate={navigateCycleWorker}
-        canGoPrev={editingWorkerIndex > 0}
-        canGoNext={editingWorkerIndex !== -1 && editingWorkerIndex < sortedWorkerRuts.length - 1}
-      />
-
-      {/* Después del modal del teléfono, para quedar encima cuando se marca
-          mensual desde ahí. */}
-      <Modal
-        open={!!monthlyConfirm}
-        onClose={() => !monthlyBusy && setMonthlyConfirm(null)}
-        title={`Marcar a ${monthlyConfirm?.name || ""} como mensual`}
-        size="sm"
-        footer={monthlyConfirm && (
-          <>
-            <button
-              type="button"
-              onClick={() => setMonthlyConfirm(null)}
-              disabled={monthlyBusy}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={() => confirmMonthly(false)}
-              disabled={monthlyBusy}
-              className={monthlyConfirm.free.length > 0
-                ? "rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
-                : "rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--color-accent-hover)] disabled:opacity-60"}
-            >
-              {monthlyConfirm.free.length > 0 ? "Dejar los montos" : "Marcar mensual"}
-            </button>
-            {monthlyConfirm.free.length > 0 && (
-              <button
-                type="button"
-                onClick={() => confirmMonthly(true)}
-                disabled={monthlyBusy}
-                className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
-              >
-                {monthlyBusy ? "..." : "Pasar a asistencia en $0"}
-              </button>
+            {/* Colores del tema (accent), no un violeta fijo: el accent cambia
+                con el tema (ver la nota de colores en AGENTS.md). */}
+            {qrLocked && (
+              <div className="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-3 py-2 text-xs text-[var(--color-text)]">
+                <span className="font-semibold text-[var(--color-accent)]">📱 Cosecha sincronizada desde QR</span>
+                <span>
+                  La producción de esta labor la escribe la app de escaneo del prefijo{" "}
+                  <span className="font-mono font-semibold">{qrPrefixForActive.id}</span>
+                  {qrPrefixForActive.label ? ` (${qrPrefixForActive.label})` : ""}, así que las celdas
+                  no se editan a mano: la próxima sincronización las sobrescribe. El piso sí se puede cargar.
+                </span>
+                <Link
+                  to="/admin/harvest-qr"
+                  className="font-medium text-[var(--color-accent)] underline hover:no-underline"
+                >
+                  Ir a Pesajes QR
+                </Link>
+              </div>
             )}
+            {!toolbarCollapsed && (
+            <>
+            <LaborToolbar />
+
+            <PricesPanel />
+            </>
+            )}
+
+            {!photoMode && isMobile && workers.length > 0 && (
+              <div className="mb-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDesktopGrid((v) => !v)}
+                  className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-xs hover:bg-[var(--color-accent-soft)]"
+                >
+                  {showDesktopGrid ? "📋 Ver por trabajador" : "🗂 Ver grilla completa"}
+                </button>
+              </div>
+            )}
+
+            <GridToolbar />
+
+            {/* Este bloque ocupa el alto libre del <main> (flex-1, min-h-0) y la
+                grilla se desplaza por dentro. En mobile se muestra
+                CycleWorkerList en su lugar, salvo con "Ver grilla completa". */}
+            <div className="flex min-h-0 flex-1 flex-col">
+              {isMobile && !showDesktopGrid && !photoMode ? (
+                <CycleWorkerList
+                  rows={rowDataRaw}
+                  days={days}
+                  fmtCurrency={fmtCurrency}
+                  onSelectWorker={setEditingCycleWorkerRut}
+                  onlyWithProduction={onlyWithProduction}
+                />
+              ) : (
+                grid
+              )}
+            </div>
           </>
         )}
-      >
-        {monthlyConfirm && (
-          <div className="space-y-2 text-sm text-[var(--color-muted)]">
-            <p>
-              Como mensual, sus días en esta labor son solo asistencia en $0 y no entran a la nómina.
-            </p>
-            {monthlyConfirm.free.length > 0 && (
-              <p>
-                Ya tiene <b className="text-[var(--color-text)]">{monthlyConfirm.free.length} día{monthlyConfirm.free.length === 1 ? "" : "s"} con monto</b>{" "}
-                por <b className="text-[var(--color-text)]">{fmtCurrency(monthlyConfirm.freeTotal)}</b> que todavía no están en una nómina.
-                Si dejas los montos, la grilla va a mostrar ✓ en esos días pero se van a seguir pagando.
-              </p>
-            )}
-            {monthlyConfirm.inPayroll > 0 && (
-              <p>
-                {monthlyConfirm.inPayroll} día{monthlyConfirm.inPayroll === 1 ? "" : "s"} con monto ya{" "}
-                {monthlyConfirm.inPayroll === 1 ? "está" : "están"} en una nómina y no se {monthlyConfirm.inPayroll === 1 ? "toca" : "tocan"}.
-              </p>
-            )}
+
+        {/* Modales */}
+        <DayNoteModal />
+
+        <AddPriceModal />
+
+        <LeaderPickerModal
+          open={!!leaderPickerFor}
+          onClose={() => setLeaderPickerFor(null)}
+          leaders={enabledLeaders}
+          workerName={leaderPickerFor ? (allWorkers.find((w) => w.id === leaderPickerFor)?.name || leaderPickerFor) : ""}
+          busy={groupBusy}
+          onPick={async (leader) => {
+            const rut = leaderPickerFor;
+            setLeaderPickerFor(null);
+            if (rut && leader) await assignLeaderToWorker(rut, leader);
+          }}
+        />
+        <AddDaysModal />
+
+        <LaborFormModal />
+
+        <WorkerPickerModal
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          onPick={pickWorker}
+          excludeRuts={workers.map((w) => w.id || w.rut)}
+          allowTemp
+          availableLeaders={enabledLeaders}
+        />
+
+        <WorkerPickerModal
+          open={!!assignTempRut}
+          onClose={() => !assignBusy && setAssignTempRut(null)}
+          onPick={convertTempToReal}
+          excludeRuts={workers.filter((w) => w.rut !== assignTempRut).map((w) => w.id || w.rut)}
+          allowTemp={false}
+          title="Asignar RUT al trabajador temporal"
+          availableLeaders={enabledLeaders}
+        />
+
+        <CycleConfirmDialogs />
+
+        <AddComboModal
+          open={!!addComboFor}
+          onClose={() => setAddComboFor(null)}
+          catalogs={catalogs}
+          existingCombos={addComboFor ? (dayCombosByDate[addComboFor.date] || []) : []}
+          date={addComboFor?.date}
+          onAddCatalogEntry={addCatalogEntry}
+          onAdd={async (x, y) => {
+            if (!addComboFor) return;
+            await addComboToDay(addComboFor.laborId, addComboFor.date, x, y);
+            setAddComboFor(null);
+          }}
+        />
+
+        <CatalogsModal
+          open={catalogsOpen}
+          onClose={() => setCatalogsOpen(false)}
+          catalogs={catalogs}
+          onAddEntry={addCatalogEntry}
+          onRenameEntry={renameCatalogEntry}
+        />
+
+        <BonusEditModal
+          open={!!bonusEdit}
+          onClose={() => setBonusEdit(null)}
+          labor={activeLabor}
+          wd={bonusEdit ? (workdaysByLabor[bonusEdit.laborId] || {})[workdayMapKey(bonusEdit.workerRut, bonusEdit.date, SINGLE_COMBO)] : null}
+          workerName={bonusEdit ? workers.find((w) => w.rut === bonusEdit.workerRut)?.name : ""}
+          date={bonusEdit?.date}
+          readOnly={readOnly}
+          onSave={async (patch) => {
+            if (!bonusEdit) return;
+            await upsertTratoHEWorkday(bonusEdit.laborId, bonusEdit.date, bonusEdit.workerRut, patch);
+            setBonusEdit(null);
+          }}
+        />
+
+        <CycleWorkerEditModal
+          workerRut={editingCycleWorkerRut}
+          onClose={() => setEditingCycleWorkerRut(null)}
+          activeLabor={activeLabor}
+          row={editingCycleWorkerRut ? rowDataRaw.find((r) => r.rut === editingCycleWorkerRut) : null}
+          days={days}
+          dayPrices={dayPrices}
+          dayCombosByDate={dayCombosByDate}
+          dayTiersByDate={dayTiersByDate}
+          dayStagesByDate={dayStagesByDate}
+          daysWithFloor={daysWithFloor}
+          catalogs={catalogs}
+          readOnly={readOnly}
+          fmtCurrency={fmtCurrency}
+          commitCosechaCombo={commitCosechaCombo}
+          commitTratoTier={commitTratoTier}
+          commitEtapaQty={commitEtapaQty}
+          commitNormalAmount={commitNormalAmount}
+          upsertTratoHEWorkday={upsertTratoHEWorkday}
+          toggleAttendance={toggleAttendance}
+          togglePiso={togglePiso}
+          persistComboConfig={persistComboConfig}
+          addComboToDay={addComboToDay}
+          removeComboFromDay={removeComboFromDay}
+          persistStagePrice={persistStagePrice}
+          persistDayPiso={persistDayPiso}
+          persistNormalDayPrice={persistNormalDayPrice}
+          persistTratoHEDay={persistTratoHEDay}
+          toggleMonthly={toggleMonthly}
+          onRemoveWorker={removeWorkerByRut}
+          useGrouped={useGrouped}
+          currentLeader={editingCycleWorkerRut ? rutToLeader.get(editingCycleWorkerRut) || null : null}
+          enabledLeaders={enabledLeaders}
+          leaderBusy={groupBusy}
+          assignLeaderToWorker={assignLeaderToWorker}
+          LEADER_LOCAL={LEADER_LOCAL}
+          onNavigate={navigateCycleWorker}
+          canGoPrev={editingWorkerIndex > 0}
+          canGoNext={editingWorkerIndex !== -1 && editingWorkerIndex < sortedWorkerRuts.length - 1}
+        />
+
+        {/* Después del modal del teléfono, para quedar encima cuando se marca
+            mensual desde ahí. */}
+        <MonthlyConfirmModal />
+
+        <DayModeModal
+          open={!!dayModeEdit}
+          onClose={() => setDayModeEdit(null)}
+          date={dayModeEdit?.date}
+          labor={activeLabor}
+          cfg={dayModeEdit ? getDaySingle(dayPrices, dayModeEdit.laborId, dayModeEdit.date, "normal") : null}
+          readOnly={readOnly}
+          onSave={async (patch) => {
+            if (!dayModeEdit) return;
+            await persistTratoHEDay(dayModeEdit.laborId, dayModeEdit.date, patch);
+            setDayModeEdit(null);
+          }}
+        />
+
+        <DefaultLeadersModal
+          open={defaultLeadersOpen}
+          onClose={() => setDefaultLeadersOpen(false)}
+          labor={activeLabor}
+          readOnly={readOnly}
+          onSave={async (defaults) => {
+            if (!activeLabor) return;
+            await persistTratoHEBonusDefaults(activeLabor.id, defaults);
+            setDefaultLeadersOpen(false);
+          }}
+        />
+
+        <TransportsModal
+          open={transportsOpen}
+          onClose={async () => {
+            setTransportsOpen(false);
+            await reloadTransports();
+          }}
+          cycle={cycle}
+          faena={faena}
+          subfaena={subfaena}
+          days={days}
+          readOnly={readOnly}
+        />
+
+        <CycleSummaryModal
+          open={summaryOpen}
+          onClose={() => setSummaryOpen(false)}
+          cycle={cycle}
+          workdaysByLabor={workdaysByLabor}
+          dayPrices={dayPrices}
+          catalogs={catalogs}
+          faena={faena}
+          subfaena={subfaena}
+        />
+
+        <WorkerEditModal
+          open={!!editingWorkerRut}
+          mode="edit"
+          worker={editingWorkerRut ? allWorkers.find((w) => w.id === editingWorkerRut) : null}
+          allWorkers={allWorkers}
+          onClose={() => setEditingWorkerRut(null)}
+          onSaved={async () => {
+            const rut = editingWorkerRut;
+            setEditingWorkerRut(null);
+            if (!rut) return;
+            // Relee el trabajador y lo reemplaza en allWorkers: la grilla toma el
+            // nombre y el líder de ahí (rutToName, rutToLeader).
+            try {
+              const updated = await workersService.getById(rut);
+              if (updated) {
+                setAllWorkers((prev) => {
+                  const idx = prev.findIndex((w) => w.id === rut);
+                  if (idx === -1) return [...prev, updated];
+                  const next = prev.slice();
+                  next[idx] = updated;
+                  return next;
+                });
+              }
+            } catch {
+              /* noop */
+            }
+          }}
+        />
+
+        {copyToast && (
+          <div className="pointer-events-none fixed bottom-6 left-1/2 -translate-x-1/2 rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] shadow-lg">
+            {copyToast}
           </div>
         )}
-      </Modal>
-
-      <DayModeModal
-        open={!!dayModeEdit}
-        onClose={() => setDayModeEdit(null)}
-        date={dayModeEdit?.date}
-        labor={activeLabor}
-        cfg={dayModeEdit ? getDaySingle(dayPrices, dayModeEdit.laborId, dayModeEdit.date, "normal") : null}
-        readOnly={readOnly}
-        onSave={async (patch) => {
-          if (!dayModeEdit) return;
-          await persistTratoHEDay(dayModeEdit.laborId, dayModeEdit.date, patch);
-          setDayModeEdit(null);
-        }}
-      />
-
-      <DefaultLeadersModal
-        open={defaultLeadersOpen}
-        onClose={() => setDefaultLeadersOpen(false)}
-        labor={activeLabor}
-        readOnly={readOnly}
-        onSave={async (defaults) => {
-          if (!activeLabor) return;
-          await persistTratoHEBonusDefaults(activeLabor.id, defaults);
-          setDefaultLeadersOpen(false);
-        }}
-      />
-
-      <TransportsModal
-        open={transportsOpen}
-        onClose={async () => {
-          setTransportsOpen(false);
-          await reloadTransports();
-        }}
-        cycle={cycle}
-        faena={faena}
-        subfaena={subfaena}
-        days={days}
-        readOnly={readOnly}
-      />
-
-      <CycleSummaryModal
-        open={summaryOpen}
-        onClose={() => setSummaryOpen(false)}
-        cycle={cycle}
-        workdaysByLabor={workdaysByLabor}
-        dayPrices={dayPrices}
-        catalogs={catalogs}
-        faena={faena}
-        subfaena={subfaena}
-      />
-
-      <WorkerEditModal
-        open={!!editingWorkerRut}
-        mode="edit"
-        worker={editingWorkerRut ? allWorkers.find((w) => w.id === editingWorkerRut) : null}
-        allWorkers={allWorkers}
-        onClose={() => setEditingWorkerRut(null)}
-        onSaved={async () => {
-          const rut = editingWorkerRut;
-          setEditingWorkerRut(null);
-          if (!rut) return;
-          // Relee el trabajador y lo reemplaza en allWorkers: la grilla toma el
-          // nombre y el líder de ahí (rutToName, rutToLeader).
-          try {
-            const updated = await workersService.getById(rut);
-            if (updated) {
-              setAllWorkers((prev) => {
-                const idx = prev.findIndex((w) => w.id === rut);
-                if (idx === -1) return [...prev, updated];
-                const next = prev.slice();
-                next[idx] = updated;
-                return next;
-              });
-            }
-          } catch {
-            /* noop */
-          }
-        }}
-      />
-
-      {copyToast && (
-        <div className="pointer-events-none fixed bottom-6 left-1/2 -translate-x-1/2 rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] shadow-lg">
-          {copyToast}
-        </div>
-      )}
-    </div>
+      </div>
+    </CycleDetailContext>
   );
 }
