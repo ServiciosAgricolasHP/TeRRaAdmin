@@ -88,20 +88,38 @@ export function normalizePhone(raw) {
   return ext ? `${number};ext=${ext}` : number;
 }
 
-// Cómo se muestra un número normalizado: `+56 9 1234 5678`, `+56 2 2345 6789`
-// o `+56 72 234 5678`; los 600 y 800 como `600 200 7000`; el resto, como
-// está. El anexo va como "anexo N".
+// Códigos de país (E.164) de 1 y de 2 dígitos; todos los demás tienen 3. Los
+// códigos están armados para que ninguno sea el comienzo de otro, así que el
+// largo se sabe por los primeros dígitos.
+const ONE_DIGIT_CODES = new Set(["1", "7"]);
+const TWO_DIGIT_CODES = new Set([
+  "20", "27", "30", "31", "32", "33", "34", "36", "39", "40", "41", "43", "44", "45", "46", "47", "48", "49",
+  "51", "52", "53", "54", "55", "56", "57", "58", "60", "61", "62", "63", "64", "65", "66",
+  "81", "82", "84", "86", "90", "91", "92", "93", "94", "95", "98",
+]);
+
+// El código de país de un número internacional (sus dígitos, sin el `+`).
+export function countryCodeOf(digits) {
+  if (ONE_DIGIT_CODES.has(digits.slice(0, 1))) return digits.slice(0, 1);
+  if (TWO_DIGIT_CODES.has(digits.slice(0, 2))) return digits.slice(0, 2);
+  return digits.slice(0, 3);
+}
+
+// Cómo se muestra un número normalizado: el código de país separado del resto
+// (`+56 912345678`, `+591 69710262`); los 600 y 800 como `600 200 7000`; el
+// resto, como está. El anexo va como "anexo N". Solo es la vista: el número se
+// guarda sin espacios.
 export function formatPhone(number) {
   const [main, extPart] = String(number || "").split(";ext=");
   let shown = main;
-  const cl = main.match(/^\+56(\d{9})$/);
+  const intl = main.match(/^\+(\d+)$/);
   const special = main.match(/^(600|800)(\d{3})(\d{4})$/);
-  if (special) shown = special.slice(1).join(" ");
-  if (cl) {
-    const d = cl[1];
-    shown = d[0] === "9" || d[0] === "2"
-      ? `+56 ${d[0]} ${d.slice(1, 5)} ${d.slice(5)}`
-      : `+56 ${d.slice(0, 2)} ${d.slice(2, 5)} ${d.slice(5)}`;
+  if (intl) {
+    const code = countryCodeOf(intl[1]);
+    const rest = intl[1].slice(code.length);
+    shown = rest ? `+${code} ${rest}` : main;
+  } else if (special) {
+    shown = special.slice(1).join(" ");
   }
   return extPart ? `${shown} anexo ${extPart}` : shown;
 }

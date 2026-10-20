@@ -59,8 +59,8 @@ describe("phoneBookSheetRows", () => {
 
   it("ordena por empresa y nombre, y junta los números y correos extra con /", () => {
     expect(phoneBookSheetRows(contacts)).toEqual([
-      ["Comercial Los Robles", "76.543.210-1", "Proveedor", "Ventas", "Ana Pérez", "Ejecutiva", "+56 9 1111 1111", "+56 2 2345 6789 / +56 9 3333 3334", "ana@robles.cl / ventas@robles.cl", "Mañana"],
-      ["Sur", "", "", "", "Beto", "", "+56 9 3333 3333", "", "", ""],
+      ["Comercial Los Robles", "76.543.210-1", "Proveedor", "Ventas", "Ana Pérez", "Ejecutiva", "+56 911111111", "+56 223456789 / +56 933333334", "ana@robles.cl / ventas@robles.cl", "Mañana"],
+      ["Sur", "", "", "", "Beto", "", "+56 933333333", "", "", ""],
     ]);
   });
 

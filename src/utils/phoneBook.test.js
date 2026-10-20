@@ -48,13 +48,21 @@ describe("normalizePhone", () => {
 });
 
 describe("formatPhone", () => {
-  it("muestra los chilenos agrupados y el resto como está", () => {
-    expect(formatPhone("+56912345678")).toBe("+56 9 1234 5678");
-    expect(formatPhone("+56223456789")).toBe("+56 2 2345 6789");
-    expect(formatPhone("+56722345678")).toBe("+56 72 234 5678");
-    expect(formatPhone("+56223456789;ext=12")).toBe("+56 2 2345 6789 anexo 12");
-    expect(formatPhone("+5491123456789")).toBe("+5491123456789");
+  it("separa el código de país, agrupa los 600 y 800, y deja el resto como está", () => {
+    expect(formatPhone("+56912345678")).toBe("+56 912345678");
+    expect(formatPhone("+56223456789;ext=12")).toBe("+56 223456789 anexo 12");
     expect(formatPhone("6002007000")).toBe("600 200 7000");
+    expect(formatPhone("12345678")).toBe("12345678");
+  });
+
+  it("separa el código de país según su largo: 1, 2 o 3 dígitos", () => {
+    expect(formatPhone("+15551234567")).toBe("+1 5551234567");
+    expect(formatPhone("+79161234567")).toBe("+7 9161234567");
+    expect(formatPhone("+5491123456789")).toBe("+54 91123456789");
+    expect(formatPhone("+447911123456")).toBe("+44 7911123456");
+    expect(formatPhone("+59169710262")).toBe("+591 69710262");
+    expect(formatPhone("+593991234567")).toBe("+593 991234567");
+    expect(formatPhone("+420601234567")).toBe("+420 601234567");
   });
 });
 
@@ -219,7 +227,7 @@ describe("phoneContactMatches y displayName", () => {
 
   it("sin nombre se muestra la empresa o el número", () => {
     expect(displayName({ company: "Banco Estado" })).toBe("Banco Estado");
-    expect(displayName({ phones: [tel("+56912345678")] })).toBe("+56 9 1234 5678");
+    expect(displayName({ phones: [tel("+56912345678")] })).toBe("+56 912345678");
   });
 });
 
@@ -267,8 +275,8 @@ describe("phoneContactText", () => {
     expect(phoneContactText(c)).toBe([
       "Ana Pérez",
       "Comercial Los Robles · Ventas · Ejecutiva",
-      "Directo: +56 9 1111 1111",
-      "Teléfono: +56 2 2345 6789 anexo 12",
+      "Directo: +56 911111111",
+      "Teléfono: +56 223456789 anexo 12",
       "Correo: ana@robles.cl",
     ].join("\n"));
   });

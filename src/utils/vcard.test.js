@@ -82,7 +82,7 @@ describe("buildVcards", () => {
     const vcf = buildVcards(contacts);
     expect(vcf.startsWith("BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Ana Pérez\r\n")).toBe(true);
     expect(vcf).toContain("TEL;TYPE=CELL:+56911111111");
-    expect(vcf).toContain("TEL;TYPE=WORK:+56 2 2345 6789 anexo 12");
+    expect(vcf).toContain("TEL;TYPE=WORK:+56 223456789 anexo 12");
     const [back] = parseVcards(vcf);
     expect(back).toMatchObject({
       name: "Ana Pérez",
