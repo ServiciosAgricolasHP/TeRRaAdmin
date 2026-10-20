@@ -101,7 +101,8 @@ export default function PhoneBookTab() {
   const onShare = async (contact) => {
     try {
       const how = await shareContact(contact);
-      if (how === "copied") toast.success("Contacto copiado: este navegador no tiene el menú de compartir");
+      if (how === "copied") toast.success("Contacto copiado");
+      if (how === "fileBlocked") toast.warning("Este teléfono no deja compartir la tarjeta de contacto. Se copió el texto; vuelve a tocar 📤 para compartirlo.");
     } catch (err) {
       toast.error("No se pudo compartir: " + (err.message || err));
     }

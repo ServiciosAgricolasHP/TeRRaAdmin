@@ -21,29 +21,56 @@ const safeFileName = (name) => name.replace(/[\\/:*?"<>|]+/g, "").trim().replace
 const vcardFile = (contact) =>
   new File([buildVcards([contact])], `${safeFileName(displayName(contact))}.vcf`, { type: "text/vcard" });
 
-// Comparte un contacto con el menú del teléfono (WhatsApp, correo…). Si el
-// navegador deja compartir archivos de contacto (iPhone, sí; Chrome en
-// Android, no), va la tarjeta .vcf y WhatsApp la muestra como contacto; si
-// no, va el texto. Sin menú de compartir (un computador sin él), se copia el
-// texto. Devuelve "file", "text", "copied" o "cancelled".
+// El teléfono no dejó compartir la tarjeta .vcf: no se vuelve a intentar.
+const VCARD_BLOCKED_KEY = "infoAccounts.vcardShareBlocked";
+
+const vcardShareBlocked = () => {
+  try { return localStorage.getItem(VCARD_BLOCKED_KEY) === "1"; } catch { return false; }
+};
+const markVcardShareBlocked = () => {
+  try { localStorage.setItem(VCARD_BLOCKED_KEY, "1"); } catch { /* noop */ }
+};
+
+const isTouchDevice = () => !!window.matchMedia?.("(pointer: coarse)").matches;
+
+// Comparte un contacto. Devuelve cómo lo hizo:
+// - "copied": en un computador (o sin menú de compartir) copia el texto.
+// - "file": en el teléfono, la tarjeta .vcf por el menú de compartir, y
+//   WhatsApp la muestra como contacto. Funciona en iPhone.
+// - "fileBlocked": el teléfono dice que acepta la tarjeta pero la rechaza al
+//   compartir (Chrome en Android responde "Permission denied"). Ese intento
+//   gasta el toque, así que el menú no se puede volver a abrir con el texto:
+//   se copia el texto y el equipo queda marcado para no intentarlo más.
+// - "text": el texto por el menú de compartir.
+// - "cancelled": se cerró el menú sin elegir nada.
 export async function shareContact(contact) {
+  const title = displayName(contact);
   const text = phoneContactText(contact);
+  const copy = () => navigator.clipboard.writeText(text);
+  if (!isTouchDevice() || !navigator.share) {
+    await copy();
+    return "copied";
+  }
   const file = vcardFile(contact);
-  try {
-    if (navigator.canShare?.({ files: [file] })) {
-      await navigator.share({ files: [file], title: displayName(contact) });
+  if (!vcardShareBlocked() && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title });
       return "file";
+    } catch (err) {
+      if (err?.name === "AbortError") return "cancelled";
+      markVcardShareBlocked();
+      await copy();
+      return "fileBlocked";
     }
-    if (navigator.share) {
-      await navigator.share({ title: displayName(contact), text });
-      return "text";
-    }
+  }
+  try {
+    await navigator.share({ title, text });
+    return "text";
   } catch (err) {
     if (err?.name === "AbortError") return "cancelled";
-    throw err;
+    await copy();
+    return "copied";
   }
-  await navigator.clipboard.writeText(text);
-  return "copied";
 }
 
 // La tarjeta .vcf de un contacto. En el teléfono, abrirla lo guarda en los

@@ -49,7 +49,7 @@ export default function PhoneContactRow({ contact, hideCompany = false, onCopy, 
         <button
           type="button"
           onClick={() => onShare(c)}
-          title="Compartir el contacto (WhatsApp, correo…)"
+          title="Compartir el contacto (WhatsApp, correo…); en el computador, lo copia"
           aria-label="Compartir contacto"
           className="min-h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-xs hover:bg-[var(--color-accent-soft)]"
         >
