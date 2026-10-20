@@ -17,6 +17,12 @@ import ContactCardModal from "./infoAccounts/ContactCardModal";
 // transferencia en WhatsApp). Todo es compartido entre usuarios (favoritos
 // incluidos, guardados en el propio doc).
 
+// La lista se cachea 10 minutos en memoria; guardar, borrar y marcar favorita
+// la actualizan en su lugar (`additive`), sin releer la colección.
+const LIST_OPTS = { order: ["name", "asc"], cache: true, ttl: 10 * 60 * 1000 };
+
+const byName = (a, b) => (a.name || "").localeCompare(b.name || "", "es", { sensitivity: "base" });
+
 export default function InfoAccounts() {
   const toast = useToast();
   const [cards, setCards] = useState([]);
@@ -33,7 +39,7 @@ export default function InfoAccounts() {
   const load = async () => {
     setLoading(true);
     try {
-      const list = await contactCardsService.list({ order: ["name", "asc"] });
+      const list = await contactCardsService.list(LIST_OPTS);
       setCards(list);
     } finally {
       setLoading(false);
@@ -100,7 +106,7 @@ export default function InfoAccounts() {
     const next = !card.favorite;
     setCards((prev) => prev.map((c) => (c.id === card.id ? { ...c, favorite: next } : c)));
     try {
-      await contactCardsService.update(card.id, { favorite: next });
+      await contactCardsService.update(card.id, { favorite: next }, { additive: true });
     } catch {
       toast.error("No se pudo actualizar el favorito");
       setCards((prev) => prev.map((c) => (c.id === card.id ? { ...c, favorite: card.favorite } : c)));
@@ -132,13 +138,11 @@ export default function InfoAccounts() {
         email: (a.email || "").trim(),
       })),
     };
-    if (draft.id) {
-      await contactCardsService.update(draft.id, payload);
-    } else {
-      await contactCardsService.create(payload);
-    }
+    const saved = draft.id
+      ? await contactCardsService.update(draft.id, payload, { additive: true })
+      : await contactCardsService.create(payload, { additive: true });
+    setCards((prev) => [...prev.filter((c) => c.id !== saved.id), saved]);
     setEditing(null);
-    await load();
     toast.success("Ficha guardada");
   };
 
@@ -147,9 +151,9 @@ export default function InfoAccounts() {
     const c = confirmDelete;
     setDeleteBusy(true);
     try {
-      await contactCardsService.remove(c.id);
+      await contactCardsService.remove(c.id, { additive: true });
+      setCards((prev) => prev.filter((x) => x.id !== c.id));
       setConfirmDelete(null);
-      await load();
       toast.success("Ficha eliminada");
     } catch (err) {
       toast.error("No se pudo eliminar: " + (err.message || err));
@@ -158,8 +162,9 @@ export default function InfoAccounts() {
     }
   };
 
-  // El buscador filtra también las favoritas.
-  const matching = useMemo(() => cards.filter((c) => cardMatchesSearch(c, search)), [cards, search]);
+  // El buscador filtra también las favoritas. El orden por nombre se arma acá
+  // porque una ficha recién guardada entra al final de la lista.
+  const matching = useMemo(() => cards.filter((c) => cardMatchesSearch(c, search)).sort(byName), [cards, search]);
   const favorites = useMemo(() => matching.filter((c) => c.favorite), [matching]);
   const rest = useMemo(() => matching.filter((c) => !c.favorite), [matching]);
   const searching = !!search.trim();
