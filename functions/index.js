@@ -41,7 +41,7 @@ const REGION = "us-central1";
 initializeApp();
 const db = getFirestore(DATABASE);
 
-const JOBS = "functionJobs";
+const FUNCTION_JOBS = "functionJobs";
 const USERS = "users";
 const LOGS = "logs";
 
@@ -54,9 +54,9 @@ const ROLES = ["admin", "user"];
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Error con un código que la app reconoce: va al campo `errorCode` del job.
-function jobError(code, message) {
+function functionJobError(code, message) {
   const err = new Error(message);
-  err.jobCode = code;
+  err.functionJobCode = code;
   return err;
 }
 
@@ -66,23 +66,23 @@ async function assertAdmin(uid, message = "Solo un admin puede crear cuentas.") 
   const profile = snap?.exists ? snap.data() : null;
   const isAdmin =
     profile && profile.disabled !== true && String(profile.role || "").toLowerCase() === "admin";
-  if (!isAdmin) throw jobError("not-admin", message);
+  if (!isAdmin) throw functionJobError("not-admin", message);
 }
 
 // Correo en minúsculas, rol de `ROLES` y alias de hasta 40 caracteres.
 function parseNewAccount(params) {
   const email = String(params?.email || "").trim().toLowerCase();
-  if (!EMAIL_RE.test(email)) throw jobError("invalid-email", "El correo no es válido.");
+  if (!EMAIL_RE.test(email)) throw functionJobError("invalid-email", "El correo no es válido.");
   const role = String(params?.role || "user");
-  if (!ROLES.includes(role)) throw jobError("invalid-role", "Rol desconocido: " + role);
+  if (!ROLES.includes(role)) throw functionJobError("invalid-role", "Rol desconocido: " + role);
   const alias = String(params?.alias || "").trim().slice(0, 40);
   return { email, role, alias };
 }
 
 // ── Handlers ────────────────────────────────────────────────────────────────
-// Cada uno recibe el job y `{ jobId }`, y devuelve lo que va al campo `result`.
+// Cada uno recibe el job y `{ functionJobId }`, y devuelve lo que va al campo `result`.
 // Si lanza, el job queda en `error` con el mensaje, y con `errorCode` si el
-// error viene de `jobError`.
+// error viene de `functionJobError`.
 
 const handlers = {
   // Prueba el camino completo: que la función exista, que haya disparado, que
@@ -90,13 +90,13 @@ const handlers = {
   //
   // `requestedBy` sale del documento: que sea el uid de quien lo creó lo
   // garantiza la regla de Firestore, no esta función.
-  async ping(job) {
+  async ping(functionJob) {
     return {
       ok: true,
       region: REGION,
       database: DATABASE,
       gen: 2,
-      requestedBy: job.requestedBy || null,
+      requestedBy: functionJob.requestedBy || null,
       serverTime: new Date().toISOString(),
     };
   },
@@ -105,17 +105,17 @@ const handlers = {
   // UID, y lo registra en `logs`. La contraseña es aleatoria y no se guarda: la
   // persona elige la suya con el correo de restablecimiento que envía la app.
   // Un correo que ya tiene cuenta recibe acceso solo con `params.useExisting`.
-  async createUser(job, { jobId }) {
-    await assertAdmin(job.requestedBy);
-    const { email, role, alias } = parseNewAccount(job.params);
+  async createUser(functionJob, { functionJobId }) {
+    await assertAdmin(functionJob.requestedBy);
+    const { email, role, alias } = parseNewAccount(functionJob.params);
     const auth = getAuth();
 
     const existing = await auth.getUserByEmail(email).catch((err) => {
       if (err?.code === "auth/user-not-found") return null;
       throw err;
     });
-    if (existing && job.params?.useExisting !== true) {
-      throw jobError("account-exists", "Ya existe una cuenta con ese correo.");
+    if (existing && functionJob.params?.useExisting !== true) {
+      throw functionJobError("account-exists", "Ya existe una cuenta con ese correo.");
     }
     const account =
       existing || (await auth.createUser({ email, password: randomBytes(24).toString("base64url") }));
@@ -125,25 +125,25 @@ const handlers = {
       await db.collection(USERS).doc(account.uid).create({
         ...profile,
         createdAt: FieldValue.serverTimestamp(),
-        createdBy: job.requestedBy,
+        createdBy: functionJob.requestedBy,
       });
     } catch (err) {
       if (!existing) await auth.deleteUser(account.uid).catch(() => {});
       // 6 = ALREADY_EXISTS
-      if (err?.code === 6) throw jobError("profile-exists", "Esa cuenta ya tiene acceso a TeRRa.");
+      if (err?.code === 6) throw functionJobError("profile-exists", "Esa cuenta ya tiene acceso a TeRRa.");
       throw err;
     }
 
     await db.collection(LOGS).add({
-      uid: job.requestedBy,
-      email: job.requestedByEmail || null,
+      uid: functionJob.requestedBy,
+      email: functionJob.requestedByEmail || null,
       action: "create",
       entity: "user",
       entityId: account.uid,
       changes: null,
       before: null,
       after: profile,
-      meta: { jobId, ...(existing ? { existingAccount: true } : {}) },
+      meta: { jobId: functionJobId, ...(existing ? { existingAccount: true } : {}) },
       timestamp: FieldValue.serverTimestamp(),
     });
 
@@ -152,33 +152,33 @@ const handlers = {
 
   // Envía ahora el correo de avisos de Cheques y pagos, aunque no haya nada
   // que avisar, para probar la entrega. No cuenta como el aviso del día.
-  async sendCommitmentDigest(job) {
-    await assertAdmin(job.requestedBy, "Solo un admin puede enviar el correo de prueba.");
+  async sendCommitmentDigest(functionJob) {
+    await assertAdmin(functionJob.requestedBy, "Solo un admin puede enviar el correo de prueba.");
     const result = await runCommitmentDigest(db, { password: SMTP_PASS.value(), test: true });
     if (!result.sent) {
-      throw jobError(result.reason, "Faltan los destinatarios o la cuenta que envía.");
+      throw functionJobError(result.reason, "Faltan los destinatarios o la cuenta que envía.");
     }
     return result;
   },
 
   // Publica una nómina en el portal de trabajadores: una ficha por RUT, que el
   // portal lee sin sesión (`./portal.js`). Reemplaza la que estaba publicada.
-  async publishPortal(job, { jobId }) {
-    await assertAdmin(job.requestedBy, "Solo un admin puede publicar en el portal.");
-    const payrollId = String(job.params?.payrollId || "");
-    if (!payrollId) throw jobError("invalid-params", "Falta la nómina a publicar.");
+  async publishPortal(functionJob, { functionJobId }) {
+    await assertAdmin(functionJob.requestedBy, "Solo un admin puede publicar en el portal.");
+    const payrollId = String(functionJob.params?.payrollId || "");
+    if (!payrollId) throw functionJobError("invalid-params", "Falta la nómina a publicar.");
     return publishPortal(db, {
       payrollId,
-      requestedBy: job.requestedBy,
-      requestedByEmail: job.requestedByEmail || null,
-      jobId,
+      requestedBy: functionJob.requestedBy,
+      requestedByEmail: functionJob.requestedByEmail || null,
+      functionJobId,
     });
   },
 };
 
 export const runFunctionJob = onDocumentCreated(
   {
-    document: JOBS + "/{jobId}",
+    document: FUNCTION_JOBS + "/{jobId}",
     database: DATABASE,
     region: REGION,
     memory: "256MiB",
@@ -193,12 +193,12 @@ export const runFunctionJob = onDocumentCreated(
     const snap = event.data;
     if (!snap) return;
     const ref = snap.ref;
-    const jobId = event.params.jobId;
+    const functionJobId = event.params.jobId;
 
     // Eventarc entrega **al menos una vez**: el mismo job puede llegar dos
     // veces, así que se reclama en una transacción leyendo el doc vivo. El
     // snapshot del evento siempre viene `pending` (es el doc recién creado).
-    const job = await db.runTransaction(async (tx) => {
+    const functionJob = await db.runTransaction(async (tx) => {
       const actual = await tx.get(ref);
       const data = actual.data();
       if (!data || data.status !== "pending") return null;
@@ -206,23 +206,23 @@ export const runFunctionJob = onDocumentCreated(
       return data;
     });
 
-    if (!job) {
-      logger.info("job " + jobId + " ya fue tomado, se ignora esta entrega");
+    if (!functionJob) {
+      logger.info("job " + functionJobId + " ya fue tomado, se ignora esta entrega");
       return;
     }
 
-    const handler = handlers[job.type];
+    const handler = handlers[functionJob.type];
     if (!handler) {
       await ref.update({
         status: "error",
-        error: "Tipo de job desconocido: " + job.type,
+        error: "Tipo de job desconocido: " + functionJob.type,
         finishedAt: FieldValue.serverTimestamp(),
       });
       return;
     }
 
     try {
-      const result = await handler(job, { jobId });
+      const result = await handler(functionJob, { functionJobId });
       // Es un `update` y el trigger es `onDocumentCreated`, así que no se
       // vuelve a disparar.
       await ref.update({
@@ -231,12 +231,12 @@ export const runFunctionJob = onDocumentCreated(
         finishedAt: FieldValue.serverTimestamp(),
       });
     } catch (err) {
-      if (err?.jobCode) logger.warn("job " + jobId + " (" + job.type + "): " + err.message);
-      else logger.error("job " + jobId + " (" + job.type + ") falló", err);
+      if (err?.functionJobCode) logger.warn("job " + functionJobId + " (" + functionJob.type + "): " + err.message);
+      else logger.error("job " + functionJobId + " (" + functionJob.type + ") falló", err);
       await ref.update({
         status: "error",
         error: (err && err.message) || String(err),
-        ...(err?.jobCode ? { errorCode: err.jobCode } : {}),
+        ...(err?.functionJobCode ? { errorCode: err.functionJobCode } : {}),
         finishedAt: FieldValue.serverTimestamp(),
       });
     }

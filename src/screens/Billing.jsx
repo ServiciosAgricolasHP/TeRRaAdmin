@@ -1,0 +1,2777 @@
+// Pantalla de facturación: multi-empresa, vista por mes actual con selector de
+// período, estados de pago y reemplazo por período con borrado de huérfanos.
+//
+// La emisión se hace en el portal del SII. Aquí solo se importa el RCV
+// mensual y se gestiona el estado de pago de cada factura.
+
+import React, { useState, useRef, useEffect, useMemo } from "react";
+import { captureFullWidthBlob, captureFullWidthDataUrl } from "../utils/imageCapture";
+import { serverTimestamp } from "firebase/firestore";
+import { auth } from "../firebase";
+import { companiesService, dteDocumentsService, costCentersService, informalExpensesService } from "../services";
+import { importDteRecords } from "../services/dteImportService";
+import { normalizeRut, parseSiiRcvCsv, extractRutFromFilename, buildDteDocId, dteTypeLabel } from "../utils/siiCsvParser";
+import { formatRutForDisplay } from "../utils/rutUtils";
+import { unshout } from "../utils/textCase";
+import { useToast } from "../contexts/ToastContext";
+import { useAuth } from "../contexts/AuthContext";
+import { useIsMobile } from "../hooks/useIsMobile";
+import {
+  CREDIT_NOTE_TYPES,
+  DEFAULT_PROJECTION_PERCENT,
+  projectCashFlow,
+  groupByCounterparty,
+  formatPeriod,
+} from "../utils/cashFlowProjection";
+import { fmtCurrency, fmtNumber } from "../utils/format";
+import { CompaniesModal } from "./billing/CompaniesModal";
+import { CompanySelectAndPickModal } from "./billing/CompanySelectAndPickModal";
+import { CostCenterSelect } from "./billing/CostCenterSelect";
+import { CostCentersModal } from "./billing/CostCentersModal";
+import { DocDetailModal } from "./billing/DocDetailModal";
+import {
+  RECEIVABLE_CATEGORIES,
+  PAYMENT_STATUSES,
+  kindTitleLabel,
+  formatPeriodPretty,
+  CREDIT_NOTE_STATE,
+  groupDocsByCostCenter,
+  MONTH_NAMES_ES,
+} from "./billing/docs";
+import { ImportPreviewModal } from "./billing/ImportPreviewModal";
+import { OtherTaxChip } from "./billing/OtherTaxChip";
+import { PaymentStatusSelect } from "./billing/PaymentStatusSelect";
+import { ReceivablesModal } from "./billing/ReceivablesModal";
+import { PrintableDocList } from "./billing/PrintableDocList";
+import { PrintableAnnualSummary } from "./billing/PrintableAnnualSummary";
+import { PrintableWithholdings } from "./billing/PrintableWithholdings";
+import { PrintableWithholdingsGroup } from "./billing/PrintableWithholdingsGroup";
+import { WithholdingsView } from "./billing/WithholdingsView";
+import { SortHeader } from "./billing/SortHeader";
+import { SummaryCard } from "./billing/SummaryCard";
+
+// Los tipos de DTE que restan (notas de crédito) viven en
+// `utils/cashFlowProjection` junto con la proyección, que necesita el mismo
+// criterio: si una NC no restara ahí, la base proyectada saldría inflada.
+
+// Mes actual en formato YYYY-MM. Es el filtro por defecto: la vista operativa
+// muestra solo el mes en curso, y el selector de período lleva a los demás.
+function currentPeriod() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+// Devuelve `{ category, amount }` para una factura pendiente, o null si no
+// tiene nada pendiente (pagada, anulada, NC, etc.).
+// `factored` (Solo IVA, cedida vía factoring) cuenta como **pagada** para
+// efectos de cobranza: el factor ya pagó el neto al emisor y el cliente le
+// debe al factor, no a la empresa. El IVA es una obligación tributaria
+// separada que se gestiona en el F29, no en este flujo.
+function pendingFor(d) {
+  if (CREDIT_NOTE_TYPES.has(Number(d.tipo))) return null;
+  const st = d.paymentStatus || "unpaid";
+  if (st === "cancelled" || st === "paid" || st === "factored") return null;
+  const total = Number(d.total) || 0;
+  const neto = Number(d.neto) || 0;
+  const iva = Number(d.iva) || 0;
+  const paid = Number(d.amountPaid) || 0;
+  if (st === "unpaid") {
+    const pending = total - paid;
+    if (pending <= 0.5) return null;
+    return { category: paid > 0 ? "partial" : "full", amount: pending };
+  }
+  if (st === "net_only") {
+    // Lo que ya está cubierto por pagos por encima del neto se imputa al IVA.
+    const vatCovered = Math.max(0, paid - neto);
+    const pending = Math.max(0, iva - vatCovered);
+    if (pending <= 0.5) return null;
+    return { category: "iva", amount: pending };
+  }
+  return null;
+}
+
+// Heurística para sugerir que una factura está anulada por una NC.
+// Coincide: misma empresa + kind + contraparte (RUT) + total exacto, con la NC
+// emitida en fecha >= factura. Es solo una sugerencia: un cliente con dos
+// facturas del mismo monto y una NC da coincidencia en ambas, así que el
+// usuario decide si la marca como Anulada.
+function findCancellingNcs(dteDoc, allDocs) {
+  if (CREDIT_NOTE_TYPES.has(Number(dteDoc.tipo))) return [];
+  const total = Number(dteDoc.total) || 0;
+  if (total <= 0) return [];
+  const counterpartyRut = dteDoc.kind === "venta" ? dteDoc.rutReceptor : dteDoc.rutEmisor;
+  if (!counterpartyRut) return [];
+  const out = [];
+  for (const d of allDocs) {
+    if (!CREDIT_NOTE_TYPES.has(Number(d.tipo))) continue;
+    if (d.companyId !== dteDoc.companyId) continue;
+    if (d.kind !== dteDoc.kind) continue;
+    const dRut = d.kind === "venta" ? d.rutReceptor : d.rutEmisor;
+    if (dRut !== counterpartyRut) continue;
+    if ((Number(d.total) || 0) !== total) continue;
+    if (d.fechaEmision && dteDoc.fechaEmision && d.fechaEmision < dteDoc.fechaEmision) continue;
+    out.push(d);
+  }
+  return out;
+}
+
+// Clave de localStorage con la última empresa elegida, que se recuerda entre
+// sesiones.
+const LS_SELECTED_COMPANY = "facturacion.selectedCompanyId";
+
+// Tamaño de página de la tabla principal. La vista plana pagina siempre, haya
+// o no búsqueda, para que meses con cientos de docs no rendericen todo.
+const PAGE_SIZE = 20;
+
+export default function Billing() {
+  const toast = useToast();
+  const isMobile = useIsMobile();
+  const { isAdmin } = useAuth();
+  const [companies, setCompanies] = useState([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState(() => {
+    try { return localStorage.getItem(LS_SELECTED_COMPANY) || ""; } catch { return ""; }
+  });
+  const [docs, setDocs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [kindTab, setKindTab] = useState("venta");
+  // Vista por defecto = mes actual. El selector de período permite ir a
+  // cualquier mes pasado o pedir "Todos los períodos".
+  const [periodFilter, setPeriodFilter] = useState(currentPeriod());
+  const [typeFilter, setTypeFilter] = useState("");
+  const [paymentFilter, setPaymentFilter] = useState(""); // "" | "unpaid" | "paid" | "net_only" | "factored"
+  const [search, setSearch] = useState("");
+  // Orden de la tabla principal: click en un encabezado alterna asc/desc; por
+  // defecto, fechaEmision desc.
+  const [sortBy, setSortBy] = useState({ key: "fechaEmision", dir: "desc" });
+  // Modales
+  const [importPreview, setImportPreview] = useState(null);
+  const [importCompanyId, setImportCompanyId] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [companiesModalOpen, setCompaniesModalOpen] = useState(false);
+  const [receivablesModalOpen, setReceivablesModalOpen] = useState(false);
+  // Catálogo manual de centros de costo ficticios (ver costCentersService),
+  // global para todas las empresas. "Combustibles" no está aquí: sale
+  // automáticamente del código de impuesto del SII.
+  const [costCenters, setCostCenters] = useState([]);
+  // Gastos informales (sin factura/boleta formal) por centro de costo — ver
+  // informalExpensesService. Puramente informativo, nunca entra a dteDocuments
+  // ni a los totales/exports fiscales reales.
+  const [informalExpenses, setInformalExpenses] = useState([]);
+  // Modal de centros de costo: crear/editar/eliminar + vista global de TODOS
+  // los documentos de un centro elegido, de todas las empresas y períodos
+  // (ignora los filtros de la tabla principal), ordenados cronológicamente.
+  // Independiente del toggle de agrupación de la tabla.
+  const [costCentersModalOpen, setCostCentersModalOpen] = useState(false);
+  // Modal de detalle: muestra todos los campos del DTE + notas editables.
+  // Se abre al click en el botón ℹ de cada fila.
+  const [detailDoc, setDetailDoc] = useState(null);
+  // Refs de los printables fuera de pantalla (retenciones, listado, resumen)
+  // para html-to-image e impresión.
+  const withholdingsPrintRef = useRef(null);
+  const docListPrintRef = useRef(null);
+  const summaryPrintRef = useRef(null);
+  const [exportBusy, setExportBusy] = useState("");
+  const [docListBusy, setDocListBusy] = useState("");
+  const [summaryBusy, setSummaryBusy] = useState("");
+  // Año de la pestaña "Resumen", con selector propio, independiente del filtro
+  // de mes (que ahí no aplica: el resumen cruza los 12 meses del año elegido).
+  const [summaryYear, setSummaryYear] = useState(() => String(new Date().getFullYear()));
+  // Pestaña "Proyección" (solo admin). `projectionStart` es el PRIMER mes
+  // proyectado; la base son los 12 meses anteriores. Arranca en el mes actual:
+  // proyecta la temporada que viene a partir de hoy.
+  const [projectionStart, setProjectionStart] = useState(() => currentPeriod());
+  // Se guarda como texto para que el input se pueda vaciar mientras se tipea
+  // sin que el valor salte a 0 y la tabla parpadee en cero.
+  const [projectionPercent, setProjectionPercent] = useState(String(DEFAULT_PROJECTION_PERCENT));
+  const [projectionBusy, setProjectionBusy] = useState("");
+  // Toggle "Agrupar tabla por centro": agrupa la tabla y el export por centro
+  // de costo (o por contraparte si el documento no tiene uno), con los
+  // combustibles juntos arriba. Se guarda en localStorage (una sola clave para
+  // todas las pestañas).
+  const [groupByCostCenter, setGroupByCostCenter] = useState(() => {
+    try { return localStorage.getItem("facturacion.groupByCostCenter") === "true"; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("facturacion.groupByCostCenter", String(groupByCostCenter)); } catch { /* noop */ }
+  }, [groupByCostCenter]);
+  // Refs por contraparte (mapa clave del grupo → nodo DOM) y estado de carga
+  // por grupo. Cada grupo se renderiza fuera de pantalla con su propio
+  // printable, y los handlers usan estos refs para copiar, descargar o
+  // imprimir solo ese grupo.
+  const groupPrintRefs = useRef(new Map());
+  const [groupBusy, setGroupBusy] = useState({}); // { [groupKey]: "copy"|"png"|... }
+  const groupKey = (g) => g?.rut || "__sin_rut__";
+  const setBusyFor = (key, action) =>
+    setGroupBusy((prev) => {
+      const next = { ...prev };
+      if (action) next[key] = action; else delete next[key];
+      return next;
+    });
+
+  const companiesById = useMemo(
+    () => new Map(companies.map((c) => [c.id, c])),
+    [companies],
+  );
+  const costCentersById = useMemo(
+    () => new Map(costCenters.map((c) => [c.id, c])),
+    [costCenters],
+  );
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const [comps, list, centers, expenses] = await Promise.all([
+        companiesService.list({ order: ["razonSocial", "asc"], cache: true, ttl: 600_000 }),
+        dteDocumentsService.list({ order: ["fechaEmision", "desc"], cache: true, ttl: 600_000 }),
+        costCentersService.list({ order: ["label", "asc"], cache: true, ttl: 600_000 }),
+        informalExpensesService.list({ order: ["date", "desc"], cache: true, ttl: 600_000 }),
+      ]);
+      setCompanies(comps);
+      setDocs(list);
+      setCostCenters(centers);
+      setInformalExpenses(expenses);
+      // Si la empresa guardada ya no existe o no hay ninguna elegida, toma la
+      // primera; si no, respeta la última elección.
+      if (comps.length > 0 && !comps.some((c) => c.id === selectedCompanyId)) {
+        setSelectedCompanyId(comps[0].id);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadAll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  // Guarda la empresa elegida para la próxima visita a la pantalla.
+  useEffect(() => {
+    try { localStorage.setItem(LS_SELECTED_COMPANY, selectedCompanyId || ""); } catch { /* noop */ }
+  }, [selectedCompanyId]);
+
+  // La pestaña "Retenciones" muestra todos los DTE (ventas y compras) con
+  // estado `net_only`, agrupados por contraparte. No es un `kind`, pero va como
+  // un valor más de `kindTab` para que las pestañas usen un solo estado.
+  const isWithholdingsView = kindTab === "retenciones";
+  // Las pestañas de análisis cruzan varios meses por su cuenta, así que apagan
+  // los filtros, las tarjetas y la tabla del listado. Todos esos lugares leen
+  // este predicado: una pestaña de análisis nueva se agrega solo aquí.
+  const isAnalysisTab = kindTab === "resumen" || kindTab === "proyeccion";
+
+  // Filtros del listado.
+  const filtered = useMemo(() => {
+    let arr = docs;
+    if (isWithholdingsView) {
+      // En retenciones: filtro implícito por estado, sin restringir kind.
+      arr = arr.filter((d) => (d.paymentStatus || "unpaid") === "net_only");
+    } else {
+      arr = arr.filter((d) => d.kind === kindTab);
+    }
+    if (selectedCompanyId) arr = arr.filter((d) => d.companyId === selectedCompanyId);
+    // Al buscar por texto (contraparte/RUT/folio) el período se ignora: la
+    // búsqueda responde "todas las facturas de esa empresa", no solo las del
+    // mes elegido. Al limpiar la búsqueda el filtro de período vuelve a regir.
+    const searching = !!search.trim();
+    if (periodFilter && !searching) arr = arr.filter((d) => d.periodo === periodFilter);
+    if (typeFilter) arr = arr.filter((d) => String(d.tipo) === String(typeFilter));
+    // El estado de pago solo se lleva en ventas; en Compras los chips del
+    // filtro no se muestran, así que tampoco filtran.
+    if (kindTab === "venta" && paymentFilter) {
+      arr = arr.filter((d) => (d.paymentStatus || "unpaid") === paymentFilter);
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase().trim();
+      arr = arr.filter((d) => {
+        const razonV = (d.razonSocialReceptor || "").toLowerCase();
+        const razonC = (d.razonSocialEmisor || "").toLowerCase();
+        const rutV = (d.rutReceptor || "").toLowerCase();
+        const rutC = (d.rutEmisor || "").toLowerCase();
+        return (
+          razonV.includes(q) || razonC.includes(q) ||
+          rutV.includes(q) || rutC.includes(q) ||
+          String(d.folio).includes(q)
+        );
+      });
+    }
+    return arr;
+  }, [docs, kindTab, isWithholdingsView, selectedCompanyId, periodFilter, typeFilter, paymentFilter, search]);
+
+  // Orden de la tabla principal (facturas y compras); la vista de retenciones
+  // agrupa por su cuenta. Al ordenar por estado, las NC usan la clave
+  // `zz_anulada`, que las deja al final en orden ascendente.
+  const sortGetter = (d, key) => {
+    switch (key) {
+      case "fechaEmision": return d.fechaEmision || "";
+      case "tipo": return Number(d.tipo) || 0;
+      case "folio": return Number(d.folio) || 0;
+      case "razon": return (kindTab === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor) || "";
+      case "rut": return (kindTab === "venta" ? d.rutReceptor : d.rutEmisor) || "";
+      case "neto": return Number(d.neto) || 0;
+      case "iva": return Number(d.iva) || 0;
+      case "total": return Number(d.total) || 0;
+      case "pagado": return Number(d.amountPaid) || 0;
+      case "saldo": return (Number(d.total) || 0) - (Number(d.amountPaid) || 0);
+      case "estado": return CREDIT_NOTE_TYPES.has(Number(d.tipo)) ? "zz_anulada" : (d.paymentStatus || "unpaid");
+      default: return 0;
+    }
+  };
+  const sortedFiltered = useMemo(() => {
+    const arr = [...filtered];
+    arr.sort((a, b) => {
+      const av = sortGetter(a, sortBy.key);
+      const bv = sortGetter(b, sortBy.key);
+      let cmp;
+      if (typeof av === "number" && typeof bv === "number") cmp = av - bv;
+      else cmp = String(av).localeCompare(String(bv));
+      return sortBy.dir === "asc" ? cmp : -cmp;
+    });
+    return arr;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered, sortBy, kindTab]);
+  const toggleSort = (key) => {
+    setSortBy((cur) => cur.key === key ? { key, dir: cur.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "fechaEmision" ? "desc" : "asc" });
+  };
+
+  // Paginación de la tabla plana. No aplica al modo "por centro de costo" ni a
+  // retenciones/resumen: son vistas de reporte con subtotales, y cortar filas
+  // los distorsionaría. Cualquier cambio de filtro u orden vuelve a la página 1.
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    setPage(1);
+  }, [kindTab, selectedCompanyId, periodFilter, typeFilter, paymentFilter, search, sortBy]);
+  const pageCount = Math.max(1, Math.ceil(sortedFiltered.length / PAGE_SIZE));
+  // Acota la página al total: si la lista se achica (p. ej. al cambiar de
+  // empresa) antes de que corra el reset, no muestra una página vacía.
+  const currentPage = Math.min(page, pageCount);
+  const pagedDocs = useMemo(
+    () => sortedFiltered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
+    [sortedFiltered, currentPage],
+  );
+  // Números de página con ventana: 1 … (cur−1) cur (cur+1) … último.
+  const pageNumbers = useMemo(() => {
+    if (pageCount <= 7) return Array.from({ length: pageCount }, (_, i) => i + 1);
+    const set = new Set([1, pageCount, currentPage - 1, currentPage, currentPage + 1]);
+    const nums = [...set].filter((n) => n >= 1 && n <= pageCount).sort((a, b) => a - b);
+    const out = [];
+    let prev = 0;
+    for (const n of nums) {
+      if (n - prev > 1) out.push("…");
+      out.push(n);
+      prev = n;
+    }
+    return out;
+  }, [pageCount, currentPage]);
+
+  // Lista de contrapartes únicas (razón social) para el datalist del buscador.
+  // Sale de los docs filtrados solo por empresa y kind, sin el resto de los
+  // filtros, para que el dropdown muestre todas las opciones posibles.
+  const counterpartySuggestions = useMemo(() => {
+    const set = new Set();
+    for (const d of docs) {
+      if (!isWithholdingsView && d.kind !== kindTab) continue;
+      if (selectedCompanyId && d.companyId !== selectedCompanyId) continue;
+      const razon = d.kind === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
+      if (razon) set.add(razon);
+    }
+    return [...set].sort();
+  }, [docs, kindTab, isWithholdingsView, selectedCompanyId]);
+
+  // Retenciones agrupadas por contraparte (RUT) → suma neto/iva/total + lista
+  // de docs. Para la pestaña Retenciones.
+  const withholdingsByCounterparty = useMemo(() => {
+    if (!isWithholdingsView) return [];
+    const map = new Map();
+    for (const d of filtered) {
+      const rutContra = d.kind === "venta" ? d.rutReceptor : d.rutEmisor;
+      const razonContra = d.kind === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
+      const key = rutContra || "__sin_rut__";
+      if (!map.has(key)) {
+        map.set(key, {
+          rut: rutContra, razon: razonContra,
+          neto: 0, iva: 0, total: 0, count: 0, docs: [],
+        });
+      }
+      const g = map.get(key);
+      g.neto += Number(d.neto) || 0;
+      g.iva += Number(d.iva) || 0;
+      g.total += Number(d.total) || 0;
+      g.count++;
+      g.docs.push(d);
+    }
+    return [...map.values()].sort((a, b) => b.iva - a.iva);
+  }, [filtered, isWithholdingsView]);
+
+  const periodOptions = useMemo(() => {
+    const set = new Set();
+    for (const d of docs) {
+      // En retenciones la pestaña no corresponde a un `kind` (venta/compra),
+      // así que se toma cualquier doc con estado net_only para que el dropdown
+      // ofrezca los meses pasados que tienen retenciones.
+      const matchesTab = isWithholdingsView
+        ? (d.paymentStatus || "unpaid") === "net_only"
+        : d.kind === kindTab;
+      if (matchesTab && d.periodo) {
+        if (!selectedCompanyId || d.companyId === selectedCompanyId) set.add(d.periodo);
+      }
+    }
+    set.add(currentPeriod());
+    return [...set].sort().reverse();
+  }, [docs, kindTab, isWithholdingsView, selectedCompanyId]);
+
+  const typeOptions = useMemo(() => {
+    const set = new Set();
+    for (const d of docs) {
+      if (d.kind === kindTab) {
+        if (!selectedCompanyId || d.companyId === selectedCompanyId) set.add(d.tipo);
+      }
+    }
+    return [...set].sort((a, b) => a - b);
+  }, [docs, kindTab, selectedCompanyId]);
+
+  // Totales con signo: las NC restan en lugar de sumar. Además cuenta las NC
+  // por separado para su tarjeta propia, y desglosa los montos por estado de
+  // pago (unpaid/net_only/factored) sumando solo facturas, no NC.
+  const totals = useMemo(() => {
+    const t = {
+      neto: 0, iva: 0, total: 0, count: 0,
+      ncTotal: 0, ncCount: 0,
+      unpaidTotal: 0, netOnlyTotal: 0, netOnlyIva: 0, factoredTotal: 0,
+    };
+    for (const d of filtered) {
+      const sign = CREDIT_NOTE_TYPES.has(Number(d.tipo)) ? -1 : 1;
+      t.neto += sign * (Number(d.neto) || 0);
+      t.iva += sign * (Number(d.iva) || 0);
+      t.total += sign * (Number(d.total) || 0);
+      t.count++;
+      if (sign < 0) {
+        t.ncTotal += Number(d.total) || 0;
+        t.ncCount++;
+      }
+      const st = d.paymentStatus || "unpaid";
+      if (sign > 0) {
+        if (st === "unpaid") t.unpaidTotal += Number(d.total) || 0;
+        if (st === "net_only") {
+          t.netOnlyTotal += Number(d.total) || 0;
+          t.netOnlyIva += Number(d.iva) || 0;
+        }
+        if (st === "factored") t.factoredTotal += Number(d.total) || 0;
+      }
+    }
+    return t;
+  }, [filtered]);
+
+  // Mapa de docId → [NC candidatas]. Se calcula sobre TODOS los docs (no solo
+  // filtered) para que una NC cuente aunque el usuario esté filtrando por otra
+  // cosa. Excluye las facturas ya marcadas como anuladas: para esas la
+  // sugerencia no aplica.
+  const cancellingByDocId = useMemo(() => {
+    const m = new Map();
+    for (const d of docs) {
+      if (CREDIT_NOTE_TYPES.has(Number(d.tipo))) continue;
+      if ((d.paymentStatus || "unpaid") === "cancelled") continue;
+      const ncs = findCancellingNcs(d, docs);
+      if (ncs.length > 0) m.set(d.id, ncs);
+    }
+    return m;
+  }, [docs]);
+
+  // Lista global de facturas pendientes (cualquier período) para la empresa
+  // seleccionada; alimenta el modal "Ver pendientes". **Solo ventas** (kind
+  // === "venta"): las compras tienen su propio flujo de seguimiento, y las
+  // cuentas por cobrar no se mezclan con las cuentas por pagar.
+  // Cada item lleva `_category` y `_pending` calculados por `pendingFor`.
+  // Ordenado por categoría (full → partial → iva) y luego por fecha ascendente.
+  const receivablesList = useMemo(() => {
+    const arr = [];
+    for (const d of docs) {
+      if (d.kind !== "venta") continue;
+      if (selectedCompanyId && d.companyId !== selectedCompanyId) continue;
+      const p = pendingFor(d);
+      if (!p) continue;
+      arr.push({ ...d, _category: p.category, _pending: p.amount });
+    }
+    arr.sort((a, b) => {
+      const oa = RECEIVABLE_CATEGORIES[a._category].order;
+      const ob = RECEIVABLE_CATEGORIES[b._category].order;
+      if (oa !== ob) return oa - ob;
+      return String(a.fechaEmision || "").localeCompare(String(b.fechaEmision || ""));
+    });
+    return arr;
+  }, [docs, selectedCompanyId]);
+
+  const receivablesTotals = useMemo(() => {
+    const t = { full: 0, partial: 0, iva: 0, total: 0, count: { full: 0, partial: 0, iva: 0 } };
+    for (const d of receivablesList) {
+      t[d._category] += d._pending;
+      t.total += d._pending;
+      t.count[d._category]++;
+    }
+    return t;
+  }, [receivablesList]);
+
+  // ===== Resumen anual (pestaña "Resumen") =====
+  // Años disponibles para el selector — derivados de los períodos de la empresa
+  // seleccionada. Siempre incluye el año actual aunque no tenga docs todavía.
+  const summaryYears = useMemo(() => {
+    const set = new Set();
+    for (const d of docs) {
+      if (selectedCompanyId && d.companyId !== selectedCompanyId) continue;
+      const y = String(d.periodo || "").slice(0, 4);
+      if (y) set.add(y);
+    }
+    set.add(String(new Date().getFullYear()));
+    return [...set].sort().reverse();
+  }, [docs, selectedCompanyId]);
+
+  // Resumen mensual del año elegido para la empresa seleccionada. Por cada mes
+  // acumula ventas/compras con signo (NC restan) separando IVA débito (ventas)
+  // de IVA crédito (compras). El IVA de las facturas "Solo neto" (net_only) se
+  // suma normalmente al débito/crédito que corresponda, sin separarlo.
+  // IVA a pagar del mes = débito − crédito.
+  const summaryData = useMemo(() => {
+    const mk = () => ({
+      salesNet: 0, vatDebit: 0, salesTotal: 0, salesCount: 0,
+      purchasesNet: 0, vatCredit: 0, purchasesTotal: 0, purchasesCount: 0,
+    });
+    const months = Array.from({ length: 12 }, mk);
+    for (const d of docs) {
+      if (selectedCompanyId && d.companyId !== selectedCompanyId) continue;
+      const p = String(d.periodo || "");
+      if (p.slice(0, 4) !== summaryYear) continue;
+      const mi = Number(p.slice(5, 7)) - 1;
+      if (mi < 0 || mi > 11) continue;
+      const m = months[mi];
+      const sign = CREDIT_NOTE_TYPES.has(Number(d.tipo)) ? -1 : 1;
+      const neto = Number(d.neto) || 0;
+      const iva = Number(d.iva) || 0;
+      const total = Number(d.total) || 0;
+      if (d.kind === "venta") {
+        m.salesNet += sign * neto;
+        m.vatDebit += sign * iva;
+        m.salesTotal += sign * total;
+        m.salesCount++;
+      } else if (d.kind === "compra") {
+        m.purchasesNet += sign * neto;
+        m.vatCredit += sign * iva;
+        m.purchasesTotal += sign * total;
+        m.purchasesCount++;
+      }
+    }
+    const total = mk();
+    for (const m of months) {
+      for (const k of Object.keys(total)) total[k] += m[k];
+    }
+    return { months, total };
+  }, [docs, selectedCompanyId, summaryYear]);
+
+  // --- IMPORTACIÓN ---
+
+  const openImport = () => {
+    if (companies.length === 0) {
+      toast.warning("Tienes que registrar al menos una empresa antes de importar. Usa el botón 🏢 Empresas.");
+      return;
+    }
+    setImportCompanyId(selectedCompanyId || companies[0].id);
+  };
+
+  // Varios archivos: parsea cada uno por separado. Cada uno trae su propio
+  // kind (ventas/compras) detectado del encabezado, sus stats, sus errores y un
+  // RUT sacado del nombre del archivo para avisar si no coincide con la
+  // empresa elegida.
+  const onFilesPick = async (files) => {
+    if (!files || files.length === 0) return;
+    if (!importCompanyId) {
+      toast.warning("Selecciona una empresa antes de elegir los archivos.");
+      return;
+    }
+    const company = companiesById.get(importCompanyId);
+    const companyRutNormalized = company?.rut ? normalizeRut(company.rut) : "";
+    const parsedFiles = [];
+    for (const file of files) {
+      try {
+        const buffer = await file.arrayBuffer();
+        const parsed = parseSiiRcvCsv(buffer, { companyRut: company?.rut || "" });
+        const detectedRut = extractRutFromFilename(file.name);
+        const detectedRutNormalized = detectedRut ? normalizeRut(detectedRut) : "";
+        const rutMismatch = !!(detectedRutNormalized && companyRutNormalized && detectedRutNormalized !== companyRutNormalized);
+        const recordsWithId = parsed.records.map((r) => ({
+          ...r,
+          id: buildDteDocId({
+            companyId: importCompanyId,
+            kind: r.kind,
+            tipo: r.tipo,
+            folio: r.folio,
+            rutEmisor: r.rutEmisor,
+            rutReceptor: r.rutReceptor,
+          }),
+          companyId: importCompanyId,
+          companyAlias: company?.alias || company?.razonSocial || "",
+          sourceFile: file.name,
+        }));
+        parsedFiles.push({
+          name: file.name,
+          kind: parsed.kind,
+          records: recordsWithId,
+          errors: parsed.errors,
+          stats: parsed.stats,
+          detectedRut: detectedRutNormalized,
+          rutMismatch,
+          excluded: false, // el usuario puede excluir archivos sospechosos
+        });
+      } catch (err) {
+        parsedFiles.push({
+          name: file.name,
+          kind: null,
+          records: [],
+          errors: [{ line: 0, message: err.message || String(err) }],
+          stats: { count: 0, byTipo: {}, totalAmount: 0 },
+          detectedRut: extractRutFromFilename(file.name),
+          rutMismatch: false,
+          excluded: true,
+          parseFailed: true,
+        });
+      }
+    }
+    setImportPreview({ files: parsedFiles });
+  };
+
+  // Incluye o excluye un archivo del import desde el modal.
+  const toggleFileExclusion = (fileName) => {
+    setImportPreview((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        files: prev.files.map((f) =>
+          f.name === fileName ? { ...f, excluded: !f.excluded } : f,
+        ),
+      };
+    });
+  };
+
+  // Confirmar import: junta los records de TODOS los archivos no excluidos y
+  // los pasa a `importDteRecords`, que por cada (kind, periodo) de la empresa
+  // hace un "replace": borra los huérfanos (estaban antes y ya no vienen) y
+  // escribe los nuevos o actualizados, en batches de hasta 450 escrituras.
+  const confirmImport = async () => {
+    if (!importPreview) return;
+    setImporting(true);
+    try {
+      const allRecords = importPreview.files
+        .filter((f) => !f.excluded && !f.parseFailed)
+        .flatMap((f) => f.records);
+      if (allRecords.length === 0) {
+        toast.warning("No hay registros para importar (todos los archivos están excluidos o fallaron).");
+        setImporting(false);
+        return;
+      }
+      const { totalNew, totalOverwrite, totalDeleted } = await importDteRecords({
+        companyId: importCompanyId,
+        records: allRecords,
+        uid: auth.currentUser?.uid || null,
+      });
+      const filesProcessed = importPreview.files.filter((f) => !f.excluded && !f.parseFailed).length;
+      toast.success(
+        `${filesProcessed} archivo${filesProcessed === 1 ? "" : "s"} procesado${filesProcessed === 1 ? "" : "s"}.\n` +
+        `Nuevos: ${totalNew} · Sobreescritos: ${totalOverwrite} · Huérfanos eliminados: ${totalDeleted}\n` +
+        `Total: ${allRecords.length}`,
+        { title: "Importación lista" },
+      );
+      setImportPreview(null);
+      setImportCompanyId("");
+      await loadAll();
+    } catch (err) {
+      toast.error("Error al guardar: " + (err.message || String(err)));
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  // --- Marcar estado de pago de una factura ---
+  // Fija el estado directamente; la UI lo ofrece como un `<select>` por fila.
+  const setPaymentStatus = async (dteDoc, newStatus) => {
+    if (!PAYMENT_STATUSES[newStatus]) return;
+    if ((dteDoc.paymentStatus || "unpaid") === newStatus) return;
+    try {
+      await dteDocumentsService.update(dteDoc.id, {
+        paymentStatus: newStatus,
+        paymentStatusSetAt: serverTimestamp(),
+        paymentStatusSetBy: auth.currentUser?.uid || null,
+      });
+      setDocs((prev) => prev.map((d) => (d.id === dteDoc.id ? { ...d, paymentStatus: newStatus } : d)));
+    } catch (err) {
+      toast.error("Error al cambiar estado: " + (err.message || err));
+    }
+  };
+
+  // Guarda notas o detalle libre de un DTE: la glosa que el SII no incluye en
+  // el CSV o apuntes de seguimiento interno.
+  const saveDocNotes = async (dteDoc, rawNotes) => {
+    const notes = unshout(rawNotes);
+    try {
+      await dteDocumentsService.update(dteDoc.id, { notes });
+      setDocs((prev) => prev.map((d) => (d.id === dteDoc.id ? { ...d, notes } : d)));
+      setDetailDoc((cur) => (cur?.id === dteDoc.id ? { ...cur, notes } : cur));
+    } catch (err) {
+      toast.error("Error al guardar notas: " + (err.message || err));
+    }
+  };
+
+  // Asigna (o quita) el centro de costo ficticio manual de un documento.
+  // Los combustibles se agrupan solos; este campo es para las demás
+  // categorías, que el usuario define a mano.
+  const saveDocCostCenter = async (dteDoc, costCenterId) => {
+    const next = costCenterId || null;
+    try {
+      await dteDocumentsService.update(dteDoc.id, { costCenterId: next });
+      setDocs((prev) => prev.map((d) => (d.id === dteDoc.id ? { ...d, costCenterId: next } : d)));
+      setDetailDoc((cur) => (cur?.id === dteDoc.id ? { ...cur, costCenterId: next } : cur));
+    } catch (err) {
+      toast.error("Error al asignar centro de costo: " + (err.message || err));
+    }
+  };
+
+  // Guarda el array completo de pagos junto con `amountPaid` denormalizado
+  // (su suma), que el orden por saldo y los pendientes leen sin recorrer el
+  // array.
+  const saveDocPayments = async (dteDoc, payments) => {
+    const amountPaid = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+    try {
+      await dteDocumentsService.update(dteDoc.id, { payments, amountPaid });
+      setDocs((prev) => prev.map((d) => (d.id === dteDoc.id ? { ...d, payments, amountPaid } : d)));
+      setDetailDoc((cur) => (cur?.id === dteDoc.id ? { ...cur, payments, amountPaid } : cur));
+    } catch (err) {
+      toast.error("Error al guardar pagos: " + (err.message || err));
+    }
+  };
+
+  // --- Export de Retenciones (infografía) ---
+  // El printable se renderiza fuera de pantalla y los botones lo capturan con
+  // html-to-image, igual que en los otros resúmenes (PrintableFortnightTable,
+  // PrintableSummary, etc.).
+
+  const exportFileBase = useMemo(() => {
+    const company = companiesById.get(selectedCompanyId);
+    const alias = (company?.alias || company?.razonSocial || "empresa").replace(/[^\w-]+/g, "_");
+    const period = periodFilter || "todos";
+    return `Retenciones_${alias}_${period}`;
+  }, [companiesById, selectedCompanyId, periodFilter]);
+
+  const handleWithholdingsCopy = async () => {
+    if (!withholdingsPrintRef.current) return;
+    setExportBusy("copy");
+    try {
+      const blob = await captureFullWidthBlob(withholdingsPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      if (!blob) throw new Error("No se pudo generar la imagen");
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      toast.success("Imagen copiada al portapapeles");
+    } catch (err) {
+      toast.error("Error al copiar: " + (err.message || err));
+    } finally {
+      setExportBusy("");
+    }
+  };
+
+  const handleWithholdingsDownload = async () => {
+    if (!withholdingsPrintRef.current) return;
+    setExportBusy("png");
+    try {
+      const dataUrl = await captureFullWidthDataUrl(withholdingsPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const link = document.createElement("a");
+      link.download = `${exportFileBase}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      toast.error("Error al generar PNG: " + (err.message || err));
+    } finally {
+      setExportBusy("");
+    }
+  };
+
+  const handleWithholdingsPrint = () => {
+    if (!withholdingsPrintRef.current) return;
+    const html = withholdingsPrintRef.current.outerHTML;
+    const win = window.open("", "_blank", "width=1000,height=700");
+    if (!win) {
+      toast.warning("Permite las ventanas emergentes para imprimir.");
+      return;
+    }
+    win.document.write(`<!DOCTYPE html><html><head><title>Retenciones</title>
+      <style>
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #999; padding: 6px 8px; font-size: 12px; }
+        thead th { background: #92d050 !important; text-align: left; }
+        @media print { @page { size: landscape; margin: 12mm; } }
+      </style>
+    </head><body>${html}</body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 250);
+  };
+
+  // XLSX con la convención del proyecto: col A vacía de ancho 6, fila 1 vacía,
+  // datos desde B2. Dos hojas: "Resumen", con una fila por contraparte, y
+  // "Detalle", con cada factura.
+  const handleWithholdingsXlsx = async () => {
+    setExportBusy("xlsx");
+    try {
+      const ExcelJS = (await import("exceljs")).default || (await import("exceljs"));
+      const wb = new ExcelJS.Workbook();
+      const company = companiesById.get(selectedCompanyId);
+      const period = periodFilter || "Todos los períodos";
+
+      // ============ Hoja Resumen ============
+      const ws = wb.addWorksheet("Resumen");
+      ws.getColumn(1).width = 6; // col A vacía de medio ancho (convención)
+      ws.getColumn(2).width = 6;  // #
+      ws.getColumn(3).width = 40; // Empresa
+      ws.getColumn(4).width = 16; // RUT
+      ws.getColumn(5).width = 14; // N° Facturas
+      ws.getColumn(6).width = 18; // Neto
+      ws.getColumn(7).width = 18; // IVA Retenido
+      ws.getColumn(8).width = 18; // Total
+
+      // Título (B2): "Retenciones — empresa — período"
+      ws.getCell("B2").value = `RETENCIONES — ${company?.alias || company?.razonSocial || ""} — ${period}`;
+      ws.getCell("B2").font = { bold: true, size: 14 };
+      ws.mergeCells("B2:H2");
+
+      // Encabezados en la fila 4
+      const HR = 4;
+      const headers = ["#", "Empresa", "RUT", "N° Facturas", "Neto", "IVA Retenido", "Total"];
+      headers.forEach((h, i) => {
+        const c = ws.getCell(HR, 2 + i);
+        c.value = h;
+        c.font = { bold: true };
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF92D050" } };
+        c.alignment = { horizontal: i === 0 ? "center" : i <= 2 ? "left" : "right", vertical: "middle" };
+        c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
+      });
+
+      const dataStart = HR + 1;
+      let r = dataStart;
+      for (let i = 0; i < withholdingsByCounterparty.length; i++) {
+        const g = withholdingsByCounterparty[i];
+        const row = [i + 1, g.razon || "—", formatRutForDisplay(g.rut) || "—", g.count, g.neto, g.iva, g.total];
+        row.forEach((v, j) => {
+          const c = ws.getCell(r, 2 + j);
+          c.value = v;
+          c.alignment = { horizontal: j === 0 ? "center" : j <= 2 ? "left" : "right" };
+          c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
+          if (j >= 4) c.numFmt = '"$"#,##0';
+        });
+        r++;
+      }
+      const lastDataRow = r - 1;
+      const totalRow = r;
+
+      // Fila de totales con fórmulas vivas.
+      const totalLabel = ws.getCell(totalRow, 2);
+      totalLabel.value = "TOTAL";
+      totalLabel.font = { bold: true };
+      totalLabel.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
+      totalLabel.alignment = { horizontal: "left" };
+      // Combina B:D para la etiqueta
+      ws.mergeCells(totalRow, 2, totalRow, 4);
+      for (let col = 2; col <= 8; col++) {
+        const c = ws.getCell(totalRow, col);
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
+        c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
+        c.font = { bold: true };
+      }
+      // Conteo + sumas con fórmulas (referencia las celdas E/F/G/H del rango).
+      if (withholdingsByCounterparty.length > 0) {
+        ws.getCell(totalRow, 5).value = { formula: `SUM(E${dataStart}:E${lastDataRow})`, result: withholdingsByCounterparty.reduce((s, g) => s + g.count, 0) };
+        ws.getCell(totalRow, 6).value = { formula: `SUM(F${dataStart}:F${lastDataRow})`, result: totals.netOnlyTotal - totals.netOnlyIva };
+        ws.getCell(totalRow, 7).value = { formula: `SUM(G${dataStart}:G${lastDataRow})`, result: totals.netOnlyIva };
+        ws.getCell(totalRow, 8).value = { formula: `SUM(H${dataStart}:H${lastDataRow})`, result: totals.netOnlyTotal };
+      }
+      ws.getCell(totalRow, 5).alignment = { horizontal: "right" };
+      ws.getCell(totalRow, 6).alignment = { horizontal: "right" };
+      ws.getCell(totalRow, 7).alignment = { horizontal: "right" };
+      ws.getCell(totalRow, 8).alignment = { horizontal: "right" };
+      ws.getCell(totalRow, 6).numFmt = '"$"#,##0';
+      ws.getCell(totalRow, 7).numFmt = '"$"#,##0';
+      ws.getCell(totalRow, 8).numFmt = '"$"#,##0';
+
+      // ============ Hoja Detalle (todas las facturas individuales) ============
+      // Sin columna "Tipo" numérica: "Documento" ya trae la etiqueta legible.
+      const wsd = wb.addWorksheet("Detalle");
+      wsd.getColumn(1).width = 6;
+      wsd.getColumn(2).width = 12; // Fecha
+      wsd.getColumn(3).width = 26; // Documento (etiqueta)
+      wsd.getColumn(4).width = 10; // Folio
+      wsd.getColumn(5).width = 36; // Contraparte
+      wsd.getColumn(6).width = 16; // RUT
+      wsd.getColumn(7).width = 16; // Neto
+      wsd.getColumn(8).width = 16; // IVA Retenido
+      wsd.getColumn(9).width = 16; // Total
+      wsd.getCell("B2").value = `DETALLE — ${company?.alias || ""} — ${period}`;
+      wsd.getCell("B2").font = { bold: true, size: 14 };
+      wsd.mergeCells("B2:I2");
+      const dHeaders = ["Fecha", "Documento", "Folio", "Contraparte", "RUT", "Neto", "IVA Retenido", "Total"];
+      dHeaders.forEach((h, i) => {
+        const c = wsd.getCell(4, 2 + i);
+        c.value = h;
+        c.font = { bold: true };
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF92D050" } };
+        c.alignment = { horizontal: i <= 3 ? "left" : "right" };
+        c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
+      });
+      let dr = 5;
+      for (const g of withholdingsByCounterparty) {
+        for (const d of g.docs) {
+          const cells = [
+            d.fechaEmision || "",
+            d.tipoLabel || dteTypeLabel(d.tipo),
+            d.folio,
+            g.razon || "",
+            formatRutForDisplay(g.rut) || "",
+            Number(d.neto) || 0,
+            Number(d.iva) || 0,
+            Number(d.total) || 0,
+          ];
+          cells.forEach((v, j) => {
+            const c = wsd.getCell(dr, 2 + j);
+            c.value = v;
+            c.alignment = { horizontal: j <= 3 ? "left" : "right" };
+            c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
+            if (j === 6) c.font = { bold: true }; // IVA en negrita
+            if (j >= 5) c.numFmt = '"$"#,##0';
+          });
+          dr++;
+        }
+      }
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${exportFileBase}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (err) {
+      toast.error("Error al generar XLSX: " + (err.message || err));
+    } finally {
+      setExportBusy("");
+    }
+  };
+
+  const selectedCompany = companiesById.get(selectedCompanyId);
+  const noCompany = companies.length === 0;
+
+  // ===== Export por contraparte (individual) =====
+  // Nombre de archivo seguro para una contraparte.
+  const groupFileBase = (g) => {
+    const alias = (selectedCompany?.alias || selectedCompany?.razonSocial || "empresa").replace(/[^\w-]+/g, "_");
+    const contra = (g.razon || "contraparte").replace(/[^\w-]+/g, "_").slice(0, 40);
+    const period = periodFilter || "todos";
+    return `Retencion_${alias}_${contra}_${period}`;
+  };
+
+  const handleGroupCopy = async (g) => {
+    const key = groupKey(g);
+    const el = groupPrintRefs.current.get(key);
+    if (!el) return;
+    setBusyFor(key, "copy");
+    try {
+      const blob = await captureFullWidthBlob(el, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      if (!blob) throw new Error("No se pudo generar la imagen");
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      toast.success(`Copiado: ${g.razon || "contraparte"}`);
+    } catch (err) {
+      toast.error("Error al copiar: " + (err.message || err));
+    } finally {
+      setBusyFor(key, null);
+    }
+  };
+
+  const handleGroupPng = async (g) => {
+    const key = groupKey(g);
+    const el = groupPrintRefs.current.get(key);
+    if (!el) return;
+    setBusyFor(key, "png");
+    try {
+      const dataUrl = await captureFullWidthDataUrl(el, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const link = document.createElement("a");
+      link.download = `${groupFileBase(g)}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      toast.error("Error al generar PNG: " + (err.message || err));
+    } finally {
+      setBusyFor(key, null);
+    }
+  };
+
+  const handleGroupPrint = (g) => {
+    const key = groupKey(g);
+    const el = groupPrintRefs.current.get(key);
+    if (!el) return;
+    const html = el.outerHTML;
+    const win = window.open("", "_blank", "width=1000,height=700");
+    if (!win) {
+      toast.warning("Permite las ventanas emergentes para imprimir.");
+      return;
+    }
+    win.document.write(`<!DOCTYPE html><html><head><title>Retención ${g.razon || ""}</title>
+      <style>
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #999; padding: 6px 8px; font-size: 12px; }
+        thead th { background: #92d050 !important; text-align: left; }
+        @media print { @page { size: landscape; margin: 12mm; } }
+      </style>
+    </head><body>${html}</body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 250);
+  };
+
+  const handleGroupXlsx = async (g) => {
+    const key = groupKey(g);
+    setBusyFor(key, "xlsx");
+    try {
+      const ExcelJS = (await import("exceljs")).default || (await import("exceljs"));
+      const wb = new ExcelJS.Workbook();
+      const company = selectedCompany;
+      const period = periodFilter || "Todos los períodos";
+      const ws = wb.addWorksheet("Retención");
+      ws.getColumn(1).width = 6;  // col A vacía de medio ancho (convención)
+      ws.getColumn(2).width = 12; // Fecha
+      ws.getColumn(3).width = 28; // Documento
+      ws.getColumn(4).width = 10; // Folio
+      ws.getColumn(5).width = 16; // Neto
+      ws.getColumn(6).width = 16; // IVA Retenido
+      ws.getColumn(7).width = 16; // Total
+
+      ws.getCell("B2").value = `RETENCIÓN — ${company?.alias || company?.razonSocial || ""} · ${period}`;
+      ws.getCell("B2").font = { bold: true, size: 14 };
+      ws.mergeCells("B2:G2");
+      ws.getCell("B3").value = `${g.razon || "—"} · RUT ${formatRutForDisplay(g.rut) || "—"} · ${g.count} factura${g.count === 1 ? "" : "s"}`;
+      ws.getCell("B3").font = { italic: true, color: { argb: "FF555555" } };
+      ws.mergeCells("B3:G3");
+
+      // Banner explícito de IVA retenido del período — fila 4 destacada.
+      ws.getCell("B4").value = `IVA RETENIDO · ${period}`;
+      ws.getCell("B4").font = { bold: true, size: 11 };
+      ws.getCell("B4").alignment = { horizontal: "left", vertical: "middle" };
+      ws.getCell("B4").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF4CE" } };
+      ws.mergeCells("B4:E4");
+      ws.getCell("F4").value = Number(g.iva) || 0;
+      ws.getCell("F4").font = { bold: true, size: 14 };
+      ws.getCell("F4").alignment = { horizontal: "right", vertical: "middle" };
+      ws.getCell("F4").fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF4CE" } };
+      ws.getCell("F4").numFmt = '"$"#,##0';
+      ws.mergeCells("F4:G4");
+
+      const HR = 6;
+      const headers = ["Fecha", "Documento", "Folio", "Neto", "IVA Retenido", "Total"];
+      headers.forEach((h, i) => {
+        const c = ws.getCell(HR, 2 + i);
+        c.value = h;
+        c.font = { bold: true };
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF92D050" } };
+        c.alignment = { horizontal: i <= 2 ? "left" : "right", vertical: "middle" };
+        c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
+      });
+
+      const dataStart = HR + 1;
+      let r = dataStart;
+      const sortedDocs = [...g.docs].sort(
+        (a, b) => String(a.fechaEmision || "").localeCompare(String(b.fechaEmision || "")),
+      );
+      for (const d of sortedDocs) {
+        const cells = [
+          d.fechaEmision || "",
+          d.tipoLabel || dteTypeLabel(d.tipo),
+          d.folio,
+          Number(d.neto) || 0,
+          Number(d.iva) || 0,
+          Number(d.total) || 0,
+        ];
+        cells.forEach((v, j) => {
+          const c = ws.getCell(r, 2 + j);
+          c.value = v;
+          c.alignment = { horizontal: j <= 2 ? "left" : "right" };
+          c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
+          if (j === 4) c.font = { bold: true }; // IVA en negrita
+          if (j >= 3) c.numFmt = '"$"#,##0';
+        });
+        r++;
+      }
+      const lastDataRow = r - 1;
+      const totalRow = r;
+      ws.getCell(totalRow, 2).value = "TOTAL";
+      ws.mergeCells(totalRow, 2, totalRow, 4);
+      for (let col = 2; col <= 7; col++) {
+        const c = ws.getCell(totalRow, col);
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
+        c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
+        c.font = { bold: true };
+      }
+      if (lastDataRow >= dataStart) {
+        ws.getCell(totalRow, 5).value = { formula: `SUM(E${dataStart}:E${lastDataRow})`, result: g.neto };
+        ws.getCell(totalRow, 6).value = { formula: `SUM(F${dataStart}:F${lastDataRow})`, result: g.iva };
+        ws.getCell(totalRow, 7).value = { formula: `SUM(G${dataStart}:G${lastDataRow})`, result: g.total };
+      }
+      ws.getCell(totalRow, 5).alignment = { horizontal: "right" };
+      ws.getCell(totalRow, 6).alignment = { horizontal: "right" };
+      ws.getCell(totalRow, 7).alignment = { horizontal: "right" };
+      ws.getCell(totalRow, 5).numFmt = '"$"#,##0';
+      ws.getCell(totalRow, 6).numFmt = '"$"#,##0';
+      ws.getCell(totalRow, 7).numFmt = '"$"#,##0';
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${groupFileBase(g)}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (err) {
+      toast.error("Error al generar XLSX: " + (err.message || err));
+    } finally {
+      setBusyFor(key, null);
+    }
+  };
+
+  const groupExport = (action, g) => {
+    if (action === "copy") return handleGroupCopy(g);
+    if (action === "png") return handleGroupPng(g);
+    if (action === "print") return handleGroupPrint(g);
+    if (action === "xlsx") return handleGroupXlsx(g);
+  };
+
+  // ===== Export del listado de Facturas / Compras (vista no-retenciones) =====
+  // Mismo patrón que Retenciones: el printable se renderiza fuera de pantalla
+  // con los mismos datos filtrados y ordenados que la tabla.
+  const docListFileBase = useMemo(() => {
+    const alias = (selectedCompany?.alias || selectedCompany?.razonSocial || "empresa").replace(/[^\w-]+/g, "_");
+    const kindLabel = kindTab === "venta" ? "Ventas-Facturas" : "Compras";
+    const period = periodFilter || "todos";
+    return `${kindLabel}_${alias}_${period}`;
+  }, [selectedCompany, kindTab, periodFilter]);
+
+  const handleDocListCopy = async () => {
+    if (!docListPrintRef.current) return;
+    setDocListBusy("copy");
+    try {
+      const blob = await captureFullWidthBlob(docListPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      if (!blob) throw new Error("No se pudo generar la imagen");
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      toast.success("Imagen copiada al portapapeles");
+    } catch (err) {
+      toast.error("Error al copiar: " + (err.message || err));
+    } finally {
+      setDocListBusy("");
+    }
+  };
+
+  const handleDocListPng = async () => {
+    if (!docListPrintRef.current) return;
+    setDocListBusy("png");
+    try {
+      const dataUrl = await captureFullWidthDataUrl(docListPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const link = document.createElement("a");
+      link.download = `${docListFileBase}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      toast.error("Error al generar PNG: " + (err.message || err));
+    } finally {
+      setDocListBusy("");
+    }
+  };
+
+  const handleDocListPrint = () => {
+    if (!docListPrintRef.current) return;
+    const html = docListPrintRef.current.outerHTML;
+    const win = window.open("", "_blank", "width=1000,height=700");
+    if (!win) { toast.warning("Permite las ventanas emergentes para imprimir."); return; }
+    const titleLabel = `${kindTitleLabel(kindTab)} — ${selectedCompany?.alias || selectedCompany?.razonSocial || ""} — ${formatPeriodPretty(periodFilter)}`;
+    win.document.write(`<!DOCTYPE html><html><head><title>${titleLabel}</title>
+      <style>
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #999; padding: 5px 7px; font-size: 11px; }
+        thead th { background: #92d050 !important; text-align: left; }
+        @media print { @page { size: landscape; margin: 10mm; } }
+      </style>
+    </head><body>${html}</body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 250);
+  };
+
+  const handleDocListXlsx = async () => {
+    setDocListBusy("xlsx");
+    try {
+      const ExcelJS = (await import("exceljs")).default || (await import("exceljs"));
+      const wb = new ExcelJS.Workbook();
+      const company = selectedCompany;
+      const period = formatPeriodPretty(periodFilter);
+      const kindLabel = kindTitleLabel(kindTab).toUpperCase();
+      const contraLabel = kindTab === "venta" ? "Cliente" : "Proveedor";
+      const showEstado = kindTab === "venta";
+      const ws = wb.addWorksheet(kindTab === "venta" ? "Ventas-Facturas" : "Compras");
+      ws.getColumn(1).width = 6;  // col A vacía de medio ancho (convención)
+      ws.getColumn(2).width = 12; // Fecha
+      ws.getColumn(3).width = 26; // Documento
+      ws.getColumn(4).width = 10; // Folio
+      ws.getColumn(5).width = 34; // Contraparte
+      ws.getColumn(6).width = 16; // RUT
+      ws.getColumn(7).width = 14; // Neto
+      ws.getColumn(8).width = 14; // IVA
+      ws.getColumn(9).width = 14; // Total
+      ws.getColumn(10).width = 14; // Pagado
+      if (showEstado) ws.getColumn(11).width = 16; // Estado
+
+      const lastCol = showEstado ? 11 : 10;
+      const lastColLetter = String.fromCharCode(64 + lastCol); // J o K
+
+      ws.getCell("B2").value = `${kindLabel} — ${company?.alias || company?.razonSocial || ""} — ${period}`;
+      ws.getCell("B2").font = { bold: true, size: 14 };
+      ws.mergeCells(`B2:${lastColLetter}2`);
+      ws.getCell("B3").value = `${sortedFiltered.length} documento${sortedFiltered.length === 1 ? "" : "s"} · Neto ${fmtCurrency(totals.neto)} · IVA ${fmtCurrency(totals.iva)} · Total ${fmtCurrency(totals.total)}${totals.ncCount > 0 ? ` · NC: -${fmtCurrency(totals.ncTotal)} (${totals.ncCount})` : ""}${groupByCostCenter ? " · Agrupado por centro de costo" : ""}`;
+      ws.getCell("B3").font = { italic: true, color: { argb: "FF555555" } };
+      ws.mergeCells(`B3:${lastColLetter}3`);
+
+      const HR = 5;
+      const headers = ["Fecha", "Documento", "Folio", contraLabel, "RUT", "Neto", "IVA", "Total", "Pagado"];
+      if (showEstado) headers.push("Estado");
+      headers.forEach((h, i) => {
+        const c = ws.getCell(HR, 2 + i);
+        c.value = h;
+        c.font = { bold: true };
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF92D050" } };
+        c.alignment = { horizontal: i <= 4 ? "left" : i === 9 ? "center" : "right", vertical: "middle" };
+        c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
+      });
+
+      const writeDocRow = (r, d) => {
+        const isNC = CREDIT_NOTE_TYPES.has(Number(d.tipo));
+        const sign = isNC ? -1 : 1;
+        const razon = d.kind === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
+        const rut = d.kind === "venta" ? d.rutReceptor : d.rutEmisor;
+        const paid = Number(d.amountPaid) || 0;
+        const estadoLabel = isNC
+          ? CREDIT_NOTE_STATE.label
+          : (PAYMENT_STATUSES[d.paymentStatus || "unpaid"]?.label || "—");
+        const cells = [
+          d.fechaEmision || "",
+          d.tipoLabel || dteTypeLabel(d.tipo),
+          d.folio,
+          razon || "",
+          formatRutForDisplay(rut) || "",
+          sign * (Number(d.neto) || 0),
+          sign * (Number(d.iva) || 0),
+          sign * (Number(d.total) || 0),
+          paid,
+        ];
+        if (showEstado) cells.push(estadoLabel);
+        cells.forEach((v, j) => {
+          const c = ws.getCell(r, 2 + j);
+          c.value = v;
+          c.alignment = { horizontal: j <= 3 ? "left" : j === 9 ? "center" : "right" };
+          c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
+          if (j >= 5 && j <= 8) c.numFmt = '"$"#,##0';
+          if (isNC && j >= 5 && j <= 7) c.font = { color: { argb: "FFCC0000" } };
+        });
+      };
+
+      const writeGroupHeader = (r, label, count, isFuel, isManual) => {
+        ws.getCell(r, 2).value = `${isFuel ? "⛽ COMBUSTIBLES" : label} · ${count} documento${count === 1 ? "" : "s"}`;
+        ws.getCell(r, 2).font = { bold: true };
+        ws.mergeCells(r, 2, r, lastCol);
+        const fillColor = isFuel ? "FFFDE2CC" : isManual ? "FFDCE6F1" : "FFE2EFDA";
+        for (let col = 2; col <= lastCol; col++) {
+          ws.getCell(r, col).fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillColor } };
+          ws.getCell(r, col).border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
+        }
+      };
+
+      const writeSubtotalRow = (r, g) => {
+        ws.getCell(r, 2).value = "Subtotal";
+        ws.getCell(r, 2).font = { bold: true };
+        ws.mergeCells(r, 2, r, 6);
+        for (let col = 2; col <= lastCol; col++) {
+          ws.getCell(r, col).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2F2F2" } };
+          ws.getCell(r, col).border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
+          ws.getCell(r, col).font = { bold: true };
+        }
+        const subs = [g.neto, g.iva, g.total];
+        subs.forEach((v, j) => {
+          const c = ws.getCell(r, 7 + j);
+          c.value = v;
+          c.numFmt = '"$"#,##0';
+          c.alignment = { horizontal: "right" };
+        });
+      };
+
+      const dataStart = HR + 1;
+      let r = dataStart;
+      if (groupByCostCenter) {
+        const groups = groupDocsByCostCenter(sortedFiltered, kindTab, costCentersById);
+        for (const g of groups) {
+          writeGroupHeader(r, g.razon, g.docs.length, g.isFuel, g.isManual);
+          r++;
+          for (const d of g.docs) {
+            writeDocRow(r, d);
+            r++;
+          }
+          writeSubtotalRow(r, g);
+          r++;
+        }
+      } else {
+        for (const d of sortedFiltered) {
+          writeDocRow(r, d);
+          r++;
+        }
+      }
+      const lastDataRow = r - 1;
+      const totalRow = r;
+      ws.getCell(totalRow, 2).value = `TOTAL (${sortedFiltered.length})`;
+      ws.mergeCells(totalRow, 2, totalRow, 6);
+      for (let col = 2; col <= lastCol; col++) {
+        const c = ws.getCell(totalRow, col);
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
+        c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
+        c.font = { bold: true };
+      }
+      // En la vista plana el total es un SUM sobre el rango; en la agrupada hay
+      // filas intermedias (encabezados, subtotales), así que los totales van
+      // como valores precalculados para no sumar dos veces.
+      if (!groupByCostCenter && lastDataRow >= dataStart) {
+        ws.getCell(totalRow, 7).value = { formula: `SUM(G${dataStart}:G${lastDataRow})`, result: totals.neto };
+        ws.getCell(totalRow, 8).value = { formula: `SUM(H${dataStart}:H${lastDataRow})`, result: totals.iva };
+        ws.getCell(totalRow, 9).value = { formula: `SUM(I${dataStart}:I${lastDataRow})`, result: totals.total };
+        ws.getCell(totalRow, 10).value = { formula: `SUM(J${dataStart}:J${lastDataRow})`, result: 0 };
+      } else {
+        ws.getCell(totalRow, 7).value = Number(totals.neto) || 0;
+        ws.getCell(totalRow, 8).value = Number(totals.iva) || 0;
+        ws.getCell(totalRow, 9).value = Number(totals.total) || 0;
+        ws.getCell(totalRow, 10).value = 0;
+      }
+      for (let col = 7; col <= 10; col++) {
+        ws.getCell(totalRow, col).alignment = { horizontal: "right" };
+        ws.getCell(totalRow, col).numFmt = '"$"#,##0';
+      }
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${docListFileBase}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (err) {
+      toast.error("Error al generar XLSX: " + (err.message || err));
+    } finally {
+      setDocListBusy("");
+    }
+  };
+
+  // ===== Export del Resumen anual =====
+  const summaryFileBase = useMemo(() => {
+    const alias = (selectedCompany?.alias || selectedCompany?.razonSocial || "empresa").replace(/[^\w-]+/g, "_");
+    return `Resumen_${alias}_${summaryYear}`;
+  }, [selectedCompany, summaryYear]);
+
+  const handleSummaryCopy = async () => {
+    if (!summaryPrintRef.current) return;
+    setSummaryBusy("copy");
+    try {
+      const blob = await captureFullWidthBlob(summaryPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      if (!blob) throw new Error("No se pudo generar la imagen");
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      toast.success("Imagen copiada al portapapeles");
+    } catch (err) {
+      toast.error("Error al copiar: " + (err.message || err));
+    } finally {
+      setSummaryBusy("");
+    }
+  };
+
+  const handleSummaryPng = async () => {
+    if (!summaryPrintRef.current) return;
+    setSummaryBusy("png");
+    try {
+      const dataUrl = await captureFullWidthDataUrl(summaryPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
+      const link = document.createElement("a");
+      link.download = `${summaryFileBase}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (err) {
+      toast.error("Error al generar PNG: " + (err.message || err));
+    } finally {
+      setSummaryBusy("");
+    }
+  };
+
+  const handleSummaryPrint = () => {
+    if (!summaryPrintRef.current) return;
+    const html = summaryPrintRef.current.outerHTML;
+    const win = window.open("", "_blank", "width=1000,height=700");
+    if (!win) { toast.warning("Permite las ventanas emergentes para imprimir."); return; }
+    const titleLabel = `Resumen ${summaryYear} — ${selectedCompany?.alias || selectedCompany?.razonSocial || ""}`;
+    win.document.write(`<!DOCTYPE html><html><head><title>${titleLabel}</title>
+      <style>
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
+        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #999; padding: 5px 7px; font-size: 11px; }
+        thead th { background: #92d050 !important; text-align: left; }
+        @media print { @page { size: landscape; margin: 10mm; } }
+      </style>
+    </head><body>${html}</body></html>`);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 250);
+  };
+
+  const handleSummaryXlsx = async () => {
+    setSummaryBusy("xlsx");
+    try {
+      const ExcelJS = (await import("exceljs")).default || (await import("exceljs"));
+      const wb = new ExcelJS.Workbook();
+      const company = selectedCompany;
+      const { months, total } = summaryData;
+      const ws = wb.addWorksheet(`Resumen ${summaryYear}`);
+      // Convención del proyecto: col A vacía (media), fila 1 vacía.
+      ws.getColumn(1).width = 6;
+      ws.getColumn(2).width = 14; // Mes
+      ws.getColumn(3).width = 16; // Ventas Neto
+      ws.getColumn(4).width = 16; // IVA Débito
+      ws.getColumn(5).width = 16; // Compras Neto
+      ws.getColumn(6).width = 16; // IVA Crédito
+      ws.getColumn(7).width = 16; // IVA a pagar
+
+      ws.getCell("B2").value = `RESUMEN ${summaryYear} — ${company?.alias || company?.razonSocial || ""}`;
+      ws.getCell("B2").font = { bold: true, size: 14 };
+      ws.mergeCells(`B2:G2`);
+      const annualVat = total.vatDebit - total.vatCredit;
+      ws.getCell("B3").value = `IVA Débito ${fmtCurrency(total.vatDebit)} · IVA Crédito ${fmtCurrency(total.vatCredit)} · IVA ${annualVat >= 0 ? "a pagar" : "a favor"} ${fmtCurrency(Math.abs(annualVat))}`;
+      ws.getCell("B3").font = { italic: true, color: { argb: "FF555555" } };
+      ws.mergeCells(`B3:G3`);
+
+      const HR = 5;
+      const headers = ["Mes", "Ventas Neto", "IVA Débito", "Compras Neto", "IVA Crédito", "IVA a pagar"];
+      headers.forEach((h, i) => {
+        const c = ws.getCell(HR, 2 + i);
+        c.value = h;
+        c.font = { bold: true };
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF92D050" } };
+        c.alignment = { horizontal: i === 0 ? "left" : "right", vertical: "middle" };
+        c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
+      });
+
+      let r = HR + 1;
+      months.forEach((m, idx) => {
+        const monthVat = m.vatDebit - m.vatCredit;
+        const cells = [MONTH_NAMES_ES[idx], m.salesNet, m.vatDebit, m.purchasesNet, m.vatCredit, monthVat];
+        cells.forEach((v, j) => {
+          const c = ws.getCell(r, 2 + j);
+          c.value = v;
+          c.alignment = { horizontal: j === 0 ? "left" : "right" };
+          c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
+          if (j >= 1) c.numFmt = '"$"#,##0';
+          if (j === 5) c.font = { bold: true, color: { argb: monthVat < 0 ? "FF1F7A1F" : "FF000000" } };
+        });
+        r++;
+      });
+
+      const totalRow = r;
+      const annualVatValue = total.vatDebit - total.vatCredit;
+      const tCells = ["TOTAL", total.salesNet, total.vatDebit, total.purchasesNet, total.vatCredit, annualVatValue];
+      tCells.forEach((v, j) => {
+        const c = ws.getCell(totalRow, 2 + j);
+        c.value = v;
+        c.font = { bold: true, ...(j === 5 ? { color: { argb: annualVatValue < 0 ? "FF1F7A1F" : "FF000000" } } : {}) };
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
+        c.alignment = { horizontal: j === 0 ? "left" : "right" };
+        c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
+        if (j >= 1) c.numFmt = '"$"#,##0';
+      });
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${summaryFileBase}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (err) {
+      toast.error("Error al generar XLSX: " + (err.message || err));
+    } finally {
+      setSummaryBusy("");
+    }
+  };
+
+
+  // ===== Proyección de flujo de caja (solo admin) =====
+  // Estima la temporada que viene escalando la anterior: los ingresos por
+  // ventas de los 12 meses previos, mes a mes, por un porcentaje. Sale entera
+  // de `docs`, que ya está en memoria con toda la colección: la proyección no
+  // cuesta lecturas.
+  const projectionYears = useMemo(() => {
+    const now = new Date().getFullYear();
+    const set = new Set([now, now + 1, now + 2].map(String));
+    for (const d of docs) {
+      if (selectedCompanyId && d.companyId !== selectedCompanyId) continue;
+      const y = String(d.periodo || "").slice(0, 4);
+      // La base son los 12 meses anteriores, así que un año con datos habilita
+      // a proyectar el siguiente.
+      if (y) { set.add(y); set.add(String(Number(y) + 1)); }
+    }
+    return [...set].sort().reverse();
+  }, [docs, selectedCompanyId]);
+
+  const projection = useMemo(
+    () => projectCashFlow(docs, {
+      companyId: selectedCompanyId,
+      startPeriod: projectionStart,
+      percent: Number(projectionPercent) || 0,
+    }),
+    [docs, selectedCompanyId, projectionStart, projectionPercent],
+  );
+
+  const projectionByClient = useMemo(() => groupByCounterparty(projection.detail), [projection.detail]);
+
+  const projectionFileBase = useMemo(() => {
+    const alias = (selectedCompany?.alias || selectedCompany?.razonSocial || "empresa").replace(/[^\w-]+/g, "_");
+    return `Proyeccion_${alias}_${(projection.targetLabel || projectionStart).replace(/[^\w-]+/g, "_")}`;
+  }, [selectedCompany, projection.targetLabel, projectionStart]);
+
+  // ===== Export de la Proyección =====
+  // Dos hojas: la base con el detalle que la sostiene, y la proyección aparte.
+  // El porcentaje va en UNA celda y las filas la referencian (`$C$4`): quien
+  // recibe el archivo cambia el supuesto en Excel y la temporada entera se
+  // recalcula.
+  const handleProjectionXlsx = async () => {
+    setProjectionBusy("xlsx");
+    try {
+      const ExcelJS = (await import("exceljs")).default || (await import("exceljs"));
+      const wb = new ExcelJS.Workbook();
+      const companyName = selectedCompany?.alias || selectedCompany?.razonSocial || "";
+      const money = '"$"#,##0';
+      const thin = { style: "thin" };
+      const box = { top: thin, left: thin, right: thin, bottom: thin };
+      const header = (ws, row, col, text, align = "left") => {
+        const c = ws.getCell(row, col);
+        c.value = text;
+        c.font = { bold: true };
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF92D050" } };
+        c.alignment = { horizontal: align, vertical: "middle" };
+        c.border = box;
+      };
+
+      // ---------- Hoja 1: ingresos del período base ----------
+      const ws1 = wb.addWorksheet("Ingresos");
+      ws1.getColumn(1).width = 6; // convención del proyecto: col A vacía
+      [13, 11, 26, 10, 32, 15, 15, 13, 15, 15].forEach((w, i) => { ws1.getColumn(2 + i).width = w; });
+
+      ws1.getCell("B2").value = `INGRESOS — ${projection.baseLabel}`;
+      ws1.getCell("B2").font = { bold: true, size: 14 };
+      ws1.mergeCells("B2:K2");
+      ws1.getCell("B3").value =
+        `${companyName} · ${projection.baseCount} documentos de venta · solo entradas (las compras no entran)` +
+        ` · las facturas de compra entran solo por el neto porque el IVA lo retiene el cliente`;
+      ws1.getCell("B3").font = { italic: true, color: { argb: "FF555555" } };
+      ws1.mergeCells("B3:K3");
+
+      ws1.getCell("B5").value = "INGRESOS DEL PERÍODO BASE";
+      ws1.mergeCells("B5:H5");
+      ws1.getCell("I5").value = projection.baseTotal;
+      ws1.mergeCells("I5:K5");
+      for (const ref of ["B5", "I5"]) {
+        const c = ws1.getCell(ref);
+        c.font = { bold: true, size: ref === "I5" ? 16 : 12 };
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF2CC" } };
+        c.alignment = { horizontal: ref === "I5" ? "right" : "left", vertical: "middle" };
+        c.border = box;
+      }
+      ws1.getCell("I5").numFmt = money;
+      ws1.getRow(5).height = 24;
+
+      // Bloque por cliente — de dónde viene la base. Una proyección sostenida
+      // por dos clientes no se lee igual que una repartida entre veinte.
+      ws1.getCell("B7").value = "Por cliente";
+      ws1.getCell("B7").font = { bold: true, size: 12 };
+      ["RUT", "Razón social", "Documentos", "Neto", "Ingreso"].forEach((h, i) =>
+        header(ws1, 8, 2 + i, h, i >= 2 ? "right" : "left"));
+      let r1 = 9;
+      for (const g of projectionByClient) {
+        const vals = [formatRutForDisplay(g.rut) || g.rut, g.razonSocial, g.count, g.neto, g.monto];
+        vals.forEach((v, j) => {
+          const c = ws1.getCell(r1, 2 + j);
+          c.value = v;
+          c.alignment = { horizontal: j >= 2 ? "right" : "left" };
+          c.border = box;
+          if (j >= 3) c.numFmt = money;
+          if (j === 4) c.font = { bold: true };
+        });
+        r1++;
+      }
+      if (projectionByClient.length > 0) {
+        const tr = r1;
+        ws1.getCell(tr, 2).value = "TOTAL";
+        ws1.getCell(tr, 4).value = { formula: `SUM(D9:D${r1 - 1})`, result: projection.baseCount };
+        ws1.getCell(tr, 5).value = {
+          formula: `SUM(E9:E${r1 - 1})`,
+          result: projectionByClient.reduce((acc, g) => acc + g.neto, 0),
+        };
+        ws1.getCell(tr, 6).value = { formula: `SUM(F9:F${r1 - 1})`, result: projection.baseTotal };
+        for (let col = 2; col <= 6; col++) {
+          const c = ws1.getCell(tr, col);
+          c.font = { bold: true };
+          c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
+          c.alignment = { horizontal: col >= 4 ? "right" : "left" };
+          c.border = box;
+          if (col >= 5) c.numFmt = money;
+        }
+        r1 = tr + 1;
+      }
+
+      // Bloque de detalle — un documento por fila. Va con neto, IVA y total
+      // además del ingreso: sin el desglose, una factura de compra que aporta
+      // menos que neto + IVA parece un error de la planilla.
+      const detStart = r1 + 2;
+      ws1.getCell(detStart - 1, 2).value = "Detalle de documentos";
+      ws1.getCell(detStart - 1, 2).font = { bold: true, size: 12 };
+      const DET_NUM = new Set([3, 6, 7, 8, 9]); // folio + los cuatro montos
+      ["Fecha", "Período", "Tipo de documento", "Folio", "Cliente", "RUT", "Neto", "IVA", "Total SII", "Ingreso"]
+        .forEach((h, i) => header(ws1, detStart, 2 + i, h, DET_NUM.has(i) ? "right" : "left"));
+      let dr = detStart + 1;
+      for (const d of projection.detail) {
+        const vals = [
+          d.fechaEmision,
+          d.periodo,
+          d.tipoLabel || dteTypeLabel(d.tipo),
+          d.folio,
+          d.razonSocial,
+          formatRutForDisplay(d.rut) || d.rut,
+          d.neto,
+          d.iva,
+          d.total,
+          d.monto,
+        ];
+        vals.forEach((v, j) => {
+          const c = ws1.getCell(dr, 2 + j);
+          c.value = v;
+          c.alignment = { horizontal: DET_NUM.has(j) ? "right" : "left" };
+          c.border = box;
+          if (j >= 6) c.numFmt = money;
+          // Las NC restan; en rojo para que la fila negativa no se lea como un
+          // error de tipeo del que armó la planilla.
+          if (d.isNc) c.font = { color: { argb: "FFB00000" } };
+          // El ingreso va en negrita, y destacado cuando no coincide con el
+          // total del SII: ahí es donde se ve la retención.
+          if (j === 9) {
+            c.font = { bold: true, color: { argb: d.isNc ? "FFB00000" : "FF000000" } };
+            if (d.conRetencion) {
+              c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF2CC" } };
+            }
+          }
+        });
+        dr++;
+      }
+      if (projection.detail.length > 0) {
+        const tr = dr;
+        ws1.getCell(tr, 2).value = "TOTAL";
+        ws1.getCell(tr, 11).value = { formula: `SUM(K${detStart + 1}:K${dr - 1})`, result: projection.baseTotal };
+        for (let col = 2; col <= 11; col++) {
+          const c = ws1.getCell(tr, col);
+          c.font = { bold: true };
+          c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
+          c.alignment = { horizontal: col === 11 ? "right" : "left" };
+          c.border = box;
+          if (col === 11) c.numFmt = money;
+        }
+      }
+
+      // ---------- Hoja 2: la proyección ----------
+      const ws2 = wb.addWorksheet("Proyección");
+      ws2.getColumn(1).width = 6;
+      [20, 14, 20, 20].forEach((w, i) => { ws2.getColumn(2 + i).width = w; });
+
+      ws2.getCell("B2").value = `PROYECCIÓN DE FLUJO DE CAJA — ${projection.targetLabel}`;
+      ws2.getCell("B2").font = { bold: true, size: 14 };
+      ws2.mergeCells("B2:E2");
+      ws2.getCell("B3").value =
+        `${companyName} · base: ingresos de ${projection.baseLabel}` +
+        ` · ${projection.mesesReales} ${projection.mesesReales === 1 ? "mes real" : "meses reales"}` +
+        ` y ${projection.mesesEstimados} ${projection.mesesEstimados === 1 ? "estimado" : "estimados"}`;
+      ws2.getCell("B3").font = { italic: true, color: { argb: "FF555555" } };
+      ws2.mergeCells("B3:E3");
+
+      // Celda del supuesto — amarilla, como los inputs editables del resto de
+      // los exports del proyecto.
+      ws2.getCell("B4").value = "Porcentaje aplicado";
+      ws2.getCell("B4").font = { bold: true };
+      const pctCell = ws2.getCell("C4");
+      pctCell.value = projection.factor;
+      pctCell.numFmt = "0.0%";
+      pctCell.font = { bold: true };
+      pctCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF2CC" } };
+      pctCell.alignment = { horizontal: "right" };
+      pctCell.border = box;
+
+      const HR2 = 6;
+      ["Mes proyectado", "Origen", "Ingreso base", "Monto"]
+        .forEach((h, i) => header(ws2, HR2, 2 + i, h, i >= 2 ? "right" : "left"));
+      let r2 = HR2 + 1;
+      for (const row of projection.rows) {
+        const origen = row.esReal
+          ? `Real · ${row.realCount} doc.`
+          : `${row.basePeriodo} × ${projection.percent}%`;
+        const vals = [formatPeriod(row.periodo), origen, row.esReal ? null : row.baseMonto, null];
+        vals.forEach((v, j) => {
+          const c = ws2.getCell(r2, 2 + j);
+          // El mes real va como valor literal y NO como fórmula: si colgara de
+          // C4, mover el supuesto en Excel movería un número ya facturado.
+          if (j === 3) {
+            c.value = row.esReal ? row.monto : { formula: `ROUND(D${r2}*$C$4,0)`, result: row.proyectado };
+          } else {
+            c.value = v;
+          }
+          c.alignment = { horizontal: j >= 2 ? "right" : "left" };
+          c.border = box;
+          if (j >= 2) c.numFmt = money;
+          if (j === 3) c.font = { bold: true, color: { argb: row.esReal ? "FF1F7A1F" : "FF000000" } };
+          if (j === 1 && row.esReal) c.font = { bold: true, color: { argb: "FF1F7A1F" } };
+        });
+        r2++;
+      }
+      const totalRow2 = r2;
+      ws2.getCell(totalRow2, 2).value = `TOTAL ${projection.targetLabel}`;
+      // Solo suma las bases de los meses estimados: los reales dejan la celda
+      // vacía porque su base no se usó para nada.
+      ws2.getCell(totalRow2, 4).value = {
+        formula: `SUM(D${HR2 + 1}:D${r2 - 1})`,
+        result: projection.rows.reduce((acc, row) => acc + (row.esReal ? 0 : row.baseMonto), 0),
+      };
+      ws2.getCell(totalRow2, 5).value = { formula: `SUM(E${HR2 + 1}:E${r2 - 1})`, result: projection.total };
+      for (let col = 2; col <= 5; col++) {
+        const c = ws2.getCell(totalRow2, col);
+        c.font = { bold: true, size: col === 5 ? 13 : 11 };
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
+        c.alignment = { horizontal: col >= 4 ? "right" : "left" };
+        c.border = box;
+        if (col >= 4) c.numFmt = money;
+      }
+
+      const notaRow = totalRow2 + 2;
+      ws2.getCell(notaRow, 2).value =
+        "Cada mes se proyecta desde el mismo mes del período anterior, no repartiendo el total en doceavos: " +
+        "la temporada es estacional y el promedio parejo esconde cuándo entra la plata. " +
+        "Los meses marcados \"Real\" ya están facturados y valen su dato: van como valor fijo y NO se mueven " +
+        "al cambiar el porcentaje de C4, que solo recalcula los meses estimados. " +
+        "Solo entran ventas (entradas); las notas de crédito restan. " +
+        "Una factura de compra entra solo por su neto, porque el IVA lo retiene el cliente y nunca se cobra; " +
+        "el resto entra por el Monto Total del SII. El desglose está en la hoja Ingresos.";
+      ws2.getCell(notaRow, 2).font = { italic: true, size: 9, color: { argb: "FF666666" } };
+      ws2.getCell(notaRow, 2).alignment = { wrapText: true, vertical: "top" };
+      ws2.mergeCells(notaRow, 2, notaRow + 2, 5);
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${projectionFileBase}.xlsx`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (err) {
+      toast.error("Error al generar XLSX: " + (err.message || err));
+    } finally {
+      setProjectionBusy("");
+    }
+  };
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Facturación</h1>
+          <p className="text-sm text-[var(--color-muted)]">
+            Importar el RCV del SII mes a mes · Marcar estado de pago · Auditar por empresa.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setCompaniesModalOpen(true)}
+            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm font-medium hover:bg-[var(--color-accent-soft)]"
+          >
+            🏢 Empresas ({companies.length})
+          </button>
+          <button
+            onClick={openImport}
+            disabled={noCompany}
+            title={noCompany ? "Registra una empresa primero" : "Importar CSV del SII"}
+            className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] shadow-sm hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
+          >
+            📥 Importar CSV del SII
+          </button>
+        </div>
+      </div>
+
+      {/* Selector de empresa + pestañas + botón de pendientes */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <select
+          value={selectedCompanyId}
+          onChange={(e) => setSelectedCompanyId(e.target.value)}
+          disabled={noCompany}
+          className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium"
+        >
+          {companies.map((c) => (
+            <option key={c.id} value={c.id}>
+              🏢 {c.alias || c.razonSocial}
+            </option>
+          ))}
+          {noCompany && <option value="">Sin empresas</option>}
+        </select>
+
+        <div className="flex flex-wrap gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1 text-sm">
+          {[
+            { v: "venta", label: "📤 Facturas" },
+            { v: "compra", label: "📥 Compras" },
+            { v: "retenciones", label: "📑 Retenciones" },
+            { v: "resumen", label: "📊 Resumen" },
+            // Proyectar es una decisión de plata a futuro, no operación del día:
+            // solo admin.
+            ...(isAdmin ? [{ v: "proyeccion", label: "📈 Proyección" }] : []),
+          ].map((t) => (
+            <button
+              key={t.v}
+              onClick={() => setKindTab(t.v)}
+              className={`min-h-[32px] rounded px-3 py-1 ${
+                kindTab === t.v
+                  ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]"
+                  : "text-[var(--color-muted)]"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {!isAnalysisTab && (<>
+        <button
+          onClick={() => setReceivablesModalOpen(true)}
+          disabled={noCompany}
+          title="Ver todas las facturas con saldo pendiente (cualquier período): factura completa, abonos parciales o IVA pendiente."
+          className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+        >
+          ⏳ Ver pendientes
+          {receivablesList.length > 0 && (
+            <span className="ml-1.5 rounded-full bg-[var(--color-warning-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-warning)]">
+              {receivablesList.length}
+            </span>
+          )}
+        </button>
+        </>)}
+      </div>
+
+      {/* Sub-filtros */}
+      {!isAnalysisTab && (
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <select
+          value={search.trim() ? "" : periodFilter}
+          onChange={(e) => setPeriodFilter(e.target.value)}
+          disabled={!!search.trim()}
+          title={search.trim()
+            ? "Ignorado mientras buscas — la búsqueda muestra todos los períodos de la empresa"
+            : "Filtrar por período"}
+          className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs disabled:opacity-60"
+        >
+          <option value="">Todos los períodos</option>
+          {periodOptions.map((p) => (
+            <option key={p} value={p}>
+              {p === currentPeriod() ? `${p} (actual)` : p}
+            </option>
+          ))}
+        </select>
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs"
+        >
+          <option value="">Todos los tipos</option>
+          {typeOptions.map((t) => (
+            <option key={t} value={t}>{t} · {dteTypeLabel(t)}</option>
+          ))}
+        </select>
+        {!isWithholdingsView && kindTab === "venta" && (
+          <div className="flex flex-wrap gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-0.5 text-xs">
+            {[
+              { v: "", label: "Todos" },
+              { v: "unpaid", label: "No pagado" },
+              { v: "paid", label: "Pagado" },
+              { v: "net_only", label: "Solo neto" },
+              { v: "factored", label: "Solo IVA" },
+            ].map((s) => (
+              <button
+                key={s.v}
+                onClick={() => setPaymentFilter(s.v)}
+                className={`min-h-[32px] rounded px-2 py-1 ${
+                  paymentFilter === s.v
+                    ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]"
+                    : "text-[var(--color-muted)]"
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        )}
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={
+            isWithholdingsView
+              ? "Buscar por contraparte, RUT o folio..."
+              : `Buscar por ${kindTab === "venta" ? "cliente" : "proveedor"}, RUT o folio...`
+          }
+          list="dte-contrapartes"
+          className="flex-1 min-w-[200px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm outline-none focus:border-[var(--color-accent)]"
+        />
+        <datalist id="dte-contrapartes">
+          {counterpartySuggestions.map((name) => (
+            <option key={name} value={name} />
+          ))}
+        </datalist>
+      </div>
+      )}
+
+      {!isAnalysisTab && (
+      <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <SummaryCard label="Documentos" value={fmtNumber(totals.count)} />
+        <SummaryCard label="Neto" value={fmtCurrency(totals.neto)} />
+        <SummaryCard label="IVA" value={fmtCurrency(totals.iva)} />
+        <SummaryCard label="Total" value={fmtCurrency(totals.total)} highlight />
+        <SummaryCard
+          label={`NC (${totals.ncCount})`}
+          value={fmtCurrency(totals.ncTotal)}
+          subtle
+        />
+      </div>
+      )}
+
+      {selectedCompany && !isWithholdingsView && !isAnalysisTab && (
+        <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <SummaryCard label="No pagado del período" value={fmtCurrency(totals.unpaidTotal)} warning />
+          <SummaryCard label="Solo neto (IVA retenido)" value={fmtCurrency(totals.netOnlyTotal)} />
+          <SummaryCard label="Cedidas / Solo IVA" value={fmtCurrency(totals.factoredTotal)} />
+        </div>
+      )}
+      {isWithholdingsView && (
+        <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <SummaryCard label="Facturas con retención" value={fmtNumber(totals.count)} />
+          <SummaryCard label="IVA retenido" value={fmtCurrency(totals.netOnlyIva)} highlight />
+          <SummaryCard label="Total facturado (con IVA)" value={fmtCurrency(totals.netOnlyTotal)} />
+        </div>
+      )}
+
+      {loading ? (
+        <div className="flex h-40 items-center justify-center text-[var(--color-muted)]">
+          Cargando...
+        </div>
+      ) : noCompany ? (
+        <div className="flex h-60 flex-col items-center justify-center gap-3 rounded-md border border-dashed border-[var(--color-border)] text-sm text-[var(--color-muted)]">
+          <div>No hay empresas registradas todavía.</div>
+          <button
+            onClick={() => setCompaniesModalOpen(true)}
+            className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)]"
+          >
+            🏢 Registrar la primera empresa
+          </button>
+        </div>
+      ) : kindTab === "resumen" ? (
+        (() => {
+          const { months, total } = summaryData;
+          const annualVat = total.vatDebit - total.vatCredit;
+          const exportDisabled = total.salesCount === 0 && total.purchasesCount === 0;
+          return (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="text-xs text-[var(--color-muted)]">Año</label>
+                <select
+                  value={summaryYear}
+                  onChange={(e) => setSummaryYear(e.target.value)}
+                  className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
+                >
+                  {summaryYears.map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+                <div className="ml-auto flex flex-wrap gap-1">
+                  <button onClick={handleSummaryCopy} disabled={summaryBusy === "copy" || exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Copiar como imagen">
+                    {summaryBusy === "copy" ? "Copiando..." : "📋 Copiar"}
+                  </button>
+                  <button onClick={handleSummaryPng} disabled={summaryBusy === "png" || exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Descargar PNG">
+                    {summaryBusy === "png" ? "..." : "📥 PNG"}
+                  </button>
+                  <button onClick={handleSummaryPrint} disabled={exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Imprimir">
+                    🖨 Imprimir
+                  </button>
+                  <button onClick={handleSummaryXlsx} disabled={summaryBusy === "xlsx" || exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Exportar XLSX">
+                    {summaryBusy === "xlsx" ? "..." : "📊 XLSX"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <SummaryCard label="IVA Débito (ventas)" value={fmtCurrency(total.vatDebit)} />
+                <SummaryCard label="IVA Crédito (compras)" value={fmtCurrency(total.vatCredit)} />
+                <SummaryCard label={annualVat >= 0 ? "IVA a pagar (año)" : "IVA a favor (remanente)"} value={fmtCurrency(Math.abs(annualVat))} highlight />
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <SummaryCard label="Ventas netas (año)" value={fmtCurrency(total.salesNet)} />
+                <SummaryCard label="Compras netas (año)" value={fmtCurrency(total.purchasesNet)} />
+                <SummaryCard label="Documentos" value={fmtNumber(total.salesCount + total.purchasesCount)} subtle />
+              </div>
+
+              <div style={{ position: "absolute", left: -99999, top: 0, pointerEvents: "none" }} aria-hidden>
+                <PrintableAnnualSummary ref={summaryPrintRef} data={summaryData} year={summaryYear} company={selectedCompany} />
+              </div>
+
+              <div className="overflow-auto rounded-md border border-[var(--color-border)]">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-[var(--color-surface-2)] text-xs uppercase tracking-wide text-[var(--color-muted)]">
+                    <tr>
+                      <th className="px-2 py-2 text-left">Mes</th>
+                      <th className="px-2 py-2 text-right">Ventas Neto</th>
+                      <th className="px-2 py-2 text-right">IVA Débito</th>
+                      <th className="px-2 py-2 text-right">Compras Neto</th>
+                      <th className="px-2 py-2 text-right">IVA Crédito</th>
+                      <th className="px-2 py-2 text-right">IVA a pagar</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {months.map((m, idx) => {
+                      const monthVat = m.vatDebit - m.vatCredit;
+                      const empty = m.salesCount === 0 && m.purchasesCount === 0;
+                      return (
+                        <tr key={idx} className={`border-t border-[var(--color-border)] ${empty ? "text-[var(--color-muted)]" : ""}`}>
+                          <td className="px-2 py-1.5">{MONTH_NAMES_ES[idx]}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(m.salesNet)}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(m.vatDebit)}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(m.purchasesNet)}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(m.vatCredit)}</td>
+                          <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${monthVat < 0 ? "text-[var(--color-success)]" : ""}`}>{fmtCurrency(monthVat)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-[var(--color-border)] bg-[var(--color-surface-2)] font-semibold">
+                      <td className="px-2 py-2">TOTAL {summaryYear}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(total.salesNet)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(total.vatDebit)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(total.purchasesNet)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(total.vatCredit)}</td>
+                      <td className={`px-2 py-2 text-right tabular-nums ${annualVat < 0 ? "text-[var(--color-success)]" : ""}`}>{fmtCurrency(annualVat)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          );
+        })()
+      ) : kindTab === "proyeccion" && isAdmin ? (
+        (() => {
+          const emptyBase = projection.baseCount === 0;
+          return (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="text-xs text-[var(--color-muted)]">Proyectar desde</label>
+                <select
+                  value={projectionStart.slice(5, 7)}
+                  onChange={(e) => setProjectionStart(`${projectionStart.slice(0, 4)}-${e.target.value}`)}
+                  className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
+                >
+                  {MONTH_NAMES_ES.map((m, i) => (
+                    <option key={m} value={String(i + 1).padStart(2, "0")}>{m}</option>
+                  ))}
+                </select>
+                <select
+                  value={projectionStart.slice(0, 4)}
+                  onChange={(e) => setProjectionStart(`${e.target.value}-${projectionStart.slice(5, 7)}`)}
+                  className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
+                >
+                  {projectionYears.map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+                <label className="ml-2 text-xs text-[var(--color-muted)]">% sobre el período anterior</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={projectionPercent}
+                  onChange={(e) => setProjectionPercent(e.target.value)}
+                  className="min-h-[32px] w-20 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-right text-sm tabular-nums"
+                />
+                <div className="ml-auto">
+                  <button
+                    onClick={handleProjectionXlsx}
+                    disabled={projectionBusy === "xlsx" || emptyBase}
+                    title={emptyBase ? "No hay ventas en el período base" : "Descargar el reporte en Excel"}
+                    className="min-h-[32px] rounded-md bg-[var(--color-accent)] px-3 py-1 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
+                  >
+                    {projectionBusy === "xlsx" ? "Generando..." : "📊 Descargar Excel"}
+                  </button>
+                </div>
+              </div>
+
+              <p className="text-xs text-[var(--color-muted)]">
+                Proyección <strong>{projection.targetLabel}</strong> — cada mes se estima desde el mismo mes de{" "}
+                <strong>{projection.baseLabel}</strong> multiplicado por el porcentaje, <strong>salvo los meses
+                que ya tienen ventas cargadas</strong>, que valen su dato real. Solo entran las{" "}
+                <strong>ventas</strong> (las compras son salidas y quedan fuera); las notas de crédito restan.
+                Una <strong>factura de compra entra solo por su neto</strong> —el IVA lo retiene el cliente y
+                nunca se cobra—; el resto entra con IVA incluido.
+              </p>
+
+              {projection.rows.some((r) => r.esReal && r.periodo === currentPeriod()) && (
+                <p className="rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-3 py-2 text-xs text-[var(--color-warning)]">
+                  ⚠ {formatPeriod(currentPeriod())} es el mes en curso: su dato real puede estar incompleto y
+                  arrastrar el total para abajo.
+                </p>
+              )}
+
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <SummaryCard label={`Ingresos ${projection.baseLabel}`} value={fmtCurrency(projection.baseTotal)} subtle />
+                <SummaryCard
+                  label={`Real · ${projection.mesesReales} ${projection.mesesReales === 1 ? "mes" : "meses"}`}
+                  value={fmtCurrency(projection.totalReal)}
+                />
+                <SummaryCard
+                  label={`Estimado · ${projection.mesesEstimados} ${projection.mesesEstimados === 1 ? "mes" : "meses"} al ${projection.percent}%`}
+                  value={fmtCurrency(projection.totalProyectado)}
+                />
+                <SummaryCard label={`Total ${projection.targetLabel}`} value={fmtCurrency(projection.total)} highlight />
+              </div>
+
+              {emptyBase && projection.mesesReales === 0 ? (
+                <div className="flex h-40 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-[var(--color-border)] px-4 text-center text-sm text-[var(--color-muted)]">
+                  <div>No hay ventas importadas en {projection.baseLabel}.</div>
+                  <div className="text-xs">
+                    La proyección se calcula sobre esos 12 meses — sin ellos no hay nada que escalar.
+                  </div>
+                </div>
+              ) : (
+                <div className="overflow-auto rounded-md border border-[var(--color-border)]">
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-[var(--color-surface-2)] text-xs uppercase tracking-wide text-[var(--color-muted)]">
+                      <tr>
+                        <th className="px-2 py-2 text-left">Mes</th>
+                        <th className="px-2 py-2 text-left">Origen</th>
+                        <th className="px-2 py-2 text-right">Ingreso base</th>
+                        <th className="px-2 py-2 text-right">Monto</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {projection.rows.map((row) => (
+                        <tr
+                          key={row.periodo}
+                          className={`border-t border-[var(--color-border)] ${
+                            !row.esReal && row.baseCount === 0 ? "text-[var(--color-muted)]" : ""
+                          }`}
+                        >
+                          <td className="px-2 py-1.5">{formatPeriod(row.periodo)}</td>
+                          <td className="px-2 py-1.5 text-xs">
+                            {row.esReal ? (
+                              <span className="rounded-full bg-[var(--color-success-soft)] px-1.5 py-0.5 font-semibold text-[var(--color-success)]">
+                                ✓ real · {row.realCount} doc.
+                              </span>
+                            ) : (
+                              <span className="text-[var(--color-muted)]">
+                                {row.basePeriodo} × {projection.percent}%
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">
+                            {row.esReal ? <span className="text-[var(--color-muted)]">—</span> : fmtCurrency(row.baseMonto)}
+                          </td>
+                          <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${row.esReal ? "text-[var(--color-success)]" : ""}`}>
+                            {fmtCurrency(row.monto)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2 border-[var(--color-border)] bg-[var(--color-surface-2)] font-semibold">
+                        <td className="px-2 py-2" colSpan={3}>TOTAL {projection.targetLabel}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(projection.total)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })()
+      ) : filtered.length === 0 ? (
+        <div className="flex h-40 items-center justify-center rounded-md border border-dashed border-[var(--color-border)] text-sm text-[var(--color-muted)]">
+          {docs.some((d) => (isWithholdingsView || d.kind === kindTab) && d.companyId === selectedCompanyId)
+            ? "Sin coincidencias para los filtros aplicados."
+            : isWithholdingsView
+              ? "No hay facturas con estado \"Solo neto\" para esta empresa en este período."
+              : `No hay ${kindTab === "venta" ? "facturas" : "compras"} importadas para esta empresa en este período. Usa "📥 Importar CSV del SII".`}
+        </div>
+      ) : isWithholdingsView ? (
+        <>
+          {/* Toolbar de export para la infografía. Mismo patrón visual que el
+              resto de los resúmenes del proyecto (Cobrar, Quincenas, Worker). */}
+          <div className="mb-2 flex flex-wrap gap-1">
+            <button
+              onClick={handleWithholdingsCopy}
+              disabled={exportBusy === "copy" || withholdingsByCounterparty.length === 0}
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
+              title="Copiar tabla como imagen"
+            >
+              {exportBusy === "copy" ? "Copiando..." : "📋 Copiar"}
+            </button>
+            <button
+              onClick={handleWithholdingsDownload}
+              disabled={exportBusy === "png" || withholdingsByCounterparty.length === 0}
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
+              title="Descargar como PNG"
+            >
+              {exportBusy === "png" ? "..." : "📥 PNG"}
+            </button>
+            <button
+              onClick={handleWithholdingsPrint}
+              disabled={withholdingsByCounterparty.length === 0}
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
+              title="Imprimir"
+            >
+              🖨 Imprimir
+            </button>
+            <button
+              onClick={handleWithholdingsXlsx}
+              disabled={exportBusy === "xlsx" || withholdingsByCounterparty.length === 0}
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
+              title="Exportar XLSX (Resumen + Detalle)"
+            >
+              {exportBusy === "xlsx" ? "..." : "📊 XLSX"}
+            </button>
+          </div>
+
+          {/* Printables fuera de pantalla para html-to-image: el resumen general
+              y uno por contraparte, para exportarlos uno a uno. */}
+          <div style={{ position: "absolute", left: -99999, top: 0, pointerEvents: "none" }} aria-hidden>
+            <PrintableWithholdings
+              ref={withholdingsPrintRef}
+              groups={withholdingsByCounterparty}
+              company={selectedCompany}
+              periodo={periodFilter}
+              totals={totals}
+            />
+            {withholdingsByCounterparty.map((g) => {
+              const k = groupKey(g);
+              return (
+                <PrintableWithholdingsGroup
+                  key={`pg_${k}`}
+                  ref={(el) => {
+                    if (el) groupPrintRefs.current.set(k, el);
+                    else groupPrintRefs.current.delete(k);
+                  }}
+                  group={g}
+                  company={selectedCompany}
+                  periodo={periodFilter}
+                />
+              );
+            })}
+          </div>
+
+          <WithholdingsView
+            groups={withholdingsByCounterparty}
+            onSelectDoc={(d) => setDetailDoc(d)}
+            onSetStatus={setPaymentStatus}
+            onGroupExport={groupExport}
+            groupBusy={groupBusy}
+            groupKeyOf={groupKey}
+          />
+        </>
+      ) : (
+        <>
+          {/* Toolbar de export para Facturas / Compras (mismo patrón que
+              Retenciones). Captura el listado tal cual está filtrado y ordenado. */}
+          <div className="mb-2 flex flex-wrap gap-1">
+            <button
+              onClick={handleDocListCopy}
+              disabled={docListBusy === "copy" || sortedFiltered.length === 0}
+              className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
+              title="Copiar tabla como imagen"
+            >
+              {docListBusy === "copy" ? "Copiando..." : "📋 Copiar"}
+            </button>
+            <button
+              onClick={handleDocListPng}
+              disabled={docListBusy === "png" || sortedFiltered.length === 0}
+              className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
+              title="Descargar como PNG"
+            >
+              {docListBusy === "png" ? "..." : "📥 PNG"}
+            </button>
+            <button
+              onClick={handleDocListPrint}
+              disabled={sortedFiltered.length === 0}
+              className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
+              title="Imprimir"
+            >
+              🖨 Imprimir
+            </button>
+            <button
+              onClick={handleDocListXlsx}
+              disabled={docListBusy === "xlsx" || sortedFiltered.length === 0}
+              className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
+              title="Exportar XLSX"
+            >
+              {docListBusy === "xlsx" ? "..." : "📊 XLSX"}
+            </button>
+            <button
+              onClick={() => setGroupByCostCenter((v) => !v)}
+              className={`min-h-[32px] rounded-md border px-2 py-1 text-xs ${
+                groupByCostCenter
+                  ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                  : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
+              }`}
+              title={groupByCostCenter
+                ? "Esta tabla y su exportación están agrupadas por centro de costo (combustibles juntos, resto por proveedor). Click para volver a la vista plana."
+                : "Agrupar ESTA tabla y su exportación por centro de costo: combustibles como un grupo aparte y el resto por proveedor."}
+            >
+              {groupByCostCenter ? "🗂 Agrupar tabla por centro · ON" : "🗂 Agrupar tabla por centro"}
+            </button>
+            <button
+              onClick={() => setCostCentersModalOpen(true)}
+              className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+              title="Abrir el panel de centros de costo: crear/editar/eliminar categorías y ver todos sus documentos, de todas las empresas y períodos"
+            >
+              🏷 Gestionar centros de costo
+            </button>
+          </div>
+
+          {/* Printable fuera de pantalla para html-to-image e impresión. */}
+          <div style={{ position: "absolute", left: -99999, top: 0, pointerEvents: "none" }} aria-hidden>
+            <PrintableDocList
+              ref={docListPrintRef}
+              kind={kindTab}
+              docs={sortedFiltered}
+              company={selectedCompany}
+              periodo={periodFilter}
+              totals={totals}
+              groupByCostCenter={groupByCostCenter}
+              costCentersById={costCentersById}
+              showEstado={kindTab === "venta"}
+            />
+          </div>
+
+        {isMobile ? (
+          <div className="divide-y divide-[var(--color-border)] rounded-md border border-[var(--color-border)]">
+            {(() => {
+              const renderDocCard = (d) => {
+                const razon = kindTab === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
+                const rut = kindTab === "venta" ? d.rutReceptor : d.rutEmisor;
+                const isNC = CREDIT_NOTE_TYPES.has(Number(d.tipo));
+                const isFuel = d.otroImpuestoCategory === "combustible";
+                const st = d.paymentStatus || "unpaid";
+                const hasNotes = !!(d.notes && d.notes.trim());
+                const pays = Array.isArray(d.payments) ? d.payments : [];
+                const paid = Number(d.amountPaid) || pays.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+                const bal = (Number(d.total) || 0) - paid;
+                const fullyPaid = bal <= 0.01;
+                return (
+                  <div key={d.id} className="px-3 py-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-muted)]">
+                          <span className="font-mono">{d.fechaEmision}</span>
+                          <span className={isNC ? "rounded px-1.5 py-0.5 bg-[var(--color-danger-soft)] text-[var(--color-danger)]" : ""}>
+                            {d.tipoLabel || dteTypeLabel(d.tipo)}
+                          </span>
+                          <OtherTaxChip code={d.otroImpuestoCodigo} tasa={d.retencionTasa} />
+                          <span className="font-mono">· Folio {d.folio}</span>
+                        </div>
+                        <div className="mt-0.5 truncate text-sm font-medium">{razon || "—"}</div>
+                        <div className="font-mono text-[10px] text-[var(--color-muted)]">{formatRutForDisplay(rut)}</div>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <div className={`text-sm font-semibold tabular-nums ${isNC ? "text-[var(--color-danger)]" : ""}`}>
+                          {isNC ? "−" : ""}{fmtCurrency(d.total)}
+                        </div>
+                        <div className="text-[10px] tabular-nums text-[var(--color-muted)]">
+                          N {isNC ? "−" : ""}{fmtCurrency(d.neto)} · IVA {isNC ? "−" : ""}{fmtCurrency(d.iva)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      {!isNC && paid > 0 && (
+                        <span className={`text-[10px] ${fullyPaid ? "text-[var(--color-success)]" : "text-[var(--color-warning)]"}`}>
+                          {fullyPaid ? `✓ Pagado (${pays.length})` : `Abono ${fmtCurrency(paid)} · Saldo ${fmtCurrency(bal)}`}
+                        </span>
+                      )}
+                      {isFuel ? (
+                        <span
+                          title="Agrupado automáticamente como Combustible (código SII de otro impuesto)"
+                          className="rounded-full bg-[var(--color-warning-soft)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-warning)]"
+                        >
+                          ⛽ auto
+                        </span>
+                      ) : (
+                        <CostCenterSelect
+                          value={d.costCenterId || ""}
+                          costCenters={costCenters}
+                          onChange={(next) => saveDocCostCenter(d, next)}
+                        />
+                      )}
+                      {kindTab === "venta" && (
+                        isNC ? (
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${CREDIT_NOTE_STATE.chip}`}>
+                            {CREDIT_NOTE_STATE.label}
+                          </span>
+                        ) : (
+                          <>
+                            <PaymentStatusSelect value={st} onChange={(next) => setPaymentStatus(d, next)} />
+                            {cancellingByDocId.has(d.id) && st !== "cancelled" && (
+                              <button
+                                onClick={() => setDetailDoc(d)}
+                                title={`Posible NC anula esta factura (${cancellingByDocId.get(d.id).length} candidata${cancellingByDocId.get(d.id).length === 1 ? "" : "s"}). Click para revisar.`}
+                                className="rounded-full bg-[var(--color-danger-soft)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-danger)] hover:opacity-80"
+                              >
+                                ⚠ NC?
+                              </button>
+                            )}
+                          </>
+                        )
+                      )}
+                      <button
+                        onClick={() => setDetailDoc(d)}
+                        title={hasNotes ? "Ver detalle (tiene notas)" : "Ver detalle / agregar notas"}
+                        className="ml-auto min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+                      >
+                        {hasNotes ? "📝 Detalle" : "ℹ Detalle"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              };
+
+              if (!groupByCostCenter) return pagedDocs.map(renderDocCard);
+
+              const groups = groupDocsByCostCenter(sortedFiltered, kindTab, costCentersById);
+              return groups.map((g) => (
+                <div key={`g_${g.key}`}>
+                  <div
+                    className={`px-3 py-1.5 text-xs font-semibold ${
+                      g.isFuel
+                        ? "bg-[var(--color-warning-soft)]"
+                        : g.isManual
+                          ? "bg-[var(--color-success-soft)]"
+                          : "bg-[var(--color-accent-soft)]"
+                    }`}
+                  >
+                    {g.isFuel ? "⛽ COMBUSTIBLES" : (g.razon || "—")}
+                    {!g.isFuel && g.rut && (
+                      <span className="ml-2 font-normal text-[var(--color-muted)]">· {formatRutForDisplay(g.rut)}</span>
+                    )}
+                    <span className="ml-2 font-normal text-[var(--color-muted)]">· {g.docs.length} documento{g.docs.length === 1 ? "" : "s"}</span>
+                  </div>
+                  <div className="divide-y divide-[var(--color-border)]">
+                    {g.docs.map(renderDocCard)}
+                  </div>
+                  <div className="flex flex-wrap justify-between gap-2 bg-[var(--color-surface-2)] px-3 py-1.5 text-xs font-semibold">
+                    <span>Subtotal</span>
+                    <span className="tabular-nums">Neto {fmtCurrency(g.neto)} · IVA {fmtCurrency(g.iva)} · Total {fmtCurrency(g.total)}</span>
+                  </div>
+                </div>
+              ));
+            })()}
+          </div>
+        ) : (
+        <div className="flex-1 overflow-auto rounded-md border border-[var(--color-border)]">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-[var(--color-surface-2)] text-xs uppercase tracking-wide text-[var(--color-muted)]">
+              <tr>
+                <SortHeader sortKey="fechaEmision" sortBy={sortBy} onToggle={toggleSort} align="left">Fecha</SortHeader>
+                <SortHeader sortKey="tipo" sortBy={sortBy} onToggle={toggleSort} align="left">Tipo</SortHeader>
+                <SortHeader sortKey="folio" sortBy={sortBy} onToggle={toggleSort} align="right">Folio</SortHeader>
+                <SortHeader sortKey="razon" sortBy={sortBy} onToggle={toggleSort} align="left">{kindTab === "venta" ? "Cliente" : "Proveedor"}</SortHeader>
+                <SortHeader sortKey="rut" sortBy={sortBy} onToggle={toggleSort} align="left">RUT</SortHeader>
+                <SortHeader sortKey="neto" sortBy={sortBy} onToggle={toggleSort} align="right">Neto</SortHeader>
+                <SortHeader sortKey="iva" sortBy={sortBy} onToggle={toggleSort} align="right">IVA</SortHeader>
+                <SortHeader sortKey="total" sortBy={sortBy} onToggle={toggleSort} align="right">Total</SortHeader>
+                <SortHeader sortKey="pagado" sortBy={sortBy} onToggle={toggleSort} align="right">Abonos</SortHeader>
+                <th className="px-2 py-2 text-left">C. Costo</th>
+                {kindTab === "venta" && (
+                  <SortHeader sortKey="estado" sortBy={sortBy} onToggle={toggleSort} align="center">Estado</SortHeader>
+                )}
+                <th className="px-2 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {(() => {
+                const renderDocRow = (d) => {
+                const razon = kindTab === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
+                const rut = kindTab === "venta" ? d.rutReceptor : d.rutEmisor;
+                const isNC = CREDIT_NOTE_TYPES.has(Number(d.tipo));
+                const isFuel = d.otroImpuestoCategory === "combustible";
+                const st = d.paymentStatus || "unpaid";
+                const hasNotes = !!(d.notes && d.notes.trim());
+                return (
+                  <tr key={d.id} className="border-t border-[var(--color-border)] hover:bg-[var(--color-surface-2)]">
+                    <td className="px-2 py-1.5 font-mono text-xs">{d.fechaEmision}</td>
+                    <td className="px-2 py-1.5 text-xs">
+                      <span className={isNC ? "rounded px-1.5 py-0.5 bg-[var(--color-danger-soft)] text-[var(--color-danger)]" : ""}>
+                        {d.tipoLabel || dteTypeLabel(d.tipo)}
+                      </span>
+                      <OtherTaxChip code={d.otroImpuestoCodigo} tasa={d.retencionTasa} />
+                    </td>
+                    <td className="px-2 py-1.5 text-right font-mono tabular-nums">{d.folio}</td>
+                    <td className="px-2 py-1.5 truncate max-w-[260px]">{razon || "—"}</td>
+                    <td className="px-2 py-1.5 font-mono text-xs">{formatRutForDisplay(rut)}</td>
+                    <td className={`px-2 py-1.5 text-right tabular-nums ${isNC ? "text-[var(--color-danger)]" : ""}`}>
+                      {isNC ? "−" : ""}{fmtCurrency(d.neto)}
+                    </td>
+                    <td className={`px-2 py-1.5 text-right tabular-nums ${isNC ? "text-[var(--color-danger)]" : ""}`}>
+                      {isNC ? "−" : ""}{fmtCurrency(d.iva)}
+                    </td>
+                    <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${isNC ? "text-[var(--color-danger)]" : ""}`}>
+                      {isNC ? "−" : ""}{fmtCurrency(d.total)}
+                    </td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">
+                      {(() => {
+                        if (isNC) return <span className="text-[var(--color-muted)]">—</span>;
+                        const pays = Array.isArray(d.payments) ? d.payments : [];
+                        const paid = Number(d.amountPaid) || pays.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+                        if (paid <= 0) return <span className="text-[var(--color-muted)]">—</span>;
+                        const bal = (Number(d.total) || 0) - paid;
+                        const full = bal <= 0.01;
+                        return (
+                          <div className="flex flex-col items-end leading-tight">
+                            <span>{fmtCurrency(paid)}</span>
+                            <span className={`text-[10px] ${full ? "text-[var(--color-success)]" : "text-[var(--color-warning)]"}`}>
+                              {full ? `✓ ${pays.length} abono${pays.length === 1 ? "" : "s"}` : `Saldo ${fmtCurrency(bal)}`}
+                            </span>
+                          </div>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-2 py-1.5">
+                      {isFuel ? (
+                        <span
+                          title="Agrupado automáticamente como Combustible (código SII de otro impuesto)"
+                          className="rounded-full bg-[var(--color-warning-soft)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-warning)]"
+                        >
+                          ⛽ auto
+                        </span>
+                      ) : (
+                        <CostCenterSelect
+                          value={d.costCenterId || ""}
+                          costCenters={costCenters}
+                          onChange={(next) => saveDocCostCenter(d, next)}
+                        />
+                      )}
+                    </td>
+                    {kindTab === "venta" && (
+                      <td className="px-2 py-1.5 text-center">
+                        {isNC ? (
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${CREDIT_NOTE_STATE.chip}`}>
+                            {CREDIT_NOTE_STATE.label}
+                          </span>
+                        ) : (
+                          <div className="flex items-center justify-center gap-1">
+                            <PaymentStatusSelect
+                              value={st}
+                              onChange={(next) => setPaymentStatus(d, next)}
+                            />
+                            {cancellingByDocId.has(d.id) && st !== "cancelled" && (
+                              <button
+                                onClick={() => setDetailDoc(d)}
+                                title={`Posible NC anula esta factura (${cancellingByDocId.get(d.id).length} candidata${cancellingByDocId.get(d.id).length === 1 ? "" : "s"}). Click para revisar.`}
+                                className="rounded-full bg-[var(--color-danger-soft)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-danger)] hover:opacity-80"
+                              >
+                                ⚠ NC?
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    )}
+                    <td className="px-2 py-1.5 text-center">
+                      <button
+                        onClick={() => setDetailDoc(d)}
+                        title={hasNotes ? "Ver detalle (tiene notas)" : "Ver detalle / agregar notas"}
+                        className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-1.5 py-0.5 text-[10px] hover:bg-[var(--color-accent-soft)]"
+                      >
+                        {hasNotes ? "📝" : "ℹ"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+                };
+
+                if (!groupByCostCenter) return pagedDocs.map(renderDocRow);
+
+                const totalCols = kindTab === "venta" ? 12 : 11;
+                const groups = groupDocsByCostCenter(sortedFiltered, kindTab, costCentersById);
+                return groups.map((g) => (
+                  <React.Fragment key={`g_${g.key}`}>
+                    <tr
+                      className={
+                        g.isFuel
+                          ? "bg-[var(--color-warning-soft)]"
+                          : g.isManual
+                            ? "bg-[var(--color-success-soft)]"
+                            : "bg-[var(--color-accent-soft)]"
+                      }
+                    >
+                      <td colSpan={totalCols} className="px-2 py-1.5 text-xs font-semibold">
+                        {g.isFuel ? "⛽ COMBUSTIBLES" : (g.razon || "—")}
+                        {!g.isFuel && g.rut && (
+                          <span className="ml-2 font-normal text-[var(--color-muted)]">· {formatRutForDisplay(g.rut)}</span>
+                        )}
+                        <span className="ml-2 font-normal text-[var(--color-muted)]">· {g.docs.length} documento{g.docs.length === 1 ? "" : "s"}</span>
+                      </td>
+                    </tr>
+                    {g.docs.map(renderDocRow)}
+                    <tr className="border-t border-[var(--color-border)] bg-[var(--color-surface-2)] text-xs font-semibold">
+                      <td colSpan={5} className="px-2 py-1.5">Subtotal</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(g.neto)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(g.iva)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(g.total)}</td>
+                      <td colSpan={kindTab === "venta" ? 4 : 3}></td>
+                    </tr>
+                  </React.Fragment>
+                ));
+              })()}
+            </tbody>
+          </table>
+        </div>
+        )}
+
+        {/* Paginación — solo en la tabla plana. En modo "por centro de costo"
+            se muestra todo (los subtotales por grupo no se pueden cortar). */}
+        {!groupByCostCenter && sortedFiltered.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <span className="text-[var(--color-muted)]">
+              Mostrando {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, sortedFiltered.length)} de {fmtNumber(sortedFiltered.length)}
+            </span>
+            {pageCount > 1 && (
+              <div className="flex flex-wrap items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setPage(Math.max(1, currentPage - 1))}
+                  disabled={currentPage <= 1}
+                  className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 hover:bg-[var(--color-accent-soft)] disabled:opacity-40"
+                >
+                  ‹ Anterior
+                </button>
+                {pageNumbers.map((n, i) =>
+                  n === "…" ? (
+                    <span key={`e_${i}`} className="px-1 text-[var(--color-muted)]">…</span>
+                  ) : (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setPage(n)}
+                      className={`min-h-[32px] min-w-[32px] rounded-md border px-2 py-1 tabular-nums ${
+                        n === currentPage
+                          ? "border-[var(--color-accent)] bg-[var(--color-accent)] font-semibold text-[var(--color-accent-fg)]"
+                          : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ),
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPage(Math.min(pageCount, currentPage + 1))}
+                  disabled={currentPage >= pageCount}
+                  className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 hover:bg-[var(--color-accent-soft)] disabled:opacity-40"
+                >
+                  Siguiente ›
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        </>
+      )}
+
+      {importPreview && (
+        <ImportPreviewModal
+          preview={importPreview}
+          existingIds={new Set(docs.map((d) => d.id))}
+          company={companiesById.get(importCompanyId)}
+          busy={importing}
+          onToggleFile={toggleFileExclusion}
+          onConfirm={confirmImport}
+          onCancel={() => { setImportPreview(null); setImportCompanyId(""); }}
+        />
+      )}
+
+      {importCompanyId && !importPreview && (
+        <CompanySelectAndPickModal
+          companies={companies}
+          companyId={importCompanyId}
+          onChange={setImportCompanyId}
+          onFilesPick={onFilesPick}
+          onCancel={() => setImportCompanyId("")}
+        />
+      )}
+
+      {companiesModalOpen && (
+        <CompaniesModal
+          companies={companies}
+          onClose={() => setCompaniesModalOpen(false)}
+          onChanged={loadAll}
+        />
+      )}
+
+      {receivablesModalOpen && (
+        <ReceivablesModal
+          items={receivablesList}
+          totals={receivablesTotals}
+          company={selectedCompany}
+          onClose={() => setReceivablesModalOpen(false)}
+          onSelectDoc={(d) => { setReceivablesModalOpen(false); setDetailDoc(d); }}
+        />
+      )}
+
+      {costCentersModalOpen && (
+        <CostCentersModal
+          costCenters={costCenters}
+          docs={docs}
+          informalExpenses={informalExpenses}
+          companiesById={companiesById}
+          onClose={() => setCostCentersModalOpen(false)}
+          onChanged={loadAll}
+          onSelectDoc={(d) => setDetailDoc(d)}
+        />
+      )}
+
+      {/* Se renderiza después de CostCentersModal a propósito: si ambos están
+          abiertos (se abrió un documento desde la vista de un centro de
+          costo), este queda apilado encima y al cerrarlo vuelve al modal de
+          centros de costo en vez de cerrar todo hasta la pantalla base. */}
+      {detailDoc && (
+        <DocDetailModal
+          dteDoc={detailDoc}
+          candidateNcs={cancellingByDocId.get(detailDoc.id) || []}
+          costCenters={costCenters}
+          onClose={() => setDetailDoc(null)}
+          onSaveNotes={(notes) => saveDocNotes(detailDoc, notes)}
+          onSetStatus={(next) => setPaymentStatus(detailDoc, next)}
+          onSavePayments={(payments) => saveDocPayments(detailDoc, payments)}
+          onSetCostCenter={(next) => saveDocCostCenter(detailDoc, next)}
+        />
+      )}
+    </div>
+  );
+}

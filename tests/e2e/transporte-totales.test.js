@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   tripsService,
   paymentsService,
-  transportPayrollsService,
+  fortnightsService,
 } from "../../src/services/transportsService";
 import { set, get } from "./helpers/seed";
 
@@ -82,7 +82,7 @@ describe("propagación de totales de transporte", () => {
       tripIds: [a.id],
       total: 100000,
     });
-    const quincena = await transportPayrollsService.create({
+    const fortnight = await fortnightsService.create({
       name: "Quincena marzo",
       periodFrom: "2026-03-01",
       periodTo: "2026-03-31",
@@ -92,7 +92,7 @@ describe("propagación de totales de transporte", () => {
     await tripsService.update(a.id, { paymentId: resumen.id, qty: 1, rate: 50000 });
 
     expect((await get("transportPayments", resumen.id)).total).toBe(50000);
-    expect((await get("transportPayrolls", quincena.id)).total).toBe(50000);
+    expect((await get("transportPayrolls", fortnight.id)).total).toBe(50000);
   });
 
   it("borrar una vuelta la saca del total y del array de ids", async () => {
@@ -120,7 +120,7 @@ describe("propagación de totales de transporte", () => {
 
 describe("resúmenes y quincenas que se quedan vacíos", () => {
   // Arma una vuelta dentro de un resumen, y el resumen dentro de una quincena.
-  async function vueltaEnQuincena({ otrosResumenes = [] } = {}) {
+  async function tripInFortnight({ otrosResumenes = [] } = {}) {
     await seedCarrier();
     const v = await nuevaVuelta({ qty: 1, rate: 40000 });
     const resumen = await paymentsService.createSummary({
@@ -131,22 +131,22 @@ describe("resúmenes y quincenas que se quedan vacíos", () => {
       total: 40000,
     });
     await tripsService.update(v.id, { paymentId: resumen.id });
-    const quincena = await transportPayrollsService.create({
+    const fortnight = await fortnightsService.create({
       name: "Quincena marzo",
       periodFrom: "2026-03-01",
       periodTo: "2026-03-15",
       paymentIds: [resumen.id, ...otrosResumenes],
     });
-    return { v, resumen, quincena };
+    return { v, resumen, fortnight };
   }
 
   it("borrar la única vuelta elimina el resumen y la quincena que quedó vacía", async () => {
-    const { v, resumen, quincena } = await vueltaEnQuincena();
+    const { v, resumen, fortnight } = await tripInFortnight();
 
     await tripsService.remove(v.id);
 
     expect(await get("transportPayments", resumen.id)).toBe(null);
-    expect(await get("transportPayrolls", quincena.id)).toBe(null);
+    expect(await get("transportPayrolls", fortnight.id)).toBe(null);
   });
 
   it("si la quincena tiene otros resúmenes, solo sale el vacío", async () => {
@@ -160,19 +160,19 @@ describe("resúmenes y quincenas que se quedan vacíos", () => {
       total: 25000,
     });
     await tripsService.update(otra.id, { paymentId: otroResumen.id });
-    const { v, resumen, quincena } = await vueltaEnQuincena({ otrosResumenes: [otroResumen.id] });
+    const { v, resumen, fortnight } = await tripInFortnight({ otrosResumenes: [otroResumen.id] });
 
     await tripsService.remove(v.id);
 
     expect(await get("transportPayments", resumen.id)).toBe(null);
-    const q = await get("transportPayrolls", quincena.id);
+    const q = await get("transportPayrolls", fortnight.id);
     expect(q.paymentIds).toEqual([otroResumen.id]);
     expect(q.total).toBe(25000);
   });
 
   it("un resumen con abonos no se elimina aunque se quede sin vueltas", async () => {
     // Los abonos son pagos ya hechos: borrar el resumen los perdería.
-    const { v, resumen, quincena } = await vueltaEnQuincena();
+    const { v, resumen, fortnight } = await tripInFortnight();
     await paymentsService.addAbono(resumen.id, { amount: 10000, date: "2026-03-05" });
 
     await tripsService.remove(v.id);
@@ -181,11 +181,11 @@ describe("resúmenes y quincenas que se quedan vacíos", () => {
     expect(r).not.toBe(null);
     expect(r.tripIds).toEqual([]);
     expect(r.total).toBe(0);
-    expect(await get("transportPayrolls", quincena.id)).not.toBe(null);
+    expect(await get("transportPayrolls", fortnight.id)).not.toBe(null);
   });
 
   it("un abono se corrige sin perder su identidad", async () => {
-    const { resumen } = await vueltaEnQuincena();
+    const { resumen } = await tripInFortnight();
     const conAbono = await paymentsService.addAbono(resumen.id, { amount: 10000, date: "2026-03-05", notes: "efectivo" });
     const original = conAbono.abonos[0];
 
@@ -210,21 +210,21 @@ describe("resúmenes y quincenas que se quedan vacíos", () => {
       tripIds: [otra.id],
       total: 25000,
     });
-    const { resumen, quincena } = await vueltaEnQuincena({ otrosResumenes: [otroResumen.id] });
+    const { resumen, fortnight } = await tripInFortnight({ otrosResumenes: [otroResumen.id] });
 
     await paymentsService.deleteSummary(resumen.id);
 
-    const q = await get("transportPayrolls", quincena.id);
+    const q = await get("transportPayrolls", fortnight.id);
     expect(q.paymentIds).toEqual([otroResumen.id]);
     expect(q.total).toBe(25000);
   });
 
   it("eliminar el único resumen de una quincena elimina la quincena", async () => {
-    const { v, resumen, quincena } = await vueltaEnQuincena();
+    const { v, resumen, fortnight } = await tripInFortnight();
 
     await paymentsService.deleteSummary(resumen.id);
 
-    expect(await get("transportPayrolls", quincena.id)).toBe(null);
+    expect(await get("transportPayrolls", fortnight.id)).toBe(null);
     // La vuelta sigue existiendo, suelta.
     expect((await get("transports", v.id))?.paymentId ?? null).toBe(null);
   });

@@ -4,7 +4,7 @@
 // `portalMeta/current`; la app no puede escribirlas (`firestore.rules`).
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../firebase";
-import { enqueueJob, waitForJob } from "./functionJobsService";
+import { enqueueFunctionJob, waitForFunctionJob } from "./functionJobsService";
 
 // La cabecera de la nómina publicada, o `null` si no hay ninguna o no se pudo
 // leer: es informativa y no puede trabar la pantalla.
@@ -19,6 +19,6 @@ export async function getPublishedPortal() {
 
 // Publica una nómina y espera el resultado (`{ status, result, error, errorCode }`).
 export async function publishPayrollToPortal(payrollId, user) {
-  const ref = await enqueueJob("publishPortal", { payrollId }, user);
-  return waitForJob(ref, { timeoutMs: 90_000 });
+  const ref = await enqueueFunctionJob("publishPortal", { payrollId }, user);
+  return waitForFunctionJob(ref, { timeoutMs: 90_000 });
 }

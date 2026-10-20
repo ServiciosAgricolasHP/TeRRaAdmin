@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { workerKeys, deleteWorkerSafe } from "../../src/services/workersService";
 import { workdaysService, workersService } from "../../src/services";
-import { loadWorkerSummaryData } from "../../src/components/WorkerSummaryModal";
+import { loadWorkerSummaryData } from "../../src/services/workerSummaryService";
 import { seedCycle, seedWorkday, set, get, CICLO } from "./helpers/seed";
 
 // Un trabajador que cambió de rut (de una cédula provisoria a la definitiva):

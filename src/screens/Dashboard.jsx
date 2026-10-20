@@ -1,25 +1,31 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, useState, useEffect, useMemo, Suspense } from "react";
 import { Link } from "react-router-dom";
-import { collection, getCountFromServer, query, where } from "firebase/firestore";
-import { db } from "../firebase";
-import { faenasService, cyclesService, transportPaymentsService, companiesService, dteDocumentsService } from "../services";
+import {
+  companiesService,
+  dteDocumentsService,
+  jobsService,
+  cyclesService,
+  transportPaymentsService,
+} from "../services";
 import { payrollsService, pendingCashOf } from "../services/payrollsService";
-import { transportPayrollsService } from "../services/transportsService";
+import { fortnightsService } from "../services/transportsService";
 import { commitmentsService } from "../services/commitmentsService";
 import { countedList } from "../services/cache";
 import { useAuth } from "../contexts/AuthContext";
 import { useCarriers } from "../contexts/CarriersContext";
 import { useToast } from "../contexts/ToastContext";
-import MetricCard from "../components/MetricCard";
+import MetricCard from "./dashboard/MetricCard";
 import Modal from "../components/Modal";
-import { fmtCurrency, fmtMonthKey, fmtNumber, fmtPercent, fmtShortDate } from "../utils/format";
+import { fmtMonthKey, fmtShortDate, fmtNumber, fmtCurrency, fmtPercent } from "../utils/format";
 import { localIsoDate } from "../utils/dates";
-import { summarize, groupUpcoming, kindMeta, directionOf, remainingOf, urgencyLabel, daysUntil } from "../utils/commitments";
+import { groupUpcoming, directionOf, summarize } from "../utils/commitments";
+import { countWorkdaysInRange } from "../services/countsService";
+import { CommitmentsWeek } from "./dashboard/CommitmentsWeek";
+import { DebtDetailList } from "./dashboard/DebtDetailList";
 
 // Recharts se carga lazy, en su propio chunk: las tarjetas de KPI pintan sin
 // esperarlo.
-const DashboardCharts = lazy(() => import("../components/DashboardCharts"));
-const CommitmentsDonut = lazy(() => import("../components/DashboardCharts").then((m) => ({ default: m.CommitmentsDonut })));
+const DashboardCharts = lazy(() => import("./dashboard/DashboardCharts"));
 
 const PERIODS = [
   { key: "1m", label: "Mes actual", months: 1 },
@@ -27,14 +33,12 @@ const PERIODS = [
   { key: "12m", label: "12 meses", months: 12 },
 ];
 
-// Vencimientos de Cheques y pagos que se listan en el tablero.
-const COMMITMENTS_SHOWN = 8;
-
 // Un ciclo abierto cuyo último día cargado tiene más días que esto se lista
 // como sin movimiento. El cierre de un ciclo es manual.
 const STALE_DAYS = 14;
 
 const monthKeyOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
 const isoOf = (d) => `${monthKeyOf(d)}-${String(d.getDate()).padStart(2, "0")}`;
 
 // Últimas N claves de mes, de la más vieja a la más nueva.
@@ -86,74 +90,19 @@ function payrollMonthKey(p) {
   return d ? monthKeyOf(d) : null;
 }
 
-// Listado completo de los movimientos de un mes en el modal de detalle. En el
-// tooltip del gráfico solo entran los más grandes; acá va todo.
-function DebtDetailList({ title, items, total, color }) {
-  return (
-    <div>
-      <div className="mb-1.5 flex items-baseline gap-2">
-        <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: color }} />
-        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">{title}</h3>
-        <span className="ml-auto font-semibold tabular-nums">{fmtCurrency(total)}</span>
-      </div>
-      {items.length === 0 ? (
-        <p className="px-2 py-1.5 text-xs text-[var(--color-muted)]">Sin movimientos este mes.</p>
-      ) : (
-        <ul className="rounded-md border border-[var(--color-border)]">
-          {items.map((it, i) => (
-            <li
-              key={`${it.name}-${it.kind}-${i}`}
-              className="border-b border-[var(--color-border)] px-3 py-2 last:border-b-0"
-            >
-              <div className="flex items-center gap-2 text-sm">
-                <span className="min-w-0 truncate">{it.name}</span>
-                <span
-                  className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                    it.kind === "abono"
-                      ? "bg-[var(--color-warning-soft)] text-[var(--color-warning)]"
-                      : "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-                  }`}
-                >
-                  {it.kind}
-                </span>
-                <span className="ml-auto shrink-0 tabular-nums">{fmtCurrency(it.amount)}</span>
-              </div>
-              <div className="mt-0.5 flex flex-wrap gap-x-3 text-[11px] text-[var(--color-muted)]">
-                <span>{it.period ? `Período ${it.period}` : "Sin período cargado"}</span>
-                <span>{it.quincena ? `Quincena: ${it.quincena}` : "Resumen suelto"}</span>
-                {it.date && (
-                  <span>
-                    {it.marked ? "Marcado pagado el" : "Abonado el"} {fmtShortDate(it.date)}
-                  </span>
-                )}
-              </div>
-              {it.notes && <div className="mt-0.5 text-[11px] italic text-[var(--color-muted)]">{it.notes}</div>}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 const pendingOfPayment = (p) => {
   const total = Number(p?.total) || 0;
-  const abonado = (p?.abonos || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
-  return Math.max(0, total - abonado);
+  const partiallyPaid = (p?.abonos || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
+  return Math.max(0, total - partiallyPaid);
 };
 
 // Notas de crédito: restan del total del período. Copia de CREDIT_NOTE_TYPES
 // de utils/cashFlowProjection.js (el que usa Facturación): tienen que coincidir.
 const CREDIT_NOTE_TYPES = new Set([61, 112]);
+
 // Ventana de la comparativa de facturación. 6 meses entra cómodo en el límite
 // de 30 valores del operador `in`.
 const DTE_MONTHS = 6;
-
-async function countWorkdaysInRange(from, to) {
-  const q = query(collection(db, "workdays"), where("date", ">=", from), where("date", "<=", to));
-  const snap = await getCountFromServer(q);
-  return snap.data().count;
-}
 
 export default function Dashboard() {
   const { isAdmin } = useAuth();
@@ -162,10 +111,10 @@ export default function Dashboard() {
   const [periodKey, setPeriodKey] = useState("3m");
   const [loading, setLoading] = useState(true);
   const [reads, setReads] = useState(0);
-  const [faenas, setFaenas] = useState([]);
+  const [jobs, setJobs] = useState([]);
   const [cycles, setCycles] = useState([]);
   const [payrolls, setPayrolls] = useState([]);
-  const [quincenas, setQuincenas] = useState([]);
+  const [fortnights, setFortnights] = useState([]);
   const [payments, setPayments] = useState([]);
   const [workdayMonths, setWorkdayMonths] = useState([]);
   const [countReads, setCountReads] = useState(0);
@@ -202,7 +151,7 @@ export default function Dashboard() {
           }),
         );
         if (cancelled) return;
-        setWorkdayMonths(keys.map((k, i) => ({ key: k, label: fmtMonthKey(k), jornadas: counts[i] })));
+        setWorkdayMonths(keys.map((k, i) => ({ key: k, label: fmtMonthKey(k), workdayCount: counts[i] })));
         setCountReads(keys.length);
       } catch (err) {
         if (!cancelled) console.error("[dashboard] conteo de jornadas:", err);
@@ -255,17 +204,17 @@ export default function Dashboard() {
         });
         if (cancelled) return;
         const byMonth = new Map(
-          lastMonthKeys(DTE_MONTHS).map((k) => [k, { key: k, label: fmtMonthKey(k), ventas: 0, compras: 0 }]),
+          lastMonthKeys(DTE_MONTHS).map((k) => [k, { key: k, label: fmtMonthKey(k), sales: 0, purchases: 0 }]),
         );
         for (const d of data) {
           const row = byMonth.get(d.periodo);
           if (!row) continue;
           // `total` ya viene con IVA incluido. Las notas de crédito restan.
           const amount = (CREDIT_NOTE_TYPES.has(Number(d.tipo)) ? -1 : 1) * (Number(d.total) || 0);
-          if (d.kind === "venta") row.ventas += amount;
-          else row.compras += amount;
+          if (d.kind === "venta") row.sales += amount;
+          else row.purchases += amount;
         }
-        setDteRows([...byMonth.values()].map((r) => ({ ...r, diferencia: r.ventas - r.compras })));
+        setDteRows([...byMonth.values()].map((r) => ({ ...r, difference: r.sales - r.purchases })));
         setDteReads((r) => r + reads);
       } catch (err) {
         if (cancelled) return;
@@ -321,17 +270,17 @@ export default function Dashboard() {
         const [f, c, p, q, pays] = await Promise.all([
           // Las tres primeras copian las opciones exactas de Faenas/Transporte/
           // Nóminas para compartir clave de caché y salir gratis.
-          countedList(faenasService, { order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
+          countedList(jobsService, { order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
           countedList(cyclesService, { cache: true, persist: true, ttl: 5 * 60 * 1000 }),
           countedList(payrollsService, { order: ["createdAt", "desc"], take: 50, cache: true, persist: true, ttl: 5 * 60 * 1000 }),
-          transportPayrollsService.listAll(),
+          fortnightsService.listAll(),
           transportPaymentsService.listSince(new Date(historyStart)),
         ]);
         if (cancelled) return;
-        setFaenas(f.data);
+        setJobs(f.data);
         setCycles(c.data);
         setPayrolls(p.data);
-        setQuincenas(q);
+        setFortnights(q);
         setPayments(pays);
         setReads(f.reads + c.reads + p.reads + q.length + pays.length);
       } catch (err) {
@@ -350,7 +299,7 @@ export default function Dashboard() {
   const money = useMemo(() => {
     const keys = lastMonthKeys(periodMonths);
     const keySet = new Set(keys);
-    const byMonth = new Map(keys.map((k) => [k, { key: k, label: fmtMonthKey(k), banco: 0, efectivo: 0, total: 0 }]));
+    const byMonth = new Map(keys.map((k) => [k, { key: k, label: fmtMonthKey(k), bank: 0, cash: 0, total: 0 }]));
     let periodTotal = 0, periodCash = 0, periodAdvances = 0, periodCount = 0;
     let pendingCount = 0, pendingTotal = 0;
     for (const p of payrolls) {
@@ -362,8 +311,8 @@ export default function Dashboard() {
       const mk = payrollMonthKey(p);
       if (!mk || !keySet.has(mk)) continue;
       const row = byMonth.get(mk);
-      row.banco += Number(p.bankTotal) || 0;
-      row.efectivo += Number(p.cashTotal) || 0;
+      row.bank += Number(p.bankTotal) || 0;
+      row.cash += Number(p.cashTotal) || 0;
       row.total += Number(p.total) || 0;
       periodTotal += Number(p.total) || 0;
       periodCash += Number(p.cashTotal) || 0;
@@ -392,15 +341,15 @@ export default function Dashboard() {
   }, [payrolls, periodMonths]);
 
   const ops = useMemo(() => {
-    const faenaName = new Map(faenas.map((f) => [f.id, f.name]));
+    const jobName = new Map(jobs.map((f) => [f.id, f.name]));
     const open = cycles.filter((c) => c.status !== "closed");
-    const byFaena = new Map();
+    const byJob = new Map();
     for (const c of open) {
-      byFaena.set(c.faenaId, (byFaena.get(c.faenaId) || 0) + 1);
+      byJob.set(c.faenaId, (byJob.get(c.faenaId) || 0) + 1);
     }
-    const cyclesByFaena = [...byFaena.entries()]
-      .map(([id, ciclos]) => ({ name: faenaName.get(id) || "(sin faena)", ciclos }))
-      .sort((a, b) => b.ciclos - a.ciclos)
+    const cyclesByJob = [...byJob.entries()]
+      .map(([id, cycleCount]) => ({ name: jobName.get(id) || "(sin faena)", cycleCount }))
+      .sort((a, b) => b.cycleCount - a.cycleCount)
       .slice(0, 8);
 
     // Última actividad = el día más reciente cargado en el ciclo. Si nunca se
@@ -410,24 +359,24 @@ export default function Dashboard() {
       .map((c) => {
         const days = Array.isArray(c.days) ? c.days : [];
         const last = days.length ? days.reduce((a, b) => (a > b ? a : b)) : (c.startDate || "");
-        return { cycle: c, last, faena: faenaName.get(c.faenaId) || "" };
+        return { cycle: c, last, job: jobName.get(c.faenaId) || "" };
       })
       .filter((x) => x.last && x.last < cutoff)
       .sort((a, b) => (a.last < b.last ? -1 : 1));
 
-    const current = workdayMonths.at(-1)?.jornadas ?? null;
-    const previous = workdayMonths.at(-2)?.jornadas ?? null;
+    const current = workdayMonths.at(-1)?.workdayCount ?? null;
+    const previous = workdayMonths.at(-2)?.workdayCount ?? null;
     const delta = previous > 0 ? ((current - previous) / previous) * 100 : null;
     return {
       openCount: open.length,
       closedCount: cycles.length - open.length,
-      activeFaenas: byFaena.size,
-      cyclesByFaena,
+      activeJobs: byJob.size,
+      cyclesByJob,
       stale,
       workdaysCurrent: current,
       workdaysDelta: delta,
     };
-  }, [cycles, faenas, workdayMonths]);
+  }, [cycles, jobs, workdayMonths]);
 
   const transport = useMemo(() => {
     const alias = new Map(carriers.map((c) => [c.id, c.alias || c.name || c.id]));
@@ -444,24 +393,24 @@ export default function Dashboard() {
       row.total += total;
       periodSpend += total;
       if (p.status !== "paid") {
-        const pend = pendingOfPayment(p);
-        row.pending += pend;
-        periodPending += pend;
+        const pendingAmount = pendingOfPayment(p);
+        row.pending += pendingAmount;
+        periodPending += pendingAmount;
       }
       byCarrier.set(id, row);
     }
     // Gasto mes a mes, fechado por el período que cubre el resumen. Ventana
     // fija de 6 meses: deja ver tendencia sin que las barras se aplasten.
     const keys = lastMonthKeys(6);
-    const byMonth = new Map(keys.map((k) => [k, { key: k, label: fmtMonthKey(k), gasto: 0 }]));
+    const byMonth = new Map(keys.map((k) => [k, { key: k, label: fmtMonthKey(k), spent: 0 }]));
     for (const p of payments) {
       const mk = paymentPeriodDate(p).slice(0, 7);
-      if (byMonth.has(mk)) byMonth.get(mk).gasto += Number(p.total) || 0;
+      if (byMonth.has(mk)) byMonth.get(mk).spent += Number(p.total) || 0;
     }
 
     const spend = [...byCarrier.values()].sort((a, b) => b.total - a.total).slice(0, 8);
     const top3 = spend.slice(0, 3).reduce((s, r) => s + r.total, 0);
-    const pendingQuincenas = quincenas.filter((q) => q.status !== "paid");
+    const pendingFortnights = fortnights.filter((q) => q.status !== "paid");
     return {
       spend,
       months: [...byMonth.values()],
@@ -469,10 +418,10 @@ export default function Dashboard() {
       periodPending,
       concentration: periodSpend > 0 ? (top3 / periodSpend) * 100 : 0,
       carrierCount: byCarrier.size,
-      pendingQuincenaCount: pendingQuincenas.length,
-      pendingQuincenaTotal: pendingQuincenas.reduce((s, q) => s + (Number(q.total) || 0), 0),
+      pendingFortnightCount: pendingFortnights.length,
+      pendingFortnightTotal: pendingFortnights.reduce((s, q) => s + (Number(q.total) || 0), 0),
     };
-  }, [payments, quincenas, carriers, periodMonths]);
+  }, [payments, fortnights, carriers, periodMonths]);
 
   // Cómo fue variando la deuda con los transportistas.
   //
@@ -490,29 +439,29 @@ export default function Dashboard() {
   // vieja que eso no entra en el saldo.
   const debt = useMemo(() => {
     const alias = new Map(carriers.map((c) => [c.id, c.alias || c.name || c.id]));
-    const quincenaName = new Map(quincenas.map((q) => [q.id, q.name || q.id]));
+    const fortnightName = new Map(fortnights.map((q) => [q.id, q.name || q.id]));
     const keys = lastMonthKeys(12);
     const from = `${keys[0]}-01`;
     const rows = new Map(
       keys.map((k) => [
         k,
-        { key: k, label: fmtMonthKey(k), generado: 0, pagado: 0, pagos: [], nuevos: [] },
+        { key: k, label: fmtMonthKey(k), generated: 0, paid: 0, paidItems: [], createdItems: [] },
       ]),
     );
-    let saldo = 0;
+    let balance = 0;
     // `detail` alimenta el desglose del tooltip: qué resúmenes y qué abonos
     // componen la barra de ese mes.
     const apply = (date, field, amount, detail) => {
       if (!date || amount <= 0) return;
       if (date < from) {
-        saldo += field === "generado" ? amount : -amount;
+        balance += field === "generated" ? amount : -amount;
         return;
       }
       const row = rows.get(date.slice(0, 7));
       if (!row) return;
       row[field] += amount;
-      if (field === "generado") row.nuevos.push(detail);
-      else row.pagos.push(detail);
+      if (field === "generated") row.createdItems.push(detail);
+      else row.paidItems.push(detail);
     };
     for (const p of payments) {
       const total = Number(p.total) || 0;
@@ -525,48 +474,48 @@ export default function Dashboard() {
           p.periodFrom || p.periodTo
             ? [fmtShortDate(p.periodFrom), fmtShortDate(p.periodTo)].filter(Boolean).join(" → ")
             : "",
-        quincena: p.payrollId ? quincenaName.get(p.payrollId) || "" : "",
+        fortnight: p.payrollId ? fortnightName.get(p.payrollId) || "" : "",
       };
-      apply(paymentPeriodDate(p), "generado", total, { ...ctx, amount: total, kind: "resumen" });
-      let abonado = 0;
+      apply(paymentPeriodDate(p), "generated", total, { ...ctx, amount: total, kind: "summary" });
+      let partiallyPaid = 0;
       for (const a of p.abonos || []) {
         const amt = Number(a.amount) || 0;
-        abonado += amt;
+        partiallyPaid += amt;
         const date = String(a.date || "").slice(0, 10);
-        apply(date, "pagado", amt, { ...ctx, amount: amt, kind: "abono", date, notes: a.notes || "" });
+        apply(date, "paid", amt, { ...ctx, amount: amt, kind: "partialPayment", date, notes: a.notes || "" });
       }
       if (p.status === "paid") {
-        const resto = Math.max(0, total - abonado);
+        const remainder = Math.max(0, total - partiallyPaid);
         const date = tsToIso(p.paidAt);
-        apply(date, "pagado", resto, { ...ctx, amount: resto, kind: "resumen", date, marked: true });
+        apply(date, "paid", remainder, { ...ctx, amount: remainder, kind: "summary", date, marked: true });
       }
     }
     const byAmount = (a, b) => b.amount - a.amount;
     return keys.map((k) => {
       const r = rows.get(k);
-      saldo += r.generado - r.pagado;
-      return { ...r, pagos: r.pagos.sort(byAmount), nuevos: r.nuevos.sort(byAmount), saldo, neto: r.pagado - r.generado };
+      balance += r.generated - r.paid;
+      return { ...r, paidItems: r.paidItems.sort(byAmount), createdItems: r.createdItems.sort(byAmount), balance, net: r.paid - r.generated };
     });
-  }, [payments, carriers, quincenas]);
+  }, [payments, carriers, fortnights]);
 
   const margin = useMemo(() => {
     const rows = cycles
       .filter((c) => Number(c.summaryTotals?.cobrar) > 0)
       .map((c) => {
-        const cobrar = Number(c.summaryTotals.cobrar) || 0;
-        const pagar = Number(c.summaryTotals.pagar) || 0;
-        return { cycle: c, cobrar, pagar, margen: cobrar - pagar, pct: ((cobrar - pagar) / cobrar) * 100 };
+        const charge = Number(c.summaryTotals.cobrar) || 0;
+        const pay = Number(c.summaryTotals.pagar) || 0;
+        return { cycle: c, cobrar: charge, pagar: pay, marginAmount: charge - pay, pct: ((charge - pay) / charge) * 100 };
       })
-      .sort((a, b) => b.margen - a.margen);
-    const cobrarSum = rows.reduce((s, r) => s + r.cobrar, 0);
-    const margenSum = rows.reduce((s, r) => s + r.margen, 0);
+      .sort((a, b) => b.marginAmount - a.marginAmount);
+    const chargeSum = rows.reduce((s, r) => s + r.cobrar, 0);
+    const marginSum = rows.reduce((s, r) => s + r.marginAmount, 0);
     return {
       rows,
       covered: rows.length,
       total: cycles.length,
       missing: cycles.length - rows.length,
-      margenSum,
-      pct: cobrarSum > 0 ? (margenSum / cobrarSum) * 100 : 0,
+      marginSum,
+      pct: chargeSum > 0 ? (marginSum / chargeSum) * 100 : 0,
     };
   }, [cycles]);
 
@@ -654,7 +603,7 @@ export default function Dashboard() {
                 hint={`${ops.closedCount} cerrados`}
                 highlight
               />
-              <MetricCard label="Faenas con actividad" value={fmtNumber(ops.activeFaenas)} hint={`de ${faenas.length}`} />
+              <MetricCard label="Faenas con actividad" value={fmtNumber(ops.activeJobs)} hint={`de ${jobs.length}`} />
               <MetricCard
                 label="Registros de jornada"
                 value={ops.workdaysCurrent == null ? "—" : fmtNumber(ops.workdaysCurrent)}
@@ -673,7 +622,7 @@ export default function Dashboard() {
               />
               <MetricCard
                 label="Margen de ciclos"
-                value={margin.covered > 0 ? fmtCurrency(margin.margenSum) : "—"}
+                value={margin.covered > 0 ? fmtCurrency(margin.marginSum) : "—"}
                 hint={
                   margin.covered > 0
                     ? `${fmtPercent(margin.pct, 1)} · ${margin.missing} sin tarifas`
@@ -702,9 +651,9 @@ export default function Dashboard() {
               />
               <MetricCard
                 label="Quincenas pendientes"
-                value={fmtNumber(transport.pendingQuincenaCount)}
-                hint={transport.pendingQuincenaCount > 0 ? fmtCurrency(transport.pendingQuincenaTotal) : "ninguna"}
-                warning={transport.pendingQuincenaCount > 0}
+                value={fmtNumber(transport.pendingFortnightCount)}
+                hint={transport.pendingFortnightCount > 0 ? fmtCurrency(transport.pendingFortnightTotal) : "ninguna"}
+                warning={transport.pendingFortnightCount > 0}
               />
               <MetricCard
                 label="Concentración top 3"
@@ -727,7 +676,7 @@ export default function Dashboard() {
             <DashboardCharts
               payrollMonths={money.months}
               payMix={money.mix}
-              cyclesByFaena={ops.cyclesByFaena}
+              cyclesByJob={ops.cyclesByJob}
               carrierSpend={transport.spend}
               transportMonths={transport.months}
               debtMonths={debt}
@@ -751,7 +700,7 @@ export default function Dashboard() {
                 Ciclos abiertos sin movimiento
               </h2>
               <div className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
-                {ops.stale.slice(0, 10).map(({ cycle, last, faena }) => (
+                {ops.stale.slice(0, 10).map(({ cycle, last, job }) => (
                   <Link
                     key={cycle.id}
                     to={`/cycles/${cycle.id}`}
@@ -759,7 +708,7 @@ export default function Dashboard() {
                   >
                     <span className="min-w-0 truncate">
                       <span className="font-medium">{cycle.label}</span>
-                      {faena && <span className="ml-2 text-xs text-[var(--color-muted)]">{faena}</span>}
+                      {job && <span className="ml-2 text-xs text-[var(--color-muted)]">{job}</span>}
                     </span>
                     <span className="shrink-0 text-xs tabular-nums text-[var(--color-muted)]">último día {last}</span>
                   </Link>
@@ -799,10 +748,10 @@ export default function Dashboard() {
                         <td className="px-3 py-1.5 text-right tabular-nums">{fmtCurrency(r.pagar)}</td>
                         <td
                           className={`px-3 py-1.5 text-right font-medium tabular-nums ${
-                            r.margen < 0 ? "text-[var(--color-danger)]" : ""
+                            r.marginAmount < 0 ? "text-[var(--color-danger)]" : ""
                           }`}
                         >
-                          {fmtCurrency(r.margen)}
+                          {fmtCurrency(r.marginAmount)}
                         </td>
                         <td className="px-3 py-1.5 text-right tabular-nums text-[var(--color-muted)]">
                           {fmtPercent(r.pct, 1)}
@@ -839,18 +788,18 @@ export default function Dashboard() {
           <div className="space-y-4">
             <DebtDetailList
               title="Deuda generada"
-              items={debtDetail.nuevos}
-              total={debtDetail.generado}
+              items={debtDetail.createdItems}
+              total={debtDetail.generated}
               color="var(--color-warning)"
             />
             <div>
               <DebtDetailList
                 title="Pagado"
-                items={debtDetail.pagos}
-                total={debtDetail.pagado}
+                items={debtDetail.paidItems}
+                total={debtDetail.paid}
                 color="var(--color-accent)"
               />
-              {debtDetail.pagos.length > 0 && (
+              {debtDetail.paidItems.length > 0 && (
                 <p className="mt-1.5 rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-3 py-2 text-[11px] text-[var(--color-warning)]">
                   ⚠ La fecha de pago es la del día en que se marcó como pagado en el sistema, no necesariamente la del
                   día en que se entregó la plata. Si un resumen se marcó días después, ese pago aparece en la fecha en
@@ -861,21 +810,21 @@ export default function Dashboard() {
             <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm">
               <div className="flex items-baseline gap-2">
                 <span className="text-[var(--color-muted)]">Saldo al cierre del mes</span>
-                <span className="ml-auto font-semibold tabular-nums">{fmtCurrency(debtDetail.saldo)}</span>
+                <span className="ml-auto font-semibold tabular-nums">{fmtCurrency(debtDetail.balance)}</span>
               </div>
               <div
                 className={`mt-1 text-xs font-medium ${
-                  debtDetail.neto > 0
+                  debtDetail.net > 0
                     ? "text-[var(--color-accent)]"
-                    : debtDetail.neto < 0
+                    : debtDetail.net < 0
                       ? "text-[var(--color-warning)]"
                       : "text-[var(--color-muted)]"
                 }`}
               >
-                {debtDetail.neto > 0
-                  ? `Se pagó ${fmtCurrency(debtDetail.neto)} más de lo generado`
-                  : debtDetail.neto < 0
-                    ? `Se pagó ${fmtCurrency(-debtDetail.neto)} menos de lo generado`
+                {debtDetail.net > 0
+                  ? `Se pagó ${fmtCurrency(debtDetail.net)} más de lo generado`
+                  : debtDetail.net < 0
+                    ? `Se pagó ${fmtCurrency(-debtDetail.net)} menos de lo generado`
                     : "Se pagó exactamente lo generado"}
               </div>
               <p className="mt-2 text-[11px] text-[var(--color-muted)]">
@@ -888,110 +837,5 @@ export default function Dashboard() {
         )}
       </Modal>
     </div>
-  );
-}
-
-// Cheques y pagos en el tablero: una dona con lo que se paga y ya venció
-// (vencido sin marcar y aplazado) y lo que vence en los próximos 7 días, con el
-// total de cada grupo al lado, más la lista de esos vencimientos. Sin cheques
-// recibidos ni protestados. Todo lleva a la pantalla de Cheques y pagos.
-function CommitmentsWeek({ data }) {
-  const { today, summary, items } = data;
-  const slice = (name, hint, color, { amount, count }) => ({ name, hint, color, value: amount, count });
-  const slices = [
-    slice("Vencido", "sin marcar", "var(--color-danger)", summary.out.overdue),
-    slice("Aplazado", "ya vencido, sin fecha", "var(--color-warning)", summary.out.postponed),
-    slice("Próximos 7 días", "por pagar", "var(--color-accent)", summary.out.next7),
-  ];
-  const total = slices.reduce((sum, s) => sum + s.value, 0);
-  const docs = (n) => `${n} documento${n === 1 ? "" : "s"}`;
-  // Un aplazado lleva además el chip de cuánto hace que venció.
-  const chips = (c) => {
-    const days = daysUntil(c.dueDate, today);
-    const due = { text: urgencyLabel(days), tone: days < 0 ? "danger" : days <= 1 ? "warning" : "muted" };
-    return c.status === "postponed" ? [{ text: "Aplazado", tone: "warning" }, due] : [due];
-  };
-  const toneCls = {
-    danger: "bg-[var(--color-danger-soft)] text-[var(--color-danger)]",
-    warning: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
-    muted: "bg-[var(--color-surface-2)] text-[var(--color-muted)]",
-  };
-
-  return (
-    <section>
-      <div className="mb-2 flex items-baseline justify-between gap-2">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--color-muted)]">Cheques y pagos</h2>
-        <Link to="/cheques-pagos" className="text-xs text-[var(--color-accent)] hover:underline">
-          Ver todo →
-        </Link>
-      </div>
-      <div className={`grid gap-3 ${items.length > 0 ? "lg:grid-cols-2" : ""}`}>
-        <div className="flex flex-col justify-center rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
-          {total > 0 ? (
-            <div className="flex flex-col items-center gap-4 sm:flex-row">
-              <div className="relative h-[200px] w-[200px] shrink-0">
-                <Suspense fallback={null}>
-                  <CommitmentsDonut slices={slices} />
-                </Suspense>
-                <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                  <span className="text-[10px] uppercase tracking-wider text-[var(--color-muted)]">Total</span>
-                  <span className="text-sm font-semibold tabular-nums">{fmtCurrency(total)}</span>
-                </div>
-              </div>
-              <ul className="w-full min-w-0 flex-1 space-y-3">
-                {slices.map((s) => (
-                  <li key={s.name} className="flex items-start gap-2">
-                    <span className="mt-1 inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: s.color }} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-xs font-medium">{s.name}</span>
-                      <span className="block text-[11px] text-[var(--color-muted)]">
-                        {s.count ? `${docs(s.count)} · ${s.hint}` : "ninguno"}
-                      </span>
-                    </span>
-                    <span className="shrink-0 text-sm font-semibold tabular-nums">{fmtCurrency(s.value)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : (
-            <p className="py-6 text-center text-xs text-[var(--color-muted)]">
-              Nada vencido ni por vencer en los próximos 7 días.
-            </p>
-          )}
-        </div>
-        {items.length > 0 && (
-          <div className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] shadow-sm">
-            {items.slice(0, COMMITMENTS_SHOWN).map((c) => {
-              const meta = kindMeta(c.kind);
-              return (
-                <Link
-                  key={c.id}
-                  to="/cheques-pagos"
-                  className="flex items-center justify-between gap-3 border-b border-[var(--color-border)] px-3 py-2 text-sm last:border-b-0 hover:bg-[var(--color-accent-soft)]"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate font-medium">{c.counterparty}</span>
-                    <span className="flex flex-wrap items-center gap-x-2 text-xs text-[var(--color-muted)]">
-                      {chips(c).map(({ text, tone }) => (
-                        <span key={text} className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${toneCls[tone]}`}>
-                          {text}
-                        </span>
-                      ))}
-                      <span>{meta.icon} {meta.label}{c.dueDate ? ` · ${fmtShortDate(c.dueDate)}` : ""}</span>
-                    </span>
-                  </span>
-                  <span className="shrink-0 font-semibold tabular-nums">{fmtCurrency(remainingOf(c))}</span>
-                </Link>
-              );
-            })}
-            {items.length > COMMITMENTS_SHOWN && (
-              <Link to="/cheques-pagos" className="block px-3 py-2 text-xs text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]">
-                +{items.length - COMMITMENTS_SHOWN} más
-              </Link>
-            )}
-          </div>
-        )}
-      </div>
-    </section>
   );
 }

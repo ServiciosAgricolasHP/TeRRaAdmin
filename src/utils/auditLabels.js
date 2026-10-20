@@ -14,8 +14,8 @@
 import {
   workersService,
   cyclesService,
-  subfaenasService,
-  faenasService,
+  subjobsService,
+  jobsService,
   costCentersService,
   laborGroupsService,
   companiesService,
@@ -23,7 +23,7 @@ import {
 import { payrollsService } from "../services/payrollsService";
 import { advancesService, normalizeAdvanceType } from "../services/advancesService";
 import { carriersService } from "../services/carriersService";
-import { tripsService, paymentsService, transportPayrollsService } from "../services/transportsService";
+import { tripsService, paymentsService, fortnightsService } from "../services/transportsService";
 
 // Fecha corta para los labels de vueltas/resúmenes ("2026-08-12" → "12-ago").
 const MONTHS_ABBR = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
@@ -39,8 +39,8 @@ const GENERIC_LABEL_FIELDS = ["name", "label", "razonSocial", "alias", "detail",
 export const ENTITY_META = {
   worker: { labelEs: "Trabajador", service: workersService, searchFields: ["name", "rut"], labelOf: (d) => (d?.name ? `${d.name}${d.rut ? " · " + d.rut : ""}` : d?.rut), searchable: true },
   cycle: { labelEs: "Ciclo", service: cyclesService, searchFields: ["label"], labelOf: (d) => d?.label, searchable: true },
-  faena: { labelEs: "Faena", service: faenasService, searchFields: ["name"], labelOf: (d) => d?.name, searchable: true },
-  subfaena: { labelEs: "Subfaena", service: subfaenasService, searchFields: ["name"], labelOf: (d) => d?.name, searchable: true },
+  faena: { labelEs: "Faena", service: jobsService, searchFields: ["name"], labelOf: (d) => d?.name, searchable: true },
+  subfaena: { labelEs: "Subfaena", service: subjobsService, searchFields: ["name"], labelOf: (d) => d?.name, searchable: true },
   payroll: { labelEs: "Nómina", service: payrollsService, searchFields: ["name"], labelOf: (d) => d?.name, searchable: true },
   carrier: { labelEs: "Transportista", service: carriersService, searchFields: ["alias", "name"], labelOf: (d) => d?.alias || d?.name, searchable: true },
   company: { labelEs: "Empresa", service: companiesService, searchFields: ["alias", "razonSocial", "rut"], labelOf: (d) => d?.alias || d?.razonSocial, searchable: true },
@@ -99,7 +99,7 @@ export const ENTITY_META = {
         .join(" · ") || null;
     },
   },
-  transportPayroll: { labelEs: "Quincena de transporte", service: transportPayrollsService, labelOf: (d) => d?.name },
+  transportPayroll: { labelEs: "Quincena de transporte", service: fortnightsService, labelOf: (d) => d?.name },
   informalExpense: { labelEs: "Gasto informal", labelOf: (d) => d?.detail },
   contactCard: { labelEs: "Ficha de contacto" },
   dteDocument: { labelEs: "Documento SII" },

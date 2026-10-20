@@ -32,7 +32,7 @@ export const userPrefsService = {
 
 // Paleta amplia organizada por familia de tonos. La primera entrada (null)
 // representa "sin color" — limpia la asignación.
-export const FAENA_PALETTE = [
+export const JOB_PALETTE = [
   { value: null, label: "Sin color", swatch: "transparent" },
   // Verdes
   { value: "#15803d", label: "Verde" },

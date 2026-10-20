@@ -102,7 +102,7 @@ export default function InfoAccounts() {
   const [deleteBusy, setDeleteBusy] = useState(false);
   // Captura de imagen a pedido: se monta fuera de pantalla solo la tarjeta
   // elegida, el efecto la captura y limpia el estado.
-  const [imageJob, setImageJob] = useState(null); // { card }
+  const [imageExport, setImageExport] = useState(null); // { card }
   const imageRef = useRef(null);
 
   const load = async () => {
@@ -129,7 +129,7 @@ export default function InfoAccounts() {
   // Captura la tarjeta estilizada off-screen y la copia al portapapeles. Si el
   // navegador no soporta copiar imágenes (algunos móviles), cae a descarga.
   useEffect(() => {
-    if (!imageJob) return;
+    if (!imageExport) return;
     let cancelled = false;
     (async () => {
       // Dos rAF para asegurar que el nodo off-screen ya está en layout.
@@ -148,7 +148,7 @@ export default function InfoAccounts() {
         } else {
           const dataUrl = await captureFullWidthDataUrl(imageRef.current, { pixelRatio: 2, cacheBust: true });
           const a = document.createElement("a");
-          a.download = `ficha_${(imageJob.card.name || "ficha").replace(/\s+/g, "_")}.png`;
+          a.download = `ficha_${(imageExport.card.name || "ficha").replace(/\s+/g, "_")}.png`;
           a.href = dataUrl;
           a.click();
           toast.success("Imagen descargada");
@@ -158,7 +158,7 @@ export default function InfoAccounts() {
         try {
           const dataUrl = await captureFullWidthDataUrl(imageRef.current, { pixelRatio: 2, cacheBust: true });
           const a = document.createElement("a");
-          a.download = `ficha_${(imageJob.card.name || "ficha").replace(/\s+/g, "_")}.png`;
+          a.download = `ficha_${(imageExport.card.name || "ficha").replace(/\s+/g, "_")}.png`;
           a.href = dataUrl;
           a.click();
           toast.success("Imagen descargada");
@@ -166,11 +166,11 @@ export default function InfoAccounts() {
           toast.error("No se pudo generar la imagen");
         }
       } finally {
-        if (!cancelled) setImageJob(null);
+        if (!cancelled) setImageExport(null);
       }
     })();
     return () => { cancelled = true; };
-  }, [imageJob, toast]);
+  }, [imageExport, toast]);
 
   const toggleFavorite = async (card) => {
     // Actualización optimista para que la tarjeta salte de sección al instante.
@@ -285,7 +285,7 @@ export default function InfoAccounts() {
                     key={c.id}
                     card={c}
                     onCopy={copy}
-                    onCopyImage={(card) => setImageJob({ card })}
+                    onCopyImage={(card) => setImageExport({ card })}
                     onToggleFavorite={toggleFavorite}
                     onEdit={setEditing}
                     onDelete={setConfirmDelete}
@@ -315,7 +315,7 @@ export default function InfoAccounts() {
                     key={c.id}
                     card={c}
                     onCopy={copy}
-                    onCopyImage={(card) => setImageJob({ card })}
+                    onCopyImage={(card) => setImageExport({ card })}
                     onToggleFavorite={toggleFavorite}
                     onEdit={setEditing}
                     onDelete={setConfirmDelete}
@@ -328,9 +328,9 @@ export default function InfoAccounts() {
       )}
 
       {/* Nodo off-screen para capturar la imagen de la tarjeta elegida. */}
-      {imageJob && (
+      {imageExport && (
         <div style={{ position: "fixed", left: -99999, top: 0, pointerEvents: "none" }} aria-hidden>
-          <ContactCardImage ref={imageRef} card={imageJob.card} />
+          <ContactCardImage ref={imageRef} card={imageExport.card} />
         </div>
       )}
 

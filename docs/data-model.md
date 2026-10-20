@@ -256,7 +256,7 @@ Agrupa N `transportPayments` de **varios** transportistas para pagar en bloque. 
 | `name` | string | obligatorio (ej. "Primera Quincena Agosto") |
 | `periodFrom`, `periodTo` | string (YYYY-MM-DD) \| null | referencial: el agrupamiento es lógico, no un filtro estricto por fecha |
 | `paymentIds` | ref→`transportPayments`[] | |
-| `total` | number | **denormalizado** = Σ `total` de sus resúmenes (`recalcPayrollTotal`) |
+| `total` | number | **denormalizado** = Σ `total` de sus resúmenes (`recalcFortnightTotal`) |
 | `status` | `"pending"` \| `"paid"` | |
 | `paidAt`, `paidBy` | ts?, string? | |
 | `notes` | string? | |
@@ -564,8 +564,8 @@ Auditoría — una fila por mutación.
 |---|---|---|
 | `workerRut`, `cycleId` | `firestoreBase.js` → `extractRefMeta` (automático en cualquier colección que tenga esos campos) | ligar `workdays` y demás a su trabajador/ciclo |
 | `carrierId` | `transportsService.js` → `carrierMeta()` (a mano: ese servicio no usa `createService`) | ligar `transport` y `transportPayment` a su transportista |
-| `auto: "recalcTotal"` | `recalcPaymentTotal` / `recalcPayrollTotal` | distinguir un recálculo automático de total de una edición hecha por una persona |
-| `auto: "emptySummary"`, `auto: "emptyPayroll"` | `recalcPaymentTotal` / `recalcPayrollTotal` | borrado automático de un resumen que se quedó sin vueltas, o de una quincena que se quedó sin resúmenes |
+| `auto: "recalcTotal"` | `recalcPaymentTotal` / `recalcFortnightTotal` | distinguir un recálculo automático de total de una edición hecha por una persona |
+| `auto: "emptySummary"`, `auto: "emptyPayroll"` | `recalcPaymentTotal` / `recalcFortnightTotal` | borrado automático de un resumen que se quedó sin vueltas, o de una quincena que se quedó sin resúmenes |
 | `auto: "extendRecurring"`, `dates` | `commitmentsDaily` (`functions/commitments.js`) | vencimientos que la función diaria le generó a un pago recurrente (`entity: "commitmentSeries"`, sin `uid`) |
 | `addedAbono`, `editedAbonoId`, `removedAbonoId` | `paymentsService` | detalle del abono tocado |
 | `jobId`, `payrollId`, `workerCount`, `removed` | `publishPortal` (`functions/portal.js`) | qué nómina se publicó en el portal, cuántas fichas quedaron y cuántas se borraron (`entity: "portalMeta"`) |
@@ -577,6 +577,50 @@ Auditoría — una fila por mutación.
 > Consumidor: `Audit.jsx` → `fetchSatelliteLogs`. Al elegir un registro en "Buscar por registro" suma los logs satélite (trabajador → sus jornadas; transportista → sus vueltas y resúmenes). Un log de transporte sin `meta.carrierId` no aparece ahí.
 
 ---
+
+## Nombres en español pendientes de migración
+
+Campos y valores guardados en Firestore con nombre en español. El código los lee y escribe con ese nombre hasta que se migren. Cada uno se migra reescribiendo los documentos existentes y cambiando a la vez todo el código que lo usa, y los que lee otra app (la de escaneo o el portal) se coordinan con ella. El nombre propuesto sigue el Glosario de AGENTS.md.
+
+| Colección | Campo o valor | Propuesto | Notas |
+|---|---|---|---|
+| `faenas`, `subfaenas` | las colecciones | `jobs`, `subjobs` | |
+| `subfaenas`, `cycles`, `transports`, `qrPrefixes`, `priceBookEntries` | `faenaId`, `subfaenaId` | `jobId`, `subjobId` | `qrPrefixes` lo lee también la app de escaneo |
+| `priceBookEntries` | `faenaLabel` | `jobLabel` | |
+| `priceBookConfig` | `hiddenFaenaIds` | `hiddenJobIds` | |
+| `users` | `faenaLayout` (con `faenaGroup`, `faenaColor`), `faenaLayoutUpdatedAt` | `jobLayout` (`jobGroup`, `jobColor`), `jobLayoutUpdatedAt` | |
+| `payrolls`, `payrollSnapshots` | `cycleDetails[].faenaName`, `subfaenaName` | `jobName`, `subjobName` | el JSON de la nómina es contrato externo con el portal |
+| `logs` | `entity: "faena"`, `"subfaena"` | `"job"`, `"subjob"` | los logs no se reescriben: la Auditoría tendría que leer los dos valores |
+| `transportPayrolls` | la colección | `transportFortnights` | |
+| `transportPayments` | `payrollId` | `fortnightId` | |
+| `transportPayments` | `abonos` | `partialPayments` | mismo nombre que en `commitments` |
+| `transports` | `lugar`, `destino` | `place`, `destination` | |
+| `dteDocuments` | `kind`: `"venta"`, `"compra"` | `"sale"`, `"purchase"` | también va en el id del documento (`_V_`, `_C_`) |
+| `dteDocuments` | `tipo`, `tipoLabel` | `dteType`, `dteTypeLabel` | |
+| `dteDocuments` | `fechaEmision`, `periodo` | `issueDate`, `period` | |
+| `dteDocuments` | `rutEmisor`, `razonSocialEmisor` | `issuerRut`, `issuerName` | |
+| `dteDocuments` | `rutReceptor`, `razonSocialReceptor` | `receiverRut`, `receiverName` | |
+| `dteDocuments` | `exento`, `neto`, `iva`, `otrosImpuestos` | `exempt`, `net`, `vat`, `otherTaxes` | |
+| `dteDocuments` | `otroImpuestoCodigo`, `otroImpuestoCategory` (valor `"combustible"`) | `otherTaxCode`, `otherTaxCategory` (`"fuel"`) | |
+| `dteDocuments` | `ivaRetenido`, `ivaRetenidoTipo`, `ivaNoRetenido`, `retencionTasa` | `withheldVat`, `withheldVatType`, `nonWithheldVat`, `withholdingRate` | los escribe el import del RCV y no están en la tabla de la colección |
+| `dteDocuments` | `payments[].kind`: `"abono"`, `"neto"`, `"iva"` | `"partial"`, `"net"`, `"vat"` | `"total"` ya está en inglés |
+| `companies` | `razonSocial` | `legalName` | |
+| `contactCards` | `giro` | `businessActivity` | |
+| `groupLeader` | `habilitado` | `enabled` | |
+| `indicators` | `sueldoBase`, `dia`, `hora` | `baseSalary`, `dayValue`, `overtimeHourValue` | |
+| `advances` | `type`: `"anticipo"`, `"bono"` (y el antiguo `"adelanto"`) | `"advance"`, `"bonus"` | |
+| `advances` | `installments.cadence`: `"porPago"`, `"quincenal"`, `"mensual"` | `"perPayment"`, `"fortnightly"`, `"monthly"` | |
+| `cycles` | `labors[].type`: `"cosecha"`, `"trato"`, `"tratoEtapas"`, `"tratoHE"` | `"harvest"`, `"piecework"`, `"pieceworkStages"`, `"overtimeDay"` | los otros tipos ya están en inglés |
+| `cycles` | `labors[].tratoType` | `pieceworkType` | |
+| `cycles` | `labors[].bonusManejo` | `drivingBonus` | el bono "M" (manejo: conducir) de las jornadas con horas extras |
+| `cycles` | `dayPrices[laborId][date].piso` | `floor` | |
+| `cycles` | `summaryTotals.pagar`, `summaryTotals.cobrar` | `pay`, `charge` | |
+| `cycleSummaries` | `cobrar` | `charge` | |
+| `workdays` | `hasManejo` | `hasDriving` | va con `labors[].bonusManejo` |
+| `workdays` | `pisoOnly`, `comboKey: "_piso"` | `floorOnly`, `"_floor"` | el `comboKey` también va en el id del documento |
+| `catalogs` | el doc `tratoTypes` | `pieceworkTypes` | el id del doc es el nombre del catálogo |
+| `qrPrefixes` | `padron` | `roster` | lo lee también la app de escaneo |
+| `logs` | `entity: "transportPayroll"`, `meta.auto: "emptyPayroll"` | `"transportFortnight"`, `"emptyFortnight"` | los logs no se reescriben: la Auditoría tendría que leer los dos valores |
 
 ## Diagrama (Mermaid)
 
@@ -781,7 +825,7 @@ erDiagram
 - **workday.payrollId**: tag inverso. Una nómina "reclama" sus workdays vía `workdayIds[]` y a la vez cada workday queda apuntando a la nómina.
 - **advance.status / appliedPayrollId**: paralelo al de workdays — se "aplican" a una nómina y se "restauran" a `pending` si la nómina se borra.
 - **transport.paymentId ↔ transportPayment.tripIds**: misma idea de tag bidireccional para transportistas. Lo mismo un nivel más arriba con **transportPayment.payrollId ↔ transportPayroll.paymentIds**.
-- **Totales denormalizados (transporte)**: `transportPayments.total` y `transportPayrolls.total` son sumas guardadas, no calculadas al leer. El detalle imprimible suma las vueltas **en vivo**, mientras que el Balance de quincenas y la tarjeta de la quincena leen el campo — si divergen, es que algo escribió una vuelta sin propagar hacia arriba. La propagación vive en `transportsService.js` (`recalcPaymentTotal` → `recalcPayrollTotal`), disparada desde `tripsService.create/update/remove`, **no en las pantallas**. Los docs con `status: "paid"` quedan congelados y no se recalculan.
+- **Totales denormalizados (transporte)**: `transportPayments.total` y `transportPayrolls.total` son sumas guardadas, no calculadas al leer. El detalle imprimible suma las vueltas **en vivo**, mientras que el Balance de quincenas y la tarjeta de la quincena leen el campo — si divergen, es que algo escribió una vuelta sin propagar hacia arriba. La propagación vive en `transportsService.js` (`recalcPaymentTotal` → `recalcFortnightTotal`), disparada desde `tripsService.create/update/remove`, **no en las pantallas**. Los docs con `status: "paid"` quedan congelados y no se recalculan.
 - **advance.amountPaid ↔ advance.payments[]**: `amountPaid` es la suma de `payments[]` y el `status` se deriva de comparar contra `amount`. Revertir una nómina filtra de `payments[]` las entradas de esa nómina y recalcula ambos — por eso el array no queda ordenado por fecha.
 - **qrPrefix → harvestWeights → workdays**: los pesajes los escribe una app externa contra un prefijo de QR; el prefijo dice a qué (ciclo, labor) sincronizarlos. La sincronización agrupa por (trabajador, día, combo) y escribe/actualiza `workdays` — flujo de una sola dirección. La app admin escribe `harvestWeights` solo por la vía manual de Cosecha QR → Pesajes, que no dispara la sincronización: queda a cargo del operador.
 - **costCenter → informalExpenses**: gastos sin respaldo tributario, deliberadamente separados de `dteDocuments` para no contaminar la data fiscal.
