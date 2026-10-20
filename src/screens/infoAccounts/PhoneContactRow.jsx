@@ -3,8 +3,9 @@ import { contactTypeLabel, displayName, formatPhone, phoneContactText } from "..
 
 // Un contacto de la agenda: nombre, empresa · departamento · cargo, sus otros
 // nombres y, a la derecha (abajo en el teléfono), sus números y correos. Tocar
-// un número o un correo lo copia; 📤 comparte el contacto entero y el menú ⋯
-// lo copia, lo descarga como tarjeta .vcf, lo edita o lo borra.
+// el nombre copia el contacto entero, y tocar un número o un correo, solo ese
+// dato; 📤 comparte el contacto y el menú ⋯ lo copia, lo descarga como
+// tarjeta .vcf, lo edita o lo borra.
 // `hideCompany`: la lista ya está agrupada por empresa.
 export default function PhoneContactRow({ contact, hideCompany = false, onCopy, onShare, onDownload, onEdit, onDelete }) {
   const c = contact;
@@ -15,7 +16,15 @@ export default function PhoneContactRow({ contact, hideCompany = false, onCopy, 
       {/* En el teléfono, las acciones van en la esquina para no sumar una línea. */}
       <div className="min-w-0 pr-28 sm:w-2/5 sm:pr-0">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <span className="font-medium break-words">{displayName(c)}</span>
+          <button
+            type="button"
+            onClick={() => onCopy(phoneContactText(c), "Contacto")}
+            title="Copiar contacto (nombre, empresa, números y correos)"
+            className="-mx-1 rounded px-1 text-left hover:bg-[var(--color-accent-soft)] active:bg-[var(--color-accent-soft)]"
+          >
+            <span className="font-medium break-words">{displayName(c)}</span>
+            <span className="ml-1 text-xs text-[var(--color-muted)]" aria-hidden>📋</span>
+          </button>
           {c.contactType && (
             <span className="rounded-full bg-[var(--color-surface-2)] px-1.5 py-0.5 text-[10px] text-[var(--color-muted)]">
               {contactTypeLabel(c.contactType)}
