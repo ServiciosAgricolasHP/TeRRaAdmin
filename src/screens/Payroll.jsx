@@ -1,11 +1,5 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef } from "react";
 import {
-  jobsService,
-  subjobsService,
-  cyclesService,
-  workersService,
-  listWorkdaysByCycles,
-  workdaysService,
   payrollSnapshotsService,
 } from "../services";
 import {
@@ -30,23 +24,19 @@ import {
   snapshotAdvanceOf,
   saveSnapshot,
   deleteSnapshot,
-  readSnapshot,
 } from "../services/payrollSnapshots";
 import { workerKeys } from "../services/workersService";
 import { isCashBank } from "../utils/banks";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
-import { getPublishedPortal, publishPayrollToPortal } from "../services/portalService";
 import {
   aggregateWorkerAmounts,
   validateAccountNumber,
   payrollSuggestedName,
   groupCashByLeader,
-  downloadPayrollXlsx,
-  downloadBankFileXlsx,
 } from "../utils/payroll";
 import { newPayrollCycleDetails } from "../utils/payrollItem";
-import { activeCyclesByJob, chosenCyclesOf, cycleStatsOf, exportCyclesOf } from "../utils/payrollCycles";
+import { activeCyclesByJob, chosenCyclesOf } from "../utils/payrollCycles";
 import {
   installmentCandidatesOf,
   payrollItemOf,
@@ -72,6 +62,9 @@ import { ProgressOverlay } from "./payroll/ProgressOverlay";
 import { RenamePayrollModal } from "./payroll/RenamePayrollModal";
 import { WorkersHistory } from "./payroll/WorkersHistory";
 import { usePayrollConfig } from "./payroll/usePayrollConfig";
+import { usePayrollDownloads } from "./payroll/usePayrollDownloads";
+import { usePayrollData } from "./payroll/usePayrollData";
+import { usePortalPublish } from "./payroll/usePortalPublish";
 
 const SELECTION_KEY = "payroll_cycle_selection";
 
@@ -86,50 +79,27 @@ const saveSelection = (set) => {
   try { localStorage.setItem(SELECTION_KEY, JSON.stringify([...set])); } catch {}
 };
 
-// Descarga el snapshot como archivo JSON. En el nombre, cada tramo de
-// caracteres que no sean letra, número, "_" o "-" pasa a "_".
-function downloadSnapshotJson(payrollName, snapshot) {
-  try {
-    const json = JSON.stringify(snapshot, null, 2);
-    const blob = new Blob([json], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    const safeName = String(payrollName || "Nomina").replace(/[^a-z0-9_-]+/gi, "_");
-    a.href = url;
-    a.download = `${safeName}.json`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
-  } catch (err) {
-    console.warn("No se pudo descargar el JSON del snapshot:", err);
-  }
-}
-
-// Copia de los items con el rut vigente, para exportar. Solo para archivos que
-// se leen afuera: dentro de la app los items conservan el rut guardado, que es
-// la clave con que se cruzan con jornadas y anticipos.
-const withCurrentRuts = (items, rutOf) =>
-  (items || []).map((it) => ({ ...it, rut: rutOf(it.rut, it.workerId) }));
-
 export default function Payroll() {
+  "use no memo";
   const toast = useToast();
   const { user, isAdmin } = useAuth();
   const { config: payrollConfig, bankFormat, currentBankFormat, save: savePayrollConfig } = usePayrollConfig();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  // Cabecera de la nómina publicada en el portal de trabajadores.
-  const [portal, setPortal] = useState(null);
-  const [publishing, setPublishing] = useState(null);
-  const [publishBusy, setPublishBusy] = useState(false);
   const [tab, setTab] = useState("create"); // create | history | workers
-  const [loading, setLoading] = useState(true);
-  const [faenas, setFaenas] = useState([]);
-  const [subfaenas, setSubfaenas] = useState([]);
-  const [cycles, setCycles] = useState([]);
-  const [workers, setWorkers] = useState([]);
+  const {
+    cycles,
+    cycleStats,
+    faenas,
+    load,
+    loading,
+    payrolls,
+    refresh,
+    refreshing,
+    subfaenas,
+    workers,
+  } = usePayrollData({ toast });
   // Rut vigente para mostrar, ver utils/workerRut.js.
   const rutOf = useMemo(() => currentRutResolver(workers), [workers]);
-  const [payrolls, setPayrolls] = useState([]);
 
   const [selectedCycleIds, setSelectedCycleIds] = useState(loadSelection);
   // Labores que entran a la nómina, por ciclo seleccionado. No se persiste,
@@ -194,94 +164,13 @@ export default function Payroll() {
   // embebido, así la re-descarga del JSON trae el nombre nuevo.
   const [renaming, setRenaming] = useState(null);
 
-  // Totales por ciclo activo (ver `cycleStatsOf`).
-  const [cycleStats, setCycleStats] = useState({});
-  // Separado de `loading`: al refrescar, el spinner va en el botón y no tapa
-  // la pantalla con "Cargando…".
-  const [refreshing, setRefreshing] = useState(false);
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const [f, s, c, w, p] = await Promise.all([
-        jobsService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
-        subjobsService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
-        cyclesService.list({ order: ["createdAt", "desc"], cache: true, persist: true, ttl: 5 * 60 * 1000 }),
-        workersService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 2 * 60 * 60 * 1000 }),
-        payrollsService.list({ order: ["createdAt", "desc"], take: 50, cache: true, persist: true, ttl: 5 * 60 * 1000 }),
-      ]);
-      setFaenas(f);
-      setSubfaenas(s);
-      setCycles(c);
-      setWorkers(w);
-      setPayrolls(p);
-
-      // Pendiente, lo que ya entró a nómina y rango de fechas de los ciclos activos.
-      const activeIds = c.filter((x) => x.status !== "closed").map((x) => x.id);
-      // Por ciclo y cacheado: `buildPreview` vuelve a pedir estos mismos
-      // documentos al elegir los ciclos y los toma de la misma clave de caché.
-      const wds = await listWorkdaysByCycles(activeIds);
-      const stats = cycleStatsOf(c, w, wds);
-      setCycleStats(stats);
-      return { cycles: c, stats, payrolls: p };
-    } catch (err) {
-      toast.error("No se pudo cargar la nómina: " + (err.message || err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    load();
-    getPublishedPortal().then(setPortal);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Publica la nómina elegida en el portal de trabajadores; reemplaza la que
-  // estaba publicada.
-  const runPublish = async () => {
-    if (!publishing) return;
-    setPublishBusy(true);
-    try {
-      const outcome = await publishPayrollToPortal(publishing.id, user);
-      if (outcome.status === "done") {
-        toast.success(`Publicada en el portal: ${outcome.result?.published ?? 0} trabajador(es)`);
-        setPublishing(null);
-        setPortal(await getPublishedPortal());
-      } else if (outcome.status === "timeout") {
-        toast.error("El backend no respondió. Pruébalo con el ping de la Consola admin.");
-      } else {
-        toast.error(outcome.error || "No se pudo publicar en el portal.");
-      }
-    } catch (err) {
-      toast.error(err?.message || String(err));
-    } finally {
-      setPublishBusy(false);
-    }
-  };
-
-  // Relee desde Firestore sin la caché local (memoria y localStorage): invalida
-  // lo que alimenta el armado de la nómina y recarga. Sirve cuando otro usuario
-  // cambió trabajadores, labores o jornadas y la caché todavía no vence.
-  const refresh = async () => {
-    if (refreshing) return;
-    setRefreshing(true);
-    try {
-      jobsService.invalidate();
-      subjobsService.invalidate();
-      cyclesService.invalidate();
-      workersService.invalidate();
-      workdaysService.invalidate();
-      payrollsService.invalidate();
-      await load();
-      toast.success("Datos actualizados");
-    } catch (err) {
-      console.error(err);
-      toast.error("No se pudo recargar.");
-    } finally {
-      setRefreshing(false);
-    }
-  };
+  const {
+    portal,
+    publishBusy,
+    publishing,
+    runPublish,
+    setPublishing,
+  } = usePortalPublish({ toast, user });
 
   // Nóminas con las transferencias pagadas y el efectivo todavía adeudado.
   // Sale de `payrolls`, ya cargado (sin lecturas extra). Es informativo: no se
@@ -373,6 +262,13 @@ export default function Payroll() {
     setPersonModal(null);
   };
   const removePerson = (workerId) => setPeople((prev) => prev.filter((p) => p.worker.id !== workerId));
+  // Limpia lo elegido, después de guardar la nómina.
+  const resetSelection = () => {
+    setSelectedCycleIds(new Set());
+    saveSelection(new Set());
+    setSelectedLaborsByCycle(new Map());
+    setPeople([]);
+  };
 
   const buildPreview = async () => {
     if (chosenCycles.size === 0 && people.length === 0) return;
@@ -453,6 +349,13 @@ export default function Payroll() {
 
   const bulkUpdate = (predicate, patch) => {
     setPreviewItems((prev) => prev.map((p) => (predicate(p) ? { ...p, ...patch } : p)));
+  };
+  // Vuelve al paso de elegir ciclos, sin vista previa.
+  const resetPreview = () => {
+    setPreviewItems([]);
+    setPreviewCycles([]);
+    setPayrollName("");
+    setStep(1);
   };
 
   const generateAndSave = async () => {
@@ -626,14 +529,8 @@ export default function Payroll() {
 
       setProgress({ step: "Actualizando lista...", detail: "", percent: 95 });
       // Limpia el armado y pasa al historial.
-      setSelectedCycleIds(new Set());
-      saveSelection(new Set());
-      setSelectedLaborsByCycle(new Map());
-      setPeople([]);
-      setPreviewItems([]);
-      setPreviewCycles([]);
-      setPayrollName("");
-      setStep(1);
+      resetSelection();
+      resetPreview();
       setTab("history");
       await load();
       setProgress({ step: "Listo ✓", detail: "", percent: 100 });
@@ -799,44 +696,7 @@ export default function Payroll() {
     setProgress({ step: "Listo ✓", detail: "", percent: 100 });
     setTimeout(() => setProgress(null), 400);
   };
-  // El formato del archivo del banco se relee en cada descarga: sin leerlo no
-  // se descarga.
-  const bankFormatForDownload = async () => {
-    try {
-      return await currentBankFormat();
-    } catch (err) {
-      console.error(err);
-      toast.error("No se pudo leer el formato del archivo del banco. Revisa la conexión e intenta de nuevo.");
-      return null;
-    }
-  };
-  const onRedownload = async (p) => {
-    const format = await bankFormatForDownload();
-    if (!format) return;
-    const cyclesForExport = exportCyclesOf(p, cycles);
-    await downloadPayrollXlsx(withCurrentRuts(p.items, rutOf), p.name || "Nomina", cyclesForExport, format);
-  };
-  const onDownloadNominaOnly = async (p) => {
-    const format = await bankFormatForDownload();
-    if (!format) return;
-    const filename = `${p.name || "Nomina"}_${format.fileSuffix}`;
-    await downloadBankFileXlsx(withCurrentRuts(p.items, rutOf), filename, format);
-  };
-  // Vuelve a bajar el JSON del snapshot de una nómina. Lo lee de
-  // payrollSnapshots y, si no está, del campo `snapshot` embebido en la nómina.
-  const onDownloadSnapshot = async (p) => {
-    try {
-      const snap = await readSnapshot(p);
-      if (!snap) {
-        toast.warning("Esta nómina no tiene JSON guardado (se creó antes de que existiera).");
-        return;
-      }
-      downloadSnapshotJson(p.name || "Nomina", snap);
-    } catch (err) {
-      console.error(err);
-      toast.error("No se pudo descargar el JSON.");
-    }
-  };
+  const { onDownloadNominaOnly, onDownloadSnapshot, onRedownload } = usePayrollDownloads({ currentBankFormat, cycles, rutOf, toast });
 
   return (
     <div className="flex h-full flex-col">
