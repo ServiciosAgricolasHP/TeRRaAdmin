@@ -1,9 +1,7 @@
 import { useRef, useState, useMemo } from "react";
 import { captureFullWidthBlob, captureFullWidthDataUrl } from "../../utils/imageCapture";
-import { costCentersService } from "../../services";
 import { dteTypeLabel } from "../../utils/siiCsvParser";
 import { formatRutForDisplay } from "../../utils/rutUtils";
-import { toTitleName } from "../../utils/textCase";
 import Modal from "../../components/Modal";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { useToast } from "../../contexts/ToastContext";
@@ -24,6 +22,9 @@ import {
   informalTotalOf,
   sortCenterRows,
 } from "../../utils/costCenterDocs";
+import { writeCostCenterDocsXlsx } from "./writeCostCenterDocsXlsx";
+import { useCostCenterCatalog } from "./useCostCenterCatalog";
+import { CostCenterForm } from "./CostCenterForm";
 
 // Modal de Centros de costo: catálogo (crear/editar/eliminar, arriba, como
 // chips) + vista global del centro elegido (abajo): TODOS sus documentos, de
@@ -35,48 +36,6 @@ export function CostCentersModal({ costCenters, docs, informalExpenses, companie
   "use no memo";
   const toast = useToast();
   const printRef = useRef(null);
-
-  // --- CRUD del catálogo ---
-  const [editing, setEditing] = useState(null); // { id?, label, emoji }
-  const [busy, setBusy] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(null); // centro de costo a borrar, o null
-
-  const startNew = () => setEditing({ id: null, label: "", emoji: "" });
-  const startEdit = (c) => setEditing({ id: c.id, label: c.label, emoji: c.emoji || "" });
-
-  const save = async () => {
-    if (!editing.label.trim()) {
-      toast.warning("Ponle un nombre al centro de costo.");
-      return;
-    }
-    setBusy(true);
-    try {
-      const payload = { label: toTitleName(editing.label), emoji: (editing.emoji || "").trim() || null };
-      if (editing.id) {
-        await costCentersService.update(editing.id, payload);
-      } else {
-        await costCentersService.create(payload);
-      }
-      setEditing(null);
-      await onChanged();
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const remove = (c) => setConfirmDelete(c);
-  const doRemove = async () => {
-    if (!confirmDelete) return;
-    setBusy(true);
-    try {
-      await costCentersService.remove(confirmDelete.id);
-      if (selectedId === confirmDelete.id) setSelectedId("");
-      await onChanged();
-      setConfirmDelete(null);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   // --- Vista global del centro elegido ---
   const [selectedId, setSelectedId] = useState("");
@@ -91,6 +50,18 @@ export function CostCentersModal({ costCenters, docs, informalExpenses, companie
   // Modal de gasto informal: null = cerrado, "new" = crear, {expense} = editar.
   const [expenseModal, setExpenseModal] = useState(null);
 
+  const {
+    busy,
+    confirmDelete,
+    doRemove,
+    editing,
+    remove,
+    save,
+    setConfirmDelete,
+    setEditing,
+    startEdit,
+    startNew,
+  } = useCostCenterCatalog({ onChanged, selectedId, setSelectedId, toast });
   const companiesList = useMemo(() => companiesByName(companiesById), [companiesById]);
 
   const selectedCenter = costCenters.find((c) => c.id === selectedId);
@@ -182,134 +153,7 @@ export function CostCentersModal({ costCenters, docs, informalExpenses, companie
   const handleXlsx = async () => {
     setExportBusy("xlsx");
     try {
-      const ExcelJS = (await import("exceljs")).default || (await import("exceljs"));
-      const wb = new ExcelJS.Workbook();
-      const ws = wb.addWorksheet("Centro de costo");
-      ws.getColumn(1).width = 6;  // col A vacía de medio ancho (convención)
-      ws.getColumn(2).width = 12; // Fecha
-      ws.getColumn(3).width = 22; // Empresa
-      ws.getColumn(4).width = 10; // Mov.
-      ws.getColumn(5).width = 22; // Documento
-      ws.getColumn(6).width = 10; // Folio
-      ws.getColumn(7).width = 30; // Contraparte
-      ws.getColumn(8).width = 16; // RUT
-      ws.getColumn(9).width = 14; // Neto
-      ws.getColumn(10).width = 14; // IVA
-      ws.getColumn(11).width = 14; // Total
-
-      ws.getCell("B2").value = `CENTRO DE COSTO — ${selectedLabel}`;
-      ws.getCell("B2").font = { bold: true, size: 14 };
-      ws.mergeCells("B2:K2");
-      const summaryLine = `${filtered.length} documento${filtered.length === 1 ? "" : "s"} · Neto ${fmtCurrency(totals.neto)} · IVA ${fmtCurrency(totals.iva)} · Total ${fmtCurrency(totals.total)}`
-        + (filteredInformal.length > 0
-          ? ` · + ${filteredInformal.length} gasto${filteredInformal.length === 1 ? "" : "s"} informal${filteredInformal.length === 1 ? "" : "es"} ${fmtCurrency(informalTotal)} · Total combinado ${fmtCurrency(totals.total + informalTotal)}`
-          : "");
-      ws.getCell("B3").value = summaryLine;
-      ws.getCell("B3").font = { italic: true, color: { argb: "FF555555" } };
-      ws.mergeCells("B3:K3");
-
-      const HR = 5;
-      const headers = ["Fecha", "Empresa", "Mov.", "Documento", "Folio", "Contraparte", "RUT", "Neto", "IVA", "Total"];
-      headers.forEach((h, i) => {
-        const c = ws.getCell(HR, 2 + i);
-        c.value = h;
-        c.font = { bold: true };
-        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF92D050" } };
-        c.alignment = { horizontal: i <= 6 ? "left" : "right", vertical: "middle" };
-        c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
-      });
-
-      let r = HR + 1;
-      for (const d of sorted) {
-        if (d.__informal) {
-          const company = companiesById.get(d.companyId);
-          const cells = [d.date || "", company?.alias || company?.razonSocial || "", "Informal", "", "", d.detail || "", "", "", "", Number(d.amount) || 0];
-          cells.forEach((v, j) => {
-            const c = ws.getCell(r, 2 + j);
-            c.value = v;
-            c.alignment = { horizontal: j <= 6 ? "left" : "right" };
-            c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
-            if (j === 9) c.numFmt = '"$"#,##0';
-            if (j === 2) c.font = { color: { argb: "FFB8860B" } };
-          });
-          r++;
-          continue;
-        }
-        const isNC = CREDIT_NOTE_TYPES.has(Number(d.tipo));
-        const sign = isNC ? -1 : 1;
-        const razon = d.kind === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
-        const rut = d.kind === "venta" ? d.rutReceptor : d.rutEmisor;
-        const company = companiesById.get(d.companyId);
-        const cells = [
-          d.fechaEmision || "",
-          company?.alias || company?.razonSocial || "",
-          d.kind === "venta" ? "Venta" : "Compra",
-          d.tipoLabel || dteTypeLabel(d.tipo),
-          d.folio,
-          razon || "",
-          formatRutForDisplay(rut) || "",
-          sign * (Number(d.neto) || 0),
-          sign * (Number(d.iva) || 0),
-          sign * (Number(d.total) || 0),
-        ];
-        cells.forEach((v, j) => {
-          const c = ws.getCell(r, 2 + j);
-          c.value = v;
-          c.alignment = { horizontal: j <= 6 ? "left" : "right" };
-          c.border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
-          if (j >= 7 && j <= 9) c.numFmt = '"$"#,##0';
-          if (isNC && j >= 7 && j <= 9) c.font = { color: { argb: "FFCC0000" } };
-        });
-        r++;
-      }
-
-      ws.getCell(r, 2).value = `TOTAL (${filtered.length})`;
-      ws.mergeCells(r, 2, r, 8);
-      for (let col = 2; col <= 11; col++) {
-        ws.getCell(r, col).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
-        ws.getCell(r, col).border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
-        ws.getCell(r, col).font = { bold: true };
-      }
-      [totals.neto, totals.iva, totals.total].forEach((v, j) => {
-        const c = ws.getCell(r, 9 + j);
-        c.value = v;
-        c.numFmt = '"$"#,##0';
-        c.alignment = { horizontal: "right" };
-      });
-      r++;
-
-      if (filteredInformal.length > 0) {
-        ws.getCell(r, 2).value = `GASTOS INFORMALES (${filteredInformal.length})`;
-        ws.mergeCells(r, 2, r, 8);
-        for (let col = 2; col <= 11; col++) {
-          ws.getCell(r, col).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFDE9C8" } };
-          ws.getCell(r, col).border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
-          ws.getCell(r, col).font = { bold: true };
-        }
-        ws.getCell(r, 11).value = informalTotal;
-        ws.getCell(r, 11).numFmt = '"$"#,##0';
-        ws.getCell(r, 11).alignment = { horizontal: "right" };
-        r++;
-
-        ws.getCell(r, 2).value = "TOTAL COMBINADO";
-        ws.mergeCells(r, 2, r, 8);
-        for (let col = 2; col <= 11; col++) {
-          ws.getCell(r, col).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
-          ws.getCell(r, col).border = { top: { style: "thin" }, left: { style: "thin" }, right: { style: "thin" }, bottom: { style: "thin" } };
-          ws.getCell(r, col).font = { bold: true };
-        }
-        ws.getCell(r, 11).value = totals.total + informalTotal;
-        ws.getCell(r, 11).numFmt = '"$"#,##0';
-        ws.getCell(r, 11).alignment = { horizontal: "right" };
-      }
-
-      const buf = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `${fileBase}.xlsx`;
-      link.click();
-      URL.revokeObjectURL(link.href);
+      await writeCostCenterDocsXlsx({ companiesById, fileBase, filtered, filteredInformal, informalTotal, selectedLabel, sorted, totals });
     } catch (err) {
       toast.error("Error XLSX: " + (err.message || err));
     } finally {
@@ -322,44 +166,12 @@ export function CostCentersModal({ costCenters, docs, informalExpenses, companie
   return (
     <Modal open onClose={onClose} size="full" title="Centros de costo">
       {editing ? (
-        <form onSubmit={(e) => { e.preventDefault(); save(); }} className="space-y-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">Nombre</label>
-            <input
-              value={editing.label}
-              onChange={(e) => setEditing({ ...editing, label: e.target.value })}
-              placeholder="Arriendo, Mantención, etc."
-              className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">Emoji (opcional)</label>
-            <input
-              value={editing.emoji}
-              onChange={(e) => setEditing({ ...editing, emoji: e.target.value })}
-              placeholder="🏠"
-              maxLength={4}
-              className="w-24 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
-            />
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={() => setEditing(null)}
-              disabled={busy}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={busy}
-              className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
-            >
-              {busy ? "Guardando..." : "Guardar"}
-            </button>
-          </div>
-        </form>
+        <CostCenterForm
+          busy={busy}
+          editing={editing}
+          save={save}
+          setEditing={setEditing}
+        />
       ) : (
         <div className="space-y-4">
           <p className="text-xs text-[var(--color-muted)]">

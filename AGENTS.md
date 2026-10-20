@@ -839,7 +839,7 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
   - **Documento:** `DocDetailModal` y `PaymentsSection` (sus pagos).
   - **Importar:** `useRcvImport` (leer los archivos, la vista previa y confirmar), `CompanySelectAndPickModal`, `ImportPreviewModal` y `FileRow`.
   - **Empresas:** `CompaniesModal`.
-  - **Centros de costo:** `CostCentersModal`, `PrintableCostCenterDocs` e `InformalExpenseFormModal`.
+  - **Centros de costo:** `CostCentersModal`, con `useCostCenterCatalog` (crear, editar y eliminar centros) y `CostCenterForm`; `PrintableCostCenterDocs`, `writeCostCenterDocsXlsx.js` e `InformalExpenseFormModal`. El cálculo de la vista de un centro (sus documentos y gastos informales, filtros, totales y orden) vive en `utils/costCenterDocs.js`, con tests.
   - **Retenciones:** `WithholdingsTab` (la pestaña con sus exportaciones, del total y por contraparte), `WithholdingsView`, `PrintableWithholdings`, `PrintableWithholdingsGroup`, `writeWithholdingsXlsx.js` y `writeWithholdingGroupXlsx.js`.
   - **Pendientes:** `ReceivablesModal` y `PrintableReceivables`.
   - **Resumen anual:** `AnnualSummaryTab`, `PrintableAnnualSummary` y `writeAnnualSummaryXlsx.js`.
