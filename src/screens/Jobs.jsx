@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, Fragment } from "react";
 import { useSearchParams } from "react-router-dom";
-import { jobsService, subjobsService, cyclesService, workdaysService } from "../services";
-import { payrollsService } from "../services/payrollsService";
+import { cyclesService } from "../services";
 import { UNGROUPED_ID } from "../services/userPrefsService";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
@@ -11,18 +10,19 @@ import TextField from "../components/TextField";
 import Select from "../components/Select";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { LABOR_TYPES } from "../utils/laborTypes";
-import { closedCyclePatch } from "../utils/cycleClosing";
-import { cloneLabors, cycleLabelSuffix, importCandidatesOf, importedDayPrices, movedWorkday, nextCycleLabors } from "../utils/cycleCreation";
-import { toTitleName, unshout } from "../utils/textCase";
 import { hasChanges } from "../utils/formChanges";
 import { ColorPickerButton } from "./jobs/ColorPickerButton";
 import { GroupHeader } from "./jobs/GroupHeader";
 import { ImportSection } from "./jobs/ImportSection";
 import { SelectedDetail } from "./jobs/SelectedDetail";
-import { defaultLabors, newId, todayStr, withInitial } from "./jobs/helpers";
+import { withInitial } from "./jobs/helpers";
 import { useJobsData } from "./jobs/useJobsData";
 import { useJobLayout } from "./jobs/useJobLayout";
 import { useSubjobDisplay } from "./jobs/useSubjobDisplay";
+import { useJobForms } from "./jobs/useJobForms";
+import { useCycleForm } from "./jobs/useCycleForm";
+import { useCloseCycleFlow } from "./jobs/useCloseCycleFlow";
+import { useJobDeletion } from "./jobs/useJobDeletion";
 
 // En el alta de un ciclo, lo que se ofrece para importar no es un dato del
 // formulario.
@@ -58,18 +58,6 @@ export default function Jobs() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
-  const [jobForm, setJobForm] = useState(null);
-  const [subjobForm, setSubjobForm] = useState(null);
-  // Subfaena recién creada a la que se le ofrece abrir su primer ciclo.
-  const [subjobOfferCycle, setSubjobOfferCycle] = useState(null);
-  const [cycleForm, setCycleForm] = useState(null);
-  const [closeFlow, setCloseFlow] = useState(null);
-  const [confirm, setConfirm] = useState(null);
-  // Segunda confirmación (cascada) dentro de doDelete: un diálogo que se
-  // puede esperar con await.
-  const [cascadeConfirm, setCascadeConfirm] = useState(null);
-  const askCascadeConfirm = (message) =>
-    new Promise((resolve) => setCascadeConfirm({ message, resolve }));
   const [busy, setBusy] = useState(false);
 
   const {
@@ -137,431 +125,65 @@ export default function Jobs() {
     return () => window.cancelAnimationFrame(id);
   }, [selectedId]);
 
-  const submitJob = async (e) => {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      const payload = {
-        // Nombre y ubicación como título; notas sin gritar (utils/textCase.js).
-        name: toTitleName(jobForm.data.name),
-        location: toTitleName(jobForm.data.location || ""),
-        notes: unshout(jobForm.data.notes || ""),
-      };
-      if (jobForm.mode === "create") {
-        const created = await jobsService.create(payload);
-        persistOrder([...order, created.id]);
-      } else {
-        await jobsService.update(jobForm.data.id, payload);
-      }
-      setJobForm(null);
-      await loadJobs();
-      toast.success(jobForm.mode === "create" ? "Faena creada" : "Faena actualizada");
-    } catch (err) {
-      toast.error("Error al guardar la faena: " + (err.message || err));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const {
+    jobForm,
+    setJobForm,
+    setSubjobForm,
+    setSubjobOfferCycle,
+    subjobForm,
+    subjobOfferCycle,
+    submitJob,
+    submitSubjob,
+  } = useJobForms({
+    loadJobs,
+    loadSubjobs,
+    order,
+    persistOrder,
+    setBusy,
+    toast,
+  });
 
-  const submitSubjob = async (e) => {
-    e.preventDefault();
-    const { mode, jobId, data } = subjobForm;
-    setBusy(true);
-    try {
-      let creada = null;
-      const fields = { name: toTitleName(data.name || ""), notes: unshout(data.notes || "") };
-      if (mode === "create") creada = await subjobsService.create({ ...data, ...fields, faenaId: jobId });
-      else await subjobsService.update(data.id, fields);
-      setSubjobForm(null);
-      await loadSubjobs(jobId);
-      toast.success(mode === "create" ? "Subfaena creada" : "Subfaena actualizada");
-      // Al crear una subfaena se ofrece abrir su primer ciclo (cancelable): sin
-      // ciclos no hay dónde anotar jornadas.
-      if (creada?.id) setSubjobOfferCycle({ jobId, subjobId: creada.id, name: fields.name });
-    } catch (err) {
-      toast.error("Error al guardar la subfaena: " + (err.message || err));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const {
+    cycleForm,
+    cyclePrefix,
+    openCreateCycle,
+    openEditCycle,
+    setCycleForm,
+    submitCycle,
+  } = useCycleForm({
+    cyclesByJob,
+    jobs,
+    loadCycles,
+    setBusy,
+    subjobsByJob,
+    toast,
+  });
 
-  const cyclePrefix = (jobId, subjobId) => {
-    const f = jobs.find((x) => x.id === jobId);
-    const subjobList = subjobsByJob[jobId] || [];
-    const s = subjobList.find((x) => x.id === subjobId);
-    const parts = [];
-    if (f?.name) parts.push(f.name);
-    if (s?.name) parts.push(s.name);
-    return parts.length ? parts.join("/") + "/" : "";
-  };
+  const {
+    closeFlow,
+    confirmCloseCycle,
+    createNextCycle,
+    openCloseFlow,
+    setCloseFlow,
+  } = useCloseCycleFlow({ cyclePrefix, cyclesByJob, loadCycles, setBusy });
 
-  const submitCycle = async (e) => {
-    e.preventDefault();
-    const { mode, jobId, data } = cycleForm;
-    if (mode === "create") {
-      const existing = cyclesByJob[jobId] || [];
-      const subjobs = subjobsByJob[jobId] || [];
-      if (!data.subfaenaId && subjobs.length > 0) {
-        toast.warning("La faena tiene subfaenas. Selecciona una subfaena para el ciclo.");
-        return;
-      }
-    }
-    setBusy(true);
-    try {
-      // Labores y datos a importar desde el ciclo origen, si se pidió.
-      let labors;
-      let importPlan = null; // { source, picked, oldToNewLaborId }
-      if (mode === "create" && data.importEnabled && data.importSourceId) {
-        const source = (data.importCandidates || []).find((c) => c.id === data.importSourceId);
-        const picked = (source?.labors || []).filter((l) => (data.importLaborIds || new Set()).has(l.id));
-        if (picked.length === 0) {
-          toast.warning("Marca al menos una labor a clonar (o desactiva la importación).");
-          setBusy(false);
-          return;
-        }
-        const cloned = cloneLabors(picked, newId);
-        labors = cloned.labors;
-        importPlan = { source, picked, oldToNewLaborId: cloned.oldToNewLaborId };
-      } else if (mode === "create") {
-        labors = defaultLabors([], {
-          type: data.laborType || "main",
-          withSupervision: !!data.withSupervision,
-        });
-      } else {
-        labors = data.labors && data.labors.length ? data.labors : defaultLabors();
-      }
-
-      const prefix = cyclePrefix(jobId, data.subfaenaId);
-      const suffix = (data.labelSuffix ?? data.label ?? "").trim();
-
-      // Días: los marcados en `importDays` definen la lista del nuevo ciclo y
-      // restringen qué jornadas y precios se importan.
-      const importDaysSet = data.importDays || new Set();
-      let nextDays = data.days || [];
-      if (mode === "create" && importPlan) {
-        nextDays = (importPlan.source.days || []).filter((d) => importDaysSet.has(d));
-      } else if (mode === "create") {
-        // El ciclo nace con la fecha de inicio como primer día, así la grilla
-        // abre con una columna.
-        nextDays = [data.startDate || todayStr()];
-      }
-
-      // dayPrices: si se pidió copiarlos, los de las labores y días importados.
-      const nextDayPrices = mode === "create" && importPlan && data.importCopyDayPrices
-        ? importedDayPrices(importPlan.source.dayPrices, importPlan.oldToNewLaborId, importDaysSet)
-        : undefined;
-
-      const payload = {
-        faenaId: jobId,
-        subfaenaId: data.subfaenaId || null,
-        label: prefix + suffix,
-        startDate: data.startDate || todayStr(),
-        notes: unshout(data.notes || ""),
-        status: data.status || "open",
-        days: nextDays,
-        labors,
-        ...(nextDayPrices ? { dayPrices: nextDayPrices } : {}),
-      };
-
-      let createdCycleId = null;
-      if (mode === "create") {
-        const created = await cyclesService.create(payload);
-        createdCycleId = created?.id || created;
-      } else {
-        await cyclesService.update(data.id, payload);
-      }
-
-      // Mover jornadas: por cada labor importada, se leen sus jornadas en el
-      // origen y se recrean en el ciclo nuevo (crear + borrar, ver
-      // `movedWorkday`). Las jornadas con payrollId se saltan para no romper
-      // nóminas ya generadas.
-      if (mode === "create" && importPlan && data.importMoveWorkdays && createdCycleId) {
-        const oldCycleId = importPlan.source.id;
-        let skippedPaid = 0;
-        let moved = 0;
-        for (const oldLabor of importPlan.picked) {
-          const newLaborId = importPlan.oldToNewLaborId.get(oldLabor.id);
-          const wds = await workdaysService.list({
-            wheres: [["cycleId", "==", oldCycleId], ["laborId", "==", oldLabor.id]],
-          });
-          for (const w of wds) {
-            if (w.payrollId) { skippedPaid += 1; continue; }
-            if (!importDaysSet.has(w.date)) continue;
-            const target = movedWorkday(w, createdCycleId, newLaborId);
-            await workdaysService.upsert(target.id, target.data);
-            await workdaysService.remove(w.id);
-            moved += 1;
-          }
-        }
-        if (skippedPaid > 0) {
-          toast.success(`Se movieron ${moved} workday(s). ${skippedPaid} ya estaban en una nómina y quedaron en el ciclo origen.`);
-        } else {
-          toast.success(mode === "create" ? "Ciclo creado" : "Ciclo actualizado");
-        }
-      } else {
-        toast.success(mode === "create" ? "Ciclo creado" : "Ciclo actualizado");
-      }
-
-      setCycleForm(null);
-      await loadCycles(jobId);
-    } catch (err) {
-      toast.error("Error al guardar el ciclo: " + (err.message || err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const openCreateCycle = (jobId, subjobId) => {
-    if (!subjobId) {
-      toast.warning("Los ciclos se crean dentro de una subfaena. Crea primero una subfaena.");
-      return;
-    }
-    const existing = cyclesByJob[jobId] || [];
-    const scope = existing.filter((c) => c.subfaenaId === subjobId);
-    const openCandidates = importCandidatesOf(existing, subjobId);
-
-    setCycleForm(withInitial({
-      mode: "create",
-      jobId,
-      data: {
-        labelSuffix: `Ciclo ${scope.length + 1}`,
-        subfaenaId: subjobId,
-        startDate: todayStr(),
-        notes: "",
-        // Las labores se arman al guardar a partir de estas dos opciones; el
-        // tipo se elige en el form.
-        laborType: "main",
-        withSupervision: false,
-        // Importar desde otro ciclo abierto: arranca apagado. Al activarlo
-        // queda elegido el más reciente, con todas sus labores y días.
-        importCandidates: openCandidates,
-        importEnabled: false,
-        importSourceId: openCandidates[0]?.id || null,
-        importLaborIds: new Set((openCandidates[0]?.labors || []).map((l) => l.id)),
-        importDays: new Set((openCandidates[0]?.days || [])),
-        importCopyDayPrices: false,
-        importMoveWorkdays: false,
-      },
-    }));
-  };
-
-  const openEditCycle = (cycle, jobId) => {
-    const prefix = cyclePrefix(jobId, cycle.subfaenaId);
-    const suffix = cycleLabelSuffix(cycle.label, prefix);
-    setCycleForm(withInitial({
-      mode: "edit",
-      jobId,
-      data: {
-        id: cycle.id,
-        labelSuffix: suffix,
-        subfaenaId: cycle.subfaenaId || "",
-        startDate: cycle.startDate || todayStr(),
-        notes: cycle.notes || "",
-        labors: cycle.labors || defaultLabors(),
-        days: cycle.days || [],
-        status: cycle.status || "open",
-      },
-    }));
-  };
-
-  const openCloseFlow = (cycle, jobId) => {
-    setCloseFlow({ cycle, jobId, askNext: false, copyWorkers: true });
-  };
-
-  const confirmCloseCycle = async () => {
-    if (!closeFlow) return;
-    setBusy(true);
-    try {
-      await cyclesService.update(closeFlow.cycle.id, closedCyclePatch(closeFlow.cycle));
-      setCloseFlow((s) => ({ ...s, askNext: true }));
-      await loadCycles(closeFlow.jobId);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const createNextCycle = async (copy) => {
-    if (!closeFlow) return;
-    setBusy(true);
-    try {
-      const prev = closeFlow.cycle;
-      const cycles = cyclesByJob[closeFlow.jobId] || [];
-      const scope = cycles.filter((c) =>
-        prev.subfaenaId ? c.subfaenaId === prev.subfaenaId : !c.subfaenaId,
-      );
-      const nextNumber = scope.length + 1;
-      const prevLabors = prev.labors || defaultLabors(prev.workers || []);
-      const newLabors = nextCycleLabors(prevLabors, copy, newId);
-      await cyclesService.create({
-        faenaId: closeFlow.jobId,
-        subfaenaId: prev.subfaenaId || null,
-        label: cyclePrefix(closeFlow.jobId, prev.subfaenaId) + `Ciclo ${nextNumber}`,
-        startDate: todayStr(),
-        notes: "",
-        status: "open",
-        // Como al crear desde el form, el ciclo nace con un primer día para
-        // que la grilla tenga una columna.
-        days: [todayStr()],
-        labors: newLabors,
-      });
-      setCloseFlow(null);
-      await loadCycles(closeFlow.jobId);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const doDelete = async () => {
-    if (!confirm) return;
-    setConfirm((c) => ({ ...c, busy: true }));
-    try {
-      try {
-      if (confirm.kind === "faena") {
-        // Sin caché: los bloqueos y el log de diagnóstico salen de datos frescos.
-        cyclesService.invalidate();
-        subjobsService.invalidate();
-        const subjobs = await subjobsService.list({ wheres: [["faenaId", "==", confirm.item.id]] });
-        const cyc = await cyclesService.list({ wheres: [["faenaId", "==", confirm.item.id]] });
-        console.log(`[Faena delete] Faena ${confirm.item.id} (${confirm.item.name})`);
-        console.log(`  Subfaenas asociadas (${subjobs.length}):`, subjobs.map((s) => ({ id: s.id, name: s.name })));
-        console.log(`  Ciclos asociados (${cyc.length}):`, cyc.map((c) => ({ id: c.id, label: c.label, status: c.status, subfaenaId: c.subfaenaId })));
-
-        const blockers = [];
-        if (subjobs.length) blockers.push(`${subjobs.length} subfaena(s): ${subjobs.map((s) => s.name).join(", ")}`);
-        if (cyc.length) blockers.push(`${cyc.length} ciclo(s): ${cyc.map((c) => c.label).join(", ")}`);
-
-        if (blockers.length) {
-          if (!isAdmin) {
-            toast.error(`${blockers.join("\n")}\n\n(Pide a un admin para borrado en cascada)`, { title: "No se puede eliminar" });
-            setConfirm(null);
-            return;
-          }
-          // La cascada se bloquea si alguna jornada ya forma parte de una
-          // nómina: borrarla dejaría la nómina huérfana. Primero hay que
-          // eliminar esas nóminas.
-          const allCycleWds = [];
-          for (const c of cyc) {
-            const wds = await workdaysService.list({ wheres: [["cycleId", "==", c.id]] });
-            allCycleWds.push(...wds);
-          }
-          const taggedPayrollIds = [...new Set(allCycleWds.map((w) => w.payrollId).filter(Boolean))];
-          if (taggedPayrollIds.length > 0) {
-            const payrolls = await Promise.all(
-              taggedPayrollIds.map((id) => payrollsService.getById(id).catch(() => null)),
-            );
-            const names = payrolls
-              .filter(Boolean)
-              .map((p) => `· ${p.name}${p.status === "paid" ? " (pagada)" : ""}`)
-              .join("\n");
-            const taggedCount = allCycleWds.filter((w) => w.payrollId).length;
-            toast.error(
-              `${taggedCount} workday(s) ya forman parte de ${taggedPayrollIds.length} nómina(s):\n` +
-                `${names || "(nómina sin nombre)"}\n\n` +
-                `Elimina primero esas nóminas y vuelve a intentar.`,
-              { title: "No se puede eliminar en cascada" },
-            );
-            setConfirm(null);
-            return;
-          }
-
-          const ok = await askCascadeConfirm(
-            `Bloqueado por:\n - ${blockers.join("\n - ")}\n\n¿Eliminar TODO en cascada (subfaenas + ciclos + producción)?\nRevisa la consola del navegador para ver los IDs.\nEsta acción no se puede deshacer.`,
-          );
-          if (!ok) { setConfirm(null); return; }
-
-          // Reusa las jornadas ya leídas arriba para no volver a leerlas.
-          const wdsByCycle = new Map();
-          for (const w of allCycleWds) {
-            if (!wdsByCycle.has(w.cycleId)) wdsByCycle.set(w.cycleId, []);
-            wdsByCycle.get(w.cycleId).push(w);
-          }
-          for (const c of cyc) {
-            const wds = wdsByCycle.get(c.id) || [];
-            console.log(`  Borrando ciclo ${c.id} (${c.label}) con ${wds.length} workdays`);
-            for (const w of wds) await workdaysService.remove(w.id);
-            await cyclesService.remove(c.id);
-          }
-          for (const s of subjobs) {
-            console.log(`  Borrando subfaena ${s.id} (${s.name})`);
-            await subjobsService.remove(s.id);
-          }
-        }
-
-        console.log(`  Borrando faena ${confirm.item.id}`);
-        await jobsService.remove(confirm.item.id);
-        persistOrder(order.filter((id) => id !== confirm.item.id));
-        if (selectedId === confirm.item.id) setSelectedId(null);
-        await loadJobs();
-      } else if (confirm.kind === "sub") {
-        await subjobsService.remove(confirm.item.id);
-        await loadSubjobs(confirm.item.faenaId);
-      } else if (confirm.kind === "cycle") {
-        try {
-          const wds = await workdaysService.list({
-            wheres: [["cycleId", "==", confirm.item.id]],
-          });
-          if (wds.length) {
-            // Antes de proponer la cascada, bloquea si alguna jornada tiene
-            // `payrollId`: borrar el ciclo dejaría los `workdayIds` de la
-            // nómina apuntando a docs inexistentes, y borrarla, revertirla o
-            // marcarla pagada fallaría. Primero hay que eliminar esas nóminas.
-            const taggedPayrollIds = [...new Set(wds.map((w) => w.payrollId).filter(Boolean))];
-            if (taggedPayrollIds.length > 0) {
-              const payrolls = await Promise.all(
-                taggedPayrollIds.map((id) => payrollsService.getById(id).catch(() => null)),
-              );
-              const names = payrolls
-                .filter(Boolean)
-                .map((p) => `· ${p.name}${p.status === "paid" ? " (pagada)" : ""}`)
-                .join("\n");
-              const taggedCount = wds.filter((w) => w.payrollId).length;
-              toast.error(
-                `${taggedCount} workday(s) ya forman parte de ${taggedPayrollIds.length} nómina(s):\n` +
-                  `${names || "(nómina sin nombre)"}\n\n` +
-                  `Elimina primero esas nóminas y vuelve a intentar.`,
-                { title: `No se puede eliminar el ciclo "${confirm.item.label}"` },
-              );
-              setConfirm(null);
-              return;
-            }
-            if (isAdmin) {
-              const ok = await askCascadeConfirm(
-                `El ciclo "${confirm.item.label}" tiene ${wds.length} registro(s) de producción.\n\n¿Eliminar TODO en cascada (producción + ciclo)?\nEsta acción no se puede deshacer.`,
-              );
-              if (!ok) {
-                setConfirm(null);
-                return;
-              }
-              for (const w of wds) await workdaysService.remove(w.id);
-            } else {
-              toast.error(
-                `El ciclo tiene ${wds.length} registro(s) de producción. (Pide a un admin para cascada)`,
-                { title: "No se puede eliminar" },
-              );
-              setConfirm(null);
-              return;
-            }
-          }
-          await cyclesService.remove(confirm.item.id);
-          cyclesService.invalidate();
-          await loadCycles(confirm.item.faenaId);
-        } catch (err) {
-          console.error("Error eliminando ciclo:", err);
-          toast.error(`Error al eliminar ciclo: ${err?.message || err}`);
-          setConfirm(null);
-          return;
-        }
-      }
-      setConfirm(null);
-      } catch (err) {
-        console.error("Error en eliminación:", err);
-        toast.error(`${err?.message || err}\nRevisa la consola para ver el detalle.`, { title: "Error al eliminar" });
-        setConfirm(null);
-      }
-    } finally {
-      setConfirm((c) => (c ? { ...c, busy: false } : null));
-    }
-  };
+  const {
+    cascadeConfirm,
+    confirm,
+    doDelete,
+    setCascadeConfirm,
+    setConfirm,
+  } = useJobDeletion({
+    isAdmin,
+    loadCycles,
+    loadJobs,
+    loadSubjobs,
+    order,
+    persistOrder,
+    selectedId,
+    setSelectedId,
+    toast,
+  });
 
   const selected = jobs.find((f) => f.id === selectedId);
   const selectedSubjobs = selectedId ? subjobsByJob[selectedId] : null;
