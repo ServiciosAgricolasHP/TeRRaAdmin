@@ -60,36 +60,34 @@ export default function InfoAccounts() {
       // Dos rAF para asegurar que el nodo off-screen ya está en layout.
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       if (cancelled || !imageRef.current) return;
+      const node = imageRef.current;
+      const download = async () => {
+        const dataUrl = await captureFullWidthDataUrl(node, { pixelRatio: 2, cacheBust: true });
+        const a = document.createElement("a");
+        a.download = `ficha_${(imageExport.card.name || "ficha").replace(/\s+/g, "_")}.png`;
+        a.href = dataUrl;
+        a.click();
+        toast.success("Imagen descargada");
+      };
+      const copyToClipboard = async () => {
+        const blob = await captureFullWidthBlob(node, { pixelRatio: 2, cacheBust: true });
+        if (!blob) throw new Error("blob vacío");
+        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+        toast.success("Imagen copiada al portapapeles");
+      };
       try {
         const canCopyImage =
           typeof ClipboardItem !== "undefined" &&
           navigator.clipboard &&
           typeof navigator.clipboard.write === "function";
-        if (canCopyImage) {
-          const blob = await captureFullWidthBlob(imageRef.current, { pixelRatio: 2, cacheBust: true });
-          if (!blob) throw new Error("blob vacío");
-          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-          toast.success("Imagen copiada al portapapeles");
+        if (!canCopyImage) {
+          await download();
         } else {
-          const dataUrl = await captureFullWidthDataUrl(imageRef.current, { pixelRatio: 2, cacheBust: true });
-          const a = document.createElement("a");
-          a.download = `ficha_${(imageExport.card.name || "ficha").replace(/\s+/g, "_")}.png`;
-          a.href = dataUrl;
-          a.click();
-          toast.success("Imagen descargada");
+          // Si copiar falla, descarga.
+          await copyToClipboard().catch(download);
         }
       } catch {
-        // Si copiar falla, intenta descargar.
-        try {
-          const dataUrl = await captureFullWidthDataUrl(imageRef.current, { pixelRatio: 2, cacheBust: true });
-          const a = document.createElement("a");
-          a.download = `ficha_${(imageExport.card.name || "ficha").replace(/\s+/g, "_")}.png`;
-          a.href = dataUrl;
-          a.click();
-          toast.success("Imagen descargada");
-        } catch {
-          toast.error("No se pudo generar la imagen");
-        }
+        toast.error("No se pudo generar la imagen");
       } finally {
         if (!cancelled) setImageExport(null);
       }
