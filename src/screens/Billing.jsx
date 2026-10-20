@@ -4,8 +4,7 @@
 // La emisión se hace en el portal del SII. Aquí solo se importa el RCV
 // mensual y se gestiona el estado de pago de cada factura.
 
-import React, { useState, useRef, useEffect, useMemo } from "react";
-import { captureFullWidthBlob, captureFullWidthDataUrl } from "../utils/imageCapture";
+import React, { useState, useEffect, useMemo } from "react";
 import { serverTimestamp } from "firebase/firestore";
 import { auth } from "../firebase";
 import { companiesService, dteDocumentsService, costCentersService, informalExpensesService } from "../services";
@@ -17,7 +16,6 @@ import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useIsMobile } from "../hooks/useIsMobile";
 import {
-  CREDIT_NOTE_TYPES,
   DEFAULT_PROJECTION_PERCENT,
 } from "../utils/cashFlowProjection";
 import { fmtCurrency, fmtNumber } from "../utils/format";
@@ -36,28 +34,23 @@ import {
 } from "../utils/billingDocs";
 import { CompaniesModal } from "./billing/CompaniesModal";
 import { CompanySelectAndPickModal } from "./billing/CompanySelectAndPickModal";
-import { CostCenterSelect } from "./billing/CostCenterSelect";
 import { CostCentersModal } from "./billing/CostCentersModal";
 import { DocDetailModal } from "./billing/DocDetailModal";
 import {
   PAYMENT_STATUSES,
-  kindTitleLabel,
-  formatPeriodPretty,
-  CREDIT_NOTE_STATE,
   groupDocsByCostCenter,
   currentPeriod,
 } from "./billing/docs";
 import { ImportPreviewModal } from "./billing/ImportPreviewModal";
-import { OtherTaxChip } from "./billing/OtherTaxChip";
-import { PaymentStatusSelect } from "./billing/PaymentStatusSelect";
 import { ReceivablesModal } from "./billing/ReceivablesModal";
-import { PrintableDocList } from "./billing/PrintableDocList";
 import { SortHeader } from "./billing/SortHeader";
 import { SummaryCard } from "./billing/SummaryCard";
-import { writeDocListXlsx } from "./billing/writeDocListXlsx";
 import { AnnualSummaryTab } from "./billing/AnnualSummaryTab";
 import { ProjectionTab } from "./billing/ProjectionTab";
 import { WithholdingsTab } from "./billing/WithholdingsTab";
+import { DocCard } from "./billing/DocCard";
+import { DocTableRow } from "./billing/DocTableRow";
+import { DocListToolbar } from "./billing/DocListToolbar";
 
 // Los tipos de DTE que restan (notas de crédito) viven en
 // `utils/cashFlowProjection` junto con la proyección, que necesita el mismo
@@ -113,9 +106,6 @@ export default function Billing() {
   // Modal de detalle: muestra todos los campos del DTE + notas editables.
   // Se abre al click en el botón ℹ de cada fila.
   const [detailDoc, setDetailDoc] = useState(null);
-  // Printable del listado, fuera de pantalla, para html-to-image e impresión.
-  const docListPrintRef = useRef(null);
-  const [docListBusy, setDocListBusy] = useState("");
   // Año de la pestaña "Resumen", con selector propio, independiente del filtro
   // de mes (que ahí no aplica: el resumen cruza los 12 meses del año elegido).
   const [summaryYear, setSummaryYear] = useState(() => String(new Date().getFullYear()));
@@ -419,78 +409,10 @@ export default function Billing() {
 
 
 
-  // ===== Export del listado de Facturas / Compras (vista no-retenciones) =====
-  // Mismo patrón que Retenciones: el printable se renderiza fuera de pantalla
-  // con los mismos datos filtrados y ordenados que la tabla.
-  const docListFileBase = useMemo(() => {
-    const alias = (selectedCompany?.alias || selectedCompany?.razonSocial || "empresa").replace(/[^\w-]+/g, "_");
-    const kindLabel = kindTab === "venta" ? "Ventas-Facturas" : "Compras";
-    const period = periodFilter || "todos";
-    return `${kindLabel}_${alias}_${period}`;
-  }, [selectedCompany, kindTab, periodFilter]);
 
-  const handleDocListCopy = async () => {
-    if (!docListPrintRef.current) return;
-    setDocListBusy("copy");
-    try {
-      const blob = await captureFullWidthBlob(docListPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada al portapapeles");
-    } catch (err) {
-      toast.error("Error al copiar: " + (err.message || err));
-    } finally {
-      setDocListBusy("");
-    }
-  };
 
-  const handleDocListPng = async () => {
-    if (!docListPrintRef.current) return;
-    setDocListBusy("png");
-    try {
-      const dataUrl = await captureFullWidthDataUrl(docListPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
-      const link = document.createElement("a");
-      link.download = `${docListFileBase}.png`;
-      link.href = dataUrl;
-      link.click();
-    } catch (err) {
-      toast.error("Error al generar PNG: " + (err.message || err));
-    } finally {
-      setDocListBusy("");
-    }
-  };
 
-  const handleDocListPrint = () => {
-    if (!docListPrintRef.current) return;
-    const html = docListPrintRef.current.outerHTML;
-    const win = window.open("", "_blank", "width=1000,height=700");
-    if (!win) { toast.warning("Permite las ventanas emergentes para imprimir."); return; }
-    const titleLabel = `${kindTitleLabel(kindTab)} — ${selectedCompany?.alias || selectedCompany?.razonSocial || ""} — ${formatPeriodPretty(periodFilter)}`;
-    win.document.write(`<!DOCTYPE html><html><head><title>${titleLabel}</title>
-      <style>
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #999; padding: 5px 7px; font-size: 11px; }
-        thead th { background: #92d050 !important; text-align: left; }
-        @media print { @page { size: landscape; margin: 10mm; } }
-      </style>
-    </head><body>${html}</body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); }, 250);
-  };
 
-  const handleDocListXlsx = async () => {
-    setDocListBusy("xlsx");
-    try {
-      await writeDocListXlsx({ costCentersById, docListFileBase, groupByCostCenter, kindTab, periodFilter, selectedCompany, sortedFiltered, totals });
-    } catch (err) {
-      toast.error("Error al generar XLSX: " + (err.message || err));
-    } finally {
-      setDocListBusy("");
-    }
-  };
 
   return (
     <div className="flex h-full flex-col">
@@ -733,169 +655,35 @@ export default function Billing() {
         />
       ) : (
         <>
-          {/* Toolbar de export para Facturas / Compras (mismo patrón que
-              Retenciones). Captura el listado tal cual está filtrado y ordenado. */}
-          <div className="mb-2 flex flex-wrap gap-1">
-            <button
-              onClick={handleDocListCopy}
-              disabled={docListBusy === "copy" || sortedFiltered.length === 0}
-              className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
-              title="Copiar tabla como imagen"
-            >
-              {docListBusy === "copy" ? "Copiando..." : "📋 Copiar"}
-            </button>
-            <button
-              onClick={handleDocListPng}
-              disabled={docListBusy === "png" || sortedFiltered.length === 0}
-              className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
-              title="Descargar como PNG"
-            >
-              {docListBusy === "png" ? "..." : "📥 PNG"}
-            </button>
-            <button
-              onClick={handleDocListPrint}
-              disabled={sortedFiltered.length === 0}
-              className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
-              title="Imprimir"
-            >
-              🖨 Imprimir
-            </button>
-            <button
-              onClick={handleDocListXlsx}
-              disabled={docListBusy === "xlsx" || sortedFiltered.length === 0}
-              className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
-              title="Exportar XLSX"
-            >
-              {docListBusy === "xlsx" ? "..." : "📊 XLSX"}
-            </button>
-            <button
-              onClick={() => setGroupByCostCenter((v) => !v)}
-              className={`min-h-[32px] rounded-md border px-2 py-1 text-xs ${
-                groupByCostCenter
-                  ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-                  : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
-              }`}
-              title={groupByCostCenter
-                ? "Esta tabla y su exportación están agrupadas por centro de costo (combustibles juntos, resto por proveedor). Click para volver a la vista plana."
-                : "Agrupar ESTA tabla y su exportación por centro de costo: combustibles como un grupo aparte y el resto por proveedor."}
-            >
-              {groupByCostCenter ? "🗂 Agrupar tabla por centro · ON" : "🗂 Agrupar tabla por centro"}
-            </button>
-            <button
-              onClick={() => setCostCentersModalOpen(true)}
-              className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
-              title="Abrir el panel de centros de costo: crear/editar/eliminar categorías y ver todos sus documentos, de todas las empresas y períodos"
-            >
-              🏷 Gestionar centros de costo
-            </button>
-          </div>
-
-          {/* Printable fuera de pantalla para html-to-image e impresión. */}
-          <div style={{ position: "absolute", left: -99999, top: 0, pointerEvents: "none" }} aria-hidden>
-            <PrintableDocList
-              ref={docListPrintRef}
-              kind={kindTab}
-              docs={sortedFiltered}
-              company={selectedCompany}
-              periodo={periodFilter}
-              totals={totals}
-              groupByCostCenter={groupByCostCenter}
-              costCentersById={costCentersById}
-              showEstado={kindTab === "venta"}
-            />
-          </div>
+          <DocListToolbar
+            costCentersById={costCentersById}
+            groupByCostCenter={groupByCostCenter}
+            kindTab={kindTab}
+            periodFilter={periodFilter}
+            selectedCompany={selectedCompany}
+            setCostCentersModalOpen={setCostCentersModalOpen}
+            setGroupByCostCenter={setGroupByCostCenter}
+            sortedFiltered={sortedFiltered}
+            toast={toast}
+            totals={totals}
+          />
 
         {isMobile ? (
           <div className="divide-y divide-[var(--color-border)] rounded-md border border-[var(--color-border)]">
             {(() => {
-              const renderDocCard = (d) => {
-                const razon = kindTab === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
-                const rut = kindTab === "venta" ? d.rutReceptor : d.rutEmisor;
-                const isNC = CREDIT_NOTE_TYPES.has(Number(d.tipo));
-                const isFuel = d.otroImpuestoCategory === "combustible";
-                const st = d.paymentStatus || "unpaid";
-                const hasNotes = !!(d.notes && d.notes.trim());
-                const pays = Array.isArray(d.payments) ? d.payments : [];
-                const paid = Number(d.amountPaid) || pays.reduce((s, p) => s + (Number(p.amount) || 0), 0);
-                const bal = (Number(d.total) || 0) - paid;
-                const fullyPaid = bal <= 0.01;
-                return (
-                  <div key={d.id} className="px-3 py-2.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-1.5 text-xs text-[var(--color-muted)]">
-                          <span className="font-mono">{d.fechaEmision}</span>
-                          <span className={isNC ? "rounded px-1.5 py-0.5 bg-[var(--color-danger-soft)] text-[var(--color-danger)]" : ""}>
-                            {d.tipoLabel || dteTypeLabel(d.tipo)}
-                          </span>
-                          <OtherTaxChip code={d.otroImpuestoCodigo} tasa={d.retencionTasa} />
-                          <span className="font-mono">· Folio {d.folio}</span>
-                        </div>
-                        <div className="mt-0.5 truncate text-sm font-medium">{razon || "—"}</div>
-                        <div className="font-mono text-[10px] text-[var(--color-muted)]">{formatRutForDisplay(rut)}</div>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <div className={`text-sm font-semibold tabular-nums ${isNC ? "text-[var(--color-danger)]" : ""}`}>
-                          {isNC ? "−" : ""}{fmtCurrency(d.total)}
-                        </div>
-                        <div className="text-[10px] tabular-nums text-[var(--color-muted)]">
-                          N {isNC ? "−" : ""}{fmtCurrency(d.neto)} · IVA {isNC ? "−" : ""}{fmtCurrency(d.iva)}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      {!isNC && paid > 0 && (
-                        <span className={`text-[10px] ${fullyPaid ? "text-[var(--color-success)]" : "text-[var(--color-warning)]"}`}>
-                          {fullyPaid ? `✓ Pagado (${pays.length})` : `Abono ${fmtCurrency(paid)} · Saldo ${fmtCurrency(bal)}`}
-                        </span>
-                      )}
-                      {isFuel ? (
-                        <span
-                          title="Agrupado automáticamente como Combustible (código SII de otro impuesto)"
-                          className="rounded-full bg-[var(--color-warning-soft)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-warning)]"
-                        >
-                          ⛽ auto
-                        </span>
-                      ) : (
-                        <CostCenterSelect
-                          value={d.costCenterId || ""}
-                          costCenters={costCenters}
-                          onChange={(next) => saveDocCostCenter(d, next)}
-                        />
-                      )}
-                      {kindTab === "venta" && (
-                        isNC ? (
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${CREDIT_NOTE_STATE.chip}`}>
-                            {CREDIT_NOTE_STATE.label}
-                          </span>
-                        ) : (
-                          <>
-                            <PaymentStatusSelect value={st} onChange={(next) => setPaymentStatus(d, next)} />
-                            {cancellingByDocId.has(d.id) && st !== "cancelled" && (
-                              <button
-                                onClick={() => setDetailDoc(d)}
-                                title={`Posible NC anula esta factura (${cancellingByDocId.get(d.id).length} candidata${cancellingByDocId.get(d.id).length === 1 ? "" : "s"}). Click para revisar.`}
-                                className="rounded-full bg-[var(--color-danger-soft)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-danger)] hover:opacity-80"
-                              >
-                                ⚠ NC?
-                              </button>
-                            )}
-                          </>
-                        )
-                      )}
-                      <button
-                        onClick={() => setDetailDoc(d)}
-                        title={hasNotes ? "Ver detalle (tiene notas)" : "Ver detalle / agregar notas"}
-                        className="ml-auto min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
-                      >
-                        {hasNotes ? "📝 Detalle" : "ℹ Detalle"}
-                      </button>
-                    </div>
-                  </div>
-                );
-              };
 
-              if (!groupByCostCenter) return pagedDocs.map(renderDocCard);
+              if (!groupByCostCenter) return pagedDocs.map((d) => (
+                <DocCard
+                  key={d.id}
+                  d={d}
+                  cancellingByDocId={cancellingByDocId}
+                  costCenters={costCenters}
+                  kindTab={kindTab}
+                  saveDocCostCenter={saveDocCostCenter}
+                  setDetailDoc={setDetailDoc}
+                  setPaymentStatus={setPaymentStatus}
+                />
+              ));
 
               const groups = groupDocsByCostCenter(sortedFiltered, kindTab, costCentersById);
               return groups.map((g) => (
@@ -916,7 +704,18 @@ export default function Billing() {
                     <span className="ml-2 font-normal text-[var(--color-muted)]">· {g.docs.length} documento{g.docs.length === 1 ? "" : "s"}</span>
                   </div>
                   <div className="divide-y divide-[var(--color-border)]">
-                    {g.docs.map(renderDocCard)}
+                    {g.docs.map((d) => (
+                      <DocCard
+                        key={d.id}
+                        d={d}
+                        cancellingByDocId={cancellingByDocId}
+                        costCenters={costCenters}
+                        kindTab={kindTab}
+                        saveDocCostCenter={saveDocCostCenter}
+                        setDetailDoc={setDetailDoc}
+                        setPaymentStatus={setPaymentStatus}
+                      />
+                    ))}
                   </div>
                   <div className="flex flex-wrap justify-between gap-2 bg-[var(--color-surface-2)] px-3 py-1.5 text-xs font-semibold">
                     <span>Subtotal</span>
@@ -949,107 +748,19 @@ export default function Billing() {
             </thead>
             <tbody>
               {(() => {
-                const renderDocRow = (d) => {
-                const razon = kindTab === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
-                const rut = kindTab === "venta" ? d.rutReceptor : d.rutEmisor;
-                const isNC = CREDIT_NOTE_TYPES.has(Number(d.tipo));
-                const isFuel = d.otroImpuestoCategory === "combustible";
-                const st = d.paymentStatus || "unpaid";
-                const hasNotes = !!(d.notes && d.notes.trim());
-                return (
-                  <tr key={d.id} className="border-t border-[var(--color-border)] hover:bg-[var(--color-surface-2)]">
-                    <td className="px-2 py-1.5 font-mono text-xs">{d.fechaEmision}</td>
-                    <td className="px-2 py-1.5 text-xs">
-                      <span className={isNC ? "rounded px-1.5 py-0.5 bg-[var(--color-danger-soft)] text-[var(--color-danger)]" : ""}>
-                        {d.tipoLabel || dteTypeLabel(d.tipo)}
-                      </span>
-                      <OtherTaxChip code={d.otroImpuestoCodigo} tasa={d.retencionTasa} />
-                    </td>
-                    <td className="px-2 py-1.5 text-right font-mono tabular-nums">{d.folio}</td>
-                    <td className="px-2 py-1.5 truncate max-w-[260px]">{razon || "—"}</td>
-                    <td className="px-2 py-1.5 font-mono text-xs">{formatRutForDisplay(rut)}</td>
-                    <td className={`px-2 py-1.5 text-right tabular-nums ${isNC ? "text-[var(--color-danger)]" : ""}`}>
-                      {isNC ? "−" : ""}{fmtCurrency(d.neto)}
-                    </td>
-                    <td className={`px-2 py-1.5 text-right tabular-nums ${isNC ? "text-[var(--color-danger)]" : ""}`}>
-                      {isNC ? "−" : ""}{fmtCurrency(d.iva)}
-                    </td>
-                    <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${isNC ? "text-[var(--color-danger)]" : ""}`}>
-                      {isNC ? "−" : ""}{fmtCurrency(d.total)}
-                    </td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">
-                      {(() => {
-                        if (isNC) return <span className="text-[var(--color-muted)]">—</span>;
-                        const pays = Array.isArray(d.payments) ? d.payments : [];
-                        const paid = Number(d.amountPaid) || pays.reduce((s, p) => s + (Number(p.amount) || 0), 0);
-                        if (paid <= 0) return <span className="text-[var(--color-muted)]">—</span>;
-                        const bal = (Number(d.total) || 0) - paid;
-                        const full = bal <= 0.01;
-                        return (
-                          <div className="flex flex-col items-end leading-tight">
-                            <span>{fmtCurrency(paid)}</span>
-                            <span className={`text-[10px] ${full ? "text-[var(--color-success)]" : "text-[var(--color-warning)]"}`}>
-                              {full ? `✓ ${pays.length} abono${pays.length === 1 ? "" : "s"}` : `Saldo ${fmtCurrency(bal)}`}
-                            </span>
-                          </div>
-                        );
-                      })()}
-                    </td>
-                    <td className="px-2 py-1.5">
-                      {isFuel ? (
-                        <span
-                          title="Agrupado automáticamente como Combustible (código SII de otro impuesto)"
-                          className="rounded-full bg-[var(--color-warning-soft)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-warning)]"
-                        >
-                          ⛽ auto
-                        </span>
-                      ) : (
-                        <CostCenterSelect
-                          value={d.costCenterId || ""}
-                          costCenters={costCenters}
-                          onChange={(next) => saveDocCostCenter(d, next)}
-                        />
-                      )}
-                    </td>
-                    {kindTab === "venta" && (
-                      <td className="px-2 py-1.5 text-center">
-                        {isNC ? (
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${CREDIT_NOTE_STATE.chip}`}>
-                            {CREDIT_NOTE_STATE.label}
-                          </span>
-                        ) : (
-                          <div className="flex items-center justify-center gap-1">
-                            <PaymentStatusSelect
-                              value={st}
-                              onChange={(next) => setPaymentStatus(d, next)}
-                            />
-                            {cancellingByDocId.has(d.id) && st !== "cancelled" && (
-                              <button
-                                onClick={() => setDetailDoc(d)}
-                                title={`Posible NC anula esta factura (${cancellingByDocId.get(d.id).length} candidata${cancellingByDocId.get(d.id).length === 1 ? "" : "s"}). Click para revisar.`}
-                                className="rounded-full bg-[var(--color-danger-soft)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--color-danger)] hover:opacity-80"
-                              >
-                                ⚠ NC?
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                    )}
-                    <td className="px-2 py-1.5 text-center">
-                      <button
-                        onClick={() => setDetailDoc(d)}
-                        title={hasNotes ? "Ver detalle (tiene notas)" : "Ver detalle / agregar notas"}
-                        className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-1.5 py-0.5 text-[10px] hover:bg-[var(--color-accent-soft)]"
-                      >
-                        {hasNotes ? "📝" : "ℹ"}
-                      </button>
-                    </td>
-                  </tr>
-                );
-                };
 
-                if (!groupByCostCenter) return pagedDocs.map(renderDocRow);
+                if (!groupByCostCenter) return pagedDocs.map((d) => (
+                  <DocTableRow
+                    key={d.id}
+                    d={d}
+                    cancellingByDocId={cancellingByDocId}
+                    costCenters={costCenters}
+                    kindTab={kindTab}
+                    saveDocCostCenter={saveDocCostCenter}
+                    setDetailDoc={setDetailDoc}
+                    setPaymentStatus={setPaymentStatus}
+                  />
+                ));
 
                 const totalCols = kindTab === "venta" ? 12 : 11;
                 const groups = groupDocsByCostCenter(sortedFiltered, kindTab, costCentersById);
@@ -1072,7 +783,18 @@ export default function Billing() {
                         <span className="ml-2 font-normal text-[var(--color-muted)]">· {g.docs.length} documento{g.docs.length === 1 ? "" : "s"}</span>
                       </td>
                     </tr>
-                    {g.docs.map(renderDocRow)}
+                    {g.docs.map((d) => (
+                      <DocTableRow
+                        key={d.id}
+                        d={d}
+                        cancellingByDocId={cancellingByDocId}
+                        costCenters={costCenters}
+                        kindTab={kindTab}
+                        saveDocCostCenter={saveDocCostCenter}
+                        setDetailDoc={setDetailDoc}
+                        setPaymentStatus={setPaymentStatus}
+                      />
+                    ))}
                     <tr className="border-t border-[var(--color-border)] bg-[var(--color-surface-2)] text-xs font-semibold">
                       <td colSpan={5} className="px-2 py-1.5">Subtotal</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(g.neto)}</td>
