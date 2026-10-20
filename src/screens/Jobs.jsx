@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef, useMemo, Fragment } from "react";
+import { useState, useEffect, useRef, Fragment } from "react";
 import { useSearchParams } from "react-router-dom";
 import { jobsService, subjobsService, cyclesService, workdaysService } from "../services";
 import { payrollsService } from "../services/payrollsService";
-import { defaultLayout, userPrefsService, normalizeLayout, UNGROUPED_ID } from "../services/userPrefsService";
+import { UNGROUPED_ID } from "../services/userPrefsService";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import Modal, { ModalCloseButton } from "../components/Modal";
@@ -10,8 +10,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import TextField from "../components/TextField";
 import Select from "../components/Select";
 import { useIsMobile } from "../hooks/useIsMobile";
-import { initialLaborPlan, LABOR_TYPES } from "../utils/laborTypes";
-import { localIsoDate } from "../utils/dates";
+import { LABOR_TYPES } from "../utils/laborTypes";
 import { closedCyclePatch } from "../utils/cycleClosing";
 import { cloneLabors, cycleLabelSuffix, importCandidatesOf, importedDayPrices, movedWorkday, nextCycleLabors } from "../utils/cycleCreation";
 import { toTitleName, unshout } from "../utils/textCase";
@@ -20,10 +19,10 @@ import { ColorPickerButton } from "./jobs/ColorPickerButton";
 import { GroupHeader } from "./jobs/GroupHeader";
 import { ImportSection } from "./jobs/ImportSection";
 import { SelectedDetail } from "./jobs/SelectedDetail";
-
-// Un formulario de faena, subfaena o ciclo con una copia de cómo se abrió
-// (`initial`), para avisar si se cierra con cambios sin guardar.
-const withInitial = (form) => ({ ...form, initial: form.data });
+import { defaultLabors, newId, todayStr, withInitial } from "./jobs/helpers";
+import { useJobsData } from "./jobs/useJobsData";
+import { useJobLayout } from "./jobs/useJobLayout";
+import { useSubjobDisplay } from "./jobs/useSubjobDisplay";
 
 // En el alta de un ciclo, lo que se ofrece para importar no es un dato del
 // formulario.
@@ -33,47 +32,12 @@ const emptyJob = { name: "", location: "", notes: "" };
 
 const emptySubjob = { name: "", notes: "" };
 
-const orderKey = (uid) => `af.faenaOrder.${uid || "anon"}`;
-
-const todayStr = () => localIsoDate();
-
-const newId = () => (crypto?.randomUUID?.() || `id_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`);
-
-function applyOrder(items, order) {
-  if (!order?.length) return items;
-  const idx = new Map(order.map((id, i) => [id, i]));
-  return [...items].sort((a, b) => {
-    const ai = idx.has(a.id) ? idx.get(a.id) : Number.MAX_SAFE_INTEGER;
-    const bi = idx.has(b.id) ? idx.get(b.id) : Number.MAX_SAFE_INTEGER;
-    if (ai !== bi) return ai - bi;
-    return a.name.localeCompare(b.name);
-  });
-}
-
-// Los trabajadores van solo en la primera labor: la de supervisión arranca
-// vacía (la supervisa otra gente, no la misma cuadrilla).
-function defaultLabors(workers = [], opts = {}) {
-  return initialLaborPlan(opts).map((l, i) => ({
-    ...l,
-    id: newId(),
-    workers: i === 0 ? workers : [],
-  }));
-}
-
 export default function Jobs() {
   const toast = useToast();
   const isMobile = useIsMobile();
   const { user, isAdmin } = useAuth();
-  const storageKey = orderKey(user?.uid);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [rawJobs, setRawJobs] = useState([]);
-  const [order, setOrder] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(storageKey) || "[]"); } catch { return []; }
-  });
-  const [subjobsByJob, setSubjobsByJob] = useState({});
-  const [cyclesByJob, setCyclesByJob] = useState({});
-  const [loading, setLoading] = useState(true);
   const [selectedId, setSelectedId] = useState(() => searchParams.get("selected"));
 
   // Sincroniza selectedId con el parámetro `selected` de la URL (enlaces del breadcrumb de CycleDetail).
@@ -108,205 +72,57 @@ export default function Jobs() {
     new Promise((resolve) => setCascadeConfirm({ message, resolve }));
   const [busy, setBusy] = useState(false);
 
-  const [dragId, setDragId] = useState(null);
-  const [dropOverId, setDropOverId] = useState(null);
-  const [dropOverGroupId, setDropOverGroupId] = useState(null);
+  const {
+    cyclesByJob,
+    jobs,
+    loadCycles,
+    loading,
+    loadJobs,
+    loadSubjobs,
+    order,
+    persistOrder,
+    subjobsByJob,
+  } = useJobsData({ selectedId, user });
 
-  // ---------------- Subfaenas plegadas / ciclos cerrados ----------------
-  // Guardado por usuario en localStorage. Las subfaenas arrancan expandidas;
-  // los ciclos cerrados, ocultos cuando hay abiertos al lado (se muestran
-  // con "Ver N cerrados").
-  const collapsedSubjobsKey = `af.collapsedSubs.${user?.uid || "anon"}`;
-  const [collapsedSubjobs, setCollapsedSubjobs] = useState(() => {
-    try { return new Set(JSON.parse(localStorage.getItem(collapsedSubjobsKey) || "[]")); } catch { return new Set(); }
+  const {
+    addGroup,
+    collapsedGroups,
+    colorOf,
+    dragId,
+    dropOverGroupId,
+    dropOverId,
+    editLayout,
+    jobsByGroup,
+    layout,
+    onDragEnd,
+    onDragLeave,
+    onDragOver,
+    onDragStart,
+    onDrop,
+    onGroupDragOver,
+    onGroupDrop,
+    removeGroup,
+    setDropOverGroupId,
+    setEditLayout,
+    setJobCardColor,
+    toggleGroupCollapsed,
+    updateGroup,
+  } = useJobLayout({ jobs, persistOrder, toast, user });
+
+  const {
+    collapsedSubjobs,
+    setCollapsedSubjobs,
+    showClosedInSubjob,
+    toggleHideSubjob,
+    toggleShowClosed,
+    toggleSubjobCollapse,
+  } = useSubjobDisplay({
+    loadSubjobs,
+    selectedId,
+    subjobsByJob,
+    toast,
+    user,
   });
-  useEffect(() => {
-    try { localStorage.setItem(collapsedSubjobsKey, JSON.stringify([...collapsedSubjobs])); } catch { /* noop */ }
-  }, [collapsedSubjobs, collapsedSubjobsKey]);
-
-  const showClosedKey = `af.showClosedInSub.${user?.uid || "anon"}`;
-  const [showClosedInSubjob, setShowClosedInSubjob] = useState(() => {
-    try { return new Set(JSON.parse(localStorage.getItem(showClosedKey) || "[]")); } catch { return new Set(); }
-  });
-  useEffect(() => {
-    try { localStorage.setItem(showClosedKey, JSON.stringify([...showClosedInSubjob])); } catch { /* noop */ }
-  }, [showClosedInSubjob, showClosedKey]);
-
-  const toggleSubjobCollapse = (subjobId) => {
-    setCollapsedSubjobs((prev) => {
-      const n = new Set(prev);
-      if (n.has(subjobId)) n.delete(subjobId); else n.add(subjobId);
-      return n;
-    });
-  };
-
-  // Subfaenas ocultas (`hidden`) que ya se plegaron solas en esta sesión. Se
-  // pliegan una vez por sesión: si el usuario expande una, queda expandida
-  // hasta recargar la página.
-  const processedHiddenRef = useRef(new Set());
-  const toggleShowClosed = (subjobId) => {
-    setShowClosedInSubjob((prev) => {
-      const n = new Set(prev);
-      if (n.has(subjobId)) n.delete(subjobId); else n.add(subjobId);
-      return n;
-    });
-  };
-
-  // ---------------- Distribución (grupos y colores por usuario) ----------------
-  const [layout, setLayout] = useState(defaultLayout);
-  const [editLayout, setEditLayout] = useState(false);
-  const layoutSaveTimer = useRef(null);
-  // Grupos plegados, guardados en el dispositivo (localStorage): la
-  // distribución viaja con el usuario, pero plegar es una preferencia visual
-  // del momento.
-  const [collapsedGroups, setCollapsedGroups] = useState(() => {
-    try {
-      const raw = localStorage.getItem("faenas.collapsedGroups");
-      return new Set(raw ? JSON.parse(raw) : []);
-    } catch {
-      return new Set();
-    }
-  });
-  const toggleGroupCollapsed = (gid) => {
-    setCollapsedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(gid)) next.delete(gid);
-      else next.add(gid);
-      try { localStorage.setItem("faenas.collapsedGroups", JSON.stringify([...next])); } catch { /* noop */ }
-      return next;
-    });
-  };
-
-  useEffect(() => {
-    if (!user?.uid) return;
-    (async () => {
-      const saved = await userPrefsService.getLayout(user.uid);
-      setLayout(normalizeLayout(saved));
-    })();
-  }, [user?.uid]);
-
-  // Actualiza el estado y guarda en las preferencias del usuario tras 400 ms sin cambios.
-  const persistLayout = (next) => {
-    setLayout(next);
-    if (!user?.uid) return;
-    if (layoutSaveTimer.current) clearTimeout(layoutSaveTimer.current);
-    layoutSaveTimer.current = setTimeout(() => {
-      userPrefsService.saveLayout(user.uid, next).catch((err) => {
-        console.error("[layout] save:", err);
-        toast.error("No se pudo guardar la distribución.");
-      });
-    }, 400);
-  };
-
-  const jobs = useMemo(() => applyOrder(rawJobs, order), [rawJobs, order]);
-
-  // Faenas por grupo
-  const jobsByGroup = useMemo(() => {
-    const out = {};
-    for (const g of layout.groups) out[g.id] = [];
-    for (const f of jobs) {
-      const gid = layout.faenaGroup[f.id] && out[layout.faenaGroup[f.id]] ? layout.faenaGroup[f.id] : UNGROUPED_ID;
-      out[gid].push(f);
-    }
-    return out;
-  }, [jobs, layout]);
-
-  const persistOrder = (next) => {
-    setOrder(next);
-    try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch (e) { void e; }
-  };
-
-  const loadJobs = async () => {
-    setLoading(true);
-    try {
-      const list = await jobsService.list({
-        order: ["name", "asc"],
-        cache: true,
-        persist: true,
-        ttl: 10 * 60 * 1000,
-      });
-      setRawJobs(list);
-      const ids = list.map((f) => f.id);
-      const cleaned = order.filter((id) => ids.includes(id));
-      const missing = ids.filter((id) => !cleaned.includes(id));
-      const next = [...cleaned, ...missing];
-      if (JSON.stringify(next) !== JSON.stringify(order)) persistOrder(next);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadSubjobs = async (jobId) => {
-    const list = await subjobsService.list({
-      wheres: [["faenaId", "==", jobId]],
-      order: ["name", "asc"],
-      cache: true,
-      persist: true,
-      ttl: 10 * 60 * 1000,
-    });
-    setSubjobsByJob((prev) => ({ ...prev, [jobId]: list }));
-  };
-
-  const loadCycles = async (jobId) => {
-    const list = await cyclesService.list({
-      wheres: [["faenaId", "==", jobId]],
-      order: ["createdAt", "desc"],
-      cache: true,
-      ttl: 2 * 60 * 1000,
-    });
-    setCyclesByJob((prev) => ({ ...prev, [jobId]: list }));
-  };
-
-  useEffect(() => {
-    loadJobs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (!selectedId) return;
-    if (!subjobsByJob[selectedId]) loadSubjobs(selectedId);
-    if (!cyclesByJob[selectedId]) loadCycles(selectedId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId]);
-
-  // Pliega las subfaenas ocultas al cargarlas, una vez por subfaena y por
-  // sesión (ver processedHiddenRef), para respetar las que el usuario expanda.
-  useEffect(() => {
-    if (!selectedId) return;
-    const subjobs = subjobsByJob[selectedId];
-    if (!subjobs) return;
-    const toCollapse = [];
-    for (const s of subjobs) {
-      if (s.hidden && !processedHiddenRef.current.has(s.id)) {
-        toCollapse.push(s.id);
-        processedHiddenRef.current.add(s.id);
-      }
-    }
-    if (toCollapse.length > 0) {
-      setCollapsedSubjobs((prev) => {
-        const n = new Set(prev);
-        for (const id of toCollapse) n.add(id);
-        return n;
-      });
-    }
-  }, [selectedId, subjobsByJob]);
-
-  // Marca o desmarca una subfaena como oculta. Se guarda en el doc de la
-  // subfaena, así que vale para todos los usuarios y dispositivos.
-  const toggleHideSubjob = async (subjob) => {
-    try {
-      await subjobsService.update(subjob.id, { hidden: !subjob.hidden });
-      subjobsService.invalidate();
-      // Al ocultarla se pliega. Al mostrarla queda como esté, plegada o no.
-      if (!subjob.hidden) {
-        setCollapsedSubjobs((prev) => new Set(prev).add(subjob.id));
-        processedHiddenRef.current.add(subjob.id);
-      }
-      if (subjob.faenaId) await loadSubjobs(subjob.faenaId);
-    } catch (err) {
-      toast.error("Error al ocultar/mostrar subfaena: " + (err.message || err));
-    }
-  };
 
   // Al abrir el detalle de una faena, desplaza la vista hasta el panel. Espera
   // un frame para que React lo dibuje antes de medir.
@@ -320,114 +136,6 @@ export default function Jobs() {
     });
     return () => window.cancelAnimationFrame(id);
   }, [selectedId]);
-
-  const onDragStart = (id) => () => setDragId(id);
-  const onDragOver = (id) => (e) => {
-    e.preventDefault();
-    if (id !== dropOverId) setDropOverId(id);
-  };
-  const onDragLeave = () => setDropOverId(null);
-  const onDrop = (targetId) => (e) => {
-    e.preventDefault();
-    if (!dragId || dragId === targetId) {
-      setDragId(null);
-      setDropOverId(null);
-      return;
-    }
-    // Si cambia de grupo, la faena arrastrada pasa al grupo del destino.
-    const targetGroup = layout.faenaGroup[targetId] || UNGROUPED_ID;
-    const dragGroup = layout.faenaGroup[dragId] || UNGROUPED_ID;
-    if (targetGroup !== dragGroup) {
-      persistLayout({
-        ...layout,
-        faenaGroup: { ...layout.faenaGroup, [dragId]: targetGroup },
-      });
-    }
-    const ids = jobs.map((f) => f.id);
-    const fromIdx = ids.indexOf(dragId);
-    const toIdx = ids.indexOf(targetId);
-    if (fromIdx < 0 || toIdx < 0) return;
-    const next = [...ids];
-    next.splice(fromIdx, 1);
-    next.splice(toIdx, 0, dragId);
-    persistOrder(next);
-    setDragId(null);
-    setDropOverId(null);
-  };
-  const onDragEnd = () => {
-    setDragId(null);
-    setDropOverId(null);
-    setDropOverGroupId(null);
-  };
-
-  // Soltar sobre la sección de un grupo (zona vacía o encabezado) asigna la faena a ese grupo.
-  const onGroupDragOver = (gid) => (e) => {
-    if (!dragId) return;
-    e.preventDefault();
-    if (gid !== dropOverGroupId) setDropOverGroupId(gid);
-  };
-  const onGroupDrop = (gid) => (e) => {
-    e.preventDefault();
-    if (!dragId) return;
-    const currentGroup = layout.faenaGroup[dragId] || UNGROUPED_ID;
-    if (currentGroup !== gid) {
-      persistLayout({
-        ...layout,
-        faenaGroup: { ...layout.faenaGroup, [dragId]: gid },
-      });
-    }
-    setDragId(null);
-    setDropOverId(null);
-    setDropOverGroupId(null);
-  };
-
-  // ---------------- Grupos ----------------
-  const newGroupId = () => `g_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
-
-  const addGroup = () => {
-    const id = newGroupId();
-    const newGroup = { id, name: "Nuevo grupo", color: null };
-    // Se inserta antes de "sin grupo", que siempre va al final.
-    const groups = [...layout.groups];
-    const ungroupedIdx = groups.findIndex((g) => g.id === UNGROUPED_ID);
-    groups.splice(ungroupedIdx, 0, newGroup);
-    persistLayout({ ...layout, groups });
-  };
-
-  const updateGroup = (gid, patch) => {
-    persistLayout({
-      ...layout,
-      groups: layout.groups.map((g) => (g.id === gid ? { ...g, ...patch } : g)),
-    });
-  };
-
-  const removeGroup = (gid) => {
-    if (gid === UNGROUPED_ID) return;
-    // Sus faenas vuelven a "sin grupo".
-    const nextJobGroup = { ...layout.faenaGroup };
-    for (const fid in nextJobGroup) {
-      if (nextJobGroup[fid] === gid) delete nextJobGroup[fid];
-    }
-    persistLayout({
-      ...layout,
-      groups: layout.groups.filter((g) => g.id !== gid),
-      faenaGroup: nextJobGroup,
-    });
-  };
-
-  const setJobCardColor = (jobId, color) => {
-    const next = { ...layout.faenaColor };
-    if (color == null) delete next[jobId];
-    else next[jobId] = color;
-    persistLayout({ ...layout, faenaColor: next });
-  };
-
-  const colorOf = (job) => {
-    const override = layout.faenaColor[job.id];
-    if (override) return override;
-    const gid = layout.faenaGroup[job.id] || UNGROUPED_ID;
-    return layout.groups.find((g) => g.id === gid)?.color || null;
-  };
 
   const submitJob = async (e) => {
     e.preventDefault();
