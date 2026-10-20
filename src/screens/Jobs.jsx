@@ -10,10 +10,10 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import TextField from "../components/TextField";
 import Select from "../components/Select";
 import { useIsMobile } from "../hooks/useIsMobile";
-import { workdayDocId } from "../utils/cosechaCombos";
 import { initialLaborPlan, LABOR_TYPES } from "../utils/laborTypes";
 import { localIsoDate } from "../utils/dates";
 import { closedCyclePatch } from "../utils/cycleClosing";
+import { cloneLabors, cycleLabelSuffix, importCandidatesOf, importedDayPrices, movedWorkday, nextCycleLabors } from "../utils/cycleCreation";
 import { toTitleName, unshout } from "../utils/textCase";
 import { hasChanges } from "../utils/formChanges";
 import { ColorPickerButton } from "./jobs/ColorPickerButton";
@@ -511,16 +511,9 @@ export default function Jobs() {
           setBusy(false);
           return;
         }
-        const oldToNewLaborId = new Map();
-        labors = picked.map((l) => {
-          const id = newId();
-          oldToNewLaborId.set(l.id, id);
-          // Copia la configuración completa salvo el id; el form de la labor
-          // en CycleDetail solo lee los campos que conoce.
-          const { id: _drop, ...rest } = l;
-          return { ...rest, id };
-        });
-        importPlan = { source, picked, oldToNewLaborId };
+        const cloned = cloneLabors(picked, newId);
+        labors = cloned.labors;
+        importPlan = { source, picked, oldToNewLaborId: cloned.oldToNewLaborId };
       } else if (mode === "create") {
         labors = defaultLabors([], {
           type: data.laborType || "main",
@@ -545,23 +538,10 @@ export default function Jobs() {
         nextDays = [data.startDate || todayStr()];
       }
 
-      // dayPrices: si se pidió copiarlos, se re-mapean al laborId nuevo de cada
-      // labor seleccionada y se filtran por los días seleccionados.
-      let nextDayPrices = undefined;
-      if (mode === "create" && importPlan && data.importCopyDayPrices) {
-        const src = importPlan.source.dayPrices || {};
-        const out = {};
-        for (const [oldLid, newLid] of importPlan.oldToNewLaborId) {
-          const srcLab = src[oldLid];
-          if (!srcLab) continue;
-          const filtered = {};
-          for (const d in srcLab) {
-            if (importDaysSet.has(d)) filtered[d] = srcLab[d];
-          }
-          if (Object.keys(filtered).length > 0) out[newLid] = filtered;
-        }
-        if (Object.keys(out).length > 0) nextDayPrices = out;
-      }
+      // dayPrices: si se pidió copiarlos, los de las labores y días importados.
+      const nextDayPrices = mode === "create" && importPlan && data.importCopyDayPrices
+        ? importedDayPrices(importPlan.source.dayPrices, importPlan.oldToNewLaborId, importDaysSet)
+        : undefined;
 
       const payload = {
         faenaId: jobId,
@@ -584,9 +564,9 @@ export default function Jobs() {
       }
 
       // Mover jornadas: por cada labor importada, se leen sus jornadas en el
-      // origen y se recrean en el ciclo nuevo. El docId codifica
-      // cycleId+laborId, así que es crear + borrar. Las jornadas con
-      // payrollId se saltan para no romper nóminas ya generadas.
+      // origen y se recrean en el ciclo nuevo (crear + borrar, ver
+      // `movedWorkday`). Las jornadas con payrollId se saltan para no romper
+      // nóminas ya generadas.
       if (mode === "create" && importPlan && data.importMoveWorkdays && createdCycleId) {
         const oldCycleId = importPlan.source.id;
         let skippedPaid = 0;
@@ -599,17 +579,8 @@ export default function Jobs() {
           for (const w of wds) {
             if (w.payrollId) { skippedPaid += 1; continue; }
             if (!importDaysSet.has(w.date)) continue;
-            // El comboKey sale del docId, desde el 5.º segmento; con 4
-            // segmentos es "0_0" implícito (jornada simple).
-            const parts = String(w.id || "").split("__");
-            const ck = parts.length >= 5 ? parts.slice(4).join("__") : "0_0";
-            const newDocId = workdayDocId(createdCycleId, newLaborId, w.workerRut, w.date, ck);
-            const { id: _oldId, cycleId: _cy, laborId: _la, ...rest } = w;
-            await workdaysService.upsert(newDocId, {
-              ...rest,
-              cycleId: createdCycleId,
-              laborId: newLaborId,
-            });
+            const target = movedWorkday(w, createdCycleId, newLaborId);
+            await workdaysService.upsert(target.id, target.data);
             await workdaysService.remove(w.id);
             moved += 1;
           }
@@ -639,13 +610,7 @@ export default function Jobs() {
     }
     const existing = cyclesByJob[jobId] || [];
     const scope = existing.filter((c) => c.subfaenaId === subjobId);
-
-    // Ciclos abiertos de la misma subfaena que pueden servir de origen para
-    // importar, del más reciente al más antiguo.
-    const sortKey = (c) => c.endDate || c.startDate || c.createdAt?.toDate?.()?.toISOString?.() || "";
-    const openCandidates = scope
-      .filter((c) => c.status !== "closed")
-      .sort((a, b) => sortKey(b).localeCompare(sortKey(a)));
+    const openCandidates = importCandidatesOf(existing, subjobId);
 
     setCycleForm(withInitial({
       mode: "create",
@@ -674,11 +639,7 @@ export default function Jobs() {
 
   const openEditCycle = (cycle, jobId) => {
     const prefix = cyclePrefix(jobId, cycle.subfaenaId);
-    // Sin distinguir mayúsculas: los nombres de faena y subfaena se guardan
-    // como título, y un ciclo antiguo puede traer el prefijo en mayúsculas.
-    const suffix = (cycle.label || "").toLowerCase().startsWith(prefix.toLowerCase())
-      ? (cycle.label || "").slice(prefix.length)
-      : cycle.label || "";
+    const suffix = cycleLabelSuffix(cycle.label, prefix);
     setCycleForm(withInitial({
       mode: "edit",
       jobId,
@@ -722,13 +683,7 @@ export default function Jobs() {
       );
       const nextNumber = scope.length + 1;
       const prevLabors = prev.labors || defaultLabors(prev.workers || []);
-      // Copia la configuración completa de cada labor (tipo de trato, base
-      // diaria, tarifa de HE, bonos, etapas…), igual que al importar desde
-      // otro ciclo. Los trabajadores solo si se pidió.
-      const newLabors = prevLabors.map((l) => {
-        const { id: _drop, ...rest } = l;
-        return { ...rest, id: newId(), workers: copy ? l.workers || [] : [] };
-      });
+      const newLabors = nextCycleLabors(prevLabors, copy, newId);
       await cyclesService.create({
         faenaId: closeFlow.jobId,
         subfaenaId: prev.subfaenaId || null,
