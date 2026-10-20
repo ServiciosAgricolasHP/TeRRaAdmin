@@ -15,7 +15,7 @@ import { usePhoneBook } from "./usePhoneBook";
 import PhoneContactRow from "./PhoneContactRow";
 import PhoneContactModal from "./PhoneContactModal";
 import PhoneBookImportModal from "./PhoneBookImportModal";
-import { shareContact, downloadContactVcard, downloadPhoneBookVcf } from "./phoneBookFiles";
+import { canShareContacts, shareContact, downloadContactVcard, downloadPhoneBookVcf } from "./phoneBookFiles";
 import { writePhoneBookXlsx } from "./writePhoneBookXlsx";
 
 // Cuántos contactos se dibujan de una vez; "Mostrar más" suma otros tantos.
@@ -38,6 +38,8 @@ export default function PhoneBookTab() {
     try { return localStorage.getItem(BY_COMPANY_KEY) === "true"; } catch { return false; }
   });
   const [limit, setLimit] = useState(PAGE);
+  // 📤 solo en un teléfono con menú de compartir.
+  const [shareable] = useState(canShareContacts);
   const [editing, setEditing] = useState(null);
   const [importing, setImporting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
@@ -122,7 +124,7 @@ export default function PhoneBookTab() {
     }
   };
 
-  const rowProps = { onCopy: copy, onShare, onDownload, onEdit: setEditing, onDelete: setConfirmDelete };
+  const rowProps = { onCopy: copy, onShare: shareable ? onShare : null, onDownload, onEdit: setEditing, onDelete: setConfirmDelete };
 
   return (
     <div className="space-y-3">

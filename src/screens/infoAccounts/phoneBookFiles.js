@@ -33,8 +33,13 @@ const markVcardShareBlocked = () => {
 
 const isTouchDevice = () => !!window.matchMedia?.("(pointer: coarse)").matches;
 
+// Si hay menú de compartir del teléfono. En un computador 📤 no se muestra:
+// copiar el contacto ya es tocar su nombre.
+export const canShareContacts = () => typeof navigator !== "undefined" && !!navigator.share && isTouchDevice();
+
 // Comparte un contacto. Devuelve cómo lo hizo:
-// - "copied": en un computador (o sin menú de compartir) copia el texto.
+// - "copied": sin menú de compartir, copia el texto (la pantalla solo muestra
+//   📤 cuando lo hay, ver `canShareContacts`).
 // - "file": en el teléfono, la tarjeta .vcf por el menú de compartir, y
 //   WhatsApp la muestra como contacto. Funciona en iPhone.
 // - "fileBlocked": el teléfono dice que acepta la tarjeta pero la rechaza al

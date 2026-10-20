@@ -2,10 +2,12 @@ import RowMenu from "../../components/RowMenu";
 import { contactTypeLabel, displayName, formatPhone, phoneContactText } from "../../utils/phoneBook";
 
 // Un contacto de la agenda: nombre, empresa · departamento · cargo, sus otros
-// nombres y, a la derecha (abajo en el teléfono), sus números y correos. Tocar
-// el nombre copia el contacto entero, y tocar un número o un correo, solo ese
-// dato; 📤 comparte el contacto y el menú ⋯ lo copia, lo descarga como
-// tarjeta .vcf, lo edita o lo borra.
+// nombres y, a la derecha (abajo en el teléfono), sus números y correos. Cada
+// acción hace una sola cosa:
+// - tocar el nombre copia el contacto entero;
+// - tocar un número o un correo copia solo ese dato;
+// - 📤 abre el menú de compartir del teléfono (sin `onShare`, no se muestra);
+// - el menú ⋯ lo descarga como tarjeta .vcf, lo edita o lo borra.
 // `hideCompany`: la lista ya está agrupada por empresa.
 export default function PhoneContactRow({ contact, hideCompany = false, onCopy, onShare, onDownload, onEdit, onDelete }) {
   const c = contact;
@@ -46,18 +48,19 @@ export default function PhoneContactRow({ contact, hideCompany = false, onCopy, 
         ))}
       </div>
       <div className="absolute right-3 top-2.5 flex shrink-0 items-center gap-1 sm:static">
-        <button
-          type="button"
-          onClick={() => onShare(c)}
-          title="Compartir el contacto (WhatsApp, correo…); en el computador, lo copia"
-          aria-label="Compartir contacto"
-          className="min-h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-xs hover:bg-[var(--color-accent-soft)]"
-        >
-          📤<span className="ml-1 hidden sm:inline">Compartir</span>
-        </button>
+        {onShare && (
+          <button
+            type="button"
+            onClick={() => onShare(c)}
+            title="Enviar el contacto por WhatsApp, correo…"
+            aria-label="Compartir contacto"
+            className="min-h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-xs hover:bg-[var(--color-accent-soft)]"
+          >
+            📤<span className="ml-1 hidden sm:inline">Compartir</span>
+          </button>
+        )}
         <RowMenu
           items={[
-            { icon: "📋", label: "Copiar contacto", hint: "Nombre, empresa, números y correos", onClick: () => onCopy(phoneContactText(c), "Contacto") },
             { icon: "📲", label: "Descargar contacto (.vcf)", hint: "Al abrirlo en el teléfono, se guarda en los contactos", onClick: () => onDownload(c) },
             { icon: "✎", label: "Editar", onClick: () => onEdit(c) },
             { divider: true },
