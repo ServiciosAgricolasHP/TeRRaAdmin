@@ -56,6 +56,14 @@ export function passwordResetBlock(target) {
   return target.email ? null : "Sin correo: aparece cuando la persona entra a TeRRa.";
 }
 
+// Con la app abierta, la visita se vuelve a grabar como mucho una vez cada 30
+// minutos. `lastAt` y `now` en milisegundos; `lastAt` 0 = nunca.
+export const VISIT_INTERVAL_MS = 30 * 60 * 1000;
+
+export function visitDue(lastAt, now) {
+  return !lastAt || now - lastAt >= VISIT_INTERVAL_MS;
+}
+
 // "hace 5 min", "hace 3 h", "hace 2 días" y, desde la semana, la fecha.
 export function lastSeenLabel(date, now = new Date()) {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "Sin registro";
