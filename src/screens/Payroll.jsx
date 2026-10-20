@@ -48,9 +48,10 @@ import {
   payrollSuggestedName,
   groupCashByLeader,
   splitBankAndCash,
-  downloadBchileXlsx,
-  downloadNominaOnlyXlsx,
+  downloadPayrollXlsx,
+  downloadBankFileXlsx,
 } from "../utils/payroll";
+import { DEFAULT_BANK_FORMAT_ID, bankFormatOf } from "../utils/bankFormats";
 import { newPayrollCycleDetails, allocateAdvances, advanceNote } from "../utils/payrollItem";
 import ConfirmDialog from "../components/ConfirmDialog";
 import CloseCyclesModal from "./payroll/CloseCyclesModal";
@@ -1062,6 +1063,7 @@ export default function Payroll() {
     setProgress({ step: "Listo ✓", detail: "", percent: 100 });
     setTimeout(() => setProgress(null), 400);
   };
+  const bankFormat = bankFormatOf(DEFAULT_BANK_FORMAT_ID);
   const onRedownload = async (p) => {
     // Aplica los nombres de ciclo editados en "📝 Editar encabezados"
     // (guardados en el doc), así el XLSX usa los nombres cortos.
@@ -1093,11 +1095,11 @@ export default function Payroll() {
     if (cyclesForExport.length === 0 && p.cycleIds) {
       for (const id of p.cycleIds) cyclesForExport.push({ id, label: overrides[id] || id });
     }
-    await downloadBchileXlsx(withCurrentRuts(p.items, rutOf), p.name || "Nomina", cyclesForExport);
+    await downloadPayrollXlsx(withCurrentRuts(p.items, rutOf), p.name || "Nomina", cyclesForExport, bankFormat);
   };
   const onDownloadNominaOnly = async (p) => {
-    const filename = `${p.name || "Nomina"}_BChile`;
-    await downloadNominaOnlyXlsx(withCurrentRuts(p.items, rutOf), filename);
+    const filename = `${p.name || "Nomina"}_${bankFormat.fileSuffix}`;
+    await downloadBankFileXlsx(withCurrentRuts(p.items, rutOf), filename, bankFormat);
   };
   // Vuelve a bajar el JSON del snapshot de una nómina. Lo lee de
   // payrollSnapshots y, si no está, del campo `snapshot` embebido en la nómina.

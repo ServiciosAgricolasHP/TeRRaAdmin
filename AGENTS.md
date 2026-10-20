@@ -538,7 +538,7 @@ Implementación en `submitCycle` (`screens/jobs/useCycleForm.js`), con el cálcu
   - **Impresiones en HTML:** `printCommon.js`, `printReceipts.js` (comprobantes de efectivo y detalle de pago) y `printSummaryTable.js`.
   - **Comunes:** `helpers.js` (formatos de fecha y de cuenta, RUT vigente).
 - Servicio: `services/payrollsService.js` (colección `payrolls`).
-- Helpers: `utils/payroll.js` — `aggregateWorkerAmounts`, `splitBankAndCash`, `groupCashByLeader`, `validateAccountNumber`, `downloadBchileXlsx`, `downloadNominaOnlyXlsx`.
+- Helpers: `utils/payroll.js` — `aggregateWorkerAmounts`, `splitBankAndCash`, `groupCashByLeader`, `validateAccountNumber`, `downloadPayrollXlsx` y `downloadBankFileXlsx`. Los formatos del archivo del banco, en `utils/bankFormats.js` (ver XLSX).
 
 ### Flujo
 
@@ -609,11 +609,11 @@ Para cuando salen las transferencias y el efectivo queda debiéndose para la vue
 - Eliminar nómina → `untagWorkdaysFromPayroll` + `restoreAdvancesFromPayroll`. Workdays vuelven a estar disponibles. Achicarla (sacar ciclos, labores o un trabajador, recalcular) tiene sus propias reglas — ver la sección siguiente.
 - Marcar pagada → sello `paidAt` en los workdays. Revertir → quita `paidAt`.
 
-### XLSX (BChile)
+### XLSX
 
 Generado con ExcelJS (lazy import). Cuatro hojas:
 
-1. **Nomina** — formato BChile (RUT con DV pegado, nombre limpio sin acentos, cuenta, código banco, monto, JUV/CTD/AHB). Es la **primera hoja** porque es la que el portal del banco ingiere.
+1. **Nomina** — la hoja del banco, en el formato PagoFácil Banco de Chile (RUT con DV pegado, nombre limpio sin acentos, cuenta, código banco, monto, JUV/CTD). Es la **primera hoja** porque es la que el portal del banco ingiere.
 2. **Resumen** — Transferencias / Efectivo / Total general por ciclo.
 3. **Transferencias** — `RUT | NOMBRE | <Ciclo1> | ... | TOTAL` con totales por ciclo.
 4. **Efectivo** — agrupado por líder con paletas de color por grupo (8 paletas alternadas) y subtotales.
@@ -621,16 +621,16 @@ Generado con ExcelJS (lazy import). Cuatro hojas:
 Al pie del detalle de una nómina, junto al total, van dos menús (el mismo `RowMenu` del historial con un botón propio): **🖨 Imprimir** (detalle de pago y comprobantes de efectivo; no aparece si no hay nada que imprimir) y **📥 Descargar** (XLSX completo, Sólo Nómina y JSON). El detalle abre con el resumen desplegado y los ciclos plegados (se despliegan solos con "✂ Editar contenido"); los dos se pliegan y despliegan con un clic. Los filtros son un buscador, el medio de pago y un panel "Filtros" con Grupo y Ciclo, cuyos filtros activos se ven como etiquetas con ✕ aunque el panel esté cerrado. La sección "Ciclos de esta nómina" lleva en cada ciclo un enlace **Abrir ciclo ↗** a `/cycles/:id`.
 
 Descargas e impresiones:
-- **🏦 Sólo Nómina** → `downloadNominaOnlyXlsx` (1 hoja, para subir al banco).
+- **🏦 Sólo Nómina** → `downloadBankFileXlsx` (1 hoja, para subir al banco).
 - **📥 XLSX completo** → 4 hojas.
 - **🧮 Estimar efectivo** (bajo el efectivo del resumen del detalle) → `CashEstimationModal`: cuántos billetes y monedas hay que llevar. Se marcan los disponibles (billetes de $20.000, $10.000, $5.000, $2.000 y $1.000; monedas de $500, $100, $50 y $10); por defecto, $10.000, $5.000, $1.000, $500 y $100 (`DEFAULT_AVAILABLE`). Cada monto se arma con la menor cantidad de piezas disponibles y, si no calza justo, sube al siguiente que sí se puede armar (`estimateCashBreakdown`, `utils/cashBreakdown.js`, con tests). La elección no se guarda: cada vez abre con los de por defecto. Se copian, como texto o como imagen, el resumen y la lista **por trabajador** (cuánto recibe cada uno y con qué billetes y monedas, por líder, con el total de piezas al pie). Los textos y los grupos de la lista se arman en el mismo `utils/cashBreakdown.js` (`cashSummaryText`, `cashListText`, `cashWorkerGroupsOf`). Los dos dicen de qué nómina son y, si incluyen efectivo pendiente de otras nóminas, cuánto y de cuáles; esas personas van en la lista en un grupo aparte por nómina.
 - **🖨 Imprimir → Comprobantes efectivo** → ventana de impresión, una página por líder con tabla firmable (RUT, Nombre, Monto, Firma) + líneas de firma final.
 - **🖨 Imprimir → Detalle de pago** → ventana de impresión más completa. Abre con un **Resumen por subfaena** (filas = subfaena, columnas `Faena | Subfaena | Con cuenta RUT | Efectivo | TOTAL`, la faena se imprime sólo en la primera fila del bloque); luego el **resumen por grupo** estructurado como 2 tablas grandes (`Con cuenta RUT` y `Otros grupos`) con columnas `Líder | Faena | TOTAL` y subtotal al pie de cada una; finalmente la tabla por líder con el detalle de producción por ciclo. En el header de cada grupo se incluye el nombre del líder con un `h1` más grande para que el inicio de cada grupo se vea claramente al imprimir.
 - **Catálogos en el detalle imprimible**: los precios bajo el día y los breakdowns de celda usan labels del catálogo (no `Q1/E2` ni `/jorn.`). Para cosecha: `Premium / Saco: $1000` (o `$1000/saco` en single-combo). Para trato: `$10000/poda` (la unidad = `tratoTypeLabel`). Para `tratoHE` no se muestra precio sugerido en el header del día (el monto del día lo define la planilla). `byCombo` se indexa por clave estructural `"x_y"` y el label visible se computa al render con `comboLabel(catalogs, x, y)`.
 - **paymentRut vs RUT del trabajador**: la hoja `Nomina` BChile usa **`it.paymentRut`** (de `bankDetails[0]`), no el RUT de la persona. `paymentRut` puede diferir cuando el pago va a una cuenta de un familiar; el portal del banco lo valida contra la titularidad. Preservado en `cleanItems` y en el snapshot.
-- **Email default BChile**: si el trabajador no tiene email se completa con `remuneracionesis@gmail.com` (constante `BCHILE_DEFAULT_EMAIL` en `utils/payroll.js`). El banco rechaza filas sin email.
+- **Email default BChile**: si el trabajador no tiene email se completa con `remuneracionesis@gmail.com` (constante `BCHILE_DEFAULT_EMAIL` en `utils/bankFormats/pagoFacilBchile.js`). El banco rechaza filas sin email.
 - **Identificador alfa-numérico**: la columna identificador del BChile usa `A001..A999` (zero-padded) y los nombres se ordenan alfabéticamente con `localeCompare("es", { sensitivity: "base" })`. Filas con `amount === 0` se filtran (el banco rechaza transferencias de $0).
-  - **Las filas se arman en `buildBchileRows(items)`, aparte de ExcelJS** (`utils/payroll.js`, exportada). `buildBchileSheet` solo las escribe y estiliza. Así se prueban sin el workbook las tres reglas que deciden a dónde va la plata: el filtro de cero-neto, el orden alfabético que hace **estable** el correlativo entre corridas, y el `paymentRut || rut`. Cubiertas en `utils/bchile.test.js`, que nombra los índices de columna — una fila corrida manda la transferencia a otra cuenta y el archivo igual se sube sin error.
+  - **Las filas se arman en `buildBchileRows(items)`, aparte de ExcelJS** (`utils/bankFormats/pagoFacilBchile.js`). `buildBankSheet` (`utils/payroll.js`) solo las escribe y estiliza. Así se prueban sin el workbook las tres reglas que deciden a dónde va la plata: el filtro de cero-neto, el orden alfabético que hace **estable** el correlativo entre corridas, y el `paymentRut || rut`. Cubiertas en `utils/bankFormats/pagoFacilBchile.test.js`, que nombra los índices de columna — una fila corrida manda la transferencia a otra cuenta y el archivo igual se sube sin error.
 
 ### Achicar una nómina pendiente (sacar ciclos, labores o un trabajador, recalcular)
 
