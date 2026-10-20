@@ -25,7 +25,6 @@ export function useCycleForm({ cyclesByJob, jobs, loadCycles, setBusy, subjobsBy
     e.preventDefault();
     const { mode, jobId, data } = cycleForm;
     if (mode === "create") {
-      const existing = cyclesByJob[jobId] || [];
       const subjobs = subjobsByJob[jobId] || [];
       if (!data.subfaenaId && subjobs.length > 0) {
         toast.warning("La faena tiene subfaenas. Selecciona una subfaena para el ciclo.");

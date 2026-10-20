@@ -42,16 +42,16 @@ export function useJobForms({ loadJobs, loadSubjobs, order, persistOrder, setBus
     const { mode, jobId, data } = subjobForm;
     setBusy(true);
     try {
-      let creada = null;
+      let createdSubjob = null;
       const fields = { name: toTitleName(data.name || ""), notes: unshout(data.notes || "") };
-      if (mode === "create") creada = await subjobsService.create({ ...data, ...fields, faenaId: jobId });
+      if (mode === "create") createdSubjob = await subjobsService.create({ ...data, ...fields, faenaId: jobId });
       else await subjobsService.update(data.id, fields);
       setSubjobForm(null);
       await loadSubjobs(jobId);
       toast.success(mode === "create" ? "Subfaena creada" : "Subfaena actualizada");
       // Al crear una subfaena se ofrece abrir su primer ciclo (cancelable): sin
       // ciclos no hay dónde anotar jornadas.
-      if (creada?.id) setSubjobOfferCycle({ jobId, subjobId: creada.id, name: fields.name });
+      if (createdSubjob?.id) setSubjobOfferCycle({ jobId, subjobId: createdSubjob.id, name: fields.name });
     } catch (err) {
       toast.error("Error al guardar la subfaena: " + (err.message || err));
     } finally {

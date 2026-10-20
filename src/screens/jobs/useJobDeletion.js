@@ -19,19 +19,19 @@ export function useJobDeletion({ isAdmin, loadCycles, loadJobs, loadSubjobs, ord
     setConfirm((c) => ({ ...c, busy: true }));
     try {
       try {
-      if (confirm.kind === "faena") {
+      if (confirm.kind === "job") {
         // Sin caché: los bloqueos y el log de diagnóstico salen de datos frescos.
         cyclesService.invalidate();
         subjobsService.invalidate();
         const subjobs = await subjobsService.list({ wheres: [["faenaId", "==", confirm.item.id]] });
-        const cyc = await cyclesService.list({ wheres: [["faenaId", "==", confirm.item.id]] });
+        const jobCycles = await cyclesService.list({ wheres: [["faenaId", "==", confirm.item.id]] });
         console.log(`[Faena delete] Faena ${confirm.item.id} (${confirm.item.name})`);
         console.log(`  Subfaenas asociadas (${subjobs.length}):`, subjobs.map((s) => ({ id: s.id, name: s.name })));
-        console.log(`  Ciclos asociados (${cyc.length}):`, cyc.map((c) => ({ id: c.id, label: c.label, status: c.status, subfaenaId: c.subfaenaId })));
+        console.log(`  Ciclos asociados (${jobCycles.length}):`, jobCycles.map((c) => ({ id: c.id, label: c.label, status: c.status, subfaenaId: c.subfaenaId })));
 
         const blockers = [];
         if (subjobs.length) blockers.push(`${subjobs.length} subfaena(s): ${subjobs.map((s) => s.name).join(", ")}`);
-        if (cyc.length) blockers.push(`${cyc.length} ciclo(s): ${cyc.map((c) => c.label).join(", ")}`);
+        if (jobCycles.length) blockers.push(`${jobCycles.length} ciclo(s): ${jobCycles.map((c) => c.label).join(", ")}`);
 
         if (blockers.length) {
           if (!isAdmin) {
@@ -43,7 +43,7 @@ export function useJobDeletion({ isAdmin, loadCycles, loadJobs, loadSubjobs, ord
           // nómina: borrarla dejaría la nómina huérfana. Primero hay que
           // eliminar esas nóminas.
           const allCycleWds = [];
-          for (const c of cyc) {
+          for (const c of jobCycles) {
             const wds = await workdaysService.list({ wheres: [["cycleId", "==", c.id]] });
             allCycleWds.push(...wds);
           }
@@ -78,7 +78,7 @@ export function useJobDeletion({ isAdmin, loadCycles, loadJobs, loadSubjobs, ord
             if (!wdsByCycle.has(w.cycleId)) wdsByCycle.set(w.cycleId, []);
             wdsByCycle.get(w.cycleId).push(w);
           }
-          for (const c of cyc) {
+          for (const c of jobCycles) {
             const wds = wdsByCycle.get(c.id) || [];
             console.log(`  Borrando ciclo ${c.id} (${c.label}) con ${wds.length} workdays`);
             for (const w of wds) await workdaysService.remove(w.id);
@@ -95,7 +95,7 @@ export function useJobDeletion({ isAdmin, loadCycles, loadJobs, loadSubjobs, ord
         persistOrder(order.filter((id) => id !== confirm.item.id));
         if (selectedId === confirm.item.id) setSelectedId(null);
         await loadJobs();
-      } else if (confirm.kind === "sub") {
+      } else if (confirm.kind === "subjob") {
         await subjobsService.remove(confirm.item.id);
         await loadSubjobs(confirm.item.faenaId);
       } else if (confirm.kind === "cycle") {

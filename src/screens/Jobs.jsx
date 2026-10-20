@@ -199,7 +199,7 @@ export default function Jobs() {
         cycles={selectedCycles}
         onCreateSubjob={() => setSubjobForm(withInitial({ mode: "create", jobId: selected.id, data: { ...emptySubjob } }))}
         onEditSubjob={(s) => setSubjobForm(withInitial({ mode: "edit", jobId: selected.id, data: { ...s } }))}
-        onDeleteSubjob={(s) => setConfirm({ kind: "sub", item: s, message: `¿Eliminar la subfaena "${s.name}"?` })}
+        onDeleteSubjob={(s) => setConfirm({ kind: "subjob", item: s, message: `¿Eliminar la subfaena "${s.name}"?` })}
         onToggleHideSubjob={toggleHideSubjob}
         onCreateCycle={(subjobId) => openCreateCycle(selected.id, subjobId || "")}
         onEditCycle={(c) => openEditCycle(c, selected.id)}
@@ -385,7 +385,7 @@ export default function Jobs() {
                                 Editar
                               </button>
                               <button
-                                onClick={() => setConfirm({ kind: "faena", item: f, message: `¿Eliminar la faena "${f.name}"?` })}
+                                onClick={() => setConfirm({ kind: "job", item: f, message: `¿Eliminar la faena "${f.name}"?` })}
                                 className="rounded-md px-2 py-1 text-[var(--color-muted)] hover:bg-[var(--color-danger-soft)] hover:text-[var(--color-danger)]"
                               >
                                 Eliminar

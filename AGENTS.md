@@ -382,10 +382,14 @@ Bono adicional configurable por día para trato y cosecha. Pensado para compensa
 
 ## Faenas / Ciclos / Cycles
 
-- Pantalla: `src/screens/Jobs.jsx` (el componente de la ruta `/faenas`, con las faenas, sus grupos y los formularios). Sus piezas, en `src/screens/jobs/`:
-  - **Grupos y colores:** `GroupHeader` (el encabezado de un grupo de faenas), `ColorPickerButton` y `ColorPalette`.
-  - **Detalle de la faena:** `SelectedDetail`, `SubjobListBody` (sus subfaenas) y `CycleRow`.
-  - **Alta de ciclo:** `ImportSection` (importar desde un ciclo abierto).
+- Pantalla: `src/screens/Jobs.jsx` (el componente de la ruta `/faenas`: las tarjetas de las faenas por grupo y el detalle de la elegida). Sus piezas, en `src/screens/jobs/`:
+  - **Carga:** `useJobsData` (las faenas con el orden de sus tarjetas, y las subfaenas y ciclos de la faena elegida).
+  - **Grupos y colores:** `useJobLayout` (grupos, colores, grupos plegados y arrastrar para reordenar), `GroupHeader` (el encabezado de un grupo de faenas), `ColorPickerButton` y `ColorPalette`.
+  - **Detalle de la faena:** `SelectedDetail`, `SubjobListBody` (sus subfaenas), `CycleRow` y `useSubjobDisplay` (subfaenas plegadas, ciclos cerrados a la vista y subfaenas ocultas).
+  - **Faenas y subfaenas:** `useJobForms`, `JobFormModal`, `SubjobFormModal` y `FirstCycleOfferModal` (ofrecer el primer ciclo de una subfaena nueva).
+  - **Ciclos:** `useCycleForm` y `CycleFormModal` (alta y edición, con `ImportSection` para importar desde un ciclo abierto), y `useCloseCycleFlow` con `CloseCycleModal` (cerrar y encadenar el siguiente). El cálculo de importar y encadenar vive en `utils/cycleCreation.js`, con tests.
+  - **Eliminar:** `useJobDeletion` (faena, subfaena o ciclo, con la cascada y sus bloqueos).
+  - **Comunes:** `helpers.js` (`withInitial`, `defaultLabors`, `newId` y `todayStr`).
   - **Resumen de producción:** `ProductionSummaryModal` (lo abren el ciclo y la faena), con sus piezas en `productionSummaryModal/`: `CombinedSummaryCard` (la tabla general), `LaborSummaryCard`, `LaborGroupTotalsCard`, `buildCell.js` (los datos de una celda), `tableStyles.js` y `helpers.js`.
 - Jerarquía: Faena → Subfaena → Ciclo → Labors → Workdays.
 - Label de ciclo = prefijo bloqueado `Faena/Subfaena/` + sufijo editable.
@@ -425,7 +429,7 @@ Al crear un ciclo nuevo, si en la misma subfaena hay al menos un ciclo abierto, 
 - **Copiar precios por día** (opcional): copia las entradas de `dayPrices` re-keadas por el nuevo `laborId` y filtradas por días seleccionados.
 - **Mover jornadas** (opcional, destructivo): para cada (labor seleccionada × día seleccionado), lee los workdays del origen y los re-crea en el nuevo ciclo con el nuevo `docId` (que encodea cycleId+laborId), luego borra los originales. Workdays con `payrollId` se saltan para no romper snapshots de nómina ya generadas — el usuario recibe un alert con el count de skipped.
 
-Implementación en `submitCycle` (`Jobs.jsx`). El mapeo `oldLaborId → newLaborId` vive en un `Map` que sirve para re-keear tanto `dayPrices` como los `docId` de workdays movidos.
+Implementación en `submitCycle` (`screens/jobs/useCycleForm.js`), con el cálculo en `utils/cycleCreation.js` (`cloneLabors`, `importedDayPrices`, `movedWorkday`). El mapeo `oldLaborId → newLaborId` vive en un `Map` que sirve para re-keear tanto `dayPrices` como los `docId` de workdays movidos.
 
 ### CycleDetail — grid
 
