@@ -1,4 +1,3 @@
-"use no memo";
 import { useState } from "react";
 import Modal, { ModalCloseButton } from "../../components/Modal";
 import { hasChanges } from "../../utils/formChanges";
@@ -10,6 +9,7 @@ import { TYPE_META, emptyCard, emptyAccount, rutIncluded } from "../../utils/con
 // Modal de creación / edición
 // ============================================================
 export default function ContactCardModal({ initial, onCancel, onSave }) {
+  "use no memo";
   const toast = useToast();
   const [form, setForm] = useState(() => {
     const base = { ...emptyCard(initial.type), ...initial, accounts: (initial.accounts || []).map((a) => ({ ...a })) };
