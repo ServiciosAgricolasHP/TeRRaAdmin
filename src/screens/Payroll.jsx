@@ -1,12 +1,10 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo } from "react";
 import {
   payrollSnapshotsService,
 } from "../services";
 import {
   payrollsService,
   pendingCashItemsOf,
-  workdaysForNewPayroll,
-  tagWorkdaysWithPayroll,
   markPaid as markPayrollPaid,
   markPending as markPayrollPending,
   markBankPaid,
@@ -14,44 +12,20 @@ import {
   untagWorkdaysFromPayroll,
 } from "../services/payrollsService";
 import {
-  listPendingForWorkers,
-  applyAdvancesToPayroll,
   restoreAdvancesFromPayroll,
 } from "../services/advancesService";
 import {
-  snapshotCycleOf,
-  snapshotWorkdayOf,
-  snapshotAdvanceOf,
-  saveSnapshot,
   deleteSnapshot,
 } from "../services/payrollSnapshots";
-import { workerKeys } from "../services/workersService";
-import { isCashBank } from "../utils/banks";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
-import {
-  aggregateWorkerAmounts,
-  validateAccountNumber,
-  payrollSuggestedName,
-  groupCashByLeader,
-} from "../utils/payroll";
-import { newPayrollCycleDetails } from "../utils/payrollItem";
-import { activeCyclesByJob, chosenCyclesOf } from "../utils/payrollCycles";
-import {
-  installmentCandidatesOf,
-  payrollItemOf,
-  payrollTotalsOf,
-  previewItemsOf,
-  withPreviewEdit,
-  withoutInstallments,
-} from "../utils/payrollPreview";
+import { activeCyclesByJob } from "../utils/payrollCycles";
 import ConfirmDialog from "../components/ConfirmDialog";
 import CloseCyclesModal from "./payroll/CloseCyclesModal";
 import { settledOpenCycles, payrollStatusMap, splitTaken } from "../utils/cycleClosing";
 import { currentRutResolver } from "../utils/workerRut";
 import { AddWorkerDaysModal } from "./payroll/AddWorkerDaysModal";
 import { CycleSelector } from "./payroll/CycleSelector";
-import { resolveCurrentRut } from "./payroll/helpers";
 import { HistoryList } from "./payroll/HistoryList";
 import { InstallmentConfirmModal } from "./payroll/InstallmentConfirmModal";
 import { PayConfirmModal } from "./payroll/PayConfirmModal";
@@ -65,19 +39,9 @@ import { usePayrollConfig } from "./payroll/usePayrollConfig";
 import { usePayrollDownloads } from "./payroll/usePayrollDownloads";
 import { usePayrollData } from "./payroll/usePayrollData";
 import { usePortalPublish } from "./payroll/usePortalPublish";
-
-const SELECTION_KEY = "payroll_cycle_selection";
-
-const loadSelection = () => {
-  try {
-    const raw = localStorage.getItem(SELECTION_KEY);
-    return raw ? new Set(JSON.parse(raw)) : new Set();
-  } catch { return new Set(); }
-};
-
-const saveSelection = (set) => {
-  try { localStorage.setItem(SELECTION_KEY, JSON.stringify([...set])); } catch {}
-};
+import { useCycleSelection } from "./payroll/useCycleSelection";
+import { usePayrollPreview } from "./payroll/usePayrollPreview";
+import { useGeneratePayroll } from "./payroll/useGeneratePayroll";
 
 export default function Payroll() {
   "use no memo";
@@ -101,63 +65,55 @@ export default function Payroll() {
   // Rut vigente para mostrar, ver utils/workerRut.js.
   const rutOf = useMemo(() => currentRutResolver(workers), [workers]);
 
-  const [selectedCycleIds, setSelectedCycleIds] = useState(loadSelection);
-  // Labores que entran a la nómina, por ciclo seleccionado. No se persiste,
-  // a diferencia de selectedCycleIds. Al marcar un ciclo entran todas sus
-  // labores, y un ciclo marcado sin entrada en el mapa también entra con todas.
-  const [selectedLaborsByCycle, setSelectedLaborsByCycle] = useState(() => new Map());
-  // Personas sueltas: días puntuales de alguien, elegidos en el mismo modal que
-  // "+ Agregar persona" del detalle de una nómina. Se suman a lo que traen los
-  // ciclos (o arman la nómina por sí solas) y no se persisten.
-  // [{ worker, workdayIds, rowKeys, filas: [{ cycleId, laborId, date, amount }] }]
-  const [people, setPeople] = useState([]);
-  // null = cerrado; {} abre el modal en la búsqueda, { worker } directo en esa
-  // persona, para corregir lo que se le eligió.
-  const [personModal, setPersonModal] = useState(null);
-  // Los ciclos de la nómina que se está previsualizando, para el filtro por
-  // ciclo: los elegidos más los que traen las personas sueltas.
-  const [previewCycles, setPreviewCycles] = useState([]);
-  const [step, setStep] = useState(1); // 1 = elegir ciclos, 2 = vista previa
-  const [previewItems, setPreviewItems] = useState([]); // items de la vista previa; la forma se arma en buildPreview
-  // Datos de origen de buildPreview, con los que generateAndSave arma el
-  // snapshot sin volver a leer jornadas ni anticipos.
-  const previewWorkdaysRef = useRef([]);
-  const previewAdvancesRef = useRef([]);
-  const [busy, setBusy] = useState(false);
+  const {
+    chosenCycles,
+    people,
+    personModal,
+    removePerson,
+    resetSelection,
+    savePerson,
+    selectedCycleIds,
+    selectedLaborsByCycle,
+    setPersonModal,
+    toggleCycle,
+    toggleLaborInCycle,
+  } = useCycleSelection({ cycles });
+  const {
+    bankSelected,
+    buildPreview,
+    bulkUpdate,
+    busy,
+    cashGroups,
+    countSelected,
+    payrollClassification,
+    payrollName,
+    previewAdvancesRef,
+    previewCycles,
+    previewItems,
+    previewWorkdaysRef,
+    resetPreview,
+    setBusy,
+    setPayrollClassification,
+    setPayrollName,
+    setStep,
+    step,
+    totalSelected,
+    updatePreview,
+  } = usePayrollPreview({
+    chosenCycles,
+    cycles,
+    faenas,
+    people,
+    subfaenas,
+    toast,
+    workers,
+  });
   // Overlay de progreso: `step` es el mensaje principal (ej. "Etiquetando
   // jornadas"), `detail` un complemento opcional (ej. "340 / 500") y `percent`
   // va de 0 a 100. `null` oculta el overlay.
   const [progress, setProgress] = useState(null);
-  const [payrollName, setPayrollName] = useState("");
-  // Clasificación: "nomina" (default) o "diferencia". Las diferencias (ajustes,
-  // pagos puntuales) se listan en una pestaña aparte del historial.
-  const [payrollClassification, setPayrollClassification] = useState("nomina");
 
   const [confirmDelete, setConfirmDelete] = useState(null);
-  // Confirmación genérica para flujos async que esperan la respuesta del
-  // usuario a mitad de camino (ej. generateAndSave): `askConfirm` devuelve una
-  // promesa que resuelve el diálogo.
-  const [confirmState, setConfirmState] = useState(null);
-  const askConfirm = (message, opts = {}) =>
-    new Promise((resolve) => setConfirmState({ message, resolve, ...opts }));
-  // Mismo patrón que askConfirm, pero para el checklist de cuotas de
-  // InstallmentConfirmModal — resuelve con la lista de advanceIds que el
-  // admin destildó, o null si canceló.
-  const [installmentConfirmState, setInstallmentConfirmState] = useState(null);
-  // Si hay anticipos-con-plan entre `items`, pausa y espera que el admin
-  // confirme cuáles se aplican esta corrida; si no hay ninguno, sigue de
-  // largo. Devuelve `items` (ajustado) o `null` si el admin canceló.
-  const confirmInstallments = async (items) => {
-    const candidates = installmentCandidatesOf(items, previewAdvancesRef.current);
-    if (candidates.length === 0) return items;
-
-    const excludedIds = await new Promise((resolve) => setInstallmentConfirmState({ candidates, resolve }));
-    setInstallmentConfirmState(null);
-    if (excludedIds === null) return null;
-    if (excludedIds.length === 0) return items;
-
-    return withoutInstallments(items, excludedIds);
-  };
   const [detailPayroll, setDetailPayroll] = useState(null);
   // Nómina que se está renombrando, o null. El nombre es solo una etiqueta y se
   // cambia en cualquier estado; renombrar actualiza el doc y el snapshot
@@ -210,336 +166,31 @@ export default function Payroll() {
     ? closable.settled.filter((r) => !closeCycles.ids || closeCycles.ids.has(r.cycle.id))
     : [];
 
-  const toggleCycle = (id) => {
-    const marcar = !selectedCycleIds.has(id);
-    setSelectedCycleIds((prev) => {
-      const next = new Set(prev);
-      if (marcar) next.add(id);
-      else next.delete(id);
-      saveSelection(next);
-      return next;
-    });
-    // Sigue a la selección de ciclos, no a si el ciclo ya tenía entrada en
-    // este mapa: marcar le pone todas sus labores y desmarcar lo saca.
-    setSelectedLaborsByCycle((prev) => {
-      const next = new Map(prev);
-      if (marcar) {
-        const cycle = cycles.find((c) => c.id === id);
-        next.set(id, new Set((cycle?.labors || []).map((l) => l.id)));
-      } else {
-        next.delete(id);
-      }
-      return next;
-    });
-  };
-
-  const toggleLaborInCycle = (cycleId, laborId) => {
-    setSelectedLaborsByCycle((prev) => {
-      const next = new Map(prev);
-      const todas = (cycles.find((c) => c.id === cycleId)?.labors || []).map((l) => l.id);
-      const set = new Set(next.get(cycleId) ?? todas);
-      if (set.has(laborId)) set.delete(laborId);
-      else set.add(laborId);
-      next.set(cycleId, set);
-      return next;
-    });
-  };
-
-  // Los ciclos elegidos y qué labores de cada uno (ver `chosenCyclesOf`).
-  const chosenCycles = chosenCyclesOf(cycles, selectedCycleIds, selectedLaborsByCycle);
-
-  // Agregar o corregir una persona suelta: la elección nueva reemplaza la que
-  // tenía, en el mismo lugar de la lista.
-  const savePerson = ({ worker, workdayIds, rowKeys, filas }) => {
-    setPeople((prev) => {
-      const entrada = { worker, workdayIds, rowKeys, filas };
-      const i = prev.findIndex((p) => p.worker.id === worker.id);
-      if (i < 0) return [...prev, entrada];
-      const next = [...prev];
-      next[i] = entrada;
-      return next;
-    });
-    setPersonModal(null);
-  };
-  const removePerson = (workerId) => setPeople((prev) => prev.filter((p) => p.worker.id !== workerId));
-  // Limpia lo elegido, después de guardar la nómina.
-  const resetSelection = () => {
-    setSelectedCycleIds(new Set());
-    saveSelection(new Set());
-    setSelectedLaborsByCycle(new Map());
-    setPeople([]);
-  };
-
-  const buildPreview = async () => {
-    if (chosenCycles.size === 0 && people.length === 0) return;
-    setBusy(true);
-    try {
-      // Los tipos de labor de todos los ciclos: los días de una persona suelta
-      // pueden ser de un ciclo que no se eligió.
-      const laborTypeById = new Map();
-      for (const cycle of cycles) {
-        for (const labor of cycle.labors || []) {
-          laborTypeById.set(labor.id, labor.type);
-        }
-      }
-
-      // Lo pendiente de los ciclos y labores elegidos, más los días de las
-      // personas sueltas, releídos (ver `workdaysForNewPayroll`). Las labores
-      // no marcadas quedan disponibles para una próxima nómina. Los ciclos se
-      // leen con el mismo helper que `load()`, así que dentro del minuto salen
-      // de la caché; el botón de refrescar la invalida.
-      const { workdays: allWorkdays, taken } = await workdaysForNewPayroll({
-        chosen: chosenCycles,
-        people: people.map((p) => ({ keys: workerKeys(p.worker), workdayIds: p.workdayIds })),
-      });
-      // Los ciclos de la nómina: los elegidos con alguna labor y los que traen
-      // las personas sueltas. Cada item lleva una entrada por cada uno, incluso
-      // en $0.
-      const ciclosNomina = newPayrollCycleDetails({
-        cycles,
-        chosen: chosenCycles,
-        workdays: allWorkdays,
-        faenas,
-        subfaenas,
-      });
-
-      const aggregates = aggregateWorkerAmounts(allWorkdays, laborTypeById);
-
-      // Anticipos vigentes de todos los de la vista previa; el servidor
-      // devuelve solo pending/partial.
-      const claveDe = resolveCurrentRut(workers);
-      const candidateIds = aggregates.filter((a) => a.total > 0).map(claveDe);
-      const pendingAdvances = await listPendingForWorkers(candidateIds);
-      previewWorkdaysRef.current = allWorkdays;
-      previewAdvancesRef.current = pendingAdvances;
-      const items = previewItemsOf({ aggregates, workers, payrollCycles: ciclosNomina, pendingAdvances });
-
-      setPreviewItems(items);
-      setPreviewCycles(ciclosNomina.map((c) => ({ id: c.id, label: c.label })));
-      setPayrollName(payrollSuggestedName());
-      setStep(2);
-      if (taken > 0) {
-        toast.warning(`Otra nómina tomó ${taken} jornada(s) de las personas sueltas mientras tanto; quedaron afuera.`);
-      }
-    } catch (err) {
-      toast.error(`No se pudo armar la vista previa: ${err?.message || err}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const totalSelected = useMemo(
-    () => previewItems.filter((p) => p.include).reduce((s, p) => s + (Number(p.amount) || 0), 0),
-    [previewItems],
-  );
-  const countSelected = useMemo(() => previewItems.filter((p) => p.include).length, [previewItems]);
-  const bankSelected = useMemo(
-    () => previewItems.filter((p) => p.include && !isCashBank(p.bankCode)),
-    [previewItems],
-  );
-  const cashSelected = useMemo(
-    () => previewItems.filter((p) => p.include && isCashBank(p.bankCode)),
-    [previewItems],
-  );
-  const cashGroups = useMemo(() => groupCashByLeader(cashSelected), [cashSelected]);
-
-  const updatePreview = (rut, patch) => {
-    setPreviewItems((prev) => prev.map((p) => (p.rut !== rut ? p : withPreviewEdit(p, patch))));
-  };
-
-  const bulkUpdate = (predicate, patch) => {
-    setPreviewItems((prev) => prev.map((p) => (predicate(p) ? { ...p, ...patch } : p)));
-  };
-  // Vuelve al paso de elegir ciclos, sin vista previa.
-  const resetPreview = () => {
-    setPreviewItems([]);
-    setPreviewCycles([]);
-    setPayrollName("");
-    setStep(1);
-  };
-
-  const generateAndSave = async () => {
-    // También entran los items en $0 con anticipo aplicado (el anticipo cubrió
-    // todo el bruto), para que sus jornadas se etiqueten y sus anticipos queden
-    // aplicados. El XLSX del banco filtra los de $0.
-    const rawItems = previewItems.filter(
-      (p) => p.include && (Number(p.amount) > 0 || Number(p.advance) > 0),
-    );
-    if (rawItems.length === 0) {
-      toast.warning("No hay trabajadores seleccionados con monto > 0 ni anticipos por aplicar.");
-      return;
-    }
-    // Cuotas: si hay anticipos con plan entre los incluidos, espera que el
-    // admin confirme cuáles se aplican. Va antes de validar cuentas porque
-    // excluir una cuota cambia el neto de un trabajador, y con eso si entra a
-    // payableItems.
-    const items = await confirmInstallments(rawItems);
-    if (!items) return; // el admin canceló en el modal de cuotas
-    // Las cuentas se validan solo para quienes reciben pago (amount > 0): los
-    // de neto cero no van al banco.
-    const payableItems = items.filter((p) => Number(p.amount) > 0);
-    const missing = payableItems.filter((p) => !isCashBank(p.bankCode) && (!p.accountNumber || !p.bankCode));
-    if (missing.length > 0) {
-      const proceed = await askConfirm(
-        `${missing.length} trabajador(es) bancarizados tienen datos incompletos. ¿Generar de todos modos?`,
-      );
-      if (!proceed) return;
-    }
-    const suspicious = payableItems
-      .map((p) => ({ p, issue: validateAccountNumber(p.accountNumber, p.bankCode) }))
-      .filter((x) => x.issue);
-    if (suspicious.length > 0) {
-      const sample = suspicious.slice(0, 5).map((x) => `• ${x.p.name}: ${x.issue}`).join("\n");
-      const proceed = await askConfirm(
-        `${suspicious.length} cuenta(s) sospechosa(s):\n${sample}${suspicious.length > 5 ? "\n…" : ""}\n\n¿Generar de todos modos?`,
-      );
-      if (!proceed) return;
-    }
-    setBusy(true);
-    setProgress({ step: "Armando datos de la nómina...", detail: "", percent: 2 });
-    try {
-      // Los ciclos de la nómina y qué labores abarca cada uno, para que
-      // Recalcular no traiga después lo que quedó afuera: los elegidos con
-      // alguna labor, y con `laborIds: []` los que traen las personas sueltas.
-      // El ciclo de una persona entra solo si ella quedó incluida.
-      const incluidas = new Set(items.flatMap((p) => p.workdayIds || []));
-      const cycleDetails = newPayrollCycleDetails({
-        cycles,
-        chosen: chosenCycles,
-        workdays: (previewWorkdaysRef.current || []).filter((wd) => incluidas.has(wd.id)),
-        faenas,
-        subfaenas,
-      });
-      const cycleIds = cycleDetails.map((c) => c.id);
-      const cycleLabels = cycleDetails.map((c) => c.label);
-      const enLaNomina = new Set(cycleIds);
-
-      const cleanItems = items.map((p) => payrollItemOf(p, enLaNomina));
-
-      const allWorkdayIds = cleanItems.flatMap((p) => p.workdayIds);
-      const allAdvanceIds = cleanItems.flatMap((p) => p.advanceIds || []);
-      const allApplications = cleanItems.flatMap((p) => p.advanceApplications || []);
-      const totals = payrollTotalsOf(cleanItems);
-      const finalName = payrollName || payrollSuggestedName();
-
-      // Snapshot estático: todo lo necesario para volver a mostrar la nómina
-      // sin más lecturas ni depender de datos que pueden cambiar (detalle de
-      // jornadas, origen de los anticipos y configuración de las labores).
-      const wdIdSet = new Set(allWorkdayIds);
-      const advIdSet = new Set(allAdvanceIds);
-      const snapshot = {
-        version: 1,
-        generatedAt: new Date().toISOString(),
-        payroll: {
-          name: finalName,
-          format: bankFormat.id,
-          classification: payrollClassification || "nomina",
-          status: "pending",
-          total: totals.total, bankTotal: totals.bankTotal, cashTotal: totals.cashTotal,
-          workerCount: totals.workerCount,
-          bankCount: totals.bankCount,
-          cashCount: totals.cashCount,
-          advanceTotal: totals.advanceTotal,
-          bonusTotal: totals.bonusTotal,
-        },
-        cycles: cycleDetails.map((cd) => snapshotCycleOf(cd, cycles.find((c) => c.id === cd.id))),
-        workers: cleanItems,
-        workdays: (previewWorkdaysRef.current || [])
-          .filter((wd) => wdIdSet.has(wd.id))
-          .map(snapshotWorkdayOf),
-        advances: (previewAdvancesRef.current || [])
-          .filter((adv) => advIdSet.has(adv.id))
-          .map(snapshotAdvanceOf),
-      };
-
-      setProgress({ step: "Creando registro de la nómina...", detail: "", percent: 5 });
-      const created = await payrollsService.create({
-        name: finalName,
-        format: bankFormat.id,
-        classification: payrollClassification || "nomina",
-        status: "pending",
-        cycleIds,
-        cycleLabels,
-        cycleDetails,
-        items: cleanItems,
-        total: totals.total,
-        bankTotal: totals.bankTotal,
-        cashTotal: totals.cashTotal,
-        workerCount: totals.workerCount,
-        bankCount: totals.bankCount,
-        cashCount: totals.cashCount,
-        workdayIds: allWorkdayIds,
-        advanceIds: allAdvanceIds,
-        advanceTotal: totals.advanceTotal,
-        hasSnapshot: true,
-      });
-
-      // Snapshot completo para guardar en `payrollSnapshots` (1:1 con payroll).
-      // El JSON se baja desde el menú de descargas del detalle.
-      const fullSnapshot = { ...snapshot, payrollId: created.id };
-
-      // Los tres pasos siguientes solo necesitan `created.id` y corren en paralelo:
-      //   • subir el snapshot (1 escritura, hasta 1 MB)       ~15% del progreso
-      //   • etiquetar jornadas (N updates, avance por chunk)  ~65%
-      //   • aplicar anticipos (get M + batch update)          ~10%
-      // El avance de las jornadas viene del callback; los otros dos solo
-      // marcan iniciado o terminado.
-      const W_SNAPSHOT = 15, W_TAG = 65, W_ADV = 10;
-      let snapshotDone = false, advancesDone = false;
-      let tagDone = 0, tagTotal = Math.max(1, allWorkdayIds.length);
-      const recompute = () => {
-        const pct =
-          10 + // base por crear doc
-          (snapshotDone ? W_SNAPSHOT : 0) +
-          W_TAG * (tagDone / tagTotal) +
-          (advancesDone ? W_ADV : 0);
-        const detailParts = [];
-        if (allWorkdayIds.length > 0) detailParts.push(`Jornadas ${tagDone}/${tagTotal}`);
-        if (allApplications.length > 0) detailParts.push(`Anticipos ${advancesDone ? "✓" : "…"}`);
-        detailParts.push(`JSON ${snapshotDone ? "✓" : "…"}`);
-        setProgress({
-          step: "Guardando y aplicando descuentos en paralelo...",
-          detail: detailParts.join(" · "),
-          percent: pct,
-        });
-      };
-      recompute();
-
-      const pSnapshot = (async () => {
-        await saveSnapshot(created.id, fullSnapshot);
-        snapshotDone = true;
-        recompute();
-      })();
-
-      const pTag = (async () => {
-        await tagWorkdaysWithPayroll(allWorkdayIds, created.id, (done, total) => {
-          tagDone = done;
-          tagTotal = Math.max(1, total);
-          recompute();
-        });
-      })();
-
-      const pAdv = (async () => {
-        await applyAdvancesToPayroll(allApplications, created.id);
-        advancesDone = true;
-        recompute();
-      })();
-
-      await Promise.all([pSnapshot, pTag, pAdv]);
-
-      setProgress({ step: "Actualizando lista...", detail: "", percent: 95 });
-      // Limpia el armado y pasa al historial.
-      resetSelection();
-      resetPreview();
-      setTab("history");
-      await load();
-      setProgress({ step: "Listo ✓", detail: "", percent: 100 });
-    } finally {
-      setBusy(false);
-      // Pequeño delay para que el "Listo ✓" sea visible un instante.
-      setTimeout(() => setProgress(null), 400);
-    }
-  };
+  const {
+    confirmState,
+    generateAndSave,
+    installmentConfirmState,
+    setConfirmState,
+    setInstallmentConfirmState,
+  } = useGeneratePayroll({
+    bankFormat,
+    chosenCycles,
+    cycles,
+    faenas,
+    load,
+    payrollClassification,
+    payrollName,
+    previewAdvancesRef,
+    previewItems,
+    previewWorkdaysRef,
+    resetPreview,
+    resetSelection,
+    setBusy,
+    setProgress,
+    setTab,
+    subfaenas,
+    toast,
+  });
 
   const onMarkPaid = async (p) => {
     await markPayrollPaid(p.id, p.workdayIds || []);
