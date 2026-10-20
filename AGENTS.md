@@ -1049,7 +1049,7 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 ## Información y Cuentas / InfoAccounts
 
 - Pantalla: `src/screens/InfoAccounts.jsx`. Ruta `/info-cuentas`. Colección `contactCards`.
-- Sus piezas, en `src/screens/infoAccounts/`: `ContactCard` (la tarjeta), `AccountBlock` (una cuenta bancaria), `Field` (una fila que se copia con un toque), `ContactCardImage` (la tarjeta que se copia como imagen) y `ContactCardModal` (alta y edición). Los textos que se copian (`accountToText`, `cardToText`) y la forma de una ficha nueva viven en `utils/contactCards.js`, con tests.
+- Sus piezas, en `src/screens/infoAccounts/`: `ContactCardsTab` (la lista de fichas, con su buscador y sus modales), `ContactCard` (la tarjeta), `AccountBlock` (una cuenta bancaria), `Field` (una fila que se copia con un toque), `ContactCardImage` (la tarjeta que se copia como imagen) y `ContactCardModal` (alta y edición). Los textos que se copian (`accountToText`, `cardToText`) y la forma de una ficha nueva viven en `utils/contactCards.js`, con tests.
 - Libreta compartida de contactos (persona o empresa) con datos bancarios listos para copiar/pegar. **Modelo independiente**: no se vincula a `worker` ni a `companies` — el usuario crea sus propias fichas, aunque dupliquen a alguien que ya existe en otra colección.
 - Cada ficha tiene N cuentas (`accounts[]`), con la misma convención de `bankCode`/`accountType` que `worker.bankDetails`.
 - `favorite` fija la ficha arriba; `includeRut` decide si el RUT viaja junto con los datos copiados (siempre `true` en empresas).
