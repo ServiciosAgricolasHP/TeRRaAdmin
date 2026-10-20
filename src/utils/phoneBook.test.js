@@ -14,6 +14,7 @@ import {
   filterPhoneContacts,
   groupByCompany,
   departmentOptions,
+  phoneContactText,
 } from "./phoneBook";
 
 describe("normalizePhone", () => {
@@ -253,5 +254,27 @@ describe("filterPhoneContacts, groupByCompany y departmentOptions", () => {
     expect(opts).toContain("Bodega");
     expect(opts.filter((d) => d.toLowerCase() === "operaciones")).toEqual(["Operaciones"]);
     expect(departmentOptions(list, { inUse: true })).toEqual(["Operaciones", "Ventas"]);
+  });
+});
+
+describe("phoneContactText", () => {
+  it("arma el texto para compartir, sin las observaciones", () => {
+    const c = {
+      name: "Ana Pérez", company: "Comercial Los Robles", department: "Ventas", role: "Ejecutiva",
+      phones: [{ number: "+56911111111", label: "Directo" }, { number: "+56223456789;ext=12", label: "" }],
+      emails: ["ana@robles.cl"], notes: "No dar este número",
+    };
+    expect(phoneContactText(c)).toBe([
+      "Ana Pérez",
+      "Comercial Los Robles · Ventas · Ejecutiva",
+      "Directo: +56 9 1111 1111",
+      "Teléfono: +56 2 2345 6789 anexo 12",
+      "Correo: ana@robles.cl",
+    ].join("\n"));
+  });
+
+  it("sin nombre, la empresa es el título y no se repite", () => {
+    expect(phoneContactText({ company: "Banco Estado", role: "Mesa central", phones: [{ number: "6002007000", label: "Directo" }] }))
+      .toBe("Banco Estado\nMesa central\nDirecto: 600 200 7000");
   });
 });

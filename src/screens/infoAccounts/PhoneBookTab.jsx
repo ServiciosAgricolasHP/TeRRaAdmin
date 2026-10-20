@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import ConfirmDialog from "../../components/ConfirmDialog";
+import RowMenu from "../../components/RowMenu";
 import { useToast } from "../../contexts/ToastContext";
 import {
   CONTACT_TYPES,
@@ -14,6 +15,8 @@ import { usePhoneBook } from "./usePhoneBook";
 import PhoneContactRow from "./PhoneContactRow";
 import PhoneContactModal from "./PhoneContactModal";
 import PhoneBookImportModal from "./PhoneBookImportModal";
+import { shareContact, downloadContactVcard, downloadPhoneBookVcf } from "./phoneBookFiles";
+import { writePhoneBookXlsx } from "./writePhoneBookXlsx";
 
 // Cuántos contactos se dibujan de una vez; "Mostrar más" suma otros tantos.
 const PAGE = 200;
@@ -95,7 +98,30 @@ export default function PhoneBookTab() {
     toast.success(`Agenda: ${res.created} ${res.created === 1 ? "nuevo" : "nuevos"} y ${res.updated} ${res.updated === 1 ? "actualizado" : "actualizados"}`);
   };
 
-  const rowProps = { onCopy: copy, onEdit: setEditing, onDelete: setConfirmDelete };
+  const onShare = async (contact) => {
+    try {
+      const how = await shareContact(contact);
+      if (how === "copied") toast.success("Contacto copiado: este navegador no tiene el menú de compartir");
+    } catch (err) {
+      toast.error("No se pudo compartir: " + (err.message || err));
+    }
+  };
+
+  const onDownload = (contact) => {
+    downloadContactVcard(contact);
+    toast.success("Contacto descargado (.vcf)");
+  };
+
+  // Las descargas llevan lo filtrado en pantalla.
+  const exportXlsx = async () => {
+    try {
+      await writePhoneBookXlsx(filtered);
+    } catch (err) {
+      toast.error("No se pudo generar el Excel: " + (err.message || err));
+    }
+  };
+
+  const rowProps = { onCopy: copy, onShare, onDownload, onEdit: setEditing, onDelete: setConfirmDelete };
 
   return (
     <div className="space-y-3">
@@ -110,6 +136,15 @@ export default function PhoneBookTab() {
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => setEditing(emptyPhoneContact())} className={btnCls}>+ Contacto</button>
           <button type="button" onClick={() => setImporting(true)} className={btnCls}>📥 Importar</button>
+          <RowMenu
+            trigger="⬇ Descargar"
+            triggerLabel="Descargar la agenda"
+            triggerClassName={btnCls}
+            items={[
+              { icon: "📊", label: "Excel", hint: filtered.length ? "En el formato de la planilla, para corregir y volver a importar" : "No hay contactos en la lista", disabled: !filtered.length, onClick: exportXlsx },
+              { icon: "📇", label: "Contactos (.vcf)", hint: filtered.length ? "Para cargarlos en un teléfono o en el correo" : "No hay contactos en la lista", disabled: !filtered.length, onClick: () => downloadPhoneBookVcf(filtered) },
+            ]}
+          />
         </div>
       </div>
 

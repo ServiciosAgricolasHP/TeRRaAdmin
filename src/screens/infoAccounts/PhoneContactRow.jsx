@@ -1,10 +1,12 @@
-import { contactTypeLabel, displayName, formatPhone } from "../../utils/phoneBook";
+import RowMenu from "../../components/RowMenu";
+import { contactTypeLabel, displayName, formatPhone, phoneContactText } from "../../utils/phoneBook";
 
 // Un contacto de la agenda: nombre, empresa · departamento · cargo, sus otros
 // nombres y, a la derecha (abajo en el teléfono), sus números y correos. Tocar
-// un número o un correo lo copia. `hideCompany`: la lista ya está agrupada
-// por empresa.
-export default function PhoneContactRow({ contact, hideCompany = false, onCopy, onEdit, onDelete }) {
+// un número o un correo lo copia; 📤 comparte el contacto entero y el menú ⋯
+// lo copia, lo descarga como tarjeta .vcf, lo edita o lo borra.
+// `hideCompany`: la lista ya está agrupada por empresa.
+export default function PhoneContactRow({ contact, hideCompany = false, onCopy, onShare, onDownload, onEdit, onDelete }) {
   const c = contact;
   // Sin nombre, la empresa ya es el título.
   const meta = [c.name && !hideCompany ? c.company : "", c.department, c.role].filter(Boolean).join(" · ");
@@ -34,23 +36,25 @@ export default function PhoneContactRow({ contact, hideCompany = false, onCopy, 
           <CopyChip key={e} icon="✉" value={e} what="Correo" onCopy={onCopy} />
         ))}
       </div>
-      <div className="absolute right-3 top-2.5 flex shrink-0 gap-1 sm:static">
+      <div className="absolute right-3 top-2.5 flex shrink-0 items-center gap-1 sm:static">
         <button
           type="button"
-          onClick={() => onEdit(c)}
-          title="Editar contacto"
+          onClick={() => onShare(c)}
+          title="Compartir el contacto (WhatsApp, correo…)"
+          aria-label="Compartir contacto"
           className="min-h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-xs hover:bg-[var(--color-accent-soft)]"
         >
-          ✎ Editar
+          📤<span className="ml-1 hidden sm:inline">Compartir</span>
         </button>
-        <button
-          type="button"
-          onClick={() => onDelete(c)}
-          title="Eliminar contacto"
-          className="min-h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
-        >
-          🗑
-        </button>
+        <RowMenu
+          items={[
+            { icon: "📋", label: "Copiar contacto", hint: "Nombre, empresa, números y correos", onClick: () => onCopy(phoneContactText(c), "Contacto") },
+            { icon: "📲", label: "Descargar contacto (.vcf)", hint: "Al abrirlo en el teléfono, se guarda en los contactos", onClick: () => onDownload(c) },
+            { icon: "✎", label: "Editar", onClick: () => onEdit(c) },
+            { divider: true },
+            { icon: "🗑", label: "Eliminar", danger: true, onClick: () => onDelete(c) },
+          ]}
+        />
       </div>
     </li>
   );

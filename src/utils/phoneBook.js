@@ -436,3 +436,15 @@ export function departmentOptions(contacts, { inUse = false } = {}) {
   return uniqueBy(inUse ? used : [...DEPARTMENTS, ...used], nameKey)
     .sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
 }
+
+// El contacto como texto para copiar o compartir por WhatsApp: nombre, empresa
+// · departamento · cargo, un renglón por número (con su etiqueta) y los
+// correos. Las observaciones no van: pueden ser apuntes internos.
+export function phoneContactText(c) {
+  const lines = [displayName(c)];
+  const meta = [c.name ? c.company : "", c.department, c.role].filter(Boolean).join(" · ");
+  if (meta) lines.push(meta);
+  for (const p of c.phones || []) lines.push(`${p.label || "Teléfono"}: ${formatPhone(p.number)}`);
+  for (const e of c.emails || []) lines.push(`Correo: ${e}`);
+  return lines.join("\n");
+}
