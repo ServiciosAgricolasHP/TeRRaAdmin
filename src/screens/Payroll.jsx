@@ -20,10 +20,7 @@ import {
   untagWorkdaysFromPayroll,
 } from "../services/payrollsService";
 import {
-  hasInstallmentPlan,
-  installmentProgress,
   listPendingForWorkers,
-  advanceSign,
   applyAdvancesToPayroll,
   restoreAdvancesFromPayroll,
 } from "../services/advancesService";
@@ -37,21 +34,27 @@ import {
 } from "../services/payrollSnapshots";
 import { workerKeys } from "../services/workersService";
 import { isCashBank } from "../utils/banks";
-import { getTratoTierTotals } from "../utils/cosechaCombos";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
 import { getPublishedPortal, publishPayrollToPortal } from "../services/portalService";
 import {
   aggregateWorkerAmounts,
   validateAccountNumber,
-  normalizeLeader,
   payrollSuggestedName,
   groupCashByLeader,
-  splitBankAndCash,
   downloadPayrollXlsx,
   downloadBankFileXlsx,
 } from "../utils/payroll";
-import { newPayrollCycleDetails, allocateAdvances, advanceNote } from "../utils/payrollItem";
+import { newPayrollCycleDetails } from "../utils/payrollItem";
+import { activeCyclesByJob, chosenCyclesOf, cycleStatsOf, exportCyclesOf } from "../utils/payrollCycles";
+import {
+  installmentCandidatesOf,
+  payrollItemOf,
+  payrollTotalsOf,
+  previewItemsOf,
+  withPreviewEdit,
+  withoutInstallments,
+} from "../utils/payrollPreview";
 import ConfirmDialog from "../components/ConfirmDialog";
 import CloseCyclesModal from "./payroll/CloseCyclesModal";
 import { settledOpenCycles, payrollStatusMap, splitTaken } from "../utils/cycleClosing";
@@ -175,21 +178,7 @@ export default function Payroll() {
   // confirme cuáles se aplican esta corrida; si no hay ninguno, sigue de
   // largo. Devuelve `items` (ajustado) o `null` si el admin canceló.
   const confirmInstallments = async (items) => {
-    const advanceById = new Map((previewAdvancesRef.current || []).map((a) => [a.id, a]));
-    const candidates = [];
-    for (const p of items) {
-      for (const app of p.anticipoApplications || []) {
-        const adv = advanceById.get(app.advanceId);
-        if (adv && hasInstallmentPlan(adv)) {
-          candidates.push({
-            advanceId: app.advanceId,
-            workerName: p.name,
-            amount: app.amount,
-            progress: installmentProgress(adv),
-          });
-        }
-      }
-    }
+    const candidates = installmentCandidatesOf(items, previewAdvancesRef.current);
     if (candidates.length === 0) return items;
 
     const excludedIds = await new Promise((resolve) => setInstallmentConfirmState({ candidates, resolve }));
@@ -197,20 +186,7 @@ export default function Payroll() {
     if (excludedIds === null) return null;
     if (excludedIds.length === 0) return items;
 
-    const excluded = new Set(excludedIds);
-    return items.map((p) => {
-      const apps = p.anticipoApplications || [];
-      if (!apps.some((a) => excluded.has(a.advanceId))) return p;
-      const kept = apps.filter((a) => !excluded.has(a.advanceId));
-      const anticiposTotal = kept.reduce((s, x) => s + x.amount, 0);
-      return {
-        ...p,
-        anticipoApplications: kept,
-        advance: anticiposTotal,
-        anticiposTotal,
-        amount: Math.max(0, Math.round((Number(p.grossAmount) || 0) - anticiposTotal + (Number(p.bonus) || 0))),
-      };
-    });
+    return withoutInstallments(items, excludedIds);
   };
   const [detailPayroll, setDetailPayroll] = useState(null);
   // Nómina que se está renombrando, o null. El nombre es solo una etiqueta y se
@@ -218,12 +194,7 @@ export default function Payroll() {
   // embebido, así la re-descarga del JSON trae el nombre nuevo.
   const [renaming, setRenaming] = useState(null);
 
-  // Totales por ciclo activo: { [cycleId]: { unpaid, taken, total, firstDay,
-  // lastDay, unpaidBank, unpaidCash, unpaidUnknown, unpaidByLabor,
-  // takenByPayroll } }, con `unpaidByLabor[laborId]` = { unpaid, bank, cash,
-  // unknown, ruts }. `taken` es lo que ya entró a alguna nómina y
-  // `takenByPayroll[payrollId]`, lo que se llevó cada una: cuánto de eso está
-  // pagado de verdad depende del estado de la nómina (`splitTaken`).
+  // Totales por ciclo activo (ver `cycleStatsOf`).
   const [cycleStats, setCycleStats] = useState({});
   // Separado de `loading`: al refrescar, el spinner va en el botón y no tapa
   // la pantalla con "Cargando…".
@@ -246,70 +217,11 @@ export default function Payroll() {
       setPayrolls(p);
 
       // Pendiente, lo que ya entró a nómina y rango de fechas de los ciclos activos.
-      // firstDay/lastDay son el período que muestra CycleSelector.
       const activeIds = c.filter((x) => x.status !== "closed").map((x) => x.id);
-      // Medio de pago por rut, para estimar sin lecturas extra cuánto de lo
-      // pendiente sale en efectivo y cuánto por transferencia. Es un estimado
-      // en bruto: el monto real por medio de pago sale en la vista previa, con
-      // anticipos, bonos y los cambios de medio que haga el usuario.
-      const payKindByRut = new Map();
-      for (const wk of w) {
-        const code = wk.bankDetails?.[3] || "";
-        payKindByRut.set(wk.id, !code ? "unknown" : isCashBank(code) ? "cash" : "bank");
-      }
-      const stats = {};
-      for (const id of activeIds) {
-        stats[id] = {
-          unpaid: 0, taken: 0, total: 0, firstDay: "", lastDay: "",
-          unpaidBank: 0, unpaidCash: 0, unpaidUnknown: 0,
-          unpaidByLabor: {}, takenByPayroll: {},
-        };
-      }
-      const laborTypeMap = new Map();
-      for (const cy of c) {
-        for (const labor of cy.labors || []) laborTypeMap.set(labor.id, labor.type);
-      }
       // Por ciclo y cacheado: `buildPreview` vuelve a pedir estos mismos
       // documentos al elegir los ciclos y los toma de la misma clave de caché.
       const wds = await listWorkdaysByCycles(activeIds);
-      for (const wd of wds) {
-        const cid = wd.cycleId;
-        if (!stats[cid]) continue;
-        const type = laborTypeMap.get(wd.laborId);
-        let amount = 0;
-        if (type === "trato") {
-          amount = getTratoTierTotals(wd).amount;
-        } else {
-          amount = Number(wd.amount) || 0;
-        }
-        stats[cid].total += amount;
-        if (wd.payrollId) {
-          stats[cid].taken += amount;
-          stats[cid].takenByPayroll[wd.payrollId] = (stats[cid].takenByPayroll[wd.payrollId] || 0) + amount;
-        } else {
-          stats[cid].unpaid += amount;
-          // Un rut sin ficha o sin banco cargado queda aparte como "por
-          // definir", no como transferencia.
-          const kind = payKindByRut.get(wd.workerRut) || "unknown";
-          if (kind === "cash") stats[cid].unpaidCash += amount;
-          else if (kind === "bank") stats[cid].unpaidBank += amount;
-          else stats[cid].unpaidUnknown += amount;
-          // Lo mismo por labor, para que el total de lo elegido respete las
-          // labores destildadas.
-          const porLabor = stats[cid].unpaidByLabor;
-          if (!porLabor[wd.laborId]) porLabor[wd.laborId] = { unpaid: 0, bank: 0, cash: 0, unknown: 0, ruts: new Set() };
-          const pl = porLabor[wd.laborId];
-          pl.unpaid += amount;
-          pl.ruts.add(wd.workerRut);
-          if (kind === "cash") pl.cash += amount;
-          else if (kind === "bank") pl.bank += amount;
-          else pl.unknown += amount;
-        }
-        if (wd.date) {
-          if (!stats[cid].firstDay || wd.date < stats[cid].firstDay) stats[cid].firstDay = wd.date;
-          if (!stats[cid].lastDay || wd.date > stats[cid].lastDay) stats[cid].lastDay = wd.date;
-        }
-      }
+      const stats = cycleStatsOf(c, w, wds);
       setCycleStats(stats);
       return { cycles: c, stats, payrolls: p };
     } catch (err) {
@@ -390,19 +302,9 @@ export default function Payroll() {
   }, [payrolls]);
 
   // Ciclos activos agrupados por faena.
-  const activeByFaena = useMemo(() => {
-    const groups = new Map();
-    for (const f of faenas) groups.set(f.id, { faena: f, cycles: [] });
-    for (const c of cycles) {
-      if (c.status === "closed") continue;
-      const g = groups.get(c.faenaId);
-      if (g) g.cycles.push(c);
-    }
-    return [...groups.values()].filter((g) => g.cycles.length > 0);
-  }, [faenas, cycles]);
+  const activeByFaena = useMemo(() => activeCyclesByJob(faenas, cycles), [faenas, cycles]);
 
   const subfaenaName = (id) => subfaenas.find((s) => s.id === id)?.name || "";
-  const workerById = (rut) => workers.find((w) => w.id === rut);
 
   // Ciclos abiertos ya pagados por completo, para cerrarlos de una vez desde
   // Generar o justo después de marcar una nómina pagada. `closeCycles.ids`
@@ -454,26 +356,8 @@ export default function Payroll() {
     });
   };
 
-  // Qué labores de un ciclo entran a la nómina, para `cycleDetails[].laborIds`:
-  // `undefined` = todas (el ciclo entero), una lista = solo esas, `[]` =
-  // ninguna. Recalcular respeta esta elección.
-  const laborScopeOf = (cycle) => {
-    const elegidas = selectedLaborsByCycle.get(cycle.id);
-    if (!elegidas) return undefined;
-    const todas = (cycle.labors || []).map((l) => l.id);
-    if (todas.every((id) => elegidas.has(id))) return undefined;
-    return todas.filter((id) => elegidas.has(id));
-  };
-
-  // Los ciclos elegidos y qué labores de cada uno: Map(cycleId → laborIds),
-  // con la convención de `laborScopeOf`. Solo abiertos: la selección se guarda
-  // entre sesiones, y un ciclo que se cerró desde entonces ya no aparece en la
-  // lista para poder desmarcarlo.
-  const chosenCycles = new Map(
-    cycles
-      .filter((c) => selectedCycleIds.has(c.id) && c.status !== "closed")
-      .map((c) => [c.id, laborScopeOf(c)]),
-  );
+  // Los ciclos elegidos y qué labores de cada uno (ver `chosenCyclesOf`).
+  const chosenCycles = chosenCyclesOf(cycles, selectedCycleIds, selectedLaborsByCycle);
 
   // Agregar o corregir una persona suelta: la elección nueva reemplaza la que
   // tenía, en el mismo lugar de la lista.
@@ -532,68 +416,7 @@ export default function Payroll() {
       const pendingAdvances = await listPendingForWorkers(candidateIds);
       previewWorkdaysRef.current = allWorkdays;
       previewAdvancesRef.current = pendingAdvances;
-      const advancesByRut = new Map();
-      for (const adv of pendingAdvances) {
-        const key = adv.workerId || adv.workerRut;
-        const e = advancesByRut.get(key) || { anticipos: [], bonos: [] };
-        if (advanceSign(adv) > 0) e.bonos.push(adv);
-        else e.anticipos.push(adv);
-        advancesByRut.set(key, e);
-      }
-
-      const items = aggregates
-        .filter((a) => a.total > 0)
-        .map((a) => {
-          const w = workerById(a.rut);
-          const bd = w?.bankDetails || [];
-          const bankCode = bd[3] || "";
-          const cash = isCashBank(bankCode);
-          const byCycle = {};
-          for (const { id: cid } of ciclosNomina) {
-            byCycle[cid] = Math.round(a.byCycle[cid] || 0);
-          }
-          const accountIssue = validateAccountNumber(bd[1] || "", bankCode);
-          const adv = advancesByRut.get(a.workerId || a.rut) || { anticipos: [], bonos: [] };
-
-          const grossInt = Math.round(a.total);
-          // Bonos primero y anticipos después, topeados por bruto + bonos.
-          // La regla y el porqué viven en src/utils/payrollItem.js.
-          const reparto = allocateAdvances({
-            gross: grossInt,
-            anticipos: adv.anticipos,
-            bonos: adv.bonos,
-          });
-          const { anticipoApplications, bonoApplications, anticiposTotal, bonosTotal } = reparto;
-
-          return {
-            rut: a.rut,
-            workerId: a.workerId || a.rut,
-            name: w?.name || "(sin nombre)",
-            paymentRut: bd[0] || a.rut,
-            accountNumber: bd[1] || "",
-            accountType: bd[2] != null ? Number(bd[2]) : 3,
-            bankCode,
-            email: w?.email || "",
-            groupLeader: normalizeLeader(w?.groupLeader?.[0]),
-            grossAmount: grossInt,
-            advance: anticiposTotal,
-            bonus: bonosTotal,
-            advanceNote: advanceNote(reparto),
-            anticipoApplications,
-            bonoApplications,
-            anticiposTotal,
-            bonosTotal,
-            // adelantosTotal se mantiene por compatibilidad del snapshot; siempre vale 0.
-            adelantosTotal: 0,
-            amount: reparto.amount,
-            byCycle,
-            workdayIds: a.workdayIds || [],
-            include: true,
-            _missing: !cash && (!w || !bd[1] || !bd[3]),
-            _accountIssue: cash ? null : accountIssue,
-          };
-        })
-        .sort((a, b) => a.name.localeCompare(b.name));
+      const items = previewItemsOf({ aggregates, workers, payrollCycles: ciclosNomina, pendingAdvances });
 
       setPreviewItems(items);
       setPreviewCycles(ciclosNomina.map((c) => ({ id: c.id, label: c.label })));
@@ -625,54 +448,7 @@ export default function Payroll() {
   const cashGroups = useMemo(() => groupCashByLeader(cashSelected), [cashSelected]);
 
   const updatePreview = (rut, patch) => {
-    setPreviewItems((prev) =>
-      prev.map((p) => {
-        if (p.rut !== rut) return p;
-        const next = { ...p, ...patch };
-        const touchesAdvance = Object.prototype.hasOwnProperty.call(patch, "advance");
-        const touchesBonus = Object.prototype.hasOwnProperty.call(patch, "bonus");
-        if (touchesAdvance || touchesBonus) {
-          const adv = Math.max(0, Number(next.advance) || 0);
-          const bon = Math.max(0, Number(next.bonus) || 0);
-          next.advance = adv;
-          next.bonus = bon;
-          next.amount = Math.max(0, Math.round((p.grossAmount || 0) - adv + bon));
-          if (touchesAdvance) {
-            // Reparte el total editado entre los anticipos, del más viejo al
-            // más nuevo, para que el desglose cuadre con el total. El tope de
-            // cada uno es el mayor entre su saldo real (`maxAmount`) y lo ya
-            // aplicado, así el override puede superar la cuota sugerida.
-            const apps = (p.anticipoApplications || []).map((x) => ({ ...x }));
-            let remaining = adv;
-            const out = [];
-            for (const ap of apps) {
-              if (remaining <= 0) break;
-              const cap = Math.max(Number(ap.maxAmount) || 0, ap.amount);
-              const take = Math.min(cap, remaining);
-              if (take > 0) out.push({ advanceId: ap.advanceId, amount: take, maxAmount: ap.maxAmount });
-              remaining -= take;
-            }
-            next.anticipoApplications = out;
-            next.anticiposTotal = out.reduce((s, x) => s + x.amount, 0);
-          }
-          if (touchesBonus) {
-            // Bonos: mismo reparto, topeado por el monto de cada aplicación.
-            const apps = (p.bonoApplications || []).map((x) => ({ ...x }));
-            let remaining = bon;
-            const out = [];
-            for (const ap of apps) {
-              if (remaining <= 0) break;
-              const take = Math.min(ap.amount, remaining);
-              if (take > 0) out.push({ advanceId: ap.advanceId, amount: take });
-              remaining -= take;
-            }
-            next.bonoApplications = out;
-            next.bonosTotal = out.reduce((s, x) => s + x.amount, 0);
-          }
-        }
-        return next;
-      }),
-    );
+    setPreviewItems((prev) => prev.map((p) => (p.rut !== rut ? p : withPreviewEdit(p, patch))));
   };
 
   const bulkUpdate = (predicate, patch) => {
@@ -735,55 +511,12 @@ export default function Payroll() {
       const cycleLabels = cycleDetails.map((c) => c.label);
       const enLaNomina = new Set(cycleIds);
 
-      const cleanItems = items.map((p) => {
-        const anticipoApps = (p.anticipoApplications || []).map((x) => ({
-          advanceId: x.advanceId,
-          amount: Math.round(Number(x.amount) || 0),
-        }));
-        const bonoApps = (p.bonoApplications || []).map((x) => ({
-          advanceId: x.advanceId,
-          amount: Math.round(Number(x.amount) || 0),
-        }));
-        const advanceApplications = [...anticipoApps, ...bonoApps];
-        return {
-          rut: p.rut,
-          workerId: p.workerId || p.rut,
-          paymentRut: p.paymentRut || p.rut,
-          name: p.name,
-          accountNumber: p.accountNumber,
-          bankCode: p.bankCode,
-          accountType: p.accountType,
-          email: p.email || "",
-          groupLeader: p.groupLeader || "",
-          grossAmount: Math.round(Number(p.grossAmount) || Number(p.amount) || 0),
-          advance: Math.round(Number(p.advance) || 0),
-          bonus: Math.round(Number(p.bonus) || 0),
-          advanceNote: p.advanceNote || "",
-          advanceIds: advanceApplications.map((x) => x.advanceId),
-          advanceApplications,
-          anticipoApplications: anticipoApps,
-          bonoApplications: bonoApps,
-          anticiposTotal: Math.round(Number(p.anticiposTotal) || 0),
-          bonosTotal: Math.round(Number(p.bonosTotal) || 0),
-          adelantosTotal: Math.round(Number(p.adelantosTotal) || 0),
-          amount: Math.round(Number(p.amount) || 0),
-          // Solo los ciclos de la nómina: el de una persona suelta que se
-          // excluyó en la vista previa no tiene columna.
-          byCycle: Object.fromEntries(Object.entries(p.byCycle || {}).filter(([cid]) => enLaNomina.has(cid))),
-          workdayIds: p.workdayIds || [],
-        };
-      });
+      const cleanItems = items.map((p) => payrollItemOf(p, enLaNomina));
 
       const allWorkdayIds = cleanItems.flatMap((p) => p.workdayIds);
       const allAdvanceIds = cleanItems.flatMap((p) => p.advanceIds || []);
       const allApplications = cleanItems.flatMap((p) => p.advanceApplications || []);
-      const { bank: bankItems, cash: cashItems } = splitBankAndCash(cleanItems);
-
-      const total = cleanItems.reduce((s, x) => s + x.amount, 0);
-      const bankTotal = bankItems.reduce((s, x) => s + x.amount, 0);
-      const cashTotal = cashItems.reduce((s, x) => s + x.amount, 0);
-      const advanceTotalSum = cleanItems.reduce((s, x) => s + (Number(x.advance) || 0), 0);
-      const bonusTotalSum = cleanItems.reduce((s, x) => s + (Number(x.bonus) || 0), 0);
+      const totals = payrollTotalsOf(cleanItems);
       const finalName = payrollName || payrollSuggestedName();
 
       // Snapshot estático: todo lo necesario para volver a mostrar la nómina
@@ -799,12 +532,12 @@ export default function Payroll() {
           format: bankFormat.id,
           classification: payrollClassification || "nomina",
           status: "pending",
-          total, bankTotal, cashTotal,
-          workerCount: cleanItems.length,
-          bankCount: bankItems.length,
-          cashCount: cashItems.length,
-          advanceTotal: advanceTotalSum,
-          bonusTotal: bonusTotalSum,
+          total: totals.total, bankTotal: totals.bankTotal, cashTotal: totals.cashTotal,
+          workerCount: totals.workerCount,
+          bankCount: totals.bankCount,
+          cashCount: totals.cashCount,
+          advanceTotal: totals.advanceTotal,
+          bonusTotal: totals.bonusTotal,
         },
         cycles: cycleDetails.map((cd) => snapshotCycleOf(cd, cycles.find((c) => c.id === cd.id))),
         workers: cleanItems,
@@ -826,15 +559,15 @@ export default function Payroll() {
         cycleLabels,
         cycleDetails,
         items: cleanItems,
-        total,
-        bankTotal,
-        cashTotal,
-        workerCount: cleanItems.length,
-        bankCount: bankItems.length,
-        cashCount: cashItems.length,
+        total: totals.total,
+        bankTotal: totals.bankTotal,
+        cashTotal: totals.cashTotal,
+        workerCount: totals.workerCount,
+        bankCount: totals.bankCount,
+        cashCount: totals.cashCount,
         workdayIds: allWorkdayIds,
         advanceIds: allAdvanceIds,
-        advanceTotal: advanceTotalSum,
+        advanceTotal: totals.advanceTotal,
         hasSnapshot: true,
       });
 
@@ -1080,36 +813,7 @@ export default function Payroll() {
   const onRedownload = async (p) => {
     const format = await bankFormatForDownload();
     if (!format) return;
-    // Aplica los nombres de ciclo editados en "📝 Editar encabezados"
-    // (guardados en el doc), así el XLSX usa los nombres cortos.
-    const overrides = p.cycleLabelOverrides || {};
-    const cyclesForExport = (p.cycleDetails || []).map((c) => {
-      // Sin firstDay/lastDay guardados, toma el rango del ciclo en memoria; si
-      // el ciclo ya no existe, queda vacío y el XLSX no incluye la fila Período.
-      let firstDay = c.firstDay || "";
-      let lastDay = c.lastDay || "";
-      if (!firstDay && !lastDay) {
-        const live = cycles.find((x) => x.id === c.id);
-        if (live && Array.isArray(live.days) && live.days.length) {
-          const sorted = [...live.days].sort();
-          firstDay = sorted[0];
-          lastDay = sorted[sorted.length - 1];
-        }
-      }
-      return {
-        id: c.id,
-        label: overrides[c.id] || c.label,
-        faenaId: c.faenaId,
-        faenaName: c.faenaName,
-        subfaenaId: c.subfaenaId,
-        subfaenaName: c.subfaenaName,
-        firstDay,
-        lastDay,
-      };
-    });
-    if (cyclesForExport.length === 0 && p.cycleIds) {
-      for (const id of p.cycleIds) cyclesForExport.push({ id, label: overrides[id] || id });
-    }
+    const cyclesForExport = exportCyclesOf(p, cycles);
     await downloadPayrollXlsx(withCurrentRuts(p.items, rutOf), p.name || "Nomina", cyclesForExport, format);
   };
   const onDownloadNominaOnly = async (p) => {
