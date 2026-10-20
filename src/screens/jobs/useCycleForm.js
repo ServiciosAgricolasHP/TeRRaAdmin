@@ -119,7 +119,7 @@ export function useCycleForm({ cyclesByJob, jobs, loadCycles, setBusy, subjobsBy
           }
         }
         if (skippedPaid > 0) {
-          toast.success(`Se movieron ${moved} workday(s). ${skippedPaid} ya estaban en una nómina y quedaron en el ciclo origen.`);
+          toast.success(`Se movieron ${moved} jornada(s). ${skippedPaid} ya estaban en una nómina y quedaron en el ciclo origen.`);
         } else {
           toast.success(mode === "create" ? "Ciclo creado" : "Ciclo actualizado");
         }

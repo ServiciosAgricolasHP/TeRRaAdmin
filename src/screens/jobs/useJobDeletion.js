@@ -58,7 +58,7 @@ export function useJobDeletion({ isAdmin, loadCycles, loadJobs, loadSubjobs, ord
               .join("\n");
             const taggedCount = allCycleWds.filter((w) => w.payrollId).length;
             toast.error(
-              `${taggedCount} workday(s) ya forman parte de ${taggedPayrollIds.length} nómina(s):\n` +
+              `${taggedCount} jornada(s) ya forman parte de ${taggedPayrollIds.length} nómina(s):\n` +
                 `${names || "(nómina sin nombre)"}\n\n` +
                 `Elimina primero esas nóminas y vuelve a intentar.`,
               { title: "No se puede eliminar en cascada" },
@@ -80,7 +80,7 @@ export function useJobDeletion({ isAdmin, loadCycles, loadJobs, loadSubjobs, ord
           }
           for (const c of jobCycles) {
             const wds = wdsByCycle.get(c.id) || [];
-            console.log(`  Borrando ciclo ${c.id} (${c.label}) con ${wds.length} workdays`);
+            console.log(`  Borrando ciclo ${c.id} (${c.label}) con ${wds.length} jornadas`);
             for (const w of wds) await workdaysService.remove(w.id);
             await cyclesService.remove(c.id);
           }
@@ -119,7 +119,7 @@ export function useJobDeletion({ isAdmin, loadCycles, loadJobs, loadSubjobs, ord
                 .join("\n");
               const taggedCount = wds.filter((w) => w.payrollId).length;
               toast.error(
-                `${taggedCount} workday(s) ya forman parte de ${taggedPayrollIds.length} nómina(s):\n` +
+                `${taggedCount} jornada(s) ya forman parte de ${taggedPayrollIds.length} nómina(s):\n` +
                   `${names || "(nómina sin nombre)"}\n\n` +
                   `Elimina primero esas nóminas y vuelve a intentar.`,
                 { title: `No se puede eliminar el ciclo "${confirm.item.label}"` },
