@@ -34,6 +34,13 @@ describe("normalizePhone", () => {
     expect(normalizePhone("22345 6789, ext. 7")).toBe("+56223456789;ext=7");
     expect(normalizePhone("+56 2 2345 6789 anexo 12")).not.toBe(normalizePhone("+56 2 2345 6789 anexo 13"));
   });
+
+  it("normalizar un número ya normalizado lo deja igual, también con anexo", () => {
+    for (const raw of ["22 345 6789 anexo 12", "912345678", "+54 9 11 2345 6789", "12345678"]) {
+      const once = normalizePhone(raw);
+      expect(normalizePhone(once)).toBe(once);
+    }
+  });
 });
 
 describe("formatPhone", () => {

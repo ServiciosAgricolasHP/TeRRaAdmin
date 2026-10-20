@@ -57,7 +57,8 @@ export function contactTypeFromLabel(label) {
   return hit ? hit.value : "other";
 }
 
-const EXTENSION_RE = /^(.*?)[\s,]*(?:anexo|anx\.?|ext\.?|extensi[oó]n|int\.?)\s*(\d+)\s*$/i;
+// Un anexo escrito a mano ("anexo 12", "ext. 12") o ya normalizado (";ext=12").
+const EXTENSION_RE = /^(.*?)(?:[\s,]*(?:anexo|anx\.?|ext\.?|extensi[oó]n|int\.?)\s*|;ext=)(\d+)\s*$/i;
 
 // Número normalizado, que es también la clave para juntar contactos. Quedan
 // los dígitos y el `+`, y `00` inicial pasa a `+`. Un número chileno de 9
