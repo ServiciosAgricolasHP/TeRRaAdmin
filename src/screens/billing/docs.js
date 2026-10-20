@@ -49,6 +49,13 @@ export const PAYMENT_STATUSES = {
 
 export const CREDIT_NOTE_STATE = { label: "Anulada", chip: "bg-[var(--color-danger-soft)] text-[var(--color-danger)]" };
 
+// Mes actual en formato YYYY-MM. Es el filtro por defecto: la vista operativa
+// muestra solo el mes en curso, y el selector de período lleva a los demás.
+export function currentPeriod() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export function todayIso() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;

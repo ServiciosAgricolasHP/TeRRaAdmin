@@ -19,24 +19,18 @@ import { useIsMobile } from "../hooks/useIsMobile";
 import {
   CREDIT_NOTE_TYPES,
   DEFAULT_PROJECTION_PERCENT,
-  projectCashFlow,
-  groupByCounterparty,
-  formatPeriod,
 } from "../utils/cashFlowProjection";
 import { fmtCurrency, fmtNumber } from "../utils/format";
 import {
-  annualSummary,
   cancellingNcsByDoc,
   counterpartyOptions,
   docTotals,
   filterDocs,
   pageWindow,
   periodOptionsOf,
-  projectionYearsOf,
   receivablesOf,
   receivablesTotalsOf,
   sortDocs,
-  summaryYearsOf,
   typeOptionsOf,
   withholdingsByCounterpartyOf,
 } from "../utils/billingDocs";
@@ -51,14 +45,13 @@ import {
   formatPeriodPretty,
   CREDIT_NOTE_STATE,
   groupDocsByCostCenter,
-  MONTH_NAMES_ES,
+  currentPeriod,
 } from "./billing/docs";
 import { ImportPreviewModal } from "./billing/ImportPreviewModal";
 import { OtherTaxChip } from "./billing/OtherTaxChip";
 import { PaymentStatusSelect } from "./billing/PaymentStatusSelect";
 import { ReceivablesModal } from "./billing/ReceivablesModal";
 import { PrintableDocList } from "./billing/PrintableDocList";
-import { PrintableAnnualSummary } from "./billing/PrintableAnnualSummary";
 import { PrintableWithholdings } from "./billing/PrintableWithholdings";
 import { PrintableWithholdingsGroup } from "./billing/PrintableWithholdingsGroup";
 import { WithholdingsView } from "./billing/WithholdingsView";
@@ -67,19 +60,12 @@ import { SummaryCard } from "./billing/SummaryCard";
 import { writeWithholdingsXlsx } from "./billing/writeWithholdingsXlsx";
 import { writeWithholdingGroupXlsx } from "./billing/writeWithholdingGroupXlsx";
 import { writeDocListXlsx } from "./billing/writeDocListXlsx";
-import { writeAnnualSummaryXlsx } from "./billing/writeAnnualSummaryXlsx";
-import { writeProjectionXlsx } from "./billing/writeProjectionXlsx";
+import { AnnualSummaryTab } from "./billing/AnnualSummaryTab";
+import { ProjectionTab } from "./billing/ProjectionTab";
 
 // Los tipos de DTE que restan (notas de crédito) viven en
 // `utils/cashFlowProjection` junto con la proyección, que necesita el mismo
 // criterio: si una NC no restara ahí, la base proyectada saldría inflada.
-
-// Mes actual en formato YYYY-MM. Es el filtro por defecto: la vista operativa
-// muestra solo el mes en curso, y el selector de período lleva a los demás.
-function currentPeriod() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
 
 // Clave de localStorage con la última empresa elegida, que se recuerda entre
 // sesiones.
@@ -135,10 +121,8 @@ export default function Billing() {
   // para html-to-image e impresión.
   const withholdingsPrintRef = useRef(null);
   const docListPrintRef = useRef(null);
-  const summaryPrintRef = useRef(null);
   const [exportBusy, setExportBusy] = useState("");
   const [docListBusy, setDocListBusy] = useState("");
-  const [summaryBusy, setSummaryBusy] = useState("");
   // Año de la pestaña "Resumen", con selector propio, independiente del filtro
   // de mes (que ahí no aplica: el resumen cruza los 12 meses del año elegido).
   const [summaryYear, setSummaryYear] = useState(() => String(new Date().getFullYear()));
@@ -149,7 +133,6 @@ export default function Billing() {
   // Se guarda como texto para que el input se pueda vaciar mientras se tipea
   // sin que el valor salte a 0 y la tabla parpadee en cero.
   const [projectionPercent, setProjectionPercent] = useState(String(DEFAULT_PROJECTION_PERCENT));
-  const [projectionBusy, setProjectionBusy] = useState("");
   // Toggle "Agrupar tabla por centro": agrupa la tabla y el export por centro
   // de costo (o por contraparte si el documento no tiene uno), con los
   // combustibles juntos arriba. Se guarda en localStorage (una sola clave para
@@ -261,10 +244,6 @@ export default function Billing() {
   const receivablesList = useMemo(() => receivablesOf(docs, selectedCompanyId), [docs, selectedCompanyId]);
 
   const receivablesTotals = useMemo(() => receivablesTotalsOf(receivablesList), [receivablesList]);
-
-  const summaryYears = useMemo(() => summaryYearsOf(docs, selectedCompanyId, new Date().getFullYear()), [docs, selectedCompanyId]);
-
-  const summaryData = useMemo(() => annualSummary(docs, selectedCompanyId, summaryYear), [docs, selectedCompanyId, summaryYear]);
 
   // --- IMPORTACIÓN ---
 
@@ -690,110 +669,6 @@ export default function Billing() {
     }
   };
 
-  // ===== Export del Resumen anual =====
-  const summaryFileBase = useMemo(() => {
-    const alias = (selectedCompany?.alias || selectedCompany?.razonSocial || "empresa").replace(/[^\w-]+/g, "_");
-    return `Resumen_${alias}_${summaryYear}`;
-  }, [selectedCompany, summaryYear]);
-
-  const handleSummaryCopy = async () => {
-    if (!summaryPrintRef.current) return;
-    setSummaryBusy("copy");
-    try {
-      const blob = await captureFullWidthBlob(summaryPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada al portapapeles");
-    } catch (err) {
-      toast.error("Error al copiar: " + (err.message || err));
-    } finally {
-      setSummaryBusy("");
-    }
-  };
-
-  const handleSummaryPng = async () => {
-    if (!summaryPrintRef.current) return;
-    setSummaryBusy("png");
-    try {
-      const dataUrl = await captureFullWidthDataUrl(summaryPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
-      const link = document.createElement("a");
-      link.download = `${summaryFileBase}.png`;
-      link.href = dataUrl;
-      link.click();
-    } catch (err) {
-      toast.error("Error al generar PNG: " + (err.message || err));
-    } finally {
-      setSummaryBusy("");
-    }
-  };
-
-  const handleSummaryPrint = () => {
-    if (!summaryPrintRef.current) return;
-    const html = summaryPrintRef.current.outerHTML;
-    const win = window.open("", "_blank", "width=1000,height=700");
-    if (!win) { toast.warning("Permite las ventanas emergentes para imprimir."); return; }
-    const titleLabel = `Resumen ${summaryYear} — ${selectedCompany?.alias || selectedCompany?.razonSocial || ""}`;
-    win.document.write(`<!DOCTYPE html><html><head><title>${titleLabel}</title>
-      <style>
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #999; padding: 5px 7px; font-size: 11px; }
-        thead th { background: #92d050 !important; text-align: left; }
-        @media print { @page { size: landscape; margin: 10mm; } }
-      </style>
-    </head><body>${html}</body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); }, 250);
-  };
-
-  const handleSummaryXlsx = async () => {
-    setSummaryBusy("xlsx");
-    try {
-      await writeAnnualSummaryXlsx({ selectedCompany, summaryData, summaryFileBase, summaryYear });
-    } catch (err) {
-      toast.error("Error al generar XLSX: " + (err.message || err));
-    } finally {
-      setSummaryBusy("");
-    }
-  };
-
-
-  const projectionYears = useMemo(() => projectionYearsOf(docs, selectedCompanyId, new Date().getFullYear()), [docs, selectedCompanyId]);
-
-  const projection = useMemo(
-    () => projectCashFlow(docs, {
-      companyId: selectedCompanyId,
-      startPeriod: projectionStart,
-      percent: Number(projectionPercent) || 0,
-    }),
-    [docs, selectedCompanyId, projectionStart, projectionPercent],
-  );
-
-  const projectionByClient = useMemo(() => groupByCounterparty(projection.detail), [projection.detail]);
-
-  const projectionFileBase = useMemo(() => {
-    const alias = (selectedCompany?.alias || selectedCompany?.razonSocial || "empresa").replace(/[^\w-]+/g, "_");
-    return `Proyeccion_${alias}_${(projection.targetLabel || projectionStart).replace(/[^\w-]+/g, "_")}`;
-  }, [selectedCompany, projection.targetLabel, projectionStart]);
-
-  // ===== Export de la Proyección =====
-  // Dos hojas: la base con el detalle que la sostiene, y la proyección aparte.
-  // El porcentaje va en UNA celda y las filas la referencian (`$C$4`): quien
-  // recibe el archivo cambia el supuesto en Excel y la temporada entera se
-  // recalcula.
-  const handleProjectionXlsx = async () => {
-    setProjectionBusy("xlsx");
-    try {
-      await writeProjectionXlsx({ projection, projectionByClient, projectionFileBase, selectedCompany });
-    } catch (err) {
-      toast.error("Error al generar XLSX: " + (err.message || err));
-    } finally {
-      setProjectionBusy("");
-    }
-  };
-
   return (
     <div className="flex h-full flex-col">
       <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
@@ -994,231 +869,25 @@ export default function Billing() {
           </button>
         </div>
       ) : kindTab === "resumen" ? (
-        (() => {
-          const { months, total } = summaryData;
-          const annualVat = total.vatDebit - total.vatCredit;
-          const exportDisabled = total.salesCount === 0 && total.purchasesCount === 0;
-          return (
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <label className="text-xs text-[var(--color-muted)]">Año</label>
-                <select
-                  value={summaryYear}
-                  onChange={(e) => setSummaryYear(e.target.value)}
-                  className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
-                >
-                  {summaryYears.map((y) => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
-                <div className="ml-auto flex flex-wrap gap-1">
-                  <button onClick={handleSummaryCopy} disabled={summaryBusy === "copy" || exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Copiar como imagen">
-                    {summaryBusy === "copy" ? "Copiando..." : "📋 Copiar"}
-                  </button>
-                  <button onClick={handleSummaryPng} disabled={summaryBusy === "png" || exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Descargar PNG">
-                    {summaryBusy === "png" ? "..." : "📥 PNG"}
-                  </button>
-                  <button onClick={handleSummaryPrint} disabled={exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Imprimir">
-                    🖨 Imprimir
-                  </button>
-                  <button onClick={handleSummaryXlsx} disabled={summaryBusy === "xlsx" || exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Exportar XLSX">
-                    {summaryBusy === "xlsx" ? "..." : "📊 XLSX"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <SummaryCard label="IVA Débito (ventas)" value={fmtCurrency(total.vatDebit)} />
-                <SummaryCard label="IVA Crédito (compras)" value={fmtCurrency(total.vatCredit)} />
-                <SummaryCard label={annualVat >= 0 ? "IVA a pagar (año)" : "IVA a favor (remanente)"} value={fmtCurrency(Math.abs(annualVat))} highlight />
-              </div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                <SummaryCard label="Ventas netas (año)" value={fmtCurrency(total.salesNet)} />
-                <SummaryCard label="Compras netas (año)" value={fmtCurrency(total.purchasesNet)} />
-                <SummaryCard label="Documentos" value={fmtNumber(total.salesCount + total.purchasesCount)} subtle />
-              </div>
-
-              <div style={{ position: "absolute", left: -99999, top: 0, pointerEvents: "none" }} aria-hidden>
-                <PrintableAnnualSummary ref={summaryPrintRef} data={summaryData} year={summaryYear} company={selectedCompany} />
-              </div>
-
-              <div className="overflow-auto rounded-md border border-[var(--color-border)]">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-[var(--color-surface-2)] text-xs uppercase tracking-wide text-[var(--color-muted)]">
-                    <tr>
-                      <th className="px-2 py-2 text-left">Mes</th>
-                      <th className="px-2 py-2 text-right">Ventas Neto</th>
-                      <th className="px-2 py-2 text-right">IVA Débito</th>
-                      <th className="px-2 py-2 text-right">Compras Neto</th>
-                      <th className="px-2 py-2 text-right">IVA Crédito</th>
-                      <th className="px-2 py-2 text-right">IVA a pagar</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {months.map((m, idx) => {
-                      const monthVat = m.vatDebit - m.vatCredit;
-                      const empty = m.salesCount === 0 && m.purchasesCount === 0;
-                      return (
-                        <tr key={idx} className={`border-t border-[var(--color-border)] ${empty ? "text-[var(--color-muted)]" : ""}`}>
-                          <td className="px-2 py-1.5">{MONTH_NAMES_ES[idx]}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(m.salesNet)}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(m.vatDebit)}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(m.purchasesNet)}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(m.vatCredit)}</td>
-                          <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${monthVat < 0 ? "text-[var(--color-success)]" : ""}`}>{fmtCurrency(monthVat)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr className="border-t-2 border-[var(--color-border)] bg-[var(--color-surface-2)] font-semibold">
-                      <td className="px-2 py-2">TOTAL {summaryYear}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(total.salesNet)}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(total.vatDebit)}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(total.purchasesNet)}</td>
-                      <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(total.vatCredit)}</td>
-                      <td className={`px-2 py-2 text-right tabular-nums ${annualVat < 0 ? "text-[var(--color-success)]" : ""}`}>{fmtCurrency(annualVat)}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-          );
-        })()
+        <AnnualSummaryTab
+          docs={docs}
+          selectedCompany={selectedCompany}
+          selectedCompanyId={selectedCompanyId}
+          setSummaryYear={setSummaryYear}
+          summaryYear={summaryYear}
+          toast={toast}
+        />
       ) : kindTab === "proyeccion" && isAdmin ? (
-        (() => {
-          const emptyBase = projection.baseCount === 0;
-          return (
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <label className="text-xs text-[var(--color-muted)]">Proyectar desde</label>
-                <select
-                  value={projectionStart.slice(5, 7)}
-                  onChange={(e) => setProjectionStart(`${projectionStart.slice(0, 4)}-${e.target.value}`)}
-                  className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
-                >
-                  {MONTH_NAMES_ES.map((m, i) => (
-                    <option key={m} value={String(i + 1).padStart(2, "0")}>{m}</option>
-                  ))}
-                </select>
-                <select
-                  value={projectionStart.slice(0, 4)}
-                  onChange={(e) => setProjectionStart(`${e.target.value}-${projectionStart.slice(5, 7)}`)}
-                  className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
-                >
-                  {projectionYears.map((y) => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
-                <label className="ml-2 text-xs text-[var(--color-muted)]">% sobre el período anterior</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={projectionPercent}
-                  onChange={(e) => setProjectionPercent(e.target.value)}
-                  className="min-h-[32px] w-20 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-right text-sm tabular-nums"
-                />
-                <div className="ml-auto">
-                  <button
-                    onClick={handleProjectionXlsx}
-                    disabled={projectionBusy === "xlsx" || emptyBase}
-                    title={emptyBase ? "No hay ventas en el período base" : "Descargar el reporte en Excel"}
-                    className="min-h-[32px] rounded-md bg-[var(--color-accent)] px-3 py-1 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
-                  >
-                    {projectionBusy === "xlsx" ? "Generando..." : "📊 Descargar Excel"}
-                  </button>
-                </div>
-              </div>
-
-              <p className="text-xs text-[var(--color-muted)]">
-                Proyección <strong>{projection.targetLabel}</strong> — cada mes se estima desde el mismo mes de{" "}
-                <strong>{projection.baseLabel}</strong> multiplicado por el porcentaje, <strong>salvo los meses
-                que ya tienen ventas cargadas</strong>, que valen su dato real. Solo entran las{" "}
-                <strong>ventas</strong> (las compras son salidas y quedan fuera); las notas de crédito restan.
-                Una <strong>factura de compra entra solo por su neto</strong> —el IVA lo retiene el cliente y
-                nunca se cobra—; el resto entra con IVA incluido.
-              </p>
-
-              {projection.rows.some((r) => r.esReal && r.periodo === currentPeriod()) && (
-                <p className="rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-3 py-2 text-xs text-[var(--color-warning)]">
-                  ⚠ {formatPeriod(currentPeriod())} es el mes en curso: su dato real puede estar incompleto y
-                  arrastrar el total para abajo.
-                </p>
-              )}
-
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <SummaryCard label={`Ingresos ${projection.baseLabel}`} value={fmtCurrency(projection.baseTotal)} subtle />
-                <SummaryCard
-                  label={`Real · ${projection.mesesReales} ${projection.mesesReales === 1 ? "mes" : "meses"}`}
-                  value={fmtCurrency(projection.totalReal)}
-                />
-                <SummaryCard
-                  label={`Estimado · ${projection.mesesEstimados} ${projection.mesesEstimados === 1 ? "mes" : "meses"} al ${projection.percent}%`}
-                  value={fmtCurrency(projection.totalProyectado)}
-                />
-                <SummaryCard label={`Total ${projection.targetLabel}`} value={fmtCurrency(projection.total)} highlight />
-              </div>
-
-              {emptyBase && projection.mesesReales === 0 ? (
-                <div className="flex h-40 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-[var(--color-border)] px-4 text-center text-sm text-[var(--color-muted)]">
-                  <div>No hay ventas importadas en {projection.baseLabel}.</div>
-                  <div className="text-xs">
-                    La proyección se calcula sobre esos 12 meses — sin ellos no hay nada que escalar.
-                  </div>
-                </div>
-              ) : (
-                <div className="overflow-auto rounded-md border border-[var(--color-border)]">
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-[var(--color-surface-2)] text-xs uppercase tracking-wide text-[var(--color-muted)]">
-                      <tr>
-                        <th className="px-2 py-2 text-left">Mes</th>
-                        <th className="px-2 py-2 text-left">Origen</th>
-                        <th className="px-2 py-2 text-right">Ingreso base</th>
-                        <th className="px-2 py-2 text-right">Monto</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {projection.rows.map((row) => (
-                        <tr
-                          key={row.periodo}
-                          className={`border-t border-[var(--color-border)] ${
-                            !row.esReal && row.baseCount === 0 ? "text-[var(--color-muted)]" : ""
-                          }`}
-                        >
-                          <td className="px-2 py-1.5">{formatPeriod(row.periodo)}</td>
-                          <td className="px-2 py-1.5 text-xs">
-                            {row.esReal ? (
-                              <span className="rounded-full bg-[var(--color-success-soft)] px-1.5 py-0.5 font-semibold text-[var(--color-success)]">
-                                ✓ real · {row.realCount} doc.
-                              </span>
-                            ) : (
-                              <span className="text-[var(--color-muted)]">
-                                {row.basePeriodo} × {projection.percent}%
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">
-                            {row.esReal ? <span className="text-[var(--color-muted)]">—</span> : fmtCurrency(row.baseMonto)}
-                          </td>
-                          <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${row.esReal ? "text-[var(--color-success)]" : ""}`}>
-                            {fmtCurrency(row.monto)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t-2 border-[var(--color-border)] bg-[var(--color-surface-2)] font-semibold">
-                        <td className="px-2 py-2" colSpan={3}>TOTAL {projection.targetLabel}</td>
-                        <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(projection.total)}</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              )}
-            </div>
-          );
-        })()
+        <ProjectionTab
+          docs={docs}
+          projectionPercent={projectionPercent}
+          projectionStart={projectionStart}
+          selectedCompany={selectedCompany}
+          selectedCompanyId={selectedCompanyId}
+          setProjectionPercent={setProjectionPercent}
+          setProjectionStart={setProjectionStart}
+          toast={toast}
+        />
       ) : filtered.length === 0 ? (
         <div className="flex h-40 items-center justify-center rounded-md border border-dashed border-[var(--color-border)] text-sm text-[var(--color-muted)]">
           {docs.some((d) => (isWithholdingsView || d.kind === kindTab) && d.companyId === selectedCompanyId)
