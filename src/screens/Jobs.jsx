@@ -4,16 +4,10 @@ import { cyclesService } from "../services";
 import { UNGROUPED_ID } from "../services/userPrefsService";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
-import Modal, { ModalCloseButton } from "../components/Modal";
 import ConfirmDialog from "../components/ConfirmDialog";
-import TextField from "../components/TextField";
-import Select from "../components/Select";
 import { useIsMobile } from "../hooks/useIsMobile";
-import { LABOR_TYPES } from "../utils/laborTypes";
-import { hasChanges } from "../utils/formChanges";
 import { ColorPickerButton } from "./jobs/ColorPickerButton";
 import { GroupHeader } from "./jobs/GroupHeader";
-import { ImportSection } from "./jobs/ImportSection";
 import { SelectedDetail } from "./jobs/SelectedDetail";
 import { withInitial } from "./jobs/helpers";
 import { useJobsData } from "./jobs/useJobsData";
@@ -23,10 +17,11 @@ import { useJobForms } from "./jobs/useJobForms";
 import { useCycleForm } from "./jobs/useCycleForm";
 import { useCloseCycleFlow } from "./jobs/useCloseCycleFlow";
 import { useJobDeletion } from "./jobs/useJobDeletion";
-
-// En el alta de un ciclo, lo que se ofrece para importar no es un dato del
-// formulario.
-const CYCLE_FORM_IGNORE = ["importCandidates", "labors", "days"];
+import { JobFormModal } from "./jobs/JobFormModal";
+import { SubjobFormModal } from "./jobs/SubjobFormModal";
+import { CycleFormModal } from "./jobs/CycleFormModal";
+import { FirstCycleOfferModal } from "./jobs/FirstCycleOfferModal";
+import { CloseCycleModal } from "./jobs/CloseCycleModal";
 
 const emptyJob = { name: "", location: "", notes: "" };
 
@@ -416,299 +411,38 @@ export default function Jobs() {
         </div>
       )}
 
-      {/* Modal de faena */}
-      <Modal
-        open={!!jobForm}
-        onClose={() => !busy && setJobForm(null)}
-        dirty={!!jobForm && !busy && hasChanges(jobForm.initial, jobForm.data)}
-        title={jobForm?.mode === "edit" ? "Editar faena" : "Nueva faena"}
-      >
-        {jobForm && (
-          <form onSubmit={submitJob} className="space-y-4">
-            <TextField
-              label="Nombre"
-              required
-              autoFocus
-              value={jobForm.data.name}
-              onChange={(v) => setJobForm((f) => ({ ...f, data: { ...f.data, name: v } }))}
-            />
-            <TextField
-              label="Ubicación"
-              value={jobForm.data.location}
-              onChange={(v) => setJobForm((f) => ({ ...f, data: { ...f.data, location: v } }))}
-            />
-            <TextField
-              label="Notas"
-              value={jobForm.data.notes}
-              onChange={(v) => setJobForm((f) => ({ ...f, data: { ...f.data, notes: v } }))}
-            />
-            <div className="flex justify-end gap-2 pt-2">
-              <ModalCloseButton
-                disabled={busy}
-                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
-              >
-                Cancelar
-              </ModalCloseButton>
-              <button
-                type="submit"
-                disabled={busy}
-                className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] shadow-sm hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
-              >
-                {busy ? "..." : "Guardar"}
-              </button>
-            </div>
-          </form>
-        )}
-      </Modal>
+      <JobFormModal
+        busy={busy}
+        jobForm={jobForm}
+        setJobForm={setJobForm}
+        submitJob={submitJob}
+      />
 
-      {/* Modal de subfaena */}
-      <Modal
-        open={!!subjobForm}
-        onClose={() => !busy && setSubjobForm(null)}
-        dirty={!!subjobForm && !busy && hasChanges(subjobForm.initial, subjobForm.data)}
-        title={subjobForm?.mode === "edit" ? "Editar subfaena" : "Nueva subfaena"}
-      >
-        {subjobForm && (
-          <form onSubmit={submitSubjob} className="space-y-4">
-            <TextField
-              label="Nombre"
-              required
-              autoFocus
-              value={subjobForm.data.name}
-              onChange={(v) => setSubjobForm((s) => ({ ...s, data: { ...s.data, name: v } }))}
-            />
-            <TextField
-              label="Notas"
-              value={subjobForm.data.notes}
-              onChange={(v) => setSubjobForm((s) => ({ ...s, data: { ...s.data, notes: v } }))}
-            />
-            <div className="flex justify-end gap-2 pt-2">
-              <ModalCloseButton
-                disabled={busy}
-                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
-              >
-                Cancelar
-              </ModalCloseButton>
-              <button
-                type="submit"
-                disabled={busy}
-                className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] shadow-sm hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
-              >
-                {busy ? "..." : "Guardar"}
-              </button>
-            </div>
-          </form>
-        )}
-      </Modal>
+      <SubjobFormModal
+        busy={busy}
+        setSubjobForm={setSubjobForm}
+        subjobForm={subjobForm}
+        submitSubjob={submitSubjob}
+      />
 
-      {/* Modal de ciclo */}
-      <Modal
-        open={!!cycleForm}
-        onClose={() => !busy && setCycleForm(null)}
-        dirty={!!cycleForm && !busy && hasChanges(cycleForm.initial, cycleForm.data, { ignore: CYCLE_FORM_IGNORE })}
-        title={cycleForm?.mode === "edit" ? "Editar ciclo" : "Nuevo ciclo"}
-      >
-        {cycleForm && (
-          <form onSubmit={submitCycle} className="space-y-4">
-            <label className="block">
-              <span className="mb-1 block text-sm text-[var(--color-muted)]">
-                Etiqueta<span className="ml-0.5 text-[var(--color-danger)]">*</span>
-              </span>
-              <div className="flex items-stretch overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)]">
-                <span className="flex items-center bg-[var(--color-surface)] px-2 text-xs text-[var(--color-muted)] border-r border-[var(--color-border)]">
-                  {cyclePrefix(cycleForm.jobId, cycleForm.data.subfaenaId) || "—"}
-                </span>
-                <input
-                  required
-                  autoFocus
-                  value={cycleForm.data.labelSuffix ?? ""}
-                  onChange={(e) => setCycleForm((c) => ({ ...c, data: { ...c.data, labelSuffix: e.target.value } }))}
-                  placeholder="Ciclo 1"
-                  className="flex-1 bg-transparent px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
-                />
-              </div>
-              <span className="mt-1 block text-[10px] text-[var(--color-muted)]">
-                El prefijo Faena/Subfaena/ es fijo
-              </span>
-            </label>
-            {selectedSubjobs && selectedSubjobs.length > 0 && (
-              <Select
-                label="Subfaena"
-                required
-                value={cycleForm.data.subfaenaId || ""}
-                onChange={(v) => setCycleForm((c) => ({ ...c, data: { ...c.data, subfaenaId: v } }))}
-                options={selectedSubjobs.map((s) => ({ value: s.id, label: s.name }))}
-                placeholder="Selecciona la subfaena"
-              />
-            )}
-            <TextField
-              label="Fecha inicio"
-              type="date"
-              value={cycleForm.data.startDate}
-              onChange={(v) => setCycleForm((c) => ({ ...c, data: { ...c.data, startDate: v } }))}
-            />
-            <TextField
-              label="Notas"
-              value={cycleForm.data.notes}
-              onChange={(v) => setCycleForm((c) => ({ ...c, data: { ...c.data, notes: v } }))}
-            />
-            {cycleForm.mode === "create" && !cycleForm.data.importEnabled && (
-              <div className="space-y-2 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3">
-                <Select
-                  label="Primera labor"
-                  value={cycleForm.data.laborType || "main"}
-                  onChange={(v) => setCycleForm((c) => ({ ...c, data: { ...c.data, laborType: v } }))}
-                  options={LABOR_TYPES}
-                />
-                <label className="flex items-start gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={!!cycleForm.data.withSupervision}
-                    onChange={(e) =>
-                      setCycleForm((c) => ({ ...c, data: { ...c.data, withSupervision: e.target.checked } }))
-                    }
-                    disabled={cycleForm.data.laborType === "supervision"}
-                    className="mt-0.5"
-                  />
-                  <span className={cycleForm.data.laborType === "supervision" ? "text-[var(--color-muted)]" : ""}>
-                    Agregar también una labor de Supervisión
-                    {cycleForm.data.laborType === "supervision" ? " (ya es la primera)" : ""}
-                  </span>
-                </label>
-              </div>
-            )}
-            {cycleForm.mode === "create" && (cycleForm.data.importCandidates || []).length > 0 && (
-              <ImportSection
-                data={cycleForm.data}
-                onChange={(patch) =>
-                  setCycleForm((c) => ({ ...c, data: { ...c.data, ...patch } }))
-                }
-              />
-            )}
-            <p className="text-xs text-[var(--color-muted)]">
-              {cycleForm.mode === "create" && cycleForm.data.importEnabled
-                ? "Se clonarán las labores marcadas. Si activaste 'Mover jornadas', se transferirán al nuevo ciclo y desaparecerán del origen."
-                : cycleForm.mode === "create"
-                  ? `El ciclo arranca con la fecha de inicio como primer día y ${
-                      cycleForm.data.withSupervision && cycleForm.data.laborType !== "supervision" ? "dos labores" : "una labor"
-                    }. Podrás agregar más al abrirlo.`
-                  : "Podrás agregar más labores al abrir el ciclo."}
-            </p>
-            <div className="flex justify-end gap-2 pt-2">
-              <ModalCloseButton
-                disabled={busy}
-                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
-              >
-                Cancelar
-              </ModalCloseButton>
-              <button
-                type="submit"
-                disabled={busy}
-                className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] shadow-sm hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
-              >
-                {busy ? "..." : "Guardar"}
-              </button>
-            </div>
-          </form>
-        )}
-      </Modal>
+      <CycleFormModal
+        busy={busy}
+        cycleForm={cycleForm}
+        cyclePrefix={cyclePrefix}
+        selectedSubjobs={selectedSubjobs}
+        setCycleForm={setCycleForm}
+        submitCycle={submitCycle}
+      />
 
-      {/* Recién creada una subfaena, se ofrece abrirle el primer ciclo. */}
-      <Modal
-        open={!!subjobOfferCycle}
-        onClose={() => setSubjobOfferCycle(null)}
-        title="¿Crear el primer ciclo?"
-        footer={
-          <>
-            <button
-              onClick={() => setSubjobOfferCycle(null)}
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]"
-            >
-              Después
-            </button>
-            <button
-              onClick={() => {
-                const { jobId, subjobId } = subjobOfferCycle;
-                setSubjobOfferCycle(null);
-                openCreateCycle(jobId, subjobId);
-              }}
-              className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]"
-            >
-              Crear ciclo
-            </button>
-          </>
-        }
-      >
-        <p className="text-sm">
-          La subfaena <strong>{subjobOfferCycle?.name}</strong> ya está creada. Las jornadas se cargan
-          dentro de un ciclo, así que sin uno todavía no hay dónde anotar nada.
-        </p>
-      </Modal>
+      <FirstCycleOfferModal openCreateCycle={openCreateCycle} setSubjobOfferCycle={setSubjobOfferCycle} subjobOfferCycle={subjobOfferCycle} />
 
-      {/* Cierre de ciclo */}
-      <Modal
-        open={!!closeFlow}
-        onClose={() => !busy && setCloseFlow(null)}
-        title={closeFlow?.askNext ? "¿Crear nuevo ciclo?" : "Cerrar ciclo"}
-        footer={
-          closeFlow?.askNext ? (
-            <>
-              <button
-                onClick={() => setCloseFlow(null)}
-                disabled={busy}
-                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
-              >
-                No, gracias
-              </button>
-              <button
-                onClick={() => createNextCycle(closeFlow.copyWorkers)}
-                disabled={busy}
-                className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
-              >
-                {busy ? "..." : "Crear ciclo"}
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={() => setCloseFlow(null)}
-                disabled={busy}
-                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={confirmCloseCycle}
-                disabled={busy}
-                className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
-              >
-                {busy ? "..." : "Cerrar ciclo"}
-              </button>
-            </>
-          )
-        }
-      >
-        {closeFlow && !closeFlow.askNext && (
-          <p className="text-sm text-[var(--color-muted)]">
-            Vas a cerrar <span className="text-[var(--color-text)]">{closeFlow.cycle.label}</span>.
-          </p>
-        )}
-        {closeFlow?.askNext && (
-          <div className="space-y-3">
-            <p className="text-sm text-[var(--color-muted)]">
-              El ciclo fue cerrado. ¿Crear uno nuevo a continuación?
-            </p>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={closeFlow.copyWorkers}
-                onChange={(e) => setCloseFlow((s) => ({ ...s, copyWorkers: e.target.checked }))}
-              />
-              Copiar trabajadores de cada labor del ciclo anterior
-            </label>
-          </div>
-        )}
-      </Modal>
+      <CloseCycleModal
+        busy={busy}
+        closeFlow={closeFlow}
+        confirmCloseCycle={confirmCloseCycle}
+        createNextCycle={createNextCycle}
+        setCloseFlow={setCloseFlow}
+      />
 
       <ConfirmDialog
         open={!!confirm}
