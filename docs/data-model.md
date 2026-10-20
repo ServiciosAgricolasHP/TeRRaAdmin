@@ -606,6 +606,8 @@ Campos y valores guardados en Firestore con nombre en español. El código los l
 | `dteDocuments` | `payments[].kind`: `"abono"`, `"neto"`, `"iva"` | `"partial"`, `"net"`, `"vat"` | `"total"` ya está en inglés |
 | `companies` | `razonSocial` | `legalName` | |
 | `contactCards` | `giro` | `businessActivity` | |
+| `contactCards` | `type`: `"persona"`, `"empresa"` | `"person"`, `"company"` | |
+| `contactCards` | `accounts[].titular`, `accounts[].rutTitular` | `holder`, `holderRut` | |
 | `groupLeader` | `habilitado` | `enabled` | |
 | `indicators` | `sueldoBase`, `dia`, `hora` | `baseSalary`, `dayValue`, `overtimeHourValue` | |
 | `advances` | `type`: `"anticipo"`, `"bono"` (y el antiguo `"adelanto"`) | `"advance"`, `"bonus"` | |
