@@ -6,7 +6,7 @@ import { useToast } from "../contexts/ToastContext";
 import { DEFAULT_BANK_CODE } from "../utils/banks";
 import { normalizeRut } from "../utils/rutUtils";
 import { toTitleName, unshout } from "../utils/textCase";
-import { emptyCard, newAccountId } from "../utils/contactCards";
+import { cardMatchesSearch, emptyCard, newAccountId } from "../utils/contactCards";
 import ContactCard from "./infoAccounts/ContactCard";
 import ContactCardImage from "./infoAccounts/ContactCardImage";
 import ContactCardModal from "./infoAccounts/ContactCardModal";
@@ -160,16 +160,11 @@ export default function InfoAccounts() {
     }
   };
 
-  const favorites = useMemo(() => cards.filter((c) => c.favorite), [cards]);
-  const rest = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const nonFav = cards.filter((c) => !c.favorite);
-    if (!q) return nonFav;
-    return nonFav.filter((c) =>
-      [c.name, c.rut, c.giro, c.email, c.phone, c.address]
-        .some((v) => String(v || "").toLowerCase().includes(q)),
-    );
-  }, [cards, search]);
+  // El buscador filtra también las favoritas.
+  const matching = useMemo(() => cards.filter((c) => cardMatchesSearch(c, search)), [cards, search]);
+  const favorites = useMemo(() => matching.filter((c) => c.favorite), [matching]);
+  const rest = useMemo(() => matching.filter((c) => !c.favorite), [matching]);
+  const searching = !!search.trim();
 
   return (
     <div className="space-y-5">
@@ -197,6 +192,14 @@ export default function InfoAccounts() {
         </div>
       ) : (
         <>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por nombre, RUT, giro, email…"
+            className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
+          />
+
           {/* Favoritas */}
           {favorites.length > 0 && (
             <section>
@@ -220,19 +223,15 @@ export default function InfoAccounts() {
             </section>
           )}
 
-          {/* Buscador + resto */}
+          {/* Resto */}
           <section>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por nombre, RUT, giro, email…"
-              className="mb-3 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
-            />
             {rest.length === 0 ? (
-              <div className="rounded-md border border-dashed border-[var(--color-border)] py-8 text-center text-sm text-[var(--color-muted)]">
-                {search.trim() ? "Sin resultados para la búsqueda." : "No hay fichas sin marcar como favoritas."}
-              </div>
+              // Buscando, el aviso sale solo si tampoco hay favoritas que calcen.
+              (!searching || favorites.length === 0) && (
+                <div className="rounded-md border border-dashed border-[var(--color-border)] py-8 text-center text-sm text-[var(--color-muted)]">
+                  {searching ? "Sin resultados para la búsqueda." : "No hay fichas sin marcar como favoritas."}
+                </div>
+              )
             ) : (
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {rest.map((c) => (

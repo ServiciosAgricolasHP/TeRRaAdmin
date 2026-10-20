@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { accountToText, cardToText, emptyCard, rutIncluded } from "./contactCards";
+import { accountToText, cardMatchesSearch, cardToText, emptyCard, rutIncluded } from "./contactCards";
 
 const account = {
   id: "a1",
@@ -66,5 +66,17 @@ describe("cardToText", () => {
   it("una persona con el RUT oculto no lo incluye", () => {
     const text = cardToText({ type: "persona", name: "Ana Pérez", rut: "12345678-5", includeRut: false });
     expect(text).toBe("Nombre: Ana Pérez");
+  });
+});
+
+describe("cardMatchesSearch", () => {
+  const card = { name: "Comercial Los Robles SpA", rut: "76543210-1", email: "pagos@losrobles.cl", favorite: true };
+
+  it("sin texto calza todo; con texto busca sin distinguir mayúsculas en los datos de la ficha", () => {
+    expect(cardMatchesSearch(card, "  ")).toBe(true);
+    expect(cardMatchesSearch(card, "ROBLES")).toBe(true);
+    expect(cardMatchesSearch(card, "pagos@")).toBe(true);
+    expect(cardMatchesSearch(card, "76543210")).toBe(true);
+    expect(cardMatchesSearch(card, "molino")).toBe(false);
   });
 });

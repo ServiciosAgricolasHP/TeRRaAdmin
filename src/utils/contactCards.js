@@ -70,3 +70,12 @@ export function cardToText(card) {
   });
   return lines.join("\n");
 }
+
+// Si la ficha calza con lo buscado: el texto, sin distinguir mayúsculas, dentro
+// del nombre, el RUT, el giro, el correo, el teléfono o la dirección.
+export function cardMatchesSearch(card, query) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return true;
+  return [card.name, card.rut, card.giro, card.email, card.phone, card.address]
+    .some((v) => String(v || "").toLowerCase().includes(q));
+}
