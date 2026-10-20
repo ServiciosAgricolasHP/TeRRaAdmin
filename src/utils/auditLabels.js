@@ -102,6 +102,7 @@ export const ENTITY_META = {
   transportPayroll: { labelEs: "Quincena de transporte", service: fortnightsService, labelOf: (d) => d?.name },
   informalExpense: { labelEs: "Gasto informal", labelOf: (d) => d?.detail },
   contactCard: { labelEs: "Ficha de contacto" },
+  phoneContact: { labelEs: "Contacto de la agenda", labelOf: (d) => d?.name },
   dteDocument: { labelEs: "Documento SII" },
   catalog: { labelEs: "Catálogo", labelOf: (_d, id) => id },
   priceBookEntry: { labelEs: "Libro de precios" },

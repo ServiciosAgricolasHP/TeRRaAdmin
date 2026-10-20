@@ -417,6 +417,26 @@ Libreta compartida de contactos (persona o empresa) con datos bancarios listos p
 - `id` (local), `label`, `titular`, `rutTitular`
 - `bankCode`, `accountType` (number, misma convención que `worker.bankDetails`), `accountNumber`, `email`
 
+### `phoneContacts`
+Agenda telefónica — pestaña "📞 Agenda telefónica" de Información y Cuentas. Se llena a mano o importando la planilla de las secretarias, CSV de Google o Outlook y archivos vCard (`utils/phoneBook.js`). **Un número es un contacto**: lo que comparte un teléfono se junta en un solo documento. Modelo **independiente** de `contactCards`, `worker` y `companies`.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | autoId |
+| `name` | string | nombre principal |
+| `otherNames` | string[] | los nombres de las copias que se juntaron, o el anterior cuando la planilla lo cambió |
+| `company` | string | como se escribió (no se corrige) |
+| `companyRut` | string | normalizado (`normalizeRut`) |
+| `contactType` | `"client"` \| `"supplier"` \| `"bank"` \| `"carrier"` \| `"contractor"` \| `"advisor"` \| `"publicAgency"` \| `"other"` \| null | la etiqueta en español sale de `CONTACT_TYPES` |
+| `department` | string | "Departamento / área"; texto libre, con la lista de la planilla como sugerencia |
+| `role` | string | cargo |
+| `phones` | `{ number, label }[]` | `number` normalizado (`normalizePhone`): `+56912345678`, un extranjero con su `+`, o solo dígitos si no se pudo; un anexo va como `;ext=N`. `label` en español ("Móvil", "Directo"…) |
+| `emails` | string[] | en minúsculas |
+| `notes` | string | |
+| `sources` | (`"sheet"` \| `"google"` \| `"outlook"` \| `"vcard"` \| `"manual"`)[] | de dónde vino |
+| `createdAt/By`, `updatedAt/By` | ts, string | |
+
+Una importación deja **un** log (`action: "import"`, `entity: "phoneContact"`, sin `entityId`) con `meta: { created, updated, unchanged, sources, files }`, en vez de uno por contacto.
+
 ### `indicators`
 Valores del ticker del header (sueldo base, valor día, valor hora extra). **Un único doc `indicators/main`**, editado a mano desde el header.
 | Campo | Tipo | Notas |
@@ -551,7 +571,7 @@ Auditoría — una fila por mutación.
 |---|---|---|
 | `id` (docId) | string | autoId |
 | `uid`, `email` | string? | quién |
-| `action` | `"create"` \| `"update"` \| `"delete"` | |
+| `action` | `"create"` \| `"update"` \| `"delete"` \| `"import"` | `"import"` solo lo escribe la importación de la agenda telefónica |
 | `entity`, `entityId` | string | qué |
 | `before` | objeto? | solo en `delete` (snapshot completo). Borrar un documento que no existe no deja log |
 | `after` | objeto? | solo en `create` (snapshot completo) |
@@ -569,6 +589,7 @@ Auditoría — una fila por mutación.
 | `auto: "extendRecurring"`, `dates` | `commitmentsDaily` (`functions/commitments.js`) | vencimientos que la función diaria le generó a un pago recurrente (`entity: "commitmentSeries"`, sin `uid`) |
 | `addedAbono`, `editedAbonoId`, `removedAbonoId` | `paymentsService` | detalle del abono tocado |
 | `jobId`, `payrollId`, `workerCount`, `removed` | `publishPortal` (`functions/portal.js`) | qué nómina se publicó en el portal, cuántas fichas quedaron y cuántas se borraron (`entity: "portalMeta"`) |
+| `created`, `updated`, `unchanged`, `sources`, `files` | `importPhoneContacts` (`services/phoneContactsService.js`) | una importación de la agenda telefónica (`action: "import"`, `entity: "phoneContact"`) |
 | `op: "applyAdvances"`, `count`, `total`, `advanceIds`, `sobrantes?` | `applyAdvancesToPayroll` | un log por nómina (`entity: "payroll"`) con los anticipos que descontó. `sobrantes: [{ advanceId, pedido, aplicado }]` son las aplicaciones recortadas |
 | `op: "restoreAdvances"`, `count`, `advanceIds` | `restoreAdvancesFromPayroll` | los anticipos que soltó la nómina |
 | `op: "setPayrollAdvances"`, `cambios` | `setPayrollAdvanceAmounts` | `cambios: [{ advanceId, antes, despues }]`: cuánto descontaba y cuánto descuenta la nómina de cada anticipo |

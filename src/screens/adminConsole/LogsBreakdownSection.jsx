@@ -12,7 +12,7 @@ const LOG_ENTITIES = [
   "payrollSnapshot", "transport", "transportPayment", "transportPayroll",
   "carrier", "catalog", "qrPrefix", "harvestWeight", "dteDocument", "company",
   "costCenter", "informalExpense", "priceBookEntry", "priceBookConfig",
-  "contactCard", "interestLink", "groupLeader", "laborGroup", "indicator",
+  "contactCard", "phoneContact", "interestLink", "groupLeader", "laborGroup", "indicator",
   "commitment", "commitmentSeries", "commitmentConfig", "portalMeta",
   "user", "log",
 ];
