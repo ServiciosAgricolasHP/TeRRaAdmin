@@ -13,8 +13,17 @@ import { todayIso } from "./docs";
 import { InformalExpenseFormModal } from "./InformalExpenseFormModal";
 import { PrintableCostCenterDocs } from "./PrintableCostCenterDocs";
 import { SortHeader } from "./SortHeader";
-
-const FUEL_VIEW_ID = "__fuel__";
+import {
+  FUEL_VIEW_ID,
+  centerDocTotals,
+  centerDocsOf,
+  centerInformalOf,
+  companiesByName,
+  filterCenterDocs,
+  filterCenterInformal,
+  informalTotalOf,
+  sortCenterRows,
+} from "../../utils/costCenterDocs";
 
 // Modal de Centros de costo: catálogo (crear/editar/eliminar, arriba, como
 // chips) + vista global del centro elegido (abajo): TODOS sus documentos, de
@@ -23,6 +32,7 @@ const FUEL_VIEW_ID = "__fuel__";
 // (copiar/PNG/imprimir/XLSX). Incluye "Combustibles" como chip fijo no
 // editable aunque esté fuera del catálogo manual: es el centro automático.
 export function CostCentersModal({ costCenters, docs, informalExpenses, companiesById, onClose, onChanged, onSelectDoc }) {
+  "use no memo";
   const toast = useToast();
   const printRef = useRef(null);
 
@@ -81,10 +91,7 @@ export function CostCentersModal({ costCenters, docs, informalExpenses, companie
   // Modal de gasto informal: null = cerrado, "new" = crear, {expense} = editar.
   const [expenseModal, setExpenseModal] = useState(null);
 
-  const companiesList = useMemo(
-    () => [...companiesById.values()].sort((a, b) => (a.alias || a.razonSocial || "").localeCompare(b.alias || b.razonSocial || "")),
-    [companiesById],
-  );
+  const companiesList = useMemo(() => companiesByName(companiesById), [companiesById]);
 
   const selectedCenter = costCenters.find((c) => c.id === selectedId);
   const selectedLabel = selectedId === FUEL_VIEW_ID
@@ -93,114 +100,24 @@ export function CostCentersModal({ costCenters, docs, informalExpenses, companie
       ? (selectedCenter.emoji ? `${selectedCenter.emoji} ${selectedCenter.label}` : selectedCenter.label)
       : "";
 
-  const baseDocs = useMemo(() => {
-    if (!selectedId) return [];
-    return selectedId === FUEL_VIEW_ID
-      ? docs.filter((d) => d.otroImpuestoCategory === "combustible")
-      : docs.filter((d) => d.costCenterId === selectedId);
-  }, [docs, selectedId]);
+  const baseDocs = useMemo(() => centerDocsOf(docs, selectedId), [docs, selectedId]);
 
   const hasFilters = !!(search.trim() || kindFilter || companyFilterId || dateFrom || dateTo);
   const clearFilters = () => {
     setSearch(""); setKindFilter(""); setCompanyFilterId(""); setDateFrom(""); setDateTo("");
   };
 
-  const filtered = useMemo(() => {
-    let list = baseDocs;
-    if (kindFilter) list = list.filter((d) => d.kind === kindFilter);
-    if (companyFilterId) list = list.filter((d) => d.companyId === companyFilterId);
-    if (dateFrom) list = list.filter((d) => (d.fechaEmision || "") >= dateFrom);
-    if (dateTo) list = list.filter((d) => (d.fechaEmision || "") <= dateTo);
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      list = list.filter((d) => {
-        const razon = (d.kind === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor) || "";
-        const rut = (d.kind === "venta" ? d.rutReceptor : d.rutEmisor) || "";
-        return razon.toLowerCase().includes(q) || rut.toLowerCase().includes(q) || String(d.folio || "").includes(q);
-      });
-    }
-    return list;
-  }, [baseDocs, kindFilter, companyFilterId, dateFrom, dateTo, search]);
+  const filtered = useMemo(() => filterCenterDocs({ baseDocs, kindFilter, companyFilterId, dateFrom, dateTo, search }), [baseDocs, kindFilter, companyFilterId, dateFrom, dateTo, search]);
 
-  // Gastos informales del centro elegido — plata sin factura/boleta formal.
-  // Puramente informativo: nunca entran a `totals` (esos quedan 100% fiscales,
-  // fieles a los dteDocuments reales); tienen su propio subtotal aparte.
-  // Nunca aparecen si el filtro Mov. está en "Venta" (un gasto informal nunca
-  // es una venta).
-  const baseInformal = useMemo(() => {
-    if (!selectedId || kindFilter === "venta") return [];
-    return informalExpenses.filter((e) => e.costCenterId === selectedId).map((e) => ({ ...e, __informal: true }));
-  }, [informalExpenses, selectedId, kindFilter]);
+  const baseInformal = useMemo(() => centerInformalOf(informalExpenses, selectedId, kindFilter), [informalExpenses, selectedId, kindFilter]);
 
-  const filteredInformal = useMemo(() => {
-    let list = baseInformal;
-    if (companyFilterId) list = list.filter((e) => e.companyId === companyFilterId);
-    if (dateFrom) list = list.filter((e) => (e.date || "") >= dateFrom);
-    if (dateTo) list = list.filter((e) => (e.date || "") <= dateTo);
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      list = list.filter((e) => (e.detail || "").toLowerCase().includes(q));
-    }
-    return list;
-  }, [baseInformal, companyFilterId, dateFrom, dateTo, search]);
+  const filteredInformal = useMemo(() => filterCenterInformal({ baseInformal, companyFilterId, dateFrom, dateTo, search }), [baseInformal, companyFilterId, dateFrom, dateTo, search]);
 
-  const totals = useMemo(() => {
-    let neto = 0, iva = 0, total = 0;
-    for (const d of filtered) {
-      const s = CREDIT_NOTE_TYPES.has(Number(d.tipo)) ? -1 : 1;
-      neto += s * (Number(d.neto) || 0);
-      iva += s * (Number(d.iva) || 0);
-      total += s * (Number(d.total) || 0);
-    }
-    return { neto, iva, total };
-  }, [filtered]);
+  const totals = useMemo(() => centerDocTotals(filtered), [filtered]);
 
-  const informalTotal = useMemo(
-    () => filteredInformal.reduce((s, e) => s + (Number(e.amount) || 0), 0),
-    [filteredInformal],
-  );
+  const informalTotal = useMemo(() => informalTotalOf(filteredInformal), [filteredInformal]);
 
-  const sortGetter = (d, key) => {
-    if (d.__informal) {
-      switch (key) {
-        case "fechaEmision": return d.date || "";
-        case "empresa": {
-          const co = companiesById.get(d.companyId);
-          return co?.alias || co?.razonSocial || "";
-        }
-        case "folio": return 0;
-        case "razon": return d.detail || "";
-        case "neto": return 0;
-        case "iva": return 0;
-        case "total": return Number(d.amount) || 0;
-        default: return "";
-      }
-    }
-    switch (key) {
-      case "fechaEmision": return d.fechaEmision || "";
-      case "empresa": {
-        const co = companiesById.get(d.companyId);
-        return co?.alias || co?.razonSocial || "";
-      }
-      case "folio": return Number(d.folio) || 0;
-      case "razon": return (d.kind === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor) || "";
-      case "neto": return Number(d.neto) || 0;
-      case "iva": return Number(d.iva) || 0;
-      case "total": return Number(d.total) || 0;
-      default: return "";
-    }
-  };
-  const sorted = useMemo(() => {
-    const arr = [...filtered, ...filteredInformal];
-    arr.sort((a, b) => {
-      const av = sortGetter(a, sortBy.key);
-      const bv = sortGetter(b, sortBy.key);
-      const cmp = typeof av === "number" && typeof bv === "number" ? av - bv : String(av).localeCompare(String(bv));
-      return sortBy.dir === "asc" ? cmp : -cmp;
-    });
-    return arr;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtered, filteredInformal, sortBy, companiesById]);
+  const sorted = useMemo(() => sortCenterRows(filtered, filteredInformal, sortBy, companiesById), [filtered, filteredInformal, sortBy, companiesById]);
   const toggleSort = (key) => {
     setSortBy((cur) => cur.key === key ? { key, dir: cur.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   };
