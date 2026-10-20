@@ -49,13 +49,13 @@ export default function Payroll() {
   const {
     cycles,
     cycleStats,
-    faenas,
+    jobs,
     load,
     loading,
     payrolls,
     refresh,
     refreshing,
-    subfaenas,
+    subjobs,
     workers,
   } = usePayrollData({ toast });
   // Rut vigente para mostrar, ver utils/workerRut.js.
@@ -98,9 +98,9 @@ export default function Payroll() {
   } = usePayrollPreview({
     chosenCycles,
     cycles,
-    faenas,
+    jobs,
     people,
-    subfaenas,
+    subjobs,
     toast,
     workers,
   });
@@ -142,9 +142,9 @@ export default function Payroll() {
   }, [payrolls]);
 
   // Ciclos activos agrupados por faena.
-  const activeByFaena = useMemo(() => activeCyclesByJob(faenas, cycles), [faenas, cycles]);
+  const activeByJob = useMemo(() => activeCyclesByJob(jobs, cycles), [jobs, cycles]);
 
-  const subfaenaName = (id) => subfaenas.find((s) => s.id === id)?.name || "";
+  const subjobName = (id) => subjobs.find((s) => s.id === id)?.name || "";
 
   const { closable, closeCandidates, closeCycles, setCloseCycles } = useClosableCycles({ cycles, cycleStats, payrolls });
   // Por ciclo, lo pagado de verdad y lo que está en una nómina sin pagar.
@@ -164,7 +164,7 @@ export default function Payroll() {
     bankFormat,
     chosenCycles,
     cycles,
-    faenas,
+    jobs,
     load,
     payrollClassification,
     payrollName,
@@ -176,7 +176,7 @@ export default function Payroll() {
     setBusy,
     setProgress,
     setTab,
-    subfaenas,
+    subjobs,
     toast,
   });
 
@@ -216,7 +216,7 @@ export default function Payroll() {
     setPayConfirm,
   } = usePayConfirm({ load, setCloseCycles, setProgress, toast });
   const { confirmDelete, onDelete, setConfirmDelete } = usePayrollDeletion({ load, setProgress, toast });
-  const { onDownloadNominaOnly, onDownloadSnapshot, onRedownload } = usePayrollDownloads({ currentBankFormat, cycles, rutOf, toast });
+  const { onDownloadBankFile, onDownloadSnapshot, onRedownload } = usePayrollDownloads({ currentBankFormat, cycles, rutOf, toast });
 
   return (
     <div className="flex h-full flex-col">
@@ -236,12 +236,12 @@ export default function Payroll() {
       ) : tab === "create" ? (
         step === 1 ? (
           <CycleSelector
-            groups={activeByFaena}
+            groups={activeByJob}
             selected={selectedCycleIds}
             toggle={toggleCycle}
             selectedLaborsByCycle={selectedLaborsByCycle}
             toggleLaborInCycle={toggleLaborInCycle}
-            subfaenaName={subfaenaName}
+            subfaenaName={subjobName}
             cycleStats={cycleStats}
             pendingCashPayrolls={pendingCashPayrolls}
             chosen={chosenCycles}
@@ -285,7 +285,7 @@ export default function Payroll() {
           onRevertBank={onAskRevertBank}
           onAskDelete={setConfirmDelete}
           onRedownload={onRedownload}
-          onDownloadNominaOnly={onDownloadNominaOnly}
+          onDownloadBankFile={onDownloadBankFile}
           onDownloadSnapshot={onDownloadSnapshot}
           onChangeClassification={onChangeClassification}
           onOpen={setDetailPayroll}
@@ -294,7 +294,7 @@ export default function Payroll() {
         />
       ) : (
         <WorkersHistory
-          faenas={faenas}
+          faenas={jobs}
           workers={workers}
         />
       )}
@@ -308,7 +308,7 @@ export default function Payroll() {
               ? `Con "${closeCycles.payrollName}" pagada, estos ciclos quedaron pagados por completo: no les queda nada pendiente. ¿Los cierras?`
               : "Estos ciclos abiertos ya se pagaron por completo: no les queda nada pendiente y lo que entró a nómina está pagado."
           }
-          faenaName={(id) => faenas.find((f) => f.id === id)?.name || ""}
+          faenaName={(id) => jobs.find((f) => f.id === id)?.name || ""}
           onClose={() => setCloseCycles(null)}
           onDone={async () => {
             setCloseCycles(null);
@@ -386,12 +386,12 @@ export default function Payroll() {
           payroll={detailPayroll}
           allPayrolls={payrolls}
           cycles={cycles}
-          faenas={faenas}
-          subfaenas={subfaenas}
+          faenas={jobs}
+          subfaenas={subjobs}
           workers={workers}
           onClose={() => setDetailPayroll(null)}
           onRedownload={onRedownload}
-          onDownloadNominaOnly={onDownloadNominaOnly}
+          onDownloadBankFile={onDownloadBankFile}
           onDownloadSnapshot={onDownloadSnapshot}
           bankFormatLabel={bankFormat.label}
           onPublishPortal={isAdmin ? setPublishing : null}

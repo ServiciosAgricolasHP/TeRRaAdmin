@@ -33,10 +33,10 @@ export function useCycleSelection({ cycles }) {
   const [personModal, setPersonModal] = useState(null);
 
   const toggleCycle = (id) => {
-    const marcar = !selectedCycleIds.has(id);
+    const select = !selectedCycleIds.has(id);
     setSelectedCycleIds((prev) => {
       const next = new Set(prev);
-      if (marcar) next.add(id);
+      if (select) next.add(id);
       else next.delete(id);
       saveSelection(next);
       return next;
@@ -45,7 +45,7 @@ export function useCycleSelection({ cycles }) {
     // este mapa: marcar le pone todas sus labores y desmarcar lo saca.
     setSelectedLaborsByCycle((prev) => {
       const next = new Map(prev);
-      if (marcar) {
+      if (select) {
         const cycle = cycles.find((c) => c.id === id);
         next.set(id, new Set((cycle?.labors || []).map((l) => l.id)));
       } else {
@@ -58,8 +58,8 @@ export function useCycleSelection({ cycles }) {
   const toggleLaborInCycle = (cycleId, laborId) => {
     setSelectedLaborsByCycle((prev) => {
       const next = new Map(prev);
-      const todas = (cycles.find((c) => c.id === cycleId)?.labors || []).map((l) => l.id);
-      const set = new Set(next.get(cycleId) ?? todas);
+      const allLaborIds = (cycles.find((c) => c.id === cycleId)?.labors || []).map((l) => l.id);
+      const set = new Set(next.get(cycleId) ?? allLaborIds);
       if (set.has(laborId)) set.delete(laborId);
       else set.add(laborId);
       next.set(cycleId, set);
@@ -74,11 +74,11 @@ export function useCycleSelection({ cycles }) {
   // tenía, en el mismo lugar de la lista.
   const savePerson = ({ worker, workdayIds, rowKeys, filas }) => {
     setPeople((prev) => {
-      const entrada = { worker, workdayIds, rowKeys, filas };
+      const entry = { worker, workdayIds, rowKeys, filas };
       const i = prev.findIndex((p) => p.worker.id === worker.id);
-      if (i < 0) return [...prev, entrada];
+      if (i < 0) return [...prev, entry];
       const next = [...prev];
-      next[i] = entrada;
+      next[i] = entry;
       return next;
     });
     setPersonModal(null);

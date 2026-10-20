@@ -10,7 +10,7 @@ import { isCashBank } from "../../utils/banks";
 
 // La vista previa de una nómina nueva: se arma con lo elegido, se edita fila
 // por fila o en bloque, y da los totales de lo incluido.
-export function usePayrollPreview({ chosenCycles, cycles, faenas, people, subfaenas, toast, workers }) {
+export function usePayrollPreview({ chosenCycles, cycles, jobs, people, subjobs, toast, workers }) {
   "use no memo";
   // Los ciclos de la nómina que se está previsualizando, para el filtro por
   // ciclo: los elegidos más los que traen las personas sueltas.
@@ -53,27 +53,27 @@ export function usePayrollPreview({ chosenCycles, cycles, faenas, people, subfae
       // Los ciclos de la nómina: los elegidos con alguna labor y los que traen
       // las personas sueltas. Cada item lleva una entrada por cada uno, incluso
       // en $0.
-      const ciclosNomina = newPayrollCycleDetails({
+      const payrollCycles = newPayrollCycleDetails({
         cycles,
         chosen: chosenCycles,
         workdays: allWorkdays,
-        faenas,
-        subfaenas,
+        faenas: jobs,
+        subfaenas: subjobs,
       });
 
       const aggregates = aggregateWorkerAmounts(allWorkdays, laborTypeById);
 
       // Anticipos vigentes de todos los de la vista previa; el servidor
       // devuelve solo pending/partial.
-      const claveDe = resolveCurrentRut(workers);
-      const candidateIds = aggregates.filter((a) => a.total > 0).map(claveDe);
+      const keyOf = resolveCurrentRut(workers);
+      const candidateIds = aggregates.filter((a) => a.total > 0).map(keyOf);
       const pendingAdvances = await listPendingForWorkers(candidateIds);
       previewWorkdaysRef.current = allWorkdays;
       previewAdvancesRef.current = pendingAdvances;
-      const items = previewItemsOf({ aggregates, workers, payrollCycles: ciclosNomina, pendingAdvances });
+      const items = previewItemsOf({ aggregates, workers, payrollCycles, pendingAdvances });
 
       setPreviewItems(items);
-      setPreviewCycles(ciclosNomina.map((c) => ({ id: c.id, label: c.label })));
+      setPreviewCycles(payrollCycles.map((c) => ({ id: c.id, label: c.label })));
       setPayrollName(payrollSuggestedName());
       setStep(2);
       if (taken > 0) {

@@ -9,8 +9,8 @@ import { cycleStatsOf } from "../../utils/payrollCycles";
 export function usePayrollData({ toast }) {
   "use no memo";
   const [loading, setLoading] = useState(true);
-  const [faenas, setFaenas] = useState([]);
-  const [subfaenas, setSubfaenas] = useState([]);
+  const [jobs, setJobs] = useState([]);
+  const [subjobs, setSubjobs] = useState([]);
   const [cycles, setCycles] = useState([]);
   const [workers, setWorkers] = useState([]);
 
@@ -32,8 +32,8 @@ export function usePayrollData({ toast }) {
         workersService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 2 * 60 * 60 * 1000 }),
         payrollsService.list({ order: ["createdAt", "desc"], take: 50, cache: true, persist: true, ttl: 5 * 60 * 1000 }),
       ]);
-      setFaenas(f);
-      setSubfaenas(s);
+      setJobs(f);
+      setSubjobs(s);
       setCycles(c);
       setWorkers(w);
       setPayrolls(p);
@@ -83,13 +83,13 @@ export function usePayrollData({ toast }) {
   return {
     cycles,
     cycleStats,
-    faenas,
+    jobs,
     load,
     loading,
     payrolls,
     refresh,
     refreshing,
-    subfaenas,
+    subjobs,
     workers,
   };
 }

@@ -24,7 +24,7 @@ export function usePayConfirm({ load, setCloseCycles, setProgress, toast }) {
   const onConfirmPay = async () => {
     if (!payConfirm) return;
     const { payroll: p, mode } = payConfirm;
-    const paso = (step) => (done, total) =>
+    const progressStep = (step) => (done, total) =>
       setProgress({
         step,
         detail: total ? `${done} de ${total} jornadas` : "",
@@ -33,13 +33,13 @@ export function usePayConfirm({ load, setCloseCycles, setProgress, toast }) {
     setProgress({ step: "Sellando jornadas...", detail: "", percent: 2 });
     try {
       if (mode === "pay") {
-        await markPayrollPaid(p.id, p.workdayIds || [], paso("Sellando jornadas pagadas..."));
+        await markPayrollPaid(p.id, p.workdayIds || [], progressStep("Sellando jornadas pagadas..."));
       } else if (mode === "revert") {
-        await markPayrollPending(p.id, p.workdayIds || [], paso("Quitando el sello de pago..."));
+        await markPayrollPending(p.id, p.workdayIds || [], progressStep("Quitando el sello de pago..."));
       } else if (mode === "bank") {
-        await markBankPaid(p.id, paso("Sellando las jornadas de banco..."));
+        await markBankPaid(p.id, progressStep("Sellando las jornadas de banco..."));
       } else if (mode === "revertBank") {
-        await revertBankPaid(p.id, paso("Revirtiendo las transferencias..."));
+        await revertBankPaid(p.id, progressStep("Revirtiendo las transferencias..."));
       }
       setProgress({ step: "Actualizando lista...", detail: "", percent: 95 });
       setPayConfirm(null);

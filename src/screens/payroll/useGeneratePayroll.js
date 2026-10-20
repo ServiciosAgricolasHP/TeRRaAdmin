@@ -14,7 +14,7 @@ export function useGeneratePayroll({
   bankFormat,
   chosenCycles,
   cycles,
-  faenas,
+  jobs,
   load,
   payrollClassification,
   payrollName,
@@ -26,7 +26,7 @@ export function useGeneratePayroll({
   setBusy,
   setProgress,
   setTab,
-  subfaenas,
+  subjobs,
   toast,
 }) {
   "use no memo";
@@ -99,19 +99,19 @@ export function useGeneratePayroll({
       // Recalcular no traiga después lo que quedó afuera: los elegidos con
       // alguna labor, y con `laborIds: []` los que traen las personas sueltas.
       // El ciclo de una persona entra solo si ella quedó incluida.
-      const incluidas = new Set(items.flatMap((p) => p.workdayIds || []));
+      const includedWorkdayIds = new Set(items.flatMap((p) => p.workdayIds || []));
       const cycleDetails = newPayrollCycleDetails({
         cycles,
         chosen: chosenCycles,
-        workdays: (previewWorkdaysRef.current || []).filter((wd) => incluidas.has(wd.id)),
-        faenas,
-        subfaenas,
+        workdays: (previewWorkdaysRef.current || []).filter((wd) => includedWorkdayIds.has(wd.id)),
+        faenas: jobs,
+        subfaenas: subjobs,
       });
       const cycleIds = cycleDetails.map((c) => c.id);
       const cycleLabels = cycleDetails.map((c) => c.label);
-      const enLaNomina = new Set(cycleIds);
+      const payrollCycleIds = new Set(cycleIds);
 
-      const cleanItems = items.map((p) => payrollItemOf(p, enLaNomina));
+      const cleanItems = items.map((p) => payrollItemOf(p, payrollCycleIds));
 
       const allWorkdayIds = cleanItems.flatMap((p) => p.workdayIds);
       const allAdvanceIds = cleanItems.flatMap((p) => p.advanceIds || []);

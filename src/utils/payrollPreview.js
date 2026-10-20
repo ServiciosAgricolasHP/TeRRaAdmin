@@ -37,12 +37,12 @@ export function previewItemsOf({ aggregates, workers, payrollCycles, pendingAdva
       const grossInt = Math.round(a.total);
       // Bonos primero y anticipos después, topeados por bruto + bonos.
       // La regla y el porqué viven en src/utils/payrollItem.js.
-      const reparto = allocateAdvances({
+      const allocation = allocateAdvances({
         gross: grossInt,
         anticipos: adv.anticipos,
         bonos: adv.bonos,
       });
-      const { anticipoApplications, bonoApplications, anticiposTotal, bonosTotal } = reparto;
+      const { anticipoApplications, bonoApplications, anticiposTotal, bonosTotal } = allocation;
 
       return {
         rut: a.rut,
@@ -57,14 +57,14 @@ export function previewItemsOf({ aggregates, workers, payrollCycles, pendingAdva
         grossAmount: grossInt,
         advance: anticiposTotal,
         bonus: bonosTotal,
-        advanceNote: advanceNote(reparto),
+        advanceNote: advanceNote(allocation),
         anticipoApplications,
         bonoApplications,
         anticiposTotal,
         bonosTotal,
         // adelantosTotal se mantiene por compatibilidad del snapshot; siempre vale 0.
         adelantosTotal: 0,
-        amount: reparto.amount,
+        amount: allocation.amount,
         byCycle,
         workdayIds: a.workdayIds || [],
         include: true,
@@ -166,16 +166,16 @@ export function withoutInstallments(items, excludedIds) {
 // El item que se guarda en la nómina, con los montos enteros. `enLaNomina`:
 // los ids de los ciclos de la nómina; el de una persona suelta que se excluyó
 // en la vista previa no tiene columna.
-export function payrollItemOf(p, enLaNomina) {
-  const anticipoApps = (p.anticipoApplications || []).map((x) => ({
+export function payrollItemOf(p, payrollCycleIds) {
+  const advanceApps = (p.anticipoApplications || []).map((x) => ({
     advanceId: x.advanceId,
     amount: Math.round(Number(x.amount) || 0),
   }));
-  const bonoApps = (p.bonoApplications || []).map((x) => ({
+  const bonusApps = (p.bonoApplications || []).map((x) => ({
     advanceId: x.advanceId,
     amount: Math.round(Number(x.amount) || 0),
   }));
-  const advanceApplications = [...anticipoApps, ...bonoApps];
+  const advanceApplications = [...advanceApps, ...bonusApps];
   return {
     rut: p.rut,
     workerId: p.workerId || p.rut,
@@ -192,13 +192,13 @@ export function payrollItemOf(p, enLaNomina) {
     advanceNote: p.advanceNote || "",
     advanceIds: advanceApplications.map((x) => x.advanceId),
     advanceApplications,
-    anticipoApplications: anticipoApps,
-    bonoApplications: bonoApps,
+    anticipoApplications: advanceApps,
+    bonoApplications: bonusApps,
     anticiposTotal: Math.round(Number(p.anticiposTotal) || 0),
     bonosTotal: Math.round(Number(p.bonosTotal) || 0),
     adelantosTotal: Math.round(Number(p.adelantosTotal) || 0),
     amount: Math.round(Number(p.amount) || 0),
-    byCycle: Object.fromEntries(Object.entries(p.byCycle || {}).filter(([cid]) => enLaNomina.has(cid))),
+    byCycle: Object.fromEntries(Object.entries(p.byCycle || {}).filter(([cid]) => payrollCycleIds.has(cid))),
     workdayIds: p.workdayIds || [],
   };
 }

@@ -30,7 +30,7 @@ export function usePayrollDownloads({ currentBankFormat, cycles, rutOf, toast })
     const cyclesForExport = exportCyclesOf(p, cycles);
     await downloadPayrollXlsx(withCurrentRuts(p.items, rutOf), p.name || "Nomina", cyclesForExport, format);
   };
-  const onDownloadNominaOnly = async (p) => {
+  const onDownloadBankFile = async (p) => {
     const format = await bankFormatForDownload();
     if (!format) return;
     const filename = `${p.name || "Nomina"}_${format.fileSuffix}`;
@@ -51,5 +51,5 @@ export function usePayrollDownloads({ currentBankFormat, cycles, rutOf, toast })
       toast.error("No se pudo descargar el JSON.");
     }
   };
-  return { onDownloadNominaOnly, onDownloadSnapshot, onRedownload };
+  return { onDownloadBankFile, onDownloadSnapshot, onRedownload };
 }

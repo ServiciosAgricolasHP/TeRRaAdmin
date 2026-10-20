@@ -58,9 +58,9 @@ export function cycleStatsOf(cycles, workers, workdays) {
       else stats[cid].unpaidUnknown += amount;
       // Lo mismo por labor, para que el total de lo elegido respete las
       // labores destildadas.
-      const porLabor = stats[cid].unpaidByLabor;
-      if (!porLabor[wd.laborId]) porLabor[wd.laborId] = { unpaid: 0, bank: 0, cash: 0, unknown: 0, ruts: new Set() };
-      const pl = porLabor[wd.laborId];
+      const byLabor = stats[cid].unpaidByLabor;
+      if (!byLabor[wd.laborId]) byLabor[wd.laborId] = { unpaid: 0, bank: 0, cash: 0, unknown: 0, ruts: new Set() };
+      const pl = byLabor[wd.laborId];
       pl.unpaid += amount;
       pl.ruts.add(wd.workerRut);
       if (kind === "cash") pl.cash += amount;
@@ -76,9 +76,9 @@ export function cycleStatsOf(cycles, workers, workdays) {
 }
 
 // Ciclos activos agrupados por faena.
-export function activeCyclesByJob(faenas, cycles) {
+export function activeCyclesByJob(jobs, cycles) {
   const groups = new Map();
-  for (const f of faenas) groups.set(f.id, { faena: f, cycles: [] });
+  for (const f of jobs) groups.set(f.id, { faena: f, cycles: [] });
   for (const c of cycles) {
     if (c.status === "closed") continue;
     const g = groups.get(c.faenaId);
@@ -91,11 +91,11 @@ export function activeCyclesByJob(faenas, cycles) {
 // `undefined` = todas (el ciclo entero), una lista = solo esas, `[]` =
 // ninguna. Recalcular respeta esta elección.
 export function laborScopeOf(cycle, selectedLaborsByCycle) {
-  const elegidas = selectedLaborsByCycle.get(cycle.id);
-  if (!elegidas) return undefined;
-  const todas = (cycle.labors || []).map((l) => l.id);
-  if (todas.every((id) => elegidas.has(id))) return undefined;
-  return todas.filter((id) => elegidas.has(id));
+  const chosen = selectedLaborsByCycle.get(cycle.id);
+  if (!chosen) return undefined;
+  const allLaborIds = (cycle.labors || []).map((l) => l.id);
+  if (allLaborIds.every((id) => chosen.has(id))) return undefined;
+  return allLaborIds.filter((id) => chosen.has(id));
 }
 
 // Los ciclos elegidos y qué labores de cada uno: Map(cycleId → laborIds),
