@@ -5,13 +5,8 @@
 // mensual y se gestiona el estado de pago de cada factura.
 
 import React, { useState, useEffect, useMemo } from "react";
-import { serverTimestamp } from "firebase/firestore";
-import { auth } from "../firebase";
-import { companiesService, dteDocumentsService, costCentersService, informalExpensesService } from "../services";
-import { importDteRecords } from "../services/dteImportService";
-import { normalizeRut, parseSiiRcvCsv, extractRutFromFilename, buildDteDocId, dteTypeLabel } from "../utils/siiCsvParser";
+import { dteTypeLabel } from "../utils/siiCsvParser";
 import { formatRutForDisplay } from "../utils/rutUtils";
-import { unshout } from "../utils/textCase";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useIsMobile } from "../hooks/useIsMobile";
@@ -37,7 +32,6 @@ import { CompanySelectAndPickModal } from "./billing/CompanySelectAndPickModal";
 import { CostCentersModal } from "./billing/CostCentersModal";
 import { DocDetailModal } from "./billing/DocDetailModal";
 import {
-  PAYMENT_STATUSES,
   groupDocsByCostCenter,
   currentPeriod,
 } from "./billing/docs";
@@ -51,29 +45,32 @@ import { WithholdingsTab } from "./billing/WithholdingsTab";
 import { DocCard } from "./billing/DocCard";
 import { DocTableRow } from "./billing/DocTableRow";
 import { DocListToolbar } from "./billing/DocListToolbar";
-
-// Los tipos de DTE que restan (notas de crédito) viven en
-// `utils/cashFlowProjection` junto con la proyección, que necesita el mismo
-// criterio: si una NC no restara ahí, la base proyectada saldría inflada.
-
-// Clave de localStorage con la última empresa elegida, que se recuerda entre
-// sesiones.
-const LS_SELECTED_COMPANY = "facturacion.selectedCompanyId";
+import { useBillingData } from "./billing/useBillingData";
+import { useRcvImport } from "./billing/useRcvImport";
+import { useDocUpdates } from "./billing/useDocUpdates";
 
 // Tamaño de página de la tabla principal. La vista plana pagina siempre, haya
 // o no búsqueda, para que meses con cientos de docs no rendericen todo.
 const PAGE_SIZE = 20;
 
 export default function Billing() {
+  "use no memo";
   const toast = useToast();
   const isMobile = useIsMobile();
   const { isAdmin } = useAuth();
-  const [companies, setCompanies] = useState([]);
-  const [selectedCompanyId, setSelectedCompanyId] = useState(() => {
-    try { return localStorage.getItem(LS_SELECTED_COMPANY) || ""; } catch { return ""; }
-  });
-  const [docs, setDocs] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const {
+    companies,
+    companiesById,
+    costCenters,
+    costCentersById,
+    docs,
+    informalExpenses,
+    loadAll,
+    loading,
+    selectedCompanyId,
+    setDocs,
+    setSelectedCompanyId,
+  } = useBillingData();
   const [kindTab, setKindTab] = useState("venta");
   // Vista por defecto = mes actual. El selector de período permite ir a
   // cualquier mes pasado o pedir "Todos los períodos".
@@ -84,20 +81,8 @@ export default function Billing() {
   // Orden de la tabla principal: click en un encabezado alterna asc/desc; por
   // defecto, fechaEmision desc.
   const [sortBy, setSortBy] = useState({ key: "fechaEmision", dir: "desc" });
-  // Modales
-  const [importPreview, setImportPreview] = useState(null);
-  const [importCompanyId, setImportCompanyId] = useState("");
-  const [importing, setImporting] = useState(false);
   const [companiesModalOpen, setCompaniesModalOpen] = useState(false);
   const [receivablesModalOpen, setReceivablesModalOpen] = useState(false);
-  // Catálogo manual de centros de costo ficticios (ver costCentersService),
-  // global para todas las empresas. "Combustibles" no está aquí: sale
-  // automáticamente del código de impuesto del SII.
-  const [costCenters, setCostCenters] = useState([]);
-  // Gastos informales (sin factura/boleta formal) por centro de costo — ver
-  // informalExpensesService. Puramente informativo, nunca entra a dteDocuments
-  // ni a los totales/exports fiscales reales.
-  const [informalExpenses, setInformalExpenses] = useState([]);
   // Modal de centros de costo: crear/editar/eliminar + vista global de TODOS
   // los documentos de un centro elegido, de todas las empresas y períodos
   // (ignora los filtros de la tabla principal), ordenados cronológicamente.
@@ -126,45 +111,6 @@ export default function Billing() {
   useEffect(() => {
     try { localStorage.setItem("facturacion.groupByCostCenter", String(groupByCostCenter)); } catch { /* noop */ }
   }, [groupByCostCenter]);
-
-  const companiesById = useMemo(
-    () => new Map(companies.map((c) => [c.id, c])),
-    [companies],
-  );
-  const costCentersById = useMemo(
-    () => new Map(costCenters.map((c) => [c.id, c])),
-    [costCenters],
-  );
-
-  const loadAll = async () => {
-    setLoading(true);
-    try {
-      const [comps, list, centers, expenses] = await Promise.all([
-        companiesService.list({ order: ["razonSocial", "asc"], cache: true, ttl: 600_000 }),
-        dteDocumentsService.list({ order: ["fechaEmision", "desc"], cache: true, ttl: 600_000 }),
-        costCentersService.list({ order: ["label", "asc"], cache: true, ttl: 600_000 }),
-        informalExpensesService.list({ order: ["date", "desc"], cache: true, ttl: 600_000 }),
-      ]);
-      setCompanies(comps);
-      setDocs(list);
-      setCostCenters(centers);
-      setInformalExpenses(expenses);
-      // Si la empresa guardada ya no existe o no hay ninguna elegida, toma la
-      // primera; si no, respeta la última elección.
-      if (comps.length > 0 && !comps.some((c) => c.id === selectedCompanyId)) {
-        setSelectedCompanyId(comps[0].id);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { loadAll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
-
-  // Guarda la empresa elegida para la próxima visita a la pantalla.
-  useEffect(() => {
-    try { localStorage.setItem(LS_SELECTED_COMPANY, selectedCompanyId || ""); } catch { /* noop */ }
-  }, [selectedCompanyId]);
 
   // La pestaña "Retenciones" muestra todos los DTE (ventas y compras) con
   // estado `net_only`, agrupados por contraparte. No es un `kind`, pero va como
@@ -215,204 +161,28 @@ export default function Billing() {
 
   const receivablesTotals = useMemo(() => receivablesTotalsOf(receivablesList), [receivablesList]);
 
-  // --- IMPORTACIÓN ---
+  const {
+    confirmImport,
+    importCompanyId,
+    importing,
+    importPreview,
+    onFilesPick,
+    openImport,
+    setImportCompanyId,
+    setImportPreview,
+    toggleFileExclusion,
+  } = useRcvImport({
+    companies,
+    companiesById,
+    loadAll,
+    selectedCompanyId,
+    toast,
+  });
 
-  const openImport = () => {
-    if (companies.length === 0) {
-      toast.warning("Tienes que registrar al menos una empresa antes de importar. Usa el botón 🏢 Empresas.");
-      return;
-    }
-    setImportCompanyId(selectedCompanyId || companies[0].id);
-  };
-
-  // Varios archivos: parsea cada uno por separado. Cada uno trae su propio
-  // kind (ventas/compras) detectado del encabezado, sus stats, sus errores y un
-  // RUT sacado del nombre del archivo para avisar si no coincide con la
-  // empresa elegida.
-  const onFilesPick = async (files) => {
-    if (!files || files.length === 0) return;
-    if (!importCompanyId) {
-      toast.warning("Selecciona una empresa antes de elegir los archivos.");
-      return;
-    }
-    const company = companiesById.get(importCompanyId);
-    const companyRutNormalized = company?.rut ? normalizeRut(company.rut) : "";
-    const parsedFiles = [];
-    for (const file of files) {
-      try {
-        const buffer = await file.arrayBuffer();
-        const parsed = parseSiiRcvCsv(buffer, { companyRut: company?.rut || "" });
-        const detectedRut = extractRutFromFilename(file.name);
-        const detectedRutNormalized = detectedRut ? normalizeRut(detectedRut) : "";
-        const rutMismatch = !!(detectedRutNormalized && companyRutNormalized && detectedRutNormalized !== companyRutNormalized);
-        const recordsWithId = parsed.records.map((r) => ({
-          ...r,
-          id: buildDteDocId({
-            companyId: importCompanyId,
-            kind: r.kind,
-            tipo: r.tipo,
-            folio: r.folio,
-            rutEmisor: r.rutEmisor,
-            rutReceptor: r.rutReceptor,
-          }),
-          companyId: importCompanyId,
-          companyAlias: company?.alias || company?.razonSocial || "",
-          sourceFile: file.name,
-        }));
-        parsedFiles.push({
-          name: file.name,
-          kind: parsed.kind,
-          records: recordsWithId,
-          errors: parsed.errors,
-          stats: parsed.stats,
-          detectedRut: detectedRutNormalized,
-          rutMismatch,
-          excluded: false, // el usuario puede excluir archivos sospechosos
-        });
-      } catch (err) {
-        parsedFiles.push({
-          name: file.name,
-          kind: null,
-          records: [],
-          errors: [{ line: 0, message: err.message || String(err) }],
-          stats: { count: 0, byTipo: {}, totalAmount: 0 },
-          detectedRut: extractRutFromFilename(file.name),
-          rutMismatch: false,
-          excluded: true,
-          parseFailed: true,
-        });
-      }
-    }
-    setImportPreview({ files: parsedFiles });
-  };
-
-  // Incluye o excluye un archivo del import desde el modal.
-  const toggleFileExclusion = (fileName) => {
-    setImportPreview((prev) => {
-      if (!prev) return prev;
-      return {
-        ...prev,
-        files: prev.files.map((f) =>
-          f.name === fileName ? { ...f, excluded: !f.excluded } : f,
-        ),
-      };
-    });
-  };
-
-  // Confirmar import: junta los records de TODOS los archivos no excluidos y
-  // los pasa a `importDteRecords`, que por cada (kind, periodo) de la empresa
-  // hace un "replace": borra los huérfanos (estaban antes y ya no vienen) y
-  // escribe los nuevos o actualizados, en batches de hasta 450 escrituras.
-  const confirmImport = async () => {
-    if (!importPreview) return;
-    setImporting(true);
-    try {
-      const allRecords = importPreview.files
-        .filter((f) => !f.excluded && !f.parseFailed)
-        .flatMap((f) => f.records);
-      if (allRecords.length === 0) {
-        toast.warning("No hay registros para importar (todos los archivos están excluidos o fallaron).");
-        setImporting(false);
-        return;
-      }
-      const { totalNew, totalOverwrite, totalDeleted } = await importDteRecords({
-        companyId: importCompanyId,
-        records: allRecords,
-        uid: auth.currentUser?.uid || null,
-      });
-      const filesProcessed = importPreview.files.filter((f) => !f.excluded && !f.parseFailed).length;
-      toast.success(
-        `${filesProcessed} archivo${filesProcessed === 1 ? "" : "s"} procesado${filesProcessed === 1 ? "" : "s"}.\n` +
-        `Nuevos: ${totalNew} · Sobreescritos: ${totalOverwrite} · Huérfanos eliminados: ${totalDeleted}\n` +
-        `Total: ${allRecords.length}`,
-        { title: "Importación lista" },
-      );
-      setImportPreview(null);
-      setImportCompanyId("");
-      await loadAll();
-    } catch (err) {
-      toast.error("Error al guardar: " + (err.message || String(err)));
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  // --- Marcar estado de pago de una factura ---
-  // Fija el estado directamente; la UI lo ofrece como un `<select>` por fila.
-  const setPaymentStatus = async (dteDoc, newStatus) => {
-    if (!PAYMENT_STATUSES[newStatus]) return;
-    if ((dteDoc.paymentStatus || "unpaid") === newStatus) return;
-    try {
-      await dteDocumentsService.update(dteDoc.id, {
-        paymentStatus: newStatus,
-        paymentStatusSetAt: serverTimestamp(),
-        paymentStatusSetBy: auth.currentUser?.uid || null,
-      });
-      setDocs((prev) => prev.map((d) => (d.id === dteDoc.id ? { ...d, paymentStatus: newStatus } : d)));
-    } catch (err) {
-      toast.error("Error al cambiar estado: " + (err.message || err));
-    }
-  };
-
-  // Guarda notas o detalle libre de un DTE: la glosa que el SII no incluye en
-  // el CSV o apuntes de seguimiento interno.
-  const saveDocNotes = async (dteDoc, rawNotes) => {
-    const notes = unshout(rawNotes);
-    try {
-      await dteDocumentsService.update(dteDoc.id, { notes });
-      setDocs((prev) => prev.map((d) => (d.id === dteDoc.id ? { ...d, notes } : d)));
-      setDetailDoc((cur) => (cur?.id === dteDoc.id ? { ...cur, notes } : cur));
-    } catch (err) {
-      toast.error("Error al guardar notas: " + (err.message || err));
-    }
-  };
-
-  // Asigna (o quita) el centro de costo ficticio manual de un documento.
-  // Los combustibles se agrupan solos; este campo es para las demás
-  // categorías, que el usuario define a mano.
-  const saveDocCostCenter = async (dteDoc, costCenterId) => {
-    const next = costCenterId || null;
-    try {
-      await dteDocumentsService.update(dteDoc.id, { costCenterId: next });
-      setDocs((prev) => prev.map((d) => (d.id === dteDoc.id ? { ...d, costCenterId: next } : d)));
-      setDetailDoc((cur) => (cur?.id === dteDoc.id ? { ...cur, costCenterId: next } : cur));
-    } catch (err) {
-      toast.error("Error al asignar centro de costo: " + (err.message || err));
-    }
-  };
-
-  // Guarda el array completo de pagos junto con `amountPaid` denormalizado
-  // (su suma), que el orden por saldo y los pendientes leen sin recorrer el
-  // array.
-  const saveDocPayments = async (dteDoc, payments) => {
-    const amountPaid = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
-    try {
-      await dteDocumentsService.update(dteDoc.id, { payments, amountPaid });
-      setDocs((prev) => prev.map((d) => (d.id === dteDoc.id ? { ...d, payments, amountPaid } : d)));
-      setDetailDoc((cur) => (cur?.id === dteDoc.id ? { ...cur, payments, amountPaid } : cur));
-    } catch (err) {
-      toast.error("Error al guardar pagos: " + (err.message || err));
-    }
-  };
-
-
-
-
-
+  const { saveDocCostCenter, saveDocNotes, saveDocPayments, setPaymentStatus } = useDocUpdates({ setDetailDoc, setDocs, toast });
 
   const selectedCompany = companiesById.get(selectedCompanyId);
   const noCompany = companies.length === 0;
-
-
-
-
-
-
-
-
-
-
-
 
   return (
     <div className="flex h-full flex-col">
