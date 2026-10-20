@@ -79,4 +79,25 @@ describe("cardMatchesSearch", () => {
     expect(cardMatchesSearch(card, "76543210")).toBe(true);
     expect(cardMatchesSearch(card, "molino")).toBe(false);
   });
+
+  it("busca cada palabra en cualquier orden y sin tildes", () => {
+    const ana = { name: "Ana Pérez" };
+    expect(cardMatchesSearch(ana, "perez ana")).toBe(true);
+    expect(cardMatchesSearch(ana, "ana soto")).toBe(false);
+  });
+
+  it("encuentra por los datos de las cuentas: etiqueta, titular, número, RUT y banco", () => {
+    const beto = { name: "Beto Soto", accounts: [{ label: "Cuenta de la señora", titular: "Rosa Soto Muñoz", rutTitular: "9876543-3", bankCode: "012", accountNumber: "555777999" }] };
+    expect(cardMatchesSearch(beto, "senora")).toBe(true);
+    expect(cardMatchesSearch(beto, "rosa munoz")).toBe(true);
+    expect(cardMatchesSearch(beto, "555777")).toBe(true);
+    expect(cardMatchesSearch(beto, "estado")).toBe(true);
+  });
+
+  it("un RUT o un número escrito con puntos y guion se busca por sus dígitos, desde 3", () => {
+    expect(cardMatchesSearch(card, "76.543.210-1")).toBe(true);
+    expect(cardMatchesSearch(card, "76.543")).toBe(true);
+    expect(cardMatchesSearch({ name: "X", accounts: [{ rutTitular: "9876543-3" }] }, "9.876.543-3")).toBe(true);
+    expect(cardMatchesSearch(card, "7.6")).toBe(false);
+  });
 });
