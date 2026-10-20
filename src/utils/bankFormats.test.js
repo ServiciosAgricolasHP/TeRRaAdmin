@@ -20,10 +20,11 @@ describe("bankFormatOf", () => {
 });
 
 describe.each(BANK_FORMATS.map((f) => [f.id, f]))("formato %s", (_id, format) => {
-  it("tiene nombre, hoja, sufijo y un ancho por columna", () => {
+  it("tiene nombre, hoja, sufijo, reglas y un ancho por columna", () => {
     expect(format.label).toBeTruthy();
     expect(format.sheetName).toBeTruthy();
     expect(format.fileSuffix).toBeTruthy();
+    expect(format.notes.length).toBeGreaterThan(0);
     expect(format.columnWidths).toHaveLength(format.headers.length);
   });
 

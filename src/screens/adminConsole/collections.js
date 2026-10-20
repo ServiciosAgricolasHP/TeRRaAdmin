@@ -15,6 +15,7 @@ export const MAIN_COLLECTIONS = [
   { id: "groupLeader", group: "Personas y pagos", label: "Líderes de grupo", note: "lista curada" },
   { id: "payrolls", group: "Personas y pagos", label: "Nóminas", note: "" },
   { id: "payrollSnapshots", group: "Personas y pagos", label: "JSON de nóminas", note: "uno por nómina" },
+  { id: "payrollConfig", group: "Personas y pagos", label: "Config de nómina", note: "normalmente 1 documento" },
   { id: "portalPayslips", group: "Personas y pagos", label: "Portal: fichas", note: "una por trabajador de la nómina publicada" },
   { id: "portalMeta", group: "Personas y pagos", label: "Portal: nómina publicada", note: "un solo documento" },
   { id: "advances", group: "Personas y pagos", label: "Anticipos / Bonos", note: "" },

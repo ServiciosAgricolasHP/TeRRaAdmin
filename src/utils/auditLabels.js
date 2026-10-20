@@ -112,6 +112,7 @@ export const ENTITY_META = {
   interestLink: { labelEs: "Link de interés", labelOf: (d) => d?.title || d?.name },
   harvestWeight: { labelEs: "Pesaje cosecha" },
   payrollSnapshot: { labelEs: "JSON de nómina" },
+  payrollConfig: { labelEs: "Config. de nómina" },
   groupLeader: { labelEs: "Líder de grupo", labelOf: (d) => d?.name },
 };
 

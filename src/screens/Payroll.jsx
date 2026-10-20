@@ -51,7 +51,6 @@ import {
   downloadPayrollXlsx,
   downloadBankFileXlsx,
 } from "../utils/payroll";
-import { DEFAULT_BANK_FORMAT_ID, bankFormatOf } from "../utils/bankFormats";
 import { newPayrollCycleDetails, allocateAdvances, advanceNote } from "../utils/payrollItem";
 import ConfirmDialog from "../components/ConfirmDialog";
 import CloseCyclesModal from "./payroll/CloseCyclesModal";
@@ -64,10 +63,12 @@ import { HistoryList } from "./payroll/HistoryList";
 import { InstallmentConfirmModal } from "./payroll/InstallmentConfirmModal";
 import { PayConfirmModal } from "./payroll/PayConfirmModal";
 import { PayrollDetailModal } from "./payroll/PayrollDetailModal";
+import { PayrollSettingsModal } from "./payroll/PayrollSettingsModal";
 import { PreviewTable } from "./payroll/PreviewTable";
 import { ProgressOverlay } from "./payroll/ProgressOverlay";
 import { RenamePayrollModal } from "./payroll/RenamePayrollModal";
 import { WorkersHistory } from "./payroll/WorkersHistory";
+import { usePayrollConfig } from "./payroll/usePayrollConfig";
 
 const SELECTION_KEY = "payroll_cycle_selection";
 
@@ -111,6 +112,8 @@ const withCurrentRuts = (items, rutOf) =>
 export default function Payroll() {
   const toast = useToast();
   const { user, isAdmin } = useAuth();
+  const { config: payrollConfig, bankFormat, currentBankFormat, save: savePayrollConfig } = usePayrollConfig();
+  const [settingsOpen, setSettingsOpen] = useState(false);
   // Cabecera de la nómina publicada en el portal de trabajadores.
   const [portal, setPortal] = useState(null);
   const [publishing, setPublishing] = useState(null);
@@ -793,7 +796,7 @@ export default function Payroll() {
         generatedAt: new Date().toISOString(),
         payroll: {
           name: finalName,
-          format: "bchile",
+          format: bankFormat.id,
           classification: payrollClassification || "nomina",
           status: "pending",
           total, bankTotal, cashTotal,
@@ -816,7 +819,7 @@ export default function Payroll() {
       setProgress({ step: "Creando registro de la nómina...", detail: "", percent: 5 });
       const created = await payrollsService.create({
         name: finalName,
-        format: "bchile",
+        format: bankFormat.id,
         classification: payrollClassification || "nomina",
         status: "pending",
         cycleIds,
@@ -1063,8 +1066,20 @@ export default function Payroll() {
     setProgress({ step: "Listo ✓", detail: "", percent: 100 });
     setTimeout(() => setProgress(null), 400);
   };
-  const bankFormat = bankFormatOf(DEFAULT_BANK_FORMAT_ID);
+  // El formato del archivo del banco se relee en cada descarga: sin leerlo no
+  // se descarga.
+  const bankFormatForDownload = async () => {
+    try {
+      return await currentBankFormat();
+    } catch (err) {
+      console.error(err);
+      toast.error("No se pudo leer el formato del archivo del banco. Revisa la conexión e intenta de nuevo.");
+      return null;
+    }
+  };
   const onRedownload = async (p) => {
+    const format = await bankFormatForDownload();
+    if (!format) return;
     // Aplica los nombres de ciclo editados en "📝 Editar encabezados"
     // (guardados en el doc), así el XLSX usa los nombres cortos.
     const overrides = p.cycleLabelOverrides || {};
@@ -1095,11 +1110,13 @@ export default function Payroll() {
     if (cyclesForExport.length === 0 && p.cycleIds) {
       for (const id of p.cycleIds) cyclesForExport.push({ id, label: overrides[id] || id });
     }
-    await downloadPayrollXlsx(withCurrentRuts(p.items, rutOf), p.name || "Nomina", cyclesForExport, bankFormat);
+    await downloadPayrollXlsx(withCurrentRuts(p.items, rutOf), p.name || "Nomina", cyclesForExport, format);
   };
   const onDownloadNominaOnly = async (p) => {
-    const filename = `${p.name || "Nomina"}_${bankFormat.fileSuffix}`;
-    await downloadBankFileXlsx(withCurrentRuts(p.items, rutOf), filename, bankFormat);
+    const format = await bankFormatForDownload();
+    if (!format) return;
+    const filename = `${p.name || "Nomina"}_${format.fileSuffix}`;
+    await downloadBankFileXlsx(withCurrentRuts(p.items, rutOf), filename, format);
   };
   // Vuelve a bajar el JSON del snapshot de una nómina. Lo lee de
   // payrollSnapshots y, si no está, del campo `snapshot` embebido en la nómina.
@@ -1122,9 +1139,19 @@ export default function Payroll() {
       <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Nómina</h1>
-          <p className="text-sm text-[var(--color-muted)]">Generar nóminas Banco de Chile a partir de ciclos activos</p>
+          <p className="text-sm text-[var(--color-muted)]">
+            Generar nóminas a partir de ciclos activos · archivo del banco: {bankFormat.label}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setSettingsOpen(true)}
+            title="Configuración de nómina: formato del archivo del banco"
+            className="flex min-h-8 items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm text-[var(--color-fg)] hover:bg-[var(--color-surface-3)]"
+          >
+            <span>⚙</span>
+            <span className="hidden sm:inline">Configuración</span>
+          </button>
           <button
             onClick={refresh}
             disabled={refreshing || loading}
@@ -1325,6 +1352,7 @@ export default function Payroll() {
           onRedownload={onRedownload}
           onDownloadNominaOnly={onDownloadNominaOnly}
           onDownloadSnapshot={onDownloadSnapshot}
+          bankFormatLabel={bankFormat.label}
           onPublishPortal={isAdmin ? setPublishing : null}
           publishedPayrollId={portal?.payrollId || null}
           onChanged={async () => {
@@ -1360,6 +1388,10 @@ export default function Payroll() {
         onConfirm={runPublish}
         onCancel={() => setPublishing(null)}
       />
+
+      {settingsOpen && (
+        <PayrollSettingsModal config={payrollConfig} isAdmin={isAdmin} onSave={savePayrollConfig} onClose={() => setSettingsOpen(false)} />
+      )}
 
       <ProgressOverlay info={progress} />
     </div>

@@ -88,5 +88,12 @@ export const pagoFacilBchile = {
   fileSuffix: "BChile",
   headers: BCHILE_HEADERS,
   columnWidths: [16, 30, 16, 16, 16, 16, 16, 16, 28, 16, 16],
+  notes: [
+    "Quien cobra $0 no va: el banco rechaza las transferencias de $0.",
+    "El RUT es el de la cuenta de pago, con el dígito verificador pegado y sin puntos ni guion.",
+    "El nombre va sin tildes ni signos, y ordenado alfabéticamente con un identificador A001, A002…",
+    "Tipo de cuenta: CTD para cuenta corriente y JUV para cuenta vista o Cuenta RUT.",
+    `Sin correo, va ${BCHILE_DEFAULT_EMAIL}: el banco rechaza las filas sin correo.`,
+  ],
   buildRows: buildBchileRows,
 };

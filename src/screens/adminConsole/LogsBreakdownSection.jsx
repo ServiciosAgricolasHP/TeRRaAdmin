@@ -9,7 +9,7 @@ import { ConsoleCard } from "./ConsoleCard";
 // en el desglose, igual que pasa con MAIN_COLLECTIONS.
 const LOG_ENTITIES = [
   "workday", "worker", "cycle", "faena", "subfaena", "advance", "payroll",
-  "payrollSnapshot", "transport", "transportPayment", "transportPayroll",
+  "payrollSnapshot", "payrollConfig", "transport", "transportPayment", "transportPayroll",
   "carrier", "catalog", "qrPrefix", "harvestWeight", "dteDocument", "company",
   "costCenter", "informalExpense", "priceBookEntry", "priceBookConfig",
   "contactCard", "phoneContact", "interestLink", "groupLeader", "laborGroup", "indicator",

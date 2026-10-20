@@ -121,7 +121,7 @@ export function PreviewTable({
           </div>
           <div
             className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-right"
-            title="Va en el archivo Banco de Chile, por transferencia"
+            title="Va en el archivo del banco, por transferencia"
           >
             <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">🏦 Transferencia</div>
             <div className="text-sm font-semibold tabular-nums">{fmtCurrency(bankTotal)}</div>
