@@ -7,22 +7,13 @@ import {
   pendingCashItemsOf,
   markPaid as markPayrollPaid,
   markPending as markPayrollPending,
-  markBankPaid,
-  revertBankPaid,
-  untagWorkdaysFromPayroll,
 } from "../services/payrollsService";
-import {
-  restoreAdvancesFromPayroll,
-} from "../services/advancesService";
-import {
-  deleteSnapshot,
-} from "../services/payrollSnapshots";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
 import { activeCyclesByJob } from "../utils/payrollCycles";
 import ConfirmDialog from "../components/ConfirmDialog";
 import CloseCyclesModal from "./payroll/CloseCyclesModal";
-import { settledOpenCycles, payrollStatusMap, splitTaken } from "../utils/cycleClosing";
+import { payrollStatusMap, splitTaken } from "../utils/cycleClosing";
 import { currentRutResolver } from "../utils/workerRut";
 import { AddWorkerDaysModal } from "./payroll/AddWorkerDaysModal";
 import { CycleSelector } from "./payroll/CycleSelector";
@@ -30,9 +21,11 @@ import { HistoryList } from "./payroll/HistoryList";
 import { InstallmentConfirmModal } from "./payroll/InstallmentConfirmModal";
 import { PayConfirmModal } from "./payroll/PayConfirmModal";
 import { PayrollDetailModal } from "./payroll/PayrollDetailModal";
+import { PayrollHeader } from "./payroll/PayrollHeader";
 import { PayrollSettingsModal } from "./payroll/PayrollSettingsModal";
 import { PreviewTable } from "./payroll/PreviewTable";
 import { ProgressOverlay } from "./payroll/ProgressOverlay";
+import { PublishPortalDialog } from "./payroll/PublishPortalDialog";
 import { RenamePayrollModal } from "./payroll/RenamePayrollModal";
 import { WorkersHistory } from "./payroll/WorkersHistory";
 import { usePayrollConfig } from "./payroll/usePayrollConfig";
@@ -42,6 +35,9 @@ import { usePortalPublish } from "./payroll/usePortalPublish";
 import { useCycleSelection } from "./payroll/useCycleSelection";
 import { usePayrollPreview } from "./payroll/usePayrollPreview";
 import { useGeneratePayroll } from "./payroll/useGeneratePayroll";
+import { useClosableCycles } from "./payroll/useClosableCycles";
+import { usePayConfirm } from "./payroll/usePayConfirm";
+import { usePayrollDeletion } from "./payroll/usePayrollDeletion";
 
 export default function Payroll() {
   "use no memo";
@@ -113,7 +109,6 @@ export default function Payroll() {
   // va de 0 a 100. `null` oculta el overlay.
   const [progress, setProgress] = useState(null);
 
-  const [confirmDelete, setConfirmDelete] = useState(null);
   const [detailPayroll, setDetailPayroll] = useState(null);
   // Nómina que se está renombrando, o null. El nombre es solo una etiqueta y se
   // cambia en cualquier estado; renombrar actualiza el doc y el snapshot
@@ -151,20 +146,13 @@ export default function Payroll() {
 
   const subfaenaName = (id) => subfaenas.find((s) => s.id === id)?.name || "";
 
-  // Ciclos abiertos ya pagados por completo, para cerrarlos de una vez desde
-  // Generar o justo después de marcar una nómina pagada. `closeCycles.ids`
-  // acota la lista a los ciclos de esa nómina.
-  const closable = useMemo(() => settledOpenCycles(cycles, cycleStats, payrolls), [cycles, cycleStats, payrolls]);
+  const { closable, closeCandidates, closeCycles, setCloseCycles } = useClosableCycles({ cycles, cycleStats, payrolls });
   // Por ciclo, lo pagado de verdad y lo que está en una nómina sin pagar.
   const takenSplit = useMemo(() => {
     const statusOf = payrollStatusMap(payrolls);
     return Object.fromEntries(Object.entries(cycleStats).map(([id, s]) => [id, splitTaken(s, statusOf)]));
   }, [cycleStats, payrolls]);
   const payrollNameOf = (id) => payrolls.find((p) => p.id === id)?.name || "";
-  const [closeCycles, setCloseCycles] = useState(null); // { ids: Set | null, payrollName }
-  const closeCandidates = closeCycles
-    ? closable.settled.filter((r) => !closeCycles.ids || closeCycles.ids.has(r.cycle.id))
-    : [];
 
   const {
     confirmState,
@@ -218,192 +206,30 @@ export default function Payroll() {
     await load();
     toast.success("Nómina renombrada");
   };
-  // mode: "pay" | "revert" | "bank" | "revertBank". Los dos últimos son el
-  // pago en dos tiempos: salen las transferencias pero el efectivo queda
-  // debiéndose.
-  const [payConfirm, setPayConfirm] = useState(null); // { payroll, mode }
-  const onAskMarkPaid = (p) => setPayConfirm({ payroll: p, mode: "pay" });
-  const onAskRevert = (p) => setPayConfirm({ payroll: p, mode: "revert" });
-  const onAskMarkBankPaid = (p) => setPayConfirm({ payroll: p, mode: "bank" });
-  const onAskRevertBank = (p) => setPayConfirm({ payroll: p, mode: "revertBank" });
-  const PAY_DONE = {
-    pay: "Nómina marcada como pagada",
-    revert: "Nómina vuelta a pendiente",
-    bank: "Transferencias marcadas como pagadas — el efectivo queda debiéndose",
-    revertBank: "Transferencias revertidas",
-  };
-  const onConfirmPay = async () => {
-    if (!payConfirm) return;
-    const { payroll: p, mode } = payConfirm;
-    const paso = (step) => (done, total) =>
-      setProgress({
-        step,
-        detail: total ? `${done} de ${total} jornadas` : "",
-        percent: total ? (done / total) * 90 : 0,
-      });
-    setProgress({ step: "Sellando jornadas...", detail: "", percent: 2 });
-    try {
-      if (mode === "pay") {
-        await markPayrollPaid(p.id, p.workdayIds || [], paso("Sellando jornadas pagadas..."));
-      } else if (mode === "revert") {
-        await markPayrollPending(p.id, p.workdayIds || [], paso("Quitando el sello de pago..."));
-      } else if (mode === "bank") {
-        await markBankPaid(p.id, paso("Sellando las jornadas de banco..."));
-      } else if (mode === "revertBank") {
-        await revertBankPaid(p.id, paso("Revirtiendo las transferencias..."));
-      }
-      setProgress({ step: "Actualizando lista...", detail: "", percent: 95 });
-      setPayConfirm(null);
-      const fresh = await load();
-      toast.success(PAY_DONE[mode] || "Listo");
-      // Los ciclos de esta nómina que con este pago quedaron pagados por
-      // completo se ofrecen para cerrar.
-      if (mode === "pay" && fresh) {
-        const ids = new Set(p.cycleIds || []);
-        const done = settledOpenCycles(fresh.cycles, fresh.stats, fresh.payrolls).settled.filter((r) => ids.has(r.cycle.id));
-        if (done.length) setCloseCycles({ ids: new Set(done.map((r) => r.cycle.id)), payrollName: p.name });
-      }
-    } catch (err) {
-      // El servicio lanza mensajes redactados para el usuario (ej. "La nómina
-      // ya está pagada entera."): se muestran en un toast.
-      toast.error(err.message || "No se pudo completar la operación.");
-    } finally {
-      setProgress(null);
-    }
-  };
-  const onDelete = async () => {
-    if (!confirmDelete) return;
-    // Una nómina pagada no se elimina. Se vuelve a chequear acá aunque la UI
-    // desactive el botón.
-    if (confirmDelete.status === "paid") {
-      setConfirmDelete(null);
-      toast.error("No se puede eliminar una nómina pagada. Revierte primero a No pagado.");
-      return;
-    }
-    // Tampoco con las transferencias pagadas: borrarla liberaría los días y
-    // restauraría anticipos de quienes ya tienen la plata en la cuenta.
-    if (confirmDelete.bankPaidAt) {
-      setConfirmDelete(null);
-      toast.error("Las transferencias de esta nómina ya se pagaron. Reviértelas antes de eliminarla.");
-      return;
-    }
-    const id = confirmDelete.id;
-    const workdayIds = confirmDelete.workdayIds || [];
-    const advanceIds = confirmDelete.advanceIds || [];
-    setConfirmDelete(null);
-    setProgress({ step: "Iniciando eliminación...", detail: "", percent: 2 });
-    try {
-      // Soltar las jornadas, restaurar los anticipos y borrar el snapshot
-      // corren en paralelo; el doc de la nómina se borra después de las tres,
-      // para no dejar referencias colgando.
-      const W_UNTAG = 70, W_ADV = 15, W_SNAP = 10;
-      let untagDone = 0, untagTotal = Math.max(1, workdayIds.length);
-      let advancesDone = false, snapDone = false;
-      const recompute = () => {
-        const pct =
-          W_UNTAG * (untagDone / untagTotal) +
-          (advancesDone ? W_ADV : 0) +
-          (snapDone ? W_SNAP : 0);
-        const detailParts = [];
-        if (workdayIds.length > 0) detailParts.push(`Jornadas ${untagDone}/${untagTotal}`);
-        if (advanceIds.length > 0) detailParts.push(`Anticipos ${advancesDone ? "✓" : "…"}`);
-        detailParts.push(`JSON ${snapDone ? "✓" : "…"}`);
-        setProgress({
-          step: "Liberando jornadas y anticipos...",
-          detail: detailParts.join(" · "),
-          percent: pct,
-        });
-      };
-      recompute();
-
-      const pUntag = untagWorkdaysFromPayroll(workdayIds, (done, total) => {
-        untagDone = done;
-        untagTotal = Math.max(1, total);
-        recompute();
-      });
-      const pAdv = (async () => {
-        await restoreAdvancesFromPayroll(advanceIds, id);
-        advancesDone = true;
-        recompute();
-      })();
-      const pSnap = (async () => {
-        await deleteSnapshot(id);
-        snapDone = true;
-        recompute();
-      })();
-
-      await Promise.all([pUntag, pAdv, pSnap]);
-
-      setProgress({ step: "Eliminando nómina...", detail: "", percent: 95 });
-      await payrollsService.remove(id);
-    } catch (err) {
-      console.error("Error al eliminar nómina:", err);
-      toast.error(`Error al eliminar la nómina: ${err?.message || err}`);
-      setProgress(null);
-      return;
-    }
-    setProgress({ step: "Actualizando lista...", detail: "", percent: 98 });
-    await load();
-    setProgress({ step: "Listo ✓", detail: "", percent: 100 });
-    setTimeout(() => setProgress(null), 400);
-  };
+  const {
+    onAskMarkBankPaid,
+    onAskMarkPaid,
+    onAskRevert,
+    onAskRevertBank,
+    onConfirmPay,
+    payConfirm,
+    setPayConfirm,
+  } = usePayConfirm({ load, setCloseCycles, setProgress, toast });
+  const { confirmDelete, onDelete, setConfirmDelete } = usePayrollDeletion({ load, setProgress, toast });
   const { onDownloadNominaOnly, onDownloadSnapshot, onRedownload } = usePayrollDownloads({ currentBankFormat, cycles, rutOf, toast });
 
   return (
     <div className="flex h-full flex-col">
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Nómina</h1>
-          <p className="text-sm text-[var(--color-muted)]">
-            Generar nóminas a partir de ciclos activos · archivo del banco: {bankFormat.label}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => setSettingsOpen(true)}
-            title="Configuración de nómina: formato del archivo del banco"
-            className="flex min-h-8 items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm text-[var(--color-fg)] hover:bg-[var(--color-surface-3)]"
-          >
-            <span>⚙</span>
-            <span className="hidden sm:inline">Configuración</span>
-          </button>
-          <button
-            onClick={refresh}
-            disabled={refreshing || loading}
-            title="Forzar recarga desde el servidor (ignora la caché local). Útil si otro usuario acaba de agregar trabajadores, labores o jornadas."
-            className="flex items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm text-[var(--color-fg)] hover:bg-[var(--color-surface-3)] disabled:opacity-50"
-          >
-            <span className={refreshing ? "inline-block animate-spin" : "inline-block"}>↻</span>
-            <span className="hidden sm:inline">{refreshing ? "Recargando…" : "Recargar datos"}</span>
-          </button>
-          <div className="flex flex-wrap gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1 text-sm">
-            <button
-              onClick={() => setTab("create")}
-              className={`rounded px-3 py-1 ${
-                tab === "create" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "text-[var(--color-muted)]"
-              }`}
-            >
-              Generar
-            </button>
-            <button
-              onClick={() => setTab("history")}
-              className={`rounded px-3 py-1 ${
-                tab === "history" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "text-[var(--color-muted)]"
-              }`}
-            >
-              Historial Nómina ({payrolls.length})
-            </button>
-            <button
-              onClick={() => setTab("workers")}
-              className={`rounded px-3 py-1 ${
-                tab === "workers" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "text-[var(--color-muted)]"
-              }`}
-            >
-              💰 Pagos anteriores
-            </button>
-          </div>
-        </div>
-      </div>
+      <PayrollHeader
+        bankFormatLabel={bankFormat.label}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onRefresh={refresh}
+        refreshing={refreshing}
+        loading={loading}
+        tab={tab}
+        setTab={setTab}
+        payrollCount={payrolls.length}
+      />
 
       {loading ? (
         <div className="flex flex-1 items-center justify-center text-[var(--color-muted)]">Cargando...</div>
@@ -584,21 +410,9 @@ export default function Payroll() {
         />
       )}
 
-      <ConfirmDialog
-        open={!!publishing}
-        title="Publicar en el portal de trabajadores"
-        message={
-          publishing
-            ? `¿Publicar "${publishing.name || "Nómina"}" en el portal? ${
-                portal?.payrollId === publishing.id
-                  ? "Ya es la publicada: se actualiza con lo que tiene ahora."
-                  : portal?.payroll?.name
-                    ? `Reemplaza a "${portal.payroll.name}", que es la publicada ahora.`
-                    : "Hoy no hay ninguna publicada."
-              } Cada trabajador ve solo su detalle, buscando su RUT.`
-            : ""
-        }
-        confirmLabel="Publicar"
+      <PublishPortalDialog
+        publishing={publishing}
+        portal={portal}
         busy={publishBusy}
         onConfirm={runPublish}
         onCancel={() => setPublishing(null)}
