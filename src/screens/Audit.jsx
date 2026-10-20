@@ -71,6 +71,7 @@ const ACTION_STYLE = {
   create: { color: "#166534", bg: "#dcfce7", label: "crear" },
   update: { color: "#92400e", bg: "#fef3c7", label: "editar" },
   delete: { color: "#b91c1c", bg: "#fee2e2", label: "eliminar" },
+  import: { color: "#1e40af", bg: "#dbeafe", label: "importar" },
 };
 
 function actionPill(action) {

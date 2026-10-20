@@ -40,6 +40,7 @@ export const MAIN_COLLECTIONS = [
   { id: "priceBookEntries", group: "Otros registros", label: "Libro de precios", note: "" },
   { id: "priceBookConfig", group: "Otros registros", label: "Config del libro de precios", note: "normalmente 1 documento" },
   { id: "contactCards", group: "Otros registros", label: "Información y cuentas", note: "" },
+  { id: "phoneContacts", group: "Otros registros", label: "Agenda telefónica", note: "" },
   { id: "interestLinks", group: "Otros registros", label: "Links útiles", note: "" },
   { id: "indicators", group: "Otros registros", label: "Indicadores", note: "" },
   { id: "harvestWeights", group: "Otros registros", label: "Pesajes QR", note: "la escribe la app de escaneo; acá solo se lee" },

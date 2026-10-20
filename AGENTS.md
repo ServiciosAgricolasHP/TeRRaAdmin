@@ -304,6 +304,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Empresa | `company` | `companies` |
 | Cheques y pagos | `commitment` | `commitments` |
 | Tarea del backend (Cloud Functions) | `functionJob` | `functionJobs` |
+| Agenda telefónica / contacto de la agenda | `phoneBook` / `phoneContact` | `phoneContacts` |
 
 Los nombres guardados en Firestore se conservan aunque no calcen con la tabla (las colecciones `faenas` y `transportPayrolls`, el campo `faenaId`, el campo `payrollId` de un resumen, los campos en español de `dteDocuments`): el código los lee y escribe con su nombre guardado. La lista con el nombre propuesto para cada uno está en `docs/data-model.md` ("Nombres en español pendientes de migración"); un campo nuevo nace en inglés.
 
@@ -792,7 +793,7 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 - Pantalla: `src/screens/AdminConsole.jsx` (arma la página con sus secciones). Ruta `/admin/console` (solo admin).
 - Sus piezas, en `src/screens/adminConsole/`: una sección por archivo (`PingSection`, `AuthDebugSection`, `CollectionCountsSection`, `LogsBreakdownSection`, `WorkdaysByMonthSection`, `WorkdaysByRangeSection`, `WorkdaysByCycleSection`, `NormalizeWorkerNamesSection`, `BackfillWorkerRutFieldSection` y `MigrateAdvanceRutsSection`), la tarjeta plegable `ConsoleCard` y `collections.js` (`MAIN_COLLECTIONS`). Los recuentos están en `services/countsService.js`.
 - Secciones para inspección barata: conteos por colección, workdays por mes (12 reads para todo un año), workdays por rango, workdays por ciclo, más los backfills y el diagnóstico del rol admin.
-- **`MAIN_COLLECTIONS` lista las 36 colecciones de la app**, agrupadas por área. Es una lista a mano: al agregar una colección nueva hay que sumarla acá o queda invisible. El botón **📋 Copiar** baja los conteos ya ejecutados separados por tab, listos para pegar en una planilla.
+- **`MAIN_COLLECTIONS` lista las 37 colecciones de la app**, agrupadas por área. Es una lista a mano: al agregar una colección nueva hay que sumarla acá o queda invisible. El botón **📋 Copiar** baja los conteos ya ejecutados separados por tab, listos para pegar en una planilla.
 - **🧪 Ping al backend**: encola un job en `functionJobs` y espera la respuesta. No llama ningún endpoint porque no hay ninguno invocable (ver Despliegue); ejercita el mismo camino que usa cualquier job. Distingue los tres modos de falla a propósito, porque cada uno se arregla en otro lado: `permission-denied` es que las reglas publicadas no dejan crear el job (o quien aprieta no es admin), el timeout de 45 s es la función sin desplegar o mirando otra base, y un job en `error` es la función corriendo y fallando adentro. Es además el **único** chequeo que prueba que el trigger esté suscrito a `hpdatabase` — el emulador no puede.
 - Usa `getCountFromServer` de Firestore — 1 read por cada 1000 docs vs N con `getDocs`. Permite estimar costos sin descargar la colección.
 - **Composición de logs** (`LogsBreakdownSection`): desglosa `logs` por entidad (~1 lectura por entidad) y mide cuántos documentos borraría un TTL de 6/12/24 meses (3 lecturas), para decidir la retención con números. `LOG_ENTITIES` es una lista a mano: una entidad nueva que no se agregue queda invisible, y la fila "sin clasificar" del total es la que lo delata.
@@ -1047,10 +1048,35 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 
 ## Información y Cuentas / InfoAccounts
 
-- Pantalla: `src/screens/InfoAccounts.jsx`. Ruta `/info-cuentas`. Colección `contactCards`.
+- Pantalla: `src/screens/InfoAccounts.jsx`. Ruta `/info-cuentas`. Dos pestañas: **📞 Agenda telefónica** (colección `phoneContacts`) y **🏦 Información y cuentas** (colección `contactCards`). Abre en la última elegida (`infoAccounts.tab` en `localStorage`), la agenda la primera vez.
+- Sus piezas, en `src/screens/infoAccounts/`:
+  - **Agenda:** `PhoneBookTab` (buscador, filtros, "🏢 Por empresa" y la lista) con `usePhoneBook` (la carga y las escrituras), `PhoneContactRow` (un contacto), `PhoneContactModal` (alta y edición), `PhoneBookImportModal` (la importación con su vista previa), `readPhoneBookFile.js` (lee cada archivo según su extensión), `phoneBookFiles.js` (compartir y descargar contactos como tarjeta .vcf o texto) y `writePhoneBookXlsx.js` (la agenda en Excel). El cálculo vive en `utils/phoneBook.js` (números, tipos, juntar copias, el plan de importación, buscar, filtrar y agrupar), `utils/contactsCsv.js` (Google y Outlook), `utils/vcard.js` y `utils/phoneBookSheet.js` (la planilla de las secretarias), todos con tests. Las escrituras, en `services/phoneContactsService.js`.
+  - **Fichas:** `ContactCardsTab` (la lista de fichas, con su buscador y sus modales), `ContactCard` (la tarjeta), `AccountBlock` (una cuenta bancaria), `Field` (una fila que se copia con un toque), `ContactCardImage` (la tarjeta que se copia como imagen) y `ContactCardModal` (alta y edición). Los textos que se copian (`accountToText`, `cardToText`), el buscador y la forma de una ficha nueva viven en `utils/contactCards.js`, con tests.
+
+### Agenda telefónica
+
+- **Un número es un contacto.** Al importar, todo lo que comparte un teléfono queda en un solo documento, también con los contactos que ya están: reimportar actualiza en vez de duplicar. Los nombres de las copias quedan en `otherNames`, y la búsqueda los encuentra.
+  - El número se guarda normalizado (`normalizePhone`): un chileno de 9 dígitos, o de 11 con el 56, pasa a `+56…`; uno con `+` queda como viene; lo demás, solo con sus dígitos. Un anexo va como `;ext=N`, así dos anexos de la misma central no juntan a dos personas. Normalizar dos veces da lo mismo, y tiene que seguir así: la fusión vuelve a normalizar lo ya guardado. Se guarda sin espacios y se muestra (`formatPhone`) con el código de país separado: `+56 912345678`, `+591 69710262`. El largo del código (1, 2 o 3 dígitos) sale de sus primeros dígitos (`countryCodeOf`).
+  - Una fila sin teléfono se junta con el contacto que tiene su correo, pero un correo no junta a dos contactos con teléfono: un correo genérico de empresa lo comparten varias personas. Una fila sin teléfono ni correo no se importa.
+  - Si una fila une a dos contactos existentes, no los fusiona (borraría uno): se agrega al primero, sin los números del otro, y la vista previa lo avisa.
+- **La planilla manda.** Su nombre y sus datos (empresa, RUT, tipo, departamento, cargo y observaciones) pisan lo que hay, porque es la fuente que corrigen las secretarias; el nombre anterior queda en `otherNames`. Google, Outlook y vCard solo llenan lo vacío. Teléfonos y correos siempre se suman.
+- **Reimportar lo mismo no escribe nada.** El origen (`sources`) no cuenta como cambio: descargar la agenda en Excel y volver a importarla no reescribe los contactos de Google.
+- **Archivos:** la planilla `.xlsx` (columnas por encabezado, en cualquier orden; varios números o correos en una celda separados por `/`, `;` o `,`), el CSV de Google (formato actual y antiguo, con ` ::: ` entre varios valores) u Outlook (en inglés o en español; UTF-8 o Windows-1252), y `.vcf` 2.1, 3.0 y 4.0. Se pueden elegir varios a la vez, y nada se escribe hasta confirmar la vista previa.
+  - **La planilla de las secretarias trae rutas absolutas** en sus relaciones internas (`/xl/tables/table1.xml`), y así ExcelJS no la abre (`Cannot read properties of undefined (reading 'name')`). `readPhoneBookFile` las reescribe como relativas con JSZip (`fixAbsoluteRelTargets`) antes de abrirla.
+- **La importación escribe en lotes** de 450 y deja **un** log (`action: "import"`) con los conteos y los archivos, en vez de uno por contacto.
+- **Costo de lecturas:** la agenda se carga entera, cacheada 2 h también en `localStorage` (`PHONE_CONTACTS_LIST`, como la lista de trabajadores): unas 1.200 lecturas la primera vez y después gratis. Las altas, ediciones, borrados e importaciones la actualizan en su lugar (`additive`). La lista dibuja 200 contactos y sigue con "Mostrar más".
+- La edición avisa si un número ya lo tiene otro contacto, pero deja guardar (puede ser una central compartida).
+- **Cada acción de un contacto hace una sola cosa:** tocar el nombre copia el contacto entero como texto (`phoneContactText`, sin las observaciones, que pueden ser internas); tocar un número o un correo copia solo ese dato; 📤 lo comparte, y el menú ⋯ lo descarga como .vcf (en el teléfono, abrir el archivo lo guarda en los contactos), lo edita o lo borra.
+- **📤 Compartir** (`shareContact`) solo aparece en un teléfono con menú de compartir (`canShareContacts`): en el computador copiar ya es tocar el nombre. Manda la tarjeta .vcf, que WhatsApp muestra como contacto (en iPhone funciona). Chrome en Android dice que la acepta (`canShare`) y la rechaza al compartir con "Permission denied"; ese intento gasta el toque, así que el texto se copia y el equipo queda marcado (`infoAccounts.vcardShareBlocked` en `localStorage`): desde el siguiente toque comparte el texto.
+- **Descargar** (⬇) lleva lo filtrado en pantalla: en Excel, en el formato de la planilla de las secretarias (Tabla de Excel, la hoja oculta "Listas" y sus listas desplegables, que sugieren sin rechazar), para corregirla y volver a importarla sin cambios; o en un .vcf con todos los contactos. El Excel no sigue la convención de la columna A vacía: es un formato de ida y vuelta, como el del banco.
+
+### Fichas (Información y cuentas)
+
 - Libreta compartida de contactos (persona o empresa) con datos bancarios listos para copiar/pegar. **Modelo independiente**: no se vincula a `worker` ni a `companies` — el usuario crea sus propias fichas, aunque dupliquen a alguien que ya existe en otra colección.
 - Cada ficha tiene N cuentas (`accounts[]`), con la misma convención de `bankCode`/`accountType` que `worker.bankDetails`.
 - `favorite` fija la ficha arriba; `includeRut` decide si el RUT viaja junto con los datos copiados (siempre `true` en empresas).
+- El buscador filtra también las favoritas y encuentra por los datos de las cuentas (etiqueta, titular, RUT, banco y número) y por un RUT o número escrito con puntos y guion (`cardMatchesSearch`).
+- La lista se cachea 10 minutos en memoria; guardar, borrar y marcar favorita la actualizan en su lugar.
 
 ## Pesajes QR / HarvestQr
 
