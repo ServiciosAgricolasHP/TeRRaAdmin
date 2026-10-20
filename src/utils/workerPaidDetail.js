@@ -113,7 +113,7 @@ export function paidCycleSectionsOf(wds, snapshotCycles, cycleDetails) {
 
 // Vista cronológica: jornadas y ajustes en una sola tabla ordenada por
 // fecha; los ajustes sin fecha quedan al final.
-export function paidChronoRowsOf(cycleSections, anticipoRows, bonoRows) {
+export function paidChronoRowsOf(cycleSections, advanceRows, bonusRows) {
   const KIND_ORDER = { work: 0, anticipo: 1, bono: 2 };
   const chronoRows = [];
   for (const sec of cycleSections) {
@@ -121,8 +121,8 @@ export function paidChronoRowsOf(cycleSections, anticipoRows, bonoRows) {
       chronoRows.push({ kind: "work", date: r.date, cycleHeader: sec.header, row: r });
     }
   }
-  for (const a of anticipoRows) chronoRows.push(a);
-  for (const b of bonoRows) chronoRows.push(b);
+  for (const a of advanceRows) chronoRows.push(a);
+  for (const b of bonusRows) chronoRows.push(b);
   chronoRows.sort((a, b) => {
     const da = a.date || "9999-12-31";
     const db = b.date || "9999-12-31";
