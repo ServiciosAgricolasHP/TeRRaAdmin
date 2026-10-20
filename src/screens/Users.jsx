@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import Modal, { ModalCloseButton } from "../components/Modal";
 import { hasChanges } from "../utils/formChanges";
 import ConfirmDialog from "../components/ConfirmDialog";
-import { usersService } from "../services";
+import { logsService, usersService } from "../services";
 import { enqueueFunctionJob, waitForFunctionJob } from "../services/functionJobsService";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import { GREETING_FIELDS } from "../utils/greetings";
+import { entityLabelEs } from "../utils/auditLabels";
 import {
   ROLE_OPTIONS,
   isAdminRole,
@@ -21,6 +22,52 @@ import {
 
 const nameOf = (p) => p.alias || p.email || p.id;
 const dateOf = (ts) => (ts?.toDate ? ts.toDate() : null);
+
+const ACTION_VERB = { create: "creó", update: "editó", delete: "eliminó", import: "importó" };
+const dateTimeOf = (date) =>
+  date.toLocaleString("es-CL", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+// El último registro de auditoría de cada cuenta: una lectura por cuenta. La
+// consulta usa el índice compuesto de `logs` uid ↑ + timestamp ↓; si falta,
+// Firestore responde `failed-precondition` con el enlace para crearlo.
+function useLastChanges(profiles, reloadKey) {
+  const idsKey = profiles.map((p) => p.id).sort().join("|");
+  const key = `${idsKey}#${reloadKey}`;
+  const [result, setResult] = useState({ key: null, byUid: {}, error: null });
+
+  useEffect(() => {
+    const ids = idsKey ? idsKey.split("|") : [];
+    if (!ids.length) return;
+    let cancelled = false;
+    Promise.all(
+      ids.map((uid) =>
+        logsService
+          .list({ wheres: [["uid", "==", uid]], order: ["timestamp", "desc"], take: 1 })
+          .then((rows) => [uid, rows[0] || null]),
+      ),
+    )
+      .then((entries) => {
+        if (!cancelled) setResult({ key, byUid: Object.fromEntries(entries), error: null });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.warn("[Users] último cambio:", err);
+        setResult({ key, byUid: {}, error: err });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [idsKey, key]);
+
+  const { error } = result;
+  return {
+    loading: result.key !== key,
+    byUid: result.byUid,
+    missingIndex: error?.code === "failed-precondition",
+    indexUrl: String(error?.message || "").match(/https:\/\/console\.firebase\.google\.com\/\S+/)?.[0] || null,
+    error,
+  };
+}
 
 const errorMessage = (err) =>
   err?.code === "permission-denied"
@@ -80,6 +127,7 @@ export default function Users() {
   const [busy, setBusy] = useState(false);
   const [greetingsOf, setGreetingsOf] = useState(null);
   const [creating, setCreating] = useState(false);
+  const lastChanges = useLastChanges(profiles, reloadKey);
 
   useEffect(() => {
     let cancelled = false;
@@ -172,6 +220,26 @@ export default function Users() {
         <p className="rounded-md bg-[var(--color-danger-soft)] px-3 py-2 text-sm text-[var(--color-danger)]">{error}</p>
       ) : null}
 
+      {lastChanges.error ? (
+        <p className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-xs text-[var(--color-muted)]">
+          {lastChanges.missingIndex ? (
+            <>
+              Para mostrar el último cambio de cada cuenta falta un índice de Firestore en <code>logs</code>: <code>uid</code>{" "}
+              ascendente y <code>timestamp</code> descendente.{" "}
+              {lastChanges.indexUrl ? (
+                <a href={lastChanges.indexUrl} target="_blank" rel="noreferrer" className="text-[var(--color-accent)] underline">
+                  Crear el índice ↗
+                </a>
+              ) : (
+                "El enlace para crearlo está en la consola del navegador."
+              )}
+            </>
+          ) : (
+            <>No se pudo leer el último cambio de las cuentas: {errorMessage(lastChanges.error)}</>
+          )}
+        </p>
+      ) : null}
+
       {loading && profiles.length === 0 ? (
         <div className="py-10 text-center text-sm text-[var(--color-muted)]">Cargando…</div>
       ) : sorted.length === 0 ? (
@@ -187,6 +255,7 @@ export default function Users() {
               key={p.id}
               profile={p}
               myUid={user?.uid}
+              lastChange={lastChanges.error ? undefined : { loading: lastChanges.loading, log: lastChanges.byUid[p.id] }}
               onAction={(kind) => setAction({ kind, profile: p })}
               onGreetings={() => setGreetingsOf(p)}
             />
@@ -432,7 +501,9 @@ function ActionButton({ children, onClick, disabled = false, danger = false }) {
   );
 }
 
-function UserCard({ profile, myUid, onAction, onGreetings }) {
+// `lastChange`: `{ loading, log }` con el último registro de auditoría de la
+// cuenta (`log` null si no tiene), o undefined si no se pudo leer.
+function UserCard({ profile, myUid, lastChange, onAction, onGreetings }) {
   const [copied, setCopied] = useState(false);
   const isMe = profile.id === myUid;
   const admin = isAdminRole(profile.role);
@@ -484,8 +555,11 @@ function UserCard({ profile, myUid, onAction, onGreetings }) {
         <span aria-hidden="true">{copied ? "✓" : "📋"}</span>
       </button>
       <div className="text-xs text-[var(--color-muted)]">
-        Último ingreso: {lastSeenLabel(dateOf(profile.lastSeenAt))}
+        {/* La cuenta propia está en la app ahora; su visita recién grabada puede
+            venir todavía sin la hora del servidor. */}
+        Visto por última vez: {isMe ? "ahora" : lastSeenLabel(dateOf(profile.lastSeenAt))}
       </div>
+      {lastChange && <LastChangeLine {...lastChange} />}
 
       <div className="mt-3 flex flex-wrap gap-1.5">
         {!isMe && (
@@ -509,6 +583,19 @@ function UserCard({ profile, myUid, onAction, onGreetings }) {
           {r}
         </p>
       ))}
+    </div>
+  );
+}
+
+// "Último cambio: hace 3 h · Jornada", con la acción y la hora exacta al pasar
+// el mouse.
+function LastChangeLine({ loading, log }) {
+  const when = log ? dateOf(log.timestamp) : null;
+  const title = log && when ? `${ACTION_VERB[log.action] || log.action} ${entityLabelEs(log.entity)} el ${dateTimeOf(when)}` : undefined;
+  return (
+    <div className="text-xs text-[var(--color-muted)]" title={title}>
+      Último cambio:{" "}
+      {loading ? "…" : log ? `${when ? lastSeenLabel(when) : "recién"} · ${entityLabelEs(log.entity)}` : "Sin registro"}
     </div>
   );
 }

@@ -208,7 +208,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 - `ProtectedRoute` envuelve rutas autenticadas; prop `adminOnly` restringe a admins.
 - `Login` redirige a la app cuando `user` ya está cargado en `AuthContext`.
 - **Sin perfil, o con `disabled: true`, la cuenta no entra.** `user.access` vale `"none"` o `"disabled"` y `ProtectedRoute` muestra `NoAccess` con el correo de la cuenta, que es lo que necesita un admin para darle acceso desde Usuarios. Si leer el perfil falla, la app entra igual como usuario y las reglas deciden qué datos ve.
-- Al abrir la app, `AuthContext` guarda en el perfil el `email` de la cuenta y `lastSeenAt` (`userPrefsService.recordVisit`). Es lo que muestra Usuarios: el navegador no puede listar las cuentas de Authentication.
+- `AuthContext` guarda en el perfil el `email` de la cuenta y `lastSeenAt` (`userPrefsService.recordVisit`) al abrir la app y, con la app abierta, al volver a ella o usarla (cambiar de pestaña, un clic, una tecla), como mucho una vez cada 30 minutos (`visitDue`, `utils/userAccounts.js`). Un computador que despierta de la suspensión sigue con la página cargada y no vuelve a iniciar sesión, así que solo el arranque no alcanza. Es lo que muestra Usuarios: el navegador no puede listar las cuentas de Authentication.
 - **`AuthContext` vuelca el doc `users/{uid}` entero en `user`**, así que cualquier campo que se le agregue queda disponible en toda la app sin pagar una lectura extra.
 
 ### Saludos personalizados / easter eggs
@@ -801,7 +801,8 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 ## Usuarios / Users
 
 - Pantalla: `src/screens/Users.jsx`. Ruta `/admin/users` (solo admin). Colección `users`.
-- Lista los perfiles (1 lectura por perfil) con correo, alias, rol, estado y último ingreso. El correo y el último ingreso los escribe cada cuenta al abrir la app (ver Auth): un perfil de alguien que todavía no entra sale "Sin correo todavía".
+- Lista los perfiles (1 lectura por perfil) con correo, alias, rol, estado, "Visto por última vez" y "Último cambio". El correo y la hora de la visita los escribe cada cuenta desde la app (ver Auth): un perfil de alguien que todavía no entra sale "Sin correo todavía".
+- **Último cambio** es el último registro de auditoría de la cuenta, con su entidad ("hace 3 h · Jornada") y, al pasar el mouse, la acción y la hora exacta. Cuesta 1 lectura por cuenta (`logs` por `uid`, `timestamp` descendente, `limit 1`) y necesita el índice compuesto `uid ↑ + timestamp ↓`: si falta, la pantalla lo avisa con el enlace para crearlo. No ve a quien solo miró sin modificar nada; eso lo dice "Visto por última vez".
 - Acciones por cuenta: **Hacer admin / Quitar admin**, **Suspender / Reactivar** (`disabled`), **Contraseña** (el correo de Firebase para elegir una nueva, en español) y **Saludos** (ver Saludos personalizados).
 - **Límites**, los mismos en `firestore.rules` y en `utils/userAccounts.js`, con tests en los dos lados:
   - Nadie cambia su propio rol ni suspende su propia cuenta. Por eso siempre queda al menos un admin: el que actúa no puede quitarse el rol.
@@ -822,8 +823,8 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 - **Desde la app, un log solo se agrega.** `firestore.rules` no deja editarlo ni borrarlo, ni siquiera a un admin. Una poda o un backfill sobre `logs` va en un job de Functions, con el admin SDK.
 - **Pérdida silenciosa**: si un log supera el límite de 1 MiB, `addDoc` lanza, `logAction` lo atrapa y solo hace `console.error`. El registro del cambio más grande es justo el candidato a perderse sin rastro.
 - **Cada mutación espera su log**: `firestoreBase` hace `await logAction(...)` después de escribir, así que editar una celda de la grilla son tres viajes en serie (leer el doc, escribirlo, escribir el log).
-- **Casi nada es consultable.** Solo hay tres formas de llegar a un log, y ninguna filtra por usuario ni por acción (la sesionización es en cliente): rango de fechas con tope de 5.000 (`HARD_CAP` en `Audit.jsx`), `entity + entityId`, y `entity + meta.workerRut|carrierId` — estas dos **sin tope ni límite de fecha**. Por eso un TTL le recorta el historial a la ficha por registro en silencio.
-- Las consultas de logs necesitan cuatro índices compuestos (`entity+entityId`, `entity+meta.workerRut`, `entity+meta.carrierId`, `entity+meta`). No hay `firestore.indexes.json` en el repo, así que no hay registro de cuáles existen.
+- **Casi nada es consultable.** Solo hay cuatro formas de llegar a un log, y ninguna filtra por acción (la sesionización es en cliente): rango de fechas con tope de 5.000 (`HARD_CAP` en `Audit.jsx`), `entity + entityId`, `entity + meta.workerRut|carrierId` — estas dos **sin tope ni límite de fecha** —, y el último de una cuenta (`uid`, en Usuarios). Por eso un TTL le recorta el historial a la ficha por registro en silencio.
+- Las consultas de logs necesitan cinco índices compuestos (`entity+entityId`, `entity+meta.workerRut`, `entity+meta.carrierId`, `entity+meta` y `uid+timestamp` descendente). No hay `firestore.indexes.json` en el repo, así que no hay registro de cuáles existen.
 
 ## Facturación / Billing
 

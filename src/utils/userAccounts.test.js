@@ -9,6 +9,8 @@ import {
   roleLabel,
   sortProfiles,
   suspendBlock,
+  VISIT_INTERVAL_MS,
+  visitDue,
 } from "./userAccounts";
 
 const ME = "me";
@@ -130,6 +132,21 @@ describe("lastSeenLabel", () => {
 
   it("desde la semana, la fecha", () => {
     expect(lastSeenLabel(new Date(2026, 8, 3, 9, 30), now)).toBe("03-09-2026");
+  });
+});
+
+describe("visitDue", () => {
+  const now = 1_800_000_000_000;
+
+  it("sin visita grabada, toca grabarla", () => {
+    expect(visitDue(0, now)).toBe(true);
+  });
+
+  it("como mucho una vez cada 30 minutos", () => {
+    expect(visitDue(now - 60_000, now)).toBe(false);
+    expect(visitDue(now - VISIT_INTERVAL_MS + 1, now)).toBe(false);
+    expect(visitDue(now - VISIT_INTERVAL_MS, now)).toBe(true);
+    expect(visitDue(now - 22 * 3600_000, now)).toBe(true);
   });
 });
 

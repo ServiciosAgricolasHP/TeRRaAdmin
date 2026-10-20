@@ -542,7 +542,7 @@ Perfil de cada cuenta: acceso, rol y preferencias. **DocId = uid de Auth.** Se c
 | `role` | `"admin"` \| `"user"` | se lee en minúsculas; cualquier valor distinto de `admin` cuenta como usuario. Un admin lo cambia desde Usuarios, nunca el propio |
 | `disabled` | bool? | `true` = cuenta suspendida: sin acceso a los datos. Un perfil admin no puede quedar suspendido |
 | `email` | string? | correo de la cuenta; lo escribe la app al abrirse y tiene que ser el del token |
-| `lastSeenAt` | ts? | última vez que la cuenta abrió la app |
+| `lastSeenAt` | ts? | última vez que se vio la cuenta en la app: al abrirla y, con la app abierta, al volver a ella o usarla, como mucho una vez cada 30 minutos. Las reglas exigen que sea la hora del servidor |
 | `alias` | string? | cómo se firma esta persona en los registros que carga a mano (ej. `harvestWeights.supervisor`). Lo edita el propio usuario desde **Mi perfil** en el header — es una preferencia, no un permiso. Sin alias se usa el correo |
 | `greetings` | `{ [slot]: string }`? | saludos personalizados por ranura (`GREETING_SLOTS` en `utils/greetings.js`); los edita un admin desde Usuarios. Texto vacío = sin saludo |
 | `faenaLayout` | `{ groups, faenaGroup, faenaColor }` | layout de la pantalla Faenas |

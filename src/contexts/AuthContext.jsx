@@ -1,9 +1,9 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { userPrefsService } from "../services/userPrefsService";
-import { accessOf } from "../utils/userAccounts";
+import { accessOf, visitDue } from "../utils/userAccounts";
 
 const AuthContext = createContext(null);
 
@@ -21,9 +21,15 @@ async function loadProfile(user) {
   return { ...data, uid: user.uid, email: user.email, role, access: accessOf(data) };
 }
 
+// Correo y hora de la visita en el perfil, para la lista de Usuarios.
+const recordVisit = (uid, email) =>
+  userPrefsService.recordVisit(uid, email).catch((err) => console.warn("[Auth] recordVisit failed:", err));
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Hora (ms) de la última visita grabada desde esta pestaña.
+  const lastVisitRef = useRef(0);
 
   useEffect(() => {
     return onAuthStateChanged(auth, async (fbUser) => {
@@ -32,9 +38,8 @@ export function AuthProvider({ children }) {
           const profile = await loadProfile(fbUser);
           setUser(profile);
           if (profile.access !== "none") {
-            userPrefsService
-              .recordVisit(fbUser.uid, fbUser.email)
-              .catch((err) => console.warn("[Auth] recordVisit failed:", err));
+            lastVisitRef.current = Date.now();
+            recordVisit(fbUser.uid, fbUser.email);
           }
         } catch (e) {
           console.error("Failed to load profile", e);
@@ -46,6 +51,32 @@ export function AuthProvider({ children }) {
       setLoading(false);
     });
   }, []);
+
+  // Con la app abierta, volver a ella o usarla vuelve a grabar la visita, como
+  // mucho una vez cada 30 minutos (`visitDue`). Un computador que despierta de
+  // la suspensión sigue con la página cargada, sin pasar por el inicio de sesión.
+  const visitUid = user && user.access !== "none" ? user.uid : null;
+  useEffect(() => {
+    if (!visitUid) return;
+    const onActivity = () => {
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (!visitDue(lastVisitRef.current, now)) return;
+      lastVisitRef.current = now;
+      recordVisit(visitUid, auth.currentUser?.email);
+    };
+    const opts = { capture: true, passive: true };
+    document.addEventListener("visibilitychange", onActivity);
+    window.addEventListener("focus", onActivity);
+    window.addEventListener("pointerdown", onActivity, opts);
+    window.addEventListener("keydown", onActivity, opts);
+    return () => {
+      document.removeEventListener("visibilitychange", onActivity);
+      window.removeEventListener("focus", onActivity);
+      window.removeEventListener("pointerdown", onActivity, opts);
+      window.removeEventListener("keydown", onActivity, opts);
+    };
+  }, [visitUid]);
 
   const login = (email, password) => signInWithEmailAndPassword(auth, email, password);
   const logout = () => signOut(auth);
