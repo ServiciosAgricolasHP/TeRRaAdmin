@@ -11,7 +11,7 @@ import { PaymentStatusSelect } from "./PaymentStatusSelect";
 // `DocCard`, en columnas.
 export function DocTableRow({ d, cancellingByDocId, costCenters, kindTab, saveDocCostCenter, setDetailDoc, setPaymentStatus }) {
   "use no memo";
-  const razon = kindTab === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
+  const counterpartyName = kindTab === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
   const rut = kindTab === "venta" ? d.rutReceptor : d.rutEmisor;
   const isNC = CREDIT_NOTE_TYPES.has(Number(d.tipo));
   const isFuel = d.otroImpuestoCategory === "combustible";
@@ -27,7 +27,7 @@ export function DocTableRow({ d, cancellingByDocId, costCenters, kindTab, saveDo
         <OtherTaxChip code={d.otroImpuestoCodigo} tasa={d.retencionTasa} />
       </td>
       <td className="px-2 py-1.5 text-right font-mono tabular-nums">{d.folio}</td>
-      <td className="px-2 py-1.5 truncate max-w-[260px]">{razon || "—"}</td>
+      <td className="px-2 py-1.5 truncate max-w-[260px]">{counterpartyName || "—"}</td>
       <td className="px-2 py-1.5 font-mono text-xs">{formatRutForDisplay(rut)}</td>
       <td className={`px-2 py-1.5 text-right tabular-nums ${isNC ? "text-[var(--color-danger)]" : ""}`}>
         {isNC ? "−" : ""}{fmtCurrency(d.neto)}

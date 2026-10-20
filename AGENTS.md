@@ -832,17 +832,21 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 
 ## Facturación / Billing
 
-- Pantalla: `src/screens/Billing.jsx` (el componente de la ruta, con sus pestañas y exportaciones). Ruta `/facturacion`. Nav label: "Facturación" (icono 🧾). Acceso para todas las cuentas.
+- Pantalla: `src/screens/Billing.jsx` (el componente de la ruta: la empresa, las pestañas, los filtros y el listado). Ruta `/facturacion`. Nav label: "Facturación" (icono 🧾). Acceso para todas las cuentas.
 - Sus piezas, en `src/screens/billing/`:
-  - **Listado:** `SummaryCard`, `SortHeader`, `OtherTaxChip`, `PaymentStatusSelect`, `CostCenterSelect` y `PrintableDocList`.
+  - **Carga y escrituras:** `useBillingData` (empresas, documentos, centros de costo y gastos informales, y la empresa elegida) y `useDocUpdates` (estado de pago, notas, centro de costo y pagos de un documento).
+  - **Listado:** `DocTableRow` (una fila en el escritorio), `DocCard` (en el teléfono), `DocListToolbar` (exportaciones del listado, agrupar por centro de costo), `SummaryCard`, `SortHeader`, `OtherTaxChip`, `PaymentStatusSelect`, `CostCenterSelect`, `PrintableDocList` y `writeDocListXlsx.js`.
   - **Documento:** `DocDetailModal` y `PaymentsSection` (sus pagos).
-  - **Importar:** `CompanySelectAndPickModal`, `ImportPreviewModal` y `FileRow`.
+  - **Importar:** `useRcvImport` (leer los archivos, la vista previa y confirmar), `CompanySelectAndPickModal`, `ImportPreviewModal` y `FileRow`.
   - **Empresas:** `CompaniesModal`.
   - **Centros de costo:** `CostCentersModal`, `PrintableCostCenterDocs` e `InformalExpenseFormModal`.
-  - **Retenciones:** `WithholdingsView`, `PrintableWithholdings` y `PrintableWithholdingsGroup`.
+  - **Retenciones:** `WithholdingsTab` (la pestaña con sus exportaciones, del total y por contraparte), `WithholdingsView`, `PrintableWithholdings`, `PrintableWithholdingsGroup`, `writeWithholdingsXlsx.js` y `writeWithholdingGroupXlsx.js`.
   - **Pendientes:** `ReceivablesModal` y `PrintableReceivables`.
-  - **Resumen anual:** `PrintableAnnualSummary`.
-  - **Comunes:** `docs.js` (período, estados de pago, categorías de lo pendiente, agrupado por centro de costo) y `printStyles.js` (celdas de las tablas imprimibles).
+  - **Resumen anual:** `AnnualSummaryTab`, `PrintableAnnualSummary` y `writeAnnualSummaryXlsx.js`.
+  - **Proyección:** `ProjectionTab` y `writeProjectionXlsx.js`.
+  - **Comunes:** `docs.js` (período, estados de pago y agrupado por centro de costo) y `printStyles.js` (celdas de las tablas imprimibles).
+- **El cálculo vive en `utils/billingDocs.js`**, con tests: los filtros, el orden y las páginas del listado, los totales con signo, las retenciones por contraparte, lo pendiente de cobro (`pendingFor`, `RECEIVABLE_CATEGORIES`), las NC que pueden anular una factura y el resumen anual.
+- El año del Resumen y el mes de inicio y el porcentaje de la Proyección los guarda la pantalla, así se conservan al cambiar de pestaña.
 - Servicios: `companiesService` (colección `companies`) + `dteDocumentsService` (colección `dteDocuments`) en `services/index.js`. TTL del list = **10 min** (`ttl: 600_000`) — las mutaciones locales (status, notas, pagos, import) actualizan el state en memoria, así que el TTL solo afecta al re-entrar a la pantalla.
 - **Multi-empresa**: el sistema soporta N empresas (probado con 3). Cada empresa tiene `{ rut, razonSocial, alias, enabled }`. CRUD inline desde el modal **🏢 Empresas**. Los DTE quedan namespaceados por `companyId` así no se colisionan folios entre empresas (mismo proveedor puede facturar a varias empresas con el mismo folio).
 - **Empresa elegida persiste en localStorage** (`facturacion.selectedCompanyId`). Si la empresa guardada fue borrada, cae a la primera.
@@ -919,7 +923,7 @@ El select nativo lleva colores explícitos `var(--color-surface)` / `var(--color
 
 ### Autodetección de NC anulada (sugerencia)
 
-- Helper `findCancellingNcs(dteDoc, allDocs)`: matchea NCs con misma `companyId + kind + RUT contraparte + total exacto`, con NC fecha ≥ factura. Memo `cancellingByDocId` precalcula el mapa.
+- Helper `findCancellingNcs(dteDoc, allDocs)` (`utils/billingDocs.js`): matchea NCs con misma `companyId + kind + RUT contraparte + total exacto`, con NC fecha ≥ factura. `cancellingNcsByDoc` precalcula el mapa.
 - **No auto-cambia** el estado — solo sugiere. En la fila aparece un badge **⚠ NC?** al lado del select; click abre el `DocDetailModal` con un banner rojo listando las NCs candidatas + botón **"Marcar como Anulada"** que en un click setea `cancelled` y agrega `[Anulada por NC tipo-folio (fecha, monto)]` a las notas como auditoría.
 
 ### Pagos / abonos (`payments[]`)
@@ -934,7 +938,7 @@ El select nativo lleva colores explícitos `var(--color-surface)` / `var(--color
 
 ### Retenciones (tab + exports)
 
-Tab **📑 Retenciones** muestra todas las facturas con `paymentStatus === "net_only"` agrupadas por contraparte (sin restricción de kind). `withholdingsByCounterparty` agrupa por RUT, suma neto/iva/total, ordena por IVA desc. Lista expandible (▸/▾) en `WithholdingsView`.
+Tab **📑 Retenciones** muestra todas las facturas con `paymentStatus === "net_only"` agrupadas por contraparte (sin restricción de kind). `withholdingsByCounterpartyOf` agrupa por RUT, suma neto/iva/total, ordena por IVA desc. Lista expandible (▸/▾) en `WithholdingsView`.
 
 **Exports** (4 botones en toolbar global, mismo set por contraparte individual):
 - 📋 Copiar (toBlob al clipboard como PNG)
@@ -981,7 +985,7 @@ Las tabs Facturas y Compras tienen la misma toolbar de 4 exports (📋📥🖨�
 
 Tab **📊 Resumen**: vista que **cruza los 12 meses** de un año para la empresa seleccionada, con **selector de año propio** (`summaryYear`, default año actual; opciones derivadas de los períodos de la empresa). Ignora el filtro de mes; en esta tab se ocultan Ver pendientes, los sub-filtros y las cards operativas.
 
-- Memo `summaryData`: por mes acumula ventas/compras **con signo** (NCs restan) separando **IVA Débito** (ventas) de **IVA Crédito** (compras). El IVA de facturas "Solo neto" (`net_only`) **se suma normalmente** al débito/crédito que corresponde — no se trackea aparte.
+- `annualSummary` (`utils/billingDocs.js`): por mes acumula ventas/compras **con signo** (NCs restan) separando **IVA Débito** (ventas) de **IVA Crédito** (compras). El IVA de facturas "Solo neto" (`net_only`) **se suma normalmente** al débito/crédito que corresponde — no se trackea aparte.
 - **Métricas explícitas (KPI cards)**: IVA Débito, IVA Crédito, **IVA a pagar (año) = débito − crédito** (highlight; si es negativo → "IVA a favor (remanente)" en verde), + Ventas netas / Compras netas / Documentos.
 - **Tabla mensual** (Ene–Dic + TOTAL): Ventas Neto · IVA Débito · Compras Neto · IVA Crédito · **IVA a pagar del mes**. Meses sin actividad atenuados.
 - Exports: misma toolbar 📋📥🖨📊. `PrintableAnnualSummary` (forwardRef) off-screen. XLSX respeta la convención col A vacía width 6 + fila 1 vacía, con el balance de IVA en el encabezado. Filename `Resumen_{empresa}_{año}`.
@@ -1006,7 +1010,7 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 - **El redondeo va por mes y el total es la suma de los meses redondeados**, no el redondeo de la suma. El Excel imprime la columna, así que el total al pie tiene que ser el de la columna o no cuadra a ojo.
 - **Cuesta 0 lecturas**: sale entero de `docs`, que ya tiene la colección completa en memoria (TTL 10 min).
 - **Lógica pura en `utils/cashFlowProjection.js`** (`projectCashFlow`, `netSalesByPeriod`, `groupByCounterparty`, `shiftPeriod`, `periodWindow`, `windowLabel`), con tests en `cashFlowProjection.test.js`. La aritmética de meses va con **enteros, nunca con `Date`**: un período es la etiqueta `YYYY-MM` del RCV, no un instante, y con `Date` una zona horaria corre un documento al mes de al lado.
-- **`CREDIT_NOTE_TYPES` vive ahí** y `Billing.jsx` lo importa. La proyección y la pantalla tienen que coincidir en que una NC resta; si divergen, la base sale inflada. `Dashboard.jsx` tiene su propia copia, que tiene que coincidir con esta.
+- **`CREDIT_NOTE_TYPES` vive ahí** y Facturación lo importa (`utils/billingDocs.js` y las piezas del listado). La proyección y la pantalla tienen que coincidir en que una NC resta; si divergen, la base sale inflada. `Dashboard.jsx` tiene su propia copia, que tiene que coincidir con esta.
 - **Export XLSX de dos hojas**: `Ventas netas` (banner con el neto de la base, bloque **por cliente** ordenado por monto, y el detalle documento por documento con fecha/período/tipo DTE/folio/cliente/RUT/neto, NC en rojo) y `Proyección` (12 filas mes a mes + total). El bloque por cliente muestra de dónde viene la base: una proyección sostenida por dos clientes no se lee igual que una repartida entre veinte.
 - **El porcentaje va en UNA celda (`C4` de la hoja `Proyección`) y las filas la referencian** con `ROUND(D7*$C$4,0)`. Quien recibe el archivo mueve el supuesto en Excel y ve la temporada entera recalcularse, en vez de pedir otra corrida por cada escenario.
 - **`isAnalysisTab`** (`resumen` + `proyeccion`) apaga filtros, tarjetas y tabla del listado. La usan los cuatro lugares que dependen de eso, así un tab de análisis nuevo se suma solo ahí.

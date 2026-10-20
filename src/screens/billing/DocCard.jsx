@@ -12,7 +12,7 @@ import { PaymentStatusSelect } from "./PaymentStatusSelect";
 // estado de pago con el aviso de una NC que podría anularlo.
 export function DocCard({ d, cancellingByDocId, costCenters, kindTab, saveDocCostCenter, setDetailDoc, setPaymentStatus }) {
   "use no memo";
-  const razon = kindTab === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
+  const counterpartyName = kindTab === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
   const rut = kindTab === "venta" ? d.rutReceptor : d.rutEmisor;
   const isNC = CREDIT_NOTE_TYPES.has(Number(d.tipo));
   const isFuel = d.otroImpuestoCategory === "combustible";
@@ -34,7 +34,7 @@ export function DocCard({ d, cancellingByDocId, costCenters, kindTab, saveDocCos
             <OtherTaxChip code={d.otroImpuestoCodigo} tasa={d.retencionTasa} />
             <span className="font-mono">· Folio {d.folio}</span>
           </div>
-          <div className="mt-0.5 truncate text-sm font-medium">{razon || "—"}</div>
+          <div className="mt-0.5 truncate text-sm font-medium">{counterpartyName || "—"}</div>
           <div className="font-mono text-[10px] text-[var(--color-muted)]">{formatRutForDisplay(rut)}</div>
         </div>
         <div className="shrink-0 text-right">

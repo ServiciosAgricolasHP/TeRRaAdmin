@@ -96,13 +96,13 @@ export function filterDocs({ docs, kindTab, isWithholdingsView, selectedCompanyI
   if (search.trim()) {
     const q = search.toLowerCase().trim();
     arr = arr.filter((d) => {
-      const razonV = (d.razonSocialReceptor || "").toLowerCase();
-      const razonC = (d.razonSocialEmisor || "").toLowerCase();
-      const rutV = (d.rutReceptor || "").toLowerCase();
-      const rutC = (d.rutEmisor || "").toLowerCase();
+      const receiverName = (d.razonSocialReceptor || "").toLowerCase();
+      const issuerName = (d.razonSocialEmisor || "").toLowerCase();
+      const receiverRut = (d.rutReceptor || "").toLowerCase();
+      const issuerRut = (d.rutEmisor || "").toLowerCase();
       return (
-        razonV.includes(q) || razonC.includes(q) ||
-        rutV.includes(q) || rutC.includes(q) ||
+        receiverName.includes(q) || issuerName.includes(q) ||
+        receiverRut.includes(q) || issuerRut.includes(q) ||
         String(d.folio).includes(q)
       );
     });
@@ -168,8 +168,8 @@ export function counterpartyOptions({ docs, kindTab, isWithholdingsView, selecte
   for (const d of docs) {
     if (!isWithholdingsView && d.kind !== kindTab) continue;
     if (selectedCompanyId && d.companyId !== selectedCompanyId) continue;
-    const razon = d.kind === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
-    if (razon) set.add(razon);
+    const name = d.kind === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
+    if (name) set.add(name);
   }
   return [...set].sort();
 }
@@ -180,12 +180,12 @@ export function withholdingsByCounterpartyOf(filtered, isWithholdingsView) {
   if (!isWithholdingsView) return [];
   const map = new Map();
   for (const d of filtered) {
-    const rutContra = d.kind === "venta" ? d.rutReceptor : d.rutEmisor;
-    const razonContra = d.kind === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
-    const key = rutContra || "__sin_rut__";
+    const counterpartyRut = d.kind === "venta" ? d.rutReceptor : d.rutEmisor;
+    const counterpartyName = d.kind === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
+    const key = counterpartyRut || "__sin_rut__";
     if (!map.has(key)) {
       map.set(key, {
-        rut: rutContra, razon: razonContra,
+        rut: counterpartyRut, razon: counterpartyName,
         neto: 0, iva: 0, total: 0, count: 0, docs: [],
       });
     }
@@ -368,8 +368,7 @@ export function annualSummary(docs, selectedCompanyId, summaryYear) {
 // de `docs`, que ya está en memoria con toda la colección: la proyección no
 // cuesta lecturas.
 export function projectionYearsOf(docs, selectedCompanyId, currentYear) {
-  const now = currentYear;
-  const set = new Set([now, now + 1, now + 2].map(String));
+  const set = new Set([currentYear, currentYear + 1, currentYear + 2].map(String));
   for (const d of docs) {
     if (selectedCompanyId && d.companyId !== selectedCompanyId) continue;
     const y = String(d.periodo || "").slice(0, 4);

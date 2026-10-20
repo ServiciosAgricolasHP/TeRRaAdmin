@@ -111,9 +111,9 @@ export function WithholdingsTab({ companiesById, periodFilter, selectedCompany, 
   // Nombre de archivo seguro para una contraparte.
   const groupFileBase = (g) => {
     const alias = (selectedCompany?.alias || selectedCompany?.razonSocial || "empresa").replace(/[^\w-]+/g, "_");
-    const contra = (g.razon || "contraparte").replace(/[^\w-]+/g, "_").slice(0, 40);
+    const counterparty = (g.razon || "contraparte").replace(/[^\w-]+/g, "_").slice(0, 40);
     const period = periodFilter || "todos";
-    return `Retencion_${alias}_${contra}_${period}`;
+    return `Retencion_${alias}_${counterparty}_${period}`;
   };
 
   const handleGroupCopy = async (g) => {
