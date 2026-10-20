@@ -26,9 +26,9 @@ export function filterCenterDocs({ baseDocs, kindFilter, companyFilterId, dateFr
   if (search.trim()) {
     const q = search.trim().toLowerCase();
     list = list.filter((d) => {
-      const razon = (d.kind === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor) || "";
+      const counterpartyName = (d.kind === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor) || "";
       const rut = (d.kind === "venta" ? d.rutReceptor : d.rutEmisor) || "";
-      return razon.toLowerCase().includes(q) || rut.toLowerCase().includes(q) || String(d.folio || "").includes(q);
+      return counterpartyName.toLowerCase().includes(q) || rut.toLowerCase().includes(q) || String(d.folio || "").includes(q);
     });
   }
   return list;

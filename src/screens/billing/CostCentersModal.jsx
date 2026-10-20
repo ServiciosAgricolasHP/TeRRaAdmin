@@ -387,7 +387,7 @@ export function CostCentersModal({ costCenters, docs, informalExpenses, companie
                           );
                         }
                         const isNC = CREDIT_NOTE_TYPES.has(Number(d.tipo));
-                        const razon = d.kind === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
+                        const counterpartyName = d.kind === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
                         const rut = d.kind === "venta" ? d.rutReceptor : d.rutEmisor;
                         const company = companiesById.get(d.companyId);
                         return (
@@ -409,7 +409,7 @@ export function CostCentersModal({ costCenters, docs, informalExpenses, companie
                               </span>
                             </td>
                             <td className="px-2 py-1.5 text-right font-mono tabular-nums">{d.folio}</td>
-                            <td className="px-2 py-1.5 truncate max-w-[220px]">{razon || "—"}</td>
+                            <td className="px-2 py-1.5 truncate max-w-[220px]">{counterpartyName || "—"}</td>
                             <td className="px-2 py-1.5 font-mono text-xs">{formatRutForDisplay(rut)}</td>
                             <td className={`px-2 py-1.5 text-right tabular-nums ${isNC ? "text-[var(--color-danger)]" : ""}`}>{isNC ? "−" : ""}{fmtCurrency(d.neto)}</td>
                             <td className={`px-2 py-1.5 text-right tabular-nums ${isNC ? "text-[var(--color-danger)]" : ""}`}>{isNC ? "−" : ""}{fmtCurrency(d.iva)}</td>
