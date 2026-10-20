@@ -1048,11 +1048,32 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 
 ## Información y Cuentas / InfoAccounts
 
-- Pantalla: `src/screens/InfoAccounts.jsx`. Ruta `/info-cuentas`. Colección `contactCards`.
-- Sus piezas, en `src/screens/infoAccounts/`: `ContactCardsTab` (la lista de fichas, con su buscador y sus modales), `ContactCard` (la tarjeta), `AccountBlock` (una cuenta bancaria), `Field` (una fila que se copia con un toque), `ContactCardImage` (la tarjeta que se copia como imagen) y `ContactCardModal` (alta y edición). Los textos que se copian (`accountToText`, `cardToText`) y la forma de una ficha nueva viven en `utils/contactCards.js`, con tests.
+- Pantalla: `src/screens/InfoAccounts.jsx`. Ruta `/info-cuentas`. Dos pestañas: **📞 Agenda telefónica** (colección `phoneContacts`) y **🏦 Información y cuentas** (colección `contactCards`). Abre en la última elegida (`infoAccounts.tab` en `localStorage`), la agenda la primera vez.
+- Sus piezas, en `src/screens/infoAccounts/`:
+  - **Agenda:** `PhoneBookTab` (buscador, filtros, "🏢 Por empresa" y la lista) con `usePhoneBook` (la carga y las escrituras), `PhoneContactRow` (un contacto), `PhoneContactModal` (alta y edición), `PhoneBookImportModal` (la importación con su vista previa) y `readPhoneBookFile.js` (lee cada archivo según su extensión). El cálculo vive en `utils/phoneBook.js` (números, tipos, juntar copias, el plan de importación, buscar, filtrar y agrupar), `utils/contactsCsv.js` (Google y Outlook), `utils/vcard.js` y `utils/phoneBookSheet.js` (la planilla de las secretarias), todos con tests. Las escrituras, en `services/phoneContactsService.js`.
+  - **Fichas:** `ContactCardsTab` (la lista de fichas, con su buscador y sus modales), `ContactCard` (la tarjeta), `AccountBlock` (una cuenta bancaria), `Field` (una fila que se copia con un toque), `ContactCardImage` (la tarjeta que se copia como imagen) y `ContactCardModal` (alta y edición). Los textos que se copian (`accountToText`, `cardToText`), el buscador y la forma de una ficha nueva viven en `utils/contactCards.js`, con tests.
+
+### Agenda telefónica
+
+- **Un número es un contacto.** Al importar, todo lo que comparte un teléfono queda en un solo documento, también con los contactos que ya están: reimportar actualiza en vez de duplicar. Los nombres de las copias quedan en `otherNames`, y la búsqueda los encuentra.
+  - El número se guarda normalizado (`normalizePhone`): un chileno de 9 dígitos, o de 11 con el 56, pasa a `+56…`; uno con `+` queda como viene; lo demás, solo con sus dígitos. Un anexo va como `;ext=N`, así dos anexos de la misma central no juntan a dos personas. Normalizar dos veces da lo mismo, y tiene que seguir así: la fusión vuelve a normalizar lo ya guardado.
+  - Una fila sin teléfono se junta con el contacto que tiene su correo, pero un correo no junta a dos contactos con teléfono: un correo genérico de empresa lo comparten varias personas. Una fila sin teléfono ni correo no se importa.
+  - Si una fila une a dos contactos existentes, no los fusiona (borraría uno): se agrega al primero, sin los números del otro, y la vista previa lo avisa.
+- **La planilla manda.** Su nombre y sus datos (empresa, RUT, tipo, departamento, cargo y observaciones) pisan lo que hay, porque es la fuente que corrigen las secretarias; el nombre anterior queda en `otherNames`. Google, Outlook y vCard solo llenan lo vacío. Teléfonos y correos siempre se suman.
+- **Reimportar lo mismo no escribe nada.** El origen (`sources`) no cuenta como cambio: descargar la agenda en Excel y volver a importarla no reescribe los contactos de Google.
+- **Archivos:** la planilla `.xlsx` (columnas por encabezado, en cualquier orden; varios números o correos en una celda separados por `/`, `;` o `,`), el CSV de Google (formato actual y antiguo, con ` ::: ` entre varios valores) u Outlook (en inglés o en español; UTF-8 o Windows-1252), y `.vcf` 2.1, 3.0 y 4.0. Se pueden elegir varios a la vez, y nada se escribe hasta confirmar la vista previa.
+  - **La planilla de las secretarias trae rutas absolutas** en sus relaciones internas (`/xl/tables/table1.xml`), y así ExcelJS no la abre (`Cannot read properties of undefined (reading 'name')`). `readPhoneBookFile` las reescribe como relativas con JSZip (`fixAbsoluteRelTargets`) antes de abrirla.
+- **La importación escribe en lotes** de 450 y deja **un** log (`action: "import"`) con los conteos y los archivos, en vez de uno por contacto.
+- **Costo de lecturas:** la agenda se carga entera, cacheada 2 h también en `localStorage` (`PHONE_CONTACTS_LIST`, como la lista de trabajadores): unas 1.200 lecturas la primera vez y después gratis. Las altas, ediciones, borrados e importaciones la actualizan en su lugar (`additive`). La lista dibuja 200 contactos y sigue con "Mostrar más".
+- La edición avisa si un número ya lo tiene otro contacto, pero deja guardar (puede ser una central compartida).
+
+### Fichas (Información y cuentas)
+
 - Libreta compartida de contactos (persona o empresa) con datos bancarios listos para copiar/pegar. **Modelo independiente**: no se vincula a `worker` ni a `companies` — el usuario crea sus propias fichas, aunque dupliquen a alguien que ya existe en otra colección.
 - Cada ficha tiene N cuentas (`accounts[]`), con la misma convención de `bankCode`/`accountType` que `worker.bankDetails`.
 - `favorite` fija la ficha arriba; `includeRut` decide si el RUT viaja junto con los datos copiados (siempre `true` en empresas).
+- El buscador filtra también las favoritas y encuentra por los datos de las cuentas (etiqueta, titular, RUT, banco y número) y por un RUT o número escrito con puntos y guion (`cardMatchesSearch`).
+- La lista se cachea 10 minutos en memoria; guardar, borrar y marcar favorita la actualizan en su lugar.
 
 ## Pesajes QR / HarvestQr
 

@@ -172,12 +172,9 @@ export default function ContactCardsTab() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Información y Cuentas</h1>
-          <p className="text-sm text-[var(--color-muted)]">
-            Fichas de personas y empresas con sus datos bancarios, listas para copiar.
-          </p>
-        </div>
+        <p className="text-sm text-[var(--color-muted)]">
+          Fichas de personas y empresas con sus datos bancarios, listas para copiar.
+        </p>
         <button
           type="button"
           onClick={() => setEditing(emptyCard("persona"))}

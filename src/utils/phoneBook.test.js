@@ -11,6 +11,9 @@ import {
   planPhoneBookImport,
   phoneContactMatches,
   displayName,
+  filterPhoneContacts,
+  groupByCompany,
+  departmentOptions,
 } from "./phoneBook";
 
 describe("normalizePhone", () => {
@@ -50,6 +53,7 @@ describe("formatPhone", () => {
     expect(formatPhone("+56722345678")).toBe("+56 72 234 5678");
     expect(formatPhone("+56223456789;ext=12")).toBe("+56 2 2345 6789 anexo 12");
     expect(formatPhone("+5491123456789")).toBe("+5491123456789");
+    expect(formatPhone("6002007000")).toBe("600 200 7000");
   });
 });
 
@@ -215,5 +219,39 @@ describe("phoneContactMatches y displayName", () => {
   it("sin nombre se muestra la empresa o el número", () => {
     expect(displayName({ company: "Banco Estado" })).toBe("Banco Estado");
     expect(displayName({ phones: [tel("+56912345678")] })).toBe("+56 9 1234 5678");
+  });
+});
+
+describe("filterPhoneContacts, groupByCompany y departmentOptions", () => {
+  const list = [
+    { id: "1", name: "Beto", company: "transportes del sur", contactType: "carrier", department: "Operaciones", sources: ["sheet"], phones: [] },
+    { id: "2", name: "Ana", company: "Comercial Los Robles", contactType: "supplier", department: "Ventas", sources: ["sheet", "google"], phones: [] },
+    { id: "3", name: "Caro", company: "", contactType: null, department: "", sources: ["google"], phones: [] },
+    { id: "4", name: "Dani", company: "Transportes del Sur", contactType: "carrier", department: "operaciones", sources: ["vcard"], phones: [] },
+  ];
+
+  it("filtra por tipo (o sin tipo), departamento sin importar mayúsculas y origen, y ordena por nombre", () => {
+    expect(filterPhoneContacts(list).map((c) => c.id)).toEqual(["2", "1", "3", "4"]);
+    expect(filterPhoneContacts(list, { type: "carrier" }).map((c) => c.id)).toEqual(["1", "4"]);
+    expect(filterPhoneContacts(list, { type: "none" }).map((c) => c.id)).toEqual(["3"]);
+    expect(filterPhoneContacts(list, { department: "OPERACIONES" }).map((c) => c.id)).toEqual(["1", "4"]);
+    expect(filterPhoneContacts(list, { source: "google" }).map((c) => c.id)).toEqual(["2", "3"]);
+    expect(filterPhoneContacts(list, { search: "robles" }).map((c) => c.id)).toEqual(["2"]);
+  });
+
+  it("agrupa por empresa sin distinguir mayúsculas, con los que no tienen empresa al final", () => {
+    const groups = groupByCompany(filterPhoneContacts(list));
+    expect(groups.map((g) => [g.company, g.contacts.map((c) => c.id)])).toEqual([
+      ["Comercial Los Robles", ["2"]],
+      ["transportes del sur", ["1", "4"]],
+      ["", ["3"]],
+    ]);
+  });
+
+  it("los departamentos de la planilla más los que usa la agenda, sin repetir", () => {
+    const opts = departmentOptions([...list, { department: "Bodega" }]);
+    expect(opts).toContain("Bodega");
+    expect(opts.filter((d) => d.toLowerCase() === "operaciones")).toEqual(["Operaciones"]);
+    expect(departmentOptions(list, { inUse: true })).toEqual(["Operaciones", "Ventas"]);
   });
 });

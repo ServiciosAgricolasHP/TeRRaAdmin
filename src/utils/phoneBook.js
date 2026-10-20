@@ -89,11 +89,14 @@ export function normalizePhone(raw) {
 }
 
 // Cómo se muestra un número normalizado: `+56 9 1234 5678`, `+56 2 2345 6789`
-// o `+56 72 234 5678`; el resto, como está. El anexo va como "anexo N".
+// o `+56 72 234 5678`; los 600 y 800 como `600 200 7000`; el resto, como
+// está. El anexo va como "anexo N".
 export function formatPhone(number) {
   const [main, extPart] = String(number || "").split(";ext=");
   let shown = main;
   const cl = main.match(/^\+56(\d{9})$/);
+  const special = main.match(/^(600|800)(\d{3})(\d{4})$/);
+  if (special) shown = special.slice(1).join(" ");
   if (cl) {
     const d = cl[1];
     shown = d[0] === "9" || d[0] === "2"
@@ -391,4 +394,45 @@ export function phoneContactMatches(c, query) {
   const digits = q.replace(/\D/g, "");
   if (digits.length < 3) return false;
   return (c.phones || []).some((p) => String(p.number).replace(/\D/g, "").includes(digits));
+}
+
+const byDisplayName = (a, b) => displayName(a).localeCompare(displayName(b), "es", { sensitivity: "base" });
+
+// Los contactos que calzan con la búsqueda y los filtros (tipo, departamento
+// y origen; vacío = todos), ordenados por nombre. El tipo "none" son los que
+// no tienen tipo.
+export function filterPhoneContacts(contacts, { search = "", type = "", department = "", source = "" } = {}) {
+  const dept = nameKey(department);
+  return contacts
+    .filter((c) => {
+      if (type === "none" ? c.contactType : type && c.contactType !== type) return false;
+      if (dept && nameKey(c.department) !== dept) return false;
+      if (source && !(c.sources || []).includes(source)) return false;
+      return phoneContactMatches(c, search);
+    })
+    .sort(byDisplayName);
+}
+
+// Agrupa por empresa, sin distinguir mayúsculas ni tildes (el encabezado usa
+// la primera forma en que aparece). Las empresas van por nombre y los que no
+// tienen empresa, al final.
+export function groupByCompany(contacts) {
+  const groups = new Map();
+  for (const c of contacts) {
+    const key = nameKey(c.company);
+    if (!groups.has(key)) groups.set(key, { company: c.company || "", contacts: [] });
+    groups.get(key).contacts.push(c);
+  }
+  return [...groups.values()].sort((a, b) => {
+    if (!a.company !== !b.company) return a.company ? -1 : 1;
+    return a.company.localeCompare(b.company, "es", { sensitivity: "base" });
+  });
+}
+
+// Los departamentos que usa la agenda, más los de la planilla, sin repetir y
+// por nombre. Con `inUse`, solo los que usa la agenda (para filtrar).
+export function departmentOptions(contacts, { inUse = false } = {}) {
+  const used = contacts.map((c) => c.department).filter(Boolean);
+  return uniqueBy(inUse ? used : [...DEPARTMENTS, ...used], nameKey)
+    .sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }));
 }

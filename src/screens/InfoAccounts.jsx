@@ -1,5 +1,46 @@
+import { useState } from "react";
+import PhoneBookTab from "./infoAccounts/PhoneBookTab";
 import ContactCardsTab from "./infoAccounts/ContactCardsTab";
 
+const TABS = [
+  { value: "phoneBook", label: "📞 Agenda telefónica" },
+  { value: "cards", label: "🏦 Información y cuentas" },
+];
+const TAB_KEY = "infoAccounts.tab";
+
+// Información y Cuentas: la agenda telefónica y las fichas con datos
+// bancarios, en dos pestañas. Abre en la última elegida (la agenda, la
+// primera vez).
 export default function InfoAccounts() {
-  return <ContactCardsTab />;
+  const [tab, setTab] = useState(() => {
+    try { return localStorage.getItem(TAB_KEY) === "cards" ? "cards" : "phoneBook"; } catch { return "phoneBook"; }
+  });
+  const choose = (value) => {
+    setTab(value);
+    try { localStorage.setItem(TAB_KEY, value); } catch { /* noop */ }
+  };
+
+  return (
+    <div>
+      <h1 className="mb-3 text-2xl font-semibold tracking-tight">Información y Cuentas</h1>
+      <div className="mb-4 flex flex-wrap gap-1 border-b border-[var(--color-border)]" role="tablist">
+        {TABS.map((t) => (
+          <button
+            key={t.value}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.value}
+            onClick={() => choose(t.value)}
+            className={`relative px-4 py-2 text-sm transition-colors ${
+              tab === t.value ? "font-medium text-[var(--color-accent)]" : "text-[var(--color-muted)] hover:text-[var(--color-text)]"
+            }`}
+          >
+            {t.label}
+            {tab === t.value && <span className="absolute inset-x-0 -bottom-px h-0.5 bg-[var(--color-accent)]" />}
+          </button>
+        ))}
+      </div>
+      {tab === "phoneBook" ? <PhoneBookTab /> : <ContactCardsTab />}
+    </div>
+  );
 }
