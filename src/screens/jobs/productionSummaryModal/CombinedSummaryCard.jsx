@@ -4,6 +4,7 @@ import { useToast } from "../../../contexts/ToastContext";
 import { useIsMobile } from "../../../hooks/useIsMobile";
 import { fmtCLP, fmtNum } from "./helpers";
 import { useProfitSettings } from "./useProfitSettings";
+import { combinedSummaryText } from "./combinedSummaryText";
 import {
   activeDaysOf,
   cellsByLaborDay,
@@ -13,10 +14,7 @@ import {
   totalsByDayOf,
 } from "../../../utils/combinedSummary";
 import {
-  toArgbFill,
   HDR_GREEN,
-  XLSX_BORDER,
-  XLSX_MONEY_FMT,
   ROW_TOTAL_DARK,
   ROW_PROFIT,
   ROW_VAT,
@@ -26,6 +24,7 @@ import {
   ROW_HIGHLIGHT,
   cell,
 } from "./tableStyles";
+import { writeCombinedSummaryXlsx } from "./writeCombinedSummaryXlsx";
 
 // Tabla general: las labores seleccionadas como columnas y los días como
 // filas; cada celda muestra cantidad (con unidad) y monto. Al final, la
@@ -68,87 +67,16 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
     grandTotalGross,
   } = useMemo(() => closingTotals(dataByColumn, settings), [dataByColumn, settings]);
 
-  const buildPlainText = () => {
-    const lines = [];
-    lines.push("📊 TABLA GENERAL — todas las labores seleccionadas");
-    lines.push(`Gran total: ${fmtCLP(grandTotal)} · ${dataByColumn.length} labor${dataByColumn.length === 1 ? "" : "es"} · ${activeDays.length} día${activeDays.length === 1 ? "" : "s"}`);
-    lines.push("");
-    const header = ["Día"];
-    for (const d of dataByColumn) header.push(`${d.col.labor.name}`);
-    header.push("Total día");
-    lines.push(header.join(" | "));
-    for (const day of activeDays) {
-      const cols = [day];
-      for (const d of dataByColumn) {
-        const c = byLaborDay.get(d.col.key)?.get(day);
-        if (!c) { cols.push("—"); continue; }
-        cols.push(`${fmtNum(c.qty)}${c.unit ? " " + c.unit : ""} · ${fmtCLP(c.amount)}`);
-      }
-      cols.push(fmtCLP(totalsByDay.get(day) || 0));
-      lines.push(cols.join(" | "));
-    }
-    const totalRow = ["TOTAL A PAGAR"];
-    for (const d of dataByColumn) {
-      const paidTag = isWorkdayCol(d.col) && workersPaid[d.col.key] ? " [ya pagado]" : "";
-      totalRow.push(`${fmtNum(d.totalQty)}${d.unit ? " " + d.unit : ""} · ${fmtCLP(d.totalAmount)}${paidTag}`);
-    }
-    totalRow.push(fmtCLP(grandTotal));
-    lines.push(totalRow.join(" | "));
-    lines.push("");
-    lines.push("💰 GANANCIAS");
-    for (const d of dataByColumn) {
-      if (isSupervisionCol(d.col)) continue;
-      const g = profitFor(d.col, d.totalAmount);
-      const detail = isWorkdayCol(d.col)
-        ? (workersPaid[d.col.key] ? `pagan ${fmtCLP(Number(paidToUs[d.col.key]) || 0)}, ya pagado` : `pagan ${fmtCLP(Number(paidToUs[d.col.key]) || 0)}`)
-        : `${effectivePct(d.col.key)}%`;
-      lines.push(`${d.col.labor.name} (${d.col.cycleLabel}) [${detail}]: ${fmtCLP(g)}`);
-    }
-    lines.push(`TOTAL GANANCIAS: ${fmtCLP(totalProfitBillable)}`);
-    lines.push("");
-    if (includeTransport) {
-      lines.push("🚐 TRANSPORTE (por ciclo)");
-      const seenCycles = new Set();
-      for (const d of dataByColumn) {
-        if (seenCycles.has(d.col.cycleId)) continue;
-        seenCycles.add(d.col.cycleId);
-        const t = transportByCycle.get(d.col.cycleId) || { total: 0, hasTrips: false };
-        const tag = t.total === 0 ? (t.hasTrips ? " [vueltas creadas]" : " [sin vueltas]") : "";
-        lines.push(`${d.col.cycleLabel}: ${fmtCLP(t.total)}${tag}`);
-      }
-      lines.push(`TOTAL TRANSPORTE: ${fmtCLP(grandTotalTransport)}`);
-      lines.push("");
-    }
-    if (hasSupervisionCols) {
-      lines.push("➖ MONTO LIBRE (descuento por supervisión, informativo, no afecta lo facturado)");
-      for (const d of dataByColumn) {
-        if (!isSupervisionCol(d.col)) continue;
-        lines.push(`${d.col.labor.name} (${d.col.cycleLabel}): ${fmtCLP(profitFor(d.col, d.totalAmount))}`);
-      }
-      lines.push(`TOTAL SUPERVISIÓN: ${fmtCLP(totalSupervisionDeduction)}`);
-      lines.push(`MONTO LIBRE (${fmtCLP(totalProfitBillable)} − ${fmtCLP(Math.abs(totalSupervisionDeduction))}): ${fmtCLP(totalProfit)}`);
-      lines.push("");
-    }
-    if (includeTransport && grandTotalTransport !== 0) {
-      lines.push(`MONTO LIBRE NETO (${fmtCLP(totalProfit)} − ${fmtCLP(grandTotalTransport)}, descuenta también transporte): ${fmtCLP(totalProfit - grandTotalTransport)}`);
-      lines.push("");
-    }
-    const generalRow = ["TOTAL GENERAL"];
-    for (const d of dataByColumn) generalRow.push(fmtCLP(totalGeneralFor(d.col, d.totalAmount)));
-    generalRow.push(fmtCLP(grandTotalGeneral));
-    lines.push(generalRow.join(" | "));
-    if (vatEnabled) {
-      lines.push("");
-      lines.push(`IVA (19%): ${fmtCLP(grandTotalVat)}`);
-      lines.push(`BRUTO: ${fmtCLP(grandTotalGross)}`);
-    }
-    return lines.join("\n");
-  };
-
   const handleCopyText = async () => {
     setBusy("text");
     try {
-      await navigator.clipboard.writeText(buildPlainText());
+      await navigator.clipboard.writeText(combinedSummaryText({
+        activeDays, byLaborDay, dataByColumn, effectivePct, grandTotal,
+        grandTotalGeneral, grandTotalGross, grandTotalTransport, grandTotalVat,
+        hasSupervisionCols, includeTransport, paidToUs, profitFor, totalGeneralFor,
+        totalProfit, totalProfitBillable, totalSupervisionDeduction, totalsByDay,
+        transportByCycle, vatEnabled, workersPaid
+      }));
       toast.success("Texto copiado");
     } catch (err) {
       toast.error("Error al copiar: " + (err.message || err));
@@ -168,140 +96,15 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
     } finally { setBusy(""); }
   };
 
-  // XLSX de la tabla general: cada labor ocupa 2 columnas (Cant./Monto) bajo
-  // un encabezado combinado con su nombre, como la tabla en pantalla.
-  // `writeTotalRow` escribe las filas de cierre (TOTAL A PAGAR, GANANCIAS,
-  // TRANSPORTE, etc.), que difieren en qué columnas llenan y con qué color.
   const handleXlsx = async () => {
     setBusy("xlsx");
     try {
-      const ExcelJS = (await import("exceljs")).default;
-      const wb = new ExcelJS.Workbook();
-      const ws = wb.addWorksheet("Tabla general");
-      ws.getColumn(1).width = 6; // restricción de layout: col A vacía
-
-      const COL_DAY = 2;
-      const COL_FIRST_LABOR = 3;
-      const COL_TOTAL = COL_FIRST_LABOR + dataByColumn.length * 2;
-
-      let r = 2; // fila 1 vacía
-      ws.getCell(r, 2).value = "Tabla general — resumen consolidado";
-      ws.getCell(r, 2).font = { bold: true, size: 13 };
-      r++;
-      ws.getCell(r, 2).value = `${dataByColumn.length} labores · ${activeDays.length} días · gran total ${fmtCLP(grandTotal)}`;
-      ws.getCell(r, 2).font = { size: 10, color: { argb: "FF666666" } };
-      r += 2;
-
-      const headerRow1 = r;
-      const headerRow2 = r + 1;
-      ws.mergeCells(headerRow1, COL_DAY, headerRow2, COL_DAY);
-      ws.getCell(headerRow1, COL_DAY).value = "Día";
-      ws.mergeCells(headerRow1, COL_TOTAL, headerRow2, COL_TOTAL);
-      ws.getCell(headerRow1, COL_TOTAL).value = "Total día";
-      dataByColumn.forEach((d, i) => {
-        const c0 = COL_FIRST_LABOR + i * 2;
-        ws.mergeCells(headerRow1, c0, headerRow1, c0 + 1);
-        ws.getCell(headerRow1, c0).value = `${d.col.labor.name} (${d.col.cycleLabel})`;
-        ws.getCell(headerRow2, c0).value = "Cant.";
-        ws.getCell(headerRow2, c0 + 1).value = "Monto";
+      await writeCombinedSummaryXlsx({
+        activeDays, byLaborDay, dataByColumn, firstColKeyForCycle, grandTotal,
+        grandTotalGeneral, grandTotalGross, grandTotalTransport, grandTotalVat,
+        hasSupervisionCols, includeTransport, profitFor, totalGeneralFor, totalProfit,
+        totalProfitBillable, totalsByDay, transportByCycle, vatEnabled
       });
-      for (let c = COL_DAY; c <= COL_TOTAL; c++) {
-        for (const rr of [headerRow1, headerRow2]) {
-          const cell = ws.getCell(rr, c);
-          cell.font = { bold: true };
-          cell.fill = toArgbFill(HDR_GREEN);
-          cell.border = XLSX_BORDER;
-          cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-        }
-      }
-      r += 2;
-
-      for (const day of activeDays) {
-        ws.getCell(r, COL_DAY).value = day;
-        dataByColumn.forEach((d, i) => {
-          const c0 = COL_FIRST_LABOR + i * 2;
-          const cellData = byLaborDay.get(d.col.key)?.get(day);
-          if (!cellData) return;
-          ws.getCell(r, c0).value = `${fmtNum(cellData.qty)}${cellData.unit ? " " + cellData.unit : ""}`;
-          ws.getCell(r, c0 + 1).value = cellData.amount;
-          ws.getCell(r, c0 + 1).numFmt = XLSX_MONEY_FMT;
-        });
-        ws.getCell(r, COL_TOTAL).value = totalsByDay.get(day) || 0;
-        ws.getCell(r, COL_TOTAL).numFmt = XLSX_MONEY_FMT;
-        for (let c = COL_DAY; c <= COL_TOTAL; c++) ws.getCell(r, c).border = XLSX_BORDER;
-        r++;
-      }
-
-      const writeTotalRow = (label, fill, fontArgb, amountForCol, totalValue, { qtyToo = false } = {}) => {
-        ws.getCell(r, COL_DAY).value = label;
-        dataByColumn.forEach((d, i) => {
-          const c0 = COL_FIRST_LABOR + i * 2;
-          if (qtyToo) ws.getCell(r, c0).value = `${fmtNum(d.totalQty)}${d.unit ? " " + d.unit : ""}`;
-          const v = amountForCol(d);
-          if (v != null) {
-            ws.getCell(r, c0 + 1).value = v;
-            ws.getCell(r, c0 + 1).numFmt = XLSX_MONEY_FMT;
-          }
-        });
-        ws.getCell(r, COL_TOTAL).value = totalValue;
-        ws.getCell(r, COL_TOTAL).numFmt = XLSX_MONEY_FMT;
-        for (let c = COL_DAY; c <= COL_TOTAL; c++) {
-          const cell = ws.getCell(r, c);
-          cell.font = { bold: true, color: { argb: fontArgb } };
-          cell.fill = toArgbFill(fill);
-          cell.border = XLSX_BORDER;
-        }
-        r++;
-      };
-
-      writeTotalRow("TOTAL A PAGAR", ROW_TOTAL_DARK, "FFFFFFFF", (d) => d.totalAmount, grandTotal, { qtyToo: true });
-      writeTotalRow(
-        "GANANCIAS", ROW_PROFIT, "FF1A2E0F",
-        (d) => (isSupervisionCol(d.col) ? null : profitFor(d.col, d.totalAmount)),
-        totalProfitBillable,
-      );
-      if (includeTransport) {
-        writeTotalRow(
-          "TRANSPORTE", ROW_TOTAL_DARK, "FFFFFFFF",
-          (d) => (firstColKeyForCycle.get(d.col.cycleId) === d.col.key ? (transportByCycle.get(d.col.cycleId)?.total || 0) : null),
-          grandTotalTransport,
-        );
-      }
-      if (hasSupervisionCols) {
-        writeTotalRow(
-          "MONTO LIBRE", ROW_VAT, "FF274E13",
-          (d) => (isSupervisionCol(d.col) ? profitFor(d.col, d.totalAmount) : null),
-          totalProfit,
-        );
-      }
-      if (includeTransport && grandTotalTransport !== 0) {
-        writeTotalRow("MONTO LIBRE NETO", ROW_VAT, "FF274E13", () => null, totalProfit - grandTotalTransport);
-      }
-      writeTotalRow(
-        "TOTAL GENERAL", ROW_TOTAL_GENERAL, "FFFFFFFF",
-        (d) => totalGeneralFor(d.col, d.totalAmount),
-        grandTotalGeneral,
-      );
-      if (vatEnabled) {
-        writeTotalRow("IVA (19%)", ROW_VAT, "FF274E13", () => null, grandTotalVat);
-        writeTotalRow("BRUTO", ROW_GROSS, "FFFFFFFF", () => null, grandTotalGross);
-      }
-
-      ws.getColumn(COL_DAY).width = 12;
-      for (let i = 0; i < dataByColumn.length; i++) {
-        ws.getColumn(COL_FIRST_LABOR + i * 2).width = 14;
-        ws.getColumn(COL_FIRST_LABOR + i * 2 + 1).width = 14;
-      }
-      ws.getColumn(COL_TOTAL).width = 16;
-
-      const buf = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "tabla_general_produccion.xlsx";
-      a.click();
-      URL.revokeObjectURL(url);
     } catch (err) {
       toast.error("Error al generar Excel: " + (err.message || err));
     } finally {
