@@ -1,8 +1,17 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useMemo } from "react";
 import { captureFullWidthBlob } from "../../../utils/imageCapture";
 import { useToast } from "../../../contexts/ToastContext";
 import { useIsMobile } from "../../../hooks/useIsMobile";
-import { loadJSON, saveJSON, fmtCLP, fmtNum } from "./helpers";
+import { fmtCLP, fmtNum } from "./helpers";
+import { useProfitSettings } from "./useProfitSettings";
+import {
+  activeDaysOf,
+  cellsByLaborDay,
+  closingTotals,
+  isSupervisionCol,
+  isWorkdayCol,
+  totalsByDayOf,
+} from "../../../utils/combinedSummary";
 import {
   toArgbFill,
   HDR_GREEN,
@@ -23,123 +32,41 @@ import {
 // columna "Total día" y las filas de cierre (TOTAL A PAGAR, GANANCIAS,
 // TRANSPORTE, MONTO LIBRE, TOTAL GENERAL, IVA y BRUTO).
 export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firstColKeyForCycle, grandTotalTransport, includeTransport }) {
+  "use no memo";
   const toast = useToast();
   const isMobile = useIsMobile();
   const [collapsed, setCollapsed] = useState(false);
   const [busy, setBusy] = useState("");
   const captureRef = useRef(null);
-  // Ganancia por labor. Cosecha, trato y por etapas: monto × %, editable por
-  // columna; `generalPct` es el control maestro y al cambiarlo vacía
-  // pctOverrides para que todas las columnas lo sigan. Pago al día: sin %; se
-  // ingresa lo que paga el cliente (paidToUs) y la ganancia es esa cifra menos
-  // el monto, o la cifra entera si ya se pagó a los trabajadores (workersPaid).
-  // Todo se guarda en localStorage por colKey (cycleId__laborId).
-  const [generalPct, setGeneralPct] = useState(() => loadJSON("generalPct", 40));
-  useEffect(() => { saveJSON("generalPct", generalPct); }, [generalPct]);
-  const [pctOverrides, setPctOverrides] = useState(() => loadJSON("pctOverrides", {})); // colKey -> % (solo no-jornada)
-  useEffect(() => { saveJSON("pctOverrides", pctOverrides); }, [pctOverrides]);
-  const [paidToUs, setPaidToUs] = useState(() => loadJSON("paidToUs", {})); // colKey -> $ pagado a nosotros (solo jornada)
-  useEffect(() => { saveJSON("paidToUs", paidToUs); }, [paidToUs]);
-  const [workersPaid, setWorkersPaid] = useState(() => loadJSON("workersPaid", {})); // colKey -> bool (solo jornada)
-  useEffect(() => { saveJSON("workersPaid", workersPaid); }, [workersPaid]);
-  // Con IVA se agregan las filas IVA (19% del TOTAL GENERAL) y BRUTO, con
-  // valor solo en la columna de total; las columnas por labor quedan en blanco.
-  const [vatEnabled, setVatEnabled] = useState(() => loadJSON("ivaEnabled", false));
-  useEffect(() => { saveJSON("ivaEnabled", vatEnabled); }, [vatEnabled]);
+  const {
+    generalPct,
+    handleGeneralPctChange,
+    paidToUs,
+    setPaidToUs,
+    setPctOverrides,
+    setVatEnabled,
+    setWorkersPaid,
+    settings,
+    vatEnabled,
+    workersPaid,
+    effectivePct,
+    profitFor,
+    totalGeneralFor,
+  } = useProfitSettings();
 
-  const isWorkdayCol = (col) => col.labor.type === "main";
-  // Supervisión no se cobra aparte: su monto se descuenta entero de la
-  // ganancia (ganancia negativa) y su total general es $0. Es un costo interno
-  // que cubre el margen de las demás labores.
-  const isSupervisionCol = (col) => col.labor.type === "supervision";
-  const effectivePct = (colKey) => pctOverrides[colKey] ?? generalPct;
-  const profitFor = (col, totalAmount) => {
-    if (isWorkdayCol(col)) {
-      const paid = Number(paidToUs[col.key]) || 0;
-      if (workersPaid[col.key]) return paid;
-      return paid - totalAmount;
-    }
-    if (isSupervisionCol(col)) return -totalAmount;
-    return (totalAmount * effectivePct(col.key)) / 100;
-  };
-  // Total general por columna: monto + ganancia. Pago al día ya pagado a los
-  // trabajadores: solo lo que paga el cliente. Supervisión: siempre $0, para
-  // que lo facturado no dependa del gasto en supervisión; ese costo aparece
-  // solo como descuento informativo en la fila MONTO LIBRE.
-  const totalGeneralFor = (col, totalAmount) => {
-    if (isSupervisionCol(col)) return 0;
-    if (isWorkdayCol(col) && workersPaid[col.key]) {
-      return Number(paidToUs[col.key]) || 0;
-    }
-    return totalAmount + profitFor(col, totalAmount);
-  };
-  const handleGeneralPctChange = (v) => {
-    setGeneralPct(v);
-    setPctOverrides({});
-  };
-
-  // Solo días que tengan al menos un dato en alguna labor visible.
-  const activeDays = useMemo(() => {
-    const set = new Set();
-    for (const d of dataByColumn) for (const r of d.rows) set.add(r.day);
-    return [...set].sort();
-  }, [dataByColumn]);
-
-  // Por labor: día → celda.
-  const byLaborDay = useMemo(() => {
-    const m = new Map();
-    for (const d of dataByColumn) {
-      const inner = new Map();
-      for (const r of d.rows) inner.set(r.day, r.cell);
-      m.set(d.col.key, inner);
-    }
-    return m;
-  }, [dataByColumn]);
-
-  const totalsByDay = useMemo(() => {
-    const out = new Map();
-    for (const day of activeDays) {
-      let sum = 0;
-      for (const d of dataByColumn) {
-        const c = byLaborDay.get(d.col.key)?.get(day);
-        if (c) sum += c.amount || 0;
-      }
-      out.set(day, sum);
-    }
-    return out;
-  }, [activeDays, dataByColumn, byLaborDay]);
-
-  const grandTotal = useMemo(
-    () => dataByColumn.reduce((s, d) => s + (d.totalAmount || 0), 0),
-    [dataByColumn],
-  );
-
-  const totalProfit = useMemo(
-    () => dataByColumn.reduce((s, d) => s + profitFor(d.col, d.totalAmount), 0),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [dataByColumn, generalPct, pctOverrides, paidToUs, workersPaid],
-  );
-  // GANANCIAS muestra el margen de las labores facturables, sin el descuento
-  // de supervisión. La fila MONTO LIBRE muestra ese descuento por columna y,
-  // en el total, ganancia − supervisión con los dos montos de la resta.
-  const totalProfitBillable = useMemo(
-    () => dataByColumn.reduce((s, d) => s + (isSupervisionCol(d.col) ? 0 : profitFor(d.col, d.totalAmount)), 0),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [dataByColumn, generalPct, pctOverrides, paidToUs, workersPaid],
-  );
-  const totalSupervisionDeduction = useMemo(
-    () => dataByColumn.reduce((s, d) => s + (isSupervisionCol(d.col) ? profitFor(d.col, d.totalAmount) : 0), 0),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [dataByColumn, generalPct, pctOverrides, paidToUs, workersPaid],
-  );
-  const hasSupervisionCols = dataByColumn.some((d) => isSupervisionCol(d.col));
-  const grandTotalGeneral = useMemo(
-    () => dataByColumn.reduce((s, d) => s + totalGeneralFor(d.col, d.totalAmount), 0),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [dataByColumn, generalPct, pctOverrides, paidToUs, workersPaid],
-  );
-  const grandTotalVat = grandTotalGeneral * 0.19;
-  const grandTotalGross = grandTotalGeneral + grandTotalVat;
+  const activeDays = useMemo(() => activeDaysOf(dataByColumn), [dataByColumn]);
+  const byLaborDay = useMemo(() => cellsByLaborDay(dataByColumn), [dataByColumn]);
+  const totalsByDay = useMemo(() => totalsByDayOf(activeDays, dataByColumn, byLaborDay), [activeDays, dataByColumn, byLaborDay]);
+  const {
+    grandTotal,
+    totalProfit,
+    totalProfitBillable,
+    totalSupervisionDeduction,
+    hasSupervisionCols,
+    grandTotalGeneral,
+    grandTotalVat,
+    grandTotalGross,
+  } = useMemo(() => closingTotals(dataByColumn, settings), [dataByColumn, settings]);
 
   const buildPlainText = () => {
     const lines = [];
