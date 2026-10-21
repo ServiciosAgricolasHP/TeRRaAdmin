@@ -497,12 +497,12 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
         </div>
 
         <PersonalDataFields
-          key={worker?.id || "new"}
+          key={`personal-${worker?.id || "new"}`}
           form={form}
           onChange={(key, v) => setForm((f) => ({ ...f, [key]: v }))}
         />
 
-        {!isCreate && worker?.id && <EmploymentHistory key={worker.id} worker={worker} />}
+        {!isCreate && worker?.id && <EmploymentHistory key={`employment-${worker.id}`} worker={worker} />}
 
         {error && (
           <div className="rounded-md border border-[var(--color-danger)] bg-[var(--color-danger-soft)] px-3 py-2 text-sm text-[var(--color-danger)]">
