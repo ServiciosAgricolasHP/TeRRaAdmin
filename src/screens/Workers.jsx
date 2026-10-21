@@ -20,6 +20,7 @@ import GroupSummaryModal from "../components/GroupSummaryModal";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { matchesSearchQuery } from "../utils/textSearch";
 import { useIsMobile } from "../hooks/useIsMobile";
+import ScreenLoader from "../components/ScreenLoader";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -401,7 +402,7 @@ export default function Workers() {
         className={`min-h-0 flex-1 ${isMobile ? "overflow-y-auto" : "ag-theme-quartz ag-theme-app"}`}
       >
         {cacheLoading && allWorkers.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-[var(--color-muted)]">Cargando trabajadores...</div>
+          <ScreenLoader label="Cargando trabajadores…" className="h-full" />
         ) : !showResults ? (
           <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-[var(--color-border)] text-sm text-[var(--color-muted)]">
             Busca por nombre, apellido o RUT (mín. {MIN_SEARCH} caracteres) o activa un filtro para listar.

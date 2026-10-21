@@ -38,6 +38,7 @@ import { useGeneratePayroll } from "./payroll/useGeneratePayroll";
 import { useClosableCycles } from "./payroll/useClosableCycles";
 import { usePayConfirm } from "./payroll/usePayConfirm";
 import { usePayrollDeletion } from "./payroll/usePayrollDeletion";
+import ScreenLoader from "../components/ScreenLoader";
 
 export default function Payroll() {
   "use no memo";
@@ -232,7 +233,7 @@ export default function Payroll() {
       />
 
       {loading ? (
-        <div className="flex flex-1 items-center justify-center text-[var(--color-muted)]">Cargando...</div>
+        <ScreenLoader className="flex-1" />
       ) : tab === "create" ? (
         step === 1 ? (
           <CycleSelector

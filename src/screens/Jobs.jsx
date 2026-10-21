@@ -22,6 +22,7 @@ import { SubjobFormModal } from "./jobs/SubjobFormModal";
 import { CycleFormModal } from "./jobs/CycleFormModal";
 import { FirstCycleOfferModal } from "./jobs/FirstCycleOfferModal";
 import { CloseCycleModal } from "./jobs/CloseCycleModal";
+import ScreenLoader from "../components/ScreenLoader";
 
 const emptyJob = { name: "", location: "", notes: "" };
 
@@ -263,7 +264,7 @@ export default function Jobs() {
       </div>
 
       {loading ? (
-        <div className="text-[var(--color-muted)]">Cargando...</div>
+        <ScreenLoader />
       ) : jobs.length === 0 ? (
         <div className="rounded-lg border border-dashed border-[var(--color-border)] p-10 text-center text-[var(--color-muted)]">
           No hay faenas. Crea la primera.

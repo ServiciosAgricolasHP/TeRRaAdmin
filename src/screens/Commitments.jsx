@@ -47,6 +47,7 @@ import { ImportModal } from "./commitments/ImportModal";
 import { PartialPaymentModal } from "./commitments/PartialPaymentModal";
 import { SeriesEditModal } from "./commitments/SeriesEditModal";
 import { primaryCls, btnCls, inputCls } from "./commitments/styles";
+import ScreenLoader from "../components/ScreenLoader";
 
 const STATUS_FILTERS = [
   { v: "", label: "Todos" },
@@ -403,7 +404,7 @@ export default function Commitments() {
       </div>
 
       {loading ? (
-        <div className="py-10 text-center text-sm text-[var(--color-muted)]">Cargando…</div>
+        <ScreenLoader />
       ) : view === "upcoming" ? (
         upcomingGroups.length === 0 ? (
           <div className="rounded-lg border border-dashed border-[var(--color-border)] py-12 text-center text-sm text-[var(--color-muted)]">

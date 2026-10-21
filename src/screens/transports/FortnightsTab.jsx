@@ -11,6 +11,7 @@ import { FortnightMetaEditModal } from "./FortnightMetaEditModal";
 import { FortnightBalanceSummary } from "./FortnightBalanceSummary";
 import { compareFortnightPeriod } from "./fortnights";
 import { TypeToConfirmModal } from "./TypeToConfirmModal";
+import ScreenLoader from "../../components/ScreenLoader";
 
 // ============================================================
 // PESTAÑA QUINCENAS
@@ -149,9 +150,7 @@ export function FortnightsTab() {
       )}
 
       {loading ? (
-        <div className="rounded-lg border border-dashed border-[var(--color-border)] py-10 text-center text-sm text-[var(--color-muted)]">
-          Cargando...
-        </div>
+        <ScreenLoader />
       ) : fortnights.length === 0 ? (
         <div className="rounded-lg border border-dashed border-[var(--color-border)] py-10 text-center text-sm text-[var(--color-muted)]">
           Aún no hay quincenas. Crea la primera con + Nueva quincena.

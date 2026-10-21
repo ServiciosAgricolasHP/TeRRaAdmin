@@ -22,6 +22,7 @@ import { groupUpcoming, directionOf, summarize } from "../utils/commitments";
 import { countWorkdaysInRange } from "../services/countsService";
 import { CommitmentsWeek } from "./dashboard/CommitmentsWeek";
 import { DebtDetailList } from "./dashboard/DebtDetailList";
+import ScreenLoader from "../components/ScreenLoader";
 
 // Recharts se carga lazy, en su propio chunk: las tarjetas de KPI pintan sin
 // esperarlo.
@@ -553,7 +554,7 @@ export default function Dashboard() {
       </div>
 
       {loading ? (
-        <div className="text-[var(--color-muted)]">Cargando...</div>
+        <ScreenLoader />
       ) : (
         <div className="space-y-6">
           <section>

@@ -10,6 +10,7 @@ import { isoDateNDaysAgo, DEFAULT_HISTORY_DAYS } from "./historyRange";
 import { PaymentDetailModal } from "./PaymentDetailModal";
 import { PaymentSection } from "./PaymentSection";
 import { PrintMultipleModal } from "./PrintMultipleModal";
+import ScreenLoader from "../../components/ScreenLoader";
 
 // ============================================================
 // PESTAÑA RESÚMENES
@@ -260,7 +261,7 @@ export function PaymentsTab() {
       </div>
 
       {loading ? (
-        <div className="py-8 text-center text-sm text-[var(--color-muted)]">Cargando...</div>
+        <ScreenLoader />
       ) : (
         <>
           <PaymentSection

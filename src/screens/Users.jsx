@@ -20,6 +20,7 @@ import {
   sortProfiles,
   suspendBlock,
 } from "../utils/userAccounts";
+import ScreenLoader from "../components/ScreenLoader";
 import BirthdayModal from "./users/BirthdayModal";
 
 const nameOf = (p) => p.alias || p.email || p.id;
@@ -244,7 +245,7 @@ export default function Users() {
       ) : null}
 
       {loading && profiles.length === 0 ? (
-        <div className="py-10 text-center text-sm text-[var(--color-muted)]">Cargando…</div>
+        <ScreenLoader />
       ) : sorted.length === 0 ? (
         error ? null : (
           <div className="rounded-lg border border-dashed border-[var(--color-border)] py-12 text-center text-sm text-[var(--color-muted)]">

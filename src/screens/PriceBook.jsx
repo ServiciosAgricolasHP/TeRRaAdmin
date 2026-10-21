@@ -7,6 +7,7 @@ import Select from "../components/Select";
 import TextField from "../components/TextField";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { toTitleName, unshout } from "../utils/textCase";
+import ScreenLoader from "../components/ScreenLoader";
 
 // Registro contable de precios por faena y labor, independiente de las
 // faenas, ciclos y labores reales: acepta faenas "dummy" (solo un nombre, sin
@@ -226,7 +227,7 @@ export default function PriceBook() {
       />
 
       {loading ? (
-        <p className="text-sm text-[var(--color-muted)]">Cargando…</p>
+        <ScreenLoader />
       ) : groups.length === 0 ? (
         <p className="rounded-md border border-dashed border-[var(--color-border)] p-6 text-center text-sm text-[var(--color-muted)]">
           {entries.length === 0 ? "No hay entradas todavía." : "No hay resultados para esa búsqueda."}

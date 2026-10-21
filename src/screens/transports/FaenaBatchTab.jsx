@@ -4,6 +4,7 @@ import { tripsService, paymentsService, titleCase } from "../../services/transpo
 import { jobsService, subjobsService, cyclesService } from "../../services";
 import { useToast } from "../../contexts/ToastContext";
 import { fmtCurrency } from "../../utils/format";
+import ScreenLoader from "../../components/ScreenLoader";
 
 // ============================================================
 // PESTAÑA PAGO POR FAENA: elige ciclos y genera un resumen por transportista
@@ -169,7 +170,7 @@ export function FaenaBatchTab() {
   };
 
   if (loading) {
-    return <div className="flex h-40 items-center justify-center text-[var(--color-muted)]">Cargando...</div>;
+    return <ScreenLoader />;
   }
 
   if (step === 1) {

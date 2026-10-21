@@ -8,6 +8,7 @@ import { doc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import { workdaysService, cyclesService, workersService } from "../services";
 import ConfirmDialog from "../components/ConfirmDialog";
+import ScreenLoader from "../components/ScreenLoader";
 
 const fmtCurrency = (v) =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
@@ -236,7 +237,7 @@ export default function CleanupPaidWorkdays() {
 
       <div className="flex-1 overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
         {loading ? (
-          <div className="flex h-40 items-center justify-center text-[var(--color-muted)]">Cargando...</div>
+          <ScreenLoader />
         ) : filtered.length === 0 ? (
           <div className="flex h-40 items-center justify-center text-sm text-[var(--color-muted)]">
             {rows.length === 0 ? "Sin jornadas pagadas en este ciclo." : "Sin coincidencias con el filtro."}

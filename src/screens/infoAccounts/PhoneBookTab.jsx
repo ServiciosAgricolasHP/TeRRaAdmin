@@ -17,6 +17,7 @@ import PhoneContactModal from "./PhoneContactModal";
 import PhoneBookImportModal from "./PhoneBookImportModal";
 import { canShareContacts, shareContact, downloadContactVcard, downloadPhoneBookVcf } from "./phoneBookFiles";
 import { writePhoneBookXlsx } from "./writePhoneBookXlsx";
+import ScreenLoader from "../../components/ScreenLoader";
 
 // Cuántos contactos se dibujan de una vez; "Mostrar más" suma otros tantos.
 const PAGE = 200;
@@ -181,7 +182,7 @@ export default function PhoneBookTab() {
       </div>
 
       {loading ? (
-        <div className="py-10 text-center text-sm text-[var(--color-muted)]">Cargando…</div>
+        <ScreenLoader />
       ) : loadError ? (
         <div className="rounded-md border border-[var(--color-danger)] p-3 text-sm text-[var(--color-danger)]">No se pudo cargar la agenda: {loadError}</div>
       ) : contacts.length === 0 ? (

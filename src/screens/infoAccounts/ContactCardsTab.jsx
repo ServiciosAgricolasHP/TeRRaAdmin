@@ -10,6 +10,7 @@ import { cardMatchesSearch, emptyCard, newAccountId } from "../../utils/contactC
 import ContactCard from "./ContactCard";
 import ContactCardImage from "./ContactCardImage";
 import ContactCardModal from "./ContactCardModal";
+import ScreenLoader from "../../components/ScreenLoader";
 
 // Módulo "Información y Cuentas": libreta compartida de fichas (persona o
 // empresa) con datos de contacto + varias cuentas bancarias. Pensada para
@@ -185,7 +186,7 @@ export default function ContactCardsTab() {
       </div>
 
       {loading ? (
-        <div className="py-10 text-center text-sm text-[var(--color-muted)]">Cargando…</div>
+        <ScreenLoader />
       ) : cards.length === 0 ? (
         <div className="rounded-lg border border-dashed border-[var(--color-border)] py-12 text-center text-sm text-[var(--color-muted)]">
           Todavía no hay fichas. Crea la primera con “+ Nueva ficha”.

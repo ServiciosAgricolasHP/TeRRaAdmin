@@ -3,6 +3,27 @@ import { db } from "../firebase";
 
 const ref = (uid) => doc(db, "users", uid);
 
+// El cumpleaños de la última cuenta que abrió la app en este navegador. Al
+// abrirla, la pantalla de carga se muestra antes de que llegue el perfil, y así
+// no cambia de animación a mitad de la carga.
+const BIRTHDAY_HINT_KEY = "screenLoader.birthday";
+
+export function rememberBirthday(birthday) {
+  try {
+    localStorage.setItem(BIRTHDAY_HINT_KEY, birthday || "");
+  } catch {
+    /* sin almacenamiento, la primera carga usa la animación del día */
+  }
+}
+
+export function rememberedBirthday() {
+  try {
+    return localStorage.getItem(BIRTHDAY_HINT_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
 export const userPrefsService = {
   async getLayout(uid) {
     if (!uid) return null;
