@@ -81,6 +81,12 @@ el id/workerId, nunca el campo `rut`.
 | `bankDetails` | `[paymentRut, accountNumber, accountType, bankCode]` | tupla. accountType: 0 cta corriente, 1 cta vista, 3 cuenta RUT. bankCode `EFE` = efectivo. |
 | `groupLeader` | string[] | historial; `[0]` = actual (ej. `CHILENOS`, `EXTRANJEROS`) |
 | `idQr` | string[] | códigos QR asignados |
+| `address`, `commune` | string? | dirección y comuna; las piden las boletas de honorarios |
+| `nationality` | string? | texto libre ("Chilena") |
+| `maritalStatus` | `"single"` \| `"married"` \| `"civilUnion"` \| `"divorced"` \| `"widowed"` \| `""` | |
+| `birthDate` | string (YYYY-MM-DD)? | |
+| `pensionFund` | string? | nombre de la AFP |
+| `healthInsurance` | string? | "Fonasa" o el nombre de la Isapre |
 
 **Búsqueda**: `findWorkerByRut()` resuelve por **las dos vías** — primero el docId, y si no hay, por el campo `rut`. Un rut que se escribió en otro documento (`workday.workerRut`, `harvestWeights.rut`, items de nómina) puede ser cualquiera de los dos según cuándo se creó, así que buscar solo por docId pierde a los que corrigieron su cédula. Quien necesite **escribir** contra el trabajador encontrado tiene que usar el `.id` del doc devuelto, nunca el rut con el que buscó.
 

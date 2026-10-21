@@ -8,6 +8,8 @@ import { formatRutForDisplay, normalizeRut, validateRut, isForeignRut } from "..
 import { toProperName } from "../utils/nameUtils";
 import { findSimilarWorkers } from "../utils/similarity";
 import { hasChanges } from "../utils/formChanges";
+import { personalDataOf, personalDataPatch } from "../utils/workerPersonalData";
+import PersonalDataFields from "./workerEditModal/PersonalDataFields";
 import {
   BANKS,
   ACCOUNT_TYPES,
@@ -45,6 +47,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
         bd_accountNumber: "",
         bd_accountType: ACCOUNT_TYPE_RUT,
         bd_bankCode: DEFAULT_BANK_CODE,
+        ...personalDataOf(null),
       };
     } else {
       const bd = worker?.bankDetails || [];
@@ -61,6 +64,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
         bd_accountNumber: bd[1] || rutWithoutDv(rut),
         bd_accountType: bd[2] != null ? Number(bd[2]) : ACCOUNT_TYPE_RUT,
         bd_bankCode: bd[3] || DEFAULT_BANK_CODE,
+        ...personalDataOf(worker),
       };
     }
     setForm(initial);
@@ -213,12 +217,13 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
 
     const bankDetails = [payRut, accNumber, accType, bankCode];
     const email = form.email.trim();
+    const personalData = personalDataPatch(form);
 
     setBusy(true);
     try {
       if (isCreate) {
         await createWorker({ rut, name: form.name });
-        await workersService.update(rut, { groupLeader, idQr: [], bankDetails, email });
+        await workersService.update(rut, { groupLeader, idQr: [], bankDetails, email, ...personalData });
       } else {
         // `idQr` no se escribe desde la ficha: lo asigna `assignQrCode`.
         await workersService.update(worker.id, {
@@ -240,6 +245,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
           email,
           groupLeader,
           bankDetails,
+          ...personalData,
         });
       }
       onSaved?.();
@@ -488,6 +494,12 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
             </>
           )}
         </div>
+
+        <PersonalDataFields
+          key={worker?.id || "new"}
+          form={form}
+          onChange={(key, v) => setForm((f) => ({ ...f, [key]: v }))}
+        />
 
         {error && (
           <div className="rounded-md border border-[var(--color-danger)] bg-[var(--color-danger-soft)] px-3 py-2 text-sm text-[var(--color-danger)]">
