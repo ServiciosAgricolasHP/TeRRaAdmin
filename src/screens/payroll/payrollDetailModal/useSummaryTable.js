@@ -107,6 +107,8 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
         bonusAdvanceSummary,
         pendingRows: pendingSummaryRows,
         pendingMode,
+        grandTotals,
+        deferredCash,
       });
     } catch (err) {
       toast.error(err?.message || String(err));

@@ -2,10 +2,11 @@ import { fmtCurrency } from "../../utils/format";
 // Ventana de impresión de la tabla resumen del detalle de la nómina.
 // Imprime solo la tabla de resumen, por subfaena o por labor según el toggle
 // del Resumen en pantalla: las mismas tablas del "Detalle de pago", sin los
-// comprobantes de cada grupo.
+// comprobantes de cada grupo. Los totales (`grandTotals`, `deferredCash`) son
+// los mismos de la tabla en pantalla.
 export function printSummaryTable(payroll, {
   showLabor, subfaenaSummary, laborSummary, bonusAdvanceSummary,
-  pendingRows = [], pendingMode = "none",
+  pendingRows = [], pendingMode = "none", grandTotals, deferredCash = 0,
 }) {
   const fmtDayShort = (d) => {
     if (!d || typeof d !== "string") return "";
@@ -36,11 +37,6 @@ export function printSummaryTable(payroll, {
     }
     return rows.join("");
   };
-  const adjustedTotals = (base) => ({
-    bank: base.bank + (bonusAdvanceSummary?.bonus.bank || 0) - (bonusAdvanceSummary?.advance.bank || 0),
-    cash: base.cash + (bonusAdvanceSummary?.bonus.cash || 0) - (bonusAdvanceSummary?.advance.cash || 0),
-    total: base.total + (bonusAdvanceSummary?.bonus.total || 0) - (bonusAdvanceSummary?.advance.total || 0),
-  });
   // Filas del efectivo adeudado de nóminas anteriores. `nameColspan` = cuántas
   // columnas ocupa el nombre (2 en la vista por labor, que tiene una columna
   // más antes del período).
@@ -53,20 +49,14 @@ export function printSummaryTable(payroll, {
       <td style="text-align:right">${fmtCurrency(r.cash)}</td>
       <td style="text-align:right"><b>${fmtCurrency(r.total)}</b></td>
     </tr>`).join(""));
-  const pendingSum = pendingRows.reduce((s, r) => s + r.total, 0);
-  // En "onlyPending" el efectivo de esta nómina no sale: se difiere a la vuelta
-  // siguiente, así que se resta con una fila propia.
-  const deferredOf = (base) => (pendingMode === "onlyPending" ? adjustedTotals(base).cash : 0);
-  const deferRowHtml = (labelColspan, base) => {
-    const d = deferredOf(base);
-    if (d <= 0) return "";
-    return `<tr class="adj-row"><td colspan="${labelColspan}" style="text-align:right">Efectivo que queda pendiente</td><td style="text-align:right">${fmtCurrency(0)}</td><td style="text-align:right">− ${fmtCurrency(d)}</td><td style="text-align:right">− ${fmtCurrency(d)}</td></tr>`;
-  };
-  const grand = (base) => {
-    const b = adjustedTotals(base);
-    const d = deferredOf(base);
-    const add = pendingMode === "none" ? 0 : pendingSum;
-    return { bank: b.bank, cash: b.cash - d + add, total: b.total - d + add };
+  // Pie de la tabla: bonos, anticipos, el efectivo de esta nómina que queda
+  // para la vuelta siguiente (en "onlyPending") y el total.
+  const footerHtml = (labelColspan) => {
+    const deferRow = deferredCash > 0
+      ? `<tr class="adj-row"><td colspan="${labelColspan}" style="text-align:right">Efectivo que queda pendiente</td><td style="text-align:right">${fmtCurrency(0)}</td><td style="text-align:right">− ${fmtCurrency(deferredCash)}</td><td style="text-align:right">− ${fmtCurrency(deferredCash)}</td></tr>`
+      : "";
+    return `${buildAdjustmentRowsHtml(labelColspan)}${deferRow}
+        <tr class="summary-total"><td colspan="${labelColspan}"><b>${pendingMode === "onlyPending" ? "TOTAL A PAGAR" : "TOTAL"}</b></td><td style="text-align:right"><b>${fmtCurrency(grandTotals.bank)}</b></td><td style="text-align:right"><b>${fmtCurrency(grandTotals.cash)}</b></td><td style="text-align:right"><b>${fmtCurrency(grandTotals.total)}</b></td></tr>`;
   };
 
   const today = new Date().toLocaleDateString("es-CL");
@@ -91,8 +81,7 @@ export function printSummaryTable(payroll, {
       <thead><tr><th>Faena</th><th>Subfaena</th><th style="width:130px">Período</th><th style="text-align:right">Transferencia</th><th style="text-align:right">Efectivo</th><th style="text-align:right">TOTAL</th></tr></thead>
       <tbody>${rowsHtml}${pendingRowsHtml(1)}</tbody>
       <tfoot>
-        ${buildAdjustmentRowsHtml(3)}${deferRowHtml(3, subfaenaSummary.totals)}
-        <tr class="summary-total"><td colspan="3"><b>${pendingMode === "onlyPending" ? "TOTAL A PAGAR" : "TOTAL"}</b></td><td style="text-align:right"><b>${fmtCurrency(grand(subfaenaSummary.totals).bank)}</b></td><td style="text-align:right"><b>${fmtCurrency(grand(subfaenaSummary.totals).cash)}</b></td><td style="text-align:right"><b>${fmtCurrency(grand(subfaenaSummary.totals).total)}</b></td></tr>
+        ${footerHtml(3)}
       </tfoot>
     </table>`;
   } else {
@@ -113,8 +102,7 @@ export function printSummaryTable(payroll, {
       <thead><tr><th>Faena</th><th>Subfaena</th><th>Labor</th><th style="width:130px">Período</th><th style="text-align:right">Transferencia</th><th style="text-align:right">Efectivo</th><th style="text-align:right">TOTAL</th></tr></thead>
       <tbody>${rowsHtml}${pendingRowsHtml(2)}</tbody>
       <tfoot>
-        ${buildAdjustmentRowsHtml(4)}${deferRowHtml(4, laborSummary.totals)}
-        <tr class="summary-total"><td colspan="4"><b>TOTAL</b></td><td style="text-align:right"><b>${fmtCurrency(adjustedTotals(laborSummary.totals).bank)}</b></td><td style="text-align:right"><b>${fmtCurrency(adjustedTotals(laborSummary.totals).cash)}</b></td><td style="text-align:right"><b>${fmtCurrency(adjustedTotals(laborSummary.totals).total)}</b></td></tr>
+        ${footerHtml(4)}
       </tfoot>
     </table>`;
   }
