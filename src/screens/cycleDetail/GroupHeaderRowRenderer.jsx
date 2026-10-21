@@ -18,7 +18,7 @@ export function GroupHeaderRowRenderer(props) {
         color: "var(--color-accent)",
       }}
     >
-      <span>👥 {data._leader}</span>
+      <span>{data._icon || "👥"} {data._leader}</span>
       <span style={{ opacity: 0.7, fontWeight: 400 }}>· {data._count} trab.</span>
     </div>
   );

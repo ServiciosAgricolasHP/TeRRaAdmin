@@ -1,28 +1,19 @@
 import { useCycleDetail } from "./CycleDetailContext";
-import { EMPLOYMENT_FILTERS } from "../../utils/employment";
 
-const selectCls =
-  "rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs outline-none focus:border-[var(--color-accent)]";
-
-// Barra sobre la grilla: ver a todos o por grupo, solo a quienes tienen
-// producción, por contrato u honorarios, y los saltos a cada grupo.
+// Barra sobre la grilla: ver a todos, por grupo (líder) o por contrato, solo a
+// quienes tienen producción, y los saltos a cada grupo.
 export function GridToolbar() {
   "use no memo";
   const {
     columnFilterActive,
-    employers,
-    employmentFilter,
     employmentLoading,
     gridVisible,
     groupView,
-    LEADER_NONE,
     onlyWithProduction,
     orderedGroups,
     scrollToGroup,
     setGroupView,
     setOnlyWithProduction,
-    setEmploymentFilter,
-    isGroupedView,
     workers,
   } = useCycleDetail();
   return (
@@ -42,6 +33,13 @@ export function GridToolbar() {
                 className={`px-3 py-1.5 ${groupView === "group" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
               >
                 Por grupo
+              </button>
+              <button
+                onClick={() => setGroupView("employment")}
+                title="Con contrato, a honorarios y sin nada, según lo vigente en algún día del ciclo"
+                className={`px-3 py-1.5 ${groupView === "employment" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
+              >
+                Por contrato
               </button>
             </div>
           )}
@@ -65,32 +63,11 @@ export function GridToolbar() {
               {onlyWithProduction && columnFilterActive && <span className="ml-1 opacity-70">(pausado)</span>}
             </button>
           </div>
-          <select
-            value={employmentFilter.type}
-            onChange={(e) => setEmploymentFilter((f) => ({ ...f, type: e.target.value }))}
-            className={selectCls}
-            aria-label="Contrato u honorarios"
-            title="Contrato u honorarios vigentes en algún día del ciclo"
-          >
-            <option value="">📄 Contrato: todos</option>
-            {Object.entries(EMPLOYMENT_FILTERS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-          </select>
-          {employmentFilter.type !== "none" && employers.length > 0 && (
-            <select
-              value={employmentFilter.employerId}
-              onChange={(e) => setEmploymentFilter((f) => ({ ...f, employerId: e.target.value }))}
-              className={selectCls}
-              aria-label="Empleador"
-            >
-              <option value="">🏢 Empleador: todos</option>
-              {employers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-            </select>
-          )}
-          {employmentLoading && <span className="text-xs text-[var(--color-muted)]">Cargando contratos…</span>}
-          {gridVisible && isGroupedView && orderedGroups.length > 0 && (
+          {gridVisible && employmentLoading && <span className="text-xs text-[var(--color-muted)]">Cargando contratos…</span>}
+          {gridVisible && orderedGroups.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
               {orderedGroups.map((g) => {
-                const isNone = g.key === LEADER_NONE;
+                const isNone = g.none;
                 return (
                   <button
                     key={g.key}
@@ -102,7 +79,7 @@ export function GridToolbar() {
                         : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
                     }`}
                   >
-                    {g.label} · {g.count}
+                    {g.icon !== "👥" && `${g.icon} `}{g.label} · {g.count}
                   </button>
                 );
               })}

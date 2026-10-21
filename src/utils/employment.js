@@ -61,6 +61,21 @@ export function matchesEmploymentFilter(active = [], { type = "", employerId = "
   return active.some((e) => (!type || e.type === type) && (!employerId || e.employerId === employerId));
 }
 
+// Grupos de la grilla del ciclo en la vista "Por contrato", en su orden.
+export const EMPLOYMENT_GROUPS = [
+  { key: "contract", label: "Con contrato", icon: "📄" },
+  { key: "fees", label: "A honorarios", icon: "🧾" },
+  { key: "none", label: "Sin contrato ni honorarios", icon: "➖" },
+];
+
+// El grupo de una persona según sus períodos vigentes: con contrato si tuvo
+// alguno, si no a honorarios, y si no, sin nada.
+export function employmentGroupOf(active = []) {
+  if (active.some((e) => e.type === "contract")) return "contract";
+  if (active.some((e) => e.type === "fees")) return "fees";
+  return "none";
+}
+
 // El período de la misma persona que se cruza con `draft`, o null. `draft`
 // puede ser un período existente que se edita (se ignora a sí mismo).
 export function overlapping(employments, draft) {

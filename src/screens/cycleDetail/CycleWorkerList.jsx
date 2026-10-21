@@ -15,7 +15,7 @@ function countDaysWithData(row, days) {
 // Vista mobile de CycleDetail: reemplaza el AG-Grid (columnas = días) por
 // una lista informativa de trabajadores con su total del ciclo. Evita el
 // scroll horizontal infinito de decenas de columnas-día en pantallas chicas.
-export default function CycleWorkerList({ rows, days, fmtCurrency, onSelectWorker, onlyWithProduction, employmentPass }) {
+export default function CycleWorkerList({ rows, days, fmtCurrency, onSelectWorker, onlyWithProduction }) {
   const [query, setQuery] = useState("");
 
   const sorted = useMemo(
@@ -25,12 +25,11 @@ export default function CycleWorkerList({ rows, days, fmtCurrency, onSelectWorke
   // Igual que en el grid de escritorio: el toggle "solo con producción" se
   // pausa solo mientras el usuario está buscando algo puntual acá abajo, para
   // que encontrar a alguien no dependa de que tenga plata este ciclo.
-  // El filtro de contrato u honorarios se mantiene también al buscar.
   const filtered = useMemo(() => {
-    const byName = sorted.filter((row) => matchesSearchQuery(row.name, query) && (!employmentPass || employmentPass(row)));
+    const byName = sorted.filter((row) => matchesSearchQuery(row.name, query));
     if (!onlyWithProduction || query.trim()) return byName;
     return byName.filter((row) => Number(row.total) > 0);
-  }, [sorted, query, onlyWithProduction, employmentPass]);
+  }, [sorted, query, onlyWithProduction]);
 
   if (sorted.length === 0) {
     return (

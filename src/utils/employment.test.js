@@ -4,6 +4,7 @@ import {
   isActiveIn,
   activeByWorker,
   matchesEmploymentFilter,
+  employmentGroupOf,
   overlapping,
   employmentError,
   planStartEmployments,
@@ -48,6 +49,15 @@ describe("vigencia", () => {
     expect(matchesEmploymentFilter(active.get("w3"), { type: "none" })).toBe(true);
     expect(matchesEmploymentFilter(active.get("w1"), { type: "none" })).toBe(false);
     expect(matchesEmploymentFilter(active.get("w3"), {})).toBe(true);
+  });
+});
+
+describe("grupos de la grilla", () => {
+  it("con contrato antes que honorarios, y sin nada al final", () => {
+    expect(employmentGroupOf([{ type: "fees" }, { type: "contract" }])).toBe("contract");
+    expect(employmentGroupOf([{ type: "fees" }])).toBe("fees");
+    expect(employmentGroupOf([])).toBe("none");
+    expect(employmentGroupOf(undefined)).toBe("none");
   });
 });
 

@@ -89,7 +89,7 @@ import { useDayNotes } from "./cycleDetail/useDayNotes";
 import { useLaborForm } from "./cycleDetail/useLaborForm";
 import { useCycleClosing } from "./cycleDetail/useCycleClosing";
 import { useCycleTransports } from "./cycleDetail/useCycleTransports";
-import { useEmploymentFilter } from "./cycleDetail/useEmploymentFilter";
+import { useEmploymentGroups } from "./cycleDetail/useEmploymentGroups";
 import ScreenLoader from "../components/ScreenLoader";
 import { WORKERS_LIST } from "../services/workersService";
 
@@ -158,7 +158,10 @@ export default function CycleDetail() {
   const [transportsOpen, setTransportsOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [groupView, setGroupView] = useState(() => {
-    try { return localStorage.getItem("cycleDetail.groupView") === "group" ? "group" : "all"; }
+    try {
+      const saved = localStorage.getItem("cycleDetail.groupView");
+      return saved === "group" || saved === "employment" ? saved : "all";
+    }
     catch { return "all"; }
   });
   const [allWorkers, setAllWorkers] = useState([]);
@@ -288,7 +291,7 @@ export default function CycleDetail() {
   // casillas de asistencia en $0.
   const allowsMonthly = isNormalLabor || isOvertimeDayLabor;
   const days = cycle?.days || [];
-  const { employmentFilter, setEmploymentFilter, employmentPass, employmentLoading, employers } = useEmploymentFilter(days);
+  const { employmentGroupOf, employmentLoading } = useEmploymentGroups(days, groupView === "employment");
   const workers = activeLabor?.workers || [];
   const wdMap = (activeLabor && workdaysByLabor[activeLabor.id]) || {};
   const shownLaborId = activeLabor?.id;
@@ -387,6 +390,7 @@ export default function CycleDetail() {
   const {
     doesExternalFilterPass,
     handleGridFilterChanged,
+    isEmploymentView,
     isExternalFilterPresent,
     isGroupedView,
     LEADER_LOCAL,
@@ -395,7 +399,7 @@ export default function CycleDetail() {
     rowData,
     scrollToGroup,
   } = useLeaderGrouping({
-    employmentPass,
+    employmentGroupOf,
     gridRef,
     groupView,
     onlyWithProduction,
@@ -832,10 +836,8 @@ export default function CycleDetail() {
     navigate,
     nextCycle,
     onlyWithProduction,
-    employmentFilter,
-    setEmploymentFilter,
     employmentLoading,
-    employers,
+    isEmploymentView,
     openCreateLabor,
     openEditLabor,
     orderedGroups,
@@ -996,7 +998,6 @@ export default function CycleDetail() {
                   fmtCurrency={fmtCurrency}
                   onSelectWorker={setEditingCycleWorkerRut}
                   onlyWithProduction={onlyWithProduction}
-                  employmentPass={employmentPass}
                 />
               ) : (
                 grid
