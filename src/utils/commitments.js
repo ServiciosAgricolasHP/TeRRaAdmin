@@ -331,8 +331,11 @@ const monthRank = (key) => MONTH_RANK[key] ?? 2;
 // Lo que se paga (sin cheques recibidos ni anulados): lo que se debe, el
 // balance de cada deuda con la fecha en que queda pagada, lo que vence en los
 // próximos 7 días y el próximo mes (`upcoming`, los mismos grupos de Próximos),
-// lo que vence cada mes, y, si se pide, lo
-// pagado en un rango (por fecha de pago). Lo aplazado va primero en cada lista. Una deuda queda pagada con su último vencimiento, aunque
+// lo que vence cada mes, lo pendiente por contraparte (`byCounterparty`, como
+// `groupByCounterparty`, con lo que suma cada una en `total` y lo que vence
+// después del corte en `later`) y, si se pide, lo pagado en un rango (por fecha
+// de pago). Lo aplazado va primero en cada lista, salvo por contraparte, donde
+// todo va por fecha. Una deuda queda pagada con su último vencimiento, aunque
 // tenga pagos atrasados (vencidos, aplazados o protestados, que van con su
 // fecha original); `behind` dice cuántos son. Los pagos recurrentes no terminan
 // y no tienen `payoffDate`.
@@ -428,6 +431,12 @@ export function buildPaymentReport(items, { today, includePaid = false, paidFrom
   const near = groupUpcoming(pending, today);
   const sumOf = (list) => list.reduce((sum, c) => (addTo(sum, c), sum), blankSum());
   const postponedFirst = [...pending.filter((c) => c.status === "postponed"), ...pending.filter((c) => c.status !== "postponed")];
+  const byCounterparty = groupByCounterparty(out, today, { until: dueUntil }).map((g) => ({
+    ...g,
+    total: sumOf([...g.items, ...g.beyond]),
+    later: sumOf(g.beyond),
+    laterEnd: g.beyond.reduce((max, c) => (c.dueDate > max ? c.dueDate : max), ""),
+  }));
   return {
     pending,
     detail: postponedFirst.filter((c) => !isLater(c)),
@@ -443,6 +452,7 @@ export function buildPaymentReport(items, { today, includePaid = false, paidFrom
     dueUntil,
     paid,
     debts,
+    byCounterparty,
     months: monthRows,
     totals,
     payoffDate,

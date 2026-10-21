@@ -231,6 +231,18 @@ describe("informe de deudas", () => {
     expect(biosur.overdue.total).toBe(500);
   });
 
+  it("por contraparte, junta lo que se paga a cada una por fecha y resume lo de después del corte", () => {
+    const r = buildPaymentReport(items, { today: today, dueUntil: "2026-11-30" });
+    expect(r.byCounterparty.map((g) => g.name)).toEqual(["Biosur", "Banco Estado", "Arriendo"]);
+    const [biosur, bank, rent] = r.byCounterparty;
+    expect(biosur.items.map((c) => c.id)).toEqual(["ch1", "ch2"]);
+    expect(biosur.total).toMatchObject({ count: 2, total: 800 });
+    expect(bank.items.map((c) => c.id)).toEqual(["cr_2", "cr_3"]);
+    expect(bank.later).toMatchObject({ count: 1, total: 100 });
+    expect(bank).toMatchObject({ laterEnd: "2026-12-30", total: { count: 3, amount: 300, extra: 0, total: 300 } });
+    expect(rent.items).toEqual([]);
+  });
+
   it("un pago recurrente no tiene fecha de término", () => {
     const r = buildPaymentReport(items, { today: today });
     expect(r.debts.find((d) => d.key === "s:arr")).toMatchObject({ recurring: true, payoffDate: "" });

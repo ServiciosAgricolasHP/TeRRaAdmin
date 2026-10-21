@@ -597,7 +597,13 @@ export default function Commitments() {
       {configOpen && <ConfigModal onClose={() => setConfigOpen(false)} />}
 
       {reportOpen && (
-        <PaymentReportModal items={items} companies={companies} today={today} onClose={() => setReportOpen(false)} />
+        <PaymentReportModal
+          items={items}
+          companies={companies}
+          today={today}
+          groupedView={byCounterparty}
+          onClose={() => setReportOpen(false)}
+        />
       )}
 
       {importOpen && (

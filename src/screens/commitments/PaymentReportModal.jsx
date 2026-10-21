@@ -1,8 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import Modal from "../../components/Modal";
 import { useToast } from "../../contexts/ToastContext";
 import { nextYearEnd, buildPaymentReport } from "../../utils/commitments";
 import { reportDocument } from "./paymentReportModal/reportDocument";
+import { printReport } from "./paymentReportModal/printReport";
 import { ReportPreview } from "./paymentReportModal/ReportPreview";
 import { writeReportPdf } from "./paymentReportModal/writeReportPdf";
 import { writeReportXlsx } from "./paymentReportModal/writeReportXlsx";
@@ -11,8 +12,9 @@ import { writeReportXlsx } from "./paymentReportModal/writeReportXlsx";
 // cada deuda con la fecha en que queda pagada, lo que vence en los próximos 7
 // días y el próximo mes, los vencimientos por mes (detallados hasta una fecha,
 // por defecto fin del año siguiente) y, si se piden, el detalle de cada pago
-// pendiente y los pagos hechos en un rango. El contenido lo arma una sola vez
-// `reportDocument`, y lo dibujan igual la vista previa (HTML) y el PDF.
+// pendiente (por fecha o por contraparte) y los pagos hechos en un rango. El
+// contenido lo arma una sola vez `reportDocument`, y lo dibujan igual la vista
+// previa (HTML), que también se imprime, y el PDF.
 
 const btnCls =
   "min-h-8 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-surface-2)] disabled:opacity-50";
@@ -20,7 +22,8 @@ const btnCls =
 const inputCls =
   "rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm outline-none focus:border-[var(--color-accent)]";
 
-export default function PaymentReportModal({ items, companies, today, onClose }) {
+// `groupedView`: si Próximos está por contraparte, el detalle abre igual.
+export default function PaymentReportModal({ items, companies, today, groupedView = false, onClose }) {
   const toast = useToast();
   const [companyId, setCompanyId] = useState("");
   const [includePaid, setIncludePaid] = useState(false);
@@ -28,7 +31,10 @@ export default function PaymentReportModal({ items, companies, today, onClose })
   const [paidTo, setPaidTo] = useState(today);
   const [dueUntil, setDueUntil] = useState(() => nextYearEnd(today));
   const [showDetail, setShowDetail] = useState(true);
+  const [groupDetail, setGroupDetail] = useState(groupedView);
   const [busy, setBusy] = useState("");
+  const previewRef = useRef(null);
+  const byCounterparty = showDetail && groupDetail;
 
   const company = companies.find((c) => c.id === companyId);
   const companyName = company ? company.alias || company.razonSocial : "";
@@ -39,8 +45,8 @@ export default function PaymentReportModal({ items, companies, today, onClose })
   }, [items, companyId, today, includePaid, paidFrom, paidTo, dueUntil]);
 
   const doc = useMemo(
-    () => reportDocument(report, { today, companyName, showDetail, includePaid, paidFrom, paidTo }),
-    [report, today, companyName, showDetail, includePaid, paidFrom, paidTo],
+    () => reportDocument(report, { today, companyName, showDetail, byCounterparty, includePaid, paidFrom, paidTo }),
+    [report, today, companyName, showDetail, byCounterparty, includePaid, paidFrom, paidTo],
   );
 
   const fileBase = `Informe_deudas_${(companyName || "todas").replace(/[^\w-]+/g, "_")}_${today}`;
@@ -57,7 +63,9 @@ export default function PaymentReportModal({ items, companies, today, onClose })
   };
 
   const downloadPdf = () => run("pdf", () => writeReportPdf(doc, fileBase));
-  const downloadXlsx = () => run("xlsx", () => writeReportXlsx(report, { today, companyName, includePaid, paidFrom, paidTo, fileBase }));
+  const downloadXlsx = () =>
+    run("xlsx", () => writeReportXlsx(report, { today, companyName, byCounterparty, includePaid, paidFrom, paidTo, fileBase }));
+  const print = () => run("print", () => printReport(previewRef.current.innerHTML, doc.title));
 
   return (
     <Modal
@@ -75,6 +83,7 @@ export default function PaymentReportModal({ items, companies, today, onClose })
           >
             {busy === "pdf" ? "Generando…" : "📄 Descargar PDF"}
           </button>
+          <button type="button" className={btnCls} onClick={print} disabled={!!busy}>🖨 Imprimir</button>
           <button type="button" className={btnCls} onClick={downloadXlsx} disabled={!!busy}>📊 Excel</button>
         </>
       }
@@ -103,6 +112,12 @@ export default function PaymentReportModal({ items, companies, today, onClose })
           <input type="checkbox" checked={showDetail} onChange={(e) => setShowDetail(e.target.checked)} />
           Detalle de cada pago pendiente
         </label>
+        {showDetail && (
+          <label className="flex min-h-8 items-center gap-2">
+            <input type="checkbox" checked={groupDetail} onChange={(e) => setGroupDetail(e.target.checked)} />
+            Agrupado por contraparte
+          </label>
+        )}
         <label className="flex min-h-8 items-center gap-2">
           <input type="checkbox" checked={includePaid} onChange={(e) => setIncludePaid(e.target.checked)} />
           Incluir pagos realizados
@@ -116,7 +131,9 @@ export default function PaymentReportModal({ items, companies, today, onClose })
         )}
       </div>
       <div className="overflow-x-auto rounded-md border border-[var(--color-border)] bg-[#e5e7eb] p-2 sm:p-4">
-        <ReportPreview doc={doc} />
+        <div ref={previewRef}>
+          <ReportPreview doc={doc} />
+        </div>
       </div>
     </Modal>
   );
