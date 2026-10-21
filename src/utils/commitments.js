@@ -233,6 +233,45 @@ export function counterpartyOptions(items) {
     .map((e) => e.name);
 }
 
+// Vista "Próximos" por contraparte: lo abierto de cada contraparte junto
+// (también lo aplazado y lo protestado), del vencimiento más antiguo al más
+// nuevo. Las contrapartes van en el orden de su primer vencimiento, así la más
+// atrasada queda arriba. Las variantes de un nombre que solo cambian en
+// mayúsculas, tildes o puntuación van juntas, con la forma del nombre más
+// usada en todos los documentos. Con `until`, lo que vence después (sin estar
+// vencido, aplazado ni protestado) queda en `beyond`. `payable` y `receivable`
+// suman lo que falta pagar y cobrar de lo que no quedó en `beyond`.
+export function groupByCounterparty(items, today, { until = "" } = {}) {
+  const variants = new Map();
+  for (const c of items) {
+    const name = String(c.counterparty || "").trim();
+    const key = counterpartyKey(name);
+    if (!variants.has(key)) variants.set(key, new Map());
+    variants.get(key).set(name, (variants.get(key).get(name) || 0) + 1);
+  }
+  // La forma más usada; si empatan, la primera que aparece.
+  const nameOf = (key) => {
+    let best = ["", 0];
+    for (const entry of variants.get(key) || []) if (entry[1] > best[1]) best = entry;
+    return best[0];
+  };
+  const open = items.filter(isOpen).sort((a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0));
+  const groups = new Map();
+  for (const c of open) {
+    const key = counterpartyKey(c.counterparty);
+    if (!groups.has(key)) groups.set(key, { key, name: nameOf(key), items: [], beyond: [], payable: 0, receivable: 0 });
+    const g = groups.get(key);
+    if (until && c.dueDate > until && debtState(c, today) === "scheduled") {
+      g.beyond.push(c);
+      continue;
+    }
+    g.items.push(c);
+    if (directionOf(c.kind) === "in") g.receivable += remainingOf(c);
+    else g.payable += remainingOf(c);
+  }
+  return [...groups.values()];
+}
+
 // La contraparte ya usada que se parece a `name` sin ser la misma
 // ("Bancoestado" → "Banco Estado"), o `null`. Si `name` ya es una de ellas
 // (aunque cambien mayúsculas o tildes), no hay nada que sugerir. El informe

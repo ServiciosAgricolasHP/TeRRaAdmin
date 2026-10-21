@@ -32,6 +32,7 @@ import {
   seriesRowError,
   counterpartyOptions,
   similarCounterparty,
+  groupByCounterparty,
 } from "./commitments";
 
 describe("vencimientos", () => {
@@ -468,6 +469,72 @@ describe("contrapartes", () => {
     expect(similarCounterparty("Agricola los robles", options)).toBe(null);
     expect(similarCounterparty("Ferretería Central", options)).toBe(null);
     expect(similarCounterparty("", options)).toBe(null);
+  });
+});
+
+describe("próximos por contraparte", () => {
+  const today = "2026-10-21";
+  const items = [
+    { id: "copec-nov", counterparty: "Copec", status: "pending", dueDate: "2026-11-05", amount: 300 },
+    { id: "banco-dic", counterparty: "Banco Estado", status: "pending", dueDate: "2026-12-10", amount: 100 },
+    { id: "copec-sep", counterparty: "COPEC", status: "postponed", dueDate: "2026-09-20", amount: 200 },
+    { id: "banco-oct", counterparty: "Banco Estado", status: "pending", dueDate: "2026-10-10", amount: 100 },
+    { id: "banco-pagado", counterparty: "Banco Estado", status: "paid", dueDate: "2026-09-10", amount: 100 },
+    { id: "copec-anulado", counterparty: "Copec", status: "cancelled", dueDate: "2026-08-01", amount: 50 },
+    { id: "cliente", kind: "chequeReceived", counterparty: "Agrícola Sur", status: "protested", dueDate: "2026-10-01", amount: 80 },
+  ];
+  const ids = (list) => list.map((c) => c.id);
+
+  it("junta lo abierto de cada contraparte, del vencimiento más antiguo al más nuevo", () => {
+    const groups = groupByCounterparty(items, today);
+    expect(groups.map((g) => g.name)).toEqual(["Copec", "Agrícola Sur", "Banco Estado"]);
+    expect(ids(groups[0].items)).toEqual(["copec-sep", "copec-nov"]);
+    expect(ids(groups[2].items)).toEqual(["banco-oct", "banco-dic"]);
+  });
+
+  it("la contraparte lleva la forma del nombre más usada, aunque no sea la primera", () => {
+    const groups = groupByCounterparty(
+      [
+        { id: "a", counterparty: "BIOSUR", status: "pending", dueDate: "2026-10-01" },
+        { id: "b", counterparty: "Biosur", status: "pending", dueDate: "2026-10-02" },
+        { id: "c", counterparty: "Biosur", status: "paid", dueDate: "2026-09-02" },
+      ],
+      today,
+    );
+    expect(groups.map((g) => g.name)).toEqual(["Biosur"]);
+  });
+
+  it("separa lo que se paga de lo que se cobra y descuenta los abonos", () => {
+    const groups = groupByCounterparty([
+      ...items,
+      { id: "abonado", kind: "personalDebt", counterparty: "Copec", status: "pending", dueDate: "2026-11-20", amount: 400, partialPayments: [{ amount: 150 }] },
+    ], today);
+    expect(groups[0]).toMatchObject({ payable: 750, receivable: 0 });
+    expect(groups[1]).toMatchObject({ payable: 0, receivable: 80 });
+  });
+
+  it("con fecha de corte, lo pendiente que vence después queda aparte", () => {
+    const groups = groupByCounterparty(
+      [...items, { id: "banco-2028", counterparty: "Banco Estado", status: "pending", dueDate: "2028-01-10", amount: 100 }],
+      today,
+      { until: "2027-12-31" },
+    );
+    expect(ids(groups[2].items)).toEqual(["banco-oct", "banco-dic"]);
+    expect(ids(groups[2].beyond)).toEqual(["banco-2028"]);
+    expect(groups[2].payable).toBe(200);
+  });
+
+  it("lo vencido no queda después del corte aunque la fecha de corte ya pasó", () => {
+    const groups = groupByCounterparty(items, today, { until: "2026-10-05" });
+    expect(ids(groups[2].items)).toEqual(["banco-oct"]);
+    expect(ids(groups[2].beyond)).toEqual(["banco-dic"]);
+  });
+
+  it("los vencimientos sin contraparte van juntos, sin nombre", () => {
+    const groups = groupByCounterparty([{ id: "a", status: "pending", dueDate: "2026-10-01" }, { id: "b", counterparty: " ", status: "pending", dueDate: "2026-10-02" }], today);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].name).toBe("");
+    expect(ids(groups[0].items)).toEqual(["a", "b"]);
   });
 });
 
