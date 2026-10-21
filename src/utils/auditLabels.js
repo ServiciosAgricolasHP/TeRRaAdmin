@@ -106,6 +106,7 @@ export const ENTITY_META = {
   employment: { labelEs: "Contrato u honorarios", labelOf: (d) => d?.workerName },
   employer: { labelEs: "Empleador", labelOf: (d) => d?.name },
   feeList: { labelEs: "Lista de honorarios", labelOf: (d) => (d?.employerName ? `${d.employerName} ${d.from} → ${d.to}` : null) },
+  contributionList: { labelEs: "Lista de imposiciones", labelOf: (d) => (d?.employerName ? `${d.employerName} ${d.month}` : null) },
   employmentConfig: { labelEs: "Config. de honorarios" },
   dteDocument: { labelEs: "Documento SII" },
   catalog: { labelEs: "Catálogo", labelOf: (_d, id) => id },

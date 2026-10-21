@@ -2,13 +2,15 @@ import { useState } from "react";
 import WorkersTab from "./workers/WorkersTab";
 import EmploymentsTab from "./workers/EmploymentsTab";
 import FeeListsTab from "./workers/FeeListsTab";
+import ContributionListsTab from "./workers/ContributionListsTab";
 
 const TABS = [
   { value: "workers", label: "👷 Trabajadores" },
   { value: "employments", label: "📄 Contratos" },
   { value: "fees", label: "🧾 Honorarios" },
+  { value: "contributions", label: "🏛 Imposiciones" },
 ];
-const TAB_CONTENT = { workers: WorkersTab, employments: EmploymentsTab, fees: FeeListsTab };
+const TAB_CONTENT = { workers: WorkersTab, employments: EmploymentsTab, fees: FeeListsTab, contributions: ContributionListsTab };
 const TAB_KEY = "workers.tab";
 
 const savedTab = () => {
@@ -20,7 +22,7 @@ const savedTab = () => {
 };
 
 // Trabajadores: la lista de personas, sus contratos y honorarios, y las listas
-// de honorarios, en pestañas. Abre en la última elegida.
+// de honorarios y de imposiciones, en pestañas. Abre en la última elegida.
 export default function Workers() {
   const [tab, setTab] = useState(() => {
     const saved = savedTab();

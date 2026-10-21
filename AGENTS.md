@@ -316,6 +316,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Honorarios | `fees` | tipo de `employment` (guardado como `"fees"`) |
 | Boleta de honorarios | `feeReceipt` | |
 | Lista de honorarios | `feeList` | `feeLists` |
+| Lista de imposiciones | `contributionList` | `contributionLists` |
 | Finiquito | `settlement` | dentro de `employments` (`settlementStatus`) |
 | Imposiciones | `contributions` | |
 | AFP / Salud (previsión) | `pensionFund` / `healthInsurance` | dentro de `worker` |
@@ -521,7 +522,7 @@ Implementación en `submitCycle` (`screens/jobs/useCycleForm.js`), con el cálcu
 
 ## Trabajadores / Workers
 
-- Pantalla: `src/screens/Workers.jsx`, con pestañas: 👷 Trabajadores (`screens/workers/WorkersTab.jsx`, la lista de personas), 📄 Contratos y 🧾 Honorarios (ver "Contratos y honorarios"). Abre en la última elegida (`workers.tab`).
+- Pantalla: `src/screens/Workers.jsx`, con pestañas: 👷 Trabajadores (`screens/workers/WorkersTab.jsx`, la lista de personas), 📄 Contratos, 🧾 Honorarios y 🏛 Imposiciones (ver "Contratos y honorarios"). Abre en la última elegida (`workers.tab`).
 - **Búsqueda client-side sobre la lista cacheada** (única fuente de datos). Al montar la pantalla, `ensureAllForModal()` trae la lista completa con `workersService.list(WORKERS_LIST)` — primera carga ~500-2000 reads, después gratis hasta que vence el TTL. La búsqueda es `workerMatchesQuery` (`utils/workerSearch.js`, con tests): cada palabra en el nombre, en cualquier orden y sin acentos, o una parte del RUT o del id sin puntos ni guion, desde 2 caracteres (`MIN_WORKER_QUERY`). Permite buscar por apellido o dígitos del RUT en cualquier posición.
 - **`WORKERS_LIST`** (`services/workersService.js`) son las opciones con que toda la app pide la lista de trabajadores (por nombre, en caché 2 h, también en `localStorage`). La clave de la caché sale de ellas: si una pantalla las escribe a mano y difieren, esa pantalla paga su propia lectura de la colección entera.
 - **Elegir a una persona** en un formulario (Anticipos, Resúmenes por grupo) es `WorkerSearchPicker` (`components/`): la misma búsqueda sobre la lista en caché (`useWorkersList`, `hooks/`), con los resultados debajo del campo y Enter para elegir el primero.
@@ -560,6 +561,13 @@ Implementación en `submitCycle` (`screens/jobs/useCycleForm.js`), con el cálcu
   - **Cuesta una lectura por jornada del rango**, como el Calendario; el modal dice cuántas leyó.
 - **Montos**: tarifa líquida fija por día y retención (`employmentConfig/main`, por defecto $18.452 y 15,25%; ⚙ Tarifa, solo admin). El bruto por día se redondea y se multiplica, como la planilla: 3 días dan $65.316 bruto y $55.356 líquido (`feeAmounts`). La tarifa se puede cambiar para una lista, y cada lista guarda la suya.
 - **Una lista guardada** (`FeeListModal`, con las filas en `FeeItemsTable`): se marca cada boleta emitida con su folio (escribir el folio la marca; la fecha es la del día) y se baja en 📊 Excel (`writeFeeListXlsx.js`), una sección por faena con RUT y dígito separados como la planilla. Una lista sin boletas emitidas se puede eliminar. El cálculo de las filas y los totales vive en `utils/feeLists.js`, con tests.
+
+### Listas de imposiciones
+
+- **Pestaña 🏛 Imposiciones** (`screens/workers/ContributionListsTab.jsx`): las listas generadas (`contributionLists`), una por empleador y mes, con si se enviaron al contador.
+- **+ Generar lista** (`GenerateContributionListModal`, propone el mes anterior): quienes tuvieron contrato con el empleador ese mes, una fila por faena (el centro de costo) con sus días trabajados dentro del período del contrato (`contributionRows`, `utils/employment.js`; los días salen igual que en honorarios, con `loadWorkedDays`). Quien tuvo contrato y no trabajó va en "Sin días trabajados" con 0 días. Si el contrato terminó ese mes, la fila pide liquidación y finiquito, con la fecha y el motivo. Los días se editan, las filas se quitan y se puede sumar a alguien.
+- **Solo los días**: sueldo y bono los completa el contador; el Excel los deja en blanco.
+- **Una lista guardada** (`ContributionListModal`, con las filas en `ContributionItemsTable`): se baja en 📊 Excel (`writeContributionListXlsx.js`, una sección por faena como la planilla) y se marca enviada al contador con la fecha del día. Una lista sin enviar se puede eliminar. Las filas y los totales salen de `utils/contributionLists.js`, con tests.
 
 ### Líder de grupo — estricto
 
@@ -854,7 +862,7 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 - Pantalla: `src/screens/AdminConsole.jsx` (arma la página con sus secciones). Ruta `/admin/console` (solo admin).
 - Sus piezas, en `src/screens/adminConsole/`: una sección por archivo (`PingSection`, `AuthDebugSection`, `CollectionCountsSection`, `LogsBreakdownSection`, `WorkdaysByMonthSection`, `WorkdaysByRangeSection`, `WorkdaysByCycleSection`, `NormalizeWorkerNamesSection`, `BackfillWorkerRutFieldSection` y `MigrateAdvanceRutsSection`), la tarjeta plegable `ConsoleCard` y `collections.js` (`MAIN_COLLECTIONS`). Los recuentos están en `services/countsService.js`.
 - Secciones para inspección barata: conteos por colección, workdays por mes (12 reads para todo un año), workdays por rango, workdays por ciclo, más los backfills y el diagnóstico del rol admin.
-- **`MAIN_COLLECTIONS` lista las 42 colecciones de la app**, agrupadas por área. Es una lista a mano: al agregar una colección nueva hay que sumarla acá o queda invisible. El botón **📋 Copiar** baja los conteos ya ejecutados separados por tab, listos para pegar en una planilla.
+- **`MAIN_COLLECTIONS` lista las 43 colecciones de la app**, agrupadas por área. Es una lista a mano: al agregar una colección nueva hay que sumarla acá o queda invisible. El botón **📋 Copiar** baja los conteos ya ejecutados separados por tab, listos para pegar en una planilla.
 - **🧪 Ping al backend**: encola un job en `functionJobs` y espera la respuesta. No llama ningún endpoint porque no hay ninguno invocable (ver Despliegue); ejercita el mismo camino que usa cualquier job. Distingue los tres modos de falla a propósito, porque cada uno se arregla en otro lado: `permission-denied` es que las reglas publicadas no dejan crear el job (o quien aprieta no es admin), el timeout de 45 s es la función sin desplegar o mirando otra base, y un job en `error` es la función corriendo y fallando adentro. Es además el **único** chequeo que prueba que el trigger esté suscrito a `hpdatabase` — el emulador no puede.
 - Usa `getCountFromServer` de Firestore — 1 read por cada 1000 docs vs N con `getDocs`. Permite estimar costos sin descargar la colección.
 - **Composición de logs** (`LogsBreakdownSection`): desglosa `logs` por entidad (~1 lectura por entidad) y mide cuántos documentos borraría un TTL de 6/12/24 meses (3 lecturas), para decidir la retención con números. `LOG_ENTITIES` es una lista a mano: una entidad nueva que no se agregue queda invisible, y la fila "sin clasificar" del total es la que lo delata.

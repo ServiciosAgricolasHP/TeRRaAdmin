@@ -254,6 +254,17 @@ Una lista de boletas de honorarios: las personas a honorarios con un empleador e
 | `items` | `[{ workerId, rut, name, faenaId, faenaName, days, net, withholding, gross, address, commune, issued, folio, issuedAt }]` | una fila por persona y faena. Bruto por día = `round(dailyNet / (1 − withholdingRate))`; bruto = días × eso; retención = bruto − líquido (`feeAmounts`, `utils/employment.js`). `issued`, `folio` e `issuedAt`: la boleta emitida |
 | `totals` | `{ people, days, gross, withholding, net, issued, count }` | denormalizado de `items` (`feeListTotals`), para la lista de la pestaña |
 
+### `contributionLists`
+Una lista de imposiciones para el contador: por empleador y mes, los días imponibles de cada persona con contrato, por faena (el centro de costo). Sueldo y bono los completa el contador. Es un registro: guarda las filas como estaban al generarla.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | autoId |
+| `employerId`, `employerName` | ref→`employers`, string | el nombre, copiado al generar |
+| `month` | string (YYYY-MM) | |
+| `items` | `[{ workerId, rut, name, faenaId, faenaName, days, request, endDate, endReason }]` | una fila por persona y faena; quien tuvo contrato y no trabajó va con `faenaId: ""` y 0 días. `request`: `"payslip"` (liquidación) o `"payslipAndSettlement"` (liquidación y finiquito, si el contrato terminó ese mes, con `endDate` y `endReason`) |
+| `totals` | `{ people, days, count, settlements }` | denormalizado de `items` (`contributionTotals`) |
+| `sentAt` | string (YYYY-MM-DD) \| `""` | cuándo se marcó enviada al contador |
+
 ### `employmentConfig`
 Configuración de contratos y honorarios. Un solo documento, `main`.
 | Campo | Tipo | Notas |
@@ -918,6 +929,6 @@ erDiagram
 - **costCenter → informalExpenses**: gastos sin respaldo tributario, deliberadamente separados de `dteDocuments` para no contaminar la data fiscal.
 - **company → dteDocuments** (`companyId`): los DTE cuelgan de una empresa. El docId es **determinístico** (no autoId) → reimportar el mismo período es idempotente; el "replace por período" borra huérfanos y preserva `paymentStatus`/`payments` existentes.
 - **commitmentSeries → commitments** (`seriesId`): un crédito crea todas sus cuotas de una; un recurrente se extiende día a día desde `generatedUntil`. Cada vencimiento se marca pagado o anulado por separado.
-- **employments + workdays → feeLists**: una lista de honorarios se arma con los días trabajados (jornadas del rango, por faena) de quienes estaban a honorarios con el empleador, y queda como copia: cambiar después las jornadas o la ficha no la toca.
+- **employments + workdays → feeLists / contributionLists**: una lista de honorarios o de imposiciones se arma con los días trabajados (jornadas del rango, por faena) de quienes estaban a honorarios con el empleador, y queda como copia: cambiar después las jornadas o la ficha no la toca.
 - **worker → employments → employer**: cada período cuelga de una persona (`workerId`) y de un empleador (`employerId`). Las acciones masivas (contratar o terminar a varios) escriben en lotes con un solo log.
 - **catalogs / users**: docIds estables (nombre / uid), no autoId.
