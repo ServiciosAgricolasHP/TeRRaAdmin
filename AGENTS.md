@@ -1151,6 +1151,7 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 
 ## Layout
 
+- `components/Layout.jsx` arma la barra lateral, el header y el drawer del teléfono. Sus piezas, en `components/layout/`: `TerraLogo` (el logo, el wordmark y el motivo de circuito), `ThemePicker`, `ProfileModal` (Mi perfil: el alias), `IndicatorsBar` (con `IndicatorChips` y `EditIndicatorsButton`), `IndicatorsModal`, `useIndicators` (carga y guarda `indicators/main`) e `indicators.js`.
 - **Sidebar colapsable** (`layout.sidebarOpen` en `localStorage`): un solo botón ☰ funciona como toggle en desktop y abre drawer en mobile (decidido por `matchMedia("(min-width: 768px)")`).
 - Nav incluye: Dashboard, Faenas, Calendario, Trabajadores, Transportes, Anticipos / Bonos, Nómina, Facturación, Cheques y pagos, Links útiles. Items admin (Usuarios, Auditoría, Migrar CSV, Limpiar pagados, Consola) se ven solo con `isAdmin`.
 - **Versión en el header** — `TeRRA v{mayor}.{menor}.{commits}`, armada en build-time por `vite.config.js` e inyectada como `__APP_VERSION__`. Sirve para diagnosticar caché PWA viejo de un vistazo: si el header sigue mostrando una versión anterior tras un deploy, el SW tiene un bundle stale.
