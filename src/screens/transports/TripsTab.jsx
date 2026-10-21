@@ -9,6 +9,7 @@ import { useIsMobile } from "../../hooks/useIsMobile";
 import { useToast } from "../../contexts/ToastContext";
 import { fmtCurrency } from "../../utils/format";
 import { isoDateNDaysAgo, DEFAULT_HISTORY_DAYS } from "./historyRange";
+import ScreenLoader from "../../components/ScreenLoader";
 
 // ============================================================
 // PESTAÑA VUELTAS
@@ -361,7 +362,7 @@ export function TripsTab({ initialCarrierId = null }) {
       </div>
 
       {loading ? (
-        <div className="py-8 text-center text-sm text-[var(--color-muted)]">Cargando...</div>
+        <ScreenLoader />
       ) : filtered.length === 0 ? (
         <div className="rounded-md border border-dashed border-[var(--color-border)] py-8 text-center text-sm text-[var(--color-muted)]">
           Sin vueltas

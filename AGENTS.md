@@ -141,6 +141,7 @@ src/
     adminConsole/       ← las secciones de la Consola admin
     calendar/           ← las piezas del Calendario
     dashboard/          ← las piezas del Dashboard
+    users/              ← las piezas de Usuarios
   contexts/             ← AuthContext, ThemeContext, CatalogsContext, CarriersContext
   services/             ← capa de datos (Firestore CRUD + caché + auditoría)
                         firestoreBase, transportsService, carriersService,
@@ -250,7 +251,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 - **Idioma.** Los textos de la interfaz, los comentarios y las descripciones de los tests (`describe`/`it`) van en español neutro, sin voseo. Los identificadores, nombres de archivo, claves y valores técnicos y los campos nuevos de Firestore van en inglés, aunque el código de alrededor use nombres en español, y los términos del negocio se nombran como dice el Glosario (abajo). Los campos ya guardados (`faenaId`, `padron`) conservan su nombre.
 - **Los comentarios y la documentación describen lo que hace el código, como si siempre hubiera sido así.** No cuentan la historia (el error que motivó un cambio, la versión anterior, lo que se descartó), ni planes o estados transitorios, ni fases o tareas por nombre. Si el código ya lo dice, no se comenta. Una restricción se escribe como comportamiento ("compara el rol sin distinguir mayúsculas"). Vale también para este archivo y los README.
 - **Mayúsculas de lo que se escribe a mano** (`utils/textCase.js`, con tests). Se corrigen al guardar, no mientras se escribe:
-  - **Nombres de registros como título** (`toTitleName`): faena, ubicación, subfaena, labor y su agrupación, quincena, transportista (nombre y alias), centro de costo, alias de empresa, ficha de Información y Cuentas, faena, labor y lugar del Libro de Precios, y la nota de anticipos y bonos. Los conectores van en minúscula ("Poda y Amarre de Parrones") y los artículos solo después de "de"/"del" ("Fundo Los Robles", "Quincena de la Cosecha"). Lugar y destino de las vueltas pasan por `titleCase` en `transportsService`.
+  - **Nombres de registros como título** (`toTitleName`): faena, ubicación, subfaena, labor y su agrupación, quincena, transportista (nombre y alias), centro de costo, alias de empresa, ficha de Agenda y Cuentas, faena, labor y lugar del Libro de Precios, y la nota de anticipos y bonos. Los conectores van en minúscula ("Poda y Amarre de Parrones") y los artículos solo después de "de"/"del" ("Fundo Los Robles", "Quincena de la Cosecha"). Lugar y destino de las vueltas pasan por `titleCase` en `transportsService`.
   - **Notas libres**: `unshout` solo las corrige si vienen **enteras en mayúsculas** (pasan a oración). Si tienen alguna minúscula, se respetan. Cubre las notas de faena, subfaena, ciclo, día del ciclo, transportista, vuelta, abono, resumen, quincena, factura y pago de factura, ficha y Libro de Precios.
   - **Quedan fuera a propósito**: la razón social (es el nombre legal del SII), el titular y el giro de las fichas (se copian al banco y al SII), el alias de los vehículos (las vueltas lo guardan como texto y dejarían de calzar), los líderes de grupo (se comparan como texto: `CHILENOS`, `EXTRANJEROS`) y los nombres de trabajadores (`toProperName`, con su propio flujo).
   - Al editar un ciclo, el prefijo "Faena/Subfaena/" de su etiqueta se reconoce sin distinguir mayúsculas, porque un ciclo antiguo puede traerlo en mayúsculas.
@@ -259,7 +260,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
   - Mientras se guarda, `dirty` va en `false`: el modal lo cierra quien guardó.
   - El modal no guarda la copia inicial: la arma cada formulario, con `useState(valores)` en el primer render, desde las props, o en el mismo efecto que llena el formulario.
   - Escape cierra solo el modal de arriba, y el clic afuera cuenta solo si también empezó afuera: arrastrar una selección desde un campo hasta el fondo no cierra.
-  - Conectado en las fichas y formularios de edición: trabajador (y el alta desde el selector de trabajadores), Cheques y pagos, anticipos y bonos, faena, subfaena, ciclo y labor, anotación del día, bonos, configuración del día y líderes por defecto de la grilla, vuelta, transportista, quincena, gasto informal, notas de una factura, prefijo QR, pesaje, ficha de Información y Cuentas, link, Libro de Precios, cuenta nueva, saludos, perfil e indicadores. En la grilla móvil del ciclo cada campo se guarda al salir de él, así que solo avisa por lo que se está escribiendo.
+  - Conectado en las fichas y formularios de edición: trabajador (y el alta desde el selector de trabajadores), Cheques y pagos, anticipos y bonos, faena, subfaena, ciclo y labor, anotación del día, bonos, configuración del día y líderes por defecto de la grilla, vuelta, transportista, quincena, gasto informal, notas de una factura, prefijo QR, pesaje, ficha de Agenda y Cuentas, link, Libro de Precios, cuenta nueva, saludos, perfil e indicadores. En la grilla móvil del ciclo cada campo se guarda al salir de él, así que solo avisa por lo que se está escribiendo.
 - **La fecha de hoy (`YYYY-MM-DD`) sale de `localIsoDate()`** (`utils/dates.js`), nunca de `toISOString().slice(0, 10)`: esa da la fecha en UTC, y en Chile desde las 20 o 21 h ya es el día siguiente. Una marca de tiempo completa (`paidAt`, `createdAt`) sí va con `toISOString()`, porque es un instante y no un día.
 - **Las imágenes que se copian o descargan salen siempre en el tema claro**, sea cual sea el tema de quien las genera: `captureFullWidthBlob` / `captureFullWidthDataUrl` (`utils/imageCapture.js`) le ponen al clon fondo blanco y redefinen las variables `--color-*` con `LIGHT_PALETTE`. Esa lista es copia de `:root` en `index.css`, y un test (`imageCapture.test.js`) falla si se separan.
 
@@ -306,6 +307,8 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Cheques y pagos | `commitment` | `commitments` |
 | Tarea del backend (Cloud Functions) | `functionJob` | `functionJobs` |
 | Agenda telefónica / contacto de la agenda | `phoneBook` / `phoneContact` | `phoneContacts` |
+| Pantalla de carga | `screenLoader` | |
+| Cumpleaños | `birthday` | dentro de `users` |
 
 Los nombres guardados en Firestore se conservan aunque no calcen con la tabla (las colecciones `faenas` y `transportPayrolls`, el campo `faenaId`, el campo `payrollId` de un resumen, los campos en español de `dteDocuments`): el código los lee y escribe con su nombre guardado. La lista con el nombre propuesto para cada uno está en `docs/data-model.md` ("Nombres en español pendientes de migración"); un campo nuevo nace en inglés.
 
@@ -513,7 +516,7 @@ Implementación en `submitCycle` (`screens/jobs/useCycleForm.js`), con el cálcu
 - Auto-detect badge **RUT** vs **Nombre** (basado en `detectQueryKind`: empieza con dígito → RUT).
 - **Filtros opcionales** (componibles con la búsqueda): dropdown 👥 Líder (con opción "— Sin líder —" + lista única extraída del dataset completo) y chips toggle 💵 Efectivo / 🏦 Transferencia. Los filtros ignoran el gate de `MIN_SEARCH` — activar cualquiera muestra resultados aunque la query esté vacía. Al editar/eliminar/togglear banco desde la grilla, `refreshCache()` re-trae la lista para reflejar el cambio.
 - Acciones por fila: 📊 Resumen, Editar, ✕. La forma de pago se muestra como **indicador informativo** (`💵 Efectivo` / `🏦 Transferencia`) — no es toggle. El cambio de banco se hace adentro de `WorkerEditModal`, que tiene un botón **🆔 Asignar Cuenta RUT** que setea Banco Estado + Cuenta RUT en un click usando el RUT del trabajador.
-- **Click sobre un RUT lo copia al portapapeles**: el del trabajador, y en escritorio también el RUT de pago. Va con puntos y guion, el mismo formato que copia Información y Cuentas. En el teléfono el RUT de la tarjeta lleva 📋 para que se note que se puede tocar.
+- **Click sobre un RUT lo copia al portapapeles**: el del trabajador, y en escritorio también el RUT de pago. Va con puntos y guion, el mismo formato que copia Agenda y Cuentas. En el teléfono el RUT de la tarjeta lleva 📋 para que se note que se puede tocar.
 - **Los IDs QR son de solo lectura en la ficha del trabajador** (`WorkerEditModal`, que también se abre desde la grilla del ciclo). Se asignan en Cosecha QR con `assignQrCode`, que le quita el código a quien lo tenía y actualiza el padrón de `qrPrefixes` con que la app de escaneo resuelve un QR sin señal. Al guardar, la ficha no escribe `idQr`: viene de la caché de 2 h y podría pisar una reasignación hecha en Cosecha QR. Un trabajador nuevo nace con `idQr: []`.
 - **Doc id = RUT con que se creó la ficha**, y es el id estable (`workerId`). El RUT vigente está en el campo `rut`, que puede diferir si se corrigió una cédula (ver `docs/data-model.md`).
 - **Se cruza por el id y se muestra siempre `worker.rut`.** Una jornada, un item de nómina o una entrada de labor guardan el RUT del momento en que se crearon, y ese valor sigue siendo la clave de los cruces. Para mostrarlo se pasa por `currentRutResolver(workers)` (`utils/workerRut.js`), que lo traduce al vigente con la lista de trabajadores ya cargada, sin lecturas extra. Lo usan Nómina (vista previa, detalle, impresiones, XLSX y Pagos anteriores, que además agrupa por `workerId`), la grilla del ciclo (`_displayRut` en las filas) y Pesajes QR.
@@ -823,7 +826,8 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 - Pantalla: `src/screens/Users.jsx`. Ruta `/admin/users` (solo admin). Colección `users`.
 - Lista los perfiles (1 lectura por perfil) con correo, alias, rol, estado, "Visto por última vez" y "Último cambio". El correo y la hora de la visita los escribe cada cuenta desde la app (ver Auth): un perfil de alguien que todavía no entra sale "Sin correo todavía".
 - **Último cambio** es el último registro de auditoría de la cuenta, con su entidad ("hace 3 h · Jornada") y, al pasar el mouse, la acción y la hora exacta. Cuesta 1 lectura por cuenta (`logs` por `uid`, `timestamp` descendente, `limit 1`) y necesita el índice compuesto `uid ↑ + timestamp ↓`: si falta, la pantalla lo avisa con el enlace para crearlo. No ve a quien solo miró sin modificar nada; eso lo dice "Visto por última vez".
-- Acciones por cuenta: **Hacer admin / Quitar admin**, **Suspender / Reactivar** (`disabled`), **Contraseña** (el correo de Firebase para elegir una nueva, en español) y **Saludos** (ver Saludos personalizados).
+- Acciones por cuenta: **Hacer admin / Quitar admin**, **Suspender / Reactivar** (`disabled`), **Contraseña** (el correo de Firebase para elegir una nueva, en español), **Saludos** (ver Saludos personalizados) y **Cumpleaños** (`screens/users/BirthdayModal.jsx`).
+- **Cumpleaños** (`birthday`, `"MM-DD"` sin año): lo carga solo un admin, desde Usuarios, y la tarjeta lo muestra; la persona no lo edita en Mi perfil. Las reglas aceptan `"MM-DD"` o vacío, y solo de un admin. El día y el mes se eligen en `screens/users/BirthdayField.jsx`, que no deja una fecha que no existe. Lo usa la pantalla de carga, desde la próxima vez que esa cuenta abre la app.
 - **Límites**, los mismos en `firestore.rules` y en `utils/userAccounts.js`, con tests en los dos lados:
   - Nadie cambia su propio rol ni suspende su propia cuenta. Por eso siempre queda al menos un admin: el que actúa no puede quitarse el rol.
   - Un admin no se suspende: primero se le quita el rol.
@@ -1071,7 +1075,7 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 - Cada entrada lleva N líneas de precio: `unit` (texto libre), `payPrice` (pago) vs `chargePrice` (cobro), y para unidades de jornada opcionalmente el par de hora extra. Las unidades nuevas se acumulan solas en el catálogo compartido `priceBookConfig/main.units`.
 - `priceBookConfig/main.hiddenFaenaIds` esconde del selector faenas reales cuyo nombre no es legible.
 
-## Información y Cuentas / InfoAccounts
+## Agenda y Cuentas / InfoAccounts
 
 - Pantalla: `src/screens/InfoAccounts.jsx`. Ruta `/info-cuentas`. Dos pestañas: **📞 Agenda telefónica** (colección `phoneContacts`) y **🏦 Información y cuentas** (colección `contactCards`). Abre en la última elegida (`infoAccounts.tab` en `localStorage`), la agenda la primera vez.
 - Sus piezas, en `src/screens/infoAccounts/`:
@@ -1155,6 +1159,23 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
   - **Subir de versión**: `npm version minor --no-git-tag-version` (actualiza `package.json` y el lock) y commit; el conteo vuelve a 0 solo. Un commit que reformatee la línea `"version"` también reinicia el conteo.
   - Ojo en CI: sin `fetch-depth: 0` el conteo da 0.
 
+## Pantalla de carga
+
+- `components/ScreenLoader.jsx`: la animación del día (un gato) con el texto debajo, en el color del tema. Va al abrir la app (`ProtectedRoute`) y en la carga de una pantalla o de una pestaña. Un modal, un botón, una lista desplegable o una sección chica siguen con el texto solo.
+- **La animación aparece pasados 300 ms**: una carga que sale de la caché termina antes y no deja un parpadeo. El texto se ve desde el inicio y la imagen se pide de inmediato. Con movimiento reducido en el sistema queda solo el texto.
+- **Cuál toca lo decide `screenLoaderFor(fecha, cumpleaños)`** (`utils/screenLoaders.js`, con tests), en este orden:
+  1. el cumpleaños de quien mira (`users/{uid}.birthday`), solo ese día; el 29 de febrero, el 28 en los años que no son bisiestos;
+  2. una fecha especial: San Valentín (8 al 14 de febrero), vuelta a clases (1 al 7 de marzo), Día de la Mujer (8 de marzo), el 9 de septiembre (el gato camina hacia la izquierda), Fiestas Patrias (10 al 20 de septiembre), Halloween (25 al 31 de octubre), Día de la Secretaria (3 de diciembre), Navidad (15 al 31 de diciembre) y Semana Santa (del Domingo de Ramos al de Pascua, calculada para cada año);
+  3. la lluvia, de mayo a agosto, día por medio con la estación;
+  4. la estación en Chile: verano (21 de diciembre al 20 de marzo), otoño (21 de marzo al 20 de junio) e invierno (21 de junio al 22 de septiembre);
+  5. la general, que es también la de primavera, turnándose por día con la que duerme y la que empuja la caja (`GENERAL_ROTATION`).
+
+  Los turnos van por días corridos (`dayNumber`) y no por el día del mes, así el 31 y el 1 no repiten.
+- **Los procesos largos de Nómina** (generar, pagar y eliminar, en `screens/payroll/ProgressOverlay.jsx`) muestran el gato que persigue su cola (`BUSY_LOADER_FILE`) en vez de un spinner.
+- **Los archivos viven en `public/loaders/`** (WebP animado, de 30 a 380 KB) y se nombran en `SCREEN_LOADER_FILES` y `BUSY_LOADER_FILE`. Un test falla si sobra o falta uno. Para sumar una fecha: el archivo, su entrada en `SCREEN_LOADER_FILES` y su rango en `FESTIVITIES`.
+- **Nadie descarga las de todas las fechas**: la app instalada guarda la general y la de los procesos largos al instalarse (`globPatterns` en `vite.config.js`), y cada una de las otras la primera vez que sale (`CacheFirst`, caché `screen-loaders`).
+- **Al abrir la app el perfil todavía no llegó**: el cumpleaños de la última cuenta que la abrió en ese navegador queda en `localStorage` (`screenLoader.birthday`, `rememberBirthday` en `services/userPrefsService.js`), así la primera carga no cambia de animación cuando llega el perfil.
+
 ## Env
 
 - `.env` ignorado en git pero necesita credenciales de Firebase.
@@ -1175,14 +1196,14 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 /facturacion                   Facturación (import RCV del SII)
 /cheques-pagos                 Cheques y pagos (vencimientos y avisos por correo)
 /price-book                    Libro de Precios
-/info-cuentas                  Información y Cuentas (libreta de contactos)
+/info-cuentas                  Agenda y Cuentas (agenda telefónica y fichas con datos bancarios)
 /links                         Links útiles
 /calendar                      Calendario mensual
 /audit                         Auditoría (admin only)
 /admin/migrate-workers         Importar trabajadores desde CSV (admin)
 /admin/cleanup-paid-workdays   Limpieza de workdays ya pagados (admin)
 /admin/console                 Consola admin: Firestore counts (admin only)
-/admin/users                   Usuarios: rol, suspensión, contraseña y saludos (admin)
+/admin/users                   Usuarios: rol, suspensión, contraseña, saludos y cumpleaños (admin)
 /harvest-qr                    Pesajes QR: explorador y sincronización → workdays (/admin/harvest-qr redirige)
 *                              NotFound (catch-all dentro y fuera del Layout)
 ```
@@ -1195,7 +1216,7 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 
 - Configurada via `vite-plugin-pwa` en `vite.config.js` con `registerType: 'autoUpdate'`. Genera `manifest.webmanifest`, `sw.js` y `registerSW.js` en `dist/` al build.
 - **Instalación**: se abre la URL desplegada en Chrome (Android) o Safari (iOS) → el navegador ofrece "Instalar app" / "Agregar a pantalla de inicio" → queda ícono en el escritorio que abre la app en standalone (sin barra de URL).
-- **Precache**: solo assets estables, `globPatterns: ['**/*.{ico,png,svg,woff2}']`. JS, CSS y HTML cambian de nombre en cada deploy: un `index.js` precacheado apuntaría a chunks que el deploy nuevo ya borró, así que van por NetworkFirst (`runtimeCaching` en `vite.config.js`). Límite de 5 MB por archivo.
+- **Precache**: solo assets estables, `globPatterns: ['**/*.{ico,png,svg,woff2}', 'loaders/cat-default.webp', 'loaders/cat-chasing-tail.webp']` (de las animaciones, solo la general y la de los procesos largos; ver "Pantalla de carga"). JS, CSS y HTML cambian de nombre en cada deploy: un `index.js` precacheado apuntaría a chunks que el deploy nuevo ya borró, así que van por NetworkFirst (`runtimeCaching` en `vite.config.js`). Límite de 5 MB por archivo.
 - **Cache de datos**: NO interceptamos las llamadas a Firestore — el SDK de Firebase ya maneja su propio cache offline en IndexedDB. Habilitar `enableIndexedDbPersistence` si queremos offline-first más agresivo.
 - **navigateFallback: null** intencional. No queremos que el SW devuelva `index.html` para rutas desconocidas porque romperíamos el truco 404.html → `?/path` de GitHub Pages.
 - **Auto-update**: cuando se publica una versión nueva (merge a `main` → Actions, o `npm run deploy` a mano), el SW detecta el cambio en `sw.js` en la próxima navegación y se actualiza sin prompt al usuario (el reload siguiente toma la versión nueva).

@@ -11,6 +11,7 @@ import {
   resolveEntityLabel,
 } from "../utils/auditLabels";
 import { localIsoDate } from "../utils/dates";
+import ScreenLoader from "../components/ScreenLoader";
 
 // Auditoría por sesiones de inactividad: lee los logs del rango elegido, los
 // agrupa por usuario y corta una sesión cada vez que la pausa entre dos
@@ -707,7 +708,7 @@ export default function Audit() {
 
       {/* Sesiones */}
       {loading ? (
-        <div className="py-8 text-center text-sm text-[var(--color-muted)]">Cargando…</div>
+        <ScreenLoader />
       ) : ranAt && sessions.length === 0 ? (
         <div className="rounded-md border border-dashed border-[var(--color-border)] py-8 text-center text-sm text-[var(--color-muted)]">
           Sin actividad en el rango seleccionado.

@@ -8,7 +8,7 @@ const TABS = [
 ];
 const TAB_KEY = "infoAccounts.tab";
 
-// Información y Cuentas: la agenda telefónica y las fichas con datos
+// Agenda y Cuentas: la agenda telefónica y las fichas con datos
 // bancarios, en dos pestañas. Abre en la última elegida (la agenda, la
 // primera vez).
 export default function InfoAccounts() {
@@ -22,7 +22,7 @@ export default function InfoAccounts() {
 
   return (
     <div>
-      <h1 className="mb-3 text-2xl font-semibold tracking-tight">Información y Cuentas</h1>
+      <h1 className="mb-3 text-2xl font-semibold tracking-tight">Agenda y Cuentas</h1>
       <div className="mb-4 flex flex-wrap gap-1 border-b border-[var(--color-border)]" role="tablist">
         {TABS.map((t) => (
           <button

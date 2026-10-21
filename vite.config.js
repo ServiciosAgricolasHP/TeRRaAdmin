@@ -67,8 +67,10 @@ export default defineConfig({
         // Precachea SOLO assets estables (imágenes, fuentes, íconos). JS, CSS y
         // HTML cambian de nombre (hash) en cada deploy: un index.js precacheado
         // apuntaría a chunks que el deploy nuevo ya borró. Esos van por
-        // NetworkFirst (ver runtimeCaching).
-        globPatterns: ['**/*.{ico,png,svg,woff2}'],
+        // NetworkFirst (ver runtimeCaching). De las animaciones de
+        // `public/loaders/` van la general y la de los procesos largos; las
+        // demás se guardan la primera vez que salen.
+        globPatterns: ['**/*.{ico,png,svg,woff2}', 'loaders/cat-default.webp', 'loaders/cat-chasing-tail.webp'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         // El SW nuevo toma control de las pestañas abiertas apenas se activa,
         // sin esperar a que se cierren.
@@ -89,6 +91,16 @@ export default defineConfig({
               cacheName: 'app-shell',
               networkTimeoutSeconds: 3,
               expiration: { maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 * 7 },
+            },
+          },
+          {
+            // Animaciones de la pantalla de carga (`public/loaders/`): no
+            // cambian, así que después de la primera vez salen de la caché.
+            urlPattern: ({ url }) => url.pathname.includes('/loaders/'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'screen-loaders',
+              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 },
             },
           },
           {

@@ -10,6 +10,7 @@ import { GREETING_FIELDS } from "../utils/greetings";
 import { entityLabelEs } from "../utils/auditLabels";
 import {
   ROLE_OPTIONS,
+  birthdayLabel,
   isAdminRole,
   lastSeenLabel,
   parseNewAccount,
@@ -19,6 +20,8 @@ import {
   sortProfiles,
   suspendBlock,
 } from "../utils/userAccounts";
+import ScreenLoader from "../components/ScreenLoader";
+import BirthdayModal from "./users/BirthdayModal";
 
 const nameOf = (p) => p.alias || p.email || p.id;
 const dateOf = (ts) => (ts?.toDate ? ts.toDate() : null);
@@ -126,6 +129,7 @@ export default function Users() {
   const [action, setAction] = useState(null);
   const [busy, setBusy] = useState(false);
   const [greetingsOf, setGreetingsOf] = useState(null);
+  const [birthdayOf, setBirthdayOf] = useState(null);
   const [creating, setCreating] = useState(false);
   const lastChanges = useLastChanges(profiles, reloadKey);
 
@@ -194,7 +198,7 @@ export default function Users() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Usuarios</h1>
           <p className="text-sm text-[var(--color-muted)]">
-            Cuentas con acceso a TeRRa: rol, suspensión, contraseña y saludos.
+            Cuentas con acceso a TeRRa: rol, suspensión, contraseña, saludos y cumpleaños.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -241,7 +245,7 @@ export default function Users() {
       ) : null}
 
       {loading && profiles.length === 0 ? (
-        <div className="py-10 text-center text-sm text-[var(--color-muted)]">Cargando…</div>
+        <ScreenLoader />
       ) : sorted.length === 0 ? (
         error ? null : (
           <div className="rounded-lg border border-dashed border-[var(--color-border)] py-12 text-center text-sm text-[var(--color-muted)]">
@@ -258,6 +262,7 @@ export default function Users() {
               lastChange={lastChanges.error ? undefined : { loading: lastChanges.loading, log: lastChanges.byUid[p.id] }}
               onAction={(kind) => setAction({ kind, profile: p })}
               onGreetings={() => setGreetingsOf(p)}
+              onBirthday={() => setBirthdayOf(p)}
             />
           ))}
         </div>
@@ -283,6 +288,24 @@ export default function Users() {
           onSaved={(greetings) => {
             patch(greetingsOf.id, { greetings });
             setGreetingsOf(null);
+          }}
+        />
+      )}
+
+      {birthdayOf && (
+        <BirthdayModal
+          profile={birthdayOf}
+          name={nameOf(birthdayOf)}
+          onClose={() => setBirthdayOf(null)}
+          onSave={async (birthday) => {
+            try {
+              await usersService.update(birthdayOf.id, { birthday });
+              patch(birthdayOf.id, { birthday });
+              toast.success("Cumpleaños guardado");
+              setBirthdayOf(null);
+            } catch (err) {
+              toast.error(errorMessage(err));
+            }
           }}
         />
       )}
@@ -503,7 +526,7 @@ function ActionButton({ children, onClick, disabled = false, danger = false }) {
 
 // `lastChange`: `{ loading, log }` con el último registro de auditoría de la
 // cuenta (`log` null si no tiene), o undefined si no se pudo leer.
-function UserCard({ profile, myUid, lastChange, onAction, onGreetings }) {
+function UserCard({ profile, myUid, lastChange, onAction, onGreetings, onBirthday }) {
   const [copied, setCopied] = useState(false);
   const isMe = profile.id === myUid;
   const admin = isAdminRole(profile.role);
@@ -560,6 +583,9 @@ function UserCard({ profile, myUid, lastChange, onAction, onGreetings }) {
         Visto por última vez: {isMe ? "ahora" : lastSeenLabel(dateOf(profile.lastSeenAt))}
       </div>
       {lastChange && <LastChangeLine {...lastChange} />}
+      {birthdayLabel(profile.birthday) && (
+        <div className="text-xs text-[var(--color-muted)]">Cumpleaños: {birthdayLabel(profile.birthday)}</div>
+      )}
 
       <div className="mt-3 flex flex-wrap gap-1.5">
         {!isMe && (
@@ -576,6 +602,7 @@ function UserCard({ profile, myUid, lastChange, onAction, onGreetings }) {
           Contraseña
         </ActionButton>
         <ActionButton onClick={onGreetings}>Saludos</ActionButton>
+        <ActionButton onClick={onBirthday}>Cumpleaños</ActionButton>
       </div>
 
       {reasons.filter(Boolean).map((r) => (

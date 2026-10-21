@@ -10,6 +10,7 @@ import { comboKey, mapHarvestCodes, qualityLabel, containerLabel } from "../../u
 import { currentRutResolver } from "../../utils/workerRut";
 import { daysAgoKey, todayKey, readsLabel, TAP } from "./helpers";
 import { WeightFormModal } from "./WeightFormModal";
+import ScreenLoader from "../../components/ScreenLoader";
 
 // TTL del explorador de pesajes. Los pesajes cambian todo el rato mientras se
 // cosecha y ningún TTL deja la pantalla fresca: la antigüedad se muestra y el
@@ -396,7 +397,7 @@ export function WeightsExplorer({ prefixes, jobById }) {
       )}
 
       {busy ? (
-        <p className="text-sm text-[var(--color-muted)]">Cargando pesajes…</p>
+        <ScreenLoader label="Cargando pesajes…" />
       ) : view.count === 0 ? (
         <p className="rounded-md border border-dashed border-[var(--color-border)] p-6 text-center text-sm text-[var(--color-muted)]">
           No hay pesajes en este rango{prefixFilter || search ? " con los filtros aplicados" : ""}.

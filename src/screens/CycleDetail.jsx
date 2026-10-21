@@ -89,6 +89,7 @@ import { useDayNotes } from "./cycleDetail/useDayNotes";
 import { useLaborForm } from "./cycleDetail/useLaborForm";
 import { useCycleClosing } from "./cycleDetail/useCycleClosing";
 import { useCycleTransports } from "./cycleDetail/useCycleTransports";
+import ScreenLoader from "../components/ScreenLoader";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -711,7 +712,7 @@ export default function CycleDetail() {
     [days, readOnly, qrLocked, isHarvestLabor, isPieceworkLabor, isPieceworkStagesLabor, isOvertimeDayLabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, catalogs, dayPrices, activeLabor, overtimeDayView, harvestView, pieceworkView, activeLaborDayNotes, legacyDayNotes, activeLaborDatesWithProduction, daysWithFloor, isMobile],
   );
 
-  if (loading) return <div className="text-[var(--color-muted)]">Cargando...</div>;
+  if (loading) return <ScreenLoader />;
   if (!cycle) return <div className="text-[var(--color-muted)]">Ciclo no encontrado.</div>;
 
   const grid = (

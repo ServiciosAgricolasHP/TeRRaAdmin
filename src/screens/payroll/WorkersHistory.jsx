@@ -8,6 +8,7 @@ import { currentRutResolver } from "../../utils/workerRut";
 import { fmtCurrency } from "../../utils/format";
 import { WorkerDetail } from "./WorkerDetail";
 import { FaenaFilterPopover } from "./FaenaFilterPopover";
+import ScreenLoader from "../../components/ScreenLoader";
 
 // ─────────────────── Pagos anteriores (WorkersHistory) ───────────────────
 // Buscador de pagos por trabajador. Carga todas las nóminas (sin tope) y
@@ -286,7 +287,7 @@ export function WorkersHistory({ faenas, workers }) {
   };
 
   if (loading) {
-    return <div className="flex flex-1 items-center justify-center text-[var(--color-muted)]">Cargando nóminas…</div>;
+    return <ScreenLoader label="Cargando nóminas…" className="flex-1" />;
   }
 
   return (

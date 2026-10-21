@@ -48,6 +48,7 @@ import { DocListToolbar } from "./billing/DocListToolbar";
 import { useBillingData } from "./billing/useBillingData";
 import { useRcvImport } from "./billing/useRcvImport";
 import { useDocUpdates } from "./billing/useDocUpdates";
+import ScreenLoader from "../components/ScreenLoader";
 
 // Tamaño de página de la tabla principal. La vista plana pagina siempre, haya
 // o no búsqueda, para que meses con cientos de docs no rendericen todo.
@@ -370,9 +371,7 @@ export default function Billing() {
       )}
 
       {loading ? (
-        <div className="flex h-40 items-center justify-center text-[var(--color-muted)]">
-          Cargando...
-        </div>
+        <ScreenLoader />
       ) : noCompany ? (
         <div className="flex h-60 flex-col items-center justify-center gap-3 rounded-md border border-dashed border-[var(--color-border)] text-sm text-[var(--color-muted)]">
           <div>No hay empresas registradas todavía.</div>

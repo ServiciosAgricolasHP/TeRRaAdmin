@@ -9,6 +9,7 @@ import { PrefixFormModal } from "./harvestQr/PrefixFormModal";
 import { QrManager } from "./harvestQr/QrManager";
 import { SyncModal } from "./harvestQr/SyncModal";
 import { WeightsExplorer } from "./harvestQr/WeightsExplorer";
+import ScreenLoader from "../components/ScreenLoader";
 
 // Puente entre los prefijos QR físicos (impresos de antemano, app scan_IS) y
 // el (faena, ciclo, labor) vigente al que se sincronizan sus pesajes.
@@ -164,7 +165,7 @@ export default function HarvestQr() {
       )}
 
       {tab === "sync" && (loading ? (
-        <p className="text-sm text-[var(--color-muted)]">Cargando…</p>
+        <ScreenLoader />
       ) : prefixes.length === 0 ? (
         <p className="rounded-md border border-dashed border-[var(--color-border)] p-6 text-center text-sm text-[var(--color-muted)]">
           No hay prefijos configurados todavía.

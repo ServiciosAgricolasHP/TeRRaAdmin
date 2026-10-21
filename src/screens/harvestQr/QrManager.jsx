@@ -10,6 +10,7 @@ import { AssignQrModal } from "./AssignQrModal";
 import { BackfillQrModal } from "./BackfillQrModal";
 import { WORKERS_TTL_MS, readsLabel, TAP } from "./helpers";
 import { TypeToConfirm } from "./TypeToConfirm";
+import ScreenLoader from "../../components/ScreenLoader";
 
 // Gestión de los QR físicos asignados a trabajadores.
 //
@@ -300,7 +301,7 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
     }
   };
 
-  if (loading) return <p className="text-sm text-[var(--color-muted)]">Cargando trabajadores…</p>;
+  if (loading) return <ScreenLoader label="Cargando trabajadores…" />;
 
   return (
     <div className="space-y-3">

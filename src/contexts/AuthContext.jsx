@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
-import { userPrefsService } from "../services/userPrefsService";
+import { rememberBirthday, userPrefsService } from "../services/userPrefsService";
 import { accessOf, visitDue } from "../utils/userAccounts";
 
 const AuthContext = createContext(null);
@@ -37,6 +37,7 @@ export function AuthProvider({ children }) {
         try {
           const profile = await loadProfile(fbUser);
           setUser(profile);
+          rememberBirthday(profile.birthday);
           if (profile.access !== "none") {
             lastVisitRef.current = Date.now();
             recordVisit(fbUser.uid, fbUser.email);

@@ -5,6 +5,7 @@ import { hasChanges } from "../utils/formChanges";
 import TextField from "../components/TextField";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { useToast } from "../contexts/ToastContext";
+import ScreenLoader from "../components/ScreenLoader";
 
 const SEED = { text: "De PDF a Word", url: "https://www.ilovepdf.com/es/pdf_a_word" };
 
@@ -155,7 +156,7 @@ export default function InterestLinks() {
       </div>
 
       {loading ? (
-        <div className="text-[var(--color-muted)]">Cargando...</div>
+        <ScreenLoader />
       ) : links.length === 0 ? (
         <div className="rounded-lg border border-dashed border-[var(--color-border)] bg-[var(--color-surface)] p-6 text-center">
           <p className="mb-3 text-sm text-[var(--color-muted)]">

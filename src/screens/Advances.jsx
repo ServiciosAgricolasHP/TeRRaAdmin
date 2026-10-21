@@ -26,6 +26,7 @@ import { useToast } from "../contexts/ToastContext";
 import { matchesSearchQuery } from "../utils/textSearch";
 import { localIsoDate } from "../utils/dates";
 import { toTitleName } from "../utils/textCase";
+import ScreenLoader from "../components/ScreenLoader";
 
 const fmtCurrency = (v) =>
   new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
@@ -250,7 +251,7 @@ export default function Advances() {
 
       <div className={`flex-1 overflow-auto ${isMobile && !loading && filtered.length > 0 ? "" : "rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]"}`}>
         {loading ? (
-          <div className="flex h-40 items-center justify-center text-[var(--color-muted)]">Cargando...</div>
+          <ScreenLoader />
         ) : filtered.length === 0 ? (
           <div className="flex h-40 items-center justify-center text-[var(--color-muted)]">
             Sin movimientos.
