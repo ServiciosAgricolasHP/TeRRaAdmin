@@ -141,6 +141,7 @@ src/
     adminConsole/       ← las secciones de la Consola admin
     calendar/           ← las piezas del Calendario
     dashboard/          ← las piezas del Dashboard
+    users/              ← las piezas de Usuarios
   contexts/             ← AuthContext, ThemeContext, CatalogsContext, CarriersContext
   services/             ← capa de datos (Firestore CRUD + caché + auditoría)
                         firestoreBase, transportsService, carriersService,
@@ -306,6 +307,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Cheques y pagos | `commitment` | `commitments` |
 | Tarea del backend (Cloud Functions) | `functionJob` | `functionJobs` |
 | Agenda telefónica / contacto de la agenda | `phoneBook` / `phoneContact` | `phoneContacts` |
+| Cumpleaños | `birthday` | dentro de `users` |
 
 Los nombres guardados en Firestore se conservan aunque no calcen con la tabla (las colecciones `faenas` y `transportPayrolls`, el campo `faenaId`, el campo `payrollId` de un resumen, los campos en español de `dteDocuments`): el código los lee y escribe con su nombre guardado. La lista con el nombre propuesto para cada uno está en `docs/data-model.md` ("Nombres en español pendientes de migración"); un campo nuevo nace en inglés.
 
@@ -823,7 +825,8 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 - Pantalla: `src/screens/Users.jsx`. Ruta `/admin/users` (solo admin). Colección `users`.
 - Lista los perfiles (1 lectura por perfil) con correo, alias, rol, estado, "Visto por última vez" y "Último cambio". El correo y la hora de la visita los escribe cada cuenta desde la app (ver Auth): un perfil de alguien que todavía no entra sale "Sin correo todavía".
 - **Último cambio** es el último registro de auditoría de la cuenta, con su entidad ("hace 3 h · Jornada") y, al pasar el mouse, la acción y la hora exacta. Cuesta 1 lectura por cuenta (`logs` por `uid`, `timestamp` descendente, `limit 1`) y necesita el índice compuesto `uid ↑ + timestamp ↓`: si falta, la pantalla lo avisa con el enlace para crearlo. No ve a quien solo miró sin modificar nada; eso lo dice "Visto por última vez".
-- Acciones por cuenta: **Hacer admin / Quitar admin**, **Suspender / Reactivar** (`disabled`), **Contraseña** (el correo de Firebase para elegir una nueva, en español) y **Saludos** (ver Saludos personalizados).
+- Acciones por cuenta: **Hacer admin / Quitar admin**, **Suspender / Reactivar** (`disabled`), **Contraseña** (el correo de Firebase para elegir una nueva, en español), **Saludos** (ver Saludos personalizados) y **Cumpleaños** (`screens/users/BirthdayModal.jsx`).
+- **Cumpleaños** (`birthday`, `"MM-DD"` sin año): lo carga solo un admin, desde Usuarios, y la tarjeta lo muestra; la persona no lo edita en Mi perfil. Las reglas aceptan `"MM-DD"` o vacío, y solo de un admin. El día y el mes se eligen en `screens/users/BirthdayField.jsx`, que no deja una fecha que no existe.
 - **Límites**, los mismos en `firestore.rules` y en `utils/userAccounts.js`, con tests en los dos lados:
   - Nadie cambia su propio rol ni suspende su propia cuenta. Por eso siempre queda al menos un admin: el que actúa no puede quitarse el rol.
   - Un admin no se suspende: primero se le quita el rol.
@@ -1182,7 +1185,7 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 /admin/migrate-workers         Importar trabajadores desde CSV (admin)
 /admin/cleanup-paid-workdays   Limpieza de workdays ya pagados (admin)
 /admin/console                 Consola admin: Firestore counts (admin only)
-/admin/users                   Usuarios: rol, suspensión, contraseña y saludos (admin)
+/admin/users                   Usuarios: rol, suspensión, contraseña, saludos y cumpleaños (admin)
 /harvest-qr                    Pesajes QR: explorador y sincronización → workdays (/admin/harvest-qr redirige)
 *                              NotFound (catch-all dentro y fuera del Layout)
 ```

@@ -551,6 +551,7 @@ Perfil de cada cuenta: acceso, rol y preferencias. **DocId = uid de Auth.** Se c
 | `email` | string? | correo de la cuenta; lo escribe la app al abrirse y tiene que ser el del token |
 | `lastSeenAt` | ts? | última vez que se vio la cuenta en la app: al abrirla y, con la app abierta, al volver a ella o usarla, como mucho una vez cada 30 minutos. Las reglas exigen que sea la hora del servidor |
 | `alias` | string? | cómo se firma esta persona en los registros que carga a mano (ej. `harvestWeights.supervisor`). Lo edita el propio usuario desde **Mi perfil** en el header — es una preferencia, no un permiso. Sin alias se usa el correo |
+| `birthday` | string? | cumpleaños, `"MM-DD"` sin año; vacío = sin cumpleaños. Lo carga solo un admin, desde Usuarios, y las reglas solo aceptan ese formato. Ese día la pantalla de carga de esa cuenta usa la animación de cumpleaños |
 | `greetings` | `{ [slot]: string }`? | saludos personalizados por ranura (`GREETING_SLOTS` en `utils/greetings.js`); los edita un admin desde Usuarios. Texto vacío = sin saludo |
 | `faenaLayout` | `{ groups, faenaGroup, faenaColor }` | layout de la pantalla Faenas |
 | `faenaLayoutUpdatedAt` | ts | |
@@ -826,6 +827,7 @@ erDiagram
         string role "admin|user"
         bool   disabled
         string email
+        string birthday
         map    greetings
         map    faenaLayout
     }

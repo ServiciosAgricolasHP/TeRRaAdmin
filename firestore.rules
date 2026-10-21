@@ -35,6 +35,14 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys();
     }
 
+    // El cumpleaños de un perfil es "MM-DD" o vacío.
+    function birthdayOk() {
+      return !changed().hasAny(['birthday'])
+        || request.resource.data.get('birthday', '') == ''
+        || (request.resource.data.birthday is string
+          && request.resource.data.birthday.matches('(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])'));
+    }
+
     // ── Colecciones de la app ──────────────────────────────────────────────
     // Lectura y escritura para cualquier cuenta con perfil. `users`, `logs`,
     // `functionJobs`, `commitmentNotifications` y las del portal de
@@ -56,9 +64,10 @@ service cloud.firestore {
         && (!changed().hasAny(['email']) || request.resource.data.email == request.auth.token.email)
         && (!changed().hasAny(['lastSeenAt']) || request.resource.data.lastSeenAt == request.time);
 
-      // Saludos de cualquier perfil, a cargo de un admin.
+      // Saludos y cumpleaños de cualquier perfil, a cargo de un admin.
       allow update: if isAdmin()
-        && changed().hasOnly(['greetings', 'updatedAt', 'updatedBy']);
+        && changed().hasOnly(['greetings', 'birthday', 'updatedAt', 'updatedBy'])
+        && birthdayOk();
 
       // Rol y suspensión de las otras cuentas. Un admin nunca queda suspendido.
       allow update: if isAdmin() && request.auth.uid != uid

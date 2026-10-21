@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   accessOf,
+  birthdayLabel,
+  birthdayOf,
+  birthdayParts,
+  daysInMonthOf,
+  isBirthdayOn,
+  isValidBirthday,
   isAdminRole,
   lastSeenLabel,
   parseNewAccount,
@@ -167,5 +173,23 @@ describe("sortProfiles", () => {
     const list = [{ id: "b" }, { id: "a" }];
     sortProfiles(list, ME);
     expect(list.map((p) => p.id)).toEqual(["b", "a"]);
+  });
+});
+
+describe("cumpleaños", () => {
+  it("se guarda como MM-DD y solo si es una fecha", () => {
+    expect([birthdayOf(5, 3), birthdayOf(29, 2), birthdayOf(31, 4), birthdayOf(0, 1), birthdayOf(1, 13)]).toEqual(["03-05", "02-29", "", "", ""]);
+    expect([isValidBirthday("12-31"), isValidBirthday("02-30"), isValidBirthday("1-5"), isValidBirthday(""), isValidBirthday(null)]).toEqual([true, false, false, false, false]);
+    expect(birthdayParts("03-05")).toEqual({ day: 5, month: 3 });
+    expect([daysInMonthOf(2), daysInMonthOf(4), daysInMonthOf(12)]).toEqual([29, 30, 31]);
+  });
+
+  it("se muestra con el nombre del mes", () => {
+    expect([birthdayLabel("03-12"), birthdayLabel(""), birthdayLabel("02-30")]).toEqual(["12 de marzo", "", ""]);
+  });
+
+  it("el día del cumpleaños; el 29 de febrero, el 28 en los años no bisiestos", () => {
+    expect([isBirthdayOn("10-20", "2026-10-20"), isBirthdayOn("10-20", "2026-10-21"), isBirthdayOn("", "2026-10-20")]).toEqual([true, false, false]);
+    expect([isBirthdayOn("02-29", "2027-02-28"), isBirthdayOn("02-29", "2028-02-28"), isBirthdayOn("02-29", "2028-02-29"), isBirthdayOn("02-29", "2100-02-28"), isBirthdayOn("02-29", "2000-02-28")]).toEqual([true, false, true, true, false]);
   });
 });

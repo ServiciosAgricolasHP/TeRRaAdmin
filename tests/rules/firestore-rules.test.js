@@ -182,6 +182,19 @@ describe("perfiles (users)", () => {
     );
   });
 
+  it("el cumpleaños lo carga un admin, como MM-DD o vacío", async () => {
+    const admin = as("admin1");
+    await assertSucceeds(updateDoc(doc(admin, "users/sup1"), { birthday: "12-31", ...stamp("admin1") }));
+    await assertSucceeds(updateDoc(doc(admin, "users/sup1"), { birthday: "", ...stamp("admin1") }));
+    await assertSucceeds(updateDoc(doc(admin, "users/admin1"), { birthday: "03-12", ...stamp("admin1") }));
+    await assertFails(updateDoc(doc(admin, "users/sup1"), { birthday: "31-12", ...stamp("admin1") }));
+    await assertFails(updateDoc(doc(admin, "users/sup1"), { birthday: "1990-03-12", ...stamp("admin1") }));
+    await assertFails(updateDoc(doc(admin, "users/sup1"), { birthday: 312, ...stamp("admin1") }));
+    // Nadie más, ni la propia cuenta.
+    await assertFails(setDoc(doc(as("sup1"), "users/sup1"), { birthday: "03-12" }, { merge: true }));
+    await assertFails(updateDoc(doc(as("sup1"), "users/admin1"), { birthday: "01-01" }));
+  });
+
   it("nadie cambia su propio rol ni su suspensión", async () => {
     await assertFails(updateDoc(doc(as("sup1"), "users/sup1"), { role: "admin" }));
     await assertFails(updateDoc(doc(as("admin1"), "users/admin1"), { role: "user", ...stamp("admin1") }));

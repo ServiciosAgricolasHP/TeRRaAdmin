@@ -90,3 +90,53 @@ export function sortProfiles(profiles, myUid) {
   const key = (p) => String(p.email || p.id).toLowerCase();
   return [...profiles].sort((a, b) => rank(a) - rank(b) || key(a).localeCompare(key(b)));
 }
+
+// Cumpleaños del perfil: "MM-DD", sin año. Vacío = sin cumpleaños.
+export const MONTH_NAMES = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+];
+
+// Días de cada mes, con 29 en febrero: el cumpleaños no tiene año.
+const MONTH_DAYS = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+export function daysInMonthOf(month) {
+  return MONTH_DAYS[month - 1] || 31;
+}
+
+export function birthdayParts(birthday) {
+  const m = /^(\d{2})-(\d{2})$/.exec(String(birthday || ""));
+  if (!m) return null;
+  const month = Number(m[1]);
+  const day = Number(m[2]);
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonthOf(month)) return null;
+  return { day, month };
+}
+
+export function isValidBirthday(birthday) {
+  return birthdayParts(birthday) !== null;
+}
+
+// "MM-DD" de un día y un mes, o "" si no forman una fecha.
+export function birthdayOf(day, month) {
+  const value = `${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return isValidBirthday(value) ? value : "";
+}
+
+// "12 de marzo", o "" sin cumpleaños.
+export function birthdayLabel(birthday) {
+  const parts = birthdayParts(birthday);
+  return parts ? `${parts.day} de ${MONTH_NAMES[parts.month - 1]}` : "";
+}
+
+// Si `isoDate` (YYYY-MM-DD) es el cumpleaños. El 29 de febrero se celebra el
+// 28 en los años que no son bisiestos.
+export function isBirthdayOn(birthday, isoDate) {
+  const parts = birthdayParts(birthday);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(isoDate || ""));
+  if (!parts || !m) return false;
+  const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const target = parts.month === 2 && parts.day === 29 && !leap ? { month: 2, day: 28 } : parts;
+  return target.month === month && target.day === day;
+}
