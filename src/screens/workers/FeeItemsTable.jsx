@@ -2,6 +2,8 @@ import { fmtCurrency } from "../../utils/format";
 import { formatRutForDisplay } from "../../utils/rutUtils";
 import { feeItemKey, itemsByFaena } from "../../utils/feeLists";
 
+const daysLabel = (n) => `${n} día${n === 1 ? "" : "s"}`;
+
 const cellInput =
   "rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-1 text-sm outline-none focus:border-[var(--color-accent)]";
 
@@ -49,7 +51,7 @@ export default function FeeItemsTable({ items, mode, onChange, onRemove }) {
           <h3 className="mb-1 text-sm font-semibold">
             {g.faenaName}
             <span className="font-normal text-[var(--color-muted)]">
-              {" "}· {g.items.length} · {g.totals.days} días · {fmtCurrency(g.totals.gross)} bruto
+              {" "}· {g.items.length} · {daysLabel(g.totals.days)} · {fmtCurrency(g.totals.gross)} bruto
             </span>
           </h3>
           <div className="hidden overflow-x-auto rounded-md border border-[var(--color-border)] md:block">
