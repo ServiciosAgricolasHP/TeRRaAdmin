@@ -233,6 +233,45 @@ export function counterpartyOptions(items) {
     .map((e) => e.name);
 }
 
+// Vista "Próximos" por contraparte: lo abierto de cada contraparte junto
+// (también lo aplazado y lo protestado), del vencimiento más antiguo al más
+// nuevo. Las contrapartes van en el orden de su primer vencimiento, así la más
+// atrasada queda arriba. Las variantes de un nombre que solo cambian en
+// mayúsculas, tildes o puntuación van juntas, con la forma del nombre más
+// usada en todos los documentos. Con `until`, lo que vence después (sin estar
+// vencido, aplazado ni protestado) queda en `beyond`. `payable` y `receivable`
+// suman lo que falta pagar y cobrar de lo que no quedó en `beyond`.
+export function groupByCounterparty(items, today, { until = "" } = {}) {
+  const variants = new Map();
+  for (const c of items) {
+    const name = String(c.counterparty || "").trim();
+    const key = counterpartyKey(name);
+    if (!variants.has(key)) variants.set(key, new Map());
+    variants.get(key).set(name, (variants.get(key).get(name) || 0) + 1);
+  }
+  // La forma más usada; si empatan, la primera que aparece.
+  const nameOf = (key) => {
+    let best = ["", 0];
+    for (const entry of variants.get(key) || []) if (entry[1] > best[1]) best = entry;
+    return best[0];
+  };
+  const open = items.filter(isOpen).sort((a, b) => (a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : 0));
+  const groups = new Map();
+  for (const c of open) {
+    const key = counterpartyKey(c.counterparty);
+    if (!groups.has(key)) groups.set(key, { key, name: nameOf(key), items: [], beyond: [], payable: 0, receivable: 0 });
+    const g = groups.get(key);
+    if (until && c.dueDate > until && debtState(c, today) === "scheduled") {
+      g.beyond.push(c);
+      continue;
+    }
+    g.items.push(c);
+    if (directionOf(c.kind) === "in") g.receivable += remainingOf(c);
+    else g.payable += remainingOf(c);
+  }
+  return [...groups.values()];
+}
+
 // La contraparte ya usada que se parece a `name` sin ser la misma
 // ("Bancoestado" → "Banco Estado"), o `null`. Si `name` ya es una de ellas
 // (aunque cambien mayúsculas o tildes), no hay nada que sugerir. El informe
@@ -292,8 +331,11 @@ const monthRank = (key) => MONTH_RANK[key] ?? 2;
 // Lo que se paga (sin cheques recibidos ni anulados): lo que se debe, el
 // balance de cada deuda con la fecha en que queda pagada, lo que vence en los
 // próximos 7 días y el próximo mes (`upcoming`, los mismos grupos de Próximos),
-// lo que vence cada mes, y, si se pide, lo
-// pagado en un rango (por fecha de pago). Lo aplazado va primero en cada lista. Una deuda queda pagada con su último vencimiento, aunque
+// lo que vence cada mes, lo pendiente por contraparte (`byCounterparty`, como
+// `groupByCounterparty`, con lo que suma cada una en `total` y lo que vence
+// después del corte en `later`) y, si se pide, lo pagado en un rango (por fecha
+// de pago). Lo aplazado va primero en cada lista, salvo por contraparte, donde
+// todo va por fecha. Una deuda queda pagada con su último vencimiento, aunque
 // tenga pagos atrasados (vencidos, aplazados o protestados, que van con su
 // fecha original); `behind` dice cuántos son. Los pagos recurrentes no terminan
 // y no tienen `payoffDate`.
@@ -389,6 +431,12 @@ export function buildPaymentReport(items, { today, includePaid = false, paidFrom
   const near = groupUpcoming(pending, today);
   const sumOf = (list) => list.reduce((sum, c) => (addTo(sum, c), sum), blankSum());
   const postponedFirst = [...pending.filter((c) => c.status === "postponed"), ...pending.filter((c) => c.status !== "postponed")];
+  const byCounterparty = groupByCounterparty(out, today, { until: dueUntil }).map((g) => ({
+    ...g,
+    total: sumOf([...g.items, ...g.beyond]),
+    later: sumOf(g.beyond),
+    laterEnd: g.beyond.reduce((max, c) => (c.dueDate > max ? c.dueDate : max), ""),
+  }));
   return {
     pending,
     detail: postponedFirst.filter((c) => !isLater(c)),
@@ -404,6 +452,7 @@ export function buildPaymentReport(items, { today, includePaid = false, paidFrom
     dueUntil,
     paid,
     debts,
+    byCounterparty,
     months: monthRows,
     totals,
     payoffDate,

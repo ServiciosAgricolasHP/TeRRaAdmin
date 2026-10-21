@@ -103,6 +103,12 @@ export const laterText = (report) => [laterCell(report).text, laterCell(report).
 // Fila del detalle: la fecha va en el detalle, que es la columna ancha.
 export const laterDetail = (report) => `${paymentsLabel(report.totals.later.count)} ${laterText(report).replace(/^Después/, "después")}, sin detalle`;
 
+// Lo mismo para una contraparte: sus pagos de después del corte.
+export const groupLaterDetail = (report, g) =>
+  `${paymentsLabel(g.later.count)} después del ${fmtDate(report.dueUntil)}${g.laterEnd ? `, hasta el ${fmtDate(g.laterEnd)}` : ""}, sin detalle`;
+
+export const counterpartyTitle = (g) => g.name || "Sin contraparte";
+
 export function itemDetail(c) {
   return [
     c.installment?.of ? `Cuota ${c.installment.n}/${c.installment.of}` : "",
@@ -130,14 +136,17 @@ const ITEM_COLUMNS = [
   { label: "Monto", num: true, width: 26 },
 ];
 
-function itemRows(list, today) {
+// Por contraparte, el nombre va en el título de cada tabla.
+const PARTY_ITEM_COLUMNS = ITEM_COLUMNS.filter((col) => col.label !== "A quién");
+
+function itemRows(list, today, { withCounterparty = true } = {}) {
   return list.map((c) => {
     const state = debtState(c, today);
     return {
       cells: [
         { text: fmtDate(c.dueDate), sub: STATE_NOTE[state] || "", tone: STATE_TONE[state] },
         kindMeta(c.kind).label,
-        c.counterparty,
+        ...(withCounterparty ? [c.counterparty] : []),
         { text: itemDetail(c), muted: true },
         fmtCurrency(remainingOf(c)),
       ],
@@ -145,7 +154,7 @@ function itemRows(list, today) {
   });
 }
 
-export function reportDocument(report, { today, companyName, showDetail, includePaid, paidFrom, paidTo }) {
+export function reportDocument(report, { today, companyName, showDetail, byCounterparty, includePaid, paidFrom, paidTo }) {
   const { totals, debts, months, pending, detail, paid, hasExtra, payoffDate, upcoming } = report;
   const blocks = [];
   const h2 = (text) => blocks.push({ kind: "h2", text });
@@ -171,37 +180,6 @@ export function reportDocument(report, { today, companyName, showDetail, include
   else if (payoffDate) p(`Todo queda pagado el ${fmtDate(payoffDate)}${payoffNote(report) ? ` (${payoffNote(report)})` : ""}.`);
   if (includePaid && totals.paid.extra) p(`Lo pagado en el período incluye ${fmtCurrency(totals.paid.extra)} de interés.`, true);
 
-  if (debts.length > 0) {
-    h2("Balance de deudas");
-    table(
-      [
-        { label: "Deuda" },
-        { label: "Pendientes", num: true, width: 22 },
-        { label: "Saldo", num: true, width: 28 },
-        { label: "Próximo pago", width: 34 },
-        { label: "Queda pagada", width: 34 },
-      ],
-      [
-        ...debts.map((d) => ({
-          cells: [
-            { text: d.counterparty, sub: [debtLabel(d), d.concept].filter(Boolean).join(" · "), bold: true },
-            { text: debtCount(d), sub: d.paid.count ? `${d.paid.count} pagada(s)` : "" },
-            { text: fmtCurrency(d.pending.total), bold: true },
-            { text: fmtDate(d.nextDue) || "—", sub: debtNotes(d), subTone: behindTone(d) },
-            { text: debtPayoff(d), sub: behindTag(d), subTone: behindTone(d) },
-          ],
-        })),
-        totalRow([
-          "Total",
-          String(totals.pending.count),
-          fmtCurrency(totals.pending.total),
-          "",
-          { text: payoffDate ? fmtDate(payoffDate) : "", sub: totals.behind.count ? behindLabel(totals.behind.count, "pago") : "", subTone: behindTone(totals) },
-        ]),
-      ],
-    );
-  }
-
   if (pending.length > 0) {
     h2("Próximos vencimientos");
     const nearGroup = (title, list, sum, emptyText) => {
@@ -224,7 +202,20 @@ export function reportDocument(report, { today, companyName, showDetail, include
     );
   }
 
-  if (showDetail && pending.length > 0) {
+  // Por contraparte: una tabla por cada una, con sus pagos por fecha y lo que
+  // vence después del corte en una fila.
+  if (showDetail && byCounterparty && pending.length > 0) {
+    h2("Detalle de pagos pendientes por contraparte");
+    for (const g of report.byCounterparty) {
+      h3(`${counterpartyTitle(g)} · ${paymentsLabel(g.total.count)} · ${fmtCurrency(g.total.total)}`);
+      const rows = [
+        ...itemRows(g.items, today, { withCounterparty: false }),
+        ...(g.later.count ? [{ cells: ["Más adelante", "", { text: groupLaterDetail(report, g), muted: true }, fmtCurrency(g.later.total)] }] : []),
+      ];
+      table(PARTY_ITEM_COLUMNS, rows.length > 1 ? [...rows, totalRow(["Total", "", "", fmtCurrency(g.total.total)])] : rows);
+    }
+    p(`Total pendiente: ${paymentsLabel(totals.pending.count)} por ${fmtCurrency(totals.pending.total)}.`);
+  } else if (showDetail && pending.length > 0) {
     h2("Detalle de pagos pendientes");
     table(ITEM_COLUMNS, [
       ...itemRows(detail, today),
@@ -264,6 +255,38 @@ export function reportDocument(report, { today, companyName, showDetail, include
           totalRow(["Total", "", "", "", "", ...(hasExtra ? [fmtCurrency(totals.paid.amount), fmtCurrency(totals.paid.extra)] : []), fmtCurrency(totals.paid.total)]),
         ],
       );
+  }
+
+  // El balance de cada deuda cierra el informe.
+  if (debts.length > 0) {
+    h2("Balance de deudas");
+    table(
+      [
+        { label: "Deuda" },
+        { label: "Pendientes", num: true, width: 22 },
+        { label: "Saldo", num: true, width: 28 },
+        { label: "Próximo pago", width: 34 },
+        { label: "Queda pagada", width: 34 },
+      ],
+      [
+        ...debts.map((d) => ({
+          cells: [
+            { text: d.counterparty, sub: [debtLabel(d), d.concept].filter(Boolean).join(" · "), bold: true },
+            { text: debtCount(d), sub: d.paid.count ? `${d.paid.count} pagada(s)` : "" },
+            { text: fmtCurrency(d.pending.total), bold: true },
+            { text: fmtDate(d.nextDue) || "—", sub: debtNotes(d), subTone: behindTone(d) },
+            { text: debtPayoff(d), sub: behindTag(d), subTone: behindTone(d) },
+          ],
+        })),
+        totalRow([
+          "Total",
+          String(totals.pending.count),
+          fmtCurrency(totals.pending.total),
+          "",
+          { text: payoffDate ? fmtDate(payoffDate) : "", sub: totals.behind.count ? behindLabel(totals.behind.count, "pago") : "", subTone: behindTone(totals) },
+        ]),
+      ],
+    );
   }
 
   return { title: "Informe de deudas", subtitle: reportSubtitle(report, { today, companyName }), blocks };

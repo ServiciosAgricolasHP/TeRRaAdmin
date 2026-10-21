@@ -23,6 +23,7 @@ import {
   summarize,
   counterpartyOptions,
   groupUpcoming,
+  groupByCounterparty,
   displayStatus,
   kindMeta,
   directionOf,
@@ -41,6 +42,7 @@ import { fmtCurrency } from "../utils/format";
 import { CommitmentList } from "./commitments/CommitmentList";
 import { CommitmentModal } from "./commitments/CommitmentModal";
 import { ConfigModal } from "./commitments/ConfigModal";
+import { CounterpartyGroups } from "./commitments/CounterpartyGroups";
 import { DateActionModal } from "./commitments/DateActionModal";
 import { fmtDate } from "./commitments/helpers";
 import { ImportModal } from "./commitments/ImportModal";
@@ -67,6 +69,9 @@ const UPCOMING_TITLES = {
   month: "Próximo mes",
   later: "Más adelante",
 };
+
+// Próximos agrupado por contraparte (true) o por fecha.
+const BY_COUNTERPARTY_KEY = "commitments.upcomingByCounterparty";
 
 const CARD_TONE = {
   danger: { border: "border-[var(--color-danger)]", text: "text-[var(--color-danger)]" },
@@ -95,6 +100,9 @@ export default function Commitments() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("upcoming");
   const [laterUntil, setLaterUntil] = useState(() => nextYearEnd(today));
+  const [byCounterparty, setByCounterparty] = useState(() => {
+    try { return localStorage.getItem(BY_COUNTERPARTY_KEY) === "true"; } catch { return false; }
+  });
   const [kindFilter, setKindFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [companyFilter, setCompanyFilter] = useState("");
@@ -141,6 +149,7 @@ export default function Commitments() {
   // "Más adelante" llega hasta `laterUntil`; lo de después se resume en una
   // línea. Vacío: sin límite.
   const upcoming = useMemo(() => groupUpcoming(items, today, { until: laterUntil }), [items, today, laterUntil]);
+  const counterpartyGroups = useMemo(() => groupByCounterparty(items, today, { until: laterUntil }), [items, today, laterUntil]);
   const upcomingGroups = useMemo(
     () =>
       Object.entries(UPCOMING_TITLES)
@@ -148,6 +157,12 @@ export default function Commitments() {
         .filter((g) => g.items.length || (g.key === "later" && upcoming.beyond.length)),
     [upcoming],
   );
+
+  const toggleByCounterparty = () => {
+    const next = !byCounterparty;
+    setByCounterparty(next);
+    try { localStorage.setItem(BY_COUNTERPARTY_KEY, String(next)); } catch { /* noop */ }
+  };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -396,6 +411,21 @@ export default function Commitments() {
             {t.label}
           </button>
         ))}
+        {view === "upcoming" && (
+          <button
+            type="button"
+            onClick={toggleByCounterparty}
+            aria-pressed={byCounterparty}
+            title="Juntar los vencimientos de cada contraparte, del más antiguo al más nuevo"
+            className={`ml-auto min-h-8 rounded-md border px-3 py-1.5 text-sm ${
+              byCounterparty
+                ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] font-medium text-[var(--color-accent)]"
+                : "border-[var(--color-border)] hover:bg-[var(--color-surface-2)]"
+            }`}
+          >
+            👥 Por contraparte
+          </button>
+        )}
         {view === "all" && (
           <button type="button" className={`${btnCls} ml-auto`} onClick={exportXlsx} disabled={!filtered.length}>
             📊 Excel
@@ -410,6 +440,8 @@ export default function Commitments() {
           <div className="rounded-lg border border-dashed border-[var(--color-border)] py-12 text-center text-sm text-[var(--color-muted)]">
             No hay nada pendiente. Agrega un cheque, un pago o un crédito con "+ Agregar documento".
           </div>
+        ) : byCounterparty ? (
+          <CounterpartyGroups groups={counterpartyGroups} until={laterUntil} onUntilChange={setLaterUntil} rowProps={rowProps} />
         ) : (
           upcomingGroups.map((g) => (
             <section key={g.key}>
@@ -565,7 +597,13 @@ export default function Commitments() {
       {configOpen && <ConfigModal onClose={() => setConfigOpen(false)} />}
 
       {reportOpen && (
-        <PaymentReportModal items={items} companies={companies} today={today} onClose={() => setReportOpen(false)} />
+        <PaymentReportModal
+          items={items}
+          companies={companies}
+          today={today}
+          groupedView={byCounterparty}
+          onClose={() => setReportOpen(false)}
+        />
       )}
 
       {importOpen && (
