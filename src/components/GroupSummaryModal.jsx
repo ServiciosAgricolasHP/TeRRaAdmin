@@ -222,7 +222,7 @@ export default function GroupSummaryModal({ open, onClose }) {
       open={open}
       onClose={onClose}
       title="📊 Resúmenes por grupo"
-      size="xl"
+      size="full"
       footer={
         <>
           <button
@@ -520,7 +520,11 @@ const MatrixTable = forwardRef(function MatrixTable(
               {showCycleCols &&
                 cycles.map((c) => (
                   <th key={c.id} style={{ ...cellH, textAlign: "right" }}>
-                    {c.label}
+                    {/* La etiqueta del ciclo se parte en líneas (también en cada
+                        "/"), así una matriz con varios ciclos cabe a lo ancho. */}
+                    <div style={{ maxWidth: 130, marginLeft: "auto", whiteSpace: "normal" }}>
+                      {String(c.label || "").replaceAll("/", "/\u200b")}
+                    </div>
                   </th>
                 ))}
               {hasAdvances && (
