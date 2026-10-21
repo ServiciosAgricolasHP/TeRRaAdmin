@@ -1,3 +1,4 @@
+import { fmtCurrency } from "../../utils/format";
 // Ventana de impresión de la tabla resumen del detalle de la nómina.
 // Imprime solo la tabla de resumen, por subfaena o por labor según el toggle
 // del Resumen en pantalla: las mismas tablas del "Detalle de pago", sin los
@@ -6,8 +7,6 @@ export function printSummaryTable(payroll, {
   showLabor, subfaenaSummary, laborSummary, bonusAdvanceSummary,
   pendingRows = [], pendingMode = "none",
 }) {
-  const fmt = (v) =>
-    new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(Number(v) || 0);
   const fmtDayShort = (d) => {
     if (!d || typeof d !== "string") return "";
     const m = d.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -30,10 +29,10 @@ export function printSummaryTable(payroll, {
   const buildAdjustmentRowsHtml = (labelColspan) => {
     const rows = [];
     if (bonusAdvanceSummary?.bonus.total > 0) {
-      rows.push(`<tr class="adj-row"><td colspan="${labelColspan}" style="text-align:right">Bonos</td><td style="text-align:right">${fmt(bonusAdvanceSummary.bonus.bank)}</td><td style="text-align:right">${fmt(bonusAdvanceSummary.bonus.cash)}</td><td style="text-align:right">${fmt(bonusAdvanceSummary.bonus.total)}</td></tr>`);
+      rows.push(`<tr class="adj-row"><td colspan="${labelColspan}" style="text-align:right">Bonos</td><td style="text-align:right">${fmtCurrency(bonusAdvanceSummary.bonus.bank)}</td><td style="text-align:right">${fmtCurrency(bonusAdvanceSummary.bonus.cash)}</td><td style="text-align:right">${fmtCurrency(bonusAdvanceSummary.bonus.total)}</td></tr>`);
     }
     if (bonusAdvanceSummary?.advance.total > 0) {
-      rows.push(`<tr class="adj-row"><td colspan="${labelColspan}" style="text-align:right">Anticipos</td><td style="text-align:right">− ${fmt(bonusAdvanceSummary.advance.bank)}</td><td style="text-align:right">− ${fmt(bonusAdvanceSummary.advance.cash)}</td><td style="text-align:right">− ${fmt(bonusAdvanceSummary.advance.total)}</td></tr>`);
+      rows.push(`<tr class="adj-row"><td colspan="${labelColspan}" style="text-align:right">Anticipos</td><td style="text-align:right">− ${fmtCurrency(bonusAdvanceSummary.advance.bank)}</td><td style="text-align:right">− ${fmtCurrency(bonusAdvanceSummary.advance.cash)}</td><td style="text-align:right">− ${fmtCurrency(bonusAdvanceSummary.advance.total)}</td></tr>`);
     }
     return rows.join("");
   };
@@ -50,9 +49,9 @@ export function printSummaryTable(payroll, {
       <td>—</td>
       <td colspan="${nameColspan}">💵 Efectivo pendiente — ${r.name} <span style="color:#666;font-size:11px">· ${r.count} pers.</span></td>
       <td style="font-size:11px;color:#444">${r.period ? `${fmtDayShort(r.period.first)} → ${fmtDayShort(r.period.last)}` : "—"}</td>
-      <td style="text-align:right">${fmt(0)}</td>
-      <td style="text-align:right">${fmt(r.cash)}</td>
-      <td style="text-align:right"><b>${fmt(r.total)}</b></td>
+      <td style="text-align:right">${fmtCurrency(0)}</td>
+      <td style="text-align:right">${fmtCurrency(r.cash)}</td>
+      <td style="text-align:right"><b>${fmtCurrency(r.total)}</b></td>
     </tr>`).join(""));
   const pendingSum = pendingRows.reduce((s, r) => s + r.total, 0);
   // En "onlyPending" el efectivo de esta nómina no sale: se difiere a la vuelta
@@ -61,7 +60,7 @@ export function printSummaryTable(payroll, {
   const deferRowHtml = (labelColspan, base) => {
     const d = deferredOf(base);
     if (d <= 0) return "";
-    return `<tr class="adj-row"><td colspan="${labelColspan}" style="text-align:right">Efectivo que queda pendiente</td><td style="text-align:right">${fmt(0)}</td><td style="text-align:right">− ${fmt(d)}</td><td style="text-align:right">− ${fmt(d)}</td></tr>`;
+    return `<tr class="adj-row"><td colspan="${labelColspan}" style="text-align:right">Efectivo que queda pendiente</td><td style="text-align:right">${fmtCurrency(0)}</td><td style="text-align:right">− ${fmtCurrency(d)}</td><td style="text-align:right">− ${fmtCurrency(d)}</td></tr>`;
   };
   const grand = (base) => {
     const b = adjustedTotals(base);
@@ -79,21 +78,21 @@ export function printSummaryTable(payroll, {
     const rowsHtml = subfaenaSummary.rows.map((r, i, arr) => {
       const showFaena = r.faenaName !== prevFaena;
       prevFaena = r.faenaName;
-      const row = `<tr><td>${showFaena ? r.faenaName : ""}</td><td>${r.subfaenaName}</td><td style="font-size:11px;color:#444">${cyclesPeriod([...r.cycleIds])}</td><td style="text-align:right">${fmt(r.bank)}</td><td style="text-align:right">${fmt(r.cash)}</td><td style="text-align:right"><b>${fmt(r.total)}</b></td></tr>`;
+      const row = `<tr><td>${showFaena ? r.faenaName : ""}</td><td>${r.subfaenaName}</td><td style="font-size:11px;color:#444">${cyclesPeriod([...r.cycleIds])}</td><td style="text-align:right">${fmtCurrency(r.bank)}</td><td style="text-align:right">${fmtCurrency(r.cash)}</td><td style="text-align:right"><b>${fmtCurrency(r.total)}</b></td></tr>`;
       const isLastOfFaena = i === arr.length - 1 || arr[i + 1].faenaName !== r.faenaName;
       if (!isLastOfFaena) return row;
       const faenaRows = arr.filter((x) => x.faenaName === r.faenaName);
       const subBank = faenaRows.reduce((s, x) => s + x.bank, 0);
       const subCash = faenaRows.reduce((s, x) => s + x.cash, 0);
       const subTotal = faenaRows.reduce((s, x) => s + x.total, 0);
-      return `${row}<tr class="subtotal-faena"><td colspan="3" style="text-align:right"><b>Sub total por faena</b></td><td style="text-align:right"><b>${fmt(subBank)}</b></td><td style="text-align:right"><b>${fmt(subCash)}</b></td><td style="text-align:right"><b>${fmt(subTotal)}</b></td></tr>`;
+      return `${row}<tr class="subtotal-faena"><td colspan="3" style="text-align:right"><b>Sub total por faena</b></td><td style="text-align:right"><b>${fmtCurrency(subBank)}</b></td><td style="text-align:right"><b>${fmtCurrency(subCash)}</b></td><td style="text-align:right"><b>${fmtCurrency(subTotal)}</b></td></tr>`;
     }).join("");
     bodyHtml = `<table class="subfaena-summary">
       <thead><tr><th>Faena</th><th>Subfaena</th><th style="width:130px">Período</th><th style="text-align:right">Transferencia</th><th style="text-align:right">Efectivo</th><th style="text-align:right">TOTAL</th></tr></thead>
       <tbody>${rowsHtml}${pendingRowsHtml(1)}</tbody>
       <tfoot>
         ${buildAdjustmentRowsHtml(3)}${deferRowHtml(3, subfaenaSummary.totals)}
-        <tr class="summary-total"><td colspan="3"><b>${pendingMode === "onlyPending" ? "TOTAL A PAGAR" : "TOTAL"}</b></td><td style="text-align:right"><b>${fmt(grand(subfaenaSummary.totals).bank)}</b></td><td style="text-align:right"><b>${fmt(grand(subfaenaSummary.totals).cash)}</b></td><td style="text-align:right"><b>${fmt(grand(subfaenaSummary.totals).total)}</b></td></tr>
+        <tr class="summary-total"><td colspan="3"><b>${pendingMode === "onlyPending" ? "TOTAL A PAGAR" : "TOTAL"}</b></td><td style="text-align:right"><b>${fmtCurrency(grand(subfaenaSummary.totals).bank)}</b></td><td style="text-align:right"><b>${fmtCurrency(grand(subfaenaSummary.totals).cash)}</b></td><td style="text-align:right"><b>${fmtCurrency(grand(subfaenaSummary.totals).total)}</b></td></tr>
       </tfoot>
     </table>`;
   } else {
@@ -101,21 +100,21 @@ export function printSummaryTable(payroll, {
     const rowsHtml = laborSummary.rows.map((r, i, arr) => {
       const showSubfaena = r.subfaenaName !== prevSubfaena;
       prevSubfaena = r.subfaenaName;
-      const row = `<tr><td>${showSubfaena ? r.faenaName : ""}</td><td>${showSubfaena ? r.subfaenaName : ""}</td><td>${r.laborName}</td><td style="font-size:11px;color:#444">${cyclesPeriod([...r.cycleIds])}</td><td style="text-align:right">${fmt(r.bank)}</td><td style="text-align:right">${fmt(r.cash)}</td><td style="text-align:right"><b>${fmt(r.total)}</b></td></tr>`;
+      const row = `<tr><td>${showSubfaena ? r.faenaName : ""}</td><td>${showSubfaena ? r.subfaenaName : ""}</td><td>${r.laborName}</td><td style="font-size:11px;color:#444">${cyclesPeriod([...r.cycleIds])}</td><td style="text-align:right">${fmtCurrency(r.bank)}</td><td style="text-align:right">${fmtCurrency(r.cash)}</td><td style="text-align:right"><b>${fmtCurrency(r.total)}</b></td></tr>`;
       const isLastOfFaena = i === arr.length - 1 || arr[i + 1].faenaName !== r.faenaName;
       if (!isLastOfFaena) return row;
       const faenaRows = arr.filter((x) => x.faenaName === r.faenaName);
       const subBank = faenaRows.reduce((s, x) => s + x.bank, 0);
       const subCash = faenaRows.reduce((s, x) => s + x.cash, 0);
       const subTotal = faenaRows.reduce((s, x) => s + x.total, 0);
-      return `${row}<tr class="subtotal-faena"><td colspan="4" style="text-align:right"><b>Sub total por faena</b></td><td style="text-align:right"><b>${fmt(subBank)}</b></td><td style="text-align:right"><b>${fmt(subCash)}</b></td><td style="text-align:right"><b>${fmt(subTotal)}</b></td></tr>`;
+      return `${row}<tr class="subtotal-faena"><td colspan="4" style="text-align:right"><b>Sub total por faena</b></td><td style="text-align:right"><b>${fmtCurrency(subBank)}</b></td><td style="text-align:right"><b>${fmtCurrency(subCash)}</b></td><td style="text-align:right"><b>${fmtCurrency(subTotal)}</b></td></tr>`;
     }).join("");
     bodyHtml = `<table class="subfaena-summary">
       <thead><tr><th>Faena</th><th>Subfaena</th><th>Labor</th><th style="width:130px">Período</th><th style="text-align:right">Transferencia</th><th style="text-align:right">Efectivo</th><th style="text-align:right">TOTAL</th></tr></thead>
       <tbody>${rowsHtml}${pendingRowsHtml(2)}</tbody>
       <tfoot>
         ${buildAdjustmentRowsHtml(4)}${deferRowHtml(4, laborSummary.totals)}
-        <tr class="summary-total"><td colspan="4"><b>TOTAL</b></td><td style="text-align:right"><b>${fmt(adjustedTotals(laborSummary.totals).bank)}</b></td><td style="text-align:right"><b>${fmt(adjustedTotals(laborSummary.totals).cash)}</b></td><td style="text-align:right"><b>${fmt(adjustedTotals(laborSummary.totals).total)}</b></td></tr>
+        <tr class="summary-total"><td colspan="4"><b>TOTAL</b></td><td style="text-align:right"><b>${fmtCurrency(adjustedTotals(laborSummary.totals).bank)}</b></td><td style="text-align:right"><b>${fmtCurrency(adjustedTotals(laborSummary.totals).cash)}</b></td><td style="text-align:right"><b>${fmtCurrency(adjustedTotals(laborSummary.totals).total)}</b></td></tr>
       </tfoot>
     </table>`;
   }

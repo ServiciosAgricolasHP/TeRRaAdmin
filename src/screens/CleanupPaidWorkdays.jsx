@@ -9,11 +9,7 @@ import { db } from "../firebase";
 import { workdaysService, cyclesService, workersService } from "../services";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ScreenLoader from "../components/ScreenLoader";
-
-const fmtCurrency = (v) =>
-  new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
-    Number(v) || 0,
-  );
+import { fmtCurrency } from "../utils/format";
 
 const fmtTimestamp = (ts) => {
   if (!ts) return "—";

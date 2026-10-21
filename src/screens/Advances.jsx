@@ -27,11 +27,7 @@ import { matchesSearchQuery } from "../utils/textSearch";
 import { localIsoDate } from "../utils/dates";
 import { toTitleName } from "../utils/textCase";
 import ScreenLoader from "../components/ScreenLoader";
-
-const fmtCurrency = (v) =>
-  new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
-    Number(v) || 0,
-  );
+import { fmtCurrency } from "../utils/format";
 
 const todayStr = () => localIsoDate();
 

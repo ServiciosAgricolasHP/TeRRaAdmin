@@ -19,11 +19,7 @@ import { loadWorkerSummaryData } from "../services/workerSummaryService";
 import { PrintableWorkerSummary } from "./workerSummaryModal/PrintableWorkerSummary";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import { localIsoDate } from "../utils/dates";
-
-const fmtCurrency = (v) =>
-  new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
-    Number(v) || 0,
-  );
+import { fmtCurrency } from "../utils/format";
 
 // Mismos colores que el comprobante de pago en efectivo.
 const LEADER_FILL = "#FFE699";

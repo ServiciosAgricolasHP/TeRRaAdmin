@@ -12,6 +12,7 @@ import {
 } from "../utils/auditLabels";
 import { localIsoDate } from "../utils/dates";
 import ScreenLoader from "../components/ScreenLoader";
+import { fmtCurrency, fmtNumber } from "../utils/format";
 
 // Auditoría por sesiones de inactividad: lee los logs del rango elegido, los
 // agrupa por usuario y corta una sesión cada vez que la pausa entre dos
@@ -66,7 +67,6 @@ const fmtDuration = (ms) => {
   return `${h}h ${mr}m`;
 };
 
-const fmtNumber = (n) => new Intl.NumberFormat("es-CL").format(Number(n) || 0);
 
 const ACTION_STYLE = {
   create: { color: "#166534", bg: "#dcfce7", label: "crear" },
@@ -147,9 +147,9 @@ function formatValue(field, value) {
   if (typeof value === "number") {
     const key = String(field).toLowerCase();
     if (MONEY_HINTS.some((m) => key.includes(m))) {
-      return new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(value);
+      return fmtCurrency(value);
     }
-    return new Intl.NumberFormat("es-CL").format(value);
+    return fmtNumber(value);
   }
   if (typeof value === "string") return value;
   if (Array.isArray(value)) return `[${value.length} elemento${value.length === 1 ? "" : "s"}]`;

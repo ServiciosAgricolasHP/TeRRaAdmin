@@ -8,6 +8,7 @@ import TextField from "../components/TextField";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { toTitleName, unshout } from "../utils/textCase";
 import ScreenLoader from "../components/ScreenLoader";
+import { fmtCurrency } from "../utils/format";
 
 // Registro contable de precios por faena y labor, independiente de las
 // faenas, ciclos y labores reales: acepta faenas "dummy" (solo un nombre, sin
@@ -19,8 +20,6 @@ import ScreenLoader from "../components/ScreenLoader";
 const DEFAULT_UNITS = ["Kilo", "Metro", "Jornada", "Hora", "Trato", "Bandeja", "Capacho"];
 const DATALIST_ID = "pricebook-units-list";
 
-const fmtCLP = (v) =>
-  new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(Number(v) || 0);
 const fmtDate = (d) => (d ? new Date(d + "T00:00:00").toLocaleDateString("es-CL") : "—");
 const fmtRange = (from, to) => `${fmtDate(from)} – ${to ? fmtDate(to) : "vigente"}`;
 const emptyPriceLine = () => ({
@@ -285,20 +284,20 @@ export default function PriceBook() {
                                     <div key={i}>
                                       <div>
                                         <span className="font-medium">{p.unit}{p.label ? ` (${p.label})` : ""}:</span>{" "}
-                                        <span className="tabular-nums">{fmtCLP(p.payPrice)} pagado</span>
+                                        <span className="tabular-nums">{fmtCurrency(p.payPrice)} pagado</span>
                                         {" / "}
-                                        <span className="tabular-nums">{fmtCLP(p.chargePrice)} cobrado</span>{" "}
+                                        <span className="tabular-nums">{fmtCurrency(p.chargePrice)} cobrado</span>{" "}
                                         <span className={`tabular-nums ${margin < 0 ? "text-[var(--color-danger)]" : "text-[var(--color-success,#16a34a)]"}`}>
-                                          ({fmtCLP(margin)})
+                                          ({fmtCurrency(margin)})
                                         </span>
                                       </div>
                                       {p.hasOvertime && (
                                         <div className="pl-3 text-xs text-[var(--color-muted)]">
-                                          ⏱ Horas extra: <span className="tabular-nums">{fmtCLP(p.overtimePayPrice)} pagado</span>
+                                          ⏱ Horas extra: <span className="tabular-nums">{fmtCurrency(p.overtimePayPrice)} pagado</span>
                                           {" / "}
-                                          <span className="tabular-nums">{fmtCLP(p.overtimeChargePrice)} cobrado</span>{" "}
+                                          <span className="tabular-nums">{fmtCurrency(p.overtimeChargePrice)} cobrado</span>{" "}
                                           <span className={`tabular-nums ${heMargin < 0 ? "text-[var(--color-danger)]" : "text-[var(--color-success,#16a34a)]"}`}>
-                                            ({fmtCLP(heMargin)})
+                                            ({fmtCurrency(heMargin)})
                                           </span>
                                         </div>
                                       )}
@@ -312,7 +311,7 @@ export default function PriceBook() {
                                 "Transporte incluido"
                               ) : (
                                 <span title={e.transportWhere || ""}>
-                                  No incluido — {e.transportWhere || "sin especificar"} ({fmtCLP(e.transportCost)})
+                                  No incluido — {e.transportWhere || "sin especificar"} ({fmtCurrency(e.transportCost)})
                                 </span>
                               )}
                             </td>

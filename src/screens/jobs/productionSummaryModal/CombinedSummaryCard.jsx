@@ -2,7 +2,7 @@ import { useState, useRef, useMemo } from "react";
 import { captureFullWidthBlob } from "../../../utils/imageCapture";
 import { useToast } from "../../../contexts/ToastContext";
 import { useIsMobile } from "../../../hooks/useIsMobile";
-import { fmtCLP, fmtNum } from "./helpers";
+import { fmtNum } from "./helpers";
 import { useProfitSettings } from "./useProfitSettings";
 import { combinedSummaryText } from "./combinedSummaryText";
 import {
@@ -26,6 +26,7 @@ import {
 } from "./tableStyles";
 import { writeCombinedSummaryXlsx } from "./writeCombinedSummaryXlsx";
 import { ProfitSettingsPanel } from "./ProfitSettingsPanel";
+import { fmtCurrency } from "../../../utils/format";
 
 // Tabla general: las labores seleccionadas como columnas y los días como
 // filas; cada celda muestra cantidad (con unidad) y monto. Al final, la
@@ -146,7 +147,7 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
         </button>
         <div className="text-right">
           <div className="text-[10px] text-[var(--color-muted)]">Gran total</div>
-          <div className="font-semibold tabular-nums text-[var(--color-accent)]">{fmtCLP(grandTotal)}</div>
+          <div className="font-semibold tabular-nums text-[var(--color-accent)]">{fmtCurrency(grandTotal)}</div>
         </div>
         <div className="flex gap-1">
           <button onClick={handleCopyText} disabled={busy === "text"} title="Copiar como texto plano"
@@ -173,7 +174,7 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
           <div style={{ marginBottom: 8 }}>
             <div style={{ fontSize: 14, fontWeight: 700 }}>📊 Tabla general — resumen consolidado</div>
             <div style={{ fontSize: 11, color: "#666", marginTop: 2 }}>
-              {dataByColumn.length} labores · {activeDays.length} días · gran total {fmtCLP(grandTotal)}
+              {dataByColumn.length} labores · {activeDays.length} días · gran total {fmtCurrency(grandTotal)}
             </div>
           </div>
           <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
@@ -206,12 +207,12 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
                             <div style={{ fontSize: 11, color: "#444" }}>
                               {fmtNum(c.qty)}{c.unit ? ` ${c.unit}` : ""}
                             </div>
-                            <div style={{ fontWeight: 600 }}>{fmtCLP(c.amount)}</div>
+                            <div style={{ fontWeight: 600 }}>{fmtCurrency(c.amount)}</div>
                           </td>
                         );
                       })}
                       <td style={{ ...cell, textAlign: "right", fontWeight: 700, background: ROW_HIGHLIGHT }}>
-                        {fmtCLP(dayTotal)}
+                        {fmtCurrency(dayTotal)}
                       </td>
                     </tr>
                   );
@@ -223,7 +224,7 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
                       <div style={{ fontSize: 10, opacity: 0.9 }}>
                         {fmtNum(d.totalQty)}{d.unit ? ` ${d.unit}` : ""}
                       </div>
-                      <div>{fmtCLP(d.totalAmount)}</div>
+                      <div>{fmtCurrency(d.totalAmount)}</div>
                       {isWorkdayCol(d.col) && workersPaid[d.col.key] && (
                         <div style={{ fontSize: 9, fontWeight: 400, marginTop: 1, color: "#d4f5d4" }}>✅ ya pagado</div>
                       )}
@@ -233,18 +234,18 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
                     </td>
                   ))}
                   <td style={{ ...cell, textAlign: "right", borderColor: "#3d6b2e", fontSize: 13 }}>
-                    {fmtCLP(grandTotal)}
+                    {fmtCurrency(grandTotal)}
                   </td>
                 </tr>
                 <tr style={{ background: ROW_PROFIT, color: "#1a2e0f", fontWeight: 700 }}>
                   <td style={{ ...cell, borderColor: "#6aa84f" }}>GANANCIAS</td>
                   {dataByColumn.map((d) => (
                     <td key={d.col.key} style={{ ...cell, textAlign: "right", borderColor: "#6aa84f" }}>
-                      {isSupervisionCol(d.col) ? "—" : fmtCLP(profitFor(d.col, d.totalAmount))}
+                      {isSupervisionCol(d.col) ? "—" : fmtCurrency(profitFor(d.col, d.totalAmount))}
                     </td>
                   ))}
                   <td style={{ ...cell, textAlign: "right", borderColor: "#6aa84f", fontSize: 13 }}>
-                    {fmtCLP(totalProfitBillable)}
+                    {fmtCurrency(totalProfitBillable)}
                   </td>
                 </tr>
                 {includeTransport && (
@@ -260,7 +261,7 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
                       const t = transportByCycle.get(d.col.cycleId) || { total: 0, hasTrips: false };
                       return (
                         <td key={d.col.key} style={{ ...cell, textAlign: "right", borderColor: "#3d6b2e" }}>
-                          {fmtCLP(t.total)}
+                          {fmtCurrency(t.total)}
                           {t.total === 0 && (
                             <div style={{ fontSize: 9, fontWeight: 400, marginTop: 1, color: "#d4f5d4" }}>
                               {t.hasTrips ? "vueltas creadas" : "sin vueltas"}
@@ -270,7 +271,7 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
                       );
                     })}
                     <td style={{ ...cell, textAlign: "right", borderColor: "#3d6b2e", fontSize: 13 }}>
-                      {fmtCLP(grandTotalTransport)}
+                      {fmtCurrency(grandTotalTransport)}
                     </td>
                   </tr>
                 )}
@@ -279,14 +280,14 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
                     <td style={{ ...cell, borderColor: "#93c47d" }}>MONTO LIBRE</td>
                     {dataByColumn.map((d) => (
                       <td key={d.col.key} style={{ ...cell, textAlign: "right", borderColor: "#93c47d" }}>
-                        {isSupervisionCol(d.col) ? fmtCLP(profitFor(d.col, d.totalAmount)) : "—"}
+                        {isSupervisionCol(d.col) ? fmtCurrency(profitFor(d.col, d.totalAmount)) : "—"}
                       </td>
                     ))}
                     <td style={{ ...cell, textAlign: "right", borderColor: "#93c47d", fontSize: 13 }}>
                       <div style={{ fontSize: 9, fontWeight: 400 }}>
-                        {fmtCLP(totalProfitBillable)} − {fmtCLP(Math.abs(totalSupervisionDeduction))}
+                        {fmtCurrency(totalProfitBillable)} − {fmtCurrency(Math.abs(totalSupervisionDeduction))}
                       </div>
-                      <div>{fmtCLP(totalProfit)}</div>
+                      <div>{fmtCurrency(totalProfit)}</div>
                     </td>
                   </tr>
                 )}
@@ -298,9 +299,9 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
                     ))}
                     <td style={{ ...cell, textAlign: "right", borderColor: "#93c47d", fontSize: 13 }}>
                       <div style={{ fontSize: 9, fontWeight: 400 }}>
-                        {fmtCLP(totalProfit)} − {fmtCLP(grandTotalTransport)}
+                        {fmtCurrency(totalProfit)} − {fmtCurrency(grandTotalTransport)}
                       </div>
-                      <div>{fmtCLP(totalProfit - grandTotalTransport)}</div>
+                      <div>{fmtCurrency(totalProfit - grandTotalTransport)}</div>
                     </td>
                   </tr>
                 )}
@@ -308,14 +309,14 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
                   <td style={{ ...cell, borderColor: "#274e13" }}>TOTAL GENERAL</td>
                   {dataByColumn.map((d) => (
                     <td key={d.col.key} style={{ ...cell, textAlign: "right", borderColor: "#274e13" }}>
-                      {fmtCLP(totalGeneralFor(d.col, d.totalAmount))}
+                      {fmtCurrency(totalGeneralFor(d.col, d.totalAmount))}
                       {isSupervisionCol(d.col) && (
                         <div style={{ fontSize: 9, fontWeight: 400, marginTop: 1, color: "#d4f5d4" }}>➖NF</div>
                       )}
                     </td>
                   ))}
                   <td style={{ ...cell, textAlign: "right", borderColor: "#274e13", fontSize: 13 }}>
-                    {fmtCLP(grandTotalGeneral)}
+                    {fmtCurrency(grandTotalGeneral)}
                   </td>
                 </tr>
                 {vatEnabled && (
@@ -326,7 +327,7 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
                         <td key={d.col.key} style={{ ...cell, borderColor: "#93c47d" }}></td>
                       ))}
                       <td style={{ ...cell, textAlign: "right", borderColor: "#93c47d", fontSize: 13 }}>
-                        {fmtCLP(grandTotalVat)}
+                        {fmtCurrency(grandTotalVat)}
                       </td>
                     </tr>
                     <tr style={{ background: ROW_GROSS, color: "#fff", fontWeight: 700 }}>
@@ -335,7 +336,7 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
                         <td key={d.col.key} style={{ ...cell, borderColor: "#16260a" }}></td>
                       ))}
                       <td style={{ ...cell, textAlign: "right", borderColor: "#16260a", fontSize: 13 }}>
-                        {fmtCLP(grandTotalGross)}
+                        {fmtCurrency(grandTotalGross)}
                       </td>
                     </tr>
                   </>

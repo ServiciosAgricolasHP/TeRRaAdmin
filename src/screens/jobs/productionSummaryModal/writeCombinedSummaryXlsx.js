@@ -2,9 +2,10 @@
 // un encabezado combinado con su nombre, como la tabla en pantalla.
 // `writeTotalRow` escribe las filas de cierre (TOTAL A PAGAR, GANANCIAS,
 // TRANSPORTE, etc.), que difieren en qué columnas llenan y con qué color.
-import { fmtCLP, fmtNum } from "./helpers";
+import { fmtNum } from "./helpers";
 import { HDR_GREEN, ROW_GROSS, ROW_PROFIT, ROW_TOTAL_DARK, ROW_TOTAL_GENERAL, ROW_VAT, XLSX_BORDER, XLSX_MONEY_FMT, toArgbFill } from "./tableStyles";
 import { isSupervisionCol } from "../../../utils/combinedSummary";
+import { fmtCurrency } from "../../../utils/format";
 
 export async function writeCombinedSummaryXlsx({ activeDays, byLaborDay, dataByColumn, firstColKeyForCycle, grandTotal, grandTotalGeneral, grandTotalGross, grandTotalTransport, grandTotalVat, hasSupervisionCols, includeTransport, profitFor, totalGeneralFor, totalProfit, totalProfitBillable, totalsByDay, transportByCycle, vatEnabled }) {
   const ExcelJS = (await import("exceljs")).default;
@@ -20,7 +21,7 @@ export async function writeCombinedSummaryXlsx({ activeDays, byLaborDay, dataByC
   ws.getCell(r, 2).value = "Tabla general — resumen consolidado";
   ws.getCell(r, 2).font = { bold: true, size: 13 };
   r++;
-  ws.getCell(r, 2).value = `${dataByColumn.length} labores · ${activeDays.length} días · gran total ${fmtCLP(grandTotal)}`;
+  ws.getCell(r, 2).value = `${dataByColumn.length} labores · ${activeDays.length} días · gran total ${fmtCurrency(grandTotal)}`;
   ws.getCell(r, 2).font = { size: 10, color: { argb: "FF666666" } };
   r += 2;
 

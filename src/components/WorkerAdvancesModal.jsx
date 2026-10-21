@@ -4,11 +4,7 @@ import { logsService } from "../services";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { advanceSign, advanceRemaining, advanceTypeMeta, advanceMatchesWorker } from "../services/advancesService";
 import { formatRutForDisplay } from "../utils/rutUtils";
-
-const fmtCurrency = (v) =>
-  new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
-    Number(v) || 0,
-  );
+import { fmtCurrency } from "../utils/format";
 
 const toDate = (ts) => (ts?.toDate ? ts.toDate() : ts ? new Date(ts) : null);
 

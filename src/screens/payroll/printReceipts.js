@@ -11,6 +11,7 @@ import {
   computeLaborSummary,
   computeBonusAdvanceSummary,
 } from "./printCommon";
+import { fmtCurrency } from "../../utils/format";
 
 function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
   const cycleDetails = payroll.cycleDetails || [];
@@ -35,18 +36,18 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
       rows.push(`
         <tr class="adj-row">
           <td colspan="${labelColspan}" style="text-align:right">Bonos</td>
-          <td style="text-align:right">${fmt(bonusAdvanceSummary.bonus.bank)}</td>
-          <td style="text-align:right">${fmt(bonusAdvanceSummary.bonus.cash)}</td>
-          <td style="text-align:right">${fmt(bonusAdvanceSummary.bonus.total)}</td>
+          <td style="text-align:right">${fmtCurrency(bonusAdvanceSummary.bonus.bank)}</td>
+          <td style="text-align:right">${fmtCurrency(bonusAdvanceSummary.bonus.cash)}</td>
+          <td style="text-align:right">${fmtCurrency(bonusAdvanceSummary.bonus.total)}</td>
         </tr>`);
     }
     if (bonusAdvanceSummary?.advance.total > 0) {
       rows.push(`
         <tr class="adj-row">
           <td colspan="${labelColspan}" style="text-align:right">Anticipos</td>
-          <td style="text-align:right">− ${fmt(bonusAdvanceSummary.advance.bank)}</td>
-          <td style="text-align:right">− ${fmt(bonusAdvanceSummary.advance.cash)}</td>
-          <td style="text-align:right">− ${fmt(bonusAdvanceSummary.advance.total)}</td>
+          <td style="text-align:right">− ${fmtCurrency(bonusAdvanceSummary.advance.bank)}</td>
+          <td style="text-align:right">− ${fmtCurrency(bonusAdvanceSummary.advance.cash)}</td>
+          <td style="text-align:right">− ${fmtCurrency(bonusAdvanceSummary.advance.total)}</td>
         </tr>`);
     }
     return rows.join("");
@@ -85,10 +86,6 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
   // El subtítulo solo muestra los nombres de ciclo — el período va en una
   // columna propia de la tabla, no acá.
   const cyclesLine = cycleDetails.map((c) => cycleLabel(c.id)).join(" · ");
-  const fmt = (v) =>
-    new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
-      Number(v) || 0,
-    );
   const fmtRut = (r) => {
     const m = String(r || "").match(/^(\d+)-([0-9KBH])$/i);
     if (!m) return r || "";
@@ -158,7 +155,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
         const list = workerBreakdown(it);
         if (list.length === 0) return "—";
         return list.map((b) =>
-          `<div style="font-size:10px;line-height:1.35"><span style="color:#666">${b.subfaena} · ${b.labor}:</span> <b>${fmt(b.amount)}</b></div>`
+          `<div style="font-size:10px;line-height:1.35"><span style="color:#666">${b.subfaena} · ${b.labor}:</span> <b>${fmtCurrency(b.amount)}</b></div>`
         ).join("");
       };
 
@@ -174,19 +171,19 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
                 .map(
                   (c) =>
                     `<td style="text-align:right">${
-                      it.byCycle && it.byCycle[c.id] ? fmt(it.byCycle[c.id]) : ""
+                      it.byCycle && it.byCycle[c.id] ? fmtCurrency(it.byCycle[c.id]) : ""
                     }</td>`,
                 )
                 .join("")
             : "";
           const advanceCell = groupHasAdvance
             ? `<td style="text-align:right;color:#b45309">${
-                Number(it.advance) > 0 ? `− ${fmt(it.advance)}` : "—"
+                Number(it.advance) > 0 ? `− ${fmtCurrency(it.advance)}` : "—"
               }</td>`
             : "";
           const bonusCell = groupHasBonus
             ? `<td style="text-align:right;color:#166534">${
-                Number(it.bonus) > 0 ? `+ ${fmt(it.bonus)}` : "—"
+                Number(it.bonus) > 0 ? `+ ${fmtCurrency(it.bonus)}` : "—"
               }</td>`
             : "";
           return `
@@ -198,7 +195,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
               ${cellsByCycle}
               ${advanceCell}
               ${bonusCell}
-              <td style="text-align:right"><b>${fmt(it.amount)}</b></td>
+              <td style="text-align:right"><b>${fmtCurrency(it.amount)}</b></td>
               <td></td>
             </tr>`;
         })
@@ -208,7 +205,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
         ? cycleCols
             .map((c) => {
               const sum = g.items.reduce((s, it) => s + (it.byCycle?.[c.id] || 0), 0);
-              return `<td style="text-align:right;background:${leaderFill}"><b>${fmt(sum)}</b></td>`;
+              return `<td style="text-align:right;background:${leaderFill}"><b>${fmtCurrency(sum)}</b></td>`;
             })
             .join("")
         : "";
@@ -216,7 +213,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
         ? `<td style="text-align:right;background:${leaderFill};color:#b45309"><b>${
             (() => {
               const sum = g.items.reduce((s, it) => s + (Number(it.advance) || 0), 0);
-              return sum > 0 ? `− ${fmt(sum)}` : "—";
+              return sum > 0 ? `− ${fmtCurrency(sum)}` : "—";
             })()
           }</b></td>`
         : "";
@@ -224,7 +221,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
         ? `<td style="text-align:right;background:${leaderFill};color:#166534"><b>${
             (() => {
               const sum = g.items.reduce((s, it) => s + (Number(it.bonus) || 0), 0);
-              return sum > 0 ? `+ ${fmt(sum)}` : "—";
+              return sum > 0 ? `+ ${fmtCurrency(sum)}` : "—";
             })()
           }</b></td>`
         : "";
@@ -338,7 +335,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
                     .map(
                       (c) =>
                         `<td style="text-align:right">${
-                          it.byCycle && it.byCycle[c.id] ? fmt(it.byCycle[c.id]) : ""
+                          it.byCycle && it.byCycle[c.id] ? fmtCurrency(it.byCycle[c.id]) : ""
                         }</td>`,
                     )
                     .join("")
@@ -346,12 +343,12 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
               const bankTag = isCashBank(it.bankCode) ? "Efectivo" : "Transferencia";
               const advanceCell = groupHasAdvance
                 ? `<td style="text-align:right;color:#b45309">${
-                    Number(it.advance) > 0 ? `− ${fmt(it.advance)}` : "—"
+                    Number(it.advance) > 0 ? `− ${fmtCurrency(it.advance)}` : "—"
                   }</td>`
                 : "";
               const bonusCell = groupHasBonus
                 ? `<td style="text-align:right;color:#166534">${
-                    Number(it.bonus) > 0 ? `+ ${fmt(it.bonus)}` : "—"
+                    Number(it.bonus) > 0 ? `+ ${fmtCurrency(it.bonus)}` : "—"
                   }</td>`
                 : "";
               return `
@@ -363,7 +360,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
                   ${cellsByCycle}
                   ${advanceCell}
                   ${bonusCell}
-                  <td style="text-align:right"><b>${fmt(it.amount)}</b></td>
+                  <td style="text-align:right"><b>${fmtCurrency(it.amount)}</b></td>
                 </tr>`;
             })
             .join("")
@@ -407,7 +404,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
             ${subtotalCells}
             ${advanceSubtotalCell}
             ${bonusSubtotalCell}
-            <td style="text-align:right"><b>${fmt(g.total)}</b></td>
+            <td style="text-align:right"><b>${fmtCurrency(g.total)}</b></td>
             ${isDetail ? "" : "<td></td>"}
           </tr>
         </tfoot>
@@ -416,7 +413,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
       <div class="signs-block">
         <div class="signs-recap">
           Subtotal ${g.leader} · ${g.items.length} persona${g.items.length === 1 ? "" : "s"}:
-          <b>${fmt(g.total)}</b>
+          <b>${fmtCurrency(g.total)}</b>
         </div>
         <div class="signs">
           <div class="sign sign-right">
@@ -488,9 +485,9 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
               <td>${showFaena ? r.faenaName : ""}</td>
               <td>${r.subfaenaName}</td>
               <td style="font-size:11px;color:#444">${cyclesPeriod(r.cycleIds)}</td>
-              <td style="text-align:right">${fmt(r.bank)}</td>
-              <td style="text-align:right">${fmt(r.cash)}</td>
-              <td style="text-align:right"><b>${fmt(r.total)}</b></td>
+              <td style="text-align:right">${fmtCurrency(r.bank)}</td>
+              <td style="text-align:right">${fmtCurrency(r.cash)}</td>
+              <td style="text-align:right"><b>${fmtCurrency(r.total)}</b></td>
             </tr>`;
           const isLastOfFaena = i === arr.length - 1 || arr[i + 1].faenaName !== r.faenaName;
           if (!isLastOfFaena) return row;
@@ -501,9 +498,9 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
           return `${row}
             <tr class="subtotal-faena">
               <td colspan="3" style="text-align:right"><b>Sub total por faena</b></td>
-              <td style="text-align:right"><b>${fmt(subBank)}</b></td>
-              <td style="text-align:right"><b>${fmt(subCash)}</b></td>
-              <td style="text-align:right"><b>${fmt(subTotal)}</b></td>
+              <td style="text-align:right"><b>${fmtCurrency(subBank)}</b></td>
+              <td style="text-align:right"><b>${fmtCurrency(subCash)}</b></td>
+              <td style="text-align:right"><b>${fmtCurrency(subTotal)}</b></td>
             </tr>`;
         }).join("");
         return `<section class="receipt summary-page">
@@ -530,9 +527,9 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
               ${buildAdjustmentRowsHtml(3)}
               <tr class="summary-total">
                 <td colspan="3"><b>TOTAL</b></td>
-                <td style="text-align:right"><b>${fmt(adjustedTotals(subfaenaSummary.totals).bank)}</b></td>
-                <td style="text-align:right"><b>${fmt(adjustedTotals(subfaenaSummary.totals).cash)}</b></td>
-                <td style="text-align:right"><b>${fmt(adjustedTotals(subfaenaSummary.totals).total)}</b></td>
+                <td style="text-align:right"><b>${fmtCurrency(adjustedTotals(subfaenaSummary.totals).bank)}</b></td>
+                <td style="text-align:right"><b>${fmtCurrency(adjustedTotals(subfaenaSummary.totals).cash)}</b></td>
+                <td style="text-align:right"><b>${fmtCurrency(adjustedTotals(subfaenaSummary.totals).total)}</b></td>
               </tr>
             </tfoot>
           </table>
@@ -555,9 +552,9 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
               <td>${showSubfaena ? r.subfaenaName : ""}</td>
               <td>${r.laborName}</td>
               <td style="font-size:11px;color:#444">${cyclesPeriod(r.cycleIds)}</td>
-              <td style="text-align:right">${fmt(r.bank)}</td>
-              <td style="text-align:right">${fmt(r.cash)}</td>
-              <td style="text-align:right"><b>${fmt(r.total)}</b></td>
+              <td style="text-align:right">${fmtCurrency(r.bank)}</td>
+              <td style="text-align:right">${fmtCurrency(r.cash)}</td>
+              <td style="text-align:right"><b>${fmtCurrency(r.total)}</b></td>
             </tr>`;
           const isLastOfFaena = i === arr.length - 1 || arr[i + 1].faenaName !== r.faenaName;
           if (!isLastOfFaena) return row;
@@ -568,9 +565,9 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
           return `${row}
             <tr class="subtotal-faena">
               <td colspan="4" style="text-align:right"><b>Sub total por faena</b></td>
-              <td style="text-align:right"><b>${fmt(subBank)}</b></td>
-              <td style="text-align:right"><b>${fmt(subCash)}</b></td>
-              <td style="text-align:right"><b>${fmt(subTotal)}</b></td>
+              <td style="text-align:right"><b>${fmtCurrency(subBank)}</b></td>
+              <td style="text-align:right"><b>${fmtCurrency(subCash)}</b></td>
+              <td style="text-align:right"><b>${fmtCurrency(subTotal)}</b></td>
             </tr>`;
         }).join("");
         return `<section class="receipt summary-page">
@@ -598,9 +595,9 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
               ${buildAdjustmentRowsHtml(4)}
               <tr class="summary-total">
                 <td colspan="4"><b>TOTAL</b></td>
-                <td style="text-align:right"><b>${fmt(adjustedTotals(laborSummary.totals).bank)}</b></td>
-                <td style="text-align:right"><b>${fmt(adjustedTotals(laborSummary.totals).cash)}</b></td>
-                <td style="text-align:right"><b>${fmt(adjustedTotals(laborSummary.totals).total)}</b></td>
+                <td style="text-align:right"><b>${fmtCurrency(adjustedTotals(laborSummary.totals).bank)}</b></td>
+                <td style="text-align:right"><b>${fmtCurrency(adjustedTotals(laborSummary.totals).cash)}</b></td>
+                <td style="text-align:right"><b>${fmtCurrency(adjustedTotals(laborSummary.totals).total)}</b></td>
               </tr>
             </tfoot>
           </table>
@@ -626,7 +623,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
               <tr>
                 <td>${i === 0 ? `<b>${r.leader}</b>` : ""}</td>
                 <td>${f.faenaName}</td>
-                <td style="text-align:right">${fmt(f.total)}</td>
+                <td style="text-align:right">${fmtCurrency(f.total)}</td>
               </tr>`).join("");
           }).join("");
           return `
@@ -644,7 +641,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
               <tfoot>
                 <tr class="summary-total">
                   <td colspan="2"><b>Total ${s.title}</b></td>
-                  <td style="text-align:right"><b>${fmt(s.total)}</b></td>
+                  <td style="text-align:right"><b>${fmtCurrency(s.total)}</b></td>
                 </tr>
               </tfoot>
             </table>

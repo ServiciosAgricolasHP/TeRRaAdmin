@@ -8,11 +8,7 @@ import { useCarriers } from "../contexts/CarriersContext";
 import { useToast } from "../contexts/ToastContext";
 import { tripsService, TRIP_KINDS, titleCase } from "../services/transportsService";
 import { CARRIER_TYPES } from "../services/carriersService";
-
-const fmtCurrency = (v) =>
-  new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
-    Number(v) || 0,
-  );
+import { fmtCurrency } from "../utils/format";
 
 // Persistencia de transportistas recientes por ciclo. Cuando se guarda una
 // vuelta, el carrier usado salta al frente de la lista para que el próximo
