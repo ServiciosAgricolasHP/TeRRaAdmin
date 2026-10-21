@@ -90,6 +90,7 @@ import { useLaborForm } from "./cycleDetail/useLaborForm";
 import { useCycleClosing } from "./cycleDetail/useCycleClosing";
 import { useCycleTransports } from "./cycleDetail/useCycleTransports";
 import ScreenLoader from "../components/ScreenLoader";
+import { WORKERS_LIST } from "../services/workersService";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -202,12 +203,7 @@ export default function CycleDetail() {
   const { nextCycle, prevCycle } = useSiblingCycles({ cycle, id });
 
   const loadAllWorkers = async () => {
-    const list = await workersService.list({
-      order: ["name", "asc"],
-      cache: true,
-      persist: true,
-      ttl: 2 * 60 * 60 * 1000,
-    });
+    const list = await workersService.list(WORKERS_LIST);
     setAllWorkers(list);
   };
 

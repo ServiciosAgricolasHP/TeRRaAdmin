@@ -1,14 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
 import { useToast } from "../../contexts/ToastContext";
 import { qrPrefixesService, harvestWeightsService } from "../../services";
-import { workersService } from "../../services/workersService";
+import { workersService, WORKERS_LIST } from "../../services/workersService";
 import { countedList } from "../../services/cache";
 import { useAuth } from "../../contexts/AuthContext";
 import { assignQrCode } from "../../services/qrCodesService";
 import { codesOfWorker, prefixOfCode } from "../../utils/qrCodes";
 import { AssignQrModal } from "./AssignQrModal";
 import { BackfillQrModal } from "./BackfillQrModal";
-import { WORKERS_TTL_MS, readsLabel, TAP } from "./helpers";
+import { readsLabel, TAP } from "./helpers";
 import { TypeToConfirm } from "./TypeToConfirm";
 import ScreenLoader from "../../components/ScreenLoader";
 
@@ -38,12 +38,7 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
       // Mismas opciones que la pestaña de pesajes y que Trabajadores, Nómina y
       // Calendario: comparten clave de caché, así que la primera pantalla que
       // se abre paga y el resto sale de la caché.
-      const { data, reads: readCount } = await countedList(workersService, {
-        order: ["name", "asc"],
-        cache: true,
-        persist: true,
-        ttl: WORKERS_TTL_MS,
-      });
+      const { data, reads: readCount } = await countedList(workersService, WORKERS_LIST);
       setWorkers(data);
       setReads(readCount);
     } catch (err) {

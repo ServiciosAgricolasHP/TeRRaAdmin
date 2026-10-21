@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   advancesService,
   ADVANCE_TYPES,
@@ -9,10 +9,10 @@ import {
   cadenceMeta,
   INSTALLMENT_CADENCES,
 } from "../../services/advancesService";
-import { searchWorkers } from "../../services/workersService";
 import { logsService } from "../../services";
 import { formatRutForDisplay } from "../../utils/rutUtils";
 import ConfirmDialog from "../../components/ConfirmDialog";
+import WorkerSearchPicker from "../../components/WorkerSearchPicker";
 import Modal, { ModalCloseButton } from "../../components/Modal";
 import { hasChanges } from "../../utils/formChanges";
 import { useToast } from "../../contexts/ToastContext";
@@ -65,25 +65,15 @@ export default function AdvanceFormModal({ open, item, items = [], onClose, onSa
     installmentCadence: "porPago",
   });
   const [busy, setBusy] = useState(false);
-  const [picker, setPicker] = useState({ q: "", results: [], open: false });
-  const debRef = useRef(null);
+  // Con el buscador abierto se elige a otra persona.
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   useEffect(() => {
     if (open) {
       setForm(advanceForm(item));
-      setPicker({ q: "", results: [], open: false });
+      setPickerOpen(false);
     }
   }, [open, item]);
-
-  useEffect(() => {
-    if (debRef.current) clearTimeout(debRef.current);
-    if (!picker.open || picker.q.trim().length < 2) return;
-    debRef.current = setTimeout(async () => {
-      const r = await searchWorkers(picker.q.trim(), { take: 20 });
-      setPicker((s) => ({ ...s, results: r }));
-    }, 250);
-    return () => clearTimeout(debRef.current);
-  }, [picker.q, picker.open]);
 
   const [dupConfirm, setDupConfirm] = useState(null);
 
@@ -243,9 +233,9 @@ export default function AdvanceFormModal({ open, item, items = [], onClose, onSa
           </div>
         </div>
 
-        <div className="relative">
+        <div>
           <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">Trabajador</label>
-          {form.workerRut && !picker.open ? (
+          {form.workerRut && !pickerOpen ? (
             <div className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm">
               <span>
                 <span className="font-medium">{form.workerName}</span>
@@ -253,7 +243,7 @@ export default function AdvanceFormModal({ open, item, items = [], onClose, onSa
               </span>
               {!isPartial && (
                 <button
-                  onClick={() => setPicker({ q: "", results: [], open: true })}
+                  onClick={() => setPickerOpen(true)}
                   className="text-xs text-[var(--color-accent)]"
                 >
                   Cambiar
@@ -261,32 +251,13 @@ export default function AdvanceFormModal({ open, item, items = [], onClose, onSa
               )}
             </div>
           ) : (
-            <>
-              <input
-                autoFocus
-                value={picker.q}
-                onChange={(e) => setPicker((s) => ({ ...s, q: e.target.value, open: true }))}
-                placeholder="Buscar por RUT o nombre..."
-                className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
-              />
-              {picker.open && picker.results.length > 0 && (
-                <div className="absolute left-0 right-0 z-10 mt-1 max-h-60 overflow-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] shadow-lg">
-                  {picker.results.map((w) => (
-                    <button
-                      key={w.id}
-                      onClick={() =>
-                        setForm((f) => ({ ...f, workerRut: w.rut || w.id, workerId: w.id, workerName: w.name })) ||
-                        setPicker({ q: "", results: [], open: false })
-                      }
-                      className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-[var(--color-accent-soft)]"
-                    >
-                      <span>{w.name}</span>
-                      <span className="font-mono text-xs text-[var(--color-muted)]">{formatRutForDisplay(w.rut || w.id)}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </>
+            <WorkerSearchPicker
+              autoFocus
+              onPick={(w) => {
+                setForm((f) => ({ ...f, workerRut: w.rut || w.id, workerId: w.id, workerName: w.name }));
+                setPickerOpen(false);
+              }}
+            />
           )}
         </div>
 

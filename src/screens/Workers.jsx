@@ -5,7 +5,7 @@ import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-quartz.css";
 import { AG_GRID_LOCALE_ES } from "../utils/agGridLocale";
 import { workersService } from "../services";
-import { deleteWorkerSafe, detectQueryKind } from "../services/workersService";
+import { deleteWorkerSafe, detectQueryKind, WORKERS_LIST } from "../services/workersService";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import {
   bankName,
@@ -18,7 +18,7 @@ import { useToast } from "../contexts/ToastContext";
 import WorkerSummaryModal from "../components/WorkerSummaryModal";
 import GroupSummaryModal from "../components/GroupSummaryModal";
 import ConfirmDialog from "../components/ConfirmDialog";
-import { matchesSearchQuery } from "../utils/textSearch";
+import { MIN_WORKER_QUERY, workerMatchesQuery, workerQueryReady } from "../utils/workerSearch";
 import { useIsMobile } from "../hooks/useIsMobile";
 import ScreenLoader from "../components/ScreenLoader";
 
@@ -27,7 +27,6 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 // Mínimo de caracteres para que la búsqueda libre filtre la lista. El filtro
 // corre en cliente sobre la lista cacheada, y los filtros de líder y forma de
 // pago no dependen de este mínimo.
-const MIN_SEARCH = 2;
 
 export default function Workers() {
   const toast = useToast();
@@ -49,7 +48,7 @@ export default function Workers() {
 
   const queryKind = detectQueryKind(search);
   const queryRaw = search.trim();
-  const queryReady = queryRaw.replace(/[.\s-]/g, "").length >= MIN_SEARCH;
+  const queryReady = workerQueryReady(queryRaw);
   const filtersActive = leaderFilter !== "" || payFilter !== "";
 
   // Carga la lista completa de trabajadores; lee Firestore solo si la caché
@@ -58,12 +57,7 @@ export default function Workers() {
     if (allWorkers.length) return allWorkers;
     setCacheLoading(true);
     try {
-      const list = await workersService.list({
-        order: ["name", "asc"],
-        cache: true,
-        persist: true,
-        ttl: 2 * 60 * 60 * 1000,
-      });
+      const list = await workersService.list(WORKERS_LIST);
       setAllWorkers(list);
       return list;
     } catch (err) {
@@ -91,15 +85,11 @@ export default function Workers() {
     return [...set].sort((a, b) => a.localeCompare(b, "es"));
   }, [allWorkers]);
 
-  const stripAccents = (s) =>
-    String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();
-
   // Filtrado en cliente sobre `allWorkers`:
   //   1. Líder, si hay uno elegido.
   //   2. Forma de pago (efectivo o transferencia).
-  //   3. Búsqueda libre (desde MIN_SEARCH): cada palabra en el nombre, en
-  //      cualquier orden y sin acentos (matchesSearchQuery), o subcadena del
-  //      RUT o del id.
+  //   3. Búsqueda libre (`workerMatchesQuery`): cada palabra en el nombre, en
+  //      cualquier orden y sin acentos, o una parte del RUT o del id.
   // Sin búsqueda ni filtros devuelve [] y se ve el estado vacío.
   const displayedResults = useMemo(() => {
     if (!queryReady && !filtersActive) return [];
@@ -116,17 +106,7 @@ export default function Workers() {
     } else if (payFilter === "transfer") {
       arr = arr.filter((w) => w.bankDetails?.[3] && !isCashBank(w.bankDetails?.[3]));
     }
-    if (queryReady) {
-      const needle = stripAccents(queryRaw.replace(/[.\s-]/g, ""));
-      if (needle) {
-        arr = arr.filter((w) => {
-          if (matchesSearchQuery(w.name, queryRaw)) return true;
-          const id = stripAccents(String(w.id || "").replace(/[.\s-]/g, ""));
-          const rut = stripAccents(String(w.rut || "").replace(/[.\s-]/g, ""));
-          return id.includes(needle) || rut.includes(needle);
-        });
-      }
-    }
+    if (queryReady) arr = arr.filter((w) => workerMatchesQuery(w, queryRaw));
     return arr;
   }, [queryReady, filtersActive, leaderFilter, payFilter, allWorkers, queryRaw]);
 
@@ -140,12 +120,7 @@ export default function Workers() {
   // `workersService` ya actualizó en modo aditivo.
   const refreshCache = async () => {
     try {
-      const list = await workersService.list({
-        order: ["name", "asc"],
-        cache: true,
-        persist: true,
-        ttl: 2 * 60 * 60 * 1000,
-      });
+      const list = await workersService.list(WORKERS_LIST);
       setAllWorkers(list);
     } catch { /* noop */ }
   };
@@ -317,7 +292,7 @@ export default function Workers() {
               ? "Cargando trabajadores..."
               : showResults
                 ? `${displayedResults.length} resultado(s) · ${allWorkers.length} en total`
-                : `Busca por nombre, apellido o RUT (mín. ${MIN_SEARCH} caracteres) · ${allWorkers.length} trabajadores`}
+                : `Busca por nombre, apellido o RUT (mín. ${MIN_WORKER_QUERY} caracteres) · ${allWorkers.length} trabajadores`}
           </p>
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
@@ -325,7 +300,7 @@ export default function Workers() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder={`Buscar por nombre, apellido o RUT (mín. ${MIN_SEARCH})...`}
+              placeholder="Buscar por nombre, apellido o RUT…"
               className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 pr-16 text-sm shadow-sm outline-none focus:border-[var(--color-accent)]"
             />
             {queryKind && (
@@ -405,7 +380,7 @@ export default function Workers() {
           <ScreenLoader label="Cargando trabajadores…" className="h-full" />
         ) : !showResults ? (
           <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-[var(--color-border)] text-sm text-[var(--color-muted)]">
-            Busca por nombre, apellido o RUT (mín. {MIN_SEARCH} caracteres) o activa un filtro para listar.
+            Busca por nombre, apellido o RUT (mín. {MIN_WORKER_QUERY} caracteres) o activa un filtro para listar.
           </div>
         ) : displayedResults.length === 0 ? (
           <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-[var(--color-border)] text-sm text-[var(--color-muted)]">

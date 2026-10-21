@@ -11,6 +11,7 @@ import { DayExpandedModal } from "./calendar/DayExpandedModal";
 import { monthBounds, isWeekendDate } from "./calendar/helpers";
 import { Legend } from "./calendar/Legend";
 import { MonthGrid } from "./calendar/MonthGrid";
+import { WORKERS_LIST } from "../services/workersService";
 
 // ============================================================================
 // CALENDARIO DE PRODUCCIÓN
@@ -155,12 +156,7 @@ export default function Calendar() {
           cyclesService.list({ cache: true, ttl: 5 * 60 * 1000 }),
           jobsService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
           subjobsService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
-          workersService.list({
-            order: ["name", "asc"],
-            cache: true,
-            persist: true,
-            ttl: 2 * 60 * 60 * 1000,
-          }),
+          workersService.list(WORKERS_LIST),
         ]);
         if (cancelled) return;
         setCycles(c);

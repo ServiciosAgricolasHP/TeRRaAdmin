@@ -126,7 +126,7 @@ src/
   App.jsx               ← router (react-router-dom)
   firebase.js           ← Firebase init (Firestore db = "hpdatabase")
   components/           ← UI compartida (Layout, ProtectedRoute, Modal, ConfirmDialog, RowMenu, TransportsModal, WorkerEditModal, WorkerSummaryModal, etc.)
-  hooks/                ← hooks que usan varias pantallas (useIsMobile)
+  hooks/                ← hooks que usan varias pantallas (useIsMobile, useWorkersList)
   screens/              ← componentes de ruta / page-level route components
                         (Dashboard, Jobs, CycleDetail, Workers, Transports, Payroll, Advances,
                          InterestLinks, Calendar, AdminConsole, Users, NoAccess, MigrateWorkers,
@@ -514,7 +514,9 @@ Implementación en `submitCycle` (`screens/jobs/useCycleForm.js`), con el cálcu
 ## Trabajadores / Workers
 
 - Pantalla: `src/screens/Workers.jsx`.
-- **Búsqueda client-side sobre la lista cacheada** (única fuente de datos). Al montar la pantalla, `ensureAllForModal()` trae la lista completa via `workersService.list({ cache: true, persist: true, ttl: 2h })` — primera carga ~500-2000 reads, después gratis hasta que vence el TTL. El filtro es substring acentos-insensitive sobre nombre y RUT (sin puntos/guiones), gated por `MIN_SEARCH = 2`. Permite buscar por apellido o dígitos del RUT en cualquier posición. `searchWorkers` (búsqueda por prefijo en el servidor) se usa solo en autocompletes chicos (`Advances`, `GroupSummaryModal`).
+- **Búsqueda client-side sobre la lista cacheada** (única fuente de datos). Al montar la pantalla, `ensureAllForModal()` trae la lista completa con `workersService.list(WORKERS_LIST)` — primera carga ~500-2000 reads, después gratis hasta que vence el TTL. La búsqueda es `workerMatchesQuery` (`utils/workerSearch.js`, con tests): cada palabra en el nombre, en cualquier orden y sin acentos, o una parte del RUT o del id sin puntos ni guion, desde 2 caracteres (`MIN_WORKER_QUERY`). Permite buscar por apellido o dígitos del RUT en cualquier posición.
+- **`WORKERS_LIST`** (`services/workersService.js`) son las opciones con que toda la app pide la lista de trabajadores (por nombre, en caché 2 h, también en `localStorage`). La clave de la caché sale de ellas: si una pantalla las escribe a mano y difieren, esa pantalla paga su propia lectura de la colección entera.
+- **Elegir a una persona** en un formulario (Anticipos, Resúmenes por grupo) es `WorkerSearchPicker` (`components/`): la misma búsqueda sobre la lista en caché (`useWorkersList`, `hooks/`), con los resultados debajo del campo y Enter para elegir el primero.
 - Auto-detect badge **RUT** vs **Nombre** (basado en `detectQueryKind`: empieza con dígito → RUT).
 - **Filtros opcionales** (componibles con la búsqueda): dropdown 👥 Líder (con opción "— Sin líder —" + lista única extraída del dataset completo) y chips toggle 💵 Efectivo / 🏦 Transferencia. Los filtros ignoran el gate de `MIN_SEARCH` — activar cualquiera muestra resultados aunque la query esté vacía. Al editar/eliminar/togglear banco desde la grilla, `refreshCache()` re-trae la lista para reflejar el cambio.
 - Acciones por fila: 📊 Resumen, Editar, ✕. La forma de pago se muestra como **indicador informativo** (`💵 Efectivo` / `🏦 Transferencia`) — no es toggle. El cambio de banco se hace adentro de `WorkerEditModal`, que tiene un botón **🆔 Asignar Cuenta RUT** que setea Banco Estado + Cuenta RUT en un click usando el RUT del trabajador.
@@ -523,7 +525,7 @@ Implementación en `submitCycle` (`screens/jobs/useCycleForm.js`), con el cálcu
 - **Doc id = RUT con que se creó la ficha**, y es el id estable (`workerId`). El RUT vigente está en el campo `rut`, que puede diferir si se corrigió una cédula (ver `docs/data-model.md`).
 - **Se cruza por el id y se muestra siempre `worker.rut`.** Una jornada, un item de nómina o una entrada de labor guardan el RUT del momento en que se crearon, y ese valor sigue siendo la clave de los cruces. Para mostrarlo se pasa por `currentRutResolver(workers)` (`utils/workerRut.js`), que lo traduce al vigente con la lista de trabajadores ya cargada, sin lecturas extra. Lo usan Nómina (vista previa, detalle, impresiones, XLSX y Pagos anteriores, que además agrupa por `workerId`), la grilla del ciclo (`_displayRut` en las filas) y Pesajes QR.
 - Bank details = `[paymentRut, accountNumber, accountType, bankCode]` (orden importante).
-- `services/workersService.js` expone `findWorkerByRut`, `createWorker`, `deleteWorkerSafe`, `searchWorkers` (server-side prefix), `detectQueryKind`.
+- `services/workersService.js` expone `findWorkerByRut`, `createWorker`, `deleteWorkerSafe`, `detectQueryKind` y `WORKERS_LIST`.
 
 ### Líder de grupo — estricto
 
@@ -708,7 +710,7 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 - Estados: `pending` | `partial` | `applied` | `cancelled`. `partial` = `amountPaid > 0 && amountPaid < amount` (la siguiente nómina sigue aplicando contra el saldo pendiente).
 - Documento: `{type, workerRut, workerName, amount, date, note, status, amountPaid, payments[], appliedPayrollId, appliedAt, appliedBy, installments}`.
 - UI: filtros por tipo (todos / anticipo / bono), búsqueda, status. El filtro "Pendientes" agrupa `pending` + `partial` (mismo criterio que `listPendingForWorkers()`) — un parcial sigue debiendo saldo, el badge "Parcial" lo distingue visualmente dentro del mismo bucket, no hay pestaña separada. Dos botones de creación (🪙 + Anticipo, 🎁 + Bono). Cada fila muestra el badge de signo correspondiente.
-- El formulario de alta y edición es `screens/advances/AdvanceFormModal.jsx`, con `searchWorkers` para autocompletar trabajador.
+- El formulario de alta y edición es `screens/advances/AdvanceFormModal.jsx`; la persona se elige con `WorkerSearchPicker` (ver Trabajadores).
 - **Lock de Editar/Eliminar**: `applied` (totalmente aplicado) → ambos bloqueados. `partial` → Editar habilitado, Eliminar bloqueado.
 - **"Perdonazo" de saldo en parciales**: editar un `partial` permite bajar `amount` hasta `amountPaid` para cerrar la cuenta — el status se recalcula al guardar (`newAmount ≤ amountPaid` → `applied`; `>` → sigue `partial`). El modal muestra banner con Pagado/Resta, bloquea `type` y `worker` (no se pueden reasignar pagos existentes), y valida que `newAmount ≥ amountPaid`. El doc + `payments[]` quedan intactos para auditoría.
 - **Cuotas** (`installments: {count, amount, cadence} | null`, solo `type: "anticipo"`): plan de pago en cuotas, elegido al crear (N° de cuotas; el sistema calcula `amount = Math.ceil(total/count)`) y **fijo para siempre** — no editable después (borrar y recrear si hace falta cambiarlo, solo mientras sigue `pending`). `cadence` (`porPago`/`quincenal`/`mensual`) es una **etiqueta informativa para el admin, no un gate automático por fecha** — no hay cron en la app, así que nada se salta solo; ver "Integración con Nómina" abajo. Helpers en `advancesService.js`: `hasInstallmentPlan`, `computeCuotaAmount`, `advanceDueNow`, `installmentProgress`, `cadenceMeta`, `daysSinceLastCuota`.
@@ -1134,7 +1136,7 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 - **TTL largo (2 h) + botón 🔄 Refrescar**, no TTL corto. Los pesajes cambian todo el rato mientras se cosecha, y por eso mismo ningún TTL automático deja la pantalla fresca: solo decide cada cuánto se vuelve a pagar. Con TTL largo la antigüedad queda a la vista ("hace N min") y refrescar es una decisión de quien mira. Los inputs de fecha van con debounce de 400 ms, para no releer el rango en cada tecla.
 - El explorador **no persiste** en `localStorage`: cada rango es su propia clave y la lista de trabajadores ya ocupa lo suyo. En memoria alcanza para ir y venir entre pestañas.
 - **Contador de lecturas visible solo para admin** en las tres pestañas (`· N lecturas` / `· desde caché`), mismo criterio que Dashboard y Calendario. Es lo que hace verificable todo lo anterior: si un día vuelve a mostrar un número grande donde decía "desde caché", alguien cambió las opciones de un `list()` y rompió la clave compartida.
-- Las listas compartidas (`worker` a 2 h, `faenas` a 10 min) usan **las mismas opciones que el resto de la app**. La clave de caché es `collection::{wheres,order,take}` y **no incluye el TTL**, así que el último que escribe sella el vencimiento para todos: bajarlo acá le acorta la caché a Trabajadores, Nómina y Calendario sin que se note. Omitir `cache: true` es peor que un TTL corto — esa llamada no lee la entrada **ni la escribe**, así que paga siempre y encima no deja la caché caliente para las demás pantallas.
+- Las listas compartidas (`worker` con `WORKERS_LIST`, `faenas` a 10 min) usan **las mismas opciones que el resto de la app**. La clave de caché es `collection::{wheres,order,take}` y **no incluye el TTL**, así que el último que escribe sella el vencimiento para todos: bajarlo acá le acorta la caché a Trabajadores, Nómina y Calendario sin que se note. Omitir `cache: true` es peor que un TTL corto — esa llamada no lee la entrada **ni la escribe**, así que paga siempre y encima no deja la caché caliente para las demás pantallas.
 
 ### Candado en la grilla del ciclo
 
