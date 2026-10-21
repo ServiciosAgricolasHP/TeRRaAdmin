@@ -1,11 +1,14 @@
 import { useState } from "react";
 import WorkersTab from "./workers/WorkersTab";
 import EmploymentsTab from "./workers/EmploymentsTab";
+import FeeListsTab from "./workers/FeeListsTab";
 
 const TABS = [
   { value: "workers", label: "👷 Trabajadores" },
   { value: "employments", label: "📄 Contratos" },
+  { value: "fees", label: "🧾 Honorarios" },
 ];
+const TAB_CONTENT = { workers: WorkersTab, employments: EmploymentsTab, fees: FeeListsTab };
 const TAB_KEY = "workers.tab";
 
 const savedTab = () => {
@@ -16,13 +19,14 @@ const savedTab = () => {
   }
 };
 
-// Trabajadores: la lista de personas y sus contratos y honorarios, en
-// pestañas. Abre en la última elegida.
+// Trabajadores: la lista de personas, sus contratos y honorarios, y las listas
+// de honorarios, en pestañas. Abre en la última elegida.
 export default function Workers() {
   const [tab, setTab] = useState(() => {
     const saved = savedTab();
     return TABS.some((t) => t.value === saved) ? saved : "workers";
   });
+  const Content = TAB_CONTENT[tab];
   const choose = (value) => {
     setTab(value);
     try { localStorage.setItem(TAB_KEY, value); } catch { /* noop */ }
@@ -48,7 +52,9 @@ export default function Workers() {
           </button>
         ))}
       </div>
-      <div className="min-h-0 flex-1">{tab === "workers" ? <WorkersTab /> : <EmploymentsTab />}</div>
+      <div className="min-h-0 flex-1">
+        <Content />
+      </div>
     </div>
   );
 }

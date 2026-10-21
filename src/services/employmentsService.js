@@ -3,6 +3,10 @@ import { db, auth } from "../firebase";
 import { createService } from "./firestoreBase";
 import { invalidate } from "./cache";
 import { logAction } from "./logger";
+import { cyclesService, jobsService } from "./index";
+import { fetchWorkdaysInRange } from "./calendarService";
+import { workedDays } from "../utils/employment";
+import { workerIdResolver } from "../utils/workerRut";
 
 // Contratos y honorarios de los trabajadores (`employments`) y las empresas
 // empleadoras (`employers`). Las altas y ediciones de a uno pasan por el
@@ -117,4 +121,32 @@ export async function setSettlementStatus(ids, status, date) {
   await commitInChunks(ids.map((id) => (batch) => batch.update(doc(db, COLLECTION, id), { ...patch, ...stamp() })));
   invalidate(COLLECTION);
   await logAction({ action: "settlement", entity: "employment", entityId: null, meta: { ids, count: ids.length, status, date } });
+}
+
+// Las mismas opciones que Transportes y Calendario, así comparten la caché. Sin
+// orden: un `orderBy` deja afuera los ciclos que no tienen ese campo.
+const CYCLES_LIST = { cache: true, persist: true, ttl: 5 * 60 * 1000 };
+const FAENAS_LIST = { cache: true, persist: true, ttl: 10 * 60 * 1000 };
+
+// Lo que hace falta para contar días en un rango: los días trabajados de cada
+// persona por faena (`workedDays`), los contratos y honorarios vigentes en el
+// rango, y las faenas con su nombre. Las jornadas se leen enteras (una lectura
+// por jornada, como el Calendario); `reads` dice cuántas fueron. La usan las
+// listas de honorarios y de imposiciones.
+export async function loadWorkedDays(from, to, workers) {
+  const [workdays, cycles, faenas, employments] = await Promise.all([
+    fetchWorkdaysInRange(from, to),
+    cyclesService.list(CYCLES_LIST),
+    jobsService.list(FAENAS_LIST),
+    listEmploymentsFrom(from),
+  ]);
+  const faenaOfCycle = new Map(cycles.map((c) => [c.id, c.faenaId || ""]));
+  const names = new Map(faenas.map((f) => [f.id, f.name || ""]));
+  return {
+    worked: workedDays(workdays, faenaOfCycle, { workerIdOf: workerIdResolver(workers) }),
+    employments,
+    faenas: faenas.map((f) => ({ id: f.id, name: f.name || "" })).sort((a, b) => a.name.localeCompare(b.name, "es")),
+    faenaNameOf: (id) => names.get(id) || "",
+    reads: workdays.length,
+  };
 }

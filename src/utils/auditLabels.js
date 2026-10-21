@@ -105,6 +105,8 @@ export const ENTITY_META = {
   phoneContact: { labelEs: "Contacto de la agenda", labelOf: (d) => d?.name },
   employment: { labelEs: "Contrato u honorarios", labelOf: (d) => d?.workerName },
   employer: { labelEs: "Empleador", labelOf: (d) => d?.name },
+  feeList: { labelEs: "Lista de honorarios", labelOf: (d) => (d?.employerName ? `${d.employerName} ${d.from} → ${d.to}` : null) },
+  employmentConfig: { labelEs: "Config. de honorarios" },
   dteDocument: { labelEs: "Documento SII" },
   catalog: { labelEs: "Catálogo", labelOf: (_d, id) => id },
   priceBookEntry: { labelEs: "Libro de precios" },

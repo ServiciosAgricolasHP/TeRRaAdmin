@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  loadWorkedDays,
   startEmployments,
   endEmployments,
   setSettlementStatus,
@@ -8,8 +9,8 @@ import {
   listSettlements,
   listWorkerEmployments,
 } from "../../src/services/employmentsService";
-import { planStartEmployments, planEndEmployments } from "../../src/utils/employment";
-import { ANA, BETO, CARO, all } from "./helpers/seed";
+import { planStartEmployments, planEndEmployments, feeRows } from "../../src/utils/employment";
+import { ANA, BETO, CARO, FAENA, all, seedCycle, seedWorkday } from "./helpers/seed";
 
 // Contratar y terminar en bloque, como lo hacen los modales de Contratos: la
 // pantalla lee los períodos de esas personas, arma el plan y lo escribe.
@@ -75,5 +76,26 @@ describe("contratos en bloque", () => {
     const again = await contratar([people[0]], { type: "fees", employerId: "hp", startDate: "2026-10-16" });
     expect(again.created).toHaveLength(1);
     expect((await listWorkerEmployments(ANA.id)).map((e) => e.type)).toEqual(["fees", "contract"]);
+  });
+});
+
+describe("días trabajados para las listas", () => {
+  it("lee las jornadas del rango y las cruza con los honorarios del empleador", async () => {
+    await seedCycle({ dias: ["2026-03-02", "2026-03-03", "2026-03-04"] });
+    await seedWorkday({ rut: ANA.id, date: "2026-03-02", amount: 20000 });
+    await seedWorkday({ rut: ANA.id, date: "2026-03-03", amount: 20000 });
+    await seedWorkday({ rut: BETO.id, date: "2026-03-03", amount: 20000 });
+    await seedWorkday({ rut: ANA.id, date: "2026-03-09", amount: 20000 });
+    await startEmployments([
+      { workerId: ANA.id, workerRut: ANA.id, workerName: ANA.name, type: "fees", employerId: "hp", startDate: "2026-03-01", endDate: "", endReason: null, settlementStatus: null, notes: "" },
+      { workerId: BETO.id, workerRut: BETO.id, workerName: BETO.name, type: "contract", employerId: "hp", startDate: "2026-03-01", endDate: "", endReason: null, settlementStatus: null, notes: "" },
+    ]);
+
+    const data = await loadWorkedDays("2026-03-01", "2026-03-08", [{ id: ANA.id }, { id: BETO.id }]);
+    expect(data.reads).toBe(3);
+    expect(data.faenaNameOf(FAENA)).toBe("Faena Uno");
+    expect(feeRows(data.employments, data.worked, { employerId: "hp", from: "2026-03-01", to: "2026-03-08" })).toEqual([
+      { workerId: ANA.id, faenaId: FAENA, days: 2 },
+    ]);
   });
 });
