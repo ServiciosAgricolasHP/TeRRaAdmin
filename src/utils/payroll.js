@@ -1,35 +1,8 @@
-// Helpers de nómina: formato de nómina de Banco de Chile, Transferencias y Efectivo.
+// Helpers de nómina: lo de cada trabajador y el Excel de la nómina (la hoja del
+// banco, Resumen, Transferencias y Efectivo).
 // ExcelJS se carga lazy, solo al exportar.
-import { ACCOUNT_TYPES, bankName, isCashBank } from "./banks";
-import { normalizeRut } from "./rutUtils";
+import { bankName, isCashBank } from "./banks";
 import { getTratoTierTotals } from "./cosechaCombos";
-
-// Quita tildes y caracteres especiales (BChile solo acepta ASCII).
-export function cleanText(text) {
-  if (!text) return "";
-  return String(text)
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^A-Za-z0-9 ]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-// RUT con el DV pegado, sin guion ni puntos. Si no tiene la forma esperada,
-// devuelve el valor normalizado sin guiones ni puntos.
-export function rutWithDvNoDash(rut) {
-  const r = normalizeRut(rut);
-  const m = r.match(/^(\d+)-([0-9KBH])$/);
-  if (!m) return r.replace(/[-.]/g, "");
-  return m[1] + m[2];
-}
-
-// Tipo de cuenta (0/1/3) → código BChile (CTD / JUV / JUV); JUV si no se reconoce.
-export function bchileAccountTypeCode(accountTypeValue) {
-  const v = Number(accountTypeValue);
-  const found = ACCOUNT_TYPES.find((t) => t.value === v);
-  return found?.code || "JUV";
-}
 
 // Lo que una jornada suma al bruto. Trato puede venir repartido en tiers.
 // También lo usa el selector de días de "Agregar persona", así muestra lo
@@ -48,7 +21,7 @@ export function aggregateWorkerAmounts(workdays, laborTypeById) {
     // Un día en cero SÍ entra a `workdayIds`, así queda etiquetado con
     // `payrollId` y cuadra el "pagado / pendiente" del ciclo. Es el caso de
     // los días de asistencia de un sueldo mensual (`attendanceOnly: true,
-    // amount: 0`). El archivo del banco los filtra (ver `buildBchileRows`).
+    // amount: 0`). El archivo del banco los filtra (ver `utils/bankFormats.js`).
     if (!byWorker.has(wd.workerRut)) {
       // workerId es el id estable del trabajador; si el workday no lo trae,
       // se usa el rut.
@@ -134,65 +107,15 @@ const STYLE_GRAND_TOTAL = { font: { bold: true, size: 12 }, fill: fill("FFC6EFCE
 const STYLE_BANK_TOTAL = { font: { bold: true }, fill: fill("FFD9E1F2"), border: BORDER_ALL };
 const STYLE_CELL = { border: BORDER_ALL };
 
-// ─────────────────────────── Hoja BChile ───────────────────────────
-// El banco rechaza las filas sin mail, así que las que no lo traen se
-// completan con la casilla de remuneraciones.
-export const BCHILE_DEFAULT_EMAIL = "remuneracionesis@gmail.com";
-
-export const BCHILE_HEADERS = [
-  "Rut Beneficiario *",
-  "Nombre Beneficiario *",
-  "Cuenta beneficiario *",
-  "Cod Banco *",
-  "Monto *",
-  "Tipo de Cuenta *",
-  "Identificador",
-  "Descripcion del Pago",
-  "Mail destinatario",
-  "Campo Libre 1  (Glosa 1)",
-  "Campo Libre 2 (Glosa 2)",
-];
-
-// Las filas que ingiere el portal del banco, como matriz de primitivos. Va
-// aparte de la escritura en ExcelJS para probar sin el workbook las tres
-// reglas que deciden a qué cuenta va la plata.
-export function buildBchileRows(items = []) {
-  // Cero-neto afuera (por ejemplo, quien liquida un anticipo con todo su
-  // bruto): el banco no acepta transferencias de $0.
-  // Orden alfabético por nombre para que el correlativo A001…A999 sea estable.
-  const ordenados = items
-    .filter((it) => Math.round(Number(it.amount) || 0) > 0)
-    .sort((a, b) =>
-      cleanText(a.name || "").localeCompare(cleanText(b.name || ""), "es", { sensitivity: "base" }),
-    );
-
-  return ordenados.map((it, idx) => [
-    // `paymentRut` viene de bankDetails[0] (la cuenta destino del banco) y
-    // puede diferir del RUT de la persona — p.ej. cuando el pago va a una
-    // cuenta de un familiar. El portal de BChile lo valida contra la
-    // titularidad de la cuenta, así que va paymentRut, y el RUT de la persona
-    // solo si no hay paymentRut.
-    rutWithDvNoDash(it.paymentRut || it.rut),
-    cleanText(it.name),
-    String(it.accountNumber || ""),
-    String(it.bankCode || ""),
-    Math.round(Number(it.amount) || 0),
-    bchileAccountTypeCode(it.accountType),
-    `A${String(idx + 1).padStart(3, "0")}`,
-    "",
-    it.email || BCHILE_DEFAULT_EMAIL,
-    "",
-    "",
-  ]);
-}
-
-function buildBchileSheet(wb, items) {
-  const ws = wb.addWorksheet("Nomina");
-  ws.addRow(BCHILE_HEADERS);
-  for (const row of buildBchileRows(items)) ws.addRow(row);
+// ─────────────────────────── Hoja del banco ───────────────────────────
+// La hoja que se sube al banco, en el formato elegido (`utils/bankFormats.js`).
+function buildBankSheet(wb, format, items) {
+  const ws = wb.addWorksheet(format.sheetName);
+  ws.addRow(format.headers);
+  for (const row of format.buildRows(items)) ws.addRow(row);
   ws.getRow(1).eachCell((c) => (c.style = STYLE_HEADER));
-  ws.columns.forEach((col, i) => {
-    col.width = i === 1 ? 30 : i === 8 ? 28 : 16;
+  format.columnWidths.forEach((width, i) => {
+    ws.getColumn(i + 1).width = width;
   });
   return ws;
 }
@@ -425,13 +348,15 @@ async function writeWorkbook(wb, filename) {
   URL.revokeObjectURL(url);
 }
 
-export async function downloadBchileXlsx(items, filename = "Nomina", cycles = []) {
+// El Excel completo: la hoja del banco en el formato `format`, Resumen,
+// Transferencias y Efectivo.
+export async function downloadPayrollXlsx(items, filename = "Nomina", cycles = [], format) {
   const ExcelJS = (await import("exceljs")).default;
   const wb = new ExcelJS.Workbook();
   const { bank, cash } = splitBankAndCash(items);
 
-  // Nomina va primera: es la hoja que ingiere el banco.
-  buildBchileSheet(wb, bank);
+  // La hoja del banco va primera: es la que ingiere el banco.
+  buildBankSheet(wb, format, bank);
   buildResumenSheet(wb, bank, cash, cycles);
   buildTransferenciasSheet(wb, bank, cycles);
   buildEfectivoSheet(wb, cash, cycles);
@@ -439,12 +364,12 @@ export async function downloadBchileXlsx(items, filename = "Nomina", cycles = []
   await writeWorkbook(wb, filename);
 }
 
-// Solo la hoja Nomina de BChile: el archivo que se sube al portal del banco.
-export async function downloadNominaOnlyXlsx(items, filename = "Nomina") {
+// Solo la hoja del banco: el archivo que se sube a su portal.
+export async function downloadBankFileXlsx(items, filename = "Nomina", format) {
   const ExcelJS = (await import("exceljs")).default;
   const wb = new ExcelJS.Workbook();
   const { bank } = splitBankAndCash(items);
-  buildBchileSheet(wb, bank);
+  buildBankSheet(wb, format, bank);
   await writeWorkbook(wb, filename);
 }
 

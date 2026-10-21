@@ -281,6 +281,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Trabajador | `worker` | `worker` |
 | Líder de grupo | `groupLeader` | `groupLeader` |
 | Nómina | `payroll` | `payrolls` |
+| Formato del archivo del banco | `bankFormat` | dentro de `payrollConfig` |
 | Cobrar / Pagar (modos del resumen del ciclo) | `charge` / `pay` | `cycleSummaries` (guardado como `cobrar`) |
 | Bono de manejo (conducir) | `drivingBonus` | dentro de `cycles.labors` (guardado como `bonusManejo`) |
 | Anticipo / Bono | `advance` / `bonus` | `advances` (`type: "anticipo"` o `"bono"`) |
@@ -382,11 +383,15 @@ Bono adicional configurable por día para trato y cosecha. Pensado para compensa
 
 ## Faenas / Ciclos / Cycles
 
-- Pantalla: `src/screens/Jobs.jsx` (el componente de la ruta `/faenas`, con las faenas, sus grupos y los formularios). Sus piezas, en `src/screens/jobs/`:
-  - **Grupos y colores:** `GroupHeader` (el encabezado de un grupo de faenas), `ColorPickerButton` y `ColorPalette`.
-  - **Detalle de la faena:** `SelectedDetail`, `SubjobListBody` (sus subfaenas) y `CycleRow`.
-  - **Alta de ciclo:** `ImportSection` (importar desde un ciclo abierto).
-  - **Resumen de producción:** `ProductionSummaryModal` (lo abren el ciclo y la faena), con sus piezas en `productionSummaryModal/`: `CombinedSummaryCard` (la tabla general), `LaborSummaryCard`, `LaborGroupTotalsCard`, `buildCell.js` (los datos de una celda), `tableStyles.js` y `helpers.js`.
+- Pantalla: `src/screens/Jobs.jsx` (el componente de la ruta `/faenas`: las tarjetas de las faenas por grupo y el detalle de la elegida). Sus piezas, en `src/screens/jobs/`:
+  - **Carga:** `useJobsData` (las faenas con el orden de sus tarjetas, y las subfaenas y ciclos de la faena elegida).
+  - **Grupos y colores:** `useJobLayout` (grupos, colores, grupos plegados y arrastrar para reordenar), `GroupHeader` (el encabezado de un grupo de faenas), `ColorPickerButton` y `ColorPalette`.
+  - **Detalle de la faena:** `SelectedDetail`, `SubjobListBody` (sus subfaenas), `CycleRow` y `useSubjobDisplay` (subfaenas plegadas, ciclos cerrados a la vista y subfaenas ocultas).
+  - **Faenas y subfaenas:** `useJobForms`, `JobFormModal`, `SubjobFormModal` y `FirstCycleOfferModal` (ofrecer el primer ciclo de una subfaena nueva).
+  - **Ciclos:** `useCycleForm` y `CycleFormModal` (alta y edición, con `ImportSection` para importar desde un ciclo abierto), y `useCloseCycleFlow` con `CloseCycleModal` (cerrar y encadenar el siguiente). El cálculo de importar y encadenar vive en `utils/cycleCreation.js`, con tests.
+  - **Eliminar:** `useJobDeletion` (faena, subfaena o ciclo, con la cascada y sus bloqueos).
+  - **Comunes:** `helpers.js` (`withInitial`, `defaultLabors`, `newId` y `todayStr`).
+  - **Resumen de producción:** `ProductionSummaryModal` (lo abren el ciclo y la faena), con sus piezas en `productionSummaryModal/`: `useProductionData` (las jornadas, vueltas y grupos de labor que lee mientras está abierto), `CombinedSummaryCard` (la tabla general), con `useProfitSettings` (los % de ganancia, lo que paga el cliente, "ya pagamos" e IVA, guardados en el dispositivo), `ProfitSettingsPanel` (donde se ajustan), `combinedSummaryText.js` (el texto que se copia) y `writeCombinedSummaryXlsx.js`; `LaborSummaryCard`, `LaborGroupTotalsCard`, `buildCell.js` (los datos de una celda), `tableStyles.js` y `helpers.js`. Las reglas de ganancia y los totales de la tabla general viven en `utils/combinedSummary.js`, y el orden de los ciclos, las columnas, los días, los datos de cada labor, el transporte y los totales por grupo en `utils/productionSummary.js`, los dos con tests.
 - Jerarquía: Faena → Subfaena → Ciclo → Labors → Workdays.
 - Label de ciclo = prefijo bloqueado `Faena/Subfaena/` + sufijo editable.
 - Estados: `open` | `closed`. Se permiten **múltiples ciclos abiertos** por (faena, subfaena) — útil para correr varios frentes en paralelo o para "carve off" temporales.
@@ -425,7 +430,7 @@ Al crear un ciclo nuevo, si en la misma subfaena hay al menos un ciclo abierto, 
 - **Copiar precios por día** (opcional): copia las entradas de `dayPrices` re-keadas por el nuevo `laborId` y filtradas por días seleccionados.
 - **Mover jornadas** (opcional, destructivo): para cada (labor seleccionada × día seleccionado), lee los workdays del origen y los re-crea en el nuevo ciclo con el nuevo `docId` (que encodea cycleId+laborId), luego borra los originales. Workdays con `payrollId` se saltan para no romper snapshots de nómina ya generadas — el usuario recibe un alert con el count de skipped.
 
-Implementación en `submitCycle` (`Jobs.jsx`). El mapeo `oldLaborId → newLaborId` vive en un `Map` que sirve para re-keear tanto `dayPrices` como los `docId` de workdays movidos.
+Implementación en `submitCycle` (`screens/jobs/useCycleForm.js`), con el cálculo en `utils/cycleCreation.js` (`cloneLabors`, `importedDayPrices`, `movedWorkday`). El mapeo `oldLaborId → newLaborId` vive en un `Map` que sirve para re-keear tanto `dayPrices` como los `docId` de workdays movidos.
 
 ### CycleDetail — grid
 
@@ -525,16 +530,18 @@ Implementación en `submitCycle` (`Jobs.jsx`). El mapeo `oldLaborId → newLabor
 
 ## Nómina / Payroll
 
-- Pantalla: `src/screens/Payroll.jsx` (el componente de la ruta y el paso Generar). Ruta `/payroll`.
+- Pantalla: `src/screens/Payroll.jsx` (el componente de la ruta: las pestañas y los modales que se abren desde ellas). Ruta `/payroll`.
 - Sus piezas, en `src/screens/payroll/`:
-  - **Generar:** `CycleSelector`, `PreviewTable`, `PayConfirmModal`, `InstallmentConfirmModal`, `ProgressOverlay` y `CloseCyclesModal` (cerrar los ciclos ya pagados).
-  - **Historial:** `HistoryList`, `PayStatePill` (con `PaymentDatesLine` y `PortalBadge`) y `payState.js`.
+  - **Carga y encabezado:** `usePayrollData` (faenas, subfaenas, ciclos, trabajadores, nóminas y lo pendiente de cada ciclo activo), `PayrollHeader` (el título, la configuración, recargar y las pestañas) y `ProgressOverlay`.
+  - **Generar:** `CycleSelector` con `useCycleSelection` (los ciclos, sus labores y las personas sueltas), `PreviewTable` con `usePayrollPreview` (armar la vista previa y editarla), `useGeneratePayroll` con `InstallmentConfirmModal` (confirmar cuotas y cuentas con problemas, y guardar), y `CloseCyclesModal` con `useClosableCycles` (cerrar los ciclos ya pagados). El cálculo vive en `utils/payrollCycles.js` (lo pendiente por ciclo, los ciclos abiertos por faena, los elegidos y los ciclos del Excel) y `utils/payrollPreview.js` (las filas de la vista previa, editar un anticipo o un bono, las cuotas, y los items y totales que se guardan), los dos con tests.
+  - **Historial:** `HistoryList`, `PayStatePill` (con `PaymentDatesLine` y `PortalBadge`) y `payState.js`; `PayConfirmModal` con `usePayConfirm` (pagar, solo transferencias y revertir), `usePayrollDeletion` (eliminar), `usePayrollDownloads` (el Excel completo, la hoja del banco y el JSON, con `downloadSnapshotJson.js`) y `usePortalPublish` con `PublishPortalDialog` (publicar en el portal).
   - **Detalle:** `PayrollDetailModal`, sus filtros (`FilterChips`) y sus modales (`AddCyclesModal`, `AddWorkerDaysModal`, `RecalcModal`, `CashEstimationModal`, `RenamePayrollModal`). El detalle de pago de una persona: `WorkerDetailRow`, `WorkerPaySummaryCards` y `WorkerPaidDetailTables`, con `workerDetailLabels.js`; su cálculo (los montos por ciclo, las jornadas por ciclo y por labor y fecha, y la vista cronológica) vive en `utils/workerPaidDetail.js`, con tests. Las piezas que son solo del modal, en `payrollDetailModal/`: las secciones `DetailFilterBar`, `CycleTitlesEditor`, `PayrollTotalsCards`, `SummaryTable` y `PayrollCyclesSection`; `writePayrollSummaryXlsx.js` (el Excel de la tabla del resumen), y sus hooks: `useDetailFilters` (búsqueda, medio de pago, grupo y ciclo), `useCashPaid` (quién ya cobró el efectivo), `useCycleTitles` (los encabezados de ciclo), `usePayrollSnapshot` (el JSON de la nómina, al abrir), `useContentEdit` (sacar un trabajador, agregar ciclos y agregar personas), `usePayrollRecalc` (Recalcular con lo marcado para sacar), `usePayrollPrints` (las impresiones del pie y de cada grupo) y `useSummaryTable` (la tabla del resumen: vistas, efectivo pendiente, totales y acciones). El cálculo del detalle (los líderes y el filtro de los items, los resúmenes por grupo y por subfaena, el período de los ciclos, las filas de la tabla del resumen y lo marcado para sacar) vive en `utils/payrollDetail.js`, con tests.
   - **Pagos anteriores:** `WorkersHistory` (con `FaenaFilterPopover`), `WorkerDetail` y `WorkerPayrollDetailModal`.
   - **Impresiones en HTML:** `printCommon.js`, `printReceipts.js` (comprobantes de efectivo y detalle de pago) y `printSummaryTable.js`.
+  - **Configuración:** `PayrollSettingsModal` (⚙, el formato del archivo del banco) y `usePayrollConfig` (lo lee y lo guarda).
   - **Comunes:** `helpers.js` (formatos de fecha y de cuenta, RUT vigente).
 - Servicio: `services/payrollsService.js` (colección `payrolls`).
-- Helpers: `utils/payroll.js` — `aggregateWorkerAmounts`, `splitBankAndCash`, `groupCashByLeader`, `validateAccountNumber`, `downloadBchileXlsx`, `downloadNominaOnlyXlsx`.
+- Helpers: `utils/payroll.js` — `aggregateWorkerAmounts`, `splitBankAndCash`, `groupCashByLeader`, `validateAccountNumber`, `downloadPayrollXlsx` y `downloadBankFileXlsx`. Los formatos del archivo del banco, en `utils/bankFormats.js` (ver XLSX).
 
 ### Flujo
 
@@ -605,11 +612,11 @@ Para cuando salen las transferencias y el efectivo queda debiéndose para la vue
 - Eliminar nómina → `untagWorkdaysFromPayroll` + `restoreAdvancesFromPayroll`. Workdays vuelven a estar disponibles. Achicarla (sacar ciclos, labores o un trabajador, recalcular) tiene sus propias reglas — ver la sección siguiente.
 - Marcar pagada → sello `paidAt` en los workdays. Revertir → quita `paidAt`.
 
-### XLSX (BChile)
+### XLSX
 
 Generado con ExcelJS (lazy import). Cuatro hojas:
 
-1. **Nomina** — formato BChile (RUT con DV pegado, nombre limpio sin acentos, cuenta, código banco, monto, JUV/CTD/AHB). Es la **primera hoja** porque es la que el portal del banco ingiere.
+1. **La hoja del banco**, en el formato configurado (ver "Formato del archivo del banco"). Con PagoFácil Banco de Chile se llama `Nomina` y lleva el RUT con DV pegado, el nombre limpio sin acentos, la cuenta, el código del banco, el monto y JUV/CTD. Es la **primera hoja** porque es la que el portal del banco ingiere.
 2. **Resumen** — Transferencias / Efectivo / Total general por ciclo.
 3. **Transferencias** — `RUT | NOMBRE | <Ciclo1> | ... | TOTAL` con totales por ciclo.
 4. **Efectivo** — agrupado por líder con paletas de color por grupo (8 paletas alternadas) y subtotales.
@@ -617,16 +624,27 @@ Generado con ExcelJS (lazy import). Cuatro hojas:
 Al pie del detalle de una nómina, junto al total, van dos menús (el mismo `RowMenu` del historial con un botón propio): **🖨 Imprimir** (detalle de pago y comprobantes de efectivo; no aparece si no hay nada que imprimir) y **📥 Descargar** (XLSX completo, Sólo Nómina y JSON). El detalle abre con el resumen desplegado y los ciclos plegados (se despliegan solos con "✂ Editar contenido"); los dos se pliegan y despliegan con un clic. Los filtros son un buscador, el medio de pago y un panel "Filtros" con Grupo y Ciclo, cuyos filtros activos se ven como etiquetas con ✕ aunque el panel esté cerrado. La sección "Ciclos de esta nómina" lleva en cada ciclo un enlace **Abrir ciclo ↗** a `/cycles/:id`.
 
 Descargas e impresiones:
-- **🏦 Sólo Nómina** → `downloadNominaOnlyXlsx` (1 hoja, para subir al banco).
+- **🏦 Sólo Nómina** → `downloadBankFileXlsx` (1 hoja, para subir al banco). El nombre del archivo termina con el sufijo del formato (`_BChile`).
 - **📥 XLSX completo** → 4 hojas.
 - **🧮 Estimar efectivo** (bajo el efectivo del resumen del detalle) → `CashEstimationModal`: cuántos billetes y monedas hay que llevar. Se marcan los disponibles (billetes de $20.000, $10.000, $5.000, $2.000 y $1.000; monedas de $500, $100, $50 y $10); por defecto, $10.000, $5.000, $1.000, $500 y $100 (`DEFAULT_AVAILABLE`). Cada monto se arma con la menor cantidad de piezas disponibles y, si no calza justo, sube al siguiente que sí se puede armar (`estimateCashBreakdown`, `utils/cashBreakdown.js`, con tests). La elección no se guarda: cada vez abre con los de por defecto. Se copian, como texto o como imagen, el resumen y la lista **por trabajador** (cuánto recibe cada uno y con qué billetes y monedas, por líder, con el total de piezas al pie). Los textos y los grupos de la lista se arman en el mismo `utils/cashBreakdown.js` (`cashSummaryText`, `cashListText`, `cashWorkerGroupsOf`). Los dos dicen de qué nómina son y, si incluyen efectivo pendiente de otras nóminas, cuánto y de cuáles; esas personas van en la lista en un grupo aparte por nómina.
 - **🖨 Imprimir → Comprobantes efectivo** → ventana de impresión, una página por líder con tabla firmable (RUT, Nombre, Monto, Firma) + líneas de firma final.
 - **🖨 Imprimir → Detalle de pago** → ventana de impresión más completa. Abre con un **Resumen por subfaena** (filas = subfaena, columnas `Faena | Subfaena | Con cuenta RUT | Efectivo | TOTAL`, la faena se imprime sólo en la primera fila del bloque); luego el **resumen por grupo** estructurado como 2 tablas grandes (`Con cuenta RUT` y `Otros grupos`) con columnas `Líder | Faena | TOTAL` y subtotal al pie de cada una; finalmente la tabla por líder con el detalle de producción por ciclo. En el header de cada grupo se incluye el nombre del líder con un `h1` más grande para que el inicio de cada grupo se vea claramente al imprimir.
 - **Catálogos en el detalle imprimible**: los precios bajo el día y los breakdowns de celda usan labels del catálogo (no `Q1/E2` ni `/jorn.`). Para cosecha: `Premium / Saco: $1000` (o `$1000/saco` en single-combo). Para trato: `$10000/poda` (la unidad = `tratoTypeLabel`). Para `tratoHE` no se muestra precio sugerido en el header del día (el monto del día lo define la planilla). `byCombo` se indexa por clave estructural `"x_y"` y el label visible se computa al render con `comboLabel(catalogs, x, y)`.
+
+### Formato del archivo del banco
+
+- **Cada formato vive en su archivo** de `utils/bankFormats/` (hoy solo `pagoFacilBchile.js`, "PagoFácil Banco de Chile") y se lista en `BANK_FORMATS` (`utils/bankFormats.js`). Un formato trae su nombre, la hoja, el sufijo del archivo, los encabezados, el ancho de cada columna, las reglas que muestra la configuración y `buildRows(items)`, que arma las filas. `bankFormats.test.js` revisa en todos que cada fila tenga tantas columnas como el encabezado, que no vayan transferencias de $0 y que el resultado no dependa del orden de entrada.
+- **Cuál se usa lo decide `payrollConfig/main.bankFormat`**, compartido entre todos los usuarios (ver `docs/data-model.md`). Se elige en Nómina → **⚙ Configuración** (`PayrollSettingsModal`): todos ven el formato vigente con sus columnas y reglas, y solo un admin lo cambia. Sin el doc vale `pagoFacilBchile`.
+- **Cuando un banco cambia su planilla, se agrega un formato nuevo** en vez de editar el que está en uso, y se cambia la preferencia: el cambio vale para todos a la vez y se puede volver al anterior.
+- **Cada descarga relee la preferencia** (`currentBankFormat` en `usePayrollConfig`), así sigue a un cambio hecho con la pantalla abierta. Si no se puede leer, no descarga: un archivo en un formato que el banco ya no acepta se sube igual.
+- **Volver a descargar una nómina anterior usa el formato configurado hoy**, porque se descarga para subirla al banco ahora. La nómina guarda en `format` el formato con que se generó, solo como registro.
+
+### Reglas de PagoFácil Banco de Chile
+
 - **paymentRut vs RUT del trabajador**: la hoja `Nomina` BChile usa **`it.paymentRut`** (de `bankDetails[0]`), no el RUT de la persona. `paymentRut` puede diferir cuando el pago va a una cuenta de un familiar; el portal del banco lo valida contra la titularidad. Preservado en `cleanItems` y en el snapshot.
-- **Email default BChile**: si el trabajador no tiene email se completa con `remuneracionesis@gmail.com` (constante `BCHILE_DEFAULT_EMAIL` en `utils/payroll.js`). El banco rechaza filas sin email.
+- **Email default BChile**: si el trabajador no tiene email se completa con `remuneracionesis@gmail.com` (constante `BCHILE_DEFAULT_EMAIL` en `utils/bankFormats/pagoFacilBchile.js`). El banco rechaza filas sin email.
 - **Identificador alfa-numérico**: la columna identificador del BChile usa `A001..A999` (zero-padded) y los nombres se ordenan alfabéticamente con `localeCompare("es", { sensitivity: "base" })`. Filas con `amount === 0` se filtran (el banco rechaza transferencias de $0).
-  - **Las filas se arman en `buildBchileRows(items)`, aparte de ExcelJS** (`utils/payroll.js`, exportada). `buildBchileSheet` solo las escribe y estiliza. Así se prueban sin el workbook las tres reglas que deciden a dónde va la plata: el filtro de cero-neto, el orden alfabético que hace **estable** el correlativo entre corridas, y el `paymentRut || rut`. Cubiertas en `utils/bchile.test.js`, que nombra los índices de columna — una fila corrida manda la transferencia a otra cuenta y el archivo igual se sube sin error.
+  - **Las filas se arman en `buildBchileRows(items)`, aparte de ExcelJS** (`utils/bankFormats/pagoFacilBchile.js`). `buildBankSheet` (`utils/payroll.js`) solo las escribe y estiliza. Así se prueban sin el workbook las tres reglas que deciden a dónde va la plata: el filtro de cero-neto, el orden alfabético que hace **estable** el correlativo entre corridas, y el `paymentRut || rut`. Cubiertas en `utils/bankFormats/pagoFacilBchile.test.js`, que nombra los índices de columna — una fila corrida manda la transferencia a otra cuenta y el archivo igual se sube sin error.
 
 ### Achicar una nómina pendiente (sacar ciclos, labores o un trabajador, recalcular)
 
@@ -697,7 +715,9 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 - Anticipos oldest-first, capados por `bruto + bonos` (no pueden dejar el neto negativo); si el anticipo tiene plan de cuotas, el tope por default es el monto de la cuota (`advanceDueNow`), no el saldo completo — con cuotas un bono puede igualmente no alcanzar a liquidarlo, y está bien.
 - **La lógica vive en un solo lugar: `utils/payrollItem.js` → `allocateAdvances`**, y la usan los cuatro caminos que arman o cambian una nómina: armar nómina, agregar ciclos, recalcular (`services/payrollRecalc.js`), y anticipos nuevos sobre una nómina ya creada. El cuarto caso —el incremental, donde la persona ya está en la nómina— es la misma función con `alreadyAdvanced` / `alreadyBonused`. Está cubierta por `utils/payrollItem.test.js`, incluido el caso de bruto 376.000 + bono 24.000 contra anticipo de 400.000.
 - Fórmula del item: `amount = grossInt − anticiposTotal + bonosTotal`.
-- Preview muestra columnas separadas **Bruto**, **Anticipo**, **Bono**, **A pagar**. Hint visual `↩ liquidado por anticipo` cuando `amount = 0 && advance > 0` (caso retiro con anticipo del valor total — el worker pasa a nómina como cero-neto pero los workdays/anticipos se marcan como pagados). El override manual de la celda Anticipo puede superar la cuota sugerida hasta el saldo real del anticipo (`maxAmount` en `anticipoApplications`, ver `updatePreview`).
+- Preview muestra columnas separadas **Bruto**, **Anticipo**, **Bono**, **A pagar**. Hint visual `↩ liquidado por anticipo` cuando `amount = 0 && advance > 0` (caso retiro con anticipo del valor total — el worker pasa a nómina como cero-neto pero los workdays/anticipos se marcan como pagados).
+  - **Lo que se edita en Anticipo y Bono tiene tope** (`withPreviewEdit` y `previewEditCaps`, `utils/payrollPreview.js`, con tests). El anticipo se puede bajar (queda parcial) o subir por encima de la cuota sugerida hasta el saldo de cada anticipo (`maxAmount`), y nunca más que bruto + bonos. El bono se puede bajar (lo que falta queda pendiente para otra nómina), pero nunca sube de su monto. Sin anticipos o bonos pendientes no se agrega ninguno. Así lo que se retiene o se paga es siempre lo que se aplica a un anticipo o un bono: un monto por encima del tope se ajusta al tope mientras se escribe, y cada celda dice su tope al pasar el mouse.
+  - **El reparto parte siempre de lo sugerido** (`allocatedAdvances` y `allocatedBonuses` en la fila, que no se guardan): del más viejo al más nuevo, primero hasta lo sugerido de cada uno y después, en los anticipos, hasta su saldo. Bajar le quita primero al más nuevo, y bajar a cero y volver a subir recupera el mismo reparto.
 - **Confirmación de cuotas**: si hay anticipos-con-plan entre los trabajadores incluidos, al hacer clic en "Generar nómina" aparece `InstallmentConfirmModal` listando cada cuota candidata (marcada por defecto) antes de persistir nada — el admin decide a mano cuáles aplican esta corrida. Solo cubre el flujo principal de generación; "agregar ciclos"/"recalcular" aplican la cuota sugerida directo, sin modal.
 - Al crear nómina: `applyAdvancesToPayroll(advanceIds, payrollId)` cambia status a `applied`/`partial` según corresponda (para ambos tipos).
 - **`payments[]` guarda lo descontado, no lo pedido.** `amountPaid` se capa con
@@ -713,7 +733,7 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 ## Bancos
 
 - `src/utils/banks.js` define `BANKS`, `ACCOUNT_TYPES`, helpers (`bankName`, `isCashBank`, `defaultBankDetails`, `isCuentaRut`).
-- Banco "Efectivo" tiene `code: "EFE"` (constante `CASH_BANK_CODE`). Filtrado del XLSX BChile.
+- Banco "Efectivo" tiene `code: "EFE"` (constante `CASH_BANK_CODE`). No va en el archivo del banco.
 - `bankDetails = [paymentRut, accountNumber, accountType, bankCode]`.
 - `defaultBankDetails(rut)` → Cuenta RUT (Banco Estado).
 
@@ -793,7 +813,7 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 - Pantalla: `src/screens/AdminConsole.jsx` (arma la página con sus secciones). Ruta `/admin/console` (solo admin).
 - Sus piezas, en `src/screens/adminConsole/`: una sección por archivo (`PingSection`, `AuthDebugSection`, `CollectionCountsSection`, `LogsBreakdownSection`, `WorkdaysByMonthSection`, `WorkdaysByRangeSection`, `WorkdaysByCycleSection`, `NormalizeWorkerNamesSection`, `BackfillWorkerRutFieldSection` y `MigrateAdvanceRutsSection`), la tarjeta plegable `ConsoleCard` y `collections.js` (`MAIN_COLLECTIONS`). Los recuentos están en `services/countsService.js`.
 - Secciones para inspección barata: conteos por colección, workdays por mes (12 reads para todo un año), workdays por rango, workdays por ciclo, más los backfills y el diagnóstico del rol admin.
-- **`MAIN_COLLECTIONS` lista las 37 colecciones de la app**, agrupadas por área. Es una lista a mano: al agregar una colección nueva hay que sumarla acá o queda invisible. El botón **📋 Copiar** baja los conteos ya ejecutados separados por tab, listos para pegar en una planilla.
+- **`MAIN_COLLECTIONS` lista las 38 colecciones de la app**, agrupadas por área. Es una lista a mano: al agregar una colección nueva hay que sumarla acá o queda invisible. El botón **📋 Copiar** baja los conteos ya ejecutados separados por tab, listos para pegar en una planilla.
 - **🧪 Ping al backend**: encola un job en `functionJobs` y espera la respuesta. No llama ningún endpoint porque no hay ninguno invocable (ver Despliegue); ejercita el mismo camino que usa cualquier job. Distingue los tres modos de falla a propósito, porque cada uno se arregla en otro lado: `permission-denied` es que las reglas publicadas no dejan crear el job (o quien aprieta no es admin), el timeout de 45 s es la función sin desplegar o mirando otra base, y un job en `error` es la función corriendo y fallando adentro. Es además el **único** chequeo que prueba que el trigger esté suscrito a `hpdatabase` — el emulador no puede.
 - Usa `getCountFromServer` de Firestore — 1 read por cada 1000 docs vs N con `getDocs`. Permite estimar costos sin descargar la colección.
 - **Composición de logs** (`LogsBreakdownSection`): desglosa `logs` por entidad (~1 lectura por entidad) y mide cuántos documentos borraría un TTL de 6/12/24 meses (3 lecturas), para decidir la retención con números. `LOG_ENTITIES` es una lista a mano: una entidad nueva que no se agregue queda invisible, y la fila "sin clasificar" del total es la que lo delata.
@@ -828,17 +848,21 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 
 ## Facturación / Billing
 
-- Pantalla: `src/screens/Billing.jsx` (el componente de la ruta, con sus pestañas y exportaciones). Ruta `/facturacion`. Nav label: "Facturación" (icono 🧾). Acceso para todas las cuentas.
+- Pantalla: `src/screens/Billing.jsx` (el componente de la ruta: la empresa, las pestañas, los filtros y el listado). Ruta `/facturacion`. Nav label: "Facturación" (icono 🧾). Acceso para todas las cuentas.
 - Sus piezas, en `src/screens/billing/`:
-  - **Listado:** `SummaryCard`, `SortHeader`, `OtherTaxChip`, `PaymentStatusSelect`, `CostCenterSelect` y `PrintableDocList`.
+  - **Carga y escrituras:** `useBillingData` (empresas, documentos, centros de costo y gastos informales, y la empresa elegida) y `useDocUpdates` (estado de pago, notas, centro de costo y pagos de un documento).
+  - **Listado:** `DocTableRow` (una fila en el escritorio), `DocCard` (en el teléfono), `DocListToolbar` (exportaciones del listado, agrupar por centro de costo), `SummaryCard`, `SortHeader`, `OtherTaxChip`, `PaymentStatusSelect`, `CostCenterSelect`, `PrintableDocList` y `writeDocListXlsx.js`.
   - **Documento:** `DocDetailModal` y `PaymentsSection` (sus pagos).
-  - **Importar:** `CompanySelectAndPickModal`, `ImportPreviewModal` y `FileRow`.
+  - **Importar:** `useRcvImport` (leer los archivos, la vista previa y confirmar), `CompanySelectAndPickModal`, `ImportPreviewModal` y `FileRow`.
   - **Empresas:** `CompaniesModal`.
-  - **Centros de costo:** `CostCentersModal`, `PrintableCostCenterDocs` e `InformalExpenseFormModal`.
-  - **Retenciones:** `WithholdingsView`, `PrintableWithholdings` y `PrintableWithholdingsGroup`.
+  - **Centros de costo:** `CostCentersModal`, con `useCostCenterCatalog` (crear, editar y eliminar centros) y `CostCenterForm`; `PrintableCostCenterDocs`, `writeCostCenterDocsXlsx.js` e `InformalExpenseFormModal`. El cálculo de la vista de un centro (sus documentos y gastos informales, filtros, totales y orden) vive en `utils/costCenterDocs.js`, con tests.
+  - **Retenciones:** `WithholdingsTab` (la pestaña con sus exportaciones, del total y por contraparte), `WithholdingsView`, `PrintableWithholdings`, `PrintableWithholdingsGroup`, `writeWithholdingsXlsx.js` y `writeWithholdingGroupXlsx.js`.
   - **Pendientes:** `ReceivablesModal` y `PrintableReceivables`.
-  - **Resumen anual:** `PrintableAnnualSummary`.
-  - **Comunes:** `docs.js` (período, estados de pago, categorías de lo pendiente, agrupado por centro de costo) y `printStyles.js` (celdas de las tablas imprimibles).
+  - **Resumen anual:** `AnnualSummaryTab`, `PrintableAnnualSummary` y `writeAnnualSummaryXlsx.js`.
+  - **Proyección:** `ProjectionTab` y `writeProjectionXlsx.js`.
+  - **Comunes:** `docs.js` (período, estados de pago y agrupado por centro de costo) y `printStyles.js` (celdas de las tablas imprimibles).
+- **El cálculo vive en `utils/billingDocs.js`**, con tests: los filtros, el orden y las páginas del listado, los totales con signo, las retenciones por contraparte, lo pendiente de cobro (`pendingFor`, `RECEIVABLE_CATEGORIES`), las NC que pueden anular una factura y el resumen anual.
+- El año del Resumen y el mes de inicio y el porcentaje de la Proyección los guarda la pantalla, así se conservan al cambiar de pestaña.
 - Servicios: `companiesService` (colección `companies`) + `dteDocumentsService` (colección `dteDocuments`) en `services/index.js`. TTL del list = **10 min** (`ttl: 600_000`) — las mutaciones locales (status, notas, pagos, import) actualizan el state en memoria, así que el TTL solo afecta al re-entrar a la pantalla.
 - **Multi-empresa**: el sistema soporta N empresas (probado con 3). Cada empresa tiene `{ rut, razonSocial, alias, enabled }`. CRUD inline desde el modal **🏢 Empresas**. Los DTE quedan namespaceados por `companyId` así no se colisionan folios entre empresas (mismo proveedor puede facturar a varias empresas con el mismo folio).
 - **Empresa elegida persiste en localStorage** (`facturacion.selectedCompanyId`). Si la empresa guardada fue borrada, cae a la primera.
@@ -915,7 +939,7 @@ El select nativo lleva colores explícitos `var(--color-surface)` / `var(--color
 
 ### Autodetección de NC anulada (sugerencia)
 
-- Helper `findCancellingNcs(dteDoc, allDocs)`: matchea NCs con misma `companyId + kind + RUT contraparte + total exacto`, con NC fecha ≥ factura. Memo `cancellingByDocId` precalcula el mapa.
+- Helper `findCancellingNcs(dteDoc, allDocs)` (`utils/billingDocs.js`): matchea NCs con misma `companyId + kind + RUT contraparte + total exacto`, con NC fecha ≥ factura. `cancellingNcsByDoc` precalcula el mapa.
 - **No auto-cambia** el estado — solo sugiere. En la fila aparece un badge **⚠ NC?** al lado del select; click abre el `DocDetailModal` con un banner rojo listando las NCs candidatas + botón **"Marcar como Anulada"** que en un click setea `cancelled` y agrega `[Anulada por NC tipo-folio (fecha, monto)]` a las notas como auditoría.
 
 ### Pagos / abonos (`payments[]`)
@@ -930,7 +954,7 @@ El select nativo lleva colores explícitos `var(--color-surface)` / `var(--color
 
 ### Retenciones (tab + exports)
 
-Tab **📑 Retenciones** muestra todas las facturas con `paymentStatus === "net_only"` agrupadas por contraparte (sin restricción de kind). `withholdingsByCounterparty` agrupa por RUT, suma neto/iva/total, ordena por IVA desc. Lista expandible (▸/▾) en `WithholdingsView`.
+Tab **📑 Retenciones** muestra todas las facturas con `paymentStatus === "net_only"` agrupadas por contraparte (sin restricción de kind). `withholdingsByCounterpartyOf` agrupa por RUT, suma neto/iva/total, ordena por IVA desc. Lista expandible (▸/▾) en `WithholdingsView`.
 
 **Exports** (4 botones en toolbar global, mismo set por contraparte individual):
 - 📋 Copiar (toBlob al clipboard como PNG)
@@ -977,7 +1001,7 @@ Las tabs Facturas y Compras tienen la misma toolbar de 4 exports (📋📥🖨�
 
 Tab **📊 Resumen**: vista que **cruza los 12 meses** de un año para la empresa seleccionada, con **selector de año propio** (`summaryYear`, default año actual; opciones derivadas de los períodos de la empresa). Ignora el filtro de mes; en esta tab se ocultan Ver pendientes, los sub-filtros y las cards operativas.
 
-- Memo `summaryData`: por mes acumula ventas/compras **con signo** (NCs restan) separando **IVA Débito** (ventas) de **IVA Crédito** (compras). El IVA de facturas "Solo neto" (`net_only`) **se suma normalmente** al débito/crédito que corresponde — no se trackea aparte.
+- `annualSummary` (`utils/billingDocs.js`): por mes acumula ventas/compras **con signo** (NCs restan) separando **IVA Débito** (ventas) de **IVA Crédito** (compras). El IVA de facturas "Solo neto" (`net_only`) **se suma normalmente** al débito/crédito que corresponde — no se trackea aparte.
 - **Métricas explícitas (KPI cards)**: IVA Débito, IVA Crédito, **IVA a pagar (año) = débito − crédito** (highlight; si es negativo → "IVA a favor (remanente)" en verde), + Ventas netas / Compras netas / Documentos.
 - **Tabla mensual** (Ene–Dic + TOTAL): Ventas Neto · IVA Débito · Compras Neto · IVA Crédito · **IVA a pagar del mes**. Meses sin actividad atenuados.
 - Exports: misma toolbar 📋📥🖨📊. `PrintableAnnualSummary` (forwardRef) off-screen. XLSX respeta la convención col A vacía width 6 + fila 1 vacía, con el balance de IVA en el encabezado. Filename `Resumen_{empresa}_{año}`.
@@ -1002,7 +1026,7 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 - **El redondeo va por mes y el total es la suma de los meses redondeados**, no el redondeo de la suma. El Excel imprime la columna, así que el total al pie tiene que ser el de la columna o no cuadra a ojo.
 - **Cuesta 0 lecturas**: sale entero de `docs`, que ya tiene la colección completa en memoria (TTL 10 min).
 - **Lógica pura en `utils/cashFlowProjection.js`** (`projectCashFlow`, `netSalesByPeriod`, `groupByCounterparty`, `shiftPeriod`, `periodWindow`, `windowLabel`), con tests en `cashFlowProjection.test.js`. La aritmética de meses va con **enteros, nunca con `Date`**: un período es la etiqueta `YYYY-MM` del RCV, no un instante, y con `Date` una zona horaria corre un documento al mes de al lado.
-- **`CREDIT_NOTE_TYPES` vive ahí** y `Billing.jsx` lo importa. La proyección y la pantalla tienen que coincidir en que una NC resta; si divergen, la base sale inflada. `Dashboard.jsx` tiene su propia copia, que tiene que coincidir con esta.
+- **`CREDIT_NOTE_TYPES` vive ahí** y Facturación lo importa (`utils/billingDocs.js` y las piezas del listado). La proyección y la pantalla tienen que coincidir en que una NC resta; si divergen, la base sale inflada. `Dashboard.jsx` tiene su propia copia, que tiene que coincidir con esta.
 - **Export XLSX de dos hojas**: `Ventas netas` (banner con el neto de la base, bloque **por cliente** ordenado por monto, y el detalle documento por documento con fecha/período/tipo DTE/folio/cliente/RUT/neto, NC en rojo) y `Proyección` (12 filas mes a mes + total). El bloque por cliente muestra de dónde viene la base: una proyección sostenida por dos clientes no se lee igual que una repartida entre veinte.
 - **El porcentaje va en UNA celda (`C4` de la hoja `Proyección`) y las filas la referencian** con `ROUND(D7*$C$4,0)`. Quien recibe el archivo mueve el supuesto en Excel y ve la temporada entera recalcularse, en vez de pedir otra corrida por cada escenario.
 - **`isAnalysisTab`** (`resumen` + `proyeccion`) apaga filtros, tarjetas y tabla del listado. La usan los cuatro lugares que dependen de eso, así un tab de análisis nuevo se suma solo ahí.

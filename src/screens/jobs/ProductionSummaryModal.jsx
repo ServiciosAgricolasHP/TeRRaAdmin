@@ -1,16 +1,24 @@
 import { useState, useEffect, useMemo } from "react";
 import Modal from "../../components/Modal";
-import { listWorkdaysByCycle, laborGroupsService } from "../../services";
-import { tripsService } from "../../services/transportsService";
 import { useCatalogs } from "../../contexts/CatalogsContext";
-import { getTratoTierTotals } from "../../utils/cosechaCombos";
-import { countingStageIds } from "../../utils/tratoEtapas";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { buildCell } from "./productionSummaryModal/buildCell";
 import { CombinedSummaryCard } from "./productionSummaryModal/CombinedSummaryCard";
 import { loadJSON, saveJSON } from "./productionSummaryModal/helpers";
 import { LaborGroupTotalsCard } from "./productionSummaryModal/LaborGroupTotalsCard";
 import { LaborSummaryCard } from "./productionSummaryModal/LaborSummaryCard";
+import {
+  columnsData,
+  firstColumnByCycle,
+  laborGroupTotals,
+  laborGroupsByIdOf,
+  orderCycles,
+  summaryColumns,
+  summaryDays,
+  transportByCycleOf,
+  transportTotalOf,
+} from "../../utils/productionSummary";
+import { useProductionData } from "./productionSummaryModal/useProductionData";
 
 // "2026-07-24" → "24/07", para mostrar rangos de fecha compactos en tablas.
 const shortDate = (iso) => {
@@ -51,9 +59,6 @@ export default function ProductionSummaryModal({
 }) {
   const { catalogs } = useCatalogs();
   const isMobile = useIsMobile();
-  const [wdByCycle, setWdByCycle] = useState(workdaysByCycleProp || {});
-  const [tripsByCycle, setTripsByCycle] = useState({});
-  const [loading, setLoading] = useState(false);
   // Filtros: por tipo de labor y por ciclo. `initialEnabledCycleIds` decide
   // qué ciclos arrancan prendidos; los demás aparecen como chip apagado.
   const [typeFilter, setTypeFilter] = useState(
@@ -87,158 +92,15 @@ export default function ProductionSummaryModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cycles.map((c) => c.id).join(","), (initialEnabledCycleIds || []).join(",")]);
 
-  // Lee las jornadas de los ciclos prendidos que no están en `wdByCycle` (el
-  // llamador puede pasarlas en `workdaysByCycle`). La consulta filtra por
-  // ciclo en el servidor y los ciclos apagados no se leen: al prender un chip,
-  // el efecto trae el que falte.
-  useEffect(() => {
-    if (!open) return;
-    const missing = cycles.filter((c) => enabledCycles.has(c.id) && !wdByCycle[c.id]);
-    if (missing.length === 0) return;
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      try {
-        // Una consulta por ciclo: la clave de caché queda estable y prender o
-        // apagar un chip no vuelve a pagar. Usa el helper compartido con
-        // Nómina, que pide lo mismo con las mismas opciones (misma clave y TTL).
-        const fetched = await Promise.all(
-          missing.map(async (c) => [c.id, await listWorkdaysByCycle(c.id)]),
-        );
-        if (cancelled) return;
-        setWdByCycle((prev) => {
-          const next = { ...prev };
-          for (const [cid, list] of fetched) next[cid] = list;
-          return next;
-        });
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, cycles.map((c) => c.id).join(","), [...enabledCycles].sort().join(",")]);
+  const { laborGroupsBySubjob, loading, tripsByCycle, wdByCycle } = useProductionData({ cycles, enabledCycles, open, workdaysByCycleProp });
 
-  // Carga las vueltas de transporte de cada ciclo — usadas por la fila
-  // TRANSPORTE de la tabla general (costo de transporte por ciclo).
-  useEffect(() => {
-    if (!open) return;
-    const missing = cycles.filter((c) => !tripsByCycle[c.id]);
-    if (missing.length === 0) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const fetched = await Promise.all(
-          missing.map(async (c) => [c.id, await tripsService.listByCycle(c.id)]),
-        );
-        if (cancelled) return;
-        setTripsByCycle((prev) => {
-          const next = { ...prev };
-          for (const [cid, list] of fetched) next[cid] = list;
-          return next;
-        });
-      } catch { /* noop */ }
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, cycles.map((c) => c.id).join(",")]);
+  const laborGroupsById = useMemo(() => laborGroupsByIdOf(laborGroupsBySubjob), [laborGroupsBySubjob]);
 
-  // Agrupaciones de labor (laborGroups) de las subfaenas involucradas, para
-  // nombrar los grupos al totalizar por laborGroupId. Se leen por subfaena y
-  // no por ciclo: varios ciclos comparten subfaena.
-  const [laborGroupsBySubjob, setLaborGroupsBySubjob] = useState({});
-  useEffect(() => {
-    if (!open) return;
-    const subIds = [...new Set(cycles.map((c) => c.subfaenaId).filter(Boolean))];
-    const missing = subIds.filter((sid) => !laborGroupsBySubjob[sid]);
-    if (missing.length === 0) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const fetched = await Promise.all(
-          missing.map(async (sid) => [sid, await laborGroupsService.list({ wheres: [["subfaenaId", "==", sid]] })]),
-        );
-        if (cancelled) return;
-        setLaborGroupsBySubjob((prev) => {
-          const next = { ...prev };
-          for (const [sid, list] of fetched) next[sid] = list;
-          return next;
-        });
-      } catch { /* noop */ }
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, cycles.map((c) => c.id).join(",")]);
-  const laborGroupsById = useMemo(() => {
-    const m = new Map();
-    for (const list of Object.values(laborGroupsBySubjob)) {
-      for (const g of list) m.set(g.id, g);
-    }
-    return m;
-  }, [laborGroupsBySubjob]);
+  const orderedCycles = useMemo(() => orderCycles(cycles), [cycles]);
 
-  // Orden de columnas y chips: agrupados por subfaena y, dentro de cada
-  // grupo, del más viejo al más nuevo por el primer día de `days` (el mismo
-  // criterio que la navegación anterior/siguiente de CycleDetail). Los grupos
-  // se ordenan por su ciclo más antiguo.
-  const orderedCycles = useMemo(() => {
-    const sortKeyFor = (c) => {
-      const days = c.days;
-      if (Array.isArray(days) && days.length > 0) {
-        return days.reduce((min, d) => (d < min ? d : min), days[0]);
-      }
-      return c.startDate || c.createdAt?.toDate?.()?.toISOString?.() || "";
-    };
-    const groups = new Map(); // subfaenaId (o "" para huérfanos) -> cycles[]
-    for (const c of cycles) {
-      const key = c.subfaenaId || "";
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(c);
-    }
-    const groupList = [...groups.values()].map((list) => {
-      const sorted = [...list].sort((a, b) => sortKeyFor(a).localeCompare(sortKeyFor(b)));
-      return { sorted, groupKey: sorted.length > 0 ? sortKeyFor(sorted[0]) : "" };
-    });
-    groupList.sort((a, b) => a.groupKey.localeCompare(b.groupKey));
-    return groupList.flatMap((g) => g.sorted);
-  }, [cycles]);
+  const columns = useMemo(() => summaryColumns(orderedCycles, enabledCycles, typeFilter), [orderedCycles, enabledCycles, typeFilter]);
 
-  // Columnas: una por (ciclo, labor) de tipo cosecha, trato, trato por
-  // etapas, pago al día o supervisión. Labores con el mismo nombre en ciclos
-  // distintos quedan en columnas separadas.
-  const columns = useMemo(() => {
-    const cols = [];
-    for (const c of orderedCycles) {
-      if (!enabledCycles.has(c.id)) continue;
-      for (const l of c.labors || []) {
-        if (l.type !== "cosecha" && l.type !== "trato" && l.type !== "tratoEtapas" && l.type !== "main" && l.type !== "supervision") continue;
-        if (!typeFilter[l.type]) continue;
-        cols.push({
-          key: `${c.id}__${l.id}`,
-          cycleId: c.id,
-          cycleLabel: c.label || c.id,
-          cycleStatus: c.status || "open",
-          labor: l,
-          dayPrices: c.dayPrices || {},
-        });
-      }
-    }
-    return cols;
-  }, [orderedCycles, enabledCycles, typeFilter]);
-
-  // Días: unión de las fechas con jornadas (de cualquier labor) de los ciclos
-  // prendidos, en orden ascendente.
-  const days = useMemo(() => {
-    const set = new Set();
-    for (const c of cycles) {
-      if (!enabledCycles.has(c.id)) continue;
-      const wds = wdByCycle[c.id] || [];
-      for (const wd of wds) {
-        if (wd.date) set.add(wd.date);
-      }
-    }
-    return [...set].sort();
-  }, [cycles, enabledCycles, wdByCycle]);
+  const days = useMemo(() => summaryDays(cycles, enabledCycles, wdByCycle), [cycles, enabledCycles, wdByCycle]);
 
   // Por celda (día × columna): cantidad, monto, precios y personas, en un
   // solo pase sobre las jornadas.
@@ -262,109 +124,15 @@ export default function ProductionSummaryModal({
     return out;
   }, [columns, wdByCycle, catalogs]);
 
-  // Por columna (labor): las filas por día con producción y sus totales.
-  // Alimenta una tarjeta por labor, con su propia tabla y sus botones de
-  // copiar e imprimir.
-  const dataByColumn = useMemo(() => {
-    return columns
-      .map((col) => {
-        const rows = days
-          .map((d) => ({ day: d, cell: cellsByKey.get(`${d}__${col.key}`) }))
-          .filter((r) => r.cell);
-        const totalQty = rows.reduce((s, r) => s + (r.cell.qty || 0), 0);
-        const totalAmount = rows.reduce((s, r) => s + (r.cell.amount || 0), 0);
-        const unitSet = new Set();
-        const personSet = new Set();
-        rows.forEach((r) => {
-          if (r.cell.unit) unitSet.add(r.cell.unit);
-        });
-        // Personas únicas en todos los días: se cuentan desde las jornadas
-        // para no repetir a quien trabajó varios días.
-        const wds = (wdByCycle[col.cycleId] || []).filter(
-          (w) => w.laborId === col.labor.id && w.workerRut,
-        );
-        const countingForCol = col.labor.type === "tratoEtapas" ? countingStageIds(col.labor) : null;
-        for (const wd of wds) {
-          let hasProd;
-          if (col.labor.type === "cosecha") {
-            hasProd = Number(wd.qty) > 0 && !wd.pisoOnly;
-          } else if (col.labor.type === "tratoEtapas") {
-            // Solo cuenta como "persona con producción" si aportó en una etapa
-            // que cuenta (misma regla que las unidades).
-            hasProd = countingForCol.has(String(wd.stageId)) && Number(wd.qty) > 0 && !wd.pisoOnly;
-          } else if (col.labor.type === "main" || col.labor.type === "supervision") {
-            // Pago al día: el monto va directo en la jornada, sin tiers.
-            hasProd = Number(wd.amount) > 0 && !wd.pisoOnly;
-          } else {
-            hasProd = Number(getTratoTierTotals(wd).qty) > 0 && !wd.pisoOnly;
-          }
-          if (hasProd) personSet.add(wd.workerRut);
-        }
-        const unitStr = [...unitSet].join("/");
-        return {
-          col,
-          rows,
-          totalQty,
-          totalAmount,
-          unit: unitStr,
-          persons: personSet.size,
-        };
-      })
-      .filter((d) => d.rows.length > 0);
-  }, [columns, days, cellsByKey, wdByCycle]);
+  const dataByColumn = useMemo(() => columnsData(columns, days, cellsByKey, wdByCycle), [columns, days, cellsByKey, wdByCycle]);
 
-  // Costo de transporte por ciclo (uno por ciclo, aunque tenga varias
-  // columnas de labor). `hasTrips` distingue $0 con vueltas sin monto
-  // (revisar tarifas) de $0 sin ninguna vuelta cargada.
-  const transportByCycle = useMemo(() => {
-    const out = new Map();
-    for (const c of cycles) {
-      const trips = tripsByCycle[c.id] || [];
-      out.set(c.id, {
-        total: trips.reduce((s, t) => s + (Number(t.amount) || 0), 0),
-        hasTrips: trips.length > 0,
-      });
-    }
-    return out;
-  }, [cycles, tripsByCycle]);
+  const transportByCycle = useMemo(() => transportByCycleOf(cycles, tripsByCycle), [cycles, tripsByCycle]);
 
-  // Primera columna visible de cada ciclo — ahí (y solo ahí) se muestra el
-  // total de transporte de ese ciclo, para no duplicarlo cuando un ciclo
-  // tiene varias labores/columnas y así no inflar el gran total.
-  const firstColKeyForCycle = useMemo(() => {
-    const seen = new Map();
-    for (const d of dataByColumn) {
-      if (!seen.has(d.col.cycleId)) seen.set(d.col.cycleId, d.col.key);
-    }
-    return seen;
-  }, [dataByColumn]);
+  const firstColKeyForCycle = useMemo(() => firstColumnByCycle(dataByColumn), [dataByColumn]);
 
-  const grandTotalTransport = useMemo(() => {
-    const cycleIds = new Set(dataByColumn.map((d) => d.col.cycleId));
-    let sum = 0;
-    for (const cid of cycleIds) sum += transportByCycle.get(cid)?.total || 0;
-    return sum;
-  }, [dataByColumn, transportByCycle]);
+  const grandTotalTransport = useMemo(() => transportTotalOf(dataByColumn, transportByCycle), [dataByColumn, transportByCycle]);
 
-  // Totales por grupo de labor: suma el monto de producción (bruto, sin % de
-  // ganancia ni IVA, que viven en CombinedSummaryCard) de las columnas
-  // (ciclo × labor) con el mismo laborGroupId. Las columnas sin grupo no
-  // entran.
-  const groupTotals = useMemo(() => {
-    const m = new Map();
-    for (const d of dataByColumn) {
-      const gid = d.col.labor.laborGroupId;
-      if (!gid) continue;
-      if (!m.has(gid)) {
-        const g = laborGroupsById.get(gid);
-        m.set(gid, { id: gid, name: g?.name || "(grupo eliminado)", amount: 0, cycleIds: new Set() });
-      }
-      const entry = m.get(gid);
-      entry.amount += d.totalAmount || 0;
-      entry.cycleIds.add(d.col.cycleId);
-    }
-    return [...m.values()].sort((a, b) => b.amount - a.amount);
-  }, [dataByColumn, laborGroupsById]);
+  const groupTotals = useMemo(() => laborGroupTotals(dataByColumn, laborGroupsById), [dataByColumn, laborGroupsById]);
 
   return (
     <Modal open={open} onClose={onClose} title={title} size="2xl">

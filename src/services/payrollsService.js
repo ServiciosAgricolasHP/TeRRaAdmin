@@ -3,6 +3,7 @@ import { db, auth } from "../firebase";
 import { createService } from "./firestoreBase";
 import { workdaysService, listWorkdaysByCycles } from "./index";
 import { isCashBank } from "../utils/banks";
+import { bankFormatOf } from "../utils/bankFormats";
 import {
   restoreAdvancesFromPayroll,
   applyAdvancesToPayroll,
@@ -16,6 +17,19 @@ export const PAYROLL_STATUSES = [
 ];
 
 export const payrollsService = createService("payroll", "payrolls");
+
+// Configuración compartida de la nómina, en un único doc `payrollConfig/main`.
+export const payrollConfigService = createService("payrollConfig", "payrollConfig");
+
+// Sin el doc, o con un formato que ya no existe, vale el formato por defecto.
+export async function getPayrollConfig() {
+  const saved = await payrollConfigService.getById("main");
+  return { bankFormat: bankFormatOf(saved?.bankFormat).id };
+}
+
+export function savePayrollConfig({ bankFormat }) {
+  return payrollConfigService.upsert("main", { bankFormat });
+}
 
 // Las jornadas con que se arma una nómina nueva: lo pendiente de los ciclos y
 // labores elegidos (`chosen`, ver `newPayrollCycleDetails`) y los días

@@ -111,7 +111,7 @@ Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
 |---|---|---|
 | `id` (docId) | string | autoId |
 | `name` | string | |
-| `format` | `"bchile"` | |
+| `format` | string | el formato del archivo del banco configurado al generarla (`payrollConfig/main.bankFormat`, ej. `"pagoFacilBchile"`). Las nóminas anteriores dicen `"bchile"`, que es el mismo formato. Es solo un registro: las descargas usan el formato configurado al descargar |
 | `status` | `"pending"` \| `"paid"` | binario. Una nómina con las transferencias pagadas y el efectivo debiendo sigue siendo `pending` |
 | `paidAt` | string (ISO) \| null | |
 | `bankPaidAt`, `bankPaidBy` | string (ISO)? / string? | **pago en dos tiempos**: salieron las transferencias pero el efectivo no. Es el flag que convierte el efectivo de esta nómina en *deuda* |
@@ -131,6 +131,13 @@ Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
 - `amount`, `advance`, `anticiposTotal`, `adelantosTotal` (**legacy: siempre 0** de acá en adelante; se sigue escribiendo solo para que los snapshots viejos se lean igual)
 - `byCycle: { [cycleId]: {...} }`
 - `workdayIds: string[]`, `advanceIds: string[]`
+
+### `payrollConfig`
+Configuración compartida de la nómina. **Un único doc `payrollConfig/main`**; sin él valen los valores por defecto. Lo cambia un admin desde Nómina → ⚙ Configuración (las reglas no distinguen el rol, igual que `commitmentConfig`).
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | siempre `"main"` |
+| `bankFormat` | string | id del formato del archivo del banco (`utils/bankFormats.js`); por defecto `"pagoFacilBchile"`. Lo usan "🏦 Sólo Nómina" y la primera hoja del XLSX completo, también al volver a descargar una nómina anterior |
 
 ### `payrollSnapshots`
 Snapshot JSON inmutable de cada nómina, separado del documento de `payrolls` para no engordar la lista. Lo escribe la app al generar la nómina y lo consume el **portal de trabajadores** (read-only) para construir su resumen.

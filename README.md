@@ -137,12 +137,12 @@ El **resumen del ciclo** (módulo CycleDetail → 📊) agrega una segunda secci
 ### Nómina
 Selector de ciclos activos con monto pendiente por ciclo. Cada ciclo seleccionado expone sus labores como chips toggleables — sirve para pagar solo algunas labores y dejar el resto disponible para una próxima nómina. Preview con anticipos pre-aplicados, validación de cuentas, filtros y bulk actions. Genera XLSX con cuatro hojas:
 
-1. **Nomina** — formato Banco de Chile (subir al portal del banco).
+1. **La hoja del banco** — en el formato que se elige en ⚙ Configuración (hoy PagoFácil Banco de Chile), para subir al portal del banco.
 2. **Resumen** — Transferencias / Efectivo / Total por ciclo.
 3. **Transferencias** — desglose por trabajador y ciclo.
 4. **Efectivo** — agrupado por líder con paletas de color y subtotales.
 
-Hay descarga **sólo Nómina** (la hoja BChile pura) o XLSX completo. Comprobantes imprimibles del efectivo (uno por líder, con líneas de firma) e incluyen una columna **Anticipo** explícita cuando algún trabajador del grupo trae descuento.
+Hay descarga **sólo Nómina** (solo la hoja del banco) o XLSX completo. Comprobantes imprimibles del efectivo (uno por líder, con líneas de firma) e incluyen una columna **Anticipo** explícita cuando algún trabajador del grupo trae descuento.
 
 El **Detalle de pago** imprimible abre con un **Resumen por subfaena** (una fila por subfaena, con la faena impresa sólo en la primera fila del bloque): columnas `Con cuenta RUT` (todas las transferencias) vs `Efectivo` + TOTAL.
 

@@ -5,7 +5,8 @@ import { formatRutForDisplay } from "../../utils/rutUtils";
 import Modal from "../../components/Modal";
 import { useToast } from "../../contexts/ToastContext";
 import { fmtCurrency, fmtNumber } from "../../utils/format";
-import { todayIso, RECEIVABLE_CATEGORIES } from "./docs";
+import { todayIso } from "./docs";
+import { RECEIVABLE_CATEGORIES } from "../../utils/billingDocs";
 import { PrintableReceivables } from "./PrintableReceivables";
 import { SummaryCard } from "./SummaryCard";
 

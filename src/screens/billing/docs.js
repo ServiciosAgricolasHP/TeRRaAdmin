@@ -1,5 +1,5 @@
 // Ayudas que comparten las piezas de Facturación: el período, los estados de
-// pago, las categorías de lo pendiente y el agrupado por centro de costo.
+// pago y el agrupado por centro de costo.
 import { CREDIT_NOTE_TYPES } from "../../utils/cashFlowProjection";
 
 // Convierte un periodo "YYYY-MM" a "Mes Año" (ej. "2026-05" → "Mayo 2026").
@@ -49,23 +49,17 @@ export const PAYMENT_STATUSES = {
 
 export const CREDIT_NOTE_STATE = { label: "Anulada", chip: "bg-[var(--color-danger-soft)] text-[var(--color-danger)]" };
 
+// Mes actual en formato YYYY-MM. Es el filtro por defecto: la vista operativa
+// muestra solo el mes en curso, y el selector de período lleva a los demás.
+export function currentPeriod() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export function todayIso() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
-
-// Categorías de facturas pendientes que aparecen en el modal "Ver pendientes".
-// Cada factura no anulada y no pagada cae en una sola categoría según su
-// estado y sus pagos registrados:
-//   - full:    estado "unpaid" sin abonos → debe el total completo.
-//   - partial: estado "unpaid" con abonos pero saldo > 0.
-//   - iva:     estado "net_only" → IVA pendiente (el IVA menos lo que ya
-//              cubren los pagos registrados por encima del neto).
-export const RECEIVABLE_CATEGORIES = {
-  full:    { key: "full",    label: "Factura completa pendiente", order: 1, hex: "#ffd6d6" },
-  partial: { key: "partial", label: "Abono parcial",              order: 2, hex: "#fff2cc" },
-  iva:     { key: "iva",     label: "IVA pendiente",              order: 3, hex: "#dde9ff" },
-};
 
 // Agrupa docs por centro de costo. Orden de los grupos:
 //   - Combustibles (cualquier doc con `otroImpuestoCategory === "combustible"`):

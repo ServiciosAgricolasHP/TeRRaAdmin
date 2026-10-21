@@ -2,7 +2,8 @@ import React, { forwardRef } from "react";
 import { dteTypeLabel } from "../../utils/siiCsvParser";
 import { formatRutForDisplay } from "../../utils/rutUtils";
 import { fmtCurrency } from "../../utils/format";
-import { todayIso, RECEIVABLE_CATEGORIES } from "./docs";
+import { todayIso } from "./docs";
+import { RECEIVABLE_CATEGORIES } from "../../utils/billingDocs";
 import { pCellH, pCell } from "./printStyles";
 
 // Printable de pendientes, sin controles. Agrupa por categoría con un

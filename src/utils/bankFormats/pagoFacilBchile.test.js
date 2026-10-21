@@ -6,7 +6,7 @@ import {
   rutWithDvNoDash,
   bchileAccountTypeCode,
   cleanText,
-} from "./payroll";
+} from "./pagoFacilBchile";
 
 // Índices de las columnas del archivo que ingiere el portal del banco.
 const RUT = 0;
@@ -179,5 +179,42 @@ describe("el nombre y el mail", () => {
   it("con mail propio respeta el del trabajador", () => {
     const [f] = buildBchileRows([persona({ email: "ana@example.com" })]);
     expect(f[MAIL]).toBe("ana@example.com");
+  });
+});
+
+describe("rutWithDvNoDash", () => {
+  it("pega el dígito verificador y saca puntos", () => {
+    expect(rutWithDvNoDash("12.345.678-5")).toBe("123456785");
+    expect(rutWithDvNoDash("12345670-K")).toBe("12345670K");
+    expect(rutWithDvNoDash("1234567-B")).toBe("1234567B");
+  });
+
+  it("limpia igual lo que no tiene forma de RUT", () => {
+    expect(rutWithDvNoDash("TEMP-abc")).toBe("TEMPABC");
+    expect(rutWithDvNoDash("")).toBe("");
+  });
+});
+
+describe("bchileAccountTypeCode", () => {
+  it("mapea los tipos conocidos", () => {
+    expect(bchileAccountTypeCode(0)).toBe("CTD"); // corriente
+    expect(bchileAccountTypeCode(1)).toBe("JUV"); // vista
+    expect(bchileAccountTypeCode(3)).toBe("JUV"); // cuenta RUT
+    expect(bchileAccountTypeCode("0")).toBe("CTD");
+  });
+
+  it("cae a JUV en silencio con un tipo desconocido", () => {
+    expect(bchileAccountTypeCode(99)).toBe("JUV");
+    expect(bchileAccountTypeCode(undefined)).toBe("JUV");
+  });
+});
+
+describe("cleanText", () => {
+  it("saca acentos y deja solo ASCII, que es lo que acepta el banco", () => {
+    expect(cleanText("José Muñoz Ñandú")).toBe("Jose Munoz Nandu");
+    expect(cleanText("O'Brien-Smith")).toBe("O Brien Smith");
+    expect(cleanText("  doble   espacio  ")).toBe("doble espacio");
+    expect(cleanText("")).toBe("");
+    expect(cleanText(null)).toBe("");
   });
 });
