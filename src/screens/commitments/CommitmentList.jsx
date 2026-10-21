@@ -54,7 +54,8 @@ export function CommitmentList({
   onPartialPayment,
   onEditSeries,
 }) {
-  // Una sola acción a la vista (pagar o cobrar, si está abierto) y el resto en el menú.
+  // Una sola acción a la vista (marcarlo pagado o cobrado, si está abierto) y
+  // el resto en el menú.
   const actions = (c) => {
     const open = isOpen(c);
     const undated = c.status === "postponed" || c.status === "protested";
@@ -97,7 +98,7 @@ export function CommitmentList({
             onClick={() => onPay(c)}
             className="h-9 whitespace-nowrap rounded-md border border-[var(--color-accent)] px-3 text-sm font-medium text-[var(--color-accent)] hover:bg-[var(--color-accent-soft)] md:h-8 md:px-2.5 md:text-xs"
           >
-            ✓ {paidLabel(c.kind)}
+            Marcar como {paidLabel(c.kind).toLowerCase()}
           </button>
         )}
         <RowMenu items={menu} />
@@ -128,10 +129,10 @@ export function CommitmentList({
           <thead className="bg-[var(--color-surface-2)] text-left text-xs text-[var(--color-muted)]">
             <tr>
               <th className="px-3 py-2">Vence</th>
-              <th className="px-3 py-2">Estado</th>
               <th className="px-3 py-2">Tipo</th>
               <th className="px-3 py-2">Contraparte</th>
               <th className="px-3 py-2">Detalle</th>
+              <th className="px-3 py-2">Estado</th>
               <th className="px-3 py-2 text-right">Monto</th>
               <th className="px-3 py-2" />
             </tr>
@@ -140,7 +141,6 @@ export function CommitmentList({
             {items.map((c) => (
               <tr key={c.id} className={`border-t border-[var(--color-border)] ${c.status === "cancelled" ? "opacity-60" : ""}`}>
                 <td className="whitespace-nowrap px-3 py-2 tabular-nums">{fmtDate(c.dueDate)}</td>
-                <td className="px-3 py-2"><StatusChip c={c} today={today} /></td>
                 <td className="whitespace-nowrap px-3 py-2">{kindMeta(c.kind).icon} {kindMeta(c.kind).label}</td>
                 <td className="px-3 py-2">
                   <div className="font-medium">{c.counterparty}</div>
@@ -152,6 +152,7 @@ export function CommitmentList({
                   {detail(c)}
                   {paidNote(c) && <div>{paidNote(c)}</div>}
                 </td>
+                <td className="px-3 py-2"><StatusChip c={c} today={today} /></td>
                 <td className={`whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums ${c.status === "cancelled" ? "line-through" : ""}`}>
                   <AmountCell c={c} />
                 </td>

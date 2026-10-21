@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   daysUntil,
   displayStatus,
+  urgencyLabel,
+  paidLabel,
   monthlyDate,
   buildInstallments,
   recurringDates,
@@ -532,5 +534,22 @@ describe("import de la planilla de cheques", () => {
     expect(r.data).toMatchObject({ companyId: null, companyLabel: "SANTA SARA", status: "paid", bank: "001", dueDate: "2026-05-06" });
     expect(mapExcelRow([49, null, null, null, null, null, null, null, null, null, null])).toBe(null);
     expect(mapExcelRow([50, "pronto", "BICE", 1, "X", "", 100]).error).toMatch(/Fecha/);
+  });
+});
+
+describe("textos del vencimiento", () => {
+  it("dice cuándo vence, o cuánto hace que venció", () => {
+    expect([urgencyLabel(-3), urgencyLabel(-1), urgencyLabel(0), urgencyLabel(1), urgencyLabel(5)]).toEqual([
+      "Vencido hace 3 días",
+      "Venció ayer",
+      "Vence hoy",
+      "Vence mañana",
+      "Vence en 5 días",
+    ]);
+    expect(urgencyLabel(null)).toBe("");
+  });
+
+  it("un cheque se cobra y lo demás se paga", () => {
+    expect([paidLabel("chequeIssued"), paidLabel("chequeReceived"), paidLabel("payment")]).toEqual(["Cobrado", "Cobrado", "Pagado"]);
   });
 });
