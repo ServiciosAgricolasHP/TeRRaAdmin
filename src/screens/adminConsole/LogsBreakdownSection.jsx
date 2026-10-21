@@ -14,6 +14,7 @@ const LOG_ENTITIES = [
   "costCenter", "informalExpense", "priceBookEntry", "priceBookConfig",
   "contactCard", "phoneContact", "interestLink", "groupLeader", "laborGroup", "indicator",
   "commitment", "commitmentSeries", "commitmentConfig", "portalMeta",
+  "employment", "employer",
   "user", "log",
 ];
 

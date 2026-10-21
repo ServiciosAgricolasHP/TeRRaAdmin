@@ -103,6 +103,8 @@ export const ENTITY_META = {
   informalExpense: { labelEs: "Gasto informal", labelOf: (d) => d?.detail },
   contactCard: { labelEs: "Ficha de contacto" },
   phoneContact: { labelEs: "Contacto de la agenda", labelOf: (d) => d?.name },
+  employment: { labelEs: "Contrato u honorarios", labelOf: (d) => d?.workerName },
+  employer: { labelEs: "Empleador", labelOf: (d) => d?.name },
   dteDocument: { labelEs: "Documento SII" },
   catalog: { labelEs: "Catálogo", labelOf: (_d, id) => id },
   priceBookEntry: { labelEs: "Libro de precios" },

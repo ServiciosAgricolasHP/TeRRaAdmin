@@ -73,6 +73,9 @@ const ACTION_STYLE = {
   update: { color: "#92400e", bg: "#fef3c7", label: "editar" },
   delete: { color: "#b91c1c", bg: "#fee2e2", label: "eliminar" },
   import: { color: "#1e40af", bg: "#dbeafe", label: "importar" },
+  bulkStart: { color: "#166534", bg: "#dcfce7", label: "contratar" },
+  bulkEnd: { color: "#b91c1c", bg: "#fee2e2", label: "terminar" },
+  settlement: { color: "#92400e", bg: "#fef3c7", label: "finiquito" },
 };
 
 function actionPill(action) {

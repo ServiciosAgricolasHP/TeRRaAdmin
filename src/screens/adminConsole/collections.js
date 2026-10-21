@@ -19,6 +19,8 @@ export const MAIN_COLLECTIONS = [
   { id: "portalPayslips", group: "Personas y pagos", label: "Portal: fichas", note: "una por trabajador de la nómina publicada" },
   { id: "portalMeta", group: "Personas y pagos", label: "Portal: nómina publicada", note: "un solo documento" },
   { id: "advances", group: "Personas y pagos", label: "Anticipos / Bonos", note: "" },
+  { id: "employments", group: "Personas y pagos", label: "Contratos y honorarios", note: "un período por documento" },
+  { id: "employers", group: "Personas y pagos", label: "Empleadores", note: "" },
 
   // Transporte
   { id: "transports", group: "Transporte", label: "Vueltas", note: "" },

@@ -209,6 +209,33 @@ Anticipos (descuento) y bonos (suma) sobre la próxima nómina. El signo lo da `
 
 > **Ojo con los filtros**: `pending` y `partial` van juntos en el bucket "Pendientes" (`Advances.jsx` → `STATUS_BUCKET`, y `listPendingForWorkers()`). Un parcial que quede fuera de ese bucket desaparece de la vista sin que su saldo deje de existir.
 
+### `employers`
+Empresas empleadoras de los contratos y los honorarios (Transporte HP, Frutos La Aguada…). Lista propia, aparte de las `companies` de Facturación.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | autoId |
+| `name` | string | |
+| `rut` | string | normalizado `"76123456-7"` |
+| `enabled` | bool | un empleador desactivado no se ofrece para períodos nuevos |
+
+### `employments`
+Un período de contrato o de honorarios de un trabajador con un empleador. El historial de una persona es la lista de sus períodos; "sin nada" es no tener ninguno vigente.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | autoId |
+| `workerId` | ref→`worker` (por id, estable) | |
+| `workerRut`, `workerName` | string | copia al crear, para mostrar sin cruzar con `worker` |
+| `type` | `"contract"` \| `"fees"` | contrato u honorarios |
+| `employerId` | ref→`employers` | |
+| `startDate` | string (YYYY-MM-DD) | |
+| `endDate` | string (YYYY-MM-DD) \| `""` | `""` = sin término. Con una fecha futura (plazo fijo) sigue vigente hasta ese día. **Vigente en `d`**: `startDate <= d` y (`endDate` vacío o `endDate >= d`) |
+| `endReason` | `"jobEnd"` \| `"companyNeeds"` \| `"resignation"` \| `"mutualAgreement"` \| `"other"` \| null | término de faena, necesidad de la empresa, renuncia, mutuo acuerdo |
+| `settlementStatus` | `"pending"` \| `"requested"` \| `"done"` \| null | el finiquito; solo en contratos terminados. Terminar un contrato lo deja en `pending` |
+| `settlementRequestedAt`, `settlementDoneAt` | string (YYYY-MM-DD)? | cuándo se pidió al contador y cuándo quedó listo |
+| `notes` | string | |
+
+> **Dos períodos de una persona no se cruzan** (`employmentError`, `utils/employment.js`): su estado en una fecha es uno solo. Las consultas van por un solo campo (`endDate == ""`, `endDate >= fecha`, `workerId`, `settlementStatus in`, `settlementDoneAt >=`) y no necesitan índice compuesto.
+
 ### `carriers`
 Transportistas (propios o contratados).
 | Campo | Tipo | Notas |
@@ -579,7 +606,7 @@ Auditoría — una fila por mutación.
 |---|---|---|
 | `id` (docId) | string | autoId |
 | `uid`, `email` | string? | quién |
-| `action` | `"create"` \| `"update"` \| `"delete"` \| `"import"` | `"import"` solo lo escribe la importación de la agenda telefónica |
+| `action` | `"create"` \| `"update"` \| `"delete"` \| `"import"` \| `"bulkStart"` \| `"bulkEnd"` \| `"settlement"` | `"import"` solo lo escribe la importación de la agenda telefónica; los otros tres, las acciones masivas de contratos (`entity: "employment"`) |
 | `entity`, `entityId` | string | qué |
 | `before` | objeto? | solo en `delete` (snapshot completo). Borrar un documento que no existe no deja log |
 | `after` | objeto? | solo en `create` (snapshot completo) |
@@ -598,6 +625,7 @@ Auditoría — una fila por mutación.
 | `addedAbono`, `editedAbonoId`, `removedAbonoId` | `paymentsService` | detalle del abono tocado |
 | `jobId`, `payrollId`, `workerCount`, `removed` | `publishPortal` (`functions/portal.js`) | qué nómina se publicó en el portal, cuántas fichas quedaron y cuántas se borraron (`entity: "portalMeta"`) |
 | `created`, `updated`, `unchanged`, `sources`, `files` | `importPhoneContacts` (`services/phoneContactsService.js`) | una importación de la agenda telefónica (`action: "import"`, `entity: "phoneContact"`) |
+| `ids`, `count`, `type`, `employerId`, `startDate` / `endDate`, `endReason` / `status`, `date` | `startEmployments`, `endEmployments`, `setSettlementStatus` (`services/employmentsService.js`) | una acción masiva sobre contratos y honorarios (`entity: "employment"`, sin `entityId`): los períodos que creó o tocó |
 | `op: "applyAdvances"`, `count`, `total`, `advanceIds`, `sobrantes?` | `applyAdvancesToPayroll` | un log por nómina (`entity: "payroll"`) con los anticipos que descontó. `sobrantes: [{ advanceId, pedido, aplicado }]` son las aplicaciones recortadas |
 | `op: "restoreAdvances"`, `count`, `advanceIds` | `restoreAdvancesFromPayroll` | los anticipos que soltó la nómina |
 | `op: "setPayrollAdvances"`, `cambios` | `setPayrollAdvanceAmounts` | `cambios: [{ advanceId, antes, despues }]`: cuánto descontaba y cuánto descuenta la nómina de cada anticipo |
@@ -662,6 +690,8 @@ erDiagram
     CYCLES ||--o{ WORKDAYS : "produce"
     WORKER ||--o{ WORKDAYS : "trabaja"
     WORKER ||--o{ ADVANCES : "recibe"
+    WORKER ||--o{ EMPLOYMENTS : "tiene (workerId)"
+    EMPLOYERS ||--o{ EMPLOYMENTS : "contrata (employerId)"
     PAYROLLS ||--o{ WORKDAYS : "tag (payrollId)"
     PAYROLLS ||--o{ ADVANCES : "aplica (appliedPayrollId)"
     CYCLES ||--o| CYCLE_SUMMARIES : "configura cobro"
@@ -863,4 +893,5 @@ erDiagram
 - **costCenter → informalExpenses**: gastos sin respaldo tributario, deliberadamente separados de `dteDocuments` para no contaminar la data fiscal.
 - **company → dteDocuments** (`companyId`): los DTE cuelgan de una empresa. El docId es **determinístico** (no autoId) → reimportar el mismo período es idempotente; el "replace por período" borra huérfanos y preserva `paymentStatus`/`payments` existentes.
 - **commitmentSeries → commitments** (`seriesId`): un crédito crea todas sus cuotas de una; un recurrente se extiende día a día desde `generatedUntil`. Cada vencimiento se marca pagado o anulado por separado.
+- **worker → employments → employer**: cada período cuelga de una persona (`workerId`) y de un empleador (`employerId`). Las acciones masivas (contratar o terminar a varios) escriben en lotes con un solo log.
 - **catalogs / users**: docIds estables (nombre / uid), no autoId.
