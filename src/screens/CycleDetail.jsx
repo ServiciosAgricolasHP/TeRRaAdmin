@@ -89,6 +89,7 @@ import { useDayNotes } from "./cycleDetail/useDayNotes";
 import { useLaborForm } from "./cycleDetail/useLaborForm";
 import { useCycleClosing } from "./cycleDetail/useCycleClosing";
 import { useCycleTransports } from "./cycleDetail/useCycleTransports";
+import { useEmploymentFilter } from "./cycleDetail/useEmploymentFilter";
 import ScreenLoader from "../components/ScreenLoader";
 import { WORKERS_LIST } from "../services/workersService";
 
@@ -287,6 +288,7 @@ export default function CycleDetail() {
   // casillas de asistencia en $0.
   const allowsMonthly = isNormalLabor || isOvertimeDayLabor;
   const days = cycle?.days || [];
+  const { employmentFilter, setEmploymentFilter, employmentPass, employmentLoading, employers } = useEmploymentFilter(days);
   const workers = activeLabor?.workers || [];
   const wdMap = (activeLabor && workdaysByLabor[activeLabor.id]) || {};
   const shownLaborId = activeLabor?.id;
@@ -393,6 +395,7 @@ export default function CycleDetail() {
     rowData,
     scrollToGroup,
   } = useLeaderGrouping({
+    employmentPass,
     gridRef,
     groupView,
     onlyWithProduction,
@@ -829,6 +832,10 @@ export default function CycleDetail() {
     navigate,
     nextCycle,
     onlyWithProduction,
+    employmentFilter,
+    setEmploymentFilter,
+    employmentLoading,
+    employers,
     openCreateLabor,
     openEditLabor,
     orderedGroups,
@@ -989,6 +996,7 @@ export default function CycleDetail() {
                   fmtCurrency={fmtCurrency}
                   onSelectWorker={setEditingCycleWorkerRut}
                   onlyWithProduction={onlyWithProduction}
+                  employmentPass={employmentPass}
                 />
               ) : (
                 grid

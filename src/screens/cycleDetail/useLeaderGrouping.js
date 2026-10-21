@@ -1,8 +1,9 @@
 import { useMemo, useEffect } from "react";
 
 // Vista por grupo de la grilla: las filas agrupadas por líder (con sus
-// encabezados), el filtro de "solo con producción" y el salto a cada grupo.
-export function useLeaderGrouping({ gridRef, groupView, onlyWithProduction, rowDataRaw, rutToLeader, setColumnFilterActive }) {
+// encabezados), los filtros de "solo con producción" y de contrato u
+// honorarios (`employmentPass`), y el salto a cada grupo.
+export function useLeaderGrouping({ employmentPass, gridRef, groupView, onlyWithProduction, rowDataRaw, rutToLeader, setColumnFilterActive }) {
   "use no memo";
   const LEADER_LOCAL = "CHILENOS";
   const LEADER_FOREIGN = "EXTRANJEROS";
@@ -57,19 +58,22 @@ export function useLeaderGrouping({ gridRef, groupView, onlyWithProduction, rowD
     }
     return out;
   }, [isGroupedView, rowDataRaw, orderedGroups]);
-  // "Solo con producción" es un filtro externo de AG-Grid (no recorta
-  // `rowData`), así convive con el orden y la selección de la grilla. Con un
-  // filtro de columna activo deja pasar todo: la búsqueda muestra a todos los
-  // que calzan, tengan o no producción.
-  const isExternalFilterPresent = () => onlyWithProduction;
+  // "Solo con producción" y el filtro de contrato son filtros externos de
+  // AG-Grid (no recortan `rowData`), así conviven con el orden y la selección
+  // de la grilla. Con un filtro de columna activo, "solo con producción" deja
+  // pasar todo: la búsqueda muestra a todos los que calzan, tengan o no
+  // producción. El de contrato se mantiene.
+  const isExternalFilterPresent = () => onlyWithProduction || !!employmentPass;
   const doesExternalFilterPass = (node) => {
     if (node.data?._isHeader) return true;
+    if (employmentPass && !employmentPass(node.data)) return false;
+    if (!onlyWithProduction) return true;
     if (gridRef.current?.api?.isColumnFilterPresent()) return true;
     return Number(node.data?.total) > 0;
   };
   useEffect(() => {
     gridRef.current?.api?.onFilterChanged();
-  }, [onlyWithProduction]);
+  }, [onlyWithProduction, employmentPass]);
   const handleGridFilterChanged = () => {
     setColumnFilterActive(!!gridRef.current?.api?.isColumnFilterPresent());
   };

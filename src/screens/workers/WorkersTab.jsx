@@ -21,6 +21,10 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import { MIN_WORKER_QUERY, workerMatchesQuery, workerQueryReady } from "../../utils/workerSearch";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import ScreenLoader from "../../components/ScreenLoader";
+import { useEmployers } from "../../hooks/useEmployers";
+import { useEmploymentsFrom } from "../../hooks/useEmploymentsFrom";
+import { localIsoDate } from "../../utils/dates";
+import { EMPLOYMENT_FILTERS, activeByWorker, matchesEmploymentFilter } from "../../utils/employment";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -45,11 +49,19 @@ export default function WorkersTab() {
   // payFilter: "" | "cash" | "transfer"
   const [leaderFilter, setLeaderFilter] = useState("");
   const [payFilter, setPayFilter] = useState("");
+  // Contrato u honorarios vigentes hoy: "" | "contract" | "fees" | "none", y
+  // el empleador. Los períodos se leen solo con el filtro en uso.
+  const [employmentFilter, setEmploymentFilter] = useState("");
+  const [employerFilter, setEmployerFilter] = useState("");
+  const today = localIsoDate();
+  const employmentOn = employmentFilter !== "" || employerFilter !== "";
+  const { employments, loading: employmentsLoading } = useEmploymentsFrom(today, employmentOn);
+  const { employers } = useEmployers();
 
   const queryKind = detectQueryKind(search);
   const queryRaw = search.trim();
   const queryReady = workerQueryReady(queryRaw);
-  const filtersActive = leaderFilter !== "" || payFilter !== "";
+  const filtersActive = leaderFilter !== "" || payFilter !== "" || employmentOn;
 
   // Carga la lista completa de trabajadores; lee Firestore solo si la caché
   // venció o no existe. Si ya está cargada, la devuelve sin esperar.
@@ -106,14 +118,20 @@ export default function WorkersTab() {
     } else if (payFilter === "transfer") {
       arr = arr.filter((w) => w.bankDetails?.[3] && !isCashBank(w.bankDetails?.[3]));
     }
+    if (employmentOn) {
+      const active = activeByWorker(employments, today);
+      arr = arr.filter((w) => matchesEmploymentFilter(active.get(w.id), { type: employmentFilter, employerId: employerFilter }));
+    }
     if (queryReady) arr = arr.filter((w) => workerMatchesQuery(w, queryRaw));
     return arr;
-  }, [queryReady, filtersActive, leaderFilter, payFilter, allWorkers, queryRaw]);
+  }, [queryReady, filtersActive, leaderFilter, payFilter, allWorkers, queryRaw, employmentOn, employments, today, employmentFilter, employerFilter]);
 
   const showResults = filtersActive || queryReady;
   const clearFilters = () => {
     setLeaderFilter("");
     setPayFilter("");
+    setEmploymentFilter("");
+    setEmployerFilter("");
   };
 
   // Tras editar o eliminar, vuelve a tomar la lista de la caché, que
@@ -359,6 +377,28 @@ export default function WorkersTab() {
         >
           🏦 Transferencia
         </button>
+        <select
+          value={employmentFilter}
+          onChange={(e) => setEmploymentFilter(e.target.value)}
+          className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs shadow-sm focus:border-[var(--color-accent)] outline-none"
+          title="Contrato u honorarios vigentes hoy"
+          aria-label="Contrato u honorarios"
+        >
+          <option value="">📄 Contrato: todos</option>
+          {Object.entries(EMPLOYMENT_FILTERS).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+        </select>
+        {employmentFilter !== "none" && employers.length > 0 && (
+          <select
+            value={employerFilter}
+            onChange={(e) => setEmployerFilter(e.target.value)}
+            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs shadow-sm focus:border-[var(--color-accent)] outline-none"
+            aria-label="Empleador"
+          >
+            <option value="">🏢 Empleador: todos</option>
+            {employers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </select>
+        )}
+        {employmentOn && employmentsLoading && <span className="text-[var(--color-muted)]">Cargando contratos…</span>}
         {filtersActive && (
           <button
             type="button"
