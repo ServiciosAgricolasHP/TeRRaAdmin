@@ -10,6 +10,7 @@ import { findSimilarWorkers } from "../utils/similarity";
 import { hasChanges } from "../utils/formChanges";
 import { personalDataOf, personalDataPatch } from "../utils/workerPersonalData";
 import PersonalDataFields from "./workerEditModal/PersonalDataFields";
+import EmploymentHistory from "./workerEditModal/EmploymentHistory";
 import {
   BANKS,
   ACCOUNT_TYPES,
@@ -500,6 +501,8 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
           form={form}
           onChange={(key, v) => setForm((f) => ({ ...f, [key]: v }))}
         />
+
+        {!isCreate && worker?.id && <EmploymentHistory key={worker.id} worker={worker} />}
 
         {error && (
           <div className="rounded-md border border-[var(--color-danger)] bg-[var(--color-danger-soft)] px-3 py-2 text-sm text-[var(--color-danger)]">

@@ -520,7 +520,7 @@ Implementación en `submitCycle` (`screens/jobs/useCycleForm.js`), con el cálcu
 
 ## Trabajadores / Workers
 
-- Pantalla: `src/screens/Workers.jsx`.
+- Pantalla: `src/screens/Workers.jsx`, con pestañas: 👷 Trabajadores (`screens/workers/WorkersTab.jsx`, la lista de personas) y 📄 Contratos (ver "Contratos y honorarios"). Abre en la última elegida (`workers.tab`).
 - **Búsqueda client-side sobre la lista cacheada** (única fuente de datos). Al montar la pantalla, `ensureAllForModal()` trae la lista completa con `workersService.list(WORKERS_LIST)` — primera carga ~500-2000 reads, después gratis hasta que vence el TTL. La búsqueda es `workerMatchesQuery` (`utils/workerSearch.js`, con tests): cada palabra en el nombre, en cualquier orden y sin acentos, o una parte del RUT o del id sin puntos ni guion, desde 2 caracteres (`MIN_WORKER_QUERY`). Permite buscar por apellido o dígitos del RUT en cualquier posición.
 - **`WORKERS_LIST`** (`services/workersService.js`) son las opciones con que toda la app pide la lista de trabajadores (por nombre, en caché 2 h, también en `localStorage`). La clave de la caché sale de ellas: si una pantalla las escribe a mano y difieren, esa pantalla paga su propia lectura de la colección entera.
 - **Elegir a una persona** en un formulario (Anticipos, Resúmenes por grupo) es `WorkerSearchPicker` (`components/`): la misma búsqueda sobre la lista en caché (`useWorkersList`, `hooks/`), con los resultados debajo del campo y Enter para elegir el primero.
@@ -534,6 +534,18 @@ Implementación en `submitCycle` (`screens/jobs/useCycleForm.js`), con el cálcu
 - **Se cruza por el id y se muestra siempre `worker.rut`.** Una jornada, un item de nómina o una entrada de labor guardan el RUT del momento en que se crearon, y ese valor sigue siendo la clave de los cruces. Para mostrarlo se pasa por `currentRutResolver(workers)` (`utils/workerRut.js`), que lo traduce al vigente con la lista de trabajadores ya cargada, sin lecturas extra. Lo usan Nómina (vista previa, detalle, impresiones, XLSX y Pagos anteriores, que además agrupa por `workerId`), la grilla del ciclo (`_displayRut` en las filas) y Pesajes QR.
 - Bank details = `[paymentRut, accountNumber, accountType, bankCode]` (orden importante).
 - `services/workersService.js` expone `findWorkerByRut`, `createWorker`, `deleteWorkerSafe`, `detectQueryKind` y `WORKERS_LIST`.
+
+### Contratos y honorarios
+
+- **Un período por documento** en `employments`: contrato u honorarios (`type`), con un empleador (`employers`, lista propia, aparte de las Empresas de Facturación), desde y hasta (`endDate` vacío = sin término). El historial de una persona es la lista de sus períodos y "sin nada" es no tener ninguno vigente. Ver `docs/data-model.md`.
+- **Dos períodos de una persona no se cruzan** (`employmentError`, `utils/employment.js`, con tests), así su estado en una fecha es uno solo. Contratar a varios lee antes los períodos de esas personas, y quien se cruzaría queda afuera con el motivo.
+- **Terminar un contrato deja su finiquito pendiente** (`settlementStatus`); después se marca solicitado (al contador) y listo, con su fecha. Los honorarios no tienen finiquito.
+- **Pestaña 📄 Contratos** (`screens/workers/EmploymentsTab.jsx`, con `useEmployments`): los vigentes y los finiquitos (pendientes, solicitados y listos en los últimos 90 días), con filtros por tipo, empleador y nombre o RUT, y selección múltiple para terminar o marcar finiquitos de una vez. El nombre abre la ficha.
+  - **+ Contratar** (`StartEmploymentsModal`): tipo, empleador, fecha y las personas, una por una o **desde un ciclo abierto** (quienes están en sus labores, sin los temporales, y no tienen un período vigente en esa fecha).
+  - **⚙ Empleadores** (`EmployersModal`): alta, edición y desactivar.
+- **En la ficha del trabajador** (`components/workerEditModal/EmploymentHistory.jsx`): la situación de hoy y el historial, con + Período, corregir, terminar y eliminar. El alta o corrección de un período es `components/EmploymentFormModal.jsx` y terminar, `components/EndEmploymentsModal.jsx`, que usa también la pestaña.
+- **Costo de lecturas** (`services/employmentsService.js`): los vigentes son dos consultas por un solo campo (`endDate == ""` y `endDate >= hoy`), en caché por 2 horas; nunca se lee la colección entera. El historial de una persona se lee al abrir su ficha (`workerId ==`).
+- **Las acciones masivas escriben en lotes de 450 con un solo log** (`bulkStart`, `bulkEnd`, `settlement`, con los ids en `meta`). Las altas y correcciones de a uno pasan por el servicio común y dejan su log por período.
 
 ### Líder de grupo — estricto
 

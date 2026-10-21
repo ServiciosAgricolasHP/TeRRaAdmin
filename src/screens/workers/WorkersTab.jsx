@@ -286,7 +286,6 @@ export default function WorkersTab() {
     <div className="flex h-full flex-col">
       <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Trabajadores</h1>
           <p className="text-sm text-[var(--color-muted)]">
             {cacheLoading && allWorkers.length === 0
               ? "Cargando trabajadores..."
