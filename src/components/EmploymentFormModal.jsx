@@ -57,12 +57,13 @@ export default function EmploymentFormModal({ worker, employment, history, emplo
       data.settlementRequestedAt = employment?.settlementRequestedAt || today;
     }
     if (data.settlementStatus === "done") data.settlementDoneAt = employment?.settlementDoneAt || today;
-    const err =employmentError(history, { ...data, id: employment?.id });
+    const id = employment?.id || null;
+    const err = employmentError(history, { ...data, id });
     if (err) return setError(err);
+    const write = id ? () => employmentsService.update(id, data) : () => employmentsService.create(data);
     setBusy(true);
     try {
-      if (employment?.id) await employmentsService.update(employment.id, data);
-      else await employmentsService.create(data);
+      await write();
       onSaved();
     } catch (e) {
       setError(e.message || "No se pudo guardar.");

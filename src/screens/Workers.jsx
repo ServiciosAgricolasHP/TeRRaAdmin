@@ -8,16 +8,20 @@ const TABS = [
 ];
 const TAB_KEY = "workers.tab";
 
+const savedTab = () => {
+  try {
+    return localStorage.getItem(TAB_KEY);
+  } catch {
+    return null;
+  }
+};
+
 // Trabajadores: la lista de personas y sus contratos y honorarios, en
 // pestañas. Abre en la última elegida.
 export default function Workers() {
   const [tab, setTab] = useState(() => {
-    try {
-      const saved = localStorage.getItem(TAB_KEY);
-      return TABS.some((t) => t.value === saved) ? saved : "workers";
-    } catch {
-      return "workers";
-    }
+    const saved = savedTab();
+    return TABS.some((t) => t.value === saved) ? saved : "workers";
   });
   const choose = (value) => {
     setTab(value);

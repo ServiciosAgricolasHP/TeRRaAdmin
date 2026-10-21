@@ -76,15 +76,16 @@ export default function EmploymentsTab() {
   };
 
   const markSettlement = async (status) => {
+    const ids = picked.map((e) => e.id);
+    const msg = `${ids.length} finiquito${ids.length === 1 ? "" : "s"}: ${SETTLEMENT_STATUSES[status].toLowerCase()}`;
     setBusy(true);
     try {
-      await setSettlementStatus(picked.map((e) => e.id), status, today);
-      afterAction(`${picked.length} finiquito${picked.length === 1 ? "" : "s"}: ${SETTLEMENT_STATUSES[status].toLowerCase()}`);
+      await setSettlementStatus(ids, status, today);
+      afterAction(msg);
     } catch (e) {
       toast.error(e.message || String(e));
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
 
   const openCard = (e) => {

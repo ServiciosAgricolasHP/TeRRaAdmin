@@ -18,28 +18,30 @@ export default function EmployersModal({ employers, onClose, onChanged }) {
     const rut = form.rut.trim() ? normalizeRut(form.rut) : "";
     if (!name) return setError("Falta el nombre.");
     if (rut && !validateRut(rut)) return setError("RUT inválido.");
+    const id = form.id;
+    const write = id ? () => employersService.update(id, { name, rut }) : () => employersService.create({ name, rut, enabled: true });
     setBusy(true);
     try {
-      if (form.id) await employersService.update(form.id, { name, rut });
-      else await employersService.create({ name, rut, enabled: true });
+      await write();
       setForm({ id: null, name: "", rut: "" });
       setError("");
       await onChanged();
     } catch (e) {
       setError(e.message || "No se pudo guardar.");
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
 
   const toggle = async (x) => {
+    const enabled = x.enabled === false;
     setBusy(true);
     try {
-      await employersService.update(x.id, { enabled: x.enabled === false });
+      await employersService.update(x.id, { enabled });
       await onChanged();
-    } finally {
-      setBusy(false);
+    } catch (e) {
+      setError(e.message || "No se pudo guardar.");
     }
+    setBusy(false);
   };
 
   return (

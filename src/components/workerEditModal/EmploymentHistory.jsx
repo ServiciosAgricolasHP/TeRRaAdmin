@@ -126,9 +126,10 @@ export default function EmploymentHistory({ worker }) {
             await employmentsService.remove(removing.id);
             setRemoving(null);
             load();
-          } finally {
-            setBusy(false);
+          } catch (e) {
+            setError(e.message || "No se pudo eliminar.");
           }
+          setBusy(false);
         }}
       />
     </div>

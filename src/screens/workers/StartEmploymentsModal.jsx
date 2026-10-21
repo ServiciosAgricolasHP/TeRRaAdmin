@@ -63,22 +63,21 @@ export default function StartEmploymentsModal({ employers, activeEmployments, on
     add([...ids].filter((wid) => !busyIds.has(wid) && byId.has(wid)).map((wid) => personOf(byId.get(wid))));
   };
 
+  // Lee los períodos de esas personas y arma el plan. Si alguien queda
+  // afuera, lo muestra y espera la confirmación; si no, escribe de una.
   const review = async () => {
+    const ids = people.map((p) => p.workerId);
+    const fields = { type, employerId, startDate, notes: notes.trim() };
     setBusy(true);
     setError("");
     try {
-      const existing = await listEmploymentsOfWorkers(people.map((p) => p.workerId));
-      const next = planStartEmployments(existing, people, { type, employerId, startDate, notes: notes.trim() });
-      if (next.skipped.length) {
-        setPlan(next);
-        return;
-      }
-      await write(next);
+      const next = planStartEmployments(await listEmploymentsOfWorkers(ids), people, fields);
+      if (next.skipped.length) setPlan(next);
+      else await write(next);
     } catch (e) {
       setError(e.message || "No se pudo contratar.");
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
 
   const write = async (p) => {
