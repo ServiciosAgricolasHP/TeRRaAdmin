@@ -11,8 +11,8 @@ import { EMPLOYMENT_TYPES, activeByWorker, planStartEmployments } from "../../ut
 const inputCls =
   "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]";
 
-// Las mismas opciones que Nómina, así comparten la caché de ciclos.
-const CYCLES_LIST = { order: ["createdAt", "desc"], cache: true, persist: true, ttl: 5 * 60 * 1000 };
+// Las mismas opciones que Transportes, así comparten la caché de ciclos.
+const CYCLES_LIST = { cache: true, persist: true, ttl: 5 * 60 * 1000 };
 
 // Contratar o pasar a honorarios a varias personas desde la misma fecha. Se
 // suman una por una o "desde un ciclo": quienes están en sus labores y no
@@ -34,7 +34,9 @@ export default function StartEmploymentsModal({ employers, activeEmployments, on
   useEffect(() => {
     cyclesService
       .list(CYCLES_LIST)
-      .then((list) => setCycles(list.filter((c) => c.status !== "closed")))
+      .then((list) =>
+        setCycles(list.filter((c) => c.status !== "closed").sort((a, b) => String(a.label).localeCompare(String(b.label), "es"))),
+      )
       .catch(() => setCycles([]));
   }, []);
 
