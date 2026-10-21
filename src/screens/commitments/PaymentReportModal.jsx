@@ -8,13 +8,13 @@ import { ReportPreview } from "./paymentReportModal/ReportPreview";
 import { writeReportPdf } from "./paymentReportModal/writeReportPdf";
 import { writeReportXlsx } from "./paymentReportModal/writeReportXlsx";
 
-// Informe de deudas de Cheques y pagos, como documento PDF: resumen, balance de
-// cada deuda con la fecha en que queda pagada, lo que vence en los próximos 7
-// días y el próximo mes, los vencimientos por mes (detallados hasta una fecha,
-// por defecto fin del año siguiente) y, si se piden, el detalle de cada pago
-// pendiente (por fecha o por contraparte) y los pagos hechos en un rango. El
-// contenido lo arma una sola vez `reportDocument`, y lo dibujan igual la vista
-// previa (HTML), que también se imprime, y el PDF.
+// Informe de deudas de Cheques y pagos, como documento PDF: resumen, lo que
+// vence en los próximos 7 días y el próximo mes, los vencimientos por mes
+// (detallados hasta una fecha, por defecto fin del año siguiente), si se piden,
+// el detalle de cada pago pendiente (por fecha o por contraparte) y los pagos
+// hechos en un rango, y al final el balance de cada deuda con la fecha en que
+// queda pagada. El contenido lo arma una sola vez `reportDocument`, y lo
+// dibujan igual la vista previa (HTML), que también se imprime, y el PDF.
 
 const btnCls =
   "min-h-8 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-surface-2)] disabled:opacity-50";
