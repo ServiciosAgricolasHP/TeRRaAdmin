@@ -32,7 +32,7 @@ export function DateActionModal({ action, onChange, onCancel, onConfirm }) {
       open
       size="sm"
       onClose={onCancel}
-      title={pay ? `Marcar ${paidLabel(item.kind).toLowerCase()}` : "Reprogramar"}
+      title={pay ? `Marcar como ${paidLabel(item.kind).toLowerCase()}` : "Reprogramar"}
       footer={
         <>
           <button type="button" className={btnCls} onClick={onCancel}>Cancelar</button>

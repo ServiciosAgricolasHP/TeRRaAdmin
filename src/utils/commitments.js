@@ -94,7 +94,7 @@ export function urgencyLabel(days) {
   if (days === -1) return "Venció ayer";
   if (days === 0) return "Vence hoy";
   if (days === 1) return "Vence mañana";
-  return `En ${days} días`;
+  return `Vence en ${days} días`;
 }
 
 // La fecha `offset` meses después de `startIso`, en el día `dayOfMonth`
