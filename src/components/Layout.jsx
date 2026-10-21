@@ -109,7 +109,7 @@ const navItems = [
   { to: "/facturacion", label: "Facturación", icon: "🧾" },
   { to: "/cheques-pagos", label: "Cheques y pagos", icon: "📆" },
   { to: "/price-book", label: "Libro de Precios", icon: "📖" },
-  { to: "/info-cuentas", label: "Información y Cuentas", icon: "📇" },
+  { to: "/info-cuentas", label: "Agenda y Cuentas", icon: "📇" },
   { to: "/links", label: "Links útiles", icon: "🔗" },
 ];
 

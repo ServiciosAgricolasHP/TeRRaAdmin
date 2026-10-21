@@ -406,7 +406,7 @@ Listas configurables. **DocId = nombre del catálogo** (`qualities`, `containers
 | `entries` | `[{ value, label }]` | |
 
 ### `contactCards`
-Libreta compartida de contactos (persona o empresa) con datos bancarios listos para copiar — pantalla "Información y Cuentas". Modelo **independiente**: no se vincula a `worker` ni a `companies`.
+Libreta compartida de contactos (persona o empresa) con datos bancarios listos para copiar — pestaña "🏦 Información y cuentas" de Agenda y Cuentas. Modelo **independiente**: no se vincula a `worker` ni a `companies`.
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | string | autoId |
@@ -425,7 +425,7 @@ Libreta compartida de contactos (persona o empresa) con datos bancarios listos p
 - `bankCode`, `accountType` (number, misma convención que `worker.bankDetails`), `accountNumber`, `email`
 
 ### `phoneContacts`
-Agenda telefónica — pestaña "📞 Agenda telefónica" de Información y Cuentas. Se llena a mano o importando la planilla de las secretarias, CSV de Google o Outlook y archivos vCard (`utils/phoneBook.js`). **Un número es un contacto**: lo que comparte un teléfono se junta en un solo documento. Modelo **independiente** de `contactCards`, `worker` y `companies`.
+Agenda telefónica — pestaña "📞 Agenda telefónica" de Agenda y Cuentas. Se llena a mano o importando la planilla de las secretarias, CSV de Google o Outlook y archivos vCard (`utils/phoneBook.js`). **Un número es un contacto**: lo que comparte un teléfono se junta en un solo documento. Modelo **independiente** de `contactCards`, `worker` y `companies`.
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | string | autoId |

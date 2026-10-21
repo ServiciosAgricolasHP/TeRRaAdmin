@@ -156,8 +156,8 @@ Libro de compras y ventas alimentado por el **CSV del RCV del SII**. Multi-empre
 ### Libro de Precios
 Registro contable **independiente** del resto de la app: no lee ni alimenta ciclos ni jornadas. Guarda qué se pagó (`payPrice`) y qué se cobró (`chargePrice`) por labor, faena y período, con líneas por unidad y su par de hora extra cuando corresponde. Acepta faenas "dummy" que nunca existieron como `faena` real.
 
-### Información y Cuentas
-Libreta compartida de contactos (persona o empresa) con datos bancarios listos para copiar/pegar, N cuentas por ficha. Modelo independiente: no se vincula a trabajadores ni a empresas.
+### Agenda y Cuentas
+Dos pestañas: la **agenda telefónica** compartida, que se llena a mano o importando la planilla de las secretarias, contactos de Google u Outlook y archivos vCard, y las **fichas** (persona o empresa) con datos bancarios listos para copiar/pegar, N cuentas por ficha. Modelo independiente: no se vincula a trabajadores ni a empresas.
 
 ### Pesajes QR (admin)
 `/admin/harvest-qr` — sincroniza hacia `workdays` los pesajes de cosecha que escanea una **app externa de QR**. Cada prefijo de QR físico apunta al (faena, ciclo, labor) vigente; ese apuntado se actualiza a mano al abrir un ciclo nuevo. La app admin nunca escribe los pesajes, solo los lee.
@@ -200,7 +200,7 @@ En el drawer del día cada labor es expandible: muestra la **lista de trabajador
 /payroll                       Nómina
 /facturacion                   Facturación (import RCV del SII)
 /price-book                    Libro de Precios
-/info-cuentas                  Información y Cuentas
+/info-cuentas                  Agenda y Cuentas
 /links                         Links útiles
 /calendar                      Calendario mensual de producción
 /audit                         Auditoría (admin)
