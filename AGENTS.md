@@ -141,6 +141,8 @@ src/
     adminConsole/       ← las secciones de la Consola admin
     calendar/           ← las piezas del Calendario
     dashboard/          ← las piezas del Dashboard
+    advances/           ← las piezas de Anticipos / Bonos
+    priceBook/          ← las piezas del Libro de Precios
     users/              ← las piezas de Usuarios
   contexts/             ← AuthContext, ThemeContext, CatalogsContext, CarriersContext
   services/             ← capa de datos (Firestore CRUD + caché + auditoría)
@@ -706,7 +708,7 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 - Estados: `pending` | `partial` | `applied` | `cancelled`. `partial` = `amountPaid > 0 && amountPaid < amount` (la siguiente nómina sigue aplicando contra el saldo pendiente).
 - Documento: `{type, workerRut, workerName, amount, date, note, status, amountPaid, payments[], appliedPayrollId, appliedAt, appliedBy, installments}`.
 - UI: filtros por tipo (todos / anticipo / bono), búsqueda, status. El filtro "Pendientes" agrupa `pending` + `partial` (mismo criterio que `listPendingForWorkers()`) — un parcial sigue debiendo saldo, el badge "Parcial" lo distingue visualmente dentro del mismo bucket, no hay pestaña separada. Dos botones de creación (🪙 + Anticipo, 🎁 + Bono). Cada fila muestra el badge de signo correspondiente.
-- Modal de creación con `searchWorkers` para autocompletar trabajador.
+- El formulario de alta y edición es `screens/advances/AdvanceFormModal.jsx`, con `searchWorkers` para autocompletar trabajador.
 - **Lock de Editar/Eliminar**: `applied` (totalmente aplicado) → ambos bloqueados. `partial` → Editar habilitado, Eliminar bloqueado.
 - **"Perdonazo" de saldo en parciales**: editar un `partial` permite bajar `amount` hasta `amountPaid` para cerrar la cuenta — el status se recalcula al guardar (`newAmount ≤ amountPaid` → `applied`; `>` → sigue `partial`). El modal muestra banner con Pagado/Resta, bloquea `type` y `worker` (no se pueden reasignar pagos existentes), y valida que `newAmount ≥ amountPaid`. El doc + `payments[]` quedan intactos para auditoría.
 - **Cuotas** (`installments: {count, amount, cadence} | null`, solo `type: "anticipo"`): plan de pago en cuotas, elegido al crear (N° de cuotas; el sistema calcula `amount = Math.ceil(total/count)`) y **fijo para siempre** — no editable después (borrar y recrear si hace falta cambiarlo, solo mientras sigue `pending`). `cadence` (`porPago`/`quincenal`/`mensual`) es una **etiqueta informativa para el admin, no un gate automático por fecha** — no hay cron en la app, así que nada se salta solo; ver "Integración con Nómina" abajo. Helpers en `advancesService.js`: `hasInstallmentPlan`, `computeCuotaAmount`, `advanceDueNow`, `installmentProgress`, `cadenceMeta`, `daysSinceLastCuota`.
@@ -1070,6 +1072,7 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 ## Libro de Precios / PriceBook
 
 - Pantalla: `src/screens/PriceBook.jsx`. Ruta `/price-book`. Colecciones `priceBookEntries` + `priceBookConfig/main`.
+- Sus piezas, en `src/screens/priceBook/`: `EntryFormModal` (alta y edición de una entrada), `HiddenFaenasModal` (⚙ Faenas visibles), `writePriceBookXlsx.js` (el Excel) y `helpers.js` (fechas y el id de la lista de unidades).
 - **Registro contable independiente**: no alimenta ni lee `cycles`/`workdays`/`faenas` para calcular nada. Es el histórico de "qué se pagó y qué se cobró por tal labor en tal faena, en tal período".
 - Una entrada puede colgar de una **faena real** (`faenaId`) o de una **faena dummy** (`faenaId: null` + `faenaLabel` como texto libre), para faenas que no existen en la app.
 - Cada entrada lleva N líneas de precio: `unit` (texto libre), `payPrice` (pago) vs `chargePrice` (cobro), y para unidades de jornada opcionalmente el par de hora extra. Las unidades nuevas se acumulan solas en el catálogo compartido `priceBookConfig/main.units`.
