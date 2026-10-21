@@ -29,8 +29,6 @@ export const monthLabel = (key) => {
   return `${MONTHS[m - 1] || key} ${y}`;
 };
 
-const money = (v) => fmtCurrency(v);
-
 export function debtLabel(d) {
   if (d.recurring) return "Pago recurrente";
   if (d.kind === "personalDebt") return d.installments ? `Deuda personal en ${d.installments} cuotas` : "Deuda personal";
@@ -72,7 +70,7 @@ function behindTone(sum) {
 function debtNotes(d) {
   return ["postponed", "overdue", "protested"]
     .filter((k) => d[k].count > 0)
-    .map((k) => `${STATE_NOTE[k]} ${money(d[k].total)}`)
+    .map((k) => `${STATE_NOTE[k]} ${fmtCurrency(d[k].total)}`)
     .join(" · ");
 }
 
@@ -80,7 +78,7 @@ function payoffNote(report) {
   const { totals, hasRecurring } = report;
   return [
     hasRecurring ? "sin contar los pagos recurrentes" : "",
-    totals.behind.count ? `con ${behindLabel(totals.behind.count, "pago")} por ${money(totals.behind.total)}` : "",
+    totals.behind.count ? `con ${behindLabel(totals.behind.count, "pago")} por ${fmtCurrency(totals.behind.total)}` : "",
   ]
     .filter(Boolean)
     .join("; ");
@@ -141,7 +139,7 @@ function itemRows(list, today) {
         kindMeta(c.kind).label,
         c.counterparty,
         { text: itemDetail(c), muted: true },
-        money(remainingOf(c)),
+        fmtCurrency(remainingOf(c)),
       ],
     };
   });
@@ -155,7 +153,7 @@ export function reportDocument(report, { today, companyName, showDetail, include
   const p = (text, muted = false) => blocks.push({ kind: "p", text, muted });
   const table = (columns, rows) => blocks.push({ kind: "table", columns, rows });
   const totalRow = (cells) => ({ cells, total: true });
-  const sumRow = (label, sum, tone) => ({ cells: [label, String(sum.count), money(sum.total)], tone });
+  const sumRow = (label, sum, tone) => ({ cells: [label, String(sum.count), fmtCurrency(sum.total)], tone });
   const paidRange = `${fmtDate(paidFrom) || "inicio"} a ${fmtDate(paidTo) || "hoy"}`;
 
   h2("Resumen");
@@ -171,7 +169,7 @@ export function reportDocument(report, { today, companyName, showDetail, include
   );
   if (pending.length === 0) p("No hay pagos pendientes.");
   else if (payoffDate) p(`Todo queda pagado el ${fmtDate(payoffDate)}${payoffNote(report) ? ` (${payoffNote(report)})` : ""}.`);
-  if (includePaid && totals.paid.extra) p(`Lo pagado en el período incluye ${money(totals.paid.extra)} de interés.`, true);
+  if (includePaid && totals.paid.extra) p(`Lo pagado en el período incluye ${fmtCurrency(totals.paid.extra)} de interés.`, true);
 
   if (debts.length > 0) {
     h2("Balance de deudas");
@@ -188,7 +186,7 @@ export function reportDocument(report, { today, companyName, showDetail, include
           cells: [
             { text: d.counterparty, sub: [debtLabel(d), d.concept].filter(Boolean).join(" · "), bold: true },
             { text: debtCount(d), sub: d.paid.count ? `${d.paid.count} pagada(s)` : "" },
-            { text: money(d.pending.total), bold: true },
+            { text: fmtCurrency(d.pending.total), bold: true },
             { text: fmtDate(d.nextDue) || "—", sub: debtNotes(d), subTone: behindTone(d) },
             { text: debtPayoff(d), sub: behindTag(d), subTone: behindTone(d) },
           ],
@@ -196,7 +194,7 @@ export function reportDocument(report, { today, companyName, showDetail, include
         totalRow([
           "Total",
           String(totals.pending.count),
-          money(totals.pending.total),
+          fmtCurrency(totals.pending.total),
           "",
           { text: payoffDate ? fmtDate(payoffDate) : "", sub: totals.behind.count ? behindLabel(totals.behind.count, "pago") : "", subTone: behindTone(totals) },
         ]),
@@ -207,9 +205,9 @@ export function reportDocument(report, { today, companyName, showDetail, include
   if (pending.length > 0) {
     h2("Próximos vencimientos");
     const nearGroup = (title, list, sum, emptyText) => {
-      h3(`${title} · ${money(sum.total)}`);
+      h3(`${title} · ${fmtCurrency(sum.total)}`);
       if (list.length === 0) p(emptyText, true);
-      else table(ITEM_COLUMNS, [...itemRows(list, today), totalRow(["Total", "", "", "", money(sum.total)])]);
+      else table(ITEM_COLUMNS, [...itemRows(list, today), totalRow(["Total", "", "", "", fmtCurrency(sum.total)])]);
     };
     nearGroup(`Próximos 7 días (hasta el ${fmtDate(upcoming.weekEnd)})`, upcoming.week, upcoming.weekTotal, "Nada vence en los próximos 7 días.");
     nearGroup(`Próximo mes (hasta el ${fmtDate(upcoming.monthEnd)})`, upcoming.month, upcoming.monthTotal, "Nada más vence en el próximo mes.");
@@ -220,7 +218,7 @@ export function reportDocument(report, { today, companyName, showDetail, include
     table(
       [{ label: "Mes" }, { label: "Pagos", num: true, width: 22 }, { label: "Total del mes", num: true, width: 34 }],
       months.map((m) => ({
-        cells: [m.month === "later" ? laterCell(report) : monthLabel(m.month), String(m.count), { text: money(m.total), bold: true }],
+        cells: [m.month === "later" ? laterCell(report) : monthLabel(m.month), String(m.count), { text: fmtCurrency(m.total), bold: true }],
         tone: STATE_TONE[m.month],
       })),
     );
@@ -231,9 +229,9 @@ export function reportDocument(report, { today, companyName, showDetail, include
     table(ITEM_COLUMNS, [
       ...itemRows(detail, today),
       ...(totals.later.count
-        ? [{ cells: ["Más adelante", "", "", { text: laterDetail(report), muted: true }, money(totals.later.total)] }]
+        ? [{ cells: ["Más adelante", "", "", { text: laterDetail(report), muted: true }, fmtCurrency(totals.later.total)] }]
         : []),
-      totalRow(["Total", "", "", "", money(totals.pending.total)]),
+      totalRow(["Total", "", "", "", fmtCurrency(totals.pending.total)]),
     ]);
   }
 
@@ -259,11 +257,11 @@ export function reportDocument(report, { today, companyName, showDetail, include
               kindMeta(c.kind).label,
               c.counterparty,
               { text: itemDetail(c), muted: true },
-              ...(hasExtra ? [money(c.amount), extraOf(c) ? money(extraOf(c)) : "—"] : []),
-              money(paidTotalOf(c)),
+              ...(hasExtra ? [fmtCurrency(c.amount), extraOf(c) ? fmtCurrency(extraOf(c)) : "—"] : []),
+              fmtCurrency(paidTotalOf(c)),
             ],
           })),
-          totalRow(["Total", "", "", "", "", ...(hasExtra ? [money(totals.paid.amount), money(totals.paid.extra)] : []), money(totals.paid.total)]),
+          totalRow(["Total", "", "", "", "", ...(hasExtra ? [fmtCurrency(totals.paid.amount), fmtCurrency(totals.paid.extra)] : []), fmtCurrency(totals.paid.total)]),
         ],
       );
   }

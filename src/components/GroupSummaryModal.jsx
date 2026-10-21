@@ -14,22 +14,17 @@ import { captureFullWidthBlob, captureFullWidthDataUrl } from "../utils/imageCap
 import Modal from "./Modal";
 import { useCatalogs } from "../contexts/CatalogsContext";
 import { useToast } from "../contexts/ToastContext";
-import { searchWorkers } from "../services/workersService";
+import WorkerSearchPicker from "./WorkerSearchPicker";
 import { loadWorkerSummaryData } from "../services/workerSummaryService";
 import { PrintableWorkerSummary } from "./workerSummaryModal/PrintableWorkerSummary";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import { localIsoDate } from "../utils/dates";
-
-const fmtCurrency = (v) =>
-  new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 }).format(
-    Number(v) || 0,
-  );
+import { fmtCurrency } from "../utils/format";
 
 // Mismos colores que el comprobante de pago en efectivo.
 const LEADER_FILL = "#FFE699";
 const ITEM_FILL = "#FFF2CC";
 
-const MIN_SEARCH = 4;
 
 const cellH = {
   border: "1px solid #555",
@@ -45,9 +40,6 @@ export default function GroupSummaryModal({ open, onClose }) {
   const { catalogs } = useCatalogs();
   const [step, setStep] = useState("build"); // build | result
   const [selected, setSelected] = useState([]); // [worker]
-  const [query, setQuery] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
-  const [searching, setSearching] = useState(false);
   // workerData: { [rut]: { data, advances, grandTotal, netAdvanceBalance, advanceBalance, bonusBalance } }
   const [workerData, setWorkerData] = useState({});
   const [loading, setLoading] = useState(false);
@@ -60,36 +52,13 @@ export default function GroupSummaryModal({ open, onClose }) {
     if (!open) return;
     setStep("build");
     setSelected([]);
-    setQuery("");
-    setSearchResults([]);
     setWorkerData({});
     individualRefs.current = {};
   }, [open]);
 
-  // Búsqueda en el servidor con debounce, desde MIN_SEARCH caracteres.
-  useEffect(() => {
-    if (query.replace(/[.\s-]/g, "").length < MIN_SEARCH) {
-      setSearchResults([]);
-      setSearching(false);
-      return;
-    }
-    setSearching(true);
-    const t = setTimeout(async () => {
-      try {
-        const results = await searchWorkers(query, { take: 30 });
-        setSearchResults(results);
-      } finally {
-        setSearching(false);
-      }
-    }, 250);
-    return () => clearTimeout(t);
-  }, [query]);
-
   const addWorker = (w) => {
     if (!w || selected.some((s) => s.id === w.id)) return;
     setSelected([...selected, w]);
-    setQuery("");
-    setSearchResults([]);
   };
 
   const removeWorker = (id) => {
@@ -253,7 +222,7 @@ export default function GroupSummaryModal({ open, onClose }) {
       open={open}
       onClose={onClose}
       title="📊 Resúmenes por grupo"
-      size="xl"
+      size="full"
       footer={
         <>
           <button
@@ -287,10 +256,6 @@ export default function GroupSummaryModal({ open, onClose }) {
     >
       {step === "build" ? (
         <BuilderUI
-          query={query}
-          setQuery={setQuery}
-          searchResults={searchResults}
-          searching={searching}
           selected={selected}
           addWorker={addWorker}
           removeWorker={removeWorker}
@@ -319,8 +284,7 @@ export default function GroupSummaryModal({ open, onClose }) {
   );
 }
 
-function BuilderUI({ query, setQuery, searchResults, searching, selected, addWorker, removeWorker }) {
-  const canSearch = query.replace(/[.\s-]/g, "").length >= MIN_SEARCH;
+function BuilderUI({ selected, addWorker, removeWorker }) {
   return (
     <div className="space-y-3">
       <div className="text-sm text-[var(--color-muted)]">
@@ -361,50 +325,12 @@ function BuilderUI({ query, setQuery, searchResults, searching, selected, addWor
         <div className="text-xs font-medium uppercase tracking-wide text-[var(--color-muted)]">
           Agregar trabajador
         </div>
-        <input
+        <WorkerSearchPicker
           autoFocus
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={`Buscar por RUT o nombre (mín. ${MIN_SEARCH} caracteres)...`}
-          className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
+          actionLabel="+ Agregar"
+          pickedIds={new Set(selected.map((w) => w.id))}
+          onPick={addWorker}
         />
-        {!canSearch ? (
-          <div className="text-xs text-[var(--color-muted)]">
-            Escribe al menos {MIN_SEARCH} caracteres.
-          </div>
-        ) : searching ? (
-          <div className="text-xs text-[var(--color-muted)]">Buscando...</div>
-        ) : searchResults.length === 0 ? (
-          <div className="text-xs text-[var(--color-muted)]">Sin resultados.</div>
-        ) : (
-          <div className="max-h-64 space-y-1 overflow-auto rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5">
-            {searchResults.map((w) => {
-              const already = selected.some((s) => s.id === w.id);
-              return (
-                <button
-                  key={w.id}
-                  onClick={() => addWorker(w)}
-                  disabled={already}
-                  className={`flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm ${
-                    already
-                      ? "cursor-not-allowed bg-[var(--color-surface-2)] text-[var(--color-muted)]"
-                      : "hover:bg-[var(--color-accent-soft)]"
-                  }`}
-                >
-                  <div>
-                    <div className="font-medium">{w.name}</div>
-                    <div className="font-mono text-[10px] text-[var(--color-muted)]">
-                      {formatRutForDisplay(w.rut || w.id)}
-                    </div>
-                  </div>
-                  <span className="text-xs text-[var(--color-accent)]">
-                    {already ? "✓ ya está" : "+ Agregar"}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
       </div>
     </div>
   );
@@ -594,7 +520,11 @@ const MatrixTable = forwardRef(function MatrixTable(
               {showCycleCols &&
                 cycles.map((c) => (
                   <th key={c.id} style={{ ...cellH, textAlign: "right" }}>
-                    {c.label}
+                    {/* La etiqueta del ciclo se parte en líneas (también en cada
+                        "/"), así una matriz con varios ciclos cabe a lo ancho. */}
+                    <div style={{ maxWidth: 130, marginLeft: "auto", whiteSpace: "normal" }}>
+                      {String(c.label || "").replaceAll("/", "/\u200b")}
+                    </div>
                   </th>
                 ))}
               {hasAdvances && (

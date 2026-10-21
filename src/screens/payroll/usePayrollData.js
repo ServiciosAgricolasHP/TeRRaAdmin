@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { jobsService, subjobsService, cyclesService, workersService, listWorkdaysByCycles, workdaysService } from "../../services";
 import { payrollsService } from "../../services/payrollsService";
 import { cycleStatsOf } from "../../utils/payrollCycles";
+import { WORKERS_LIST } from "../../services/workersService";
 
 // Lo que usa la pantalla Nómina: faenas, subfaenas, ciclos, trabajadores, las
 // nóminas y lo pendiente de cada ciclo activo. `load` lo relee (con la caché) y
@@ -29,7 +30,7 @@ export function usePayrollData({ toast }) {
         jobsService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
         subjobsService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
         cyclesService.list({ order: ["createdAt", "desc"], cache: true, persist: true, ttl: 5 * 60 * 1000 }),
-        workersService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 2 * 60 * 60 * 1000 }),
+        workersService.list(WORKERS_LIST),
         payrollsService.list({ order: ["createdAt", "desc"], take: 50, cache: true, persist: true, ttl: 5 * 60 * 1000 }),
       ]);
       setJobs(f);

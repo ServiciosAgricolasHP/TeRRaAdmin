@@ -1,5 +1,3 @@
-import { collection, query, where, orderBy, limit, getDocs, documentId } from "firebase/firestore";
-import { db } from "../firebase";
 import { workersService, workdaysService } from "./index";
 import { normalizeRut, validateRut } from "../utils/rutUtils";
 import { toProperName } from "../utils/nameUtils";
@@ -11,50 +9,10 @@ export function detectQueryKind(q) {
   return /^\d/.test(s) ? "rut" : "name";
 }
 
-// Búsqueda por prefijo en el servidor. Devuelve hasta `take` trabajadores.
-export async function searchWorkers(q, { take = 50 } = {}) {
-  const kind = detectQueryKind(q);
-  if (!kind) return [];
-  const raw = String(q).trim();
-  const col = collection(db, "worker");
-
-  if (kind === "rut") {
-    // El doc id es el rut de creación (workerId estable) y el rut actual vive
-    // en el campo `rut`, que puede ser otro. Se busca por los dos y se mezclan
-    // los resultados: aparece tanto quien nunca cambió de rut (coincide por id)
-    // como quien sí (coincide por el campo `rut`).
-    const prefix = raw.replace(/[.\s]/g, "").toUpperCase();
-    const [byId, byField] = await Promise.all([
-      getDocs(query(col, where(documentId(), ">=", prefix), where(documentId(), "<", prefix + ""), limit(take))),
-      getDocs(query(col, where("rut", ">=", prefix), where("rut", "<", prefix + ""), limit(take))),
-    ]);
-    const seenRut = new Map();
-    for (const d of [...byId.docs, ...byField.docs]) {
-      if (!seenRut.has(d.id)) seenRut.set(d.id, { id: d.id, ...d.data() });
-    }
-    return [...seenRut.values()].slice(0, take);
-  }
-
-  // Por nombre: prueba algunas variantes de mayúsculas, porque Firestore
-  // distingue mayúsculas de minúsculas.
-  const variants = new Set([raw, raw.toUpperCase(), raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase()]);
-  const seen = new Map();
-  for (const v of variants) {
-    const qy = query(
-      col,
-      orderBy("name"),
-      where("name", ">=", v),
-      where("name", "<", v + ""),
-      limit(take),
-    );
-    const snap = await getDocs(qy);
-    for (const d of snap.docs) {
-      if (!seen.has(d.id)) seen.set(d.id, { id: d.id, ...d.data() });
-    }
-    if (seen.size >= take) break;
-  }
-  return [...seen.values()].slice(0, take);
-}
+// La lista completa de trabajadores, ordenada por nombre y en caché 2 h, también
+// en localStorage. Todas las pantallas la piden con estas mismas opciones:
+// la clave de la caché sale de ellas, y así la comparten.
+export const WORKERS_LIST = { order: ["name", "asc"], cache: true, persist: true, ttl: 2 * 60 * 60 * 1000 };
 
 // El doc id es el rut con el que se creó el trabajador: se trata como
 // `workerId` estable y no cambia aunque cambie el rut (Firestore no renombra

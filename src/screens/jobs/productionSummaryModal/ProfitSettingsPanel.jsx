@@ -1,6 +1,6 @@
 import { HDR_GREEN, ROW_TOTAL_DARK, cell, cellH } from "./tableStyles";
-import { fmtCLP } from "./helpers";
 import { isSupervisionCol, isWorkdayCol } from "../../../utils/combinedSummary";
+import { fmtCurrency } from "../../../utils/format";
 
 // Tabla para ajustar la ganancia (los % o lo que paga el cliente en labores
 // de jornada), que alimenta GANANCIAS y TOTAL GENERAL. Va fuera de lo que se
@@ -43,7 +43,7 @@ export function ProfitSettingsPanel({ dataByColumn, grandTotal, isMobile, profit
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
                   <span style={{ color: "#666" }}>Monto</span>
-                  <span>{fmtCLP(d.totalAmount)}</span>
+                  <span>{fmtCurrency(d.totalAmount)}</span>
                 </div>
                 {isWorkdayCol(d.col) && workersPaid[d.col.key] && (
                   <div style={{ fontSize: 9, fontWeight: 700, color: "#2e7d32", marginTop: 2 }}>
@@ -105,13 +105,13 @@ export function ProfitSettingsPanel({ dataByColumn, grandTotal, isMobile, profit
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontWeight: 700, borderTop: "1px solid #ddd", paddingTop: 4 }}>
                   <span>Ganancia</span>
-                  <span>{fmtCLP(profitFor(d.col, d.totalAmount))}</span>
+                  <span>{fmtCurrency(profitFor(d.col, d.totalAmount))}</span>
                 </div>
               </div>
             ))}
             <div style={{ background: ROW_TOTAL_DARK, color: "#fff", fontWeight: 700, borderRadius: 6, padding: 8, display: "flex", justifyContent: "space-between", fontSize: 13 }}>
-              <span>TOTAL — {fmtCLP(grandTotal)}</span>
-              <span>{fmtCLP(totalProfit)}</span>
+              <span>TOTAL — {fmtCurrency(grandTotal)}</span>
+              <span>{fmtCurrency(totalProfit)}</span>
             </div>
           </div>
         ) : (
@@ -133,7 +133,7 @@ export function ProfitSettingsPanel({ dataByColumn, grandTotal, isMobile, profit
                     <span style={{ marginLeft: 4, fontSize: 9, color: "#888" }}>· {d.col.cycleLabel}</span>
                   </td>
                   <td style={{ ...cell, textAlign: "right" }}>
-                    {fmtCLP(d.totalAmount)}
+                    {fmtCurrency(d.totalAmount)}
                     {isWorkdayCol(d.col) && workersPaid[d.col.key] && (
                       <div style={{ fontSize: 9, fontWeight: 700, color: "#2e7d32", marginTop: 1 }}>
                         ✅ ya pagado <span style={{ fontWeight: 400, color: "#666" }}>(solo informativo)</span>
@@ -188,16 +188,16 @@ export function ProfitSettingsPanel({ dataByColumn, grandTotal, isMobile, profit
                     )}
                   </td>
                   <td style={{ ...cell, textAlign: "right", fontWeight: 600 }}>
-                    {fmtCLP(profitFor(d.col, d.totalAmount))}
+                    {fmtCurrency(profitFor(d.col, d.totalAmount))}
                   </td>
                 </tr>
               ))}
               <tr style={{ background: ROW_TOTAL_DARK, color: "#fff", fontWeight: 700 }}>
                 <td style={{ ...cell, borderColor: "#3d6b2e" }}>TOTAL</td>
-                <td style={{ ...cell, textAlign: "right", borderColor: "#3d6b2e" }}>{fmtCLP(grandTotal)}</td>
+                <td style={{ ...cell, textAlign: "right", borderColor: "#3d6b2e" }}>{fmtCurrency(grandTotal)}</td>
                 <td style={{ ...cell, borderColor: "#3d6b2e" }}></td>
                 <td style={{ ...cell, textAlign: "right", borderColor: "#3d6b2e", fontSize: 13 }}>
-                  {fmtCLP(totalProfit)}
+                  {fmtCurrency(totalProfit)}
                 </td>
               </tr>
             </tbody>

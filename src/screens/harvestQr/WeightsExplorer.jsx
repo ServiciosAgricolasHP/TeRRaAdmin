@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, Fragment } from "react";
 import { useToast } from "../../contexts/ToastContext";
 import { harvestWeightsService } from "../../services";
-import { workersService } from "../../services/workersService";
+import { workersService, WORKERS_LIST } from "../../services/workersService";
 import { countedList } from "../../services/cache";
 import { useCatalogs } from "../../contexts/CatalogsContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -131,7 +131,7 @@ export function WeightsExplorer({ prefixes, jobById }) {
   // parchea la entrada en memoria sin releer la colección.
   const loadWorkers = () =>
     workersService
-      .list({ order: ["name", "asc"], cache: true, persist: true, ttl: 2 * 60 * 60 * 1000 })
+      .list(WORKERS_LIST)
       .then(setWorkers)
       .catch(() => { /* sin la lista se muestra el RUT en vez del nombre */ });
 

@@ -9,7 +9,8 @@ import {
   tratoTypeLabel,
 } from "../../../utils/cosechaCombos";
 import { countingStageIds, normalizeStages } from "../../../utils/tratoEtapas";
-import { fmtCLP, fmtNum } from "./helpers";
+import { fmtNum } from "./helpers";
+import { fmtCurrency } from "../../../utils/format";
 
 // Datos de una celda a partir de las jornadas del día y la labor: cosecha
 // (combos calidad/envase), trato (tiers), trato por etapas y pago al día o
@@ -41,14 +42,14 @@ export function buildCell(labor, date, workdays, dayPrices, catalogs) {
     if (activeCombos.length === 1) {
       const c0 = activeCombos[0];
       priceLabel = c0.mode === "flat"
-        ? `${fmtCLP(c0.price)}/día`
-        : `${fmtCLP(c0.price)}/${containerLabel(catalogs, c0.y).toLowerCase()}`;
+        ? `${fmtCurrency(c0.price)}/día`
+        : `${fmtCurrency(c0.price)}/${containerLabel(catalogs, c0.y).toLowerCase()}`;
     } else if (activeCombos.length > 1) {
       priceLabel = activeCombos
-        .map((c) => `${qualityLabel(catalogs, c.x)}: ${fmtCLP(c.price)}`)
+        .map((c) => `${qualityLabel(catalogs, c.x)}: ${fmtCurrency(c.price)}`)
         .join(" · ");
     } else if (qty > 0) {
-      priceLabel = `~${fmtCLP(amount / qty)}/u`;
+      priceLabel = `~${fmtCurrency(amount / qty)}/u`;
     }
     const persons = ruts.size;
     const avg = persons > 0 ? qty / persons : 0;
@@ -76,18 +77,18 @@ export function buildCell(labor, date, workdays, dayPrices, catalogs) {
       const unitLbl = t0.unit == null ? null : tratoUnitLabel(catalogs, t0.unit);
       if (unitLbl) unitSet.add(unitLbl.toLowerCase());
       priceLabel = t0.mode === "flat"
-        ? `${fmtCLP(t0.price)}/día`
-        : `${fmtCLP(t0.price)}/${unitLbl ? unitLbl.toLowerCase() : "unid"}`;
+        ? `${fmtCurrency(t0.price)}/día`
+        : `${fmtCurrency(t0.price)}/${unitLbl ? unitLbl.toLowerCase() : "unid"}`;
     } else if (activeTiers.length > 1) {
       for (const t of activeTiers) {
         const u = t.unit == null ? null : tratoUnitLabel(catalogs, t.unit);
         if (u) unitSet.add(u.toLowerCase());
       }
       priceLabel = activeTiers
-        .map((t, i) => `P${i + 1}: ${fmtCLP(t.price)}`)
+        .map((t, i) => `P${i + 1}: ${fmtCurrency(t.price)}`)
         .join(" · ");
     } else if (qty > 0) {
-      priceLabel = `~${fmtCLP(amount / qty)}/u`;
+      priceLabel = `~${fmtCurrency(amount / qty)}/u`;
     }
     // Sin unidad configurada, se muestra el tipo de trato.
     const unit = unitSet.size > 0
@@ -142,7 +143,7 @@ export function buildCell(labor, date, workdays, dayPrices, catalogs) {
     const qty = ruts.size;
     const persons = ruts.size;
     const avg = qty > 0 ? amount / qty : 0;
-    const priceLabel = qty > 0 ? `~${fmtCLP(avg)}/jornada` : "";
+    const priceLabel = qty > 0 ? `~${fmtCurrency(avg)}/jornada` : "";
     return { qty, amount, unit: "jornadas", priceLabel, persons, avg };
   }
   return null;

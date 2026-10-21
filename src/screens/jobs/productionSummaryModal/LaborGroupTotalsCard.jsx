@@ -1,5 +1,5 @@
 import { useIsMobile } from "../../../hooks/useIsMobile";
-import { fmtCLP } from "./helpers";
+import { fmtCurrency } from "../../../utils/format";
 
 // Totales por grupo de labor entre ciclos: una fila por laborGroupId con el
 // monto bruto de producción de sus columnas (ciclo × labor). Aparece solo si
@@ -19,7 +19,7 @@ export function LaborGroupTotalsCard({ groupTotals }) {
                 <div className="truncate font-medium">{g.name}</div>
                 <div className="text-[10px] text-[var(--color-muted)]">{g.cycleIds.size} ciclo{g.cycleIds.size === 1 ? "" : "s"}</div>
               </div>
-              <span className="shrink-0 font-semibold tabular-nums">{fmtCLP(g.amount)}</span>
+              <span className="shrink-0 font-semibold tabular-nums">{fmtCurrency(g.amount)}</span>
             </div>
           ))}
         </div>
@@ -37,7 +37,7 @@ export function LaborGroupTotalsCard({ groupTotals }) {
             <tr key={g.id} className="border-t border-[var(--color-border)]">
               <td className="px-3 py-1.5 font-medium">{g.name}</td>
               <td className="px-3 py-1.5 text-right tabular-nums text-[var(--color-muted)]">{g.cycleIds.size}</td>
-              <td className="px-3 py-1.5 text-right font-semibold tabular-nums">{fmtCLP(g.amount)}</td>
+              <td className="px-3 py-1.5 text-right font-semibold tabular-nums">{fmtCurrency(g.amount)}</td>
             </tr>
           ))}
         </tbody>

@@ -1,10 +1,6 @@
 // Ayudas que comparten las piezas del resumen de producción: formatos de
 // número y las opciones guardadas en localStorage.
 
-export const fmtCLP = (v) =>
-  new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", minimumFractionDigits: 0 })
-    .format(Number(v) || 0);
-
 export const fmtNum = (v) =>
   new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 }).format(Number(v) || 0);
 

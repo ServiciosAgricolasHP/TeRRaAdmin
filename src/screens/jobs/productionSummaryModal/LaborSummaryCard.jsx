@@ -3,8 +3,9 @@ import { captureFullWidthBlob } from "../../../utils/imageCapture";
 import { useToast } from "../../../contexts/ToastContext";
 import { tratoTypeLabel } from "../../../utils/cosechaCombos";
 import { useIsMobile } from "../../../hooks/useIsMobile";
-import { fmtNum, fmtCLP } from "./helpers";
+import { fmtNum } from "./helpers";
 import { toArgbFill, HDR_BLUE, XLSX_BORDER, XLSX_MONEY_FMT, ROW_TOTAL_LIGHT, cellH, cell } from "./tableStyles";
+import { fmtCurrency } from "../../../utils/format";
 
 // Tarjeta por labor: encabezado con título, total, flecha de plegado y
 // botones de copiar e imprimir; cuerpo con la tabla día por día. Arranca
@@ -43,14 +44,14 @@ export function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
     const lines = [];
     lines.push(`📊 ${col.labor.name} — ${col.cycleLabel} (${typeLabel})`);
     lines.push(
-      `Total: ${fmtNum(totalQty)}${unit ? " " + unit : ""} · ${fmtCLP(totalAmount)} · ${persons} pers`,
+      `Total: ${fmtNum(totalQty)}${unit ? " " + unit : ""} · ${fmtCurrency(totalAmount)} · ${persons} pers`,
     );
     lines.push("");
     lines.push("Día        | Producción            | Precio              | Monto       | Rendimiento");
     for (const { day, cell } of rows) {
       const prod = `${fmtNum(cell.qty)}${cell.unit ? " " + cell.unit : ""}`;
       const price = cell.priceLabel || "—";
-      const amt = fmtCLP(cell.amount);
+      const amt = fmtCurrency(cell.amount);
       const yieldText = cell.persons > 0 ? `${cell.persons} pers · prom ${fmtNum(cell.avg)}` : "—";
       lines.push(
         `${day.padEnd(10, " ")} | ${prod.padEnd(21, " ")} | ${price.padEnd(19, " ")} | ${amt.padEnd(11, " ")} | ${yieldText}`,
@@ -198,7 +199,7 @@ export function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
             </div>
           )}
           <div className="font-semibold tabular-nums text-[var(--color-accent)]">
-            {fmtCLP(totalAmount)}
+            {fmtCurrency(totalAmount)}
           </div>
         </div>
         <div className="flex gap-1">
@@ -252,7 +253,7 @@ export function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
                 <div key={day} style={{ border: "1px solid #999", borderRadius: 6, padding: "6px 8px", fontSize: 12 }}>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span style={{ fontFamily: "ui-monospace, monospace", fontWeight: 700 }}>{day}</span>
-                    <span style={{ fontWeight: 600 }}>{fmtCLP(c.amount)}</span>
+                    <span style={{ fontWeight: 600 }}>{fmtCurrency(c.amount)}</span>
                   </div>
                   <div style={{ marginTop: 2 }}>
                     <span style={{ fontWeight: 600 }}>{fmtNum(c.qty)}</span>
@@ -269,7 +270,7 @@ export function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
               <div style={{ background: ROW_TOTAL_LIGHT, fontWeight: 700, borderRadius: 6, padding: "6px 8px", fontSize: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span>TOTAL</span>
-                  <span>{fmtCLP(totalAmount)}</span>
+                  <span>{fmtCurrency(totalAmount)}</span>
                 </div>
                 <div style={{ marginTop: 2, fontWeight: 400 }}>
                   {fmtNum(totalQty)}{unit && ` ${unit}`} · {persons} personas únicas
@@ -297,7 +298,7 @@ export function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
                       {c.unit && <span style={{ marginLeft: 4, color: "#666" }}>{c.unit}</span>}
                     </td>
                     <td style={{ ...cell, color: "#444" }}>{c.priceLabel || "—"}</td>
-                    <td style={{ ...cell, textAlign: "right", fontWeight: 600 }}>{fmtCLP(c.amount)}</td>
+                    <td style={{ ...cell, textAlign: "right", fontWeight: 600 }}>{fmtCurrency(c.amount)}</td>
                     <td style={{ ...cell, textAlign: "right", color: "#666" }}>
                       {c.persons > 0 ? `${c.persons} pers · prom ${fmtNum(c.avg)}` : "—"}
                     </td>
@@ -312,7 +313,7 @@ export function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
                   <td style={{ ...cell, fontSize: 10, color: "#555" }}>
                     {persons} personas únicas
                   </td>
-                  <td style={{ ...cell, textAlign: "right" }}>{fmtCLP(totalAmount)}</td>
+                  <td style={{ ...cell, textAlign: "right" }}>{fmtCurrency(totalAmount)}</td>
                   <td style={cell}></td>
                 </tr>
               </tbody>

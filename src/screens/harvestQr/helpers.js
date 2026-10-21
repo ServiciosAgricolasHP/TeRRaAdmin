@@ -2,12 +2,10 @@
 // compartidas, el contador de lecturas, el alto de toque y las fechas de la
 // sincronización.
 
-// TTL de las listas que esta pantalla comparte con el resto de la app, con los
-// mismos valores que usan las otras pantallas. La clave de caché
-// (`collection::{wheres,order,take}`) no incluye el TTL, así que el último que
-// escribe fija el vencimiento para todos: bajarlos aquí acorta la caché de
-// Trabajadores, Nómina y Calendario.
-export const WORKERS_TTL_MS = 2 * 60 * 60 * 1000;
+// TTL de la lista de faenas, que esta pantalla comparte con el resto de la app,
+// con el mismo valor que usan las otras pantallas (la de trabajadores sale de
+// `WORKERS_LIST`). La clave de caché (`collection::{wheres,order,take}`) no
+// incluye el TTL, así que el último que escribe fija el vencimiento para todos.
 export const JOBS_TTL_MS = 10 * 60 * 1000;
 
 // Contador de lecturas que ve el admin junto al título. Permite verificar que
