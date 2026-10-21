@@ -1,8 +1,12 @@
 import { useMemo, useEffect } from "react";
+import { EMPLOYMENT_GROUPS } from "../../utils/employment";
 
-// Vista por grupo de la grilla: las filas agrupadas por líder (con sus
-// encabezados), el filtro de "solo con producción" y el salto a cada grupo.
-export function useLeaderGrouping({ gridRef, groupView, onlyWithProduction, rowDataRaw, rutToLeader, setColumnFilterActive }) {
+// Vistas agrupadas de la grilla, con un encabezado por grupo: "Por grupo" (por
+// líder, `groupView === "group"`) y "Por contrato" (con contrato, a
+// honorarios y sin nada, en ese orden; `groupView === "employment"`, con
+// `employmentGroupOf`). También el filtro de "solo con producción" y el salto
+// a cada grupo.
+export function useLeaderGrouping({ employmentGroupOf, gridRef, groupView, onlyWithProduction, rowDataRaw, rutToLeader, setColumnFilterActive }) {
   "use no memo";
   const LEADER_LOCAL = "CHILENOS";
   const LEADER_FOREIGN = "EXTRANJEROS";
@@ -31,19 +35,36 @@ export function useLeaderGrouping({ gridRef, groupView, onlyWithProduction, rowD
     return buckets;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowDataRaw, rutToLeader]);
-  const orderedGroups = useMemo(() => {
+  const leaderGroups = useMemo(() => {
     const keys = orderLeaders([...groupBuckets.keys()]);
     return keys.map((k) => ({
       key: k,
       label: k === LEADER_NONE ? "SIN GRUPO" : k,
+      icon: "👥",
+      none: k === LEADER_NONE,
       count: groupBuckets.get(k)?.length || 0,
       rows: groupBuckets.get(k) || [],
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupBuckets]);
+  // Por contrato: los grupos en su orden fijo y sin los vacíos. Las claves
+  // llevan prefijo para no chocar con el nombre de un líder.
+  const employmentGroups = useMemo(() => {
+    if (!employmentGroupOf) return [];
+    const byName = (a, b) => String(a.name || "").localeCompare(String(b.name || ""));
+    return EMPLOYMENT_GROUPS.map((g) => {
+      const rows = rowDataRaw.filter((r) => employmentGroupOf(r.rut) === g.key).sort(byName);
+      return { key: `employment:${g.key}`, label: g.label, icon: g.icon, none: g.key === "none", count: rows.length, rows };
+    }).filter((g) => g.count > 0);
+  }, [employmentGroupOf, rowDataRaw]);
   const isGroupedView = groupView === "group";
+  const isEmploymentView = groupView === "employment" && !!employmentGroupOf;
+  const orderedGroups = useMemo(
+    () => (isGroupedView ? leaderGroups : isEmploymentView ? employmentGroups : []),
+    [isGroupedView, isEmploymentView, leaderGroups, employmentGroups],
+  );
   const rowData = useMemo(() => {
-    if (!isGroupedView) return rowDataRaw;
+    if (!isGroupedView && !isEmploymentView) return rowDataRaw;
     const out = [];
     for (const g of orderedGroups) {
       out.push({
@@ -51,12 +72,13 @@ export function useLeaderGrouping({ gridRef, groupView, onlyWithProduction, rowD
         _isHeader: true,
         _leader: g.label,
         _leaderKey: g.key,
+        _icon: g.icon,
         _count: g.count,
       });
       for (const r of g.rows) out.push(r);
     }
     return out;
-  }, [isGroupedView, rowDataRaw, orderedGroups]);
+  }, [isGroupedView, isEmploymentView, rowDataRaw, orderedGroups]);
   // "Solo con producción" es un filtro externo de AG-Grid (no recorta
   // `rowData`), así convive con el orden y la selección de la grilla. Con un
   // filtro de columna activo deja pasar todo: la búsqueda muestra a todos los
@@ -83,6 +105,7 @@ export function useLeaderGrouping({ gridRef, groupView, onlyWithProduction, rowD
     doesExternalFilterPass,
     handleGridFilterChanged,
     isExternalFilterPresent,
+    isEmploymentView,
     isGroupedView,
     LEADER_LOCAL,
     LEADER_NONE,

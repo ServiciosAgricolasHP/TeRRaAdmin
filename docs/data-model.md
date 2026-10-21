@@ -81,6 +81,12 @@ el id/workerId, nunca el campo `rut`.
 | `bankDetails` | `[paymentRut, accountNumber, accountType, bankCode]` | tupla. accountType: 0 cta corriente, 1 cta vista, 3 cuenta RUT. bankCode `EFE` = efectivo. |
 | `groupLeader` | string[] | historial; `[0]` = actual (ej. `CHILENOS`, `EXTRANJEROS`) |
 | `idQr` | string[] | códigos QR asignados |
+| `address`, `commune` | string? | dirección y comuna; las piden las boletas de honorarios |
+| `nationality` | string? | texto libre ("Chilena") |
+| `maritalStatus` | `"single"` \| `"married"` \| `"civilUnion"` \| `"divorced"` \| `"widowed"` \| `""` | |
+| `birthDate` | string (YYYY-MM-DD)? | |
+| `pensionFund` | string? | nombre de la AFP |
+| `healthInsurance` | string? | "Fonasa" o el nombre de la Isapre |
 
 **Búsqueda**: `findWorkerByRut()` resuelve por **las dos vías** — primero el docId, y si no hay, por el campo `rut`. Un rut que se escribió en otro documento (`workday.workerRut`, `harvestWeights.rut`, items de nómina) puede ser cualquiera de los dos según cuándo se creó, así que buscar solo por docId pierde a los que corrigieron su cédula. Quien necesite **escribir** contra el trabajador encontrado tiene que usar el `.id` del doc devuelto, nunca el rut con el que buscó.
 
@@ -208,6 +214,63 @@ Anticipos (descuento) y bonos (suma) sobre la próxima nómina. El signo lo da `
 | `appliedAt`, `appliedBy` | ts?, string? | |
 
 > **Ojo con los filtros**: `pending` y `partial` van juntos en el bucket "Pendientes" (`Advances.jsx` → `STATUS_BUCKET`, y `listPendingForWorkers()`). Un parcial que quede fuera de ese bucket desaparece de la vista sin que su saldo deje de existir.
+
+### `employers`
+Empresas empleadoras de los contratos y los honorarios (Transporte HP, Frutos La Aguada…). Lista propia, aparte de las `companies` de Facturación.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | autoId |
+| `name` | string | |
+| `rut` | string | normalizado `"76123456-7"` |
+| `enabled` | bool | un empleador desactivado no se ofrece para períodos nuevos |
+
+### `employments`
+Un período de contrato o de honorarios de un trabajador con un empleador. El historial de una persona es la lista de sus períodos; "sin nada" es no tener ninguno vigente.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | autoId |
+| `workerId` | ref→`worker` (por id, estable) | |
+| `workerRut`, `workerName` | string | copia al crear, para mostrar sin cruzar con `worker` |
+| `type` | `"contract"` \| `"fees"` | contrato u honorarios |
+| `employerId` | ref→`employers` | |
+| `startDate` | string (YYYY-MM-DD) | |
+| `endDate` | string (YYYY-MM-DD) \| `""` | `""` = sin término. Con una fecha futura (plazo fijo) sigue vigente hasta ese día. **Vigente en `d`**: `startDate <= d` y (`endDate` vacío o `endDate >= d`) |
+| `endReason` | `"jobEnd"` \| `"companyNeeds"` \| `"resignation"` \| `"mutualAgreement"` \| `"other"` \| null | término de faena, necesidad de la empresa, renuncia, mutuo acuerdo |
+| `settlementStatus` | `"pending"` \| `"requested"` \| `"done"` \| null | el finiquito; solo en contratos terminados. Terminar un contrato lo deja en `pending` |
+| `settlementRequestedAt`, `settlementDoneAt` | string (YYYY-MM-DD)? | cuándo se pidió al contador y cuándo quedó listo |
+| `notes` | string | |
+
+> **Dos períodos de una persona no se cruzan** (`employmentError`, `utils/employment.js`): su estado en una fecha es uno solo. Las consultas van por un solo campo (`endDate == ""`, `endDate >= fecha`, `workerId`, `settlementStatus in`, `settlementDoneAt >=`) y no necesitan índice compuesto.
+
+### `feeLists`
+Una lista de boletas de honorarios: las personas a honorarios con un empleador en un rango de fechas, con sus días y montos. Es un registro: guarda la tarifa, los datos de cada persona y los montos tal como estaban al generarla.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | autoId |
+| `employerId`, `employerName` | ref→`employers`, string | el nombre, copiado al generar |
+| `from`, `to` | string (YYYY-MM-DD) | el rango de las jornadas |
+| `dailyNet` | number | líquido por día con que se generó |
+| `withholdingRate` | number | retención de la boleta (0,1525 = 15,25%) |
+| `items` | `[{ workerId, rut, name, faenaId, faenaName, days, net, withholding, gross, address, commune, issued, folio, issuedAt }]` | una fila por persona y faena. Bruto por día = `round(dailyNet / (1 − withholdingRate))`; bruto = días × eso; retención = bruto − líquido (`feeAmounts`, `utils/employment.js`). `issued`, `folio` e `issuedAt`: la boleta emitida |
+| `totals` | `{ people, days, gross, withholding, net, issued, count }` | denormalizado de `items` (`feeListTotals`), para la lista de la pestaña |
+
+### `contributionLists`
+Una lista de imposiciones para el contador: por empleador y mes, los días imponibles de cada persona con contrato, por faena (el centro de costo). Sueldo y bono los completa el contador. Es un registro: guarda las filas como estaban al generarla.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | autoId |
+| `employerId`, `employerName` | ref→`employers`, string | el nombre, copiado al generar |
+| `month` | string (YYYY-MM) | |
+| `items` | `[{ workerId, rut, name, faenaId, faenaName, days, request, endDate, endReason }]` | una fila por persona y faena; quien tuvo contrato y no trabajó va con `faenaId: ""` y 0 días. `request`: `"payslip"` (liquidación) o `"payslipAndSettlement"` (liquidación y finiquito, si el contrato terminó ese mes, con `endDate` y `endReason`) |
+| `totals` | `{ people, days, count, settlements }` | denormalizado de `items` (`contributionTotals`) |
+| `sentAt` | string (YYYY-MM-DD) \| `""` | cuándo se marcó enviada al contador |
+
+### `employmentConfig`
+Configuración de contratos y honorarios. Un solo documento, `main`.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `feeDailyNet` | number | líquido por día de una boleta de honorarios (por defecto 18.452) |
+| `feeWithholdingRate` | number | retención de la boleta (por defecto 0,1525, la de 2026) |
 
 ### `carriers`
 Transportistas (propios o contratados).
@@ -579,7 +642,7 @@ Auditoría — una fila por mutación.
 |---|---|---|
 | `id` (docId) | string | autoId |
 | `uid`, `email` | string? | quién |
-| `action` | `"create"` \| `"update"` \| `"delete"` \| `"import"` | `"import"` solo lo escribe la importación de la agenda telefónica |
+| `action` | `"create"` \| `"update"` \| `"delete"` \| `"import"` \| `"bulkStart"` \| `"bulkEnd"` \| `"settlement"` | `"import"` solo lo escribe la importación de la agenda telefónica; los otros tres, las acciones masivas de contratos (`entity: "employment"`) |
 | `entity`, `entityId` | string | qué |
 | `before` | objeto? | solo en `delete` (snapshot completo). Borrar un documento que no existe no deja log |
 | `after` | objeto? | solo en `create` (snapshot completo) |
@@ -598,6 +661,7 @@ Auditoría — una fila por mutación.
 | `addedAbono`, `editedAbonoId`, `removedAbonoId` | `paymentsService` | detalle del abono tocado |
 | `jobId`, `payrollId`, `workerCount`, `removed` | `publishPortal` (`functions/portal.js`) | qué nómina se publicó en el portal, cuántas fichas quedaron y cuántas se borraron (`entity: "portalMeta"`) |
 | `created`, `updated`, `unchanged`, `sources`, `files` | `importPhoneContacts` (`services/phoneContactsService.js`) | una importación de la agenda telefónica (`action: "import"`, `entity: "phoneContact"`) |
+| `ids`, `count`, `type`, `employerId`, `startDate` / `endDate`, `endReason` / `status`, `date` | `startEmployments`, `endEmployments`, `setSettlementStatus` (`services/employmentsService.js`) | una acción masiva sobre contratos y honorarios (`entity: "employment"`, sin `entityId`): los períodos que creó o tocó |
 | `op: "applyAdvances"`, `count`, `total`, `advanceIds`, `sobrantes?` | `applyAdvancesToPayroll` | un log por nómina (`entity: "payroll"`) con los anticipos que descontó. `sobrantes: [{ advanceId, pedido, aplicado }]` son las aplicaciones recortadas |
 | `op: "restoreAdvances"`, `count`, `advanceIds` | `restoreAdvancesFromPayroll` | los anticipos que soltó la nómina |
 | `op: "setPayrollAdvances"`, `cambios` | `setPayrollAdvanceAmounts` | `cambios: [{ advanceId, antes, despues }]`: cuánto descontaba y cuánto descuenta la nómina de cada anticipo |
@@ -662,6 +726,8 @@ erDiagram
     CYCLES ||--o{ WORKDAYS : "produce"
     WORKER ||--o{ WORKDAYS : "trabaja"
     WORKER ||--o{ ADVANCES : "recibe"
+    WORKER ||--o{ EMPLOYMENTS : "tiene (workerId)"
+    EMPLOYERS ||--o{ EMPLOYMENTS : "contrata (employerId)"
     PAYROLLS ||--o{ WORKDAYS : "tag (payrollId)"
     PAYROLLS ||--o{ ADVANCES : "aplica (appliedPayrollId)"
     CYCLES ||--o| CYCLE_SUMMARIES : "configura cobro"
@@ -863,4 +929,6 @@ erDiagram
 - **costCenter → informalExpenses**: gastos sin respaldo tributario, deliberadamente separados de `dteDocuments` para no contaminar la data fiscal.
 - **company → dteDocuments** (`companyId`): los DTE cuelgan de una empresa. El docId es **determinístico** (no autoId) → reimportar el mismo período es idempotente; el "replace por período" borra huérfanos y preserva `paymentStatus`/`payments` existentes.
 - **commitmentSeries → commitments** (`seriesId`): un crédito crea todas sus cuotas de una; un recurrente se extiende día a día desde `generatedUntil`. Cada vencimiento se marca pagado o anulado por separado.
+- **employments + workdays → feeLists / contributionLists**: una lista de honorarios o de imposiciones se arma con los días trabajados (jornadas del rango, por faena) de quienes estaban a honorarios con el empleador, y queda como copia: cambiar después las jornadas o la ficha no la toca.
+- **worker → employments → employer**: cada período cuelga de una persona (`workerId`) y de un empleador (`employerId`). Las acciones masivas (contratar o terminar a varios) escriben en lotes con un solo log.
 - **catalogs / users**: docIds estables (nombre / uid), no autoId.

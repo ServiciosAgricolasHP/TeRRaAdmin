@@ -1,20 +1,19 @@
 import { useCycleDetail } from "./CycleDetailContext";
 
-// Barra sobre la grilla: ver a todos o por grupo, solo a quienes tienen
-// producción, y los saltos a cada grupo.
+// Barra sobre la grilla: ver a todos, por grupo (líder) o por contrato, solo a
+// quienes tienen producción, y los saltos a cada grupo.
 export function GridToolbar() {
   "use no memo";
   const {
     columnFilterActive,
+    employmentLoading,
     gridVisible,
     groupView,
-    LEADER_NONE,
     onlyWithProduction,
     orderedGroups,
     scrollToGroup,
     setGroupView,
     setOnlyWithProduction,
-    isGroupedView,
     workers,
   } = useCycleDetail();
   return (
@@ -34,6 +33,13 @@ export function GridToolbar() {
                 className={`px-3 py-1.5 ${groupView === "group" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
               >
                 Por grupo
+              </button>
+              <button
+                onClick={() => setGroupView("employment")}
+                title="Con contrato, a honorarios y sin nada, según lo vigente en algún día del ciclo"
+                className={`px-3 py-1.5 ${groupView === "employment" ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
+              >
+                Por contrato
               </button>
             </div>
           )}
@@ -57,10 +63,11 @@ export function GridToolbar() {
               {onlyWithProduction && columnFilterActive && <span className="ml-1 opacity-70">(pausado)</span>}
             </button>
           </div>
-          {gridVisible && isGroupedView && orderedGroups.length > 0 && (
+          {gridVisible && employmentLoading && <span className="text-xs text-[var(--color-muted)]">Cargando contratos…</span>}
+          {gridVisible && orderedGroups.length > 0 && (
             <div className="flex flex-wrap items-center gap-1.5">
               {orderedGroups.map((g) => {
-                const isNone = g.key === LEADER_NONE;
+                const isNone = g.none;
                 return (
                   <button
                     key={g.key}
@@ -72,7 +79,7 @@ export function GridToolbar() {
                         : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
                     }`}
                   >
-                    {g.label} · {g.count}
+                    {g.icon !== "👥" && `${g.icon} `}{g.label} · {g.count}
                   </button>
                 );
               })}
