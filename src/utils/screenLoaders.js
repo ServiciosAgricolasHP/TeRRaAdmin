@@ -25,6 +25,10 @@ export const SCREEN_LOADER_FILES = {
   winter: "cat-winter.webp",
 };
 
+// La animación de un proceso largo (generar o eliminar una nómina), en vez de
+// un spinner.
+export const BUSY_LOADER_FILE = "cat-chasing-tail.webp";
+
 // Rangos `MM-DD`, los dos días incluidos. Uno con `from` mayor que `to` cruza
 // el año nuevo.
 const FESTIVITIES = [

@@ -68,9 +68,9 @@ export default defineConfig({
         // HTML cambian de nombre (hash) en cada deploy: un index.js precacheado
         // apuntaría a chunks que el deploy nuevo ya borró. Esos van por
         // NetworkFirst (ver runtimeCaching). De las animaciones de
-        // `public/loaders/` va la general; las demás se guardan la primera vez
-        // que salen.
-        globPatterns: ['**/*.{ico,png,svg,woff2}', 'loaders/cat-default.webp'],
+        // `public/loaders/` van la general y la de los procesos largos; las
+        // demás se guardan la primera vez que salen.
+        globPatterns: ['**/*.{ico,png,svg,woff2}', 'loaders/cat-default.webp', 'loaders/cat-chasing-tail.webp'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         // El SW nuevo toma control de las pestañas abiertas apenas se activa,
         // sin esperar a que se cierren.

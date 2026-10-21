@@ -1,6 +1,6 @@
 import { readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { easterSunday, holyWeekOf, SCREEN_LOADER_FILES, screenLoaderFor } from "./screenLoaders";
+import { BUSY_LOADER_FILE, easterSunday, holyWeekOf, SCREEN_LOADER_FILES, screenLoaderFor } from "./screenLoaders";
 
 const idOn = (isoDate, birthday) => screenLoaderFor(isoDate, birthday).id;
 // "general" por cualquiera de las tres que se turnan.
@@ -10,7 +10,7 @@ const kindOn = (isoDate, birthday) => (GENERAL.includes(idOn(isoDate, birthday))
 describe("screenLoaderFor", () => {
   it("cada animación de la lista tiene su archivo, y cada archivo está en la lista", () => {
     const files = readdirSync(new URL("../../public/loaders/", import.meta.url));
-    expect([...files].sort()).toEqual(Object.values(SCREEN_LOADER_FILES).sort());
+    expect([...files].sort()).toEqual([...Object.values(SCREEN_LOADER_FILES), BUSY_LOADER_FILE].sort());
   });
 
   it("devuelve el archivo de la animación", () => {

@@ -1171,8 +1171,9 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
   5. la general, que es también la de primavera, turnándose por día con la que duerme y la que empuja la caja (`GENERAL_ROTATION`).
 
   Los turnos van por días corridos (`dayNumber`) y no por el día del mes, así el 31 y el 1 no repiten.
-- **Los archivos viven en `public/loaders/`** (WebP animado, de 30 a 380 KB) y se nombran en `SCREEN_LOADER_FILES`. Un test falla si sobra o falta uno. Para sumar una fecha: el archivo, su entrada en `SCREEN_LOADER_FILES` y su rango en `FESTIVITIES`.
-- **Nadie descarga las de todas las fechas**: la app instalada guarda la general al instalarse (`globPatterns` en `vite.config.js`), y cada una de las otras la primera vez que sale (`CacheFirst`, caché `screen-loaders`).
+- **Los procesos largos de Nómina** (generar, pagar y eliminar, en `screens/payroll/ProgressOverlay.jsx`) muestran el gato que persigue su cola (`BUSY_LOADER_FILE`) en vez de un spinner.
+- **Los archivos viven en `public/loaders/`** (WebP animado, de 30 a 380 KB) y se nombran en `SCREEN_LOADER_FILES` y `BUSY_LOADER_FILE`. Un test falla si sobra o falta uno. Para sumar una fecha: el archivo, su entrada en `SCREEN_LOADER_FILES` y su rango en `FESTIVITIES`.
+- **Nadie descarga las de todas las fechas**: la app instalada guarda la general y la de los procesos largos al instalarse (`globPatterns` en `vite.config.js`), y cada una de las otras la primera vez que sale (`CacheFirst`, caché `screen-loaders`).
 - **Al abrir la app el perfil todavía no llegó**: el cumpleaños de la última cuenta que la abrió en ese navegador queda en `localStorage` (`screenLoader.birthday`, `rememberBirthday` en `services/userPrefsService.js`), así la primera carga no cambia de animación cuando llega el perfil.
 
 ## Env
@@ -1215,7 +1216,7 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 
 - Configurada via `vite-plugin-pwa` en `vite.config.js` con `registerType: 'autoUpdate'`. Genera `manifest.webmanifest`, `sw.js` y `registerSW.js` en `dist/` al build.
 - **Instalación**: se abre la URL desplegada en Chrome (Android) o Safari (iOS) → el navegador ofrece "Instalar app" / "Agregar a pantalla de inicio" → queda ícono en el escritorio que abre la app en standalone (sin barra de URL).
-- **Precache**: solo assets estables, `globPatterns: ['**/*.{ico,png,svg,woff2}', 'loaders/cat-default.webp']` (de las animaciones, solo la general; ver "Pantalla de carga"). JS, CSS y HTML cambian de nombre en cada deploy: un `index.js` precacheado apuntaría a chunks que el deploy nuevo ya borró, así que van por NetworkFirst (`runtimeCaching` en `vite.config.js`). Límite de 5 MB por archivo.
+- **Precache**: solo assets estables, `globPatterns: ['**/*.{ico,png,svg,woff2}', 'loaders/cat-default.webp', 'loaders/cat-chasing-tail.webp']` (de las animaciones, solo la general y la de los procesos largos; ver "Pantalla de carga"). JS, CSS y HTML cambian de nombre en cada deploy: un `index.js` precacheado apuntaría a chunks que el deploy nuevo ya borró, así que van por NetworkFirst (`runtimeCaching` en `vite.config.js`). Límite de 5 MB por archivo.
 - **Cache de datos**: NO interceptamos las llamadas a Firestore — el SDK de Firebase ya maneja su propio cache offline en IndexedDB. Habilitar `enableIndexedDbPersistence` si queremos offline-first más agresivo.
 - **navigateFallback: null** intencional. No queremos que el SW devuelva `index.html` para rutas desconocidas porque romperíamos el truco 404.html → `?/path` de GitHub Pages.
 - **Auto-update**: cuando se publica una versión nueva (merge a `main` → Actions, o `npm run deploy` a mano), el SW detecta el cambio en `sw.js` en la próxima navegación y se actualiza sin prompt al usuario (el reload siguiente toma la versión nueva).
