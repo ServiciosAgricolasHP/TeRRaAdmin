@@ -12,7 +12,7 @@ import { useIndicators } from "./layout/useIndicators";
 // Versión que inyecta Vite al compilar (v<mayor>.<menor>.<commits>, ver vite.config.js).
 // Se muestra en el header: una versión menor a la desplegada indica un bundle
 // viejo en la caché del service worker.
-export const APP_VERSION = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev";
+const APP_VERSION = typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev";
 
 const navItems = [
   { to: "/faenas", label: "Faenas", icon: "🌾" },
@@ -35,7 +35,10 @@ export default function Layout() {
   const [profileOpen, setProfileOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // El drawer del teléfono queda abierto solo en la ruta donde se abrió:
+  // navegar lo cierra.
+  const [drawerPath, setDrawerPath] = useState(null);
+  const drawerOpen = drawerPath === location.pathname;
   // Barra lateral de escritorio, abierta o cerrada según la última sesión.
   // Cerrada se oculta entera y el contenido usa todo el ancho.
   const [sidebarOpen, setSidebarOpen] = useState(() => {
@@ -68,18 +71,13 @@ export default function Layout() {
     setIndicatorsModalOpen(false);
   };
 
-  // Cierra el drawer al cambiar de ruta.
-  useEffect(() => {
-    setDrawerOpen(false);
-  }, [location.pathname]);
-
   // Un solo botón: según el ancho, colapsa la barra lateral (escritorio) o
   // abre el drawer (mobile).
   const onMenuClick = () => {
     if (typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches) {
       setSidebarOpen((o) => !o);
     } else {
-      setDrawerOpen(true);
+      setDrawerPath(location.pathname);
     }
   };
 
@@ -178,7 +176,7 @@ export default function Layout() {
         <div className="fixed inset-0 z-40 md:hidden">
           <div
             className="absolute inset-0 bg-black/40"
-            onClick={() => setDrawerOpen(false)}
+            onClick={() => setDrawerPath(null)}
             aria-label="Cerrar menú"
           />
           <aside className="absolute inset-y-0 left-0 z-0 flex w-60 flex-col overflow-hidden border-r border-[var(--color-border)] bg-[var(--color-surface)] shadow-xl">

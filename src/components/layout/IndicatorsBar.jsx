@@ -1,4 +1,4 @@
-import { fmtCLP, INDICATOR_DEFS } from "./indicators";
+import { fmtIndicator, INDICATOR_DEFS } from "./indicators";
 
 // Los 3 chips de indicadores (sin contenedor). Se reusa en el centro del
 // header (desktop) y en la barra tipo ticker de mobile.
@@ -11,7 +11,7 @@ export function IndicatorChips({ indicators }) {
       <span>{ind.icon}</span>
       <span className="text-[var(--color-muted)]">{ind.label}</span>
       <span className="font-semibold tabular-nums text-[var(--color-text)]">
-        {fmtCLP(indicators?.[ind.key])}
+        {fmtIndicator(indicators?.[ind.key])}
       </span>
     </div>
   ));
