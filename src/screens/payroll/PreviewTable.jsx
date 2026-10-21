@@ -4,6 +4,7 @@ import { isCashBank, CASH_BANK_CODE, bankName } from "../../utils/banks";
 import { normalizeLeader } from "../../utils/payroll";
 import { matchesSearchQuery } from "../../utils/textSearch";
 import { fmtCurrency } from "../../utils/format";
+import { previewEditCaps } from "../../utils/payrollPreview";
 import { accountTypeShort } from "./helpers";
 
 export function PreviewTable({
@@ -230,6 +231,7 @@ export function PreviewTable({
           <tbody>
             {filteredItems.map((p) => {
               const cash = isCashBank(p.bankCode);
+              const caps = previewEditCaps(p);
               return (
                 <tr
                   key={p.rut}
@@ -277,7 +279,8 @@ export function PreviewTable({
                       type="number"
                       value={p.advance || ""}
                       placeholder="0"
-                      title="Anticipo a descontar"
+                      max={caps.advanceMax}
+                      title={`Anticipo a descontar: hasta ${fmtCurrency(caps.advanceMax)}. Se puede bajar y el anticipo queda parcial.`}
                       onChange={(e) => updatePreview(p.rut, { advance: Number(e.target.value) || 0 })}
                       className="w-24 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-right text-sm tabular-nums outline-none focus:border-[var(--color-accent)]"
                     />
@@ -295,7 +298,8 @@ export function PreviewTable({
                       type="number"
                       value={p.bonus || ""}
                       placeholder="0"
-                      title="Bono a sumar"
+                      max={caps.bonusMax}
+                      title={`Bono a sumar: hasta ${fmtCurrency(caps.bonusMax)}. Se puede bajar y el resto queda pendiente.`}
                       onChange={(e) => updatePreview(p.rut, { bonus: Number(e.target.value) || 0 })}
                       className={`w-24 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-right text-sm tabular-nums outline-none focus:border-[var(--color-accent)] ${Number(p.bonus) > 0 ? "text-[var(--color-success)]" : ""}`}
                     />

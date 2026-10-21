@@ -8,6 +8,7 @@ const {
   installmentCandidatesOf,
   payrollItemOf,
   payrollTotalsOf,
+  previewEditCaps,
   previewItemsOf,
   withPreviewEdit,
   withoutInstallments,
@@ -46,6 +47,7 @@ describe("previewItemsOf", () => {
     const [ana, beto] = items;
     expect([ana.grossAmount, ana.advance, ana.amount]).toEqual([100000, 30000, 70000]);
     expect(ana.anticipoApplications.map((a) => [a.advanceId, a.amount])).toEqual([["ADV1", 30000]]);
+    expect(ana.allocatedAdvances).toBe(ana.anticipoApplications);
     expect([beto.bonus, beto.amount]).toEqual([5000, 55000]);
   });
 
@@ -61,26 +63,71 @@ describe("previewItemsOf", () => {
 });
 
 describe("withPreviewEdit", () => {
+  // V1: cuota de 20.000 con saldo 20.000; V2: cuota de 10.000 con saldo 50.000.
+  const allocatedAdvances = [{ advanceId: "V1", amount: 20000, maxAmount: 20000 }, { advanceId: "V2", amount: 10000, maxAmount: 50000 }];
+  const allocatedBonuses = [{ advanceId: "B1", amount: 5000 }, { advanceId: "B2", amount: 2000 }];
   const row = {
-    grossAmount: 100000, advance: 30000, bonus: 5000, amount: 75000,
-    anticipoApplications: [{ advanceId: "V1", amount: 20000, maxAmount: 20000 }, { advanceId: "V2", amount: 10000, maxAmount: 50000 }],
-    bonoApplications: [{ advanceId: "B1", amount: 5000 }],
+    grossAmount: 100000, advance: 30000, bonus: 7000, amount: 77000,
+    anticipoApplications: allocatedAdvances, bonoApplications: allocatedBonuses, allocatedAdvances, allocatedBonuses,
   };
+  const apps = (r, k = "anticipoApplications") => r[k].map((a) => [a.advanceId, a.amount]);
 
   it("otro campo no toca los montos", () => {
     expect(withPreviewEdit(row, { include: false })).toEqual({ ...row, include: false });
   });
 
-  it("el anticipo editado se reparte del más viejo al más nuevo, topeado por el saldo", () => {
-    const next = withPreviewEdit(row, { advance: "45000" });
-    expect([next.advance, next.amount, next.anticiposTotal]).toEqual([45000, 60000, 45000]);
-    expect(next.anticipoApplications).toEqual([{ advanceId: "V1", amount: 20000, maxAmount: 20000 }, { advanceId: "V2", amount: 25000, maxAmount: 50000 }]);
+  it("bajar el anticipo se lo quita primero al más nuevo; queda parcial", () => {
+    const next = withPreviewEdit(row, { advance: 25000 });
+    expect([next.advance, next.amount, next.anticiposTotal]).toEqual([25000, 82000, 25000]);
+    expect(apps(next)).toEqual([["V1", 20000], ["V2", 5000]]);
   });
 
-  it("el bono no pasa del monto de cada aplicación; el neto no baja de cero", () => {
-    const next = withPreviewEdit(row, { bonus: 9000 });
-    expect([next.bonus, next.amount, next.bonosTotal]).toEqual([9000, 79000, 5000]);
-    expect(withPreviewEdit(row, { advance: 200000 }).amount).toBe(0);
+  it("el anticipo sube por encima de la cuota hasta el saldo de cada uno", () => {
+    const next = withPreviewEdit(row, { advance: "45000" });
+    expect([next.advance, next.amount]).toEqual([45000, 62000]);
+    expect(apps(next)).toEqual([["V1", 20000], ["V2", 25000]]);
+    expect(next.anticipoApplications[1].maxAmount).toBe(50000);
+  });
+
+  it("el anticipo no pasa del saldo ni de bruto + bonos", () => {
+    expect(withPreviewEdit(row, { advance: 200000 }).advance).toBe(70000);
+    const poco = { ...row, grossAmount: 40000 };
+    const next = withPreviewEdit(poco, { advance: 200000 });
+    expect([next.advance, next.amount, next.anticiposTotal]).toEqual([47000, 0, 47000]);
+  });
+
+  it("bajar a cero y volver a subir recupera el reparto sugerido", () => {
+    const cero = withPreviewEdit(row, { advance: 0 });
+    expect(cero.anticipoApplications).toEqual([]);
+    expect(withPreviewEdit(cero, { advance: 30000 }).anticipoApplications).toEqual(allocatedAdvances);
+  });
+
+  it("el bono baja y el resto queda pendiente; nunca sube de su monto", () => {
+    const bajo = withPreviewEdit(row, { bonus: 6000 });
+    expect([bajo.bonus, bajo.amount, bajo.bonosTotal]).toEqual([6000, 76000, 6000]);
+    expect(apps(bajo, "bonoApplications")).toEqual([["B1", 5000], ["B2", 1000]]);
+    const alto = withPreviewEdit(row, { bonus: 9000 });
+    expect([alto.bonus, alto.amount]).toEqual([7000, 77000]);
+  });
+
+  it("sin anticipos ni bonos pendientes no se puede agregar ninguno", () => {
+    const sin = { grossAmount: 50000, advance: 0, bonus: 0, amount: 50000, anticipoApplications: [], bonoApplications: [], allocatedAdvances: [], allocatedBonuses: [] };
+    const next = withPreviewEdit(sin, { advance: 5000, bonus: 3000 });
+    expect([next.advance, next.bonus, next.amount]).toEqual([0, 0, 50000]);
+  });
+
+  it("bajar el bono vuelve a topear el anticipo con el bruto + bonos nuevo", () => {
+    const justo = { ...row, grossAmount: 20000 };
+    const conTodo = withPreviewEdit(justo, { advance: 27000 });
+    expect([conTodo.advance, conTodo.amount]).toEqual([27000, 0]);
+    const sinBono = withPreviewEdit(conTodo, { bonus: 0 });
+    expect([sinBono.advance, sinBono.bonus, sinBono.amount]).toEqual([20000, 0, 0]);
+    expect(apps(sinBono)).toEqual([["V1", 20000]]);
+  });
+
+  it("los topes se pueden mostrar", () => {
+    expect(previewEditCaps(row)).toEqual({ advanceMax: 70000, bonusMax: 7000 });
+    expect(previewEditCaps({ ...row, grossAmount: 10000 })).toEqual({ advanceMax: 17000, bonusMax: 7000 });
   });
 });
 
@@ -121,7 +168,7 @@ describe("payrollItemOf y payrollTotalsOf", () => {
     expect(item.advanceApplications).toEqual([{ advanceId: "V1", amount: 200 }, { advanceId: "B1", amount: 0 }]);
     expect(item.advanceIds).toEqual(["V1", "B1"]);
     expect(item.byCycle).toEqual({ K1: 600 });
-    expect("include" in item || "_missing" in item).toBe(false);
+    expect(["include", "_missing", "allocatedAdvances", "allocatedBonuses"].some((k) => k in item)).toBe(false);
   });
 
   it("los totales separan banco y efectivo", () => {

@@ -62,6 +62,10 @@ export function previewItemsOf({ aggregates, workers, payrollCycles, pendingAdva
         bonoApplications,
         anticiposTotal,
         bonosTotal,
+        // El reparto sugerido, del que parte cada edición (ver `withPreviewEdit`).
+        // No se guarda en la nómina.
+        allocatedAdvances: anticipoApplications,
+        allocatedBonuses: bonoApplications,
         // adelantosTotal se mantiene por compatibilidad del snapshot; siempre vale 0.
         adelantosTotal: 0,
         amount: allocation.amount,
@@ -75,51 +79,65 @@ export function previewItemsOf({ aggregates, workers, payrollCycles, pendingAdva
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-// La fila con el cambio aplicado. Si cambia el anticipo o el bono, el neto se
-// recalcula y el total editado se reparte entre los anticipos o bonos de la
-// fila.
+// Reparte `total` entre las aplicaciones sugeridas, del más viejo al más nuevo:
+// primero hasta lo sugerido de cada una y después, si sobra, hasta `capOf`. Así
+// lo que se baja se le quita primero al más nuevo, y un total igual al sugerido
+// da el mismo reparto.
+function spread(apps, total, capOf) {
+  let remaining = total;
+  const takes = apps.map((ap) => {
+    const take = Math.min(ap.amount, remaining);
+    remaining -= take;
+    return take;
+  });
+  for (let k = 0; k < apps.length && remaining > 0; k++) {
+    const extra = Math.min(capOf(apps[k]) - takes[k], remaining);
+    if (extra > 0) {
+      takes[k] += extra;
+      remaining -= extra;
+    }
+  }
+  return apps.map((ap, k) => ({ ...ap, amount: takes[k] })).filter((ap) => ap.amount > 0);
+}
+
+const sumOf = (apps, f = (ap) => ap.amount) => apps.reduce((s, ap) => s + (Number(f(ap)) || 0), 0);
+
+// Lo más que se puede descontar y acreditar en la fila. Un bono no sube de su
+// monto: se puede bajar y lo que falta queda pendiente. Un anticipo sube hasta
+// su saldo (`maxAmount`, por encima de la cuota sugerida) y nunca más que
+// bruto + bonos: lo que se retiene es lo que baja la deuda.
+export function previewEditCaps(p, bonus = p.bonus) {
+  const advances = p.allocatedAdvances || p.anticipoApplications || [];
+  const bonuses = p.allocatedBonuses || p.bonoApplications || [];
+  const bonusMax = sumOf(bonuses);
+  const bon = Math.min(Math.max(0, Number(bonus) || 0), bonusMax);
+  const advanceMax = Math.min(
+    sumOf(advances, (ap) => Math.max(Number(ap.maxAmount) || 0, ap.amount)),
+    Math.max(0, Math.round(Number(p.grossAmount) || 0) + bon),
+  );
+  return { advanceMax, bonusMax };
+}
+
+// La fila con el cambio aplicado. Si cambia el anticipo o el bono, los dos se
+// ajustan a sus topes (`previewEditCaps`), se reparten entre los anticipos y
+// bonos de la fila y el neto se recalcula.
 export function withPreviewEdit(p, patch) {
   const next = { ...p, ...patch };
   const touchesAdvance = Object.prototype.hasOwnProperty.call(patch, "advance");
   const touchesBonus = Object.prototype.hasOwnProperty.call(patch, "bonus");
   if (touchesAdvance || touchesBonus) {
-    const adv = Math.max(0, Number(next.advance) || 0);
-    const bon = Math.max(0, Number(next.bonus) || 0);
+    const advances = p.allocatedAdvances || p.anticipoApplications || [];
+    const bonuses = p.allocatedBonuses || p.bonoApplications || [];
+    const { advanceMax, bonusMax } = previewEditCaps(p, next.bonus);
+    const bon = Math.min(Math.max(0, Number(next.bonus) || 0), bonusMax);
+    const adv = Math.min(Math.max(0, Number(next.advance) || 0), advanceMax);
     next.advance = adv;
     next.bonus = bon;
     next.amount = Math.max(0, Math.round((p.grossAmount || 0) - adv + bon));
-    if (touchesAdvance) {
-      // Reparte el total editado entre los anticipos, del más viejo al
-      // más nuevo, para que el desglose cuadre con el total. El tope de
-      // cada uno es el mayor entre su saldo real (`maxAmount`) y lo ya
-      // aplicado, así el override puede superar la cuota sugerida.
-      const apps = (p.anticipoApplications || []).map((x) => ({ ...x }));
-      let remaining = adv;
-      const out = [];
-      for (const ap of apps) {
-        if (remaining <= 0) break;
-        const cap = Math.max(Number(ap.maxAmount) || 0, ap.amount);
-        const take = Math.min(cap, remaining);
-        if (take > 0) out.push({ advanceId: ap.advanceId, amount: take, maxAmount: ap.maxAmount });
-        remaining -= take;
-      }
-      next.anticipoApplications = out;
-      next.anticiposTotal = out.reduce((s, x) => s + x.amount, 0);
-    }
-    if (touchesBonus) {
-      // Bonos: mismo reparto, topeado por el monto de cada aplicación.
-      const apps = (p.bonoApplications || []).map((x) => ({ ...x }));
-      let remaining = bon;
-      const out = [];
-      for (const ap of apps) {
-        if (remaining <= 0) break;
-        const take = Math.min(ap.amount, remaining);
-        if (take > 0) out.push({ advanceId: ap.advanceId, amount: take });
-        remaining -= take;
-      }
-      next.bonoApplications = out;
-      next.bonosTotal = out.reduce((s, x) => s + x.amount, 0);
-    }
+    next.anticipoApplications = spread(advances, adv, (ap) => Math.max(Number(ap.maxAmount) || 0, ap.amount));
+    next.anticiposTotal = sumOf(next.anticipoApplications);
+    next.bonoApplications = spread(bonuses, bon, (ap) => ap.amount);
+    next.bonosTotal = sumOf(next.bonoApplications);
   }
   return next;
 }
