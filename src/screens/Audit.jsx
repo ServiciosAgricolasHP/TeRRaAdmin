@@ -18,7 +18,7 @@ import SessionCard from "./audit/SessionCard";
 // Días que cubre el rango al abrir la pantalla. `logs` es con diferencia la
 // colección más grande del sistema, así que el default es lo mínimo útil y
 // ampliar el rango queda como acción explícita.
-const DIAS_POR_DEFECTO = 3;
+const DEFAULT_DAYS = 3;
 
 const todayISO = () => localIsoDate();
 const daysAgoISO = (n) => {
@@ -28,8 +28,8 @@ const daysAgoISO = (n) => {
 };
 
 export default function Audit() {
-  const [fromDate, setFromDate] = useState(daysAgoISO(DIAS_POR_DEFECTO));
-  const [toDate, setToDateStr] = useState(todayISO());
+  const [fromDate, setFromDate] = useState(daysAgoISO(DEFAULT_DAYS));
+  const [toDate, setToDate] = useState(todayISO());
   const [gapMinutes, setGapMinutes] = useState(30);
   const [emailFilter, setEmailFilter] = useState("");
   const [loading, setLoading] = useState(false);
@@ -116,7 +116,7 @@ export default function Audit() {
             <input
               type="date"
               value={toDate}
-              onChange={(e) => setToDateStr(e.target.value)}
+              onChange={(e) => setToDate(e.target.value)}
               className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 text-sm"
             />
           </label>
