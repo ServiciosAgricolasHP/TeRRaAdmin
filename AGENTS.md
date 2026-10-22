@@ -888,6 +888,8 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 
 `logs` es la colección más grande del sistema (49.132 docs en septiembre 2026, el 72% de la base) y conviene entender por qué antes de tocarla.
 
+- Pantalla: `src/screens/Audit.jsx` (ruta `/audit`, solo admin): las sesiones de un rango de fechas y el buscador por registro. Las sesiones se arman en `utils/auditLogs.js` (`sessionize`, con los formatos de fecha y de los campos de un cambio), con tests.
+
 - **Nada la borra, nunca.** No existe un solo `logsService.remove` en el repo: es append-only y crece con cada escritura de cualquier colección, porque `logAction` lo llama `firestoreBase` en todos los `create`/`update`/`upsert`/`remove`.
 - **El conteo y el peso no vienen del mismo lado.** `diff()` (`services/logger.js`) compara por clave de **primer nivel**, así que cambiar un elemento de un array guarda **dos copias completas** de la estructura. Medido sobre un ciclo realista (3 labores × 80 personas, 30 días × 4 combos): **~30 KB por log de `cycle`** contra **~0,1 KB por log de `workday`**. Agregar un trabajador a una labor escribe 30 KB. Las entidades pesadas son `cycle` (`labors[]`, `dayPrices{}`), `payroll` (`items[]`, `workdayIds[]`), `payrollSnapshot` (el snapshot entero, que además es contrato externo), `qrPrefix` (`padron{}`, un código por trabajador) y `catalog` (`entries[]`). Ese blob **no se lee**: la UI lo pinta como JSON crudo en un `<pre>`.
 - **Desde la app, un log solo se agrega.** `firestore.rules` no deja editarlo ni borrarlo, ni siquiera a un admin. Una poda o un backfill sobre `logs` va en un job de Functions, con el admin SDK.
