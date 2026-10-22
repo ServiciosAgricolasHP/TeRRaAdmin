@@ -72,10 +72,11 @@ export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate
 
   // Al cambiar de transportista: con un solo vehículo, lo elige; con varios,
   // elige el primero solo si no había vehículo elegido; sin vehículos, limpia
-  // el campo.
-  const handleCarrierChange = (nextId) => {
+  // el campo. `created` es el transportista recién creado, que todavía no está
+  // en `carriers`.
+  const handleCarrierChange = (nextId, created = null) => {
     setCarrierId(nextId);
-    const c = carriers.find((x) => x.id === nextId);
+    const c = created || carriers.find((x) => x.id === nextId);
     const vehicles = c?.vehicles || [];
     if (vehicles.length > 0 && (vehicles.length === 1 || !vehicleAlias)) {
       setVehicleAlias(vehicles[0].alias);
@@ -223,8 +224,7 @@ export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate
         onCreated={(created) => {
           setCreatingCarrier(false);
           if (!created?.id) return;
-          // handleCarrierChange ya auto-pre-selecciona el primer vehículo.
-          handleCarrierChange(created.id);
+          handleCarrierChange(created.id, created);
         }}
       />
     </Modal>
