@@ -1,34 +1,18 @@
-import { lazy, useState, useEffect, useMemo, Suspense } from "react";
+import { lazy, useState, useMemo, Suspense } from "react";
 import { Link } from "react-router-dom";
-import {
-  companiesService,
-  dteDocumentsService,
-  jobsService,
-  cyclesService,
-  transportPaymentsService,
-} from "../services";
-import { payrollsService } from "../services/payrollsService";
-import { fortnightsService } from "../services/transportsService";
-import { commitmentsService } from "../services/commitmentsService";
-import { countedList } from "../services/cache";
 import { useAuth } from "../contexts/AuthContext";
 import { useCarriers } from "../contexts/CarriersContext";
-import { useToast } from "../contexts/ToastContext";
 import MetricCard from "./dashboard/MetricCard";
 import Modal from "../components/Modal";
-import { fmtMonthKey, fmtNumber, fmtCurrency, fmtPercent } from "../utils/format";
-import { localIsoDate } from "../utils/dates";
-import { countWorkdaysInRange } from "../services/countsService";
+import { fmtNumber, fmtCurrency, fmtPercent } from "../utils/format";
 import { CommitmentsWeek } from "./dashboard/CommitmentsWeek";
 import { DebtDetailList } from "./dashboard/DebtDetailList";
 import ScreenLoader from "../components/ScreenLoader";
+import { useDashboardData } from "./dashboard/useDashboardData";
+import { useDteComparison } from "./dashboard/useDteComparison";
 import {
-  commitmentsWeekOf,
   cycleMargins,
   DTE_MONTHS,
-  dteMonthlyTotals,
-  lastMonthKeys,
-  monthRangeOfKey,
   operationStats,
   payrollMoneyStats,
   STALE_DAYS,
@@ -47,182 +31,17 @@ const PERIODS = [
 ];
 
 export default function Dashboard() {
+  "use no memo";
   const { isAdmin } = useAuth();
   const { carriers } = useCarriers();
-  const toast = useToast();
-  const [periodKey, setPeriodKey] = useState("3m");
-  const [loading, setLoading] = useState(true);
-  const [reads, setReads] = useState(0);
-  const [jobs, setJobs] = useState([]);
-  const [cycles, setCycles] = useState([]);
-  const [payrolls, setPayrolls] = useState([]);
-  const [fortnights, setFortnights] = useState([]);
-  const [payments, setPayments] = useState([]);
-  const [workdayMonths, setWorkdayMonths] = useState([]);
-  const [countReads, setCountReads] = useState(0);
+  const [period, setPeriod] = useState(PERIODS[1]);
   // Mes del gráfico de deuda abierto en el modal de detalle.
   const [debtDetail, setDebtDetail] = useState(null);
-  // Comparativa compras/ventas, de una empresa a la vez: `dteDocuments` es la
-  // colección más grande del sistema y la consulta se acota a la empresa
-  // elegida.
-  const [dteCompanies, setDteCompanies] = useState([]);
-  const [dteCompanyId, setDteCompanyId] = useState("");
-  const [dteRows, setDteRows] = useState(null);
-  const [dteBusy, setDteBusy] = useState(false);
-  const [dteReads, setDteReads] = useState(0);
-  const [dteError, setDteError] = useState("");
-  const [commitments, setCommitments] = useState(null);
-  const [commitmentReads, setCommitmentReads] = useState(0);
+  const { commitmentsWeek, cycles, fortnights, jobs, loading, payments, payrolls, reads, workdayMonths } =
+    useDashboardData();
+  const dte = useDteComparison();
 
-  const period = PERIODS.find((p) => p.key === periodKey) || PERIODS[1];
   const periodMonths = period.months;
-
-  // Serie de actividad de los últimos 12 meses. Un `getCountFromServer` por mes
-  // = 12 lecturas para el año entero, contra las decenas de miles que costaría
-  // traerse las filas. No depende del selector de período: se pide una sola vez
-  // por sesión y alimenta tanto la tarjeta como el gráfico de historia.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const keys = lastMonthKeys(12);
-      try {
-        const counts = await Promise.all(
-          keys.map((k) => {
-            const { start, end } = monthRangeOfKey(k);
-            return countWorkdaysInRange(start, end);
-          }),
-        );
-        if (cancelled) return;
-        setWorkdayMonths(keys.map((k, i) => ({ key: k, label: fmtMonthKey(k), workdayCount: counts[i] })));
-        setCountReads(keys.length);
-      } catch (err) {
-        if (!cancelled) console.error("[dashboard] conteo de jornadas:", err);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  // Catálogo de empresas para el selector. Misma clave de caché que
-  // Facturación: no cuesta lecturas si esa pantalla ya lo cargó.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const { data, reads } = await countedList(companiesService, {
-          order: ["razonSocial", "asc"],
-          cache: true,
-          ttl: 600_000,
-        });
-        if (cancelled) return;
-        setDteCompanies(data);
-        setDteCompanyId((prev) => prev || data[0]?.id || "");
-        setDteReads((r) => r + reads);
-      } catch (err) {
-        if (!cancelled) console.error("[dashboard] empresas:", err);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  // Comparativa de la empresa elegida. Carga sola con la primera empresa y se
-  // rehace al cambiar de empresa. Va por el servicio para quedar cacheada y
-  // persistida: salir del Dashboard y volver dentro de 10 minutos no relee.
-  useEffect(() => {
-    if (!dteCompanyId) return;
-    let cancelled = false;
-    setDteRows(null);
-    setDteError("");
-    setDteBusy(true);
-    (async () => {
-      try {
-        const { data, reads } = await countedList(dteDocumentsService, {
-          wheres: [
-            ["companyId", "==", dteCompanyId],
-            ["periodo", "in", lastMonthKeys(DTE_MONTHS)],
-          ],
-          cache: true,
-          persist: true,
-          ttl: 600_000,
-        });
-        if (cancelled) return;
-        setDteRows(dteMonthlyTotals(data, lastMonthKeys(DTE_MONTHS)));
-        setDteReads((r) => r + reads);
-      } catch (err) {
-        if (cancelled) return;
-        // La consulta cruza `companyId` con `periodo` y puede pedir un índice
-        // compuesto. El mensaje de Firestore trae el link para crearlo: va a la
-        // consola del navegador.
-        console.error("[dashboard] comparativa de facturación:", err);
-        setDteError(
-          err.code === "failed-precondition"
-            ? "Falta un índice en Firestore para esta consulta (el detalle está en la consola del navegador)."
-            : "No se pudo cargar la facturación de esta empresa.",
-        );
-      } finally {
-        if (!cancelled) setDteBusy(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [dteCompanyId]);
-
-  // Cheques y pagos, aparte de la carga principal: si falla, el resto del
-  // tablero se muestra igual. Las opciones son las de `listCommitments`, así
-  // comparte la caché con la pantalla.
-  useEffect(() => {
-    let cancelled = false;
-    countedList(commitmentsService, { order: ["dueDate", "asc"], cache: true, ttl: 300_000 })
-      .then(({ data, reads }) => {
-        if (cancelled) return;
-        setCommitments(data);
-        setCommitmentReads(reads);
-      })
-      .catch((err) => console.error("[dashboard] cheques y pagos:", err));
-    return () => { cancelled = true; };
-  }, []);
-
-  const commitmentsWeek = useMemo(
-    () => (commitments ? commitmentsWeekOf(commitments, localIsoDate()) : null),
-    [commitments],
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      try {
-        // Los resúmenes de transporte se traen siempre por 12 meses (la ventana
-        // más larga que se puede pedir) y todo lo que depende del período se
-        // filtra en cliente. Así cambiar de período no cuesta ninguna lectura,
-        // y la curva de deuda tiene el histórico completo que necesita.
-        const historyStart = `${lastMonthKeys(12)[0]}-01`;
-        const [f, c, p, q, pays] = await Promise.all([
-          // Las tres primeras copian las opciones exactas de Faenas/Transporte/
-          // Nóminas para compartir clave de caché y salir gratis.
-          countedList(jobsService, { order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
-          countedList(cyclesService, { cache: true, persist: true, ttl: 5 * 60 * 1000 }),
-          countedList(payrollsService, { order: ["createdAt", "desc"], take: 50, cache: true, persist: true, ttl: 5 * 60 * 1000 }),
-          fortnightsService.listAll(),
-          transportPaymentsService.listSince(new Date(historyStart)),
-        ]);
-        if (cancelled) return;
-        setJobs(f.data);
-        setCycles(c.data);
-        setPayrolls(p.data);
-        setFortnights(q);
-        setPayments(pays);
-        setReads(f.reads + c.reads + p.reads + q.length + pays.length);
-      } catch (err) {
-        if (!cancelled) {
-          console.error("[dashboard] carga:", err);
-          toast.error("No se pudo cargar el dashboard: " + (err.message || err));
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const money = useMemo(() => payrollMoneyStats(payrolls, periodMonths), [payrolls, periodMonths]);
 
@@ -246,9 +65,7 @@ export default function Dashboard() {
             Plata, operación y transporte de un vistazo.
             {isAdmin && !loading && (
               <span className="ml-1 text-xs">
-                {reads + countReads + dteReads + commitmentReads === 0
-                  ? "· desde caché"
-                  : `· ${fmtNumber(reads + countReads + dteReads + commitmentReads)} lecturas`}
+                {reads + dte.reads === 0 ? "· desde caché" : `· ${fmtNumber(reads + dte.reads)} lecturas`}
               </span>
             )}
           </p>
@@ -257,9 +74,9 @@ export default function Dashboard() {
           {PERIODS.map((p) => (
             <button
               key={p.key}
-              onClick={() => setPeriodKey(p.key)}
+              onClick={() => setPeriod(p)}
               className={`px-3 py-1.5 ${
-                p.key === periodKey
+                p.key === period.key
                   ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
                   : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
               }`}
@@ -401,12 +218,12 @@ export default function Dashboard() {
               workdayMonths={workdayMonths}
               onDebtMonthClick={setDebtDetail}
               dte={{
-                companies: dteCompanies,
-                companyId: dteCompanyId,
-                onSelectCompany: setDteCompanyId,
-                error: dteError,
-                rows: dteRows,
-                busy: dteBusy,
+                companies: dte.companies,
+                companyId: dte.companyId,
+                onSelectCompany: dte.setCompanyId,
+                error: dte.error,
+                rows: dte.rows,
+                busy: dte.busy,
                 months: DTE_MONTHS,
               }}
             />
