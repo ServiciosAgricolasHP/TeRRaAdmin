@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import {
   ENTITY_META,
   entityLabelEs,
@@ -83,9 +83,8 @@ export default function LogsTable({ logs }) {
           const isOpen = openIdx === idx;
           const hasDetails = l.changes || l.before || l.after || l.meta;
           return (
-            <>
+            <Fragment key={l.id || idx}>
               <tr
-                key={l.id || idx}
                 className="cursor-pointer border-t border-[var(--color-border)] hover:bg-[var(--color-surface-2)]"
                 onClick={() => hasDetails && setOpenIdx(isOpen ? null : idx)}
               >
@@ -102,7 +101,7 @@ export default function LogsTable({ logs }) {
                 </td>
               </tr>
               {isOpen && hasDetails && (
-                <tr key={`d_${idx}`} className="border-t border-[var(--color-border)]">
+                <tr className="border-t border-[var(--color-border)]">
                   <td colSpan={5} className="bg-[var(--color-surface-2)] px-3 py-2">
                     <div className="grid gap-2 md:grid-cols-2">
                       {l.changes && <FieldBlock title="Cambios" data={l.changes} kind="changes" />}
@@ -113,7 +112,7 @@ export default function LogsTable({ logs }) {
                   </td>
                 </tr>
               )}
-            </>
+            </Fragment>
           );
         })}
       </tbody>
