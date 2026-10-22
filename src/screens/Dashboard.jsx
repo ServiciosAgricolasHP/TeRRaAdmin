@@ -278,8 +278,8 @@ export default function Dashboard() {
                             {r.cycle.label}
                           </Link>
                         </td>
-                        <td className="px-3 py-1.5 text-right tabular-nums">{fmtCurrency(r.cobrar)}</td>
-                        <td className="px-3 py-1.5 text-right tabular-nums">{fmtCurrency(r.pagar)}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">{fmtCurrency(r.charge)}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">{fmtCurrency(r.pay)}</td>
                         <td
                           className={`px-3 py-1.5 text-right font-medium tabular-nums ${
                             r.marginAmount < 0 ? "text-[var(--color-danger)]" : ""

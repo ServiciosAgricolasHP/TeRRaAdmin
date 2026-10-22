@@ -293,10 +293,10 @@ export function cycleMargins(cycles) {
     .map((c) => {
       const charge = Number(c.summaryTotals.cobrar) || 0;
       const pay = Number(c.summaryTotals.pagar) || 0;
-      return { cycle: c, cobrar: charge, pagar: pay, marginAmount: charge - pay, pct: ((charge - pay) / charge) * 100 };
+      return { cycle: c, charge, pay, marginAmount: charge - pay, pct: ((charge - pay) / charge) * 100 };
     })
     .sort((a, b) => b.marginAmount - a.marginAmount);
-  const chargeSum = rows.reduce((s, r) => s + r.cobrar, 0);
+  const chargeSum = rows.reduce((s, r) => s + r.charge, 0);
   const marginSum = rows.reduce((s, r) => s + r.marginAmount, 0);
   return {
     rows,
