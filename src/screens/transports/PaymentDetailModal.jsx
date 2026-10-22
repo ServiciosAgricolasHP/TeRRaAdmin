@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { captureFullWidthDataUrl, captureFullWidthBlob } from "../../utils/imageCapture";
 import Modal from "../../components/Modal";
 import ConfirmDialog from "../../components/ConfirmDialog";
-import { TripEditModal } from "../../components/TransportsModal";
+import { TripEditModal } from "../../components/TripEditModal";
 import { tripsService, paymentsService, titleCase } from "../../services/transportsService";
 import { useToast } from "../../contexts/ToastContext";
 import { localIsoDate } from "../../utils/dates";

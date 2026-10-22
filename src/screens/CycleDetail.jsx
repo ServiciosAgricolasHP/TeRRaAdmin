@@ -21,7 +21,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useIsMobile } from "../hooks/useIsMobile";
 import WorkerPickerModal from "./cycleDetail/WorkerPickerModal";
 import WorkerEditModal from "../components/WorkerEditModal";
-import TransportsModal from "../components/TransportsModal";
+import TransportsModal from "./cycleDetail/TransportsModal";
 import CycleWorkerList from "./cycleDetail/CycleWorkerList";
 import CycleWorkerEditModal from "./cycleDetail/CycleWorkerEditModal";
 import CycleSummaryModal from "./cycleDetail/CycleSummaryModal";
