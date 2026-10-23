@@ -1,13 +1,10 @@
-import { dateLabel } from "../../../utils/cycleSummary";
-import { fmtCurrency } from "../../../utils/format";
+import { carrierColumns, cellText } from "../../../utils/summaryTables";
 import { cellH, cell, chargeDateInputStyle, inputVal, chargeInputStyle } from "./tableStyles";
 
+// La tabla día a día de un transportista del resumen del ciclo. Las columnas
+// salen de `carrierColumns`, las mismas que escribe el Excel.
 export function TransportTable({
-  carrierId,
-  displayName,
-  rows,
-  totalCount,
-  totalAmount,
+  section,
   mode,
   editMode = true,
   hiddenColumns = new Set(),
@@ -15,16 +12,12 @@ export function TransportTable({
   onAddRow,
   onRemoveRow,
 }) {
+  const { carrierId, displayName, rows, totals } = section;
   const isCharge = mode === "charge";
   const editable = isCharge && editMode;
   if (rows.length === 0 && !isCharge) return null;
-  const showCol = (key) => !hiddenColumns.has(key);
-
-  const rowCount = (r) => isCharge ? r.chargedCount : r.count;
-  const rowRate = (r) => isCharge
-    ? r.chargedRate
-    : (r.count > 0 ? Math.round(r.amount / r.count) : 0);
-  const rowTotal = (r) => isCharge ? r.chargedAmount : r.amount;
+  const columns = carrierColumns(section, { mode, hiddenColumns });
+  const dataColumns = columns.filter((c) => c.key !== "detail" && c.key !== "date");
 
   const handleField = (r, field, raw) => {
     if (!onEditRow) return;
@@ -35,6 +28,21 @@ export function TransportTable({
     if (!onEditRow) return;
     onEditRow(carrierId, r, { date: raw });
   };
+  const renderCell = (col, r) => {
+    const edit = editable && col.edit ? col.edit(r) : null;
+    if (edit) {
+      return (
+        <input
+          type="number"
+          value={inputVal(edit.raw)}
+          onChange={(e) => handleField(r, edit.field, e.target.value)}
+          style={edit.bold ? { ...chargeInputStyle, fontWeight: 600 } : chargeInputStyle}
+          title={edit.title}
+        />
+      );
+    }
+    return cellText(col, col.value(r));
+  };
 
   return (
     <div style={{ marginBottom: 14 }}>
@@ -43,17 +51,14 @@ export function TransportTable({
           <tr style={{ background: "#fbe5d6" }}>
             <th style={cellH}>🚐 Transporte</th>
             <th style={cellH}>Fecha</th>
-            {showCol("qty") && <th style={{ ...cellH, textAlign: "right" }}>Vueltas</th>}
-            {showCol("rate") && <th style={{ ...cellH, textAlign: "right" }}>Valor</th>}
-            {showCol("total") && <th style={{ ...cellH, textAlign: "right" }}>Total</th>}
+            {dataColumns.map((col) => (
+              <th key={col.key} style={{ ...cellH, textAlign: "right" }}>{col.label}</th>
+            ))}
             {editable && <th style={{ ...cellH, width: 24 }}></th>}
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => {
-            const count = rowCount(r);
-            const rate = rowRate(r);
-            const total = rowTotal(r);
             const rowKey = r.rowKey || r.date || `r${Math.random()}`;
             return (
               <tr key={rowKey}>
@@ -74,46 +79,14 @@ export function TransportTable({
                       style={chargeDateInputStyle}
                     />
                   ) : (
-                    dateLabel(r.date)
+                    columns[1].value(r)
                   )}
                 </td>
-                {showCol("qty") && (
-                  <td style={{ ...cell, textAlign: "right", padding: editable ? 3 : "5px 8px" }}>
-                    {editable ? (
-                      <input
-                        type="number"
-                        value={inputVal(count)}
-                        onChange={(e) => handleField(r, "count", e.target.value)}
-                        style={chargeInputStyle}
-                      />
-                    ) : count}
+                {dataColumns.map((col) => (
+                  <td key={col.key} style={{ ...cell, textAlign: "right", padding: editable ? 3 : "5px 8px" }}>
+                    {renderCell(col, r)}
                   </td>
-                )}
-                {showCol("rate") && (
-                  <td style={{ ...cell, textAlign: "right", padding: editable ? 3 : "5px 8px" }}>
-                    {editable ? (
-                      <input
-                        type="number"
-                        value={inputVal(rate)}
-                        onChange={(e) => handleField(r, "rate", e.target.value)}
-                        style={chargeInputStyle}
-                      />
-                    ) : (rate > 0 ? fmtCurrency(rate) : "")}
-                  </td>
-                )}
-                {showCol("total") && (
-                  <td style={{ ...cell, textAlign: "right", padding: editable ? 3 : "5px 8px" }}>
-                    {editable ? (
-                      <input
-                        type="number"
-                        value={inputVal(total)}
-                        onChange={(e) => handleField(r, "amount", e.target.value)}
-                        style={{ ...chargeInputStyle, fontWeight: 600 }}
-                        title="Reemplaza el cálculo vueltas × valor. Bórralo para volver al cálculo automático."
-                      />
-                    ) : fmtCurrency(total)}
-                  </td>
-                )}
+                ))}
                 {editable && (
                   <td style={{ ...cell, textAlign: "center", padding: 2 }}>
                     {r.isExtra && (
@@ -133,10 +106,7 @@ export function TransportTable({
           })}
           {editable && onAddRow && (
             <tr>
-              <td
-                colSpan={2 + Number(showCol("qty")) + Number(showCol("rate")) + Number(showCol("total")) + 1}
-                style={{ ...cell, padding: 4, textAlign: "left", background: "#f9fafb" }}
-              >
+              <td colSpan={columns.length + 1} style={{ ...cell, padding: 4, textAlign: "left", background: "#f9fafb" }}>
                 <button
                   type="button"
                   onClick={() => onAddRow(carrierId)}
@@ -149,14 +119,14 @@ export function TransportTable({
           )}
           <tr style={{ background: "#c6efce" }}>
             <td style={{ ...cell, fontWeight: 700 }} colSpan={2}>Subtotal {displayName}</td>
-            {showCol("qty") && (
-              <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{totalCount}</td>
-            )}
-            {showCol("rate") && <td style={cell}></td>}
-            {showCol("total") && (
-              <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                {fmtCurrency(totalAmount)}
-              </td>
+            {dataColumns.map((col) =>
+              col.key === "rate"
+                ? <td key={col.key} style={cell}></td>
+                : (
+                  <td key={col.key} style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                    {cellText(col, col.total(totals))}
+                  </td>
+                ),
             )}
             {editable && <td style={cell}></td>}
           </tr>
