@@ -1,5 +1,10 @@
-import { describe, it, expect } from "vitest";
-import {
+import { describe, it, expect, vi } from "vitest";
+
+// `dashboard` toma `pendingCashOf` de `payrollsService`, que arrastra
+// `../firebase`. La función es pura; el mock evita levantar Firebase.
+vi.mock("../firebase", () => ({ db: {}, auth: { currentUser: null } }));
+
+const {
   commitmentsWeekOf,
   cycleMargins,
   dteMonthlyTotals,
@@ -13,7 +18,7 @@ import {
   transportDebtByMonth,
   transportStats,
   tsToIso,
-} from "./dashboard";
+} = await import("./dashboard");
 
 // 21 de octubre de 2026, hora local.
 const NOW = new Date(2026, 9, 21, 12);
