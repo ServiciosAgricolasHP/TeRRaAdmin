@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { buildWorkdaysByGroup, computeLaborSummary } from "../printCommon";
-import { summaryDisplayRowsOf } from "../../../utils/payrollDetail";
+import { summaryDisplayRowsOf, summaryLabelColumnsOf } from "../../../utils/payrollDetail";
 import { printSummaryTable } from "../printSummaryTable";
 import { captureFullWidthBlob } from "../../../utils/imageCapture";
 import { writePayrollSummaryXlsx } from "./writePayrollSummaryXlsx";
@@ -93,7 +93,11 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
     total: ownAdjusted.total - deferredCash + addedPending,
   };
 
-  const summaryDisplayRows = useMemo(() => summaryDisplayRowsOf(activeSummary, summaryShowLabor), [activeSummary, summaryShowLabor]);
+  const labelColumns = summaryLabelColumnsOf({ showLabor: summaryShowLabor });
+  const summaryDisplayRows = useMemo(
+    () => summaryDisplayRowsOf(activeSummary, { showLabor: summaryShowLabor, periodOf: cyclesPeriod }),
+    [activeSummary, summaryShowLabor, cyclesPeriod],
+  );
 
   const summaryCaptureRef = useRef(null);
   const [summaryBusy, setSummaryBusy] = useState("");
@@ -102,8 +106,8 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
     try {
       printSummaryTable(payroll, {
         showLabor: summaryShowLabor,
-        subfaenaSummary,
-        laborSummary: laborSummaryData,
+        labelColumns,
+        displayRows: summaryDisplayRows,
         bonusAdvanceSummary,
         pendingRows: pendingSummaryRows,
         pendingMode,
@@ -132,7 +136,7 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
     if (!activeSummary) return;
     setSummaryBusy("xlsx");
     try {
-      await writePayrollSummaryXlsx({ bonusAdvanceSummary, cyclesPeriod, deferredCash, grandTotals, payroll, pendingMode, pendingSummaryRows, summaryDisplayRows, summaryShowLabor });
+      await writePayrollSummaryXlsx({ bonusAdvanceSummary, deferredCash, grandTotals, labelColumns, payroll, pendingMode, pendingSummaryRows, summaryDisplayRows, summaryShowLabor });
     } catch (err) {
       toast.error("Error al generar Excel: " + (err.message || err));
     } finally {
@@ -146,6 +150,7 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
     handleCopySummaryImage,
     handleDownloadSummaryXlsx,
     handlePrintSummary,
+    labelColumns,
     laborSummaryLoading,
     pendingMode,
     pendingSummaryRows,

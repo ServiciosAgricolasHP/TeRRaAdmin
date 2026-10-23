@@ -12,6 +12,7 @@ import {
   computeBonusAdvanceSummary,
 } from "./printCommon";
 import { fmtCurrency } from "../../utils/format";
+import { summaryDisplayRowsOf, summaryLabelColumnsOf } from "../../utils/payrollDetail";
 
 function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
   const cycleDetails = payroll.cycleDetails || [];
@@ -470,39 +471,36 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
     return a || b || "—";
   };
 
-  // Resumen por subfaena (primera hoja del detalle imprimible). Filas:
-  // subfaena, con la faena solo en la primera fila del bloque y un subtotal
-  // por faena; columnas: Período, Transferencia, Efectivo y TOTAL. Solo en
-  // modo "detail".
+  // Las filas y los encabezados de "Resumen por subfaena" y "Resumen por
+  // labor": los mismos de la tabla del resumen en pantalla
+  // (`summaryDisplayRowsOf`), con su subtotal por faena.
+  const summaryHeadHtml = (showLabor) => summaryLabelColumnsOf({ showLabor })
+    .map((c) => (c.key === "period" ? `<th style="width:130px">${c.label}</th>` : `<th>${c.label}</th>`))
+    .join("\n                ");
+  const summaryRowsHtml = (summary, showLabor) => {
+    const columns = summaryLabelColumnsOf({ showLabor });
+    return summaryDisplayRowsOf(summary, { showLabor, periodOf: cyclesPeriod }).map((entry) => (entry.subtotal
+      ? `
+            <tr class="subtotal-faena">
+              <td colspan="${columns.length}" style="text-align:right"><b>Sub total por faena</b></td>
+              <td style="text-align:right"><b>${fmtCurrency(entry.subtotal.bank)}</b></td>
+              <td style="text-align:right"><b>${fmtCurrency(entry.subtotal.cash)}</b></td>
+              <td style="text-align:right"><b>${fmtCurrency(entry.subtotal.total)}</b></td>
+            </tr>`
+      : `
+            <tr>${entry.labels.map((t, k) => `
+              <td${columns[k].key === "period" ? ' style="font-size:11px;color:#444"' : ""}>${t}</td>`).join("")}
+              <td style="text-align:right">${fmtCurrency(entry.row.bank)}</td>
+              <td style="text-align:right">${fmtCurrency(entry.row.cash)}</td>
+              <td style="text-align:right"><b>${fmtCurrency(entry.row.total)}</b></td>
+            </tr>`)).join("");
+  };
+
+  // Resumen por subfaena (primera hoja del detalle imprimible). Solo en modo
+  // "detail".
   const subfaenaSummaryHtml = (isDetail && subfaenaSummary && subfaenaSummary.rows.length > 0)
     ? (() => {
-        let prevFaena = null;
-        const rowsHtml = subfaenaSummary.rows.map((r, i, arr) => {
-          const showFaena = r.faenaName !== prevFaena;
-          prevFaena = r.faenaName;
-          const row = `
-            <tr>
-              <td>${showFaena ? r.faenaName : ""}</td>
-              <td>${r.subfaenaName}</td>
-              <td style="font-size:11px;color:#444">${cyclesPeriod(r.cycleIds)}</td>
-              <td style="text-align:right">${fmtCurrency(r.bank)}</td>
-              <td style="text-align:right">${fmtCurrency(r.cash)}</td>
-              <td style="text-align:right"><b>${fmtCurrency(r.total)}</b></td>
-            </tr>`;
-          const isLastOfFaena = i === arr.length - 1 || arr[i + 1].faenaName !== r.faenaName;
-          if (!isLastOfFaena) return row;
-          const faenaRows = arr.filter((x) => x.faenaName === r.faenaName);
-          const subBank = faenaRows.reduce((s, x) => s + x.bank, 0);
-          const subCash = faenaRows.reduce((s, x) => s + x.cash, 0);
-          const subTotal = faenaRows.reduce((s, x) => s + x.total, 0);
-          return `${row}
-            <tr class="subtotal-faena">
-              <td colspan="3" style="text-align:right"><b>Sub total por faena</b></td>
-              <td style="text-align:right"><b>${fmtCurrency(subBank)}</b></td>
-              <td style="text-align:right"><b>${fmtCurrency(subCash)}</b></td>
-              <td style="text-align:right"><b>${fmtCurrency(subTotal)}</b></td>
-            </tr>`;
-        }).join("");
+        const rowsHtml = summaryRowsHtml(subfaenaSummary, false);
         return `<section class="receipt summary-page">
           <div class="hd">
             <div>
@@ -514,9 +512,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
           <table class="subfaena-summary">
             <thead>
               <tr>
-                <th>Faena</th>
-                <th>Subfaena</th>
-                <th style="width:130px">Período</th>
+                ${summaryHeadHtml(false)}
                 <th style="text-align:right">Transferencia</th>
                 <th style="text-align:right">Efectivo</th>
                 <th style="text-align:right">TOTAL</th>
@@ -542,34 +538,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
   // "detail".
   const laborSummaryHtml = (isDetail && laborSummary && laborSummary.rows.length > 0)
     ? (() => {
-        let prevSubfaena = null;
-        const rowsHtml = laborSummary.rows.map((r, i, arr) => {
-          const showSubfaena = r.subfaenaName !== prevSubfaena;
-          prevSubfaena = r.subfaenaName;
-          const row = `
-            <tr>
-              <td>${showSubfaena ? r.faenaName : ""}</td>
-              <td>${showSubfaena ? r.subfaenaName : ""}</td>
-              <td>${r.laborName}</td>
-              <td style="font-size:11px;color:#444">${cyclesPeriod(r.cycleIds)}</td>
-              <td style="text-align:right">${fmtCurrency(r.bank)}</td>
-              <td style="text-align:right">${fmtCurrency(r.cash)}</td>
-              <td style="text-align:right"><b>${fmtCurrency(r.total)}</b></td>
-            </tr>`;
-          const isLastOfFaena = i === arr.length - 1 || arr[i + 1].faenaName !== r.faenaName;
-          if (!isLastOfFaena) return row;
-          const faenaRows = arr.filter((x) => x.faenaName === r.faenaName);
-          const subBank = faenaRows.reduce((s, x) => s + x.bank, 0);
-          const subCash = faenaRows.reduce((s, x) => s + x.cash, 0);
-          const subTotal = faenaRows.reduce((s, x) => s + x.total, 0);
-          return `${row}
-            <tr class="subtotal-faena">
-              <td colspan="4" style="text-align:right"><b>Sub total por faena</b></td>
-              <td style="text-align:right"><b>${fmtCurrency(subBank)}</b></td>
-              <td style="text-align:right"><b>${fmtCurrency(subCash)}</b></td>
-              <td style="text-align:right"><b>${fmtCurrency(subTotal)}</b></td>
-            </tr>`;
-        }).join("");
+        const rowsHtml = summaryRowsHtml(laborSummary, true);
         return `<section class="receipt summary-page">
           <div class="hd">
             <div>
@@ -581,10 +550,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
           <table class="subfaena-summary">
             <thead>
               <tr>
-                <th>Faena</th>
-                <th>Subfaena</th>
-                <th>Labor</th>
-                <th style="width:130px">Período</th>
+                ${summaryHeadHtml(true)}
                 <th style="text-align:right">Transferencia</th>
                 <th style="text-align:right">Efectivo</th>
                 <th style="text-align:right">TOTAL</th>

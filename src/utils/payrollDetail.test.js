@@ -6,6 +6,7 @@ import {
   subfaenaSummaryOf,
   cyclesPeriodOf,
   summaryDisplayRowsOf,
+  summaryLabelColumnsOf,
   removalSummaryOf,
 } from "./payrollDetail";
 import { groupCashByLeader } from "./payroll";
@@ -129,25 +130,32 @@ describe("cyclesPeriodOf", () => {
 
 describe("summaryDisplayRowsOf", () => {
   const rows = [
-    { faenaName: "Fundo A", subfaenaName: "S1", bank: 10, cash: 5, total: 15 },
-    { faenaName: "Fundo A", subfaenaName: "S1", bank: 1, cash: 0, total: 1 },
-    { faenaName: "Fundo B", subfaenaName: "S3", bank: 0, cash: 4, total: 4 },
+    { faenaName: "Fundo A", subfaenaName: "S1", laborName: "Poda", cycleIds: new Set(["C1"]), bank: 10, cash: 5, total: 15 },
+    { faenaName: "Fundo A", subfaenaName: "S1", laborName: "Raleo", cycleIds: new Set(["C1"]), bank: 1, cash: 0, total: 1 },
+    { faenaName: "Fundo B", subfaenaName: "S3", laborName: "Poda", cycleIds: new Set(["C3"]), bank: 0, cash: 4, total: 4 },
   ];
+  const periodOf = (ids) => [...ids].join("+");
 
   it("pone el nombre al empezar cada faena y un subtotal al cerrarla", () => {
-    expect(summaryDisplayRowsOf({ rows }, false)).toEqual([
-      { row: rows[0], showLabel: true },
-      { row: rows[1], showLabel: false },
+    expect(summaryLabelColumnsOf({ showLabor: false }).map((c) => c.label)).toEqual(["Faena", "Subfaena", "Período"]);
+    expect(summaryDisplayRowsOf({ rows }, { showLabor: false, periodOf })).toEqual([
+      { row: rows[0], labels: ["Fundo A", "S1", "C1"] },
+      { row: rows[1], labels: ["", "S1", "C1"] },
       { subtotal: { bank: 11, cash: 5, total: 16 } },
-      { row: rows[2], showLabel: true },
+      { row: rows[2], labels: ["Fundo B", "S3", "C3"] },
       { subtotal: { bank: 0, cash: 4, total: 4 } },
     ]);
   });
 
-  it("con labores, el nombre va al cambiar de subfaena", () => {
+  it("con labores, faena y subfaena van al cambiar de subfaena", () => {
     const withLabor = [rows[0], { ...rows[1], subfaenaName: "S2" }];
-    expect(summaryDisplayRowsOf({ rows: withLabor }, true).map((e) => e.showLabel)).toEqual([true, true, undefined]);
-    expect(summaryDisplayRowsOf(null, false)).toEqual([]);
+    expect(summaryLabelColumnsOf({ showLabor: true }).map((c) => c.label)).toEqual(["Faena", "Subfaena", "Labor", "Período"]);
+    expect(summaryDisplayRowsOf({ rows: withLabor }, { showLabor: true, periodOf }).map((e) => e.labels)).toEqual([
+      ["Fundo A", "S1", "Poda", "C1"],
+      ["Fundo A", "S2", "Raleo", "C1"],
+      undefined,
+    ]);
+    expect(summaryDisplayRowsOf(null, { showLabor: false, periodOf })).toEqual([]);
   });
 });
 

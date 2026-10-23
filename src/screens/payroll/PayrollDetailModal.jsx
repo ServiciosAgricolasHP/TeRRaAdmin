@@ -433,7 +433,6 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
                 {subfaenaSummary.rows.length > 0 && (
                   <SummaryTable
                     bonusAdvanceSummary={bonusAdvanceSummary}
-                    cyclesPeriod={cyclesPeriod}
                     payroll={payroll}
                     table={table}
                   />

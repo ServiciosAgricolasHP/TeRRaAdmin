@@ -150,16 +150,36 @@ export function cyclesPeriodOf(cycleDetails, cycleIdsIn) {
   return a || b || "—";
 }
 
-// Aplana filas y subtotales por faena en una sola lista, así el JSX hace un
-// .map() sin mirar la fila siguiente.
-export function summaryDisplayRowsOf(activeSummary, summaryShowLabor) {
+// Las columnas de texto de la tabla del resumen, antes de Transferencia,
+// Efectivo y TOTAL: por subfaena o, con labores, también por labor.
+export function summaryLabelColumnsOf({ showLabor }) {
+  return [
+    { key: "faena", label: "Faena" },
+    { key: "subfaena", label: "Subfaena" },
+    ...(showLabor ? [{ key: "labor", label: "Labor" }] : []),
+    { key: "period", label: "Período" },
+  ];
+}
+
+// Aplana filas y subtotales por faena en una sola lista, con el texto de cada
+// columna de `summaryLabelColumnsOf` en `labels`: la pantalla, el Excel y las
+// impresiones arman con esto la misma tabla. La faena va al empezar cada
+// faena (con labores, al empezar cada subfaena, junto con la subfaena).
+// `periodOf(cycleIds)` da el período de una fila.
+export function summaryDisplayRowsOf(activeSummary, { showLabor, periodOf }) {
   if (!activeSummary) return [];
   const rows = activeSummary.rows;
   const out = [];
   rows.forEach((r, i, arr) => {
     const prev = arr[i - 1];
-    const showLabel = summaryShowLabor ? r.subfaenaName !== prev?.subfaenaName : r.faenaName !== prev?.faenaName;
-    out.push({ row: r, showLabel });
+    const period = periodOf(r.cycleIds);
+    if (showLabor) {
+      const first = r.subfaenaName !== prev?.subfaenaName;
+      out.push({ row: r, labels: [first ? r.faenaName : "", first ? r.subfaenaName : "", r.laborName, period] });
+    } else {
+      const first = r.faenaName !== prev?.faenaName;
+      out.push({ row: r, labels: [first ? r.faenaName : "", r.subfaenaName, period] });
+    }
     const isLastOfFaena = i === arr.length - 1 || arr[i + 1].faenaName !== r.faenaName;
     if (isLastOfFaena) {
       const faenaRows = arr.filter((x) => x.faenaName === r.faenaName);

@@ -1,11 +1,12 @@
 import { fmtCurrency } from "../../utils/format";
 // Ventana de impresión de la tabla resumen del detalle de la nómina.
 // Imprime solo la tabla de resumen, por subfaena o por labor según el toggle
-// del Resumen en pantalla: las mismas tablas del "Detalle de pago", sin los
-// comprobantes de cada grupo. Los totales (`grandTotals`, `deferredCash`) son
-// los mismos de la tabla en pantalla.
+// del Resumen en pantalla, con las mismas filas (`displayRows`, de
+// `summaryDisplayRowsOf`) y columnas (`labelColumns`), sin los comprobantes
+// de cada grupo. Los totales (`grandTotals`, `deferredCash`) son los mismos de
+// la tabla en pantalla.
 export function printSummaryTable(payroll, {
-  showLabor, subfaenaSummary, laborSummary, bonusAdvanceSummary,
+  showLabor, labelColumns, displayRows, bonusAdvanceSummary,
   pendingRows = [], pendingMode = "none", grandTotals, deferredCash = 0,
 }) {
   const fmtDayShort = (d) => {
@@ -14,19 +15,6 @@ export function printSummaryTable(payroll, {
     return m ? `${m[3]}/${m[2]}` : d;
   };
   const cycleDetails = payroll.cycleDetails || [];
-  const cyclesPeriod = (cycleIds) => {
-    let minFirst = null, maxLast = null;
-    for (const cid of cycleIds) {
-      const cd = cycleDetails.find((c) => c.id === cid);
-      const first = cd?.firstDay || "";
-      const last = cd?.lastDay || "";
-      if (first && (!minFirst || first < minFirst)) minFirst = first;
-      if (last && (!maxLast || last > maxLast)) maxLast = last;
-    }
-    const a = fmtDayShort(minFirst), b = fmtDayShort(maxLast);
-    if (a && b && a !== b) return `${a} → ${b}`;
-    return a || b || "—";
-  };
   const buildAdjustmentRowsHtml = (labelColspan) => {
     const rows = [];
     if (bonusAdvanceSummary?.bonus.total > 0) {
@@ -38,8 +26,7 @@ export function printSummaryTable(payroll, {
     return rows.join("");
   };
   // Filas del efectivo adeudado de nóminas anteriores. `nameColspan` = cuántas
-  // columnas ocupa el nombre (2 en la vista por labor, que tiene una columna
-  // más antes del período).
+  // columnas ocupa el nombre: las de texto, menos la faena y el período.
   const pendingRowsHtml = (nameColspan) => (pendingMode === "none" ? "" : pendingRows.map((r) => `
     <tr class="pending-row">
       <td>—</td>
@@ -62,50 +49,24 @@ export function printSummaryTable(payroll, {
   const today = new Date().toLocaleDateString("es-CL");
   const cyclesLine = cycleDetails.map((c) => c.label).join(" · ");
 
-  let bodyHtml;
-  if (!showLabor) {
-    let prevFaena = null;
-    const rowsHtml = subfaenaSummary.rows.map((r, i, arr) => {
-      const showFaena = r.faenaName !== prevFaena;
-      prevFaena = r.faenaName;
-      const row = `<tr><td>${showFaena ? r.faenaName : ""}</td><td>${r.subfaenaName}</td><td style="font-size:11px;color:#444">${cyclesPeriod([...r.cycleIds])}</td><td style="text-align:right">${fmtCurrency(r.bank)}</td><td style="text-align:right">${fmtCurrency(r.cash)}</td><td style="text-align:right"><b>${fmtCurrency(r.total)}</b></td></tr>`;
-      const isLastOfFaena = i === arr.length - 1 || arr[i + 1].faenaName !== r.faenaName;
-      if (!isLastOfFaena) return row;
-      const faenaRows = arr.filter((x) => x.faenaName === r.faenaName);
-      const subBank = faenaRows.reduce((s, x) => s + x.bank, 0);
-      const subCash = faenaRows.reduce((s, x) => s + x.cash, 0);
-      const subTotal = faenaRows.reduce((s, x) => s + x.total, 0);
-      return `${row}<tr class="subtotal-faena"><td colspan="3" style="text-align:right"><b>Sub total por faena</b></td><td style="text-align:right"><b>${fmtCurrency(subBank)}</b></td><td style="text-align:right"><b>${fmtCurrency(subCash)}</b></td><td style="text-align:right"><b>${fmtCurrency(subTotal)}</b></td></tr>`;
-    }).join("");
-    bodyHtml = `<table class="subfaena-summary">
-      <thead><tr><th>Faena</th><th>Subfaena</th><th style="width:130px">Período</th><th style="text-align:right">Transferencia</th><th style="text-align:right">Efectivo</th><th style="text-align:right">TOTAL</th></tr></thead>
-      <tbody>${rowsHtml}${pendingRowsHtml(1)}</tbody>
+  const labelSpan = labelColumns.length;
+  const headHtml = labelColumns.map((c) => (c.key === "period" ? `<th style="width:130px">${c.label}</th>` : `<th>${c.label}</th>`)).join("");
+  const rowsHtml = displayRows.map((entry) => {
+    if (entry.subtotal) {
+      const s = entry.subtotal;
+      return `<tr class="subtotal-faena"><td colspan="${labelSpan}" style="text-align:right"><b>Sub total por faena</b></td><td style="text-align:right"><b>${fmtCurrency(s.bank)}</b></td><td style="text-align:right"><b>${fmtCurrency(s.cash)}</b></td><td style="text-align:right"><b>${fmtCurrency(s.total)}</b></td></tr>`;
+    }
+    const r = entry.row;
+    const labelsHtml = entry.labels.map((t, k) => (labelColumns[k].key === "period" ? `<td style="font-size:11px;color:#444">${t}</td>` : `<td>${t}</td>`)).join("");
+    return `<tr>${labelsHtml}<td style="text-align:right">${fmtCurrency(r.bank)}</td><td style="text-align:right">${fmtCurrency(r.cash)}</td><td style="text-align:right"><b>${fmtCurrency(r.total)}</b></td></tr>`;
+  }).join("");
+  const bodyHtml = `<table class="subfaena-summary">
+      <thead><tr>${headHtml}<th style="text-align:right">Transferencia</th><th style="text-align:right">Efectivo</th><th style="text-align:right">TOTAL</th></tr></thead>
+      <tbody>${rowsHtml}${pendingRowsHtml(labelSpan - 2)}</tbody>
       <tfoot>
-        ${footerHtml(3)}
+        ${footerHtml(labelSpan)}
       </tfoot>
     </table>`;
-  } else {
-    let prevSubfaena = null;
-    const rowsHtml = laborSummary.rows.map((r, i, arr) => {
-      const showSubfaena = r.subfaenaName !== prevSubfaena;
-      prevSubfaena = r.subfaenaName;
-      const row = `<tr><td>${showSubfaena ? r.faenaName : ""}</td><td>${showSubfaena ? r.subfaenaName : ""}</td><td>${r.laborName}</td><td style="font-size:11px;color:#444">${cyclesPeriod([...r.cycleIds])}</td><td style="text-align:right">${fmtCurrency(r.bank)}</td><td style="text-align:right">${fmtCurrency(r.cash)}</td><td style="text-align:right"><b>${fmtCurrency(r.total)}</b></td></tr>`;
-      const isLastOfFaena = i === arr.length - 1 || arr[i + 1].faenaName !== r.faenaName;
-      if (!isLastOfFaena) return row;
-      const faenaRows = arr.filter((x) => x.faenaName === r.faenaName);
-      const subBank = faenaRows.reduce((s, x) => s + x.bank, 0);
-      const subCash = faenaRows.reduce((s, x) => s + x.cash, 0);
-      const subTotal = faenaRows.reduce((s, x) => s + x.total, 0);
-      return `${row}<tr class="subtotal-faena"><td colspan="4" style="text-align:right"><b>Sub total por faena</b></td><td style="text-align:right"><b>${fmtCurrency(subBank)}</b></td><td style="text-align:right"><b>${fmtCurrency(subCash)}</b></td><td style="text-align:right"><b>${fmtCurrency(subTotal)}</b></td></tr>`;
-    }).join("");
-    bodyHtml = `<table class="subfaena-summary">
-      <thead><tr><th>Faena</th><th>Subfaena</th><th>Labor</th><th style="width:130px">Período</th><th style="text-align:right">Transferencia</th><th style="text-align:right">Efectivo</th><th style="text-align:right">TOTAL</th></tr></thead>
-      <tbody>${rowsHtml}${pendingRowsHtml(2)}</tbody>
-      <tfoot>
-        ${footerHtml(4)}
-      </tfoot>
-    </table>`;
-  }
 
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${payroll.name} — Resumen</title>
 <style>
