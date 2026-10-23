@@ -15,7 +15,8 @@ const TABS = [
 
 export default function Transports() {
   const [tab, setTab] = useState("carriers");
-  // Transportista al que salta "Vueltas" desde una tarjeta de "Transportistas".
+  // Transportista al que salta "Vueltas" desde el botón 🚚 Vueltas de una
+  // tarjeta de "Transportistas".
   // TripsTab lo lee una sola vez al montar (`initialCarrierId`); un click en
   // cualquier pestaña del nav lo limpia.
   const [tripsCarrierPreset, setTripsCarrierPreset] = useState(null);

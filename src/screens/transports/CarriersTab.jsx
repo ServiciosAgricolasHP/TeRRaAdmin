@@ -4,6 +4,7 @@ import { paymentsService, tripsService } from "../../services/transportsService"
 import { useToast } from "../../contexts/ToastContext";
 import { fmtCurrency } from "../../utils/format";
 import { CarrierEditModal } from "./CarrierEditModal";
+import { CarrierSummaryModal } from "./CarrierSummaryModal";
 
 // ============================================================
 // PESTAÑA TRANSPORTISTAS
@@ -13,6 +14,7 @@ export function CarriersTab({ onViewTrips }) {
   const toast = useToast();
   const { carriers, addCarrier, updateCarrier, softDeleteCarrier, restoreCarrier } = useCarriers();
   const [edit, setEdit] = useState(null); // null | "new" | carrier
+  const [summaryCarrier, setSummaryCarrier] = useState(null);
   const [showInactive, setShowInactive] = useState(false);
   // Filtro por tipo (all/own/contracted) y orden de la grilla.
   const [typeFilter, setTypeFilter] = useState("all");
@@ -195,17 +197,17 @@ export function CarriersTab({ onViewTrips }) {
                 key={c.id}
                 role="button"
                 tabIndex={0}
-                onClick={() => onViewTrips(c)}
+                onClick={() => setSummaryCarrier(c)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
-                    onViewTrips(c);
+                    setSummaryCarrier(c);
                   }
                 }}
                 className={`group relative cursor-pointer overflow-hidden rounded-lg border bg-[var(--color-surface)] shadow-sm transition-all hover:shadow-md ${
                   isInactive ? "border-[var(--color-border)] opacity-60" : "border-[var(--color-border)] hover:border-[var(--color-accent)]"
                 }`}
-                title="Ver vueltas del transportista"
+                title="Ver el resumen del transportista"
                 style={{ borderTop: `3px solid ${isInactive ? "var(--color-border)" : bandColor}` }}
               >
                 <div className="p-3">
@@ -271,9 +273,16 @@ export function CarriersTab({ onViewTrips }) {
                   onClick={(e) => e.stopPropagation()}
                 >
                   <span className="text-[10px] text-[var(--color-muted)] opacity-0 transition-opacity group-hover:opacity-100">
-                    Click para ver vueltas →
+                    Click para ver el resumen →
                   </span>
                   <div className="flex gap-1">
+                    <button
+                      onClick={() => onViewTrips(c)}
+                      className="rounded px-1.5 py-0.5 text-[11px] text-[var(--color-accent)] hover:bg-[var(--color-accent-soft)]"
+                      title="Ver sus vueltas en la pestaña Vueltas"
+                    >
+                      🚚 Vueltas
+                    </button>
                     <button
                       onClick={() => setEdit(c)}
                       className="rounded px-1.5 py-0.5 text-[11px] text-[var(--color-accent)] hover:bg-[var(--color-accent-soft)]"
@@ -304,6 +313,7 @@ export function CarriersTab({ onViewTrips }) {
       )}
 
       <CarrierEditModal open={!!edit} carrier={edit === "new" ? null : edit} onClose={() => setEdit(null)} onSave={handleSave} />
+      {summaryCarrier && <CarrierSummaryModal carrier={summaryCarrier} onClose={() => setSummaryCarrier(null)} />}
     </div>
   );
 }

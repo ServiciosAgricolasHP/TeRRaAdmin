@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { captureFullWidthBlob, captureFullWidthDataUrl } from "../../utils/imageCapture";
 import { useToast } from "../../contexts/ToastContext";
 import { fmtCurrency } from "../../utils/format";
-import { CarrierSummariesModal } from "./CarrierSummariesModal";
+import { CarrierSummaryModal } from "./CarrierSummaryModal";
 import { cellH, cell } from "./printStyles";
 import { paymentSplit, compareFortnightPeriod, compactDate } from "./fortnights";
 
@@ -420,7 +420,7 @@ export function FortnightBalanceSummary({ carriers, fortnights, payments }) {
                         <button
                           type="button"
                           onClick={() => setDetalle(r)}
-                          title={`Ver todos los resúmenes de ${r.alias}`}
+                          title={`Ver el resumen de ${r.alias}`}
                           style={{
                             background: "none",
                             border: "none",
@@ -535,13 +535,12 @@ export function FortnightBalanceSummary({ carriers, fortnights, payments }) {
         </div>
       )}
 
-      <CarrierSummariesModal
-        open={!!detalle}
-        onClose={() => setDetalle(null)}
-        row={detalle}
-        payments={payments}
-        fortnights={fortnights}
-      />
+      {detalle && (
+        <CarrierSummaryModal
+          carrier={carriers.find((c) => c.id === detalle.carrierId) || { id: detalle.carrierId, alias: detalle.alias, name: detalle.name }}
+          onClose={() => setDetalle(null)}
+        />
+      )}
     </div>
   );
 }
