@@ -2,17 +2,9 @@ import { forwardRef } from "react";
 import { titleCase } from "../../services/transportsService";
 import { fmtCurrency } from "../../utils/format";
 import { cellH, cell } from "./printStyles";
-
-const MONTH_NAMES = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
+import { MONTH_NAMES, tripDateLabel, tripLaborLabel, tripObservation } from "./tripCells";
 
 const DAY_NAMES = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
-
-function dateLabel(dateStr) {
-  if (!dateStr) return "";
-  const d = new Date(dateStr + "T00:00:00");
-  if (isNaN(d.getTime())) return dateStr;
-  return `${String(d.getDate()).padStart(2, "0")}-${MONTH_NAMES[d.getMonth()].slice(0, 3).toLowerCase()}`;
-}
 
 function monthOfTrips(trips) {
   if (!trips.length) return "";
@@ -74,14 +66,11 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
         </thead>
         <tbody>
           {trips.map((t) => {
-            const fa = faenaById?.get(t.faenaId);
-            const sb = subfaenaById?.get(t.subfaenaId);
-            const cy = cycleById?.get(t.cycleId);
-            const labor = [fa?.name, sb?.name].filter(Boolean).join(" / ") || cy?.label || "—";
+            const labor = tripLaborLabel(t, { faenaById, subfaenaById, cycleById });
             const locked = isTripLocked ? isTripLocked(t) : false;
             return (
               <tr key={t.id}>
-                <td style={cell}>{dateLabel(t.date)}</td>
+                <td style={cell}>{tripDateLabel(t.date)}</td>
                 <td style={cell}>{t.vehicleAlias || "—"}</td>
                 <td style={{ ...cell, textAlign: "center" }}>{t.qty}</td>
                 <td style={cell}>{titleCase(t.lugar)}</td>
@@ -90,11 +79,7 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
                 <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: "5px 8px" }}>
                   {fmtCurrency(t.amount)}
                 </td>
-                <td style={cell}>
-                  {t.personCount != null ? `${t.personCount} PERS` : ""}
-                  {t.kind === "approach" ? (t.personCount != null ? " · " : "") + "acercamiento" : ""}
-                  {t.notes ? (t.personCount != null || t.kind === "approach" ? " · " : "") + t.notes : ""}
-                </td>
+                <td style={cell}>{tripObservation(t)}</td>
                 {showActions && (
                   <td style={{ ...cell, textAlign: "center", padding: 4 }}>
                     <div style={{ display: "flex", justifyContent: "center", gap: 4 }}>
@@ -151,7 +136,7 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
           {abonos.map((a, i) => (
             <tr key={a.id || i}>
               <td style={{ ...cell, color: "#166534" }} colSpan={labelSpan}>
-                Abono {dateLabel(a.date)}
+                Abono {tripDateLabel(a.date)}
               </td>
               <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#166534" }}>
                 − {fmtCurrency(a.amount)}
