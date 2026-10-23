@@ -1,14 +1,16 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { buildWorkdaysByGroup } from "../printCommon";
-import { computeLaborSummary, summaryDisplayRowsOf, summaryLabelColumnsOf } from "../../../utils/payrollDetail";
+import { computeLaborSummary, summaryDisplayRowsOf, summaryLabelColumnsOf, summaryTitleOf } from "../../../utils/payrollDetail";
 import { printSummaryTable } from "../printSummaryTable";
 import { captureFullWidthBlob } from "../../../utils/imageCapture";
 import { writePayrollSummaryXlsx } from "./writePayrollSummaryXlsx";
 
-// La tabla del resumen del detalle: por subfaena o por labor, con o sin el
-// efectivo pendiente de otras nóminas, sus totales y sus acciones de
-// imprimir, copiar y descargar.
-export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cyclesPeriod, getPayrollData, otherPendingCash, payroll, subfaenaSummary, toast }) {
+// La tabla del resumen del detalle: por subfaena o por labor, con los ciclos
+// de una subfaena juntos o separados (`cyclesApart`, que vive en el modal
+// porque también lo usa el detalle de pago impreso), con o sin el efectivo
+// pendiente de otras nóminas, sus totales y sus acciones de imprimir, copiar y
+// descargar.
+export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycleNameOf, cyclesApart, cyclesPeriod, getPayrollData, otherPendingCash, payroll, setCyclesApart, subfaenaSummary, toast }) {
   "use no memo";
   const adjustedTotals = (base) => ({
     bank: base.bank + (bonusAdvanceSummary.bonus.bank || 0) - (bonusAdvanceSummary.advance.bank || 0),
@@ -21,24 +23,28 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
   // vista "con labores" usa la misma lectura cara de ciclos y jornadas: se
   // carga al activar el toggle y queda en caché mientras el modal esté abierto.
   const [summaryShowLabor, setSummaryShowLabor] = useState(false);
-  // Atado a la nómina para la que se calculó, igual que `getPayrollData`: toda
-  // edición llega como un `payroll` nuevo y el resumen se vuelve a calcular.
-  const [laborSummary, setLaborSummary] = useState({ payroll: null, data: null });
-  const laborSummaryData = laborSummary.payroll === payroll ? laborSummary.data : null;
+  // Las jornadas por grupo, atadas a la nómina para la que se leyeron, igual
+  // que `getPayrollData`: toda edición llega como un `payroll` nuevo y se
+  // vuelven a leer. El resumen sale de ellas en cada render, así sigue a
+  // `cyclesApart` y a los nombres de los ciclos sin releer.
+  const [laborWorkdays, setLaborWorkdays] = useState({ payroll: null, data: null });
+  const workdaysByGroup = laborWorkdays.payroll === payroll ? laborWorkdays.data : null;
+  const laborSummaryData = summaryShowLabor && workdaysByGroup
+    ? computeLaborSummary(payroll, allGroups, workdaysByGroup, { byCycle: cyclesApart, cycleNameOf })
+    : null;
   const [laborSummaryLoading, setLaborSummaryLoading] = useState(false);
   useEffect(() => {
     // No mira `laborSummaryLoading`: si la nómina cambia a mitad de una carga,
     // el cleanup cancela la anterior (que ya no apaga el loading) y esta
     // arranca igual.
-    if (!summaryShowLabor || laborSummaryData) return;
+    if (!summaryShowLabor || workdaysByGroup) return;
     let cancelled = false;
     setLaborSummaryLoading(true);
     (async () => {
       try {
         const data = await getPayrollData();
         if (cancelled) return;
-        const workdaysByGroup = buildWorkdaysByGroup(allGroups, data, catalogs);
-        setLaborSummary({ payroll, data: computeLaborSummary(payroll, allGroups, workdaysByGroup) });
+        setLaborWorkdays({ payroll, data: buildWorkdaysByGroup(allGroups, data, catalogs) });
       } catch (err) {
         if (!cancelled) toast.error("No se pudo cargar el resumen por labor: " + (err?.message || err));
       } finally {
@@ -93,11 +99,15 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
     total: ownAdjusted.total - deferredCash + addedPending,
   };
 
-  const labelColumns = summaryLabelColumnsOf({ showLabor: summaryShowLabor });
+  const labelColumns = summaryLabelColumnsOf({ showLabor: summaryShowLabor, byCycle: cyclesApart });
+  const summaryTitle = summaryTitleOf({ showLabor: summaryShowLabor, byCycle: cyclesApart });
   const summaryDisplayRows = useMemo(
-    () => summaryDisplayRowsOf(activeSummary, { showLabor: summaryShowLabor, periodOf: cyclesPeriod }),
-    [activeSummary, summaryShowLabor, cyclesPeriod],
+    () => summaryDisplayRowsOf(activeSummary, { showLabor: summaryShowLabor, byCycle: cyclesApart, periodOf: cyclesPeriod }),
+    [activeSummary, summaryShowLabor, cyclesApart, cyclesPeriod],
   );
+  // El selector de juntos o separados se ofrece cuando alguna subfaena tiene
+  // más de un ciclo con monto.
+  const hasSeveralCycles = subfaenaSummary.rows.some((r) => r.cycleCount > 1);
 
   const summaryCaptureRef = useRef(null);
   const [summaryBusy, setSummaryBusy] = useState("");
@@ -105,7 +115,7 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
     if (!activeSummary) return;
     try {
       printSummaryTable(payroll, {
-        showLabor: summaryShowLabor,
+        title: summaryTitle,
         labelColumns,
         displayRows: summaryDisplayRows,
         bonusAdvanceSummary,
@@ -136,7 +146,7 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
     if (!activeSummary) return;
     setSummaryBusy("xlsx");
     try {
-      await writePayrollSummaryXlsx({ bonusAdvanceSummary, deferredCash, grandTotals, labelColumns, payroll, pendingMode, pendingSummaryRows, summaryDisplayRows, summaryShowLabor });
+      await writePayrollSummaryXlsx({ bonusAdvanceSummary, deferredCash, grandTotals, labelColumns, payroll, pendingMode, pendingSummaryRows, summaryDisplayRows, summaryTitle });
     } catch (err) {
       toast.error("Error al generar Excel: " + (err.message || err));
     } finally {
@@ -145,21 +155,25 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
   };
   return {
     activeSummary,
+    cyclesApart,
     deferredCash,
     grandTotals,
     handleCopySummaryImage,
     handleDownloadSummaryXlsx,
     handlePrintSummary,
+    hasSeveralCycles,
     labelColumns,
     laborSummaryLoading,
     pendingMode,
     pendingSummaryRows,
     summaryBusy,
     summaryCaptureRef,
+    setCyclesApart,
     setSummaryPending,
     setSummaryShowLabor,
     summaryDisplayRows,
     summaryPending,
     summaryShowLabor,
+    summaryTitle,
   };
 }

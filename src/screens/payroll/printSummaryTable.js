@@ -1,12 +1,13 @@
 import { fmtCurrency } from "../../utils/format";
+import { cyclesNoteHtml } from "./printCommon";
 // Ventana de impresión de la tabla resumen del detalle de la nómina.
-// Imprime solo la tabla de resumen, por subfaena o por labor según el toggle
-// del Resumen en pantalla, con las mismas filas (`displayRows`, de
+// Imprime solo la tabla de resumen, como esté en pantalla (por subfaena o por
+// labor, con los ciclos juntos o separados; `title` lo dice), con las mismas filas (`displayRows`, de
 // `summaryDisplayRowsOf`) y columnas (`labelColumns`), sin los comprobantes
 // de cada grupo. Los totales (`grandTotals`, `deferredCash`) son los mismos de
 // la tabla en pantalla.
 export function printSummaryTable(payroll, {
-  showLabor, labelColumns, displayRows, bonusAdvanceSummary,
+  title, labelColumns, displayRows, bonusAdvanceSummary,
   pendingRows = [], pendingMode = "none", grandTotals, deferredCash = 0,
 }) {
   const fmtDayShort = (d) => {
@@ -57,7 +58,11 @@ export function printSummaryTable(payroll, {
       return `<tr class="subtotal-faena"><td colspan="${labelSpan}" style="text-align:right"><b>Sub total por faena</b></td><td style="text-align:right"><b>${fmtCurrency(s.bank)}</b></td><td style="text-align:right"><b>${fmtCurrency(s.cash)}</b></td><td style="text-align:right"><b>${fmtCurrency(s.total)}</b></td></tr>`;
     }
     const r = entry.row;
-    const labelsHtml = entry.labels.map((t, k) => (labelColumns[k].key === "period" ? `<td style="font-size:11px;color:#444">${t}</td>` : `<td>${t}</td>`)).join("");
+    const labelsHtml = entry.labels.map((t, k) => {
+      if (labelColumns[k].key === "period") return `<td style="font-size:11px;color:#444">${t}</td>`;
+      const note = entry.notes?.[labelColumns[k].key];
+      return `<td>${t}${note ? cyclesNoteHtml(note, entry.noteTitle) : ""}</td>`;
+    }).join("");
     return `<tr>${labelsHtml}<td style="text-align:right">${fmtCurrency(r.bank)}</td><td style="text-align:right">${fmtCurrency(r.cash)}</td><td style="text-align:right"><b>${fmtCurrency(r.total)}</b></td></tr>`;
   }).join("");
   const bodyHtml = `<table class="subfaena-summary">
@@ -88,7 +93,7 @@ export function printSummaryTable(payroll, {
 </head><body>
   <div class="hd">
     <div>
-      <h1>Resumen ${showLabor ? "por labor" : "por subfaena"}</h1>
+      <h1>Resumen ${title}</h1>
       <div class="sub">${payroll.name} · ${cyclesLine}</div>
     </div>
     <div class="meta"><div><b>Fecha:</b> ${today}</div></div>

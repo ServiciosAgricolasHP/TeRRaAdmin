@@ -9,9 +9,10 @@ import {
   fetchPayrollWorkdays,
   buildWorkdaysByGroup,
   computeBonusAdvanceSummary,
+  cyclesNoteHtml,
 } from "./printCommon";
 import { fmtCurrency } from "../../utils/format";
-import { computeLaborSummary, summaryDisplayRowsOf, summaryLabelColumnsOf } from "../../utils/payrollDetail";
+import { computeLaborSummary, summaryCycleName, summaryDisplayRowsOf, summaryLabelColumnsOf, summaryTitleOf } from "../../utils/payrollDetail";
 
 function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
   const cycleDetails = payroll.cycleDetails || [];
@@ -26,6 +27,9 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
   const summaries = options.summaries || [];
   const subfaenaSummary = options.subfaenaSummary || null;
   const laborSummary = options.laborSummary || null;
+  // Los ciclos de una subfaena, juntos o separados en los resúmenes, como en
+  // la tabla del resumen en pantalla.
+  const cyclesApart = !!options.cyclesApart;
   const bonusAdvanceSummary = options.bonusAdvanceSummary || null;
   // Filas de ajuste (Bonos / Anticipos), comunes a "Resumen por subfaena" y
   // "Resumen por labor"; el total cuadrado sale de `adjustedTotals`.
@@ -473,12 +477,16 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
   // Las filas y los encabezados de "Resumen por subfaena" y "Resumen por
   // labor": los mismos de la tabla del resumen en pantalla
   // (`summaryDisplayRowsOf`), con su subtotal por faena.
-  const summaryHeadHtml = (showLabor) => summaryLabelColumnsOf({ showLabor })
+  const summaryHeadHtml = (showLabor) => summaryLabelColumnsOf({ showLabor, byCycle: cyclesApart })
     .map((c) => (c.key === "period" ? `<th style="width:130px">${c.label}</th>` : `<th>${c.label}</th>`))
     .join("\n                ");
   const summaryRowsHtml = (summary, showLabor) => {
-    const columns = summaryLabelColumnsOf({ showLabor });
-    return summaryDisplayRowsOf(summary, { showLabor, periodOf: cyclesPeriod }).map((entry) => (entry.subtotal
+    const columns = summaryLabelColumnsOf({ showLabor, byCycle: cyclesApart });
+    const cellHtml = (entry, t, k) => {
+      const note = entry.notes?.[columns[k].key];
+      return `${t}${note ? cyclesNoteHtml(note, entry.noteTitle) : ""}`;
+    };
+    return summaryDisplayRowsOf(summary, { showLabor, byCycle: cyclesApart, periodOf: cyclesPeriod }).map((entry) => (entry.subtotal
       ? `
             <tr class="subtotal-faena">
               <td colspan="${columns.length}" style="text-align:right"><b>Sub total por faena</b></td>
@@ -488,7 +496,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
             </tr>`
       : `
             <tr>${entry.labels.map((t, k) => `
-              <td${columns[k].key === "period" ? ' style="font-size:11px;color:#444"' : ""}>${t}</td>`).join("")}
+              <td${columns[k].key === "period" ? ' style="font-size:11px;color:#444"' : ""}>${cellHtml(entry, t, k)}</td>`).join("")}
               <td style="text-align:right">${fmtCurrency(entry.row.bank)}</td>
               <td style="text-align:right">${fmtCurrency(entry.row.cash)}</td>
               <td style="text-align:right"><b>${fmtCurrency(entry.row.total)}</b></td>
@@ -503,7 +511,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
         return `<section class="receipt summary-page">
           <div class="hd">
             <div>
-              <h1>Resumen por subfaena</h1>
+              <h1>Resumen ${summaryTitleOf({ showLabor: false, byCycle: cyclesApart })}</h1>
               <div class="sub">${payroll.name} · ${cyclesLine}</div>
             </div>
             <div class="meta"><div><b>Fecha:</b> ${today}</div></div>
@@ -541,7 +549,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
         return `<section class="receipt summary-page">
           <div class="hd">
             <div>
-              <h1>Resumen por labor</h1>
+              <h1>Resumen ${summaryTitleOf({ showLabor: true, byCycle: cyclesApart })}</h1>
               <div class="sub">${payroll.name} · ${cyclesLine}</div>
             </div>
             <div class="meta"><div><b>Fecha:</b> ${today}</div></div>
@@ -684,14 +692,19 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
 </body></html>`;
 }
 
-export async function printPaymentDetails(payroll, allGroups, titleOverrides = {}, summaries = [], catalogs = {}, subfaenaSummary = null, payrollData = null, rutOf = undefined) {
+// `cyclesApart` separa los ciclos de una subfaena en los resúmenes, como la
+// tabla del resumen en pantalla; `subfaenaSummary` ya viene armado así.
+export async function printPaymentDetails(payroll, allGroups, titleOverrides = {}, summaries = [], catalogs = {}, subfaenaSummary = null, payrollData = null, rutOf = undefined, { cyclesApart = false } = {}) {
   if (allGroups.length === 0) return;
   const allItems = allGroups.flatMap((g) => g.items);
   // `payrollData` viene memorizado desde el modal; si no llega, se lee acá.
   const data = payrollData || (await fetchPayrollWorkdays(payroll));
   const { cyclesById } = data;
   const workdaysByGroup = buildWorkdaysByGroup(allGroups, data, catalogs);
-  const laborSummary = computeLaborSummary(payroll, allGroups, workdaysByGroup);
+  const laborSummary = computeLaborSummary(payroll, allGroups, workdaysByGroup, {
+    byCycle: cyclesApart,
+    cycleNameOf: (cd) => summaryCycleName(cd, titleOverrides),
+  });
   const bonusAdvanceSummary = computeBonusAdvanceSummary(allItems);
 
   const html = buildCashReceiptHtml(payroll, allGroups, {
@@ -705,6 +718,7 @@ export async function printPaymentDetails(payroll, allGroups, titleOverrides = {
     laborSummary,
     bonusAdvanceSummary,
     rutOf,
+    cyclesApart,
   });
   const w = window.open("", "_blank", "width=900,height=700");
   if (!w) {

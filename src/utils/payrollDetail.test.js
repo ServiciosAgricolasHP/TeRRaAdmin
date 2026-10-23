@@ -8,6 +8,8 @@ import {
   summaryDisplayRowsOf,
   computeLaborSummary,
   summaryLabelColumnsOf,
+  summaryCycleName,
+  summaryTitleOf,
   removalSummaryOf,
 } from "./payrollDetail";
 import { groupCashByLeader } from "./payroll";
@@ -114,13 +116,109 @@ describe("subfaenaSummaryOf", () => {
   });
 });
 
+describe("ciclos juntos o separados en el resumen", () => {
+  const cycleDetails = [
+    { id: "C3", subfaenaId: "S1", subfaenaName: "Sector Uno", faenaName: "Fundo B", label: "Fundo B/Sector Uno/Ciclo 3", firstDay: "2026-10-10" },
+    { id: "C1", subfaenaId: "S1", subfaenaName: "Sector Uno", faenaName: "Fundo B", label: "Fundo B/Sector Uno/Ciclo 1", firstDay: "2026-10-01" },
+    { id: "C9", subfaenaId: "S1", subfaenaName: "Sector Uno", faenaName: "Fundo B", label: "Fundo B/Sector Uno/Ciclo 9", firstDay: "2026-10-20" },
+    { id: "C2", subfaenaId: "S2", subfaenaName: "Sector Dos", faenaName: "Fundo B", label: "Fundo B/Sector Dos/Ciclo 1", firstDay: "2026-10-02" },
+  ];
+  const bank = [{ byCycle: { C1: 100, C3: 50, C9: 0 } }];
+  const cash = [{ byCycle: { C2: 30, C3: 5 } }];
+  const cycleNameOf = (cd) => summaryCycleName(cd, { C3: "Repaso" });
+
+  it("el nombre del ciclo es el editado o la etiqueta sin faena ni subfaena", () => {
+    expect(summaryCycleName(cycleDetails[1])).toBe("Ciclo 1");
+    expect(summaryCycleName(cycleDetails[0], { C3: "Repaso" })).toBe("Repaso");
+    expect(summaryCycleName({ id: "C7", label: "Suelto/Ciclo 7" })).toBe("Suelto/Ciclo 7");
+    expect(summaryCycleName({ id: "C8" })).toBe("C8");
+  });
+
+  it("juntos, la fila dice cuántos ciclos con monto junta y cuáles", () => {
+    const { rows } = subfaenaSummaryOf(cycleDetails, bank, cash, { cycleNameOf });
+    expect(rows.map((r) => [r.subfaenaName, r.cycleCount, r.cycleNames, r.total])).toEqual([
+      ["Sector Dos", 1, ["Ciclo 1"], 30],
+      ["Sector Uno", 2, ["Ciclo 1", "Repaso"], 155],
+    ]);
+  });
+
+  it("separados, una fila por ciclo con monto, por su primer día, y los mismos totales", () => {
+    const joined = subfaenaSummaryOf(cycleDetails, bank, cash, { cycleNameOf });
+    const apart = subfaenaSummaryOf(cycleDetails, bank, cash, { byCycle: true, cycleNameOf });
+    expect(apart.rows.map((r) => [r.subfaenaName, r.cycleName, [...r.cycleIds], r.cycleCount, r.bank, r.cash])).toEqual([
+      ["Sector Dos", "Ciclo 1", ["C2"], 1, 0, 30],
+      ["Sector Uno", "Ciclo 1", ["C1"], 2, 100, 0],
+      ["Sector Uno", "Repaso", ["C3"], 2, 50, 5],
+    ]);
+    expect(apart.totals).toEqual(joined.totals);
+  });
+
+  it("el resumen por labor también se separa por ciclo", () => {
+    const allGroups = [{ leader: "G", items: [{ rut: "A", bankCode: "012" }] }];
+    const workdaysByGroup = { G: {
+      C3: [{ laborName: "Poda", rows: [{ rut: "A", totalAmount: 50 }] }],
+      C1: [{ laborName: "Poda", rows: [{ rut: "A", totalAmount: 100 }] }, { laborName: "Amarre", rows: [{ rut: "A", totalAmount: 10 }] }],
+    } };
+    const joined = computeLaborSummary({ cycleDetails }, allGroups, workdaysByGroup, { cycleNameOf });
+    expect(joined.rows.map((r) => [r.laborName, r.cycleCount, r.cycleNames, r.total])).toEqual([
+      ["Amarre", 1, ["Ciclo 1"], 10],
+      ["Poda", 2, ["Repaso", "Ciclo 1"], 150],
+    ]);
+    const apart = computeLaborSummary({ cycleDetails }, allGroups, workdaysByGroup, { byCycle: true, cycleNameOf });
+    expect(apart.rows.map((r) => [r.cycleName, r.laborName, r.total])).toEqual([
+      ["Ciclo 1", "Amarre", 10],
+      ["Ciclo 1", "Poda", 100],
+      ["Repaso", "Poda", 50],
+    ]);
+  });
+
+  it("la tabla: juntos marca la fila que junta ciclos; separados agrega la columna Ciclo", () => {
+    const periodOf = () => "—";
+    const joined = summaryDisplayRowsOf(subfaenaSummaryOf(cycleDetails, bank, cash, { cycleNameOf }), { showLabor: false, periodOf });
+    expect(joined.filter((e) => e.row).map((e) => [e.labels, e.notes, e.noteTitle])).toEqual([
+      [["Fundo B", "Sector Dos", "—"], undefined, undefined],
+      [["", "Sector Uno", "—"], { subfaena: "2 ciclos" }, "Junta Ciclo 1, Repaso"],
+    ]);
+    expect(summaryTitleOf({ showLabor: false, byCycle: true })).toBe("por ciclo");
+    expect(summaryLabelColumnsOf({ showLabor: false, byCycle: true }).map((c) => c.label)).toEqual(["Faena", "Subfaena", "Ciclo", "Período"]);
+    const apart = summaryDisplayRowsOf(subfaenaSummaryOf(cycleDetails, bank, cash, { byCycle: true, cycleNameOf }), { showLabor: false, byCycle: true, periodOf });
+    expect(apart.map((e) => e.labels || "subtotal")).toEqual([
+      ["Fundo B", "Sector Dos", "Ciclo 1", "—"],
+      ["", "Sector Uno", "Ciclo 1", "—"],
+      ["", "", "Repaso", "—"],
+      "subtotal",
+    ]);
+  });
+
+  it("con labores: juntos la marca va en la labor; separados el ciclo va al empezar cada uno", () => {
+    const periodOf = () => "—";
+    const allGroups = [{ leader: "G", items: [{ rut: "A", bankCode: "012" }] }];
+    const workdaysByGroup = { G: {
+      C3: [{ laborName: "Poda", rows: [{ rut: "A", totalAmount: 50 }] }],
+      C1: [{ laborName: "Poda", rows: [{ rut: "A", totalAmount: 100 }] }, { laborName: "Amarre", rows: [{ rut: "A", totalAmount: 10 }] }],
+    } };
+    const joined = summaryDisplayRowsOf(computeLaborSummary({ cycleDetails }, allGroups, workdaysByGroup, { cycleNameOf }), { showLabor: true, periodOf });
+    expect(joined.filter((e) => e.row).map((e) => e.notes)).toEqual([undefined, { labor: "2 ciclos" }]);
+    const apart = summaryDisplayRowsOf(
+      computeLaborSummary({ cycleDetails }, allGroups, workdaysByGroup, { byCycle: true, cycleNameOf }),
+      { showLabor: true, byCycle: true, periodOf },
+    );
+    expect(summaryLabelColumnsOf({ showLabor: true, byCycle: true }).map((c) => c.label)).toEqual(["Faena", "Subfaena", "Ciclo", "Labor", "Período"]);
+    expect(apart.filter((e) => e.row).map((e) => e.labels)).toEqual([
+      ["Fundo B", "Sector Uno", "Ciclo 1", "Amarre", "—"],
+      ["", "", "", "Poda", "—"],
+      ["", "", "Repaso", "Poda", "—"],
+    ]);
+  });
+});
+
 describe("computeLaborSummary", () => {
   it("suma por subfaena y labor, separando banco y efectivo, sin filas en 0", () => {
     const payroll = {
       cycleDetails: [
-        { id: "C1", subfaenaName: "Sector Uno", faenaName: "Fundo B" },
-        { id: "C3", subfaenaName: "Sector Uno", faenaName: "Fundo B" },
-        { id: "C2", subfaenaName: "Sector Dos", faenaName: "Fundo A" },
+        { id: "C1", subfaenaId: "S1", subfaenaName: "Sector Uno", faenaName: "Fundo B" },
+        { id: "C3", subfaenaId: "S1", subfaenaName: "Sector Uno", faenaName: "Fundo B" },
+        { id: "C2", subfaenaId: "S2", subfaenaName: "Sector Dos", faenaName: "Fundo A" },
       ],
     };
     const allGroups = [{ leader: "G", items: [{ rut: "A", bankCode: "012" }, { rut: "B", bankCode: "EFE" }] }];
@@ -137,6 +235,26 @@ describe("computeLaborSummary", () => {
       ["Fundo B", "Sector Uno", "Poda", ["C1", "C3"], 150, 20, 170],
     ]);
     expect(totals).toEqual({ bank: 150, cash: 50, total: 200 });
+  });
+
+  it("junta la subfaena por su id, con el nombre de su primer ciclo, aunque un ciclo traiga otro", () => {
+    const payroll = {
+      cycleDetails: [
+        { id: "C1", subfaenaId: "S1", subfaenaName: "Sector Uno", faenaName: "Fundo B" },
+        { id: "C3", subfaenaId: "S1", subfaenaName: "Sector Norte", faenaName: "Fundo B" },
+        { id: "C4", subfaenaId: "S4", subfaenaName: "Sector Uno", faenaName: "Fundo B" },
+      ],
+    };
+    const allGroups = [{ leader: "G", items: [{ rut: "A", bankCode: "012" }] }];
+    const workdaysByGroup = { G: {
+      C1: [{ laborName: "Poda", rows: [{ rut: "A", totalAmount: 100 }] }],
+      C3: [{ laborName: "Poda", rows: [{ rut: "A", totalAmount: 50 }] }],
+      C4: [{ laborName: "Poda", rows: [{ rut: "A", totalAmount: 7 }] }],
+    } };
+    expect(computeLaborSummary(payroll, allGroups, workdaysByGroup).rows.map((r) => [r.subfaenaName, [...r.cycleIds], r.total])).toEqual([
+      ["Sector Uno", ["C1", "C3"], 150],
+      ["Sector Uno", ["C4"], 7],
+    ]);
   });
 });
 

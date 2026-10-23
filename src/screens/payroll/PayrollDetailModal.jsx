@@ -22,6 +22,7 @@ import {
   detailSummariesOf,
   subfaenaSummaryOf,
   cyclesPeriodOf,
+  summaryCycleName,
 } from "../../utils/payrollDetail";
 import { fmtCurrency } from "../../utils/format";
 import { AddCyclesModal } from "./AddCyclesModal";
@@ -158,7 +159,13 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
     setEditMode,
   } = edit;
 
-  const subfaenaSummary = subfaenaSummaryOf(cycleDetails, bank, cash);
+  const { cycleTitleOverrides, displayCycleLabel, setCycleTitle } = useCycleTitles({ payroll });
+
+  // El resumen junta los ciclos de una misma subfaena; "Ciclos separados" lo
+  // muestra (y lo imprime y descarga) con una fila por ciclo.
+  const [cyclesApart, setCyclesApart] = useState(false);
+  const cycleNameOf = (cd) => summaryCycleName(cd, cycleTitleOverrides);
+  const subfaenaSummary = subfaenaSummaryOf(cycleDetails, bank, cash, { byCycle: cyclesApart, cycleNameOf });
 
   const bonusAdvanceSummary = computeBonusAdvanceSummary(items);
   const cyclesPeriod = (cycleIdsIn) => cyclesPeriodOf(cycleDetails, cycleIdsIn);
@@ -180,10 +187,13 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
     allGroups,
     bonusAdvanceSummary,
     catalogs,
+    cycleNameOf,
+    cyclesApart,
     cyclesPeriod,
     getPayrollData,
     otherPendingCash,
     payroll,
+    setCyclesApart,
     subfaenaSummary,
     toast,
   });
@@ -227,8 +237,6 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
     startRecalc,
   } = recalc;
 
-  const { cycleTitleOverrides, displayCycleLabel, setCycleTitle } = useCycleTitles({ payroll });
-
   const {
     handlePrint,
     handlePrintDetail,
@@ -240,6 +248,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
     allGroups,
     cashGroups,
     catalogs,
+    cyclesApart,
     cycleTitleOverrides,
     detailSummaries,
     getPayrollData,

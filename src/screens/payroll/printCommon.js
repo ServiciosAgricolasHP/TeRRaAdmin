@@ -425,6 +425,12 @@ export function buildWorkdaysByGroup(groups, payrollData, catalogs = {}) {
   return workdaysByGroup;
 }
 
+// La marca "N ciclos" de una fila del resumen que junta varios ciclos, en las
+// impresiones; en pantalla es la misma píldora.
+export function cyclesNoteHtml(note, title = "") {
+  return ` <span title="${title}" style="display:inline-block;margin-left:6px;padding:0 6px;border:1px solid #E0B000;border-radius:9px;background:#FFF2CC;color:#7A5A00;font-size:10px;font-weight:600;white-space:nowrap">${note}</span>`;
+}
+
 // Bonos y anticipos por medio de pago. Son un ajuste por trabajador, no por
 // subfaena ni labor, así que van como filas de ajuste al pie de
 // subfaenaSummary/laborSummary para que el TOTAL cuadre con lo que hay que

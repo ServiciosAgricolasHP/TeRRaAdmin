@@ -1,11 +1,12 @@
 import { fmtCurrency } from "../../../utils/format";
 import { fmtDayShortEs } from "../helpers";
 
-// La tabla del resumen, por subfaena o por labor, con el selector de efectivo
-// pendiente de otras nóminas y sus acciones de copiar, descargar e imprimir.
+// La tabla del resumen, por subfaena o por labor y con los ciclos de una
+// subfaena juntos o separados, con el selector de efectivo pendiente de otras
+// nóminas y sus acciones de copiar, descargar e imprimir.
 export function SummaryTable({ bonusAdvanceSummary, payroll, table }) {
   "use no memo";
-  const { activeSummary, deferredCash, grandTotals, handleCopySummaryImage, handleDownloadSummaryXlsx, handlePrintSummary, labelColumns, laborSummaryLoading, pendingMode, pendingSummaryRows, summaryBusy, summaryCaptureRef, setSummaryPending, setSummaryShowLabor, summaryDisplayRows, summaryPending, summaryShowLabor } = table;
+  const { activeSummary, cyclesApart, deferredCash, grandTotals, handleCopySummaryImage, handleDownloadSummaryXlsx, handlePrintSummary, hasSeveralCycles, labelColumns, laborSummaryLoading, pendingMode, pendingSummaryRows, summaryBusy, summaryCaptureRef, setCyclesApart, setSummaryPending, setSummaryShowLabor, summaryDisplayRows, summaryPending, summaryShowLabor, summaryTitle } = table;
   const labelSpan = labelColumns.length;
   return (
     <div className="mt-4">
@@ -26,6 +27,27 @@ export function SummaryTable({ bonusAdvanceSummary, payroll, table }) {
             Con labores
           </button>
         </div>
+        {hasSeveralCycles && (
+          <div
+            className="inline-flex overflow-hidden rounded-md border border-[var(--color-border)] text-xs"
+            title="Hay subfaenas con más de un ciclo en esta nómina: juntos van en una fila por subfaena, separados en una fila por ciclo."
+          >
+            <button
+              type="button"
+              onClick={() => setCyclesApart(false)}
+              className={`px-2.5 py-1.5 ${!cyclesApart ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
+            >
+              Ciclos juntos
+            </button>
+            <button
+              type="button"
+              onClick={() => setCyclesApart(true)}
+              className={`border-l border-[var(--color-border)] px-2.5 py-1.5 ${cyclesApart ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
+            >
+              Ciclos separados
+            </button>
+          </div>
+        )}
         {pendingSummaryRows.length > 0 && (
           <div
             className="inline-flex overflow-hidden rounded-md border border-[var(--color-warning)] text-xs"
@@ -89,7 +111,7 @@ export function SummaryTable({ bonusAdvanceSummary, payroll, table }) {
         <div className="px-3 pt-2.5" style={{ color: "#222" }}>
           <div className="text-sm font-semibold">{payroll.name}</div>
           <div className="text-[11px]" style={{ color: "#666" }}>
-            Resumen {summaryShowLabor ? "por labor" : "por subfaena"}
+            Resumen {summaryTitle}
             {pendingMode === "with" && " · incluye efectivo pendiente de nóminas anteriores"}
             {pendingMode === "onlyPending" && " · transferencias + solo el efectivo pendiente de antes"}
           </div>
@@ -128,6 +150,16 @@ export function SummaryTable({ bonusAdvanceSummary, payroll, table }) {
                         style={labelColumns[k].key === "period" ? { border: "1px solid #999", fontSize: 11, color: "#444" } : { border: "1px solid #999" }}
                       >
                         {text}
+                        {entry.notes?.[labelColumns[k].key] && " "}
+                        {entry.notes?.[labelColumns[k].key] && (
+                          <span
+                            title={entry.noteTitle}
+                            className="ml-1.5 inline-block whitespace-nowrap rounded-full px-1.5 text-[10px] font-semibold"
+                            style={{ background: "#FFF2CC", border: "1px solid #E0B000", color: "#7A5A00" }}
+                          >
+                            {entry.notes[labelColumns[k].key]}
+                          </span>
+                        )}
                       </td>
                     ))}
                     <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(r.bank)}</td>
