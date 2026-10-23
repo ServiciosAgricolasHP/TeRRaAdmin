@@ -1,11 +1,13 @@
 import { fmtCurrency } from "../../../utils/format";
 import { fmtDayShortEs } from "../helpers";
 
-// La tabla del resumen, por subfaena o por labor, con el selector de efectivo
-// pendiente de otras nóminas y sus acciones de copiar, descargar e imprimir.
-export function SummaryTable({ bonusAdvanceSummary, cyclesPeriod, payroll, table }) {
+// La tabla del resumen, por subfaena o por labor y con los ciclos de una
+// subfaena juntos o separados, con el selector de efectivo pendiente de otras
+// nóminas y sus acciones de copiar, descargar e imprimir.
+export function SummaryTable({ bonusAdvanceSummary, payroll, table }) {
   "use no memo";
-  const { activeSummary, deferredCash, grandTotals, handleCopySummaryImage, handleDownloadSummaryXlsx, handlePrintSummary, laborSummaryLoading, pendingMode, pendingSummaryRows, summaryBusy, summaryCaptureRef, setSummaryPending, setSummaryShowLabor, summaryDisplayRows, summaryPending, summaryShowLabor } = table;
+  const { activeSummary, cyclesApart, deferredCash, grandTotals, handleCopySummaryImage, handleDownloadSummaryXlsx, handlePrintSummary, hasSeveralCycles, labelColumns, laborSummaryLoading, pendingMode, pendingSummaryRows, summaryBusy, summaryCaptureRef, setCyclesApart, setSummaryPending, setSummaryShowLabor, summaryDisplayRows, summaryPending, summaryShowLabor, summaryTitle } = table;
+  const labelSpan = labelColumns.length;
   return (
     <div className="mt-4">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -25,6 +27,27 @@ export function SummaryTable({ bonusAdvanceSummary, cyclesPeriod, payroll, table
             Con labores
           </button>
         </div>
+        {hasSeveralCycles && (
+          <div
+            className="inline-flex overflow-hidden rounded-md border border-[var(--color-border)] text-xs"
+            title="Hay subfaenas con más de un ciclo en esta nómina: juntos van en una fila por subfaena, separados en una fila por ciclo."
+          >
+            <button
+              type="button"
+              onClick={() => setCyclesApart(false)}
+              className={`px-2.5 py-1.5 ${!cyclesApart ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
+            >
+              Ciclos juntos
+            </button>
+            <button
+              type="button"
+              onClick={() => setCyclesApart(true)}
+              className={`border-l border-[var(--color-border)] px-2.5 py-1.5 ${cyclesApart ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
+            >
+              Ciclos separados
+            </button>
+          </div>
+        )}
         {pendingSummaryRows.length > 0 && (
           <div
             className="inline-flex overflow-hidden rounded-md border border-[var(--color-warning)] text-xs"
@@ -88,7 +111,7 @@ export function SummaryTable({ bonusAdvanceSummary, cyclesPeriod, payroll, table
         <div className="px-3 pt-2.5" style={{ color: "#222" }}>
           <div className="text-sm font-semibold">{payroll.name}</div>
           <div className="text-[11px]" style={{ color: "#666" }}>
-            Resumen {summaryShowLabor ? "por labor" : "por subfaena"}
+            Resumen {summaryTitle}
             {pendingMode === "with" && " · incluye efectivo pendiente de nóminas anteriores"}
             {pendingMode === "onlyPending" && " · transferencias + solo el efectivo pendiente de antes"}
           </div>
@@ -97,10 +120,9 @@ export function SummaryTable({ bonusAdvanceSummary, cyclesPeriod, payroll, table
           <table className="w-full text-xs" style={{ color: "#222", borderCollapse: "collapse" }}>
             <thead style={{ background: "#B7DEE8" }}>
               <tr>
-                <th className="px-2 py-1.5 text-left">Faena</th>
-                <th className="px-2 py-1.5 text-left">Subfaena</th>
-                {summaryShowLabor && <th className="px-2 py-1.5 text-left">Labor</th>}
-                <th className="px-2 py-1.5 text-left">Período</th>
+                {labelColumns.map((c) => (
+                  <th key={c.key} className="px-2 py-1.5 text-left">{c.label}</th>
+                ))}
                 <th className="px-2 py-1.5 text-right">Transferencia</th>
                 <th className="px-2 py-1.5 text-right">Efectivo</th>
                 <th className="px-2 py-1.5 text-right">TOTAL</th>
@@ -111,7 +133,7 @@ export function SummaryTable({ bonusAdvanceSummary, cyclesPeriod, payroll, table
                 if (entry.subtotal) {
                   return (
                     <tr key={`sub_${i}`} style={{ background: "#F2F2F2", fontStyle: "italic", fontWeight: 700 }}>
-                      <td className="px-2 py-1 text-right" colSpan={summaryShowLabor ? 4 : 3} style={{ border: "1px solid #999" }}>Sub total por faena</td>
+                      <td className="px-2 py-1 text-right" colSpan={labelSpan} style={{ border: "1px solid #999" }}>Sub total por faena</td>
                       <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(entry.subtotal.bank)}</td>
                       <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(entry.subtotal.cash)}</td>
                       <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(entry.subtotal.total)}</td>
@@ -121,16 +143,25 @@ export function SummaryTable({ bonusAdvanceSummary, cyclesPeriod, payroll, table
                 const r = entry.row;
                 return (
                   <tr key={`row_${i}`}>
-                    <td className="px-2 py-1" style={{ border: "1px solid #999" }}>{entry.showLabel ? r.faenaName : ""}</td>
-                    {summaryShowLabor ? (
-                      <>
-                        <td className="px-2 py-1" style={{ border: "1px solid #999" }}>{entry.showLabel ? r.subfaenaName : ""}</td>
-                        <td className="px-2 py-1" style={{ border: "1px solid #999" }}>{r.laborName}</td>
-                      </>
-                    ) : (
-                      <td className="px-2 py-1" style={{ border: "1px solid #999" }}>{r.subfaenaName}</td>
-                    )}
-                    <td className="px-2 py-1" style={{ border: "1px solid #999", fontSize: 11, color: "#444" }}>{cyclesPeriod([...r.cycleIds])}</td>
+                    {entry.labels.map((text, k) => (
+                      <td
+                        key={labelColumns[k].key}
+                        className="px-2 py-1"
+                        style={labelColumns[k].key === "period" ? { border: "1px solid #999", fontSize: 11, color: "#444" } : { border: "1px solid #999" }}
+                      >
+                        {text}
+                        {entry.notes?.[labelColumns[k].key] && " "}
+                        {entry.notes?.[labelColumns[k].key] && (
+                          <span
+                            title={entry.noteTitle}
+                            className="ml-1.5 inline-block whitespace-nowrap rounded-full px-1.5 text-[10px] font-semibold"
+                            style={{ background: "#FFF2CC", border: "1px solid #E0B000", color: "#7A5A00" }}
+                          >
+                            {entry.notes[labelColumns[k].key]}
+                          </span>
+                        )}
+                      </td>
+                    ))}
                     <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(r.bank)}</td>
                     <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(r.cash)}</td>
                     <td className="px-2 py-1 text-right font-semibold tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(r.total)}</td>
@@ -142,7 +173,7 @@ export function SummaryTable({ bonusAdvanceSummary, cyclesPeriod, payroll, table
                   <td className="px-2 py-1" style={{ border: "1px solid #999" }}>—</td>
                   <td
                     className="px-2 py-1"
-                    colSpan={summaryShowLabor ? 2 : 1}
+                    colSpan={labelSpan - 2}
                     style={{ border: "1px solid #999" }}
                   >
                     💵 Efectivo pendiente — {r.name}
@@ -161,7 +192,7 @@ export function SummaryTable({ bonusAdvanceSummary, cyclesPeriod, payroll, table
               <tfoot>
                 {bonusAdvanceSummary.bonus.total > 0 && (
                   <tr style={{ background: "#EAF3FA" }}>
-                    <td colSpan={summaryShowLabor ? 4 : 3} className="px-2 py-1 text-right" style={{ border: "1px solid #999" }}>Bonos</td>
+                    <td colSpan={labelSpan} className="px-2 py-1 text-right" style={{ border: "1px solid #999" }}>Bonos</td>
                     <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(bonusAdvanceSummary.bonus.bank)}</td>
                     <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(bonusAdvanceSummary.bonus.cash)}</td>
                     <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(bonusAdvanceSummary.bonus.total)}</td>
@@ -169,7 +200,7 @@ export function SummaryTable({ bonusAdvanceSummary, cyclesPeriod, payroll, table
                 )}
                 {bonusAdvanceSummary.advance.total > 0 && (
                   <tr style={{ background: "#EAF3FA" }}>
-                    <td colSpan={summaryShowLabor ? 4 : 3} className="px-2 py-1 text-right" style={{ border: "1px solid #999" }}>Anticipos</td>
+                    <td colSpan={labelSpan} className="px-2 py-1 text-right" style={{ border: "1px solid #999" }}>Anticipos</td>
                     <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>− {fmtCurrency(bonusAdvanceSummary.advance.bank)}</td>
                     <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>− {fmtCurrency(bonusAdvanceSummary.advance.cash)}</td>
                     <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>− {fmtCurrency(bonusAdvanceSummary.advance.total)}</td>
@@ -177,7 +208,7 @@ export function SummaryTable({ bonusAdvanceSummary, cyclesPeriod, payroll, table
                 )}
                 {deferredCash > 0 && (
                   <tr style={{ background: "#EAF3FA" }}>
-                    <td colSpan={summaryShowLabor ? 4 : 3} className="px-2 py-1 text-right" style={{ border: "1px solid #999" }}>
+                    <td colSpan={labelSpan} className="px-2 py-1 text-right" style={{ border: "1px solid #999" }}>
                       Efectivo que queda pendiente
                     </td>
                     <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(0)}</td>
@@ -186,7 +217,7 @@ export function SummaryTable({ bonusAdvanceSummary, cyclesPeriod, payroll, table
                   </tr>
                 )}
                 <tr style={{ background: "#FFE699", fontWeight: 700 }}>
-                  <td colSpan={summaryShowLabor ? 4 : 3} className="px-2 py-1" style={{ border: "1px solid #999" }}>
+                  <td colSpan={labelSpan} className="px-2 py-1" style={{ border: "1px solid #999" }}>
                     {pendingMode === "onlyPending" ? "TOTAL A PAGAR" : "TOTAL"}
                   </td>
                   <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(grandTotals.bank)}</td>

@@ -1,12 +1,14 @@
-// Excel de la tabla del resumen del detalle de una nómina, por subfaena o por
-// labor, con el efectivo pendiente de otras nóminas según el modo elegido, los
-// ajustes (bonos, anticipos y efectivo que queda pendiente) y el total.
+// Excel de la tabla del resumen del detalle de una nómina, con las mismas
+// filas y columnas que en pantalla (por subfaena o por labor, con los ciclos
+// juntos o separados), el efectivo pendiente de otras nóminas según el modo
+// elegido, los ajustes (bonos, anticipos y efectivo que queda pendiente) y el
+// total.
 import { fmtDayShortEs } from "../helpers";
 
-export async function writePayrollSummaryXlsx({ bonusAdvanceSummary, cyclesPeriod, deferredCash, grandTotals, payroll, pendingMode, pendingSummaryRows, summaryDisplayRows, summaryShowLabor }) {
+export async function writePayrollSummaryXlsx({ bonusAdvanceSummary, deferredCash, grandTotals, labelColumns, payroll, pendingMode, pendingSummaryRows, summaryDisplayRows, summaryTitle }) {
     const ExcelJS = (await import("exceljs")).default;
     const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet(summaryShowLabor ? "Resumen por labor" : "Resumen por subfaena");
+    const ws = wb.addWorksheet(`Resumen ${summaryTitle}`);
     ws.getColumn(1).width = 6; // restricción de layout: col A vacía
 
     const HEADER_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFB7DEE8" } };
@@ -16,11 +18,11 @@ export async function writePayrollSummaryXlsx({ bonusAdvanceSummary, cyclesPerio
     const PENDING_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF4E5" } };
     const thinBorder = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
     const moneyFmt = '"$"#,##0';
-    const labelCols = summaryShowLabor ? 4 : 3; // Faena, Subfaena, [Labor,] Período
-    const totalCols = summaryShowLabor ? 7 : 6;
+    const labelCols = labelColumns.length;
+    const totalCols = labelCols + 3;
 
     let r = 2; // fila 1 vacía
-    ws.getCell(r, 2).value = `Resumen ${summaryShowLabor ? "por labor" : "por subfaena"}`
+    ws.getCell(r, 2).value = `Resumen ${summaryTitle}`
       + (pendingMode === "with" ? " · incluye efectivo pendiente de nóminas anteriores" : "")
       + (pendingMode === "onlyPending" ? " · transferencias + solo el efectivo pendiente de antes" : "");
     ws.getCell(r, 2).font = { bold: true, size: 13 };
@@ -29,9 +31,7 @@ export async function writePayrollSummaryXlsx({ bonusAdvanceSummary, cyclesPerio
     ws.getCell(r, 2).font = { size: 10, color: { argb: "FF666666" } };
     r += 2;
 
-    const headers = summaryShowLabor
-      ? ["Faena", "Subfaena", "Labor", "Período", "Transferencia", "Efectivo", "TOTAL"]
-      : ["Faena", "Subfaena", "Período", "Transferencia", "Efectivo", "TOTAL"];
+    const headers = [...labelColumns.map((c) => c.label), "Transferencia", "Efectivo", "TOTAL"];
     headers.forEach((h, i) => {
       const c = ws.getCell(r, 2 + i);
       c.value = h;
@@ -60,14 +60,10 @@ export async function writePayrollSummaryXlsx({ bonusAdvanceSummary, cyclesPerio
       }
       const row = entry.row;
       let col = 2;
-      ws.getCell(r, col++).value = entry.showLabel ? row.faenaName : "";
-      if (summaryShowLabor) {
-        ws.getCell(r, col++).value = entry.showLabel ? row.subfaenaName : "";
-        ws.getCell(r, col++).value = row.laborName;
-      } else {
-        ws.getCell(r, col++).value = row.subfaenaName;
-      }
-      ws.getCell(r, col++).value = cyclesPeriod([...row.cycleIds]);
+      entry.labels.forEach((text, k) => {
+        const note = entry.notes?.[labelColumns[k].key];
+        ws.getCell(r, col++).value = note ? `${text} (${note})` : text;
+      });
       ws.getCell(r, col).value = row.bank; ws.getCell(r, col++).numFmt = moneyFmt;
       ws.getCell(r, col).value = row.cash; ws.getCell(r, col++).numFmt = moneyFmt;
       ws.getCell(r, col).value = row.total; ws.getCell(r, col++).numFmt = moneyFmt;
@@ -137,14 +133,8 @@ export async function writePayrollSummaryXlsx({ bonusAdvanceSummary, cyclesPerio
       cell.border = thinBorder;
     }
 
-    ws.getColumn(2).width = 20; // Faena
-    ws.getColumn(3).width = 20; // Subfaena
-    if (summaryShowLabor) {
-      ws.getColumn(4).width = 22; // Labor
-      ws.getColumn(5).width = 14; // Período
-    } else {
-      ws.getColumn(4).width = 14; // Período
-    }
+    const LABEL_WIDTHS = { faena: 20, subfaena: 20, cycle: 18, labor: 22, period: 14 };
+    labelColumns.forEach((c, i) => { ws.getColumn(2 + i).width = LABEL_WIDTHS[c.key]; });
     ws.getColumn(2 + labelCols).width = 14; // Transferencia
     ws.getColumn(3 + labelCols).width = 16; // Efectivo
     ws.getColumn(4 + labelCols).width = 16; // TOTAL
@@ -154,7 +144,7 @@ export async function writePayrollSummaryXlsx({ bonusAdvanceSummary, cyclesPerio
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `resumen_${summaryShowLabor ? "por_labor" : "por_subfaena"}_${payroll.name}`.replace(/[/\s]+/g, "_") + ".xlsx";
+    a.download = `resumen_${summaryTitle}_${payroll.name}`.replace(/[/\s]+/g, "_") + ".xlsx";
     a.click();
     URL.revokeObjectURL(url);
 }

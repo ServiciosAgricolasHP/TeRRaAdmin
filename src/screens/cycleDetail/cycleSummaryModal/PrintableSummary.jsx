@@ -1,8 +1,6 @@
 import { forwardRef } from "react";
-import { getDaySingle } from "../../../utils/cosechaCombos";
-import { isRedDay } from "../../../utils/tratoHE";
-import { buildChargeSections, mergedRows, mergedTotals } from "../../../utils/chargeMerge";
 import { fmtCurrency } from "../../../utils/format";
+import { summarySections } from "../../../utils/summaryTables";
 import { DayNotesTable } from "./DayNotesTable";
 import { LaborTable } from "./LaborTable";
 import { cell, chargeDateInputStyle, chargeInputStyle } from "./tableStyles";
@@ -56,82 +54,26 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
         <div style={{ width: 90 }} />
       </div>
 
-      {/* Tablas día a día por labor. En cobrar, las labores fusionadas
-          (`mergeInto`) van dentro de la tabla de su destino (utils/chargeMerge.js). */}
-      {(mode === "charge"
-        ? buildChargeSections(labors)
-        : labors.map((ld) => ({ lead: ld, members: [ld] }))
-      ).map(({ lead: ld, members }) => {
-        if (mode === "charge" && ld.include === false) return null;
-        const nameOf = (m) => titles.laborNames?.[m.labor.id] || m.labor.name;
-        const merged = members.length > 1;
-        const displayName = merged ? members.map(nameOf).join(" + ") : nameOf(ld);
-        // tratoHE: sábados, domingos y feriados en rojo en la columna Fecha,
-        // con el mismo criterio que la grilla por trabajador.
-        let redDates = null;
-        if (ld.labor.type === "tratoHE") {
-          redDates = new Set();
-          for (const m of members) {
-            // Una labor importada trae sus días en rojo calculados con los
-            // feriados de su propio ciclo.
-            if (m.importedFrom) {
-              for (const d of m.importedFrom.redDates) redDates.add(d);
-              continue;
-            }
-            const sourceRows = mode === "charge" ? (m.chargedRows || m.rows) : m.rows;
-            for (const r of sourceRows) {
-              if (!r.date) continue;
-              const cfg = getDaySingle(dayPrices, m.labor.id, r.date, "normal");
-              if (isRedDay(r.date, cfg)) redDates.add(r.date);
-            }
-          }
-        }
-        // En cobrar, chargedRows (con overrides y filas extra) y chargedTotals.
-        const tableRows = merged
-          ? mergedRows(members, nameOf)
-          : mode === "charge" ? (ld.chargedRows || ld.rows) : ld.rows;
-        const tableTotals = merged
-          ? mergedTotals(members)
-          : mode === "charge" ? (ld.chargedTotals || ld.totals) : ld.totals;
-        return (
+      {/* Tablas día a día por labor y por transportista. En cobrar, las
+          labores fusionadas (`mergeInto`) van dentro de la tabla de su destino
+          (utils/summaryTables.js). */}
+      {summarySections({ mode, labors, carriers, titles, carrierById, dayPrices }).map((section) =>
+        section.kind === "labor" ? (
           <LaborTable
-            key={ld.labor.id}
-            laborId={ld.labor.id}
-            displayName={displayName}
-            unit={merged && tableTotals.qty == null ? "Cantidad" : ld.unit}
-            laborType={ld.labor.type}
-            overtimeRate={Number(ld.labor.overtimeRate) > 0 ? Number(ld.labor.overtimeRate) : 3500}
-            rows={tableRows}
-            totals={tableTotals}
+            key={section.key}
+            section={section}
             mode={mode}
             editMode={editMode}
             hiddenColumns={hiddenColumns}
             catalogs={catalogs}
-            redDates={redDates}
             onEditRow={editLaborRow}
             onAddRow={addLaborRow}
             onRemoveRow={removeLaborRow}
           />
-        );
-      })}
-
-      {/* Tablas de transporte (una por transportista) */}
-      {carriers.map((tg) => {
-        if (mode === "charge" && tg.include === false) return null;
-        const c = carrierById.get(tg.carrierId);
-        const fallbackName = c?.alias || c?.name || "(transportista eliminado)";
-        const displayName = titles.carrierNames?.[tg.carrierId] || fallbackName;
-        const tableRows = mode === "charge" ? (tg.chargedRows || tg.rows) : tg.rows;
-        const totalCount = mode === "charge" ? (tg.chargedTotalCount ?? tg.totalCount) : tg.totalCount;
-        const totalAmount = mode === "charge" ? (tg.chargedTotalAmount ?? tg.totalAmount) : tg.totalAmount;
-        return (
+        ) : (
           <TransportTable
-            key={tg.carrierId}
-            carrierId={tg.carrierId}
-            displayName={displayName}
-            rows={tableRows}
-            totalCount={totalCount}
-            totalAmount={totalAmount}
+            key={section.key}
+            section={section}
             mode={mode}
             editMode={editMode}
             hiddenColumns={hiddenColumns}
@@ -139,8 +81,8 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
             onAddRow={addCarrierRow}
             onRemoveRow={removeCarrierRow}
           />
-        );
-      })}
+        ),
+      )}
 
       {/* Total general. En cobrar suma, cuando corresponde, las filas de
           Subtotal, Descuento, IVA (19%) y saldo pendiente. */}

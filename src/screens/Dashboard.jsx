@@ -1,28 +1,23 @@
-import { lazy, useState, useEffect, useMemo, Suspense } from "react";
+import { lazy, useState, useMemo, Suspense } from "react";
 import { Link } from "react-router-dom";
-import {
-  companiesService,
-  dteDocumentsService,
-  jobsService,
-  cyclesService,
-  transportPaymentsService,
-} from "../services";
-import { payrollsService, pendingCashOf } from "../services/payrollsService";
-import { fortnightsService } from "../services/transportsService";
-import { commitmentsService } from "../services/commitmentsService";
-import { countedList } from "../services/cache";
 import { useAuth } from "../contexts/AuthContext";
 import { useCarriers } from "../contexts/CarriersContext";
-import { useToast } from "../contexts/ToastContext";
 import MetricCard from "./dashboard/MetricCard";
-import Modal from "../components/Modal";
-import { fmtMonthKey, fmtShortDate, fmtNumber, fmtCurrency, fmtPercent } from "../utils/format";
-import { localIsoDate } from "../utils/dates";
-import { groupUpcoming, directionOf, summarize } from "../utils/commitments";
-import { countWorkdaysInRange } from "../services/countsService";
+import { fmtNumber, fmtCurrency, fmtPercent } from "../utils/format";
 import { CommitmentsWeek } from "./dashboard/CommitmentsWeek";
-import { DebtDetailList } from "./dashboard/DebtDetailList";
+import { DebtMonthModal } from "./dashboard/DebtMonthModal";
 import ScreenLoader from "../components/ScreenLoader";
+import { useDashboardData } from "./dashboard/useDashboardData";
+import { useDteComparison } from "./dashboard/useDteComparison";
+import {
+  cycleMargins,
+  DTE_MONTHS,
+  operationStats,
+  payrollMoneyStats,
+  STALE_DAYS,
+  transportDebtByMonth,
+  transportStats,
+} from "../utils/dashboard";
 
 // Recharts se carga lazy, en su propio chunk: las tarjetas de KPI pintan sin
 // esperarlo.
@@ -34,491 +29,31 @@ const PERIODS = [
   { key: "12m", label: "12 meses", months: 12 },
 ];
 
-// Un ciclo abierto cuyo último día cargado tiene más días que esto se lista
-// como sin movimiento. El cierre de un ciclo es manual.
-const STALE_DAYS = 14;
-
-const monthKeyOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-
-const isoOf = (d) => `${monthKeyOf(d)}-${String(d.getDate()).padStart(2, "0")}`;
-
-// Últimas N claves de mes, de la más vieja a la más nueva.
-function lastMonthKeys(n) {
-  const out = [];
-  const base = new Date();
-  for (let i = n - 1; i >= 0; i--) {
-    out.push(monthKeyOf(new Date(base.getFullYear(), base.getMonth() - i, 1)));
-  }
-  return out;
-}
-
-// "2026-09" -> { start: "2026-09-01", end: "2026-09-30" }
-function monthRangeOfKey(key) {
-  const [y, m] = String(key).split("-").map(Number);
-  const lastDay = new Date(y, m, 0).getDate();
-  return { start: `${key}-01`, end: `${key}-${String(lastDay).padStart(2, "0")}` };
-}
-
-// Timestamp de Firestore -> "YYYY-MM-DD". Devuelve "" si no hay fecha.
-function tsToIso(ts) {
-  const d = ts?.toDate?.() || (ts?.seconds ? new Date(ts.seconds * 1000) : null);
-  return d ? isoOf(d) : "";
-}
-
-// Fecha a la que se atribuye un resumen de transporte: el punto medio del
-// período que cubre, no `createdAt` (un resumen suele armarse semanas después
-// del período). Si el período cruza el cambio de mes, el punto medio cae en el
-// mes con más días (28-ago a 3-sep → 31-ago → agosto).
-//
-// `periodFrom`/`periodTo` son el rango con que se creó el resumen y no se
-// recalculan al agregarle vueltas, así que pueden quedar algo más angostos que
-// las fechas reales. Sin período, usa `createdAt`.
-function paymentPeriodDate(p) {
-  const from = p.periodFrom || p.periodTo;
-  const to = p.periodTo || p.periodFrom;
-  if (!from) return tsToIso(p.createdAt);
-  const a = new Date(`${from}T00:00:00`).getTime();
-  const b = new Date(`${to}T00:00:00`).getTime();
-  if (Number.isNaN(a) || Number.isNaN(b)) return tsToIso(p.createdAt);
-  return isoOf(new Date((a + b) / 2));
-}
-
-// La nómina se fecha por `paidAt` (string ISO) si ya se pagó; si no, por el
-// `createdAt` (Timestamp de Firestore).
-function payrollMonthKey(p) {
-  if (p.paidAt) return String(p.paidAt).slice(0, 7);
-  const d = p.createdAt?.toDate?.() || (p.createdAt?.seconds ? new Date(p.createdAt.seconds * 1000) : null);
-  return d ? monthKeyOf(d) : null;
-}
-
-const pendingOfPayment = (p) => {
-  const total = Number(p?.total) || 0;
-  const partiallyPaid = (p?.abonos || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
-  return Math.max(0, total - partiallyPaid);
-};
-
-// Notas de crédito: restan del total del período. Copia de CREDIT_NOTE_TYPES
-// de utils/cashFlowProjection.js (el que usa Facturación): tienen que coincidir.
-const CREDIT_NOTE_TYPES = new Set([61, 112]);
-
-// Ventana de la comparativa de facturación. 6 meses entra cómodo en el límite
-// de 30 valores del operador `in`.
-const DTE_MONTHS = 6;
-
 export default function Dashboard() {
+  "use no memo";
   const { isAdmin } = useAuth();
   const { carriers } = useCarriers();
-  const toast = useToast();
-  const [periodKey, setPeriodKey] = useState("3m");
-  const [loading, setLoading] = useState(true);
-  const [reads, setReads] = useState(0);
-  const [jobs, setJobs] = useState([]);
-  const [cycles, setCycles] = useState([]);
-  const [payrolls, setPayrolls] = useState([]);
-  const [fortnights, setFortnights] = useState([]);
-  const [payments, setPayments] = useState([]);
-  const [workdayMonths, setWorkdayMonths] = useState([]);
-  const [countReads, setCountReads] = useState(0);
+  const [period, setPeriod] = useState(PERIODS[1]);
   // Mes del gráfico de deuda abierto en el modal de detalle.
   const [debtDetail, setDebtDetail] = useState(null);
-  // Comparativa compras/ventas, de una empresa a la vez: `dteDocuments` es la
-  // colección más grande del sistema y la consulta se acota a la empresa
-  // elegida.
-  const [dteCompanies, setDteCompanies] = useState([]);
-  const [dteCompanyId, setDteCompanyId] = useState("");
-  const [dteRows, setDteRows] = useState(null);
-  const [dteBusy, setDteBusy] = useState(false);
-  const [dteReads, setDteReads] = useState(0);
-  const [dteError, setDteError] = useState("");
-  const [commitments, setCommitments] = useState(null);
-  const [commitmentReads, setCommitmentReads] = useState(0);
+  const { commitmentsWeek, cycles, fortnights, jobs, loading, payments, payrolls, reads, workdayMonths } =
+    useDashboardData();
+  const dte = useDteComparison();
 
-  const period = PERIODS.find((p) => p.key === periodKey) || PERIODS[1];
   const periodMonths = period.months;
 
-  // Serie de actividad de los últimos 12 meses. Un `getCountFromServer` por mes
-  // = 12 lecturas para el año entero, contra las decenas de miles que costaría
-  // traerse las filas. No depende del selector de período: se pide una sola vez
-  // por sesión y alimenta tanto la tarjeta como el gráfico de historia.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const keys = lastMonthKeys(12);
-      try {
-        const counts = await Promise.all(
-          keys.map((k) => {
-            const { start, end } = monthRangeOfKey(k);
-            return countWorkdaysInRange(start, end);
-          }),
-        );
-        if (cancelled) return;
-        setWorkdayMonths(keys.map((k, i) => ({ key: k, label: fmtMonthKey(k), workdayCount: counts[i] })));
-        setCountReads(keys.length);
-      } catch (err) {
-        if (!cancelled) console.error("[dashboard] conteo de jornadas:", err);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+  const money = useMemo(() => payrollMoneyStats(payrolls, periodMonths), [payrolls, periodMonths]);
 
-  // Catálogo de empresas para el selector. Misma clave de caché que
-  // Facturación: no cuesta lecturas si esa pantalla ya lo cargó.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const { data, reads } = await countedList(companiesService, {
-          order: ["razonSocial", "asc"],
-          cache: true,
-          ttl: 600_000,
-        });
-        if (cancelled) return;
-        setDteCompanies(data);
-        setDteCompanyId((prev) => prev || data[0]?.id || "");
-        setDteReads((r) => r + reads);
-      } catch (err) {
-        if (!cancelled) console.error("[dashboard] empresas:", err);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
+  const ops = useMemo(() => operationStats(cycles, jobs, workdayMonths), [cycles, jobs, workdayMonths]);
 
-  // Comparativa de la empresa elegida. Carga sola con la primera empresa y se
-  // rehace al cambiar de empresa. Va por el servicio para quedar cacheada y
-  // persistida: salir del Dashboard y volver dentro de 10 minutos no relee.
-  useEffect(() => {
-    if (!dteCompanyId) return;
-    let cancelled = false;
-    setDteRows(null);
-    setDteError("");
-    setDteBusy(true);
-    (async () => {
-      try {
-        const { data, reads } = await countedList(dteDocumentsService, {
-          wheres: [
-            ["companyId", "==", dteCompanyId],
-            ["periodo", "in", lastMonthKeys(DTE_MONTHS)],
-          ],
-          cache: true,
-          persist: true,
-          ttl: 600_000,
-        });
-        if (cancelled) return;
-        const byMonth = new Map(
-          lastMonthKeys(DTE_MONTHS).map((k) => [k, { key: k, label: fmtMonthKey(k), sales: 0, purchases: 0 }]),
-        );
-        for (const d of data) {
-          const row = byMonth.get(d.periodo);
-          if (!row) continue;
-          // `total` ya viene con IVA incluido. Las notas de crédito restan.
-          const amount = (CREDIT_NOTE_TYPES.has(Number(d.tipo)) ? -1 : 1) * (Number(d.total) || 0);
-          if (d.kind === "venta") row.sales += amount;
-          else row.purchases += amount;
-        }
-        setDteRows([...byMonth.values()].map((r) => ({ ...r, difference: r.sales - r.purchases })));
-        setDteReads((r) => r + reads);
-      } catch (err) {
-        if (cancelled) return;
-        // La consulta cruza `companyId` con `periodo` y puede pedir un índice
-        // compuesto. El mensaje de Firestore trae el link para crearlo: va a la
-        // consola del navegador.
-        console.error("[dashboard] comparativa de facturación:", err);
-        setDteError(
-          err.code === "failed-precondition"
-            ? "Falta un índice en Firestore para esta consulta (el detalle está en la consola del navegador)."
-            : "No se pudo cargar la facturación de esta empresa.",
-        );
-      } finally {
-        if (!cancelled) setDteBusy(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [dteCompanyId]);
+  const transport = useMemo(
+    () => transportStats(payments, fortnights, carriers, periodMonths),
+    [payments, fortnights, carriers, periodMonths],
+  );
 
-  // Cheques y pagos, aparte de la carga principal: si falla, el resto del
-  // tablero se muestra igual. Las opciones son las de `listCommitments`, así
-  // comparte la caché con la pantalla.
-  useEffect(() => {
-    let cancelled = false;
-    countedList(commitmentsService, { order: ["dueDate", "asc"], cache: true, ttl: 300_000 })
-      .then(({ data, reads }) => {
-        if (cancelled) return;
-        setCommitments(data);
-        setCommitmentReads(reads);
-      })
-      .catch((err) => console.error("[dashboard] cheques y pagos:", err));
-    return () => { cancelled = true; };
-  }, []);
+  const debt = useMemo(() => transportDebtByMonth(payments, carriers, fortnights), [payments, carriers, fortnights]);
 
-  const commitmentsWeek = useMemo(() => {
-    if (!commitments) return null;
-    const today = localIsoDate();
-    const groups = groupUpcoming(commitments, today);
-    const items = [...groups.overdue, ...groups.week].filter((c) => directionOf(c.kind) === "out");
-    return { today, summary: summarize(commitments, today), items };
-  }, [commitments]);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      try {
-        // Los resúmenes de transporte se traen siempre por 12 meses (la ventana
-        // más larga que se puede pedir) y todo lo que depende del período se
-        // filtra en cliente. Así cambiar de período no cuesta ninguna lectura,
-        // y la curva de deuda tiene el histórico completo que necesita.
-        const historyStart = `${lastMonthKeys(12)[0]}-01`;
-        const [f, c, p, q, pays] = await Promise.all([
-          // Las tres primeras copian las opciones exactas de Faenas/Transporte/
-          // Nóminas para compartir clave de caché y salir gratis.
-          countedList(jobsService, { order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
-          countedList(cyclesService, { cache: true, persist: true, ttl: 5 * 60 * 1000 }),
-          countedList(payrollsService, { order: ["createdAt", "desc"], take: 50, cache: true, persist: true, ttl: 5 * 60 * 1000 }),
-          fortnightsService.listAll(),
-          transportPaymentsService.listSince(new Date(historyStart)),
-        ]);
-        if (cancelled) return;
-        setJobs(f.data);
-        setCycles(c.data);
-        setPayrolls(p.data);
-        setFortnights(q);
-        setPayments(pays);
-        setReads(f.reads + c.reads + p.reads + q.length + pays.length);
-      } catch (err) {
-        if (!cancelled) {
-          console.error("[dashboard] carga:", err);
-          toast.error("No se pudo cargar el dashboard: " + (err.message || err));
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const money = useMemo(() => {
-    const keys = lastMonthKeys(periodMonths);
-    const keySet = new Set(keys);
-    const byMonth = new Map(keys.map((k) => [k, { key: k, label: fmtMonthKey(k), bank: 0, cash: 0, total: 0 }]));
-    let periodTotal = 0, periodCash = 0, periodAdvances = 0, periodCount = 0;
-    let pendingCount = 0, pendingTotal = 0;
-    for (const p of payrolls) {
-      if (p.status !== "paid") {
-        pendingCount += 1;
-        // Con las transferencias ya hechas, lo pendiente es solo el efectivo.
-        pendingTotal += p.bankPaidAt ? pendingCashOf(p) : Number(p.total) || 0;
-      }
-      const mk = payrollMonthKey(p);
-      if (!mk || !keySet.has(mk)) continue;
-      const row = byMonth.get(mk);
-      row.bank += Number(p.bankTotal) || 0;
-      row.cash += Number(p.cashTotal) || 0;
-      row.total += Number(p.total) || 0;
-      periodTotal += Number(p.total) || 0;
-      periodCash += Number(p.cashTotal) || 0;
-      periodAdvances += Number(p.advanceTotal) || 0;
-      periodCount += 1;
-    }
-    return {
-      months: [...byMonth.values()],
-      periodTotal,
-      periodCash,
-      periodAdvances,
-      periodCount,
-      cashShare: periodTotal > 0 ? (periodCash / periodTotal) * 100 : 0,
-      pendingCount,
-      pendingTotal,
-      lastPayroll: payrolls[0] || null,
-      // Composición de lo devengado en el período: lo que se transfirió, lo
-      // que se pagó en efectivo y lo que quedó retenido como anticipo (ya se
-      // había entregado antes, por eso no está en `total`).
-      mix: [
-        { name: "Banco", value: periodTotal - periodCash },
-        { name: "Efectivo", value: periodCash },
-        { name: "Anticipos", value: periodAdvances },
-      ].filter((s) => s.value > 0),
-    };
-  }, [payrolls, periodMonths]);
-
-  const ops = useMemo(() => {
-    const jobName = new Map(jobs.map((f) => [f.id, f.name]));
-    const open = cycles.filter((c) => c.status !== "closed");
-    const byJob = new Map();
-    for (const c of open) {
-      byJob.set(c.faenaId, (byJob.get(c.faenaId) || 0) + 1);
-    }
-    const cyclesByJob = [...byJob.entries()]
-      .map(([id, cycleCount]) => ({ name: jobName.get(id) || "(sin faena)", cycleCount }))
-      .sort((a, b) => b.cycleCount - a.cycleCount)
-      .slice(0, 8);
-
-    // Última actividad = el día más reciente cargado en el ciclo. Si nunca se
-    // le cargó un día, cae a la fecha de inicio.
-    const cutoff = isoOf(new Date(Date.now() - STALE_DAYS * 86400000));
-    const stale = open
-      .map((c) => {
-        const days = Array.isArray(c.days) ? c.days : [];
-        const last = days.length ? days.reduce((a, b) => (a > b ? a : b)) : (c.startDate || "");
-        return { cycle: c, last, job: jobName.get(c.faenaId) || "" };
-      })
-      .filter((x) => x.last && x.last < cutoff)
-      .sort((a, b) => (a.last < b.last ? -1 : 1));
-
-    const current = workdayMonths.at(-1)?.workdayCount ?? null;
-    const previous = workdayMonths.at(-2)?.workdayCount ?? null;
-    const delta = previous > 0 ? ((current - previous) / previous) * 100 : null;
-    return {
-      openCount: open.length,
-      closedCount: cycles.length - open.length,
-      activeJobs: byJob.size,
-      cyclesByJob,
-      stale,
-      workdaysCurrent: current,
-      workdaysDelta: delta,
-    };
-  }, [cycles, jobs, workdayMonths]);
-
-  const transport = useMemo(() => {
-    const alias = new Map(carriers.map((c) => [c.id, c.alias || c.name || c.id]));
-    const byCarrier = new Map();
-    let periodSpend = 0;
-    let periodPending = 0;
-    // Los resúmenes vienen por 12 meses; el período se recorta acá.
-    const periodStart = `${lastMonthKeys(periodMonths)[0]}-01`;
-    for (const p of payments) {
-      if (paymentPeriodDate(p) < periodStart) continue;
-      const id = p.carrierId || "?";
-      const row = byCarrier.get(id) || { name: alias.get(id) || id, total: 0, pending: 0 };
-      const total = Number(p.total) || 0;
-      row.total += total;
-      periodSpend += total;
-      if (p.status !== "paid") {
-        const pendingAmount = pendingOfPayment(p);
-        row.pending += pendingAmount;
-        periodPending += pendingAmount;
-      }
-      byCarrier.set(id, row);
-    }
-    // Gasto mes a mes, fechado por el período que cubre el resumen. Ventana
-    // fija de 6 meses: deja ver tendencia sin que las barras se aplasten.
-    const keys = lastMonthKeys(6);
-    const byMonth = new Map(keys.map((k) => [k, { key: k, label: fmtMonthKey(k), spent: 0 }]));
-    for (const p of payments) {
-      const mk = paymentPeriodDate(p).slice(0, 7);
-      if (byMonth.has(mk)) byMonth.get(mk).spent += Number(p.total) || 0;
-    }
-
-    const spend = [...byCarrier.values()].sort((a, b) => b.total - a.total).slice(0, 8);
-    const top3 = spend.slice(0, 3).reduce((s, r) => s + r.total, 0);
-    const pendingFortnights = fortnights.filter((q) => q.status !== "paid");
-    return {
-      spend,
-      months: [...byMonth.values()],
-      periodSpend,
-      periodPending,
-      concentration: periodSpend > 0 ? (top3 / periodSpend) * 100 : 0,
-      carrierCount: byCarrier.size,
-      pendingFortnightCount: pendingFortnights.length,
-      pendingFortnightTotal: pendingFortnights.reduce((s, q) => s + (Number(q.total) || 0), 0),
-    };
-  }, [payments, fortnights, carriers, periodMonths]);
-
-  // Cómo fue variando la deuda con los transportistas.
-  //
-  // La unidad de deuda es el resumen (`transportPayments`), no la quincena,
-  // que solo agrupa resúmenes: contar las dos duplicaría los montos. La deuda
-  // nace con el resumen y baja por cada abono parcial (en su fecha) y al
-  // marcarlo pagado, que salda el remanente.
-  //
-  // La deuda se fecha por el período que cubre el resumen (`paymentPeriodDate`);
-  // los pagos, por su fecha real.
-  //
-  // Lo anterior a la ventana de 12 meses se acumula en un saldo inicial, así la
-  // línea es el saldo vigente y no solo el flujo de la ventana. Los resúmenes
-  // se traen por `createdAt` de los últimos 12 meses: una deuda impaga más
-  // vieja que eso no entra en el saldo.
-  const debt = useMemo(() => {
-    const alias = new Map(carriers.map((c) => [c.id, c.alias || c.name || c.id]));
-    const fortnightName = new Map(fortnights.map((q) => [q.id, q.name || q.id]));
-    const keys = lastMonthKeys(12);
-    const from = `${keys[0]}-01`;
-    const rows = new Map(
-      keys.map((k) => [
-        k,
-        { key: k, label: fmtMonthKey(k), generated: 0, paid: 0, paidItems: [], createdItems: [] },
-      ]),
-    );
-    let balance = 0;
-    // `detail` alimenta el desglose del tooltip: qué resúmenes y qué abonos
-    // componen la barra de ese mes.
-    const apply = (date, field, amount, detail) => {
-      if (!date || amount <= 0) return;
-      if (date < from) {
-        balance += field === "generated" ? amount : -amount;
-        return;
-      }
-      const row = rows.get(date.slice(0, 7));
-      if (!row) return;
-      row[field] += amount;
-      if (field === "generated") row.createdItems.push(detail);
-      else row.paidItems.push(detail);
-    };
-    for (const p of payments) {
-      const total = Number(p.total) || 0;
-      if (total <= 0) continue;
-      // Contexto común a todas las entradas que genera este resumen, para que
-      // el modal pueda mostrar de qué período es y a qué quincena pertenece.
-      const ctx = {
-        name: alias.get(p.carrierId) || p.carrierId || "—",
-        period:
-          p.periodFrom || p.periodTo
-            ? [fmtShortDate(p.periodFrom), fmtShortDate(p.periodTo)].filter(Boolean).join(" → ")
-            : "",
-        fortnight: p.payrollId ? fortnightName.get(p.payrollId) || "" : "",
-      };
-      apply(paymentPeriodDate(p), "generated", total, { ...ctx, amount: total, kind: "summary" });
-      let partiallyPaid = 0;
-      for (const a of p.abonos || []) {
-        const amt = Number(a.amount) || 0;
-        partiallyPaid += amt;
-        const date = String(a.date || "").slice(0, 10);
-        apply(date, "paid", amt, { ...ctx, amount: amt, kind: "partialPayment", date, notes: a.notes || "" });
-      }
-      if (p.status === "paid") {
-        const remainder = Math.max(0, total - partiallyPaid);
-        const date = tsToIso(p.paidAt);
-        apply(date, "paid", remainder, { ...ctx, amount: remainder, kind: "summary", date, marked: true });
-      }
-    }
-    const byAmount = (a, b) => b.amount - a.amount;
-    return keys.map((k) => {
-      const r = rows.get(k);
-      balance += r.generated - r.paid;
-      return { ...r, paidItems: r.paidItems.sort(byAmount), createdItems: r.createdItems.sort(byAmount), balance, net: r.paid - r.generated };
-    });
-  }, [payments, carriers, fortnights]);
-
-  const margin = useMemo(() => {
-    const rows = cycles
-      .filter((c) => Number(c.summaryTotals?.cobrar) > 0)
-      .map((c) => {
-        const charge = Number(c.summaryTotals.cobrar) || 0;
-        const pay = Number(c.summaryTotals.pagar) || 0;
-        return { cycle: c, cobrar: charge, pagar: pay, marginAmount: charge - pay, pct: ((charge - pay) / charge) * 100 };
-      })
-      .sort((a, b) => b.marginAmount - a.marginAmount);
-    const chargeSum = rows.reduce((s, r) => s + r.cobrar, 0);
-    const marginSum = rows.reduce((s, r) => s + r.marginAmount, 0);
-    return {
-      rows,
-      covered: rows.length,
-      total: cycles.length,
-      missing: cycles.length - rows.length,
-      marginSum,
-      pct: chargeSum > 0 ? (marginSum / chargeSum) * 100 : 0,
-    };
-  }, [cycles]);
+  const margin = useMemo(() => cycleMargins(cycles), [cycles]);
 
   return (
     <div>
@@ -529,9 +64,7 @@ export default function Dashboard() {
             Plata, operación y transporte de un vistazo.
             {isAdmin && !loading && (
               <span className="ml-1 text-xs">
-                {reads + countReads + dteReads + commitmentReads === 0
-                  ? "· desde caché"
-                  : `· ${fmtNumber(reads + countReads + dteReads + commitmentReads)} lecturas`}
+                {reads + dte.reads === 0 ? "· desde caché" : `· ${fmtNumber(reads + dte.reads)} lecturas`}
               </span>
             )}
           </p>
@@ -540,9 +73,9 @@ export default function Dashboard() {
           {PERIODS.map((p) => (
             <button
               key={p.key}
-              onClick={() => setPeriodKey(p.key)}
+              onClick={() => setPeriod(p)}
               className={`px-3 py-1.5 ${
-                p.key === periodKey
+                p.key === period.key
                   ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)] font-medium"
                   : "bg-[var(--color-surface-2)] text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)]"
               }`}
@@ -684,12 +217,12 @@ export default function Dashboard() {
               workdayMonths={workdayMonths}
               onDebtMonthClick={setDebtDetail}
               dte={{
-                companies: dteCompanies,
-                companyId: dteCompanyId,
-                onSelectCompany: setDteCompanyId,
-                error: dteError,
-                rows: dteRows,
-                busy: dteBusy,
+                companies: dte.companies,
+                companyId: dte.companyId,
+                onSelectCompany: dte.setCompanyId,
+                error: dte.error,
+                rows: dte.rows,
+                busy: dte.busy,
                 months: DTE_MONTHS,
               }}
             />
@@ -745,8 +278,8 @@ export default function Dashboard() {
                             {r.cycle.label}
                           </Link>
                         </td>
-                        <td className="px-3 py-1.5 text-right tabular-nums">{fmtCurrency(r.cobrar)}</td>
-                        <td className="px-3 py-1.5 text-right tabular-nums">{fmtCurrency(r.pagar)}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">{fmtCurrency(r.charge)}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">{fmtCurrency(r.pay)}</td>
                         <td
                           className={`px-3 py-1.5 text-right font-medium tabular-nums ${
                             r.marginAmount < 0 ? "text-[var(--color-danger)]" : ""
@@ -771,72 +304,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      <Modal
-        open={!!debtDetail}
-        onClose={() => setDebtDetail(null)}
-        title={`🚐 Movimientos de ${debtDetail?.label || ""}`}
-        size="lg"
-        footer={
-          <button
-            onClick={() => setDebtDetail(null)}
-            className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]"
-          >
-            Cerrar
-          </button>
-        }
-      >
-        {debtDetail && (
-          <div className="space-y-4">
-            <DebtDetailList
-              title="Deuda generada"
-              items={debtDetail.createdItems}
-              total={debtDetail.generated}
-              color="var(--color-warning)"
-            />
-            <div>
-              <DebtDetailList
-                title="Pagado"
-                items={debtDetail.paidItems}
-                total={debtDetail.paid}
-                color="var(--color-accent)"
-              />
-              {debtDetail.paidItems.length > 0 && (
-                <p className="mt-1.5 rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-3 py-2 text-[11px] text-[var(--color-warning)]">
-                  ⚠ La fecha de pago es la del día en que se marcó como pagado en el sistema, no necesariamente la del
-                  día en que se entregó la plata. Si un resumen se marcó días después, ese pago aparece en la fecha en
-                  que se registró.
-                </p>
-              )}
-            </div>
-            <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm">
-              <div className="flex items-baseline gap-2">
-                <span className="text-[var(--color-muted)]">Saldo al cierre del mes</span>
-                <span className="ml-auto font-semibold tabular-nums">{fmtCurrency(debtDetail.balance)}</span>
-              </div>
-              <div
-                className={`mt-1 text-xs font-medium ${
-                  debtDetail.net > 0
-                    ? "text-[var(--color-accent)]"
-                    : debtDetail.net < 0
-                      ? "text-[var(--color-warning)]"
-                      : "text-[var(--color-muted)]"
-                }`}
-              >
-                {debtDetail.net > 0
-                  ? `Se pagó ${fmtCurrency(debtDetail.net)} más de lo generado`
-                  : debtDetail.net < 0
-                    ? `Se pagó ${fmtCurrency(-debtDetail.net)} menos de lo generado`
-                    : "Se pagó exactamente lo generado"}
-              </div>
-              <p className="mt-2 text-[11px] text-[var(--color-muted)]">
-                La deuda se cuenta en el mes del período que cubre el resumen, no en el día en que se armó. Los pagos y
-                abonos van por su fecha real. Un resumen saldado muestra el remanente que se pagó al marcarlo, no su
-                total original: lo que ya se había abonado antes aparece en el mes de cada abono.
-              </p>
-            </div>
-          </div>
-        )}
-      </Modal>
+      <DebtMonthModal month={debtDetail} onClose={() => setDebtDetail(null)} />
     </div>
   );
 }

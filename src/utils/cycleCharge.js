@@ -41,8 +41,10 @@ export function importedLaborsDataOf(importedLabors, catalogs) {
 // difiere más de un 10%.
 //
 // En tratoHE la tarifa es la de la hora extra: cada fila se cobra como su
-// base más las horas por la tarifa. La sugerida es la tarifa HE de la labor,
-// la misma de la columna "Total HE", y no lleva mediana ni promedio.
+// base más las horas a cobrar por la tarifa. La sugerida es la tarifa HE de
+// la labor, la misma que se paga, y no lleva mediana ni promedio. Las horas a
+// cobrar parten en las trabajadas (`workedOvertimeHours`) y se ajustan por
+// día, igual que la tarifa.
 export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, catalogs) {
   return [...laborsData, ...importedLaborsData].map((ld) => {
     const cfg = laborCharges[ld.labor.id] || {};
@@ -137,6 +139,7 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
       const hasOverride = Object.keys(ov).length > 0;
       return {
         ...r,
+        workedOvertimeHours: Number(r.overtimeHours) || 0,
         chargedQty: qty,
         chargedOvertimeHours: overtimeHours,
         chargedRate: rowRate,
@@ -165,6 +168,8 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
         unit: ex.unit != null ? ex.unit : dominantUnit,
         pisoAmount: 0,
         pisoCount: 0,
+        // Una fila manual no tiene horas trabajadas.
+        workedOvertimeHours: null,
         chargedQty: qty,
         chargedOvertimeHours: overtimeHours,
         chargedRate: rowRate,
@@ -187,13 +192,15 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
       return a.date < b.date ? -1 : a.date > b.date ? 1 : 0;
     });
     let chargedTotalAmount = 0, chargedTotalQty = 0, chargedTotalOvertimeHours = 0,
-      chargedTotalTransport = 0, chargedTotalWorkerCount = 0, chargedCountedQty = 0;
+      chargedTotalTransport = 0, chargedTotalWorkerCount = 0, chargedCountedQty = 0,
+      chargedHeTotal = 0;
     for (const r of chargedRows) {
       chargedTotalAmount += r.chargedAmount;
       chargedTotalQty += r.chargedQty;
       // Unidades (tratoEtapas): solo etapas que cuentan; el resto suma normal.
       if (r.stageCounts === undefined || r.stageCounts) chargedCountedQty += r.chargedQty;
       chargedTotalOvertimeHours += r.chargedOvertimeHours;
+      chargedHeTotal += (Number(r.chargedOvertimeHours) || 0) * (Number(r.chargedRate) || 0);
       chargedTotalTransport += r.chargedTransport || 0;
       chargedTotalWorkerCount += r.chargedWorkerCount || 0;
     }
@@ -210,7 +217,10 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
       // Personas: suma de los conteos por fila (con overrides aplicados —
       // sin ediciones coincide con el dato real).
       workerDays: chargedTotalWorkerCount,
-      heTotal: ld.totals.heTotal || 0,
+      // tratoHE: las horas que se trabajaron y lo que suman las que se cobran
+      // (horas a cobrar × tarifa de cada fila).
+      workedOvertimeHours: ld.totals.overtimeHours || 0,
+      heTotal: isHE ? chargedHeTotal : ld.totals.heTotal || 0,
       bonosTotal: ld.totals.bonosTotal || 0,
     };
     return {

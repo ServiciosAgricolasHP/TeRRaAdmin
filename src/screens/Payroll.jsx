@@ -13,7 +13,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { activeCyclesByJob } from "../utils/payrollCycles";
 import ConfirmDialog from "../components/ConfirmDialog";
 import CloseCyclesModal from "./payroll/CloseCyclesModal";
-import { payrollStatusMap, splitTaken } from "../utils/cycleClosing";
+import { takenSplitOf } from "../utils/cycleClosing";
 import { currentRutResolver } from "../utils/workerRut";
 import { AddWorkerDaysModal } from "./payroll/AddWorkerDaysModal";
 import { CycleSelector } from "./payroll/CycleSelector";
@@ -149,10 +149,7 @@ export default function Payroll() {
 
   const { closable, closeCandidates, closeCycles, setCloseCycles } = useClosableCycles({ cycles, cycleStats, payrolls });
   // Por ciclo, lo pagado de verdad y lo que está en una nómina sin pagar.
-  const takenSplit = useMemo(() => {
-    const statusOf = payrollStatusMap(payrolls);
-    return Object.fromEntries(Object.entries(cycleStats).map(([id, s]) => [id, splitTaken(s, statusOf)]));
-  }, [cycleStats, payrolls]);
+  const takenSplit = useMemo(() => takenSplitOf(cycleStats, payrolls), [cycleStats, payrolls]);
   const payrollNameOf = (id) => payrolls.find((p) => p.id === id)?.name || "";
 
   const {
@@ -387,6 +384,7 @@ export default function Payroll() {
           payroll={detailPayroll}
           allPayrolls={payrolls}
           cycles={cycles}
+          cycleStats={cycleStats}
           faenas={jobs}
           subfaenas={subjobs}
           workers={workers}

@@ -1,75 +1,35 @@
-import { tratoUnitLabel } from "../../../utils/cosechaCombos";
-import { dateLabel, fmtNumber, formatRowMetric, formatTotalsMetric } from "../../../utils/cycleSummary";
-import { fmtCurrency } from "../../../utils/format";
+import { cellText, laborColumns } from "../../../utils/summaryTables";
 import { cellH, cell, chargeDateInputStyle, inputVal, chargeInputStyle } from "./tableStyles";
 
+// La tabla día a día de una labor (o de una tabla juntada) del resumen del
+// ciclo. Las columnas y sus valores salen de `laborColumns`, las mismas que
+// escribe el Excel; acá se dibujan, con los inputs del modo cobrar en edición.
 export function LaborTable({
-  laborId,
-  displayName,
-  unit,
-  laborType,
-  overtimeRate = 3500,
-  rows,
-  totals,
+  section,
   mode,
   editMode = true,
   hiddenColumns = new Set(),
   catalogs,
-  redDates,
   onEditRow,
   onAddRow,
   onRemoveRow,
 }) {
+  const { laborId, laborType, displayName, rows, totals, redDates } = section;
   const isCharge = mode === "charge";
   const editable = isCharge && editMode;
   if (rows.length === 0 && !isCharge) return null;
-  const showPiso = (totals.pisoAmount || 0) > 0;
   const isHE = laborType === "tratoHE";
-  const showCol = (key) => !hiddenColumns.has(key);
+  const columns = laborColumns(section, { mode, hiddenColumns, catalogs });
+  const dataColumns = columns.filter((c) => c.key !== "detail" && c.key !== "date");
+  const dateColumn = columns.find((c) => c.key === "date");
 
-  // En cobrar las filas traen chargedQty, chargedOvertimeHours, chargedRate y
-  // chargedAmount, con los overrides aplicados; en pagar se leen los campos de
-  // la fila agregada.
-  const rowQty = (r) => isCharge ? r.chargedQty : r.qty;
-  const rowHE = (r) => isCharge ? r.chargedOvertimeHours : r.overtimeHours;
-  // Columna "Valor": en tratoHE, el Total HE (horas × tarifa HE de la labor);
-  // en el resto, el precio por unidad.
-  const rowHeTotal = (r) => (Number(rowHE(r)) || 0) * overtimeRate;
-  const rowRate = (r) => {
-    if (isHE) return rowHeTotal(r);
-    if (isCharge) return r.chargedRate;
-    return r.qty > 0 ? Math.round(r.amount / r.qty) : 0;
-  };
-  const rowValorTotal = (r) => isCharge ? r.chargedAmount : r.amount;
-
-  // En una tabla fusionada cada fila trae su labor de origen (`_laborId`,
-  // `_laborType`, `_laborName`): las ediciones vuelven a esa labor.
+  // En una tabla fusionada cada fila trae su labor de origen (`_laborId`):
+  // las ediciones vuelven a esa labor.
   const laborOf = (r) => r._laborId || laborId;
-  const typeOf = (r) => r._laborType || laborType;
   const handleField = (r, field, raw) => {
     if (!onEditRow) return;
     const value = raw === "" ? "" : Number(raw);
     onEditRow(laborOf(r), r, { [field]: value });
-  };
-  // Trato: badge junto a la fecha con la unidad del tier (Árbol, Metro…) o
-  // "T1", "T2"… si no tiene unidad. La fila del primer tier lo lleva solo si
-  // el día tiene más de una fila.
-  const rowCountByDate = (() => {
-    const m = new Map();
-    for (const r of rows) {
-      if (!r.date || r.isExtra || typeOf(r) !== "trato") continue;
-      const k = `${laborOf(r)}|${r.date}`;
-      m.set(k, (m.get(k) || 0) + 1);
-    }
-    return m;
-  })();
-  const tierBadgeFor = (r) => {
-    if (typeOf(r) !== "trato" || r.isExtra) return null;
-    const same = rowCountByDate.get(`${laborOf(r)}|${r.date}`) || 0;
-    if (same < 2 && (r.tierIdx ?? 0) === 0) return null;
-    const unitLbl = r.unit != null ? tratoUnitLabel(catalogs, r.unit) : null;
-    if (unitLbl) return unitLbl;
-    return `P${(r.tierIdx ?? 0) + 1}`;
   };
   const handleDateChange = (r, raw) => {
     if (!onEditRow) return;
@@ -78,6 +38,39 @@ export function LaborTable({
   const handleAdd = () => { if (onAddRow) onAddRow(laborId); };
   const handleRemove = (r) => { if (onRemoveRow) onRemoveRow(laborOf(r), r.extraId); };
 
+  const rowCellStyle = (col, v) => {
+    if (col.key === "heWorked") return { ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#555" };
+    if (col.key === "piso") return { ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", color: v !== "—" ? "#b45309" : "#999" };
+    if (col.key === "total") return { ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600 };
+    if (col.key === "personas") return { ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: editable ? 3 : "5px 8px" };
+    if (col.key === "bonos") return { ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", color: v !== "—" ? "#b45309" : "#999" };
+    return { ...cell, textAlign: "right", padding: editable && col.edit ? 3 : "5px 8px" };
+  };
+  const totalCellStyle = (col) => {
+    const base = { ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" };
+    if (col.key === "heWorked") return { ...base, color: "#555" };
+    if (col.key === "piso" || col.key === "bonos") return { ...base, color: "#b45309" };
+    return base;
+  };
+  const renderCell = (col, r) => {
+    const edit = editable && col.edit ? col.edit(r) : null;
+    if (edit) {
+      return (
+        <input
+          type="number"
+          step={edit.step}
+          value={inputVal(edit.raw)}
+          onChange={(e) => handleField(r, edit.field, e.target.value)}
+          style={edit.bold ? { ...chargeInputStyle, fontWeight: 600 } : chargeInputStyle}
+          title={edit.title}
+        />
+      );
+    }
+    const v = col.value(r);
+    if (col.key === "transport" && typeof v === "string") return <span style={{ color: "#999" }}>{v}</span>;
+    return cellText(col, v);
+  };
+
   return (
     <div style={{ marginBottom: 14 }}>
       <table style={{ borderCollapse: "collapse", width: "100%" }}>
@@ -85,50 +78,18 @@ export function LaborTable({
           <tr style={{ background: "#9dc3e6" }}>
             <th style={cellH}>Detalle de jornada</th>
             <th style={cellH}>Fecha</th>
-            {isHE ? (
-              <>
-                {showCol("qty") && <th style={{ ...cellH, textAlign: "right" }}>Base $</th>}
-                {showCol("he") && <th style={{ ...cellH, textAlign: "right" }}>HE (hrs)</th>}
-              </>
-            ) : (
-              showCol("qty") && (
-                <th
-                  style={{ ...cellH, textAlign: "right" }}
-                  title="La cantidad que se paga en esta labor. En pago al día es una jornada por trabajador (coincide con Personas); en cosecha son kilos y en trato unidades (sacos, metros, árboles), que no tienen relación con cuánta gente trabajó."
-                >
-                  {unit}
-                </th>
-              )
-            )}
-            {showCol("rate") && <th style={{ ...cellH, textAlign: "right" }}>{isHE ? "Total HE" : "Valor"}</th>}
-            {showCol("valorTotal") && <th style={{ ...cellH, textAlign: "right" }}>Valor total</th>}
-            {showPiso && showCol("piso") && <th style={{ ...cellH, textAlign: "right" }}>Piso</th>}
-            {showCol("transport") && <th style={{ ...cellH, textAlign: "right" }}>Transporte</th>}
-            {showCol("total") && <th style={{ ...cellH, textAlign: "right" }}>Total</th>}
-            {showCol("personas") && (
-              <th
-                style={{ ...cellH, textAlign: "right" }}
-                title="Cuántos trabajadores distintos tuvieron jornada ese día. Es informativo: no entra en ningún cálculo de montos."
-              >
-                Personas
-              </th>
-            )}
-            {isHE && showCol("bonos") && <th style={{ ...cellH, textAlign: "right" }}>Bonos</th>}
+            {dataColumns.map((col) => (
+              <th key={col.key} style={{ ...cellH, textAlign: "right" }} title={col.title}>{col.label}</th>
+            ))}
             {editable && <th style={{ ...cellH, width: 24 }}></th>}
           </tr>
         </thead>
         <tbody>
           {rows.map((r) => {
-            const piso = Number(r.pisoAmount) || 0;
-            const qty = rowQty(r);
-            const heHrs = rowHE(r);
-            const rate = rowRate(r);
-            const valorTotal = rowValorTotal(r);
-            const transport = isCharge ? Number(r.chargedTransport) || 0 : 0;
-            const totalCol = isCharge ? valorTotal + transport : valorTotal + piso;
             const dateIsRed = isHE && redDates && r.date && redDates.has(r.date);
             const dateCellStyle = dateIsRed ? { ...cell, color: "#c00", fontWeight: 700 } : cell;
             const rowKey = r._key || r.rowKey || r.date || `r${Math.random()}`;
+            const badge = dateColumn.badge(r);
             return (
               <tr key={rowKey}>
                 <td style={cell}>
@@ -151,150 +112,30 @@ export function LaborTable({
                     />
                   ) : (
                     <>
-                      {dateLabel(r.date)}
-                      {(() => {
-                        const tb = tierBadgeFor(r);
-                        if (!tb) return null;
-                        return (
-                          <span
-                            style={{
-                              marginLeft: 6,
-                              padding: "1px 6px",
-                              fontSize: 10,
-                              fontWeight: 600,
-                              background: "#e0e7ff",
-                              color: "#3730a3",
-                              borderRadius: 4,
-                              verticalAlign: "middle",
-                            }}
-                            title="Precio del día (P1, P2…)"
-                          >
-                            {tb}
-                          </span>
-                        );
-                      })()}
+                      {dateColumn.value(r)}
+                      {badge && (
+                        <span
+                          style={{
+                            marginLeft: 6,
+                            padding: "1px 6px",
+                            fontSize: 10,
+                            fontWeight: 600,
+                            background: "#e0e7ff",
+                            color: "#3730a3",
+                            borderRadius: 4,
+                            verticalAlign: "middle",
+                          }}
+                          title="Precio del día (P1, P2…)"
+                        >
+                          {badge}
+                        </span>
+                      )}
                     </>
                   )}
                 </td>
-                {isHE ? (
-                  <>
-                    {showCol("qty") && (
-                      <td style={{ ...cell, textAlign: "right", padding: editable ? 3 : "5px 8px" }}>
-                        {editable ? (
-                          <input
-                            type="number"
-                            value={inputVal(qty)}
-                            onChange={(e) => handleField(r, "qty", e.target.value)}
-                            style={chargeInputStyle}
-                          />
-                        ) : (qty > 0 ? fmtCurrency(qty) : "")}
-                      </td>
-                    )}
-                    {showCol("he") && (
-                      <td style={{ ...cell, textAlign: "right", padding: editable ? 3 : "5px 8px" }}>
-                        {editable ? (
-                          <input
-                            type="number"
-                            step="0.25"
-                            value={inputVal(heHrs)}
-                            onChange={(e) => handleField(r, "overtimeHours", e.target.value)}
-                            style={chargeInputStyle}
-                          />
-                        ) : (heHrs > 0 ? fmtNumber(heHrs) : "")}
-                      </td>
-                    )}
-                  </>
-                ) : (
-                  showCol("qty") && (
-                    <td style={{ ...cell, textAlign: "right", padding: editable ? 3 : "5px 8px" }}>
-                      {editable ? (
-                        <input
-                          type="number"
-                          value={inputVal(qty)}
-                          onChange={(e) => handleField(r, "qty", e.target.value)}
-                          style={chargeInputStyle}
-                        />
-                      ) : (
-                        // Se pasa el qty resuelto (chargedQty en cobrar, qty en pagar)
-                        // para que la métrica refleje los overrides.
-                        formatRowMetric({ ...r, qty, overtimeHours: heHrs }, typeOf(r), catalogs)
-                      )}
-                    </td>
-                  )
-                )}
-                {showCol("rate") && (
-                  <td style={{ ...cell, textAlign: "right", padding: (editable && !isHE) ? 3 : "5px 8px" }}>
-                    {isHE ? (
-                      rate > 0 ? fmtCurrency(rate) : ""
-                    ) : editable ? (
-                      <input
-                        type="number"
-                        value={inputVal(rate)}
-                        onChange={(e) => handleField(r, "rate", e.target.value)}
-                        style={chargeInputStyle}
-                      />
-                    ) : (rate > 0 ? fmtCurrency(rate) : "")}
-                  </td>
-                )}
-                {showCol("valorTotal") && (
-                  <td style={{ ...cell, textAlign: "right", padding: editable ? 3 : "5px 8px" }}>
-                    {editable ? (
-                      <input
-                        type="number"
-                        value={inputVal(valorTotal)}
-                        onChange={(e) => handleField(r, "amount", e.target.value)}
-                        style={{ ...chargeInputStyle, fontWeight: 600 }}
-                        title="Reemplaza el cálculo cantidad × tarifa. Bórralo para volver al cálculo automático."
-                      />
-                    ) : fmtCurrency(valorTotal)}
-                  </td>
-                )}
-                {showPiso && showCol("piso") && (
-                  <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", color: piso > 0 ? "#b45309" : "#999" }}>
-                    {piso > 0 ? `${r.pisoCount > 1 ? `${r.pisoCount}× ` : ""}${fmtCurrency(piso)}` : "—"}
-                  </td>
-                )}
-                {showCol("transport") && (
-                  <td style={{ ...cell, textAlign: "right", padding: editable ? 3 : "5px 8px" }}>
-                    {editable ? (
-                      <input
-                        type="number"
-                        value={inputVal(transport)}
-                        onChange={(e) => handleField(r, "transport", e.target.value)}
-                        style={chargeInputStyle}
-                        title="Monto de transporte del día — SUMA al Total de la fila y al total a cobrar"
-                      />
-                    ) : transport > 0 ? (
-                      fmtCurrency(transport)
-                    ) : (
-                      <span style={{ color: "#999" }}>$ -</span>
-                    )}
-                  </td>
-                )}
-                {showCol("total") && (
-                  <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{fmtCurrency(totalCol)}</td>
-                )}
-                {showCol("personas") && (
-                  <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: editable ? 3 : "5px 8px" }}>
-                    {editable ? (
-                      <input
-                        type="number"
-                        value={inputVal(isCharge ? r.chargedWorkerCount : r.workerCount)}
-                        onChange={(e) => handleField(r, "workerCount", e.target.value)}
-                        style={chargeInputStyle}
-                        title="Cantidad de personas del día — informativo, no afecta montos"
-                      />
-                    ) : (() => {
-                      const wc = isCharge ? Number(r.chargedWorkerCount) || 0 : Number(r.workerCount) || 0;
-                      return wc > 0 ? wc : (r.isExtra ? "—" : 0);
-                    })()}
-                  </td>
-                )}
-                {isHE && showCol("bonos") && (
-                  <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", color: (r.bonosTotal || 0) > 0 ? "#b45309" : "#999" }}>
-                    {(r.bonosTotal || 0) > 0 ? fmtCurrency(r.bonosTotal) : "—"}
-                  </td>
-                )}
+                {dataColumns.map((col) => (
+                  <td key={col.key} style={rowCellStyle(col, col.value(r))}>{renderCell(col, r)}</td>
+                ))}
                 {editable && (
                   <td style={{ ...cell, textAlign: "center", padding: 2 }}>
                     {r.isExtra && (
@@ -314,21 +155,7 @@ export function LaborTable({
           })}
           {editable && onAddRow && (
             <tr>
-              <td
-                colSpan={
-                  2
-                  + (isHE ? (Number(showCol("qty")) + Number(showCol("he"))) : Number(showCol("qty")))
-                  + Number(showCol("rate"))
-                  + Number(showCol("valorTotal"))
-                  + (showPiso ? Number(showCol("piso")) : 0)
-                  + Number(showCol("transport"))
-                  + Number(showCol("total"))
-                  + Number(showCol("personas"))
-                  + (isHE ? Number(showCol("bonos")) : 0)
-                  + 1
-                }
-                style={{ ...cell, padding: 4, textAlign: "left", background: "#f9fafb" }}
-              >
+              <td colSpan={columns.length + 1} style={{ ...cell, padding: 4, textAlign: "left", background: "#f9fafb" }}>
                 <button
                   type="button"
                   onClick={handleAdd}
@@ -341,66 +168,10 @@ export function LaborTable({
           )}
           <tr style={{ background: "#c6efce" }}>
             <td style={{ ...cell, fontWeight: 700 }} colSpan={2}>Subtotal {displayName}</td>
-            {isHE ? (
-              <>
-                {showCol("qty") && (
-                  <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                    {totals.qty > 0 ? fmtCurrency(totals.qty) : ""}
-                  </td>
-                )}
-                {showCol("he") && (
-                  <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                    {totals.overtimeHours > 0 ? fmtNumber(totals.overtimeHours) : ""}
-                  </td>
-                )}
-              </>
-            ) : (
-              showCol("qty") && (
-                <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                  {isCharge
-                    ? (totals.qty == null
-                        // Tabla fusionada con medidas distintas: no se suman.
-                        ? ""
-                        : laborType === "tratoEtapas"
-                        // Unidades deduplicadas (solo etapas que cuentan).
-                        ? `${fmtNumber(totals.countedQty ?? totals.qty ?? 0)} unid.`
-                        : fmtNumber(totals.qty || 0))
-                    : formatTotalsMetric(totals, laborType, rows, catalogs)}
-                </td>
-              )
-            )}
-            {showCol("rate") && (
-              <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                {isHE && (totals.heTotal || 0) > 0 ? fmtCurrency(totals.heTotal) : ""}
-              </td>
-            )}
-            {showCol("valorTotal") && (
-              <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{fmtCurrency(totals.amount)}</td>
-            )}
-            {showPiso && showCol("piso") && (
-              <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "#b45309" }}>
-                {fmtCurrency(totals.pisoAmount || 0)}
-              </td>
-            )}
-            {showCol("transport") && (
-              <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                {isCharge && (totals.transport || 0) > 0 ? fmtCurrency(totals.transport) : ""}
-              </td>
-            )}
-            {showCol("total") && (
-              <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                {fmtCurrency(isCharge ? totals.amount + (totals.transport || 0) : totals.amount + (totals.pisoAmount || 0))}
-              </td>
-            )}
-            {showCol("personas") && (
-              <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
-                {(totals.workerDays || 0) > 0 ? totals.workerDays : ""}
-              </td>
-            )}
-            {isHE && showCol("bonos") && (
-              <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "#b45309" }}>
-                {(totals.bonosTotal || 0) > 0 ? fmtCurrency(totals.bonosTotal) : "—"}
-              </td>
+            {dataColumns.map((col) =>
+              col.key === "heRate"
+                ? <td key={col.key} style={cell}></td>
+                : <td key={col.key} style={totalCellStyle(col)}>{cellText(col, col.total(totals))}</td>,
             )}
             {editable && <td style={cell}></td>}
           </tr>

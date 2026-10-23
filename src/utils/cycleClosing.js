@@ -45,6 +45,13 @@ export function splitTaken(stat, statusOf) {
   return { paid, inPayroll, openPayrollIds };
 }
 
+// `splitTaken` de cada ciclo con totales: { [cycleId]: { paid, inPayroll,
+// openPayrollIds } }.
+export function takenSplitOf(cycleStats, payrolls) {
+  const statusOf = payrollStatusMap(payrolls);
+  return Object.fromEntries(Object.entries(cycleStats).map(([id, s]) => [id, splitTaken(s, statusOf)]));
+}
+
 // Ciclos abiertos que ya se pagaron por completo, para cerrarlos de una vez:
 // tienen algo pagado, nada pendiente y nada en una nómina sin pagar. `waiting`
 // son los que no tienen pendiente pero siguen en una nómina sin pagar

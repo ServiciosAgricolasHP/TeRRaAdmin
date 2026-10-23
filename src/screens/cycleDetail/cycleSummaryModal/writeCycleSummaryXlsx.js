@@ -1,19 +1,76 @@
-import { containerLabel, getDayCombos, getDaySingle, getTratoTierTotals, getTratoTiers, qualityLabel, tratoUnitLabel } from "../../../utils/cosechaCombos";
-import { isRedDay } from "../../../utils/tratoHE";
 import { dateLabel } from "../../../utils/cycleSummary";
+import { carrierColumns, laborColumns, sectionTotal, summarySections } from "../../../utils/summaryTables";
 
-// XLSX del resumen consolidado: una hoja por labor, una por transportista y
-// la hoja Total. Cada hoja deja la columna A vacía (mitad de ancho) y la
-// fila 1 vacía; los datos arrancan en B2. Cosecha y trato se desglosan por
-// (día, combo/tier) con precios editables; tratoHE tiene tarifa HE editable
-// y fórmulas Base + HE × tarifa + Extras. Subtotales y total con SUM() para
-// recalcular al editar precios.
-export async function writeCycleSummaryXlsx({ carrierById, catalogs, charge, chargeCarriers, chargeLabors, cycle, dayPrices, grandTotalCharge, grandTotalPay, laborsData, mode, subtotalCharge, titles, transportData, workdaysByLabor }) {
-  const ExcelJS = (await import("exceljs")).default;
+// XLSX del resumen del ciclo: lo mismo que se ve en pantalla. Una hoja por
+// tabla (labor, tabla juntada o transportista) con sus mismas columnas, filas
+// y subtotal, que salen de utils/summaryTables.js como en `LaborTable` y
+// `TransportTable`; la hoja Total con el total de cada tabla y el bloque final
+// (descuento, IVA y saldo pendiente); y en pagar, las observaciones por día.
+// Cada hoja deja la columna A vacía (mitad de ancho) y la fila 1 vacía.
+
+const MONEY_FMT = '"$"#,##0;[Red]-"$"#,##0';
+const NUMBER_FMT = "#,##0.##";
+const fill = (argb) => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
+const HEADER_FILL = fill("FF9DC3E6");
+const TRANSPORT_FILL = fill("FFFBE5D6");
+const SUBTOTAL_FILL = fill("FFC6EFCE");
+const TOTAL_FILL = fill("FFA9D08E");
+const FINAL_FILL = fill("FF6AA84F");
+const MUTED = "FF999999";
+const AMBER = "FFB45309";
+
+// Un texto que la pantalla muestra como número o monto ("1.234", "$5.000")
+// va como número, así se puede sumar en Excel.
+function parseShown(s) {
+  const m = /^(\$)?(-?\d{1,3}(?:\.\d{3})*(?:,\d+)?|-?\d+(?:,\d+)?)$/.exec(String(s).trim());
+  if (!m) return null;
+  const n = Number(m[2].replace(/\./g, "").replace(",", "."));
+  return Number.isFinite(n) ? { n, money: !!m[1] } : null;
+}
+
+// Escribe el valor de una celda como en pantalla: vacío, número con su
+// formato o texto.
+function writeValue(c, col, v) {
+  if (v == null || v === "") return;
+  if (typeof v === "number") {
+    c.value = v;
+    if (col.kind === "money") c.numFmt = MONEY_FMT;
+    else if (col.kind === "number") c.numFmt = NUMBER_FMT;
+    return;
+  }
+  const parsed = parseShown(v);
+  if (parsed) {
+    c.value = parsed.n;
+    c.numFmt = parsed.money ? MONEY_FMT : NUMBER_FMT;
+    return;
+  }
+  c.value = v;
+}
+
+const colLetter = (i) => String.fromCharCode(66 + i); // 0 → B
+
+export function buildCycleSummaryWorkbook(ExcelJS, {
+  carrierById,
+  catalogs,
+  charge = {},
+  chargeCarriers,
+  chargeLabors,
+  dayNotes = [],
+  dayPrices,
+  grandTotalCharge,
+  grandTotalPay,
+  hiddenColumns = new Set(),
+  laborsData,
+  mode,
+  subtotalCharge,
+  titles,
+  transportData,
+}) {
+  const isCharge = mode === "charge";
   const wb = new ExcelJS.Workbook();
   const usedNames = new Set();
   const safeName = (s) => {
-    let base = String(s || "Hoja").substring(0, 28).replace(/[\\/?*[\]]/g, "_");
+    const base = String(s || "Hoja").substring(0, 28).replace(/[\\/?*[\]:]/g, "_");
     let name = base, i = 2;
     while (usedNames.has(name)) {
       name = `${base} ${i}`.substring(0, 31);
@@ -22,584 +79,184 @@ export async function writeCycleSummaryXlsx({ carrierById, catalogs, charge, cha
     usedNames.add(name);
     return name;
   };
-  const moneyFmt = '"$"#,##0;[Red]-"$"#,##0';
-  const headerFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF9DC3E6" } };
-  const subtotalFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFC6EFCE" } };
-  const editableFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFF2CC" } };
-  const transportFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFBE5D6" } };
-  const titleFill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFA9D08E" } };
 
-  const laborsForMode = mode === "charge" ? chargeLabors : laborsData;
-  const carriersForMode = mode === "charge" ? chargeCarriers : transportData;
+  const sections = summarySections({
+    mode,
+    labors: isCharge ? chargeLabors : laborsData,
+    carriers: isCharge ? chargeCarriers : transportData,
+    titles,
+    carrierById,
+    dayPrices,
+  });
 
-  // Para la hoja Total: { displayName, sheetName, totalRef, fallback } por hoja.
-  const sheetTotals = [];
-
-  // ============ HOJAS DE LABORES ============
-  for (const ld of laborsForMode) {
-    if (mode === "charge" && !ld.include) continue;
-    // Las labores importadas de otro ciclo no van al Excel: su desglose
-    // por combo o tier se arma releyendo las jornadas de este ciclo.
-    if (ld.importedFrom) continue;
-    const labor = ld.labor;
-    if (!ld.rows || ld.rows.length === 0) continue;
-    const displayName = titles.laborNames?.[labor.id] || labor.name;
-    const sheetName = safeName(displayName);
-    const ws = wb.addWorksheet(sheetName);
+  // ============ UNA HOJA POR TABLA ============
+  for (const section of sections) {
+    const isLabor = section.kind === "labor";
+    const title = isLabor ? section.displayName : `🚐 ${section.displayName}`;
+    const ws = wb.addWorksheet(safeName(title));
     ws.getColumn(1).width = 6;
-
-    // Título en B2
-    ws.getCell("B2").value = displayName;
+    ws.getCell("B2").value = title;
     ws.getCell("B2").font = { bold: true, size: 14 };
 
-    const isHarvest = labor.type === "cosecha";
-    const isPiecework = labor.type === "trato";
-    const isHE = labor.type === "tratoHE";
-
-    // Días en rojo en la columna Fecha (solo tratoHE): fines de semana y
-    // feriados.
-    const redDates = new Set();
-    if (isHE) {
-      for (const r of ld.rows) {
-        const cfg = getDaySingle(dayPrices, labor.id, r.date, "normal");
-        if (isRedDay(r.date, cfg)) redDates.add(r.date);
-      }
-    }
-
-    if (isHarvest || isPiecework) {
-      // Estructura: B Fecha | C Combo/Tier | D Cantidad | E Precio | F Total
-      // En cobrar, una sola tarifa editable en C3 que todas las filas referencian.
-      let chargeRef = null;
-      if (mode === "charge") {
-        ws.getCell("B3").value = "Tarifa cobro:";
-        ws.getCell("B3").font = { bold: true };
-        const c3 = ws.getCell("C3");
-        c3.value = Number(ld.rate) || 0;
-        c3.numFmt = moneyFmt;
-        c3.fill = editableFill;
-        chargeRef = "$C$3";
-      }
-
-      const HEADER_ROW = mode === "charge" ? 5 : 4;
-      const headerCells = ["B", "C", "D", "E", "F"];
-      const headers = ["Fecha", isHarvest ? "Combo (Calidad / Envase)" : "Tipo de precio", "Cantidad", "Precio", "Total"];
-      headerCells.forEach((col, i) => {
-        const c = ws.getCell(`${col}${HEADER_ROW}`);
-        c.value = headers[i];
-        c.font = { bold: true };
-        c.fill = headerFill;
-        c.alignment = { horizontal: i === 0 || i === 1 ? "left" : "right" };
-      });
-
-      // Construir filas desglosadas por (fecha, combo/tier).
-      const wdMap = workdaysByLabor[labor.id] || {};
-      const dayMap = new Map();
-      for (const k in wdMap) {
-        const wd = wdMap[k];
-        if (wd?.pisoOnly) continue;
-        let key, label, qty;
-        if (isHarvest) {
-          const qx = Number(wd.qualityX) || 0;
-          const cy = Number(wd.containerY) || 0;
-          key = `${qx}_${cy}`;
-          label = `${qualityLabel(catalogs, qx)} / ${containerLabel(catalogs, cy)}`;
-          qty = Number(wd.qty) || 0;
-        } else {
-          const parts = String(k).split("__");
-          key = parts[2] || "t0";
-          const t = getTratoTierTotals(wd);
-          const tiers = getTratoTiers(dayPrices, labor.id, wd.date);
-          const tier = tiers.find((x) => x.key === key);
-          const unitLabel = tier?.unit != null ? tratoUnitLabel(catalogs, tier.unit) : null;
-          label = unitLabel || `Precio ${Number(key.replace(/^t/, "")) + 1}`;
-          qty = t.qty;
-        }
-        if (qty <= 0) continue;
-        if (!dayMap.has(wd.date)) dayMap.set(wd.date, new Map());
-        const m = dayMap.get(wd.date);
-        if (!m.has(key)) m.set(key, { key, label, qty: 0 });
-        m.get(key).qty += qty;
-      }
-
-      const sortedDates = [...dayMap.keys()].sort();
-      let curRow = HEADER_ROW + 1;
-      const dataStartRow = curRow;
-      for (const date of sortedDates) {
-        const items = [...dayMap.get(date).values()].sort((a, b) => a.label.localeCompare(b.label));
-        for (const it of items) {
-          const dateCell = ws.getCell(`B${curRow}`);
-          dateCell.value = dateLabel(date);
-          ws.getCell(`C${curRow}`).value = it.label;
-          const qCell = ws.getCell(`D${curRow}`);
-          qCell.value = it.qty;
-          qCell.numFmt = "#,##0.##";
-          qCell.alignment = { horizontal: "right" };
-          const pCell = ws.getCell(`E${curRow}`);
-          if (mode === "charge") {
-            pCell.value = { formula: chargeRef, result: Number(ld.rate) || 0 };
-          } else {
-            let price = 0;
-            if (isHarvest) {
-              const list = getDayCombos(dayPrices, labor.id, date, "unit");
-              const hit = list.find((c) => c.key === it.key);
-              price = Number(hit?.price) || 0;
-            } else {
-              const list = getTratoTiers(dayPrices, labor.id, date, "unit");
-              const hit = list.find((c) => c.key === it.key);
-              price = Number(hit?.price) || 0;
-            }
-            pCell.value = price;
-            pCell.fill = editableFill;
-          }
-          pCell.numFmt = moneyFmt;
-          const tCell = ws.getCell(`F${curRow}`);
-          const priceResult = mode === "charge"
-            ? Number(ld.rate) || 0
-            : Number(pCell.value) || 0;
-          tCell.value = { formula: `D${curRow}*E${curRow}`, result: it.qty * priceResult };
-          tCell.numFmt = moneyFmt;
-          curRow++;
-        }
-      }
-      const dataEndRow = curRow - 1;
-
-      // Subtotal
-      const subRow = curRow;
-      for (const col of headerCells) {
-        ws.getCell(`${col}${subRow}`).fill = subtotalFill;
-        ws.getCell(`${col}${subRow}`).font = { bold: true };
-      }
-      ws.getCell(`B${subRow}`).value = "Subtotal";
-      if (dataEndRow >= dataStartRow) {
-        ws.getCell(`D${subRow}`).value = { formula: `SUM(D${dataStartRow}:D${dataEndRow})`, result: 0 };
-        ws.getCell(`D${subRow}`).numFmt = "#,##0.##";
-        ws.getCell(`F${subRow}`).value = { formula: `SUM(F${dataStartRow}:F${dataEndRow})`, result: ld.totals.amount };
-        ws.getCell(`F${subRow}`).numFmt = moneyFmt;
-      }
-      const fallbackCombo = mode === "charge" ? (ld.chargedTotals?.amount ?? ld.totals.amount) : ld.totals.amount;
-      sheetTotals.push({ displayName, sheetName, totalRef: `'${sheetName}'!$F$${subRow}`, fallback: fallbackCombo });
-
-      ws.getColumn(2).width = 14;
-      ws.getColumn(3).width = 30;
-      ws.getColumn(4).width = 12;
-      ws.getColumn(5).width = 12;
-      ws.getColumn(6).width = 14;
-      ws.views = [{ state: "frozen", ySplit: HEADER_ROW }];
-    }
-    else if (isHE) {
-      // tratoHE: B Fecha | C Base $ | D HE (hrs) | E Tarifa HE (ref) | F Extras $ | G Total
-      // Tarifa HE editable en C3.
-      ws.getCell("B3").value = "Tarifa HE:";
-      ws.getCell("B3").font = { bold: true };
-      const c3 = ws.getCell("C3");
-      // Tarifa HE inicial: (monto − base) / horas HE, o 0 si no hay horas.
-      const totalHE = ld.totals.overtimeHours || 0;
-      const implicitRate = totalHE > 0 ? Math.round(ld.totals.amount - ld.totals.qty) / Math.max(totalHE, 1) : 0;
-      c3.value = totalHE > 0 ? Math.max(0, Math.round(implicitRate)) : 0;
-      c3.numFmt = moneyFmt;
-      c3.fill = editableFill;
-      const heRateRef = "$C$3";
-
-      const HEADER_ROW = 5;
-      const cols = ["B", "C", "D", "E", "F", "G"];
-      const headers = ["Fecha", "Base $", "HE (hrs)", "Tarifa HE", "Extras $", "Total $"];
-      cols.forEach((col, i) => {
-        const c = ws.getCell(`${col}${HEADER_ROW}`);
-        c.value = headers[i];
-        c.font = { bold: true };
-        c.fill = headerFill;
-        c.alignment = { horizontal: i === 0 ? "left" : "right" };
-      });
-
-      let curRow = HEADER_ROW + 1;
-      const dataStartRow = curRow;
-      // En cobrar, chargedRows (con overrides y filas extra).
-      const heRows = mode === "charge" ? (ld.chargedRows || ld.rows) : ld.rows;
-      for (const r of heRows) {
-        const isRed = redDates.has(r.date);
-        const dCell = ws.getCell(`B${curRow}`);
-        dCell.value = r.date ? dateLabel(r.date) : (r.isExtra ? "(ajuste)" : "");
-        if (isRed) dCell.font = { bold: true, color: { argb: "FFCC0000" } };
-
-        const baseV = mode === "charge" ? Number(r.chargedQty) || 0 : Number(r.qty) || 0;
-        const heHrs = mode === "charge" ? Number(r.chargedOvertimeHours) || 0 : Number(r.overtimeHours) || 0;
-        const heAmt = heHrs * (Number(c3.value) || 0);
-        const amountForExtras = mode === "charge" ? Number(r.chargedAmount) || 0 : Number(r.amount) || 0;
-        const extras = Math.max(0, amountForExtras - baseV - heAmt);
-
-        const base = ws.getCell(`C${curRow}`);
-        base.value = baseV;
-        base.numFmt = moneyFmt;
-        const he = ws.getCell(`D${curRow}`);
-        he.value = heHrs;
-        he.numFmt = "#,##0.##";
-        const rate = ws.getCell(`E${curRow}`);
-        rate.value = { formula: heRateRef, result: Number(c3.value) || 0 };
-        rate.numFmt = moneyFmt;
-        const ex = ws.getCell(`F${curRow}`);
-        ex.value = extras;
-        ex.numFmt = moneyFmt;
-        ex.fill = editableFill;
-        const tot = ws.getCell(`G${curRow}`);
-        tot.value = {
-          formula: `C${curRow}+D${curRow}*${heRateRef}+F${curRow}`,
-          result: baseV + heAmt + extras,
-        };
-        tot.numFmt = moneyFmt;
-        curRow++;
-      }
-      const dataEndRow = curRow - 1;
-
-      const subRow = curRow;
-      for (const col of cols) {
-        ws.getCell(`${col}${subRow}`).fill = subtotalFill;
-        ws.getCell(`${col}${subRow}`).font = { bold: true };
-      }
-      ws.getCell(`B${subRow}`).value = "Subtotal";
-      if (dataEndRow >= dataStartRow) {
-        ws.getCell(`C${subRow}`).value = { formula: `SUM(C${dataStartRow}:C${dataEndRow})`, result: 0 };
-        ws.getCell(`C${subRow}`).numFmt = moneyFmt;
-        ws.getCell(`D${subRow}`).value = { formula: `SUM(D${dataStartRow}:D${dataEndRow})`, result: 0 };
-        ws.getCell(`D${subRow}`).numFmt = "#,##0.##";
-        ws.getCell(`F${subRow}`).value = { formula: `SUM(F${dataStartRow}:F${dataEndRow})`, result: 0 };
-        ws.getCell(`F${subRow}`).numFmt = moneyFmt;
-        ws.getCell(`G${subRow}`).value = { formula: `SUM(G${dataStartRow}:G${dataEndRow})`, result: ld.totals.amount };
-        ws.getCell(`G${subRow}`).numFmt = moneyFmt;
-      }
-      const fallbackHE = mode === "charge" ? (ld.chargedTotals?.amount ?? ld.totals.amount) : ld.totals.amount;
-      sheetTotals.push({ displayName, sheetName, totalRef: `'${sheetName}'!$G$${subRow}`, fallback: fallbackHE });
-
-      ws.getColumn(2).width = 14;
-      ws.getColumn(3).width = 14;
-      ws.getColumn(4).width = 12;
-      ws.getColumn(5).width = 12;
-      ws.getColumn(6).width = 14;
-      ws.getColumn(7).width = 14;
-      ws.views = [{ state: "frozen", ySplit: HEADER_ROW }];
-    }
-    else {
-      // main / supervision / extra (y tratoEtapas): B Fecha | C Jornadas | D $ jornada | E Total
-      // En cobrar, C3 muestra la tarifa de la labor y cada fila lleva la suya.
-      if (mode === "charge") {
-        ws.getCell("B3").value = "Tarifa cobro:";
-        ws.getCell("B3").font = { bold: true };
-        const c3 = ws.getCell("C3");
-        c3.value = Number(ld.rate) || 0;
-        c3.numFmt = moneyFmt;
-        c3.fill = editableFill;
-      }
-
-      const HEADER_ROW = mode === "charge" ? 5 : 4;
-      const cols = ["B", "C", "D", "E"];
-      const headers = ["Fecha", "Jornadas", "$ por jornada", "Total"];
-      cols.forEach((col, i) => {
-        const c = ws.getCell(`${col}${HEADER_ROW}`);
-        c.value = headers[i];
-        c.font = { bold: true };
-        c.fill = headerFill;
-        c.alignment = { horizontal: i === 0 ? "left" : "right" };
-      });
-
-      let curRow = HEADER_ROW + 1;
-      const dataStartRow = curRow;
-      // En cobrar, chargedRows (con overrides y filas extra).
-      const simpleRows = mode === "charge" ? (ld.chargedRows || ld.rows) : ld.rows;
-      for (const r of simpleRows) {
-        ws.getCell(`B${curRow}`).value = r.date ? dateLabel(r.date) : (r.isExtra ? "(ajuste)" : "");
-        const qCell = ws.getCell(`C${curRow}`);
-        const qtyV = mode === "charge" ? Number(r.chargedQty) || 0 : Number(r.qty) || 0;
-        qCell.value = qtyV;
-        qCell.numFmt = "#,##0";
-        const pCell = ws.getCell(`D${curRow}`);
-        if (mode === "charge") {
-          // En cobrar la tarifa puede tener override por fila: va el valor
-          // literal, sin referenciar $C$3.
-          pCell.value = Number(r.chargedRate) || 0;
-          pCell.fill = editableFill;
-        } else {
-          const rate = r.qty > 0 ? Math.round(r.amount / r.qty) : 0;
-          pCell.value = rate;
-          pCell.fill = editableFill;
-        }
-        pCell.numFmt = moneyFmt;
-        const tCell = ws.getCell(`E${curRow}`);
-        const amountResult = mode === "charge" ? Number(r.chargedAmount) || 0 : Number(r.amount) || 0;
-        tCell.value = { formula: `C${curRow}*D${curRow}`, result: amountResult };
-        tCell.numFmt = moneyFmt;
-        curRow++;
-      }
-      const dataEndRow = curRow - 1;
-
-      const subRow = curRow;
-      for (const col of cols) {
-        ws.getCell(`${col}${subRow}`).fill = subtotalFill;
-        ws.getCell(`${col}${subRow}`).font = { bold: true };
-      }
-      ws.getCell(`B${subRow}`).value = "Subtotal";
-      if (dataEndRow >= dataStartRow) {
-        ws.getCell(`C${subRow}`).value = { formula: `SUM(C${dataStartRow}:C${dataEndRow})`, result: 0 };
-        ws.getCell(`C${subRow}`).numFmt = "#,##0";
-        ws.getCell(`E${subRow}`).value = { formula: `SUM(E${dataStartRow}:E${dataEndRow})`, result: ld.totals.amount };
-        ws.getCell(`E${subRow}`).numFmt = moneyFmt;
-      }
-      const fallbackSimple = mode === "charge" ? (ld.chargedTotals?.amount ?? ld.totals.amount) : ld.totals.amount;
-      sheetTotals.push({ displayName, sheetName, totalRef: `'${sheetName}'!$E$${subRow}`, fallback: fallbackSimple });
-
-      ws.getColumn(2).width = 14;
-      ws.getColumn(3).width = 12;
-      ws.getColumn(4).width = 14;
-      ws.getColumn(5).width = 14;
-      ws.views = [{ state: "frozen", ySplit: HEADER_ROW }];
-    }
-  }
-
-  // ============ HOJAS DE TRANSPORTE ============
-  for (const tg of carriersForMode) {
-    if (mode === "charge" && !tg.include) continue;
-    if (!tg.rows || tg.rows.length === 0) continue;
-    const fallbackName = carrierById.get(tg.carrierId)?.alias || carrierById.get(tg.carrierId)?.name || "(transportista)";
-    const displayName = titles.carrierNames?.[tg.carrierId] || fallbackName;
-    const sheetName = safeName(`🚐 ${displayName}`);
-    const ws = wb.addWorksheet(sheetName);
-    ws.getColumn(1).width = 6;
-
-    ws.getCell("B2").value = `🚐 ${displayName}`;
-    ws.getCell("B2").font = { bold: true, size: 14 };
-
-    if (mode === "charge") {
-      ws.getCell("B3").value = "Tarifa cobro:";
-      ws.getCell("B3").font = { bold: true };
-      const c3 = ws.getCell("C3");
-      c3.value = Number(tg.rate) || 0;
-      c3.numFmt = moneyFmt;
-      c3.fill = editableFill;
-    }
-
-    const HEADER_ROW = mode === "charge" ? 5 : 4;
-    const cols = ["B", "C", "D", "E"];
-    const headers = ["Fecha", "Vueltas", "Precio", "Total"];
-    cols.forEach((col, i) => {
-      const c = ws.getCell(`${col}${HEADER_ROW}`);
-      c.value = headers[i];
+    const columns = isLabor
+      ? laborColumns(section, { mode, hiddenColumns, catalogs })
+      : carrierColumns(section, { mode, hiddenColumns });
+    const HEADER_ROW = 4;
+    columns.forEach((col, i) => {
+      const c = ws.getCell(`${colLetter(i)}${HEADER_ROW}`);
+      c.value = col.label;
       c.font = { bold: true };
-      c.fill = transportFill;
-      c.alignment = { horizontal: i === 0 ? "left" : "right" };
+      c.fill = isLabor ? HEADER_FILL : TRANSPORT_FILL;
+      c.alignment = { horizontal: i < 2 ? "left" : "right" };
     });
 
-    let curRow = HEADER_ROW + 1;
-    const dataStartRow = curRow;
-    const carrierRows = mode === "charge" ? (tg.chargedRows || tg.rows) : tg.rows;
-    for (const r of carrierRows) {
-      ws.getCell(`B${curRow}`).value = r.date ? dateLabel(r.date) : (r.isExtra ? "(ajuste)" : "");
-      const qCell = ws.getCell(`C${curRow}`);
-      const countV = mode === "charge" ? Number(r.chargedCount) || 0 : Number(r.count) || 0;
-      qCell.value = countV;
-      qCell.numFmt = "#,##0";
-      const pCell = ws.getCell(`D${curRow}`);
-      if (mode === "charge") {
-        pCell.value = Number(r.chargedRate) || 0;
-        pCell.fill = editableFill;
-      } else {
-        const rate = r.count > 0 ? Math.round(r.amount / r.count) : 0;
-        pCell.value = rate;
-        pCell.fill = editableFill;
-      }
-      pCell.numFmt = moneyFmt;
-      const tCell = ws.getCell(`E${curRow}`);
-      const amountV = mode === "charge" ? Number(r.chargedAmount) || 0 : Number(r.amount) || 0;
-      tCell.value = { formula: `C${curRow}*D${curRow}`, result: amountV };
-      tCell.numFmt = moneyFmt;
-      curRow++;
+    let row = HEADER_ROW + 1;
+    for (const r of section.rows) {
+      columns.forEach((col, i) => {
+        const c = ws.getCell(`${colLetter(i)}${row}`);
+        if (col.key === "date") {
+          const badge = col.badge ? col.badge(r) : null;
+          c.value = badge ? `${col.value(r)} (${badge})` : col.value(r);
+          // tratoHE: sábados, domingos y feriados en rojo.
+          if (section.laborType === "tratoHE" && section.redDates?.has(r.date)) c.font = { bold: true, color: { argb: "FFCC0000" } };
+          return;
+        }
+        const v = col.value(r);
+        // Detalle: el nombre tal cual, aunque parezca un número.
+        if (i < 2) {
+          c.value = v;
+          return;
+        }
+        writeValue(c, col, v);
+        c.alignment = { horizontal: "right" };
+        if (col.key === "total") c.font = { bold: true };
+        else if (col.key === "heWorked") c.font = { color: { argb: "FF555555" } };
+        else if (col.key === "piso" || col.key === "bonos") c.font = { color: { argb: v === "—" ? MUTED : AMBER } };
+        else if (col.key === "transport" && typeof v === "string") c.font = { color: { argb: MUTED } };
+      });
+      row++;
     }
-    const dataEndRow = curRow - 1;
 
-    const subRow = curRow;
-    for (const col of cols) {
-      ws.getCell(`${col}${subRow}`).fill = subtotalFill;
-      ws.getCell(`${col}${subRow}`).font = { bold: true };
-    }
-    ws.getCell(`B${subRow}`).value = "Subtotal";
-    const totalAmountForSheet = mode === "charge" ? (tg.chargedTotalAmount || 0) : tg.totalAmount;
-    if (dataEndRow >= dataStartRow) {
-      ws.getCell(`C${subRow}`).value = { formula: `SUM(C${dataStartRow}:C${dataEndRow})`, result: 0 };
-      ws.getCell(`C${subRow}`).numFmt = "#,##0";
-      ws.getCell(`E${subRow}`).value = { formula: `SUM(E${dataStartRow}:E${dataEndRow})`, result: totalAmountForSheet };
-      ws.getCell(`E${subRow}`).numFmt = moneyFmt;
-    }
-    const fallbackTotal = mode === "charge" ? (tg.chargedTotalAmount || 0) : tg.totalAmount;
-    sheetTotals.push({ displayName: `🚐 ${displayName}`, sheetName, totalRef: `'${sheetName}'!$E$${subRow}`, fallback: fallbackTotal });
+    // Subtotal, como el de la tabla: el rótulo ocupa Detalle y Fecha.
+    ws.getCell(`B${row}`).value = `Subtotal ${section.displayName}`;
+    ws.mergeCells(`B${row}:C${row}`);
+    columns.forEach((col, i) => {
+      const c = ws.getCell(`${colLetter(i)}${row}`);
+      c.fill = SUBTOTAL_FILL;
+      c.font = { bold: true };
+      if (i < 2 || !col.total) return;
+      writeValue(c, col, col.total(section.totals));
+      c.alignment = { horizontal: "right" };
+      if (col.key === "heWorked") c.font = { bold: true, color: { argb: "FF555555" } };
+      if (col.key === "piso" || col.key === "bonos") c.font = { bold: true, color: { argb: AMBER } };
+    });
 
-    ws.getColumn(2).width = 14;
-    ws.getColumn(3).width = 12;
-    ws.getColumn(4).width = 12;
-    ws.getColumn(5).width = 14;
+    ws.getColumn(2).width = 28;
+    ws.getColumn(3).width = 14;
+    for (let i = 2; i < columns.length; i++) ws.getColumn(i + 2).width = 14;
     ws.views = [{ state: "frozen", ySplit: HEADER_ROW }];
   }
 
-  // ============ HOJA TOTAL GENERAL ============
-  // Transporte manual por fila (cobrar): las hojas por labor no tienen esa
-  // columna, así que va como línea propia en el Total, igual que en
-  // subtotalCobrar.
-  if (mode === "charge") {
-    let laborTransportSum = 0;
-    for (const ld of laborsForMode) {
-      if (!ld.include) continue;
-      laborTransportSum += Number(ld.chargedTotals?.transport) || 0;
-    }
-    if (laborTransportSum > 0) {
-      sheetTotals.push({ displayName: "Transporte (ajustes en labores)", totalRef: null, fallback: laborTransportSum });
-    }
-  }
+  // ============ HOJA TOTAL ============
   const wsTotal = wb.addWorksheet(safeName("Total"));
   wsTotal.getColumn(1).width = 6;
-  wsTotal.getCell("B2").value = mode === "charge"
-    ? (charge.withIva !== false ? "TOTAL A FACTURAR" : "TOTAL A COBRAR (sin IVA)")
-    : "TOTAL GENERAL";
+  wsTotal.getColumn(2).width = 40;
+  wsTotal.getColumn(3).width = 16;
+  wsTotal.getCell("B2").value = titles.main || "DETALLE DE JORNADA";
   wsTotal.getCell("B2").font = { bold: true, size: 14 };
+  if (titles.subtitle) wsTotal.getCell("B3").value = titles.subtitle;
 
-  const HR = 4;
-  const headerCols = ["B", "C"];
-  ["Concepto", "Subtotal"].forEach((h, i) => {
-    const c = wsTotal.getCell(`${headerCols[i]}${HR}`);
+  const HR = 5;
+  ["Concepto", "Total"].forEach((h, i) => {
+    const c = wsTotal.getCell(`${colLetter(i)}${HR}`);
     c.value = h;
     c.font = { bold: true };
-    c.fill = headerFill;
+    c.fill = HEADER_FILL;
     c.alignment = { horizontal: i === 0 ? "left" : "right" };
   });
-
-  let totalRow = HR + 1;
-  const totalStart = totalRow;
-  for (const st of sheetTotals) {
-    wsTotal.getCell(`B${totalRow}`).value = st.displayName;
-    const ref = wsTotal.getCell(`C${totalRow}`);
-    // Entradas sin hoja propia (ej. transporte manual) van como literal.
-    ref.value = st.totalRef ? { formula: st.totalRef, result: st.fallback } : st.fallback;
-    ref.numFmt = moneyFmt;
-    totalRow++;
-  }
-  const totalEnd = totalRow - 1;
-
-  // Con descuento (cobrar) van las filas Subtotal y Descuento antes del
-  // total, que queda en subtotal − descuento. El IVA, si está activo, se
-  // calcula sobre ese total.
-  const discountValue = mode === "charge" ? Math.max(0, Number(charge.discount) || 0) : 0;
-  const discountNoteValue = mode === "charge" ? (charge.discountNote || "") : "";
-  const pendingValue = mode === "charge" ? Math.max(0, Number(charge.pendingBalance) || 0) : 0;
-  const pendingNoteValue = mode === "charge" ? (charge.pendingBalanceNote || "") : "";
-  let subtotalRow = null;
-  let discountRow = null;
-  // Antes del total solo entra el descuento; el saldo pendiente se suma
-  // después del IVA, al final.
-  if (discountValue > 0) {
-    subtotalRow = totalRow;
-    wsTotal.getCell(`B${subtotalRow}`).value = "Subtotal";
-    wsTotal.getCell(`B${subtotalRow}`).font = { bold: true };
-    const sub = wsTotal.getCell(`C${subtotalRow}`);
-    if (totalEnd >= totalStart) {
-      sub.value = { formula: `SUM(C${totalStart}:C${totalEnd})`, result: subtotalCharge };
-    } else {
-      sub.value = 0;
+  let row = HR + 1;
+  const line = (label, value, { font, labelFont, valueFill } = {}) => {
+    wsTotal.getCell(`B${row}`).value = label;
+    if (labelFont) wsTotal.getCell(`B${row}`).font = labelFont;
+    const c = wsTotal.getCell(`C${row}`);
+    c.value = value;
+    c.numFmt = MONEY_FMT;
+    c.alignment = { horizontal: "right" };
+    if (font) c.font = font;
+    if (valueFill) {
+      wsTotal.getCell(`B${row}`).fill = valueFill;
+      c.fill = valueFill;
     }
-    sub.numFmt = moneyFmt;
-    sub.font = { bold: true };
-    totalRow++;
+    row++;
+  };
+  for (const section of sections) {
+    line(section.kind === "labor" ? section.displayName : `🚐 ${section.displayName}`, sectionTotal(section, mode));
+  }
+  row++;
 
-    discountRow = totalRow;
-    wsTotal.getCell(`B${discountRow}`).value = discountNoteValue
-      ? `Descuento · ${discountNoteValue}`
-      : "Descuento";
-    wsTotal.getCell(`B${discountRow}`).font = { bold: true, color: { argb: "FFBB0000" } };
-    const disc = wsTotal.getCell(`C${discountRow}`);
-    disc.value = -discountValue;
-    disc.numFmt = moneyFmt;
-    disc.font = { bold: true, color: { argb: "FFBB0000" } };
-    totalRow++;
+  // El bloque final, como abajo del resumen.
+  const discount = isCharge ? Math.max(0, Number(charge.discount) || 0) : 0;
+  const pending = isCharge ? Math.max(0, Number(charge.pendingBalance) || 0) : 0;
+  const withIva = isCharge && charge.withIva !== false;
+  const grandTotal = isCharge ? grandTotalCharge : grandTotalPay;
+  if (isCharge && (discount > 0 || pending > 0)) {
+    line("Subtotal", subtotalCharge, { font: { bold: true }, labelFont: { bold: true } });
+  }
+  if (discount > 0) {
+    const red = { bold: true, color: { argb: "FFBB0000" } };
+    line(charge.discountNote ? `Descuento · ${charge.discountNote}` : "Descuento", -discount, { font: red, labelFont: red });
+  }
+  const bold14 = { bold: true, size: 14 };
+  line(isCharge ? (withIva ? "TOTAL A FACTURAR" : "TOTAL A COBRAR (sin IVA)") : "TOTAL GENERAL", grandTotal, {
+    font: bold14, labelFont: bold14, valueFill: TOTAL_FILL,
+  });
+  if (withIva) {
+    line("Valor IVA (19%)", Math.round((Number(grandTotal) || 0) * 0.19), { font: { bold: true }, labelFont: { bold: true } });
+    line("IVA incluido", Math.round((Number(grandTotal) || 0) * 1.19), { font: bold14, labelFont: bold14, valueFill: SUBTOTAL_FILL });
+  }
+  if (pending > 0) {
+    const green = { bold: true, color: { argb: "FF0A7D3B" } };
+    line(charge.pendingBalanceNote ? `Saldo pendiente · ${charge.pendingBalanceNote}` : "Saldo pendiente", pending, { font: green, labelFont: green });
+    const postIva = withIva ? Math.round((Number(grandTotal) || 0) * 1.19) : Number(grandTotal) || 0;
+    const white = { bold: true, size: 14, color: { argb: "FFFFFFFF" } };
+    line("TOTAL FINAL", postIva + pending, { font: white, labelFont: white, valueFill: FINAL_FILL });
   }
 
-  const grandRow = totalRow;
-  wsTotal.getCell(`B${grandRow}`).value = mode === "charge"
-    ? (charge.withIva !== false ? "TOTAL A FACTURAR" : "TOTAL A COBRAR (sin IVA)")
-    : "TOTAL GENERAL";
-  wsTotal.getCell(`B${grandRow}`).font = { bold: true };
-  wsTotal.getCell(`B${grandRow}`).fill = titleFill;
-  const grand = wsTotal.getCell(`C${grandRow}`);
-  const grandFallback = mode === "charge" ? grandTotalCharge : grandTotalPay;
-  if (subtotalRow != null && discountRow != null) {
-    grand.value = { formula: `C${subtotalRow}+C${discountRow}`, result: grandFallback };
-  } else if (totalEnd >= totalStart) {
-    grand.value = { formula: `SUM(C${totalStart}:C${totalEnd})`, result: grandFallback };
-  } else {
-    grand.value = 0;
+  // ============ OBSERVACIONES (pagar) ============
+  // Solo en pagar: son apuntes internos, igual que en pantalla.
+  if (!isCharge && dayNotes.length > 0) {
+    const ws = wb.addWorksheet(safeName("Observaciones"));
+    ws.getColumn(1).width = 6;
+    ws.getColumn(2).width = 12;
+    ws.getColumn(3).width = 80;
+    ws.getCell("B2").value = "OBSERVACIONES POR DÍA";
+    ws.getCell("B2").font = { bold: true, size: 14 };
+    ["Fecha", "Observación"].forEach((h, i) => {
+      const c = ws.getCell(`${colLetter(i)}4`);
+      c.value = h;
+      c.font = { bold: true };
+      c.fill = HEADER_FILL;
+    });
+    const showLaborNames = (laborsData || []).length > 1;
+    let r = 5;
+    for (const g of dayNotes) {
+      const lines = g.shared ? [{ name: "Todas las labores", text: g.shared }] : [];
+      for (const e of g.entries) lines.push({ name: e.name, text: e.text });
+      ws.getCell(`B${r}`).value = dateLabel(g.date);
+      ws.getCell(`B${r}`).font = { bold: true };
+      ws.getCell(`B${r}`).alignment = { vertical: "top" };
+      const c = ws.getCell(`C${r}`);
+      c.value = lines.map((l) => `${showLaborNames ? `${l.name} — ` : ""}${l.text}`).join("\n");
+      c.alignment = { wrapText: true, vertical: "top" };
+      r++;
+    }
   }
-  grand.numFmt = moneyFmt;
-  grand.font = { bold: true, size: 12 };
-  grand.fill = titleFill;
+  return wb;
+}
 
-  // En cobrar con IVA van debajo las filas Valor IVA (19%) e IVA incluido.
-  let afterVatRow = grandRow; // fila a la que se suma el saldo pendiente
-  const afterVatFallback = (charge.withIva !== false)
-    ? Math.round((Number(grandFallback) || 0) * 1.19)
-    : Number(grandFallback) || 0;
-  if (mode === "charge" && charge.withIva !== false) {
-    const vatRow = grandRow + 1;
-    wsTotal.getCell(`B${vatRow}`).value = "Valor IVA (19%)";
-    wsTotal.getCell(`B${vatRow}`).font = { bold: true };
-    const vatCell = wsTotal.getCell(`C${vatRow}`);
-    vatCell.value = { formula: `ROUND(C${grandRow}*0.19,0)`, result: Math.round((Number(grandFallback) || 0) * 0.19) };
-    vatCell.numFmt = moneyFmt;
-    vatCell.font = { bold: true };
-
-    const withVatRow = grandRow + 2;
-    wsTotal.getCell(`B${withVatRow}`).value = "IVA incluido";
-    wsTotal.getCell(`B${withVatRow}`).font = { bold: true, size: 12 };
-    wsTotal.getCell(`B${withVatRow}`).fill = titleFill;
-    const withVatCell = wsTotal.getCell(`C${withVatRow}`);
-    withVatCell.value = { formula: `C${grandRow}+C${vatRow}`, result: afterVatFallback };
-    withVatCell.numFmt = moneyFmt;
-    withVatCell.font = { bold: true, size: 12 };
-    withVatCell.fill = titleFill;
-    afterVatRow = withVatRow;
-    totalRow = withVatRow + 1;
-  } else {
-    totalRow = grandRow + 1;
-  }
-
-  // Saldo pendiente, después del IVA: con saldo > 0 van la fila del saldo y
-  // TOTAL FINAL = total con IVA (o neto, sin IVA) + saldo.
-  if (mode === "charge" && pendingValue > 0) {
-    const pendingRow = totalRow;
-    wsTotal.getCell(`B${pendingRow}`).value = pendingNoteValue
-      ? `Saldo pendiente · ${pendingNoteValue}`
-      : "Saldo pendiente";
-    wsTotal.getCell(`B${pendingRow}`).font = { bold: true, color: { argb: "FF0A7D3B" } };
-    const pendingCell = wsTotal.getCell(`C${pendingRow}`);
-    pendingCell.value = pendingValue;
-    pendingCell.numFmt = moneyFmt;
-    pendingCell.font = { bold: true, color: { argb: "FF0A7D3B" } };
-    totalRow++;
-
-    const finalRow = totalRow;
-    wsTotal.getCell(`B${finalRow}`).value = "TOTAL FINAL";
-    wsTotal.getCell(`B${finalRow}`).font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } };
-    wsTotal.getCell(`B${finalRow}`).fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "FF6AA84F" },
-    };
-    const finalCell = wsTotal.getCell(`C${finalRow}`);
-    finalCell.value = { formula: `C${afterVatRow}+C${pendingRow}`, result: afterVatFallback + pendingValue };
-    finalCell.numFmt = moneyFmt;
-    finalCell.font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } };
-    finalCell.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "FF6AA84F" },
-    };
-  }
-
-  wsTotal.getColumn(2).width = 32;
-  wsTotal.getColumn(3).width = 16;
-
+export async function writeCycleSummaryXlsx({ cycle, mode, ...args }) {
+  const ExcelJS = (await import("exceljs")).default;
+  const wb = buildCycleSummaryWorkbook(ExcelJS, { mode, ...args });
   const buf = await wb.xlsx.writeBuffer();
   const blob = new Blob([buf], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

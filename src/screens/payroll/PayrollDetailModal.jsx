@@ -22,6 +22,7 @@ import {
   detailSummariesOf,
   subfaenaSummaryOf,
   cyclesPeriodOf,
+  summaryCycleName,
 } from "../../utils/payrollDetail";
 import { fmtCurrency } from "../../utils/format";
 import { AddCyclesModal } from "./AddCyclesModal";
@@ -49,7 +50,7 @@ import { PayrollTotalsCards } from "./payrollDetailModal/PayrollTotalsCards";
 import { SummaryTable } from "./payrollDetailModal/SummaryTable";
 import { PayrollCyclesSection } from "./payrollDetailModal/PayrollCyclesSection";
 
-export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPayrolls = [], onClose, onRedownload, onDownloadBankFile, onDownloadSnapshot, bankFormatLabel = null, onPublishPortal = null, publishedPayrollId = null, onChanged }) {
+export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, subfaenas, workers, allPayrolls = [], onClose, onRedownload, onDownloadBankFile, onDownloadSnapshot, bankFormatLabel = null, onPublishPortal = null, publishedPayrollId = null, onChanged }) {
   "use no memo";
   const { catalogs } = useCatalogs();
   const toast = useToast();
@@ -158,7 +159,13 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
     setEditMode,
   } = edit;
 
-  const subfaenaSummary = subfaenaSummaryOf(cycleDetails, bank, cash);
+  const { cycleTitleOverrides, displayCycleLabel, setCycleTitle } = useCycleTitles({ payroll });
+
+  // El resumen junta los ciclos de una misma subfaena; "Ciclos separados" lo
+  // muestra (y lo imprime y descarga) con una fila por ciclo.
+  const [cyclesApart, setCyclesApart] = useState(false);
+  const cycleNameOf = (cd) => summaryCycleName(cd, cycleTitleOverrides);
+  const subfaenaSummary = subfaenaSummaryOf(cycleDetails, bank, cash, { byCycle: cyclesApart, cycleNameOf });
 
   const bonusAdvanceSummary = computeBonusAdvanceSummary(items);
   const cyclesPeriod = (cycleIdsIn) => cyclesPeriodOf(cycleDetails, cycleIdsIn);
@@ -180,10 +187,13 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
     allGroups,
     bonusAdvanceSummary,
     catalogs,
+    cycleNameOf,
+    cyclesApart,
     cyclesPeriod,
     getPayrollData,
     otherPendingCash,
     payroll,
+    setCyclesApart,
     subfaenaSummary,
     toast,
   });
@@ -227,8 +237,6 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
     startRecalc,
   } = recalc;
 
-  const { cycleTitleOverrides, displayCycleLabel, setCycleTitle } = useCycleTitles({ payroll });
-
   const {
     handlePrint,
     handlePrintDetail,
@@ -240,6 +248,7 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
     allGroups,
     cashGroups,
     catalogs,
+    cyclesApart,
     cycleTitleOverrides,
     detailSummaries,
     getPayrollData,
@@ -349,6 +358,28 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
                   {editMode ? "✕ Cerrar edición" : "✂ Editar contenido"}
                 </button>
               )}
+              {isPending && editMode && (
+                <>
+                  <button
+                    type="button"
+                    disabled={editBusy}
+                    onClick={() => setAddCyclesOpen(true)}
+                    className="min-h-8 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-xs text-[var(--color-accent)] hover:opacity-80 disabled:opacity-50"
+                    title="Agregar otro ciclo, o las labores que le faltan a uno que ya está"
+                  >
+                    + Agregar ciclo
+                  </button>
+                  <button
+                    type="button"
+                    disabled={editBusy}
+                    onClick={() => setAddWorkerOpen(true)}
+                    className="min-h-8 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-xs text-[var(--color-accent)] hover:opacity-80 disabled:opacity-50"
+                    title="Sumar días puntuales de una persona, de cualquier ciclo abierto"
+                  >
+                    + Agregar persona
+                  </button>
+                </>
+              )}
               {isPending && (
                 <button
                   type="button"
@@ -411,7 +442,6 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
                 {subfaenaSummary.rows.length > 0 && (
                   <SummaryTable
                     bonusAdvanceSummary={bonusAdvanceSummary}
-                    cyclesPeriod={cyclesPeriod}
                     payroll={payroll}
                     table={table}
                   />
@@ -709,11 +739,12 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
       {addCyclesOpen && (
         <AddCyclesModal
           onClose={() => setAddCyclesOpen(false)}
+          payroll={payroll}
           cycles={cycles}
           faenas={faenas}
           subfaenas={subfaenas}
-          payrollCycleDetails={cycleDetails}
-          payrollCycleIds={payroll.cycleIds || []}
+          cycleStats={cycleStats}
+          allPayrolls={allPayrolls}
           onConfirm={handleAddCycles}
           busy={editBusy}
         />

@@ -3,7 +3,7 @@ import { printCashReceipts, printPaymentDetails } from "../printReceipts";
 
 // Las impresiones del detalle: comprobantes de efectivo, detalle de pago y el
 // detalle de un solo grupo, con su estado de carga.
-export function usePayrollPrints({ allGroups, cashGroups, catalogs, cycleTitleOverrides, detailSummaries, getPayrollData, payroll, rutOf, subfaenaSummary, toast }) {
+export function usePayrollPrints({ allGroups, cashGroups, catalogs, cyclesApart, cycleTitleOverrides, detailSummaries, getPayrollData, payroll, rutOf, subfaenaSummary, toast }) {
   "use no memo";
   const [printingGroupLeader, setPrintingGroupLeader] = useState(null);
 
@@ -24,7 +24,7 @@ export function usePayrollPrints({ allGroups, cashGroups, catalogs, cycleTitleOv
   const handlePrintDetail = async () => {
     setPrintingDetail(true);
     try {
-      await printPaymentDetails(payroll, allGroups, cycleTitleOverrides, detailSummaries, catalogs, subfaenaSummary, await getPayrollData(), rutOf);
+      await printPaymentDetails(payroll, allGroups, cycleTitleOverrides, detailSummaries, catalogs, subfaenaSummary, await getPayrollData(), rutOf, { cyclesApart });
     } catch (err) {
       toast.error(err?.message || "Error al imprimir");
     } finally {
@@ -39,7 +39,7 @@ export function usePayrollPrints({ allGroups, cashGroups, catalogs, cycleTitleOv
     const loadingKey = key || group.leader;
     setPrintingGroupLeader(loadingKey);
     try {
-      await printPaymentDetails(payroll, [group], cycleTitleOverrides, [], catalogs, null, await getPayrollData(), rutOf);
+      await printPaymentDetails(payroll, [group], cycleTitleOverrides, [], catalogs, null, await getPayrollData(), rutOf, { cyclesApart });
     } catch (err) {
       toast.error(err?.message || "Error al imprimir grupo");
     } finally {

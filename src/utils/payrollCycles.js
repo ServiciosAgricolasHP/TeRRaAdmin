@@ -1,8 +1,9 @@
-// Los ciclos en Nómina: lo pendiente de cada ciclo activo, los ciclos abiertos
-// por faena, cuáles se eligieron y con qué labores, y los ciclos de una nómina
-// tal como van al Excel.
+// Los ciclos en Nómina: lo pendiente de cada ciclo activo, la lista para
+// elegirlos, los ciclos abiertos por faena, cuáles se eligieron y con qué
+// labores, y los ciclos de una nómina tal como van al Excel.
 import { isCashBank } from "./banks";
 import { getTratoTierTotals } from "./cosechaCombos";
+import { matchesSearchQuery } from "./textSearch";
 
 // Totales por ciclo activo: { [cycleId]: { unpaid, taken, total, firstDay,
 // lastDay, unpaidBank, unpaidCash, unpaidUnknown, unpaidByLabor,
@@ -73,6 +74,142 @@ export function cycleStatsOf(cycles, workers, workdays) {
     }
   }
   return stats;
+}
+
+// Lo pendiente de un ciclo marcado, contando solo las labores elegidas.
+export function pendingOfChosenLabors(cycle, stat, selectedLaborsByCycle) {
+  const elegidas = selectedLaborsByCycle?.get(cycle.id);
+  const todas = (cycle.labors || []).map((l) => l.id);
+  if (!elegidas || todas.every((id) => elegidas.has(id))) {
+    return {
+      unpaid: stat.unpaid,
+      bank: stat.unpaidBank || 0,
+      cash: stat.unpaidCash || 0,
+      unknown: stat.unpaidUnknown || 0,
+    };
+  }
+  const out = { unpaid: 0, bank: 0, cash: 0, unknown: 0 };
+  for (const id of elegidas) {
+    const pl = stat.unpaidByLabor?.[id];
+    if (!pl) continue;
+    out.unpaid += pl.unpaid;
+    out.bank += pl.bank;
+    out.cash += pl.cash;
+    out.unknown += pl.unknown;
+  }
+  return out;
+}
+
+// La lista de ciclos para elegir, por faena: los que se ven con la búsqueda y
+// con "Sin pendientes" (un ciclo marcado se ve siempre), lo pendiente de
+// cada uno y de cada faena, y los totales de lo pendiente y de lo elegido.
+export function cycleChecklistOf({ groups, cycleStats, selected, selectedLaborsByCycle, search, showEmpty, subfaenaName }) {
+  const statOf = (id) =>
+    cycleStats?.[id] || {
+      unpaid: 0, taken: 0, total: 0, firstDay: "", lastDay: "",
+      unpaidBank: 0, unpaidCash: 0, unpaidUnknown: 0,
+    };
+  let empty = 0;
+  let pendingSum = 0;
+  let withPending = 0;
+  let bankSum = 0, cashSum = 0, unknownSum = 0;
+  let selSum = 0, selBank = 0, selCash = 0, selUnknown = 0;
+  const out = [];
+  for (const { faena, cycles } of groups) {
+    const rows = [];
+    let groupPending = 0;
+    let groupBank = 0;
+    let groupCash = 0;
+    for (const c of cycles) {
+      const stat = statOf(c.id);
+      const isSelected = selected.has(c.id);
+      const hasPending = stat.unpaid > 0;
+      if (hasPending) {
+        withPending += 1;
+        pendingSum += stat.unpaid;
+        bankSum += stat.unpaidBank || 0;
+        cashSum += stat.unpaidCash || 0;
+        unknownSum += stat.unpaidUnknown || 0;
+      } else {
+        empty += 1;
+      }
+      if (isSelected) {
+        const parte = pendingOfChosenLabors(c, stat, selectedLaborsByCycle);
+        selSum += parte.unpaid;
+        selBank += parte.bank;
+        selCash += parte.cash;
+        selUnknown += parte.unknown;
+      }
+      if (!hasPending && !showEmpty && !isSelected) continue;
+      const sub = subfaenaName(c.subfaenaId);
+      if (!matchesSearchQuery(`${c.label || c.id} ${sub} ${faena.name || ""}`, search)) continue;
+      if (hasPending) {
+        groupPending += stat.unpaid;
+        groupBank += stat.unpaidBank || 0;
+        groupCash += stat.unpaidCash || 0;
+      }
+      rows.push({ cycle: c, stat, sub, isSelected, hasPending });
+    }
+    if (rows.length > 0) out.push({ faena, rows, groupPending, groupBank, groupCash });
+  }
+  return {
+    visibleGroups: out,
+    emptyCount: empty,
+    totalPending: pendingSum,
+    pendingCount: withPending,
+    pendingBank: bankSum,
+    pendingCash: cashSum,
+    pendingUnknown: unknownSum,
+    selectedTotal: selSum,
+    selectedBank: selBank,
+    selectedCash: selCash,
+    selectedUnknown: selUnknown,
+  };
+}
+
+// Lo que se le puede sumar a una nómina ya creada con "+ Agregar ciclo", en la
+// forma de `cycleChecklistOf`: los ciclos abiertos por faena, cada uno con las
+// labores que todavía no están en la nómina, y lo pendiente de cada ciclo
+// contando solo esas labores. Un ciclo que está entero en la nómina no
+// aparece; uno que está con algunas labores aparece con las que le faltan y va
+// en `partial`. Un ciclo en `cycleIds` sin detalle en `cycleDetails` está
+// entero.
+export function addableCyclesOf({ jobs, cycles, cycleStats = {}, payroll }) {
+  const details = new Map((payroll.cycleDetails || []).map((cd) => [cd.id, cd]));
+  const whole = new Set((payroll.cycleIds || []).filter((id) => !details.has(id)));
+  const byJob = new Map(jobs.map((f) => [f.id, { faena: f, cycles: [] }]));
+  const stats = {};
+  const partial = new Set();
+  for (const c of cycles) {
+    if (c.status === "closed" || whole.has(c.id)) continue;
+    const inPayroll = details.get(c.id);
+    if (inPayroll && !Array.isArray(inPayroll.laborIds)) continue;
+    const group = byJob.get(c.faenaId);
+    if (!group) continue;
+    const already = new Set(inPayroll?.laborIds || []);
+    const labors = (c.labors || []).filter((l) => !already.has(l.id));
+    if (labors.length === 0) continue;
+    group.cycles.push(already.size > 0 ? { ...c, labors } : c);
+    if (inPayroll) partial.add(c.id);
+    const stat = cycleStats[c.id];
+    if (stat) stats[c.id] = already.size > 0 ? statOfLabors(stat, labors) : stat;
+  }
+  return { groups: [...byJob.values()].filter((g) => g.cycles.length > 0), stats, partial };
+}
+
+// Lo pendiente de un ciclo contando solo esas labores.
+function statOfLabors(stat, labors) {
+  const out = { ...stat, unpaid: 0, unpaidBank: 0, unpaidCash: 0, unpaidUnknown: 0, unpaidByLabor: {} };
+  for (const l of labors) {
+    const pl = stat.unpaidByLabor?.[l.id];
+    if (!pl) continue;
+    out.unpaidByLabor[l.id] = pl;
+    out.unpaid += pl.unpaid;
+    out.unpaidBank += pl.bank;
+    out.unpaidCash += pl.cash;
+    out.unpaidUnknown += pl.unknown;
+  }
+  return out;
 }
 
 // Ciclos activos agrupados por faena.

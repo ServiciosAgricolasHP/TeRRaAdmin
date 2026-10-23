@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import Select from "../../components/Select";
 import ConfirmDialog from "../../components/ConfirmDialog";
-import { TripEditModal } from "../../components/TransportsModal";
+import { TripEditModal } from "../../components/TripEditModal";
 import { useCarriers } from "../../contexts/CarriersContext";
 import { tripsService, titleCase } from "../../services/transportsService";
 import { cyclesService, jobsService, subjobsService } from "../../services";

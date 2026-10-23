@@ -7,10 +7,13 @@ import { createPortal } from "react-dom";
 // Columnas que se pueden ocultar en todas las tablas del resumen; se guardan
 // en `cobrar.hiddenColumns`. Las claves son las que consultan LaborTable y
 // TransportTable con `hiddenColumns.has(key)`. Algunas aplican solo a ciertos
-// tipos (he y bonos a tratoHE; piso, cuando hay piso registrado).
+// tipos (las de horas extras y bonos a tratoHE; piso, cuando hay piso
+// registrado).
 const COLUMN_OPTIONS = [
   { key: "qty", label: "Base $ / Unidad / Vueltas" },
-  { key: "he", label: "HE (hrs) — tratoHE" },
+  { key: "heWorked", label: "HE trabajadas — tratoHE, cobrar" },
+  { key: "he", label: "HE (hrs) / HE a cobrar — tratoHE" },
+  { key: "heRate", label: "Tarifa HE — tratoHE, cobrar" },
   { key: "rate", label: "Total HE / Valor" },
   { key: "valorTotal", label: "Valor total" },
   { key: "piso", label: "Piso" },
