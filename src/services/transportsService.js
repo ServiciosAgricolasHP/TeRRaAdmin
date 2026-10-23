@@ -599,6 +599,13 @@ export const fortnightsService = {
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   },
 
+  // Las quincenas sin pagar.
+  async listOpen() {
+    const q = query(collection(db, FORTNIGHTS), where("status", "==", "pending"));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  },
+
   async getById(id) {
     const s = await getDoc(doc(db, FORTNIGHTS, id));
     return s.exists() ? { id: s.id, ...s.data() } : null;
