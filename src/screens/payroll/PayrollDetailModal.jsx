@@ -349,6 +349,28 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
                   {editMode ? "✕ Cerrar edición" : "✂ Editar contenido"}
                 </button>
               )}
+              {isPending && editMode && (
+                <>
+                  <button
+                    type="button"
+                    disabled={editBusy}
+                    onClick={() => setAddCyclesOpen(true)}
+                    className="min-h-8 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-xs text-[var(--color-accent)] hover:opacity-80 disabled:opacity-50"
+                    title="Agregar otro ciclo, o las labores que le faltan a uno que ya está"
+                  >
+                    + Agregar ciclo
+                  </button>
+                  <button
+                    type="button"
+                    disabled={editBusy}
+                    onClick={() => setAddWorkerOpen(true)}
+                    className="min-h-8 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-xs text-[var(--color-accent)] hover:opacity-80 disabled:opacity-50"
+                    title="Sumar días puntuales de una persona, de cualquier ciclo abierto"
+                  >
+                    + Agregar persona
+                  </button>
+                </>
+              )}
               {isPending && (
                 <button
                   type="button"

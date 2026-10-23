@@ -4,11 +4,11 @@ import { fmtDayShortEs } from "../helpers";
 
 // Los ciclos de la nómina, con sus labores y lo que paga cada una. En
 // "✂ Editar contenido" se destildan ciclos o labores para sacarlos con
-// Recalcular, y se agregan personas o ciclos.
+// Recalcular.
 export function PayrollCyclesSection({ cycleBreakdown, cycleDetails, edit, isCollapsed, recalc, toggleSection }) {
   "use no memo";
   const { activeRemoval, recalcBusy, removalSummary, setRemoval, startRecalc, toggleCycleRemoval, toggleLaborRemoval } = recalc;
-  const { editBusy, editMode, isPending, setAddCyclesOpen, setAddWorkerOpen } = edit;
+  const { editBusy, editMode } = edit;
   return (
     <section>
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -23,28 +23,6 @@ export function PayrollCyclesSection({ cycleBreakdown, cycleDetails, edit, isCol
             {cycleDetails.length}
           </span>
         </button>
-        {editMode && isPending && (
-          <div className="flex shrink-0 gap-1">
-            <button
-              type="button"
-              disabled={editBusy}
-              onClick={() => setAddWorkerOpen(true)}
-              className="min-h-[32px] rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-[10px] text-[var(--color-accent)] hover:opacity-80 disabled:opacity-50 sm:min-h-0"
-              title="Sumar días puntuales de una persona, de cualquier ciclo abierto"
-            >
-              + Agregar persona
-            </button>
-            <button
-              type="button"
-              disabled={editBusy}
-              onClick={() => setAddCyclesOpen(true)}
-              className="min-h-[32px] rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-[10px] text-[var(--color-accent)] hover:opacity-80 disabled:opacity-50 sm:min-h-0"
-              title="Agregar otro ciclo, o las labores que le faltan a uno que ya está"
-            >
-              + Agregar ciclo
-            </button>
-          </div>
-        )}
       </div>
       {!isCollapsed("cycles") && (
         <>
