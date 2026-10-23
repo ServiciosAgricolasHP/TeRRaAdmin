@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { activeCyclesByJob, chosenCyclesOf, cycleStatsOf, exportCyclesOf, laborScopeOf } from "./payrollCycles";
+import {
+  activeCyclesByJob, chosenCyclesOf, cycleChecklistOf, cycleStatsOf, exportCyclesOf, laborScopeOf, pendingOfChosenLabors,
+} from "./payrollCycles";
 
 const cycles = [
   { id: "C1", faenaId: "F1", labors: [{ id: "L1", type: "main" }, { id: "L2", type: "trato" }] },
@@ -42,6 +44,67 @@ describe("cycleStatsOf", () => {
   it("un ciclo activo sin jornadas queda en cero", () => {
     expect(stats.C2.total).toBe(0);
     expect(stats.C2.firstDay).toBe("");
+  });
+});
+
+describe("pendingOfChosenLabors", () => {
+  const stat = {
+    unpaid: 900, unpaidBank: 600, unpaidCash: 200, unpaidUnknown: 100,
+    unpaidByLabor: {
+      L1: { unpaid: 700, bank: 600, cash: 100, unknown: 0 },
+      L2: { unpaid: 200, bank: 0, cash: 100, unknown: 100 },
+    },
+  };
+  it("sin elección o con todas las labores, es lo pendiente del ciclo entero", () => {
+    expect(pendingOfChosenLabors(cycles[0], stat, new Map())).toEqual({ unpaid: 900, bank: 600, cash: 200, unknown: 100 });
+    expect(pendingOfChosenLabors(cycles[0], stat, new Map([["C1", new Set(["L1", "L2"])]])).unpaid).toBe(900);
+  });
+  it("con algunas labores, suma solo las elegidas; sin ninguna, cero", () => {
+    expect(pendingOfChosenLabors(cycles[0], stat, new Map([["C1", new Set(["L2"])]]))).toEqual({ unpaid: 200, bank: 0, cash: 100, unknown: 100 });
+    expect(pendingOfChosenLabors(cycles[0], stat, new Map([["C1", new Set()]])).unpaid).toBe(0);
+  });
+});
+
+describe("cycleChecklistOf", () => {
+  const F1 = { id: "F1", name: "Fundo Uno" };
+  const F2 = { id: "F2", name: "Fundo Dos" };
+  const A = { id: "A", label: "Poda", subfaenaId: "S1", labors: [{ id: "L1" }, { id: "L2" }] };
+  const B = { id: "B", label: "Raleo", subfaenaId: "S2", labors: [{ id: "L3" }] };
+  const C = { id: "C", label: "Cosecha", subfaenaId: "S1", labors: [{ id: "L4" }] };
+  const groups = [{ faena: F1, cycles: [A, B] }, { faena: F2, cycles: [C] }];
+  const cycleStats = {
+    A: {
+      unpaid: 900, unpaidBank: 600, unpaidCash: 200, unpaidUnknown: 100,
+      unpaidByLabor: { L1: { unpaid: 700, bank: 600, cash: 100, unknown: 0 }, L2: { unpaid: 200, bank: 0, cash: 100, unknown: 100 } },
+    },
+    B: { unpaid: 0, unpaidBank: 0, unpaidCash: 0, unpaidUnknown: 0, unpaidByLabor: {} },
+    C: { unpaid: 50, unpaidBank: 0, unpaidCash: 50, unpaidUnknown: 0, unpaidByLabor: { L4: { unpaid: 50, bank: 0, cash: 50, unknown: 0 } } },
+  };
+  const subfaenaName = (id) => ({ S1: "Sector Norte", S2: "Sector Sur" })[id] || "";
+  const base = { groups, cycleStats, selected: new Set(), selectedLaborsByCycle: new Map(), search: "", showEmpty: false, subfaenaName };
+  const ids = (r) => r.visibleGroups.map((g) => [g.faena.id, g.rows.map((x) => x.cycle.id)]);
+
+  it("esconde los ciclos sin pendiente salvo con \"Sin pendientes\" o si están marcados", () => {
+    expect(ids(cycleChecklistOf(base))).toEqual([["F1", ["A"]], ["F2", ["C"]]]);
+    expect(ids(cycleChecklistOf({ ...base, showEmpty: true }))).toEqual([["F1", ["A", "B"]], ["F2", ["C"]]]);
+    expect(ids(cycleChecklistOf({ ...base, selected: new Set(["B"]) }))).toEqual([["F1", ["A", "B"]], ["F2", ["C"]]]);
+  });
+
+  it("totaliza lo pendiente por faena y en general, y cuenta los ciclos sin pendiente", () => {
+    const r = cycleChecklistOf(base);
+    expect([r.totalPending, r.pendingCount, r.emptyCount]).toEqual([950, 2, 1]);
+    expect([r.pendingBank, r.pendingCash, r.pendingUnknown]).toEqual([600, 250, 100]);
+    expect(r.visibleGroups.map((g) => [g.groupPending, g.groupBank, g.groupCash])).toEqual([[900, 600, 200], [50, 0, 50]]);
+  });
+
+  it("lo elegido respeta las labores destildadas", () => {
+    const r = cycleChecklistOf({ ...base, selected: new Set(["A", "C"]), selectedLaborsByCycle: new Map([["A", new Set(["L2"])]]) });
+    expect([r.selectedTotal, r.selectedBank, r.selectedCash, r.selectedUnknown]).toEqual([250, 0, 150, 100]);
+  });
+
+  it("busca por ciclo, subfaena o faena, en cualquier orden y sin tildes", () => {
+    expect(ids(cycleChecklistOf({ ...base, search: "norte poda" }))).toEqual([["F1", ["A"]]]);
+    expect(ids(cycleChecklistOf({ ...base, search: "fundo dos" }))).toEqual([["F2", ["C"]]]);
   });
 });
 

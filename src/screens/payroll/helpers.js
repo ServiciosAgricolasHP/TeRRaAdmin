@@ -24,3 +24,10 @@ export const resolveCurrentRut = (workers) => {
   const rutOf = currentRutResolver(workers);
   return (agg) => rutOf(agg.rut, agg.workerId);
 };
+
+// Ayudas del estimado de lo pendiente por medio de pago, en Generar.
+export const PAY_SPLIT_HINT =
+  "Estimado en bruto, según el banco que tiene cargado cada trabajador. El monto definitivo por medio de pago sale en la vista previa, después de anticipos/bonos y de los cambios que hagas ahí.";
+
+export const PAY_UNKNOWN_HINT =
+  "Trabajadores sin banco cargado o que no están en el catálogo. Se define su medio de pago en la vista previa.";
