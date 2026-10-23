@@ -8,11 +8,10 @@ import {
   renderProductionTotal,
   fetchPayrollWorkdays,
   buildWorkdaysByGroup,
-  computeLaborSummary,
   computeBonusAdvanceSummary,
 } from "./printCommon";
 import { fmtCurrency } from "../../utils/format";
-import { summaryDisplayRowsOf, summaryLabelColumnsOf } from "../../utils/payrollDetail";
+import { computeLaborSummary, summaryDisplayRowsOf, summaryLabelColumnsOf } from "../../utils/payrollDetail";
 
 function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
   const cycleDetails = payroll.cycleDetails || [];

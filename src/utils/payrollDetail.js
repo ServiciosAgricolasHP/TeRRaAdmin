@@ -1,6 +1,6 @@
 // Cálculos del detalle de una nómina: los líderes y el filtro de sus items,
-// los resúmenes por grupo y por subfaena, el período de sus ciclos, las filas
-// de la tabla del resumen y lo marcado para sacar.
+// los resúmenes por grupo, por subfaena y por labor, el período de sus
+// ciclos, las filas de la tabla del resumen y lo marcado para sacar.
 import { isCashBank } from "./banks";
 import { normalizeLeader } from "./payroll";
 import { matchesSearchQuery } from "./textSearch";
@@ -124,6 +124,52 @@ export function subfaenaSummaryOf(cycleDetails, bank, cash) {
       cash: acc.cash + r.cash,
       total: acc.total + r.total,
     }),
+    { bank: 0, cash: 0, total: 0 },
+  );
+  return { rows, totals };
+}
+
+// Resumen por labor (segunda hoja del "Detalle de pago" imprimible y vista
+// "con labores" del Resumen en pantalla). Mismo criterio que subfaenaSummary
+// (banco y efectivo por fila), desglosado también por labor y sumando a todos
+// los trabajadores de la nómina. Necesita `workdaysByGroup` (ver
+// buildWorkdaysByGroup): payroll.items solo trae el total por ciclo.
+export function computeLaborSummary(payroll, allGroups, workdaysByGroup) {
+  const allItems = allGroups.flatMap((g) => g.items);
+  const cashByRut = new Map(allItems.map((it) => [it.rut, isCashBank(it.bankCode)]));
+  const cycleDetails = payroll.cycleDetails || [];
+  const acc = new Map(); // clave: subfaenaName||laborName
+  for (const g of allGroups) {
+    const byCycle = workdaysByGroup[g.leader] || {};
+    for (const [cid, snapshots] of Object.entries(byCycle)) {
+      const cd = cycleDetails.find((c) => c.id === cid);
+      const subfaenaName = cd?.subfaenaName || cd?.label || cid;
+      const faenaName = cd?.faenaName || "—";
+      for (const snap of snapshots) {
+        for (const row of snap.rows) {
+          if (!(row.totalAmount > 0)) continue;
+          const key = `${subfaenaName}||${snap.laborName}`;
+          if (!acc.has(key)) {
+            acc.set(key, { faenaName, subfaenaName, laborName: snap.laborName, bank: 0, cash: 0, total: 0, cycleIds: new Set() });
+          }
+          const entry = acc.get(key);
+          if (cashByRut.get(row.rut)) entry.cash += row.totalAmount;
+          else entry.bank += row.totalAmount;
+          entry.total += row.totalAmount;
+          entry.cycleIds.add(cid);
+        }
+      }
+    }
+  }
+  const rows = [...acc.values()].sort((a, b) => {
+    const f = a.faenaName.localeCompare(b.faenaName, "es");
+    if (f !== 0) return f;
+    const s = a.subfaenaName.localeCompare(b.subfaenaName, "es");
+    if (s !== 0) return s;
+    return a.laborName.localeCompare(b.laborName, "es");
+  });
+  const totals = rows.reduce(
+    (acc2, r) => ({ bank: acc2.bank + r.bank, cash: acc2.cash + r.cash, total: acc2.total + r.total }),
     { bank: 0, cash: 0, total: 0 },
   );
   return { rows, totals };

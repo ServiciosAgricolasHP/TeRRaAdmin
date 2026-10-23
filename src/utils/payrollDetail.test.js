@@ -6,6 +6,7 @@ import {
   subfaenaSummaryOf,
   cyclesPeriodOf,
   summaryDisplayRowsOf,
+  computeLaborSummary,
   summaryLabelColumnsOf,
   removalSummaryOf,
 } from "./payrollDetail";
@@ -110,6 +111,32 @@ describe("subfaenaSummaryOf", () => {
       ["Fundo B", "Sector Uno", ["C1", "C3"], 150, 20, 170],
     ]);
     expect(totals).toEqual({ bank: 180, cash: 27, total: 207 });
+  });
+});
+
+describe("computeLaborSummary", () => {
+  it("suma por subfaena y labor, separando banco y efectivo, sin filas en 0", () => {
+    const payroll = {
+      cycleDetails: [
+        { id: "C1", subfaenaName: "Sector Uno", faenaName: "Fundo B" },
+        { id: "C3", subfaenaName: "Sector Uno", faenaName: "Fundo B" },
+        { id: "C2", subfaenaName: "Sector Dos", faenaName: "Fundo A" },
+      ],
+    };
+    const allGroups = [{ leader: "G", items: [{ rut: "A", bankCode: "012" }, { rut: "B", bankCode: "EFE" }] }];
+    const workdaysByGroup = {
+      G: {
+        C1: [{ laborName: "Poda", rows: [{ rut: "A", totalAmount: 100 }, { rut: "B", totalAmount: 20 }] }],
+        C3: [{ laborName: "Poda", rows: [{ rut: "A", totalAmount: 50 }] }, { laborName: "Amarre", rows: [{ rut: "B", totalAmount: 0 }] }],
+        C2: [{ laborName: "Raleo", rows: [{ rut: "B", totalAmount: 30 }] }],
+      },
+    };
+    const { rows, totals } = computeLaborSummary(payroll, allGroups, workdaysByGroup);
+    expect(rows.map((r) => [r.faenaName, r.subfaenaName, r.laborName, [...r.cycleIds], r.bank, r.cash, r.total])).toEqual([
+      ["Fundo A", "Sector Dos", "Raleo", ["C2"], 0, 30, 30],
+      ["Fundo B", "Sector Uno", "Poda", ["C1", "C3"], 150, 20, 170],
+    ]);
+    expect(totals).toEqual({ bank: 150, cash: 50, total: 200 });
   });
 });
 

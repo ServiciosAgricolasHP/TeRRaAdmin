@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { buildWorkdaysByGroup, computeLaborSummary } from "../printCommon";
-import { summaryDisplayRowsOf, summaryLabelColumnsOf } from "../../../utils/payrollDetail";
+import { buildWorkdaysByGroup } from "../printCommon";
+import { computeLaborSummary, summaryDisplayRowsOf, summaryLabelColumnsOf } from "../../../utils/payrollDetail";
 import { printSummaryTable } from "../printSummaryTable";
 import { captureFullWidthBlob } from "../../../utils/imageCapture";
 import { writePayrollSummaryXlsx } from "./writePayrollSummaryXlsx";
