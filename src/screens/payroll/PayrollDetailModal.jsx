@@ -49,7 +49,7 @@ import { PayrollTotalsCards } from "./payrollDetailModal/PayrollTotalsCards";
 import { SummaryTable } from "./payrollDetailModal/SummaryTable";
 import { PayrollCyclesSection } from "./payrollDetailModal/PayrollCyclesSection";
 
-export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers, allPayrolls = [], onClose, onRedownload, onDownloadBankFile, onDownloadSnapshot, bankFormatLabel = null, onPublishPortal = null, publishedPayrollId = null, onChanged }) {
+export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, subfaenas, workers, allPayrolls = [], onClose, onRedownload, onDownloadBankFile, onDownloadSnapshot, bankFormatLabel = null, onPublishPortal = null, publishedPayrollId = null, onChanged }) {
   "use no memo";
   const { catalogs } = useCatalogs();
   const toast = useToast();
@@ -709,11 +709,12 @@ export function PayrollDetailModal({ payroll, cycles, faenas, subfaenas, workers
       {addCyclesOpen && (
         <AddCyclesModal
           onClose={() => setAddCyclesOpen(false)}
+          payroll={payroll}
           cycles={cycles}
           faenas={faenas}
           subfaenas={subfaenas}
-          payrollCycleDetails={cycleDetails}
-          payrollCycleIds={payroll.cycleIds || []}
+          cycleStats={cycleStats}
+          allPayrolls={allPayrolls}
           onConfirm={handleAddCycles}
           busy={editBusy}
         />

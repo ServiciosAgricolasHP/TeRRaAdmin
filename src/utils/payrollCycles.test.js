@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  activeCyclesByJob, chosenCyclesOf, cycleChecklistOf, cycleStatsOf, exportCyclesOf, laborScopeOf, pendingOfChosenLabors,
+  activeCyclesByJob, addableCyclesOf, chosenCyclesOf, cycleChecklistOf, cycleStatsOf, exportCyclesOf, laborScopeOf,
+  pendingOfChosenLabors,
 } from "./payrollCycles";
 
 const cycles = [
@@ -105,6 +106,57 @@ describe("cycleChecklistOf", () => {
   it("busca por ciclo, subfaena o faena, en cualquier orden y sin tildes", () => {
     expect(ids(cycleChecklistOf({ ...base, search: "norte poda" }))).toEqual([["F1", ["A"]]]);
     expect(ids(cycleChecklistOf({ ...base, search: "fundo dos" }))).toEqual([["F2", ["C"]]]);
+  });
+});
+
+describe("addableCyclesOf", () => {
+  const jobs = [{ id: "F1" }, { id: "F2" }];
+  const labors = (...ids) => ids.map((id) => ({ id, name: `Labor ${id}` }));
+  const all = [
+    { id: "A", faenaId: "F1", labors: labors("L1", "L2", "L3") },
+    { id: "B", faenaId: "F1", labors: labors("L4") },
+    { id: "C", faenaId: "F2", labors: labors("L5", "L6") },
+    { id: "D", faenaId: "F2", labors: labors("L7") },
+    { id: "E", faenaId: "F2", status: "closed", labors: labors("L8") },
+    { id: "G", faenaId: "F9", labors: labors("L9") },
+    { id: "H", faenaId: "F1", labors: labors("L10") },
+  ];
+  const pl = (unpaid, bank, cash, unknown) => ({ unpaid, bank, cash, unknown, ruts: new Set(["X"]) });
+  const cycleStats = {
+    A: { unpaid: 600, unpaidBank: 300, unpaidCash: 200, unpaidUnknown: 100, unpaidByLabor: { L1: pl(100, 100, 0, 0), L2: pl(200, 0, 200, 0), L3: pl(300, 200, 0, 100) } },
+    C: { unpaid: 70, unpaidBank: 70, unpaidCash: 0, unpaidUnknown: 0, unpaidByLabor: { L5: pl(70, 70, 0, 0) } },
+  };
+  const payroll = {
+    // A con L1, B entero en cycleDetails, C solo por días agregados a mano,
+    // H entero sin detalle (nómina antigua).
+    cycleIds: ["A", "B", "C", "H"],
+    cycleDetails: [{ id: "A", laborIds: ["L1"] }, { id: "B" }, { id: "C", laborIds: [] }],
+  };
+  const r = addableCyclesOf({ jobs, cycles: all, cycleStats, payroll });
+
+  it("deja afuera lo que está entero en la nómina, lo cerrado y lo de faenas que no están", () => {
+    expect(r.groups.map((g) => [g.faena.id, g.cycles.map((c) => c.id)])).toEqual([["F1", ["A"]], ["F2", ["C", "D"]]]);
+  });
+
+  it("un ciclo que ya está muestra solo las labores que le faltan, y lo pendiente de esas", () => {
+    const a = r.groups[0].cycles[0];
+    expect(a.labors.map((l) => l.id)).toEqual(["L2", "L3"]);
+    expect([r.stats.A.unpaid, r.stats.A.unpaidBank, r.stats.A.unpaidCash, r.stats.A.unpaidUnknown]).toEqual([500, 200, 200, 100]);
+    expect(Object.keys(r.stats.A.unpaidByLabor)).toEqual(["L2", "L3"]);
+  });
+
+  it("un ciclo que está solo por días a mano sigue con todas sus labores y su pendiente", () => {
+    expect(r.groups[1].cycles[0]).toBe(all[2]);
+    expect(r.stats.C).toBe(cycleStats.C);
+    expect([...r.partial]).toEqual(["A", "C"]);
+  });
+
+  it("lo pendiente que da la lista es el de las labores que faltan", () => {
+    const list = cycleChecklistOf({
+      groups: r.groups, cycleStats: r.stats, selected: new Set(["A"]), selectedLaborsByCycle: new Map([["A", new Set(["L2", "L3"])]]),
+      search: "", showEmpty: false, subfaenaName: () => "",
+    });
+    expect([list.totalPending, list.selectedTotal, list.emptyCount]).toEqual([570, 500, 1]);
   });
 });
 

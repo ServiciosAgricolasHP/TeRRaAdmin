@@ -4,7 +4,8 @@ import { PAY_SPLIT_HINT } from "./helpers";
 
 // Los ciclos para elegir, por faena: lo pendiente de cada uno, lo pagado y lo
 // que está en una nómina sin pagar y, al marcarlo, sus labores con lo
-// pendiente de cada una.
+// pendiente de cada una. La usan Generar y "+ Agregar ciclo" del detalle de
+// una nómina; `cycleNote` agrega una línea bajo un ciclo.
 export function CycleGroupList({
   visibleGroups,
   emptyCount,
@@ -15,6 +16,7 @@ export function CycleGroupList({
   toggleLaborInCycle,
   takenSplit = {},
   payrollNameOf = () => "",
+  cycleNote = () => null,
 }) {
   "use no memo";
   // "Todos / ninguno" por faena: solo opera sobre los ciclos que están a la
@@ -107,6 +109,7 @@ export function CycleGroupList({
                   // Estar en una nómina no es estar pagado: recién lo es cuando
                   // esa nómina se marca pagada.
                   const taken = takenSplit[c.id] || { paid: 0, inPayroll: 0, openPayrollIds: [] };
+                  const note = cycleNote(c);
                   const inPayrollTitle = `En nómina${taken.openPayrollIds.length === 1 ? "" : "s"} que todavía no se marca${taken.openPayrollIds.length === 1 ? "" : "n"} pagada${taken.openPayrollIds.length === 1 ? "" : "s"}: ${taken.openPayrollIds.map((id) => payrollNameOf(id) || id).join(", ")}`;
                   return (
                     <div
@@ -146,6 +149,7 @@ export function CycleGroupList({
                               </span>
                             )}
                           </div>
+                          {note && <div className="mt-0.5 text-xs text-[var(--color-muted)]">{note}</div>}
                           {isSelected && labors.length > 0 && !allLaborsOn && (
                             <div className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">
                               {noneOn

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { firstWorkedDay, lastWorkedDay, closedCyclePatch, settledOpenCycles, splitTaken, payrollStatusMap } from "./cycleClosing";
+import { firstWorkedDay, lastWorkedDay, closedCyclePatch, settledOpenCycles, splitTaken, payrollStatusMap, takenSplitOf } from "./cycleClosing";
 
 describe("fechas al cerrar un ciclo", () => {
   const today = "2026-10-17";
@@ -40,6 +40,13 @@ describe("en nómina no es pagado", () => {
   it("una nómina más antigua que las cargadas cuenta como pagada, y lo de $0 no cuenta", () => {
     expect(splitTaken({ takenByPayroll: { vieja: 80, pendiente: 0 } }, statusOf)).toEqual({ paid: 80, inPayroll: 0, openPayrollIds: [] });
     expect(splitTaken({}, statusOf)).toEqual({ paid: 0, inPayroll: 0, openPayrollIds: [] });
+  });
+
+  it("takenSplitOf lo hace para cada ciclo", () => {
+    expect(takenSplitOf({ C1: { takenByPayroll: { pagada: 100 } }, C2: { takenByPayroll: { pendiente: 30 } } }, payrolls)).toEqual({
+      C1: { paid: 100, inPayroll: 0, openPayrollIds: [] },
+      C2: { paid: 0, inPayroll: 30, openPayrollIds: ["pendiente"] },
+    });
   });
 });
 

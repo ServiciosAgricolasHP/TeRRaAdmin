@@ -167,6 +167,51 @@ export function cycleChecklistOf({ groups, cycleStats, selected, selectedLaborsB
   };
 }
 
+// Lo que se le puede sumar a una nómina ya creada con "+ Agregar ciclo", en la
+// forma de `cycleChecklistOf`: los ciclos abiertos por faena, cada uno con las
+// labores que todavía no están en la nómina, y lo pendiente de cada ciclo
+// contando solo esas labores. Un ciclo que está entero en la nómina no
+// aparece; uno que está con algunas labores aparece con las que le faltan y va
+// en `partial`. Un ciclo en `cycleIds` sin detalle en `cycleDetails` está
+// entero.
+export function addableCyclesOf({ jobs, cycles, cycleStats = {}, payroll }) {
+  const details = new Map((payroll.cycleDetails || []).map((cd) => [cd.id, cd]));
+  const whole = new Set((payroll.cycleIds || []).filter((id) => !details.has(id)));
+  const byJob = new Map(jobs.map((f) => [f.id, { faena: f, cycles: [] }]));
+  const stats = {};
+  const partial = new Set();
+  for (const c of cycles) {
+    if (c.status === "closed" || whole.has(c.id)) continue;
+    const inPayroll = details.get(c.id);
+    if (inPayroll && !Array.isArray(inPayroll.laborIds)) continue;
+    const group = byJob.get(c.faenaId);
+    if (!group) continue;
+    const already = new Set(inPayroll?.laborIds || []);
+    const labors = (c.labors || []).filter((l) => !already.has(l.id));
+    if (labors.length === 0) continue;
+    group.cycles.push(already.size > 0 ? { ...c, labors } : c);
+    if (inPayroll) partial.add(c.id);
+    const stat = cycleStats[c.id];
+    if (stat) stats[c.id] = already.size > 0 ? statOfLabors(stat, labors) : stat;
+  }
+  return { groups: [...byJob.values()].filter((g) => g.cycles.length > 0), stats, partial };
+}
+
+// Lo pendiente de un ciclo contando solo esas labores.
+function statOfLabors(stat, labors) {
+  const out = { ...stat, unpaid: 0, unpaidBank: 0, unpaidCash: 0, unpaidUnknown: 0, unpaidByLabor: {} };
+  for (const l of labors) {
+    const pl = stat.unpaidByLabor?.[l.id];
+    if (!pl) continue;
+    out.unpaidByLabor[l.id] = pl;
+    out.unpaid += pl.unpaid;
+    out.unpaidBank += pl.bank;
+    out.unpaidCash += pl.cash;
+    out.unpaidUnknown += pl.unknown;
+  }
+  return out;
+}
+
 // Ciclos activos agrupados por faena.
 export function activeCyclesByJob(jobs, cycles) {
   const groups = new Map();
