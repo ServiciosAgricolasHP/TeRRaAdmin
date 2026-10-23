@@ -180,15 +180,16 @@ export default function CycleSummaryModal({
         chargeCarriers,
         chargeLabors,
         cycle,
+        dayNotes: dayNotesSummary,
         dayPrices,
         grandTotalCharge,
         grandTotalPay,
+        hiddenColumns,
         laborsData,
         mode,
         subtotalCharge,
         titles,
         transportData,
-        workdaysByLabor,
       });
     } catch (err) {
       toast.error("Error al exportar: " + (err.message || err));

@@ -318,3 +318,14 @@ export function carrierColumns(section, { mode, hiddenColumns = new Set() }) {
   }
   return cols;
 }
+
+// Lo que aporta una tabla al total del resumen, igual que su columna Total:
+// en cobrar, lo cobrado más el transporte por fila; en pagar, lo pagado más
+// el piso; en un transportista, el total de sus vueltas.
+export function sectionTotal(section, mode) {
+  const t = section.totals;
+  if (section.kind === "carrier") return Number(t.amount) || 0;
+  return mode === "charge"
+    ? (Number(t.amount) || 0) + (Number(t.transport) || 0)
+    : (Number(t.amount) || 0) + (Number(t.pisoAmount) || 0);
+}
