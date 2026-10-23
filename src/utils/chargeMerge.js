@@ -67,7 +67,7 @@ export function mergedRows(members, nameOf = (ld) => ld.labor.name) {
     .map(({ r }) => r);
 }
 
-const SUM_KEYS = ["amount", "transport", "pisoAmount", "pisoCount", "workerDays", "overtimeHours", "heTotal", "bonosTotal"];
+const SUM_KEYS = ["amount", "transport", "pisoAmount", "pisoCount", "workerDays", "overtimeHours", "workedOvertimeHours", "heTotal", "bonosTotal"];
 
 // Subtotal de una tabla fusionada. La cantidad solo se suma si todas las
 // labores miden lo mismo (mismo tipo y misma unidad): sumar kilos con

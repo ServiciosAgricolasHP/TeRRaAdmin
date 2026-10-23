@@ -32,9 +32,13 @@ export function LaborTable({
   // la fila agregada.
   const rowQty = (r) => isCharge ? r.chargedQty : r.qty;
   const rowHE = (r) => isCharge ? r.chargedOvertimeHours : r.overtimeHours;
-  // Columna "Valor": en tratoHE, el Total HE (horas × tarifa HE de la labor);
-  // en el resto, el precio por unidad.
-  const rowHeTotal = (r) => (Number(rowHE(r)) || 0) * overtimeRate;
+  // Columna "Valor": en tratoHE, el Total HE; en el resto, el precio por
+  // unidad. En pagar el Total HE va a la tarifa HE de la labor; en cobrar, a
+  // la tarifa de cada fila, sobre las horas que se cobran.
+  const rowHeTotal = (r) => (Number(rowHE(r)) || 0) * (isCharge ? Number(r.chargedRate) || 0 : overtimeRate);
+  // tratoHE en cobrar: además de las horas que se cobran, las que se
+  // trabajaron y la tarifa de cada día.
+  const showHeDetail = isHE && isCharge;
   const rowRate = (r) => {
     if (isHE) return rowHeTotal(r);
     if (isCharge) return r.chargedRate;
@@ -88,7 +92,9 @@ export function LaborTable({
             {isHE ? (
               <>
                 {showCol("qty") && <th style={{ ...cellH, textAlign: "right" }}>Base $</th>}
-                {showCol("he") && <th style={{ ...cellH, textAlign: "right" }}>HE (hrs)</th>}
+                {showHeDetail && showCol("heWorked") && <th style={{ ...cellH, textAlign: "right" }}>HE trabajadas</th>}
+                {showCol("he") && <th style={{ ...cellH, textAlign: "right" }}>{isCharge ? "HE a cobrar" : "HE (hrs)"}</th>}
+                {showHeDetail && showCol("heRate") && <th style={{ ...cellH, textAlign: "right" }}>Tarifa HE</th>}
               </>
             ) : (
               showCol("qty") && (
@@ -190,6 +196,11 @@ export function LaborTable({
                         ) : (qty > 0 ? fmtCurrency(qty) : "")}
                       </td>
                     )}
+                    {showHeDetail && showCol("heWorked") && (
+                      <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#555" }}>
+                        {r.workedOvertimeHours == null ? "—" : r.workedOvertimeHours > 0 ? fmtNumber(r.workedOvertimeHours) : ""}
+                      </td>
+                    )}
                     {showCol("he") && (
                       <td style={{ ...cell, textAlign: "right", padding: editable ? 3 : "5px 8px" }}>
                         {editable ? (
@@ -199,8 +210,22 @@ export function LaborTable({
                             value={inputVal(heHrs)}
                             onChange={(e) => handleField(r, "overtimeHours", e.target.value)}
                             style={chargeInputStyle}
+                            title="Horas extras que se cobran ese día. Parte en las trabajadas; 0 si el día no se cobra."
                           />
                         ) : (heHrs > 0 ? fmtNumber(heHrs) : "")}
+                      </td>
+                    )}
+                    {showHeDetail && showCol("heRate") && (
+                      <td style={{ ...cell, textAlign: "right", padding: editable ? 3 : "5px 8px" }}>
+                        {editable ? (
+                          <input
+                            type="number"
+                            value={inputVal(r.chargedRate)}
+                            onChange={(e) => handleField(r, "rate", e.target.value)}
+                            style={chargeInputStyle}
+                            title="Tarifa de la hora extra que se cobra ese día"
+                          />
+                        ) : (Number(r.chargedRate) > 0 ? fmtCurrency(r.chargedRate) : "")}
                       </td>
                     )}
                   </>
@@ -318,6 +343,7 @@ export function LaborTable({
                 colSpan={
                   2
                   + (isHE ? (Number(showCol("qty")) + Number(showCol("he"))) : Number(showCol("qty")))
+                  + (showHeDetail ? Number(showCol("heWorked")) + Number(showCol("heRate")) : 0)
                   + Number(showCol("rate"))
                   + Number(showCol("valorTotal"))
                   + (showPiso ? Number(showCol("piso")) : 0)
@@ -348,11 +374,17 @@ export function LaborTable({
                     {totals.qty > 0 ? fmtCurrency(totals.qty) : ""}
                   </td>
                 )}
+                {showHeDetail && showCol("heWorked") && (
+                  <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "#555" }}>
+                    {totals.workedOvertimeHours > 0 ? fmtNumber(totals.workedOvertimeHours) : ""}
+                  </td>
+                )}
                 {showCol("he") && (
                   <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
                     {totals.overtimeHours > 0 ? fmtNumber(totals.overtimeHours) : ""}
                   </td>
                 )}
+                {showHeDetail && showCol("heRate") && <td style={cell}></td>}
               </>
             ) : (
               showCol("qty") && (

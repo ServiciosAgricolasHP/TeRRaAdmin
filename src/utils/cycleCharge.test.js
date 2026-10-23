@@ -141,8 +141,32 @@ describe("chargeLaborsOf: por tipo de labor", () => {
     const fixed = chargeOf(LH, days, { LH: { chargeRate: 6000, rowOverrides: { [D1]: { overtimeHours: 3 } } } });
     expect(fixed.chargedRows[0].chargedAmount).toBe(30000 + 3 * 6000);
     expect(fixed.chargedTotals.overtimeHours).toBe(3);
-    expect(fixed.chargedTotals.heTotal).toBe(10000);
     expect(fixed.chargedTotals.bonosTotal).toBe(4000);
+  });
+
+  it("en tratoHE muestra las horas trabajadas y las que se cobran, cada una a su tarifa", () => {
+    const LH = { id: "LH", name: "Jornadas HE", type: "tratoHE", overtimeRate: 5000 };
+    const days = [
+      ["0_0", wd(ANA, D1, { qty: 30000, overtimeHours: 2, amount: 40000 })],
+      ["0_0", wd(ANA, D2, { qty: 30000, overtimeHours: 4, amount: 50000 })],
+    ];
+    const cl = chargeOf(LH, days, {
+      LH: {
+        rowOverrides: { [D1]: { overtimeHours: 0 }, [D2]: { rate: 6000 } },
+        extraRows: [{ id: "x1", date: D3, qty: 10000, overtimeHours: 1, rate: 7000, amount: "" }],
+      },
+    });
+    // Las horas a cobrar parten en las trabajadas; un día cubierto va en 0.
+    expect(cl.chargedRows.map((r) => [r.workedOvertimeHours, r.chargedOvertimeHours, r.chargedRate])).toEqual([
+      [2, 0, 5000],
+      [4, 4, 6000],
+      [null, 1, 7000],
+    ]);
+    expect(cl.chargedRows.map((r) => r.chargedAmount)).toEqual([30000, 30000 + 4 * 6000, 10000 + 7000]);
+    expect(cl.chargedTotals.workedOvertimeHours).toBe(6);
+    expect(cl.chargedTotals.overtimeHours).toBe(5);
+    // El Total HE suma las horas a cobrar por la tarifa de cada fila.
+    expect(cl.chargedTotals.heTotal).toBe(4 * 6000 + 7000);
   });
 
   it("copia el piso de los totales de pago", () => {
