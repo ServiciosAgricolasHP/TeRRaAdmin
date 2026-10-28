@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 import Modal, { ModalCloseButton } from "../../components/Modal";
 import { hasChanges } from "../../utils/formChanges";
 import TextField from "../../components/TextField";
@@ -16,8 +17,7 @@ export function CarrierEditModal({ open, onClose, carrier, onSave }) {
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    if (!open) return;
+  if (useValuesChanged([open, carrier], { onMount: true }) && open) {
     setAlias(carrier?.alias || "");
     setName(carrier?.name || "");
     setType(carrier?.type || "contracted");
@@ -25,7 +25,7 @@ export function CarrierEditModal({ open, onClose, carrier, onSave }) {
     setVehicles(carrier?.vehicles ? [...carrier.vehicles] : []);
     setNotes(carrier?.notes || "");
     setError("");
-  }, [open, carrier]);
+  }
 
   const addVehicle = () => {
     const a = prompt("Alias del vehículo (ej: furgon, bus):");

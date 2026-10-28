@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { subjobsService } from "../../services";
 
 // Cómo se ven las subfaenas de la faena elegida: plegadas o no, con o sin sus
@@ -37,7 +37,7 @@ export function useSubjobDisplay({ loadSubjobs, selectedId, subjobsByJob, toast,
   // Subfaenas ocultas (`hidden`) que ya se plegaron solas en esta sesión. Se
   // pliegan una vez por sesión: si el usuario expande una, queda expandida
   // hasta recargar la página.
-  const processedHiddenRef = useRef(new Set());
+  const [processedHidden, setProcessedHidden] = useState(() => new Set());
   const toggleShowClosed = (subjobId) => {
     setShowClosedInSubjob((prev) => {
       const n = new Set(prev);
@@ -47,26 +47,14 @@ export function useSubjobDisplay({ loadSubjobs, selectedId, subjobsByJob, toast,
   };
 
   // Pliega las subfaenas ocultas al cargarlas, una vez por subfaena y por
-  // sesión (ver processedHiddenRef), para respetar las que el usuario expanda.
-  useEffect(() => {
-    if (!selectedId) return;
-    const subjobs = subjobsByJob[selectedId];
-    if (!subjobs) return;
-    const toCollapse = [];
-    for (const s of subjobs) {
-      if (s.hidden && !processedHiddenRef.current.has(s.id)) {
-        toCollapse.push(s.id);
-        processedHiddenRef.current.add(s.id);
-      }
-    }
-    if (toCollapse.length > 0) {
-      setCollapsedSubjobs((prev) => {
-        const n = new Set(prev);
-        for (const id of toCollapse) n.add(id);
-        return n;
-      });
-    }
-  }, [selectedId, subjobsByJob]);
+  // sesión (ver processedHidden), para respetar las que el usuario expanda.
+  const toCollapse = ((selectedId && subjobsByJob[selectedId]) || [])
+    .filter((s) => s.hidden && !processedHidden.has(s.id))
+    .map((s) => s.id);
+  if (toCollapse.length > 0) {
+    setProcessedHidden((prev) => new Set([...prev, ...toCollapse]));
+    setCollapsedSubjobs((prev) => new Set([...prev, ...toCollapse]));
+  }
 
   // Marca o desmarca una subfaena como oculta. Se guarda en el doc de la
   // subfaena, así que vale para todos los usuarios y dispositivos.
@@ -77,7 +65,7 @@ export function useSubjobDisplay({ loadSubjobs, selectedId, subjobsByJob, toast,
       // Al ocultarla se pliega. Al mostrarla queda como esté, plegada o no.
       if (!subjob.hidden) {
         setCollapsedSubjobs((prev) => new Set(prev).add(subjob.id));
-        processedHiddenRef.current.add(subjob.id);
+        setProcessedHidden((prev) => new Set(prev).add(subjob.id));
       }
       if (subjob.faenaId) await loadSubjobs(subjob.faenaId);
     } catch (err) {

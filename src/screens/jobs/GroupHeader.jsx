@@ -1,5 +1,6 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import ConfirmDialog from "../../components/ConfirmDialog";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 import { ColorPalette } from "./ColorPalette";
 
 export function GroupHeader({ group, count, editable, isUngrouped, collapsed, onToggleCollapsed, onUpdate, onRemove }) {
@@ -8,7 +9,7 @@ export function GroupHeader({ group, count, editable, isUngrouped, collapsed, on
   const [pickerOpen, setPickerOpen] = useState(false);
   const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
 
-  useEffect(() => setName(group.name), [group.name]);
+  if (useValuesChanged([group.name])) setName(group.name);
 
   const commitName = () => {
     setEditingName(false);

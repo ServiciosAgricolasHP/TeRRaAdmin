@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 import { DEFAULT_BONUS_MANEJO, DEFAULT_BONUS_SUPERVISION } from "../../utils/tratoHE";
 import Modal, { ModalCloseButton } from "../../components/Modal";
 import { hasChanges } from "../../utils/formChanges";
@@ -12,14 +13,12 @@ export function BonusEditModal({ open, onClose, labor, wd, workerName, date, rea
   const [hasSupervision, setHasSupervision] = useState(false);
   const [extras, setExtras] = useState("");
 
-  useEffect(() => {
-    if (open) {
-      const defaults = labor?.bonusDefaults?.[wd?.workerRut] || {};
-      setHasManejo(wd ? !!wd.hasManejo : !!defaults.manejo);
-      setHasSupervision(wd ? !!wd.hasSupervision : !!defaults.supervision);
-      setExtras(wd?.extras ? String(wd.extras) : "");
-    }
-  }, [open, wd, labor]);
+  if (useValuesChanged([open, wd, labor], { onMount: true }) && open) {
+    const defaults = labor?.bonusDefaults?.[wd?.workerRut] || {};
+    setHasManejo(wd ? !!wd.hasManejo : !!defaults.manejo);
+    setHasSupervision(wd ? !!wd.hasSupervision : !!defaults.supervision);
+    setExtras(wd?.extras ? String(wd.extras) : "");
+  }
 
   if (!labor) return null;
   const bonusManejo = labor.bonusManejo ?? DEFAULT_BONUS_MANEJO;

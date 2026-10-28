@@ -1,8 +1,7 @@
-import { useState, useEffect } from "react";
-import { payrollSnapshotsService } from "../../services";
 import Modal from "../../components/Modal";
 import { WorkerPaidDetailTables } from "./WorkerPaidDetailTables";
 import { WorkerPaySummaryCards } from "./WorkerPaySummaryCards";
+import { usePayrollSnapshot } from "./payrollDetailModal/usePayrollSnapshot";
 
 // Lo que un trabajador cobró en una nómina: el mismo contenido que la fila
 // expandible de PayrollDetailModal (WorkerPaidDetailTables +
@@ -10,29 +9,7 @@ import { WorkerPaySummaryCards } from "./WorkerPaySummaryCards";
 // está en memoria, así que solo se lee el snapshot de esa nómina (un doc).
 export function WorkerPayrollDetailModal({ open, payment, worker, catalogs, onClose, onShowFullHistory }) {
   const payroll = payment?.payroll || null;
-  const [snapshot, setSnapshot] = useState(null);
-  const [snapshotLoading, setSnapshotLoading] = useState(false);
-
-  useEffect(() => {
-    if (!open || !payroll?.id) return;
-    let cancelled = false;
-    setSnapshotLoading(true);
-    payrollSnapshotsService.getById(payroll.id)
-      .then((doc) => {
-        if (cancelled) return;
-        if (doc) {
-          const { id: _omit, ...rest } = doc;
-          setSnapshot(rest);
-        } else if (payroll.snapshot) {
-          setSnapshot(payroll.snapshot);
-        } else {
-          setSnapshot(null);
-        }
-      })
-      .catch(() => { if (!cancelled) setSnapshot(payroll.snapshot || null); })
-      .finally(() => { if (!cancelled) setSnapshotLoading(false); });
-    return () => { cancelled = true; };
-  }, [open, payroll?.id]);
+  const { snapshot, snapshotLoading } = usePayrollSnapshot({ payroll: open ? payroll : null });
 
   if (!payroll) return null;
   const item = (payroll.items || []).find((it) => (it.workerId || it.rut) === worker.workerId) || null;

@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 import { cadenceMeta } from "../../services/advancesService";
 import Modal from "../../components/Modal";
 import { fmtCurrency } from "../../utils/format";
@@ -9,9 +10,7 @@ import { fmtCurrency } from "../../utils/format";
 // marcadas por defecto.
 export function InstallmentConfirmModal({ state, onCancel, onConfirm }) {
   const [checked, setChecked] = useState(() => new Set());
-  useEffect(() => {
-    setChecked(new Set((state?.candidates || []).map((c) => c.advanceId)));
-  }, [state]);
+  if (useValuesChanged([state], { onMount: true })) setChecked(new Set((state?.candidates || []).map((c) => c.advanceId)));
   if (!state) return null;
 
   const toggle = (id) => {

@@ -11,7 +11,7 @@ export function useSiblingCycles({ cycle, id }) {
   const [siblingCycles, setSiblingCycles] = useState(null);
   useEffect(() => {
     const jobId = cycle?.faenaId;
-    if (!jobId) { setSiblingCycles(null); return; }
+    if (!jobId) return;
     const subjobId = cycle?.subfaenaId || null;
     let cancelled = false;
     (async () => {
@@ -36,10 +36,12 @@ export function useSiblingCycles({ cycle, id }) {
     })();
     return () => { cancelled = true; };
   }, [cycle?.faenaId, cycle?.subfaenaId]);
-  const cycleNavIndex = siblingCycles ? siblingCycles.findIndex((c) => c.id === id) : -1;
-  const prevCycle = cycleNavIndex > 0 ? siblingCycles[cycleNavIndex - 1] : null;
-  const nextCycle = cycleNavIndex >= 0 && cycleNavIndex < (siblingCycles?.length || 0) - 1
-    ? siblingCycles[cycleNavIndex + 1]
+  // Un ciclo sin faena no tiene hermanos, aunque quede una lista de antes.
+  const siblings = cycle?.faenaId ? siblingCycles : null;
+  const cycleNavIndex = siblings ? siblings.findIndex((c) => c.id === id) : -1;
+  const prevCycle = cycleNavIndex > 0 ? siblings[cycleNavIndex - 1] : null;
+  const nextCycle = cycleNavIndex >= 0 && cycleNavIndex < (siblings?.length || 0) - 1
+    ? siblings[cycleNavIndex + 1]
     : null;
   return { nextCycle, prevCycle };
 }

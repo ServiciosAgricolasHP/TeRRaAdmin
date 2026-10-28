@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 import { DEFAULT_BASE_DAY, isWeekendDate, TRATO_HE_MODES } from "../../utils/tratoHE";
 import Modal, { ModalCloseButton } from "../../components/Modal";
 import { hasChanges } from "../../utils/formChanges";
@@ -8,13 +9,11 @@ export function DayModeModal({ open, onClose, date, labor, cfg, readOnly, onSave
   const [mode, setMode] = useState("normal");
   const [isHoliday, setIsHoliday] = useState(false);
 
-  useEffect(() => {
-    if (open && cfg) {
-      setPrice(cfg.price ? String(cfg.price) : String(labor?.baseDayDefault ?? DEFAULT_BASE_DAY));
-      setMode(cfg.mode || "normal");
-      setIsHoliday(!!cfg.isHoliday);
-    }
-  }, [open, cfg, labor]);
+  if (useValuesChanged([open, cfg, labor], { onMount: true }) && open && cfg) {
+    setPrice(cfg.price ? String(cfg.price) : String(labor?.baseDayDefault ?? DEFAULT_BASE_DAY));
+    setMode(cfg.mode || "normal");
+    setIsHoliday(!!cfg.isHoliday);
+  }
 
   if (!labor) return null;
   const weekend = isWeekendDate(date);

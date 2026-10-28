@@ -1,38 +1,38 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useEffectEvent } from "react";
 import { payrollSnapshotsService } from "../../../services";
 
-// El snapshot JSON de la nómina, leído al abrir el detalle.
+// El snapshot JSON de una nómina, leído al abrirla, para el detalle por
+// trabajador (días pagados por ciclo, como en Trabajadores). Sin snapshot, el
+// detalle muestra solo las 4 métricas básicas. Si no hay doc aparte o falla la
+// lectura, usa el embebido en la nómina. Con `payroll` null no lee nada.
 export function usePayrollSnapshot({ payroll }) {
   "use no memo";
-  // Snapshot que se carga al abrir, para el detalle por trabajador (días
-  // pagados por ciclo, como en Trabajadores). Sin snapshot, el detalle muestra
-  // solo las 4 métricas básicas.
-  const [snapshot, setSnapshot] = useState(null);
-  const [snapshotLoading, setSnapshotLoading] = useState(false);
+  // `loaded.id` es la nómina para la que se leyó: mientras no sea la de ahora,
+  // está cargando.
+  const [loaded, setLoaded] = useState({ id: null, snapshot: null });
+  const payrollId = payroll?.id || null;
+  const embedded = useEffectEvent(() => payroll?.snapshot || null);
   useEffect(() => {
-    if (!payroll?.id) return;
+    if (!payrollId) return;
     let cancelled = false;
-    setSnapshotLoading(true);
-    payrollSnapshotsService.getById(payroll.id)
+    payrollSnapshotsService.getById(payrollId)
       .then((doc) => {
         if (cancelled) return;
         if (doc) {
           const { id: _omit, ...rest } = doc;
-          setSnapshot(rest);
-        } else if (payroll.snapshot) {
-          setSnapshot(payroll.snapshot);
+          setLoaded({ id: payrollId, snapshot: rest });
         } else {
-          setSnapshot(null);
+          setLoaded({ id: payrollId, snapshot: embedded() });
         }
       })
       .catch((err) => {
         if (!cancelled) {
           console.warn("No se pudo cargar snapshot:", err);
-          setSnapshot(payroll.snapshot || null);
+          setLoaded({ id: payrollId, snapshot: embedded() });
         }
-      })
-      .finally(() => { if (!cancelled) setSnapshotLoading(false); });
+      });
     return () => { cancelled = true; };
-  }, [payroll?.id]);
-  return { snapshot, snapshotLoading };
+  }, [payrollId]);
+  const current = payrollId !== null && loaded.id === payrollId;
+  return { snapshot: current ? loaded.snapshot : null, snapshotLoading: payrollId !== null && !current };
 }

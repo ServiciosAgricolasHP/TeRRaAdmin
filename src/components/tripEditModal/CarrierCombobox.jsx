@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 
 // Combobox con búsqueda para elegir transportista. Filtra por alias, nombre y
 // alias de vehículos. Sin búsqueda muestra arriba los recientes de este ciclo
@@ -73,7 +74,7 @@ export default function CarrierCombobox({ value, onChange, carriers, recentIds, 
     [items],
   );
 
-  useEffect(() => { setFocusIndex(0); }, [query, open]);
+  if (useValuesChanged([query, open])) setFocusIndex(0);
 
   const scrollFocusedIntoView = (idx) => {
     const node = listRef.current?.querySelector(`[data-idx="${idx}"]`);

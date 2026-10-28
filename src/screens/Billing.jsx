@@ -10,6 +10,7 @@ import { formatRutForDisplay } from "../utils/rutUtils";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { useValuesChanged } from "../hooks/useValuesChanged";
 import {
   DEFAULT_PROJECTION_PERCENT,
 } from "../utils/cashFlowProjection";
@@ -133,9 +134,7 @@ export default function Billing() {
   // retenciones/resumen: son vistas de reporte con subtotales, y cortar filas
   // los distorsionaría. Cualquier cambio de filtro u orden vuelve a la página 1.
   const [page, setPage] = useState(1);
-  useEffect(() => {
-    setPage(1);
-  }, [kindTab, selectedCompanyId, periodFilter, typeFilter, paymentFilter, search, sortBy]);
+  if (useValuesChanged([kindTab, selectedCompanyId, periodFilter, typeFilter, paymentFilter, search, sortBy])) setPage(1);
   const pageCount = Math.max(1, Math.ceil(sortedFiltered.length / PAGE_SIZE));
   // Acota la página al total: si la lista se achica (p. ej. al cambiar de
   // empresa) antes de que corra el reset, no muestra una página vacía.
