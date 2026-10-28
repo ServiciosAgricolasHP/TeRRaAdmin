@@ -6,7 +6,7 @@
 |---------|---------|
 | `npm run dev` | Iniciar servidor de desarrollo (HMR) / Start Vite dev server (HMR) |
 | `npm run build` | Compilar para producción → `dist/` / Production build → `dist/` |
-| `npm run lint` | ESLint (flat config, `.js` y `.jsx`) |
+| `npm run lint` | ESLint (flat config, `.js` y `.jsx`); falla con cualquier error o aviso |
 | `npm run preview` | Vista previa del build / Preview production build locally |
 | `npm test` | Vitest sobre lógica pura (~2s, sin red) / Pure-logic unit tests |
 | `npm run test:watch` | Vitest en modo watch |
@@ -94,7 +94,9 @@ arreglas uno, el test se cae y eso es la señal de actualizar los dos.
 
 - **Día a día en `develop`.** `main` es producción y solo recibe merges vía Pull Request.
 - **`docs/data-model.md` acompaña a cada cambio de modelo.** Una colección nueva, un campo nuevo, uno que cambia de tipo o de significado, o uno que se deja de escribir se documenta en el mismo commit; una colección nueva también va en `MAIN_COLLECTIONS` (`screens/adminConsole/collections.js`). Antes de un push se revisa que los commits que tocaron entidades lo hayan actualizado.
-- `.github/workflows/ci.yml` — corre en push/PR: `npm run lint` (**no bloqueante**, `continue-on-error`: el lint tiene ~65 errores sin resolver) y `npm run build` (**sí bloqueante**). Este build en Linux es lo que caza los imports con casing incorrecto que Windows esconde.
+- `.github/workflows/ci.yml` — corre en push/PR dos jobs, los dos bloqueantes:
+  - `build`: `npm run lint`, que falla con cualquier error o aviso (`--max-warnings=0`), y `npm run build`. Este build en Linux es lo que caza los imports con casing incorrecto que Windows esconde.
+  - `test`: los tests de unidad, **sin `.env`** (un test que arrastra `src/firebase.js` falla con `auth/invalid-api-key`: se mockea `../firebase`; para reproducirlo, `VITE_FIREBASE_API_KEY= npx vitest run`), los e2e y las reglas, contra el emulador.
 - `.github/workflows/deploy.yml` — push a `main` → build → publica `dist/` en la rama `gh-pages`.
 - **Los secrets son obligatorios para el build de deploy**: las 6 `VITE_FIREBASE_*` viven en *Settings → Secrets and variables → Actions* del repo y se inyectan como `env` del paso de build. `.env` está gitignoreado, así que sin ellas el bundle sale con la config vacía y producción cae con `auth/invalid-api-key`.
 - **`fetch-depth: 0`** en el checkout del deploy: sin el historial completo, el conteo de commits de `vite.config.js` no encuentra su punto de partida y la versión del header queda pegada en `.0`.
@@ -126,7 +128,7 @@ src/
   App.jsx               ← router (react-router-dom)
   firebase.js           ← Firebase init (Firestore db = "hpdatabase")
   components/           ← UI compartida (Layout, ProtectedRoute, Modal, ConfirmDialog, RowMenu, TripEditModal, WorkerEditModal, WorkerSummaryModal, etc.)
-  hooks/                ← hooks que usan varias pantallas (useIsMobile, useWorkersList)
+  hooks/                ← hooks que usan varias pantallas (useIsMobile, useWorkersList, useValuesChanged)
   screens/              ← componentes de ruta / page-level route components
                         (Dashboard, Jobs, CycleDetail, Workers, Transports, Payroll, Advances,
                          InterestLinks, Calendar, AdminConsole, Users, NoAccess, MigrateWorkers,
@@ -250,7 +252,8 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 ## Convenciones / Conventions
 
 - Organización de componentes, hooks y archivos: ver "Componentes y archivos" en Arquitectura.
-- ESLint: variables sin usar empezando con `A-Z_` son ignoradas.
+- ESLint: variables sin usar empezando con `A-Z_` son ignoradas. **El lint queda en cero** (el CI falla con cualquier error o aviso): una excepción con `eslint-disable` lleva su motivo al lado.
+- **Efectos solo para sincronizar con algo externo.** Ajustar estado cuando cambia una prop (rellenar un formulario al abrir el modal, volver a la página 1 al filtrar) se hace durante el render con `useValuesChanged` (`hooks/`), no con un efecto. Para leer el valor actual de una función o una prop dentro de un efecto sin volver a correrlo, `useEffectEvent`.
 - **Idioma.** Los textos de la interfaz, los comentarios y las descripciones de los tests (`describe`/`it`) van en español neutro, sin voseo. Los identificadores, nombres de archivo, claves y valores técnicos y los campos nuevos de Firestore van en inglés, aunque el código de alrededor use nombres en español, y los términos del negocio se nombran como dice el Glosario (abajo). Los campos ya guardados (`faenaId`, `padron`) conservan su nombre.
 - **Los comentarios y la documentación describen lo que hace el código, como si siempre hubiera sido así.** No cuentan la historia (el error que motivó un cambio, la versión anterior, lo que se descartó), ni planes o estados transitorios, ni fases o tareas por nombre. Si el código ya lo dice, no se comenta. Una restricción se escribe como comportamiento ("compara el rol sin distinguir mayúsculas"). Vale también para este archivo y los README.
 - **Mayúsculas de lo que se escribe a mano** (`utils/textCase.js`, con tests). Se corrigen al guardar, no mientras se escribe:

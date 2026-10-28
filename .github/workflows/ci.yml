@@ -20,10 +20,8 @@ jobs:
 
       - run: npm ci
 
-      # El lint no bloquea: sus errores quedan visibles en el log del check
-      # sin hacerlo fallar.
+      # Bloqueante: sin errores ni avisos (`--max-warnings=0` en el script).
       - run: npm run lint
-        continue-on-error: true
 
       - run: npm run build
 
