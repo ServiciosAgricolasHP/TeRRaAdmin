@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useEffectEvent, useMemo } from "react";
 import { captureFullWidthDataUrl, captureFullWidthBlob, cloneForExport } from "../utils/imageCapture";
 import Modal from "./Modal";
 import { advanceRemaining, advanceSign } from "../services/advancesService";
@@ -97,27 +97,32 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
   const [showFilter, setShowFilter] = useState(false);
   const printRef = useRef(null);
 
+  // Se recarga cuando cambia la persona (por su id), no cuando llega otra copia
+  // del mismo objeto; `currentWorker` lee la de ahora.
+  const workerId = worker?.id;
+  const currentWorker = useEffectEvent(() => worker);
   useEffect(() => {
-    if (!open || !worker?.id) {
+    if (!open || !workerId) {
       setData([]);
       setAdvances([]);
       return;
     }
-    setTitles(loadTitles(worker.id, worker.name || ""));
+    const w = currentWorker();
+    setTitles(loadTitles(w.id, w.name || ""));
     (async () => {
       setLoading(true);
       try {
         const opts = includeClosed
           ? { includeClosed: true, closedFrom, closedTo }
           : { includeClosed: false };
-        const { data: result, advances: adv } = await loadWorkerSummaryData(worker, catalogs, opts);
+        const { data: result, advances: adv } = await loadWorkerSummaryData(w, catalogs, opts);
         setAdvances(adv);
         setData(result);
       } finally {
         setLoading(false);
       }
     })();
-  }, [open, worker?.id, catalogs, includeClosed, closedFrom, closedTo]);
+  }, [open, workerId, catalogs, includeClosed, closedFrom, closedTo]);
 
   // Aplica statusFilter y hiddenRowKeys y recalcula los totales por ciclo, así
   // los subtotales reflejan solo lo visible. `totalsByStatus` alimenta el

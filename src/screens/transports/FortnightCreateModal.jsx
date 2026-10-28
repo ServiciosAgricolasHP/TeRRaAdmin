@@ -18,14 +18,11 @@ export function FortnightCreateModal({ carriersById, faenas, pendingTrips, loose
   const [importIds, setImportIds] = useState(new Set());
   const [busy, setBusy] = useState(false);
 
-  const inRange = (d) =>
-    (!periodFrom || d >= periodFrom) && (!periodTo || d <= periodTo);
-
   // Vueltas sueltas (sin paymentId) del rango y de las faenas incluidas: con
   // ellas se arman los resúmenes nuevos.
   const eligibleTrips = useMemo(() => {
     return pendingTrips.filter((t) => {
-      if (!inRange(t.date)) return false;
+      if ((periodFrom && t.date < periodFrom) || (periodTo && t.date > periodTo)) return false;
       if (excludedFaenaIds.has(t.faenaId)) return false;
       return true;
     });

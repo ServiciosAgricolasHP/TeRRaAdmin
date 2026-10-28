@@ -89,7 +89,7 @@ export function useLeaderGrouping({ employmentGroupOf, gridRef, groupView, onlyW
   };
   useEffect(() => {
     gridRef.current?.api?.onFilterChanged();
-  }, [onlyWithProduction]);
+  }, [gridRef, onlyWithProduction]);
   const handleGridFilterChanged = () => {
     setColumnFilterActive(!!gridRef.current?.api?.isColumnFilterPresent());
   };

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useEffectEvent, useMemo } from "react";
 import ConfirmDialog from "../components/ConfirmDialog";
 import PaymentReportModal from "./commitments/PaymentReportModal";
 import { useToast } from "../contexts/ToastContext";
@@ -136,7 +136,10 @@ export default function Commitments() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  // Carga al montar; `useEffectEvent` lee la versión actual de la función sin
+  // volver a correr el efecto cuando cambia.
+  const loadOnMount = useEffectEvent(() => load());
+  useEffect(() => { loadOnMount(); }, []);
 
   const companyName = (c) => {
     const comp = companies.find((x) => x.id === c.companyId);

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useEffectEvent } from "react";
 import { companiesService, dteDocumentsService, costCentersService, informalExpensesService } from "../../services";
 
 // Clave de localStorage con la última empresa elegida, que se recuerda entre
@@ -58,7 +58,10 @@ export function useBillingData() {
     }
   };
 
-  useEffect(() => { loadAll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  // Carga al montar; `useEffectEvent` lee la versión actual de la función sin
+  // volver a correr el efecto cuando cambia.
+  const loadOnMount = useEffectEvent(() => loadAll());
+  useEffect(() => { loadOnMount(); }, []);
 
   // Guarda la empresa elegida para la próxima visita a la pantalla.
   useEffect(() => {

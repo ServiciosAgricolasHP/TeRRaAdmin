@@ -184,6 +184,9 @@ export default function WorkersTab() {
     }
   };
 
+  // Las columnas se arman una vez: si cambiaran en cada render, ag-grid las
+  // volvería a aplicar. Sus botones usan las funciones del primer render; por
+  // eso "Editar" vuelve a pedir la lista de trabajadores, que sale de la caché.
   const columnDefs = useMemo(
     () => [
       {
@@ -297,6 +300,7 @@ export default function WorkersTab() {
         },
       },
     ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- las columnas se arman una vez (ver arriba)
     [],
   );
 

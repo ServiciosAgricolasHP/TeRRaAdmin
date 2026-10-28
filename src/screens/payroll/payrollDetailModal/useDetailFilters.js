@@ -36,7 +36,7 @@ export function useDetailFilters({ items, payroll, rutOf }) {
     return new Set([...cycleFilter].filter((id) => current.has(id)));
   }, [cycleFilter, payroll.cycleDetails]);
 
-  const filteredItems = useMemo(() => filterPayrollItems(items, { search, paymentMethod, activeLeaderFilter, activeCycleFilter, rutOf }), [items, search, paymentMethod, activeLeaderFilter, activeCycleFilter]);
+  const filteredItems = useMemo(() => filterPayrollItems(items, { search, paymentMethod, activeLeaderFilter, activeCycleFilter, rutOf }), [items, search, paymentMethod, activeLeaderFilter, activeCycleFilter, rutOf]);
 
   const hasActiveFilter = !!(search || paymentMethod !== "all" || activeLeaderFilter.size > 0 || activeCycleFilter.size > 0);
   const moreFilterCount = activeLeaderFilter.size + activeCycleFilter.size;

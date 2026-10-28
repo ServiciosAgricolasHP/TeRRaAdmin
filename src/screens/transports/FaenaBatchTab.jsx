@@ -62,11 +62,8 @@ export function FaenaBatchTab() {
     return [...groups.values()].filter((g) => g.cycles.length > 0);
   }, [faenas, cycles]);
 
-  const inDateRange = (date) =>
-    (!dateFrom || date >= dateFrom) && (!dateTo || date <= dateTo);
-
   const tripsInRange = useMemo(
-    () => allTrips.filter((t) => inDateRange(t.date)),
+    () => allTrips.filter((t) => (!dateFrom || t.date >= dateFrom) && (!dateTo || t.date <= dateTo)),
     [allTrips, dateFrom, dateTo],
   );
 
