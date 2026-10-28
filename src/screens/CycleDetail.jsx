@@ -492,7 +492,6 @@ export default function CycleDetail() {
     toast,
     wdWrite,
     workdaysByLabor,
-    workerIdFor,
   });
 
   const {

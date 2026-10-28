@@ -152,7 +152,7 @@ export function PrintMultipleModal({
       await waitFor(80); // espera el render
       const nodes = itemRefs.current.filter(Boolean);
       const html = nodes
-        .map((n, i) => `<div class="page">${n.outerHTML}</div>`)
+        .map((n) => `<div class="page">${n.outerHTML}</div>`)
         .join("");
       const win = window.open("", "_blank", "width=1000,height=800");
       if (!win) {

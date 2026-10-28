@@ -8,7 +8,7 @@ import { parseAmount } from "../../utils/formula";
 // Precios por día de las labores del ciclo: combos de cosecha, tiers de trato,
 // etapas, el precio sugerido de las labores al día y la configuración de las
 // de horas extras. Cambiar un precio recalcula las jornadas que lo usan.
-export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, dayPrices, defaultMode, id, isHarvestLabor, setCycle, setDayPrices, setWorkdaysByLabor, toast, wdWrite, workdaysByLabor, workerIdFor }) {
+export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, dayPrices, defaultMode, id, isHarvestLabor, setCycle, setDayPrices, setWorkdaysByLabor, toast, wdWrite, workdaysByLabor }) {
   "use no memo";
   const [localPriceInputs, setLocalPriceInputs] = useState({});
 
@@ -178,29 +178,6 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
       const next = { ...wd, amount, workerId: w.id || w.rut };
       await wdWrite.upsert(docId, next);
       updates[mapKey] = next;
-    }
-    if (Object.keys(updates).length > 0) {
-      setWorkdaysByLabor((prev) => ({
-        ...prev,
-        [laborId]: { ...(prev[laborId] || {}), ...updates },
-      }));
-    }
-  };
-
-  const recalcAllOvertimeDays = async (laborId) => {
-    const labor = cycle.labors.find((l) => l.id === laborId);
-    if (!labor || labor.type !== "tratoHE") return;
-    const wdMapForLabor = workdaysByLabor[laborId] || {};
-    const updates = {};
-    for (const k in wdMapForLabor) {
-      const wd = wdMapForLabor[k];
-      const dayCfg = getDaySingle(dayPrices, laborId, wd.date, "normal");
-      const amount = computeOvertimeDayAmount(labor, dayCfg, wd);
-      if (amount === wd.amount) continue;
-      const docId = workdayDocId(id, laborId, wd.workerRut, wd.date, SINGLE_COMBO);
-      const next = { ...wd, amount, workerId: workerIdFor(laborId, wd.workerRut) };
-      await wdWrite.upsert(docId, next);
-      updates[k] = next;
     }
     if (Object.keys(updates).length > 0) {
       setWorkdaysByLabor((prev) => ({

@@ -1,4 +1,4 @@
-import { collection, getDocs, doc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { logAction } from "./logger";
 import { createService } from "./firestoreBase";

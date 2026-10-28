@@ -32,7 +32,7 @@ import { fmtCurrency } from "../../../utils/format";
 // filas; cada celda muestra cantidad (con unidad) y monto. Al final, la
 // columna "Total día" y las filas de cierre (TOTAL A PAGAR, GANANCIAS,
 // TRANSPORTE, MONTO LIBRE, TOTAL GENERAL, IVA y BRUTO).
-export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firstColKeyForCycle, grandTotalTransport, includeTransport }) {
+export function CombinedSummaryCard({ dataByColumn, transportByCycle, firstColKeyForCycle, grandTotalTransport, includeTransport }) {
   "use no memo";
   const toast = useToast();
   const isMobile = useIsMobile();

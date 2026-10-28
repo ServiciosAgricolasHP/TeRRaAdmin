@@ -7,7 +7,7 @@ import { fmtDate } from "./helpers";
 import { payStateOf } from "./payState";
 import { PortalBadge, PayStatePill, PaymentDatesLine } from "./PayStatePill";
 
-export function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRevertBank, onAskDelete, onRedownload, onDownloadBankFile, onDownloadSnapshot, onChangeClassification, onOpen, onRename, publishedPayrollId = null }) {
+export function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRevertBank, onAskDelete, onChangeClassification, onOpen, onRename, publishedPayrollId = null }) {
   const isMobile = useIsMobile();
   const [statusFilter, setStatusFilter] = useState("all"); // all | pending | paid | cashPending
   const [monthFilter, setMonthFilter] = useState("all"); // all | YYYY-MM

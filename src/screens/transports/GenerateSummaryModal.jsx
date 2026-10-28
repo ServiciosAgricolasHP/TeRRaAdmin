@@ -5,7 +5,7 @@ import Select from "../../components/Select";
 import { tripsService, paymentsService, titleCase } from "../../services/transportsService";
 import { fmtCurrency } from "../../utils/format";
 
-export function GenerateSummaryModal({ open, onClose, carriers, faenas = [], faenaById, subfaenaById, cycleById, onGenerated }) {
+export function GenerateSummaryModal({ open, onClose, carriers, faenaById, subfaenaById, cycleById, onGenerated }) {
   const [carrierId, setCarrierId] = useState("");
   const [periodFrom, setPeriodFrom] = useState("");
   const [periodTo, setPeriodTo] = useState("");

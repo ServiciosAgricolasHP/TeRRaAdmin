@@ -95,7 +95,6 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
   // filas ya sacadas. Las exportaciones nunca la incluyen: sus celdas llevan
   // `data-export-hide` y `cloneForExport` las quita.
   const [showFilter, setShowFilter] = useState(false);
-  const isRowVisible = (r) => statusFilter.has(r.paymentStatus) && !hiddenRowKeys.has(r.rowKey);
   const printRef = useRef(null);
 
   useEffect(() => {

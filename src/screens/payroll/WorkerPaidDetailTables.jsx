@@ -115,7 +115,6 @@ export function WorkerPaidDetailTables({ displayRut, item, snapshot, snapshotLoa
         const fecha = r.date ? workerDetailDateLabel(r.date) : "s/f";
         if (r.kind === "work") {
           const det = laborDisplayLabel(r.row.labor, catalogs);
-          const prod = formatWorkerDetailProd(r.row, catalogs);
           const monto = fmtCurrency(r.row.amount);
           lines.push(
             `${fecha.padEnd(7, " ")} | ${det.padEnd(27, " ").slice(0, 27)} | ${(r.cycleHeader || "").padEnd(30, " ").slice(0, 30)} | ${monto}`,

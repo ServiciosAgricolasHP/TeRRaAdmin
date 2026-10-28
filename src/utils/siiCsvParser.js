@@ -246,7 +246,7 @@ export function rutNumeric(rawRut) {
 // Id del doc de un DTE en Firestore: companyId + kind + tipo + folio (+ el
 // proveedor en compras), único dentro de la empresa. Reimportar el mismo
 // período sobrescribe sin duplicar.
-export function buildDteDocId({ companyId, kind, tipo, folio, rutEmisor, rutReceptor }) {
+export function buildDteDocId({ companyId, kind, tipo, folio, rutEmisor }) {
   if (!companyId) throw new Error("buildDteDocId requiere companyId");
   if (kind === "venta") {
     return `${companyId}_V_${tipo}_${folio}`;

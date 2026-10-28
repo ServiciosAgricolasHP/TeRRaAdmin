@@ -71,22 +71,6 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
     const m = d.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     return m ? `${m[3]}/${m[2]}` : d;
   };
-  const cyclePeriod = (cycleId) => {
-    const cd = cycleDetails.find((c) => c.id === cycleId);
-    let first = cd?.firstDay || "";
-    let last = cd?.lastDay || "";
-    if (!first && !last) {
-      const days = cyclesById[cycleId]?.days;
-      if (Array.isArray(days) && days.length) {
-        const sorted = [...days].sort();
-        first = sorted[0]; last = sorted[sorted.length - 1];
-      }
-    }
-    const a = fmtDayShort(first);
-    const b = fmtDayShort(last);
-    if (a && b && a !== b) return `${a} → ${b}`;
-    return a || b || "";
-  };
   // El subtítulo solo muestra los nombres de ciclo — el período va en una
   // columna propia de la tabla, no acá.
   const cyclesLine = cycleDetails.map((c) => cycleLabel(c.id)).join(" · ");

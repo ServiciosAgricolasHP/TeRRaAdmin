@@ -9,7 +9,7 @@ import { localIsoDate } from "../../utils/dates";
 import { fmtCurrency } from "../../utils/format";
 import { PrintableSummary } from "./PrintableSummary";
 
-export function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], faenaById, subfaenaById, cycleById, onPay, onRevert, onDelete, onChanged }) {
+export function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], faenaById, subfaenaById, cycleById, onDelete, onChanged }) {
   const toast = useToast();
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(false);

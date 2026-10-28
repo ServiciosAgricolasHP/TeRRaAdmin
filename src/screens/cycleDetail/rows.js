@@ -17,7 +17,11 @@ export function normalizeCycle(c) {
     for (const l of labors) for (const d of l.days || []) union.add(d);
     days = [...union].sort();
   }
-  labors = labors.map(({ days: _drop, ...rest }) => rest);
+  labors = labors.map((l) => {
+    const rest = { ...l };
+    delete rest.days;
+    return rest;
+  });
   return { ...c, days, labors };
 }
 
