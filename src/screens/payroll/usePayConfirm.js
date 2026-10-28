@@ -24,13 +24,16 @@ export function usePayConfirm({ load, setCloseCycles, setProgress, toast }) {
   const onConfirmPay = async () => {
     if (!payConfirm) return;
     const { payroll: p, mode } = payConfirm;
+    // Revertir deshace un pago: lleva la animación de deshacer.
+    const undo = mode === "revert" || mode === "revertBank";
+    const show = (info) => setProgress({ ...info, undo });
     const progressStep = (step) => (done, total) =>
-      setProgress({
+      show({
         step,
         detail: total ? `${done} de ${total} jornadas` : "",
         percent: total ? (done / total) * 90 : 0,
       });
-    setProgress({ step: "Sellando jornadas...", detail: "", percent: 2 });
+    show({ step: "Sellando jornadas...", detail: "", percent: 2 });
     try {
       if (mode === "pay") {
         await markPayrollPaid(p.id, p.workdayIds || [], progressStep("Sellando jornadas pagadas..."));
@@ -41,7 +44,7 @@ export function usePayConfirm({ load, setCloseCycles, setProgress, toast }) {
       } else if (mode === "revertBank") {
         await revertBankPaid(p.id, progressStep("Revirtiendo las transferencias..."));
       }
-      setProgress({ step: "Actualizando lista...", detail: "", percent: 95 });
+      show({ step: "Actualizando lista...", detail: "", percent: 95 });
       setPayConfirm(null);
       const fresh = await load();
       toast.success(PAY_DONE[mode] || "Listo");

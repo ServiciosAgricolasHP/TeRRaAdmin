@@ -235,9 +235,14 @@ export const tripsService = {
   // `paymentId` vacío va en JS: una consulta de Firestore no encuentra los
   // documentos a los que les falta el campo.
   async listPendingUnlinked() {
+    return (await this.listPending()).filter((t) => !t.paymentId);
+  },
+
+  // Todas las vueltas pendientes, estén o no en un resumen.
+  async listPending() {
     const q = query(collection(db, TRIPS), where("status", "==", "pending"));
     const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((t) => !t.paymentId);
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   },
 
   async getById(id) {
