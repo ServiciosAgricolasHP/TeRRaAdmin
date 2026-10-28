@@ -7,6 +7,8 @@ import { deleteSnapshot } from "../../services/payrollSnapshots";
 // bonos y borra su JSON antes de borrar el documento.
 export function usePayrollDeletion({ load, setProgress, toast }) {
   "use no memo";
+  // Eliminar deshace una nómina: lleva la animación de deshacer.
+  const showProgress = (info) => setProgress(info && { ...info, undo: true });
   const [confirmDelete, setConfirmDelete] = useState(null);
 
   const onDelete = async () => {
@@ -29,7 +31,7 @@ export function usePayrollDeletion({ load, setProgress, toast }) {
     const workdayIds = confirmDelete.workdayIds || [];
     const advanceIds = confirmDelete.advanceIds || [];
     setConfirmDelete(null);
-    setProgress({ step: "Iniciando eliminación...", detail: "", percent: 2 });
+    showProgress({ step: "Iniciando eliminación...", detail: "", percent: 2 });
     try {
       // Soltar las jornadas, restaurar los anticipos y borrar el snapshot
       // corren en paralelo; el doc de la nómina se borra después de las tres,
@@ -46,7 +48,7 @@ export function usePayrollDeletion({ load, setProgress, toast }) {
         if (workdayIds.length > 0) detailParts.push(`Jornadas ${untagDone}/${untagTotal}`);
         if (advanceIds.length > 0) detailParts.push(`Anticipos ${advancesDone ? "✓" : "…"}`);
         detailParts.push(`JSON ${snapDone ? "✓" : "…"}`);
-        setProgress({
+        showProgress({
           step: "Liberando jornadas y anticipos...",
           detail: detailParts.join(" · "),
           percent: pct,
@@ -72,18 +74,18 @@ export function usePayrollDeletion({ load, setProgress, toast }) {
 
       await Promise.all([pUntag, pAdv, pSnap]);
 
-      setProgress({ step: "Eliminando nómina...", detail: "", percent: 95 });
+      showProgress({ step: "Eliminando nómina...", detail: "", percent: 95 });
       await payrollsService.remove(id);
     } catch (err) {
       console.error("Error al eliminar nómina:", err);
       toast.error(`Error al eliminar la nómina: ${err?.message || err}`);
-      setProgress(null);
+      showProgress(null);
       return;
     }
-    setProgress({ step: "Actualizando lista...", detail: "", percent: 98 });
+    showProgress({ step: "Actualizando lista...", detail: "", percent: 98 });
     await load();
-    setProgress({ step: "Listo ✓", detail: "", percent: 100 });
-    setTimeout(() => setProgress(null), 400);
+    showProgress({ step: "Listo ✓", detail: "", percent: 100 });
+    setTimeout(() => showProgress(null), 400);
   };
   return { confirmDelete, onDelete, setConfirmDelete };
 }

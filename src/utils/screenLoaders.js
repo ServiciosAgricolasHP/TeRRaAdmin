@@ -1,15 +1,20 @@
 // La animación de la pantalla de carga que toca cada día. Los archivos viven en
 // `public/loaders/`. Manda el cumpleaños de quien mira, después una fecha
-// especial, después la lluvia (día por medio en los meses de lluvia), después
-// la estación del año y, en primavera o sin nada que celebrar, la general, que
-// se turna por día con otras dos.
+// especial de un día, después una festividad de varios días y, sin nada que
+// celebrar, el día de la semana: lunes y martes la estación (el martes de
+// invierno, la lluvia), de miércoles a sábado una rotación y el domingo la que
+// duerme.
 import { isBirthdayOn } from "./userAccounts";
 
 export const SCREEN_LOADER_FILES = {
   default: "cat-default.webp",
   sleeping: "cat-sleeping.webp",
   pushingBox: "cat-pushing-box.webp",
+  working: "cat-working.webp",
+  paperwork: "cat-paperwork.webp",
+  wheel: "cat-wheel.webp",
   birthday: "cat-birthday.webp",
+  bossDay: "cat-boss.webp",
   valentinesDay: "cat-valentines-day.webp",
   backToSchool: "cat-back-to-school.webp",
   womensDay: "cat-womens-day.webp",
@@ -23,18 +28,24 @@ export const SCREEN_LOADER_FILES = {
   summer: "cat-summer.webp",
   autumn: "cat-autumn.webp",
   winter: "cat-winter.webp",
+  spring: "cat-spring.webp",
 };
 
-// La animación de un proceso largo (generar o eliminar una nómina), en vez de
-// un spinner.
-export const BUSY_LOADER_FILE = "cat-chasing-tail.webp";
+// La animación de un proceso largo (generar o pagar una nómina), en vez de un
+// spinner.
+export const BUSY_LOADER_FILE = "cat-wheel-fall.webp";
+
+// La de un proceso largo que deshace algo (eliminar una nómina, revertir su
+// pago o sus transferencias).
+export const UNDO_LOADER_FILE = "cat-chasing-tail.webp";
 
 // Rangos `MM-DD`, los dos días incluidos. Uno con `from` mayor que `to` cruza
-// el año nuevo.
+// el año nuevo. Las fechas de un solo día ganan a las de varios días.
 const FESTIVITIES = [
   { id: "valentinesDay", from: "02-08", to: "02-14" },
   { id: "backToSchool", from: "03-01", to: "03-07" },
   { id: "womensDay", from: "03-08", to: "03-08" },
+  { id: "bossDay", from: "04-06", to: "04-06" },
   { id: "walkingLeft", from: "09-09", to: "09-09" },
   { id: "independenceDay", from: "09-10", to: "09-20" },
   { id: "halloween", from: "10-25", to: "10-31" },
@@ -42,18 +53,16 @@ const FESTIVITIES = [
   { id: "christmas", from: "12-15", to: "12-31" },
 ];
 
-// Los meses de lluvia en la zona central: ahí la lluvia se turna por día con la
-// estación.
-const RAINY_MONTHS = { from: "05-01", to: "08-31" };
-
-// La general se turna por día con estas, en este orden.
-const GENERAL_ROTATION = ["default", "sleeping", "pushingBox"];
+// La rotación de miércoles a sábado, en este orden. Sigue de una semana a la
+// siguiente, así salen todas aunque sean más que esos cuatro días.
+const ROTATION = ["default", "pushingBox", "working", "paperwork", "wheel"];
 
 // Las estaciones en Chile.
 const SEASONS = [
   { id: "summer", from: "12-21", to: "03-20" },
   { id: "autumn", from: "03-21", to: "06-20" },
   { id: "winter", from: "06-21", to: "09-22" },
+  { id: "spring", from: "09-23", to: "12-20" },
 ];
 
 const inRange = (md, { from, to }) => (from <= to ? md >= from && md <= to : md >= from || md <= to);
@@ -89,8 +98,8 @@ export function holyWeekOf(year) {
   return { from, to };
 }
 
-// Días desde el 1 de enero de 1970. Los turnos (la lluvia, la general) van por
-// este número y no por el día del mes, así el 31 y el 1 no repiten.
+// Días desde el 1 de enero de 1970, que fue jueves. De ahí salen el día de la
+// semana y los turnos de la rotación, sin zona horaria.
 const dayNumber = (isoDate) => {
   const [y, m, d] = isoDate.split("-").map(Number);
   return Math.round(Date.UTC(y, m - 1, d) / 86_400_000);
@@ -103,11 +112,20 @@ export function screenLoaderFor(isoDate, birthday) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(isoDate || ""))) return pick("default");
   if (isBirthdayOn(birthday, isoDate)) return pick("birthday");
   const md = isoDate.slice(5);
-  const festivity = FESTIVITIES.find((f) => inRange(md, f));
+  const oneDay = FESTIVITIES.find((f) => f.from === f.to && f.from === md);
+  if (oneDay) return pick(oneDay.id);
+  const festivity = FESTIVITIES.find((f) => f.from !== f.to && inRange(md, f));
   if (festivity) return pick(festivity.id);
   if (inRange(md, holyWeekOf(Number(isoDate.slice(0, 4))))) return pick("easter");
-  if (inRange(md, RAINY_MONTHS) && dayNumber(isoDate) % 2 === 0) return pick("rain");
-  const season = SEASONS.find((s) => inRange(md, s));
-  if (season) return pick(season.id);
-  return pick(GENERAL_ROTATION[dayNumber(isoDate) % GENERAL_ROTATION.length]);
+
+  // Semanas que empiezan el domingo: el día 0 fue jueves.
+  const days = dayNumber(isoDate) + 4;
+  const weekday = days % 7; // 0 = domingo
+  if (weekday === 0) return pick("sleeping");
+  if (weekday <= 2) {
+    const season = SEASONS.find((s) => inRange(md, s));
+    return pick(season.id === "winter" && weekday === 2 ? "rain" : season.id);
+  }
+  const turn = Math.floor(days / 7) * 4 + (weekday - 3);
+  return pick(ROTATION[turn % ROTATION.length]);
 }

@@ -1,7 +1,7 @@
-import { BUSY_LOADER_FILE } from "../../utils/screenLoaders";
+import { BUSY_LOADER_FILE, UNDO_LOADER_FILE } from "../../utils/screenLoaders";
 
-// Overlay de progreso, visible solo cuando hay `info`: el gato que persigue su
-// cola, el paso actual, un detalle opcional (ej. "340 / 500") y una barra. No
+// Overlay de progreso, visible solo cuando hay `info`: el gato de la rueda (con
+// `info.undo`, el que persigue su cola), el paso actual, un detalle opcional (ej. "340 / 500") y una barra. No
 // es cancelable porque la mayoría de los pasos corren en paralelo. Con
 // movimiento reducido en el sistema, sin el gato.
 export function ProgressOverlay({ info }) {
@@ -12,7 +12,7 @@ export function ProgressOverlay({ info }) {
       <div className="w-[420px] max-w-[90vw] rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-2xl">
         {/* La animación trae aire a los lados: se recorta al gato. */}
         <img
-          src={`${import.meta.env.BASE_URL}loaders/${BUSY_LOADER_FILE}`}
+          src={`${import.meta.env.BASE_URL}loaders/${info.undo ? UNDO_LOADER_FILE : BUSY_LOADER_FILE}`}
           alt=""
           width={140}
           height={110}

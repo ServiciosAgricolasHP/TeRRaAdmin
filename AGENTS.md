@@ -1226,15 +1226,17 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 - **La animación aparece pasados 300 ms**: una carga que sale de la caché termina antes y no deja un parpadeo. El texto se ve desde el inicio y la imagen se pide de inmediato. Con movimiento reducido en el sistema queda solo el texto.
 - **Cuál toca lo decide `screenLoaderFor(fecha, cumpleaños)`** (`utils/screenLoaders.js`, con tests), en este orden:
   1. el cumpleaños de quien mira (`users/{uid}.birthday`), solo ese día; el 29 de febrero, el 28 en los años que no son bisiestos;
-  2. una fecha especial: San Valentín (8 al 14 de febrero), vuelta a clases (1 al 7 de marzo), Día de la Mujer (8 de marzo), el 9 de septiembre (el gato camina hacia la izquierda), Fiestas Patrias (10 al 20 de septiembre), Halloween (25 al 31 de octubre), Día de la Secretaria (3 de diciembre), Navidad (15 al 31 de diciembre) y Semana Santa (del Domingo de Ramos al de Pascua, calculada para cada año);
-  3. la lluvia, de mayo a agosto, día por medio con la estación;
-  4. la estación en Chile: verano (21 de diciembre al 20 de marzo), otoño (21 de marzo al 20 de junio) e invierno (21 de junio al 22 de septiembre);
-  5. la general, que es también la de primavera, turnándose por día con la que duerme y la que empuja la caja (`GENERAL_ROTATION`).
+  2. una fecha especial de un solo día: Día de la Mujer (8 de marzo), el 6 de abril (el gato jefe), el 9 de septiembre (el gato camina hacia la izquierda) y Día de la Secretaria (3 de diciembre). Gana también a una festividad de varios días que caiga ese día;
+  3. una festividad de varios días, todos sus días: San Valentín (8 al 14 de febrero), vuelta a clases (1 al 7 de marzo), Fiestas Patrias (10 al 20 de septiembre), Halloween (25 al 31 de octubre), Navidad (15 al 31 de diciembre) y Semana Santa (del Domingo de Ramos al de Pascua, calculada para cada año);
+  4. si no hay nada que celebrar, el día de la semana:
+     - **lunes y martes, la estación en Chile**: verano (21 de diciembre al 20 de marzo), otoño (21 de marzo al 20 de junio), invierno (21 de junio al 22 de septiembre) y primavera (23 de septiembre al 20 de diciembre). La lluvia es una versión del invierno: el martes de invierno sale la lluvia;
+     - **miércoles a sábado, la rotación** (`ROTATION`): la general, la que empuja la caja, el trabajador, el de los papeles y el de la rueda. Sigue de una semana a la siguiente, así salen las cinco aunque sean cuatro días;
+     - **domingo, la que duerme**.
 
-  Los turnos van por días corridos (`dayNumber`) y no por el día del mes, así el 31 y el 1 no repiten.
-- **Los procesos largos de Nómina** (generar, pagar y eliminar, en `screens/payroll/ProgressOverlay.jsx`) muestran el gato que persigue su cola (`BUSY_LOADER_FILE`) en vez de un spinner.
-- **Los archivos viven en `public/loaders/`** (WebP animado, de 30 a 380 KB) y se nombran en `SCREEN_LOADER_FILES` y `BUSY_LOADER_FILE`. Un test falla si sobra o falta uno. Para sumar una fecha: el archivo, su entrada en `SCREEN_LOADER_FILES` y su rango en `FESTIVITIES`.
-- **Nadie descarga las de todas las fechas**: la app instalada guarda la general y la de los procesos largos al instalarse (`globPatterns` en `vite.config.js`), y cada una de las otras la primera vez que sale (`CacheFirst`, caché `screen-loaders`).
+  El día de la semana y los turnos salen de los días corridos (`dayNumber`), sin zona horaria.
+- **Los procesos largos de Nómina** (`screens/payroll/ProgressOverlay.jsx`) muestran un gato en vez de un spinner: el de la rueda al generar y pagar (`BUSY_LOADER_FILE`), y el que persigue su cola al deshacer, o sea, al eliminar una nómina o revertir su pago o sus transferencias (`UNDO_LOADER_FILE`, con `undo: true` en el progreso).
+- **Los archivos viven en `public/loaders/`** (WebP animado, de 30 a 730 KB) y se nombran en `SCREEN_LOADER_FILES`, `BUSY_LOADER_FILE` y `UNDO_LOADER_FILE`. Un test falla si sobra o falta uno. Para sumar una fecha: el archivo, su entrada en `SCREEN_LOADER_FILES` y su rango en `FESTIVITIES`.
+- **Nadie descarga las de todas las fechas**: la app instalada guarda la general y las dos de los procesos largos al instalarse (`globPatterns` en `vite.config.js`), y cada una de las otras la primera vez que sale (`CacheFirst`, caché `screen-loaders`).
 - **Al abrir la app el perfil todavía no llegó**: el cumpleaños de la última cuenta que la abrió en ese navegador queda en `localStorage` (`screenLoader.birthday`, `rememberBirthday` en `services/userPrefsService.js`), así la primera carga no cambia de animación cuando llega el perfil.
 
 ## Env
@@ -1277,7 +1279,7 @@ Tab **📈 Proyección**, visible solo con `isAdmin`: proyectar plata a futuro e
 
 - Configurada via `vite-plugin-pwa` en `vite.config.js` con `registerType: 'autoUpdate'`. Genera `manifest.webmanifest`, `sw.js` y `registerSW.js` en `dist/` al build.
 - **Instalación**: se abre la URL desplegada en Chrome (Android) o Safari (iOS) → el navegador ofrece "Instalar app" / "Agregar a pantalla de inicio" → queda ícono en el escritorio que abre la app en standalone (sin barra de URL).
-- **Precache**: solo assets estables, `globPatterns: ['**/*.{ico,png,svg,woff2}', 'loaders/cat-default.webp', 'loaders/cat-chasing-tail.webp']` (de las animaciones, solo la general y la de los procesos largos; ver "Pantalla de carga"). JS, CSS y HTML cambian de nombre en cada deploy: un `index.js` precacheado apuntaría a chunks que el deploy nuevo ya borró, así que van por NetworkFirst (`runtimeCaching` en `vite.config.js`). Límite de 5 MB por archivo.
+- **Precache**: solo assets estables, `globPatterns: ['**/*.{ico,png,svg,woff2}', 'loaders/cat-default.webp', 'loaders/cat-wheel-fall.webp', 'loaders/cat-chasing-tail.webp']` (de las animaciones, solo la general y las dos de los procesos largos; ver "Pantalla de carga"). JS, CSS y HTML cambian de nombre en cada deploy: un `index.js` precacheado apuntaría a chunks que el deploy nuevo ya borró, así que van por NetworkFirst (`runtimeCaching` en `vite.config.js`). Límite de 5 MB por archivo.
 - **Cache de datos**: NO interceptamos las llamadas a Firestore — el SDK de Firebase ya maneja su propio cache offline en IndexedDB. Habilitar `enableIndexedDbPersistence` si queremos offline-first más agresivo.
 - **navigateFallback: null** intencional. No queremos que el SW devuelva `index.html` para rutas desconocidas porque romperíamos el truco 404.html → `?/path` de GitHub Pages.
 - **Auto-update**: cuando se publica una versión nueva (merge a `main` → Actions, o `npm run deploy` a mano), el SW detecta el cambio en `sw.js` en la próxima navegación y se actualiza sin prompt al usuario (el reload siguiente toma la versión nueva).
