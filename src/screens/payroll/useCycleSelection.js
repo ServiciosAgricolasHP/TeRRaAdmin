@@ -11,7 +11,7 @@ const loadSelection = () => {
 };
 
 const saveSelection = (set) => {
-  try { localStorage.setItem(SELECTION_KEY, JSON.stringify([...set])); } catch {}
+  try { localStorage.setItem(SELECTION_KEY, JSON.stringify([...set])); } catch { /* noop */ }
 };
 
 // Lo que se elige para una nómina nueva: los ciclos (guardados en el

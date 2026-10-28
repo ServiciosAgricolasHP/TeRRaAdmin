@@ -197,7 +197,6 @@ export function PrintMultipleModal({
       for (let i = 0; i < items.length; i++) {
         const node = itemRefs.current[i];
         if (!node) continue;
-        // eslint-disable-next-line no-await-in-loop
         const blob = await captureFullWidthBlob(node);
         if (!blob) continue;
         const it = items[i];

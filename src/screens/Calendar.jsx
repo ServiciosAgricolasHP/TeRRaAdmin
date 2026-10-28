@@ -203,7 +203,6 @@ export default function Calendar() {
 
   useEffect(() => {
     loadMonth(year, month);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, month]);
 
   // ─── Índices y agregaciones ──────────────────────────────────────────────

@@ -12,7 +12,6 @@ export function parseAmount(input) {
     const expr = s.slice(1).trim();
     if (!/^[\d+\-*/().\s]+$/.test(expr)) return 0;
     try {
-      // eslint-disable-next-line no-new-func
       const value = Function(`"use strict"; return (${expr});`)();
       return Number.isFinite(value) ? value : 0;
     } catch {

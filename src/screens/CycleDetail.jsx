@@ -369,7 +369,6 @@ export default function CycleDetail() {
     else if (isOvertimeDayLabor) rows = buildRowsOvertimeDay(gridWorkers, days, wdMap);
     else rows = buildRowsNormal(gridWorkers, days, wdMap);
     return rows.map((r) => (r._isTemp ? r : { ...r, _displayRut: rutOf(r.rut) }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gridWorkers, days, wdMap, isHarvestLabor, isPieceworkLabor, isPieceworkStagesLabor, isOvertimeDayLabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, rutOf]);
 
   // Orden alfabético — mismo criterio que CycleWorkerList.jsx — para que el
