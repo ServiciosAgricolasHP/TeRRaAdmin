@@ -144,7 +144,7 @@ src/
     advances/           ← las piezas de Anticipos / Bonos
     priceBook/          ← las piezas del Libro de Precios
     users/              ← las piezas de Usuarios
-  contexts/             ← AuthContext, ThemeContext, CatalogsContext, CarriersContext
+  contexts/             ← Auth, Theme, Catalogs, Carriers y Toast: XContext.js + XProvider.jsx
   services/             ← capa de datos (Firestore CRUD + caché + auditoría)
                         firestoreBase, transportsService, carriersService,
                         workersService, payrollsService, advancesService, logger
@@ -242,6 +242,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 
 ### Contexts
 
+- **Cada contexto va en dos archivos**: `XContext.js` con el contexto, su hook (`useAuth`, `useToast`…) y lo que exporta además (`ROLES`, `THEMES`), y `XProvider.jsx` con el componente que lo provee. Así cada `.jsx` exporta solo componentes y Fast Refresh no recarga la página entera. Las pantallas importan el hook desde `XContext`; solo `App.jsx` importa los proveedores.
 - Orden en `App.jsx`: `ThemeProvider` → `AuthProvider` → `CatalogsProvider` → `CarriersProvider` → `BrowserRouter`.
 - `CarriersProvider` precarga transportistas; expone `carriers`, `activeCarriers`, `addCarrier`, `updateCarrier`, `softDeleteCarrier`, `restoreCarrier`.
 - `CatalogsProvider` precarga tablas de lookup usadas en las pantallas.

@@ -1,13 +1,10 @@
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { rememberBirthday, userPrefsService } from "../services/userPrefsService";
 import { accessOf, visitDue } from "../utils/userAccounts";
-
-const AuthContext = createContext(null);
-
-const ROLES = { ADMIN: "admin", SUPERVISOR: "supervisor" };
+import { AuthContext, ROLES } from "./AuthContext";
 
 // `access`: "ok", "none" (sin perfil) o "disabled" (suspendida). `role` va en
 // minúsculas.
@@ -110,11 +107,3 @@ export function AuthProvider({ children }) {
     </AuthContext.Provider>
   );
 }
-
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
-  return ctx;
-}
-
-export { ROLES };

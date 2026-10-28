@@ -1,12 +1,11 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { ToastContext } from "./ToastContext";
 
 // Notificaciones tipo toast, en lugar de `window.alert`. Cuatro niveles
 // (success/error/info/warning), cierre automático configurable y mensajes
 // multilínea (`\n` es salto de línea). Un click sobre el toast copia su texto,
 // para pegar un error tal cual; la × lo cierra. Se apilan arriba a la derecha.
-
-const ToastContext = createContext(null);
 
 const TYPE_META = {
   success: {
@@ -74,21 +73,6 @@ export function ToastProvider({ children }) {
       <ToastViewport toasts={toasts} onDismiss={dismiss} />
     </ToastContext.Provider>
   );
-}
-
-export function useToast() {
-  const ctx = useContext(ToastContext);
-  if (!ctx) {
-    // Sin provider, cae a `window.alert` en vez de lanzar.
-    return {
-      success: (m) => window.alert(m),
-      error: (m) => window.alert(m),
-      warning: (m) => window.alert(m),
-      info: (m) => window.alert(m),
-      dismiss: () => {},
-    };
-  }
-  return ctx;
 }
 
 function ToastViewport({ toasts, onDismiss }) {
