@@ -5,6 +5,8 @@ import { useToast } from "../../contexts/ToastContext";
 import { fmtCurrency } from "../../utils/format";
 import { CarrierEditModal } from "./CarrierEditModal";
 import { CarrierSummaryModal } from "./CarrierSummaryModal";
+import { UnpricedTripsModal } from "./UnpricedTripsModal";
+import { unpricedTripsByCarrier } from "../../utils/unpricedTrips";
 
 // ============================================================
 // PESTAÑA TRANSPORTISTAS
@@ -24,8 +26,12 @@ export function CarriersTab({ onViewTrips }) {
   // adeudado (suma de resúmenes pendientes + vueltas sueltas pendientes) y
   // total de vueltas pendientes (sueltas, sin resumen asignado).
   const [pendingPayments, setPendingPayments] = useState([]);
-  const [pendingTrips, setPendingTrips] = useState([]);
+  // Todas las vueltas pendientes: las sueltas alimentan las métricas y las sin
+  // precio, el botón "Vueltas sin precio".
+  const [allPendingTrips, setAllPendingTrips] = useState([]);
   const [metricsLoading, setMetricsLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [showUnpriced, setShowUnpriced] = useState(false);
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -33,11 +39,11 @@ export function CarriersTab({ onViewTrips }) {
       try {
         const [payments, trips] = await Promise.all([
           paymentsService.listAll(),
-          tripsService.listPendingUnlinked(),
+          tripsService.listPending(),
         ]);
         if (cancelled) return;
         setPendingPayments(payments.filter((p) => p.status === "pending"));
-        setPendingTrips(trips);
+        setAllPendingTrips(trips);
       } catch (err) {
         if (!cancelled) toast.error("No se pudieron cargar las métricas de transportistas: " + (err.message || err));
       } finally {
@@ -45,7 +51,11 @@ export function CarriersTab({ onViewTrips }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [toast]);
+  }, [toast, reloadKey]);
+
+  const pendingTrips = useMemo(() => allPendingTrips.filter((t) => !t.paymentId), [allPendingTrips]);
+  const unpricedGroups = useMemo(() => unpricedTripsByCarrier(allPendingTrips, carriers), [allPendingTrips, carriers]);
+  const unpricedCount = unpricedGroups.reduce((s, g) => s + g.trips.length, 0);
 
   const metricsByCarrier = useMemo(() => {
     const map = new Map();
@@ -168,12 +178,23 @@ export function CarriersTab({ onViewTrips }) {
             Mostrar inactivos
           </label>
         </div>
-        <button
-          onClick={() => setEdit("new")}
-          className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]"
-        >
-          + Transportista
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {unpricedCount > 0 && (
+            <button
+              onClick={() => setShowUnpriced(true)}
+              className="rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-soft)] px-3 py-1.5 text-sm font-medium text-[var(--color-warning)] hover:opacity-90"
+              title="Vueltas pendientes de transportistas contratados que todavía no tienen tarifa"
+            >
+              ⚠ Vueltas sin precio ({unpricedCount})
+            </button>
+          )}
+          <button
+            onClick={() => setEdit("new")}
+            className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]"
+          >
+            + Transportista
+          </button>
+        </div>
       </div>
 
       {visible.length === 0 ? (
@@ -314,6 +335,16 @@ export function CarriersTab({ onViewTrips }) {
 
       <CarrierEditModal open={!!edit} carrier={edit === "new" ? null : edit} onClose={() => setEdit(null)} onSave={handleSave} />
       {summaryCarrier && <CarrierSummaryModal carrier={summaryCarrier} onClose={() => setSummaryCarrier(null)} />}
+      {showUnpriced && (
+        <UnpricedTripsModal
+          groups={unpricedGroups}
+          onClose={() => setShowUnpriced(false)}
+          onSaved={() => {
+            setShowUnpriced(false);
+            setReloadKey((k) => k + 1);
+          }}
+        />
+      )}
     </div>
   );
 }
