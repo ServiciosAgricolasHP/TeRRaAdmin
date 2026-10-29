@@ -6,7 +6,6 @@ import { formatRutForDisplay } from "../utils/rutUtils";
 import ConfirmDialog from "../components/ConfirmDialog";
 
 export default function MigrateWorkers() {
-  const [rawText, setRawText] = useState("");
   const [parsed, setParsed] = useState({ header: [], rows: [] });
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
@@ -17,7 +16,6 @@ export default function MigrateWorkers() {
 
   const onFile = async (file) => {
     const text = await file.text();
-    setRawText(text);
     setParsed(parseCsv(text));
     setResults({ created: 0, updated: 0, skipped: 0, errors: [] });
   };

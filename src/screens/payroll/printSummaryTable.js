@@ -1,4 +1,5 @@
 import { fmtCurrency } from "../../utils/format";
+import { openPrintWindow } from "../../utils/printWindow";
 import { cyclesNoteHtml } from "./printCommon";
 // Ventana de impresión de la tabla resumen del detalle de la nómina.
 // Imprime solo la tabla de resumen, como esté en pantalla (por subfaena o por
@@ -101,9 +102,5 @@ export function printSummaryTable(payroll, {
   ${bodyHtml}
 <script>window.onload = () => { window.focus(); window.print(); };</script>
 </body></html>`;
-  const w = window.open("", "_blank", "width=900,height=700");
-  if (!w) throw new Error("Permite las ventanas emergentes para imprimir.");
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
+  openPrintWindow(html);
 }

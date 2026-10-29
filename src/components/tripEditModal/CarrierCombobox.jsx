@@ -1,9 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 
 // Combobox con búsqueda para elegir transportista. Filtra por alias, nombre y
 // alias de vehículos. Sin búsqueda muestra arriba los recientes de este ciclo
 // y después el resto en orden alfabético. ↑/↓ y Enter eligen, Esc cierra, y
 // "+ Nuevo transportista" llama a `onCreateNew`.
+const normalize = (s) => String(s || "").toLowerCase();
+
+// Si el transportista calza con la búsqueda (ya normalizada): por alias,
+// nombre o alias de sus vehículos.
+const matches = (c, q) => {
+  if (!q) return true;
+  const hay = [c.alias, c.name, ...(c.vehicles || []).map((v) => v.alias)]
+    .map(normalize)
+    .join(" ");
+  return hay.includes(q);
+};
+
 export default function CarrierCombobox({ value, onChange, carriers, recentIds, onCreateNew, autoFocus = false }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -30,15 +43,6 @@ export default function CarrierCombobox({ value, onChange, carriers, recentIds, 
   useEffect(() => {
     if (autoFocus) inputRef.current?.focus();
   }, [autoFocus]);
-
-  const normalize = (s) => String(s || "").toLowerCase();
-  const matches = (c, q) => {
-    if (!q) return true;
-    const hay = [c.alias, c.name, ...(c.vehicles || []).map((v) => v.alias)]
-      .map(normalize)
-      .join(" ");
-    return hay.includes(q);
-  };
 
   const items = useMemo(() => {
     const q = normalize(query.trim());
@@ -73,7 +77,7 @@ export default function CarrierCombobox({ value, onChange, carriers, recentIds, 
     [items],
   );
 
-  useEffect(() => { setFocusIndex(0); }, [query, open]);
+  if (useValuesChanged([query, open])) setFocusIndex(0);
 
   const scrollFocusedIntoView = (idx) => {
     const node = listRef.current?.querySelector(`[data-idx="${idx}"]`);

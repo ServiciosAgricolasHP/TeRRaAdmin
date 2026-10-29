@@ -66,7 +66,6 @@ export function WorkersHistory({ faenas, workers }) {
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const faenaById = useMemo(() => new Map(faenas.map((f) => [f.id, f])), [faenas]);
 
   // 1) Filtramos payrolls por rango de fechas + clasificación.
   const filteredPayrolls = useMemo(() => {

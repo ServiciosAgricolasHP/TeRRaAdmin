@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { captureFullWidthBlob, captureFullWidthDataUrl } from "../../utils/imageCapture";
 import Modal from "../../components/Modal";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { TripEditModal } from "../../components/TripEditModal";
 import { tripsService, paymentsService } from "../../services/transportsService";
 import { useToast } from "../../contexts/ToastContext";
+import { useCaptureActions } from "../../hooks/useCaptureActions";
+import { PRINT_SHEET_CSS } from "../../utils/printWindow";
 import { fmtCurrency } from "../../utils/format";
 import { PrintableSummary } from "./PrintableSummary";
 
@@ -19,7 +20,7 @@ export function UnifiedSummaryModal({ open, onClose, group, faenaById, subfaenaB
   const [trips, setTrips] = useState([]);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [busy, setBusy] = useState("");
+  const { busy, copy, download, print } = useCaptureActions();
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [editMode, setEditMode] = useState(false);
@@ -147,65 +148,9 @@ export function UnifiedSummaryModal({ open, onClose, group, faenaById, subfaenaB
     ? `${fmtDate(filteredTrips[0].date)} → ${fmtDate(filteredTrips[filteredTrips.length - 1].date)}`
     : "—";
 
-  const handleCopy = async () => {
-    if (!printRef.current) return;
-    setBusy("copy");
-    try {
-      const blob = await captureFullWidthBlob(printRef.current);
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada al portapapeles");
-    } catch (err) {
-      toast.error("Error al copiar: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const handleDownload = async () => {
-    if (!printRef.current) return;
-    setBusy("download");
-    try {
-      const dataUrl = await captureFullWidthDataUrl(printRef.current);
-      const link = document.createElement("a");
-      link.download = `transporte_unificado_${group.alias}_${dateFrom}_${dateTo}.png`;
-      link.href = dataUrl;
-      link.click();
-    } catch (err) {
-      toast.error("Error al generar imagen: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const handlePrint = () => {
-    if (!printRef.current) return;
-    const html = printRef.current.outerHTML;
-    const win = window.open("", "_blank", "width=900,height=700");
-    if (!win) {
-      toast.warning("Permite las ventanas emergentes para imprimir.");
-      return;
-    }
-    win.document.write(`<!DOCTYPE html><html><head><title>Resumen Transporte Unificado</title>
-      <style>
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-        html, body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #999; padding: 6px 8px; font-size: 12px; }
-        thead th { background: #92d050 !important; text-align: left; }
-        .month-tag { background: #e6c0e0 !important; padding: 2px 8px; font-weight: 600; display: inline-block; }
-        .num { text-align: right; font-variant-numeric: tabular-nums; }
-        @media print {
-          @page { size: landscape; margin: 12mm; }
-          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-        }
-      </style>
-    </head><body>${html}</body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); }, 250);
-  };
+  const handleCopy = () => copy(printRef.current);
+  const handleDownload = () => download(printRef.current, `transporte_unificado_${group.alias}_${dateFrom}_${dateTo}.png`);
+  const handlePrint = () => print(printRef.current, { title: "Resumen Transporte Unificado", css: PRINT_SHEET_CSS });
 
   return (
     <Modal

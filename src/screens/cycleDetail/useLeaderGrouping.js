@@ -33,7 +33,6 @@ export function useLeaderGrouping({ employmentGroupOf, gridRef, groupView, onlyW
     }
     for (const [, rows] of buckets) rows.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
     return buckets;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowDataRaw, rutToLeader]);
   const leaderGroups = useMemo(() => {
     const keys = orderLeaders([...groupBuckets.keys()]);
@@ -45,7 +44,6 @@ export function useLeaderGrouping({ employmentGroupOf, gridRef, groupView, onlyW
       count: groupBuckets.get(k)?.length || 0,
       rows: groupBuckets.get(k) || [],
     }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupBuckets]);
   // Por contrato: los grupos en su orden fijo y sin los vacíos. Las claves
   // llevan prefijo para no chocar con el nombre de un líder.
@@ -91,7 +89,7 @@ export function useLeaderGrouping({ employmentGroupOf, gridRef, groupView, onlyW
   };
   useEffect(() => {
     gridRef.current?.api?.onFilterChanged();
-  }, [onlyWithProduction]);
+  }, [gridRef, onlyWithProduction]);
   const handleGridFilterChanged = () => {
     setColumnFilterActive(!!gridRef.current?.api?.isColumnFilterPresent());
   };

@@ -1,8 +1,9 @@
 import { useState, useRef } from "react";
-import { captureFullWidthDataUrl, captureFullWidthBlob } from "../../utils/imageCapture";
 import Modal from "../../components/Modal";
 import { tripsService, paymentsService } from "../../services/transportsService";
 import { useToast } from "../../contexts/ToastContext";
+import { useCaptureActions } from "../../hooks/useCaptureActions";
+import { PRINT_SHEET_CSS, printNodes } from "../../utils/printWindow";
 import { fmtCurrency } from "../../utils/format";
 import { PaymentDetailModal } from "./PaymentDetailModal";
 import { PrintableFortnightTable } from "./PrintableFortnightTable";
@@ -15,6 +16,7 @@ export function FortnightDetailModal({
   onMarkFortnightPaid, onRevertFortnight, onMarkItemPaid, onRevertItem, onItemChanged,
 }) {
   const toast = useToast();
+  const { busy, run, copy, download, print } = useCaptureActions();
   const [addingOpen, setAddingOpen] = useState(false);
   const [adding, setAdding] = useState(new Set());
   const printRef = useRef(null);
@@ -23,7 +25,6 @@ export function FortnightDetailModal({
   // con su outerHTML.
   const summaryRefs = useRef([]);
   const [printItems, setPrintItems] = useState(null);
-  const [busy, setBusy] = useState("");
   // Resumen abierto en detalle, para ver o editar sus vueltas sin salir de la
   // quincena.
   const [viewingPayment, setViewingPayment] = useState(null);
@@ -43,126 +44,46 @@ export function FortnightDetailModal({
     setAddingOpen(false);
   };
 
-  const handleDownload = async () => {
-    if (!printRef.current) return;
-    setBusy("download");
-    try {
-      const dataUrl = await captureFullWidthDataUrl(printRef.current);
-      const link = document.createElement("a");
-      link.download = `quincena_${fortnight.name.replace(/[^\w-]+/g, "_")}.png`;
-      link.href = dataUrl;
-      link.click();
-    } catch (err) {
-      toast.error("Error al generar imagen: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const handleCopy = async () => {
-    if (!printRef.current) return;
-    setBusy("copy");
-    try {
-      const blob = await captureFullWidthBlob(printRef.current);
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada al portapapeles");
-    } catch (err) {
-      toast.error("Error al copiar: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const handlePrint = () => {
-    if (!printRef.current) return;
-    const html = printRef.current.outerHTML;
-    const win = window.open("", "_blank", "width=900,height=700");
-    if (!win) {
-      toast.warning("Permite las ventanas emergentes para imprimir.");
-      return;
-    }
-    win.document.write(`<!DOCTYPE html><html><head><title>Quincena ${fortnight.name}</title>
-      <style>
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #999; padding: 6px 8px; font-size: 12px; }
-        thead th { background: #92d050 !important; text-align: left; }
-        @media print { @page { size: landscape; margin: 12mm; } }
-      </style>
-    </head><body>${html}</body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); }, 250);
-  };
+  const handleDownload = () => download(printRef.current, `quincena_${fortnight.name.replace(/[^\w-]+/g, "_")}.png`);
+  const handleCopy = () => copy(printRef.current);
+  const handlePrint = () => print(printRef.current, { title: `Quincena ${fortnight.name}`, css: PRINT_SHEET_CSS });
 
   // Imprime la tabla de la quincena y una hoja por resumen con el detalle de
   // sus vueltas. Las vueltas se leen al hacer click (tripsService.listAll) y
   // se filtran por los tripIds de cada resumen.
-  const handlePrintAll = async () => {
+  const printAll = async () => {
+    const allTrips = await tripsService.listAll();
+    const tripById = new Map(allTrips.map((t) => [t.id, t]));
+    const built = items.map((it) => {
+      const carrier = carriersById.get(it.carrierId) || null;
+      const myTrips = (it.tripIds || [])
+        .map((id) => tripById.get(id))
+        .filter(Boolean)
+        .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+      const dates = myTrips.map((t) => t.date).filter(Boolean).sort();
+      const periodLabel =
+        it.periodFrom && it.periodTo
+          ? `${it.periodFrom} → ${it.periodTo}`
+          : dates.length
+            ? `${dates[0]} → ${dates[dates.length - 1]}`
+            : "—";
+      return { payment: it, carrier, trips: myTrips, periodLabel };
+    });
+    summaryRefs.current = new Array(built.length).fill(null);
+    setPrintItems(built);
+    // Espera a que React dibuje los nodos fuera de pantalla.
+    await new Promise((r) => setTimeout(r, 100));
+    printNodes([printRef.current, ...summaryRefs.current], {
+      title: `Quincena ${fortnight.name} — completa`,
+      css: PRINT_SHEET_CSS,
+    });
+  };
+  const handlePrintAll = () => {
     if (items.length === 0) {
       toast.warning("La quincena no tiene resúmenes para imprimir.");
       return;
     }
-    setBusy("printAll");
-    try {
-      const allTrips = await tripsService.listAll();
-      const tripById = new Map(allTrips.map((t) => [t.id, t]));
-      const built = items.map((it) => {
-        const carrier = carriersById.get(it.carrierId) || null;
-        const myTrips = (it.tripIds || [])
-          .map((id) => tripById.get(id))
-          .filter(Boolean)
-          .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
-        const dates = myTrips.map((t) => t.date).filter(Boolean).sort();
-        const periodLabel =
-          it.periodFrom && it.periodTo
-            ? `${it.periodFrom} → ${it.periodTo}`
-            : dates.length
-              ? `${dates[0]} → ${dates[dates.length - 1]}`
-              : "—";
-        return { payment: it, carrier, trips: myTrips, periodLabel };
-      });
-      summaryRefs.current = new Array(built.length).fill(null);
-      setPrintItems(built);
-      // Espera a que React dibuje los nodos fuera de pantalla.
-      await new Promise((r) => setTimeout(r, 100));
-      const headerHtml = printRef.current?.outerHTML || "";
-      const summariesHtml = summaryRefs.current
-        .filter(Boolean)
-        .map((n) => `<div class="page">${n.outerHTML}</div>`)
-        .join("");
-      const win = window.open("", "_blank", "width=1000,height=800");
-      if (!win) {
-        toast.warning("Permite las ventanas emergentes para imprimir.");
-        return;
-      }
-      win.document.write(`<!DOCTYPE html><html><head><title>Quincena ${fortnight.name} — completa</title>
-        <style>
-          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; box-sizing: border-box; }
-          body { font-family: ui-sans-serif, system-ui, sans-serif; color: #000; margin: 0; padding: 0; }
-          .page { padding: 20px; page-break-after: always; }
-          .page:last-child { page-break-after: auto; }
-          table { border-collapse: collapse; width: 100%; }
-          th, td { border: 1px solid #999; padding: 6px 8px; font-size: 12px; }
-          thead th { background: #92d050 !important; text-align: left; }
-          .month-tag { background: #e6c0e0 !important; padding: 2px 8px; font-weight: 600; display: inline-block; }
-          tr.tot-row td, .tot-row td { background: #c6efce !important; font-weight: 700; }
-          @media print { @page { size: landscape; margin: 12mm; } }
-        </style>
-      </head><body>
-        <div class="page">${headerHtml}</div>
-        ${summariesHtml}
-        <script>window.onload = () => { window.focus(); window.print(); };</script>
-      </body></html>`);
-      win.document.close();
-    } catch (err) {
-      toast.error("Error al imprimir: " + (err?.message || err));
-    } finally {
-      setPrintItems(null);
-      setBusy("");
-    }
+    run("printAll", () => printAll().finally(() => setPrintItems(null)), { error: "No se pudo imprimir" });
   };
 
   return (

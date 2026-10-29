@@ -1,6 +1,7 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef } from "react";
 import { annualSummary, summaryYearsOf } from "../../utils/billingDocs";
-import { captureFullWidthBlob, captureFullWidthDataUrl } from "../../utils/imageCapture";
+import { useCaptureActions } from "../../hooks/useCaptureActions";
+import { PRINT_SHEET_CSS } from "../../utils/printWindow";
 import { writeAnnualSummaryXlsx } from "./writeAnnualSummaryXlsx";
 import { SummaryCard } from "./SummaryCard";
 import { fmtCurrency, fmtNumber } from "../../utils/format";
@@ -10,11 +11,11 @@ import { MONTH_NAMES_ES } from "./docs";
 // Pestaña "Resumen": los 12 meses del año elegido para la empresa, con el
 // balance de IVA (débito − crédito) y sus exportaciones. El año lo guarda la
 // pantalla, así se conserva al cambiar de pestaña.
-export function AnnualSummaryTab({ docs, selectedCompany, selectedCompanyId, setSummaryYear, summaryYear, toast }) {
+export function AnnualSummaryTab({ docs, selectedCompany, selectedCompanyId, setSummaryYear, summaryYear }) {
   "use no memo";
   const summaryPrintRef = useRef(null);
 
-  const [summaryBusy, setSummaryBusy] = useState("");
+  const { busy: summaryBusy, run, copy, download, print } = useCaptureActions();
 
   const summaryYears = useMemo(() => summaryYearsOf(docs, selectedCompanyId, new Date().getFullYear()), [docs, selectedCompanyId]);
 
@@ -26,68 +27,17 @@ export function AnnualSummaryTab({ docs, selectedCompany, selectedCompanyId, set
     return `Resumen_${alias}_${summaryYear}`;
   }, [selectedCompany, summaryYear]);
 
-  const handleSummaryCopy = async () => {
-    if (!summaryPrintRef.current) return;
-    setSummaryBusy("copy");
-    try {
-      const blob = await captureFullWidthBlob(summaryPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada al portapapeles");
-    } catch (err) {
-      toast.error("Error al copiar: " + (err.message || err));
-    } finally {
-      setSummaryBusy("");
-    }
-  };
+  const handleSummaryCopy = () => copy(summaryPrintRef.current);
+  const handleSummaryPng = () => download(summaryPrintRef.current, `${summaryFileBase}.png`);
+  const handleSummaryPrint = () =>
+    print(summaryPrintRef.current, {
+      title: `Resumen ${summaryYear} — ${selectedCompany?.alias || selectedCompany?.razonSocial || ""}`,
+      css: PRINT_SHEET_CSS,
+      margin: "10mm",
+    });
 
-  const handleSummaryPng = async () => {
-    if (!summaryPrintRef.current) return;
-    setSummaryBusy("png");
-    try {
-      const dataUrl = await captureFullWidthDataUrl(summaryPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
-      const link = document.createElement("a");
-      link.download = `${summaryFileBase}.png`;
-      link.href = dataUrl;
-      link.click();
-    } catch (err) {
-      toast.error("Error al generar PNG: " + (err.message || err));
-    } finally {
-      setSummaryBusy("");
-    }
-  };
-
-  const handleSummaryPrint = () => {
-    if (!summaryPrintRef.current) return;
-    const html = summaryPrintRef.current.outerHTML;
-    const win = window.open("", "_blank", "width=1000,height=700");
-    if (!win) { toast.warning("Permite las ventanas emergentes para imprimir."); return; }
-    const titleLabel = `Resumen ${summaryYear} — ${selectedCompany?.alias || selectedCompany?.razonSocial || ""}`;
-    win.document.write(`<!DOCTYPE html><html><head><title>${titleLabel}</title>
-      <style>
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #999; padding: 5px 7px; font-size: 11px; }
-        thead th { background: #92d050 !important; text-align: left; }
-        @media print { @page { size: landscape; margin: 10mm; } }
-      </style>
-    </head><body>${html}</body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); }, 250);
-  };
-
-  const handleSummaryXlsx = async () => {
-    setSummaryBusy("xlsx");
-    try {
-      await writeAnnualSummaryXlsx({ selectedCompany, summaryData, summaryFileBase, summaryYear });
-    } catch (err) {
-      toast.error("Error al generar XLSX: " + (err.message || err));
-    } finally {
-      setSummaryBusy("");
-    }
-  };
+  const handleSummaryXlsx = () =>
+    run("xlsx", () => writeAnnualSummaryXlsx({ selectedCompany, summaryData, summaryFileBase, summaryYear }), { error: "No se pudo generar el Excel" });
 
   const { months, total } = summaryData;
   const annualVat = total.vatDebit - total.vatCredit;
@@ -109,8 +59,8 @@ export function AnnualSummaryTab({ docs, selectedCompany, selectedCompanyId, set
           <button onClick={handleSummaryCopy} disabled={summaryBusy === "copy" || exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Copiar como imagen">
             {summaryBusy === "copy" ? "Copiando..." : "📋 Copiar"}
           </button>
-          <button onClick={handleSummaryPng} disabled={summaryBusy === "png" || exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Descargar PNG">
-            {summaryBusy === "png" ? "..." : "📥 PNG"}
+          <button onClick={handleSummaryPng} disabled={summaryBusy === "download" || exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Descargar PNG">
+            {summaryBusy === "download" ? "..." : "📥 PNG"}
           </button>
           <button onClick={handleSummaryPrint} disabled={exportDisabled} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Imprimir">
             🖨 Imprimir

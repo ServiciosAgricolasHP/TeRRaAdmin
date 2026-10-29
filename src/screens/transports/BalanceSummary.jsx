@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { captureFullWidthBlob, captureFullWidthDataUrl } from "../../utils/imageCapture";
 import { tripsService, paymentsService, fortnightsService } from "../../services/transportsService";
-import { useToast } from "../../contexts/ToastContext";
+import { useCaptureActions } from "../../hooks/useCaptureActions";
+import { PRINT_GRID_CSS } from "../../utils/printWindow";
 import { fmtCurrency } from "../../utils/format";
 import { cellH, cell } from "./printStyles";
 
@@ -10,7 +10,6 @@ import { cellH, cell } from "./printStyles";
 // fechas se aplica a la `date` de la vuelta y al cruce con el período
 // (periodFrom/periodTo) del resumen o la quincena.
 export function BalanceSummary({ carriers, reloadVersion }) {
-  const toast = useToast();
   const [pendingTrips, setPendingTrips] = useState([]);
   const [pendingPayments, setPendingPayments] = useState([]);
   // Quincenas pendientes. Un resumen que está en una quincena se suma en la
@@ -20,7 +19,7 @@ export function BalanceSummary({ carriers, reloadVersion }) {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [expanded, setExpanded] = useState(true);
-  const [busy, setBusy] = useState("");
+  const { busy, copy, download, print } = useCaptureActions();
   const printRef = useRef(null);
 
   useEffect(() => {
@@ -159,56 +158,9 @@ export function BalanceSummary({ carriers, reloadVersion }) {
   const paymentsTotal = rows.reduce((s, r) => s + r.paymentTotal, 0);
   const fortnightsTotal = rows.reduce((s, r) => s + r.fortnightTotal, 0);
 
-  const handleCopyImage = async () => {
-    if (!printRef.current) return;
-    setBusy("copy");
-    try {
-      const blob = await captureFullWidthBlob(printRef.current);
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada");
-    } catch (err) {
-      toast.error("Error: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const handleDownload = async () => {
-    if (!printRef.current) return;
-    setBusy("download");
-    try {
-      const dataUrl = await captureFullWidthDataUrl(printRef.current);
-      const link = document.createElement("a");
-      link.download = "balance-transportes.png";
-      link.href = dataUrl;
-      link.click();
-    } finally {
-      setBusy("");
-    }
-  };
-
-  // Imprime el outerHTML del balance con estilos mínimos de tabla.
-  // `print-color-adjust: exact` evita que el navegador descarte los fondos.
-  const handlePrint = () => {
-    if (!printRef.current) return;
-    const html = printRef.current.outerHTML;
-    const win = window.open("", "_blank", "width=900,height=700");
-    if (!win) {
-      toast.warning("Permite las ventanas emergentes para imprimir.");
-      return;
-    }
-    win.document.write(`<!DOCTYPE html><html><head><title>Balance de transportes</title>
-      <style>
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
-        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; margin: 0; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #888; padding: 6px 8px; font-size: 12px; }
-        @media print { @page { size: landscape; margin: 12mm; } }
-      </style>
-    </head><body>${html}<script>window.onload = () => { window.focus(); window.print(); };</script></body></html>`);
-    win.document.close();
-  };
+  const handleCopyImage = () => copy(printRef.current);
+  const handleDownload = () => download(printRef.current, "balance-transportes.png");
+  const handlePrint = () => print(printRef.current, { title: "Balance de transportes", css: PRINT_GRID_CSS });
 
   const rangeLabel = (() => {
     if (!dateFrom && !dateTo) return "Todo lo pendiente";

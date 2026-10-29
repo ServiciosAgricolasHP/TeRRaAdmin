@@ -77,11 +77,11 @@ export function SummaryTable({ bonusAdvanceSummary, payroll, table }) {
         <div className="flex gap-1">
           <button
             onClick={handleCopySummaryImage}
-            disabled={summaryBusy === "image" || !activeSummary}
+            disabled={summaryBusy === "copy" || !activeSummary}
             title="Copiar como imagen"
             className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-[10px] hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
           >
-            {summaryBusy === "image" ? "..." : "📋 Copiar"}
+            {summaryBusy === "copy" ? "..." : "📋 Copiar"}
           </button>
           <button
             onClick={handleDownloadSummaryXlsx}

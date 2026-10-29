@@ -1,10 +1,11 @@
 import { BrowserRouter, Routes, Route, Link, Navigate } from "react-router-dom";
-import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { AuthProvider } from "./contexts/AuthProvider";
+import { useAuth } from "./contexts/AuthContext";
 import { greeting, GREETING_SLOTS } from "./utils/greetings";
-import { ThemeProvider } from "./contexts/ThemeContext";
-import { CatalogsProvider } from "./contexts/CatalogsContext";
-import { CarriersProvider } from "./contexts/CarriersContext";
-import { ToastProvider } from "./contexts/ToastContext";
+import { ThemeProvider } from "./contexts/ThemeProvider";
+import { CatalogsProvider } from "./contexts/CatalogsProvider";
+import { CarriersProvider } from "./contexts/CarriersProvider";
+import { ToastProvider } from "./contexts/ToastProvider";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Layout from "./components/Layout";
 import Login from "./screens/Login";

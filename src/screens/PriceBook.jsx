@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import { useToast } from "../contexts/ToastContext";
 import { jobsService, priceBookService, priceBookConfigService } from "../services";
 import ConfirmDialog from "../components/ConfirmDialog";
@@ -54,7 +54,10 @@ export default function PriceBook() {
     }
   };
 
-  useEffect(() => { reload(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  // Carga al montar; `useEffectEvent` lee la versión actual de la función sin
+  // volver a correr el efecto cuando cambia.
+  const loadOnMount = useEffectEvent(() => reload());
+  useEffect(() => { loadOnMount(); }, []);
 
   const faenaById = useMemo(() => new Map(faenas.map((f) => [f.id, f])), [faenas]);
 

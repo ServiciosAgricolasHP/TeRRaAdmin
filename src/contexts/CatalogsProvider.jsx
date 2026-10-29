@@ -1,8 +1,7 @@
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { catalogsService, CATALOG_DEFAULTS } from "../services/catalogsService";
 import { useAuth } from "./AuthContext";
-
-const CatalogsContext = createContext(null);
+import { CatalogsContext } from "./CatalogsContext";
 
 export function CatalogsProvider({ children }) {
   const { user, hasAccess } = useAuth();
@@ -58,10 +57,4 @@ export function CatalogsProvider({ children }) {
       {children}
     </CatalogsContext.Provider>
   );
-}
-
-export function useCatalogs() {
-  const ctx = useContext(CatalogsContext);
-  if (!ctx) throw new Error("useCatalogs must be used inside CatalogsProvider");
-  return ctx;
 }

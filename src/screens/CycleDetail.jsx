@@ -95,6 +95,12 @@ import { WORKERS_LIST } from "../services/workersService";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
+// Valores vacíos estables: un `[]` o `{}` nuevo en cada render haría que los
+// `useMemo` que dependen de ellos se recalcularan siempre.
+const NO_DAYS = [];
+const NO_WORKERS = [];
+const NO_WORKDAYS = {};
+
 export default function CycleDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -290,10 +296,10 @@ export default function CycleDetail() {
   // Labores donde un trabajador puede ser de sueldo mensual: sus días pasan a
   // casillas de asistencia en $0.
   const allowsMonthly = isNormalLabor || isOvertimeDayLabor;
-  const days = cycle?.days || [];
+  const days = cycle?.days || NO_DAYS;
   const { employmentGroupOf, employmentLoading } = useEmploymentGroups(days, groupView === "employment");
-  const workers = activeLabor?.workers || [];
-  const wdMap = (activeLabor && workdaysByLabor[activeLabor.id]) || {};
+  const workers = activeLabor?.workers || NO_WORKERS;
+  const wdMap = (activeLabor && workdaysByLabor[activeLabor.id]) || NO_WORKDAYS;
   const shownLaborId = activeLabor?.id;
   const peopleByDate = useMemo(() => peopleByDateOf(workdaysByLabor, shownLaborId), [workdaysByLabor, shownLaborId]);
   // Fechas con al menos un workday de esta labor. El ciclo comparte `days`
@@ -369,7 +375,6 @@ export default function CycleDetail() {
     else if (isOvertimeDayLabor) rows = buildRowsOvertimeDay(gridWorkers, days, wdMap);
     else rows = buildRowsNormal(gridWorkers, days, wdMap);
     return rows.map((r) => (r._isTemp ? r : { ...r, _displayRut: rutOf(r.rut) }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gridWorkers, days, wdMap, isHarvestLabor, isPieceworkLabor, isPieceworkStagesLabor, isOvertimeDayLabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, rutOf]);
 
   // Orden alfabético — mismo criterio que CycleWorkerList.jsx — para que el
@@ -492,7 +497,6 @@ export default function CycleDetail() {
     toast,
     wdWrite,
     workdaysByLabor,
-    workerIdFor,
   });
 
   const {

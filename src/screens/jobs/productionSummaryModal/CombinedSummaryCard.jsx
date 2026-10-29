@@ -1,6 +1,5 @@
 import { useState, useRef, useMemo } from "react";
-import { captureFullWidthBlob } from "../../../utils/imageCapture";
-import { useToast } from "../../../contexts/ToastContext";
+import { useCaptureActions } from "../../../hooks/useCaptureActions";
 import { useIsMobile } from "../../../hooks/useIsMobile";
 import { fmtNum } from "./helpers";
 import { useProfitSettings } from "./useProfitSettings";
@@ -32,12 +31,11 @@ import { fmtCurrency } from "../../../utils/format";
 // filas; cada celda muestra cantidad (con unidad) y monto. Al final, la
 // columna "Total día" y las filas de cierre (TOTAL A PAGAR, GANANCIAS,
 // TRANSPORTE, MONTO LIBRE, TOTAL GENERAL, IVA y BRUTO).
-export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firstColKeyForCycle, grandTotalTransport, includeTransport }) {
+export function CombinedSummaryCard({ dataByColumn, transportByCycle, firstColKeyForCycle, grandTotalTransport, includeTransport }) {
   "use no memo";
-  const toast = useToast();
   const isMobile = useIsMobile();
   const [collapsed, setCollapsed] = useState(false);
-  const [busy, setBusy] = useState("");
+  const { busy, run, copy, print, copyText } = useCaptureActions();
   const captureRef = useRef(null);
   const profit = useProfitSettings();
   const {
@@ -64,70 +62,31 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
     grandTotalGross,
   } = useMemo(() => closingTotals(dataByColumn, settings), [dataByColumn, settings]);
 
-  const handleCopyText = async () => {
-    setBusy("text");
-    try {
-      await navigator.clipboard.writeText(combinedSummaryText({
-        activeDays, byLaborDay, dataByColumn, effectivePct, grandTotal,
-        grandTotalGeneral, grandTotalGross, grandTotalTransport, grandTotalVat,
-        hasSupervisionCols, includeTransport, paidToUs, profitFor, totalGeneralFor,
-        totalProfit, totalProfitBillable, totalSupervisionDeduction, totalsByDay,
-        transportByCycle, vatEnabled, workersPaid
-      }));
-      toast.success("Texto copiado");
-    } catch (err) {
-      toast.error("Error al copiar: " + (err.message || err));
-    } finally { setBusy(""); }
-  };
+  const handleCopyText = () =>
+    copyText(combinedSummaryText({
+      activeDays, byLaborDay, dataByColumn, effectivePct, grandTotal,
+      grandTotalGeneral, grandTotalGross, grandTotalTransport, grandTotalVat,
+      hasSupervisionCols, includeTransport, paidToUs, profitFor, totalGeneralFor,
+      totalProfit, totalProfitBillable, totalSupervisionDeduction, totalsByDay,
+      transportByCycle, vatEnabled, workersPaid
+    }));
 
-  const handleCopyImage = async () => {
-    if (!captureRef.current) return;
-    setBusy("image");
-    try {
-      const blob = await captureFullWidthBlob(captureRef.current);
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada");
-    } catch (err) {
-      toast.error("Error al copiar: " + (err.message || err));
-    } finally { setBusy(""); }
-  };
+  const handleCopyImage = () => copy(captureRef.current);
 
-  const handleXlsx = async () => {
-    setBusy("xlsx");
-    try {
-      await writeCombinedSummaryXlsx({
-        activeDays, byLaborDay, dataByColumn, firstColKeyForCycle, grandTotal,
-        grandTotalGeneral, grandTotalGross, grandTotalTransport, grandTotalVat,
-        hasSupervisionCols, includeTransport, profitFor, totalGeneralFor, totalProfit,
-        totalProfitBillable, totalsByDay, transportByCycle, vatEnabled
-      });
-    } catch (err) {
-      toast.error("Error al generar Excel: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
-  };
+  const handleXlsx = () =>
+    run("xlsx", () => writeCombinedSummaryXlsx({
+      activeDays, byLaborDay, dataByColumn, firstColKeyForCycle, grandTotal,
+      grandTotalGeneral, grandTotalGross, grandTotalTransport, grandTotalVat,
+      hasSupervisionCols, includeTransport, profitFor, totalGeneralFor, totalProfit,
+      totalProfitBillable, totalsByDay, transportByCycle, vatEnabled
+    }), { error: "No se pudo generar el Excel" });
 
-  const handlePrint = () => {
-    if (!captureRef.current) return;
-    const html = captureRef.current.outerHTML;
-    const win = window.open("", "_blank", "width=1100,height=700");
-    if (!win) {
-      toast.warning("Permite las ventanas emergentes para imprimir.");
-      return;
-    }
-    win.document.write(`<!DOCTYPE html><html><head><title>Tabla general</title>
-      <style>
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
-        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; margin: 0; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #888; padding: 6px 8px; font-size: 11px; }
-        @media print { @page { size: landscape; margin: 10mm; } }
-      </style>
-    </head><body>${html}<script>window.onload = () => { window.focus(); window.print(); };</script></body></html>`);
-    win.document.close();
-  };
+  const handlePrint = () =>
+    print(captureRef.current, {
+      title: "Tabla general",
+      margin: "10mm",
+      css: "th, td { border: 1px solid #888; padding: 6px 8px; font-size: 11px; }",
+    });
 
   return (
     <div className="rounded-md border-2 border-[var(--color-border)]">
@@ -154,9 +113,9 @@ export function CombinedSummaryCard({ dataByColumn, days, transportByCycle, firs
             className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[10px] hover:bg-[var(--color-accent-soft)] disabled:opacity-50">
             {busy === "text" ? "..." : "📋 Texto"}
           </button>
-          <button onClick={handleCopyImage} disabled={busy === "image"} title="Copiar como imagen"
+          <button onClick={handleCopyImage} disabled={busy === "copy"} title="Copiar como imagen"
             className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[10px] hover:bg-[var(--color-accent-soft)] disabled:opacity-50">
-            {busy === "image" ? "..." : "📋 Imagen"}
+            {busy === "copy" ? "..." : "📋 Imagen"}
           </button>
           <button onClick={handleXlsx} disabled={busy === "xlsx"} title="Descargar como Excel"
             className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[10px] hover:bg-[var(--color-accent-soft)] disabled:opacity-50">

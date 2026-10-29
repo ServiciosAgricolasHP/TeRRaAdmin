@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 import Modal from "../../components/Modal";
 import TextField from "../../components/TextField";
 import { matchesSearchQuery } from "../../utils/textSearch";
@@ -6,9 +7,7 @@ import { matchesSearchQuery } from "../../utils/textSearch";
 export function LeaderPickerModal({ open, onClose, leaders, workerName, busy, onPick }) {
   const [filter, setFilter] = useState("");
 
-  useEffect(() => {
-    if (open) setFilter("");
-  }, [open]);
+  if (useValuesChanged([open], { onMount: true }) && open) setFilter("");
 
   const filtered = useMemo(() => {
     if (!filter.trim()) return leaders;

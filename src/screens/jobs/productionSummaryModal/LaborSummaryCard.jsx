@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { captureFullWidthBlob } from "../../../utils/imageCapture";
-import { useToast } from "../../../contexts/ToastContext";
+import { useCaptureActions } from "../../../hooks/useCaptureActions";
+import { PRINT_GRID_CSS } from "../../../utils/printWindow";
 import { tratoTypeLabel } from "../../../utils/cosechaCombos";
 import { useIsMobile } from "../../../hooks/useIsMobile";
 import { fmtNum } from "./helpers";
@@ -11,12 +11,11 @@ import { fmtCurrency } from "../../../utils/format";
 // botones de copiar e imprimir; cuerpo con la tabla día por día. Arranca
 // plegada si el ciclo está cerrado.
 export function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
-  const toast = useToast();
   const isMobile = useIsMobile();
   const { col, rows, totalQty, totalAmount, unit, persons } = data;
   const isClosed = col.cycleStatus === "closed";
   const [collapsed, setCollapsed] = useState(isClosed);
-  const [busy, setBusy] = useState("");
+  const { busy, run, copy, print, copyText } = useCaptureActions();
   const captureRef = useRef(null);
 
   // El control maestro del modal pliega o despliega a la vez las tarjetas de
@@ -60,119 +59,71 @@ export function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
     return lines.join("\n");
   };
 
-  const handleCopyText = async () => {
-    setBusy("text");
-    try {
-      await navigator.clipboard.writeText(buildPlainText());
-      toast.success("Texto copiado");
-    } catch (err) {
-      toast.error("Error al copiar: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
-  };
+  const handleCopyText = () => copyText(buildPlainText());
+  const handleCopyImage = () => copy(captureRef.current);
 
-  const handleCopyImage = async () => {
-    if (!captureRef.current) return;
-    setBusy("image");
-    try {
-      const blob = await captureFullWidthBlob(captureRef.current);
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada");
-    } catch (err) {
-      toast.error("Error al copiar: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
-  };
+  const handleXlsx = () => run("xlsx", async () => {
+    const ExcelJS = (await import("exceljs")).default;
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet((col.labor.name || "Resumen").slice(0, 31));
+    ws.getColumn(1).width = 6; // restricción de layout: col A vacía
 
-  const handleXlsx = async () => {
-    setBusy("xlsx");
-    try {
-      const ExcelJS = (await import("exceljs")).default;
-      const wb = new ExcelJS.Workbook();
-      const ws = wb.addWorksheet((col.labor.name || "Resumen").slice(0, 31));
-      ws.getColumn(1).width = 6; // restricción de layout: col A vacía
+    let r = 2; // fila 1 vacía
+    ws.getCell(r, 2).value = col.labor.name;
+    ws.getCell(r, 2).font = { bold: true, size: 13 };
+    r++;
+    ws.getCell(r, 2).value = `${col.cycleLabel} · ${typeLabel}${col.cycleStatus === "closed" ? " · cerrado" : ""}`;
+    ws.getCell(r, 2).font = { size: 10, color: { argb: "FF666666" } };
+    r += 2;
 
-      let r = 2; // fila 1 vacía
-      ws.getCell(r, 2).value = col.labor.name;
-      ws.getCell(r, 2).font = { bold: true, size: 13 };
+    const headerRow = r;
+    ["Día", "Producción", "Precio", "Monto", "Rendimiento"].forEach((h, i) => {
+      const c = ws.getCell(headerRow, 2 + i);
+      c.value = h;
+      c.font = { bold: true };
+      c.fill = toArgbFill(HDR_BLUE);
+      c.border = XLSX_BORDER;
+    });
+    r++;
+
+    for (const { day, cell: cd } of rows) {
+      ws.getCell(r, 2).value = day;
+      ws.getCell(r, 3).value = `${fmtNum(cd.qty)}${cd.unit ? " " + cd.unit : ""}`;
+      ws.getCell(r, 4).value = cd.priceLabel || "—";
+      ws.getCell(r, 5).value = cd.amount;
+      ws.getCell(r, 5).numFmt = XLSX_MONEY_FMT;
+      ws.getCell(r, 6).value = cd.persons > 0 ? `${cd.persons} pers · prom ${fmtNum(cd.avg)}` : "—";
+      for (let c = 2; c <= 6; c++) ws.getCell(r, c).border = XLSX_BORDER;
       r++;
-      ws.getCell(r, 2).value = `${col.cycleLabel} · ${typeLabel}${col.cycleStatus === "closed" ? " · cerrado" : ""}`;
-      ws.getCell(r, 2).font = { size: 10, color: { argb: "FF666666" } };
-      r += 2;
-
-      const headerRow = r;
-      ["Día", "Producción", "Precio", "Monto", "Rendimiento"].forEach((h, i) => {
-        const c = ws.getCell(headerRow, 2 + i);
-        c.value = h;
-        c.font = { bold: true };
-        c.fill = toArgbFill(HDR_BLUE);
-        c.border = XLSX_BORDER;
-      });
-      r++;
-
-      for (const { day, cell: cd } of rows) {
-        ws.getCell(r, 2).value = day;
-        ws.getCell(r, 3).value = `${fmtNum(cd.qty)}${cd.unit ? " " + cd.unit : ""}`;
-        ws.getCell(r, 4).value = cd.priceLabel || "—";
-        ws.getCell(r, 5).value = cd.amount;
-        ws.getCell(r, 5).numFmt = XLSX_MONEY_FMT;
-        ws.getCell(r, 6).value = cd.persons > 0 ? `${cd.persons} pers · prom ${fmtNum(cd.avg)}` : "—";
-        for (let c = 2; c <= 6; c++) ws.getCell(r, c).border = XLSX_BORDER;
-        r++;
-      }
-
-      const totalRow = r;
-      ws.getCell(totalRow, 2).value = "TOTAL";
-      ws.getCell(totalRow, 3).value = `${fmtNum(totalQty)}${unit ? " " + unit : ""}`;
-      ws.getCell(totalRow, 4).value = `${persons} personas únicas`;
-      ws.getCell(totalRow, 5).value = totalAmount;
-      ws.getCell(totalRow, 5).numFmt = XLSX_MONEY_FMT;
-      for (let c = 2; c <= 6; c++) {
-        const cell = ws.getCell(totalRow, c);
-        cell.font = { bold: true };
-        cell.fill = toArgbFill(ROW_TOTAL_LIGHT);
-        cell.border = XLSX_BORDER;
-      }
-
-      [2, 3, 4, 5, 6].forEach((c) => { ws.getColumn(c).width = 18; });
-
-      const buf = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `resumen_${col.labor.name}_${col.cycleLabel}`.replace(/[/\s]+/g, "_") + ".xlsx";
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      toast.error("Error al generar Excel: " + (err.message || err));
-    } finally {
-      setBusy("");
     }
-  };
 
-  const handlePrint = () => {
-    if (!captureRef.current) return;
-    const html = captureRef.current.outerHTML;
-    const win = window.open("", "_blank", "width=900,height=700");
-    if (!win) {
-      toast.warning("Permite las ventanas emergentes para imprimir.");
-      return;
+    const totalRow = r;
+    ws.getCell(totalRow, 2).value = "TOTAL";
+    ws.getCell(totalRow, 3).value = `${fmtNum(totalQty)}${unit ? " " + unit : ""}`;
+    ws.getCell(totalRow, 4).value = `${persons} personas únicas`;
+    ws.getCell(totalRow, 5).value = totalAmount;
+    ws.getCell(totalRow, 5).numFmt = XLSX_MONEY_FMT;
+    for (let c = 2; c <= 6; c++) {
+      const cell = ws.getCell(totalRow, c);
+      cell.font = { bold: true };
+      cell.fill = toArgbFill(ROW_TOTAL_LIGHT);
+      cell.border = XLSX_BORDER;
     }
-    win.document.write(`<!DOCTYPE html><html><head><title>Resumen ${col.labor.name}</title>
-      <style>
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
-        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; margin: 0; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #888; padding: 6px 8px; font-size: 12px; }
-        @media print { @page { size: portrait; margin: 12mm; } }
-      </style>
-    </head><body>${html}<script>window.onload = () => { window.focus(); window.print(); };</script></body></html>`);
-    win.document.close();
-  };
+
+    [2, 3, 4, 5, 6].forEach((c) => { ws.getColumn(c).width = 18; });
+
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `resumen_${col.labor.name}_${col.cycleLabel}`.replace(/[/\s]+/g, "_") + ".xlsx";
+    a.click();
+    URL.revokeObjectURL(url);
+  }, { error: "No se pudo generar el Excel" });
+
+  const handlePrint = () =>
+    print(captureRef.current, { title: `Resumen ${col.labor.name}`, page: "portrait", css: PRINT_GRID_CSS });
 
   return (
     <div className="rounded-md border border-[var(--color-border)]">
@@ -213,11 +164,11 @@ export function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
           </button>
           <button
             onClick={handleCopyImage}
-            disabled={busy === "image"}
+            disabled={busy === "copy"}
             title="Copiar como imagen"
             className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[10px] hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
           >
-            {busy === "image" ? "..." : "📋 Imagen"}
+            {busy === "copy" ? "..." : "📋 Imagen"}
           </button>
           <button
             onClick={handleXlsx}

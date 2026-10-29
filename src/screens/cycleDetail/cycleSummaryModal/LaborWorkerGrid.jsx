@@ -1,11 +1,10 @@
 import { useRef, useState, useMemo } from "react";
-import { captureFullWidthBlob, captureFullWidthDataUrl } from "../../../utils/imageCapture";
 import Modal from "../../../components/Modal";
 import {
   getDaySingle,
 } from "../../../utils/cosechaCombos";
 import { isRedDay } from "../../../utils/tratoHE";
-import { useToast } from "../../../contexts/ToastContext";
+import { useCaptureActions } from "../../../hooks/useCaptureActions";
 import { writeLaborWorkerGridXlsx } from "./writeLaborWorkerGridXlsx";
 import { WorkerGridTable } from "./WorkerGridTable";
 
@@ -28,9 +27,8 @@ export function LaborWorkerGrid({
   titles,
   dayPrices = {},
 }) {
-  const toast = useToast();
   const ref = useRef(null);
-  const [busy, setBusy] = useState("");
+  const { busy, run, copy, download, print } = useCaptureActions();
   // Vista ampliada: la grilla en un Modal aparte, para verla completa cuando
   // hay muchos días.
   const [expanded, setExpanded] = useState(false);
@@ -54,92 +52,32 @@ export function LaborWorkerGrid({
       if (isRedDay(d, cfg)) out.add(d);
     }
     return out;
-  }, [labor?.type, labor?.id, dates, dayPrices]);
+  }, [labor, dates, dayPrices]);
 
   const filename = `resumen_trabajadores_${(labor?.name || "labor").replace(/[/\s]+/g, "_")}.png`;
   const xlsxFilename = `resumen_${(labor?.name || "labor").replace(/[/\s]+/g, "_")}.xlsx`;
 
-  // Con una grilla más ancha que la ventana, `html-to-image` puede cortar en
-  // el `offsetWidth` del elemento; `width`/`height` salen de
-  // `scrollWidth`/`scrollHeight` para que el PNG traiga la tabla completa.
-  const fullCaptureOpts = () => ({
-    backgroundColor: "#ffffff",
-    pixelRatio: 2,
-    width: ref.current?.scrollWidth || undefined,
-    height: ref.current?.scrollHeight || undefined,
-  });
+  const handleCopy = () => copy(ref.current);
+  const handleDownload = () => download(ref.current, filename);
+  const handleXlsx = () =>
+    run("xlsx", () => writeLaborWorkerGridXlsx({
+      catalogs,
+      dates,
+      dayPrices,
+      displayName,
+      labor,
+      redDates,
+      unit,
+      workers,
+      xlsxFilename,
+    }), { error: "No se pudo exportar" });
 
-  const handleCopy = async () => {
-    if (!ref.current) return;
-    setBusy("copy");
-    try {
-      const blob = await captureFullWidthBlob(ref.current, fullCaptureOpts());
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada al portapapeles");
-    } catch (err) {
-      toast.error("Error: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
-  };
-  const handleDownload = async () => {
-    if (!ref.current) return;
-    setBusy("download");
-    try {
-      const dataUrl = await captureFullWidthDataUrl(ref.current, fullCaptureOpts());
-      const link = document.createElement("a");
-      link.download = filename;
-      link.href = dataUrl;
-      link.click();
-    } finally {
-      setBusy("");
-    }
-  };
-  const handleXlsx = async () => {
-    setBusy("xlsx");
-    try {
-      await writeLaborWorkerGridXlsx({
-        catalogs,
-        dates,
-        dayPrices,
-        displayName,
-        labor,
-        redDates,
-        unit,
-        workers,
-        xlsxFilename,
-      });
-    } catch (err) {
-      toast.error("Error al exportar: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const handlePrint = () => {
-    if (!ref.current) return;
-    const html = ref.current.outerHTML;
-    const win = window.open("", "_blank", "width=1100,height=800");
-    if (!win) {
-      toast.warning("Permite las ventanas emergentes para imprimir.");
-      return;
-    }
-    win.document.write(`<!DOCTYPE html><html><head><title>${displayName} — trabajadores</title>
-      <style>
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
-        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; margin: 0; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #888; padding: 5px 7px; font-size: 11px; }
-        /* Hace que el thead se repita en cada hoja nueva (Chrome/Firefox). */
-        thead { display: table-header-group; }
-        tfoot { display: table-row-group; }
-        tr { page-break-inside: avoid; }
-        @media print { @page { size: landscape; margin: 10mm; } }
-      </style>
-    </head><body>${html}<script>window.onload = () => { window.focus(); window.print(); };</script></body></html>`);
-    win.document.close();
-  };
+  const handlePrint = () =>
+    print(ref.current, {
+      title: `${displayName} — trabajadores`,
+      margin: "10mm",
+      css: "th, td { border: 1px solid #888; padding: 5px 7px; font-size: 11px; }",
+    });
 
   if (allWorkers.length === 0 || dates.length === 0) return null;
 

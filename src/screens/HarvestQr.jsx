@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useEffectEvent, useMemo } from "react";
 import { useToast } from "../contexts/ToastContext";
 import { qrPrefixesService, jobsService, cyclesService } from "../services";
 import { countedList } from "../services/cache";
@@ -89,7 +89,10 @@ export default function HarvestQr() {
     }
   };
 
-  useEffect(() => { reload(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  // Carga al montar; `useEffectEvent` lee la versión actual de la función sin
+  // volver a correr el efecto cuando cambia.
+  const loadOnMount = useEffectEvent(() => reload());
+  useEffect(() => { loadOnMount(); }, []);
 
   const jobById = useMemo(() => new Map(jobs.map((f) => [f.id, f])), [jobs]);
 

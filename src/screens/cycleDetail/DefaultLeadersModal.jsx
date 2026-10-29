@@ -1,12 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 import Modal, { ModalCloseButton } from "../../components/Modal";
 import { hasChanges } from "../../utils/formChanges";
 
 export function DefaultLeadersModal({ open, onClose, labor, readOnly, onSave }) {
   const [draft, setDraft] = useState({});
-  useEffect(() => {
-    if (open && labor) setDraft({ ...(labor.bonusDefaults || {}) });
-  }, [open, labor]);
+  if (useValuesChanged([open, labor], { onMount: true }) && open && labor) setDraft({ ...(labor.bonusDefaults || {}) });
   if (!labor) return null;
 
   const toggle = (rut, key) => {

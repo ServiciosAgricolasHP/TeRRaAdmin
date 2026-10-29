@@ -1,16 +1,7 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { ThemeContext, THEMES } from "./ThemeContext";
 
-const ThemeContext = createContext(null);
 const STORAGE_KEY = "af.theme";
-
-export const THEMES = [
-  { key: "light", label: "Light", isDark: false },
-  { key: "dark", label: "Dark", isDark: true },
-  { key: "donDiego", label: "Don Diego", isDark: true },
-  { key: "sheridan", label: "DarkViolet", isDark: true },
-  { key: "aetiskViolet", label: "Aetisk Violet", isDark: false },
-  { key: "aetiskPastel", label: "Aetisk Pastel", isDark: false },
-];
 
 const VALID = new Set(THEMES.map((t) => t.key));
 const KEYS = THEMES.map((t) => `theme-${t.key}`);
@@ -38,10 +29,4 @@ export function ThemeProvider({ children }) {
       {children}
     </ThemeContext.Provider>
   );
-}
-
-export function useTheme() {
-  const ctx = useContext(ThemeContext);
-  if (!ctx) throw new Error("useTheme must be used inside ThemeProvider");
-  return ctx;
 }

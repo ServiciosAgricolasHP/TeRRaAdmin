@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { captureFullWidthBlob, captureFullWidthDataUrl } from "../../utils/imageCapture";
+import { copyNodeImage, downloadNodePng } from "../../utils/imageCapture";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { contactCardsService } from "../../services";
 import { useToast } from "../../contexts/ToastContext";
@@ -68,18 +68,13 @@ export default function ContactCardsTab() {
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       if (cancelled || !imageRef.current) return;
       const node = imageRef.current;
+      const image = { pixelRatio: 2, cacheBust: true };
       const download = async () => {
-        const dataUrl = await captureFullWidthDataUrl(node, { pixelRatio: 2, cacheBust: true });
-        const a = document.createElement("a");
-        a.download = `ficha_${(imageExport.card.name || "ficha").replace(/\s+/g, "_")}.png`;
-        a.href = dataUrl;
-        a.click();
+        await downloadNodePng(node, `ficha_${(imageExport.card.name || "ficha").replace(/\s+/g, "_")}.png`, image);
         toast.success("Imagen descargada");
       };
       const copyToClipboard = async () => {
-        const blob = await captureFullWidthBlob(node, { pixelRatio: 2, cacheBust: true });
-        if (!blob) throw new Error("blob vacío");
-        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+        await copyNodeImage(node, image);
         toast.success("Imagen copiada al portapapeles");
       };
       try {

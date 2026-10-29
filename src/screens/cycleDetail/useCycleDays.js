@@ -2,16 +2,12 @@ import { useState } from "react";
 import { workdaysService } from "../../services";
 import { tripsService } from "../../services/transportsService";
 import { greeting, GREETING_SLOTS } from "../../utils/greetings";
-import { localIsoDate } from "../../utils/dates";
-
-const todayStr = () => localIsoDate();
 
 // Días del ciclo: agregarlos desde el calendario y quitar uno que no tenga
 // jornadas ni vueltas de transporte.
 export function useCycleDays({ cycleWrite, days, id, setCycle, showToast, toast, user }) {
   "use no memo";
   const [addDayOpen, setAddDayOpen] = useState(false);
-  const [newDay, setNewDay] = useState(todayStr());
   const [selectedDays, setSelectedDays] = useState(() => new Set());
   const [viewMonth, setViewMonth] = useState(() => {
     const d = new Date();
@@ -37,14 +33,6 @@ export function useCycleDays({ cycleWrite, days, id, setCycle, showToast, toast,
   // ============================================================
   // Días
   // ============================================================
-
-  const addDay = async () => {
-    if (!newDay) return;
-    if (days.includes(newDay)) { setAddDayOpen(false); return; }
-    const ok = await persistDays([...days, newDay].sort());
-    setAddDayOpen(false);
-    if (ok) showToast(`Día ${newDay} agregado`);
-  };
 
   const addSelectedDays = async () => {
     const toAdd = [...selectedDays].filter((d) => !days.includes(d));

@@ -1,20 +1,21 @@
 import { useState, useRef, useEffect } from "react";
-import { captureFullWidthDataUrl, captureFullWidthBlob } from "../../utils/imageCapture";
 import Modal from "../../components/Modal";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { TripEditModal } from "../../components/TripEditModal";
 import { tripsService, paymentsService, titleCase } from "../../services/transportsService";
 import { useToast } from "../../contexts/ToastContext";
+import { useCaptureActions } from "../../hooks/useCaptureActions";
+import { PRINT_SHEET_CSS } from "../../utils/printWindow";
 import { localIsoDate } from "../../utils/dates";
 import { fmtCurrency } from "../../utils/format";
 import { PrintableSummary } from "./PrintableSummary";
 
-export function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], faenaById, subfaenaById, cycleById, onPay, onRevert, onDelete, onChanged }) {
+export function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], faenaById, subfaenaById, cycleById, onDelete, onChanged }) {
   const toast = useToast();
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(false);
   const printRef = useRef(null);
-  const [busy, setBusy] = useState("");
+  const { busy, copy, download, print } = useCaptureActions();
   const [editMode, setEditMode] = useState(false);
   // Edición de una vuelta (mismo modal que TripsTab) y confirmación para
   // sacarla del resumen sin borrarla: vuelve a quedar suelta para otro
@@ -73,36 +74,8 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
     return `${dates[0]} → ${dates[dates.length - 1]}`;
   })();
 
-  const handleDownload = async () => {
-    if (!printRef.current) return;
-    setBusy("download");
-    try {
-      const dataUrl = await captureFullWidthDataUrl(printRef.current);
-      const link = document.createElement("a");
-      link.download = `transporte_${carrier?.alias || "resumen"}_${payment.id}.png`;
-      link.href = dataUrl;
-      link.click();
-    } catch (err) {
-      toast.error("Error al generar imagen: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const handleCopy = async () => {
-    if (!printRef.current) return;
-    setBusy("copy");
-    try {
-      const blob = await captureFullWidthBlob(printRef.current);
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada al portapapeles");
-    } catch (err) {
-      toast.error("Error al copiar: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
-  };
+  const handleDownload = () => download(printRef.current, `transporte_${carrier?.alias || "resumen"}_${payment.id}.png`);
+  const handleCopy = () => copy(printRef.current);
 
   // Abonado y saldo, desde el estado local `abonos` (no `payment.abonos`),
   // para reflejar al instante un abono agregado o quitado.
@@ -290,35 +263,7 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
     }
   };
 
-  const handlePrint = () => {
-    if (!printRef.current) return;
-    const html = printRef.current.outerHTML;
-    const win = window.open("", "_blank", "width=900,height=700");
-    if (!win) {
-      toast.warning("Permite las ventanas emergentes para imprimir.");
-      return;
-    }
-    win.document.write(`<!DOCTYPE html><html><head><title>Resumen Transporte</title>
-      <style>
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-        html, body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #999; padding: 6px 8px; font-size: 12px; }
-        thead th { background: #92d050 !important; text-align: left; }
-        .month-tag { background: #e6c0e0 !important; padding: 2px 8px; font-weight: 600; display: inline-block; }
-        .tot-row td, tr.tot-row td { background: #c6efce !important; font-weight: 700; }
-        .num { text-align: right; font-variant-numeric: tabular-nums; }
-        @media print {
-          @page { size: landscape; margin: 12mm; }
-          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-        }
-      </style>
-    </head><body>${html}</body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); }, 250);
-  };
+  const handlePrint = () => print(printRef.current, { title: "Resumen Transporte", css: PRINT_SHEET_CSS });
 
   return (
     <Modal

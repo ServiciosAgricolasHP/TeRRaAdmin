@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 import Modal from "../../components/Modal";
 import { useToast } from "../../contexts/ToastContext";
 
@@ -8,7 +9,10 @@ export function TypeToConfirmModal({ word, title, message, confirmLabel, danger 
   const toast = useToast();
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
-  useEffect(() => { setTyped(""); setBusy(false); }, [word]);
+  if (useValuesChanged([word])) {
+    setTyped("");
+    setBusy(false);
+  }
   const ok = typed.trim().toLowerCase() === String(word || "").toLowerCase();
   return (
     <Modal

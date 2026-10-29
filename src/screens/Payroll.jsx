@@ -5,8 +5,6 @@ import {
 import {
   payrollsService,
   pendingCashItemsOf,
-  markPaid as markPayrollPaid,
-  markPending as markPayrollPending,
 } from "../services/payrollsService";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
@@ -178,14 +176,6 @@ export default function Payroll() {
     toast,
   });
 
-  const onMarkPaid = async (p) => {
-    await markPayrollPaid(p.id, p.workdayIds || []);
-    await load();
-  };
-  const onMarkPending = async (p) => {
-    await markPayrollPending(p.id, p.workdayIds || []);
-    await load();
-  };
   const onChangeClassification = async (p) => {
     const current = p.classification || "nomina";
     const next = current === "diferencia" ? "nomina" : "diferencia";

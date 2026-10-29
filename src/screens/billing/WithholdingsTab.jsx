@@ -1,32 +1,32 @@
 import { PrintableWithholdings } from "./PrintableWithholdings";
 import { PrintableWithholdingsGroup } from "./PrintableWithholdingsGroup";
 import { WithholdingsView } from "./WithholdingsView";
-import { captureFullWidthBlob, captureFullWidthDataUrl } from "../../utils/imageCapture";
-import { useMemo, useRef, useState } from "react";
+import { useCaptureActions } from "../../hooks/useCaptureActions";
+import { PRINT_SHEET_CSS } from "../../utils/printWindow";
+import { useMemo, useRef } from "react";
 import { writeWithholdingGroupXlsx } from "./writeWithholdingGroupXlsx";
 import { writeWithholdingsXlsx } from "./writeWithholdingsXlsx";
 
 // Pestaña "Retenciones": las facturas en "Solo neto" agrupadas por contraparte,
 // con las exportaciones del total (copiar, PNG, imprimir y Excel) y las de cada
 // contraparte. Cada grupo tiene su propio imprimible fuera de pantalla.
-export function WithholdingsTab({ companiesById, periodFilter, selectedCompany, selectedCompanyId, setDetailDoc, setPaymentStatus, toast, totals, withholdingsByCounterparty }) {
+export function WithholdingsTab({ companiesById, periodFilter, selectedCompany, selectedCompanyId, setDetailDoc, setPaymentStatus, totals, withholdingsByCounterparty }) {
   "use no memo";
   // Printable del total, fuera de pantalla, para html-to-image e impresión.
   const withholdingsPrintRef = useRef(null);
-  const [exportBusy, setExportBusy] = useState("");
-  // Refs por contraparte (mapa clave del grupo → nodo DOM) y estado de carga
-  // por grupo. Cada grupo se renderiza fuera de pantalla con su propio
-  // printable, y los handlers usan estos refs para copiar, descargar o
-  // imprimir solo ese grupo.
+  const { busy: exportBusy, run, copy, download, print } = useCaptureActions();
+  // Refs por contraparte (mapa clave del grupo → nodo DOM). Cada grupo se
+  // renderiza fuera de pantalla con su propio printable, y sus exportaciones
+  // usan estos refs para copiar, descargar o imprimir solo ese grupo.
   const groupPrintRefs = useRef(new Map());
-  const [groupBusy, setGroupBusy] = useState({}); // { [groupKey]: "copy"|"png"|... }
   const groupKey = (g) => g?.rut || "__sin_rut__";
-  const setBusyFor = (key, action) =>
-    setGroupBusy((prev) => {
-      const next = { ...prev };
-      if (action) next[key] = action; else delete next[key];
-      return next;
-    });
+  // Las exportaciones de un grupo corren con la clave "acción:grupo"; la
+  // vista recibe la acción en curso de cada grupo.
+  const groupCapture = useCaptureActions();
+  const busySplit = groupCapture.busy.indexOf(":");
+  const groupBusy = groupCapture.busy
+    ? { [groupCapture.busy.slice(busySplit + 1)]: groupCapture.busy.slice(0, busySplit) }
+    : {};
   // --- Export de Retenciones (infografía) ---
   // El printable se renderiza fuera de pantalla y los botones lo capturan con
   // html-to-image, igual que en los otros resúmenes (PrintableFortnightTable,
@@ -39,73 +39,19 @@ export function WithholdingsTab({ companiesById, periodFilter, selectedCompany, 
     return `Retenciones_${alias}_${period}`;
   }, [companiesById, selectedCompanyId, periodFilter]);
 
-  const handleWithholdingsCopy = async () => {
-    if (!withholdingsPrintRef.current) return;
-    setExportBusy("copy");
-    try {
-      const blob = await captureFullWidthBlob(withholdingsPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada al portapapeles");
-    } catch (err) {
-      toast.error("Error al copiar: " + (err.message || err));
-    } finally {
-      setExportBusy("");
-    }
-  };
-
-  const handleWithholdingsDownload = async () => {
-    if (!withholdingsPrintRef.current) return;
-    setExportBusy("png");
-    try {
-      const dataUrl = await captureFullWidthDataUrl(withholdingsPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
-      const link = document.createElement("a");
-      link.download = `${exportFileBase}.png`;
-      link.href = dataUrl;
-      link.click();
-    } catch (err) {
-      toast.error("Error al generar PNG: " + (err.message || err));
-    } finally {
-      setExportBusy("");
-    }
-  };
-
-  const handleWithholdingsPrint = () => {
-    if (!withholdingsPrintRef.current) return;
-    const html = withholdingsPrintRef.current.outerHTML;
-    const win = window.open("", "_blank", "width=1000,height=700");
-    if (!win) {
-      toast.warning("Permite las ventanas emergentes para imprimir.");
-      return;
-    }
-    win.document.write(`<!DOCTYPE html><html><head><title>Retenciones</title>
-      <style>
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #999; padding: 6px 8px; font-size: 12px; }
-        thead th { background: #92d050 !important; text-align: left; }
-        @media print { @page { size: landscape; margin: 12mm; } }
-      </style>
-    </head><body>${html}</body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); }, 250);
-  };
+  const handleWithholdingsCopy = () => copy(withholdingsPrintRef.current);
+  const handleWithholdingsDownload = () => download(withholdingsPrintRef.current, `${exportFileBase}.png`);
+  const handleWithholdingsPrint = () => print(withholdingsPrintRef.current, { title: "Retenciones", css: PRINT_SHEET_CSS });
 
   // XLSX con la convención del proyecto: col A vacía de ancho 6, fila 1 vacía,
   // datos desde B2. Dos hojas: "Resumen", con una fila por contraparte, y
   // "Detalle", con cada factura.
-  const handleWithholdingsXlsx = async () => {
-    setExportBusy("xlsx");
-    try {
-      await writeWithholdingsXlsx({ companiesById, exportFileBase, periodFilter, selectedCompanyId, totals, withholdingsByCounterparty });
-    } catch (err) {
-      toast.error("Error al generar XLSX: " + (err.message || err));
-    } finally {
-      setExportBusy("");
-    }
-  };
+  const handleWithholdingsXlsx = () =>
+    run(
+      "xlsx",
+      () => writeWithholdingsXlsx({ companiesById, exportFileBase, periodFilter, selectedCompany, selectedCompanyId, totals, withholdingsByCounterparty }),
+      { error: "No se pudo generar el Excel" },
+    );
 
   // ===== Export por contraparte (individual) =====
   // Nombre de archivo seguro para una contraparte.
@@ -116,83 +62,18 @@ export function WithholdingsTab({ companiesById, periodFilter, selectedCompany, 
     return `Retencion_${alias}_${counterparty}_${period}`;
   };
 
-  const handleGroupCopy = async (g) => {
-    const key = groupKey(g);
-    const el = groupPrintRefs.current.get(key);
-    if (!el) return;
-    setBusyFor(key, "copy");
-    try {
-      const blob = await captureFullWidthBlob(el, { backgroundColor: "#ffffff", pixelRatio: 2 });
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success(`Copiado: ${g.razon || "contraparte"}`);
-    } catch (err) {
-      toast.error("Error al copiar: " + (err.message || err));
-    } finally {
-      setBusyFor(key, null);
-    }
-  };
-
-  const handleGroupPng = async (g) => {
-    const key = groupKey(g);
-    const el = groupPrintRefs.current.get(key);
-    if (!el) return;
-    setBusyFor(key, "png");
-    try {
-      const dataUrl = await captureFullWidthDataUrl(el, { backgroundColor: "#ffffff", pixelRatio: 2 });
-      const link = document.createElement("a");
-      link.download = `${groupFileBase(g)}.png`;
-      link.href = dataUrl;
-      link.click();
-    } catch (err) {
-      toast.error("Error al generar PNG: " + (err.message || err));
-    } finally {
-      setBusyFor(key, null);
-    }
-  };
-
-  const handleGroupPrint = (g) => {
-    const key = groupKey(g);
-    const el = groupPrintRefs.current.get(key);
-    if (!el) return;
-    const html = el.outerHTML;
-    const win = window.open("", "_blank", "width=1000,height=700");
-    if (!win) {
-      toast.warning("Permite las ventanas emergentes para imprimir.");
-      return;
-    }
-    win.document.write(`<!DOCTYPE html><html><head><title>Retención ${g.razon || ""}</title>
-      <style>
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #999; padding: 6px 8px; font-size: 12px; }
-        thead th { background: #92d050 !important; text-align: left; }
-        @media print { @page { size: landscape; margin: 12mm; } }
-      </style>
-    </head><body>${html}</body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); }, 250);
-  };
-
-  const handleGroupXlsx = async (g) => {
-    const key = groupKey(g);
-    setBusyFor(key, "xlsx");
-    try {
-      await writeWithholdingGroupXlsx({ g, groupFileBase, periodFilter, selectedCompany });
-    } catch (err) {
-      toast.error("Error al generar XLSX: " + (err.message || err));
-    } finally {
-      setBusyFor(key, null);
-    }
-  };
-
   const groupExport = (action, g) => {
-    if (action === "copy") return handleGroupCopy(g);
-    if (action === "png") return handleGroupPng(g);
-    if (action === "print") return handleGroupPrint(g);
-    if (action === "xlsx") return handleGroupXlsx(g);
+    const gk = groupKey(g);
+    const node = groupPrintRefs.current.get(gk);
+    const key = `${action}:${gk}`;
+    if (action === "copy") return groupCapture.copy(node, { key, success: `Copiado: ${g.razon || "contraparte"}` });
+    if (action === "png") return groupCapture.download(node, `${groupFileBase(g)}.png`, { key });
+    if (action === "print") return groupCapture.print(node, { key, title: `Retención ${g.razon || ""}`, css: PRINT_SHEET_CSS });
+    if (action === "xlsx") {
+      return groupCapture.run(key, () => writeWithholdingGroupXlsx({ g, groupFileBase, periodFilter, selectedCompany }), {
+        error: "No se pudo generar el Excel",
+      });
+    }
   };
   return (
     <>
@@ -209,11 +90,11 @@ export function WithholdingsTab({ companiesById, periodFilter, selectedCompany, 
         </button>
         <button
           onClick={handleWithholdingsDownload}
-          disabled={exportBusy === "png" || withholdingsByCounterparty.length === 0}
+          disabled={exportBusy === "download" || withholdingsByCounterparty.length === 0}
           className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
           title="Descargar como PNG"
         >
-          {exportBusy === "png" ? "..." : "📥 PNG"}
+          {exportBusy === "download" ? "..." : "📥 PNG"}
         </button>
         <button
           onClick={handleWithholdingsPrint}

@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 import { getDayPiso } from "../../utils/cosechaCombos";
 import { fmtCurrency } from "../../utils/format";
 
@@ -10,9 +11,7 @@ export function FloorDayRow({ labor, dayPrices, date, readOnly, onPersist, pendi
   const hasPiso = dayPiso != null && dayPiso > 0;
   const [editing, setEditing] = useState(false);
   const [local, setLocal] = useState("");
-  useEffect(() => {
-    if (!editing) setLocal(hasPiso ? String(dayPiso) : "");
-  }, [editing, dayPiso, hasPiso]);
+  if (useValuesChanged([editing, dayPiso, hasPiso], { onMount: true }) && !editing) setLocal(hasPiso ? String(dayPiso) : "");
 
   if (!hasPiso && !editing) {
     if (readOnly) return null;

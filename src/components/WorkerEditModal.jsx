@@ -20,6 +20,7 @@ import {
   isCashBank,
   bankName,
   rutWithoutDv,
+  paysToOtherPerson,
 } from "../utils/banks";
 
 export default function WorkerEditModal({ open, mode, worker, allWorkers = [], onClose, onSaved }) {
@@ -45,6 +46,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
         groupLeader: "",
         groupLeaderHistory: [],
         bd_paymentRut: "",
+        paymentName: "",
         bd_accountNumber: "",
         bd_accountType: ACCOUNT_TYPE_RUT,
         bd_bankCode: DEFAULT_BANK_CODE,
@@ -62,6 +64,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
         groupLeader: worker?.groupLeader?.[0] || "",
         groupLeaderHistory: worker?.groupLeader || [],
         bd_paymentRut: bd[0] || rut,
+        paymentName: worker?.paymentName || "",
         bd_accountNumber: bd[1] || rutWithoutDv(rut),
         bd_accountType: bd[2] != null ? Number(bd[2]) : ACCOUNT_TYPE_RUT,
         bd_bankCode: bd[3] || DEFAULT_BANK_CODE,
@@ -106,6 +109,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
   const accType = Number(form.bd_accountType);
   const isCuentaRutSelected = accType === ACCOUNT_TYPE_RUT;
   const isCash = isCashBank(form.bd_bankCode);
+  const payeeIsOther = paysToOtherPerson(form.rut, form.bd_paymentRut);
   const qrCodes = (worker?.idQr || []).map((c) => String(c || "").trim()).filter(Boolean);
 
   const switchToCash = () => {
@@ -130,12 +134,14 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
 
   // Asigna Cuenta RUT de Banco Estado en un click: RUT de pago = RUT del
   // trabajador y número = RUT sin DV. Si estaba en efectivo, vuelve a banco.
+  // La cuenta pasa a ser del trabajador, así que se borra el titular.
   const assignCuentaRut = () => {
     setForm((f) => {
       const rut = normalizeRut(f.rut);
       return {
         ...f,
         bd_paymentRut: rut,
+        paymentName: "",
         bd_accountNumber: rutWithoutDv(rut),
         bd_accountType: ACCOUNT_TYPE_RUT,
         bd_bankCode: DEFAULT_BANK_CODE,
@@ -190,6 +196,10 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
 
     const payRut = normalizeRut(form.bd_paymentRut || rut);
     if (!validateRut(payRut)) return setError("RUT de pago inválido");
+    const paymentName = toProperName(form.paymentName);
+    if (paysToOtherPerson(rut, payRut) && !paymentName) {
+      return setError("El RUT de pago es de otra persona: ingresa el nombre del titular");
+    }
 
     // Efectivo: se guarda con bankCode "EFE" sin validar cuenta ni banco; el
     // número de cuenta queda de relleno.
@@ -224,7 +234,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
     try {
       if (isCreate) {
         await createWorker({ rut, name: form.name });
-        await workersService.update(rut, { groupLeader, idQr: [], bankDetails, email, ...personalData });
+        await workersService.update(rut, { groupLeader, idQr: [], bankDetails, paymentName, email, ...personalData });
       } else {
         // `idQr` no se escribe desde la ficha: lo asigna `assignQrCode`.
         await workersService.update(worker.id, {
@@ -246,6 +256,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
           email,
           groupLeader,
           bankDetails,
+          paymentName,
           ...personalData,
         });
       }
@@ -437,13 +448,22 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
               <div className="rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-3 py-2 text-xs text-[var(--color-accent)]">
                 💵 Este trabajador cobra en efectivo. No se envía a la nómina del banco.
               </div>
-              <TextField
-                label="RUT de pago"
-                required
-                value={form.bd_paymentRut}
-                onChange={onPaymentRutChange}
-                placeholder="Puede diferir del trabajador"
-              />
+              <div className="grid gap-4 sm:grid-cols-2">
+                <TextField
+                  label="RUT de pago"
+                  required
+                  value={form.bd_paymentRut}
+                  onChange={onPaymentRutChange}
+                  placeholder="Puede diferir del trabajador"
+                />
+                <TextField
+                  label="Nombre de quien cobra"
+                  required={payeeIsOther}
+                  value={form.paymentName}
+                  onChange={(v) => setForm((f) => ({ ...f, paymentName: v }))}
+                  placeholder={payeeIsOther ? "El RUT de pago es de otra persona" : "Opcional: es el trabajador"}
+                />
+              </div>
               {(form.bd_prevBankCode || form.bd_prevAccountNumber) && (
                 <p className="text-[10px] text-[var(--color-muted)]">
                   Datos bancarios guardados (se restauran si vuelves a Banco):
@@ -468,6 +488,13 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
                   value={form.bd_paymentRut}
                   onChange={onPaymentRutChange}
                   placeholder="Puede diferir del trabajador"
+                />
+                <TextField
+                  label="Nombre del titular"
+                  required={payeeIsOther}
+                  value={form.paymentName}
+                  onChange={(v) => setForm((f) => ({ ...f, paymentName: v }))}
+                  placeholder={payeeIsOther ? "La cuenta es de otra persona" : "Opcional: la cuenta es del trabajador"}
                 />
                 <Select
                   label="Tipo de cuenta"

@@ -12,6 +12,7 @@ import {
   cyclesNoteHtml,
 } from "./printCommon";
 import { fmtCurrency } from "../../utils/format";
+import { openPrintWindow } from "../../utils/printWindow";
 import { computeLaborSummary, summaryCycleName, summaryDisplayRowsOf, summaryLabelColumnsOf, summaryTitleOf } from "../../utils/payrollDetail";
 
 function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
@@ -70,22 +71,6 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
     if (!d || typeof d !== "string") return "";
     const m = d.match(/^(\d{4})-(\d{2})-(\d{2})$/);
     return m ? `${m[3]}/${m[2]}` : d;
-  };
-  const cyclePeriod = (cycleId) => {
-    const cd = cycleDetails.find((c) => c.id === cycleId);
-    let first = cd?.firstDay || "";
-    let last = cd?.lastDay || "";
-    if (!first && !last) {
-      const days = cyclesById[cycleId]?.days;
-      if (Array.isArray(days) && days.length) {
-        const sorted = [...days].sort();
-        first = sorted[0]; last = sorted[sorted.length - 1];
-      }
-    }
-    const a = fmtDayShort(first);
-    const b = fmtDayShort(last);
-    if (a && b && a !== b) return `${a} → ${b}`;
-    return a || b || "";
   };
   // El subtítulo solo muestra los nombres de ciclo — el período va en una
   // columna propia de la tabla, no acá.
@@ -720,13 +705,7 @@ export async function printPaymentDetails(payroll, allGroups, titleOverrides = {
     rutOf,
     cyclesApart,
   });
-  const w = window.open("", "_blank", "width=900,height=700");
-  if (!w) {
-    throw new Error("Permite las ventanas emergentes para imprimir.");
-  }
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
+  openPrintWindow(html);
 }
 
 export async function printCashReceipts(payroll, cashGroups, titleOverrides = {}, catalogs = {}, payrollData = null, rutOf = undefined) {
@@ -758,11 +737,5 @@ export async function printCashReceipts(payroll, cashGroups, titleOverrides = {}
     catalogs,
     rutOf,
   });
-  const w = window.open("", "_blank", "width=900,height=700");
-  if (!w) {
-    throw new Error("Permite las ventanas emergentes para imprimir.");
-  }
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
+  openPrintWindow(html);
 }

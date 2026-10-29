@@ -1,13 +1,14 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { pendingCashOf } from "../../services/payrollsService";
 import RowMenu from "../../components/RowMenu";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 import { fmtCurrency } from "../../utils/format";
 import { fmtDate } from "./helpers";
 import { payStateOf } from "./payState";
 import { PortalBadge, PayStatePill, PaymentDatesLine } from "./PayStatePill";
 
-export function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRevertBank, onAskDelete, onRedownload, onDownloadBankFile, onDownloadSnapshot, onChangeClassification, onOpen, onRename, publishedPayrollId = null }) {
+export function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRevertBank, onAskDelete, onChangeClassification, onOpen, onRename, publishedPayrollId = null }) {
   const isMobile = useIsMobile();
   const [statusFilter, setStatusFilter] = useState("all"); // all | pending | paid | cashPending
   const [monthFilter, setMonthFilter] = useState("all"); // all | YYYY-MM
@@ -76,9 +77,7 @@ export function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPai
   // a la página 1.
   const PAGE_SIZE = 15;
   const [page, setPage] = useState(1);
-  useEffect(() => {
-    setPage(1);
-  }, [classificationTab, statusFilter, monthFilter, search]);
+  if (useValuesChanged([classificationTab, statusFilter, monthFilter, search])) setPage(1);
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const currentPage = Math.min(page, pageCount);
   const paged = useMemo(

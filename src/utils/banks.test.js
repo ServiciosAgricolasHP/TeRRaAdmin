@@ -11,7 +11,42 @@ import {
   defaultBankDetails,
   isCuentaRut,
   isCashBank,
+  paysToOtherPerson,
+  lacksPaymentName,
 } from "./banks";
+
+describe("lacksPaymentName", () => {
+  const other = { rut: "12345678-5", bankDetails: ["11111111-1", "1", 0, "001"] };
+
+  it("falta cuando la cuenta es de otra persona y no tiene nombre", () => {
+    expect(lacksPaymentName(other)).toBe(true);
+    expect(lacksPaymentName({ ...other, paymentName: "   " })).toBe(true);
+  });
+
+  it("no falta si tiene el nombre o si la cuenta es del trabajador", () => {
+    expect(lacksPaymentName({ ...other, paymentName: "María Soto" })).toBe(false);
+    expect(lacksPaymentName({ rut: "12345678-5", bankDetails: ["12345678-5", "12345678", 3, "012"] })).toBe(false);
+  });
+
+  it("sin el campo `rut`, compara con el id", () => {
+    expect(lacksPaymentName({ id: "11111111-1", bankDetails: ["11111111-1"] })).toBe(false);
+  });
+});
+
+describe("paysToOtherPerson", () => {
+  it("es otra persona cuando el RUT de pago no es el del trabajador", () => {
+    expect(paysToOtherPerson("12345678-5", "11111111-1")).toBe(true);
+  });
+
+  it("no lo es con el mismo RUT, aunque venga con puntos o minúscula", () => {
+    expect(paysToOtherPerson("12345678-k", "12.345.678-K")).toBe(false);
+  });
+
+  it("sin RUT de pago, la cuenta es la del trabajador", () => {
+    expect(paysToOtherPerson("12345678-5", "")).toBe(false);
+    expect(paysToOtherPerson("12345678-5", undefined)).toBe(false);
+  });
+});
 
 describe("isCashBank", () => {
   // Es el único predicado que decide si a alguien se le transfiere o se le

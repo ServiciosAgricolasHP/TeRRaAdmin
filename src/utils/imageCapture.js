@@ -100,3 +100,18 @@ export function captureFullWidthBlob(node, options) {
 export function captureFullWidthDataUrl(node, options) {
   return _captureExpanded(node, toPng, options);
 }
+
+// Copia la imagen del nodo al portapapeles.
+export async function copyNodeImage(node, options) {
+  const blob = await captureFullWidthBlob(node, options);
+  if (!blob) throw new Error("No se pudo generar la imagen");
+  await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+}
+
+// Descarga la imagen del nodo como PNG con el nombre `fileName`.
+export async function downloadNodePng(node, fileName, options) {
+  const link = document.createElement("a");
+  link.download = fileName;
+  link.href = await captureFullWidthDataUrl(node, options);
+  link.click();
+}

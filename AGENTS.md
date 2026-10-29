@@ -6,7 +6,7 @@
 |---------|---------|
 | `npm run dev` | Iniciar servidor de desarrollo (HMR) / Start Vite dev server (HMR) |
 | `npm run build` | Compilar para producción → `dist/` / Production build → `dist/` |
-| `npm run lint` | ESLint (flat config, `.js` y `.jsx`) |
+| `npm run lint` | ESLint (flat config, `.js` y `.jsx`); falla con cualquier error o aviso |
 | `npm run preview` | Vista previa del build / Preview production build locally |
 | `npm test` | Vitest sobre lógica pura (~2s, sin red) / Pure-logic unit tests |
 | `npm run test:watch` | Vitest en modo watch |
@@ -94,7 +94,9 @@ arreglas uno, el test se cae y eso es la señal de actualizar los dos.
 
 - **Día a día en `develop`.** `main` es producción y solo recibe merges vía Pull Request.
 - **`docs/data-model.md` acompaña a cada cambio de modelo.** Una colección nueva, un campo nuevo, uno que cambia de tipo o de significado, o uno que se deja de escribir se documenta en el mismo commit; una colección nueva también va en `MAIN_COLLECTIONS` (`screens/adminConsole/collections.js`). Antes de un push se revisa que los commits que tocaron entidades lo hayan actualizado.
-- `.github/workflows/ci.yml` — corre en push/PR: `npm run lint` (**no bloqueante**, `continue-on-error`: el lint tiene ~65 errores sin resolver) y `npm run build` (**sí bloqueante**). Este build en Linux es lo que caza los imports con casing incorrecto que Windows esconde.
+- `.github/workflows/ci.yml` — corre en push/PR dos jobs, los dos bloqueantes:
+  - `build`: `npm run lint`, que falla con cualquier error o aviso (`--max-warnings=0`), y `npm run build`. Este build en Linux es lo que caza los imports con casing incorrecto que Windows esconde.
+  - `test`: los tests de unidad, **sin `.env`** (un test que arrastra `src/firebase.js` falla con `auth/invalid-api-key`: se mockea `../firebase`; para reproducirlo, `VITE_FIREBASE_API_KEY= npx vitest run`), los e2e y las reglas, contra el emulador.
 - `.github/workflows/deploy.yml` — push a `main` → build → publica `dist/` en la rama `gh-pages`.
 - **Los secrets son obligatorios para el build de deploy**: las 6 `VITE_FIREBASE_*` viven en *Settings → Secrets and variables → Actions* del repo y se inyectan como `env` del paso de build. `.env` está gitignoreado, así que sin ellas el bundle sale con la config vacía y producción cae con `auth/invalid-api-key`.
 - **`fetch-depth: 0`** en el checkout del deploy: sin el historial completo, el conteo de commits de `vite.config.js` no encuentra su punto de partida y la versión del header queda pegada en `.0`.
@@ -126,7 +128,7 @@ src/
   App.jsx               ← router (react-router-dom)
   firebase.js           ← Firebase init (Firestore db = "hpdatabase")
   components/           ← UI compartida (Layout, ProtectedRoute, Modal, ConfirmDialog, RowMenu, TripEditModal, WorkerEditModal, WorkerSummaryModal, etc.)
-  hooks/                ← hooks que usan varias pantallas (useIsMobile, useWorkersList)
+  hooks/                ← hooks que usan varias pantallas (useIsMobile, useWorkersList, useValuesChanged, useCaptureActions)
   screens/              ← componentes de ruta / page-level route components
                         (Dashboard, Jobs, CycleDetail, Workers, Transports, Payroll, Advances,
                          InterestLinks, Calendar, AdminConsole, Users, NoAccess, MigrateWorkers,
@@ -144,7 +146,7 @@ src/
     advances/           ← las piezas de Anticipos / Bonos
     priceBook/          ← las piezas del Libro de Precios
     users/              ← las piezas de Usuarios
-  contexts/             ← AuthContext, ThemeContext, CatalogsContext, CarriersContext
+  contexts/             ← Auth, Theme, Catalogs, Carriers y Toast: XContext.js + XProvider.jsx
   services/             ← capa de datos (Firestore CRUD + caché + auditoría)
                         firestoreBase, transportsService, carriersService,
                         workersService, payrollsService, advancesService, logger
@@ -242,6 +244,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 
 ### Contexts
 
+- **Cada contexto va en dos archivos**: `XContext.js` con el contexto, su hook (`useAuth`, `useToast`…) y lo que exporta además (`ROLES`, `THEMES`), y `XProvider.jsx` con el componente que lo provee. Así cada `.jsx` exporta solo componentes y Fast Refresh no recarga la página entera. Las pantallas importan el hook desde `XContext`; solo `App.jsx` importa los proveedores.
 - Orden en `App.jsx`: `ThemeProvider` → `AuthProvider` → `CatalogsProvider` → `CarriersProvider` → `BrowserRouter`.
 - `CarriersProvider` precarga transportistas; expone `carriers`, `activeCarriers`, `addCarrier`, `updateCarrier`, `softDeleteCarrier`, `restoreCarrier`.
 - `CatalogsProvider` precarga tablas de lookup usadas en las pantallas.
@@ -249,7 +252,8 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 ## Convenciones / Conventions
 
 - Organización de componentes, hooks y archivos: ver "Componentes y archivos" en Arquitectura.
-- ESLint: variables sin usar empezando con `A-Z_` son ignoradas.
+- ESLint: variables sin usar empezando con `A-Z_` son ignoradas. **El lint queda en cero** (el CI falla con cualquier error o aviso): una excepción con `eslint-disable` lleva su motivo al lado.
+- **Efectos solo para sincronizar con algo externo.** Ajustar estado cuando cambia una prop (rellenar un formulario al abrir el modal, volver a la página 1 al filtrar) se hace durante el render con `useValuesChanged` (`hooks/`), no con un efecto. Para leer el valor actual de una función o una prop dentro de un efecto sin volver a correrlo, `useEffectEvent`.
 - **Idioma.** Los textos de la interfaz, los comentarios y las descripciones de los tests (`describe`/`it`) van en español neutro, sin voseo. Los identificadores, nombres de archivo, claves y valores técnicos y los campos nuevos de Firestore van en inglés, aunque el código de alrededor use nombres en español, y los términos del negocio se nombran como dice el Glosario (abajo). Los campos ya guardados (`faenaId`, `padron`) conservan su nombre.
 - **Los comentarios y la documentación describen lo que hace el código, como si siempre hubiera sido así.** No cuentan la historia (el error que motivó un cambio, la versión anterior, lo que se descartó), ni planes o estados transitorios, ni fases o tareas por nombre. Si el código ya lo dice, no se comenta. Una restricción se escribe como comportamiento ("compara el rol sin distinguir mayúsculas"). Vale también para este archivo y los README.
 - **Mayúsculas de lo que se escribe a mano** (`utils/textCase.js`, con tests). Se corrigen al guardar, no mientras se escribe:
@@ -266,6 +270,9 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 - **La fecha de hoy (`YYYY-MM-DD`) sale de `localIsoDate()`** (`utils/dates.js`), nunca de `toISOString().slice(0, 10)`: esa da la fecha en UTC, y en Chile desde las 20 o 21 h ya es el día siguiente. Una marca de tiempo completa (`paidAt`, `createdAt`) sí va con `toISOString()`, porque es un instante y no un día.
 - **Lo que se exporta es lo que se ve.** Un Excel, una imagen, una impresión o un PDF muestran exactamente lo de la pantalla: las mismas filas, ajustes, columnas y totales. Se arman desde los mismos datos que dibuja la pantalla, sin recalcular por su cuenta; si difieren, el error es del archivo.
 - **Las imágenes que se copian o descargan salen siempre en el tema claro**, sea cual sea el tema de quien las genera: `captureFullWidthBlob` / `captureFullWidthDataUrl` (`utils/imageCapture.js`) le ponen al clon fondo blanco y redefinen las variables `--color-*` con `LIGHT_PALETTE`. Esa lista es copia de `:root` en `index.css`, y un test (`imageCapture.test.js`) falla si se separan.
+- **Copiar la imagen, descargar el PNG e imprimir pasan por `useCaptureActions`** (`hooks/`). Cada acción recibe el nodo al llamarla, así una pantalla con varias tablas usa un solo hook; `busy` dice qué está en curso, y `run` corre cualquier otra exportación (el Excel) con el mismo aviso si falla. Una pantalla no arma su propio `try`/`finally` para esto.
+  - Imprimir abre una ventana aparte con el HTML del nodo (`printNodes`, `utils/printWindow.js`): sin los controles marcados con `data-export-hide`, una hoja por nodo, el encabezado de cada tabla repetido en cada hoja y la orientación en un `@page` al nivel superior, porque anidado en `@media print` hay navegadores que lo ignoran. Las tablas imprimibles llevan su estilo en línea: la ventana no carga el CSS de la app.
+  - Las impresiones que arman su propio HTML (los comprobantes y la tabla del resumen de Nómina, el informe de deudas y el mes del Calendario) abren la ventana con `openPrintWindow`. Si el navegador la bloquea, el aviso pide permitir las ventanas emergentes.
 
 ### Glosario
 
@@ -507,7 +514,7 @@ Implementación en `submitCycle` (`screens/jobs/useCycleForm.js`), con el cálcu
   - **Objetivo de ancho (desktop): que entren 8 quincenas sin desplazarse** (`FORTNIGHT_COL_W` 92 + `CARRIER_COL_W` 150 + ~115 del total ≈ 1.000 px). **El ancho lo decide el contenido del encabezado, no el `minWidth`**: `compactDate` muestra el rango como `16-04-26` en dos líneas (en ISO, `2026-04-16 → 2026-04-30` ocupa ~145 px en una línea) y el nombre se envuelve.
   - **Columnas fijas** (`stickyLeft`/`stickyRight`): el nombre y el Total quedan quietos al desplazar el pivot. Tres detalles: el fondo de la celda fija es **opaco** (si no, se transparenta lo que pasa por debajo) y **de color** (en blanco se lee como un hueco); la línea de corte es un `box-shadow` y no el borde, porque con `border-collapse: collapse` el borde es compartido y se va con la celda que se mueve; y `printRef` lleva `minWidth: max-content`, si no el bloque blanco mide lo que el contenedor y la tabla se sale por la derecha.
   - Las celdas fijas no afectan las exportaciones: la captura clona a `width: max-content` con `overflow: visible`, así que sin contenedor de scroll se comportan como cualquier otra.
-  - **🖨 Imprimir de este balance imprime la captura PNG, no el `outerHTML`** — es la excepción al patrón del resto de la pantalla: el navegador no pagina de costado, y un pivot más ancho que la hoja perdería las quincenas de la derecha. Reusar `captureFullWidthDataUrl` hace que las tres salidas muestren lo mismo; se pierde el texto seleccionable del PDF y se gana que salga completo. **Siempre una hoja y apaisado**: `max-height: 100vh` escala la imagen al área de página en vez de desbordar a una segunda, y el `@page { size: landscape }` va al nivel superior y no dentro de `@media print` porque anidado hay navegadores que lo ignoran. Partir el balance en dos hojas obliga a cruzar transportistas de una con quincenas de la otra, que es lo que la tabla existe para evitar.
+  - **🖨 Imprimir de este balance imprime la imagen, no el HTML** (`print` con `asImage`, que usa `printNodeAsImage` de `utils/printWindow.js`) — es la excepción al patrón del resto de la pantalla: el navegador no pagina de costado, y un pivot más ancho que la hoja perdería las quincenas de la derecha. Es la misma imagen que copian 📋 y 📥, así las tres salidas muestran lo mismo; se pierde el texto seleccionable del PDF y se gana que salga completo. **Siempre una hoja y apaisado**: `max-height: 100vh` escala la imagen al área de página en vez de desbordar a una segunda. Partir el balance en dos hojas obliga a cruzar transportistas de una con quincenas de la otra, que es lo que la tabla existe para evitar.
 - **Resumen del transportista** (`CarrierSummaryModal`, al tocar su tarjeta o su nombre en el balance de quincenas). Su cálculo vive en `utils/carrierSummary.js` (con tests) y sus lecturas en `services/carrierSummaryService.js`.
   - **Arriba, una fila por grupo** con su período, las vueltas, el total, lo pagado y abonado, y lo pendiente. Los grupos son sus quincenas (de la más antigua a la más nueva, marcadas abierta, pagada o eliminada), "Sin quincena" (los resúmenes sueltos) y "Vueltas sin resumen" (las pendientes que no están en ninguno).
   - **Debajo, las vueltas de "Sin quincena" y de "Vueltas sin resumen"**, como en el detalle de un resumen. Las de cada quincena van solo con **🚚 Detalle de quincenas** (apagado por defecto): una quincena ya tiene su propio detalle, así que por defecto queda como una fila de la tabla de arriba. Un grupo con más de un resumen lleva una fila por resumen con su período, total y estado. Los abonos se listan en los resúmenes pendientes, y cada grupo cierra con su total y, si tiene algo pagado, lo pagado y lo pendiente.
@@ -540,7 +547,7 @@ Implementación en `submitCycle` (`screens/jobs/useCycleForm.js`), con el cálcu
 - **`WORKERS_LIST`** (`services/workersService.js`) son las opciones con que toda la app pide la lista de trabajadores (por nombre, en caché 2 h, también en `localStorage`). La clave de la caché sale de ellas: si una pantalla las escribe a mano y difieren, esa pantalla paga su propia lectura de la colección entera.
 - **Elegir a una persona** en un formulario (Anticipos, Resúmenes por grupo) es `WorkerSearchPicker` (`components/`): la misma búsqueda sobre la lista en caché (`useWorkersList`, `hooks/`), con los resultados debajo del campo y Enter para elegir el primero.
 - Auto-detect badge **RUT** vs **Nombre** (basado en `detectQueryKind`: empieza con dígito → RUT).
-- **Filtros opcionales** (componibles con la búsqueda): dropdown 👥 Líder (con opción "— Sin líder —" + lista única extraída del dataset completo) y chips toggle 💵 Efectivo / 🏦 Transferencia. Los filtros ignoran el gate de `MIN_SEARCH` — activar cualquiera muestra resultados aunque la query esté vacía. Al editar/eliminar/togglear banco desde la grilla, `refreshCache()` re-trae la lista para reflejar el cambio.
+- **Filtros opcionales** (componibles con la búsqueda): dropdown 👥 Líder (con opción "— Sin líder —" + lista única extraída del dataset completo) y chips toggle 💵 Efectivo / 🏦 Transferencia, más **⚠ Sin titular (N)** mientras alguien cobre en la cuenta de otra persona sin su nombre (`lacksPaymentName`, `utils/banks.js`; ver Bancos). Los filtros ignoran el gate de `MIN_SEARCH` — activar cualquiera muestra resultados aunque la query esté vacía. Al editar/eliminar/togglear banco desde la grilla, `refreshCache()` re-trae la lista para reflejar el cambio.
 - Acciones por fila: 📊 Resumen, Editar, ✕. La forma de pago se muestra como **indicador informativo** (`💵 Efectivo` / `🏦 Transferencia`) — no es toggle. El cambio de banco se hace adentro de `WorkerEditModal`, que tiene un botón **🆔 Asignar Cuenta RUT** que setea Banco Estado + Cuenta RUT en un click usando el RUT del trabajador.
 - **Click sobre un RUT lo copia al portapapeles**: el del trabajador, y en escritorio también el RUT de pago. Va con puntos y guion, el mismo formato que copia Agenda y Cuentas. En el teléfono el RUT de la tarjeta lleva 📋 para que se note que se puede tocar.
 - **Datos personales en la ficha** (`components/workerEditModal/PersonalDataFields.jsx`, plegable): dirección, comuna, nacionalidad, estado civil, fecha de nacimiento, AFP y salud, los que piden los contratos y las boletas de honorarios. Se guardan en el mismo documento del trabajador (`utils/workerPersonalData.js`, con tests), así llegan con la lista en caché sin lecturas extra.
@@ -548,6 +555,7 @@ Implementación en `submitCycle` (`screens/jobs/useCycleForm.js`), con el cálcu
 - **Doc id = RUT con que se creó la ficha**, y es el id estable (`workerId`). El RUT vigente está en el campo `rut`, que puede diferir si se corrigió una cédula (ver `docs/data-model.md`).
 - **Se cruza por el id y se muestra siempre `worker.rut`.** Una jornada, un item de nómina o una entrada de labor guardan el RUT del momento en que se crearon, y ese valor sigue siendo la clave de los cruces. Para mostrarlo se pasa por `currentRutResolver(workers)` (`utils/workerRut.js`), que lo traduce al vigente con la lista de trabajadores ya cargada, sin lecturas extra. Lo usan Nómina (vista previa, detalle, impresiones, XLSX y Pagos anteriores, que además agrupa por `workerId`), la grilla del ciclo (`_displayRut` en las filas) y Pesajes QR.
 - Bank details = `[paymentRut, accountNumber, accountType, bankCode]` (orden importante).
+- **Si el RUT de pago es de otra persona, la ficha guarda su nombre** en `paymentName` (el titular de la cuenta, o quien cobra en efectivo): es obligatorio en ese caso y opcional si es el mismo RUT del trabajador (`paysToOtherPerson`, `utils/banks.js`). Lo piden la ficha y el alta desde la grilla del ciclo. 🆔 Asignar Cuenta RUT lo borra, porque la cuenta pasa a ser del trabajador. La lista de Trabajadores lo muestra en la columna Titular, y en el teléfono como "Cuenta de"; si falta, avisa "⚠ Falta el titular", y el filtro ⚠ Sin titular junta a todos los que faltan. Las fichas anteriores al campo no se tocan solas: se completan al guardarlas.
 - `services/workersService.js` expone `findWorkerByRut`, `createWorker`, `deleteWorkerSafe`, `detectQueryKind` y `WORKERS_LIST`.
 
 ### Contratos y honorarios

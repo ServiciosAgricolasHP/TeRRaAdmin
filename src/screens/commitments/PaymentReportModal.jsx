@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from "react";
 import Modal from "../../components/Modal";
-import { useToast } from "../../contexts/ToastContext";
+import { useCaptureActions } from "../../hooks/useCaptureActions";
 import { nextYearEnd, buildPaymentReport } from "../../utils/commitments";
 import { reportDocument } from "./paymentReportModal/reportDocument";
 import { printReport } from "./paymentReportModal/printReport";
@@ -24,7 +24,6 @@ const inputCls =
 
 // `groupedView`: si Próximos está por contraparte, el detalle abre igual.
 export default function PaymentReportModal({ items, companies, today, groupedView = false, onClose }) {
-  const toast = useToast();
   const [companyId, setCompanyId] = useState("");
   const [includePaid, setIncludePaid] = useState(false);
   const [paidFrom, setPaidFrom] = useState(`${today.slice(0, 7)}-01`);
@@ -32,7 +31,7 @@ export default function PaymentReportModal({ items, companies, today, groupedVie
   const [dueUntil, setDueUntil] = useState(() => nextYearEnd(today));
   const [showDetail, setShowDetail] = useState(true);
   const [groupDetail, setGroupDetail] = useState(groupedView);
-  const [busy, setBusy] = useState("");
+  const { busy, run } = useCaptureActions();
   const previewRef = useRef(null);
   const byCounterparty = showDetail && groupDetail;
 
@@ -50,17 +49,6 @@ export default function PaymentReportModal({ items, companies, today, groupedVie
   );
 
   const fileBase = `Informe_deudas_${(companyName || "todas").replace(/[^\w-]+/g, "_")}_${today}`;
-
-  const run = async (kind, fn) => {
-    setBusy(kind);
-    try {
-      await fn();
-    } catch (err) {
-      toast.error(err.message || String(err));
-    } finally {
-      setBusy("");
-    }
-  };
 
   const downloadPdf = () => run("pdf", () => writeReportPdf(doc, fileBase));
   const downloadXlsx = () =>

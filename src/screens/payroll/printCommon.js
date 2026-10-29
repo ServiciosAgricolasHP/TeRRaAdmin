@@ -228,10 +228,6 @@ function buildGroupCycleSnapshot(groupRuts, cycle, workdays, nameByRut, catalogs
   return out;
 }
 
-function fmtMoneyShort(v) {
-  return "$" + (Number(v) || 0).toLocaleString("es-CL");
-}
-
 export function fmtDateShort(dateStr) {
   if (!dateStr) return "";
   const d = new Date(dateStr + "T00:00:00");

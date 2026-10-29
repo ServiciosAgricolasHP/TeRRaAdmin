@@ -1,7 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import Modal from "../../components/Modal";
-import { captureFullWidthBlob, captureFullWidthDataUrl, cloneForExport } from "../../utils/imageCapture";
-import { useToast } from "../../contexts/ToastContext";
+import { useCaptureActions } from "../../hooks/useCaptureActions";
 import { localIsoDate } from "../../utils/dates";
 import { fmtCurrency } from "../../utils/format";
 import { carrierSummaryGroups, carrierSummaryTotals } from "../../utils/carrierSummary";
@@ -45,19 +44,6 @@ function scopeLabelOf({ includePaid, from, to }) {
   return `Lo pendiente, las quincenas abiertas y ${paid ? `lo pagado ${paid}` : "todo lo pagado"}`;
 }
 
-// Corre una exportación marcando `kind` como ocupado mientras dura, y avisa si
-// falla.
-async function runExport(setBusy, toast, kind, task) {
-  setBusy(kind);
-  try {
-    await task();
-  } catch (err) {
-    toast.error("Error: " + (err.message || err));
-  } finally {
-    setBusy("");
-  }
-}
-
 const toggleClass = (on) =>
   `rounded-md border px-2 py-1 ${on ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)]" : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"}`;
 const inputClass = "rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-0.5 text-xs outline-none focus:border-[var(--color-accent)]";
@@ -69,14 +55,13 @@ const footerButton = "rounded-md border border-[var(--color-border)] px-3 py-1.5
 // quincenas abiertas; "Incluir pagados" suma lo pagado en un rango. Se monta
 // solo mientras está abierto.
 export function CarrierSummaryModal({ carrier, onClose }) {
-  const toast = useToast();
+  const { busy, copy, download, print } = useCaptureActions();
   const [showFortnightTrips, setShowFortnightTrips] = useState(false);
   const [includePaid, setIncludePaid] = useState(false);
   const [from, setFrom] = useState(monthAgo);
   const [to, setTo] = useState(() => localIsoDate());
   const [titles, setTitles] = useState(() => loadTitles(carrier.id));
   const [showTitleEditor, setShowTitleEditor] = useState(false);
-  const [busy, setBusy] = useState("");
   const printRef = useRef(null);
 
   const scope = includePaid ? { includePaid, from, to } : { includePaid: false, from: "", to: "" };
@@ -95,43 +80,9 @@ export function CarrierSummaryModal({ carrier, onClose }) {
 
   const fileBase = `resumen_transporte_${String(carrier.alias || "transportista").replace(/\s+/g, "_")}`;
   const canExport = !loading && groups.length > 0;
-
-  const handleCopy = () => runExport(setBusy, toast, "copy", async () => {
-    const blob = await captureFullWidthBlob(printRef.current);
-    if (!blob) throw new Error("No se pudo generar la imagen");
-    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-    toast.success("Imagen copiada al portapapeles");
-  });
-
-  const handleDownload = () => runExport(setBusy, toast, "download", async () => {
-    const link = document.createElement("a");
-    link.download = `${fileBase}.png`;
-    link.href = await captureFullWidthDataUrl(printRef.current);
-    link.click();
-  });
-
-  const handlePrint = () => {
-    if (!printRef.current) return;
-    const html = cloneForExport(printRef.current).outerHTML;
-    const win = window.open("", "_blank", "width=1000,height=700");
-    if (!win) {
-      toast.warning("Permite las ventanas emergentes para imprimir.");
-      return;
-    }
-    win.document.write(`<!DOCTYPE html><html><head><title>Resumen — ${carrier.alias || ""}</title>
-      <style>
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; margin: 0; }
-        table { border-collapse: collapse; width: 100%; }
-        thead { display: table-header-group; }
-        tr { page-break-inside: avoid; }
-        @media print { @page { size: landscape; margin: 12mm; } }
-      </style>
-    </head><body>${html}</body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); }, 250);
-  };
+  const handleCopy = () => copy(printRef.current);
+  const handleDownload = () => download(printRef.current, `${fileBase}.png`);
+  const handlePrint = () => print(printRef.current, { title: `Resumen — ${carrier.alias || ""}` });
 
   return (
     <Modal

@@ -5,7 +5,7 @@ import { fmtCurrency } from "../../utils/format";
 // Alta de quincena: se eligen fechas, faenas y transportistas, y la quincena
 // se arma con un resumen nuevo por transportista (con sus vueltas sueltas de
 // ese alcance) más los resúmenes sueltos que se elijan importar.
-export function FortnightCreateModal({ carriers, carriersById, faenas, pendingTrips, looseSummaries, onClose, onCreate }) {
+export function FortnightCreateModal({ carriersById, faenas, pendingTrips, looseSummaries, onClose, onCreate }) {
   const [name, setName] = useState("");
   const [periodFrom, setPeriodFrom] = useState("");
   const [periodTo, setPeriodTo] = useState("");
@@ -18,14 +18,11 @@ export function FortnightCreateModal({ carriers, carriersById, faenas, pendingTr
   const [importIds, setImportIds] = useState(new Set());
   const [busy, setBusy] = useState(false);
 
-  const inRange = (d) =>
-    (!periodFrom || d >= periodFrom) && (!periodTo || d <= periodTo);
-
   // Vueltas sueltas (sin paymentId) del rango y de las faenas incluidas: con
   // ellas se arman los resúmenes nuevos.
   const eligibleTrips = useMemo(() => {
     return pendingTrips.filter((t) => {
-      if (!inRange(t.date)) return false;
+      if ((periodFrom && t.date < periodFrom) || (periodTo && t.date > periodTo)) return false;
       if (excludedFaenaIds.has(t.faenaId)) return false;
       return true;
     });

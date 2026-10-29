@@ -1,8 +1,7 @@
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { carriersService } from "../services/carriersService";
 import { useAuth } from "./AuthContext";
-
-const CarriersContext = createContext(null);
+import { CarriersContext } from "./CarriersContext";
 
 export function CarriersProvider({ children }) {
   const { user, hasAccess } = useAuth();
@@ -65,10 +64,4 @@ export function CarriersProvider({ children }) {
       {children}
     </CarriersContext.Provider>
   );
-}
-
-export function useCarriers() {
-  const ctx = useContext(CarriersContext);
-  if (!ctx) throw new Error("useCarriers must be used inside CarriersProvider");
-  return ctx;
 }

@@ -7,7 +7,6 @@ import { fmtNumber, fmtCurrency } from "../../utils/format";
 // import.
 export function FileRow({ file, existingIds, companyRut, onToggle }) {
   const dupCount = file.records.filter((r) => existingIds.has(r.id)).length;
-  const newCount = file.records.length - dupCount;
   const periods = useMemo(() => {
     const set = new Set();
     for (const r of file.records) if (r.periodo) set.add(r.periodo);

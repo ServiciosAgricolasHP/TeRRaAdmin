@@ -3,8 +3,9 @@ import { cyclesService, jobsService, subjobsService, workersService } from "../s
 import { useCarriers } from "../contexts/CarriersContext";
 import { useCatalogs } from "../contexts/CatalogsContext";
 import { useAuth } from "../contexts/AuthContext";
-import { useToast } from "../contexts/ToastContext";
 import { useIsMobile } from "../hooks/useIsMobile";
+import { useCaptureActions } from "../hooks/useCaptureActions";
+import { openPrintWindow } from "../utils/printWindow";
 import { fetchWorkdaysInRange, fetchTripsInRange } from "../services/calendarService";
 import { DayDetailDrawer } from "./calendar/DayDetailDrawer";
 import { DayExpandedModal } from "./calendar/DayExpandedModal";
@@ -90,7 +91,7 @@ function invalidateMonthCache(y, m) {
 
 export default function Calendar() {
   const { isAdmin } = useAuth();
-  const toast = useToast();
+  const { run } = useCaptureActions();
   const { carriers } = useCarriers();
   const { catalogs } = useCatalogs();
   const today = useMemo(() => new Date(), []);
@@ -203,7 +204,6 @@ export default function Calendar() {
 
   useEffect(() => {
     loadMonth(year, month);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [year, month]);
 
   // ─── Índices y agregaciones ──────────────────────────────────────────────
@@ -360,12 +360,7 @@ export default function Calendar() {
 
     const tableRows = weeks.map((w) => `<tr>${w.map(renderCell).join("")}</tr>`).join("");
     const title = `${MONTH_NAMES[month - 1]} ${year}`;
-    const win = window.open("", "_blank", "width=1200,height=850");
-    if (!win) {
-      toast.warning("Permite las ventanas emergentes para imprimir.");
-      return;
-    }
-    win.document.write(`<!DOCTYPE html><html><head><title>Calendario · ${title}</title>
+    run("print", () => openPrintWindow(`<!DOCTYPE html><html><head><title>Calendario · ${title}</title>
       <style>
         * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
         body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 12px 16px; color: #000; margin: 0; }
@@ -403,8 +398,7 @@ export default function Calendar() {
         <tbody>${tableRows}</tbody>
       </table>
       <script>window.onload = () => { window.focus(); window.print(); };</script>
-    </body></html>`);
-    win.document.close();
+    </body></html>`), { error: "No se pudo imprimir" });
   };
 
   const refresh = () => {

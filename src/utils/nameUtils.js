@@ -24,7 +24,7 @@ export function toProperName(input) {
     .split(" ")
     .map((word, idx) => {
       if (idx > 0 && CONNECTORS.has(word)) return word;
-      return word.replace(/(^|[\-'])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase());
+      return word.replace(/(^|[-'])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase());
     })
     .join(" ");
 }
