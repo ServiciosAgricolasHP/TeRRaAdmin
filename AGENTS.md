@@ -13,7 +13,7 @@
 | `npm run test:e2e` | Ciclos end-to-end contra el emulador de Firestore / Integration cycles against the Firestore emulator |
 | `npm run test:rules` | `firestore.rules` contra el emulador / Security rules against the Firestore emulator |
 | `npm run test:all` | Los tres anteriores |
-| `npm run functions:verify` | Cloud Functions contra los emuladores de functions, firestore y auth, sin deployar / Verify Cloud Functions locally |
+| `npm run functions:verify` | Cloud Functions contra los emuladores de functions, firestore, auth y storage, sin deployar / Verify Cloud Functions locally |
 | `npm run deploy` | Deploy manual a GitHub Pages (`gh-pages -d dist -t`). **Escape hatch** — el camino normal es mergear a `main` y dejar que Actions deploye / Manual fallback; normal path is merge to `main` |
 
 ## Tests
@@ -103,7 +103,7 @@ arreglas uno, el test se cae y eso es la señal de actualizar los dos.
 - **Cloud Functions quedan fuera del pipeline** — se deployan a mano (ver `functions/README.md`).
   - **El backend no se invoca por HTTP: se le escribe un documento.** La app crea un job en `functionJobs` y un **trigger de Firestore v2** lo levanta, lo ejecuta y escribe el resultado en el mismo doc; la UI lo mira con un `onSnapshot`. Del lado de la app, `services/functionJobsService.js` crea el job (`enqueueFunctionJob`) y espera el resultado (`waitForFunctionJob`).
   - **No hay funciones callable.** *(a)* Una callable **v2** corre sobre Cloud Run y necesita un binding IAM `allUsers`, que la org policy del proyecto prohíbe: responde **403 con cuerpo HTML** antes de llegar al código. *(b)* Cloud Functions **v1** no existe en `southamerica-west1`, y esa región tampoco tiene App Engine, que gen1 necesita para el staging. *(c)* Un **trigger de Firestore v1** solo dispara sobre la base `(default)`, que en este proyecto no existe. Un trigger v2 lo invoca Eventarc con una service account, sin invoker público.
-  - **Lo programado va con `onSchedule` (v2)**, que Cloud Scheduler invoca con una service account: tampoco necesita invoker público. Es el caso del aviso diario de Cheques y pagos (`commitmentsDaily`), en `us-central1` como el resto.
+  - **Lo programado va con `onSchedule` (v2)**, que Cloud Scheduler invoca con una service account: tampoco necesita invoker público. Es el caso del aviso diario de Cheques y pagos (`commitmentsDaily`) y del respaldo semanal en JSON (`weeklyBackup`), en `us-central1` como el resto.
   - **Región `us-central1`, y no es negociable**: `hpdatabase` está en **`nam5`** (multi-región de EE.UU.) y un trigger de Firestore tiene que vivir en la ubicación de la base. Ver la nota de `nam5` en Arquitectura.
   - **`database: "hpdatabase"` en el trigger.** La base no es `(default)`. Si no coincide, la función queda suscrita a una base inexistente y **nunca dispara, sin dar error** — el peor modo de falla del diseño.
   - **La autorización está en las reglas**: la regla de Firestore decide quién crea un doc en `functionJobs` (`firestore.rules`, ver Tests). El `create` exige que lo pida un admin, con `status == "pending"` y `requestedBy == request.auth.uid`, y nadie edita ni borra un job desde el cliente (la función escribe con el admin SDK, que no pasa por reglas).
@@ -316,6 +316,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Empresa | `company` | `companies` |
 | Cheques y pagos | `commitment` | `commitments` |
 | Tarea del backend (Cloud Functions) | `functionJob` | `functionJobs` |
+| Respaldo en JSON | `backup` | `backups` |
 | Agenda telefónica / contacto de la agenda | `phoneBook` / `phoneContact` | `phoneContacts` |
 | Pantalla de carga | `screenLoader` | |
 | Cumpleaños | `birthday` | dentro de `users` |
@@ -885,10 +886,15 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 ## Consola admin / AdminConsole
 
 - Pantalla: `src/screens/AdminConsole.jsx` (arma la página con sus secciones). Ruta `/admin/console` (solo admin).
-- Sus piezas, en `src/screens/adminConsole/`: una sección por archivo (`PingSection`, `AuthDebugSection`, `CollectionCountsSection`, `LogsBreakdownSection`, `WorkdaysByMonthSection`, `WorkdaysByRangeSection`, `WorkdaysByCycleSection`, `NormalizeWorkerNamesSection`, `BackfillWorkerRutFieldSection` y `MigrateAdvanceRutsSection`), la tarjeta plegable `ConsoleCard` y `collections.js` (`MAIN_COLLECTIONS`). Los recuentos están en `services/countsService.js`.
-- Secciones para inspección barata: conteos por colección, workdays por mes (12 reads para todo un año), workdays por rango, workdays por ciclo, más los backfills y el diagnóstico del rol admin.
-- **`MAIN_COLLECTIONS` lista las 43 colecciones de la app**, agrupadas por área. Es una lista a mano: al agregar una colección nueva hay que sumarla acá o queda invisible. El botón **📋 Copiar** baja los conteos ya ejecutados separados por tab, listos para pegar en una planilla.
+- Sus piezas, en `src/screens/adminConsole/`: una sección por archivo (`PingSection`, `BackupSection` con `useBackups`, `AuthDebugSection`, `CollectionCountsSection`, `LogsBreakdownSection`, `WorkdaysByMonthSection`, `WorkdaysByRangeSection`, `WorkdaysByCycleSection`, `NormalizeWorkerNamesSection`, `BackfillWorkerRutFieldSection` y `MigrateAdvanceRutsSection`), la tarjeta plegable `ConsoleCard` y `collections.js` (`MAIN_COLLECTIONS`). Los recuentos están en `services/countsService.js`.
+- Secciones para inspección barata: conteos por colección, workdays por mes (12 reads para todo un año), workdays por rango, workdays por ciclo, más los respaldos en JSON, los backfills y el diagnóstico del rol admin.
+- **`MAIN_COLLECTIONS` lista las 44 colecciones de la app**, agrupadas por área. Es una lista a mano: al agregar una colección nueva hay que sumarla acá o queda invisible. El botón **📋 Copiar** baja los conteos ya ejecutados separados por tab, listos para pegar en una planilla.
 - **🧪 Ping al backend**: encola un job en `functionJobs` y espera la respuesta. No llama ningún endpoint porque no hay ninguno invocable (ver Despliegue); ejercita el mismo camino que usa cualquier job. Distingue los tres modos de falla a propósito, porque cada uno se arregla en otro lado: `permission-denied` es que las reglas publicadas no dejan crear el job (o quien aprieta no es admin), el timeout de 45 s es la función sin desplegar o mirando otra base, y un job en `error` es la función corriendo y fallando adentro. Es además el **único** chequeo que prueba que el trigger esté suscrito a `hpdatabase` — el emulador no puede.
+- **💾 Respaldos en JSON** (`functions/backup.js`; la puesta en marcha está en `functions/README.md`): todas las colecciones menos `logs`, más las subcolecciones, en un archivo en Cloud Storage con su ficha en `backups`. Se genera solo los domingos a las 3:00 (`weeklyBackup`) y con **💾 Generar respaldo ahora**, que muestra el avance por colección; se guardan los últimos 12.
+  - **⬇ Bajar** pide un enlace firmado que vence en 15 minutos (job `backupDownloadUrl`), y la tarjeta enlaza a la carpeta en la consola de Google Cloud. Desde el navegador nadie lee ni escribe el bucket (`storage.rules`).
+  - Las fechas de Firestore, las referencias y los demás tipos que JSON no tiene van marcados con `__type`, para poder restaurarlos. Restaurar no está hecho.
+  - Un respaldo cuesta una lectura por documento de la base sin la auditoría (unas 19.000); abrir la tarjeta lee las fichas, hasta 12.
+  - Complementa el respaldo nativo diario de Firestore, que guarda 7 días y se restaura a una base nueva.
 - Usa `getCountFromServer` de Firestore — 1 read por cada 1000 docs vs N con `getDocs`. Permite estimar costos sin descargar la colección.
 - **Composición de logs** (`LogsBreakdownSection`): desglosa `logs` por entidad (~1 lectura por entidad) y mide cuántos documentos borraría un TTL de 6/12/24 meses (3 lecturas), para decidir la retención con números. `LOG_ENTITIES` es una lista a mano: una entidad nueva que no se agregue queda invisible, y la fila "sin clasificar" del total es la que lo delata.
 

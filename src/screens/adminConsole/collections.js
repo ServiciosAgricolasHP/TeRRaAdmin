@@ -56,6 +56,7 @@ export const MAIN_COLLECTIONS = [
   { id: "users", group: "Sistema", label: "Perfiles de usuario", note: "id del documento = UID de Firebase" },
   { id: "logs", group: "Sistema", label: "Registros de auditoría", note: "puede ser MUY grande" },
   { id: "functionJobs", group: "Sistema", label: "Tareas del backend", note: "cola de Cloud Functions; nada la poda todavía" },
+  { id: "backups", group: "Sistema", label: "Respaldos en JSON", note: "una ficha por respaldo; el archivo está en Cloud Storage" },
 ];
 
 // Grupos en el orden en que aparecen por primera vez en MAIN_COLLECTIONS.

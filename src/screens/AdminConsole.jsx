@@ -1,5 +1,6 @@
 import { AuthDebugSection } from "./adminConsole/AuthDebugSection";
 import { BackfillWorkerRutFieldSection } from "./adminConsole/BackfillWorkerRutFieldSection";
+import { BackupSection } from "./adminConsole/BackupSection";
 import { CollectionCountsSection } from "./adminConsole/CollectionCountsSection";
 import { LogsBreakdownSection } from "./adminConsole/LogsBreakdownSection";
 import { MigrateAdvanceRutsSection } from "./adminConsole/MigrateAdvanceRutsSection";
@@ -39,6 +40,10 @@ export default function AdminConsole() {
       <Group title="Diagnóstico">
         <AuthDebugSection />
         <PingSection />
+      </Group>
+
+      <Group title="Respaldos">
+        <BackupSection />
       </Group>
 
       <Group title="Inspección de escala">

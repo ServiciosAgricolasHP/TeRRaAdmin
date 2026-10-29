@@ -627,16 +627,33 @@ Cola de trabajos del backend. La app crea el job y el trigger `runFunctionJob` (
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | string | autoId |
-| `type` | string | handler que se ejecuta (`ping`, `createUser`) |
-| `params` | object? | datos del job. `createUser`: `{ email, role, alias?, useExisting? }` |
+| `type` | string | handler que se ejecuta (`ping`, `createUser`, `sendCommitmentDigest`, `publishPortal`, `backup`, `backupDownloadUrl`) |
+| `params` | object? | datos del job. `createUser`: `{ email, role, alias?, useExisting? }`; `publishPortal`: `{ payrollId }`; `backupDownloadUrl`: `{ backupId }` |
 | `status` | `"pending"` \| `"running"` \| `"done"` \| `"error"` | nace `pending`; la función lo pasa a `running` en una transacción antes de ejecutarlo |
 | `requestedBy` | string | uid de quien lo pidió; las reglas exigen que sea el de la sesión |
 | `requestedByEmail` | string? | |
 | `requestedAt` | ts | |
 | `startedAt`, `finishedAt` | ts? | los escribe la función |
-| `result` | any? | lo que devuelve el handler, si terminó bien |
+| `progress` | object? | avance de un job largo, mientras corre. `backup`: `{ step, total, collection, docs }`, al terminar cada colección |
+| `result` | any? | lo que devuelve el handler, si terminó bien. `backup`: `{ id, path, collectionCount, totalDocs, bytes, pruned }`; `backupDownloadUrl`: `{ url, expiresAt }` |
 | `error` | string? | mensaje, si falló |
-| `errorCode` | string? | código que la app reconoce. `createUser`: `account-exists`, `profile-exists`, `not-admin`, `invalid-email`, `invalid-role` |
+| `errorCode` | string? | código que la app reconoce. `createUser`: `account-exists`, `profile-exists`, `not-admin`, `invalid-email`, `invalid-role`. `backup`: `not-admin`, `no-bucket`, `storage-denied`. `backupDownloadUrl`: `not-admin`, `invalid-params`, `not-found`, `cannot-sign` |
+
+### `backups`
+Ficha de cada respaldo en JSON de la base (`functions/backup.js`). El archivo está en Cloud Storage; la ficha la escribe la función al terminarlo y se borra junto con el archivo cuando deja de estar entre los últimos 12. La Consola admin la lee y no la escribe.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | el instante en que empezó, en UTC (`2026-11-01T06-00-00-000Z`); es también el nombre del archivo |
+| `path`, `bucket` | string | el archivo en Cloud Storage: `backups/{id}.json`, guardado con gzip (se baja descomprimido) |
+| `createdAt`, `finishedAt` | string (ISO) | |
+| `trigger` | `"scheduled"` \| `"manual"` | el semanal (`weeklyBackup`) o el botón de la Consola admin |
+| `requestedBy`, `requestedByEmail` | string? | quién lo pidió; `null` en el semanal |
+| `collections` | `{ [colección]: number }` | documentos respaldados de cada colección (todas menos `logs`) |
+| `subcollections` | `{ [grupo]: number }` | documentos de cada subcolección, por su nombre de grupo (`entry`, de `weights/{fecha}/entry`) |
+| `collectionCount`, `totalDocs` | number | |
+| `bytes` | number | tamaño del archivo comprimido |
+
+El archivo es `{ format: "terra-backup", version: 1, createdAt, database, excluded, collections: { <colección>: [{ id, data }] }, subcollections: { <grupo>: [{ path, data }] }, counts }`. Los valores que JSON no tiene van como `{ __type, … }`: `timestamp` (`seconds`, `nanoseconds`, `iso`), `reference` (`path`), `geopoint`, `bytes` (`base64`) y `number` (`NaN`, `Infinity`).
 
 ### `logs`
 Auditoría — una fila por mutación.

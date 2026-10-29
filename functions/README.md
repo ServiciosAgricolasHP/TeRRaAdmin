@@ -5,7 +5,7 @@ en la colección `functionJobs` y un trigger de Firestore lo levanta, lo ejecuta
 escribe el resultado en el mismo documento. La UI mira ese documento con un
 listener.
 
-Hay cuatro tipos de job:
+Hay seis tipos de job:
 
 - `ping` verifica el plomo de punta a punta (Consola admin → Ping al backend).
 - `createUser` crea una cuenta en Authentication y su perfil en `users/{uid}`
@@ -15,14 +15,66 @@ Hay cuatro tipos de job:
 - `publishPortal` publica una nómina en el portal de trabajadores: una ficha
   por RUT en `portalPayslips` y la cabecera en `portalMeta/current`
   (`portal.js`; Nómina → detalle → 🌐 Publicar en portal).
+- `backup` genera ahora un respaldo en JSON de la base, sin la auditoría
+  (`backup.js`; Consola admin → 💾 Respaldos en JSON).
+- `backupDownloadUrl` devuelve un enlace para bajar un respaldo, que vence en
+  15 minutos (el botón ⬇ Bajar de esa misma tarjeta).
 
-Y una función programada, `commitmentsDaily` (`commitments.js`): todos los días
-a las 8:00 de Chile envía un correo con los cheques, cuotas y pagos que vencen
-en los días configurados, y extiende los pagos recurrentes. La dispara Cloud
-Scheduler con una cuenta de servicio, así que tampoco necesita invoker público.
+Y dos funciones programadas, que dispara Cloud Scheduler con una cuenta de
+servicio, así que tampoco necesitan invoker público:
 
-Los siguientes están como TODO al final de `index.js`: el backup en JSON y más
-jobs para Usuarios.
+- `commitmentsDaily` (`commitments.js`): todos los días a las 8:00 de Chile
+  envía un correo con los cheques, cuotas y pagos que vencen en los días
+  configurados, y extiende los pagos recurrentes.
+- `weeklyBackup` (`backup.js`): los domingos a las 3:00 de Chile genera el
+  respaldo en JSON.
+
+Los siguientes están como TODO al final de `index.js`: restaurar una colección
+desde un respaldo y más jobs para Usuarios.
+
+## Respaldos en JSON
+
+`backup.js` escribe en Cloud Storage `backups/{id}.json` con todas las
+colecciones menos `logs` y las subcolecciones de `SUBCOLLECTION_GROUPS`, y una
+ficha en la colección `backups`. Se guardan los últimos 12: al terminar uno se
+borran los más antiguos, archivo y ficha. La forma del archivo está al
+principio de `backup.js` y en `docs/data-model.md`.
+
+Complementa el respaldo nativo diario de Firestore, que guarda 7 días y se
+restaura a una base nueva (`firebase firestore:backups:schedules:list --database hpdatabase`).
+
+Para que funcione en producción hay que hacer esto una vez, con la cuenta dueña
+del proyecto:
+
+1. **Activar Storage** en la consola de Firebase (Storage → Comenzar), en
+   `us-central1`, junto a la base y las funciones. Las funciones usan el bucket
+   por defecto; sin él, el respaldo termina con `no-bucket`.
+2. **Publicar `storage.rules`** (en la raíz del repo) en Storage → Reglas, igual
+   que `firestore.rules`: nadie lee ni escribe el bucket desde el navegador. Las
+   funciones usan el admin SDK, que no pasa por reglas.
+3. **Dejar que las funciones firmen el enlace de descarga.** Lo firma su cuenta
+   de servicio, `NUMERO_DEL_PROYECTO-compute@developer.gserviceaccount.com`, que
+   tiene que poder firmar en su propio nombre:
+   - en IAM → Cuentas de servicio → esa cuenta → Permisos, darle a ella misma el
+     rol **Creador de tokens de cuenta de servicio**
+     (`roles/iam.serviceAccountTokenCreator`);
+   - habilitar la **IAM Service Account Credentials API**.
+
+   Sin eso el respaldo se genera igual, pero ⬇ Bajar responde `cannot-sign`, y
+   el archivo se baja desde la consola de Google Cloud (Cloud Storage → el
+   bucket → `backups/`). Con `gcloud`:
+
+   ```bash
+   SA=NUMERO_DEL_PROYECTO-compute@developer.gserviceaccount.com
+   gcloud iam service-accounts add-iam-policy-binding $SA --member=serviceAccount:$SA \
+     --role=roles/iam.serviceAccountTokenCreator --project arandanos-hp
+   gcloud services enable iamcredentials.googleapis.com --project arandanos-hp
+   ```
+4. Si el respaldo termina con `storage-denied`, esa misma cuenta no puede
+   escribir en el bucket: darle **Administrador de objetos de Storage** sobre él.
+
+El respaldo lee la base entera, así que `runFunctionJob` tiene 1 GiB y 9 minutos
+(los demás jobs terminan en segundos), igual que `weeklyBackup`.
 
 ## Por qué un trigger y no un callable
 
@@ -134,9 +186,15 @@ npm install
 npm run functions:verify     # desde la raíz del repo
 ```
 
-Levanta los emuladores de **functions, firestore y auth** con el project id
-`demo-terra-test` y corre `functions/verify.mjs`, que encola jobs y espera el
-resultado igual que lo hace la Consola. Sale con código ≠ 0 si algo falla.
+Levanta los emuladores de **functions, firestore, auth y storage** con el
+project id `demo-terra-test` y corre `functions/verify.mjs`, que encola jobs y
+espera el resultado igual que lo hace la Consola. Sale con código ≠ 0 si algo
+falla.
+
+La primera vez, el emulador de Storage baja su runtime mientras las funciones
+cargan, y la carga puede pasar de 10 s: el emulador avisa *"Failed to load
+function definition"* y todos los jobs quedan en `pending`. Se vuelve a correr y
+anda.
 
 Existe porque iterar deployando es caro: cada corrida pasa por Cloud Build, tarda
 minutos y factura. El prefijo `demo-` es la misma barrera que usan los tests e2e
