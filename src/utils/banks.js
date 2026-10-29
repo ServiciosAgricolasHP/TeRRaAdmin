@@ -1,3 +1,5 @@
+import { normalizeRut } from "./rutUtils";
+
 // Bancos chilenos — código para nóminas.
 export const CASH_BANK_CODE = "EFE";
 export const BANKS = [
@@ -43,6 +45,18 @@ export function rutWithoutDv(rut) {
 export function defaultBankDetails(rut) {
   const num = rutWithoutDv(rut);
   return [rut, num, ACCOUNT_TYPE_RUT, DEFAULT_BANK_CODE];
+}
+
+// El RUT de pago es de otra persona: la cuenta no es del trabajador, y su
+// ficha tiene que decir de quién es (`worker.paymentName`).
+export function paysToOtherPerson(rut, paymentRut) {
+  const pay = normalizeRut(paymentRut);
+  return Boolean(pay) && pay !== normalizeRut(rut);
+}
+
+// Trabajador que cobra en la cuenta de otra persona sin el nombre de ella.
+export function lacksPaymentName(worker) {
+  return paysToOtherPerson(worker?.rut || worker?.id, worker?.bankDetails?.[0]) && !String(worker?.paymentName || "").trim();
 }
 
 export function isCuentaRut(bankDetails) {

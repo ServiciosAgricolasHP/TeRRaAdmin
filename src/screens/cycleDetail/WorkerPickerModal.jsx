@@ -14,7 +14,9 @@ import {
   CASH_BANK_CODE,
   DEFAULT_BANK_CODE,
   rutWithoutDv,
+  paysToOtherPerson,
 } from "../../utils/banks";
+import { toProperName } from "../../utils/nameUtils";
 import { matchesSearchQuery } from "../../utils/textSearch";
 import { greeting, GREETING_SLOTS } from "../../utils/greetings";
 
@@ -32,6 +34,7 @@ function emptyNewWorker() {
     rut: "",
     name: "",
     bd_paymentRut: "",
+    paymentName: "",
     bd_accountNumber: "",
     bd_accountType: ACCOUNT_TYPE_RUT,
     bd_bankCode: DEFAULT_BANK_CODE,
@@ -116,6 +119,7 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
   const accType = Number(newWorker.bd_accountType);
   const isCash = String(newWorker.bd_bankCode).toUpperCase() === CASH_BANK_CODE;
   const isCuentaRutSelected = accType === ACCOUNT_TYPE_RUT && !isCash;
+  const payeeIsOther = paysToOtherPerson(newWorker.rut, newWorker.bd_paymentRut);
 
   const onRutChange = (v) => {
     setNewWorker((w) => {
@@ -190,6 +194,10 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
 
     const payRut = normalizeRut(newWorker.bd_paymentRut || rut);
     if (!validateRut(payRut)) return setError("RUT de pago inválido");
+    const paymentName = toProperName(newWorker.paymentName);
+    if (paysToOtherPerson(rut, payRut) && !paymentName) {
+      return setError("El RUT de pago es de otra persona: ingresa el nombre del titular");
+    }
     const bankCode = isCash ? CASH_BANK_CODE : (accType === ACCOUNT_TYPE_RUT ? DEFAULT_BANK_CODE : newWorker.bd_bankCode);
     if (!bankCode) return setError("Selecciona el banco");
     const accNumber = isCash
@@ -208,7 +216,7 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
       const bankDetails = [payRut, accNumber, accType, bankCode];
       const leaderChoice = String(newWorker.leader || "").trim().toUpperCase() || defaultLeaderForRut(rut);
       const groupLeader = [leaderChoice];
-      await workersService.update(created.id, { bankDetails, groupLeader, idQr: [] });
+      await workersService.update(created.id, { bankDetails, paymentName, groupLeader, idQr: [] });
       onPick({ id: created.id, rut: created.id, name: created.name });
     } catch (err) {
       setError(err.message || "Error");
@@ -393,6 +401,13 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
                 value={newWorker.bd_paymentRut}
                 onChange={onPaymentRutChange}
                 placeholder="Puede diferir del trabajador"
+              />
+              <TextField
+                label="Nombre del titular"
+                required={payeeIsOther}
+                value={newWorker.paymentName}
+                onChange={(v) => setNewWorker((w) => ({ ...w, paymentName: v }))}
+                placeholder={payeeIsOther ? "La cuenta es de otra persona" : "Opcional: la cuenta es del trabajador"}
               />
               <Select
                 label="Tipo de cuenta"

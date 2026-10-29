@@ -79,6 +79,7 @@ el id/workerId, nunca el campo `rut`.
 | `name` | string | UPPERCASE típicamente |
 | `email` | string? | |
 | `bankDetails` | `[paymentRut, accountNumber, accountType, bankCode]` | tupla. accountType: 0 cta corriente, 1 cta vista, 3 cuenta RUT. bankCode `EFE` = efectivo. |
+| `paymentName` | string? | nombre de a quién se le paga: el titular de la cuenta o, en efectivo, quien cobra. Obligatorio cuando `paymentRut` es de otra persona (`paysToOtherPerson`, `utils/banks.js`); opcional si es el mismo RUT del trabajador |
 | `groupLeader` | string[] | historial; `[0]` = actual (ej. `CHILENOS`, `EXTRANJEROS`) |
 | `idQr` | string[] | códigos QR asignados |
 | `address`, `commune` | string? | dirección y comuna; las piden las boletas de honorarios |
