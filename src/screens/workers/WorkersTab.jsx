@@ -12,6 +12,8 @@ import {
   accountTypeLabel,
   isCuentaRut,
   isCashBank,
+  paysToOtherPerson,
+  lacksPaymentName,
 } from "../../utils/banks";
 import WorkerEditModal from "../../components/WorkerEditModal";
 import { useToast } from "../../contexts/ToastContext";
@@ -49,6 +51,8 @@ export default function WorkersTab() {
   // payFilter: "" | "cash" | "transfer"
   const [leaderFilter, setLeaderFilter] = useState("");
   const [payFilter, setPayFilter] = useState("");
+  // Solo quienes cobran en la cuenta de otra persona sin su nombre.
+  const [missingPayeeOnly, setMissingPayeeOnly] = useState(false);
   // Contrato u honorarios vigentes hoy: "" | "contract" | "fees" | "none", y
   // el empleador. Los períodos se leen solo con el filtro en uso.
   const [employmentFilter, setEmploymentFilter] = useState("");
@@ -61,7 +65,7 @@ export default function WorkersTab() {
   const queryKind = detectQueryKind(search);
   const queryRaw = search.trim();
   const queryReady = workerQueryReady(queryRaw);
-  const filtersActive = leaderFilter !== "" || payFilter !== "" || employmentOn;
+  const filtersActive = leaderFilter !== "" || payFilter !== "" || employmentOn || missingPayeeOnly;
 
   // Carga la lista completa de trabajadores; lee Firestore solo si la caché
   // venció o no existe. Si ya está cargada, la devuelve sin esperar.
@@ -97,9 +101,14 @@ export default function WorkersTab() {
     return [...set].sort((a, b) => a.localeCompare(b, "es"));
   }, [allWorkers]);
 
+  // Cuántos cobran en la cuenta de otra persona sin su nombre; el filtro se
+  // ofrece mientras quede alguno.
+  const missingPayeeCount = useMemo(() => allWorkers.filter(lacksPaymentName).length, [allWorkers]);
+
   // Filtrado en cliente sobre `allWorkers`:
   //   1. Líder, si hay uno elegido.
-  //   2. Forma de pago (efectivo o transferencia).
+  //   2. Forma de pago (efectivo o transferencia) y la cuenta de otra
+  //      persona sin el nombre del titular.
   //   3. Búsqueda libre (`workerMatchesQuery`): cada palabra en el nombre, en
   //      cualquier orden y sin acentos, o una parte del RUT o del id.
   // Sin búsqueda ni filtros devuelve [] y se ve el estado vacío.
@@ -118,18 +127,20 @@ export default function WorkersTab() {
     } else if (payFilter === "transfer") {
       arr = arr.filter((w) => w.bankDetails?.[3] && !isCashBank(w.bankDetails?.[3]));
     }
+    if (missingPayeeOnly) arr = arr.filter(lacksPaymentName);
     if (employmentOn) {
       const active = activeByWorker(employments, today);
       arr = arr.filter((w) => matchesEmploymentFilter(active.get(w.id), { type: employmentFilter, employerId: employerFilter }));
     }
     if (queryReady) arr = arr.filter((w) => workerMatchesQuery(w, queryRaw));
     return arr;
-  }, [queryReady, filtersActive, leaderFilter, payFilter, allWorkers, queryRaw, employmentOn, employments, today, employmentFilter, employerFilter]);
+  }, [queryReady, filtersActive, leaderFilter, payFilter, missingPayeeOnly, allWorkers, queryRaw, employmentOn, employments, today, employmentFilter, employerFilter]);
 
   const showResults = filtersActive || queryReady;
   const clearFilters = () => {
     setLeaderFilter("");
     setPayFilter("");
+    setMissingPayeeOnly(false);
     setEmploymentFilter("");
     setEmployerFilter("");
   };
@@ -257,6 +268,18 @@ export default function WorkersTab() {
           ) : null,
       },
       {
+        // Solo cuando la cuenta es de otra persona; si falta el nombre, se marca.
+        headerName: "Titular",
+        valueGetter: (p) =>
+          lacksPaymentName(p.data)
+            ? "⚠ Falta el titular"
+            : paysToOtherPerson(p.data.rut || p.data.id, p.data.bankDetails?.[0])
+              ? p.data.paymentName
+              : "",
+        width: 170,
+        cellClass: (p) => (p.value === "⚠ Falta el titular" ? "text-[var(--color-warning)]" : ""),
+      },
+      {
         headerName: "",
         width: 260,
         pinned: "right",
@@ -381,6 +404,20 @@ export default function WorkersTab() {
         >
           🏦 Transferencia
         </button>
+        {(missingPayeeCount > 0 || missingPayeeOnly) && (
+          <button
+            type="button"
+            onClick={() => setMissingPayeeOnly((v) => !v)}
+            title="Cobran en la cuenta de otra persona y su ficha no dice de quién es"
+            className={`rounded-md border px-2 py-1.5 ${
+              missingPayeeOnly
+                ? "border-[var(--color-warning)] bg-[var(--color-warning)] text-white"
+                : "border-[var(--color-warning)] bg-[var(--color-warning-soft)] text-[var(--color-warning)] hover:opacity-80"
+            }`}
+          >
+            ⚠ Sin titular ({missingPayeeCount})
+          </button>
+        )}
         <select
           value={employmentFilter}
           onChange={(e) => setEmploymentFilter(e.target.value)}
@@ -466,6 +503,17 @@ export default function WorkersTab() {
                       </>
                     )}
                   </div>
+                  {paysToOtherPerson(w.rut || w.id, w.bankDetails?.[0]) && (
+                    <div className="text-xs text-[var(--color-muted)]">
+                      Cuenta de:{" "}
+                      {lacksPaymentName(w) ? (
+                        <span className="text-[var(--color-warning)]">⚠ falta el titular</span>
+                      ) : (
+                        <span className="text-[var(--color-text)]">{w.paymentName}</span>
+                      )}{" "}
+                      <span className="font-mono">{formatRutForDisplay(w.bankDetails[0])}</span>
+                    </div>
+                  )}
                   <div className="text-xs text-[var(--color-muted)]">
                     Líder: <span className="text-[var(--color-text)]">{leader}</span>
                   </div>
