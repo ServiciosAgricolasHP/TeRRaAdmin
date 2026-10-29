@@ -3,9 +3,9 @@
 // configuración (`payrollConfig/main.bankFormat`).
 //
 // Un formato es { id, label, sheetName, fileSuffix, headers, columnWidths,
-// notes, buildRows }: `buildRows(items)` arma las filas de la hoja, una por
-// transferencia, con tantas columnas como `headers`, y `notes` explica sus
-// reglas en la configuración de Nómina.
+// notes, buildRows }: `buildRows(items, { payrollName })` arma las filas de la
+// hoja, una por transferencia, con tantas columnas como `headers`, y `notes`
+// explica sus reglas en la configuración de Nómina.
 //
 // Cuando un banco cambia su planilla, se agrega un formato nuevo en vez de
 // editar el que está en uso, y se elige en la configuración.

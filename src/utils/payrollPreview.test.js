@@ -15,7 +15,7 @@ const {
 } = await import("./payrollPreview");
 
 const workers = [
-  { id: "A", name: "Ana", email: "ana@x.cl", groupLeader: ["grupo norte"], bankDetails: ["P-A", "123456", 0, "001"] },
+  { id: "A", name: "Ana", email: "ana@x.cl", groupLeader: ["grupo norte"], bankDetails: ["P-A", "123456", 0, "001"], paymentName: "Pía Ruiz" },
   { id: "B", name: "Beto", groupLeader: [], bankDetails: ["B", "", 3, "EFE"] },
   { id: "C", name: "Caro", bankDetails: ["C", "12", 1, "012"] },
 ];
@@ -40,7 +40,8 @@ describe("previewItemsOf", () => {
 
   it("los datos de pago salen de la ficha", () => {
     const [ana] = items;
-    expect([ana.paymentRut, ana.accountNumber, ana.accountType, ana.bankCode, ana.email, ana.groupLeader]).toEqual(["P-A", "123456", 0, "001", "ana@x.cl", "GRUPO NORTE"]);
+    expect([ana.paymentRut, ana.paymentName, ana.accountNumber, ana.accountType, ana.bankCode, ana.email, ana.groupLeader]).toEqual(["P-A", "Pía Ruiz", "123456", 0, "001", "ana@x.cl", "GRUPO NORTE"]);
+    expect(payrollItemOf(ana, new Set(["K1", "K2"])).paymentName).toBe("Pía Ruiz");
   });
 
   it("aplica anticipos y bonos pendientes", () => {

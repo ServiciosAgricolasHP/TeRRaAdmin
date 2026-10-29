@@ -136,6 +136,7 @@ Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
 `PayrollItem` (embebido):
 - `rut` (el campo real en código es `rut`, no `workerRut` a pesar de lo que sugiere el nombre del doc — mismatch histórico), `workerId` (agregado en fase 2, ref estable al worker), `workerName`, `bankDetails`
 - `amount`, `advance`, `anticiposTotal`, `adelantosTotal` (**legacy: siempre 0** de acá en adelante; se sigue escribiendo solo para que los snapshots viejos se lean igual)
+- `paymentRut`, `paymentName`, `accountNumber`, `bankCode`, `accountType`, `email`, `groupLeader`: los datos de cuenta y de grupo de la ficha al generar, al agregar a la persona o al recalcular. `paymentName` es el titular de la cuenta (`worker.paymentName`; vacío si la ficha no lo tiene) y el archivo del banco lo usa cuando la cuenta es de otra persona; las nóminas anteriores al campo no lo traen hasta que se recalculan
 - `byCycle: { [cycleId]: {...} }`
 - `workdayIds: string[]`, `advanceIds: string[]`
 

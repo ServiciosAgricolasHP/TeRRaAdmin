@@ -16,7 +16,10 @@ const BANCO = 3;
 const MONTO = 4;
 const TIPO = 5;
 const ID = 6;
+const DESCRIPCION = 7;
 const MAIL = 8;
+const GLOSA_1 = 9;
+const GLOSA_2 = 10;
 
 const persona = (over = {}) => ({
   rut: "11111111-1",
@@ -60,6 +63,38 @@ describe("a qué cuenta va la plata", () => {
     // valida contra la titularidad de la cuenta, así que manda paymentRut.
     const [f] = buildBchileRows([persona({ rut: "11111111-1", paymentRut: "22222222-2" })]);
     expect(f[RUT]).toBe(rutWithDvNoDash("22222222-2"));
+  });
+
+  it("en una cuenta de otra persona, el nombre sigue siendo el del trabajador", () => {
+    // Dos trabajadores que cobran en la misma cuenta se distinguen por el nombre.
+    const filas = buildBchileRows([
+      persona({ name: "Ana Silva", paymentRut: "22222222-2", paymentName: "Pedro Rojas" }),
+      persona({ rut: "2-7", name: "Beto Soto", paymentRut: "22222222-2", paymentName: "Pedro Rojas" }),
+    ]);
+    expect(filas.map((f) => f[RUT])).toEqual([rutWithDvNoDash("22222222-2"), rutWithDvNoDash("22222222-2")]);
+    expect(filas.map((f) => f[NOMBRE])).toEqual(["Ana Silva XR", "Beto Soto XR"]);
+  });
+
+  it("la cuenta de otra persona lleva el RUT del trabajador y el nombre del titular", () => {
+    const [f] = buildBchileRows([persona({ rut: "11.111.111-k", paymentRut: "22.222.222-2", paymentName: "Pedro Rojas Muñoz" })]);
+    expect([f[NOMBRE], f[GLOSA_1], f[GLOSA_2]]).toEqual(["Ana Silva XR", "RT(11111111-K)", "Pedro Rojas Munoz"]);
+  });
+
+  it("sin el nombre del titular, la cuenta de otra persona igual se marca", () => {
+    const [f] = buildBchileRows([persona({ paymentRut: "22222222-2" })]);
+    expect([f[NOMBRE], f[GLOSA_1], f[GLOSA_2]]).toEqual(["Ana Silva XR", "RT(11111111-1)", ""]);
+  });
+
+  it("la cuenta del trabajador va como Pago propio, sin titular", () => {
+    // El RUT de pago escrito con puntos sigue siendo el del trabajador.
+    const [f] = buildBchileRows([persona({ paymentRut: "11.111.111-1", paymentName: "Ana Silva" })]);
+    expect([f[NOMBRE], f[GLOSA_1], f[GLOSA_2]]).toEqual(["Ana Silva", "Pago propio", ""]);
+  });
+
+  it("la descripción del pago es el nombre de la nómina", () => {
+    const [f] = buildBchileRows([persona()], { payrollName: "Nómina 1-15 Octubre" });
+    expect(f[DESCRIPCION]).toBe("Nomina 1 15 Octubre");
+    expect(buildBchileRows([persona()])[0][DESCRIPCION]).toBe("");
   });
 
   it("cae al RUT de la persona cuando no hay paymentRut", () => {

@@ -1,6 +1,6 @@
 // Formato PagoFácil de Banco de Chile: la planilla de transferencias que se
 // sube al portal del banco.
-import { ACCOUNT_TYPES } from "../banks";
+import { ACCOUNT_TYPES, paysToOtherPerson } from "../banks";
 import { normalizeRut } from "../rutUtils";
 
 // Quita tildes y caracteres especiales (BChile solo acepta ASCII).
@@ -50,8 +50,9 @@ export const BCHILE_HEADERS = [
 
 // Las filas que ingiere el portal del banco, como matriz de primitivos. Va
 // aparte de la escritura en ExcelJS para probar sin el workbook las tres
-// reglas que deciden a qué cuenta va la plata.
-export function buildBchileRows(items = []) {
+// reglas que deciden a qué cuenta va la plata. `payrollName` va en la
+// descripción del pago.
+export function buildBchileRows(items = [], { payrollName = "" } = {}) {
   // Cero-neto afuera (por ejemplo, quien liquida un anticipo con todo su
   // bruto): el banco no acepta transferencias de $0.
   // Orden alfabético por nombre para que el correlativo A001…A999 sea estable.
@@ -61,24 +62,34 @@ export function buildBchileRows(items = []) {
       cleanText(a.name || "").localeCompare(cleanText(b.name || ""), "es", { sensitivity: "base" }),
     );
 
-  return ordenados.map((it, idx) => [
-    // `paymentRut` viene de bankDetails[0] (la cuenta destino del banco) y
-    // puede diferir del RUT de la persona — p.ej. cuando el pago va a una
-    // cuenta de un familiar. El portal de BChile lo valida contra la
-    // titularidad de la cuenta, así que va paymentRut, y el RUT de la persona
-    // solo si no hay paymentRut.
-    rutWithDvNoDash(it.paymentRut || it.rut),
-    cleanText(it.name),
-    String(it.accountNumber || ""),
-    String(it.bankCode || ""),
-    Math.round(Number(it.amount) || 0),
-    bchileAccountTypeCode(it.accountType),
-    `A${String(idx + 1).padStart(3, "0")}`,
-    "",
-    it.email || BCHILE_DEFAULT_EMAIL,
-    "",
-    "",
-  ]);
+  return ordenados.map((it, idx) => {
+    // La cuenta es de otra persona cuando el RUT de pago no es el del
+    // trabajador.
+    const otherPerson = paysToOtherPerson(it.rut, it.paymentRut);
+    return [
+      // `paymentRut` viene de bankDetails[0] (la cuenta destino del banco) y
+      // puede diferir del RUT de la persona — p.ej. cuando el pago va a una
+      // cuenta de un familiar. El portal de BChile lo valida contra la
+      // titularidad de la cuenta, así que va paymentRut, y el RUT de la persona
+      // solo si no hay paymentRut.
+      rutWithDvNoDash(it.paymentRut || it.rut),
+      // El nombre es el del trabajador, no el del titular: dos trabajadores
+      // que cobran en la misma cuenta van con el mismo RUT, y en el banco cada
+      // pago se reconoce por el nombre. " XR" marca la cuenta de otra persona.
+      otherPerson ? `${cleanText(it.name)} XR` : cleanText(it.name),
+      String(it.accountNumber || ""),
+      String(it.bankCode || ""),
+      Math.round(Number(it.amount) || 0),
+      bchileAccountTypeCode(it.accountType),
+      `A${String(idx + 1).padStart(3, "0")}`,
+      cleanText(payrollName),
+      it.email || BCHILE_DEFAULT_EMAIL,
+      // En la cuenta de otra persona, el RUT del trabajador, que el banco no
+      // ve en ninguna otra columna.
+      otherPerson ? `RT(${normalizeRut(it.rut)})` : "Pago propio",
+      otherPerson ? cleanText(it.paymentName) : "",
+    ];
+  });
 }
 
 export const pagoFacilBchile = {
@@ -87,13 +98,15 @@ export const pagoFacilBchile = {
   sheetName: "Nomina",
   fileSuffix: "BChile",
   headers: BCHILE_HEADERS,
-  columnWidths: [16, 30, 16, 16, 16, 16, 16, 16, 28, 16, 16],
+  columnWidths: [16, 30, 16, 16, 16, 16, 16, 30, 28, 16, 30],
   notes: [
     "Quien cobra $0 no va: el banco rechaza las transferencias de $0.",
     "El RUT es el de la cuenta de pago, con el dígito verificador pegado y sin puntos ni guion.",
     "El nombre va sin tildes ni signos, y ordenado alfabéticamente con un identificador A001, A002…",
     "Tipo de cuenta: CTD para cuenta corriente y JUV para cuenta vista o Cuenta RUT.",
     `Sin correo, va ${BCHILE_DEFAULT_EMAIL}: el banco rechaza las filas sin correo.`,
+    "La descripción del pago es el nombre de la nómina.",
+    "Si la cuenta es de otra persona (el RUT de pago no es el del trabajador), el nombre lleva XR al final, el Campo Libre 1 trae el RUT del trabajador como RT(11111111-1) y el Campo Libre 2, el nombre del titular. Si es del trabajador, el Campo Libre 1 dice Pago propio.",
   ],
   buildRows: buildBchileRows,
 };

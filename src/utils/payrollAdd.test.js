@@ -397,11 +397,11 @@ describe("planAddWorkdays", () => {
       workdays: [wd("b1", { rut: "BETO", amount: 50000 })],
       laborTypeById: tipos,
       pendingAdvances: [anticipo("ant", "BETO", 80000), bono("bon", "BETO", 10000)],
-      profileFor: () => ({ name: "Beto", paymentRut: "PAGO", bankCode: "EFE", accountNumber: "", accountType: 3, groupLeader: "GRUPO B" }),
+      profileFor: () => ({ name: "Beto", paymentRut: "PAGO", paymentName: "Pía Ruiz", bankCode: "EFE", accountNumber: "", accountType: 3, groupLeader: "GRUPO B" }),
     });
     const [nuevo] = plan.items;
     expect(nuevo).toMatchObject({
-      rut: "BETO", workerId: "BETO", name: "Beto", paymentRut: "PAGO", bankCode: "EFE", groupLeader: "GRUPO B",
+      rut: "BETO", workerId: "BETO", name: "Beto", paymentRut: "PAGO", paymentName: "Pía Ruiz", bankCode: "EFE", groupLeader: "GRUPO B",
       grossAmount: 50000, bonus: 10000, advance: 60000, amount: 0,
       byCycle: { A: 50000 }, workdayIds: ["b1"],
     });
