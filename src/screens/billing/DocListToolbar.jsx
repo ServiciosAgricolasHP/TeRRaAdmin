@@ -1,17 +1,18 @@
 import { PrintableDocList } from "./PrintableDocList";
-import { captureFullWidthBlob, captureFullWidthDataUrl } from "../../utils/imageCapture";
+import { useCaptureActions } from "../../hooks/useCaptureActions";
+import { PRINT_SHEET_CSS } from "../../utils/printWindow";
 import { formatPeriodPretty, kindTitleLabel } from "./docs";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef } from "react";
 import { writeDocListXlsx } from "./writeDocListXlsx";
 
 // Barra del listado de Facturas o Compras: copiar, PNG, imprimir y Excel de lo
 // que está filtrado y ordenado, agrupar por centro de costo y abrir la gestión
 // de centros. El printable va fuera de pantalla para html-to-image.
-export function DocListToolbar({ costCentersById, groupByCostCenter, kindTab, periodFilter, selectedCompany, setCostCentersModalOpen, setGroupByCostCenter, sortedFiltered, toast, totals }) {
+export function DocListToolbar({ costCentersById, groupByCostCenter, kindTab, periodFilter, selectedCompany, setCostCentersModalOpen, setGroupByCostCenter, sortedFiltered, totals }) {
   "use no memo";
   // Printable del listado, fuera de pantalla, para html-to-image e impresión.
   const docListPrintRef = useRef(null);
-  const [docListBusy, setDocListBusy] = useState("");
+  const { busy: docListBusy, run, copy, download, print } = useCaptureActions();
   // ===== Export del listado de Facturas / Compras (vista no-retenciones) =====
   // Mismo patrón que Retenciones: el printable se renderiza fuera de pantalla
   // con los mismos datos filtrados y ordenados que la tabla.
@@ -22,68 +23,21 @@ export function DocListToolbar({ costCentersById, groupByCostCenter, kindTab, pe
     return `${kindLabel}_${alias}_${period}`;
   }, [selectedCompany, kindTab, periodFilter]);
 
-  const handleDocListCopy = async () => {
-    if (!docListPrintRef.current) return;
-    setDocListBusy("copy");
-    try {
-      const blob = await captureFullWidthBlob(docListPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada al portapapeles");
-    } catch (err) {
-      toast.error("Error al copiar: " + (err.message || err));
-    } finally {
-      setDocListBusy("");
-    }
-  };
+  const handleDocListCopy = () => copy(docListPrintRef.current);
+  const handleDocListPng = () => download(docListPrintRef.current, `${docListFileBase}.png`);
+  const handleDocListPrint = () =>
+    print(docListPrintRef.current, {
+      title: `${kindTitleLabel(kindTab)} — ${selectedCompany?.alias || selectedCompany?.razonSocial || ""} — ${formatPeriodPretty(periodFilter)}`,
+      css: PRINT_SHEET_CSS,
+      margin: "10mm",
+    });
 
-  const handleDocListPng = async () => {
-    if (!docListPrintRef.current) return;
-    setDocListBusy("png");
-    try {
-      const dataUrl = await captureFullWidthDataUrl(docListPrintRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
-      const link = document.createElement("a");
-      link.download = `${docListFileBase}.png`;
-      link.href = dataUrl;
-      link.click();
-    } catch (err) {
-      toast.error("Error al generar PNG: " + (err.message || err));
-    } finally {
-      setDocListBusy("");
-    }
-  };
-
-  const handleDocListPrint = () => {
-    if (!docListPrintRef.current) return;
-    const html = docListPrintRef.current.outerHTML;
-    const win = window.open("", "_blank", "width=1000,height=700");
-    if (!win) { toast.warning("Permite las ventanas emergentes para imprimir."); return; }
-    const titleLabel = `${kindTitleLabel(kindTab)} — ${selectedCompany?.alias || selectedCompany?.razonSocial || ""} — ${formatPeriodPretty(periodFilter)}`;
-    win.document.write(`<!DOCTYPE html><html><head><title>${titleLabel}</title>
-      <style>
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #999; padding: 5px 7px; font-size: 11px; }
-        thead th { background: #92d050 !important; text-align: left; }
-        @media print { @page { size: landscape; margin: 10mm; } }
-      </style>
-    </head><body>${html}</body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); }, 250);
-  };
-
-  const handleDocListXlsx = async () => {
-    setDocListBusy("xlsx");
-    try {
-      await writeDocListXlsx({ costCentersById, docListFileBase, groupByCostCenter, kindTab, periodFilter, selectedCompany, sortedFiltered, totals });
-    } catch (err) {
-      toast.error("Error al generar XLSX: " + (err.message || err));
-    } finally {
-      setDocListBusy("");
-    }
-  };
+  const handleDocListXlsx = () =>
+    run(
+      "xlsx",
+      () => writeDocListXlsx({ costCentersById, docListFileBase, groupByCostCenter, kindTab, periodFilter, selectedCompany, sortedFiltered, totals }),
+      { error: "No se pudo generar el Excel" },
+    );
   return (
     <>
     {/* Toolbar de export para Facturas / Compras (mismo patrón que
@@ -99,11 +53,11 @@ export function DocListToolbar({ costCentersById, groupByCostCenter, kindTab, pe
       </button>
       <button
         onClick={handleDocListPng}
-        disabled={docListBusy === "png" || sortedFiltered.length === 0}
+        disabled={docListBusy === "download" || sortedFiltered.length === 0}
         className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
         title="Descargar como PNG"
       >
-        {docListBusy === "png" ? "..." : "📥 PNG"}
+        {docListBusy === "download" ? "..." : "📥 PNG"}
       </button>
       <button
         onClick={handleDocListPrint}

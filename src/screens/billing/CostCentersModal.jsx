@@ -1,5 +1,6 @@
 import { useRef, useState, useMemo } from "react";
-import { captureFullWidthBlob, captureFullWidthDataUrl } from "../../utils/imageCapture";
+import { useCaptureActions } from "../../hooks/useCaptureActions";
+import { PRINT_SHEET_CSS } from "../../utils/printWindow";
 import { dteTypeLabel } from "../../utils/siiCsvParser";
 import { formatRutForDisplay } from "../../utils/rutUtils";
 import Modal from "../../components/Modal";
@@ -46,7 +47,7 @@ export function CostCentersModal({ costCenters, docs, informalExpenses, companie
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [sortBy, setSortBy] = useState({ key: "fechaEmision", dir: "asc" });
-  const [exportBusy, setExportBusy] = useState("");
+  const { busy: exportBusy, run, copy, download, print } = useCaptureActions();
   // Modal de gasto informal: null = cerrado, "new" = crear, {expense} = editar.
   const [expenseModal, setExpenseModal] = useState(null);
 
@@ -99,67 +100,17 @@ export function CostCentersModal({ costCenters, docs, informalExpenses, companie
     return `CentroCosto_${label}_${todayIso()}`;
   }, [selectedLabel]);
 
-  const handleCopy = async () => {
-    if (!printRef.current) return;
-    setExportBusy("copy");
-    try {
-      const blob = await captureFullWidthBlob(printRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada al portapapeles");
-    } catch (err) {
-      toast.error("Error al copiar: " + (err.message || err));
-    } finally {
-      setExportBusy("");
-    }
-  };
+  const handleCopy = () => copy(printRef.current);
+  const handlePng = () => download(printRef.current, `${fileBase}.png`);
+  const handlePrint = () =>
+    print(printRef.current, { title: `Centro de costo — ${selectedLabel}`, css: PRINT_SHEET_CSS, margin: "10mm" });
 
-  const handlePng = async () => {
-    if (!printRef.current) return;
-    setExportBusy("png");
-    try {
-      const dataUrl = await captureFullWidthDataUrl(printRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
-      const link = document.createElement("a");
-      link.download = `${fileBase}.png`;
-      link.href = dataUrl;
-      link.click();
-    } catch (err) {
-      toast.error("Error PNG: " + (err.message || err));
-    } finally {
-      setExportBusy("");
-    }
-  };
-
-  const handlePrint = () => {
-    if (!printRef.current) return;
-    const html = printRef.current.outerHTML;
-    const win = window.open("", "_blank", "width=1000,height=700");
-    if (!win) { toast.warning("Permite las ventanas emergentes para imprimir."); return; }
-    win.document.write(`<!DOCTYPE html><html><head><title>Centro de costo — ${selectedLabel}</title>
-      <style>
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #999; padding: 5px 7px; font-size: 11px; }
-        thead th { background: #92d050 !important; text-align: left; }
-        @media print { @page { size: landscape; margin: 10mm; } }
-      </style>
-    </head><body>${html}</body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); }, 250);
-  };
-
-  const handleXlsx = async () => {
-    setExportBusy("xlsx");
-    try {
-      await writeCostCenterDocsXlsx({ companiesById, fileBase, filtered, filteredInformal, informalTotal, selectedLabel, sorted, totals });
-    } catch (err) {
-      toast.error("Error XLSX: " + (err.message || err));
-    } finally {
-      setExportBusy("");
-    }
-  };
+  const handleXlsx = () =>
+    run(
+      "xlsx",
+      () => writeCostCenterDocsXlsx({ companiesById, fileBase, filtered, filteredInformal, informalTotal, selectedLabel, sorted, totals }),
+      { error: "No se pudo generar el Excel" },
+    );
 
   const selectClass = "rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs";
 
@@ -325,7 +276,7 @@ export function CostCentersModal({ costCenters, docs, informalExpenses, companie
                     {exportBusy === "copy" ? "..." : "📋 Copiar"}
                   </button>
                   <button onClick={handlePng} disabled={!!exportBusy || sorted.length === 0} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Descargar PNG">
-                    {exportBusy === "png" ? "..." : "📥 PNG"}
+                    {exportBusy === "download" ? "..." : "📥 PNG"}
                   </button>
                   <button onClick={handlePrint} disabled={!!exportBusy || sorted.length === 0} className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-60" title="Imprimir">
                     🖨 Imprimir

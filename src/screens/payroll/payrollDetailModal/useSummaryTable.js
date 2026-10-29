@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { buildWorkdaysByGroup } from "../printCommon";
 import { computeLaborSummary, summaryDisplayRowsOf, summaryLabelColumnsOf, summaryTitleOf } from "../../../utils/payrollDetail";
 import { printSummaryTable } from "../printSummaryTable";
-import { captureFullWidthBlob } from "../../../utils/imageCapture";
+import { useCaptureActions } from "../../../hooks/useCaptureActions";
 import { writePayrollSummaryXlsx } from "./writePayrollSummaryXlsx";
 
 // La tabla del resumen del detalle: por subfaena o por labor, con los ciclos
@@ -110,48 +110,28 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
   const hasSeveralCycles = subfaenaSummary.rows.some((r) => r.cycleCount > 1);
 
   const summaryCaptureRef = useRef(null);
-  const [summaryBusy, setSummaryBusy] = useState("");
+  const { busy: summaryBusy, run, copy } = useCaptureActions();
   const handlePrintSummary = () => {
     if (!activeSummary) return;
-    try {
-      printSummaryTable(payroll, {
-        title: summaryTitle,
-        labelColumns,
-        displayRows: summaryDisplayRows,
-        bonusAdvanceSummary,
-        pendingRows: pendingSummaryRows,
-        pendingMode,
-        grandTotals,
-        deferredCash,
-      });
-    } catch (err) {
-      toast.error(err?.message || String(err));
-    }
+    run("print", () => printSummaryTable(payroll, {
+      title: summaryTitle,
+      labelColumns,
+      displayRows: summaryDisplayRows,
+      bonusAdvanceSummary,
+      pendingRows: pendingSummaryRows,
+      pendingMode,
+      grandTotals,
+      deferredCash,
+    }), { error: "No se pudo imprimir" });
   };
-  const handleCopySummaryImage = async () => {
-    if (!summaryCaptureRef.current) return;
-    setSummaryBusy("image");
-    try {
-      const blob = await captureFullWidthBlob(summaryCaptureRef.current);
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada");
-    } catch (err) {
-      toast.error("Error al copiar: " + (err.message || err));
-    } finally {
-      setSummaryBusy("");
-    }
-  };
-  const handleDownloadSummaryXlsx = async () => {
+  const handleCopySummaryImage = () => copy(summaryCaptureRef.current);
+  const handleDownloadSummaryXlsx = () => {
     if (!activeSummary) return;
-    setSummaryBusy("xlsx");
-    try {
-      await writePayrollSummaryXlsx({ bonusAdvanceSummary, deferredCash, grandTotals, labelColumns, payroll, pendingMode, pendingSummaryRows, summaryDisplayRows, summaryTitle });
-    } catch (err) {
-      toast.error("Error al generar Excel: " + (err.message || err));
-    } finally {
-      setSummaryBusy("");
-    }
+    run(
+      "xlsx",
+      () => writePayrollSummaryXlsx({ bonusAdvanceSummary, deferredCash, grandTotals, labelColumns, payroll, pendingMode, pendingSummaryRows, summaryDisplayRows, summaryTitle }),
+      { error: "No se pudo generar el Excel" },
+    );
   };
   return {
     activeSummary,

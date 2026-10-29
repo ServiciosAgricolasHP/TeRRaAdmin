@@ -1,8 +1,7 @@
 import { useState, useRef } from "react";
-import { captureFullWidthBlob } from "../../utils/imageCapture";
 import { advanceTypeMeta } from "../../services/advancesService";
 import { formatRutForDisplay } from "../../utils/rutUtils";
-import { useToast } from "../../contexts/ToastContext";
+import { useCaptureActions } from "../../hooks/useCaptureActions";
 import { fmtCurrency } from "../../utils/format";
 import { paidByCycleEntriesOf, paidCycleSectionsOf, paidChronoRowsOf } from "../../utils/workerPaidDetail";
 import {
@@ -20,8 +19,7 @@ import {
 // ajustes intercalados. Sin snapshot, o sin jornadas de la persona en él,
 // muestra solo los montos por ciclo.
 export function WorkerPaidDetailTables({ displayRut, item, snapshot, snapshotLoading, cycleDetails, displayCycleLabel, catalogs }) {
-  const toast = useToast();
-  const [busy, setBusy] = useState("");
+  const { busy, copy, copyText } = useCaptureActions();
   // cronologico (default): una sola tabla ordenada por fecha, con los
   // anticipos y bonos intercalados en su fecha. porCiclo: una tabla por ciclo
   // con subtotales y un bloque final de ajustes.
@@ -161,28 +159,9 @@ export function WorkerPaidDetailTables({ displayRut, item, snapshot, snapshotLoa
     return lines.join("\n");
   };
 
-  const handleCopyText = async () => {
-    setBusy("text");
-    try {
-      await navigator.clipboard.writeText(buildPlainText());
-      toast.success("Texto copiado");
-    } catch (err) {
-      toast.error("Error al copiar: " + (err.message || err));
-    } finally { setBusy(""); }
-  };
+  const handleCopyText = () => copyText(buildPlainText());
 
-  const handleCopyImage = async () => {
-    if (!captureRef.current) return;
-    setBusy("image");
-    try {
-      const blob = await captureFullWidthBlob(captureRef.current);
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada");
-    } catch (err) {
-      toast.error("Error al copiar: " + (err.message || err));
-    } finally { setBusy(""); }
-  };
+  const handleCopyImage = () => copy(captureRef.current);
 
   const tabBtn = (active) =>
     `rounded-md border px-2 py-0.5 text-[10px] ${
@@ -216,11 +195,11 @@ export function WorkerPaidDetailTables({ displayRut, item, snapshot, snapshotLoa
           <button
             type="button"
             onClick={handleCopyImage}
-            disabled={busy === "image"}
+            disabled={busy === "copy"}
             title="Copiar como imagen (PNG)"
             className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 text-[10px] hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
           >
-            {busy === "image" ? "..." : "📋 Imagen"}
+            {busy === "copy" ? "..." : "📋 Imagen"}
           </button>
         </div>
       </div>

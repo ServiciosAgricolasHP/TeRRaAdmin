@@ -156,6 +156,7 @@ export default function CycleSummaryModal({
   const {
     CAPTURE_LABELS,
     captureAsk,
+    captureBusy,
     captureLocked,
     lockedHint,
     requestCapture,
@@ -166,9 +167,7 @@ export default function CycleSummaryModal({
     editMode,
     mode,
     printRef,
-    setBusy,
     titles,
-    toast,
   });
   const handleXlsxSummary = async () => {
     setBusy("xlsx");
@@ -219,11 +218,11 @@ export default function CycleSummaryModal({
           <button onClick={onClose} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
             Cerrar
           </button>
-          <button onClick={() => requestCapture("copy")} disabled={busy === "copy"} title={captureLocked ? lockedHint : undefined} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
-            {busy === "copy" ? "Copiando..." : "📋 Copiar imagen"}
+          <button onClick={() => requestCapture("copy")} disabled={captureBusy === "copy"} title={captureLocked ? lockedHint : undefined} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
+            {captureBusy === "copy" ? "Copiando..." : "📋 Copiar imagen"}
           </button>
-          <button onClick={() => requestCapture("download")} disabled={busy === "download"} title={captureLocked ? lockedHint : undefined} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
-            {busy === "download" ? "Descargando..." : "📥 Descargar PNG"}
+          <button onClick={() => requestCapture("download")} disabled={captureBusy === "download"} title={captureLocked ? lockedHint : undefined} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
+            {captureBusy === "download" ? "Descargando..." : "📥 Descargar PNG"}
           </button>
           <button onClick={handleXlsxSummary} disabled={busy === "xlsx"} title="El Excel se arma desde los datos — sale limpio aunque estés editando." className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60">
             {busy === "xlsx" ? "Generando..." : "📊 Excel"}

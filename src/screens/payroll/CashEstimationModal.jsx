@@ -1,6 +1,6 @@
 import { useMemo, useState, useRef } from "react";
-import { captureFullWidthBlob } from "../../utils/imageCapture";
-import { useToast } from "../../contexts/ToastContext";
+import { copyNodeImage } from "../../utils/imageCapture";
+import { useCaptureActions } from "../../hooks/useCaptureActions";
 import Modal from "../../components/Modal";
 import { DEFAULT_AVAILABLE, estimateCashBreakdown, isBill, CASH_DENOMINATIONS, cashWorkerGroupsOf, cashSummaryText, cashListText } from "../../utils/cashBreakdown";
 import { fmtCurrency } from "../../utils/format";
@@ -13,7 +13,6 @@ import { fmtCurrency } from "../../utils/format";
 // como texto o como imagen, y las dos dicen de qué nómina son y cuánto
 // efectivo pendiente de otras incluyen.
 export function CashEstimationModal({ cashItems, payrollName, pendingExtra = [], onClose }) {
-  const toast = useToast();
   // El efectivo pendiente de otras nóminas se entrega aparte, pero la plata se
   // saca del banco de una sola vez — así que el desglose de billetes y sencillo
   // tiene que poder cubrir todo junto. Cada persona pendiente lleva el nombre
@@ -44,7 +43,7 @@ export function CashEstimationModal({ cashItems, payrollName, pendingExtra = [],
   const est = useMemo(() => estimateCashBreakdown(allItems, [...available]), [allItems, available]);
   const denominations = [...est.counts.keys()];
   const [showDetail, setShowDetail] = useState(false);
-  const [busy, setBusy] = useState("");
+  const { busy, run, copy, copyText } = useCaptureActions();
   const captureRef = useRef(null);
   const listRef = useRef(null);
   const diff = est.totalNeeded - est.totalOriginal;
@@ -60,34 +59,6 @@ export function CashEstimationModal({ cashItems, payrollName, pendingExtra = [],
 
   const buildListText = () => cashListText({ payrollName, usePending, pendingNote, workerGroups, est, denominations });
 
-  const copyText = async (kind, text) => {
-    setBusy(kind);
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.success("Texto copiado");
-    } catch (err) {
-      toast.error("Error al copiar: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
-  };
-
-  // `prepare` corre antes de capturar (por ejemplo, desplegar la lista).
-  const copyImage = async (kind, ref, prepare) => {
-    setBusy(kind);
-    try {
-      if (prepare) await prepare();
-      if (!ref.current) throw new Error("No se pudo generar la imagen");
-      const blob = await captureFullWidthBlob(ref.current);
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada");
-    } catch (err) {
-      toast.error("Error al copiar: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
-  };
   // La lista se despliega antes de capturarla; dos cuadros dan tiempo a que
   // se pinte.
   const showListForCapture = async () => {
@@ -95,6 +66,11 @@ export function CashEstimationModal({ cashItems, payrollName, pendingExtra = [],
     setShowDetail(true);
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   };
+  const copyListImage = () =>
+    run("listImage", async () => {
+      await showListForCapture();
+      await copyNodeImage(listRef.current);
+    }, { success: "Imagen copiada al portapapeles", error: "No se pudo copiar la imagen" });
 
   const copyBtn = "rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-50";
   const nothingAvailable = available.size === 0;
@@ -108,7 +84,7 @@ export function CashEstimationModal({ cashItems, payrollName, pendingExtra = [],
           </p>
           <div className="flex gap-1">
             <button
-              onClick={() => copyText("text", buildSummaryText())}
+              onClick={() => copyText(buildSummaryText())}
               disabled={busy === "text" || nothingAvailable}
               className={copyBtn}
               title="Copiar el resumen como texto plano (para pegar en chat o notas)"
@@ -116,12 +92,12 @@ export function CashEstimationModal({ cashItems, payrollName, pendingExtra = [],
               {busy === "text" ? "..." : "📋 Texto"}
             </button>
             <button
-              onClick={() => copyImage("image", captureRef)}
-              disabled={busy === "image" || nothingAvailable}
+              onClick={() => copy(captureRef.current)}
+              disabled={busy === "copy" || nothingAvailable}
               className={copyBtn}
               title="Copiar el resumen como imagen al portapapeles"
             >
-              {busy === "image" ? "..." : "📋 Imagen"}
+              {busy === "copy" ? "..." : "📋 Imagen"}
             </button>
           </div>
         </div>
@@ -277,7 +253,7 @@ export function CashEstimationModal({ cashItems, payrollName, pendingExtra = [],
                 </button>
                 <div className="flex gap-1">
                   <button
-                    onClick={() => copyText("listText", buildListText())}
+                    onClick={() => copyText(buildListText(), { key: "listText" })}
                     disabled={busy === "listText"}
                     className={copyBtn}
                     title="Copiar la lista por trabajador, con sus billetes y monedas, como texto"
@@ -285,7 +261,7 @@ export function CashEstimationModal({ cashItems, payrollName, pendingExtra = [],
                     {busy === "listText" ? "..." : "📋 Lista"}
                   </button>
                   <button
-                    onClick={() => copyImage("listImage", listRef, showListForCapture)}
+                    onClick={copyListImage}
                     disabled={busy === "listImage"}
                     className={copyBtn}
                     title="Copiar la lista por trabajador como imagen"

@@ -12,6 +12,7 @@ import {
   cyclesNoteHtml,
 } from "./printCommon";
 import { fmtCurrency } from "../../utils/format";
+import { openPrintWindow } from "../../utils/printWindow";
 import { computeLaborSummary, summaryCycleName, summaryDisplayRowsOf, summaryLabelColumnsOf, summaryTitleOf } from "../../utils/payrollDetail";
 
 function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
@@ -704,13 +705,7 @@ export async function printPaymentDetails(payroll, allGroups, titleOverrides = {
     rutOf,
     cyclesApart,
   });
-  const w = window.open("", "_blank", "width=900,height=700");
-  if (!w) {
-    throw new Error("Permite las ventanas emergentes para imprimir.");
-  }
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
+  openPrintWindow(html);
 }
 
 export async function printCashReceipts(payroll, cashGroups, titleOverrides = {}, catalogs = {}, payrollData = null, rutOf = undefined) {
@@ -742,11 +737,5 @@ export async function printCashReceipts(payroll, cashGroups, titleOverrides = {}
     catalogs,
     rutOf,
   });
-  const w = window.open("", "_blank", "width=900,height=700");
-  if (!w) {
-    throw new Error("Permite las ventanas emergentes para imprimir.");
-  }
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
+  openPrintWindow(html);
 }

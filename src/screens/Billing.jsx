@@ -388,7 +388,6 @@ export default function Billing() {
           selectedCompanyId={selectedCompanyId}
           setSummaryYear={setSummaryYear}
           summaryYear={summaryYear}
-          toast={toast}
         />
       ) : kindTab === "proyeccion" && isAdmin ? (
         <ProjectionTab
@@ -417,7 +416,6 @@ export default function Billing() {
           selectedCompanyId={selectedCompanyId}
           setDetailDoc={setDetailDoc}
           setPaymentStatus={setPaymentStatus}
-          toast={toast}
           totals={totals}
           withholdingsByCounterparty={withholdingsByCounterparty}
         />
@@ -432,7 +430,6 @@ export default function Billing() {
             setCostCentersModalOpen={setCostCentersModalOpen}
             setGroupByCostCenter={setGroupByCostCenter}
             sortedFiltered={sortedFiltered}
-            toast={toast}
             totals={totals}
           />
 

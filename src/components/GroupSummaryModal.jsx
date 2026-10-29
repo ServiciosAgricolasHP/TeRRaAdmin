@@ -10,10 +10,9 @@
 // matriz son la unión de los ciclos con producción de cualquier integrante.
 
 import { forwardRef, useEffect, useMemo, useRef, useState } from "react";
-import { captureFullWidthBlob, captureFullWidthDataUrl } from "../utils/imageCapture";
+import { useCaptureActions } from "../hooks/useCaptureActions";
 import Modal from "./Modal";
 import { useCatalogs } from "../contexts/CatalogsContext";
-import { useToast } from "../contexts/ToastContext";
 import WorkerSearchPicker from "./WorkerSearchPicker";
 import { loadWorkerSummaryData } from "../services/workerSummaryService";
 import { PrintableWorkerSummary } from "./workerSummaryModal/PrintableWorkerSummary";
@@ -36,14 +35,13 @@ const cellH = {
 const cell = { border: "1px solid #999", padding: "5px 8px", fontSize: 12 };
 
 export default function GroupSummaryModal({ open, onClose }) {
-  const toast = useToast();
   const { catalogs } = useCatalogs();
   const [step, setStep] = useState("build"); // build | result
   const [selected, setSelected] = useState([]); // [worker]
   // workerData: { [rut]: { data, advances, grandTotal, netAdvanceBalance, advanceBalance, bonusBalance } }
   const [workerData, setWorkerData] = useState({});
   const [loading, setLoading] = useState(false);
-  const [busy, setBusy] = useState("");
+  const { busy, copy, download } = useCaptureActions();
   const matrixRef = useRef(null);
   const individualRefs = useRef({}); // { rut: HTMLElement }
 
@@ -137,85 +135,26 @@ export default function GroupSummaryModal({ open, onClose }) {
     return { cycleTotals, advanceTotal, bonusTotal, totalTotal, netoTotal };
   }, [matrixRows]);
 
-  const captureMatrix = async (action) => {
-    if (!matrixRef.current) return;
-    setBusy(action);
-    try {
-      if (action === "copy") {
-        const blob = await captureFullWidthBlob(matrixRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
-        if (!blob) throw new Error("No se pudo generar la imagen");
-        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-        toast.success("Imagen copiada al portapapeles");
-      } else if (action === "download") {
-        const dataUrl = await captureFullWidthDataUrl(matrixRef.current, { backgroundColor: "#ffffff", pixelRatio: 2 });
-        const link = document.createElement("a");
-        link.download = `grupo_matriz_${localIsoDate()}.png`;
-        link.href = dataUrl;
-        link.click();
-      }
-    } catch (err) {
-      toast.error("Error: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
-  };
+  const captureMatrix = (action) =>
+    action === "copy"
+      ? copy(matrixRef.current)
+      : download(matrixRef.current, `grupo_matriz_${localIsoDate()}.png`);
 
-  const captureIndividual = async (rut, action = "download") => {
-    const refEl = individualRefs.current[rut];
-    if (!refEl) return;
-    setBusy(`${action}_${rut}`);
-    try {
-      const worker = selected.find((s) => s.id === rut);
-      if (action === "copy") {
-        const blob = await captureFullWidthBlob(refEl, { backgroundColor: "#ffffff", pixelRatio: 2 });
-        if (!blob) throw new Error("No se pudo generar la imagen");
-        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-        toast.success("Imagen copiada al portapapeles");
-      } else {
-        const dataUrl = await captureFullWidthDataUrl(refEl, { backgroundColor: "#ffffff", pixelRatio: 2 });
-        const link = document.createElement("a");
-        link.download = `resumen_${(worker?.name || "trabajador").replace(/\s+/g, "_")}.png`;
-        link.href = dataUrl;
-        link.click();
-      }
-    } catch (err) {
-      toast.error("Error: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
+  const captureIndividual = (rut, action = "download") => {
+    const node = individualRefs.current[rut];
+    const key = `${action}_${rut}`;
+    if (action === "copy") return copy(node, { key });
+    const worker = selected.find((s) => s.id === rut);
+    return download(node, `resumen_${(worker?.name || "trabajador").replace(/\s+/g, "_")}.png`, { key });
   };
 
   // Captura todos los detalles individuales en una sola imagen; la matriz no
   // entra, tiene sus propios botones.
   const everythingRef = useRef(null);
-  const captureEverything = async (action = "copy") => {
-    if (!everythingRef.current) return;
-    setBusy(`all_${action}`);
-    try {
-      if (action === "copy") {
-        const blob = await captureFullWidthBlob(everythingRef.current, {
-          backgroundColor: "#ffffff",
-          pixelRatio: 2,
-        });
-        if (!blob) throw new Error("No se pudo generar la imagen");
-        await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-        toast.success("Imagen completa copiada al portapapeles");
-      } else {
-        const dataUrl = await captureFullWidthDataUrl(everythingRef.current, {
-          backgroundColor: "#ffffff",
-          pixelRatio: 2,
-        });
-        const link = document.createElement("a");
-        link.download = `grupo_completo_${localIsoDate()}.png`;
-        link.href = dataUrl;
-        link.click();
-      }
-    } catch (err) {
-      toast.error("Error: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
-  };
+  const captureEverything = (action = "copy") =>
+    action === "copy"
+      ? copy(everythingRef.current, { key: "all_copy", success: "Imagen completa copiada al portapapeles" })
+      : download(everythingRef.current, `grupo_completo_${localIsoDate()}.png`, { key: "all_download" });
 
   return (
     <Modal

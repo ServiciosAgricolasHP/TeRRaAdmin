@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect, useEffectEvent, useMemo } from "react";
-import { captureFullWidthDataUrl, captureFullWidthBlob, cloneForExport } from "../utils/imageCapture";
+import { useCaptureActions } from "../hooks/useCaptureActions";
+import { PRINT_GRID_CSS } from "../utils/printWindow";
 import Modal from "./Modal";
 import { advanceRemaining, advanceSign } from "../services/advancesService";
 import { useCatalogs } from "../contexts/CatalogsContext";
-import { useToast } from "../contexts/ToastContext";
 import { localIsoDate } from "../utils/dates";
 import { loadWorkerSummaryData } from "../services/workerSummaryService";
 import { fmtCurrency } from "../utils/format";
@@ -49,12 +49,11 @@ const oneMonthAgoISO = () => {
 };
 
 export default function WorkerSummaryModal({ open, onClose, worker }) {
-  const toast = useToast();
   const { catalogs } = useCatalogs();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState([]); // [{ cycle, faena, subfaena, rows, totals, cols, tratoLabel, kilosLabel, isClosed }]
   const [advances, setAdvances] = useState([]); // anticipos y bonos pending/partial del trabajador
-  const [busy, setBusy] = useState("");
+  const { busy, copy, download, print } = useCaptureActions();
   const [titles, setTitles] = useState({ main: "DETALLE DE JORNADA", subtitle: "" });
   const [showTitleEditor, setShowTitleEditor] = useState(false);
   // Incluir ciclos cerrados (apagado por defecto) dentro de un rango de
@@ -190,58 +189,14 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
     updateTitles({ linear: { ...(titles?.linear || {}), ...viewTitle, ...patch } });
   };
 
-  const handleDownload = async () => {
-    if (!printRef.current) return;
-    setBusy("download");
-    try {
-      const dataUrl = await captureFullWidthDataUrl(printRef.current);
-      const link = document.createElement("a");
-      link.download = `resumen_${(worker?.name || "trabajador").replace(/\s+/g, "_")}.png`;
-      link.href = dataUrl;
-      link.click();
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const handleCopy = async () => {
-    if (!printRef.current) return;
-    setBusy("copy");
-    try {
-      const blob = await captureFullWidthBlob(printRef.current);
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada al portapapeles");
-    } catch (err) {
-      toast.error("Error: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const handlePrint = () => {
-    if (!printRef.current) return;
-    const html = cloneForExport(printRef.current).outerHTML;
-    const win = window.open("", "_blank", "width=900,height=700");
-    if (!win) {
-      toast.warning("Permite las ventanas emergentes para imprimir.");
-      return;
-    }
-    win.document.write(`<!DOCTYPE html><html><head><title>Resumen — ${worker?.name || ""}</title>
-      <style>
-        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-        body { font-family: ui-sans-serif, system-ui, sans-serif; padding: 20px; color: #000; margin: 0; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #888; padding: 6px 8px; font-size: 12px; }
-        thead { display: table-header-group; }
-        tr { page-break-inside: avoid; }
-        @media print { @page { size: ${viewMode === "linear" ? "landscape" : "portrait"}; margin: 12mm; } }
-      </style>
-    </head><body>${html}</body></html>`);
-    win.document.close();
-    win.focus();
-    setTimeout(() => { win.print(); }, 250);
-  };
+  const handleDownload = () => download(printRef.current, `resumen_${(worker?.name || "trabajador").replace(/\s+/g, "_")}.png`);
+  const handleCopy = () => copy(printRef.current);
+  const handlePrint = () =>
+    print(printRef.current, {
+      title: `Resumen — ${worker?.name || ""}`,
+      page: viewMode === "linear" ? "landscape" : "portrait",
+      css: PRINT_GRID_CSS,
+    });
 
   return (
     <Modal

@@ -3,6 +3,8 @@ import { captureFullWidthBlob } from "../../utils/imageCapture";
 import Modal from "../../components/Modal";
 import { tripsService } from "../../services/transportsService";
 import { useToast } from "../../contexts/ToastContext";
+import { useCaptureActions } from "../../hooks/useCaptureActions";
+import { PRINT_SHEET_CSS, printNodes } from "../../utils/printWindow";
 import { localIsoDate } from "../../utils/dates";
 import { fmtCurrency } from "../../utils/format";
 import { PrintableSummary } from "./PrintableSummary";
@@ -40,8 +42,8 @@ export function PrintMultipleModal({
   const [tripsLoading, setTripsLoading] = useState(false);
 
   // Acción en curso: "" | "print" | "zip". Mientras dura, se dibujan todos los
-  // PrintableSummary fuera de pantalla para capturar su outerHTML o PNG.
-  const [busy, setBusy] = useState("");
+  // PrintableSummary fuera de pantalla para imprimirlos o capturarlos.
+  const { busy, run } = useCaptureActions();
   const [renderItems, setRenderItems] = useState(null);
   const itemRefs = useRef([]);
 
@@ -54,7 +56,6 @@ export function PrintMultipleModal({
       setFaenasSel(new Set());
       setSubfaenasSel(new Set());
       setRenderItems(null);
-      setBusy("");
     }
   }, [open]);
 
@@ -139,92 +140,59 @@ export function PrintMultipleModal({
 
   const waitFor = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  const handlePrint = async () => {
-    setBusy("print");
-    try {
-      const items = await buildRenderItems();
-      if (items.length === 0) {
-        toast.warning("No hay resúmenes que coincidan con los filtros.");
-        return;
-      }
-      itemRefs.current = new Array(items.length).fill(null);
-      setRenderItems(items);
-      await waitFor(80); // espera el render
-      const nodes = itemRefs.current.filter(Boolean);
-      const html = nodes
-        .map((n) => `<div class="page">${n.outerHTML}</div>`)
-        .join("");
-      const win = window.open("", "_blank", "width=1000,height=800");
-      if (!win) {
-        toast.warning("Permite las ventanas emergentes para imprimir.");
-        return;
-      }
-      win.document.write(`<!DOCTYPE html><html><head><title>Resúmenes Transportes</title>
-        <style>
-          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; box-sizing: border-box; }
-          body { font-family: ui-sans-serif, system-ui, sans-serif; color: #000; margin: 0; padding: 0; }
-          .page { padding: 20px; page-break-after: always; }
-          .page:last-child { page-break-after: auto; }
-          table { border-collapse: collapse; width: 100%; }
-          th, td { border: 1px solid #999; padding: 6px 8px; font-size: 12px; }
-          thead th { background: #92d050 !important; text-align: left; }
-          .month-tag { background: #e6c0e0 !important; padding: 2px 8px; font-weight: 600; display: inline-block; }
-          tr.tot-row td, .tot-row td { background: #c6efce !important; font-weight: 700; }
-          @media print { @page { size: landscape; margin: 12mm; } }
-        </style>
-      </head><body>${html}<script>window.onload = () => { window.focus(); window.print(); };</script></body></html>`);
-      win.document.close();
-    } finally {
-      setRenderItems(null);
-      setBusy("");
+  // Dibuja fuera de pantalla un PrintableSummary por resumen que pasa los
+  // filtros. Devuelve los resúmenes, o null si no hay ninguno.
+  const renderSummaries = async () => {
+    const items = await buildRenderItems();
+    if (items.length === 0) {
+      toast.warning("No hay resúmenes que coincidan con los filtros.");
+      return null;
     }
+    itemRefs.current = new Array(items.length).fill(null);
+    setRenderItems(items);
+    await waitFor(80); // espera el render
+    return items;
   };
 
-  const handleZip = async () => {
-    setBusy("zip");
-    try {
-      const items = await buildRenderItems();
-      if (items.length === 0) {
-        toast.warning("No hay resúmenes que coincidan con los filtros.");
-        return;
-      }
-      itemRefs.current = new Array(items.length).fill(null);
-      setRenderItems(items);
-      await waitFor(80);
-      const JSZip = (await import("jszip")).default;
-      const zip = new JSZip();
-      const usedNames = new Set();
-      for (let i = 0; i < items.length; i++) {
-        const node = itemRefs.current[i];
-        if (!node) continue;
-        const blob = await captureFullWidthBlob(node);
-        if (!blob) continue;
-        const it = items[i];
-        const base = (it.carrier?.alias || it.payment.carrierId || "resumen")
-          .toString()
-          .replace(/[^a-z0-9_-]+/gi, "_");
-        let name = `${base}_${it.payment.id.slice(-6)}.png`;
-        while (usedNames.has(name)) name = `${base}_${i}.png`;
-        usedNames.add(name);
-        zip.file(name, blob);
-      }
-      const zipBlob = await zip.generateAsync({ type: "blob" });
-      const url = URL.createObjectURL(zipBlob);
-      const a = document.createElement("a");
-      const stamp = localIsoDate();
-      a.href = url;
-      a.download = `resumenes_transportes_${stamp}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (err) {
-      toast.error("Error al generar el ZIP: " + (err.message || err));
-    } finally {
-      setRenderItems(null);
-      setBusy("");
-    }
+  const printAll = async () => {
+    if (!(await renderSummaries())) return;
+    printNodes(itemRefs.current, { title: "Resúmenes Transportes", css: PRINT_SHEET_CSS });
   };
+
+  const zipAll = async () => {
+    const items = await renderSummaries();
+    if (!items) return;
+    const JSZip = (await import("jszip")).default;
+    const zip = new JSZip();
+    const usedNames = new Set();
+    for (let i = 0; i < items.length; i++) {
+      const node = itemRefs.current[i];
+      if (!node) continue;
+      const blob = await captureFullWidthBlob(node);
+      if (!blob) continue;
+      const it = items[i];
+      const base = (it.carrier?.alias || it.payment.carrierId || "resumen")
+        .toString()
+        .replace(/[^a-z0-9_-]+/gi, "_");
+      let name = `${base}_${it.payment.id.slice(-6)}.png`;
+      while (usedNames.has(name)) name = `${base}_${i}.png`;
+      usedNames.add(name);
+      zip.file(name, blob);
+    }
+    const zipBlob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(zipBlob);
+    const a = document.createElement("a");
+    const stamp = localIsoDate();
+    a.href = url;
+    a.download = `resumenes_transportes_${stamp}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const handlePrint = () => run("print", () => printAll().finally(() => setRenderItems(null)), { error: "No se pudo imprimir" });
+  const handleZip = () => run("zip", () => zipAll().finally(() => setRenderItems(null)), { error: "No se pudo generar el ZIP" });
 
   const toggleIn = (set, setter) => (id) =>
     setter((prev) => {

@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { captureFullWidthBlob, captureFullWidthDataUrl } from "../../utils/imageCapture";
-import { useToast } from "../../contexts/ToastContext";
+import { useCaptureActions } from "../../hooks/useCaptureActions";
 import { fmtCurrency } from "../../utils/format";
 import { CarrierSummaryModal } from "./CarrierSummaryModal";
 import { cellH, cell } from "./printStyles";
@@ -35,9 +34,8 @@ const FORTNIGHT_COL_W = 92;
 const CARRIER_COL_W = 150;
 
 export function FortnightBalanceSummary({ carriers, fortnights, payments }) {
-  const toast = useToast();
   const [expanded, setExpanded] = useState(true);
-  const [busy, setBusy] = useState("");
+  const { busy, copy, download, print } = useCaptureActions();
   const printRef = useRef(null);
   // Fila del transportista cuyo detalle se está mirando, o null.
   const [detalle, setDetalle] = useState(null);
@@ -148,82 +146,13 @@ export function FortnightBalanceSummary({ carriers, fortnights, payments }) {
   }, [pendingFortnights, rows]);
   const fortnightCount = pendingFortnights.length;
 
-  const handleCopyImage = async () => {
-    if (!printRef.current) return;
-    setBusy("copy");
-    try {
-      const blob = await captureFullWidthBlob(printRef.current);
-      if (!blob) throw new Error("No se pudo generar la imagen");
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-      toast.success("Imagen copiada");
-    } catch (err) {
-      toast.error("Error: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
-  };
-
-  const handleDownload = async () => {
-    if (!printRef.current) return;
-    setBusy("download");
-    try {
-      const dataUrl = await captureFullWidthDataUrl(printRef.current);
-      const link = document.createElement("a");
-      link.download = showAllSummaries
-        ? "balance-quincenas-activas.png"
-        : "balance-quincenas.png";
-      link.href = dataUrl;
-      link.click();
-    } finally {
-      setBusy("");
-    }
-  };
-
-  // Imprime la MISMA captura que 📋 y 📥, no el HTML de la tabla: el navegador
-  // no pagina de costado y un pivot más ancho que la hoja perdería las
-  // quincenas de la derecha. `captureFullWidthDataUrl` clona fuera de pantalla
-  // a `max-content`, así las tres salidas muestran lo mismo; a cambio, el PDF
-  // no trae texto seleccionable.
-  const handlePrint = async () => {
-    if (!printRef.current) return;
-    setBusy("print");
-    try {
-      const dataUrl = await captureFullWidthDataUrl(printRef.current);
-      const win = window.open("", "_blank", "width=900,height=700");
-      if (!win) {
-        toast.warning("Permite las ventanas emergentes para imprimir.");
-        return;
-      }
-      // `print()` va en el onload de la imagen: antes de que se decodifique el
-      // dataUrl, la hoja sale en blanco.
-      // Siempre una sola hoja: la imagen se escala al área de página
-      // (`max-height: 100vh` en impresión, con `width/height: auto` para
-      // mantener la proporción) en vez de partir el balance en dos.
-      win.document.write(`<!DOCTYPE html><html><head><title>${titulo}</title>
-        <style>
-          * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; box-sizing: border-box; }
-          /* Apaisado. Va al nivel superior y no adentro de @media print: la
-             regla solo aplica a medios paginados igual, y anidada hay
-             navegadores que la ignoran y salen en vertical. Sin tamaño de
-             papel explícito para respetar el que tenga configurado (carta o
-             A4) y solo cambiarle la orientación. */
-          @page { size: landscape; margin: 8mm; }
-          body { margin: 0; padding: 16px; background: #fff; }
-          img { display: block; margin: 0 auto; max-width: 100%; height: auto; }
-          @media print {
-            html, body { height: 100%; }
-            body { padding: 0; }
-            img { max-width: 100%; max-height: 100vh; width: auto; height: auto; break-inside: avoid; page-break-inside: avoid; }
-          }
-        </style>
-      </head><body><img alt="${titulo}" src="${dataUrl}" onload="window.focus(); window.print();"></body></html>`);
-      win.document.close();
-    } catch (err) {
-      toast.error("Error: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
-  };
+  const handleCopyImage = () => copy(printRef.current);
+  const handleDownload = () =>
+    download(printRef.current, showAllSummaries ? "balance-quincenas-activas.png" : "balance-quincenas.png");
+  // Imprime la misma imagen que 📋 y 📥, en una sola hoja apaisada, y no el
+  // HTML de la tabla: el navegador no pagina de costado, y un pivot más ancho
+  // que la hoja perdería las quincenas de la derecha.
+  const handlePrint = () => print(printRef.current, { asImage: true, title: titulo });
 
   return (
     <div className="mb-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
