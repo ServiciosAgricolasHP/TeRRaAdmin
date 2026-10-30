@@ -152,6 +152,16 @@ describe("buildDailyRows", () => {
     expect(withRate[0]).toMatchObject({ heTotal: 10000, bonosTotal: 0 });
   });
 
+  it("en tratoHE cuenta como jornada solo el día con base", () => {
+    const labor = { id: "L1", type: "tratoHE" };
+    const { rows } = buildDailyRows(labor, {
+      a: { date: D1, workerRut: "1-9", qty: 30000, overtimeHours: 2, amount: 37000 },
+      b: { date: D1, workerRut: "2-7", qty: 30000, amount: 30000 },
+      c: { date: D1, workerRut: "3-5", qty: 0, overtimeHours: 3, amount: 10500 },
+    });
+    expect(rows[0]).toMatchObject({ workdayCount: 2, workerCount: 3, qty: 60000, overtimeHours: 5 });
+  });
+
   it("en etapas arma una fila por etapa con su nombre y si cuenta", () => {
     const labor = { id: "L1", type: "tratoEtapas", stages: [{ id: "s1", name: "Corte", counts: true }, { id: "s2", name: "Amarre", counts: false }] };
     const wdMap = {
@@ -170,10 +180,10 @@ describe("laborTotals", () => {
     const totals = laborTotals([
       { qty: 6, amount: 600, stageCounts: true, workerCount: 1 },
       { qty: 4, amount: 200, stageCounts: false, workerCount: 1, pisoAmount: 50, pisoCount: 1 },
-      { qty: 2, amount: 100, workerCount: 2, heTotal: 10, bonosTotal: 5, overtimeHours: 1 },
+      { qty: 2, amount: 100, workerCount: 2, heTotal: 10, bonosTotal: 5, overtimeHours: 1, workdayCount: 2 },
     ]);
     expect(totals).toEqual({
-      qty: 12, countedQty: 8, overtimeHours: 1, amount: 900, pisoAmount: 50, pisoCount: 1, workerDays: 4, heTotal: 10, bonosTotal: 5,
+      qty: 12, countedQty: 8, overtimeHours: 1, amount: 900, pisoAmount: 50, pisoCount: 1, workerDays: 4, heTotal: 10, bonosTotal: 5, workdayCount: 2,
     });
   });
 });

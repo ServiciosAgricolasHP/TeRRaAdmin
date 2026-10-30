@@ -25,8 +25,10 @@ import { logger } from "firebase-functions/v2";
 import { initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 import { runCommitmentDigest, TIME_ZONE } from "./commitments.js";
 import { publishPortal } from "./portal.js";
+import { backupDownloadLink, runBackup } from "./backup.js";
 
 // La base NO se llama `(default)`: es `hpdatabase`. Un trigger que no la
 // declara queda suscrito a una base que no existe y nunca dispara, sin dar
@@ -174,6 +176,25 @@ const handlers = {
       functionJobId,
     });
   },
+
+  // Respalda todas las colecciones menos la auditoría en un JSON en Cloud
+  // Storage (`./backup.js`). El avance queda en el campo `progress` del job.
+  async backup(functionJob, { functionJobId }) {
+    await assertAdmin(functionJob.requestedBy, "Solo un admin puede generar un respaldo.");
+    const ref = db.collection(FUNCTION_JOBS).doc(functionJobId);
+    return runBackup(db, getStorage().bucket(), {
+      trigger: "manual",
+      requestedBy: functionJob.requestedBy,
+      requestedByEmail: functionJob.requestedByEmail || null,
+      onProgress: (progress) => ref.update({ progress }),
+    });
+  },
+
+  // Enlace para bajar un respaldo (`params.backupId`), que vence en 15 minutos.
+  async backupDownloadUrl(functionJob) {
+    await assertAdmin(functionJob.requestedBy, "Solo un admin puede bajar un respaldo.");
+    return backupDownloadLink(getStorage().bucket(), functionJob.params?.backupId);
+  },
 };
 
 export const runFunctionJob = onDocumentCreated(
@@ -181,8 +202,10 @@ export const runFunctionJob = onDocumentCreated(
     document: FUNCTION_JOBS + "/{jobId}",
     database: DATABASE,
     region: REGION,
-    memory: "256MiB",
-    timeoutSeconds: 120,
+    // Memoria y tiempo para el respaldo, el job más largo: lee la base entera.
+    // Los demás terminan en segundos.
+    memory: "1GiB",
+    timeoutSeconds: 540,
     secrets: [SMTP_PASS],
     // Sin reintento automático: un job que falló se vuelve a pedir a mano desde
     // la Consola. Reintentar solo es seguro cuando la operación es idempotente,
@@ -262,10 +285,26 @@ export const commitmentsDaily = onSchedule(
   },
 );
 
-// TODO: handler `backup` que exporte cada colección (menos `logs`) a un JSON en
-// Cloud Storage, con el progreso en el doc del job y restauración colección por
-// colección, como complemento del backup nativo diario de Firestore. Con sus
-// chequeos en `functions/verify.mjs`.
+// Respaldo semanal en JSON (`./backup.js`): los domingos a las 3:00 de Chile.
+// Se reintenta una vez si falla; cada intento escribe su propio archivo y la
+// limpieza deja los últimos 12.
+export const weeklyBackup = onSchedule(
+  {
+    schedule: "0 3 * * 0",
+    timeZone: TIME_ZONE,
+    region: REGION,
+    memory: "1GiB",
+    timeoutSeconds: 540,
+    retryCount: 1,
+  },
+  async () => {
+    const result = await runBackup(db, getStorage().bucket(), { trigger: "scheduled" });
+    logger.info("weeklyBackup", result);
+  },
+);
+
+// TODO: restaurar una colección desde un respaldo en JSON (`./backup.js`), con
+// confirmación escribiendo una palabra: reescribe la colección entera.
 
 // TODO: más jobs para Usuarios (`src/screens/Users.jsx`), con el patrón de
 // `createUser`: listar las cuentas de Authentication sin perfil, y desactivar o

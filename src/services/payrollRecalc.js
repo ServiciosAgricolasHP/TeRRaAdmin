@@ -48,6 +48,7 @@ export function liveProfileOf(w) {
   return {
     name: w?.name || "",
     paymentRut: bd[0] || w?.rut || "",
+    paymentName: w?.paymentName || "",
     accountNumber: bd[1] || "",
     bankCode: bd[3] || "",
     accountType: bd[2] != null ? Number(bd[2]) : 3,
@@ -59,6 +60,7 @@ export function liveProfileOf(w) {
 const PROFILE_FIELDS = [
   { key: "name", label: "Nombre" },
   { key: "paymentRut", label: "RUT de pago" },
+  { key: "paymentName", label: "Titular de la cuenta" },
   { key: "accountNumber", label: "N° de cuenta" },
   { key: "bankCode", label: "Banco" },
   { key: "accountType", label: "Tipo de cuenta" },
@@ -256,6 +258,7 @@ export async function planPayrollRecalc(payroll, { cycles = [], faenas = [], sub
       rut: a.rut,
       workerId: a.workerId || a.rut,
       paymentRut: bd[0] || a.rut,
+      paymentName: w?.paymentName || "",
       name: w?.name || "(sin nombre)",
       accountNumber: bd[1] || "",
       bankCode: bd[3] || "",

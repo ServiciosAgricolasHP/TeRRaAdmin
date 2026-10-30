@@ -627,6 +627,7 @@ export function planAddWorkdays({
       rut: a.rut,
       workerId: key,
       paymentRut: perfil.paymentRut || a.rut,
+      paymentName: perfil.paymentName || "",
       name: perfil.name || "(sin nombre)",
       accountNumber: perfil.accountNumber || "",
       bankCode: perfil.bankCode || "",

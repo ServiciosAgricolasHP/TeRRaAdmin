@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { laborsDataOf } from "./cycleSummary";
 import { chargeCarriersOf, chargeLaborsOf } from "./cycleCharge";
-import { carrierColumns, cellText, laborColumns, summarySections } from "./summaryTables";
+import { carrierColumns, cellText, hiddenColumnsOf, laborColumns, summarySections, toggledColumns } from "./summaryTables";
 
 const D1 = "2026-10-01";
 const D2 = "2026-10-02";
@@ -59,26 +59,72 @@ describe("laborColumns", () => {
     expect(totalTexts(cols, section.totals)).toEqual(["2", "", "$60.000", "", "$60.000", "2"]);
   });
 
-  it("en cobrar, horas extras muestra las trabajadas, las que se cobran, la tarifa y el Total HE", () => {
-    const charge = chargeLaborsOf(laborsData, [], {
-      LH: {
-        rowOverrides: { [D1]: { overtimeHours: 1, rate: 6000 } },
+  describe("horas extras en cobrar", () => {
+    const HE_DAY = wdMapOf([
+      ["0_0", wd(ANA, D1, { qty: 30000, overtimeHours: 2, hasManejo: true, amount: 44000 })],
+      ["0_0", wd(BETO, D1, { qty: 30000, amount: 30000 })],
+      ["0_0", wd(ANA, D2, { qty: 30000, overtimeHours: 1, amount: 35000 })],
+    ]);
+    const heData = laborsDataOf([HE], { LH: HE_DAY }, {}, {});
+    const heSection = (cfg) => summarySections({ mode: "charge", labors: chargeLaborsOf(heData, [], { LH: cfg }, {}), carriers: [], titles, carrierById })[0];
+
+    it("se ve como las jornadas, con las horas extras en una columna y la tarifa en el encabezado", () => {
+      const section = heSection({});
+      const cols = laborColumns(section, { mode: "charge", hiddenColumns: new Set(["personas"]), catalogs: {} });
+      expect(cols.map((c) => c.label)).toEqual([
+        "Detalle de jornada", "Fecha", "Jornadas", "Valor", "Horas extras ($5.000 c/u)", "Valor total", "Transporte", "Total",
+      ]);
+      expect(texts(cols, section.rows)).toEqual([
+        ["Jornadas HE", "01-oct", "2", "$30.000", "$10.000 (x 2 HE)", "$70.000", "$ -", "$70.000"],
+        ["Jornadas HE", "02-oct", "1", "$30.000", "$5.000 (x 1 HE)", "$35.000", "$ -", "$35.000"],
+      ]);
+      expect(totalTexts(cols, section.totals)).toEqual(["3", "", "$15.000 (x 3 HE)", "$105.000", "", "$105.000"]);
+      // Sin ajustes se cobra lo mismo: la base que se pagó más las horas a la tarifa.
+      expect(section.totals.amount).toBe(60000 + 30000 + 3 * 5000);
+    });
+
+    it("ajustar las jornadas o su valor recalcula la base, y las horas se editan con su tarifa", () => {
+      const section = heSection({ rowOverrides: { [D1]: { workdayCount: 3 }, [D2]: { workdayRate: 40000, rate: 6000 } } });
+      expect(section.rows.map((r) => [r.chargedWorkdayCount, r.chargedWorkdayRate, r.chargedAmount])).toEqual([
+        [3, 30000, 3 * 30000 + 2 * 5000],
+        [1, 40000, 40000 + 6000],
+      ]);
+      const cols = laborColumns(section, { mode: "charge", catalogs: {} });
+      const he = cols.find((c) => c.key === "he");
+      // Con tarifas distintas, cada celda lleva la suya.
+      expect(he.label).toBe("Horas extras");
+      expect(texts([he], section.rows)).toEqual([["$10.000 (x 2 HE a $5.000)"], ["$6.000 (x 1 HE a $6.000)"]]);
+      expect(he.edits(section.rows[0]).map((e) => [e.field, e.raw])).toEqual([["overtimeHours", 2], ["rate", 5000]]);
+      expect(cols.find((c) => c.key === "qty").edit(section.rows[0])).toMatchObject({ field: "workdayCount", raw: 3 });
+      expect(cols.find((c) => c.key === "rate").edit(section.rows[0])).toMatchObject({ field: "workdayRate", raw: 30000 });
+    });
+
+    it("una base ajustada en pesos se respeta y su valor por jornada sale de ella", () => {
+      const section = heSection({
+        rowOverrides: { [D1]: { qty: 70000 } },
         extraRows: [{ id: "x1", date: "", qty: 10000, overtimeHours: 2, rate: "", amount: "" }],
-      },
-    }, {});
-    const section = summarySections({ mode: "charge", labors: charge, carriers: [], titles, carrierById })
-      .find((s) => s.laborType === "tratoHE");
-    const cols = laborColumns(section, { mode: "charge", catalogs: {} });
-    expect(cols.map((c) => c.label)).toEqual([
-      "Detalle de jornada", "Fecha", "Base $", "HE trabajadas", "HE a cobrar", "Tarifa HE", "Total HE",
-      "Valor total", "Transporte", "Total", "Personas", "Bonos",
-    ]);
-    expect(texts(cols, section.rows).map((r) => r.slice(2, 8))).toEqual([
-      ["$30.000", "2", "1", "$6.000", "$6.000", "$36.000"],
-      ["$10.000", "—", "2", "$5.000", "$10.000", "$20.000"],
-    ]);
-    const total = Object.fromEntries(cols.filter((c) => c.total).map((c) => [c.key, cellText(c, c.total(section.totals))]));
-    expect(total).toMatchObject({ qty: "$40.000", heWorked: "2", he: "3", heRate: "", rate: "$16.000", valorTotal: "$56.000" });
+      });
+      expect(section.rows.map((r) => [r.chargedWorkdayCount, r.chargedWorkdayRate, r.chargedAmount])).toEqual([
+        [2, 35000, 70000 + 2 * 5000],
+        [1, 30000, 30000 + 5000],
+        [0, null, 10000 + 2 * 5000],
+      ]);
+    });
+
+    it("una fila manual se cobra por jornadas al valor de la labor", () => {
+      const section = heSection({ extraRows: [{ id: "x1", date: D2, workdayCount: 4, overtimeHours: "", rate: "", amount: "" }] });
+      const extra = section.rows.find((r) => r.isExtra);
+      expect([extra.chargedWorkdayCount, extra.chargedWorkdayRate, extra.chargedAmount]).toEqual([4, 30000, 120000]);
+    });
+
+    it("sin cobrar horas extras no hay columna ni monto de horas, y los ajustes quedan guardados", () => {
+      const section = heSection({ chargeOvertime: false, rowOverrides: { [D1]: { overtimeHours: 4 } } });
+      expect(section.overtimeToggles).toEqual([{ laborId: "LH", name: "Jornadas HE", on: false }]);
+      expect(laborColumns(section, { mode: "charge", catalogs: {} }).map((c) => c.key)).not.toContain("he");
+      expect(section.rows.map((r) => r.chargedAmount)).toEqual([60000, 30000]);
+      expect(section.totals.heTotal).toBe(0);
+      expect(heSection({ rowOverrides: { [D1]: { overtimeHours: 4 } } }).rows[0].chargedAmount).toBe(60000 + 4 * 5000);
+    });
   });
 
   it("las horas trabajadas y la tarifa solo aparecen en cobrar", () => {
@@ -99,6 +145,20 @@ describe("laborColumns", () => {
     expect(cols.find((c) => c.key === "rate").edit(section.rows[0])).toEqual({ field: "rate", raw: 30000 });
     const [paySection] = summarySections({ mode: "pay", labors: laborsData, carriers: [], titles, carrierById });
     expect(laborColumns(paySection, { mode: "pay", catalogs: {} }).find((c) => c.key === "rate").edit(paySection.rows[0])).toBe(null);
+  });
+});
+
+describe("columnas ocultas", () => {
+  it("Personas empieza oculta y se muestra con shownColumns", () => {
+    expect([...hiddenColumnsOf()]).toEqual(["personas"]);
+    expect([...hiddenColumnsOf(["transport"], ["personas"])]).toEqual(["transport"]);
+  });
+
+  it("mostrar u ocultar guarda cada columna en su lista", () => {
+    expect(toggledColumns([], [], "personas")).toEqual({ hiddenColumns: [], shownColumns: ["personas"] });
+    expect(toggledColumns([], ["personas"], "personas")).toEqual({ hiddenColumns: [], shownColumns: [] });
+    expect(toggledColumns(["total"], [], "transport")).toEqual({ hiddenColumns: ["total", "transport"], shownColumns: [] });
+    expect(toggledColumns(["total"], [], "total")).toEqual({ hiddenColumns: [], shownColumns: [] });
   });
 });
 

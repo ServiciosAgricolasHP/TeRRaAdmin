@@ -13,6 +13,7 @@ import {
 } from "../../utils/cycleSummary";
 import { importedLaborsDataOf, chargeLaborsOf, chargeCarriersOf, chargeSubtotal } from "../../utils/cycleCharge";
 import { fmtCurrency } from "../../utils/format";
+import { DEFAULT_HIDDEN_COLUMNS, hiddenColumnsOf } from "../../utils/summaryTables";
 import { ChargeEditor } from "./cycleSummaryModal/ChargeEditor";
 import { ColumnsMenu } from "./cycleSummaryModal/ColumnsMenu";
 import { EditingWatermark } from "./cycleSummaryModal/EditingWatermark";
@@ -112,7 +113,14 @@ export default function CycleSummaryModal({
     toast,
   });
 
-  const hiddenColumns = useMemo(() => new Set(charge.hiddenColumns || []), [charge.hiddenColumns]);
+  const hiddenColumns = useMemo(
+    () => hiddenColumnsOf(charge.hiddenColumns, charge.shownColumns),
+    [charge.hiddenColumns, charge.shownColumns],
+  );
+  // El botón de columnas se marca cuando se ocultó o se mostró algo distinto
+  // de lo que viene por defecto.
+  const columnsCustomized = hiddenColumns.size !== DEFAULT_HIDDEN_COLUMNS.length
+    || DEFAULT_HIDDEN_COLUMNS.some((k) => !hiddenColumns.has(k));
 
   const laborsData = useMemo(() => laborsDataOf(cycle?.labors, workdaysByLabor, dayPrices, catalogs), [cycle?.labors, workdaysByLabor, catalogs, dayPrices]);
 
@@ -309,10 +317,10 @@ export default function CycleSummaryModal({
             <button
               ref={colsBtnRef}
               onClick={() => setColsMenuOpen((v) => !v)}
-              className={`rounded-md border px-2 py-1 text-xs ${hiddenColumns.size > 0 ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)]" : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"}`}
+              className={`rounded-md border px-2 py-1 text-xs ${columnsCustomized ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)]" : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"}`}
               title="Mostrar / ocultar columnas"
             >
-              👁 Columnas{hiddenColumns.size > 0 ? ` (${hiddenColumns.size} ocultas)` : ""}
+              👁 Columnas{hiddenColumns.size > 0 ? ` (${hiddenColumns.size} oculta${hiddenColumns.size === 1 ? "" : "s"})` : ""}
             </button>
             {colsMenuOpen && (
               <ColumnsMenu
@@ -392,6 +400,7 @@ export default function CycleSummaryModal({
           editLaborRow={editChargeLaborRow}
           addLaborRow={addChargeLaborExtraRow}
           removeLaborRow={removeChargeLaborExtraRow}
+          toggleLaborOvertime={(laborId, on) => updateChargeLabor(laborId, { chargeOvertime: on })}
           editCarrierRow={editChargeCarrierRow}
           addCarrierRow={addChargeCarrierExtraRow}
           removeCarrierRow={removeChargeCarrierExtraRow}

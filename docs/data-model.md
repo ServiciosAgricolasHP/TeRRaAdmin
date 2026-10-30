@@ -136,6 +136,7 @@ Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
 `PayrollItem` (embebido):
 - `rut` (el campo real en código es `rut`, no `workerRut` a pesar de lo que sugiere el nombre del doc — mismatch histórico), `workerId` (agregado en fase 2, ref estable al worker), `workerName`, `bankDetails`
 - `amount`, `advance`, `anticiposTotal`, `adelantosTotal` (**legacy: siempre 0** de acá en adelante; se sigue escribiendo solo para que los snapshots viejos se lean igual)
+- `paymentRut`, `paymentName`, `accountNumber`, `bankCode`, `accountType`, `email`, `groupLeader`: los datos de cuenta y de grupo de la ficha al generar, al agregar a la persona o al recalcular. `paymentName` es el titular de la cuenta (`worker.paymentName`; vacío si la ficha no lo tiene) y el archivo del banco lo usa cuando la cuenta es de otra persona; las nóminas anteriores al campo no lo traen hasta que se recalculan
 - `byCycle: { [cycleId]: {...} }`
 - `workdayIds: string[]`, `advanceIds: string[]`
 
@@ -598,7 +599,7 @@ Colección aparte y no un campo en `cycles` porque los docs de `cycles` se traen
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | ref→`cycles` | el cycleId |
-| `cobrar` | object | `{ labors, carriers, withIva, discount, discountNote, pendingBalance, pendingBalanceNote, hiddenColumns }` — ver `labors[laborId].rowOverrides/extraRows` en AGENTS.md. `labors[laborId].mergeInto?: laborId` muestra esa labor dentro de la tabla de otra (solo presentación). `importedLabors?: [{ id, sourceCycleId, sourceCycleLabel, sourceLaborId, labor, rows, containers, redDates }]` son labores de otros ciclos copiadas al resumen: la definición de la labor (sin `workers` ni `bonusDefaults`, con `id` propio `imp_…`) y sus filas diarias; sus tarifas y ajustes van en `labors[id]` como los de cualquier labor. Una versión anterior importaba como filas en `labors[laborId].extraRows[]` con `sourceCycleId`/`sourceCycleLabel`: esas filas siguen leyéndose |
+| `cobrar` | object | `{ labors, carriers, withIva, discount, discountNote, pendingBalance, pendingBalanceNote, hiddenColumns, shownColumns }` — ver `labors[laborId].rowOverrides/extraRows` en AGENTS.md. `hiddenColumns` son las columnas que se ocultaron y `shownColumns`, las que empiezan ocultas (`personas`) y se mostraron. En tratoHE, un override o una fila manual puede traer `workdayCount` y `workdayRate` (jornadas y valor de la jornada que se cobran), y `labors[laborId].chargeOvertime: false` deja de cobrar las horas extras de la labor. `labors[laborId].mergeInto?: laborId` muestra esa labor dentro de la tabla de otra (solo presentación). `importedLabors?: [{ id, sourceCycleId, sourceCycleLabel, sourceLaborId, labor, rows, containers, redDates }]` son labores de otros ciclos copiadas al resumen: la definición de la labor (sin `workers` ni `bonusDefaults`, con `id` propio `imp_…`) y sus filas diarias; sus tarifas y ajustes van en `labors[id]` como los de cualquier labor. Una versión anterior importaba como filas en `labors[laborId].extraRows[]` con `sourceCycleId`/`sourceCycleLabel`: esas filas siguen leyéndose |
 | `titles` | object | `{ main, subtitle, laborNames, carrierNames }` |
 | `updatedAt` | timestamp | escrito con `serverTimestamp()` en cada guardado debounced |
 | `updatedBy`, `updatedByEmail` | string \| null | quién lo tocó al final; se muestra en el header del modal |
@@ -626,16 +627,33 @@ Cola de trabajos del backend. La app crea el job y el trigger `runFunctionJob` (
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | string | autoId |
-| `type` | string | handler que se ejecuta (`ping`, `createUser`) |
-| `params` | object? | datos del job. `createUser`: `{ email, role, alias?, useExisting? }` |
+| `type` | string | handler que se ejecuta (`ping`, `createUser`, `sendCommitmentDigest`, `publishPortal`, `backup`, `backupDownloadUrl`) |
+| `params` | object? | datos del job. `createUser`: `{ email, role, alias?, useExisting? }`; `publishPortal`: `{ payrollId }`; `backupDownloadUrl`: `{ backupId }` |
 | `status` | `"pending"` \| `"running"` \| `"done"` \| `"error"` | nace `pending`; la función lo pasa a `running` en una transacción antes de ejecutarlo |
 | `requestedBy` | string | uid de quien lo pidió; las reglas exigen que sea el de la sesión |
 | `requestedByEmail` | string? | |
 | `requestedAt` | ts | |
 | `startedAt`, `finishedAt` | ts? | los escribe la función |
-| `result` | any? | lo que devuelve el handler, si terminó bien |
+| `progress` | object? | avance de un job largo, mientras corre. `backup`: `{ step, total, collection, docs }`, al terminar cada colección |
+| `result` | any? | lo que devuelve el handler, si terminó bien. `backup`: `{ id, path, collectionCount, totalDocs, bytes, pruned }`; `backupDownloadUrl`: `{ url, expiresAt }` |
 | `error` | string? | mensaje, si falló |
-| `errorCode` | string? | código que la app reconoce. `createUser`: `account-exists`, `profile-exists`, `not-admin`, `invalid-email`, `invalid-role` |
+| `errorCode` | string? | código que la app reconoce. `createUser`: `account-exists`, `profile-exists`, `not-admin`, `invalid-email`, `invalid-role`. `backup`: `not-admin`, `no-bucket`, `storage-denied`. `backupDownloadUrl`: `not-admin`, `invalid-params`, `not-found`, `cannot-sign` |
+
+### `backups`
+Ficha de cada respaldo en JSON de la base (`functions/backup.js`). El archivo está en Cloud Storage; la ficha la escribe la función al terminarlo y se borra junto con el archivo cuando deja de estar entre los últimos 12. La Consola admin la lee y no la escribe.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | el instante en que empezó, en UTC (`2026-11-01T06-00-00-000Z`); es también el nombre del archivo |
+| `path`, `bucket` | string | el archivo en Cloud Storage: `backups/{id}.json`, guardado con gzip (se baja descomprimido) |
+| `createdAt`, `finishedAt` | string (ISO) | |
+| `trigger` | `"scheduled"` \| `"manual"` | el semanal (`weeklyBackup`) o el botón de la Consola admin |
+| `requestedBy`, `requestedByEmail` | string? | quién lo pidió; `null` en el semanal |
+| `collections` | `{ [colección]: number }` | documentos respaldados de cada colección (todas menos `logs`) |
+| `subcollections` | `{ [grupo]: number }` | documentos de cada subcolección, por su nombre de grupo (`entry`, de `weights/{fecha}/entry`) |
+| `collectionCount`, `totalDocs` | number | |
+| `bytes` | number | tamaño del archivo comprimido |
+
+El archivo es `{ format: "terra-backup", version: 1, createdAt, database, excluded, collections: { <colección>: [{ id, data }] }, subcollections: { <grupo>: [{ path, data }] }, counts }`. Los valores que JSON no tiene van como `{ __type, … }`: `timestamp` (`seconds`, `nanoseconds`, `iso`), `reference` (`path`), `geopoint`, `bytes` (`base64`) y `number` (`NaN`, `Infinity`).
 
 ### `logs`
 Auditoría — una fila por mutación.

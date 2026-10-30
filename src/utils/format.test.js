@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  fmtBytes,
   fmtCurrency,
   fmtNumber,
   fmtCompactCLP,
@@ -150,5 +151,20 @@ describe("fmtMonthKey", () => {
     // no lo detecta y sale "undefined sura". Lo esperado sería devolver la clave
     // tal cual, como con un mes fuera de rango.
     expect(fmtMonthKey("basura")).toBe("undefined sura");
+  });
+});
+
+describe("fmtBytes", () => {
+  it("usa la unidad que deja un número corto", () => {
+    expect(fmtBytes(850)).toBe("850 B");
+    expect(fmtBytes(12 * 1024 + 300)).toBe("12 KB");
+    expect(fmtBytes(3.24 * 1024 ** 2)).toBe("3,2 MB");
+    expect(fmtBytes(5 * 1024 ** 2)).toBe("5 MB");
+    expect(fmtBytes(1.5 * 1024 ** 3)).toBe("1,5 GB");
+  });
+
+  it("vacío o inválido es cero", () => {
+    expect(fmtBytes(undefined)).toBe("0 B");
+    expect(fmtBytes("abc")).toBe("0 B");
   });
 });

@@ -1,9 +1,12 @@
+import { Fragment } from "react";
 import { cellText, laborColumns } from "../../../utils/summaryTables";
 import { cellH, cell, chargeDateInputStyle, inputVal, chargeInputStyle } from "./tableStyles";
 
 // La tabla día a día de una labor (o de una tabla juntada) del resumen del
 // ciclo. Las columnas y sus valores salen de `laborColumns`, las mismas que
 // escribe el Excel; acá se dibujan, con los inputs del modo cobrar en edición.
+// En cobrar, una tabla de horas extras lleva en edición el interruptor
+// "Cobrar horas extras" de cada labor (`onToggleOvertime`).
 export function LaborTable({
   section,
   mode,
@@ -13,8 +16,9 @@ export function LaborTable({
   onEditRow,
   onAddRow,
   onRemoveRow,
+  onToggleOvertime,
 }) {
-  const { laborId, laborType, displayName, rows, totals, redDates } = section;
+  const { laborId, laborType, displayName, rows, totals, redDates, overtimeToggles } = section;
   const isCharge = mode === "charge";
   const editable = isCharge && editMode;
   if (rows.length === 0 && !isCharge) return null;
@@ -39,20 +43,38 @@ export function LaborTable({
   const handleRemove = (r) => { if (onRemoveRow) onRemoveRow(laborOf(r), r.extraId); };
 
   const rowCellStyle = (col, v) => {
-    if (col.key === "heWorked") return { ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#555" };
     if (col.key === "piso") return { ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", color: v !== "—" ? "#b45309" : "#999" };
     if (col.key === "total") return { ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600 };
     if (col.key === "personas") return { ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", padding: editable ? 3 : "5px 8px" };
     if (col.key === "bonos") return { ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", color: v !== "—" ? "#b45309" : "#999" };
-    return { ...cell, textAlign: "right", padding: editable && col.edit ? 3 : "5px 8px" };
+    return { ...cell, textAlign: "right", whiteSpace: col.edits ? "nowrap" : undefined, padding: editable && (col.edit || col.edits) ? 3 : "5px 8px" };
   };
   const totalCellStyle = (col) => {
     const base = { ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums" };
-    if (col.key === "heWorked") return { ...base, color: "#555" };
     if (col.key === "piso" || col.key === "bonos") return { ...base, color: "#b45309" };
     return base;
   };
   const renderCell = (col, r) => {
+    const edits = editable && col.edits ? col.edits(r) : null;
+    if (edits) {
+      return (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
+          {edits.map((e) => (
+            <Fragment key={e.field}>
+              <input
+                type="number"
+                step={e.step}
+                value={inputVal(e.raw)}
+                onChange={(ev) => handleField(r, e.field, ev.target.value)}
+                style={{ ...chargeInputStyle, width: e.width }}
+                title={e.title}
+              />
+              {e.suffix && <span style={{ fontSize: 10, color: "#666" }}>{e.suffix}</span>}
+            </Fragment>
+          ))}
+        </span>
+      );
+    }
     const edit = editable && col.edit ? col.edit(r) : null;
     if (edit) {
       return (
@@ -73,6 +95,16 @@ export function LaborTable({
 
   return (
     <div style={{ marginBottom: 14 }}>
+      {editable && overtimeToggles && onToggleOvertime && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 4, fontSize: 12 }}>
+          {overtimeToggles.map((t) => (
+            <label key={t.laborId} style={{ display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
+              <input type="checkbox" checked={t.on} onChange={() => onToggleOvertime(t.laborId, !t.on)} />
+              Cobrar horas extras{overtimeToggles.length > 1 ? ` · ${t.name}` : ""}
+            </label>
+          ))}
+        </div>
+      )}
       <table style={{ borderCollapse: "collapse", width: "100%" }}>
         <thead>
           <tr style={{ background: "#9dc3e6" }}>
@@ -168,11 +200,9 @@ export function LaborTable({
           )}
           <tr style={{ background: "#c6efce" }}>
             <td style={{ ...cell, fontWeight: 700 }} colSpan={2}>Subtotal {displayName}</td>
-            {dataColumns.map((col) =>
-              col.key === "heRate"
-                ? <td key={col.key} style={cell}></td>
-                : <td key={col.key} style={totalCellStyle(col)}>{cellText(col, col.total(totals))}</td>,
-            )}
+            {dataColumns.map((col) => (
+              <td key={col.key} style={totalCellStyle(col)}>{cellText(col, col.total(totals))}</td>
+            ))}
             {editable && <td style={cell}></td>}
           </tr>
         </tbody>

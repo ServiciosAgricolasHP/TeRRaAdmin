@@ -33,6 +33,12 @@
 //      cuenta en 4 dígitos, sin correo ni RUT de pago), la cabecera con el
 //      nombre y el estado vivos de la nómina, borre las fichas de quienes ya
 //      no están y lo pida solo un admin.
+//   7. Que el respaldo deje en Cloud Storage un JSON con todas las colecciones
+//      menos `logs`, más las subcolecciones, con los tipos de Firestore
+//      marcados; su ficha en `backups` y el avance en el job; que guarde solo
+//      los últimos 12, que lo pida solo un admin, y que el enlace de descarga
+//      rechace un id inválido o un respaldo que no existe. Firmar el enlace no
+//      se prueba: el emulador no tiene credenciales para firmar.
 //
 // **Lo que este archivo NO puede probar**: que el trigger esté suscrito a la
 // base correcta. El emulador de Firestore no soporta bases múltiples —lo dice
@@ -43,25 +49,29 @@
 // Un trigger apuntado a la base equivocada no da error: nunca dispara. Eso solo
 // se prueba en producción, con el botón de ping de la Consola.
 
+import { gunzipSync } from "node:zlib";
 import { initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, Timestamp } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 import { runCommitmentDigest } from "./commitments.js";
+import { backupIdOf, runBackup } from "./backup.js";
 
 const PROJECT = "demo-terra-test";
 const DATABASE = "hpdatabase";
 const FUNCTION_JOBS = "functionJobs";
 const TIMEOUT_MS = 30_000;
 
-if (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_HOST) {
+if (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_HOST || !process.env.FIREBASE_STORAGE_EMULATOR_HOST) {
   console.error(
-    "FIRESTORE_EMULATOR_HOST o FIREBASE_AUTH_EMULATOR_HOST no están puestas. Este script " +
+    "FIRESTORE_EMULATOR_HOST, FIREBASE_AUTH_EMULATOR_HOST o FIREBASE_STORAGE_EMULATOR_HOST no están puestas. Este script " +
       "corre bajo `firebase emulators:exec`, que las define solas. Correrlo suelto no tiene sentido.",
   );
   process.exit(1);
 }
 
-initializeApp({ projectId: PROJECT });
+// El bucket es el que el emulador de functions le pasa a la función.
+initializeApp({ projectId: PROJECT, storageBucket: `${PROJECT}.appspot.com` });
 const db = getFirestore(DATABASE);
 
 let failures = 0;
@@ -372,6 +382,87 @@ console.log("portal de trabajadores");
   check("solo un admin publica", denied?.errorCode === "not-admin", denied);
   const missing = await waitForResolution(await enqueue({ type: "publishPortal", requestedBy: "verify-admin", params: { payrollId: "no-existe" } }));
   check("una nómina que no existe falla sin tocar lo publicado", missing?.errorCode === "not-found" && (await db.collection("portalMeta").doc("current").get()).data()?.payrollId === "pay-42", missing);
+}
+
+console.log("");
+console.log("respaldo");
+{
+  const bucket = getStorage().bucket();
+  const backupFiles = async () => (await bucket.getFiles({ prefix: "backups/" }))[0].map((f) => f.name).sort();
+  const readBackup = async (path) => {
+    const [raw] = await bucket.file(path).download();
+    const text = raw[0] === 0x1f && raw[1] === 0x8b ? gunzipSync(raw).toString("utf8") : raw.toString("utf8");
+    return JSON.parse(text);
+  };
+
+  await db.collection("backupProbe").doc("p1").set({
+    when: Timestamp.fromDate(new Date("2026-10-01T12:00:00Z")),
+    owner: db.collection("worker").doc("11111111-1"),
+    nested: { list: [1, "dos", null], ok: true },
+  });
+  await db.collection("weights").doc("2026-10-01").collection("entry").doc("e1").set({ kg: 12.5 });
+  await db.collection("logs").add({ action: "create", entity: "probe" });
+
+  const done = await waitForResolution(
+    await enqueue({ type: "backup", requestedBy: "verify-admin", requestedByEmail: "admin@terra.test" }),
+    { timeout: 120_000 },
+  );
+  check("respalda desde la cola", done?.status === "done" && done?.result?.totalDocs > 0, done);
+  check("deja el avance en el job", done?.progress?.total > 0 && done?.progress?.step === done?.progress?.total, done?.progress);
+
+  const backup = done?.result?.path ? await readBackup(done.result.path) : null;
+  check("el archivo es un respaldo de TeRRa", backup?.format === "terra-backup" && backup?.version === 1, backup && { format: backup.format, version: backup.version });
+  check("deja fuera la auditoría", backup && !("logs" in backup.collections) && backup.excluded?.includes("logs"), backup && Object.keys(backup.collections));
+  check("trae las demás colecciones", backup && ["backupProbe", "functionJobs", "users", "payrolls"].every((c) => c in backup.collections), backup && Object.keys(backup.collections));
+  check(
+    "los conteos calzan con lo que trae",
+    backup && Object.entries(backup.counts.collections).every(([c, n]) => backup.collections[c]?.length === n),
+    backup?.counts,
+  );
+  const probe = backup?.collections?.backupProbe?.[0];
+  check("una fecha de Firestore va marcada con su tipo", probe?.data?.when?.__type === "timestamp" && probe.data.when.iso === "2026-10-01T12:00:00.000Z", probe?.data?.when);
+  check("una referencia va como su ruta", probe?.data?.owner?.__type === "reference" && probe.data.owner.path === "worker/11111111-1", probe?.data?.owner);
+  check("lo demás va tal cual", JSON.stringify(probe?.data?.nested) === JSON.stringify({ list: [1, "dos", null], ok: true }), probe?.data?.nested);
+  const entry = backup?.subcollections?.entry?.find((e) => e.path === "weights/2026-10-01/entry/e1");
+  check("trae las subcolecciones con su ruta", entry?.data?.kg === 12.5, backup?.subcollections);
+
+  const record = done?.result?.id ? (await db.collection("backups").doc(done.result.id).get()).data() : null;
+  check(
+    "deja la ficha del respaldo",
+    record?.totalDocs === done?.result?.totalDocs && record?.trigger === "manual" && record?.requestedBy === "verify-admin" && record?.bytes > 0 && record?.bucket === bucket.name,
+    record,
+  );
+
+  const before = await backupFiles();
+  const denied = await waitForResolution(await enqueue({ type: "backup", requestedBy: "verify-user" }));
+  check("solo un admin genera un respaldo", denied?.errorCode === "not-admin", denied);
+  check("y no escribe nada", JSON.stringify(await backupFiles()) === JSON.stringify(before), await backupFiles());
+
+  const scheduled = await runBackup(db, bucket, { trigger: "scheduled" });
+  check("el semanal deja su ficha", (await db.collection("backups").doc(scheduled.id).get()).data()?.trigger === "scheduled", scheduled);
+
+  // 13 respaldos más antiguos que los de recién, con su ficha: después del
+  // próximo quedan los 12 más nuevos.
+  for (let i = 0; i < 13; i++) {
+    const id = backupIdOf(new Date(Date.UTC(2025, 0, 1 + i)));
+    await bucket.file(`backups/${id}.json`).save("{}", { contentType: "application/json" });
+    await db.collection("backups").doc(id).set({ createdAt: id, totalDocs: 0 });
+  }
+  const beforeLatest = await backupFiles();
+  const latest = await runBackup(db, bucket, { trigger: "scheduled" });
+  const files = await backupFiles();
+  const records = (await db.collection("backups").get()).docs.map((d) => d.id).sort();
+  check("guarda solo los últimos 12", files.length === 12 && latest.pruned === beforeLatest.length + 1 - 12, { files: files.length, pruned: latest.pruned });
+  check("borra los más antiguos", JSON.stringify(files) === JSON.stringify([...beforeLatest, latest.path].sort().slice(-12)), files);
+  check("y sus fichas", records.length === 12 && records.every((id) => files.includes(`backups/${id}.json`)), records);
+
+  const link = (params, requestedBy = "verify-admin") =>
+    enqueue({ type: "backupDownloadUrl", requestedBy, params }).then((ref) => waitForResolution(ref));
+  check("el enlace lo pide solo un admin", (await link({ backupId: latest.id }, "verify-user"))?.errorCode === "not-admin");
+  check("rechaza un id que no es de respaldo", (await link({ backupId: "../worker" }))?.errorCode === "invalid-params");
+  check("avisa si el respaldo ya no está", (await link({ backupId: backupIdOf(new Date(Date.UTC(2024, 0, 1))) }))?.errorCode === "not-found");
+  const signed = await link({ backupId: latest.id });
+  console.log(`  (el enlace de un respaldo que existe, en el emulador: ${signed?.status}${signed?.errorCode ? " " + signed.errorCode : ""})`);
 }
 
 console.log("");

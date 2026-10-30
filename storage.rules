@@ -1,0 +1,17 @@
+rules_version = '2';
+
+// Cloud Storage guarda solo los respaldos en JSON (`backups/`), que tienen la
+// base entera: RUT, cuentas y montos. Nadie los lee ni los escribe desde el
+// navegador. Los escriben las funciones con el admin SDK, que no pasa por estas
+// reglas, y se bajan con un enlace firmado que vence en 15 minutos o desde la
+// consola de Google Cloud.
+//
+// Se publican a mano, como `firestore.rules`: el archivo entero en la consola
+// de Firebase → Storage → Reglas.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

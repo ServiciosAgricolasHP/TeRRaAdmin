@@ -109,10 +109,10 @@ const STYLE_CELL = { border: BORDER_ALL };
 
 // ─────────────────────────── Hoja del banco ───────────────────────────
 // La hoja que se sube al banco, en el formato elegido (`utils/bankFormats.js`).
-function buildBankSheet(wb, format, items) {
+function buildBankSheet(wb, format, items, options) {
   const ws = wb.addWorksheet(format.sheetName);
   ws.addRow(format.headers);
-  for (const row of format.buildRows(items)) ws.addRow(row);
+  for (const row of format.buildRows(items, options)) ws.addRow(row);
   ws.getRow(1).eachCell((c) => (c.style = STYLE_HEADER));
   format.columnWidths.forEach((width, i) => {
     ws.getColumn(i + 1).width = width;
@@ -349,14 +349,15 @@ async function writeWorkbook(wb, filename) {
 }
 
 // El Excel completo: la hoja del banco en el formato `format`, Resumen,
-// Transferencias y Efectivo.
-export async function downloadPayrollXlsx(items, filename = "Nomina", cycles = [], format) {
+// Transferencias y Efectivo. `payrollName` es el nombre de la nómina, que la
+// hoja del banco lleva en la descripción del pago.
+export async function downloadPayrollXlsx(items, filename = "Nomina", cycles = [], format, { payrollName = "" } = {}) {
   const ExcelJS = (await import("exceljs")).default;
   const wb = new ExcelJS.Workbook();
   const { bank, cash } = splitBankAndCash(items);
 
   // La hoja del banco va primera: es la que ingiere el banco.
-  buildBankSheet(wb, format, bank);
+  buildBankSheet(wb, format, bank, { payrollName });
   buildResumenSheet(wb, bank, cash, cycles);
   buildTransferenciasSheet(wb, bank, cycles);
   buildEfectivoSheet(wb, cash, cycles);
@@ -365,11 +366,11 @@ export async function downloadPayrollXlsx(items, filename = "Nomina", cycles = [
 }
 
 // Solo la hoja del banco: el archivo que se sube a su portal.
-export async function downloadBankFileXlsx(items, filename = "Nomina", format) {
+export async function downloadBankFileXlsx(items, filename = "Nomina", format, { payrollName = "" } = {}) {
   const ExcelJS = (await import("exceljs")).default;
   const wb = new ExcelJS.Workbook();
   const { bank } = splitBankAndCash(items);
-  buildBankSheet(wb, format, bank);
+  buildBankSheet(wb, format, bank, { payrollName });
   await writeWorkbook(wb, filename);
 }
 

@@ -5,22 +5,19 @@ import { createPortal } from "react-dom";
 // Popover: Mostrar / ocultar columnas (modo cobrar)
 // ============================================================
 // Columnas que se pueden ocultar en todas las tablas del resumen; se guardan
-// en `cobrar.hiddenColumns`. Las claves son las que consultan LaborTable y
-// TransportTable con `hiddenColumns.has(key)`. Algunas aplican solo a ciertos
-// tipos (las de horas extras y bonos a tratoHE; piso, cuando hay piso
-// registrado).
+// en `cobrar.hiddenColumns` y `cobrar.shownColumns` (ver `toggledColumns`).
+// Las claves son las que consultan LaborTable y TransportTable con
+// `hiddenColumns.has(key)`. Algunas aplican solo a ciertos tipos (horas extras
+// a tratoHE; piso, cuando hay piso registrado).
 const COLUMN_OPTIONS = [
-  { key: "qty", label: "Base $ / Unidad / Vueltas" },
-  { key: "heWorked", label: "HE trabajadas — tratoHE, cobrar" },
-  { key: "he", label: "HE (hrs) / HE a cobrar — tratoHE" },
-  { key: "heRate", label: "Tarifa HE — tratoHE, cobrar" },
-  { key: "rate", label: "Total HE / Valor" },
+  { key: "qty", label: "Cantidad / Jornadas / Vueltas" },
+  { key: "rate", label: "Valor" },
+  { key: "he", label: "Horas extras" },
   { key: "valorTotal", label: "Valor total" },
   { key: "piso", label: "Piso" },
   { key: "transport", label: "Transporte" },
   { key: "total", label: "Total" },
   { key: "personas", label: "Personas" },
-  { key: "bonos", label: "Bonos — tratoHE" },
 ];
 
 export function ColumnsMenu({ anchorRef, hidden, onToggle, onReset, onClose }) {

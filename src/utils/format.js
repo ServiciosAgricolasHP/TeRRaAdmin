@@ -10,6 +10,16 @@ const plain = new Intl.NumberFormat("es-CL");
 export const fmtCurrency = (v) => clp.format(Number(v) || 0);
 export const fmtNumber = (v) => plain.format(Number(v) || 0);
 
+// Tamaño de un archivo: "850 B", "12 KB", "3,2 MB".
+const oneDecimal = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 });
+export function fmtBytes(v) {
+  const n = Math.max(0, Number(v) || 0);
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 ** 2) return `${Math.round(n / 1024)} KB`;
+  if (n < 1024 ** 3) return `${oneDecimal.format(n / 1024 ** 2)} MB`;
+  return `${oneDecimal.format(n / 1024 ** 3)} GB`;
+}
+
 // Montos grandes en un eje de gráfico: "$1.2M" / "$450k". No sirve para
 // mostrar plata en una tabla: ahí siempre va el monto exacto.
 export function fmtCompactCLP(v) {

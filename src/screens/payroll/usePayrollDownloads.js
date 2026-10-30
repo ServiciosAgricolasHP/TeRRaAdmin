@@ -28,13 +28,15 @@ export function usePayrollDownloads({ currentBankFormat, cycles, rutOf, toast })
     const format = await bankFormatForDownload();
     if (!format) return;
     const cyclesForExport = exportCyclesOf(p, cycles);
-    await downloadPayrollXlsx(withCurrentRuts(p.items, rutOf), p.name || "Nomina", cyclesForExport, format);
+    await downloadPayrollXlsx(withCurrentRuts(p.items, rutOf), p.name || "Nomina", cyclesForExport, format, {
+      payrollName: p.name || "",
+    });
   };
   const onDownloadBankFile = async (p) => {
     const format = await bankFormatForDownload();
     if (!format) return;
     const filename = `${p.name || "Nomina"}_${format.fileSuffix}`;
-    await downloadBankFileXlsx(withCurrentRuts(p.items, rutOf), filename, format);
+    await downloadBankFileXlsx(withCurrentRuts(p.items, rutOf), filename, format, { payrollName: p.name || "" });
   };
   // Vuelve a bajar el JSON del snapshot de una nómina. Lo lee de
   // payrollSnapshots y, si no está, del campo `snapshot` embebido en la nómina.

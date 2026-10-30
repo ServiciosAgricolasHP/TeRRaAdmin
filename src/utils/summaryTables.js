@@ -13,6 +13,31 @@ import { dateLabel, fmtNumber, formatRowMetric, formatTotalsMetric } from "./cyc
 import { fmtCurrency } from "./format";
 import { DEFAULT_OVERTIME_RATE, isRedDay } from "./tratoHE";
 
+// Columnas que empiezan ocultas en las tablas del resumen; se muestran con
+// `cobrar.shownColumns`. Las demás se ocultan con `cobrar.hiddenColumns`.
+export const DEFAULT_HIDDEN_COLUMNS = ["personas"];
+
+// Las columnas ocultas de un resumen: las que se ocultaron más las que
+// empiezan ocultas y no se mostraron.
+export function hiddenColumnsOf(hiddenColumns = [], shownColumns = []) {
+  const shown = new Set(shownColumns);
+  return new Set([...hiddenColumns, ...DEFAULT_HIDDEN_COLUMNS.filter((k) => !shown.has(k))]);
+}
+
+// Muestra u oculta una columna: devuelve { hiddenColumns, shownColumns }.
+export function toggledColumns(hiddenColumns = [], shownColumns = [], key) {
+  if (DEFAULT_HIDDEN_COLUMNS.includes(key)) {
+    const shown = new Set(shownColumns);
+    if (shown.has(key)) shown.delete(key);
+    else shown.add(key);
+    return { hiddenColumns: [...hiddenColumns], shownColumns: [...shown] };
+  }
+  const hidden = new Set(hiddenColumns);
+  if (hidden.has(key)) hidden.delete(key);
+  else hidden.add(key);
+  return { hiddenColumns: [...hidden], shownColumns: [...shownColumns] };
+}
+
 // El texto de una celda.
 export function cellText(col, v) {
   if (v == null) return "";
@@ -58,6 +83,10 @@ export function summarySections({ mode, labors, carriers, titles, carrierById, d
     const rows = merged ? mergedRows(members, nameOf) : isCharge ? (ld.chargedRows || ld.rows) : ld.rows;
     const totals = merged ? mergedTotals(members) : isCharge ? (ld.chargedTotals || ld.totals) : ld.totals;
     if (rows.length === 0 && !isCharge) continue;
+    // tratoHE en cobrar: si cada labor de la tabla cobra sus horas extras.
+    const overtimeToggles = isCharge && ld.labor.type === "tratoHE"
+      ? members.map((m) => ({ laborId: m.labor.id, name: nameOf(m), on: m.chargeOvertime !== false }))
+      : null;
     sections.push({
       kind: "labor",
       key: ld.labor.id,
@@ -69,6 +98,7 @@ export function summarySections({ mode, labors, carriers, titles, carrierById, d
       rows,
       totals,
       redDates,
+      overtimeToggles,
     });
   }
   for (const tg of carriers) {
@@ -111,8 +141,49 @@ function tierBadges(rows, typeOf, laborOf, catalogs) {
   };
 }
 
+// Las horas extras de una fila de cobro: el monto con sus horas,
+// "$7.500 (x 5 HE)", y la tarifa si no es la del encabezado.
+function overtimeText(amount, hours, rate = null) {
+  return `${fmtCurrency(amount)} (x ${fmtNumber(hours)} HE${rate ? ` a ${fmtCurrency(rate)}` : ""})`;
+}
+
+// La columna de horas extras de tratoHE en cobrar. La tarifa va en el
+// encabezado si todas las filas con horas usan la misma; si no, en cada
+// celda. En edición lleva dos campos: las horas y la tarifa.
+function overtimeColumn(rows, editIf) {
+  const ratesWithHours = new Set(
+    rows.filter((r) => Number(r.chargedOvertimeHours) > 0).map((r) => Number(r.chargedRate) || 0),
+  );
+  const sharedRate = ratesWithHours.size === 1
+    ? [...ratesWithHours][0]
+    : ratesWithHours.size === 0 ? Number(rows[0]?.chargedRate) || 0 : 0;
+  return {
+    key: "he",
+    label: sharedRate > 0 ? `Horas extras (${fmtCurrency(sharedRate)} c/u)` : "Horas extras",
+    kind: "text",
+    value: (r) => {
+      const hours = Number(r.chargedOvertimeHours) || 0;
+      if (hours <= 0) return null;
+      const rate = Number(r.chargedRate) || 0;
+      return overtimeText(hours * rate, hours, rate === sharedRate ? null : rate);
+    },
+    total: (t) => (t.overtimeHours > 0 ? overtimeText(t.heTotal || 0, t.overtimeHours) : null),
+    edits: (r) => {
+      const hoursEdit = editIf("overtimeHours", r.chargedOvertimeHours, {
+        step: "0.25",
+        suffix: "HE ×",
+        width: 56,
+        title: `Horas extras que se cobran ese día${r.workedOvertimeHours != null ? `; se trabajaron ${fmtNumber(r.workedOvertimeHours)}` : ""}. 0 si el día no se cobra.`,
+      });
+      const rateEdit = editIf("rate", r.chargedRate, { width: 76, title: "Tarifa de la hora extra que se cobra ese día" });
+      return hoursEdit ? [hoursEdit, rateEdit] : null;
+    },
+  };
+}
+
 // Columnas de la tabla de una labor (o de una tabla juntada). `edit` marca la
-// celda que se edita en cobrar: el campo que guarda y su valor actual.
+// celda que se edita en cobrar: el campo que guarda y su valor actual; `edits`,
+// una celda con varios campos.
 export function laborColumns(section, { mode, hiddenColumns = new Set(), catalogs }) {
   const { laborId, laborType, unit, overtimeRate, rows, totals, displayName } = section;
   const isCharge = mode === "charge";
@@ -139,40 +210,40 @@ export function laborColumns(section, { mode, hiddenColumns = new Set(), catalog
     { key: "detail", label: "Detalle de jornada", kind: "text", value: (r) => r._laborName || displayName },
     { key: "date", label: "Fecha", kind: "text", value: (r) => dateLabel(r.date), badge: badgeOf },
   ];
-  if (isHE) {
+  if (isHE && isCharge) {
+    // En cobrar, como las labores al día: jornadas × valor, más las horas
+    // extras en una sola columna.
+    if (show("qty")) {
+      cols.push({
+        key: "qty", label: "Jornadas", kind: "number",
+        value: (r) => (r.chargedWorkdayCount > 0 ? r.chargedWorkdayCount : null),
+        total: (t) => (t.workdayCount > 0 ? t.workdayCount : null),
+        edit: (r) => editIf("workdayCount", r.chargedWorkdayCount, { title: "Jornadas que se cobran ese día" }),
+      });
+    }
+    if (show("rate")) {
+      cols.push({
+        key: "rate", label: "Valor", kind: "money",
+        value: (r) => (r.chargedWorkdayRate > 0 ? r.chargedWorkdayRate : null),
+        total: () => null,
+        edit: (r) => editIf("workdayRate", r.chargedWorkdayRate, { title: "Valor de la jornada que se cobra ese día" }),
+      });
+    }
+    const chargesOvertime = (section.overtimeToggles || []).some((t) => t.on) || !section.overtimeToggles;
+    if (chargesOvertime && show("he")) cols.push(overtimeColumn(rows, editIf));
+  } else if (isHE) {
     if (show("qty")) {
       cols.push({
         key: "qty", label: "Base $", kind: "money",
         value: (r) => (rowQty(r) > 0 ? rowQty(r) : null),
         total: (t) => (t.qty > 0 ? t.qty : null),
-        edit: (r) => editIf("qty", rowQty(r)),
-      });
-    }
-    // En cobrar, las horas que se trabajaron, junto a las que se cobran.
-    if (isCharge && show("heWorked")) {
-      cols.push({
-        key: "heWorked", label: "HE trabajadas", kind: "number",
-        value: (r) => (r.workedOvertimeHours == null ? "—" : r.workedOvertimeHours > 0 ? r.workedOvertimeHours : null),
-        total: (t) => (t.workedOvertimeHours > 0 ? t.workedOvertimeHours : null),
       });
     }
     if (show("he")) {
       cols.push({
-        key: "he", label: isCharge ? "HE a cobrar" : "HE (hrs)", kind: "number",
+        key: "he", label: "HE (hrs)", kind: "number",
         value: (r) => (rowHE(r) > 0 ? rowHE(r) : null),
         total: (t) => (t.overtimeHours > 0 ? t.overtimeHours : null),
-        edit: (r) => editIf("overtimeHours", rowHE(r), {
-          step: "0.25",
-          title: "Horas extras que se cobran ese día. Parte en las trabajadas; 0 si el día no se cobra.",
-        }),
-      });
-    }
-    if (isCharge && show("heRate")) {
-      cols.push({
-        key: "heRate", label: "Tarifa HE", kind: "money",
-        value: (r) => (Number(r.chargedRate) > 0 ? r.chargedRate : null),
-        total: () => null,
-        edit: (r) => editIf("rate", r.chargedRate, { title: "Tarifa de la hora extra que se cobra ese día" }),
       });
     }
   } else if (show("qty")) {
@@ -195,8 +266,8 @@ export function laborColumns(section, { mode, hiddenColumns = new Set(), catalog
       edit: (r) => editIf("qty", rowQty(r)),
     });
   }
-  if (show("rate")) {
-    // En tratoHE, el Total HE; en el resto, el precio por unidad.
+  if (show("rate") && !(isHE && isCharge)) {
+    // En tratoHE (pagar), el Total HE; en el resto, el precio por unidad.
     cols.push(isHE
       ? {
         key: "rate", label: "Total HE", kind: "money",
@@ -267,7 +338,8 @@ export function laborColumns(section, { mode, hiddenColumns = new Set(), catalog
       }),
     });
   }
-  if (isHE && show("bonos")) {
+  // Los bonos se pagan y no se cobran: solo en pagar.
+  if (isHE && !isCharge && show("bonos")) {
     cols.push({
       key: "bonos", label: "Bonos", kind: "money",
       value: (r) => ((r.bonosTotal || 0) > 0 ? r.bonosTotal : "—"),
