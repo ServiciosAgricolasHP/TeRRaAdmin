@@ -161,7 +161,7 @@ describe("ciclo completo de nómina", () => {
   });
 
   it("el bono engrosa la base y deja el anticipo liquidado", async () => {
-    // El caso que documenta AGENTS.md, de punta a punta.
+    // El caso que documenta `docs/screens/advances.md`, de punta a punta.
     await seedEscenarioNomina();
     await seedAdvance("bono-1", { rut: ANA.id, amount: 24000, type: "bono" });
     await seedAdvance("adv-1", { rut: ANA.id, amount: 124000 });

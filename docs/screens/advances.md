@@ -1,0 +1,35 @@
+# Anticipos / Bonos
+
+- Pantalla: `src/screens/Advances.jsx`. Ruta `/advances`. Nav label: "Anticipos / Bonos".
+- Servicio: `services/advancesService.js` (colección `advances`).
+- Una colección con discriminador `type: "anticipo" | "bono"`. El valor `"adelanto"` se normaliza a `"anticipo"` al leer (vía `LEGACY_TYPE_MAP`) — no hay tipo separado. Helpers: `ADVANCE_TYPES`, `normalizeAdvanceType`, `advanceSign`, `isBono`, `advanceTypeMeta`.
+- **Signo**: anticipo = `-1` (descuenta del bruto), bono = `+1` (suma al bruto). Mismo flow / lifecycle, distinto signo.
+- Estados: `pending` | `partial` | `applied` | `cancelled`. `partial` = `amountPaid > 0 && amountPaid < amount` (la siguiente nómina sigue aplicando contra el saldo pendiente).
+- Documento: `{type, workerRut, workerName, amount, date, note, status, amountPaid, payments[], appliedPayrollId, appliedAt, appliedBy, installments}`.
+- UI: filtros por tipo (todos / anticipo / bono), búsqueda, status. El filtro "Pendientes" agrupa `pending` + `partial` (mismo criterio que `listPendingForWorkers()`) — un parcial sigue debiendo saldo, el badge "Parcial" lo distingue visualmente dentro del mismo bucket, no hay pestaña separada. Dos botones de creación (🪙 + Anticipo, 🎁 + Bono). Cada fila muestra el badge de signo correspondiente.
+- El formulario de alta y edición es `screens/advances/AdvanceFormModal.jsx`; la persona se elige con `WorkerSearchPicker` (ver `docs/screens/workers.md`).
+- **Lock de Editar/Eliminar**: `applied` (totalmente aplicado) → ambos bloqueados. `partial` → Editar habilitado, Eliminar bloqueado.
+- **"Perdonazo" de saldo en parciales**: editar un `partial` permite bajar `amount` hasta `amountPaid` para cerrar la cuenta — el status se recalcula al guardar (`newAmount ≤ amountPaid` → `applied`; `>` → sigue `partial`). El modal muestra banner con Pagado/Resta, bloquea `type` y `worker` (no se pueden reasignar pagos existentes), y valida que `newAmount ≥ amountPaid`. El doc + `payments[]` quedan intactos para auditoría.
+- **Cuotas** (`installments: {count, amount, cadence} | null`, solo `type: "anticipo"`): plan de pago en cuotas, elegido al crear (N° de cuotas; el sistema calcula `amount = Math.ceil(total/count)`) y **fijo para siempre** — no editable después (borrar y recrear si hace falta cambiarlo, solo mientras sigue `pending`). `cadence` (`porPago`/`quincenal`/`mensual`) es una **etiqueta informativa para el admin, no un gate automático por fecha** — no hay cron en la app, así que nada se salta solo; ver "Integración con Nómina" abajo. Helpers en `advancesService.js`: `hasInstallmentPlan`, `computeCuotaAmount`, `advanceDueNow`, `installmentProgress`, `cadenceMeta`, `daysSinceLastCuota`.
+
+## Integración con Nómina
+
+- Al construir preview, `listPendingForWorkers(ruts)` carga anticipos y bonos `pending`+`partial` de los trabajadores.
+- **Orden: BONOS PRIMERO, anticipos después.** Los bonos se aplican completos (nunca tienen plan) y **engrosan la base** contra la que se descuenta el anticipo: el tope es `bruto + bonos`, no el bruto pelado. Con el orden invertido, un bono deja el anticipo sin liquidar por **exactamente el monto del bono**: el trabajador recibe el bono en la mano y la deuda pasa a la nómina siguiente en vez de cerrarse (bruto 376.000 + bono 24.000 contra un anticipo de 400.000: en este orden queda saldado y neto 0; al revés quedarían 24.000 debiendo y 24.000 pagados). La plata que desembolsa la empresa es la misma en los dos órdenes; lo que cambia es si la deuda queda cerrada.
+- Anticipos oldest-first, capados por `bruto + bonos` (no pueden dejar el neto negativo); si el anticipo tiene plan de cuotas, el tope por default es el monto de la cuota (`advanceDueNow`), no el saldo completo — con cuotas un bono puede igualmente no alcanzar a liquidarlo, y está bien.
+- **La lógica vive en un solo lugar: `utils/payrollItem.js` → `allocateAdvances`**, y la usan los cuatro caminos que arman o cambian una nómina: armar nómina, agregar ciclos, recalcular (`services/payrollRecalc.js`), y anticipos nuevos sobre una nómina ya creada. El cuarto caso —el incremental, donde la persona ya está en la nómina— es la misma función con `alreadyAdvanced` / `alreadyBonused`. Está cubierta por `utils/payrollItem.test.js`, incluido el caso de bruto 376.000 + bono 24.000 contra anticipo de 400.000.
+- Fórmula del item: `amount = grossInt − anticiposTotal + bonosTotal`.
+- Preview muestra columnas separadas **Bruto**, **Anticipo**, **Bono**, **A pagar**. Hint visual `↩ liquidado por anticipo` cuando `amount = 0 && advance > 0` (caso retiro con anticipo del valor total — el worker pasa a nómina como cero-neto pero los workdays/anticipos se marcan como pagados).
+  - **Lo que se edita en Anticipo y Bono tiene tope** (`withPreviewEdit` y `previewEditCaps`, `utils/payrollPreview.js`, con tests). El anticipo se puede bajar (queda parcial) o subir por encima de la cuota sugerida hasta el saldo de cada anticipo (`maxAmount`), y nunca más que bruto + bonos. El bono se puede bajar (lo que falta queda pendiente para otra nómina), pero nunca sube de su monto. Sin anticipos o bonos pendientes no se agrega ninguno. Así lo que se retiene o se paga es siempre lo que se aplica a un anticipo o un bono: un monto por encima del tope se ajusta al tope mientras se escribe, y cada celda dice su tope al pasar el mouse.
+  - **El reparto parte siempre de lo sugerido** (`allocatedAdvances` y `allocatedBonuses` en la fila, que no se guardan): del más viejo al más nuevo, primero hasta lo sugerido de cada uno y después, en los anticipos, hasta su saldo. Bajar le quita primero al más nuevo, y bajar a cero y volver a subir recupera el mismo reparto.
+- **Confirmación de cuotas**: si hay anticipos-con-plan entre los trabajadores incluidos, al hacer clic en "Generar nómina" aparece `InstallmentConfirmModal` listando cada cuota candidata (marcada por defecto) antes de persistir nada — el admin decide a mano cuáles aplican esta corrida. Solo cubre el flujo principal de generación; "agregar ciclos"/"recalcular" aplican la cuota sugerida directo, sin modal.
+- Al crear nómina: `applyAdvancesToPayroll(advanceIds, payrollId)` cambia status a `applied`/`partial` según corresponda (para ambos tipos).
+- **`payments[]` guarda lo descontado, no lo pedido.** `amountPaid` se capa con
+  `Math.min` contra el total del anticipo; si a `payments[]` va el monto pedido,
+  los dos dejan de cuadrar y `restoreAdvancesFromPayroll` —que recalcula el saldo
+  **desde `payments[]`**— devuelve un anticipo tocado por dos nóminas con menos
+  deuda de la real. `applyAdvancesToPayroll` devuelve `{ sobrantes }` con las
+  aplicaciones recortadas y las escribe en el log (`meta.sobrantes`): al
+  trabajador se le retuvo lo pedido pero la deuda solo bajó lo aplicado, y esa
+  diferencia hay que devolvérsela a mano.
+- Al eliminar nómina: `restoreAdvancesFromPayroll(advanceIds)` recalcula el status hacia atrás (`pending`/`partial`) — también recalcula sola la fecha base del hint "última cuota hace N días", que se deriva de `payments[]` en vez de guardarse aparte.

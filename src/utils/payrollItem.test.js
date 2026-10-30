@@ -42,7 +42,7 @@ describe("allocateAdvances — el caso sin nada aplicado (armar la nómina)", ()
   });
 
   // ─────────────────────────────────────────────────────────────────────
-  // El orden bonos → anticipos, con el caso que documenta AGENTS.md.
+  // El orden bonos → anticipos, con el caso que documenta `docs/screens/advances.md`.
   // ─────────────────────────────────────────────────────────────────────
   it("bonos PRIMERO: el bono engrosa la base y deja el anticipo liquidado", () => {
     const r = allocateAdvances({
