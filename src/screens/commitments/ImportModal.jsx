@@ -2,11 +2,12 @@ import { useState } from "react";
 import Modal from "../../components/Modal";
 import { useToast } from "../../contexts/ToastContext";
 import { importRows } from "../../services/commitmentsService";
-import { mapExcelRow, paidLabel, STATUS_LABELS } from "../../utils/commitments";
+import { paidLabel, STATUS_LABELS } from "../../utils/commitments";
 import { bankName } from "../../utils/banks";
 import { fmtCurrency } from "../../utils/format";
 import { TONE_CLS, fmtDate } from "./helpers";
 import { btnCls, primaryCls } from "./styles";
+import { readChequesFile } from "./readChequesFile";
 
 // Import de la planilla "Control de Cheques". Muestra lo que se va a crear y
 // salta las filas que ya existen (mismo banco y N° de cheque).
@@ -20,17 +21,7 @@ export function ImportModal({ companies, existingIds, onCancel, onImported }) {
     if (!file) return;
     setFileName(file.name);
     try {
-      const ExcelJS = (await import("exceljs")).default;
-      const wb = new ExcelJS.Workbook();
-      await wb.xlsx.load(await file.arrayBuffer());
-      const ws = wb.getWorksheet("Control de Cheques") || wb.worksheets[0];
-      const out = [];
-      ws.eachRow((row, i) => {
-        if (i === 1) return;
-        const mapped = mapExcelRow(row.values.slice(1), { companies });
-        if (mapped) out.push({ line: i, ...mapped });
-      });
-      setRows(out);
+      setRows(await readChequesFile(file, companies));
     } catch (err) {
       toast.error("No se pudo leer el archivo: " + (err.message || err));
     }

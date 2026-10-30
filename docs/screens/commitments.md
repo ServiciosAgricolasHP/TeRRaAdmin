@@ -2,9 +2,9 @@
 
 - Pantalla: `src/screens/Commitments.jsx`. Ruta `/cheques-pagos`, para todas las cuentas. Servicio `services/commitmentsService.js`, lógica pura en `utils/commitments.js` (con tests). Colecciones `commitments`, `commitmentSeries`, `commitmentConfig/main` y `commitmentNotifications` (ver `docs/data-model.md`).
 - Sus piezas, en `src/screens/commitments/`:
-  - **Lista:** `CommitmentList`, `StatusChip` y `CounterpartyGroups` (Próximos por contraparte).
+  - **Lista:** `CommitmentList`, `StatusChip`, `CounterpartyGroups` (Próximos por contraparte) y `writeCommitmentsXlsx.js` (la lista en Excel).
   - **Formularios:** `CommitmentModal` (con `CommonFields`), `DateActionModal` (marcar pagado o reprogramar), `PartialPaymentModal` (abonos) y `SeriesEditModal`.
-  - **Configuración e importación:** `ConfigModal` (avisos por correo) e `ImportModal` (la planilla de cheques).
+  - **Configuración e importación:** `ConfigModal` (avisos por correo) e `ImportModal` (la planilla de cheques, que lee `readChequesFile.js`).
   - **Informe de deudas:** `PaymentReportModal`, con sus partes en `paymentReportModal/`: `reportDocument.js` (el documento y sus formatos), `ReportPreview`, `printReport.js` (imprime la vista previa), `writeReportPdf.js` y `writeReportXlsx.js`.
   - **Comunes:** `helpers.js` (formato de fecha y colores de los chips) y `styles.js` (clases de campos y botones).
 - **Próximos** agrupa lo vencido, los cheques protestados, los próximos 7 días, el **próximo mes** (de ahí hasta el mismo día del mes siguiente, `upcomingMonthEnd`) y lo que viene más adelante (`groupUpcoming`). **Más adelante** llega hasta una fecha que se elige en su título, por defecto el 31 de diciembre del año siguiente (`nextYearEnd`); lo de después se resume en una línea con cuántos son y por cuánto, y vaciar la fecha lo muestra todo. El total de cada grupo es lo que falta pagar.

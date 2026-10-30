@@ -9,7 +9,7 @@
   - **Empresas:** `CompaniesModal`.
   - **Centros de costo:** `CostCentersModal`, con `useCostCenterCatalog` (crear, editar y eliminar centros) y `CostCenterForm`; `PrintableCostCenterDocs`, `writeCostCenterDocsXlsx.js` e `InformalExpenseFormModal`. El cálculo de la vista de un centro (sus documentos y gastos informales, filtros, totales y orden) vive en `utils/costCenterDocs.js`, con tests.
   - **Retenciones:** `WithholdingsTab` (la pestaña con sus exportaciones, del total y por contraparte), `WithholdingsView`, `PrintableWithholdings`, `PrintableWithholdingsGroup`, `writeWithholdingsXlsx.js` y `writeWithholdingGroupXlsx.js`.
-  - **Pendientes:** `ReceivablesModal` y `PrintableReceivables`.
+  - **Pendientes:** `ReceivablesModal`, `PrintableReceivables` y `writeReceivablesXlsx.js`.
   - **Resumen anual:** `AnnualSummaryTab`, `PrintableAnnualSummary` y `writeAnnualSummaryXlsx.js`.
   - **Proyección:** `ProjectionTab` y `writeProjectionXlsx.js`.
   - **Comunes:** `docs.js` (período, estados de pago y agrupado por centro de costo) y `printStyles.js` (celdas de las tablas imprimibles).

@@ -27,10 +27,6 @@ import {
   displayStatus,
   kindMeta,
   directionOf,
-  statusLabel,
-  partialPaidOf,
-  extraOf,
-  paidTotalOf,
   remainingOf,
   upcomingMonthEnd,
   COMMITMENT_KINDS,
@@ -50,6 +46,7 @@ import { PartialPaymentModal } from "./commitments/PartialPaymentModal";
 import { SeriesEditModal } from "./commitments/SeriesEditModal";
 import { primaryCls, btnCls, inputCls } from "./commitments/styles";
 import ScreenLoader from "../components/ScreenLoader";
+import { writeCommitmentsXlsx } from "./commitments/writeCommitmentsXlsx";
 
 const STATUS_FILTERS = [
   { v: "", label: "Todos" },
@@ -280,58 +277,7 @@ export default function Commitments() {
 
   const exportXlsx = async () => {
     try {
-      const ExcelJS = (await import("exceljs")).default;
-      const wb = new ExcelJS.Workbook();
-      const ws = wb.addWorksheet("Cheques y pagos");
-      ws.getColumn(1).width = 6;
-      const headers = ["Vencimiento", "Tipo", "Estado", "Banco", "N° cheque", "Contraparte", "Concepto", "Monto", "Abonado", "Interés / extra", "Total pagado", "Fecha de pago", "Empresa", "Observaciones"];
-      const head = ws.getRow(2);
-      headers.forEach((h, i) => {
-        const cell = head.getCell(i + 2);
-        cell.value = h;
-        cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF374151" } };
-      });
-      filtered.forEach((c, idx) => {
-        const row = ws.getRow(idx + 3);
-        [
-          fmtDate(c.dueDate),
-          kindMeta(c.kind).label,
-          statusLabel(c, today),
-          c.bank ? bankName(c.bank) : "",
-          c.chequeNumber || "",
-          c.counterparty || "",
-          c.concept || "",
-          Number(c.amount) || 0,
-          partialPaidOf(c) || "",
-          extraOf(c) || "",
-          c.status === "paid" ? paidTotalOf(c) : "",
-          fmtDate(c.paidAt),
-          companyName(c),
-          c.notes || "",
-        ].forEach((v, i) => {
-          row.getCell(i + 2).value = v;
-        });
-        [9, 10, 11, 12].forEach((col) => {
-          row.getCell(col).numFmt = '"$"#,##0';
-        });
-      });
-      const totalRow = ws.getRow(filtered.length + 3);
-      totalRow.getCell(8).value = "Total (sin anulados)";
-      totalRow.getCell(9).value = filteredTotal;
-      totalRow.getCell(9).numFmt = '"$"#,##0';
-      totalRow.font = { bold: true };
-      [12, 18, 12, 22, 12, 28, 26, 14, 14, 14, 14, 12, 18, 40].forEach((w, i) => {
-        ws.getColumn(i + 2).width = w;
-      });
-      const buf = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `Cheques_y_pagos_${today}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
+      await writeCommitmentsXlsx({ items: filtered, total: filteredTotal, today, companyName });
     } catch (err) {
       toast.error("No se pudo generar el Excel: " + (err.message || err));
     }
