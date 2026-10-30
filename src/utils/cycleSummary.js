@@ -186,6 +186,9 @@ export function buildDailyRows(labor, wdMap, dayPrices = {}) {
         workersSet: new Set(),
         pisoWorkersSet: new Set(),
       };
+      // tratoHE: las jornadas del día, las que tienen base (un día de solo
+      // horas extras no es una jornada).
+      if (labor?.type === "tratoHE") row.workdayCount = 0;
       if (isTrato) {
         const tiers = getTratoTiers(dayPrices, labor.id, d);
         if (tierKey) {
@@ -230,6 +233,7 @@ export function buildDailyRows(labor, wdMap, dayPrices = {}) {
       g.amount += Number(wd.amount) || 0;
     } else if (labor.type === "tratoHE") {
       g.qty += Number(wd.qty) || 0;
+      if ((Number(wd.qty) || 0) > 0) g.workdayCount += 1;
       g.overtimeHours += Number(wd.overtimeHours) || 0;
       g.amount += Number(wd.amount) || 0;
     } else {
@@ -271,9 +275,10 @@ export function buildDailyRows(labor, wdMap, dayPrices = {}) {
 
 export function laborTotals(rows) {
   let qty = 0, overtimeHours = 0, amount = 0, pisoAmount = 0, pisoCount = 0;
-  let workerDays = 0, heTotal = 0, bonosTotal = 0, countedQty = 0;
+  let workerDays = 0, heTotal = 0, bonosTotal = 0, countedQty = 0, workdayCount = 0;
   for (const r of rows) {
     qty += r.qty;
+    workdayCount += r.workdayCount || 0;
     // Unidades de producción: en tratoEtapas suman solo las etapas que
     // cuentan; en los demás tipos `stageCounts` es undefined y suma todo.
     if (r.stageCounts === undefined || r.stageCounts) countedQty += r.qty;
@@ -285,7 +290,7 @@ export function laborTotals(rows) {
     heTotal += r.heTotal || 0;
     bonosTotal += r.bonosTotal || 0;
   }
-  return { qty, countedQty, overtimeHours, amount, pisoAmount, pisoCount, workerDays, heTotal, bonosTotal };
+  return { qty, countedQty, overtimeHours, amount, pisoAmount, pisoCount, workerDays, heTotal, bonosTotal, workdayCount };
 }
 
 // ============================================================

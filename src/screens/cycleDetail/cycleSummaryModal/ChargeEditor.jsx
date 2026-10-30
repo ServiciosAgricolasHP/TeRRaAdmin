@@ -103,7 +103,10 @@ export function ChargeEditor({ labors, carriers, carrierById, onLaborChange, onC
                     );
                   })()}
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{fmtNumber(l.chargedTotals.qty)}</td>
+                {/* En tratoHE la cantidad son las jornadas; `qty` es la base en pesos. */}
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  {fmtNumber(l.labor.type === "tratoHE" ? l.chargedTotals.workdayCount : l.chargedTotals.qty)}
+                </td>
                 <td className="px-2 py-1.5 text-right text-[var(--color-muted)] tabular-nums">
                   <div>{fmtCurrency(l.defaultRate)}</div>
                   {showMeanHint && (

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { cycleSummariesService } from "../../../services";
 import { tripsService } from "../../../services/transportsService";
 import { loadJSON, chargeStorageKey, titlesStorageKey, saveJSON } from "./summaryStorage";
+import { DEFAULT_HIDDEN_COLUMNS, toggledColumns } from "../../../utils/summaryTables";
 
 // Lo que el resumen guarda, compartido entre usuarios: las tarifas y ajustes
 // del cobro y los títulos, en Firestore con un espejo en localStorage. Carga
@@ -300,21 +301,19 @@ export function useSummarySettings({ cycle, cycleId, faena, open, subfaena, toas
   };
 
   // Muestra u oculta una columna en todas las tablas del resumen del ciclo. Se
-  // guarda en `cobrar.hiddenColumns: string[]`, con las claves de columna de
-  // LaborTable y TransportTable.
+  // guarda en `cobrar.hiddenColumns: string[]` y, las que empiezan ocultas
+  // (`DEFAULT_HIDDEN_COLUMNS`), en `cobrar.shownColumns: string[]`, con las
+  // claves de columna de LaborTable y TransportTable.
   const toggleColumn = (key) => {
     setCharge((prev) => {
-      const set = new Set(prev.hiddenColumns || []);
-      if (set.has(key)) set.delete(key);
-      else set.add(key);
-      const next = { ...prev, hiddenColumns: [...set] };
+      const next = { ...prev, ...toggledColumns(prev.hiddenColumns, prev.shownColumns, key) };
       saveJSON(chargeStorageKey(cycle?.id), next);
       return next;
     });
   };
   const resetColumns = () => {
     setCharge((prev) => {
-      const next = { ...prev, hiddenColumns: [] };
+      const next = { ...prev, hiddenColumns: [], shownColumns: [...DEFAULT_HIDDEN_COLUMNS] };
       saveJSON(chargeStorageKey(cycle?.id), next);
       return next;
     });
@@ -322,15 +321,16 @@ export function useSummarySettings({ cycle, cycleId, faena, open, subfaena, toas
 
   // LaborTable y TransportTable editan una fila con `onEditRow(id, row, patch)`;
   // estos envoltorios mandan el cambio al override de la fila o a la fila
-  // extra. Editar un factor (qty, count, rate, overtimeHours) sin pasar
-  // `amount` vacía `amount`, para que vuelva a mandar el cálculo (qty × rate,
-  // o qty + horas × rate en tratoHE) y no quede fijo el monto anterior.
+  // extra. Editar un factor (qty, count, rate, overtimeHours, y en tratoHE las
+  // jornadas y su valor) sin pasar `amount` vacía `amount`, para que vuelva a
+  // mandar el cálculo (qty × rate, o jornadas × valor + horas × rate en
+  // tratoHE) y no quede fijo el monto anterior.
   const clearAmountIfFactorEdit = (patch, factorKeys) => {
     const editsFactor = factorKeys.some((k) => k in patch);
     return editsFactor && !("amount" in patch) ? { ...patch, amount: "" } : patch;
   };
   const editChargeLaborRow = (laborId, row, patch) => {
-    const finalPatch = clearAmountIfFactorEdit(patch, ["qty", "rate", "overtimeHours"]);
+    const finalPatch = clearAmountIfFactorEdit(patch, ["qty", "rate", "overtimeHours", "workdayCount", "workdayRate"]);
     if (row?.isExtra) updateChargeLaborExtraRow(laborId, row.extraId, finalPatch);
     // La clave del override es el rowKey de la fila: la fecha, o fecha y
     // tier/etapa en trato y tratoEtapas, así cada tier tiene su override.

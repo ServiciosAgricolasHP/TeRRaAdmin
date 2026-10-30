@@ -44,12 +44,32 @@ export function importedLaborsDataOf(importedLabors, catalogs) {
 // base más las horas a cobrar por la tarifa. La sugerida es la tarifa HE de
 // la labor, la misma que se paga, y no lleva mediana ni promedio. Las horas a
 // cobrar parten en las trabajadas (`workedOvertimeHours`) y se ajustan por
-// día, igual que la tarifa.
+// día, igual que la tarifa. Con `chargeOvertime: false` la labor no cobra
+// horas extras, y sus ajustes de horas quedan guardados para cuando se vuelva
+// a prender.
+//
+// La base de tratoHE se cobra por jornadas: jornadas × valor de la jornada.
+// Sin ajustes son las jornadas del día y el promedio de su base, así la base
+// queda igual a la que se pagó. Ajustar las jornadas o el valor
+// (`workdayCount`, `workdayRate`) la recalcula; un ajuste anterior de la base
+// en pesos (`qty`) se respeta mientras no se toquen esos dos.
 export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, catalogs) {
   return [...laborsData, ...importedLaborsData].map((ld) => {
     const cfg = laborCharges[ld.labor.id] || {};
     const include = cfg.include !== false;
     const isHE = ld.labor.type === "tratoHE";
+    const chargeOvertime = !isHE || cfg.chargeOvertime !== false;
+    const filled = (v) => v != null && v !== "";
+    // Jornadas de una fila del día: las que tienen base; una labor importada
+    // antes de contarlas trae solo las personas.
+    const workdaysOf = (r) => Number(r.workdayCount ?? r.workerCount) || 0;
+    // Valor de la jornada para una fila manual: la mediana de lo que se pagó
+    // por jornada, o la base por defecto de la labor.
+    const defaultWorkdayRate = isHE
+      ? Math.round(medianOf((ld.rows || [])
+        .filter((r) => (Number(r.qty) || 0) > 0 && workdaysOf(r) > 0)
+        .map((r) => Number(r.qty) / workdaysOf(r)))) || Number(ld.labor.baseDayDefault) || 0
+      : 0;
     const meanRate = !isHE && ld.totals.qty > 0 ? Math.round(ld.totals.amount / ld.totals.qty) : 0;
     const perDayRates = isHE ? [] : (ld.rows || [])
       .filter((r) => (Number(r.qty) || 0) > 0)
@@ -107,10 +127,24 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
       // y, si no hay, por la fecha sola.
       const newKey = r.rowKey || r.date;
       const ov = rowOverrides[newKey] || rowOverrides[r.date] || {};
-      const qty = ov.qty != null && ov.qty !== "" ? Number(ov.qty) : Number(r.qty) || 0;
-      const overtimeHours = ov.overtimeHours != null && ov.overtimeHours !== ""
+      let qty = filled(ov.qty) ? Number(ov.qty) : Number(r.qty) || 0;
+      const overtimeHours = !chargeOvertime ? 0 : filled(ov.overtimeHours)
         ? Number(ov.overtimeHours)
         : Number(r.overtimeHours) || 0;
+      let workdayCount = null;
+      let workdayRate = null;
+      if (isHE) {
+        const realCount = workdaysOf(r);
+        workdayCount = filled(ov.workdayCount) ? Number(ov.workdayCount) : realCount;
+        if (filled(ov.workdayCount) || filled(ov.workdayRate)) {
+          workdayRate = filled(ov.workdayRate)
+            ? Number(ov.workdayRate)
+            : realCount > 0 ? Math.round((Number(r.qty) || 0) / realCount) : defaultWorkdayRate;
+          qty = workdayCount * workdayRate;
+        } else {
+          workdayRate = workdayCount > 0 ? Math.round(qty / workdayCount) : null;
+        }
+      }
       // Prioridad de tarifa: override de la fila → tarifa fija de la labor
       // (cfg.chargeRate) → en tratoEtapas, el precio real de la fila
       // (amount/qty) → mediana del tier (trato) → tarifa sugerida de la
@@ -141,6 +175,8 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
         ...r,
         workedOvertimeHours: Number(r.overtimeHours) || 0,
         chargedQty: qty,
+        chargedWorkdayCount: workdayCount,
+        chargedWorkdayRate: workdayRate,
         chargedOvertimeHours: overtimeHours,
         chargedRate: rowRate,
         chargedAmount: amount,
@@ -153,8 +189,20 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
       };
     });
     for (const ex of extraRows) {
-      const qty = Number(ex.qty) || 0;
-      const overtimeHours = Number(ex.overtimeHours) || 0;
+      let qty = Number(ex.qty) || 0;
+      const overtimeHours = chargeOvertime ? Number(ex.overtimeHours) || 0 : 0;
+      let workdayCount = null;
+      let workdayRate = null;
+      if (isHE) {
+        workdayCount = Number(ex.workdayCount) || 0;
+        if (filled(ex.workdayCount) || filled(ex.workdayRate)) {
+          workdayRate = filled(ex.workdayRate) ? Number(ex.workdayRate) : defaultWorkdayRate;
+          qty = workdayCount * workdayRate;
+        } else {
+          // Una fila con la base escrita en pesos no tiene jornadas.
+          workdayRate = qty > 0 ? null : defaultWorkdayRate || null;
+        }
+      }
       const rowRate = ex.rate != null && ex.rate !== "" ? Number(ex.rate) : rate;
       const computedAmount = computeAmount(qty, overtimeHours, rowRate);
       const amount = ex.amount != null && ex.amount !== "" ? Number(ex.amount) : computedAmount;
@@ -171,6 +219,8 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
         // Una fila manual no tiene horas trabajadas.
         workedOvertimeHours: null,
         chargedQty: qty,
+        chargedWorkdayCount: workdayCount,
+        chargedWorkdayRate: workdayRate,
         chargedOvertimeHours: overtimeHours,
         chargedRate: rowRate,
         chargedAmount: amount,
@@ -193,9 +243,10 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
     });
     let chargedTotalAmount = 0, chargedTotalQty = 0, chargedTotalOvertimeHours = 0,
       chargedTotalTransport = 0, chargedTotalWorkerCount = 0, chargedCountedQty = 0,
-      chargedHeTotal = 0;
+      chargedHeTotal = 0, chargedTotalWorkdays = 0;
     for (const r of chargedRows) {
       chargedTotalAmount += r.chargedAmount;
+      chargedTotalWorkdays += Number(r.chargedWorkdayCount) || 0;
       chargedTotalQty += r.chargedQty;
       // Unidades (tratoEtapas): solo etapas que cuentan; el resto suma normal.
       if (r.stageCounts === undefined || r.stageCounts) chargedCountedQty += r.chargedQty;
@@ -222,6 +273,7 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
       workedOvertimeHours: ld.totals.overtimeHours || 0,
       heTotal: isHE ? chargedHeTotal : ld.totals.heTotal || 0,
       bonosTotal: ld.totals.bonosTotal || 0,
+      workdayCount: chargedTotalWorkdays,
     };
     return {
       ...ld,
@@ -233,6 +285,7 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
       activity,
       chargedRows,
       chargedTotals,
+      chargeOvertime,
       mergeInto: cfg.mergeInto || null,
     };
   });
