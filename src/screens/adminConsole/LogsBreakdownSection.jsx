@@ -2,6 +2,7 @@ import { useState } from "react";
 import { countCollection, countLogsByEntity, countLogsOlderThan } from "../../services/countsService";
 import { fmtNumber } from "../../utils/format";
 import { ConsoleCard } from "./ConsoleCard";
+import { attempt } from "../../utils/attempt";
 
 // Las entidades que escriben en `logs`. Sale de los `createService(entity, ...)`
 // de services/index.js más las literales de transportsService/catalogsService.
@@ -48,35 +49,33 @@ export function LogsBreakdownSection() {
 
   const countAll = async () => {
     setCountingAll(true);
-    try {
+    const { error: err } = await attempt(async () => {
       // El total de la colección va aparte: sirve para ver si las entidades
-      // listadas suman todo o si hay alguna que no está en LOG_ENTITIES.
-      try { setTotal(await countCollection("logs")); } catch { /* el desglose igual sirve */ }
+      // listadas suman todo o si hay alguna que no está en LOG_ENTITIES. Si
+      // falla, el desglose igual sirve.
+      await attempt(async () => { setTotal(await countCollection("logs")); });
       for (const e of LOG_ENTITIES) {
         setByEntity((r) => ({ ...r, [e]: { busy: true } }));
-        try {
+        const { error: countErr } = await attempt(async () => {
           const count = await countLogsByEntity(e);
           setByEntity((r) => ({ ...r, [e]: { count } }));
-        } catch (err) {
-          setByEntity((r) => ({ ...r, [e]: { error: err.message || String(err) } }));
-        }
+        });
+        if (countErr) setByEntity((r) => ({ ...r, [e]: { error: countErr.message || String(countErr) } }));
       }
-    } finally {
-      setCountingAll(false);
-    }
+    });
+    setCountingAll(false);
+    if (err) throw err;
   };
 
   const measureAge = async () => {
     setAgeBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const out = {};
       for (const m of [6, 12, 24]) out[m] = await countLogsOlderThan(m);
       setAgeCounts(out);
-    } catch (err) {
-      setAgeCounts({ error: err.message || String(err) });
-    } finally {
-      setAgeBusy(false);
-    }
+    });
+    if (err) setAgeCounts({ error: err.message || String(err) });
+    setAgeBusy(false);
   };
 
   const countedEntities = LOG_ENTITIES.filter((e) => byEntity[e]?.count != null);
@@ -96,13 +95,12 @@ export function LogsBreakdownSection() {
       lines.push("", "Anteriores a", ...[6, 12, 24].map((m) => `  ${m} meses\t${ageCounts[m]}`));
     }
     const text = lines.join("\n");
-    try {
+    const { error: err } = await attempt(async () => {
       await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      window.prompt("Copia el desglose:", text);
-    }
+    });
+    if (err) window.prompt("Copia el desglose:", text);
   };
 
   return (

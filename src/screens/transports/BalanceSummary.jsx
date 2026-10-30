@@ -4,6 +4,7 @@ import { useCaptureActions } from "../../hooks/useCaptureActions";
 import { PRINT_GRID_CSS } from "../../utils/printWindow";
 import { fmtCurrency } from "../../utils/format";
 import { cellH, cell } from "./printStyles";
+import { attempt } from "../../utils/attempt";
 
 // Balance general: cuánto se le debe a cada transportista, separado en vueltas
 // sueltas, resúmenes sin quincena y quincenas, todo pendiente. El rango de
@@ -26,7 +27,7 @@ export function BalanceSummary({ carriers, reloadVersion }) {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      try {
+      const { error: err } = await attempt(async () => {
         const [trips, allPayments, allFortnights] = await Promise.all([
           tripsService.listPendingUnlinked(),
           paymentsService.listAll(),
@@ -36,9 +37,9 @@ export function BalanceSummary({ carriers, reloadVersion }) {
         setPendingTrips(trips);
         setPendingPayments(allPayments.filter((p) => p.status === "pending"));
         setPendingFortnights(allFortnights.filter((p) => p.status === "pending"));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+      });
+      if (!cancelled) setLoading(false);
+      if (err) throw err;
     })();
     return () => {
       cancelled = true;

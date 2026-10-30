@@ -5,6 +5,7 @@ import { hasChanges } from "../../utils/formChanges";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { useToast } from "../../contexts/ToastContext";
 import { todayIso } from "./docs";
+import { attempt } from "../../utils/attempt";
 
 // Crear/editar/eliminar un gasto informal (sin factura/boleta formal) de un
 // centro de costo. Vive solo en `informalExpenses`: nunca toca `dteDocuments`
@@ -27,7 +28,7 @@ export function InformalExpenseFormModal({ expense, costCenterId, companiesList,
     if (!amt || amt <= 0) { toast.warning("Ingresa un monto válido."); return; }
     if (!detail.trim()) { toast.warning("Agrega un detalle."); return; }
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const payload = { costCenterId, date, amount: amt, detail: detail.trim(), companyId: companyId || null };
       if (expense) {
         await informalExpensesService.update(expense.id, payload);
@@ -36,26 +37,22 @@ export function InformalExpenseFormModal({ expense, costCenterId, companiesList,
       }
       await onSaved();
       onClose();
-    } catch (err) {
-      toast.error("Error al guardar: " + (err.message || err));
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) toast.error("Error al guardar: " + (err.message || err));
+    setBusy(false);
   };
 
   const remove = () => setConfirmDeleteOpen(true);
   const doRemove = async () => {
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await informalExpensesService.remove(expense.id);
       await onDeleted();
       onClose();
-    } catch (err) {
-      toast.error("Error al eliminar: " + (err.message || err));
-    } finally {
-      setBusy(false);
-      setConfirmDeleteOpen(false);
-    }
+    });
+    if (err) toast.error("Error al eliminar: " + (err.message || err));
+    setBusy(false);
+    setConfirmDeleteOpen(false);
   };
 
   return (

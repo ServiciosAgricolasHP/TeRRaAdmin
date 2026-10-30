@@ -10,6 +10,8 @@ import { fmtCurrency } from "../utils/format";
 import { defaultCycleTitle } from "./workerSummaryModal/helpers";
 import { PrintableWorkerSummary } from "./workerSummaryModal/PrintableWorkerSummary";
 import { StatusFilterPill } from "./workerSummaryModal/StatusPill";
+import { attempt } from "../utils/attempt";
+import { useValuesChanged } from "../hooks/useValuesChanged";
 
 const titlesKey = (rut) => `worker_summary_titles_${rut}`;
 
@@ -99,27 +101,30 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
   // Se recarga cuando cambia la persona (por su id), no cuando llega otra copia
   // del mismo objeto; `currentWorker` lee la de ahora.
   const workerId = worker?.id;
-  const currentWorker = useEffectEvent(() => worker);
-  useEffect(() => {
+  if (useValuesChanged([open, workerId, catalogs, includeClosed, closedFrom, closedTo], { onMount: true })) {
     if (!open || !workerId) {
       setData([]);
       setAdvances([]);
-      return;
-    }
-    const w = currentWorker();
-    setTitles(loadTitles(w.id, w.name || ""));
-    (async () => {
+    } else {
+      setTitles(loadTitles(worker.id, worker.name || ""));
       setLoading(true);
-      try {
+    }
+  }
+  const currentWorker = useEffectEvent(() => worker);
+  useEffect(() => {
+    if (!open || !workerId) return;
+    const w = currentWorker();
+    (async () => {
+      const { error: err } = await attempt(async () => {
         const opts = includeClosed
           ? { includeClosed: true, closedFrom, closedTo }
           : { includeClosed: false };
         const { data: result, advances: adv } = await loadWorkerSummaryData(w, catalogs, opts);
         setAdvances(adv);
         setData(result);
-      } finally {
-        setLoading(false);
-      }
+      });
+      setLoading(false);
+      if (err) throw err;
     })();
   }, [open, workerId, catalogs, includeClosed, closedFrom, closedTo]);
 

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { useCaptureActions } from "../../../hooks/useCaptureActions";
 import { PRINT_GRID_CSS } from "../../../utils/printWindow";
 import { tratoTypeLabel } from "../../../utils/cosechaCombos";
@@ -7,6 +7,7 @@ import { fmtNum } from "./helpers";
 import { HDR_BLUE, ROW_TOTAL_LIGHT, cellH, cell } from "./tableStyles";
 import { fmtCurrency } from "../../../utils/format";
 import { writeLaborSummaryXlsx } from "./writeLaborSummaryXlsx";
+import { useValuesChanged } from "../../../hooks/useValuesChanged";
 
 // Tarjeta por labor: encabezado con título, total, flecha de plegado y
 // botones de copiar e imprimir; cuerpo con la tabla día por día. Arranca
@@ -22,10 +23,7 @@ export function LaborSummaryCard({ data, catalogs, allClosedCollapsed }) {
   // El control maestro del modal pliega o despliega a la vez las tarjetas de
   // ciclos cerrados (las de ciclos abiertos no cambian). Cada una se puede
   // plegar a mano; el siguiente cambio del control las vuelve a igualar.
-  useEffect(() => {
-    if (isClosed) setCollapsed(allClosedCollapsed);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allClosedCollapsed]);
+  if (useValuesChanged([allClosedCollapsed], { onMount: true }) && isClosed) setCollapsed(allClosedCollapsed);
 
   const typeLabel = col.labor.type === "cosecha"
     ? "🌾 Cosecha"

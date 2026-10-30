@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import Modal from "../../components/Modal";
 import { fmtCurrency } from "../../utils/format";
+import { attempt } from "../../utils/attempt";
 
 // Alta de quincena: se eligen fechas, faenas y transportistas, y la quincena
 // se arma con un resumen nuevo por transportista (con sus vueltas sueltas de
@@ -122,7 +123,7 @@ export function FortnightCreateModal({ carriersById, faenas, pendingTrips, loose
   const onSubmit = async () => {
     if (!name.trim() || totalSummaries === 0) return;
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await onCreate({
         name,
         periodFrom: periodFrom || null,
@@ -131,9 +132,9 @@ export function FortnightCreateModal({ carriersById, faenas, pendingTrips, loose
         perCarrier: perCarrierToCreate,
         importSummaryIds: [...importIds],
       });
-    } finally {
-      setBusy(false);
-    }
+    });
+    setBusy(false);
+    if (err) throw err;
   };
 
   return (

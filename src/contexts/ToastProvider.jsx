@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useEffectEvent } from "react";
 import { createPortal } from "react-dom";
 import { ToastContext } from "./ToastContext";
+import { attempt } from "../utils/attempt";
 
 // Notificaciones tipo toast, en lugar de `window.alert`. Cuatro niveles
 // (success/error/info/warning), cierre automático configurable y mensajes
@@ -96,19 +97,19 @@ function ToastItem({ toast, onDismiss }) {
   // El cierre automático se pausa con el mouse encima y, al salir, sigue con
   // el tiempo que le quedaba.
   const remainingRef = useRef(toast.duration);
-  const startedRef = useRef(Date.now());
+  const startedRef = useRef(0);
   const timerRef = useRef(null);
   const [copied, setCopied] = useState(false);
 
+  const dismiss = useEffectEvent(() => onDismiss());
   useEffect(() => {
     if (!toast.duration || toast.duration <= 0) return;
     startedRef.current = Date.now();
-    timerRef.current = setTimeout(onDismiss, remainingRef.current);
+    timerRef.current = setTimeout(dismiss, remainingRef.current);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [toast.duration]);
 
   const onMouseEnter = () => {
     if (!timerRef.current) return;
@@ -124,12 +125,11 @@ function ToastItem({ toast, onDismiss }) {
   };
 
   const copy = async () => {
-    try {
+    const { error: err } = await attempt(async () => {
       await navigator.clipboard.writeText([toast.title, toast.message].filter(Boolean).join("\n"));
       setCopied(true);
-    } catch {
-      setCopied(false);
-    }
+    });
+    if (err) setCopied(false);
   };
 
   return (

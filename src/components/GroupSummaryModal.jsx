@@ -19,6 +19,8 @@ import { PrintableWorkerSummary } from "./workerSummaryModal/PrintableWorkerSumm
 import { formatRutForDisplay } from "../utils/rutUtils";
 import { localIsoDate } from "../utils/dates";
 import { fmtCurrency } from "../utils/format";
+import { attempt } from "../utils/attempt";
+import { useValuesChanged } from "../hooks/useValuesChanged";
 
 // Mismos colores que el comprobante de pago en efectivo.
 const LEADER_FILL = "#FFE699";
@@ -46,12 +48,13 @@ export default function GroupSummaryModal({ open, onClose }) {
   const individualRefs = useRef({}); // { rut: HTMLElement }
 
   // Reinicia el estado al abrir.
-  useEffect(() => {
-    if (!open) return;
+  if (useValuesChanged([open], { onMount: true }) && open) {
     setStep("build");
     setSelected([]);
     setWorkerData({});
-    individualRefs.current = {};
+  }
+  useEffect(() => {
+    if (open) individualRefs.current = {};
   }, [open]);
 
   const addWorker = (w) => {
@@ -66,7 +69,7 @@ export default function GroupSummaryModal({ open, onClose }) {
   const handleGenerate = async () => {
     if (selected.length === 0) return;
     setLoading(true);
-    try {
+    const { error: err } = await attempt(async () => {
       // En paralelo: cada trabajador hace sus propias consultas (jornadas,
       // ciclos y anticipos).
       const entries = await Promise.all(
@@ -74,9 +77,9 @@ export default function GroupSummaryModal({ open, onClose }) {
       );
       setWorkerData(Object.fromEntries(entries));
       setStep("result");
-    } finally {
-      setLoading(false);
-    }
+    });
+    setLoading(false);
+    if (err) throw err;
   };
 
   // Unión de ciclos con producción de algún integrante, por label alfabético.

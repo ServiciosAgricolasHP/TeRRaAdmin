@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Modal, { ModalCloseButton } from "./Modal";
 import { hasChanges } from "../utils/formChanges";
 import TextField from "./TextField";
@@ -8,6 +8,8 @@ import { fmtCurrency } from "../utils/format";
 import CarrierCombobox from "./tripEditModal/CarrierCombobox";
 import QuickCreateCarrierModal from "./tripEditModal/QuickCreateCarrierModal";
 import { loadRecents, pushRecent } from "./tripEditModal/recentCarriers";
+import { attempt } from "../utils/attempt";
+import { useValuesChanged } from "../hooks/useValuesChanged";
 
 // Alta y edición de una vuelta: transportista, vehículo, fecha, tipo, labor,
 // lugar, destino, personas, vueltas y tarifa. La usan la grilla del ciclo y
@@ -32,13 +34,9 @@ export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate
   const [creatingCarrier, setCreatingCarrier] = useState(false);
   const [recentIds, setRecentIds] = useState([]);
 
-  useEffect(() => {
-    if (!open) return;
-    setRecentIds(loadRecents(cycleId));
-  }, [open, cycleId]);
+  if (useValuesChanged([open, cycleId], { onMount: true }) && open) setRecentIds(loadRecents(cycleId));
 
-  useEffect(() => {
-    if (!open) return;
+  if (useValuesChanged([open, trip, defaultDate], { onMount: true }) && open) {
     if (trip) {
       setCarrierId(trip.carrierId || "");
       setVehicleAlias(trip.vehicleAlias || "");
@@ -65,7 +63,7 @@ export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate
       setNotes("");
     }
     setError("");
-  }, [open, trip, defaultDate]);
+  }
 
   const carrier = carriers.find((c) => c.id === carrierId);
   const isOwn = carrier?.type === "own";
@@ -85,11 +83,10 @@ export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate
     }
   };
 
-  useEffect(() => {
-    if (!open || trip) return;
+  if (useValuesChanged([carrierId, open, trip, isOwn, carrier], { onMount: true }) && open && !trip) {
     if (isOwn) setRate(0);
     else if (carrier?.defaultRate) setRate(carrier.defaultRate);
-  }, [carrierId, open, trip, isOwn, carrier]);
+  }
 
   const handleSubmit = async (e) => {
     e?.preventDefault?.();
@@ -97,7 +94,7 @@ export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate
     if (!vehicleAlias) return setError("Selecciona vehículo");
     if (!date) return setError("Selecciona fecha");
     setSaving(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await onSave({
         carrierId,
         vehicleAlias,
@@ -112,11 +109,9 @@ export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate
         notes,
       });
       pushRecent(cycleId, carrierId);
-    } catch (err) {
-      setError(err.message || "Error al guardar");
-    } finally {
-      setSaving(false);
-    }
+    });
+    if (err) setError(err.message || "Error al guardar");
+    setSaving(false);
   };
 
   const vehicleOptions = (carrier?.vehicles || []).map((v) => ({ value: v.alias, label: v.alias }));

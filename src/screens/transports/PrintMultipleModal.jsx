@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useEffectEvent, useMemo } from "react";
 import { captureFullWidthBlob } from "../../utils/imageCapture";
 import Modal from "../../components/Modal";
 import { tripsService } from "../../services/transportsService";
@@ -8,6 +8,11 @@ import { PRINT_SHEET_CSS, printNodes } from "../../utils/printWindow";
 import { localIsoDate } from "../../utils/dates";
 import { fmtCurrency } from "../../utils/format";
 import { PrintableSummary } from "./PrintableSummary";
+import { attempt } from "../../utils/attempt";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
+
+// JSZip va en un chunk aparte y se carga solo al bajar el ZIP.
+const loadJsZip = () => import("jszip").then((m) => m.default);
 
 // ============================================================
 // IMPRIMIR VARIOS: imprime o exporta varios resúmenes a la vez
@@ -47,35 +52,33 @@ export function PrintMultipleModal({
   const [renderItems, setRenderItems] = useState(null);
   const itemRefs = useRef([]);
 
-  useEffect(() => {
-    if (!open) {
-      setStatusFilter("pending");
-      setDateFrom("");
-      setDateTo("");
-      setCarriersSel(new Set());
-      setFaenasSel(new Set());
-      setSubfaenasSel(new Set());
-      setRenderItems(null);
-    }
-  }, [open]);
+  if (useValuesChanged([open], { onMount: true }) && !open) {
+    setStatusFilter("pending");
+    setDateFrom("");
+    setDateTo("");
+    setCarriersSel(new Set());
+    setFaenasSel(new Set());
+    setSubfaenasSel(new Set());
+    setRenderItems(null);
+  }
 
   const ensureTrips = async () => {
     if (allTrips) return allTrips;
     setTripsLoading(true);
-    try {
-      const list = await tripsService.listAll();
-      setAllTrips(list);
-      return list;
-    } finally {
-      setTripsLoading(false);
-    }
+    const { value: list, error: err } = await attempt(() => tripsService.listAll());
+    setTripsLoading(false);
+    if (err) throw err;
+    setAllTrips(list);
+    return list;
   };
 
   // Carga las vueltas al activar el filtro por faena o subfaena.
   const advancedActive = faenasSel.size > 0 || subfaenasSel.size > 0;
+  const loadTripsIfMissing = useEffectEvent(() => {
+    if (!allTrips && !tripsLoading) ensureTrips();
+  });
   useEffect(() => {
-    if (open && advancedActive && !allTrips && !tripsLoading) ensureTrips();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (open && advancedActive) loadTripsIfMissing();
   }, [open, advancedActive]);
 
   // Filtros que no necesitan las vueltas.
@@ -162,7 +165,7 @@ export function PrintMultipleModal({
   const zipAll = async () => {
     const items = await renderSummaries();
     if (!items) return;
-    const JSZip = (await import("jszip")).default;
+    const JSZip = await loadJsZip();
     const zip = new JSZip();
     const usedNames = new Set();
     for (let i = 0; i < items.length; i++) {

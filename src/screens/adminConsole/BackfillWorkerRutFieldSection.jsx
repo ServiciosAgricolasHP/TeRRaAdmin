@@ -4,6 +4,7 @@ import { useToast } from "../../contexts/ToastContext";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { fmtNumber } from "../../utils/format";
 import { ConsoleCard } from "./ConsoleCard";
+import { attempt } from "../../utils/attempt";
 
 // Completa `rut: doc.id` en los trabajadores que no tienen el campo. Solo toca
 // esos, así que se puede volver a correr.
@@ -20,16 +21,14 @@ export function BackfillWorkerRutFieldSection() {
     setLoading(true);
     setResult(null);
     setCandidates(null);
-    try {
+    const { error: err } = await attempt(async () => {
       const all = await workersService.list();
       const rows = all.filter((w) => !w.rut).map((w) => ({ id: w.id, name: w.name || "" }));
       rows.sort((a, b) => a.id.localeCompare(b.id));
       setCandidates(rows);
-    } catch (err) {
-      toast.error("Error al leer trabajadores: " + (err.message || String(err)));
-    } finally {
-      setLoading(false);
-    }
+    });
+    if (err) toast.error("Error al leer trabajadores: " + (err.message || String(err)));
+    setLoading(false);
   };
 
   const apply = () => {
@@ -44,12 +43,9 @@ export function BackfillWorkerRutFieldSection() {
     const errors = [];
     for (let i = 0; i < candidates.length; i++) {
       const c = candidates[i];
-      try {
-        await workersService.update(c.id, { rut: c.id });
-        updated++;
-      } catch (err) {
-        errors.push({ id: c.id, error: err.message || String(err) });
-      }
+      const { error: err } = await attempt(() => workersService.update(c.id, { rut: c.id }));
+      if (err) errors.push({ id: c.id, error: err.message || String(err) });
+      else updated++;
       setProgress({ done: i + 1, total: candidates.length });
     }
     setResult({ updated, errors });

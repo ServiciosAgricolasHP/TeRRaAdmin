@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useEffectEvent, useMemo } from "react";
 import Select from "../../components/Select";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { TripEditModal } from "../../components/TripEditModal";
@@ -10,6 +10,7 @@ import { useToast } from "../../contexts/ToastContext";
 import { fmtCurrency } from "../../utils/format";
 import { isoDateNDaysAgo, DEFAULT_HISTORY_DAYS } from "./historyRange";
 import ScreenLoader from "../../components/ScreenLoader";
+import { attempt } from "../../utils/attempt";
 
 // ============================================================
 // PESTAÑA VUELTAS
@@ -38,7 +39,7 @@ export function TripsTab({ initialCarrierId = null }) {
 
   const reload = async () => {
     setLoading(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const tripPromise = showHistoric
         ? tripsService.listAll()
         : tripsService.listSince(sinceDate);
@@ -53,16 +54,15 @@ export function TripsTab({ initialCarrierId = null }) {
       setCycles(cyc);
       setFaenas(fa);
       setSubfaenas(sub);
-    } catch (err) {
-      toast.error("No se pudieron cargar las vueltas: " + (err.message || err));
-    } finally {
-      setLoading(false);
-    }
+    });
+    if (err) toast.error("No se pudieron cargar las vueltas: " + (err.message || err));
+    setLoading(false);
   };
 
+  // Se vuelve a leer al cambiar el rango.
+  const reloadForRange = useEffectEvent(() => reload());
   useEffect(() => {
-    reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    reloadForRange();
   }, [sinceDate, showHistoric]);
 
   const carrierById = useMemo(() => new Map(carriers.map((c) => [c.id, c])), [carriers]);
@@ -178,26 +178,24 @@ export function TripsTab({ initialCarrierId = null }) {
       faenaId: editing.faenaId || null,
       subfaenaId: editing.subfaenaId || null,
     };
-    try {
+    const { error: err } = await attempt(async () => {
       await tripsService.update(editing.id, payload);
       setEditing(null);
       await reload();
       toast.success("Vuelta actualizada");
-    } catch (err) {
-      toast.error("Error al guardar: " + (err.message || err));
-    }
+    });
+    if (err) toast.error("Error al guardar: " + (err.message || err));
   };
 
   const handleDeleteTrip = async () => {
     if (!confirmDel) return;
-    try {
+    const { error: err } = await attempt(async () => {
       await tripsService.remove(confirmDel.id);
       setConfirmDel(null);
       await reload();
       toast.success("Vuelta eliminada");
-    } catch (err) {
-      toast.error(err.message || "Error al eliminar");
-    }
+    });
+    if (err) toast.error(err.message || "Error al eliminar");
   };
 
   // Vueltas agrupadas por transportista, con alias, total y desglose

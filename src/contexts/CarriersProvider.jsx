@@ -1,7 +1,8 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useEffectEvent, useState, useCallback } from "react";
 import { carriersService } from "../services/carriersService";
 import { useAuth } from "./AuthContext";
 import { CarriersContext } from "./CarriersContext";
+import { attempt } from "../utils/attempt";
 
 export function CarriersProvider({ children }) {
   const { user, hasAccess } = useAuth();
@@ -11,19 +12,20 @@ export function CarriersProvider({ children }) {
 
   const reload = useCallback(async () => {
     setLoading(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const all = await carriersService.listAll({ includeInactive: true });
       setCarriers(all);
-    } catch (err) {
-      console.error("[Carriers] load failed:", err);
-    } finally {
-      setLoading(false);
-    }
+    });
+    if (err) console.error("[Carriers] load failed:", err);
+    setLoading(false);
   }, []);
 
+  // `useEffectEvent` lee la versión actual de `reload` sin volver a correr el
+  // efecto.
+  const reloadForUser = useEffectEvent(() => reload());
   useEffect(() => {
-    if (uid) reload();
-  }, [uid, reload]);
+    if (uid) reloadForUser();
+  }, [uid]);
 
   const addCarrier = useCallback(async (data) => {
     const created = await carriersService.createCarrier(data);

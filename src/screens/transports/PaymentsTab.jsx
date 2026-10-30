@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useEffectEvent, useMemo } from "react";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { useCarriers } from "../../contexts/CarriersContext";
 import { paymentsService, fortnightsService } from "../../services/transportsService";
@@ -11,6 +11,8 @@ import { PaymentDetailModal } from "./PaymentDetailModal";
 import { PaymentSection } from "./PaymentSection";
 import { PrintMultipleModal } from "./PrintMultipleModal";
 import ScreenLoader from "../../components/ScreenLoader";
+import { attempt } from "../../utils/attempt";
+import { readStored, writeStored } from "../../utils/browserStorage";
 
 // ============================================================
 // PESTAÑA RESÚMENES
@@ -41,17 +43,14 @@ export function PaymentsTab() {
   const [search, setSearch] = useState("");
   const [filterFrom, setFilterFrom] = useState("");
   const [filterTo, setFilterTo] = useState("");
-  const [sortBy, setSortBy] = useState(() => {
-    try { return localStorage.getItem("transports_payments_sort") || "period_desc"; }
-    catch { return "period_desc"; }
-  });
+  const [sortBy, setSortBy] = useState(() => readStored("transports_payments_sort", "period_desc"));
   useEffect(() => {
-    try { localStorage.setItem("transports_payments_sort", sortBy); } catch { /* noop */ }
+    writeStored("transports_payments_sort", sortBy);
   }, [sortBy]);
 
   const reload = async () => {
     setLoading(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const paymentsPromise = showHistoricPaid
         ? paymentsService.listAll()
         : paymentsService.listSince(isoDateNDaysAgo(DEFAULT_HISTORY_DAYS));
@@ -72,14 +71,15 @@ export function PaymentsTab() {
       setSubfaenas(sub);
       setCycles(cyc);
       setFortnights(tp);
-    } finally {
-      setLoading(false);
-    }
+    });
+    setLoading(false);
+    if (err) throw err;
   };
 
+  // Se vuelve a leer al mostrar u ocultar los pagados antiguos.
+  const reloadForFilter = useEffectEvent(() => reload());
   useEffect(() => {
-    reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    reloadForFilter();
   }, [showHistoricPaid]);
 
   // Recarga después de ediciones hechas fuera de PaymentDetailModal (p. ej.
@@ -367,16 +367,15 @@ export function PaymentsTab() {
         onConfirm={async () => {
           const a = confirmAction;
           setConfirmAction(null);
-          try {
+          const { error: err } = await attempt(async () => {
             if (a.type === "pay") await paymentsService.markPaid(a.payment.id);
             else if (a.type === "revert") await paymentsService.revertPaid(a.payment.id);
             else if (a.type === "delete") await paymentsService.deleteSummary(a.payment.id);
             setViewing(null);
             await reload();
             setBalanceVersion((v) => v + 1);
-          } catch (err) {
-            toast.error(err.message || "Error");
-          }
+          });
+          if (err) toast.error(err.message || "Error");
         }}
       />
     </div>

@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Modal, { ModalCloseButton } from "../Modal";
 import TextField from "../TextField";
 import Select from "../Select";
 import { hasChanges } from "../../utils/formChanges";
 import { useCarriers } from "../../contexts/CarriersContext";
 import { CARRIER_TYPES } from "../../services/carriersService";
+import { attempt } from "../../utils/attempt";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 
 // Alta rápida de un transportista desde el modal de la vuelta: alias, nombre,
 // tipo, tarifa y un vehículo. El resto se edita en Transportes.
@@ -19,8 +21,7 @@ export default function QuickCreateCarrierModal({ open, onClose, onCreated }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    if (!open) return;
+  if (useValuesChanged([open], { onMount: true }) && open) {
     setAlias("");
     setName("");
     setType("contracted");
@@ -28,7 +29,7 @@ export default function QuickCreateCarrierModal({ open, onClose, onCreated }) {
     setVehicleAlias("");
     setPlate("");
     setError("");
-  }, [open]);
+  }
 
   const submit = async (e) => {
     e?.preventDefault?.();
@@ -36,7 +37,7 @@ export default function QuickCreateCarrierModal({ open, onClose, onCreated }) {
     if (!name.trim()) return setError("Nombre requerido");
     if (!vehicleAlias.trim()) return setError("Agrega al menos un vehículo");
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const created = await addCarrier({
         alias: alias.trim(),
         name: name.trim(),
@@ -50,11 +51,9 @@ export default function QuickCreateCarrierModal({ open, onClose, onCreated }) {
         ],
       });
       onCreated?.(created);
-    } catch (err) {
-      setError(err.message || "Error al crear");
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) setError(err.message || "Error al crear");
+    setBusy(false);
   };
 
   const typeOptions = CARRIER_TYPES.map((t) => ({ value: t.value, label: t.label }));

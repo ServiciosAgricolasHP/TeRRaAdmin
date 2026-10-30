@@ -2,6 +2,7 @@ import { useState } from "react";
 import Modal, { ModalCloseButton } from "../Modal";
 import { hasChanges } from "../../utils/formChanges";
 import { INDICATOR_DEFS } from "./indicators";
+import { attempt } from "../../utils/attempt";
 
 // Modal para editar los 3 indicadores a la vez. Inputs numéricos simples.
 export default function IndicatorsModal({ indicators, onCancel, onSave }) {
@@ -21,15 +22,15 @@ export default function IndicatorsModal({ indicators, onCancel, onSave }) {
 
   const submit = async () => {
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await onSave({
         sueldoBase: Number(form.sueldoBase) || 0,
         dia: Number(form.dia) || 0,
         hora: Number(form.hora) || 0,
       });
-    } finally {
-      setBusy(false);
-    }
+    });
+    setBusy(false);
+    if (err) throw err;
   };
 
   const inputCls = "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]";

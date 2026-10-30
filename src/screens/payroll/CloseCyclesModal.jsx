@@ -4,6 +4,7 @@ import { cyclesService } from "../../services";
 import { useToast } from "../../contexts/ToastContext";
 import { closedCyclePatch } from "../../utils/cycleClosing";
 import { fmtCurrency, fmtShortDate } from "../../utils/format";
+import { attempt } from "../../utils/attempt";
 
 // Cierra de una vez ciclos que ya se pagaron por completo (`settledOpenCycles`).
 // Todos vienen marcados. Cerrar es el mismo cambio que el botón del ciclo
@@ -33,18 +34,16 @@ export default function CloseCyclesModal({ candidates, waitingCount = 0, intro, 
   const run = async () => {
     setBusy(true);
     let closed = 0;
-    try {
+    const { error: err } = await attempt(async () => {
       for (const { cycle } of candidates) {
         if (!chosen.has(cycle.id)) continue;
         await cyclesService.update(cycle.id, closedCyclePatch(cycle));
         closed += 1;
       }
       toast.success(`${closed} ciclo${closed === 1 ? "" : "s"} cerrado${closed === 1 ? "" : "s"}`);
-    } catch (err) {
-      toast.error(`Se cerraron ${closed}; el resto falló: ${err.message || err}`);
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) toast.error(`Se cerraron ${closed}; el resto falló: ${err.message || err}`);
+    setBusy(false);
     await onDone();
   };
 

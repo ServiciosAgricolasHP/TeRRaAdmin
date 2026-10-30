@@ -7,6 +7,7 @@ import { bankName } from "../../utils/banks";
 import { fmtCurrency } from "../../utils/format";
 import { TONE_CLS, fmtDate } from "./helpers";
 import { btnCls, primaryCls } from "./styles";
+import { attempt } from "../../utils/attempt";
 import { readChequesFile } from "./readChequesFile";
 
 // Import de la planilla "Control de Cheques". Muestra lo que se va a crear y
@@ -20,11 +21,9 @@ export function ImportModal({ companies, existingIds, onCancel, onImported }) {
   const readFile = async (file) => {
     if (!file) return;
     setFileName(file.name);
-    try {
-      setRows(await readChequesFile(file, companies));
-    } catch (err) {
-      toast.error("No se pudo leer el archivo: " + (err.message || err));
-    }
+    const { value, error: err } = await attempt(() => readChequesFile(file, companies));
+    if (err) toast.error("No se pudo leer el archivo: " + (err.message || err));
+    else setRows(value);
   };
 
   const seen = new Set();
@@ -39,14 +38,12 @@ export function ImportModal({ companies, existingIds, onCancel, onImported }) {
 
   const confirm = async () => {
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const n = await importRows(newRows, existingIds);
       await onImported(n);
-    } catch (err) {
-      toast.error("Error al importar: " + (err.message || err));
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) toast.error("Error al importar: " + (err.message || err));
+    setBusy(false);
   };
 
   const STATE = {

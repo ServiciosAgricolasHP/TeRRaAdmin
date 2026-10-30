@@ -7,6 +7,7 @@ import Select from "../../components/Select";
 import TextField from "../../components/TextField";
 import { toTitleName, unshout } from "../../utils/textCase";
 import { DATALIST_ID } from "./helpers";
+import { attempt } from "../../utils/attempt";
 
 const emptyPriceLine = () => ({
   unit: "", label: "", payPrice: "", chargePrice: "",
@@ -89,7 +90,7 @@ export default function EntryFormModal({ initial, faenas, hiddenFaenaIds, units,
     const resolvedFaenaLabel = isReal ? faenas.find((f) => f.id === faenaId)?.name || "" : faenaLabel.trim();
 
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       // Suma al catálogo propio del libro cualquier unidad nueva que se haya escrito.
       const newUnits = cleanLines
         .map((l) => l.unit)
@@ -117,11 +118,9 @@ export default function EntryFormModal({ initial, faenas, hiddenFaenaIds, units,
       else await priceBookService.create(payload);
       toast.success(isEdit ? "Entrada actualizada" : "Entrada agregada");
       onSaved();
-    } catch (err) {
-      toast.error("No se pudo guardar: " + err.message);
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) toast.error("No se pudo guardar: " + err.message);
+    setBusy(false);
   };
 
   const inputCls = "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]";

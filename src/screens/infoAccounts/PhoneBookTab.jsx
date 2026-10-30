@@ -18,6 +18,8 @@ import PhoneBookImportModal from "./PhoneBookImportModal";
 import { canShareContacts, shareContact, downloadContactVcard, downloadPhoneBookVcf } from "./phoneBookFiles";
 import { writePhoneBookXlsx } from "./writePhoneBookXlsx";
 import ScreenLoader from "../../components/ScreenLoader";
+import { attempt } from "../../utils/attempt";
+import { readStored, writeStored } from "../../utils/browserStorage";
 
 // Cuántos contactos se dibujan de una vez; "Mostrar más" suma otros tantos.
 const PAGE = 200;
@@ -35,9 +37,7 @@ export default function PhoneBookTab() {
   const [type, setType] = useState("");
   const [department, setDepartment] = useState("");
   const [source, setSource] = useState("");
-  const [byCompany, setByCompany] = useState(() => {
-    try { return localStorage.getItem(BY_COMPANY_KEY) === "true"; } catch { return false; }
-  });
+  const [byCompany, setByCompany] = useState(() => readStored(BY_COMPANY_KEY) === "true");
   const [limit, setLimit] = useState(PAGE);
   // 📤 solo en un teléfono con menú de compartir.
   const [shareable] = useState(canShareContacts);
@@ -54,7 +54,7 @@ export default function PhoneBookTab() {
   const toggleByCompany = () => {
     const next = !byCompany;
     setByCompany(next);
-    try { localStorage.setItem(BY_COMPANY_KEY, String(next)); } catch { /* noop */ }
+    writeStored(BY_COMPANY_KEY, String(next));
   };
 
   const filtered = useMemo(
@@ -68,12 +68,11 @@ export default function PhoneBookTab() {
   const filtering = !!(search.trim() || type || department || source);
 
   const copy = async (text, label) => {
-    try {
+    const { error: err } = await attempt(async () => {
       await navigator.clipboard.writeText(text);
       toast.success(`${label} copiado`);
-    } catch {
-      toast.error("No se pudo copiar");
-    }
+    });
+    if (err) toast.error("No se pudo copiar");
   };
 
   const onSave = async (draft) => {
@@ -84,15 +83,13 @@ export default function PhoneBookTab() {
 
   const doDelete = async () => {
     setDeleteBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await remove(confirmDelete);
       setConfirmDelete(null);
       toast.success("Contacto eliminado");
-    } catch (err) {
-      toast.error("No se pudo eliminar: " + (err.message || err));
-    } finally {
-      setDeleteBusy(false);
-    }
+    });
+    if (err) toast.error("No se pudo eliminar: " + (err.message || err));
+    setDeleteBusy(false);
   };
 
   const onImported = (res) => {
@@ -102,13 +99,12 @@ export default function PhoneBookTab() {
   };
 
   const onShare = async (contact) => {
-    try {
+    const { error: err } = await attempt(async () => {
       const how = await shareContact(contact);
       if (how === "copied") toast.success("Contacto copiado");
       if (how === "fileBlocked") toast.warning("Este teléfono no deja compartir la tarjeta de contacto. Se copió el texto; vuelve a tocar 📤 para compartirlo.");
-    } catch (err) {
-      toast.error("No se pudo compartir: " + (err.message || err));
-    }
+    });
+    if (err) toast.error("No se pudo compartir: " + (err.message || err));
   };
 
   const onDownload = (contact) => {
@@ -118,11 +114,8 @@ export default function PhoneBookTab() {
 
   // Las descargas llevan lo filtrado en pantalla.
   const exportXlsx = async () => {
-    try {
-      await writePhoneBookXlsx(filtered);
-    } catch (err) {
-      toast.error("No se pudo generar el Excel: " + (err.message || err));
-    }
+    const { error: err } = await attempt(() => writePhoneBookXlsx(filtered));
+    if (err) toast.error("No se pudo generar el Excel: " + (err.message || err));
   };
 
   const rowProps = { onCopy: copy, onShare: shareable ? onShare : null, onDownload, onEdit: setEditing, onDelete: setConfirmDelete };

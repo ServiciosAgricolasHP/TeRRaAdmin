@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Modal, { ModalCloseButton } from "./Modal";
 import TextField from "./TextField";
 import Select from "./Select";
@@ -22,6 +22,8 @@ import {
   rutWithoutDv,
   paysToOtherPerson,
 } from "../utils/banks";
+import { attempt } from "../utils/attempt";
+import { useValuesChanged } from "../hooks/useValuesChanged";
 
 export default function WorkerEditModal({ open, mode, worker, allWorkers = [], onClose, onSaved }) {
   const isCreate = mode === "create";
@@ -31,9 +33,9 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [overrideSimilar, setOverrideSimilar] = useState(false);
+  const [allowNewLeader, setAllowNewLeader] = useState(false);
 
-  useEffect(() => {
-    if (!open) return;
+  if (useValuesChanged([open, worker, isCreate], { onMount: true }) && open) {
     setError("");
     setOverrideSimilar(false);
     setAllowNewLeader(false);
@@ -73,12 +75,13 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
     }
     setForm(initial);
     setBaseline(initial);
-  }, [open, worker, isCreate]);
+  }
 
+  const formName = form?.name || "";
   const similarMatches = useMemo(() => {
-    if (!isCreate || !form?.name || form.name.trim().length < 3) return [];
-    return findSimilarWorkers(form.name, allWorkers, { threshold: 0.8, limit: 4 });
-  }, [isCreate, form?.name, allWorkers]);
+    if (!isCreate || formName.trim().length < 3) return [];
+    return findSimilarWorkers(formName, allWorkers, { threshold: 0.8, limit: 4 });
+  }, [isCreate, formName, allWorkers]);
 
   // Líderes actuales de los trabajadores, en mayúsculas y sin espacios en los
   // bordes, para que las variantes de un mismo nombre cuenten como uno.
@@ -93,8 +96,6 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
     }
     return [...set].sort();
   }, [allWorkers]);
-
-  const [allowNewLeader, setAllowNewLeader] = useState(false);
 
   const showSimilarBlock = isCreate && similarMatches.length > 0;
   const isForeign = form ? isForeignRut(form.rut) : false;
@@ -231,7 +232,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
     const personalData = personalDataPatch(form);
 
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       if (isCreate) {
         await createWorker({ rut, name: form.name });
         await workersService.update(rut, { groupLeader, idQr: [], bankDetails, paymentName, email, ...personalData });
@@ -261,11 +262,9 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
         });
       }
       onSaved?.();
-    } catch (err) {
-      setError(err.message || "Error al guardar");
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) setError(err.message || "Error al guardar");
+    setBusy(false);
   };
 
   return (

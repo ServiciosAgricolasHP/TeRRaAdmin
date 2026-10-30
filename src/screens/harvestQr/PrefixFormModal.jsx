@@ -4,6 +4,8 @@ import { cyclesService, qrPrefixesService } from "../../services";
 import Modal, { ModalCloseButton } from "../../components/Modal";
 import { hasChanges } from "../../utils/formChanges";
 import Select from "../../components/Select";
+import { attempt } from "../../utils/attempt";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 
 export function PrefixFormModal({ mode, initial, jobs, onClose, onSaved }) {
   const toast = useToast();
@@ -18,8 +20,9 @@ export function PrefixFormModal({ mode, initial, jobs, onClose, onSaved }) {
   const values = { prefix, label, faenaId: jobId, cycleId, laborId, active };
   const [baseline] = useState(values);
 
+  if (useValuesChanged([jobId], { onMount: true }) && !jobId) setCycles([]);
   useEffect(() => {
-    if (!jobId) { setCycles([]); return; }
+    if (!jobId) return;
     cyclesService
       .list({ wheres: [["faenaId", "==", jobId]], order: ["createdAt", "desc"] })
       .then((list) => {
@@ -31,8 +34,7 @@ export function PrefixFormModal({ mode, initial, jobs, onClose, onSaved }) {
         setCycles([]);
         toast.error("No se pudieron cargar los ciclos de la faena: " + (err.message || err));
       });
-    /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, [jobId]);
+  }, [jobId, toast]);
 
   const selectedCycle = cycles.find((c) => c.id === cycleId);
   const laborOptions = (selectedCycle?.labors || [])
@@ -46,7 +48,7 @@ export function PrefixFormModal({ mode, initial, jobs, onClose, onSaved }) {
       return;
     }
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await qrPrefixesService.upsert(prefixId, {
         label: label.trim(),
         faenaId: jobId,
@@ -56,11 +58,9 @@ export function PrefixFormModal({ mode, initial, jobs, onClose, onSaved }) {
       });
       toast.success(mode === "create" ? "Prefijo creado" : "Prefijo actualizado");
       onSaved();
-    } catch (err) {
-      toast.error("No se pudo guardar: " + err.message);
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) toast.error("No se pudo guardar: " + err.message);
+    setBusy(false);
   };
 
   return (

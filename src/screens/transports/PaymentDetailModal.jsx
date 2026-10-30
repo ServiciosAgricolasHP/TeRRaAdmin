@@ -9,6 +9,8 @@ import { PRINT_SHEET_CSS } from "../../utils/printWindow";
 import { localIsoDate } from "../../utils/dates";
 import { fmtCurrency } from "../../utils/format";
 import { PrintableSummary } from "./PrintableSummary";
+import { attempt } from "../../utils/attempt";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 
 export function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], faenaById, subfaenaById, cycleById, onDelete, onChanged }) {
   const toast = useToast();
@@ -42,25 +44,21 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
   // promesa que handleAddAbono espera antes de seguir.
   const [confirmState, setConfirmState] = useState(null);
   const askConfirm = (message) => new Promise((resolve) => setConfirmState({ message, resolve }));
-  useEffect(() => {
-    setAbonos(payment?.abonos || []);
-  }, [payment?.id, payment?.abonos]);
+  if (useValuesChanged([payment?.id, payment?.abonos], { onMount: true })) setAbonos(payment?.abonos || []);
 
   useEffect(() => {
     if (!open || !payment) return;
     (async () => {
       setLoading(true);
-      try {
+      const { error: err } = await attempt(async () => {
         const all = await tripsService.listByCarrier(payment.carrierId);
         const filtered = all
           .filter((t) => (payment.tripIds || []).includes(t.id))
           .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
         setTrips(filtered);
-      } catch (err) {
-        toast.error("No se pudieron cargar las vueltas del resumen: " + (err.message || err));
-      } finally {
-        setLoading(false);
-      }
+      });
+      if (err) toast.error("No se pudieron cargar las vueltas del resumen: " + (err.message || err));
+      setLoading(false);
     })();
   }, [open, payment, toast]);
 
@@ -95,7 +93,7 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
       if (!ok) return;
     }
     setAbonoBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const updated = await paymentsService.addAbono(payment.id, {
         amount: amt,
         date: newAbono.date || localIsoDate(),
@@ -104,11 +102,9 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
       setAbonos(updated.abonos || []);
       setNewAbono({ amount: "", date: "", notes: "" });
       if (onChanged) await onChanged();
-    } catch (err) {
-      toast.error("Error al cargar abono: " + (err.message || err));
-    } finally {
-      setAbonoBusy(false);
-    }
+    });
+    if (err) toast.error("Error al cargar abono: " + (err.message || err));
+    setAbonoBusy(false);
   };
 
   const startEditAbono = (a) =>
@@ -130,7 +126,7 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
       if (!ok) return;
     }
     setAbonoBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const updated = await paymentsService.updateAbono(payment.id, editingAbono.id, {
         amount: amt,
         date: editingAbono.date,
@@ -139,50 +135,45 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
       setAbonos(updated.abonos || []);
       setEditingAbono(null);
       if (onChanged) await onChanged();
-    } catch (err) {
-      toast.error("Error al editar el abono: " + (err.message || err));
-    } finally {
-      setAbonoBusy(false);
-    }
+    });
+    if (err) toast.error("Error al editar el abono: " + (err.message || err));
+    setAbonoBusy(false);
   };
 
   const handleRemoveAbono = (abonoId) => setConfirmRemoveAbono(abonoId);
   const doRemoveAbono = async (abonoId) => {
     setAbonoBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const updated = await paymentsService.removeAbono(payment.id, abonoId);
       setAbonos(updated.abonos || []);
       if (onChanged) await onChanged();
-    } catch (err) {
-      toast.error("Error al eliminar abono: " + (err.message || err));
-    } finally {
-      setAbonoBusy(false);
-    }
+    });
+    if (err) toast.error("Error al eliminar abono: " + (err.message || err));
+    setAbonoBusy(false);
   };
 
   // Vuelve a leer las vueltas del resumen después de editar o quitar una.
   const refreshTrips = async () => {
-    try {
+    const { error: err } = await attempt(async () => {
       const all = await tripsService.listByCarrier(payment.carrierId);
       // Relee el resumen para tener sus tripIds al día (quitar una vuelta los
       // cambia); si la lectura falla, usa los del resumen recibido.
       let currentTripIds = payment.tripIds || [];
-      try {
+      await attempt(async () => {
         const updated = await paymentsService.getById(payment.id);
         if (updated) currentTripIds = updated.tripIds || currentTripIds;
-      } catch { /* noop */ }
+      });
       const filtered = all
         .filter((t) => currentTripIds.includes(t.id))
         .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
       setTrips(filtered);
-    } catch (err) {
-      toast.error("No se pudieron recargar las vueltas: " + (err.message || err));
-    }
+    });
+    if (err) toast.error("No se pudieron recargar las vueltas: " + (err.message || err));
   };
 
   const handleSaveTrip = async (form) => {
     if (!editingTrip) return;
-    try {
+    const { error: err } = await attempt(async () => {
       // Conserva el ciclo, la faena y la subfaena de la vuelta, igual que
       // TripsTab.
       const payload = {
@@ -198,14 +189,13 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
       await refreshTrips();
       if (onChanged) await onChanged();
       toast.success("Vuelta actualizada");
-    } catch (err) {
-      toast.error("Error al guardar: " + (err.message || err));
-    }
+    });
+    if (err) toast.error("Error al guardar: " + (err.message || err));
   };
 
   const handleRemoveTripFromPayment = async () => {
     if (!confirmRemoveTrip) return;
-    try {
+    const { error: err } = await attempt(async () => {
       await paymentsService.editSummaryTrips(payment.id, {
         removeTripIds: [confirmRemoveTrip.id],
       });
@@ -213,9 +203,8 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
       await refreshTrips();
       if (onChanged) await onChanged();
       toast.success("Vuelta quitada del resumen");
-    } catch (err) {
-      toast.error("Error al quitar: " + (err.message || err));
-    }
+    });
+    if (err) toast.error("Error al quitar: " + (err.message || err));
   };
 
   // Carga las vueltas pendientes del mismo transportista que no tienen
@@ -224,17 +213,15 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
     setSelectedToAdd(new Set());
     setAddingTrips(true);
     setLoadingAvailable(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const all = await tripsService.listByCarrier(payment.carrierId, { onlyPending: true });
       const unlinked = all
         .filter((t) => !t.paymentId)
         .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
       setAvailableTrips(unlinked);
-    } catch (err) {
-      toast.error("Error al buscar vueltas sueltas: " + (err.message || err));
-    } finally {
-      setLoadingAvailable(false);
-    }
+    });
+    if (err) toast.error("Error al buscar vueltas sueltas: " + (err.message || err));
+    setLoadingAvailable(false);
   };
 
   const toggleSelectToAdd = (id) => {
@@ -249,18 +236,16 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
   const handleAddTrips = async () => {
     if (selectedToAdd.size === 0) return;
     setAddBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await paymentsService.editSummaryTrips(payment.id, { addTripIds: [...selectedToAdd] });
       setAddingTrips(false);
       setSelectedToAdd(new Set());
       await refreshTrips();
       if (onChanged) await onChanged();
       toast.success("Vueltas agregadas al resumen");
-    } catch (err) {
-      toast.error("Error al agregar: " + (err.message || err));
-    } finally {
-      setAddBusy(false);
-    }
+    });
+    if (err) toast.error("Error al agregar: " + (err.message || err));
+    setAddBusy(false);
   };
 
   const handlePrint = () => print(printRef.current, { title: "Resumen Transporte", css: PRINT_SHEET_CSS });

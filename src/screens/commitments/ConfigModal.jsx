@@ -6,6 +6,7 @@ import { getCommitmentConfig, DEFAULT_COMMITMENT_CONFIG, saveCommitmentConfig } 
 import { enqueueFunctionJob, waitForFunctionJob } from "../../services/functionJobsService";
 import { hasChanges } from "../../utils/formChanges";
 import { btnCls, primaryCls, labelCls, inputCls } from "./styles";
+import { attempt } from "../../utils/attempt";
 
 const OFFSET_CHOICES = [7, 5, 3, 2, 1, 0];
 
@@ -53,20 +54,18 @@ export function ConfigModal({ onClose }) {
 
   const save = async () => {
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await persist();
       toast.success("Avisos guardados");
       onClose();
-    } catch (err) {
-      toast.error(err.message || String(err));
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) toast.error(err.message || String(err));
+    setBusy(false);
   };
 
   const sendTest = async () => {
     setTesting(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await persist();
       const ref = await enqueueFunctionJob("sendCommitmentDigest", null, user);
       const outcome = await waitForFunctionJob(ref, { timeoutMs: 60_000 });
@@ -77,11 +76,9 @@ export function ConfigModal({ onClose }) {
       } else {
         toast.error("No se pudo enviar: " + (outcome.error || outcome.status));
       }
-    } catch (err) {
-      toast.error(err.message || String(err));
-    } finally {
-      setTesting(false);
-    }
+    });
+    if (err) toast.error(err.message || String(err));
+    setTesting(false);
   };
 
   const toggleOffset = (n) =>

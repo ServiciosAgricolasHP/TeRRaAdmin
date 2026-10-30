@@ -4,6 +4,25 @@ import { findWorkerByRut } from "../services/workersService";
 import { parseCsv, buildWorkerPatch } from "../utils/importWorkers";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { attempt } from "../utils/attempt";
+
+// Una fila del CSV: crea al trabajador, lo actualiza o la salta. Devuelve qué
+// pasó y, si la fila no sirve, el motivo.
+async function importWorkerRow(row) {
+  const rutNorm = String(row.rut || "").trim();
+  if (!rutNorm) return { outcome: "skipped" };
+  const existing = await findWorkerByRut(rutNorm);
+  const built = buildWorkerPatch(row, existing);
+  if (built.error) return { outcome: "skipped", error: built.error };
+  if (built.mode === "update") {
+    // Por el id del doc encontrado, no por el rut del CSV: pueden diferir
+    // si el trabajador cambió de cédula después de crearse.
+    await workersService.update(existing.id, built.patch);
+    return { outcome: "updated" };
+  }
+  await workersService.create(built.payload, { id: built.rut });
+  return { outcome: "created" };
+}
 
 export default function MigrateWorkers() {
   const [parsed, setParsed] = useState({ header: [], rows: [] });
@@ -42,29 +61,10 @@ export default function MigrateWorkers() {
     const results = { created: 0, updated: 0, skipped: 0, errors: [] };
     for (let i = 0; i < parsed.rows.length; i++) {
       const row = parsed.rows[i];
-      try {
-        const rutNorm = String(row.rut || "").trim();
-        if (!rutNorm) { results.skipped++; continue; }
-        const existing = await findWorkerByRut(rutNorm);
-        const built = buildWorkerPatch(row, existing);
-        if (built.error) {
-          results.errors.push({ row: i + 2, rut: row.rut, error: built.error });
-          results.skipped++;
-          continue;
-        }
-        if (built.mode === "update") {
-          // Por el id del doc encontrado, no por el rut del CSV: pueden diferir
-          // si el trabajador cambió de cédula después de crearse.
-          await workersService.update(existing.id, built.patch);
-          results.updated++;
-        } else {
-          await workersService.create(built.payload, { id: built.rut });
-          results.created++;
-        }
-      } catch (err) {
-        results.errors.push({ row: i + 2, rut: row.rut, error: err.message || String(err) });
-        results.skipped++;
-      }
+      const { value, error: err } = await attempt(() => importWorkerRow(row));
+      const rowError = err ? err.message || String(err) : value.error;
+      if (rowError) results.errors.push({ row: i + 2, rut: row.rut, error: rowError });
+      results[err ? "skipped" : value.outcome]++;
       setProgress({ done: i + 1, total: parsed.rows.length });
       setResults({ ...results });
     }

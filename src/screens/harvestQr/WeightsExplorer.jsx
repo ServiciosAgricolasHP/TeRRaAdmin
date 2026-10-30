@@ -11,6 +11,8 @@ import { currentRutResolver } from "../../utils/workerRut";
 import { daysAgoKey, todayKey, readsLabel, TAP } from "./helpers";
 import { WeightFormModal } from "./WeightFormModal";
 import ScreenLoader from "../../components/ScreenLoader";
+import { attempt } from "../../utils/attempt";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 
 // TTL del explorador de pesajes. Los pesajes cambian todo el rato mientras se
 // cosecha y ningún TTL deja la pantalla fresca: la antigüedad se muestra y el
@@ -148,11 +150,12 @@ export function WeightsExplorer({ prefixes, jobById }) {
     return () => clearTimeout(t);
   }, [dateFrom, dateTo]);
 
+  const rangeValid = !!range.from && !!range.to && range.from <= range.to;
+  if (useValuesChanged([range, reloadKey, prefixFilter, missingIndex], { onMount: true }) && rangeValid) setBusy(true);
   useEffect(() => {
     let cancelled = false;
     const { from, to } = range;
     if (!from || !to || from > to) return;
-    setBusy(true);
 
     // El prefijo filtra en la consulta, así elegir uno baja las lecturas.
     // Necesita el índice compuesto (prefix, dateKey), el mismo que usa la
@@ -175,27 +178,21 @@ export function WeightsExplorer({ prefixes, jobById }) {
     };
 
     (async () => {
-      try {
-        const { data, reads: readCount } = await countedList(harvestWeightsService, opts);
-        if (cancelled) return;
-        setWeights(data);
-        setReads(readCount);
-        setFetchedAt(Date.now());
-      } catch (err) {
-        if (cancelled) return;
-        if (filterByPrefix && err?.code === "failed-precondition") {
-          setMissingIndex(true);
-          return;
-        }
-        toast.error("No se pudieron leer los pesajes: " + (err.message || err));
-      } finally {
-        if (!cancelled) setBusy(false);
+      const { value, error: err } = await attempt(() => countedList(harvestWeightsService, opts));
+      if (cancelled) return;
+      setBusy(false);
+      if (err) {
+        if (filterByPrefix && err?.code === "failed-precondition") setMissingIndex(true);
+        else toast.error("No se pudieron leer los pesajes: " + (err.message || err));
+        return;
       }
+      setWeights(value.data);
+      setReads(value.reads);
+      setFetchedAt(Date.now());
     })();
 
     return () => { cancelled = true; };
-    /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, [range, reloadKey, prefixFilter, missingIndex]);
+  }, [range, reloadKey, prefixFilter, missingIndex, toast]);
 
   // Descarta la caché de pesajes y vuelve a leer: con TTL largo, refrescar es
   // una decisión de quien mira.

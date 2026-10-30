@@ -46,6 +46,8 @@ import { PartialPaymentModal } from "./commitments/PartialPaymentModal";
 import { SeriesEditModal } from "./commitments/SeriesEditModal";
 import { primaryCls, btnCls, inputCls } from "./commitments/styles";
 import ScreenLoader from "../components/ScreenLoader";
+import { attempt } from "../utils/attempt";
+import { readStored, writeStored } from "../utils/browserStorage";
 import { writeCommitmentsXlsx } from "./commitments/writeCommitmentsXlsx";
 
 const STATUS_FILTERS = [
@@ -97,9 +99,7 @@ export default function Commitments() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("upcoming");
   const [laterUntil, setLaterUntil] = useState(() => nextYearEnd(today));
-  const [byCounterparty, setByCounterparty] = useState(() => {
-    try { return localStorage.getItem(BY_COUNTERPARTY_KEY) === "true"; } catch { return false; }
-  });
+  const [byCounterparty, setByCounterparty] = useState(() => readStored(BY_COUNTERPARTY_KEY) === "true");
   const [kindFilter, setKindFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [companyFilter, setCompanyFilter] = useState("");
@@ -119,18 +119,16 @@ export default function Commitments() {
 
   const load = async () => {
     setLoading(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const [list, comps] = await Promise.all([
         listCommitments(),
         companiesService.list({ order: ["razonSocial", "asc"], cache: true, ttl: 600_000 }),
       ]);
       setItems(list);
       setCompanies(comps);
-    } catch (err) {
-      toast.error("No se pudieron cargar los vencimientos: " + (err.message || err));
-    } finally {
-      setLoading(false);
-    }
+    });
+    if (err) toast.error("No se pudieron cargar los vencimientos: " + (err.message || err));
+    setLoading(false);
   };
 
   // Carga al montar; `useEffectEvent` lee la versión actual de la función sin
@@ -161,7 +159,7 @@ export default function Commitments() {
   const toggleByCounterparty = () => {
     const next = !byCounterparty;
     setByCounterparty(next);
-    try { localStorage.setItem(BY_COUNTERPARTY_KEY, String(next)); } catch { /* noop */ }
+    writeStored(BY_COUNTERPARTY_KEY, String(next));
   };
 
   const filtered = useMemo(() => {
@@ -189,15 +187,13 @@ export default function Commitments() {
   const runConfirm = async () => {
     if (!confirm) return;
     setConfirmBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await confirm.run();
       setConfirm(null);
       await load();
-    } catch (err) {
-      toast.error(err.message || String(err));
-    } finally {
-      setConfirmBusy(false);
-    }
+    });
+    if (err) toast.error(err.message || String(err));
+    setConfirmBusy(false);
   };
 
   const askCancel = (c) =>
@@ -276,11 +272,8 @@ export default function Commitments() {
   };
 
   const exportXlsx = async () => {
-    try {
-      await writeCommitmentsXlsx({ items: filtered, total: filteredTotal, today, companyName });
-    } catch (err) {
-      toast.error("No se pudo generar el Excel: " + (err.message || err));
-    }
+    const { error: err } = await attempt(() => writeCommitmentsXlsx({ items: filtered, total: filteredTotal, today, companyName }));
+    if (err) toast.error("No se pudo generar el Excel: " + (err.message || err));
   };
 
   const rowProps = {
@@ -503,15 +496,14 @@ export default function Commitments() {
           onChange={(patch) => setDateAction((a) => ({ ...a, ...patch }))}
           onCancel={() => setDateAction(null)}
           onConfirm={async ({ item, mode, date, extra }) => {
-            try {
+            const { error: err } = await attempt(async () => {
               if (mode === "pay") await markPaid(item.id, date, extra);
               else await reschedule(item.id, date);
               setDateAction(null);
               toast.success(mode === "pay" ? paidLabel(item.kind) : `Reprogramado para el ${fmtDate(date)}`);
               await load();
-            } catch (err) {
-              toast.error(err.message || String(err));
-            }
+            });
+            if (err) toast.error(err.message || String(err));
           }}
         />
       )}

@@ -3,13 +3,14 @@
 // las que apuntan a una nómina que ya no existe.
 //
 // TODO: eliminar esta pantalla, su ruta en App.jsx y su ítem en Layout.jsx al terminar la limpieza.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import { doc, writeBatch, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import { workdaysService, cyclesService, workersService } from "../services";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ScreenLoader from "../components/ScreenLoader";
 import { fmtCurrency } from "../utils/format";
+import { attempt } from "../utils/attempt";
 
 const fmtTimestamp = (ts) => {
   if (!ts) return "—";
@@ -36,7 +37,7 @@ export default function CleanupPaidWorkdays() {
     setLoading(true);
     setMessage("");
     setSelected(new Set());
-    try {
+    const { error: err } = await attempt(async () => {
       const [cycle, wds] = await Promise.all([
         cyclesService.getById(cycleId.trim()),
         workdaysService.list({ wheres: [["cycleId", "==", cycleId.trim()]] }),
@@ -61,20 +62,18 @@ export default function CleanupPaidWorkdays() {
         for (const w of list) map[w.id] = w;
       }
       setWorkersByRut(map);
-    } catch (err) {
-      setMessage(`Error: ${err.message || err}`);
-    } finally {
-      setLoading(false);
-    }
+    });
+    if (err) setMessage(`Error: ${err.message || err}`);
+    setLoading(false);
   };
 
   useEffect(() => {
     cyclesService.list({ order: ["label", "asc"] }).then(setCycles);
   }, []);
 
+  const loadCycle = useEffectEvent(() => load());
   useEffect(() => {
-    if (cycleId) load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (cycleId) loadCycle();
   }, [cycleId]);
 
   const filtered = useMemo(() => {
@@ -124,7 +123,7 @@ export default function CleanupPaidWorkdays() {
     setConfirmRelease(false);
     setBusy(true);
     setMessage("");
-    try {
+    const { error: err } = await attempt(async () => {
       const ids = [...selected];
       const chunkSize = 450;
       for (let i = 0; i < ids.length; i += chunkSize) {
@@ -142,11 +141,9 @@ export default function CleanupPaidWorkdays() {
       workdaysService.invalidate();
       setMessage(`✓ Liberadas ${ids.length} jornada(s).`);
       await load();
-    } catch (err) {
-      setMessage(`Error al liberar: ${err.message || err}`);
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) setMessage(`Error al liberar: ${err.message || err}`);
+    setBusy(false);
   };
 
   return (

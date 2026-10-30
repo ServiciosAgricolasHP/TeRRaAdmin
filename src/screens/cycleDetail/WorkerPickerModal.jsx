@@ -19,6 +19,8 @@ import {
 import { toProperName } from "../../utils/nameUtils";
 import { matchesSearchQuery } from "../../utils/textSearch";
 import { greeting, GREETING_SLOTS } from "../../utils/greetings";
+import { attempt } from "../../utils/attempt";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 
 const MIN_SEARCH = 3;
 const WORKERS_TTL_MS = 2 * 60 * 60 * 1000;
@@ -66,11 +68,8 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
     return [...set].filter(Boolean).sort();
   }, [availableLeaders]);
 
-  // Carga la lista de trabajadores, de la caché si está vigente. La caché es
-  // aditiva: un trabajador creado desde este modal aparece en las búsquedas
-  // siguientes sin releer la colección.
-  useEffect(() => {
-    if (!open) return;
+  // Al abrir, vuelve a la búsqueda vacía.
+  if (useValuesChanged([open], { onMount: true }) && open) {
     setSearch("");
     setCreating(false);
     setCreatingTemp(false);
@@ -78,8 +77,14 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
     setNewWorker(emptyNewWorker());
     setError("");
     setTempLeader(LEADER_LOCAL);
-    let cancelled = false;
     setLoading(true);
+  }
+  // Carga la lista de trabajadores, de la caché si está vigente. La caché es
+  // aditiva: un trabajador creado desde este modal aparece en las búsquedas
+  // siguientes sin releer la colección.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
     workersService
       .list({ cache: true, persist: true, ttl: WORKERS_TTL_MS })
       .then((list) => {
@@ -206,7 +211,7 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
     if (!accNumber) return setError("Número de cuenta requerido");
 
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const existing = await findWorkerByRut(rut);
       if (existing) {
         onPick({ id: existing.id, rut: existing.id, name: existing.name });
@@ -218,11 +223,9 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
       const groupLeader = [leaderChoice];
       await workersService.update(created.id, { bankDetails, paymentName, groupLeader, idQr: [] });
       onPick({ id: created.id, rut: created.id, name: created.name });
-    } catch (err) {
-      setError(err.message || "Error");
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) setError(err.message || "Error");
+    setBusy(false);
   };
 
   const submitTemp = (e) => {

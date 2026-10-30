@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useEffect } from "react";
+import { useState, useRef, useMemo, useEffect, useEffectEvent } from "react";
 import { workdaysService } from "../../services";
 import { listPendingForWorkers } from "../../services/advancesService";
 import { workerKeys } from "../../services/workersService";
@@ -10,6 +10,7 @@ import Modal from "../../components/Modal";
 import { matchesSearchQuery } from "../../utils/textSearch";
 import { fmtCurrency } from "../../utils/format";
 import { formatWorkerDetailProd, workerDetailDateLabel } from "./workerDetailLabels";
+import { attempt } from "../../utils/attempt";
 
 // Dígitos (y la K) de un RUT, para buscar sin puntos ni guion.
 function rutDigits(s) {
@@ -82,7 +83,7 @@ export function AddWorkerDaysModal({
   }, [workers, query]);
 
   const cargar = async (w, id) => {
-    try {
+    const { error: err } = await attempt(async () => {
       const claves = workerKeys(w);
       // Al generar, los anticipos se reparten en la vista previa: acá no se
       // necesitan.
@@ -91,11 +92,9 @@ export function AddWorkerDaysModal({
         generando ? [] : listPendingForWorkers(claves),
       ]);
       if (pedido.current === id) setData({ workdays, advances });
-    } catch (err) {
-      if (pedido.current === id) setError(err?.message || String(err));
-    } finally {
-      if (pedido.current === id) setLoading(false);
-    }
+    });
+    if (err) if (pedido.current === id) setError(err?.message || String(err));
+    if (pedido.current === id) setLoading(false);
   };
   const elegir = (w) => {
     const id = ++pedido.current;
@@ -107,9 +106,11 @@ export function AddWorkerDaysModal({
     cargar(w, id);
   };
   // Abierto directo en una persona: sus días se cargan al montar.
-  useEffect(() => {
+  const loadInitialWorker = useEffectEvent(() => {
     if (initialWorker) cargar(initialWorker, ++pedido.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
+  useEffect(() => {
+    loadInitialWorker();
   }, []);
   const otraPersona = () => {
     pedido.current += 1;

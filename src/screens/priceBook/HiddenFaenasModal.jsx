@@ -3,6 +3,7 @@ import { useToast } from "../../contexts/ToastContext";
 import { priceBookConfigService } from "../../services";
 import Modal, { ModalCloseButton } from "../../components/Modal";
 import { hasChanges } from "../../utils/formChanges";
+import { attempt } from "../../utils/attempt";
 
 export default function HiddenFaenasModal({ faenas, hiddenFaenaIds, onClose, onSaved }) {
   const toast = useToast();
@@ -19,15 +20,13 @@ export default function HiddenFaenasModal({ faenas, hiddenFaenaIds, onClose, onS
 
   const submit = async () => {
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await priceBookConfigService.upsert("main", { hiddenFaenaIds: [...hidden] });
       toast.success("Preferencias guardadas");
       onSaved();
-    } catch (err) {
-      toast.error("No se pudo guardar: " + err.message);
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) toast.error("No se pudo guardar: " + err.message);
+    setBusy(false);
   };
 
   return (

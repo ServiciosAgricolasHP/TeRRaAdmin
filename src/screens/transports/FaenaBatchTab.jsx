@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useEffectEvent, useMemo } from "react";
 import { useCarriers } from "../../contexts/CarriersContext";
 import { tripsService, paymentsService, titleCase } from "../../services/transportsService";
 import { jobsService, subjobsService, cyclesService } from "../../services";
 import { useToast } from "../../contexts/ToastContext";
 import { fmtCurrency } from "../../utils/format";
 import ScreenLoader from "../../components/ScreenLoader";
+import { attempt } from "../../utils/attempt";
 
 // ============================================================
 // PESTAÑA PAGO POR FAENA: elige ciclos y genera un resumen por transportista
@@ -27,7 +28,7 @@ export function FaenaBatchTab() {
 
   const load = async () => {
     setLoading(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const [f, s, c, pendingT] = await Promise.all([
         jobsService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
         subjobsService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
@@ -40,13 +41,14 @@ export function FaenaBatchTab() {
       // Solo ciclos abiertos; la consulta ya trae solo vueltas pendientes y sin resumen.
       const activeCycleIds = new Set(c.filter((x) => x.status !== "closed").map((x) => x.id));
       setAllTrips(pendingT.filter((t) => activeCycleIds.has(t.cycleId)));
-    } finally {
-      setLoading(false);
-    }
+    });
+    setLoading(false);
+    if (err) throw err;
   };
 
+  const loadOnMount = useEffectEvent(() => load());
   useEffect(() => {
-    load();
+    loadOnMount();
   }, []);
 
   const subfaenaName = (id) => subfaenas.find((s) => s.id === id)?.name || "";
@@ -140,7 +142,7 @@ export function FaenaBatchTab() {
       return;
     }
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const cycleIds = [...selectedCycleIds];
       let created = 0;
       for (const it of items) {
@@ -161,9 +163,9 @@ export function FaenaBatchTab() {
       setCarrierItems([]);
       setStep(1);
       await load();
-    } finally {
-      setBusy(false);
-    }
+    });
+    setBusy(false);
+    if (err) throw err;
   };
 
   if (loading) {

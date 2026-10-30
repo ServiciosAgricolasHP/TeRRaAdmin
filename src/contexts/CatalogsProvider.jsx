@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { catalogsService, CATALOG_DEFAULTS } from "../services/catalogsService";
 import { useAuth } from "./AuthContext";
 import { CatalogsContext } from "./CatalogsContext";
+import { attempt } from "../utils/attempt";
 
 export function CatalogsProvider({ children }) {
   const { user, hasAccess } = useAuth();
@@ -12,14 +13,12 @@ export function CatalogsProvider({ children }) {
   useEffect(() => {
     if (!uid) return;
     (async () => {
-      try {
+      const { error: err } = await attempt(async () => {
         const all = await catalogsService.getAll();
         setCatalogs((c) => ({ ...c, ...all }));
-      } catch (err) {
-        console.error("[Catalogs] load failed:", err);
-      } finally {
-        setLoading(false);
-      }
+      });
+      if (err) console.error("[Catalogs] load failed:", err);
+      setLoading(false);
     })();
   }, [uid]);
 

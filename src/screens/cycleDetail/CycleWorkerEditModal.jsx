@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Modal from "../../components/Modal";
 import DayConfigContent from "./cycleWorkerEditModal/DayConfigContent";
 import { formatRutForDisplay } from "../../utils/rutUtils";
@@ -15,6 +15,8 @@ import { PieceworkDay } from "./cycleWorkerEditModal/PieceworkDay";
 import { StagesDay } from "./cycleWorkerEditModal/StagesDay";
 import { OvertimeDay } from "./cycleWorkerEditModal/OvertimeDay";
 import { NormalDay } from "./cycleWorkerEditModal/NormalDay";
+import { attempt } from "../../utils/attempt";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 
 // Modal mobile: edita un trabajador a la vez, una tarjeta por día (en vez de
 // una columna por día como la grilla). Escribe con las mismas funciones que la
@@ -57,21 +59,20 @@ export default function CycleWorkerEditModal({
   // El modal queda montado y solo cambia `workerRut`. Al cambiar de
   // trabajador (también con ‹/›) vuelve a la vista principal y descarta los
   // textos sin confirmar, la búsqueda de líder y las confirmaciones pendientes.
-  useEffect(() => {
+  if (useValuesChanged([workerRut])) {
     setConfiguringDate(null);
     setPickingLeader(false);
     setLeaderFilter("");
     setConfirmingRemove(false);
     setBonusDate(null);
     setDrafts({});
-  }, [workerRut]);
+  }
 
   // Precarga el formulario de bonos: los valores del día si ya tiene algo
   // cargado, o los `bonusDefaults` del trabajador si está vacío. El
   // BonusEditModal de escritorio mira si existe el workday; acá no se tiene el
   // workday, así que "vacío" es que todos los campos del día estén en cero.
-  useEffect(() => {
-    if (!bonusDate || !row || !activeLabor) return;
+  if (useValuesChanged([bonusDate, row, activeLabor, workerRut], { onMount: true }) && bonusDate && row && activeLabor) {
     const isBlankDay =
       !row[`${bonusDate}__m`] &&
       !row[`${bonusDate}__s`] &&
@@ -82,7 +83,7 @@ export default function CycleWorkerEditModal({
     setDrivingBonusChecked(isBlankDay ? !!defaults.manejo : !!row[`${bonusDate}__m`]);
     setBonusSupervisionChecked(isBlankDay ? !!defaults.supervision : !!row[`${bonusDate}__s`]);
     setBonusExtras(row[`${bonusDate}__x`] ? String(row[`${bonusDate}__x`]) : "");
-  }, [bonusDate, row, activeLabor, workerRut]);
+  }
 
   const open = !!workerRut && !!row && !!activeLabor;
 
@@ -112,13 +113,12 @@ export default function CycleWorkerEditModal({
   const runWithSaving = async (field, task) => {
     setSaving(field, true);
     const started = Date.now();
-    try {
-      return await task();
-    } finally {
-      const elapsed = Date.now() - started;
-      if (elapsed < MIN_SAVING_MS) await new Promise((r) => setTimeout(r, MIN_SAVING_MS - elapsed));
-      setSaving(field, false);
-    }
+    const { value, error: err } = await attempt(task);
+    const elapsed = Date.now() - started;
+    if (elapsed < MIN_SAVING_MS) await new Promise((r) => setTimeout(r, MIN_SAVING_MS - elapsed));
+    setSaving(field, false);
+    if (err) throw err;
+    return value;
   };
 
   if (!open) return null;
@@ -135,13 +135,13 @@ export default function CycleWorkerEditModal({
 
   const doRemove = async () => {
     setRemoving(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const ok = await onRemoveWorker(workerRut);
       if (ok) onClose();
       else setConfirmingRemove(false);
-    } finally {
-      setRemoving(false);
-    }
+    });
+    setRemoving(false);
+    if (err) throw err;
   };
 
   const visibleDays = onlyWithData ? days.filter((d) => dayHasData(row, d)) : days;

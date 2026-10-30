@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { copyNodeImage, downloadNodePng } from "../../utils/imageCapture";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { contactCardsService } from "../../services";
@@ -11,6 +11,7 @@ import ContactCard from "./ContactCard";
 import ContactCardImage from "./ContactCardImage";
 import ContactCardModal from "./ContactCardModal";
 import ScreenLoader from "../../components/ScreenLoader";
+import { attempt } from "../../utils/attempt";
 
 // Pestaña "Información y cuentas" de Agenda y Cuentas: libreta compartida de
 // fichas (persona o empresa) con datos de contacto + varias cuentas bancarias.
@@ -39,23 +40,23 @@ export default function ContactCardsTab() {
 
   const load = async () => {
     setLoading(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const list = await contactCardsService.list(LIST_OPTS);
       setCards(list);
-    } finally {
-      setLoading(false);
-    }
+    });
+    setLoading(false);
+    if (err) throw err;
   };
 
-  useEffect(() => { load(); }, []);
+  const loadOnMount = useEffectEvent(() => load());
+  useEffect(() => { loadOnMount(); }, []);
 
   const copy = async (text, label = "Dato") => {
-    try {
+    const { error: err } = await attempt(async () => {
       await navigator.clipboard.writeText(text);
       toast.success(`${label} copiado`);
-    } catch {
-      toast.error("No se pudo copiar");
-    }
+    });
+    if (err) toast.error("No se pudo copiar");
   };
 
   // Captura la tarjeta estilizada off-screen y la copia al portapapeles. Si el
@@ -77,7 +78,7 @@ export default function ContactCardsTab() {
         await copyNodeImage(node, image);
         toast.success("Imagen copiada al portapapeles");
       };
-      try {
+      const { error: err } = await attempt(async () => {
         const canCopyImage =
           typeof ClipboardItem !== "undefined" &&
           navigator.clipboard &&
@@ -88,11 +89,9 @@ export default function ContactCardsTab() {
           // Si copiar falla, descarga.
           await copyToClipboard().catch(download);
         }
-      } catch {
-        toast.error("No se pudo generar la imagen");
-      } finally {
-        if (!cancelled) setImageExport(null);
-      }
+      });
+      if (err) toast.error("No se pudo generar la imagen");
+      if (!cancelled) setImageExport(null);
     })();
     return () => { cancelled = true; };
   }, [imageExport, toast]);
@@ -101,9 +100,8 @@ export default function ContactCardsTab() {
     // Actualización optimista para que la tarjeta salte de sección al instante.
     const next = !card.favorite;
     setCards((prev) => prev.map((c) => (c.id === card.id ? { ...c, favorite: next } : c)));
-    try {
-      await contactCardsService.update(card.id, { favorite: next }, { additive: true });
-    } catch {
+    const { error: err } = await attempt(() => contactCardsService.update(card.id, { favorite: next }, { additive: true }));
+    if (err) {
       toast.error("No se pudo actualizar el favorito");
       setCards((prev) => prev.map((c) => (c.id === card.id ? { ...c, favorite: card.favorite } : c)));
     }
@@ -146,16 +144,14 @@ export default function ContactCardsTab() {
     if (!confirmDelete) return;
     const c = confirmDelete;
     setDeleteBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await contactCardsService.remove(c.id, { additive: true });
       setCards((prev) => prev.filter((x) => x.id !== c.id));
       setConfirmDelete(null);
       toast.success("Ficha eliminada");
-    } catch (err) {
-      toast.error("No se pudo eliminar: " + (err.message || err));
-    } finally {
-      setDeleteBusy(false);
-    }
+    });
+    if (err) toast.error("No se pudo eliminar: " + (err.message || err));
+    setDeleteBusy(false);
   };
 
   // El buscador filtra también las favoritas. El orden por nombre se arma acá

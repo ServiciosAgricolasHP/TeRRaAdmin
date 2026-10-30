@@ -11,6 +11,7 @@ import { mirrorWeightToWorkdays } from "../../services/harvestSyncService";
 import { assignQrCode } from "../../services/qrCodesService";
 import { prefixOfCode, suggestFreeCodes, ownerOfCode } from "../../utils/qrCodes";
 import { todayKey, TAP } from "./helpers";
+import { attempt } from "../../utils/attempt";
 
 // Alta y edición manual de pesajes. `harvestWeights` la escribe la app de
 // scan; esto es la vía de excepción para corregir una lectura mala o cargar
@@ -107,7 +108,7 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
 
   const assignQr = async (code, fromWorker) => {
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const { released } = await assignQrCode(code, worker, fromWorker);
       setJustAssigned(code);
       setQrPick(code);
@@ -119,11 +120,9 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
           : `${code} → ${worker.name || worker.id}`,
       );
       onWorkersChanged?.();
-    } catch (err) {
-      toast.error("No se pudo asignar: " + (err.message || err));
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) toast.error("No se pudo asignar: " + (err.message || err));
+    setBusy(false);
   };
 
   const requestAssignment = () => {
@@ -156,7 +155,7 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
     }
 
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       for (const r of checked) {
         const payload = {
           rut: worker.id,
@@ -178,9 +177,9 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
       }
       toast.success(isEdit ? "Pesaje actualizado" : `${checked.length} pesaje(s) agregado(s)`);
 
-      // El espejo va en su propio try: si falla, los pesajes ya quedaron
-      // guardados y el aviso lo dice.
-      try {
+      // El espejo va aparte: si falla, los pesajes ya quedaron guardados y el
+      // aviso lo dice.
+      const { error: mirrorErr } = await attempt(async () => {
         const newKeys = checked.map((r) => ({ prefixId, rut: worker.id, dateKey, x: r.x, y: r.y }));
         const oldKey = isEdit
           ? { prefixId: initial.prefix, rut: initial.rut, dateKey: initial.dateKey, x: initial.x, y: initial.y }
@@ -208,16 +207,13 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
             toast.warning(`Sin precio configurado para ${mirror.zeroPriceDays.join(", ")}: esas jornadas quedaron en $0.`);
           }
         }
-      } catch (err) {
-        toast.warning("El pesaje se guardó, pero no se pudo actualizar la jornada: " + (err.message || err));
-      }
+      });
+      if (mirrorErr) toast.warning("El pesaje se guardó, pero no se pudo actualizar la jornada: " + (mirrorErr.message || mirrorErr));
 
       onSaved(dateKey);
-    } catch (err) {
-      toast.error("No se pudo guardar: " + (err.message || err));
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) toast.error("No se pudo guardar: " + (err.message || err));
+    setBusy(false);
   };
 
   const numSelect = (label, value, onChange, entries) => (
@@ -479,7 +475,7 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
       }
       confirmLabel="Pasárselo"
       busy={busy}
-      onConfirm={() => assignQr(confirmTakeover.code, confirmTakeover.from)}
+      onConfirm={() => confirmTakeover && assignQr(confirmTakeover.code, confirmTakeover.from)}
       onCancel={() => setConfirmTakeover(null)}
     />
     </>

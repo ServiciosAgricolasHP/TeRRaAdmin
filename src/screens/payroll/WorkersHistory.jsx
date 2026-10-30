@@ -9,6 +9,7 @@ import { fmtCurrency } from "../../utils/format";
 import { WorkerDetail } from "./WorkerDetail";
 import { FaenaFilterPopover } from "./FaenaFilterPopover";
 import ScreenLoader from "../../components/ScreenLoader";
+import { attempt } from "../../utils/attempt";
 import { writeWorkerPaymentsXlsx } from "./writeWorkerPaymentsXlsx";
 
 // ─────────────────── Pagos anteriores (WorkersHistory) ───────────────────
@@ -55,17 +56,15 @@ export function WorkersHistory({ faenas, workers }) {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      try {
+      const { error: err } = await attempt(async () => {
         const list = await payrollsService.list({ order: ["createdAt", "desc"] });
         if (!cancelled) setAllPayrolls(list);
-      } catch (err) {
-        toast.error("No se pudieron cargar las nóminas: " + (err?.message || err));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+      });
+      if (err) toast.error("No se pudieron cargar las nóminas: " + (err?.message || err));
+      if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [toast]);
 
 
   // 1) Filtramos payrolls por rango de fechas + clasificación.
@@ -216,13 +215,9 @@ export function WorkersHistory({ faenas, workers }) {
   const handleExport = async () => {
     if (!selectedWorker) return;
     setExporting(true);
-    try {
-      await writeWorkerPaymentsXlsx({ selectedWorker, dateFrom, dateTo, classification });
-    } catch (err) {
-      toast.error("No se pudo exportar: " + (err?.message || err));
-    } finally {
-      setExporting(false);
-    }
+    const { error: err } = await attempt(() => writeWorkerPaymentsXlsx({ selectedWorker, dateFrom, dateTo, classification }));
+    if (err) toast.error("No se pudo exportar: " + (err?.message || err));
+    setExporting(false);
   };
 
   if (loading) {

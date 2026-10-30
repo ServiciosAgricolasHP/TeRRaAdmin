@@ -4,6 +4,8 @@ import TextField from "../../components/TextField";
 import Select from "../../components/Select";
 import { tripsService, paymentsService, titleCase } from "../../services/transportsService";
 import { fmtCurrency } from "../../utils/format";
+import { attempt } from "../../utils/attempt";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 
 export function GenerateSummaryModal({ open, onClose, carriers, faenaById, subfaenaById, cycleById, onGenerated }) {
   const [carrierId, setCarrierId] = useState("");
@@ -22,7 +24,7 @@ export function GenerateSummaryModal({ open, onClose, carriers, faenaById, subfa
   const [pendingByCarrier, setPendingByCarrier] = useState(() => new Map());
   const [loadingCarrierCounts, setLoadingCarrierCounts] = useState(false);
 
-  useEffect(() => {
+  if (useValuesChanged([open], { onMount: true })) {
     if (!open) {
       setCarrierId("");
       setPeriodFrom("");
@@ -32,10 +34,13 @@ export function GenerateSummaryModal({ open, onClose, carriers, faenaById, subfa
       setNotes("");
       setSortBy("date");
       setSortDir("desc");
-      return;
+    } else {
+      setLoadingCarrierCounts(true);
     }
+  }
+  useEffect(() => {
+    if (!open) return;
     let cancelled = false;
-    setLoadingCarrierCounts(true);
     tripsService.listPendingUnlinked()
       .then((trips) => {
         if (cancelled) return;
@@ -65,11 +70,16 @@ export function GenerateSummaryModal({ open, onClose, carriers, faenaById, subfa
 
   // La vista previa se recarga al cambiar el transportista o el rango de
   // fechas, y limpia el filtro de faena.
+  if (useValuesChanged([open, carrierId, periodFrom, periodTo], { onMount: true })) {
+    if (!open || !carrierId) setPreview(null);
+    else {
+      setFaenaFilter("");
+      setLoading(true);
+    }
+  }
   useEffect(() => {
-    if (!open || !carrierId) { setPreview(null); return; }
+    if (!open || !carrierId) return;
     let cancelled = false;
-    setFaenaFilter("");
-    setLoading(true);
     paymentsService.previewSummary({ carrierId, periodFrom, periodTo })
       .then((r) => { if (!cancelled) setPreview(r); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -79,7 +89,7 @@ export function GenerateSummaryModal({ open, onClose, carriers, faenaById, subfa
   const handleGenerate = async () => {
     if (!preview || preview.trips.length === 0) return;
     setSaving(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await paymentsService.createSummary({
         carrierId,
         periodFrom: periodFrom || null,
@@ -90,9 +100,9 @@ export function GenerateSummaryModal({ open, onClose, carriers, faenaById, subfa
         notes,
       });
       onGenerated();
-    } finally {
-      setSaving(false);
-    }
+    });
+    setSaving(false);
+    if (err) throw err;
   };
 
   // El filtro de faena solo acota el detalle: el resumen generado incluye

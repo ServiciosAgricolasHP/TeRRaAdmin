@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useEffectEvent } from "react";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { useCarriers } from "../../contexts/CarriersContext";
 import { fortnightsService, paymentsService, tripsService } from "../../services/transportsService";
@@ -12,6 +12,7 @@ import { FortnightBalanceSummary } from "./FortnightBalanceSummary";
 import { compareFortnightPeriod } from "./fortnights";
 import { TypeToConfirmModal } from "./TypeToConfirmModal";
 import ScreenLoader from "../../components/ScreenLoader";
+import { attempt } from "../../utils/attempt";
 
 // ============================================================
 // PESTAÑA QUINCENAS
@@ -46,7 +47,7 @@ export function FortnightsTab() {
 
   const load = async () => {
     setLoading(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const [pr, py, fa, sub, cyc, pt] = await Promise.all([
         fortnightsService.listAll(),
         paymentsService.listAll(),
@@ -63,12 +64,13 @@ export function FortnightsTab() {
       // Solo las vueltas no asignadas a ningún resumen — son las elegibles
       // para entrar a una quincena nueva.
       setPendingTrips(pt.filter((t) => !t.paymentId));
-    } finally {
-      setLoading(false);
-    }
+    });
+    setLoading(false);
+    if (err) throw err;
   };
 
-  useEffect(() => { load(); }, []);
+  const loadOnMount = useEffectEvent(() => load());
+  useEffect(() => { loadOnMount(); }, []);
 
   const paymentsById = useMemo(() => new Map(payments.map((p) => [p.id, p])), [payments]);
   const faenaById = useMemo(() => new Map(faenas.map((f) => [f.id, f])), [faenas]);
@@ -200,7 +202,7 @@ export function FortnightsTab() {
           looseSummaries={looseSummaries}
           onClose={() => setCreating(false)}
           onCreate={async ({ name, periodFrom, periodTo, notes, perCarrier, importSummaryIds }) => {
-            try {
+            const { error: err } = await attempt(async () => {
               // 1) Crea un resumen por transportista con sus vueltas sueltas filtradas.
               // 2) Suma los resúmenes existentes elegidos para importar.
               // 3) Crea la quincena con todos los paymentIds; fortnightsService.create
@@ -228,7 +230,8 @@ export function FortnightsTab() {
               });
               setCreating(false);
               await load();
-            } catch (err) { toast.error(err?.message || "Error"); }
+            });
+            if (err) toast.error(err?.message || "Error");
           }}
         />
       )}
@@ -246,8 +249,8 @@ export function FortnightsTab() {
           onClose={() => setDetailId(null)}
           onEditMeta={() => setEditingId(detail.id)}
           onDeleteFortnight={() => setConfirmDelete(detail)}
-          onAddSummaries={async (ids) => { try { await fortnightsService.addPayments(detail.id, ids); await load(); } catch (err) { toast.error(err?.message || "Error"); } }}
-          onRemoveSummary={async (pid) => { try { await fortnightsService.removePayments(detail.id, [pid]); await load(); } catch (err) { toast.error(err?.message || "Error"); } }}
+          onAddSummaries={async (ids) => { const { error: err } = await attempt(async () => { await fortnightsService.addPayments(detail.id, ids); await load(); }); if (err) toast.error(err?.message || "Error"); }}
+          onRemoveSummary={async (pid) => { const { error: err } = await attempt(async () => { await fortnightsService.removePayments(detail.id, [pid]); await load(); }); if (err) toast.error(err?.message || "Error"); }}
           onMarkFortnightPaid={() => askMarkFortnightPaid(detail)}
           onRevertFortnight={() => askRevertFortnight(detail)}
           onMarkItemPaid={askMarkItemPaid}
@@ -261,8 +264,8 @@ export function FortnightsTab() {
           fortnight={fortnights.find((p) => p.id === editingId)}
           onClose={() => setEditingId(null)}
           onSave={async (patch) => {
-            try { await fortnightsService.update(editingId, patch); setEditingId(null); await load(); }
-            catch (err) { toast.error(err?.message || "Error"); }
+            const { error: err } = await attempt(async () => { await fortnightsService.update(editingId, patch); setEditingId(null); await load(); });
+            if (err) toast.error(err?.message || "Error");
           }}
         />
       )}
@@ -275,8 +278,8 @@ export function FortnightsTab() {
         danger
         onCancel={() => setConfirmDelete(null)}
         onConfirm={async () => {
-          try { await fortnightsService.delete(confirmDelete.id); setDetailId(null); setConfirmDelete(null); await load(); }
-          catch (err) { toast.error(err?.message || "Error"); }
+          const { error: err } = await attempt(async () => { await fortnightsService.delete(confirmDelete.id); setDetailId(null); setConfirmDelete(null); await load(); });
+          if (err) toast.error(err?.message || "Error");
         }}
       />
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { indicatorsService } from "../../services";
+import { attempt } from "../../utils/attempt";
 
 const INDICATORS_DOC = "main";
 
@@ -9,12 +10,11 @@ export function useIndicators() {
   const [indicators, setIndicators] = useState(null);
   useEffect(() => {
     (async () => {
-      try {
+      const { error: err } = await attempt(async () => {
         const doc = await indicatorsService.getById(INDICATORS_DOC);
         setIndicators(doc || {});
-      } catch {
-        setIndicators({});
-      }
+      });
+      if (err) setIndicators({});
     })();
   }, []);
   const save = async (values) => {

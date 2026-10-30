@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Modal from "../../components/Modal";
 import Select from "../../components/Select";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 
 // ============================================================
 // Subcomponentes
@@ -16,15 +17,12 @@ export function AddComboModal({ open, onClose, catalogs, existingCombos, date, o
   const [showNewQ, setShowNewQ] = useState(false);
   const [showNewC, setShowNewC] = useState(false);
 
-  useEffect(() => {
-    if (open) {
-      setX(qualities[0]?.value ?? 0);
-      setY(containers[0]?.value ?? 0);
-      setNewQuality(""); setNewContainer("");
-      setShowNewQ(false); setShowNewC(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  if (useValuesChanged([open], { onMount: true }) && open) {
+    setX(qualities[0]?.value ?? 0);
+    setY(containers[0]?.value ?? 0);
+    setNewQuality(""); setNewContainer("");
+    setShowNewQ(false); setShowNewC(false);
+  }
 
   const existingKeys = new Set(existingCombos.map((c) => c.key));
   const targetKey = `${x}_${y}`;

@@ -1,12 +1,17 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { pendingCashOf } from "../../services/payrollsService";
 import Modal from "../../components/Modal";
 import { fmtCurrency } from "../../utils/format";
+import { attempt } from "../../utils/attempt";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 
 export function PayConfirmModal({ info, onCancel, onConfirm }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
-  useEffect(() => { if (info) { setText(""); setBusy(false); } }, [info]);
+  if (useValuesChanged([info]) && info) {
+    setText("");
+    setBusy(false);
+  }
   if (!info) return null;
   const { payroll: p, mode } = info;
   const isRevert = mode === "revert" || mode === "revertBank";
@@ -59,7 +64,9 @@ export function PayConfirmModal({ info, onCancel, onConfirm }) {
             onClick={async () => {
               if (!ok) return;
               setBusy(true);
-              try { await onConfirm(); } finally { setBusy(false); }
+              const { error: err } = await attempt(async () => { await onConfirm(); });
+              setBusy(false);
+              if (err) throw err;
             }}
             disabled={!ok || busy}
             className={`rounded-md px-3 py-1.5 text-sm font-medium disabled:opacity-50 ${

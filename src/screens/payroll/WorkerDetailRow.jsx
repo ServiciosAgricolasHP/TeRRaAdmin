@@ -5,11 +5,14 @@ import { accountTypeShort } from "./helpers";
 import { WorkerPaidDetailTables } from "./WorkerPaidDetailTables";
 import { WorkerPaySummaryCards } from "./WorkerPaySummaryCards";
 
+// El RUT tal como viene, cuando no se pasa `rutOf`.
+const sameRut = (r) => r;
+
 // Fila expandible de banco o efectivo. Al expandirla muestra el detalle de la
 // persona en la nómina: tablas por ciclo y tarjetas de bruto, anticipos, bonos
 // y neto. "📅 Ver historial completo" abre el WorkerSummaryModal.
 export function WorkerDetailRow({
-  rutOf = (r) => r, item, expanded, onToggle, onShowSummary, cycleDetails, displayCycleLabel,
+  rutOf = sameRut, item, expanded, onToggle, onShowSummary, cycleDetails, displayCycleLabel,
   editMode, editBusy, onRemoveWorker, cols, snapshot, snapshotLoading, catalogs, isMobile,
   cashPaidMode = false, cashPaid = false, onToggleCashPaid,
 }) {

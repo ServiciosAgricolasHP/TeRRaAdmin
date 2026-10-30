@@ -5,6 +5,7 @@ import { useToast } from "../../contexts/ToastContext";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { fmtNumber } from "../../utils/format";
 import { ConsoleCard } from "./ConsoleCard";
+import { attempt } from "../../utils/attempt";
 
 // ============================================================
 // Sección: normalizar nombres de trabajadores a Proper Case
@@ -31,7 +32,7 @@ export function NormalizeWorkerNamesSection() {
     setResult(null);
     setDiffs([]);
     setShowAll(false);
-    try {
+    const { error: err } = await attempt(async () => {
       // Sin caché: lee datos frescos antes de escribir.
       const list = await workersService.list();
       setScanned(list.length);
@@ -45,11 +46,9 @@ export function NormalizeWorkerNamesSection() {
       }
       changes.sort((a, b) => a.newName.localeCompare(b.newName));
       setDiffs(changes);
-    } catch (err) {
-      toast.error("Error al leer trabajadores: " + (err.message || String(err)));
-    } finally {
-      setLoading(false);
-    }
+    });
+    if (err) toast.error("Error al leer trabajadores: " + (err.message || String(err)));
+    setLoading(false);
   };
 
   const apply = () => {
@@ -64,12 +63,9 @@ export function NormalizeWorkerNamesSection() {
     const errors = [];
     for (let i = 0; i < diffs.length; i++) {
       const d = diffs[i];
-      try {
-        await workersService.update(d.id, { name: d.newName });
-        updated++;
-      } catch (err) {
-        errors.push({ id: d.id, oldName: d.oldName, error: err.message || String(err) });
-      }
+      const { error: err } = await attempt(() => workersService.update(d.id, { name: d.newName }));
+      if (err) errors.push({ id: d.id, oldName: d.oldName, error: err.message || String(err) });
+      else updated++;
       setProgress({ done: i + 1, total: diffs.length });
     }
     setResult({ updated, errors });

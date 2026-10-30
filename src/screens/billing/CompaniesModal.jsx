@@ -5,6 +5,7 @@ import { toTitleName } from "../../utils/textCase";
 import Modal from "../../components/Modal";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { useToast } from "../../contexts/ToastContext";
+import { attempt } from "../../utils/attempt";
 
 // CRUD inline de empresas. Lista + formulario para agregar/editar/borrar.
 // El alias es lo que se muestra en la UI; razón social va en el detalle.
@@ -18,12 +19,13 @@ export function CompaniesModal({ companies, onClose, onChanged }) {
   const startEdit = (c) => setEditing({ id: c.id, rut: c.rut, razonSocial: c.razonSocial, alias: c.alias || "" });
 
   const save = async () => {
+    if (!editing) return;
     if (!editing.rut.trim() || !editing.razonSocial.trim()) {
       toast.warning("Completa RUT y Razón Social.");
       return;
     }
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const payload = {
         rut: normalizeRut(editing.rut),
         razonSocial: editing.razonSocial.trim(),
@@ -39,22 +41,22 @@ export function CompaniesModal({ companies, onClose, onChanged }) {
       }
       setEditing(null);
       await onChanged();
-    } finally {
-      setBusy(false);
-    }
+    });
+    setBusy(false);
+    if (err) throw err;
   };
 
   const remove = (c) => setConfirmDelete(c);
   const doRemove = async () => {
     if (!confirmDelete) return;
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await companiesService.remove(confirmDelete.id);
       await onChanged();
       setConfirmDelete(null);
-    } finally {
-      setBusy(false);
-    }
+    });
+    setBusy(false);
+    if (err) throw err;
   };
 
   return (

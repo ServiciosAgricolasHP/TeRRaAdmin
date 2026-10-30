@@ -4,12 +4,15 @@ import { useIsMobile } from "../../hooks/useIsMobile";
 import { fmtCurrency } from "../../utils/format";
 import { PaymentStatusSelect } from "./PaymentStatusSelect";
 
+// La clave de un grupo cuando no se pasa `groupKeyOf`: su RUT.
+const rutKeyOf = (g) => g?.rut || "__sin_rut__";
+
 // Vista de Retenciones: agrupa facturas con estado `net_only` por contraparte.
 // Cada grupo es expandible — muestra los docs individuales con su select de
 // estado por si el usuario quiere revertir el "solo neto" a otro estado.
 // Cada grupo tiene su propia toolbar de export (📋📥🖨📊) para que se pueda
 // compartir el resumen de una sola contraparte sin armar uno general.
-export function WithholdingsView({ groups, onSelectDoc, onSetStatus, onGroupExport, groupBusy = {}, groupKeyOf = (g) => g?.rut || "__sin_rut__" }) {
+export function WithholdingsView({ groups, onSelectDoc, onSetStatus, onGroupExport, groupBusy = {}, groupKeyOf = rutKeyOf }) {
   const isMobile = useIsMobile();
   const [expanded, setExpanded] = useState(() => new Set());
   const toggle = (rut) => {

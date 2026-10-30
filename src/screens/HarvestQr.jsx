@@ -10,6 +10,7 @@ import { QrManager } from "./harvestQr/QrManager";
 import { SyncModal } from "./harvestQr/SyncModal";
 import { WeightsExplorer } from "./harvestQr/WeightsExplorer";
 import ScreenLoader from "../components/ScreenLoader";
+import { attempt } from "../utils/attempt";
 
 // Puente entre los prefijos QR físicos (impresos de antemano, app scan_IS) y
 // el (faena, ciclo, labor) vigente al que se sincronizan sus pesajes.
@@ -66,7 +67,7 @@ export default function HarvestQr() {
 
   const reload = async () => {
     setLoading(true);
-    try {
+    const { error: err } = await attempt(async () => {
       // `qrPrefixes` va sin caché: son pocos documentos y es la configuración
       // que hay que reapuntar al abrir un ciclo, así que se muestra al día.
       const [px, jobsResult] = await Promise.all([
@@ -82,11 +83,9 @@ export default function HarvestQr() {
       const map = new Map();
       cycles.forEach((c) => { if (c) map.set(c.id, c); });
       setCyclesById(map);
-    } catch (err) {
-      toast.error("No se pudo cargar la configuración de prefijos QR: " + err.message);
-    } finally {
-      setLoading(false);
-    }
+    });
+    if (err) toast.error("No se pudo cargar la configuración de prefijos QR: " + err.message);
+    setLoading(false);
   };
 
   // Carga al montar; `useEffectEvent` lee la versión actual de la función sin
@@ -99,16 +98,14 @@ export default function HarvestQr() {
   const handleDelete = async () => {
     if (!confirmDelete) return;
     setDeleteBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await qrPrefixesService.remove(confirmDelete.id);
       setConfirmDelete(null);
       toast.success(`Prefijo ${confirmDelete.id} eliminado`);
       await reload();
-    } catch (err) {
-      toast.error("No se pudo eliminar: " + (err.message || err));
-    } finally {
-      setDeleteBusy(false);
-    }
+    });
+    if (err) toast.error("No se pudo eliminar: " + (err.message || err));
+    setDeleteBusy(false);
   };
 
   return (

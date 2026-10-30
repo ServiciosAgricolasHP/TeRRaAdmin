@@ -12,12 +12,15 @@ const LOGO_URL = `${import.meta.env.BASE_URL}logo.png`;
 // Imprimible
 // ============================================================
 
+// Lo que se usa cuando no se pasa la prop: siempre el mismo objeto.
+const NO_HIDDEN_COLUMNS = new Set();
+
 export const PrintableSummary = forwardRef(function PrintableSummary(
   {
     mode,
     editMode = true,
     withIva = true,
-    hiddenColumns = new Set(),
+    hiddenColumns = NO_HIDDEN_COLUMNS,
     titles,
     labors,
     carriers,

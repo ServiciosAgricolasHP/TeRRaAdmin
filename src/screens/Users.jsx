@@ -22,6 +22,7 @@ import {
 } from "../utils/userAccounts";
 import ScreenLoader from "../components/ScreenLoader";
 import BirthdayModal from "./users/BirthdayModal";
+import { attempt } from "../utils/attempt";
 
 const nameOf = (p) => p.alias || p.email || p.id;
 const dateOf = (ts) => (ts?.toDate ? ts.toDate() : null);
@@ -167,7 +168,7 @@ export default function Users() {
     if (!action) return;
     const { kind, profile } = action;
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       if (kind === "reset") {
         await sendPasswordReset(profile.email);
         toast.success(`Correo enviado a ${profile.email}`);
@@ -183,11 +184,9 @@ export default function Users() {
         toast.success(`${nameOf(profile)}: cuenta ${disabled ? "suspendida" : "reactivada"}`);
       }
       setAction(null);
-    } catch (err) {
-      toast.error(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) toast.error(errorMessage(err));
+    setBusy(false);
   };
 
   const copy = action ? confirmCopy(action) : null;
@@ -298,14 +297,13 @@ export default function Users() {
           name={nameOf(birthdayOf)}
           onClose={() => setBirthdayOf(null)}
           onSave={async (birthday) => {
-            try {
+            const { error: err } = await attempt(async () => {
               await usersService.update(birthdayOf.id, { birthday });
               patch(birthdayOf.id, { birthday });
               toast.success("Cumpleaños guardado");
               setBirthdayOf(null);
-            } catch (err) {
-              toast.error(errorMessage(err));
-            }
+            });
+            if (err) toast.error(errorMessage(err));
           }}
         />
       )}
@@ -348,43 +346,36 @@ function NewAccountModal({ onClose, onCreated }) {
     const { email } = parsed.value;
     setBusy(true);
     setError("");
-    try {
+    const { value: outcome, error: err } = await attempt(async () => {
       const ref = await enqueueFunctionJob("createUser", { ...parsed.value, ...(useExisting ? { useExisting: true } : {}) }, user);
-      const outcome = await waitForFunctionJob(ref);
-
-      if (outcome.status === "done") {
-        let resetSent = false;
-        if (form.sendReset) {
-          try {
-            await sendPasswordReset(email);
-            resetSent = true;
-          } catch {
-            toast.warning(`No se pudo enviar el correo a ${email}. Puedes enviarlo con "Contraseña".`);
-          }
-        }
-        const what = outcome.result?.existingAccount ? `${email} ya tiene acceso a TeRRa` : `Cuenta creada para ${email}`;
-        toast.success(resetSent ? `${what}. Le llegó un correo para elegir su contraseña.` : `${what}.`);
-        onCreated({ id: outcome.result?.uid, ...parsed.value });
-        return;
-      }
-      if (outcome.errorCode === "account-exists") {
-        setExistingEmail(email);
-        return;
-      }
-      setError(
-        outcome.status === "timeout"
-          ? "El backend no respondió a los 45 s. Revisa que las Functions estén desplegadas."
-          : outcome.error || "No se pudo crear la cuenta.",
-      );
-    } catch (err) {
+      return waitForFunctionJob(ref);
+    });
+    if (err) {
       setError(
         err?.code === "permission-denied"
           ? "Las reglas de Firestore no dejan crear el job: solo un admin puede crear cuentas."
           : err?.message || String(err),
       );
-    } finally {
-      setBusy(false);
+    } else if (outcome.status === "done") {
+      let resetSent = false;
+      if (form.sendReset) {
+        const { error: resetErr } = await attempt(() => sendPasswordReset(email));
+        if (resetErr) toast.warning(`No se pudo enviar el correo a ${email}. Puedes enviarlo con "Contraseña".`);
+        else resetSent = true;
+      }
+      const what = outcome.result?.existingAccount ? `${email} ya tiene acceso a TeRRa` : `Cuenta creada para ${email}`;
+      toast.success(resetSent ? `${what}. Le llegó un correo para elegir su contraseña.` : `${what}.`);
+      onCreated({ id: outcome.result?.uid, ...parsed.value });
+    } else if (outcome.errorCode === "account-exists") {
+      setExistingEmail(email);
+    } else {
+      setError(
+        outcome.status === "timeout"
+          ? "El backend no respondió a los 45 s. Revisa que las Functions estén desplegadas."
+          : outcome.error || "No se pudo crear la cuenta.",
+      );
     }
+    setBusy(false);
   };
 
   const confirmButton = existingEmail ? (
@@ -537,13 +528,11 @@ function UserCard({ profile, myUid, lastChange, onAction, onGreetings, onBirthda
   const reasons = isMe ? [resetBlock] : [roleBlock, suspendBlockReason, resetBlock];
 
   const copyUid = async () => {
-    try {
+    await attempt(async () => {
       await navigator.clipboard.writeText(profile.id);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch {
-      /* noop */
-    }
+    });
   };
 
   return (
@@ -634,7 +623,7 @@ function GreetingsModal({ profile, onClose, onSaved }) {
 
   const save = async () => {
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const greetings = {};
       for (const f of GREETING_FIELDS) {
         const text = String(drafts[f.slot] || "").trim();
@@ -643,11 +632,9 @@ function GreetingsModal({ profile, onClose, onSaved }) {
       await usersService.update(profile.id, { greetings });
       toast.success("Saludos guardados");
       onSaved(greetings);
-    } catch (err) {
-      toast.error(errorMessage(err));
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) toast.error(errorMessage(err));
+    setBusy(false);
   };
 
   return (

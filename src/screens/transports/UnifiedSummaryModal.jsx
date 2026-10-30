@@ -8,6 +8,8 @@ import { useCaptureActions } from "../../hooks/useCaptureActions";
 import { PRINT_SHEET_CSS } from "../../utils/printWindow";
 import { fmtCurrency } from "../../utils/format";
 import { PrintableSummary } from "./PrintableSummary";
+import { attempt } from "../../utils/attempt";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 
 // Junta las vueltas de todos los resúmenes de un transportista (p. ej. las dos
 // quincenas de un mes) en una sola tabla para verlas, imprimirlas o copiarlas.
@@ -34,15 +36,17 @@ export function UnifiedSummaryModal({ open, onClose, group, faenaById, subfaenaB
     return m ? `${m[3]}/${m[2]}/${m[1].slice(2)}` : d;
   };
 
-  useEffect(() => {
-    if (!open || !group) return;
+  if (useValuesChanged([open, group], { onMount: true }) && open && group) {
     setEditMode(false);
     setEditingTrip(null);
     setConfirmRemoveTrip(null);
     setItems(group.items);
+    setLoading(true);
+  }
+  useEffect(() => {
+    if (!open || !group) return;
     (async () => {
-      setLoading(true);
-      try {
+      const { error: err } = await attempt(async () => {
         const tripIds = new Set();
         for (const p of group.items) for (const id of p.tripIds || []) tripIds.add(id);
         const all = await tripsService.listByCarrier(group.carrierId);
@@ -52,9 +56,9 @@ export function UnifiedSummaryModal({ open, onClose, group, faenaById, subfaenaB
         setTrips(filtered);
         setDateFrom(filtered[0]?.date || "");
         setDateTo(filtered[filtered.length - 1]?.date || "");
-      } finally {
-        setLoading(false);
-      }
+      });
+      setLoading(false);
+      if (err) throw err;
     })();
   }, [open, group]);
 
@@ -67,7 +71,7 @@ export function UnifiedSummaryModal({ open, onClose, group, faenaById, subfaenaB
 
   const refreshTrips = async () => {
     if (!group) return;
-    try {
+    const { error: err } = await attempt(async () => {
       const tripIds = new Set();
       for (const p of items) for (const id of p.tripIds || []) tripIds.add(id);
       const all = await tripsService.listByCarrier(group.carrierId);
@@ -75,14 +79,13 @@ export function UnifiedSummaryModal({ open, onClose, group, faenaById, subfaenaB
         .filter((t) => tripIds.has(t.id))
         .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
       setTrips(filtered);
-    } catch (err) {
-      toast.error("No se pudieron recargar las vueltas: " + (err.message || err));
-    }
+    });
+    if (err) toast.error("No se pudieron recargar las vueltas: " + (err.message || err));
   };
 
   const handleSaveTrip = async (form) => {
     if (!editingTrip) return;
-    try {
+    const { error: err } = await attempt(async () => {
       // Conserva el ciclo, la faena y la subfaena de la vuelta, igual que
       // TripsTab.
       const payload = {
@@ -98,9 +101,8 @@ export function UnifiedSummaryModal({ open, onClose, group, faenaById, subfaenaB
       await refreshTrips();
       if (onChanged) await onChanged();
       toast.success("Vuelta actualizada");
-    } catch (err) {
-      toast.error("Error al guardar: " + (err.message || err));
-    }
+    });
+    if (err) toast.error("Error al guardar: " + (err.message || err));
   };
 
   const handleRemoveTripFromPayment = async () => {
@@ -111,7 +113,7 @@ export function UnifiedSummaryModal({ open, onClose, group, faenaById, subfaenaB
       setConfirmRemoveTrip(null);
       return;
     }
-    try {
+    const { error: err } = await attempt(async () => {
       await paymentsService.editSummaryTrips(owningPayment.id, {
         removeTripIds: [confirmRemoveTrip.id],
       });
@@ -126,9 +128,8 @@ export function UnifiedSummaryModal({ open, onClose, group, faenaById, subfaenaB
       setConfirmRemoveTrip(null);
       if (onChanged) await onChanged();
       toast.success("Vuelta quitada del resumen");
-    } catch (err) {
-      toast.error("Error al quitar: " + (err.message || err));
-    }
+    });
+    if (err) toast.error("Error al quitar: " + (err.message || err));
   };
 
   if (!group) return null;

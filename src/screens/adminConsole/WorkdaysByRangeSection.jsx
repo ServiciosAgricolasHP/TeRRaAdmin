@@ -3,6 +3,7 @@ import { localIsoDate } from "../../utils/dates";
 import { countWorkdaysInRange } from "../../services/countsService";
 import { fmtNumber } from "../../utils/format";
 import { ConsoleCard } from "./ConsoleCard";
+import { attempt } from "../../utils/attempt";
 
 // ============================================================
 // Sección: workdays en un rango de fechas
@@ -23,15 +24,15 @@ export function WorkdaysByRangeSection() {
     }
     setError("");
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const c = await countWorkdaysInRange(from, to);
       setCount(c);
-    } catch (err) {
+    });
+    if (err) {
       setError(err.message || String(err));
       setCount(null);
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
 
   return (

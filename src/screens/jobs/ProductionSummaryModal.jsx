@@ -19,6 +19,7 @@ import {
   transportTotalOf,
 } from "../../utils/productionSummary";
 import { useProductionData } from "./productionSummaryModal/useProductionData";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 
 // "2026-07-24" → "24/07", para mostrar rangos de fecha compactos en tablas.
 const shortDate = (iso) => {
@@ -87,10 +88,11 @@ export default function ProductionSummaryModal({
   const [allClosedCollapsed, setAllClosedCollapsed] = useState(() => loadJSON("allClosedCollapsed", true));
   useEffect(() => { saveJSON("allClosedCollapsed", allClosedCollapsed); }, [allClosedCollapsed]);
 
-  useEffect(() => {
+  const cycleIdsKey = cycles.map((c) => c.id).join(",");
+  const initialIdsKey = (initialEnabledCycleIds || []).join(",");
+  if (useValuesChanged([cycleIdsKey, initialIdsKey], { onMount: true })) {
     setEnabledCyclesState(computeEnabledCycles(cycles, initialEnabledCycleIds));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cycles.map((c) => c.id).join(","), (initialEnabledCycleIds || []).join(",")]);
+  }
 
   const { laborGroupsBySubjob, loading, tripsByCycle, wdByCycle } = useProductionData({ cycles, enabledCycles, open, workdaysByCycleProp });
 

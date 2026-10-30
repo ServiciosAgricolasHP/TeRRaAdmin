@@ -3,6 +3,7 @@ import { cyclesService, jobsService } from "../../services";
 import { countWorkdaysByCycle } from "../../services/countsService";
 import { fmtNumber } from "../../utils/format";
 import { ConsoleCard } from "./ConsoleCard";
+import { attempt } from "../../utils/attempt";
 
 // ============================================================
 // Sección: workdays por ciclo (abiertos; los cerrados, opcionales)
@@ -18,16 +19,16 @@ export function WorkdaysByCycleSection() {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      try {
+      const { error: err } = await attempt(async () => {
         const [c, f] = await Promise.all([
           cyclesService.list({ cache: true, ttl: 60_000 }),
           jobsService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
         ]);
         setCycles(c);
         setJobs(f);
-      } finally {
-        setLoading(false);
-      }
+      });
+      setLoading(false);
+      if (err) throw err;
     })();
   }, []);
 
@@ -44,19 +45,18 @@ export function WorkdaysByCycleSection() {
 
   const runAll = async () => {
     setRunning(true);
-    try {
+    const { error: err } = await attempt(async () => {
       for (const c of visibleCycles) {
         setCounts((prev) => ({ ...prev, [c.id]: "..." }));
-        try {
+        const { error: countErr } = await attempt(async () => {
           const n = await countWorkdaysByCycle(c.id);
           setCounts((prev) => ({ ...prev, [c.id]: n }));
-        } catch {
-          setCounts((prev) => ({ ...prev, [c.id]: "err" }));
-        }
+        });
+        if (countErr) setCounts((prev) => ({ ...prev, [c.id]: "err" }));
       }
-    } finally {
-      setRunning(false);
-    }
+    });
+    setRunning(false);
+    if (err) throw err;
   };
 
   const numericCounts = Object.values(counts).filter((v) => typeof v === "number");

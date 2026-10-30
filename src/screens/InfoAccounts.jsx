@@ -1,6 +1,7 @@
 import { useState } from "react";
 import PhoneBookTab from "./infoAccounts/PhoneBookTab";
 import ContactCardsTab from "./infoAccounts/ContactCardsTab";
+import { readStored, writeStored } from "../utils/browserStorage";
 
 const TABS = [
   { value: "phoneBook", label: "📞 Agenda telefónica" },
@@ -12,12 +13,10 @@ const TAB_KEY = "infoAccounts.tab";
 // bancarios, en dos pestañas. Abre en la última elegida (la agenda, la
 // primera vez).
 export default function InfoAccounts() {
-  const [tab, setTab] = useState(() => {
-    try { return localStorage.getItem(TAB_KEY) === "cards" ? "cards" : "phoneBook"; } catch { return "phoneBook"; }
-  });
+  const [tab, setTab] = useState(() => (readStored(TAB_KEY) === "cards" ? "cards" : "phoneBook"));
   const choose = (value) => {
     setTab(value);
-    try { localStorage.setItem(TAB_KEY, value); } catch { /* noop */ }
+    writeStored(TAB_KEY, value);
   };
 
   return (
