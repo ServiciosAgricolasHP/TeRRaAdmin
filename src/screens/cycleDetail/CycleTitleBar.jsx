@@ -79,12 +79,13 @@ export function CycleTitleBar() {
         <span
           className="hidden sm:inline-flex items-center gap-1 rounded-md border border-dashed border-[var(--color-border)] px-2 py-1 text-[10px] text-[var(--color-muted)]"
           title={
-            "Atajos en el grid:\n" +
-            "  Esc → salir de edición\n" +
-            "  Shift+Click en filas → seleccionar rango\n" +
-            "  Ctrl+D → copiar valor de la celda focuseada a las filas seleccionadas\n" +
-            "  Ctrl+V → pegar columna desde portapapeles (una línea por fila)\n" +
-            "  Ctrl+Z → deshacer último cambio (Ctrl+D y Ctrl+V se deshacen como uno)"
+            "Atajos en la grilla:\n" +
+            "  Shift+clic o Shift+↑/↓ → elegir varias celdas de una columna\n" +
+            "  Ctrl+C → copiar la celda o las elegidas\n" +
+            "  Ctrl+V → pegar: un valor llena las elegidas; una columna de Excel baja una línea por fila\n" +
+            "  Supr → borrar las elegidas\n" +
+            "  Ctrl+Z → deshacer (un pegado o un borrado se deshace de una vez)\n" +
+            "  Esc → salir de la edición o de la selección"
           }
         >
           ⌨ Atajos

@@ -36,7 +36,7 @@ function buildFloorChildCol(date, labor, dayPrices, disabled, toggleFloor) {
         <button
           onClick={(e) => {
             e.stopPropagation();
-            if (canToggle) toggleFloor(labor.id, date, p.data.rut);
+            if (canToggle && !e.shiftKey) toggleFloor(labor.id, date, p.data.rut);
           }}
           disabled={!canToggle}
           title={title}
@@ -65,7 +65,8 @@ function buildFloorChildCol(date, labor, dayPrices, disabled, toggleFloor) {
 // nombre fijos a la izquierda, un grupo por día con sus combos, tiers o etapas
 // (o horas extras y bonos) y el piso, el total y las acciones de cada fila.
 // Los renderers de celda usan los valores y las acciones del render en que se
-// armaron las columnas.
+// armaron las columnas. Los botones que escriben dentro de una celda no
+// responden a Shift+clic, que elige celdas (useCellRange).
 export function buildColumnDefs(ctx) {
   const {
     activeLabor,
@@ -213,7 +214,7 @@ export function buildColumnDefs(ctx) {
     return (
       <div
         role="button"
-        onClick={(e) => { e.stopPropagation(); toggleAttendance(p.data.rut, d, present); }}
+        onClick={(e) => { e.stopPropagation(); if (!e.shiftKey) toggleAttendance(p.data.rut, d, present); }}
         className={`flex h-full w-full cursor-pointer items-center justify-center text-base font-bold transition-colors ${
           present
             ? "bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-300"
@@ -577,6 +578,7 @@ export function buildColumnDefs(ctx) {
                         <button
                           onClick={async (e) => {
                             e.stopPropagation();
+                            if (e.shiftKey) return;
                             await upsertOvertimeDayWorkday(activeLabor.id, d, p.data.rut, { qty: suggested });
                           }}
                           className="flex h-full w-full items-center justify-end gap-1 text-[10px] italic text-[var(--color-muted)] hover:not-italic hover:text-[var(--color-accent)]"
@@ -657,6 +659,7 @@ export function buildColumnDefs(ctx) {
           <button
             onClick={async (e) => {
               e.stopPropagation();
+              if (e.shiftKey) return;
               await commitNormalAmount(d, p.data.rut, suggested);
             }}
             className="flex h-full w-full items-center justify-end gap-1 text-[10px] italic text-[var(--color-muted)] hover:not-italic hover:text-[var(--color-accent)]"

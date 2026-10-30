@@ -83,6 +83,7 @@ import { useCycleLoader } from "./cycleDetail/useCycleLoader";
 import { useDayPrices } from "./cycleDetail/useDayPrices";
 import { useFloorBonus } from "./cycleDetail/useFloorBonus";
 import { useCellEdits } from "./cycleDetail/useCellEdits";
+import { useCellRange } from "./cycleDetail/useCellRange";
 import { useLaborWorkers } from "./cycleDetail/useLaborWorkers";
 import { useCycleDays } from "./cycleDetail/useCycleDays";
 import { useDayNotes } from "./cycleDetail/useDayNotes";
@@ -526,6 +527,19 @@ export default function CycleDetail() {
     workerIdFor,
   });
 
+  const cellRange = useCellRange({ gridRef, laborId: activeLabor?.id });
+  const { isSelected: isCellInRange, suppressKeyboardEvent: suppressRangeKeys } = cellRange;
+  const defaultColDef = useMemo(
+    () => ({
+      resizable: true,
+      sortable: true,
+      filter: true,
+      cellClassRules: { "cell-range-selected": isCellInRange },
+      suppressKeyboardEvent: suppressRangeKeys,
+    }),
+    [isCellInRange, suppressRangeKeys],
+  );
+
   const {
     bonusEdit,
     commitHarvestCombo,
@@ -553,6 +567,7 @@ export default function CycleDetail() {
     isPieceworkLabor,
     isPieceworkStagesLabor,
     qrLocked,
+    range: cellRange,
     readOnly,
     setCopyToast,
     setWorkdaysByLabor,
@@ -736,6 +751,8 @@ export default function CycleDetail() {
           columnDefs={columnDefs}
           onCellValueChanged={onCellValueChanged}
           onCellKeyDown={onCellKeyDown}
+          onCellClicked={cellRange.onCellClicked}
+          onCellFocused={cellRange.onCellFocused}
           isExternalFilterPresent={isExternalFilterPresent}
           doesExternalFilterPass={doesExternalFilterPass}
           onFilterChanged={handleGridFilterChanged}
@@ -747,7 +764,7 @@ export default function CycleDetail() {
           enableCellTextSelection
           ensureDomOrder
           localeText={AG_GRID_LOCALE_ES}
-          defaultColDef={{ resizable: true, sortable: true, filter: true }}
+          defaultColDef={defaultColDef}
           rowHeight={isOvertimeDayLabor ? 58 : (isQtyLabor ? 44 : undefined)}
           isFullWidthRow={(p) => !!p.rowNode.data?._isHeader}
           fullWidthCellRenderer={GroupHeaderRowRenderer}
