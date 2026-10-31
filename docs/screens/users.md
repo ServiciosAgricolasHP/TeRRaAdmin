@@ -1,6 +1,7 @@
 # Usuarios / Users
 
 - Pantalla: `src/screens/Users.jsx`. Ruta `/admin/users` (solo admin). Colección `users`.
+- Piezas, en `screens/users/`: `UserCard` (la tarjeta de cada cuenta, con su último cambio), `useLastChanges` (el último registro de auditoría de cada cuenta), `NewAccountModal`, `GreetingsModal`, `BirthdayModal` con `BirthdayField`, y `helpers.js` (`nameOf`, `errorMessage`).
 - Lista los perfiles (1 lectura por perfil) con correo, alias, rol, estado, "Visto por última vez" y "Último cambio". El correo y la hora de la visita los escribe cada cuenta desde la app (ver Auth en AGENTS.md): un perfil de alguien que todavía no entra sale "Sin correo todavía".
 - **Último cambio** es el último registro de auditoría de la cuenta, con su entidad ("hace 3 h · Jornada") y, al pasar el mouse, la acción y la hora exacta. Cuesta 1 lectura por cuenta (`logs` por `uid`, `timestamp` descendente, `limit 1`) y necesita el índice compuesto `uid ↑ + timestamp ↓`: si falta, la pantalla lo avisa con el enlace para crearlo. No ve a quien solo miró sin modificar nada; eso lo dice "Visto por última vez".
 - Acciones por cuenta: **Hacer admin / Quitar admin**, **Suspender / Reactivar** (`disabled`), **Contraseña** (el correo de Firebase para elegir una nueva, en español), **Saludos** (ver Saludos personalizados en AGENTS.md) y **Cumpleaños** (`screens/users/BirthdayModal.jsx`).
