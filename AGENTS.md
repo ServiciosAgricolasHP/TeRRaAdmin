@@ -11,7 +11,13 @@ Las reglas de este repo, para personas y agentes. Lo de una sola pantalla está 
 
 ### Flujo de trabajo en git
 
-- **Día a día en `develop`.** `main` es producción y solo recibe merges vía Pull Request.
+- **Tres caminos.** `main` es producción y solo recibe Pull Requests. `develop` junta la próxima versión menor. Una rama `hotfix/<nombre>` lleva un arreglo que producción necesita antes de esa versión.
+- **Una versión menor es un hito, no una cantidad de commits.** Los hitos de cada versión se anotan en el backlog. Cuando se completan, `develop` pasa a `main` en un PR que sube la versión (`npm version minor --no-git-tag-version`, en un commit propio).
+- **Hotfix.** Cuando se pide un hotfix, el arreglo sale de `main` y no lleva nada de lo que está en `develop`:
+  1. `git fetch` y `git switch -c hotfix/<nombre> --no-track origin/main`. Lo que haya sin commitear en `develop` se guarda antes (`git stash`) y se recupera al volver.
+  2. El arreglo y sus tests, con las mismas reglas de cualquier commit (lint, tests, `docs/data-model.md`, la guía de la ayuda). Después, `git push -u origin hotfix/<nombre>` y el PR a `main`. El encabezado muestra el número siguiente (v1.3.1), porque cuenta los commits desde la última subida de versión.
+  3. Mergeado el PR, `main` vuelve a `develop` con un merge (`git switch develop && git merge origin/main`) y la rama se borra. Va con merge, no con cherry-pick: el mismo cambio en dos commits choca en el próximo PR de `develop`.
+- **Los conflictos se resuelven en `develop`, antes de abrir el PR a `main`**, nunca en el PR. Si `develop` no tiene algo de `main` (un hotfix sin volver), se mergea `origin/main` primero y se corren lint y tests sobre el resultado.
 - **`docs/data-model.md` acompaña a cada cambio de modelo.** Una colección nueva, un campo nuevo, uno que cambia de tipo o de significado, o uno que se deja de escribir se documenta en el mismo commit; una colección nueva también va en `MAIN_COLLECTIONS` (`screens/adminConsole/collections.js`). Antes de un push se revisa que los commits que tocaron entidades lo hayan actualizado.
 - `.github/workflows/ci.yml` — corre en push/PR dos jobs, los dos bloqueantes:
   - `build`: `npm run lint`, que falla con cualquier error o aviso (`--max-warnings=0`), y `npm run build`. Este build en Linux es lo que caza los imports con casing incorrecto que Windows esconde.
