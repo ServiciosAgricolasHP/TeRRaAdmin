@@ -5,7 +5,7 @@
 - **`WORKERS_LIST`** (`services/workersService.js`) son las opciones con que toda la app pide la lista de trabajadores (por nombre, en caché 2 h, también en `localStorage`). La clave de la caché sale de ellas: si una pantalla las escribe a mano y difieren, esa pantalla paga su propia lectura de la colección entera.
 - **Elegir a una persona** en un formulario (Anticipos, Resúmenes por grupo) es `WorkerSearchPicker` (`components/`): la misma búsqueda sobre la lista en caché (`useWorkersList`, `hooks/`), con los resultados debajo del campo y Enter para elegir el primero.
 - Auto-detect badge **RUT** vs **Nombre** (basado en `detectQueryKind`: empieza con dígito → RUT).
-- **Filtros opcionales** (componibles con la búsqueda): dropdown 👥 Líder (con opción "— Sin líder —" + lista única extraída del dataset completo) y chips toggle 💵 Efectivo / 🏦 Transferencia, más **⚠ Sin titular (N)** mientras alguien cobre en la cuenta de otra persona sin su nombre (`lacksPaymentName`, `utils/banks.js`; ver Bancos en AGENTS.md). Los filtros ignoran el gate de `MIN_SEARCH` — activar cualquiera muestra resultados aunque la query esté vacía. Al editar/eliminar/togglear banco desde la grilla, `refreshCache()` re-trae la lista para reflejar el cambio.
+- **Filtros opcionales** (componibles con la búsqueda): dropdown 👥 Líder (con opción "— Sin líder —" + lista única extraída del dataset completo) y chips toggle 💵 Efectivo / 🏦 Transferencia, más **⚠ Sin titular (N)** mientras alguien cobre en la cuenta de otra persona sin su nombre (`lacksPaymentName`, `utils/banks.js`; ver Bancos, abajo). Los filtros ignoran el gate de `MIN_SEARCH` — activar cualquiera muestra resultados aunque la query esté vacía. Al editar/eliminar/togglear banco desde la grilla, `refreshCache()` re-trae la lista para reflejar el cambio.
 - Acciones por fila: 📊 Resumen, Editar, ✕. La forma de pago se muestra como **indicador informativo** (`💵 Efectivo` / `🏦 Transferencia`) — no es toggle. El cambio de banco se hace adentro de `WorkerEditModal`, que tiene un botón **🆔 Asignar Cuenta RUT** que setea Banco Estado + Cuenta RUT en un click usando el RUT del trabajador.
 - **Click sobre un RUT lo copia al portapapeles**: el del trabajador, y en escritorio también el RUT de pago. Va con puntos y guion, el mismo formato que copia Agenda y Cuentas. En el teléfono el RUT de la tarjeta lleva 📋 para que se note que se puede tocar.
 - **Datos personales en la ficha** (`components/workerEditModal/PersonalDataFields.jsx`, plegable): dirección, comuna, nacionalidad, estado civil, fecha de nacimiento, AFP y salud, los que piden los contratos y las boletas de honorarios. Se guardan en el mismo documento del trabajador (`utils/workerPersonalData.js`, con tests), así llegan con la lista en caché sin lecturas extra.
@@ -54,3 +54,10 @@
 - Edición del trabajador (`WorkerEditModal`): el **dropdown** ofrece los líderes que ya tienen asignados los trabajadores (`groupLeader[0]` de la lista cargada), no la colección `groupLeader`, más la opción "+ Crear nuevo líder", que requiere acción explícita. La colección curada la usa la agrupación por líder de la grilla del ciclo (`loadEnabledLeaders`).
 - Al guardar: si el valor no está en la lista de líderes existentes y no se eligió "crear nuevo", error.
 - En Payroll preview el líder es **read-only** (estrictamente lo del worker).
+
+## Bancos
+
+- `src/utils/banks.js` define `BANKS`, `ACCOUNT_TYPES`, helpers (`bankName`, `isCashBank`, `defaultBankDetails`, `isCuentaRut`).
+- Banco "Efectivo" tiene `code: "EFE"` (constante `CASH_BANK_CODE`). No va en el archivo del banco.
+- `bankDetails = [paymentRut, accountNumber, accountType, bankCode]`.
+- `defaultBankDetails(rut)` → Cuenta RUT (Banco Estado).

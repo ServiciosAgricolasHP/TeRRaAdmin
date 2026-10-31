@@ -1,6 +1,19 @@
 # Tipos de labor en detalle
 
-La tabla con los seis tipos está en AGENTS.md ("Tipos de Labor"). Acá, cómo guarda y calcula cada uno sus precios y montos.
+Definidos en `src/utils/laborTypes.js` (`LABOR_TYPES`). Viven ahí y no en `CycleDetail.jsx` porque el form de crear ciclo también necesita la lista: importarla desde la pantalla del ciclo arrastraría ese módulo entero —más de 6.000 líneas, ag-grid incluido— al chunk de Faenas, que es justo la pantalla que se abre al entrar a la app. Cada labor tiene un campo `type` que determina columnas del grid, entrada de datos y métricas:
+
+| Tipo / Type | Etiqueta / Label | Comportamiento del grid / Grid behavior | Forma de datos / Data shape |
+|------|-------|---------------|------------|
+| `main` | Pago al día | 1 columna/día, monto `$` directo | `workdays: { amount }` |
+| `supervision` | Supervisión | Igual que main / Same as main | Igual / Same |
+| `extra` | Adicional | Igual que main / Same as main | Igual / Same |
+| `cosecha` | Cosecha | Multi-columnas por día (calidad × envase); toggle detalle/resumen | `workdays: { qualityX, containerY, qty, amount }` |
+| `trato` | A trato | Multi-precio por día (`t0`, `t1`, ...); toggle `/unid` vs `/día` por tier; toggle detalle/resumen | `dayPrices: { t0: { price, mode }, t1: ... }`, `workdays: { qty, amount, tiers? }` |
+| `tratoHE` | Jornadas con horas extras | Columnas: D, HE, M, S, X, `$`; toggle detalle/resumen | `workdays: { qty, overtimeHours, hasManejo, hasSupervision, extras, amount }` |
+
+El tag `main` se renderiza como **"al día"** en métricas y tabs.
+
+Abajo, cómo guarda y calcula cada uno sus precios y montos.
 
 ## trato — multi-precio por día
 

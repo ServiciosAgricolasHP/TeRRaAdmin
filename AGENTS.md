@@ -88,7 +88,7 @@ arreglas uno, el test se cae y eso es la señal de actualizar los dos.
 - El path base `/TeRRaAdmin/` está en **dos archivos** — ambos deben coincidir:
   - `vite.config.js` → `base`
   - `src/App.jsx` → `<BrowserRouter basename="/TeRRaAdmin">`
-- La URL anterior (`/adminAgrofrutos/`) la sirve un repo aparte con ese nombre, en la misma organización: un stub que redirige a `/TeRRaAdmin/`. **GitHub no redirige las URLs de Pages de un repo renombrado** (solo las de git y web).
+- El deploy y sus secrets, la URL anterior, la PWA y el truco del 404 de GitHub Pages: `docs/deploy.md`.
 
 ### Flujo de trabajo Git / Git workflow
 
@@ -98,16 +98,7 @@ arreglas uno, el test se cae y eso es la señal de actualizar los dos.
   - `build`: `npm run lint`, que falla con cualquier error o aviso (`--max-warnings=0`), y `npm run build`. Este build en Linux es lo que caza los imports con casing incorrecto que Windows esconde.
   - `test`: los tests de unidad, **sin `.env`** (un test que arrastra `src/firebase.js` falla con `auth/invalid-api-key`: se mockea `../firebase`; para reproducirlo, `VITE_FIREBASE_API_KEY= npx vitest run`), los e2e y las reglas, contra el emulador.
 - `.github/workflows/deploy.yml` — push a `main` → build → publica `dist/` en la rama `gh-pages`.
-- **Los secrets son obligatorios para el build de deploy**: las 6 `VITE_FIREBASE_*` viven en *Settings → Secrets and variables → Actions* del repo y se inyectan como `env` del paso de build. `.env` está gitignoreado, así que sin ellas el bundle sale con la config vacía y producción cae con `auth/invalid-api-key`.
-- **`fetch-depth: 0`** en el checkout del deploy: sin el historial completo, el conteo de commits de `vite.config.js` no encuentra su punto de partida y la versión del header queda pegada en `.0`.
-- **Cloud Functions quedan fuera del pipeline** — se deployan a mano (ver `functions/README.md`).
-  - **El backend no se invoca por HTTP: se le escribe un documento.** La app crea un job en `functionJobs` y un **trigger de Firestore v2** lo levanta, lo ejecuta y escribe el resultado en el mismo doc; la UI lo mira con un `onSnapshot`. Del lado de la app, `services/functionJobsService.js` crea el job (`enqueueFunctionJob`) y espera el resultado (`waitForFunctionJob`).
-  - **No hay funciones callable.** *(a)* Una callable **v2** corre sobre Cloud Run y necesita un binding IAM `allUsers`, que la org policy del proyecto prohíbe: responde **403 con cuerpo HTML** antes de llegar al código. *(b)* Cloud Functions **v1** no existe en `southamerica-west1`, y esa región tampoco tiene App Engine, que gen1 necesita para el staging. *(c)* Un **trigger de Firestore v1** solo dispara sobre la base `(default)`, que en este proyecto no existe. Un trigger v2 lo invoca Eventarc con una service account, sin invoker público.
-  - **Lo programado va con `onSchedule` (v2)**, que Cloud Scheduler invoca con una service account: tampoco necesita invoker público. Es el caso del aviso diario de Cheques y pagos (`commitmentsDaily`) y del respaldo semanal en JSON (`weeklyBackup`), en `us-central1` como el resto.
-  - **Región `us-central1`, y no es negociable**: `hpdatabase` está en **`nam5`** (multi-región de EE.UU.) y un trigger de Firestore tiene que vivir en la ubicación de la base. Ver la nota de `nam5` en Arquitectura.
-  - **`database: "hpdatabase"` en el trigger.** La base no es `(default)`. Si no coincide, la función queda suscrita a una base inexistente y **nunca dispara, sin dar error** — el peor modo de falla del diseño.
-  - **La autorización está en las reglas**: la regla de Firestore decide quién crea un doc en `functionJobs` (`firestore.rules`, ver Tests). El `create` exige que lo pida un admin, con `status == "pending"` y `requestedBy == request.auth.uid`, y nadie edita ni borra un job desde el cliente (la función escribe con el admin SDK, que no pasa por reglas).
-  - **`npm run functions:verify` antes de cada deploy** — ver `functions/README.md`. Iterar deployando cuesta minutos de Cloud Build por vuelta; el emulador da lo mismo en segundos. **Pero no prueba el enrutamiento por base**: el emulador de Firestore no soporta bases múltiples, así que sirve una sola y el nombre le da igual. Eso solo se verifica en producción, y es para lo que está el botón de ping.
+- **Cloud Functions quedan fuera del pipeline** y se deployan a mano. La app no las invoca por HTTP: escribe un job en `functionJobs` y un trigger de Firestore v2 lo ejecuta. Van en `us-central1` y declaran `database: "hpdatabase"`; el porqué, la autorización y `npm run functions:verify` antes de cada deploy están en `functions/README.md`.
 
 ## Stack
 
@@ -215,14 +206,6 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 - **Sin perfil, o con `disabled: true`, la cuenta no entra.** `user.access` vale `"none"` o `"disabled"` y `ProtectedRoute` muestra `NoAccess` con el correo de la cuenta, que es lo que necesita un admin para darle acceso desde Usuarios. Si leer el perfil falla, la app entra igual como usuario y las reglas deciden qué datos ve.
 - `AuthContext` guarda en el perfil el `email` de la cuenta y `lastSeenAt` (`userPrefsService.recordVisit`) al abrir la app y, con la app abierta, al volver a ella o usarla (cambiar de pestaña, un clic, una tecla), como mucho una vez cada 30 minutos (`visitDue`, `utils/userAccounts.js`). Un computador que despierta de la suspensión sigue con la página cargada y no vuelve a iniciar sesión, así que solo el arranque no alcanza. Es lo que muestra Usuarios: el navegador no puede listar las cuentas de Authentication.
 - **`AuthContext` vuelca el doc `users/{uid}` entero en `user`**, así que cualquier campo que se le agregue queda disponible en toda la app sin pagar una lectura extra.
-
-### Saludos personalizados / easter eggs
-
-- `utils/greetings.js` — `GREETING_SLOTS` (los nombres de las ranuras) y `greeting(user, slot, fallback)`.
-- **El texto nunca va en el código.** Vive en `users/{uid}.greetings[slot]`, se carga desde Usuarios → Saludos, y cada usuario solo lee el suyo. Hardcodearlo deja el mail de una persona real en el repo, y fuera de contexto un chiste interno puede leerse como cualquier otra cosa.
-- Cuesta **0 lecturas**: el doc ya viene con el perfil. No hay colección aparte ni consulta al abrir el modal.
-- Un texto vacío o en blanco cuenta como "sin saludo" — borrar el easter egg es vaciar el campo, no eliminarlo del documento.
-- Ranuras en uso: `workerAlreadyInLabor` (tag del trabajador ya agregado, en `WorkerPickerModal`), `profileHover` (tooltip del nombre en el header), `notFound` (la 404) y `removeDayBlocked` (línea extra al final del aviso que impide quitar un día del ciclo, por jornadas o por vueltas de transporte). Para sumar otra: declararla en `GREETING_SLOTS` y describirla en `GREETING_FIELDS` (el editor de Usuarios), leerla con `greeting()` donde toque, y cargar el texto desde Usuarios.
 
 ### Servicios / Services
 
@@ -350,27 +333,7 @@ Los nombres guardados en Firestore se conservan aunque no calcen con la tabla (l
 
 ## Tipos de Labor / Labor Types
 
-Definidos en `src/utils/laborTypes.js` (`LABOR_TYPES`). Viven ahí y no en `CycleDetail.jsx` porque el form de crear ciclo también necesita la lista: importarla desde la pantalla del ciclo arrastraría ese módulo entero —más de 6.000 líneas, ag-grid incluido— al chunk de Faenas, que es justo la pantalla que se abre al entrar a la app. Cada labor tiene un campo `type` que determina columnas del grid, entrada de datos y métricas:
-
-| Tipo / Type | Etiqueta / Label | Comportamiento del grid / Grid behavior | Forma de datos / Data shape |
-|------|-------|---------------|------------|
-| `main` | Pago al día | 1 columna/día, monto `$` directo | `workdays: { amount }` |
-| `supervision` | Supervisión | Igual que main / Same as main | Igual / Same |
-| `extra` | Adicional | Igual que main / Same as main | Igual / Same |
-| `cosecha` | Cosecha | Multi-columnas por día (calidad × envase); toggle detalle/resumen | `workdays: { qualityX, containerY, qty, amount }` |
-| `trato` | A trato | Multi-precio por día (`t0`, `t1`, ...); toggle `/unid` vs `/día` por tier; toggle detalle/resumen | `dayPrices: { t0: { price, mode }, t1: ... }`, `workdays: { qty, amount, tiers? }` |
-| `tratoHE` | Jornadas con horas extras | Columnas: D, HE, M, S, X, `$`; toggle detalle/resumen | `workdays: { qty, overtimeHours, hasManejo, hasSupervision, extras, amount }` |
-
-El tag `main` se renderiza como **"al día"** en métricas y tabs.
-
-Cómo guarda y calcula sus precios y montos cada tipo (trato, tratoHE, cosecha, tratoEtapas y el piso): `docs/labor-types.md`.
-
-## Bancos
-
-- `src/utils/banks.js` define `BANKS`, `ACCOUNT_TYPES`, helpers (`bankName`, `isCashBank`, `defaultBankDetails`, `isCuentaRut`).
-- Banco "Efectivo" tiene `code: "EFE"` (constante `CASH_BANK_CODE`). No va en el archivo del banco.
-- `bankDetails = [paymentRut, accountNumber, accountType, bankCode]`.
-- `defaultBankDetails(rut)` → Cuenta RUT (Banco Estado).
+Definidos en `src/utils/laborTypes.js` (`LABOR_TYPES`). Cada labor tiene un `type` que decide sus columnas en la grilla, cómo se cargan los datos y sus métricas. La tabla de los tipos, y cómo guarda y calcula cada uno sus precios y montos: `docs/labor-types.md`.
 
 ## Documentación por pantalla
 
@@ -383,7 +346,7 @@ Lo que vale para varias pantallas está en este archivo; lo de una sola, en su a
 | El precio o el monto de una jornada según el tipo de labor | `docs/labor-types.md` |
 | El resumen del ciclo (`CycleSummaryModal`) o el del trabajador (`WorkerSummaryModal`) | `docs/screens/summaries.md` |
 | Transportes: transportistas, vueltas, resúmenes y quincenas | `docs/screens/transports.md` |
-| Trabajadores, contratos, honorarios e imposiciones | `docs/screens/workers.md` |
+| Trabajadores, sus bancos, contratos, honorarios e imposiciones | `docs/screens/workers.md` |
 | Nómina: generar, el detalle, achicar o agrandar, el archivo del banco y el portal | `docs/screens/payroll.md` y, si toca anticipos o bonos, `advances.md` |
 | Anticipos y bonos, y cómo los descuenta la nómina | `docs/screens/advances.md` |
 | Calendario | `docs/screens/calendar.md` |
@@ -395,11 +358,12 @@ Lo que vale para varias pantallas está en este archivo; lo de una sola, en su a
 | Libro de Precios | `docs/screens/price-book.md` |
 | Links útiles | `docs/screens/links.md` |
 | Consola admin y respaldos | `docs/screens/admin-console.md` |
-| Usuarios | `docs/screens/users.md` |
+| Usuarios y los saludos personalizados | `docs/screens/users.md` |
 | Auditoría, `services/logger.js` o la colección `logs` | `docs/screens/audit.md` |
 | La barra lateral, el encabezado y la versión | `docs/screens/layout.md` |
 | La pantalla de carga | `docs/screens/screen-loader.md` |
 | Una colección o un campo de Firestore | `docs/data-model.md` |
+| El deploy, la PWA o la URL de GitHub Pages | `docs/deploy.md` |
 
 ## Env
 
@@ -432,17 +396,3 @@ Lo que vale para varias pantallas está en este archivo; lo de una sola, en su a
 /harvest-qr                    Pesajes QR: explorador y sincronización → workdays (/admin/harvest-qr redirige)
 *                              NotFound (catch-all dentro y fuera del Layout)
 ```
-
-### SPA en GitHub Pages
-
-- `public/404.html` + script en `index.html` (truco rafgraph/spa-github-pages): cualquier ruta desconocida recarga `index.html?/<path>`, el script hace `history.replaceState` y React Router renderiza la ruta correcta. Sin esto, recargar `/cycles/abc` devuelve 404 de GitHub Pages.
-
-### PWA
-
-- Configurada via `vite-plugin-pwa` en `vite.config.js` con `registerType: 'autoUpdate'`. Genera `manifest.webmanifest`, `sw.js` y `registerSW.js` en `dist/` al build.
-- **Instalación**: se abre la URL desplegada en Chrome (Android) o Safari (iOS) → el navegador ofrece "Instalar app" / "Agregar a pantalla de inicio" → queda ícono en el escritorio que abre la app en standalone (sin barra de URL).
-- **Precache**: solo assets estables, `globPatterns: ['**/*.{ico,png,svg,woff2}', 'loaders/cat-default.webp', 'loaders/cat-wheel-fall.webp', 'loaders/cat-chasing-tail.webp']` (de las animaciones, solo la general y las dos de los procesos largos; ver `docs/screens/screen-loader.md`). JS, CSS y HTML cambian de nombre en cada deploy: un `index.js` precacheado apuntaría a chunks que el deploy nuevo ya borró, así que van por NetworkFirst (`runtimeCaching` en `vite.config.js`). Límite de 5 MB por archivo.
-- **Cache de datos**: NO interceptamos las llamadas a Firestore — el SDK de Firebase ya maneja su propio cache offline en IndexedDB. Habilitar `enableIndexedDbPersistence` si queremos offline-first más agresivo.
-- **navigateFallback: null** intencional. No queremos que el SW devuelva `index.html` para rutas desconocidas porque romperíamos el truco 404.html → `?/path` de GitHub Pages.
-- **Auto-update**: cuando se publica una versión nueva (merge a `main` → Actions, o `npm run deploy` a mano), el SW detecta el cambio en `sw.js` en la próxima navegación y se actualiza sin prompt al usuario (el reload siguiente toma la versión nueva).
-- **Dev**: `devOptions.enabled: false` — el SW no corre en `npm run dev` para no pelearse con HMR.
