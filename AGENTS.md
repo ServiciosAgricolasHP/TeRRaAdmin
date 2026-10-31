@@ -1,5 +1,7 @@
 # AGENTS.md
 
+Las reglas de este repo, para personas y agentes. Lo de una sola pantalla está en `docs/screens/` (ver Documentación por pantalla).
+
 ## Cómo trabajar
 
 ### Idioma y comentarios
@@ -16,6 +18,12 @@
   - `test`: los tests de unidad, **sin `.env`** (un test que arrastra `src/firebase.js` falla con `auth/invalid-api-key`: se mockea `../firebase`; para reproducirlo, `VITE_FIREBASE_API_KEY= npx vitest run`), los e2e y las reglas, contra el emulador.
 - `.github/workflows/deploy.yml` — push a `main` → build → publica `dist/` en la rama `gh-pages`.
 - **Cloud Functions quedan fuera del pipeline** y se deployan a mano. La app no las invoca por HTTP: escribe un job en `functionJobs` y un trigger de Firestore v2 lo ejecuta. Van en `us-central1` y declaran `database: "hpdatabase"`; el porqué, la autorización y `npm run functions:verify` antes de cada deploy están en `functions/README.md`.
+
+### Commits
+
+- **Un commit por criterio**, con un mensaje corto en camelCase (`noWritesOnOpeningSummaries`), sin prefijos (`feat:`) ni líneas `Co-Authored-By`. Separar un archivo va en un commit aparte (ver "Componentes y archivos"). `.claude/settings.local.json` es la configuración local de cada quien y no se commitea.
+- **Antes de commitear:** `npm run lint` en cero; `VITE_FIREBASE_API_KEY= npx vitest run`, que corre los tests como el CI, sin `.env`; y `npm run build` si cambiaron imports o nombres de archivo. Un cambio de interfaz se prueba en la app contra el emulador (ver Tests), en escritorio y a 412 px.
+- **Los datos reales no entran al repo, que es público.** Ni planillas, ni JSON de nóminas, ni contactos, ni el nombre, RUT, cuenta o correo de una persona real en el código, los tests, la documentación o las capturas. Las pruebas usan datos inventados, y los archivos reales que se usan en local van en `.git/info/exclude`.
 
 ### Documentación por pantalla
 
@@ -115,6 +123,10 @@ Un componente se ubica según quién lo usa:
 - **Separar un archivo va en un commit aparte.** El código se mueve tal cual y solo cambian imports y exports, así el diff se revisa como movimiento. Un cambio de lógica va en otro commit.
 - **Las piezas de cada pantalla se listan en su archivo de `docs/screens/`** (ver "Documentación por pantalla"), agrupadas por área (como en `payroll.md`). Un archivo nuevo en una de esas carpetas se suma a la lista.
 
+### Cálculo del negocio
+
+- **Un cálculo del negocio vive en un solo lugar.** Contar jornadas, sumar montos o calcular un saldo se hace en un helper de `utils/`, con tests, y lo usan todas las pantallas que muestran ese número. Antes de escribir uno se busca si ya existe: con una copia por pantalla, un arreglo en una deja a las demás con el error.
+
 ### React y React Compiler
 
 - ESLint: variables sin usar empezando con `A-Z_` son ignoradas. **El lint queda en cero** (el CI falla con cualquier error o aviso): una excepción con `eslint-disable` lleva su motivo al lado.
@@ -181,11 +193,23 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 - `workersService` (en `services/index.js`) está envuelto para usar `additive: true` por defecto en todas las mutaciones — alta de trabajador no invalida la lista en caché.
 - Helpers internos: `mergeListItem` y `removeListItem` (solo tocan claves de caché con `wheres` vacío).
 
+### Escrituras
+
+- **Abrir o mirar no escribe.** Una pantalla o un modal escribe en Firestore solo después de una acción de la persona: guardar, editar un campo o apretar un botón. Un valor calculado que se guarda para otra pantalla (como `cycle.summaryTotals`, que lee el Dashboard) se escribe solo si cambió desde la última escritura. Cada escritura de un servicio cuesta una lectura y deja un log de auditoría a nombre de quien tiene la sesión.
+
 ### Fechas
 
 - **La fecha de hoy (`YYYY-MM-DD`) sale de `localIsoDate()`** (`utils/dates.js`), nunca de `toISOString().slice(0, 10)`: esa da la fecha en UTC, y en Chile desde las 20 o 21 h ya es el día siguiente. Una marca de tiempo completa (`paidAt`, `createdAt`) sí va con `toISOString()`, porque es un instante y no un día.
 
 ## Interfaz
+
+### Teléfono
+
+- **La app también se usa en el teléfono, y cada pantalla se diseña para los dos anchos desde el principio.** El ancho de referencia es 412 px (Samsung A56). Bajo `md` (`useIsMobile`), las tablas densas pasan a tarjetas; lo que se toca mide al menos 32 px y la página no se desplaza a lo ancho.
+
+### Tablas dentro de un modal
+
+- **El ancho del modal sale de su tabla** (`size` de `Modal`): en escritorio la tabla entra entera, sin desplazarse a lo ancho. Montos, fechas y estados van en una línea (`whitespace-nowrap`), y un correo o un id largo se recorta (`truncate`) con el texto completo en `title`.
 
 ### Formularios
 
