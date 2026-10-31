@@ -216,6 +216,7 @@ export default function CycleSummaryModal({
 
   return (
     <Modal
+      section="Resumen del ciclo"
       open={open}
       onClose={onClose}
       title={`📊 Resumen ciclo — ${cycle?.label || ""}`}

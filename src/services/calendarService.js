@@ -1,5 +1,6 @@
 // Lecturas del Calendario: las jornadas y las vueltas de un rango de fechas.
-import { getDocs, query, collection, where } from "firebase/firestore";
+import { query, collection, where } from "firebase/firestore";
+import { getDocs } from "./readMeter";
 import { db } from "../firebase";
 
 // Trae los workdays del rango: una lectura por workday. Es el único punto de

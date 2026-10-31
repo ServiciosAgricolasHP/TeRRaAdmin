@@ -6,6 +6,7 @@ import { LogsBreakdownSection } from "./adminConsole/LogsBreakdownSection";
 import { MigrateAdvanceRutsSection } from "./adminConsole/MigrateAdvanceRutsSection";
 import { NormalizeWorkerNamesSection } from "./adminConsole/NormalizeWorkerNamesSection";
 import { PingSection } from "./adminConsole/PingSection";
+import { ReadMeterSection } from "./adminConsole/ReadMeterSection";
 import { WorkdaysByCycleSection } from "./adminConsole/WorkdaysByCycleSection";
 import { WorkdaysByMonthSection } from "./adminConsole/WorkdaysByMonthSection";
 import { WorkdaysByRangeSection } from "./adminConsole/WorkdaysByRangeSection";
@@ -47,6 +48,7 @@ export default function AdminConsole() {
       </Group>
 
       <Group title="Inspección de escala">
+        <ReadMeterSection />
         <CollectionCountsSection />
         <LogsBreakdownSection />
         <WorkdaysByMonthSection />

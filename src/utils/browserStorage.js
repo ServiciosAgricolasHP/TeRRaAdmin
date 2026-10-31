@@ -22,6 +22,20 @@ export function writeStored(key, value) {
   }
 }
 
+// Las claves guardadas que empiezan con `prefix`.
+export function storedKeys(prefix) {
+  try {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i += 1) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(prefix)) keys.push(key);
+    }
+    return keys;
+  } catch {
+    return [];
+  }
+}
+
 export function readStoredJson(key, fallback = null) {
   const raw = readStored(key);
   if (raw === null) return fallback;

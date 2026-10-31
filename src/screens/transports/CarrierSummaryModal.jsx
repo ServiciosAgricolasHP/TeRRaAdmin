@@ -86,6 +86,7 @@ export function CarrierSummaryModal({ carrier, onClose }) {
 
   return (
     <Modal
+      section="Resumen del transportista"
       open
       onClose={onClose}
       size="xl"

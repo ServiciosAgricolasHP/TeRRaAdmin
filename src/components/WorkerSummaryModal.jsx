@@ -205,6 +205,7 @@ export default function WorkerSummaryModal({ open, onClose, worker }) {
 
   return (
     <Modal
+      section="Resumen del trabajador"
       open={open}
       onClose={onClose}
       title={`📊 Resumen — ${worker?.name || ""}`}

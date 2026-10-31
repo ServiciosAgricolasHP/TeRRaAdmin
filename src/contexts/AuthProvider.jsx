@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { onAuthStateChanged, sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
+import { doc } from "firebase/firestore";
+import { getDoc } from "../services/readMeter";
 import { auth, db } from "../firebase";
 import { rememberBirthday, userPrefsService } from "../services/userPrefsService";
 import { accessOf, visitDue } from "../utils/userAccounts";

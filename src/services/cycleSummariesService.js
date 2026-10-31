@@ -1,4 +1,5 @@
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, serverTimestamp } from "firebase/firestore";
+import { getDoc, setDoc } from "./readMeter";
 import { db, auth } from "../firebase";
 
 // Estado editable del "Resumen ciclo" (tarifas de cobro, overrides por fila,

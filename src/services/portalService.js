@@ -2,7 +2,8 @@
 // otra. Publicar lo hace la función `publishPortal` (functions/portal.js), que
 // escribe una ficha por RUT en `portalPayslips` y la cabecera en
 // `portalMeta/current`; la app no puede escribirlas (`firestore.rules`).
-import { doc, getDoc } from "firebase/firestore";
+import { doc } from "firebase/firestore";
+import { getDoc } from "./readMeter";
 import { db } from "../firebase";
 import { enqueueFunctionJob, waitForFunctionJob } from "./functionJobsService";
 

@@ -31,7 +31,7 @@ export default function TransportsModal({ open, onClose, cycle, faena, subfaena,
 
   return (
     <>
-      <Modal open={open} onClose={onClose} title={`🚐 Transportes — ${cycle?.label || ""}`} size="xl">
+      <Modal section="Vueltas del ciclo" open={open} onClose={onClose} title={`🚐 Transportes — ${cycle?.label || ""}`} size="xl">
         <div className="mb-3 flex items-center justify-between gap-2 text-sm">
           <span className="text-[var(--color-muted)]">
             {trips.length} vuelta{trips.length === 1 ? "" : "s"} · Total {fmtCurrency(total)}

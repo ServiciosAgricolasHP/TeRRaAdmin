@@ -1,7 +1,8 @@
-import { collection, getDocs, query, Timestamp, where } from "firebase/firestore";
+import { collection, query, Timestamp, where } from "firebase/firestore";
 import { db } from "../firebase";
 import { workersService, workdaysService } from "./index";
 import { cacheKey, getCache, setCache, subscribe } from "./cache";
+import { getDocs, recordCacheHit } from "./readMeter";
 import { normalizeRut, validateRut } from "../utils/rutUtils";
 import { toProperName } from "../utils/nameUtils";
 import { localIsoDate } from "../utils/dates";
@@ -65,7 +66,10 @@ async function runSync(fresh) {
     fresh,
     minGapMs: MIN_GAP_MS,
   });
-  if (mode === "cached") return { data: copy, reads: 0 };
+  if (mode === "cached") {
+    recordCacheHit({ collection: "worker", order: LIST_ORDER }, copy.length);
+    return { data: copy, reads: 0 };
+  }
 
   if (mode === "full") {
     const data = await workersService.list({ order: LIST_ORDER });

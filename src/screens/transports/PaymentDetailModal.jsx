@@ -166,6 +166,7 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
 
   return (
     <Modal
+      section="Detalle del resumen de transporte"
       open={open}
       onClose={onClose}
       title={`Resumen — ${carrier?.alias || payment.carrierId}`}

@@ -57,6 +57,8 @@ export const MAIN_COLLECTIONS = [
   { id: "logs", group: "Sistema", label: "Registros de auditoría", note: "puede ser MUY grande" },
   { id: "functionJobs", group: "Sistema", label: "Tareas del backend", note: "cola de Cloud Functions; nada la poda todavía" },
   { id: "backups", group: "Sistema", label: "Respaldos en JSON", note: "una ficha por respaldo; el archivo está en Cloud Storage" },
+  { id: "readLogs", group: "Sistema", label: "Registro de lecturas", note: "uno por persona y día mientras el registro está encendido" },
+  { id: "readLogConfig", group: "Sistema", label: "Config del registro de lecturas", note: "un solo documento" },
 ];
 
 // Grupos en el orden en que aparecen por primera vez en MAIN_COLLECTIONS.

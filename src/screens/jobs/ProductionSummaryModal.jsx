@@ -137,7 +137,7 @@ export default function ProductionSummaryModal({
   const groupTotals = useMemo(() => laborGroupTotals(dataByColumn, laborGroupsById), [dataByColumn, laborGroupsById]);
 
   return (
-    <Modal open={open} onClose={onClose} title={title} size="2xl">
+    <Modal section="Resumen de producción" open={open} onClose={onClose} title={title} size="2xl">
       <div className="mb-3 flex flex-wrap items-center gap-3 text-xs">
         {/* Filtro de tipos */}
         <span className="text-[var(--color-muted)]">Tipo:</span>

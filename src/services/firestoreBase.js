@@ -1,18 +1,13 @@
 import {
   collection,
   doc,
-  addDoc,
-  getDoc,
-  getDocs,
-  updateDoc,
-  deleteDoc,
-  setDoc,
   query,
   where,
   orderBy,
   limit,
   serverTimestamp,
 } from "firebase/firestore";
+import { addDoc, getDoc, getDocs, updateDoc, deleteDoc, setDoc, recordCacheHit } from "./readMeter";
 import { db, auth } from "../firebase";
 import { logAction } from "./logger";
 import {
@@ -62,7 +57,10 @@ export function createService(entityName, collectionName = entityName) {
     const key = cacheKey(scope, { wheres, order, take });
     if (cache) {
       const hit = getCache(key, { persist });
-      if (hit !== undefined) return hit;
+      if (hit !== undefined) {
+        recordCacheHit({ collection: collectionName, wheres, order, take }, Array.isArray(hit) ? hit.length : 0);
+        return hit;
+      }
     }
     const parts = [];
     for (const [field, op, value] of wheres) parts.push(where(field, op, value));

@@ -16,6 +16,7 @@ export function UnpricedTripsModal({ groups, onClose, onSaved }) {
 
   return (
     <Modal
+      section="Vueltas sin precio"
       open
       onClose={onClose}
       size="lg"

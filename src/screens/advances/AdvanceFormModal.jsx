@@ -175,6 +175,7 @@ export default function AdvanceFormModal({ open, item, items = [], onClose, onSa
   return (
     <>
     <Modal
+      section="Anticipo o bono"
       open={open}
       onClose={onClose}
       dirty={dirty}

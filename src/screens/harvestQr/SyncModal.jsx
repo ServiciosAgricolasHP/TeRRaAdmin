@@ -188,7 +188,7 @@ export function SyncModal({ prefix, cycle, onClose, onSynced }) {
   };
 
   return (
-    <Modal open onClose={onClose} title={`Sincronizar pesajes — ${prefix.id}`} size="sm">
+    <Modal section="Sincronizar pesajes" open onClose={onClose} title={`Sincronizar pesajes — ${prefix.id}`} size="sm">
       <div className="space-y-3">
         <p className="text-sm text-[var(--color-muted)]">
           Recalcula y sobreescribe las jornadas de <strong>{cycle?.label || cycle?.name}</strong> en el rango elegido, sumando los pesajes de este prefijo. Los días y trabajadores que falten se agregan al ciclo para que las jornadas sean visibles en la grilla. Se puede repetir sin problema — vuelve a calcular desde cero cada vez.
