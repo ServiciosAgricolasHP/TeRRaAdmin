@@ -9,7 +9,6 @@ import { parseAmount } from "../../utils/formula";
 // etapas, el precio sugerido de las labores al día y la configuración de las
 // de horas extras. Cambiar un precio recalcula las jornadas que lo usan.
 export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, dayPrices, defaultMode, id, isHarvestLabor, setCycle, setDayPrices, setWorkdaysByLabor, toast, wdWrite, workdaysByLabor }) {
-  "use no memo";
   const [localPriceInputs, setLocalPriceInputs] = useState({});
 
   const [addComboFor, setAddComboFor] = useState(null);

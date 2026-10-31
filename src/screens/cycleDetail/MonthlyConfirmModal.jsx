@@ -5,7 +5,6 @@ import { useCycleDetail } from "./CycleDetailContext";
 // Confirma marcar como mensual a alguien que ya tiene días con monto: pasa a
 // asistencia en $0 los días que no están en una nómina, o deja los montos.
 export function MonthlyConfirmModal() {
-  "use no memo";
   const { confirmMonthly, monthlyBusy, monthlyConfirm, setMonthlyConfirm } = useCycleDetail();
   return (
     <Modal

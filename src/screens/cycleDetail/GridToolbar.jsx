@@ -3,7 +3,6 @@ import { useCycleDetail } from "./CycleDetailContext";
 // Barra sobre la grilla: ver a todos, por grupo (líder) o por contrato, solo a
 // quienes tienen producción, y los saltos a cada grupo.
 export function GridToolbar() {
-  "use no memo";
   const {
     columnFilterActive,
     employmentLoading,

@@ -10,7 +10,6 @@ import { useTripsByDay } from "./useTripsByDay";
 // Las vueltas de transporte del ciclo, día por día: la lista de días con su
 // total y, del día elegido, sus vueltas para agregar, editar o eliminar.
 export default function TransportsModal({ open, onClose, cycle, faena, subfaena, days = [], readOnly = false }) {
-  "use no memo";
   const { activeCarriers } = useCarriers();
   const {
     confirmDel,

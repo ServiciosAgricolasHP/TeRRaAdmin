@@ -7,7 +7,6 @@ import { useCycleDetail } from "../CycleDetailContext";
 import { useWorkerEdit } from "./WorkerEditContext";
 
 export function PieceworkDay({ d }) {
-  "use no memo";
   const {
     catalogs,
     commitPieceworkTier,

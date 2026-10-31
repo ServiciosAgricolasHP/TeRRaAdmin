@@ -5,7 +5,6 @@ import { useCycleDetail } from "../CycleDetailContext";
 import { useWorkerEdit } from "./WorkerEditContext";
 
 export function StagesDay({ d }) {
-  "use no memo";
   const { commitStageQty, dayStagesByDate, readOnly } = useCycleDetail();
   const {
     clearDraft,

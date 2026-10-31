@@ -258,7 +258,9 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
   - **Un `try`.** El compilador no acepta `finally`, ni condicionales u operadores lógicos dentro de un `try`. Un error se maneja con `attempt(fn)` (`utils/attempt.js`), que devuelve `{ value }` o `{ error }` sin lanzar: `const { error: err } = await attempt(() => service.update(id, data)); if (err) setError(err.message); setBusy(false);`.
   - **`localStorage`** se lee y escribe con `utils/browserStorage.js` (`readStored`, `writeStored` y sus versiones JSON), que nunca lanza.
   - **Un `import()` dinámico.** Una exportación va en su `write…Xlsx.js`, fuera del componente.
-  - **Un `new Set()`, un `new Map()` o una función como valor por defecto de una prop.** Van en una constante del módulo.
+  - **Un `new Set()`, un `new Map()`, una función o un template string como valor por defecto** de una prop o un parámetro. Van en una constante del módulo o se calculan en el cuerpo (``const field = fieldProp ?? `${d}__total` ``).
+  - **Una clave calculada con una llamada** (`{ [keyOf(x)]: value }`): la clave va antes en una variable.
+  - **Un `for…of` que desestructura un objeto dentro de otro** (`for (const [i, { node }] of list.entries())`): se recorre por índice.
   - **`||=`**, y un `++` sobre una variable que usa una función de adentro.
 - **Un callback que lee una propiedad de algo que puede ser `null` revisa primero que exista**: `onConfirm={() => toDelete && remove(toDelete.id)}`, o `if (!editing) return;` al principio de la función. React Compiler compara `toDelete.id` en cada render para saber si rehace el callback y, con `toDelete` en `null` (un diálogo cerrado), la pantalla se cae.
 - **Idioma.** Los textos de la interfaz, los comentarios y las descripciones de los tests (`describe`/`it`) van en español neutro, sin voseo. Los identificadores, nombres de archivo, claves y valores técnicos y los campos nuevos de Firestore van en inglés, aunque el código de alrededor use nombres en español, y los términos del negocio se nombran como dice el Glosario (abajo). Los campos ya guardados (`faenaId`, `padron`) conservan su nombre.

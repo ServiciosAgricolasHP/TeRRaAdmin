@@ -4,7 +4,6 @@ import { cyclesService, cycleSummariesService } from "../../../services";
 // Al cerrar el resumen, o al desmontarlo, guarda lo que el debounce dejó
 // pendiente y los totales de pagar y cobrar en el ciclo.
 export function useSummaryFlush({ charge, cycleId, grandTotalCharge, grandTotalPay, hydratedRef, lastSavedRef, lastTotalsRef, open, titles }) {
-  "use no memo";
   // Guarda los totales de pagar y cobrar en `cycle.summaryTotals`, de donde el
   // Dashboard saca el margen por ciclo sin leer `cycleSummaries` (una lectura
   // por ciclo). Solo escribe si cambiaron.

@@ -6,13 +6,13 @@ import { workdayHasData } from "../../utils/tratoHE";
 import { getStageDayPrice, computeStageDayAmount } from "../../utils/tratoEtapas";
 import { clipboardColumn, copiedValue, pastedAmount, pasteWrites } from "../../utils/gridClipboard";
 import { formatRutForDisplay } from "../../utils/rutUtils";
+import { attempt } from "../../utils/attempt";
 
 // Edición de las celdas de la grilla: guardar el monto o la cantidad de cada
 // tipo de labor, y los atajos como en Excel: copiar (Ctrl+C), pegar (Ctrl+V),
 // borrar las celdas elegidas (Supr) y deshacer (Ctrl+Z). Las celdas elegidas
 // salen de useCellRange (`range`).
 export function useCellEdits({ activeLabor, computeOvertimeDayAmount, cycle, dayCombosByDate, dayPrices, days, dayStagesByDate, dayTiersByDate, getCombo, gridRef, id, isHarvestLabor, isOvertimeDayLabor, isPieceworkLabor, isPieceworkStagesLabor, qrLocked, range, readOnly, setCopyToast, setWorkdaysByLabor, toast, wdMap, wdWrite, workdaysByLabor, workerIdFor }) {
-  "use no memo";
   // Modales de tratoHE
   const [bonusEdit, setBonusEdit] = useState(null);   // { laborId, date, workerRut }
 
@@ -302,16 +302,17 @@ export function useCellEdits({ activeLabor, computeOvertimeDayAmount, cycle, day
   // paso para Ctrl+Z. Devuelve cuántas cambiaron.
   const writeCells = async (field, writes, verb) => {
     pendingBatchRef.current = [];
-    let count = 0;
-    try {
-      for (const [i, { node, value }] of writes.entries()) {
+    const { value: count, error: err } = await attempt(async () => {
+      let changed = 0;
+      for (let i = 0; i < writes.length; i++) {
         if (writes.length > 3) showToast(`${verb} ${i + 1} de ${writes.length}…`);
-        if (await writeCell(node, field, value)) count++;
+        if (await writeCell(writes[i].node, field, writes[i].value)) changed++;
       }
-    } finally {
-      pushUndo(pendingBatchRef.current);
-      pendingBatchRef.current = null;
-    }
+      return changed;
+    });
+    pushUndo(pendingBatchRef.current);
+    pendingBatchRef.current = null;
+    if (err) throw err;
     return count;
   };
 
@@ -332,12 +333,11 @@ export function useCellEdits({ activeLabor, computeOvertimeDayAmount, cycle, day
     const field = sel ? sel.field : params.colDef?.field;
     const nodes = (sel ? sel.nodes : [params.node]).filter((n) => n?.data && !n.data._isHeader);
     if (!field || !nodes.length) return;
-    try {
+    const { error: err } = await attempt(async () => {
       await navigator.clipboard.writeText(nodes.map((n) => copiedCell(n, field)).join("\n"));
       flash(`✓ ${plural(nodes.length, "celda copiada", "celdas copiadas")}`);
-    } catch {
-      flash("No se pudo copiar al portapapeles", 2000);
-    }
+    });
+    if (err) flash("No se pudo copiar al portapapeles", 2000);
   };
 
   // Ctrl+V: con varias celdas elegidas y un solo valor copiado, el valor va en
@@ -354,10 +354,8 @@ export function useCellEdits({ activeLabor, computeOvertimeDayAmount, cycle, day
       flash(blocked, 2200);
       return;
     }
-    let text;
-    try {
-      text = await navigator.clipboard.readText();
-    } catch {
+    const { value: text, error: err } = await attempt(() => navigator.clipboard.readText());
+    if (err) {
       flash("No se pudo leer el portapapeles", 2000);
       return;
     }
@@ -407,15 +405,15 @@ export function useCellEdits({ activeLabor, computeOvertimeDayAmount, cycle, day
     if (!api) return;
     stack.pop();
     isUndoingRef.current = true;
-    try {
+    const { error: err } = await attempt(async () => {
       for (let i = batch.length - 1; i >= 0; i--) {
         const { rut, field, oldValue } = batch[i];
         await writeCell(api.getRowNode(rut), field, oldValue);
       }
       flash(`↶ Deshecho (${plural(batch.length, "celda", "celdas")})`);
-    } finally {
-      isUndoingRef.current = false;
-    }
+    });
+    isUndoingRef.current = false;
+    if (err) throw err;
   };
 
   // Los atajos de la grilla. Mientras se escribe en una celda, las teclas son
@@ -443,11 +441,9 @@ export function useCellEdits({ activeLabor, computeOvertimeDayAmount, cycle, day
       return;
     }
     busyRef.current = true;
-    try {
-      await action();
-    } finally {
-      busyRef.current = false;
-    }
+    const { error: err } = await attempt(action);
+    busyRef.current = false;
+    if (err) throw err;
   };
 
   const onCellValueChanged = async (params) => {

@@ -5,7 +5,6 @@ import { useCycleDetail } from "./CycleDetailContext";
 // Métricas del ciclo, plegables: una tarjeta por labor con su total y lo que
 // produjo, el transporte y el total del ciclo.
 export function LaborMetrics() {
-  "use no memo";
   const {
     activeLabor,
     balanceWithTransport,

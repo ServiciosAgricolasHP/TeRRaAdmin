@@ -3,7 +3,6 @@ import { useCycleDetail } from "../CycleDetailContext";
 import { useWorkerEdit } from "./WorkerEditContext";
 
 export function LeaderPicker() {
-  "use no memo";
   const { assignLeaderToWorker, enabledLeaders } = useCycleDetail();
   const {
     leaderBusy,

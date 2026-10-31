@@ -7,7 +7,6 @@ import { useCycleDetail } from "../CycleDetailContext";
 import { useWorkerEdit } from "./WorkerEditContext";
 
 export function HarvestDay({ d }) {
-  "use no memo";
   const {
     catalogs,
     commitHarvestCombo,

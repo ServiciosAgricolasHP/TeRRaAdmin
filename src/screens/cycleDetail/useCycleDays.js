@@ -6,7 +6,6 @@ import { greeting, GREETING_SLOTS } from "../../utils/greetings";
 // Días del ciclo: agregarlos desde el calendario y quitar uno que no tenga
 // jornadas ni vueltas de transporte.
 export function useCycleDays({ cycleWrite, days, id, setCycle, showToast, toast, user }) {
-  "use no memo";
   const [addDayOpen, setAddDayOpen] = useState(false);
   const [selectedDays, setSelectedDays] = useState(() => new Set());
   const [viewMonth, setViewMonth] = useState(() => {

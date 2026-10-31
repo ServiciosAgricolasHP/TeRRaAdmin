@@ -4,11 +4,11 @@ import { workdayComboKeyOf, workdayMapKey, getDaySingle } from "../../../utils/c
 import { buildDailyRows } from "../../../utils/cycleSummary";
 import { isRedDay } from "../../../utils/tratoHE";
 import { saveJSON, chargeStorageKey } from "./summaryStorage";
+import { attempt } from "../../../utils/attempt";
 
 // Importar labores de ciclos anteriores de la misma subfaena al modo cobrar,
 // en dos pasos (los ciclos y después sus labores), y quitar una importada.
 export function useImportCycles({ charge, cycle, setBusy, setCharge, toast }) {
-  "use no memo";
   // Modal de importar ciclos anteriores (modo cobrar): ciclos disponibles y
   // selección.
   const [importOpen, setImportOpen] = useState(false);
@@ -54,7 +54,7 @@ export function useImportCycles({ charge, cycle, setBusy, setCharge, toast }) {
       setAvailableCycles([]);
       return;
     }
-    try {
+    const { error: err } = await attempt(async () => {
       const list = await cyclesService.list({
         wheres: [
           ["faenaId", "==", cycle.faenaId],
@@ -67,7 +67,8 @@ export function useImportCycles({ charge, cycle, setBusy, setCharge, toast }) {
         .filter((c) => c.id !== cycle.id)
         .sort((a, b) => String(b.createdAt || b.id).localeCompare(String(a.createdAt || a.id)));
       setAvailableCycles(filtered);
-    } catch (err) {
+    });
+    if (err) {
       toast.error("Error cargando ciclos: " + (err.message || err));
       setAvailableCycles([]);
     }
@@ -82,7 +83,7 @@ export function useImportCycles({ charge, cycle, setBusy, setCharge, toast }) {
       return;
     }
     setBusy("import");
-    try {
+    const { error: err } = await attempt(async () => {
       const sourceCycles = await Promise.all(ids.map((id) => cyclesService.getById(id)));
       const allWds = await Promise.all(
         ids.map((id) => workdaysService.list({ wheres: [["cycleId", "==", id]] })),
@@ -140,11 +141,9 @@ export function useImportCycles({ charge, cycle, setBusy, setCharge, toast }) {
       }
       setImportOpen(false);
       setImportPlan({ candidates });
-    } catch (err) {
-      toast.error("Error importando: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
+    });
+    if (err) toast.error("Error importando: " + (err.message || err));
+    setBusy("");
   };
 
   // Paso 2: cada labor elegida entra al resumen como labor propia

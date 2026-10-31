@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { hasChanges } from "../../utils/formChanges";
 import { unshout } from "../../utils/textCase";
+import { attempt } from "../../utils/attempt";
 
 // Anotaciones de cada día de la labor activa: cuál se muestra, qué días se
 // pueden anotar y el modal que las edita, con el paso al día anterior y al
 // siguiente.
 export function useDayNotes({ activeLabor, activeLaborDatesWithProduction, cycle, cycleWrite, days, setCycle }) {
-  "use no memo";
   // Anotaciones por (labor, día) en cycle.dayNotesByLabor = { [laborId]:
   // { "YYYY-MM-DD": "texto" } }. cycle.dayNotes (compartido entre labores)
   // solo se lee, cuando la labor no tiene anotación propia para ese día. Se
@@ -61,7 +61,7 @@ export function useDayNotes({ activeLabor, activeLaborDatesWithProduction, cycle
     if (!editingDayNote) return;
     const { laborId, date } = editingDayNote;
     setDayNoteBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const text = unshout(String(editingDayNoteText || "").trim());
       const nextByLabor = { ...(cycle?.dayNotesByLabor || {}) };
       const nextForLabor = { ...(nextByLabor[laborId] || {}) };
@@ -72,9 +72,9 @@ export function useDayNotes({ activeLabor, activeLaborDatesWithProduction, cycle
       setCycle((c) => (c ? { ...c, dayNotesByLabor: nextByLabor } : c));
       setEditingDayNote(null);
       setEditingDayNoteText("");
-    } finally {
-      setDayNoteBusy(false);
-    }
+    });
+    setDayNoteBusy(false);
+    if (err) throw err;
   };
   return {
     activeLaborDayNotes,

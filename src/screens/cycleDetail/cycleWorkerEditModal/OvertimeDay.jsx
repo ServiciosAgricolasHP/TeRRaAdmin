@@ -9,7 +9,6 @@ import { useCycleDetail } from "../CycleDetailContext";
 import { useWorkerEdit } from "./WorkerEditContext";
 
 export function OvertimeDay({ d }) {
-  "use no memo";
   const { activeLabor, dayPrices, readOnly, upsertOvertimeDayWorkday } = useCycleDetail();
   const {
     clearDraft,

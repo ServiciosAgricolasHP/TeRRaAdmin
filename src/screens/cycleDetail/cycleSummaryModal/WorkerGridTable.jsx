@@ -8,7 +8,6 @@ import { cellH, cell } from "./tableStyles";
 // "Ampliar"; según `expanded` hay una sola instancia montada, así el ref
 // apunta siempre a la activa.
 export function WorkerGridTable({ anyPiso, catalogs, containers, dates, dayPrices, displayName, labor, redDates, titles, unit, workers }) {
-  "use no memo";
   // Sumas por columna (día) — pie de tabla.
   const dayTotals = new Map();
   for (const d of dates) dayTotals.set(d, { qty: 0, amount: 0, jornadas: 0, overtimeHours: 0, pisoAmount: 0 });

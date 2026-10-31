@@ -1,15 +1,15 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useEffectEvent } from "react";
 import { cycleSummariesService } from "../../../services";
 import { tripsService } from "../../../services/transportsService";
 import { loadJSON, chargeStorageKey, titlesStorageKey, saveJSON } from "./summaryStorage";
 import { DEFAULT_HIDDEN_COLUMNS, toggledColumns } from "../../../utils/summaryTables";
+import { attempt } from "../../../utils/attempt";
 
 // Lo que el resumen guarda, compartido entre usuarios: las tarifas y ajustes
 // del cobro y los títulos, en Firestore con un espejo en localStorage. Carga
 // eso y las vueltas del ciclo al abrir, sube la copia local si el ciclo todavía
 // no tiene resumen guardado y guarda cada cambio con debounce.
 export function useSummarySettings({ cycle, cycleId, faena, open, subfaena, toast, user }) {
-  "use no memo";
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -32,10 +32,9 @@ export function useSummarySettings({ cycle, cycleId, faena, open, subfaena, toas
   // escritura propia.
   const lastTotalsRef = useRef(null);
 
-  useEffect(() => {
-    if (!open || !cycleId) return;
-    hydratedRef.current = false;
-    let cancelled = false;
+  // Se lee al abrir y cuando cambian el ciclo o los nombres que arman el
+  // subtítulo por defecto.
+  const loadSummary = useEffectEvent((isCancelled) => {
     // Valores por defecto para los campos que un resumen guardado no traiga.
     const chargeDefaults = { labors: {}, carriers: {}, importedLabors: [], withIva: true, discount: 0, discountNote: "", pendingBalance: 0, pendingBalanceNote: "" };
     const titlesDefaults = {
@@ -46,7 +45,7 @@ export function useSummarySettings({ cycle, cycleId, faena, open, subfaena, toas
     };
     (async () => {
       setLoading(true);
-      try {
+      const { error: err } = await attempt(async () => {
         const [remote, list] = await Promise.all([
           cycleSummariesService.get(cycleId).catch((err) => {
             console.error("[resumen] carga:", err);
@@ -55,7 +54,7 @@ export function useSummarySettings({ cycle, cycleId, faena, open, subfaena, toas
           }),
           tripsService.listByCycle(cycleId),
         ]);
-        if (cancelled) return;
+        if (isCancelled()) return;
         setTrips(list);
         const localCharge = loadJSON(chargeStorageKey(cycleId), null);
         const localTitles = loadJSON(titlesStorageKey(cycleId), null);
@@ -75,20 +74,23 @@ export function useSummarySettings({ cycle, cycleId, faena, open, subfaena, toas
             .save(cycleId, { cobrar: nextCharge, titles: nextTitles })
             .catch((err) => console.error("[resumen] migración:", err));
         }
-      } catch (err) {
-        if (!cancelled) {
-          console.error("[resumen] carga:", err);
-          toast.error("No se pudo cargar el resumen: " + (err.message || err));
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-          hydratedRef.current = true;
-        }
+      });
+      if (err && !isCancelled()) {
+        console.error("[resumen] carga:", err);
+        toast.error("No se pudo cargar el resumen: " + (err.message || err));
+      }
+      if (!isCancelled()) {
+        setLoading(false);
+        hydratedRef.current = true;
       }
     })();
+  });
+  useEffect(() => {
+    if (!open || !cycleId) return;
+    hydratedRef.current = false;
+    let cancelled = false;
+    loadSummary(() => cancelled);
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, cycleId, cycle?.label, faena?.name, subfaena?.name]);
 
   // Guarda en Firestore con debounce de 600 ms, porque el estado cambia tecla
@@ -111,8 +113,7 @@ export function useSummarySettings({ cycle, cycleId, faena, open, subfaena, toas
         });
     }, 600);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [charge, open, cycleId]);
+  }, [charge, open, cycleId, toast, user?.email]);
 
   useEffect(() => {
     if (!open || !cycleId || !hydratedRef.current) return;
@@ -130,8 +131,7 @@ export function useSummarySettings({ cycle, cycleId, faena, open, subfaena, toas
         });
     }, 600);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [titles, open, cycleId]);
+  }, [titles, open, cycleId, toast, user?.email]);
 
   const updateTitles = (patch) => {
     setTitles((prev) => {

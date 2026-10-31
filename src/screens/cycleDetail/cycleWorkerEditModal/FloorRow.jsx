@@ -4,7 +4,6 @@ import { useCycleDetail } from "../CycleDetailContext";
 import { useWorkerEdit } from "./WorkerEditContext";
 
 export function FloorRow({ d }) {
-  "use no memo";
   const {
     activeLabor,
     dayPrices,

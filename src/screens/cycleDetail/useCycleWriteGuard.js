@@ -3,7 +3,6 @@ import { cyclesService, workdaysService } from "../../services";
 // Candado de escritura del ciclo: si está cerrado, la grilla queda de solo
 // lectura y toda escritura del ciclo o de sus jornadas se rechaza.
 export function useCycleWriteGuard({ cycle, id, toast }) {
-  "use no memo";
   const closed = cycle?.status === "closed";
   // Un ciclo cerrado es de solo lectura para todos, admin incluido; para
   // editarlo hay que reabrirlo.
