@@ -1,4 +1,5 @@
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
+import { doc, serverTimestamp } from "firebase/firestore";
+import { getDoc, setDoc } from "./readMeter";
 import { db } from "../firebase";
 
 const ref = (uid) => doc(db, "users", uid);

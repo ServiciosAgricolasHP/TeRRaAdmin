@@ -18,6 +18,9 @@ export const workersService = {
 
 export const workdaysService = createService("workday", "workdays");
 
+// Interruptor del registro de lecturas (`readLogConfig/main`, ver readMeter.js).
+export const readLogConfigService = createService("readLogConfig", "readLogConfig");
+
 // Los workdays de un ciclo, la consulta más repetida de la app (Nómina y el
 // resumen de producción por faena). Las pantallas pasan por acá para compartir
 // la clave de caché `workdays::{wheres,order,take}` y el TTL: cualquier

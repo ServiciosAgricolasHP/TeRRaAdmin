@@ -161,6 +161,7 @@ export default function GroupSummaryModal({ open, onClose }) {
 
   return (
     <Modal
+      section="Resumen por grupo"
       open={open}
       onClose={onClose}
       title="📊 Resúmenes por grupo"

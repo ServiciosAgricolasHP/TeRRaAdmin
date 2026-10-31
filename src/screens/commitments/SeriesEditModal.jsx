@@ -75,6 +75,7 @@ export function SeriesEditModal({ item, items, today, onCancel, onSaved }) {
 
   return (
     <Modal
+      section="Serie de cheques"
       open
       size="xl"
       onClose={onCancel}

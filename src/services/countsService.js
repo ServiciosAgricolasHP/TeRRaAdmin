@@ -1,6 +1,7 @@
 // Recuentos con `getCountFromServer`, que cuesta ~1 lectura por cada 1.000
 // documentos contados. Los usan la Consola admin y el Dashboard.
-import { getCountFromServer, collection, query, where } from "firebase/firestore";
+import { collection, query, where } from "firebase/firestore";
+import { getCountFromServer } from "./readMeter";
 import { db } from "../firebase";
 
 export async function countCollection(collName) {

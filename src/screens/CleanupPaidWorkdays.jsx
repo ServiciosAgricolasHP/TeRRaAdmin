@@ -4,7 +4,8 @@
 //
 // TODO: eliminar esta pantalla, su ruta en App.jsx y su ítem en Layout.jsx al terminar la limpieza.
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
-import { doc, writeBatch, serverTimestamp } from "firebase/firestore";
+import { doc, serverTimestamp } from "firebase/firestore";
+import { writeBatch } from "../services/readMeter";
 import { db } from "../firebase";
 import { workdaysService, cyclesService, workersService } from "../services";
 import ConfirmDialog from "../components/ConfirmDialog";

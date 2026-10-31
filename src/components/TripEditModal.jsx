@@ -141,6 +141,7 @@ export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate
 
   return (
     <Modal
+      section="Editar vuelta"
       open={open}
       onClose={onClose}
       dirty={dirty}

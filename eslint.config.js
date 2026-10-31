@@ -29,4 +29,23 @@ export default defineConfig([
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
     },
   },
+  {
+    // La app lee y escribe Firestore por services/readMeter.js, que cuenta
+    // cada petición en el registro de lecturas.
+    files: ['src/**/*.{js,jsx}'],
+    ignores: ['src/services/readMeter.js', 'src/**/*.test.js'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [{
+          name: 'firebase/firestore',
+          importNames: [
+            'getDocs', 'getDoc', 'getCountFromServer', 'getAggregateFromServer', 'getDocsFromServer',
+            'getDocFromServer', 'onSnapshot', 'runTransaction', 'setDoc', 'updateDoc', 'addDoc',
+            'deleteDoc', 'writeBatch',
+          ],
+          message: 'Se importa de services/readMeter.js, que la cuenta en el registro de lecturas.',
+        }],
+      }],
+    },
+  },
 ])

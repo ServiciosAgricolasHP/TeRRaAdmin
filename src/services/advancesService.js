@@ -22,7 +22,8 @@
 // el admin, no un corte por fecha: el descuento ocurre al generar una nómina,
 // y el admin confirma qué cuotas aplica en InstallmentConfirmModal
 // (Payroll.jsx). Ver advanceDueNow() e installmentProgress().
-import { writeBatch, doc, getDoc, serverTimestamp } from "firebase/firestore";
+import { doc, serverTimestamp } from "firebase/firestore";
+import { writeBatch, getDoc } from "./readMeter";
 import { db, auth } from "../firebase";
 import { createService } from "./firestoreBase";
 import { logAction } from "./logger";

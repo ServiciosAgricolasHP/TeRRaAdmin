@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { getDoc, doc } from "firebase/firestore";
+import { doc } from "firebase/firestore";
+import { getDoc } from "../../services/readMeter";
 import { db } from "../../firebase";
 import { isAdminRole } from "../../utils/userAccounts";
 import { useAuth } from "../../contexts/AuthContext";

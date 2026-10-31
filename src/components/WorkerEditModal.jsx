@@ -24,8 +24,10 @@ import {
 } from "../utils/banks";
 import { attempt } from "../utils/attempt";
 import { useValuesChanged } from "../hooks/useValuesChanged";
+import { useReadSection } from "../hooks/useReadSection";
 
 export default function WorkerEditModal({ open, mode, worker, allWorkers = [], onClose, onSaved }) {
+  useReadSection("Ficha del trabajador", open);
   const isCreate = mode === "create";
   const [form, setForm] = useState(null);
   // Cómo se abrió la ficha, para avisar si se cierra con cambios sin guardar.

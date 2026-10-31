@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { recordVisit } from "../services/readMeter";
 import { greeting, GREETING_SLOTS } from "../utils/greetings";
 import IndicatorsBar, { EditIndicatorsButton, IndicatorChips } from "./layout/IndicatorsBar";
 import IndicatorsModal from "./layout/IndicatorsModal";
@@ -41,6 +42,10 @@ export default function Layout() {
   // navegar lo cierra.
   const [drawerPath, setDrawerPath] = useState(null);
   const drawerOpen = drawerPath === location.pathname;
+  // Cada pantalla abierta suma una visita en el registro de lecturas.
+  useEffect(() => {
+    recordVisit(location.pathname);
+  }, [location.pathname]);
   // Barra lateral de escritorio, abierta o cerrada según la última sesión.
   // Cerrada se oculta entera y el contenido usa todo el ancho.
   const [sidebarOpen, setSidebarOpen] = useState(() => {

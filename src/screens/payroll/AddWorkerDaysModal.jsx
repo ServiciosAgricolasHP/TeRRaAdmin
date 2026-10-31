@@ -241,6 +241,7 @@ export function AddWorkerDaysModal({
 
   return (
     <Modal
+      section="Agregar días a la nómina"
       open
       onClose={onClose}
       title={generando ? "Agregar persona a la nómina nueva" : "Agregar persona a la nómina"}

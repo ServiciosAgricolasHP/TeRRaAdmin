@@ -1,4 +1,5 @@
-import { collection, getDocs, limit, orderBy, query } from "firebase/firestore";
+import { collection, limit, orderBy, query } from "firebase/firestore";
+import { getDocs } from "./readMeter";
 import { db } from "../firebase";
 import { enqueueFunctionJob, waitForFunctionJob } from "./functionJobsService";
 

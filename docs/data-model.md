@@ -665,6 +665,33 @@ Lo que alguien buscó en la ayuda (`/ayuda`) sin encontrarlo, guardado con **Avi
 | `fromPath` | string? | la pantalla desde donde se abrió la ayuda con el botón **?** (`/cycles/C1`) |
 | `createdAt/By`, `updatedAt/By` | ts, string | |
 
+### `readLogs`
+El registro de lecturas (`services/readMeter.js`): un documento por persona, día y entorno mientras el registro está encendido. **DocId = `{fecha}_{uid}_{env}`** (`2026-11-03_abc123_prod`). La app no lo lee; lo suma con `setDoc` + `merge` e `increment`, cada 5 minutos y al ocultar la pestaña.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `date` | string (YYYY-MM-DD) | |
+| `userId` | string | uid |
+| `env` | `"prod"` \| `"local"` | `local`: la app corriendo en un computador contra la base real |
+| `appVersion` | string | la del encabezado |
+| `opens` | number | veces que se abrió la app |
+| `flushes` | number | envíos (cada uno es una escritura y la lectura de las reglas) |
+| `reads` | map | `{hora: {pantalla: {consulta: {requests, docs, cacheHits, cacheDocs}}}}`. `docs` son las lecturas cobradas; `cacheHits`/`cacheDocs`, las que ahorró una caché |
+| `visits` | map | `{hora: {pantalla: n}}`; abrir un modal marcado cuenta como visita de su sección |
+| `time` | map | `{hora: {pantalla: segundos}}` con la pestaña visible |
+| `writes` | map | `{hora: {pantalla: {colección: n}}}`, peticiones de escritura (un lote cuenta una) |
+| `updatedAt` | timestamp | |
+| `expiresAt` | timestamp | la fecha + 60 días, para una política TTL de Firestore |
+
+- La **hora** va con dos dígitos (`"09"`). La **pantalla** es la ruta como patrón con los modales marcados abiertos encima (`/payroll › Detalle de nómina`), y la **consulta** es la colección con los campos y operadores de sus filtros, sin valores (`workdays · cycleId ==`). En las claves, `.` y `/` van como `%2E` y `%2F` (se leen con `decodeURIComponent`).
+
+### `readLogConfig`
+El interruptor del registro de lecturas: un solo documento, `main`. Se cambia desde la Consola admin; la app lo lee una vez por sesión, antes del primer envío.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `enabled` | bool | sin documento, no registra |
+| `until` | string (YYYY-MM-DD) | último día que registra |
+| `createdAt/By`, `updatedAt/By` | | |
+
 ### `logs`
 Auditoría — una fila por mutación.
 | Campo | Tipo | Notas |
