@@ -11,8 +11,9 @@ Las reglas de este repo, para personas y agentes. Lo de una sola pantalla está 
 
 ### Flujo de trabajo en git
 
-- **Tres caminos.** `main` es producción y solo recibe Pull Requests. `develop` junta la próxima versión menor. Una rama `hotfix/<nombre>` lleva un arreglo que producción necesita antes de esa versión.
-- **Una versión menor es un hito, no una cantidad de commits.** Los hitos de cada versión se anotan en el backlog. Cuando se completan, `develop` pasa a `main` en un PR que sube la versión (`npm version minor --no-git-tag-version`, en un commit propio).
+- **Tres caminos.** `main` es producción y solo recibe Pull Requests. `develop` junta los hitos de la próxima versión menor. Una rama `hotfix/<nombre>` lleva a producción un arreglo rápido sin lo que está a medio hacer en `develop`.
+- **Un hito, un PR; la versión completa, un cambio de versión.** Los hitos de cada versión menor se anotan en el backlog. Cada hito pasa de `develop` a `main` en su propio PR apenas está completo, y el PR del último sube la versión (`npm version minor --no-git-tag-version`, en un commit propio). Entre medio, producción sigue en la versión anterior con el conteo de commits (v1.3.12).
+  - El PR lleva todo lo que tiene `develop`: se trabaja un hito a la vez, o el que está a medio hacer espera a que esté completo. Lo que no puede esperar sale como hotfix.
 - **Hotfix.** Cuando se pide un hotfix, el arreglo sale de `main` y no lleva nada de lo que está en `develop`:
   1. `git fetch` y `git switch -c hotfix/<nombre> --no-track origin/main`. Lo que haya sin commitear en `develop` se guarda antes (`git stash`) y se recupera al volver.
   2. El arreglo y sus tests, con las mismas reglas de cualquier commit (lint, tests, `docs/data-model.md`, la guía de la ayuda). Después, `git push -u origin hotfix/<nombre>` y el PR a `main`. El encabezado muestra el número siguiente (v1.3.1), porque cuenta los commits desde la última subida de versión.
