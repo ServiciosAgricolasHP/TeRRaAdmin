@@ -47,6 +47,32 @@ describe("toTitleName", () => {
     expect(toTitleName("san josé-norte (sector b)")).toBe("San José-Norte (Sector B)");
   });
 
+  it("una palabra sin vocales es una sigla y va en mayúsculas", () => {
+    expect(toTitleName("KWS")).toBe("KWS");
+    expect(toTitleName("kws")).toBe("KWS");
+    expect(toTitleName("FUNDO KWS NORTE")).toBe("Fundo KWS Norte");
+    expect(toTitleName("servicios agrícolas hp spa")).toBe("Servicios Agrícolas HP Spa");
+    expect(toTitleName("kws/norte")).toBe("KWS/Norte");
+  });
+
+  it("las abreviaturas sin vocales y las letras sueltas no son siglas", () => {
+    expect(toTitleName("cosecha por kg")).toBe("Cosecha por Kg");
+    expect(toTitleName("CAMINO KM 12")).toBe("Camino Km 12");
+    expect(toTitleName("cosecha x bandeja")).toBe("Cosecha X Bandeja");
+  });
+
+  it("respeta una palabra en mayúsculas si el nombre tiene minúsculas", () => {
+    expect(toTitleName("Ensayo INIA")).toBe("Ensayo INIA");
+    expect(toTitleName("ensayo INIA-2")).toBe("Ensayo INIA-2");
+    expect(toTitleName("ENSAYO INIA")).toBe("Ensayo Inia");
+  });
+
+  it("los conectores en mayúsculas no se respetan", () => {
+    expect(toTitleName("Poda Y Amarre DE Parrones")).toBe("Poda y Amarre de Parrones");
+    expect(toTitleName("Quincena DE LA Cosecha")).toBe("Quincena de la Cosecha");
+    expect(toTitleName("DE la Torre")).toBe("De la Torre");
+  });
+
   it("vacío y null quedan igual", () => {
     expect(toTitleName("")).toBe("");
     expect(toTitleName("   ")).toBe("");
