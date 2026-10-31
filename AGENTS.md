@@ -1,6 +1,226 @@
 # AGENTS.md
 
-## Comandos
+## Cómo trabajar
+
+### Idioma y comentarios
+
+- **Idioma.** Los textos de la interfaz, los comentarios y las descripciones de los tests (`describe`/`it`) van en español neutro, sin voseo. Los identificadores, nombres de archivo, claves y valores técnicos y los campos nuevos de Firestore van en inglés, aunque el código de alrededor use nombres en español, y los términos del negocio se nombran como dice el Glosario (abajo). Los campos ya guardados (`faenaId`, `padron`) conservan su nombre.
+- **Los comentarios y la documentación describen lo que hace el código, como si siempre hubiera sido así.** No cuentan la historia (el error que motivó un cambio, la versión anterior, lo que se descartó), ni planes o estados transitorios, ni fases o tareas por nombre. Si el código ya lo dice, no se comenta. Una restricción se escribe como comportamiento ("compara el rol sin distinguir mayúsculas"). Vale también para este archivo, `docs/` y los README.
+
+### Flujo de trabajo en git
+
+- **Día a día en `develop`.** `main` es producción y solo recibe merges vía Pull Request.
+- **`docs/data-model.md` acompaña a cada cambio de modelo.** Una colección nueva, un campo nuevo, uno que cambia de tipo o de significado, o uno que se deja de escribir se documenta en el mismo commit; una colección nueva también va en `MAIN_COLLECTIONS` (`screens/adminConsole/collections.js`). Antes de un push se revisa que los commits que tocaron entidades lo hayan actualizado.
+- `.github/workflows/ci.yml` — corre en push/PR dos jobs, los dos bloqueantes:
+  - `build`: `npm run lint`, que falla con cualquier error o aviso (`--max-warnings=0`), y `npm run build`. Este build en Linux es lo que caza los imports con casing incorrecto que Windows esconde.
+  - `test`: los tests de unidad, **sin `.env`** (un test que arrastra `src/firebase.js` falla con `auth/invalid-api-key`: se mockea `../firebase`; para reproducirlo, `VITE_FIREBASE_API_KEY= npx vitest run`), los e2e y las reglas, contra el emulador.
+- `.github/workflows/deploy.yml` — push a `main` → build → publica `dist/` en la rama `gh-pages`.
+- **Cloud Functions quedan fuera del pipeline** y se deployan a mano. La app no las invoca por HTTP: escribe un job en `functionJobs` y un trigger de Firestore v2 lo ejecuta. Van en `us-central1` y declaran `database: "hpdatabase"`; el porqué, la autorización y `npm run functions:verify` antes de cada deploy están en `functions/README.md`.
+
+### Documentación por pantalla
+
+Lo que vale para varias pantallas está en este archivo; lo de una sola, en su archivo de `docs/screens/`. **Antes de tocar una pantalla, sus piezas, su servicio o su cálculo, se lee su archivo.** Un cambio de comportamiento actualiza ese archivo en el mismo commit, y una pantalla nueva suma el suyo y su fila acá.
+
+| Antes de tocar | Leer |
+|---|---|
+| Faenas, subfaenas y ciclos (`screens/Jobs.jsx`, `screens/jobs/`): crear, cerrar, reabrir, importar o eliminar | `docs/screens/jobs.md` |
+| La grilla del ciclo (`screens/CycleDetail.jsx`, `screens/cycleDetail/`) | `docs/screens/cycle-detail.md`, "Ciclo cerrado = congelado" en `jobs.md`, `docs/labor-types.md` y "Candado en la grilla del ciclo" en `harvest-qr.md` |
+| El precio o el monto de una jornada según el tipo de labor | `docs/labor-types.md` |
+| El resumen del ciclo (`CycleSummaryModal`) o el del trabajador (`WorkerSummaryModal`) | `docs/screens/summaries.md` |
+| Transportes: transportistas, vueltas, resúmenes y quincenas | `docs/screens/transports.md` |
+| Trabajadores, sus bancos, contratos, honorarios e imposiciones | `docs/screens/workers.md` |
+| Nómina: generar, el detalle, achicar o agrandar, el archivo del banco y el portal | `docs/screens/payroll.md` y, si toca anticipos o bonos, `advances.md` |
+| Anticipos y bonos, y cómo los descuenta la nómina | `docs/screens/advances.md` |
+| Calendario | `docs/screens/calendar.md` |
+| Dashboard | `docs/screens/dashboard.md` |
+| Facturación | `docs/screens/billing.md` |
+| Cheques y pagos | `docs/screens/commitments.md` |
+| Pesajes QR | `docs/screens/harvest-qr.md` |
+| Agenda y Cuentas | `docs/screens/info-accounts.md` |
+| Libro de Precios | `docs/screens/price-book.md` |
+| Links útiles | `docs/screens/links.md` |
+| Consola admin y respaldos | `docs/screens/admin-console.md` |
+| Usuarios y los saludos personalizados | `docs/screens/users.md` |
+| Auditoría, `services/logger.js` o la colección `logs` | `docs/screens/audit.md` |
+| La barra lateral, el encabezado y la versión | `docs/screens/layout.md` |
+| La pantalla de carga | `docs/screens/screen-loader.md` |
+| Una colección o un campo de Firestore | `docs/data-model.md` |
+| El deploy, la PWA o la URL de GitHub Pages | `docs/deploy.md` |
+
+## Código
+
+### Stack
+
+React 19 · Vite 7 · Tailwind CSS 4 · Firebase (Firestore + Auth) · ag-grid · React Router 7 · ExcelJS (lazy) · Recharts (lazy) · jsPDF (lazy) · html-to-image · ESLint flat config
+
+- **Solo JavaScript** (no TypeScript).
+- **React Compiler 1.0** habilitado vía `babel-plugin-react-compiler`.
+- Variables de entorno con prefijo `VITE_`.
+- `exceljs` se importa **lazy** (`await import("exceljs")`) solo al exportar — chunk separado de ~937 KB.
+- `recharts` idem, vía `React.lazy` sobre `screens/dashboard/DashboardCharts.jsx` y la dona `CommitmentsDonut`, en un chunk separado de ~340 KB. El chunk principal ya está sobre el límite de Vite, así que toda librería pesada nueva va lazy.
+- `jspdf` + `jspdf-autotable` también se importan lazy, solo al descargar el PDF del Informe de deudas.
+
+### Arquitectura
+
+```
+src/
+  main.jsx              ← punto de entrada
+  App.jsx               ← las rutas (react-router-dom)
+  firebase.js           ← Firebase (Firestore db = "hpdatabase")
+  components/           ← UI compartida (Layout, ProtectedRoute, Modal, ConfirmDialog, RowMenu, TripEditModal, WorkerEditModal, WorkerSummaryModal, etc.)
+  hooks/                ← hooks que usan varias pantallas (useIsMobile, useWorkersList, useValuesChanged, useCaptureActions)
+  screens/              ← un componente por ruta (ver Rutas) y, al lado, la carpeta con sus piezas
+                        (jobs/, cycleDetail/, payroll/, transports/…; ver "Componentes y archivos")
+  contexts/             ← Auth, Theme, Catalogs, Carriers y Toast: XContext.js + XProvider.jsx
+  services/             ← capa de datos (Firestore CRUD + caché + auditoría), reunida en services/index.js
+  utils/                ← cálculo y helpers de dominio, sin React ni Firestore (rutUtils, banks,
+                        payroll, cosechaCombos, agGridLocale, similarity, etc.)
+```
+
+### Componentes y archivos
+
+El código de la interfaz se organiza **por funcionalidad** (*feature folders*): las carpetas llevan el nombre de lo que hace la app (`payroll/`), no del tipo de archivo (`modals/`, `helpers/`). Cada pieza vive lo más cerca posible de donde se usa (*colocation*), y la interfaz, la lógica, el cálculo y los datos van en capas separadas. Vale para todo lo que se crea y para lo que se toca.
+
+Un componente se ubica según quién lo usa:
+
+| Tipo | Dónde va |
+|---|---|
+| **Pantalla**: el componente de una ruta | `screens/<Pantalla>.jsx` |
+| **Pieza**: lo usa una sola pantalla | En la carpeta de su pantalla: `screens/<pantalla>/<Pieza>.jsx` |
+| **Compartido**: lo usan dos o más pantallas, o es la estructura de la app (`Layout`, `ProtectedRoute`) | `components/<Componente>.jsx` |
+
+- **La carpeta aparece cuando hay piezas que separar.** Una pantalla o un componente que cabe en un archivo no lleva carpeta (`Login.jsx`, `Modal.jsx`).
+  - Cuando la lleva, la carpeta va al lado del archivo y se llama como él, con la primera letra en minúscula (`Payroll.jsx` → `payroll/`). El archivo conserva el componente principal.
+  - Una pieza con piezas propias repite el esquema dentro de la carpeta de su pantalla.
+- **Una pieza cambia de lugar cuando cambia quién la usa.** Si otra pantalla la necesita, pasa a `components/`. Un componente de `components/` que usa una sola pantalla va en la carpeta de esa pantalla.
+- **El resto del código:**
+  - `hooks/`: los hooks que usan dos o más pantallas. Los de una sola pantalla van en su carpeta, o en el archivo de la pantalla si no la tiene.
+  - `utils/`: cálculo puro, sin React ni Firestore, con su `*.test.js` al lado.
+  - `services/`: las lecturas y escrituras de Firestore.
+- **Un componente por archivo `.jsx`**, con el nombre del componente en PascalCase. Los helpers chicos que solo él usa van en el mismo archivo, sin exportar.
+  - Componentes chicos (unas 50 líneas o menos) e intrínsecamente relacionados pueden compartir archivo, exportados o no: `PayStatePill.jsx` reúne las insignias del estado de pago y `WorkerDetail.jsx` guarda su `MetricCard`. El archivo lleva el nombre del principal.
+  - Un componente más grande va en su propio archivo, aunque lo use uno solo.
+- **Lo que no es componente va en `.js`**: helpers compartidos, constantes, hooks y las impresiones en HTML. Si un `.jsx` exporta algo más que componentes, Fast Refresh recarga la página entera en vez del componente (`react-refresh/only-export-components`).
+- **Un componente dibuja; la lógica va aparte.**
+  - El estado y los efectos que forman una unidad (un flujo, una carga, una edición) van en un hook `use<Algo>.js`. El prefijo `use` es obligatorio: el linter de hooks y React Compiler reconocen los hooks por él.
+  - El cálculo sin estado va en `utils/`, con tests.
+  - Los datos, en `services/`.
+- **El estado vive en el componente más bajo que lo necesita**, y sube al padre solo si lo comparten dos hermanos. El buscador o los filtros de una sección son estado de esa sección: si viven arriba, cada tecla vuelve a dibujar el componente entero.
+- **Un componente no se define dentro de otro.** Se crea de nuevo en cada render, y React lo desmonta y lo vuelve a montar: pierde su estado y el foco.
+- **Tamaños de referencia:** un archivo de más de ~800 líneas o un componente de más de ~400 está haciendo varias cosas. Una sección, un modal o un flujo nuevo que caería en uno así va en un archivo propio de la carpeta.
+- **Más de ~10 props desde el padre indican un mal corte**: el estado que usa la pieza debería vivir en ella, o la lógica compartida en un hook o un contexto.
+- **Las piezas se importan desde su archivo**, sin un `index.js` que reexporte la carpeta. `services/index.js` es la excepción: reúne los servicios.
+- **Dos archivos de una carpeta no difieren solo en mayúsculas** (`workerDetail.js` y `WorkerDetail.jsx`): Windows resuelve `./WorkerDetail` al que encuentre primero.
+- **La mayúscula de un import tiene que ser exacta.** Windows no distingue mayúsculas en las rutas, pero el build de Linux del CI sí: un import con la mayúscula equivocada compila local y falla en CI. La carpeta es `components/`, en minúscula.
+- **Separar un archivo va en un commit aparte.** El código se mueve tal cual y solo cambian imports y exports, así el diff se revisa como movimiento. Un cambio de lógica va en otro commit.
+- **Las piezas de cada pantalla se listan en su archivo de `docs/screens/`** (ver "Documentación por pantalla"), agrupadas por área (como en `payroll.md`). Un archivo nuevo en una de esas carpetas se suma a la lista.
+
+### React y React Compiler
+
+- ESLint: variables sin usar empezando con `A-Z_` son ignoradas. **El lint queda en cero** (el CI falla con cualquier error o aviso): una excepción con `eslint-disable` lleva su motivo al lado.
+- **Efectos solo para sincronizar con algo externo.** Ajustar estado cuando cambia una prop (rellenar un formulario al abrir el modal, volver a la página 1 al filtrar) se hace durante el render con `useValuesChanged` (`hooks/`), no con un efecto. Para leer el valor actual de una función o una prop dentro de un efecto sin volver a correrlo, `useEffectEvent`; así también se carga al montar (`const loadOnMount = useEffectEvent(() => load())`). Las dependencias de un efecto se declaran todas: un `eslint-disable` de `react-hooks` hace que React Compiler se salte el archivo entero.
+- **Lo que React Compiler no sabe leer no va en un componente ni en un hook**, porque se salta el archivo entero, sin avisar:
+  - **Un `try`.** El compilador no acepta `finally`, ni condicionales u operadores lógicos dentro de un `try`. Un error se maneja con `attempt(fn)` (`utils/attempt.js`), que devuelve `{ value }` o `{ error }` sin lanzar: `const { error: err } = await attempt(() => service.update(id, data)); if (err) setError(err.message); setBusy(false);`.
+  - **`localStorage`** se lee y escribe con `utils/browserStorage.js` (`readStored`, `writeStored` y sus versiones JSON), que nunca lanza.
+  - **Un `import()` dinámico.** Una exportación va en su `write…Xlsx.js`, fuera del componente.
+  - **Un `new Set()`, un `new Map()`, una función o un template string como valor por defecto** de una prop o un parámetro. Van en una constante del módulo o se calculan en el cuerpo (``const field = fieldProp ?? `${d}__total` ``).
+  - **Una clave calculada con una llamada** (`{ [keyOf(x)]: value }`): la clave va antes en una variable.
+  - **Un `for…of` que desestructura un objeto dentro de otro** (`for (const [i, { node }] of list.entries())`): se recorre por índice.
+  - **`||=`**, y un `++` sobre una variable que usa una función de adentro.
+- **Las columnas de ag-grid dependen solo de la forma de la grilla** (días, combos, vista), con todas sus dependencias declaradas. Las celdas son componentes que llaman a las acciones vigentes desde un ref que se actualiza en un efecto (`actionsRef`, en `WorkersTab` y en `GridCellsContext` de la grilla del ciclo), así cambiar una función no rehace las columnas. Ese ref lo leen las celdas en sus handlers: pasárselo a una función durante el render (`buildColumnDefs({ actionsRef })`) no compila.
+- **Un callback que lee una propiedad de algo que puede ser `null` revisa primero que exista**: `onConfirm={() => toDelete && remove(toDelete.id)}`, o `if (!editing) return;` al principio de la función. React Compiler compara `toDelete.id` en cada render para saber si rehace el callback y, con `toDelete` en `null` (un diálogo cerrado), la pantalla se cae.
+
+### Contextos
+
+- **Cada contexto va en dos archivos**: `XContext.js` con el contexto, su hook (`useAuth`, `useToast`…) y lo que exporta además (`ROLES`, `THEMES`), y `XProvider.jsx` con el componente que lo provee. Así cada `.jsx` exporta solo componentes y Fast Refresh no recarga la página entera. Las pantallas importan el hook desde `XContext`; solo `App.jsx` importa los proveedores.
+- Orden en `App.jsx`: `ThemeProvider` → `AuthProvider` → `CatalogsProvider` → `CarriersProvider` → `BrowserRouter`.
+- `CarriersProvider` precarga transportistas; expone `carriers`, `activeCarriers`, `addCarrier`, `updateCarrier`, `softDeleteCarrier`, `restoreCarrier`.
+- `CatalogsProvider` precarga tablas de lookup usadas en las pantallas.
+
+## Datos
+
+### Dónde viven los datos
+
+La base se llama **`hpdatabase`** y **no existe la `(default)`** — varias APIs de
+Google asumen `(default)` en silencio, así que hay que declararla en todos lados
+(`getFirestore(app, "hpdatabase")` en el cliente, `database:` en los triggers).
+
+Está en **`nam5`**, el multi-región de Estados Unidos: toda lectura de la app
+cruza a EE.UU. Lo que corre en el servidor y lee mucho (backups, agregaciones)
+va en `us-central1`, pegado a la base. En Santiago quedaría cerca de los
+usuarios y lejos de los datos.
+
+Se consulta con `firebase firestore:databases:get hpdatabase`.
+
+### Auth
+
+- Firebase Email/Password.
+- Perfiles en colección `users` de Firestore (doc id = Firebase uid).
+- Roles: `admin` y `user`; cualquier otro valor cuenta como usuario (`roleLabel` en `utils/userAccounts.js`).
+- `ProtectedRoute` envuelve rutas autenticadas; prop `adminOnly` restringe a admins.
+- `Login` redirige a la app cuando `user` ya está cargado en `AuthContext`.
+- **Sin perfil, o con `disabled: true`, la cuenta no entra.** `user.access` vale `"none"` o `"disabled"` y `ProtectedRoute` muestra `NoAccess` con el correo de la cuenta, que es lo que necesita un admin para darle acceso desde Usuarios. Si leer el perfil falla, la app entra igual como usuario y las reglas deciden qué datos ve.
+- `AuthContext` guarda en el perfil el `email` de la cuenta y `lastSeenAt` (`userPrefsService.recordVisit`) al abrir la app y, con la app abierta, al volver a ella o usarla (cambiar de pestaña, un clic, una tecla), como mucho una vez cada 30 minutos (`visitDue`, `utils/userAccounts.js`). Un computador que despierta de la suspensión sigue con la página cargada y no vuelve a iniciar sesión, así que solo el arranque no alcanza. Es lo que muestra Usuarios: el navegador no puede listar las cuentas de Authentication.
+- **`AuthContext` vuelca el doc `users/{uid}` entero en `user`**, así que cualquier campo que se le agregue queda disponible en toda la app sin pagar una lectura extra.
+
+### Servicios
+
+- `services/firestoreBase.js` exporta `createService(entityName, collectionName)`, que arma el CRUD de una colección.
+- Cada servicio invalida su caché en memoria y escribe el log de auditoría con `services/logger.js`.
+- `list()` acepta `cache: true`, con un TTL de 60 s por defecto; `persist: true` la guarda además en `localStorage`.
+- Las escrituras en lote van con `writeBatch(db)`, en tandas de 450 (el límite de Firestore es 500).
+- **`update`, `upsert` y `remove` cuestan una lectura además de la escritura**: hacen un `getById` interno para armar el `before` del log de auditoría. `create` no lee.
+- **`remove` de un documento que ya no existe no borra ni escribe log**: un log de `delete` siempre trae el `before`, y de ahí sale su `meta`.
+- **`upsert(id, data, { before })`** deja pasar el documento que el llamador ya leyó y se saltea ese `getById`. `undefined` = "no me lo pasaron, léelo"; `null` = "lo leí y no existe". La diferencia decide si el doc se crea con `createdAt`/`createdBy`, así que **no se puede colapsar en un chequeo de verdad/falsedad** — escrito `knownBefore ? …` el ahorro desaparece sin que nada falle a la vista. Fijado en `tests/e2e/upsert-before.test.js`, que lo observa pasando `null` sobre un doc que sí existe (única forma de ver desde afuera si la lectura ocurrió).
+- **`countedList(service, opts)`** (en `services/cache.js`) envuelve un `list()` y devuelve `{ data, reads }`, con `reads: 0` cuando salió de la caché. Es lo que alimenta los contadores de lecturas de Dashboard, Calendario y Pesajes QR. Las opciones que se le pasan tienen que ser **exactamente** las de la llamada real: reconstruye la clave `collection::{wheres,order,take}`, así que si divergen el contador miente en vez de avisar.
+- Un servicio nuevo que usan varias pantallas se exporta desde `services/index.js`.
+
+### Caché aditiva
+
+- `firestoreBase` soporta `additive: true` en `create`/`update`/`upsert`/`remove` — en vez de invalidar la entrada de caché correspondiente, la **corrige en su lugar**: agrega, actualiza o quita el documento. Útil cuando una colección se lista entera (sin `wheres`) y la queremos mantener fresca sin pagar el costo de re-leer todos los docs.
+- `workersService` (en `services/index.js`) está envuelto para usar `additive: true` por defecto en todas las mutaciones — alta de trabajador no invalida la lista en caché.
+- Helpers internos: `mergeListItem` y `removeListItem` (solo tocan claves de caché con `wheres` vacío).
+
+### Fechas
+
+- **La fecha de hoy (`YYYY-MM-DD`) sale de `localIsoDate()`** (`utils/dates.js`), nunca de `toISOString().slice(0, 10)`: esa da la fecha en UTC, y en Chile desde las 20 o 21 h ya es el día siguiente. Una marca de tiempo completa (`paidAt`, `createdAt`) sí va con `toISOString()`, porque es un instante y no un día.
+
+## Interfaz
+
+### Formularios
+
+- **Mayúsculas de lo que se escribe a mano** (`utils/textCase.js`, con tests). Se corrigen al guardar, no mientras se escribe:
+  - **Nombres de registros como título** (`toTitleName`): faena, ubicación, subfaena, labor y su agrupación, quincena, transportista (nombre y alias), centro de costo, alias de empresa, ficha de Agenda y Cuentas, faena, labor y lugar del Libro de Precios, y la nota de anticipos y bonos. Los conectores van en minúscula ("Poda y Amarre de Parrones") y los artículos solo después de "de"/"del" ("Fundo Los Robles", "Quincena de la Cosecha"). Lugar y destino de las vueltas pasan por `titleCase` en `transportsService`.
+  - **Notas libres**: `unshout` solo las corrige si vienen **enteras en mayúsculas** (pasan a oración). Si tienen alguna minúscula, se respetan. Cubre las notas de faena, subfaena, ciclo, día del ciclo, transportista, vuelta, abono, resumen, quincena, factura y pago de factura, ficha y Libro de Precios.
+  - **Quedan fuera a propósito**: la razón social (es el nombre legal del SII), el titular y el giro de las fichas (se copian al banco y al SII), el alias de los vehículos (las vueltas lo guardan como texto y dejarían de calzar), los líderes de grupo (se comparan como texto: `CHILENOS`, `EXTRANJEROS`) y los nombres de trabajadores (`toProperName`, con su propio flujo).
+  - Al editar un ciclo, el prefijo "Faena/Subfaena/" de su etiqueta se reconoce sin distinguir mayúsculas, porque un ciclo antiguo puede traerlo en mayúsculas.
+- **Un formulario en un modal avisa antes de perder cambios.** `Modal` recibe `dirty`: con cambios sin guardar, cerrar por el ✕, Escape o el clic afuera muestra "Cambios sin guardar" (Seguir editando / Descartar cambios), y cerrar o recargar la pestaña muestra el aviso del navegador. El "Cancelar" del formulario es un `ModalCloseButton`, que pasa por el mismo aviso; un `onClick={onClose}` directo se lo salta.
+  - `dirty` sale de `hasChanges(cómoSeAbrió, valoresActuales)` (`utils/formChanges.js`, con tests), que compara lo que se ve: vacío, `null`, `false` y una fila en blanco valen lo mismo, y `150000` es igual a `"150000"`. Lo que no es dato del formulario va en `ignore` (el tipo elegido en un alta, respaldos internos como los `bd_prev*` de la ficha del trabajador).
+  - Mientras se guarda, `dirty` va en `false`: el modal lo cierra quien guardó.
+  - El modal no guarda la copia inicial: la arma cada formulario, con `useState(valores)` en el primer render, desde las props, o en el mismo bloque `useValuesChanged` que llena el formulario al abrir.
+  - Escape cierra solo el modal de arriba, y el clic afuera cuenta solo si también empezó afuera: arrastrar una selección desde un campo hasta el fondo no cierra.
+  - Conectado en las fichas y formularios de edición: trabajador (y el alta desde el selector de trabajadores), Cheques y pagos, anticipos y bonos, faena, subfaena, ciclo y labor, anotación del día, bonos, configuración del día y líderes por defecto de la grilla, vuelta, transportista, quincena, gasto informal, notas de una factura, prefijo QR, pesaje, ficha de Agenda y Cuentas, link, Libro de Precios, cuenta nueva, saludos, perfil e indicadores. En la grilla móvil del ciclo cada campo se guarda al salir de él, así que solo avisa por lo que se está escribiendo.
+
+### Exportar, copiar e imprimir
+
+- **Lo que se exporta es lo que se ve.** Un Excel, una imagen, una impresión o un PDF muestran exactamente lo de la pantalla: las mismas filas, ajustes, columnas y totales. Se arman desde los mismos datos que dibuja la pantalla, sin recalcular por su cuenta; si difieren, el error es del archivo.
+- **Las imágenes que se copian o descargan salen siempre en el tema claro**, sea cual sea el tema de quien las genera: `captureFullWidthBlob` / `captureFullWidthDataUrl` (`utils/imageCapture.js`) le ponen al clon fondo blanco y redefinen las variables `--color-*` con `LIGHT_PALETTE`. Esa lista es copia de `:root` en `index.css`, y un test (`imageCapture.test.js`) falla si se separan.
+- **Copiar la imagen, descargar el PNG e imprimir pasan por `useCaptureActions`** (`hooks/`). Cada acción recibe el nodo al llamarla, así una pantalla con varias tablas usa un solo hook; `busy` dice qué está en curso, y `run` corre cualquier otra exportación (el Excel) con el mismo aviso si falla. Una pantalla no arma su propio `try`/`finally` para esto.
+  - Imprimir abre una ventana aparte con el HTML del nodo (`printNodes`, `utils/printWindow.js`): sin los controles marcados con `data-export-hide`, una hoja por nodo, el encabezado de cada tabla repetido en cada hoja y la orientación en un `@page` al nivel superior, porque anidado en `@media print` hay navegadores que lo ignoran. Las tablas imprimibles llevan su estilo en línea: la ventana no carga el CSS de la app.
+  - Las impresiones que arman su propio HTML (los comprobantes y la tabla del resumen de Nómina, el informe de deudas y el mes del Calendario) abren la ventana con `openPrintWindow`. Si el navegador la bloquea, el aviso pide permitir las ventanas emergentes.
+
+### Colores
+
+- **Los colores salen de las variables del tema** (`var(--color-*)`), nunca fijos: el accent es naranja en donDiego y violeta en sheridan y aetiskPastel, así que un verde o un violeta escrito a mano se ve fuera de lugar en los otros temas.
+
+### Alto de las listas y grillas
+
+- **Regla**: la lista va `min-h-0 flex-1` dentro del `flex h-full flex-col` de la raíz y toma el alto que queda libre (Advances, Workers). Sin alto fijo ni control para arrastrarlo.
+- Si la lista tiene algo debajo, eso va con `shrink-0` y un `max-h` propio, y la lista lleva además un alto mínimo para que no desaparezca en pantallas bajas: es el caso de la vista previa de Nómina, con el panel de efectivo abajo (`min-h-[240px] flex-1`). Cuando no cabe, desplaza el `<main>`.
+
+## Referencia
+
+### Comandos
 
 | Comando | Para qué |
 |---|---|
@@ -16,7 +236,7 @@
 | `npm run functions:verify` | Cloud Functions contra los emuladores de functions, firestore, auth y storage, sin deployar |
 | `npm run deploy` | Deploy manual a GitHub Pages (`gh-pages -d dist -t`). Solo si falla el camino normal, que es mergear a `main` y dejar que Actions despliegue |
 
-## Tests
+### Tests
 
 Tres capas, ninguna toca datos reales.
 
@@ -82,179 +302,13 @@ Los tests marcados `[bug conocido]` fijan el comportamiento **actual** de algo q
 parece estar mal, con el porqué en un comentario. No son la conducta deseada: si
 arreglas uno, el test se cae y eso es la señal de actualizar los dos.
 
-## Despliegue
+### Despliegue
 
 - Desplegado en GitHub Pages en: `https://serviciosagricolashp.github.io/TeRRaAdmin/`
 - El path base `/TeRRaAdmin/` está en **dos archivos** — ambos deben coincidir:
   - `vite.config.js` → `base`
   - `src/App.jsx` → `<BrowserRouter basename="/TeRRaAdmin">`
 - El deploy y sus secrets, la URL anterior, la PWA y el truco del 404 de GitHub Pages: `docs/deploy.md`.
-
-### Flujo de trabajo en git
-
-- **Día a día en `develop`.** `main` es producción y solo recibe merges vía Pull Request.
-- **`docs/data-model.md` acompaña a cada cambio de modelo.** Una colección nueva, un campo nuevo, uno que cambia de tipo o de significado, o uno que se deja de escribir se documenta en el mismo commit; una colección nueva también va en `MAIN_COLLECTIONS` (`screens/adminConsole/collections.js`). Antes de un push se revisa que los commits que tocaron entidades lo hayan actualizado.
-- `.github/workflows/ci.yml` — corre en push/PR dos jobs, los dos bloqueantes:
-  - `build`: `npm run lint`, que falla con cualquier error o aviso (`--max-warnings=0`), y `npm run build`. Este build en Linux es lo que caza los imports con casing incorrecto que Windows esconde.
-  - `test`: los tests de unidad, **sin `.env`** (un test que arrastra `src/firebase.js` falla con `auth/invalid-api-key`: se mockea `../firebase`; para reproducirlo, `VITE_FIREBASE_API_KEY= npx vitest run`), los e2e y las reglas, contra el emulador.
-- `.github/workflows/deploy.yml` — push a `main` → build → publica `dist/` en la rama `gh-pages`.
-- **Cloud Functions quedan fuera del pipeline** y se deployan a mano. La app no las invoca por HTTP: escribe un job en `functionJobs` y un trigger de Firestore v2 lo ejecuta. Van en `us-central1` y declaran `database: "hpdatabase"`; el porqué, la autorización y `npm run functions:verify` antes de cada deploy están en `functions/README.md`.
-
-## Stack
-
-React 19 · Vite 7 · Tailwind CSS 4 · Firebase (Firestore + Auth) · ag-grid · React Router 7 · ExcelJS (lazy) · Recharts (lazy) · jsPDF (lazy) · html-to-image · ESLint flat config
-
-- **Solo JavaScript** (no TypeScript).
-- **React Compiler 1.0** habilitado vía `babel-plugin-react-compiler`.
-- Variables de entorno con prefijo `VITE_`.
-- `exceljs` se importa **lazy** (`await import("exceljs")`) solo al exportar — chunk separado de ~937 KB.
-- `recharts` idem, vía `React.lazy` sobre `screens/dashboard/DashboardCharts.jsx` y la dona `CommitmentsDonut`, en un chunk separado de ~340 KB. El chunk principal ya está sobre el límite de Vite, así que toda librería pesada nueva va lazy.
-- `jspdf` + `jspdf-autotable` también se importan lazy, solo al descargar el PDF del Informe de deudas.
-
-## Arquitectura
-
-```
-src/
-  main.jsx              ← punto de entrada
-  App.jsx               ← las rutas (react-router-dom)
-  firebase.js           ← Firebase (Firestore db = "hpdatabase")
-  components/           ← UI compartida (Layout, ProtectedRoute, Modal, ConfirmDialog, RowMenu, TripEditModal, WorkerEditModal, WorkerSummaryModal, etc.)
-  hooks/                ← hooks que usan varias pantallas (useIsMobile, useWorkersList, useValuesChanged, useCaptureActions)
-  screens/              ← un componente por ruta (ver Rutas) y, al lado, la carpeta con sus piezas
-                        (jobs/, cycleDetail/, payroll/, transports/…; ver "Componentes y archivos")
-  contexts/             ← Auth, Theme, Catalogs, Carriers y Toast: XContext.js + XProvider.jsx
-  services/             ← capa de datos (Firestore CRUD + caché + auditoría), reunida en services/index.js
-  utils/                ← cálculo y helpers de dominio, sin React ni Firestore (rutUtils, banks,
-                        payroll, cosechaCombos, agGridLocale, similarity, etc.)
-```
-
-### Componentes y archivos
-
-El código de la interfaz se organiza **por funcionalidad** (*feature folders*): las carpetas llevan el nombre de lo que hace la app (`payroll/`), no del tipo de archivo (`modals/`, `helpers/`). Cada pieza vive lo más cerca posible de donde se usa (*colocation*), y la interfaz, la lógica, el cálculo y los datos van en capas separadas. Vale para todo lo que se crea y para lo que se toca.
-
-Un componente se ubica según quién lo usa:
-
-| Tipo | Dónde va |
-|---|---|
-| **Pantalla**: el componente de una ruta | `screens/<Pantalla>.jsx` |
-| **Pieza**: lo usa una sola pantalla | En la carpeta de su pantalla: `screens/<pantalla>/<Pieza>.jsx` |
-| **Compartido**: lo usan dos o más pantallas, o es la estructura de la app (`Layout`, `ProtectedRoute`) | `components/<Componente>.jsx` |
-
-- **La carpeta aparece cuando hay piezas que separar.** Una pantalla o un componente que cabe en un archivo no lleva carpeta (`Login.jsx`, `Modal.jsx`).
-  - Cuando la lleva, la carpeta va al lado del archivo y se llama como él, con la primera letra en minúscula (`Payroll.jsx` → `payroll/`). El archivo conserva el componente principal.
-  - Una pieza con piezas propias repite el esquema dentro de la carpeta de su pantalla.
-- **Una pieza cambia de lugar cuando cambia quién la usa.** Si otra pantalla la necesita, pasa a `components/`. Un componente de `components/` que usa una sola pantalla va en la carpeta de esa pantalla.
-- **El resto del código:**
-  - `hooks/`: los hooks que usan dos o más pantallas. Los de una sola pantalla van en su carpeta, o en el archivo de la pantalla si no la tiene.
-  - `utils/`: cálculo puro, sin React ni Firestore, con su `*.test.js` al lado.
-  - `services/`: las lecturas y escrituras de Firestore.
-- **Un componente por archivo `.jsx`**, con el nombre del componente en PascalCase. Los helpers chicos que solo él usa van en el mismo archivo, sin exportar.
-  - Componentes chicos (unas 50 líneas o menos) e intrínsecamente relacionados pueden compartir archivo, exportados o no: `PayStatePill.jsx` reúne las insignias del estado de pago y `WorkerDetail.jsx` guarda su `MetricCard`. El archivo lleva el nombre del principal.
-  - Un componente más grande va en su propio archivo, aunque lo use uno solo.
-- **Lo que no es componente va en `.js`**: helpers compartidos, constantes, hooks y las impresiones en HTML. Si un `.jsx` exporta algo más que componentes, Fast Refresh recarga la página entera en vez del componente (`react-refresh/only-export-components`).
-- **Un componente dibuja; la lógica va aparte.**
-  - El estado y los efectos que forman una unidad (un flujo, una carga, una edición) van en un hook `use<Algo>.js`. El prefijo `use` es obligatorio: el linter de hooks y React Compiler reconocen los hooks por él.
-  - El cálculo sin estado va en `utils/`, con tests.
-  - Los datos, en `services/`.
-- **El estado vive en el componente más bajo que lo necesita**, y sube al padre solo si lo comparten dos hermanos. El buscador o los filtros de una sección son estado de esa sección: si viven arriba, cada tecla vuelve a dibujar el componente entero.
-- **Un componente no se define dentro de otro.** Se crea de nuevo en cada render, y React lo desmonta y lo vuelve a montar: pierde su estado y el foco.
-- **Tamaños de referencia:** un archivo de más de ~800 líneas o un componente de más de ~400 está haciendo varias cosas. Una sección, un modal o un flujo nuevo que caería en uno así va en un archivo propio de la carpeta.
-- **Más de ~10 props desde el padre indican un mal corte**: el estado que usa la pieza debería vivir en ella, o la lógica compartida en un hook o un contexto.
-- **Las piezas se importan desde su archivo**, sin un `index.js` que reexporte la carpeta. `services/index.js` es la excepción: reúne los servicios.
-- **Dos archivos de una carpeta no difieren solo en mayúsculas** (`workerDetail.js` y `WorkerDetail.jsx`): Windows resuelve `./WorkerDetail` al que encuentre primero.
-- **La mayúscula de un import tiene que ser exacta.** Windows no distingue mayúsculas en las rutas, pero el build de Linux del CI sí: un import con la mayúscula equivocada compila local y falla en CI. La carpeta es `components/`, en minúscula.
-- **Separar un archivo va en un commit aparte.** El código se mueve tal cual y solo cambian imports y exports, así el diff se revisa como movimiento. Un cambio de lógica va en otro commit.
-- **Las piezas de cada pantalla se listan en su archivo de `docs/screens/`** (ver "Documentación por pantalla"), agrupadas por área (como en `payroll.md`). Un archivo nuevo en una de esas carpetas se suma a la lista.
-
-### Dónde viven los datos
-
-La base se llama **`hpdatabase`** y **no existe la `(default)`** — varias APIs de
-Google asumen `(default)` en silencio, así que hay que declararla en todos lados
-(`getFirestore(app, "hpdatabase")` en el cliente, `database:` en los triggers).
-
-Está en **`nam5`**, el multi-región de Estados Unidos: toda lectura de la app
-cruza a EE.UU. Lo que corre en el servidor y lee mucho (backups, agregaciones)
-va en `us-central1`, pegado a la base. En Santiago quedaría cerca de los
-usuarios y lejos de los datos.
-
-Se consulta con `firebase firestore:databases:get hpdatabase`.
-
-### Auth
-
-- Firebase Email/Password.
-- Perfiles en colección `users` de Firestore (doc id = Firebase uid).
-- Roles: `admin` y `user`; cualquier otro valor cuenta como usuario (`roleLabel` en `utils/userAccounts.js`).
-- `ProtectedRoute` envuelve rutas autenticadas; prop `adminOnly` restringe a admins.
-- `Login` redirige a la app cuando `user` ya está cargado en `AuthContext`.
-- **Sin perfil, o con `disabled: true`, la cuenta no entra.** `user.access` vale `"none"` o `"disabled"` y `ProtectedRoute` muestra `NoAccess` con el correo de la cuenta, que es lo que necesita un admin para darle acceso desde Usuarios. Si leer el perfil falla, la app entra igual como usuario y las reglas deciden qué datos ve.
-- `AuthContext` guarda en el perfil el `email` de la cuenta y `lastSeenAt` (`userPrefsService.recordVisit`) al abrir la app y, con la app abierta, al volver a ella o usarla (cambiar de pestaña, un clic, una tecla), como mucho una vez cada 30 minutos (`visitDue`, `utils/userAccounts.js`). Un computador que despierta de la suspensión sigue con la página cargada y no vuelve a iniciar sesión, así que solo el arranque no alcanza. Es lo que muestra Usuarios: el navegador no puede listar las cuentas de Authentication.
-- **`AuthContext` vuelca el doc `users/{uid}` entero en `user`**, así que cualquier campo que se le agregue queda disponible en toda la app sin pagar una lectura extra.
-
-### Servicios
-
-- `services/firestoreBase.js` exporta `createService(entityName, collectionName)`, que arma el CRUD de una colección.
-- Cada servicio invalida su caché en memoria y escribe el log de auditoría con `services/logger.js`.
-- `list()` acepta `cache: true`, con un TTL de 60 s por defecto; `persist: true` la guarda además en `localStorage`.
-- Las escrituras en lote van con `writeBatch(db)`, en tandas de 450 (el límite de Firestore es 500).
-- **`update`, `upsert` y `remove` cuestan una lectura además de la escritura**: hacen un `getById` interno para armar el `before` del log de auditoría. `create` no lee.
-- **`remove` de un documento que ya no existe no borra ni escribe log**: un log de `delete` siempre trae el `before`, y de ahí sale su `meta`.
-- **`upsert(id, data, { before })`** deja pasar el documento que el llamador ya leyó y se saltea ese `getById`. `undefined` = "no me lo pasaron, léelo"; `null` = "lo leí y no existe". La diferencia decide si el doc se crea con `createdAt`/`createdBy`, así que **no se puede colapsar en un chequeo de verdad/falsedad** — escrito `knownBefore ? …` el ahorro desaparece sin que nada falle a la vista. Fijado en `tests/e2e/upsert-before.test.js`, que lo observa pasando `null` sobre un doc que sí existe (única forma de ver desde afuera si la lectura ocurrió).
-- **`countedList(service, opts)`** (en `services/cache.js`) envuelve un `list()` y devuelve `{ data, reads }`, con `reads: 0` cuando salió de la caché. Es lo que alimenta los contadores de lecturas de Dashboard, Calendario y Pesajes QR. Las opciones que se le pasan tienen que ser **exactamente** las de la llamada real: reconstruye la clave `collection::{wheres,order,take}`, así que si divergen el contador miente en vez de avisar.
-- Un servicio nuevo que usan varias pantallas se exporta desde `services/index.js`.
-
-### Caché aditiva
-
-- `firestoreBase` soporta `additive: true` en `create`/`update`/`upsert`/`remove` — en vez de invalidar la entrada de caché correspondiente, la **corrige en su lugar**: agrega, actualiza o quita el documento. Útil cuando una colección se lista entera (sin `wheres`) y la queremos mantener fresca sin pagar el costo de re-leer todos los docs.
-- `workersService` (en `services/index.js`) está envuelto para usar `additive: true` por defecto en todas las mutaciones — alta de trabajador no invalida la lista en caché.
-- Helpers internos: `mergeListItem` y `removeListItem` (solo tocan claves de caché con `wheres` vacío).
-
-### Contextos
-
-- **Cada contexto va en dos archivos**: `XContext.js` con el contexto, su hook (`useAuth`, `useToast`…) y lo que exporta además (`ROLES`, `THEMES`), y `XProvider.jsx` con el componente que lo provee. Así cada `.jsx` exporta solo componentes y Fast Refresh no recarga la página entera. Las pantallas importan el hook desde `XContext`; solo `App.jsx` importa los proveedores.
-- Orden en `App.jsx`: `ThemeProvider` → `AuthProvider` → `CatalogsProvider` → `CarriersProvider` → `BrowserRouter`.
-- `CarriersProvider` precarga transportistas; expone `carriers`, `activeCarriers`, `addCarrier`, `updateCarrier`, `softDeleteCarrier`, `restoreCarrier`.
-- `CatalogsProvider` precarga tablas de lookup usadas en las pantallas.
-
-## Convenciones
-
-- Organización de componentes, hooks y archivos: ver "Componentes y archivos" en Arquitectura.
-- ESLint: variables sin usar empezando con `A-Z_` son ignoradas. **El lint queda en cero** (el CI falla con cualquier error o aviso): una excepción con `eslint-disable` lleva su motivo al lado.
-- **Efectos solo para sincronizar con algo externo.** Ajustar estado cuando cambia una prop (rellenar un formulario al abrir el modal, volver a la página 1 al filtrar) se hace durante el render con `useValuesChanged` (`hooks/`), no con un efecto. Para leer el valor actual de una función o una prop dentro de un efecto sin volver a correrlo, `useEffectEvent`; así también se carga al montar (`const loadOnMount = useEffectEvent(() => load())`). Las dependencias de un efecto se declaran todas: un `eslint-disable` de `react-hooks` hace que React Compiler se salte el archivo entero.
-- **Lo que React Compiler no sabe leer no va en un componente ni en un hook**, porque se salta el archivo entero, sin avisar:
-  - **Un `try`.** El compilador no acepta `finally`, ni condicionales u operadores lógicos dentro de un `try`. Un error se maneja con `attempt(fn)` (`utils/attempt.js`), que devuelve `{ value }` o `{ error }` sin lanzar: `const { error: err } = await attempt(() => service.update(id, data)); if (err) setError(err.message); setBusy(false);`.
-  - **`localStorage`** se lee y escribe con `utils/browserStorage.js` (`readStored`, `writeStored` y sus versiones JSON), que nunca lanza.
-  - **Un `import()` dinámico.** Una exportación va en su `write…Xlsx.js`, fuera del componente.
-  - **Un `new Set()`, un `new Map()`, una función o un template string como valor por defecto** de una prop o un parámetro. Van en una constante del módulo o se calculan en el cuerpo (``const field = fieldProp ?? `${d}__total` ``).
-  - **Una clave calculada con una llamada** (`{ [keyOf(x)]: value }`): la clave va antes en una variable.
-  - **Un `for…of` que desestructura un objeto dentro de otro** (`for (const [i, { node }] of list.entries())`): se recorre por índice.
-  - **`||=`**, y un `++` sobre una variable que usa una función de adentro.
-- **Las columnas de ag-grid dependen solo de la forma de la grilla** (días, combos, vista), con todas sus dependencias declaradas. Las celdas son componentes que llaman a las acciones vigentes desde un ref que se actualiza en un efecto (`actionsRef`, en `WorkersTab` y en `GridCellsContext` de la grilla del ciclo), así cambiar una función no rehace las columnas. Ese ref lo leen las celdas en sus handlers: pasárselo a una función durante el render (`buildColumnDefs({ actionsRef })`) no compila.
-- **Un callback que lee una propiedad de algo que puede ser `null` revisa primero que exista**: `onConfirm={() => toDelete && remove(toDelete.id)}`, o `if (!editing) return;` al principio de la función. React Compiler compara `toDelete.id` en cada render para saber si rehace el callback y, con `toDelete` en `null` (un diálogo cerrado), la pantalla se cae.
-- **Idioma.** Los textos de la interfaz, los comentarios y las descripciones de los tests (`describe`/`it`) van en español neutro, sin voseo. Los identificadores, nombres de archivo, claves y valores técnicos y los campos nuevos de Firestore van en inglés, aunque el código de alrededor use nombres en español, y los términos del negocio se nombran como dice el Glosario (abajo). Los campos ya guardados (`faenaId`, `padron`) conservan su nombre.
-- **Los comentarios y la documentación describen lo que hace el código, como si siempre hubiera sido así.** No cuentan la historia (el error que motivó un cambio, la versión anterior, lo que se descartó), ni planes o estados transitorios, ni fases o tareas por nombre. Si el código ya lo dice, no se comenta. Una restricción se escribe como comportamiento ("compara el rol sin distinguir mayúsculas"). Vale también para este archivo, `docs/` y los README.
-- **Mayúsculas de lo que se escribe a mano** (`utils/textCase.js`, con tests). Se corrigen al guardar, no mientras se escribe:
-  - **Nombres de registros como título** (`toTitleName`): faena, ubicación, subfaena, labor y su agrupación, quincena, transportista (nombre y alias), centro de costo, alias de empresa, ficha de Agenda y Cuentas, faena, labor y lugar del Libro de Precios, y la nota de anticipos y bonos. Los conectores van en minúscula ("Poda y Amarre de Parrones") y los artículos solo después de "de"/"del" ("Fundo Los Robles", "Quincena de la Cosecha"). Lugar y destino de las vueltas pasan por `titleCase` en `transportsService`.
-  - **Notas libres**: `unshout` solo las corrige si vienen **enteras en mayúsculas** (pasan a oración). Si tienen alguna minúscula, se respetan. Cubre las notas de faena, subfaena, ciclo, día del ciclo, transportista, vuelta, abono, resumen, quincena, factura y pago de factura, ficha y Libro de Precios.
-  - **Quedan fuera a propósito**: la razón social (es el nombre legal del SII), el titular y el giro de las fichas (se copian al banco y al SII), el alias de los vehículos (las vueltas lo guardan como texto y dejarían de calzar), los líderes de grupo (se comparan como texto: `CHILENOS`, `EXTRANJEROS`) y los nombres de trabajadores (`toProperName`, con su propio flujo).
-  - Al editar un ciclo, el prefijo "Faena/Subfaena/" de su etiqueta se reconoce sin distinguir mayúsculas, porque un ciclo antiguo puede traerlo en mayúsculas.
-- **Un formulario en un modal avisa antes de perder cambios.** `Modal` recibe `dirty`: con cambios sin guardar, cerrar por el ✕, Escape o el clic afuera muestra "Cambios sin guardar" (Seguir editando / Descartar cambios), y cerrar o recargar la pestaña muestra el aviso del navegador. El "Cancelar" del formulario es un `ModalCloseButton`, que pasa por el mismo aviso; un `onClick={onClose}` directo se lo salta.
-  - `dirty` sale de `hasChanges(cómoSeAbrió, valoresActuales)` (`utils/formChanges.js`, con tests), que compara lo que se ve: vacío, `null`, `false` y una fila en blanco valen lo mismo, y `150000` es igual a `"150000"`. Lo que no es dato del formulario va en `ignore` (el tipo elegido en un alta, respaldos internos como los `bd_prev*` de la ficha del trabajador).
-  - Mientras se guarda, `dirty` va en `false`: el modal lo cierra quien guardó.
-  - El modal no guarda la copia inicial: la arma cada formulario, con `useState(valores)` en el primer render, desde las props, o en el mismo bloque `useValuesChanged` que llena el formulario al abrir.
-  - Escape cierra solo el modal de arriba, y el clic afuera cuenta solo si también empezó afuera: arrastrar una selección desde un campo hasta el fondo no cierra.
-  - Conectado en las fichas y formularios de edición: trabajador (y el alta desde el selector de trabajadores), Cheques y pagos, anticipos y bonos, faena, subfaena, ciclo y labor, anotación del día, bonos, configuración del día y líderes por defecto de la grilla, vuelta, transportista, quincena, gasto informal, notas de una factura, prefijo QR, pesaje, ficha de Agenda y Cuentas, link, Libro de Precios, cuenta nueva, saludos, perfil e indicadores. En la grilla móvil del ciclo cada campo se guarda al salir de él, así que solo avisa por lo que se está escribiendo.
-- **La fecha de hoy (`YYYY-MM-DD`) sale de `localIsoDate()`** (`utils/dates.js`), nunca de `toISOString().slice(0, 10)`: esa da la fecha en UTC, y en Chile desde las 20 o 21 h ya es el día siguiente. Una marca de tiempo completa (`paidAt`, `createdAt`) sí va con `toISOString()`, porque es un instante y no un día.
-- **Lo que se exporta es lo que se ve.** Un Excel, una imagen, una impresión o un PDF muestran exactamente lo de la pantalla: las mismas filas, ajustes, columnas y totales. Se arman desde los mismos datos que dibuja la pantalla, sin recalcular por su cuenta; si difieren, el error es del archivo.
-- **Las imágenes que se copian o descargan salen siempre en el tema claro**, sea cual sea el tema de quien las genera: `captureFullWidthBlob` / `captureFullWidthDataUrl` (`utils/imageCapture.js`) le ponen al clon fondo blanco y redefinen las variables `--color-*` con `LIGHT_PALETTE`. Esa lista es copia de `:root` en `index.css`, y un test (`imageCapture.test.js`) falla si se separan.
-- **Los colores salen de las variables del tema** (`var(--color-*)`), nunca fijos: el accent es naranja en donDiego y violeta en sheridan y aetiskPastel, así que un verde o un violeta escrito a mano se ve fuera de lugar en los otros temas.
-- **Copiar la imagen, descargar el PNG e imprimir pasan por `useCaptureActions`** (`hooks/`). Cada acción recibe el nodo al llamarla, así una pantalla con varias tablas usa un solo hook; `busy` dice qué está en curso, y `run` corre cualquier otra exportación (el Excel) con el mismo aviso si falla. Una pantalla no arma su propio `try`/`finally` para esto.
-  - Imprimir abre una ventana aparte con el HTML del nodo (`printNodes`, `utils/printWindow.js`): sin los controles marcados con `data-export-hide`, una hoja por nodo, el encabezado de cada tabla repetido en cada hoja y la orientación en un `@page` al nivel superior, porque anidado en `@media print` hay navegadores que lo ignoran. Las tablas imprimibles llevan su estilo en línea: la ventana no carga el CSS de la app.
-  - Las impresiones que arman su propio HTML (los comprobantes y la tabla del resumen de Nómina, el informe de deudas y el mes del Calendario) abren la ventana con `openPrintWindow`. Si el navegador la bloquea, el aviso pide permitir las ventanas emergentes.
-
-### Alto de las listas y grillas
-
-- **Regla**: la lista va `min-h-0 flex-1` dentro del `flex h-full flex-col` de la raíz y toma el alto que queda libre (Advances, Workers). Sin alto fijo ni control para arrastrarlo.
-- Si la lista tiene algo debajo, eso va con `shrink-0` y un `max-h` propio, y la lista lleva además un alto mínimo para que no desaparezca en pantallas bajas: es el caso de la vista previa de Nómina, con el panel de efectivo abajo (`min-h-[240px] flex-1`). Cuando no cabe, desplaza el `<main>`.
 
 ### Glosario
 
@@ -314,45 +368,15 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 
 Los nombres guardados en Firestore se conservan aunque no calcen con la tabla (las colecciones `faenas` y `transportPayrolls`, el campo `faenaId`, el campo `payrollId` de un resumen, los campos en español de `dteDocuments`): el código los lee y escribe con su nombre guardado. La lista con el nombre propuesto para cada uno está en `docs/data-model.md` ("Nombres en español pendientes de migración"); un campo nuevo nace en inglés.
 
-## Tipos de labor
+### Tipos de labor
 
 Definidos en `src/utils/laborTypes.js` (`LABOR_TYPES`). Cada labor tiene un `type` que decide sus columnas en la grilla, cómo se cargan los datos y sus métricas. La tabla de los tipos, y cómo guarda y calcula cada uno sus precios y montos: `docs/labor-types.md`.
 
-## Documentación por pantalla
-
-Lo que vale para varias pantallas está en este archivo; lo de una sola, en su archivo de `docs/screens/`. **Antes de tocar una pantalla, sus piezas, su servicio o su cálculo, se lee su archivo.** Un cambio de comportamiento actualiza ese archivo en el mismo commit, y una pantalla nueva suma el suyo y su fila acá.
-
-| Antes de tocar | Leer |
-|---|---|
-| Faenas, subfaenas y ciclos (`screens/Jobs.jsx`, `screens/jobs/`): crear, cerrar, reabrir, importar o eliminar | `docs/screens/jobs.md` |
-| La grilla del ciclo (`screens/CycleDetail.jsx`, `screens/cycleDetail/`) | `docs/screens/cycle-detail.md`, "Ciclo cerrado = congelado" en `jobs.md`, `docs/labor-types.md` y "Candado en la grilla del ciclo" en `harvest-qr.md` |
-| El precio o el monto de una jornada según el tipo de labor | `docs/labor-types.md` |
-| El resumen del ciclo (`CycleSummaryModal`) o el del trabajador (`WorkerSummaryModal`) | `docs/screens/summaries.md` |
-| Transportes: transportistas, vueltas, resúmenes y quincenas | `docs/screens/transports.md` |
-| Trabajadores, sus bancos, contratos, honorarios e imposiciones | `docs/screens/workers.md` |
-| Nómina: generar, el detalle, achicar o agrandar, el archivo del banco y el portal | `docs/screens/payroll.md` y, si toca anticipos o bonos, `advances.md` |
-| Anticipos y bonos, y cómo los descuenta la nómina | `docs/screens/advances.md` |
-| Calendario | `docs/screens/calendar.md` |
-| Dashboard | `docs/screens/dashboard.md` |
-| Facturación | `docs/screens/billing.md` |
-| Cheques y pagos | `docs/screens/commitments.md` |
-| Pesajes QR | `docs/screens/harvest-qr.md` |
-| Agenda y Cuentas | `docs/screens/info-accounts.md` |
-| Libro de Precios | `docs/screens/price-book.md` |
-| Links útiles | `docs/screens/links.md` |
-| Consola admin y respaldos | `docs/screens/admin-console.md` |
-| Usuarios y los saludos personalizados | `docs/screens/users.md` |
-| Auditoría, `services/logger.js` o la colección `logs` | `docs/screens/audit.md` |
-| La barra lateral, el encabezado y la versión | `docs/screens/layout.md` |
-| La pantalla de carga | `docs/screens/screen-loader.md` |
-| Una colección o un campo de Firestore | `docs/data-model.md` |
-| El deploy, la PWA o la URL de GitHub Pages | `docs/deploy.md` |
-
-## Variables de entorno
+### Variables de entorno
 
 - `.env` está en `.gitignore` y lleva las credenciales de Firebase (las `VITE_FIREBASE_*`). Se copia de otro `.env` o de la consola de Firebase del proyecto.
 
-## Rutas
+### Rutas
 
 ```
 /                              Redirige a /faenas
