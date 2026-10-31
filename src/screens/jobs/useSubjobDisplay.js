@@ -1,29 +1,32 @@
 import { useState, useEffect } from "react";
 import { subjobsService } from "../../services";
+import { attempt } from "../../utils/attempt";
+import { readStoredJson, writeStoredJson } from "../../utils/browserStorage";
+
+// Los ids guardados en el dispositivo; vacío si no hay o no es una lista.
+function storedSet(key) {
+  const ids = readStoredJson(key, []);
+  return new Set(Array.isArray(ids) ? ids : []);
+}
 
 // Cómo se ven las subfaenas de la faena elegida: plegadas o no, con o sin sus
 // ciclos cerrados (las dos cosas por usuario, en el dispositivo), y ocultas,
 // que se guarda en la subfaena y vale para todos.
 export function useSubjobDisplay({ loadSubjobs, selectedId, subjobsByJob, toast, user }) {
-  "use no memo";
   // ---------------- Subfaenas plegadas / ciclos cerrados ----------------
   // Guardado por usuario en localStorage. Las subfaenas arrancan expandidas;
   // los ciclos cerrados, ocultos cuando hay abiertos al lado (se muestran
   // con "Ver N cerrados").
   const collapsedSubjobsKey = `af.collapsedSubs.${user?.uid || "anon"}`;
-  const [collapsedSubjobs, setCollapsedSubjobs] = useState(() => {
-    try { return new Set(JSON.parse(localStorage.getItem(collapsedSubjobsKey) || "[]")); } catch { return new Set(); }
-  });
+  const [collapsedSubjobs, setCollapsedSubjobs] = useState(() => storedSet(collapsedSubjobsKey));
   useEffect(() => {
-    try { localStorage.setItem(collapsedSubjobsKey, JSON.stringify([...collapsedSubjobs])); } catch { /* noop */ }
+    writeStoredJson(collapsedSubjobsKey, [...collapsedSubjobs]);
   }, [collapsedSubjobs, collapsedSubjobsKey]);
 
   const showClosedKey = `af.showClosedInSub.${user?.uid || "anon"}`;
-  const [showClosedInSubjob, setShowClosedInSubjob] = useState(() => {
-    try { return new Set(JSON.parse(localStorage.getItem(showClosedKey) || "[]")); } catch { return new Set(); }
-  });
+  const [showClosedInSubjob, setShowClosedInSubjob] = useState(() => storedSet(showClosedKey));
   useEffect(() => {
-    try { localStorage.setItem(showClosedKey, JSON.stringify([...showClosedInSubjob])); } catch { /* noop */ }
+    writeStoredJson(showClosedKey, [...showClosedInSubjob]);
   }, [showClosedInSubjob, showClosedKey]);
 
   const toggleSubjobCollapse = (subjobId) => {
@@ -59,7 +62,7 @@ export function useSubjobDisplay({ loadSubjobs, selectedId, subjobsByJob, toast,
   // Marca o desmarca una subfaena como oculta. Se guarda en el doc de la
   // subfaena, así que vale para todos los usuarios y dispositivos.
   const toggleHideSubjob = async (subjob) => {
-    try {
+    const { error: err } = await attempt(async () => {
       await subjobsService.update(subjob.id, { hidden: !subjob.hidden });
       subjobsService.invalidate();
       // Al ocultarla se pliega. Al mostrarla queda como esté, plegada o no.
@@ -68,9 +71,8 @@ export function useSubjobDisplay({ loadSubjobs, selectedId, subjobsByJob, toast,
         setProcessedHidden((prev) => new Set(prev).add(subjob.id));
       }
       if (subjob.faenaId) await loadSubjobs(subjob.faenaId);
-    } catch (err) {
-      toast.error("Error al ocultar/mostrar subfaena: " + (err.message || err));
-    }
+    });
+    if (err) toast.error("Error al ocultar/mostrar subfaena: " + (err.message || err));
   };
   return {
     collapsedSubjobs,

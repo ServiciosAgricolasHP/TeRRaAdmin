@@ -4,7 +4,6 @@ import { hasChanges } from "../../utils/formChanges";
 
 // Alta y edición de una faena: nombre, ubicación y notas.
 export function JobFormModal({ busy, jobForm, setJobForm, submitJob }) {
-  "use no memo";
   return (
     <Modal
       open={!!jobForm}

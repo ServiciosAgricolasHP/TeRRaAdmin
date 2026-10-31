@@ -32,7 +32,6 @@ import { fmtCurrency } from "../../../utils/format";
 // columna "Total día" y las filas de cierre (TOTAL A PAGAR, GANANCIAS,
 // TRANSPORTE, MONTO LIBRE, TOTAL GENERAL, IVA y BRUTO).
 export function CombinedSummaryCard({ dataByColumn, transportByCycle, firstColKeyForCycle, grandTotalTransport, includeTransport }) {
-  "use no memo";
   const isMobile = useIsMobile();
   const [collapsed, setCollapsed] = useState(false);
   const { busy, run, copy, print, copyText } = useCaptureActions();

@@ -13,7 +13,6 @@ const CYCLE_FORM_IGNORE = ["importCandidates", "labors", "days"];
 // suma una de Supervisión) o se importa desde otro ciclo abierto de la
 // subfaena.
 export function CycleFormModal({ busy, cycleForm, cyclePrefix, selectedSubjobs, setCycleForm, submitCycle }) {
-  "use no memo";
   return (
     <Modal
       open={!!cycleForm}

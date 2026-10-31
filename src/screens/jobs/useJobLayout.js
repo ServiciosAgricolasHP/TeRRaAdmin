@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import { defaultLayout, userPrefsService, normalizeLayout, UNGROUPED_ID } from "../../services/userPrefsService";
+import { readStoredJson, writeStoredJson } from "../../utils/browserStorage";
 
 // La distribución de las tarjetas: grupos con nombre y color, el color de cada
 // faena y arrastrar para reordenar o cambiar de grupo. Viaja con el usuario
 // (`users/{uid}.faenaLayout`); los grupos plegados quedan en el dispositivo.
 export function useJobLayout({ jobs, persistOrder, toast, user }) {
-  "use no memo";
   const [dragId, setDragId] = useState(null);
   const [dropOverId, setDropOverId] = useState(null);
   const [dropOverGroupId, setDropOverGroupId] = useState(null);
@@ -18,19 +18,15 @@ export function useJobLayout({ jobs, persistOrder, toast, user }) {
   // distribución viaja con el usuario, pero plegar es una preferencia visual
   // del momento.
   const [collapsedGroups, setCollapsedGroups] = useState(() => {
-    try {
-      const raw = localStorage.getItem("faenas.collapsedGroups");
-      return new Set(raw ? JSON.parse(raw) : []);
-    } catch {
-      return new Set();
-    }
+    const ids = readStoredJson("faenas.collapsedGroups", []);
+    return new Set(Array.isArray(ids) ? ids : []);
   });
   const toggleGroupCollapsed = (gid) => {
     setCollapsedGroups((prev) => {
       const next = new Set(prev);
       if (next.has(gid)) next.delete(gid);
       else next.add(gid);
-      try { localStorage.setItem("faenas.collapsedGroups", JSON.stringify([...next])); } catch { /* noop */ }
+      writeStoredJson("faenas.collapsedGroups", [...next]);
       return next;
     });
   };

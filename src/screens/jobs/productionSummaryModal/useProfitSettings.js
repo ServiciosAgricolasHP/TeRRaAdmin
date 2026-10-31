@@ -10,7 +10,6 @@ import { columnPct, columnProfit, columnTotalGeneral } from "../../../utils/comb
 // trabajadores (workersPaid). Todo se guarda en localStorage por colKey
 // (cycleId__laborId). Las reglas viven en `utils/combinedSummary.js`.
 export function useProfitSettings() {
-  "use no memo";
   const [generalPct, setGeneralPct] = useState(() => loadJSON("generalPct", 40));
   useEffect(() => { saveJSON("generalPct", generalPct); }, [generalPct]);
   const [pctOverrides, setPctOverrides] = useState(() => loadJSON("pctOverrides", {})); // colKey -> % (solo no-jornada)

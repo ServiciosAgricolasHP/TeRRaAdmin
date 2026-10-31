@@ -3,7 +3,6 @@ import Modal from "../../components/Modal";
 // Recién creada una subfaena, ofrece abrirle el primer ciclo: sin uno no
 // hay dónde anotar jornadas.
 export function FirstCycleOfferModal({ openCreateCycle, setSubjobOfferCycle, subjobOfferCycle }) {
-  "use no memo";
   return (
     <Modal
       open={!!subjobOfferCycle}

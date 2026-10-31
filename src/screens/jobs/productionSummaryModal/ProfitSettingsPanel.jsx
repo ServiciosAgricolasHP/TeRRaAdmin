@@ -6,7 +6,6 @@ import { fmtCurrency } from "../../../utils/format";
 // de jornada), que alimenta GANANCIAS y TOTAL GENERAL. Va fuera de lo que se
 // copia o imprime. En el teléfono, una tarjeta por labor.
 export function ProfitSettingsPanel({ dataByColumn, grandTotal, isMobile, profit, totalProfit }) {
-  "use no memo";
   const { effectivePct, generalPct, handleGeneralPctChange, paidToUs, profitFor, setPaidToUs, setPctOverrides, setVatEnabled, setWorkersPaid, vatEnabled, workersPaid } = profit;
   return (
     <div style={{ marginTop: 12, borderTop: "2px solid #ccc", paddingTop: 10, padding: "10px 12px 12px" }}>

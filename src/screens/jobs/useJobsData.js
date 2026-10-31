@@ -1,5 +1,7 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useEffectEvent } from "react";
 import { jobsService, subjobsService, cyclesService } from "../../services";
+import { attempt } from "../../utils/attempt";
+import { readStoredJson, writeStoredJson } from "../../utils/browserStorage";
 
 const orderKey = (uid) => `af.faenaOrder.${uid || "anon"}`;
 
@@ -17,13 +19,10 @@ function applyOrder(items, order) {
 // Las faenas con el orden de sus tarjetas (guardado en el dispositivo), y las
 // subfaenas y ciclos de cada faena, que se cargan al elegirla.
 export function useJobsData({ selectedId, user }) {
-  "use no memo";
   const storageKey = orderKey(user?.uid);
 
   const [rawJobs, setRawJobs] = useState([]);
-  const [order, setOrder] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(storageKey) || "[]"); } catch { return []; }
-  });
+  const [order, setOrder] = useState(() => readStoredJson(storageKey, []));
   const [subjobsByJob, setSubjobsByJob] = useState({});
   const [cyclesByJob, setCyclesByJob] = useState({});
   const [loading, setLoading] = useState(true);
@@ -32,12 +31,12 @@ export function useJobsData({ selectedId, user }) {
 
   const persistOrder = (next) => {
     setOrder(next);
-    try { localStorage.setItem(storageKey, JSON.stringify(next)); } catch (e) { void e; }
+    writeStoredJson(storageKey, next);
   };
 
   const loadJobs = async () => {
     setLoading(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const list = await jobsService.list({
         order: ["name", "asc"],
         cache: true,
@@ -50,9 +49,9 @@ export function useJobsData({ selectedId, user }) {
       const missing = ids.filter((id) => !cleaned.includes(id));
       const next = [...cleaned, ...missing];
       if (JSON.stringify(next) !== JSON.stringify(order)) persistOrder(next);
-    } finally {
-      setLoading(false);
-    }
+    });
+    setLoading(false);
+    if (err) throw err;
   };
 
   const loadSubjobs = async (jobId) => {
@@ -76,16 +75,18 @@ export function useJobsData({ selectedId, user }) {
     setCyclesByJob((prev) => ({ ...prev, [jobId]: list }));
   };
 
+  const loadOnMount = useEffectEvent(() => loadJobs());
   useEffect(() => {
-    loadJobs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadOnMount();
   }, []);
 
+  // Al elegir una faena se cargan sus subfaenas y ciclos, si no están.
+  const loadJobIfMissing = useEffectEvent((jobId) => {
+    if (!subjobsByJob[jobId]) loadSubjobs(jobId);
+    if (!cyclesByJob[jobId]) loadCycles(jobId);
+  });
   useEffect(() => {
-    if (!selectedId) return;
-    if (!subjobsByJob[selectedId]) loadSubjobs(selectedId);
-    if (!cyclesByJob[selectedId]) loadCycles(selectedId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (selectedId) loadJobIfMissing(selectedId);
   }, [selectedId]);
   return {
     cyclesByJob,
