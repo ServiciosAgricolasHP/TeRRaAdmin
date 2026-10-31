@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, Fragment } from "react";
 import { useToast } from "../../contexts/ToastContext";
 import { harvestWeightsService } from "../../services";
-import { workersService, WORKERS_LIST } from "../../services/workersService";
+import { listWorkers } from "../../services/workersService";
 import { countedList } from "../../services/cache";
 import { useCatalogs } from "../../contexts/CatalogsContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -87,12 +87,10 @@ export function WeightsExplorer({ prefixes, jobById }) {
 
   const qrMatch = useMemo(() => resolveQrSearch(search, workers, weights), [workers, weights, search]);
 
-  // Cacheada y compartida con Trabajadores, Nómina y Calendario.
-  // `workersService` es aditivo (ver services/index.js): al asignar un QR
-  // parchea la entrada en memoria sin releer la colección.
+  // La copia del navegador puesta al día (`listWorkers`). Al asignar un QR,
+  // `workersService` la corrige en su lugar (ver services/index.js).
   const loadWorkers = () =>
-    workersService
-      .list(WORKERS_LIST)
+    listWorkers()
       .then(setWorkers)
       .catch(() => { /* sin la lista se muestra el RUT en vez del nombre */ });
 

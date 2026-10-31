@@ -4,8 +4,7 @@ import { ModuleRegistry, AllCommunityModule } from "ag-grid-community";
 import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-quartz.css";
 import { AG_GRID_LOCALE_ES } from "../../utils/agGridLocale";
-import { workersService } from "../../services";
-import { deleteWorkerSafe, detectQueryKind, WORKERS_LIST } from "../../services/workersService";
+import { deleteWorkerSafe, detectQueryKind, listWorkers } from "../../services/workersService";
 import { formatRutForDisplay } from "../../utils/rutUtils";
 import {
   bankName,
@@ -51,7 +50,7 @@ export default function WorkersTab() {
   const [groupSummaryOpen, setGroupSummaryOpen] = useState(false);
   const [search, setSearch] = useState("");
   // `allWorkers` es la única fuente de datos de la pantalla: la caché
-  // persistente de `workersService.list` (TTL 2 h).
+  // del navegador (`listWorkers`).
   const [allWorkers, setAllWorkers] = useState([]);
   const [cacheLoading, setCacheLoading] = useState(false);
   // Filtros opcionales componibles con la búsqueda de texto.
@@ -80,7 +79,7 @@ export default function WorkersTab() {
   const ensureAllForModal = async () => {
     if (allWorkers.length) return allWorkers;
     setCacheLoading(true);
-    const { value: list, error: err } = await attempt(() => workersService.list(WORKERS_LIST));
+    const { value: list, error: err } = await attempt(() => listWorkers());
     setCacheLoading(false);
     if (err) {
       toast.error("No se pudo cargar la lista de trabajadores: " + (err.message || err));
@@ -91,7 +90,7 @@ export default function WorkersTab() {
   };
 
   // Precarga la lista al montar, para que el filtro funcione desde el primer
-  // carácter. Cuesta una lectura por trabajador una vez por TTL.
+  // carácter.
   const loadOnMount = useEffectEvent(() => ensureAllForModal());
   useEffect(() => {
     loadOnMount();
@@ -155,7 +154,7 @@ export default function WorkersTab() {
   // `workersService` ya actualizó en modo aditivo.
   const refreshCache = async () => {
     await attempt(async () => {
-      const list = await workersService.list(WORKERS_LIST);
+      const list = await listWorkers();
       setAllWorkers(list);
     });
   };

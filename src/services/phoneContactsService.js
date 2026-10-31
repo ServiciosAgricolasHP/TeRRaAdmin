@@ -12,9 +12,9 @@ const COLLECTION = "phoneContacts";
 
 export const phoneContactsService = createService("phoneContact", COLLECTION);
 
-// La agenda completa, cacheada 2 horas también en `localStorage`, como la
-// lista de trabajadores: son cerca de 1.200 lecturas la primera vez. Las
-// escrituras la actualizan en su lugar (`additive`).
+// La agenda completa, cacheada 2 horas también en `localStorage`: son cerca
+// de 1.200 lecturas la primera vez. Las escrituras la actualizan en su lugar
+// (`additive`).
 export const PHONE_CONTACTS_LIST = { cache: true, persist: true, ttl: 2 * 60 * 60 * 1000 };
 
 export const listPhoneContacts = () => phoneContactsService.list(PHONE_CONTACTS_LIST);

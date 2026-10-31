@@ -4,9 +4,9 @@ export const jobsService = createService("faena", "faenas");
 export const subjobsService = createService("subfaena", "subfaenas");
 export const cyclesService = createService("cycle", "cycles");
 
-// Trabajadores: todas las mutaciones actualizan la caché en modo aditivo por
-// defecto, así la lista persistida de 2 h sigue vigente y el selector no relee
-// la colección entera después de cada alta.
+// Trabajadores: todas las mutaciones corrigen la lista guardada en el
+// navegador en su lugar (modo aditivo), así no se relee la colección entera
+// después de cada alta (ver `listWorkers` en workersService.js).
 const _workers = createService("worker", "worker");
 export const workersService = {
   ..._workers,

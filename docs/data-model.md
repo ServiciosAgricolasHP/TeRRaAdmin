@@ -88,6 +88,7 @@ el id/workerId, nunca el campo `rut`.
 | `birthDate` | string (YYYY-MM-DD)? | |
 | `pensionFund` | string? | nombre de la AFP |
 | `healthInsurance` | string? | "Fonasa" o el nombre de la Isapre |
+| `updatedAt` | timestamp | lo pone el servicio en cada escritura de TeRRa. La lista de trabajadores del navegador se pone al día con él (`listWorkers`, `services/workersService.js`). El escáner escribe sin él: lo suyo entra con la carga completa diaria, igual que una eliminación hecha en otro equipo |
 
 **Búsqueda**: `findWorkerByRut()` resuelve por **las dos vías** — primero el docId, y si no hay, por el campo `rut`. Un rut que se escribió en otro documento (`workday.workerRut`, `harvestWeights.rut`, items de nómina) puede ser cualquiera de los dos según cuándo se creó, así que buscar solo por docId pierde a los que corrigieron su cédula. Quien necesite **escribir** contra el trabajador encontrado tiene que usar el `.id` del doc devuelto, nunca el rut con el que buscó.
 

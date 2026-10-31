@@ -92,7 +92,7 @@ import { useCycleClosing } from "./cycleDetail/useCycleClosing";
 import { useCycleTransports } from "./cycleDetail/useCycleTransports";
 import { useEmploymentGroups } from "./cycleDetail/useEmploymentGroups";
 import ScreenLoader from "../components/ScreenLoader";
-import { WORKERS_LIST } from "../services/workersService";
+import { listWorkers } from "../services/workersService";
 import { GridCellsContext } from "./cycleDetail/GridCellsContext";
 import { attempt } from "../utils/attempt";
 import { readStored, writeStored } from "../utils/browserStorage";
@@ -215,7 +215,7 @@ export default function CycleDetail() {
   const { nextCycle, prevCycle } = useSiblingCycles({ cycle, id });
 
   const loadAllWorkers = async () => {
-    const list = await workersService.list(WORKERS_LIST);
+    const list = await listWorkers();
     setAllWorkers(list);
   };
 
