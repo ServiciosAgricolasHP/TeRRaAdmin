@@ -4,12 +4,12 @@ import { hasChanges } from "../../utils/formChanges";
 import { useToast } from "../../contexts/ToastContext";
 import { BANKS, ACCOUNT_TYPES } from "../../utils/banks";
 import { TYPE_META, emptyCard, emptyAccount, rutIncluded } from "../../utils/contactCards";
+import { attempt } from "../../utils/attempt";
 
 // ============================================================
 // Modal de creación / edición
 // ============================================================
 export default function ContactCardModal({ initial, onCancel, onSave }) {
-  "use no memo";
   const toast = useToast();
   const [form, setForm] = useState(() => {
     const base = { ...emptyCard(initial.type), ...initial, accounts: (initial.accounts || []).map((a) => ({ ...a })) };
@@ -37,13 +37,9 @@ export default function ContactCardModal({ initial, onCancel, onSave }) {
       return;
     }
     setBusy(true);
-    try {
-      await onSave(form);
-    } catch (err) {
-      toast.error("Error al guardar: " + (err.message || err));
-    } finally {
-      setBusy(false);
-    }
+    const { error: err } = await attempt(() => onSave(form));
+    if (err) toast.error("Error al guardar: " + (err.message || err));
+    setBusy(false);
   };
 
   const inputCls = "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]";
