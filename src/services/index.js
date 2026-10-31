@@ -20,6 +20,9 @@ export const workdaysService = createService("workday", "workdays");
 
 // Interruptor del registro de lecturas (`readLogConfig/main`, ver readMeter.js).
 export const readLogConfigService = createService("readLogConfig", "readLogConfig");
+// Lo que anotó el registro de lecturas, un documento por persona y día. Solo
+// lo lee el informe de la Consola admin.
+export const readLogsService = createService("readLog", "readLogs");
 
 // Los workdays de un ciclo, la consulta más repetida de la app (Nómina y el
 // resumen de producción por faena). Las pantallas pasan por acá para compartir

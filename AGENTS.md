@@ -202,6 +202,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 - Mientras está encendido (**📈 Registro de lecturas** en la Consola admin, `readLogConfig/main`), cuenta por persona, día, hora y pantalla: las lecturas por forma de consulta, sin los valores de los filtros; lo que ahorró una caché; las visitas, el tiempo con la pantalla visible y las escrituras. Lo manda cada 5 minutos a `readLogs`, un documento por persona y día (ver `docs/data-model.md`). El cálculo, en `utils/readMeterKeys.js`, con tests.
 - **Un modal que lee datos por su cuenta lleva `section`** (`<Modal section="Detalle de nómina">`, o `useReadSection` en un modal con overlay propio): mientras está abierto, sus lecturas quedan como `/payroll › Detalle de nómina`, también con modales anidados. El nombre es fijo: nunca el título, que puede llevar el nombre de una persona o un folio.
 - La lista de trabajadores anota también lo que ahorra su copia (`recordCacheHit`).
+- **📊 Informe de lecturas** (Consola admin) lo muestra por pantalla, consulta, colección, hora y persona, con filtros por persona (o sin los admin) y entorno. El cálculo, en `utils/readLogReport.js`, con tests.
 
 ### Caché aditiva
 

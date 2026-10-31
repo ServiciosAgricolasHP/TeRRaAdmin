@@ -666,7 +666,7 @@ Lo que alguien buscó en la ayuda (`/ayuda`) sin encontrarlo, guardado con **Avi
 | `createdAt/By`, `updatedAt/By` | ts, string | |
 
 ### `readLogs`
-El registro de lecturas (`services/readMeter.js`): un documento por persona, día y entorno mientras el registro está encendido. **DocId = `{fecha}_{uid}_{env}`** (`2026-11-03_abc123_prod`). La app no lo lee; lo suma con `setDoc` + `merge` e `increment`, cada 5 minutos y al ocultar la pestaña.
+El registro de lecturas (`services/readMeter.js`): un documento por persona, día y entorno mientras el registro está encendido. **DocId = `{fecha}_{uid}_{env}`** (`2026-11-03_abc123_prod`). El registro lo suma con `setDoc` + `merge` e `increment`, cada 5 minutos y al ocultar la pestaña, sin leerlo. Solo lo lee el informe de la Consola admin (**📊 Informe de lecturas**), por rango de `date`.
 | Campo | Tipo | Notas |
 |---|---|---|
 | `date` | string (YYYY-MM-DD) | |
