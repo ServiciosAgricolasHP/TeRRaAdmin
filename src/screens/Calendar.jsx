@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect, useEffectEvent } from "react";
-import { cyclesService, jobsService, subjobsService, workersService } from "../services";
+import { cyclesService, jobsService, subjobsService } from "../services";
 import { useCarriers } from "../contexts/CarriersContext";
 import { useCatalogs } from "../contexts/CatalogsContext";
 import { useAuth } from "../contexts/AuthContext";
@@ -12,7 +12,7 @@ import { DayExpandedModal } from "./calendar/DayExpandedModal";
 import { monthBounds, isWeekendDate } from "./calendar/helpers";
 import { Legend } from "./calendar/Legend";
 import { MonthGrid } from "./calendar/MonthGrid";
-import { WORKERS_LIST } from "../services/workersService";
+import { listWorkers } from "../services/workersService";
 import { attempt } from "../utils/attempt";
 import { readStoredJson, writeStoredJson } from "../utils/browserStorage";
 
@@ -106,8 +106,7 @@ export default function Calendar() {
   const [jobs, setJobs] = useState([]);
   const [subjobs, setSubjobs] = useState([]);
   // Lista completa de trabajadores, para los nombres del detalle del día.
-  // Comparte con Trabajadores la caché de 2 h en localStorage: la primera
-  // carga cuesta ~500-2.000 lecturas y las siguientes, ninguna.
+  // Sale de `listWorkers`, la copia del navegador puesta al día.
   const [workers, setWorkers] = useState([]);
 
   const [loading, setLoading] = useState(true);
@@ -154,7 +153,7 @@ export default function Calendar() {
         cyclesService.list({ cache: true, ttl: 5 * 60 * 1000 }),
         jobsService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
         subjobsService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
-        workersService.list(WORKERS_LIST),
+        listWorkers(),
       ]),
     ).then(({ value, error: err }) => {
       if (cancelled) return;

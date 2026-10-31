@@ -3,8 +3,7 @@
 // sincronización.
 
 // TTL de la lista de faenas, que esta pantalla comparte con el resto de la app,
-// con el mismo valor que usan las otras pantallas (la de trabajadores sale de
-// `WORKERS_LIST`). La clave de caché (`collection::{wheres,order,take}`) no
+// con el mismo valor que usan las otras pantallas. La clave de caché (`collection::{wheres,order,take}`) no
 // incluye el TTL, así que el último que escribe fija el vencimiento para todos.
 export const JOBS_TTL_MS = 10 * 60 * 1000;
 
