@@ -30,7 +30,6 @@ const PERIODS = [
 ];
 
 export default function Dashboard() {
-  "use no memo";
   const { isAdmin } = useAuth();
   const { carriers } = useCarriers();
   const [period, setPeriod] = useState(PERIODS[1]);
