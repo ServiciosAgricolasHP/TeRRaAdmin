@@ -1,10 +1,8 @@
 import { useEffect, useState } from "react";
-import { workersService } from "../services";
-import { WORKERS_LIST } from "../services/workersService";
+import { listWorkers } from "../services/workersService";
 
-// La lista completa de trabajadores, de la misma caché que usan Trabajadores,
-// Nómina y Calendario: la primera vez cuesta una lectura por trabajador y
-// después sale gratis hasta que vence (2 h).
+// La lista completa de trabajadores (`listWorkers`): la copia del navegador,
+// puesta al día con lo que cambió.
 export function useWorkersList() {
   const [workers, setWorkers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -12,8 +10,7 @@ export function useWorkersList() {
 
   useEffect(() => {
     let alive = true;
-    workersService
-      .list(WORKERS_LIST)
+    listWorkers()
       .then((list) => {
         if (alive) setWorkers(list);
       })
