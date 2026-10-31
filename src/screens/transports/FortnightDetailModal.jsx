@@ -88,6 +88,7 @@ export function FortnightDetailModal({
 
   return (
     <Modal
+      section="Detalle de quincena"
       open
       onClose={onClose}
       title={`📅 ${fortnight.name}`}

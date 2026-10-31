@@ -1,7 +1,8 @@
 // Persistencia del import del RCV del SII. Importar reemplaza el período: los
 // documentos del ámbito que no vienen en el CSV se borran, con todo lo que se
 // les cargó a mano.
-import { writeBatch, doc, serverTimestamp } from "firebase/firestore";
+import { doc, serverTimestamp } from "firebase/firestore";
+import { writeBatch } from "./readMeter";
 import { db } from "../firebase";
 import { dteDocumentsService } from "./index";
 

@@ -49,8 +49,10 @@ import { CycleTitlesEditor } from "./payrollDetailModal/CycleTitlesEditor";
 import { PayrollTotalsCards } from "./payrollDetailModal/PayrollTotalsCards";
 import { SummaryTable } from "./payrollDetailModal/SummaryTable";
 import { PayrollCyclesSection } from "./payrollDetailModal/PayrollCyclesSection";
+import { useReadSection } from "../../hooks/useReadSection";
 
 export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, subfaenas, workers, allPayrolls = [], onClose, onRedownload, onDownloadBankFile, onDownloadSnapshot, bankFormatLabel = null, onPublishPortal = null, publishedPayrollId = null, onChanged }) {
+  useReadSection("Detalle de nómina");
   const { catalogs } = useCatalogs();
   const toast = useToast();
   const isMobile = useIsMobile();

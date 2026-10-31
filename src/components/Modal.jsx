@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { useReadSection } from "../hooks/useReadSection";
 
 // Cierre del modal más cercano, con el aviso de cambios sin guardar.
 const ModalCloseContext = createContext(null);
@@ -20,7 +21,12 @@ export function ModalCloseButton({ children, onClick, ...props }) {
 // `dirty`: el formulario tiene cambios sin guardar. Cerrar por el ✕, Escape,
 // el clic afuera o un `ModalCloseButton` pide confirmación antes de descartarlos,
 // y cerrar o recargar la pestaña muestra el aviso del navegador.
-export default function Modal({ open, onClose, title, children, footer, size = "md", dirty = false }) {
+//
+// `section`: nombre fijo con que el registro de lecturas anota lo que se lee
+// mientras está abierto (ver `useReadSection`). Lo llevan los modales que leen
+// datos por su cuenta; los demás quedan en la pantalla o el modal de abajo.
+export default function Modal({ open, onClose, title, children, footer, size = "md", dirty = false, section }) {
+  useReadSection(section, open);
   const [askDiscard, setAskDiscard] = useState(false);
   // El clic afuera cierra solo si también empezó afuera: arrastrar una
   // selección desde un campo hasta el fondo no es un clic en el fondo.

@@ -1,4 +1,5 @@
-import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { collection, serverTimestamp } from "firebase/firestore";
+import { addDoc } from "./readMeter";
 import { db, auth } from "../firebase";
 
 const LOGS = "logs";

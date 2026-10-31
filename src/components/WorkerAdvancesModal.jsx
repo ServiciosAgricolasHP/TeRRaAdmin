@@ -111,6 +111,7 @@ export default function WorkerAdvancesModal({ workerKeys, name, rut, items, onCl
 
   return (
     <Modal
+      section="Anticipos del trabajador"
       open
       onClose={onClose}
       title={`Anticipos y bonos — ${name || rut}`}

@@ -17,7 +17,7 @@ export function WorkerPayrollDetailModal({ open, payment, worker, catalogs, onCl
   const displayCycleLabel = (cycle) => payroll.cycleLabelOverrides?.[cycle.id] || cycle.label || cycle.id;
 
   return (
-    <Modal open={open} onClose={onClose} title={`${worker.name} — ${payroll.name || "Nómina"}`} size="lg">
+    <Modal section="Pago del trabajador" open={open} onClose={onClose} title={`${worker.name} — ${payroll.name || "Nómina"}`} size="lg">
       {!item ? (
         <p className="rounded-md border border-dashed border-[var(--color-border)] py-8 text-center text-sm text-[var(--color-muted)]">
           No se encontró el detalle de este trabajador en esta nómina.

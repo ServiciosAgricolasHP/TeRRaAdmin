@@ -155,6 +155,7 @@ export function UnifiedSummaryModal({ open, onClose, group, faenaById, subfaenaB
 
   return (
     <Modal
+      section="Resumen unificado"
       open={open}
       onClose={onClose}
       title={`🔗 Vista unificada — ${group.alias}`}

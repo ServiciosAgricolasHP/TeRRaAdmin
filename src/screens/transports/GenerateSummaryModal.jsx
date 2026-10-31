@@ -190,6 +190,7 @@ export function GenerateSummaryModal({ open, onClose, carriers, faenaById, subfa
 
   return (
     <Modal
+      section="Generar resumen de transporte"
       open={open}
       onClose={onClose}
       title="Generar resumen de transporte"

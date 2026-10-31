@@ -1,4 +1,5 @@
-import { addDoc, collection, onSnapshot, serverTimestamp } from "firebase/firestore";
+import { collection, serverTimestamp } from "firebase/firestore";
+import { addDoc, onSnapshot } from "./readMeter";
 import { db } from "../firebase";
 
 // Cola de jobs del backend (`functionJobs`, ver functions/index.js): la app crea

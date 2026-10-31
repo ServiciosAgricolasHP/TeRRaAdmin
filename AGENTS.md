@@ -187,6 +187,13 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 - **`countedList(service, opts)`** (en `services/cache.js`) envuelve un `list()` y devuelve `{ data, reads }`, con `reads: 0` cuando salió de la caché. Es lo que alimenta los contadores de lecturas de Dashboard, Calendario y Pesajes QR. Las opciones que se le pasan tienen que ser **exactamente** las de la llamada real: reconstruye la clave `collection::{wheres,order,take}`, así que si divergen el contador miente en vez de avisar.
 - Un servicio nuevo que usan varias pantallas se exporta desde `services/index.js`.
 
+### Registro de lecturas
+
+- **Toda lectura y escritura de Firestore pasa por `services/readMeter.js`**: `getDocs`, `getDoc`, `getCountFromServer`, `onSnapshot`, `setDoc`, `updateDoc`, `addDoc`, `deleteDoc` y `writeBatch` se importan de ahí, con la misma firma que en `firebase/firestore`. El lint impide importarlas directo en `src/`.
+- Mientras está encendido (**📈 Registro de lecturas** en la Consola admin, `readLogConfig/main`), cuenta por persona, día, hora y pantalla: las lecturas por forma de consulta, sin los valores de los filtros; lo que ahorró una caché; las visitas, el tiempo con la pantalla visible y las escrituras. Lo manda cada 5 minutos a `readLogs`, un documento por persona y día (ver `docs/data-model.md`). El cálculo, en `utils/readMeterKeys.js`, con tests.
+- **Un modal que lee datos por su cuenta lleva `section`** (`<Modal section="Detalle de nómina">`, o `useReadSection` en un modal con overlay propio): mientras está abierto, sus lecturas quedan como `/payroll › Detalle de nómina`, también con modales anidados. El nombre es fijo: nunca el título, que puede llevar el nombre de una persona o un folio.
+- La lista de trabajadores anota también lo que ahorra su copia (`recordCacheHit`).
+
 ### Caché aditiva
 
 - `firestoreBase` soporta `additive: true` en `create`/`update`/`upsert`/`remove` — en vez de invalidar la entrada de caché correspondiente, la **corrige en su lugar**: agrega, actualiza o quita el documento. Útil cuando una colección se lista entera (sin `wheres`) y la queremos mantener fresca sin pagar el costo de re-leer todos los docs.
@@ -380,6 +387,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Respaldo en JSON | `backup` | `backups` |
 | Agenda telefónica / contacto de la agenda | `phoneBook` / `phoneContact` | `phoneContacts` |
 | Pantalla de carga | `screenLoader` | |
+| Registro de lecturas (lo que lee cada pantalla) | `readLog` | `readLogs` (y su interruptor, `readLogConfig`) |
 | Cumpleaños | `birthday` | dentro de `users` |
 | Contrato u honorarios (un período) | `employment` | `employments` |
 | Empleador | `employer` | `employers` |

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { addDoc, collection, serverTimestamp, onSnapshot } from "firebase/firestore";
+import { collection, serverTimestamp } from "firebase/firestore";
+import { addDoc, onSnapshot } from "../../services/readMeter";
 import { db } from "../../firebase";
 import { useAuth } from "../../contexts/AuthContext";
 import { ConsoleCard } from "./ConsoleCard";
