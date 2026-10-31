@@ -306,6 +306,61 @@ input, select, textarea {
   box-shadow: 0 0 0 2px var(--color-accent-soft);
 }
 
+/* Texto de las guías de la ayuda (Markdown ya convertido a HTML) */
+.help-prose {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+.help-prose > * + * {
+  margin-top: 0.75rem;
+}
+.help-prose h3 {
+  font-weight: 600;
+  margin-top: 1.25rem;
+}
+.help-prose ol {
+  list-style: decimal;
+  padding-left: 1.4rem;
+}
+.help-prose ul {
+  list-style: disc;
+  padding-left: 1.4rem;
+}
+.help-prose li + li {
+  margin-top: 0.35rem;
+}
+.help-prose a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.help-prose code,
+.help-prose kbd {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  padding: 0 0.3rem;
+  font-size: 0.85em;
+}
+.help-prose img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+.help-prose blockquote {
+  border-left: 3px solid var(--color-accent);
+  background: var(--color-accent-soft);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.75rem;
+}
+/* La sección a la que se llegó desde una sugerencia de la búsqueda */
+.help-section-hit {
+  box-shadow: 0 0 0 3px var(--color-accent);
+}
+
 /* Notificaciones toast: animación de entrada */
 @keyframes toastIn {
   0%   { transform: translateY(-8px); opacity: 0; }

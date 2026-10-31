@@ -8,6 +8,7 @@ import ProfileModal from "./layout/ProfileModal";
 import { TerraCircuitPixels, TerraLogo, TerraWordmark } from "./layout/TerraLogo";
 import ThemePicker from "./layout/ThemePicker";
 import { useIndicators } from "./layout/useIndicators";
+import { helpPathFor } from "./layout/helpLinks";
 
 // Versión que inyecta Vite al compilar (v<mayor>.<menor>.<commits>, ver vite.config.js).
 // Se muestra en el header: una versión menor a la desplegada indica un bundle
@@ -28,6 +29,7 @@ const navItems = [
   { to: "/price-book", label: "Libro de Precios", icon: "📖" },
   { to: "/info-cuentas", label: "Agenda y Cuentas", icon: "📇" },
   { to: "/links", label: "Links útiles", icon: "🔗" },
+  { to: "/ayuda", label: "Ayuda", icon: "❓" },
 ];
 
 export default function Layout() {
@@ -221,6 +223,17 @@ export default function Layout() {
             <EditIndicatorsButton onEdit={() => setIndicatorsModalOpen(true)} />
           </div>
           <div className="flex shrink-0 flex-nowrap items-center justify-end gap-1 sm:gap-2">
+            {/* La ayuda de la pantalla en que se está; la ayuda recibe de
+                dónde se vino, para anotarlo si se avisa que falta algo. */}
+            <Link
+              to={helpPathFor(location.pathname)}
+              state={{ from: location.pathname }}
+              aria-label="Ayuda de esta pantalla"
+              title="Ayuda de esta pantalla"
+              className="inline-flex min-h-[32px] min-w-[32px] shrink-0 items-center justify-center rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] text-sm font-semibold hover:bg-[var(--color-accent-soft)]"
+            >
+              ?
+            </Link>
             <ThemePicker />
             <button
               onClick={handleLogout}

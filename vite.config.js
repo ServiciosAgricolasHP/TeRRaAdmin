@@ -71,6 +71,8 @@ export default defineConfig({
         // `public/loaders/` van la general y las dos de los procesos largos
         // (hacer y deshacer); las demás se guardan la primera vez que salen.
         globPatterns: ['**/*.{ico,png,svg,woff2}', 'loaders/cat-default.webp', 'loaders/cat-wheel-fall.webp', 'loaders/cat-chasing-tail.webp'],
+        // Las capturas de la ayuda se bajan al abrir su guía, nunca al instalar.
+        globIgnores: ['help/**'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         // El SW nuevo toma control de las pestañas abiertas apenas se activa,
         // sin esperar a que se cierren.

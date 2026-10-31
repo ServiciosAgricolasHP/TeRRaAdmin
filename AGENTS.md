@@ -53,6 +53,7 @@ Lo que vale para varias pantallas está en este archivo; lo de una sola, en su a
 | La barra lateral, el encabezado y la versión | `docs/screens/layout.md` |
 | La pantalla de carga | `docs/screens/screen-loader.md` |
 | Una colección o un campo de Firestore | `docs/data-model.md` |
+| La ayuda (`/ayuda`): sus guías, la búsqueda y las capturas | `docs/screens/help.md` |
 | El deploy, la PWA o la URL de GitHub Pages | `docs/deploy.md` |
 
 ## Código
@@ -67,6 +68,7 @@ React 19 · Vite 7 · Tailwind CSS 4 · Firebase (Firestore + Auth) · ag-grid �
 - `exceljs` se importa **lazy** (`await import("exceljs")`) solo al exportar — chunk separado de ~937 KB.
 - `recharts` idem, vía `React.lazy` sobre `screens/dashboard/DashboardCharts.jsx` y la dona `CommitmentsDonut`, en un chunk separado de ~340 KB. El chunk principal ya está sobre el límite de Vite, así que toda librería pesada nueva va lazy.
 - `jspdf` + `jspdf-autotable` también se importan lazy, solo al descargar el PDF del Informe de deudas.
+- `marked` y `minisearch` van solo en el chunk de la ayuda (`screens/Help.jsx`, cargada con `React.lazy`).
 
 ### Arquitectura
 
@@ -237,6 +239,10 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 
 - **Los colores salen de las variables del tema** (`var(--color-*)`), nunca fijos: el accent es naranja en donDiego y violeta en sheridan y aetiskPastel, así que un verde o un violeta escrito a mano se ve fuera de lugar en los otros temas.
 
+### Ayuda
+
+- **Una pantalla con guía en la ayuda mantiene su guía al día.** Un cambio de interfaz en esa pantalla actualiza el texto de la guía y regenera sus capturas (`HELP_GUIDES=<guía> npm run help:shots`) en el mismo commit; una tarea nueva suma su sección, con sus preguntas de ejemplo. Si el guion de captura falla, la guía quedó vieja. Cómo se escribe una guía: `docs/screens/help.md`.
+
 ### Alto de las listas y grillas
 
 - **Regla**: la lista va `min-h-0 flex-1` dentro del `flex h-full flex-col` de la raíz y toma el alto que queda libre (Advances, Workers). Sin alto fijo ni control para arrastrarlo.
@@ -258,6 +264,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 | `npm run test:rules` | `firestore.rules` contra el emulador |
 | `npm run test:all` | Los tres anteriores |
 | `npm run functions:verify` | Cloud Functions contra los emuladores de functions, firestore, auth y storage, sin deployar |
+| `npm run help:shots` | Regenera las capturas de la ayuda contra los emuladores, con datos inventados (`HELP_GUIDES=<id>` para algunas guías) |
 | `npm run deploy` | Deploy manual a GitHub Pages (`gh-pages -d dist -t`). Solo si falla el camino normal, que es mergear a `main` y dejar que Actions despliegue |
 
 ### Tests
@@ -378,6 +385,8 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Tarea del backend (Cloud Functions) | `functionJob` | `functionJobs` |
 | Respaldo en JSON | `backup` | `backups` |
 | Agenda telefónica / contacto de la agenda | `phoneBook` / `phoneContact` | `phoneContacts` |
+| Ayuda / guía de la ayuda | `help` / `helpGuide` | |
+| Pregunta sin respuesta en la ayuda ("Avisar que falta") | `helpQuestion` | `helpQuestions` |
 | Pantalla de carga | `screenLoader` | |
 | Cumpleaños | `birthday` | dentro de `users` |
 | Contrato u honorarios (un período) | `employment` | `employments` |
@@ -424,5 +433,6 @@ Definidos en `src/utils/laborTypes.js` (`LABOR_TYPES`). Cada labor tiene un `typ
 /admin/console                 Consola admin: Firestore counts (admin only)
 /admin/users                   Usuarios: rol, suspensión, contraseña, saludos y cumpleaños (admin)
 /harvest-qr                    Pesajes QR: explorador y sincronización → workdays (/admin/harvest-qr redirige)
+/ayuda                         Ayuda: las guías de uso y el buscador (/ayuda/:guideId abre una guía)
 *                              NotFound (catch-all dentro y fuera del Layout)
 ```

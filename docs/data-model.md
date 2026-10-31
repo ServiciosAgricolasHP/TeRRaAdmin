@@ -655,6 +655,15 @@ Ficha de cada respaldo en JSON de la base (`functions/backup.js`). El archivo es
 
 El archivo es `{ format: "terra-backup", version: 1, createdAt, database, excluded, collections: { <colección>: [{ id, data }] }, subcollections: { <grupo>: [{ path, data }] }, counts }`. Los valores que JSON no tiene van como `{ __type, … }`: `timestamp` (`seconds`, `nanoseconds`, `iso`), `reference` (`path`), `geopoint`, `bytes` (`base64`) y `number` (`NaN`, `Infinity`).
 
+### `helpQuestions`
+Lo que alguien buscó en la ayuda (`/ayuda`) sin encontrarlo, guardado con **Avisar que falta**: dice qué guías o secciones faltan. Se escribe solo al tocar el botón, una vez por pregunta; buscar no escribe. La app no la muestra: se lee desde la consola de Firebase.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `question` | string | lo que se escribió en "¿Qué quieres hacer?" |
+| `guideId` | string? | la guía abierta al buscar, si había una |
+| `fromPath` | string? | la pantalla desde donde se abrió la ayuda con el botón **?** (`/cycles/C1`) |
+| `createdAt/By`, `updatedAt/By` | ts, string | |
+
 ### `logs`
 Auditoría — una fila por mutación.
 | Campo | Tipo | Notas |

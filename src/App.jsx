@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Link, Navigate } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthProvider";
 import { useAuth } from "./contexts/AuthContext";
@@ -29,6 +30,16 @@ import HarvestQr from "./screens/HarvestQr";
 import PriceBook from "./screens/PriceBook";
 import Commitments from "./screens/Commitments";
 import Users from "./screens/Users";
+import ScreenLoader from "./components/ScreenLoader";
+
+// La ayuda va en su propio chunk: sus guías, `marked` y el buscador solo se
+// bajan al abrirla.
+const Help = lazy(() => import("./screens/Help"));
+const helpScreen = (
+  <Suspense fallback={<ScreenLoader />}>
+    <Help />
+  </Suspense>
+);
 
 export default function App() {
   return (
@@ -68,6 +79,8 @@ export default function App() {
                 <Route path="facturacion" element={<Billing />} />
                 <Route path="price-book" element={<PriceBook />} />
                 <Route path="cheques-pagos" element={<Commitments />} />
+                <Route path="ayuda" element={helpScreen} />
+                <Route path="ayuda/:guideId" element={helpScreen} />
                 <Route
                   path="audit"
                   element={

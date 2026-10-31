@@ -116,6 +116,10 @@ export const informalExpensesService = createService("informalExpense", "informa
 // cycleId+laborId. Ver CycleDetail.jsx (alta/edición de labor).
 export const laborGroupsService = createService("laborGroup", "laborGroups");
 
+// Lo que alguien buscó en la ayuda sin encontrarlo, guardado con "Avisar que
+// falta". Dice qué guías o secciones faltan.
+export const helpQuestionsService = createService("helpQuestion", "helpQuestions");
+
 // Estado editable del resumen de ciclo (tarifas de cobro, overrides por fila,
 // títulos), compartido entre usuarios. Servicio propio, no `createService`:
 // ver el comentario del archivo.
