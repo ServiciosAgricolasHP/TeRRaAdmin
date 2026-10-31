@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { cyclesService, jobsService, subjobsService, laborGroupsService, workdaysService } from "../../services";
 import { normalizeCycle } from "./rows";
 import { normalizeTratoDayPrices, normalizeDayPricesEntry, workdayComboKeyOf, PISO_COMBO_KEY, normalizeTratoWorkday, workdayMapKey } from "../../utils/cosechaCombos";
@@ -7,7 +7,6 @@ import { normalizeTratoDayPrices, normalizeDayPricesEntry, workdayComboKeyOf, PI
 // y guardados si venían en un formato anterior), su faena y subfaena, las
 // agrupaciones de labor y las jornadas de cada labor.
 export function useCycleLoader({ id }) {
-  "use no memo";
   const [cycle, setCycle] = useState(null);
   const [job, setJob] = useState(null);
   const [subjob, setSubjob] = useState(null);
@@ -15,10 +14,6 @@ export function useCycleLoader({ id }) {
   // labores del mismo tipo a través de ciclos. Ver laborGroupsService.
   const [laborGroups, setLaborGroups] = useState([]);
   const [workdaysByLabor, setWorkdaysByLabor] = useState({});
-  // Última versión de las jornadas, para los handlers que las columnas de la
-  // grilla capturan en un render anterior.
-  const workdaysRef = useRef(workdaysByLabor);
-  useEffect(() => { workdaysRef.current = workdaysByLabor; }, [workdaysByLabor]);
 
   const [loading, setLoading] = useState(true);
   const [activeLaborId, setActiveLaborId] = useState(null);
@@ -100,6 +95,5 @@ export function useCycleLoader({ id }) {
     setWorkdaysByLabor,
     subjob,
     workdaysByLabor,
-    workdaysRef,
   };
 }
