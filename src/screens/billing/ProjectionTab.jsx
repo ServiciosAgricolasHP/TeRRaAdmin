@@ -5,13 +5,13 @@ import { writeProjectionXlsx } from "./writeProjectionXlsx";
 import { MONTH_NAMES_ES, currentPeriod } from "./docs";
 import { SummaryCard } from "./SummaryCard";
 import { fmtCurrency } from "../../utils/format";
+import { attempt } from "../../utils/attempt";
 
 // Pestaña "Proyección" (solo admin): la temporada que viene, mes a mes, desde
 // las ventas de los 12 meses anteriores por un porcentaje, con los meses ya
 // facturados en su valor real. El mes de inicio y el porcentaje los guarda la
 // pantalla, así se conservan al cambiar de pestaña.
 export function ProjectionTab({ docs, projectionPercent, projectionStart, selectedCompany, selectedCompanyId, setProjectionPercent, setProjectionStart, toast }) {
-  "use no memo";
   const [projectionBusy, setProjectionBusy] = useState("");
 
   const projectionYears = useMemo(() => projectionYearsOf(docs, selectedCompanyId, new Date().getFullYear()), [docs, selectedCompanyId]);
@@ -39,13 +39,9 @@ export function ProjectionTab({ docs, projectionPercent, projectionStart, select
   // recalcula.
   const handleProjectionXlsx = async () => {
     setProjectionBusy("xlsx");
-    try {
-      await writeProjectionXlsx({ projection, projectionByClient, projectionFileBase, selectedCompany });
-    } catch (err) {
-      toast.error("Error al generar XLSX: " + (err.message || err));
-    } finally {
-      setProjectionBusy("");
-    }
+    const { error: err } = await attempt(() => writeProjectionXlsx({ projection, projectionByClient, projectionFileBase, selectedCompany }));
+    if (err) toast.error("Error al generar XLSX: " + (err.message || err));
+    setProjectionBusy("");
   };
 
   const emptyBase = projection.baseCount === 0;

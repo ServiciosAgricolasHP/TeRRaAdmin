@@ -56,7 +56,6 @@ import ScreenLoader from "../components/ScreenLoader";
 const PAGE_SIZE = 20;
 
 export default function Billing() {
-  "use no memo";
   const toast = useToast();
   const isMobile = useIsMobile();
   const { isAdmin } = useAuth();

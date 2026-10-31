@@ -11,7 +11,6 @@ import { PaymentStatusSelect } from "./PaymentStatusSelect";
 // montos (las NC en negativo), sus abonos, el centro de costo y, en ventas, el
 // estado de pago con el aviso de una NC que podría anularlo.
 export function DocCard({ d, cancellingByDocId, costCenters, kindTab, saveDocCostCenter, setDetailDoc, setPaymentStatus }) {
-  "use no memo";
   const counterpartyName = kindTab === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
   const rut = kindTab === "venta" ? d.rutReceptor : d.rutEmisor;
   const isNC = CREDIT_NOTE_TYPES.has(Number(d.tipo));

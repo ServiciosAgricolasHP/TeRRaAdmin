@@ -1,5 +1,7 @@
 import { useState, useMemo, useEffect, useEffectEvent } from "react";
 import { companiesService, dteDocumentsService, costCentersService, informalExpensesService } from "../../services";
+import { attempt } from "../../utils/attempt";
+import { readStored, writeStored } from "../../utils/browserStorage";
 
 // Clave de localStorage con la última empresa elegida, que se recuerda entre
 // sesiones.
@@ -9,11 +11,8 @@ const LS_SELECTED_COMPANY = "facturacion.selectedCompanyId";
 // costo y gastos informales, cacheados 10 minutos. Recuerda la empresa elegida
 // en el dispositivo y, si ya no existe, toma la primera.
 export function useBillingData() {
-  "use no memo";
   const [companies, setCompanies] = useState([]);
-  const [selectedCompanyId, setSelectedCompanyId] = useState(() => {
-    try { return localStorage.getItem(LS_SELECTED_COMPANY) || ""; } catch { return ""; }
-  });
+  const [selectedCompanyId, setSelectedCompanyId] = useState(() => readStored(LS_SELECTED_COMPANY, ""));
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -37,7 +36,7 @@ export function useBillingData() {
 
   const loadAll = async () => {
     setLoading(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const [comps, list, centers, expenses] = await Promise.all([
         companiesService.list({ order: ["razonSocial", "asc"], cache: true, ttl: 600_000 }),
         dteDocumentsService.list({ order: ["fechaEmision", "desc"], cache: true, ttl: 600_000 }),
@@ -53,9 +52,9 @@ export function useBillingData() {
       if (comps.length > 0 && !comps.some((c) => c.id === selectedCompanyId)) {
         setSelectedCompanyId(comps[0].id);
       }
-    } finally {
-      setLoading(false);
-    }
+    });
+    setLoading(false);
+    if (err) throw err;
   };
 
   // Carga al montar; `useEffectEvent` lee la versión actual de la función sin
@@ -65,7 +64,7 @@ export function useBillingData() {
 
   // Guarda la empresa elegida para la próxima visita a la pantalla.
   useEffect(() => {
-    try { localStorage.setItem(LS_SELECTED_COMPANY, selectedCompanyId || ""); } catch { /* noop */ }
+    writeStored(LS_SELECTED_COMPANY, selectedCompanyId || "");
   }, [selectedCompanyId]);
   return {
     companies,

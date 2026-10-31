@@ -11,7 +11,6 @@ import { writeWithholdingsXlsx } from "./writeWithholdingsXlsx";
 // con las exportaciones del total (copiar, PNG, imprimir y Excel) y las de cada
 // contraparte. Cada grupo tiene su propio imprimible fuera de pantalla.
 export function WithholdingsTab({ companiesById, periodFilter, selectedCompany, selectedCompanyId, setDetailDoc, setPaymentStatus, totals, withholdingsByCounterparty }) {
-  "use no memo";
   // Printable del total, fuera de pantalla, para html-to-image e impresión.
   const withholdingsPrintRef = useRef(null);
   const { busy: exportBusy, run, copy, download, print } = useCaptureActions();
@@ -24,9 +23,8 @@ export function WithholdingsTab({ companiesById, periodFilter, selectedCompany, 
   // vista recibe la acción en curso de cada grupo.
   const groupCapture = useCaptureActions();
   const busySplit = groupCapture.busy.indexOf(":");
-  const groupBusy = groupCapture.busy
-    ? { [groupCapture.busy.slice(busySplit + 1)]: groupCapture.busy.slice(0, busySplit) }
-    : {};
+  const busyGroup = groupCapture.busy.slice(busySplit + 1);
+  const groupBusy = groupCapture.busy ? { [busyGroup]: groupCapture.busy.slice(0, busySplit) } : {};
   // --- Export de Retenciones (infografía) ---
   // El printable se renderiza fuera de pantalla y los botones lo capturan con
   // html-to-image, igual que en los otros resúmenes (PrintableFortnightTable,

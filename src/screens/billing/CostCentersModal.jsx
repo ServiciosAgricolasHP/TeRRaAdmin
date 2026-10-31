@@ -34,7 +34,6 @@ import { CostCenterForm } from "./CostCenterForm";
 // (copiar/PNG/imprimir/XLSX). Incluye "Combustibles" como chip fijo no
 // editable aunque esté fuera del catálogo manual: es el centro automático.
 export function CostCentersModal({ costCenters, docs, informalExpenses, companiesById, onClose, onChanged, onSelectDoc }) {
-  "use no memo";
   const toast = useToast();
   const printRef = useRef(null);
 

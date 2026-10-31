@@ -9,7 +9,6 @@ import { writeDocListXlsx } from "./writeDocListXlsx";
 // que está filtrado y ordenado, agrupar por centro de costo y abrir la gestión
 // de centros. El printable va fuera de pantalla para html-to-image.
 export function DocListToolbar({ costCentersById, groupByCostCenter, kindTab, periodFilter, selectedCompany, setCostCentersModalOpen, setGroupByCostCenter, sortedFiltered, totals }) {
-  "use no memo";
   // Printable del listado, fuera de pantalla, para html-to-image e impresión.
   const docListPrintRef = useRef(null);
   const { busy: docListBusy, run, copy, download, print } = useCaptureActions();

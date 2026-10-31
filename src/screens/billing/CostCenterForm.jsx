@@ -2,7 +2,6 @@
 // Formulario de un centro de costo: nombre (se guarda como título) y un
 // emoji opcional.
 export function CostCenterForm({ busy, editing, save, setEditing }) {
-  "use no memo";
   return (
     <form onSubmit={(e) => { e.preventDefault(); save(); }} className="space-y-3">
       <div>
