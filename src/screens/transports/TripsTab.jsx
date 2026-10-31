@@ -11,6 +11,7 @@ import { fmtCurrency } from "../../utils/format";
 import { isoDateNDaysAgo, DEFAULT_HISTORY_DAYS } from "./historyRange";
 import ScreenLoader from "../../components/ScreenLoader";
 import { attempt } from "../../utils/attempt";
+import { cycleShort, filterTrips, groupTripsByCarrier, sortTripsBy } from "../../utils/tripsList";
 
 // ============================================================
 // PESTAÑA VUELTAS
@@ -79,26 +80,9 @@ export function TripsTab({ initialCarrierId = null }) {
       .sort((a, b) => String(a.label || "").localeCompare(String(b.label || ""), "es"));
   }, [cycles, filter.faenaId]);
 
-  const filtered = useMemo(() => {
-    return trips.filter((t) => {
-      if (filter.carrierId && t.carrierId !== filter.carrierId) return false;
-      if (filter.status && t.status !== filter.status) return false;
-      if (filter.cycleId && t.cycleId !== filter.cycleId) return false;
-      if (filter.faenaId && t.faenaId !== filter.faenaId) return false;
-      if (dateTo && t.date && t.date > dateTo) return false;
-      return true;
-    });
-  }, [trips, filter, dateTo]);
+  const filtered = useMemo(() => filterTrips(trips, filter, dateTo), [trips, filter, dateTo]);
 
   const total = filtered.reduce((s, t) => s + (Number(t.amount) || 0), 0);
-
-  // Último tramo del label "Faena/Subfaena/Ciclo N": la faena y la subfaena
-  // ya tienen su propia columna.
-  const cycleShort = (cy) => {
-    const l = cy?.label || "";
-    const idx = l.lastIndexOf("/");
-    return idx >= 0 ? l.slice(idx + 1) : l;
-  };
 
   const SORT_OPTIONS = [
     { v: "date", l: "Fecha" },
@@ -112,35 +96,7 @@ export function TripsTab({ initialCarrierId = null }) {
   ];
 
   // Un solo orden para las tablas y tarjetas de todos los transportistas.
-  const sortTrips = (list) => {
-    const keyOf = (t) => {
-      switch (sortBy) {
-        case "date": return t.date || "";
-        case "vehicle": return (t.vehicleAlias || "").toLowerCase();
-        case "faena": {
-          const fa = faenaById.get(t.faenaId);
-          const sb = subfaenaById.get(t.subfaenaId);
-          return `${fa?.name || ""}/${sb?.name || ""}`.toLowerCase();
-        }
-        case "destino": return `${t.lugar || ""} ${t.destino || ""}`.toLowerCase();
-        case "personas": return Number(t.personCount) || 0;
-        case "vueltas": return Number(t.qty) || 0;
-        case "monto": return Number(t.amount) || 0;
-        case "estado": return t.status || "";
-        default: return "";
-      }
-    };
-    const arr = [...list];
-    arr.sort((a, b) => {
-      const ka = keyOf(a);
-      const kb = keyOf(b);
-      const cmp = typeof ka === "number" && typeof kb === "number"
-        ? ka - kb
-        : String(ka).localeCompare(String(kb), "es");
-      return sortDir === "asc" ? cmp : -cmp;
-    });
-    return arr;
-  };
+  const sortTrips = (list) => sortTripsBy(list, { sortBy, sortDir, faenaById, subfaenaById });
 
   const toggleSort = (field) => {
     if (sortBy === field) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -201,32 +157,7 @@ export function TripsTab({ initialCarrierId = null }) {
   // Vueltas agrupadas por transportista, con alias, total y desglose
   // pendiente/pagado para el encabezado del grupo. Las vueltas sin carrierId
   // van al grupo "Sin transportista".
-  const byCarrier = useMemo(() => {
-    const groups = new Map();
-    for (const t of filtered) {
-      const cid = t.carrierId || "__none__";
-      if (!groups.has(cid)) {
-        const c = carrierById.get(t.carrierId);
-        groups.set(cid, {
-          carrierId: cid,
-          alias: c?.alias || (cid === "__none__" ? "Sin transportista" : "—"),
-          name: c?.name || "",
-          trips: [],
-          total: 0,
-          pendingCount: 0,
-          paidCount: 0,
-          pendingTotal: 0,
-        });
-      }
-      const g = groups.get(cid);
-      g.trips.push(t);
-      const amt = Number(t.amount) || 0;
-      g.total += amt;
-      if (t.status === "paid") g.paidCount += 1;
-      else { g.pendingCount += 1; g.pendingTotal += amt; }
-    }
-    return [...groups.values()].sort((a, b) => a.alias.localeCompare(b.alias, "es"));
-  }, [filtered, carrierById]);
+  const byCarrier = useMemo(() => groupTripsByCarrier(filtered, carrierById), [filtered, carrierById]);
 
   // Transportistas expandidos; arrancan todos colapsados.
   const [expandedCarriers, setExpandedCarriers] = useState(() => new Set());
