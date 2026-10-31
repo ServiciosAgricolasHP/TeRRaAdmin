@@ -18,7 +18,6 @@ export function CycleGroupList({
   payrollNameOf = () => "",
   cycleNote = () => null,
 }) {
-  "use no memo";
   // "Todos / ninguno" por faena: solo opera sobre los ciclos que están a la
   // vista, así el botón nunca marca algo que el usuario no ve.
   const toggleGroup = (rows) => {

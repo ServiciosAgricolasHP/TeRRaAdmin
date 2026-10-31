@@ -17,7 +17,6 @@ const saveSelection = (set) => {
 // Lo que se elige para una nómina nueva: los ciclos (guardados en el
 // dispositivo), sus labores y las personas sueltas.
 export function useCycleSelection({ cycles }) {
-  "use no memo";
   const [selectedCycleIds, setSelectedCycleIds] = useState(loadSelection);
   // Labores que entran a la nómina, por ciclo seleccionado. No se persiste,
   // a diferencia de selectedCycleIds. Al marcar un ciclo entran todas sus

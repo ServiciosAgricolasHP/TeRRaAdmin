@@ -93,7 +93,7 @@ export function AddWorkerDaysModal({
       ]);
       if (pedido.current === id) setData({ workdays, advances });
     });
-    if (err) if (pedido.current === id) setError(err?.message || String(err));
+    if (err && pedido.current === id) setError(err?.message || String(err));
     if (pedido.current === id) setLoading(false);
   };
   const elegir = (w) => {

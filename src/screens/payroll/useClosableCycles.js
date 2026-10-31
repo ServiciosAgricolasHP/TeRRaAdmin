@@ -3,7 +3,6 @@ import { settledOpenCycles } from "../../utils/cycleClosing";
 
 // Los ciclos abiertos ya pagados por completo y cuáles se ofrecen para cerrar.
 export function useClosableCycles({ cycles, cycleStats, payrolls }) {
-  "use no memo";
   // Ciclos abiertos ya pagados por completo, para cerrarlos de una vez desde
   // Generar o justo después de marcar una nómina pagada. `closeCycles.ids`
   // acota la lista a los ciclos de esa nómina.

@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { getPublishedPortal, publishPayrollToPortal } from "../../services/portalService";
+import { attempt } from "../../utils/attempt";
 
 // La nómina publicada en el portal de trabajadores y el flujo de publicar otra,
 // que reemplaza a la publicada.
 export function usePortalPublish({ toast, user }) {
-  "use no memo";
   // Cabecera de la nómina publicada en el portal de trabajadores.
   const [portal, setPortal] = useState(null);
   const [publishing, setPublishing] = useState(null);
@@ -19,7 +19,7 @@ export function usePortalPublish({ toast, user }) {
   const runPublish = async () => {
     if (!publishing) return;
     setPublishBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const outcome = await publishPayrollToPortal(publishing.id, user);
       if (outcome.status === "done") {
         toast.success(`Publicada en el portal: ${outcome.result?.published ?? 0} trabajador(es)`);
@@ -30,11 +30,9 @@ export function usePortalPublish({ toast, user }) {
       } else {
         toast.error(outcome.error || "No se pudo publicar en el portal.");
       }
-    } catch (err) {
-      toast.error(err?.message || String(err));
-    } finally {
-      setPublishBusy(false);
-    }
+    });
+    if (err) toast.error(err?.message || String(err));
+    setPublishBusy(false);
   };
   return {
     portal,

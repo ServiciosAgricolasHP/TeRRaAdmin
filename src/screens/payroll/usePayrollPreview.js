@@ -7,11 +7,11 @@ import { resolveCurrentRut } from "./helpers";
 import { listPendingForWorkers } from "../../services/advancesService";
 import { previewItemsOf, withPreviewEdit } from "../../utils/payrollPreview";
 import { isCashBank } from "../../utils/banks";
+import { attempt } from "../../utils/attempt";
 
 // La vista previa de una nómina nueva: se arma con lo elegido, se edita fila
 // por fila o en bloque, y da los totales de lo incluido.
 export function usePayrollPreview({ chosenCycles, cycles, jobs, people, subjobs, toast, workers }) {
-  "use no memo";
   // Los ciclos de la nómina que se está previsualizando, para el filtro por
   // ciclo: los elegidos más los que traen las personas sueltas.
   const [previewCycles, setPreviewCycles] = useState([]);
@@ -31,7 +31,7 @@ export function usePayrollPreview({ chosenCycles, cycles, jobs, people, subjobs,
   const buildPreview = async () => {
     if (chosenCycles.size === 0 && people.length === 0) return;
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       // Los tipos de labor de todos los ciclos: los días de una persona suelta
       // pueden ser de un ciclo que no se eligió.
       const laborTypeById = new Map();
@@ -79,11 +79,9 @@ export function usePayrollPreview({ chosenCycles, cycles, jobs, people, subjobs,
       if (taken > 0) {
         toast.warning(`Otra nómina tomó ${taken} jornada(s) de las personas sueltas mientras tanto; quedaron afuera.`);
       }
-    } catch (err) {
-      toast.error(`No se pudo armar la vista previa: ${err?.message || err}`);
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) toast.error(`No se pudo armar la vista previa: ${err?.message || err}`);
+    setBusy(false);
   };
 
   const totalSelected = useMemo(

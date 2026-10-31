@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { markPaid as markPayrollPaid, markPending as markPayrollPending, markBankPaid, revertBankPaid } from "../../services/payrollsService";
 import { settledOpenCycles } from "../../utils/cycleClosing";
+import { attempt } from "../../utils/attempt";
 
 // Marcar una nómina pagada o pendiente, o solo sus transferencias, después de
 // confirmarlo escribiendo una palabra. Al pagarla entera ofrece cerrar los
 // ciclos que quedaron pagados por completo.
 export function usePayConfirm({ load, setCloseCycles, setProgress, toast }) {
-  "use no memo";
   // mode: "pay" | "revert" | "bank" | "revertBank". Los dos últimos son el
   // pago en dos tiempos: salen las transferencias pero el efectivo queda
   // debiéndose.
@@ -34,7 +34,7 @@ export function usePayConfirm({ load, setCloseCycles, setProgress, toast }) {
         percent: total ? (done / total) * 90 : 0,
       });
     show({ step: "Sellando jornadas...", detail: "", percent: 2 });
-    try {
+    const { error: err } = await attempt(async () => {
       if (mode === "pay") {
         await markPayrollPaid(p.id, p.workdayIds || [], progressStep("Sellando jornadas pagadas..."));
       } else if (mode === "revert") {
@@ -55,13 +55,13 @@ export function usePayConfirm({ load, setCloseCycles, setProgress, toast }) {
         const done = settledOpenCycles(fresh.cycles, fresh.stats, fresh.payrolls).settled.filter((r) => ids.has(r.cycle.id));
         if (done.length) setCloseCycles({ ids: new Set(done.map((r) => r.cycle.id)), payrollName: p.name });
       }
-    } catch (err) {
+    });
+    if (err) {
       // El servicio lanza mensajes redactados para el usuario (ej. "La nómina
       // ya está pagada entera."): se muestran en un toast.
       toast.error(err.message || "No se pudo completar la operación.");
-    } finally {
-      setProgress(null);
     }
+    setProgress(null);
   };
   return {
     onAskMarkBankPaid,

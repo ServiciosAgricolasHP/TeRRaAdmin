@@ -6,7 +6,6 @@ import { deleteSnapshot } from "../../services/payrollSnapshots";
 // Eliminar una nómina pendiente: suelta sus jornadas, devuelve sus anticipos y
 // bonos y borra su JSON antes de borrar el documento.
 export function usePayrollDeletion({ load, setProgress, toast }) {
-  "use no memo";
   // Eliminar deshace una nómina: lleva la animación de deshacer.
   const showProgress = (info) => setProgress(info && { ...info, undo: true });
   const [confirmDelete, setConfirmDelete] = useState(null);
