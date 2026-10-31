@@ -1,0 +1,63 @@
+# Trabajadores / Workers
+
+- Pantalla: `src/screens/Workers.jsx`, con pestañas: 👷 Trabajadores (`screens/workers/WorkersTab.jsx`, la lista de personas), 📄 Contratos, 🧾 Honorarios y 🏛 Imposiciones (ver "Contratos y honorarios"). Abre en la última elegida (`workers.tab`).
+- **Búsqueda client-side sobre la lista cacheada** (única fuente de datos). Al montar la pantalla, `ensureAllForModal()` trae la lista completa con `workersService.list(WORKERS_LIST)` — primera carga ~500-2000 reads, después gratis hasta que vence el TTL. La búsqueda es `workerMatchesQuery` (`utils/workerSearch.js`, con tests): cada palabra en el nombre, en cualquier orden y sin acentos, o una parte del RUT o del id sin puntos ni guion, desde 2 caracteres (`MIN_WORKER_QUERY`). Permite buscar por apellido o dígitos del RUT en cualquier posición.
+- **`WORKERS_LIST`** (`services/workersService.js`) son las opciones con que toda la app pide la lista de trabajadores (por nombre, en caché 2 h, también en `localStorage`). La clave de la caché sale de ellas: si una pantalla las escribe a mano y difieren, esa pantalla paga su propia lectura de la colección entera.
+- **Elegir a una persona** en un formulario (Anticipos, Resúmenes por grupo) es `WorkerSearchPicker` (`components/`): la misma búsqueda sobre la lista en caché (`useWorkersList`, `hooks/`), con los resultados debajo del campo y Enter para elegir el primero.
+- Auto-detect badge **RUT** vs **Nombre** (basado en `detectQueryKind`: empieza con dígito → RUT).
+- **Filtros opcionales** (componibles con la búsqueda): dropdown 👥 Líder (con opción "— Sin líder —" + lista única extraída del dataset completo) y chips toggle 💵 Efectivo / 🏦 Transferencia, más **⚠ Sin titular (N)** mientras alguien cobre en la cuenta de otra persona sin su nombre (`lacksPaymentName`, `utils/banks.js`; ver Bancos, abajo). Los filtros ignoran el gate de `MIN_SEARCH` — activar cualquiera muestra resultados aunque la query esté vacía. Al editar/eliminar/togglear banco desde la grilla, `refreshCache()` re-trae la lista para reflejar el cambio.
+- Acciones por fila: 📊 Resumen, Editar, ✕. La forma de pago se muestra como **indicador informativo** (`💵 Efectivo` / `🏦 Transferencia`) — no es toggle. El cambio de banco se hace adentro de `WorkerEditModal`, que tiene un botón **🆔 Asignar Cuenta RUT** que setea Banco Estado + Cuenta RUT en un click usando el RUT del trabajador.
+- **Click sobre un RUT lo copia al portapapeles**: el del trabajador, y en escritorio también el RUT de pago. Va con puntos y guion, el mismo formato que copia Agenda y Cuentas. En el teléfono el RUT de la tarjeta lleva 📋 para que se note que se puede tocar.
+- **Datos personales en la ficha** (`components/workerEditModal/PersonalDataFields.jsx`, plegable): dirección, comuna, nacionalidad, estado civil, fecha de nacimiento, AFP y salud, los que piden los contratos y las boletas de honorarios. Se guardan en el mismo documento del trabajador (`utils/workerPersonalData.js`, con tests), así llegan con la lista en caché sin lecturas extra.
+- **Los IDs QR son de solo lectura en la ficha del trabajador** (`WorkerEditModal`, que también se abre desde la grilla del ciclo). Se asignan en Cosecha QR con `assignQrCode`, que le quita el código a quien lo tenía y actualiza el padrón de `qrPrefixes` con que la app de escaneo resuelve un QR sin señal. Al guardar, la ficha no escribe `idQr`: viene de la caché de 2 h y podría pisar una reasignación hecha en Cosecha QR. Un trabajador nuevo nace con `idQr: []`.
+- **Doc id = RUT con que se creó la ficha**, y es el id estable (`workerId`). El RUT vigente está en el campo `rut`, que puede diferir si se corrigió una cédula (ver `docs/data-model.md`).
+- **Se cruza por el id y se muestra siempre `worker.rut`.** Una jornada, un item de nómina o una entrada de labor guardan el RUT del momento en que se crearon, y ese valor sigue siendo la clave de los cruces. Para mostrarlo se pasa por `currentRutResolver(workers)` (`utils/workerRut.js`), que lo traduce al vigente con la lista de trabajadores ya cargada, sin lecturas extra. Lo usan Nómina (vista previa, detalle, impresiones, XLSX y Pagos anteriores, que además agrupa por `workerId`), la grilla del ciclo (`_displayRut` en las filas) y Pesajes QR.
+- Bank details = `[paymentRut, accountNumber, accountType, bankCode]` (orden importante).
+- **Si el RUT de pago es de otra persona, la ficha guarda su nombre** en `paymentName` (el titular de la cuenta, o quien cobra en efectivo): es obligatorio en ese caso y opcional si es el mismo RUT del trabajador (`paysToOtherPerson`, `utils/banks.js`). Lo piden la ficha y el alta desde la grilla del ciclo. 🆔 Asignar Cuenta RUT lo borra, porque la cuenta pasa a ser del trabajador. La lista de Trabajadores lo muestra en la columna Titular, y en el teléfono como "Cuenta de"; si falta, avisa "⚠ Falta el titular", y el filtro ⚠ Sin titular junta a todos los que faltan. Las fichas anteriores al campo no se tocan solas: se completan al guardarlas. La nómina guarda el titular con los datos de cuenta y el archivo del banco lo lleva (ver "Reglas de PagoFácil Banco de Chile" en `docs/screens/payroll.md`).
+- `services/workersService.js` expone `findWorkerByRut`, `createWorker`, `deleteWorkerSafe`, `detectQueryKind` y `WORKERS_LIST`.
+
+## Contratos y honorarios
+
+- **Un período por documento** en `employments`: contrato u honorarios (`type`), con un empleador (`employers`, lista propia, aparte de las Empresas de Facturación), desde y hasta (`endDate` vacío = sin término). El historial de una persona es la lista de sus períodos y "sin nada" es no tener ninguno vigente. Ver `docs/data-model.md`.
+- **Dos períodos de una persona no se cruzan** (`employmentError`, `utils/employment.js`, con tests), así su estado en una fecha es uno solo. Contratar a varios lee antes los períodos de esas personas, y quien se cruzaría queda afuera con el motivo.
+- **Terminar un contrato deja su finiquito pendiente** (`settlementStatus`); después se marca solicitado (al contador) y listo, con su fecha. Los honorarios no tienen finiquito.
+- **Pestaña 📄 Contratos** (`screens/workers/EmploymentsTab.jsx`, con `useEmployments`): los vigentes y los finiquitos (pendientes, solicitados y listos en los últimos 90 días), con filtros por tipo, empleador y nombre o RUT, y selección múltiple para terminar o marcar finiquitos de una vez. El nombre abre la ficha.
+  - **+ Contratar** (`StartEmploymentsModal`): tipo, empleador, fecha y las personas, una por una o **desde un ciclo abierto** (quienes están en sus labores, sin los temporales, y no tienen un período vigente en esa fecha).
+  - **⚙ Empleadores** (`EmployersModal`): alta, edición y desactivar.
+- **En la ficha del trabajador** (`components/workerEditModal/EmploymentHistory.jsx`): la situación de hoy y el historial, con + Período, corregir, terminar y eliminar. El alta o corrección de un período es `components/EmploymentFormModal.jsx` y terminar, `components/EndEmploymentsModal.jsx`, que usa también la pestaña.
+- **En 👷 Trabajadores, filtro "📄 Contrato"** (con contrato, a honorarios o sin contrato ni honorarios, y el empleador; `matchesEmploymentFilter`), con lo vigente hoy, junto a los de líder y forma de pago.
+- **En la grilla del ciclo, vista "Por contrato"** (junto a "Todos" y "Por grupo", que agrupa por líder): un encabezado por grupo, primero con contrato, luego a honorarios y al final sin contrato ni honorarios (`EMPLOYMENT_GROUPS`, `employmentGroupOf`), con los saltos a cada grupo. Cuenta lo vigente en algún día del ciclo (`screens/cycleDetail/useEmploymentGroups.js`): quien tuvo contrato y honorarios en el ciclo va con contrato. Las filas se cruzan por el id del trabajador; un temporal va en sin nada. La arma `useLeaderGrouping`, igual que la de líderes, y no muestra los botones para asignar líder. Como esa, se ve en la grilla y no en la lista del teléfono, y se recuerda (`cycleDetail.groupView`).
+- Los períodos se leen solo con el filtro o la vista en uso (`hooks/useEmploymentsFrom.js`).
+- **Costo de lecturas** (`services/employmentsService.js`): los vigentes son dos consultas por un solo campo (`endDate == ""` y `endDate >= hoy`), en caché por 2 horas; nunca se lee la colección entera. El historial de una persona se lee al abrir su ficha (`workerId ==`).
+- **Las acciones masivas escriben en lotes de 450 con un solo log** (`bulkStart`, `bulkEnd`, `settlement`, con los ids en `meta`). Las altas y correcciones de a uno pasan por el servicio común y dejan su log por período.
+
+## Listas de honorarios
+
+- **Pestaña 🧾 Honorarios** (`screens/workers/FeeListsTab.jsx`): las listas generadas (`feeLists`), de la más nueva a la más antigua, con cuántas boletas lleva emitidas cada una.
+- **+ Generar lista** (`GenerateFeeListModal`): el empleador y el rango arman una fila por persona y faena con los días que trabajó a honorarios con ese empleador (`feeRows`, `utils/employment.js`). Los días se editan, las filas se quitan y se puede sumar a alguien con su faena. Avisa a quién le falta la dirección, que la boleta pide.
+  - **Los días salen de las jornadas** (`loadWorkedDays`, `services/employmentsService.js`): un día cuenta si hay al menos una jornada, y un día con jornadas en dos faenas cuenta una vez, en la de mayor monto (`workedDays`). Solo cuentan los días dentro del período de honorarios de la persona. Las jornadas antiguas sin `workerId` se cruzan por su rut, también uno anterior (`workerIdResolver`, `utils/workerRut.js`).
+  - **Cuesta una lectura por jornada del rango**, como el Calendario; el modal dice cuántas leyó.
+- **Montos**: tarifa líquida fija por día y retención (`employmentConfig/main`, por defecto $18.452 y 15,25%; ⚙ Tarifa, solo admin). El bruto por día se redondea y se multiplica, como la planilla: 3 días dan $65.316 bruto y $55.356 líquido (`feeAmounts`). La tarifa se puede cambiar para una lista, y cada lista guarda la suya.
+- **Una lista guardada** (`FeeListModal`, con las filas en `FeeItemsTable`): se marca cada boleta emitida con su folio (escribir el folio la marca; la fecha es la del día) y se baja en 📊 Excel (`writeFeeListXlsx.js`), una sección por faena con RUT y dígito separados como la planilla. Una lista sin boletas emitidas se puede eliminar. El cálculo de las filas y los totales vive en `utils/feeLists.js`, con tests.
+
+## Listas de imposiciones
+
+- **Pestaña 🏛 Imposiciones** (`screens/workers/ContributionListsTab.jsx`): las listas generadas (`contributionLists`), una por empleador y mes, con si se enviaron al contador.
+- **+ Generar lista** (`GenerateContributionListModal`, propone el mes anterior): quienes tuvieron contrato con el empleador ese mes, una fila por faena (el centro de costo) con sus días trabajados dentro del período del contrato (`contributionRows`, `utils/employment.js`; los días salen igual que en honorarios, con `loadWorkedDays`). Quien tuvo contrato y no trabajó va en "Sin días trabajados" con 0 días. Si el contrato terminó ese mes, la fila pide liquidación y finiquito, con la fecha y el motivo. Los días se editan, las filas se quitan y se puede sumar a alguien.
+- **Solo los días**: sueldo y bono los completa el contador; el Excel los deja en blanco.
+- **Una lista guardada** (`ContributionListModal`, con las filas en `ContributionItemsTable`): se baja en 📊 Excel (`writeContributionListXlsx.js`, una sección por faena como la planilla) y se marca enviada al contador con la fecha del día. Una lista sin enviar se puede eliminar. Las filas y los totales salen de `utils/contributionLists.js`, con tests.
+
+## Líder de grupo — estricto
+
+- `worker.groupLeader` es un array (historial); `groupLeader[0]` es el líder actual.
+- Lista curada en la colección **`groupLeader`** (`groupLeadersService`) — `{ name, habilitado }`. La idea es no dejar que la lista crezca con valores ad-hoc.
+- Edición del trabajador (`WorkerEditModal`): el **dropdown** ofrece los líderes que ya tienen asignados los trabajadores (`groupLeader[0]` de la lista cargada), no la colección `groupLeader`, más la opción "+ Crear nuevo líder", que requiere acción explícita. La colección curada la usa la agrupación por líder de la grilla del ciclo (`loadEnabledLeaders`).
+- Al guardar: si el valor no está en la lista de líderes existentes y no se eligió "crear nuevo", error.
+- En Payroll preview el líder es **read-only** (estrictamente lo del worker).
+
+## Bancos
+
+- `src/utils/banks.js` define `BANKS`, `ACCOUNT_TYPES`, helpers (`bankName`, `isCashBank`, `defaultBankDetails`, `isCuentaRut`).
+- Banco "Efectivo" tiene `code: "EFE"` (constante `CASH_BANK_CODE`). No va en el archivo del banco.
+- `bankDetails = [paymentRut, accountNumber, accountType, bankCode]`.
+- `defaultBankDetails(rut)` → Cuenta RUT (Banco Estado).

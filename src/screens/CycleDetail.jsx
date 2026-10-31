@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useEffectEvent, useMemo } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { AgGridReact } from "ag-grid-react";
 import { ModuleRegistry, AllCommunityModule } from "ag-grid-community";
@@ -93,6 +93,11 @@ import { useCycleTransports } from "./cycleDetail/useCycleTransports";
 import { useEmploymentGroups } from "./cycleDetail/useEmploymentGroups";
 import ScreenLoader from "../components/ScreenLoader";
 import { WORKERS_LIST } from "../services/workersService";
+import { GridCellsContext } from "./cycleDetail/GridCellsContext";
+import { attempt } from "../utils/attempt";
+import { readStored, writeStored } from "../utils/browserStorage";
+import { useValuesChanged } from "../hooks/useValuesChanged";
+import { useStableValue } from "./cycleDetail/useStableValue";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -123,7 +128,6 @@ export default function CycleDetail() {
     setWorkdaysByLabor,
     subjob,
     workdaysByLabor,
-    workdaysRef,
   } = useCycleLoader({ id });
 
   // Prefijos QR apuntados a este ciclo. Ver `qrLockedLabors` más abajo.
@@ -165,11 +169,8 @@ export default function CycleDetail() {
   const [transportsOpen, setTransportsOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [groupView, setGroupView] = useState(() => {
-    try {
-      const saved = localStorage.getItem("cycleDetail.groupView");
-      return saved === "group" || saved === "employment" ? saved : "all";
-    }
-    catch { return "all"; }
+    const saved = readStored("cycleDetail.groupView");
+    return saved === "group" || saved === "employment" ? saved : "all";
   });
   const [allWorkers, setAllWorkers] = useState([]);
   const [enabledLeaders, setEnabledLeaders] = useState([]);
@@ -232,13 +233,16 @@ export default function CycleDetail() {
     setEnabledLeaders(dedup);
   };
 
-  useEffect(() => {
+  const loadOnMount = useEffectEvent(() => {
     loadAllWorkers();
     loadEnabledLeaders();
+  });
+  useEffect(() => {
+    loadOnMount();
   }, []);
 
   useEffect(() => {
-    try { localStorage.setItem("cycleDetail.groupView", groupView); } catch { /* ignore */ }
+    writeStored("cycleDetail.groupView", groupView);
   }, [groupView]);
 
   const rutToLeader = useMemo(() => {
@@ -276,9 +280,8 @@ export default function CycleDetail() {
     [cycle, activeLaborId],
   );
 
-  useEffect(() => {
-    setEditingCycleWorkerRut(null);
-  }, [activeLabor?.id]);
+  // Al cambiar de labor se cierra la ficha móvil: ese rut puede no estar.
+  if (useValuesChanged([activeLabor?.id])) setEditingCycleWorkerRut(null);
 
   const isHarvestLabor = activeLabor?.type === "cosecha";
   const isPieceworkLabor = activeLabor?.type === "trato";
@@ -327,7 +330,6 @@ export default function CycleDetail() {
   const dayStagesByDate = useMemo(() => dayStagesOf(isPieceworkStagesLabor, activeLabor, days, dayPrices, workdaysByLabor), [isPieceworkStagesLabor, activeLabor, days, dayPrices, workdaysByLabor]);
 
   const {
-    activeLaborDayNotes,
     closeDayNote,
     dayHasContent,
     dayNoteBusy,
@@ -337,7 +339,6 @@ export default function CycleDetail() {
     goToDayNote,
     hasNextDayNote,
     hasPrevDayNote,
-    legacyDayNotes,
     noteForDay,
     openDayNote,
     saveDayNote,
@@ -419,12 +420,12 @@ export default function CycleDetail() {
     const prev = Array.isArray(w?.groupLeader) ? w.groupLeader : [];
     const next = [leader, ...prev.filter((p) => String(p).toUpperCase() !== leader)];
     setGroupBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await workersService.update(rut, { groupLeader: next });
       await loadAllWorkers();
-    } finally {
-      setGroupBusy(false);
-    }
+    });
+    setGroupBusy(false);
+    if (err) throw err;
   };
 
   const [leaderPickerFor, setLeaderPickerFor] = useState(null); // rut | null
@@ -647,7 +648,7 @@ export default function CycleDetail() {
     showToast,
     toast,
     wdWrite,
-    workdaysRef,
+    workdaysByLabor,
     workerIdFor,
     workers,
   });
@@ -688,23 +689,60 @@ export default function CycleDetail() {
   // Columnas de la grilla
   // ============================================================
 
+  // Las celdas llaman a las acciones vigentes desde `actionsRef` y leen del
+  // contexto lo que cambia sin rehacer las columnas (ver GridCells.jsx).
+  const gridActionsRef = useRef(null);
+  useEffect(() => {
+    gridActionsRef.current = {
+      askRemoveWorker,
+      assignLeaderToWorker,
+      commitNormalAmount,
+      openDayNote,
+      toggleAttendance,
+      toggleFloor,
+      toggleMonthly,
+      upsertOvertimeDayWorkday,
+    };
+  });
+  const gridCells = useMemo(
+    () => ({
+      actionsRef: gridActionsRef,
+      allowsMonthly,
+      groupBusy,
+      isGroupedView,
+      leaderLocal: LEADER_LOCAL,
+      readOnly,
+      rutToLeader,
+      setAssignTempRut,
+      setBonusEdit,
+      setLeaderPickerFor,
+    }),
+    [allowsMonthly, groupBusy, isGroupedView, LEADER_LOCAL, readOnly, rutToLeader, setAssignTempRut, setBonusEdit, setLeaderPickerFor],
+  );
+
+  // Las columnas se rehacen solo cuando cambia la forma de la grilla: estos
+  // valores se recalculan con cada jornada, pero quedan iguales mientras su
+  // contenido no cambie.
+  const gridDayCombos = useStableValue(dayCombosByDate, JSON.stringify(dayCombosByDate));
+  const gridDayTiers = useStableValue(dayTiersByDate, JSON.stringify(dayTiersByDate));
+  const gridDayStages = useStableValue(dayStagesByDate, JSON.stringify(dayStagesByDate));
+  const gridDaysWithFloor = useStableValue(daysWithFloor, [...daysWithFloor].sort().join(","));
+  const dayHeaderInfo = Object.fromEntries(days.map((d) => [d, { note: noteForDay(d), clickable: dayHasContent(d) }]));
+  const gridDayHeaders = useStableValue(dayHeaderInfo, JSON.stringify(dayHeaderInfo));
+
   const columnDefs = useMemo(
     () => buildColumnDefs({
       activeLabor,
       allowsMonthly,
-      askRemoveWorker,
-      assignLeaderToWorker,
       catalogs,
-      commitNormalAmount,
-      dayCombosByDate,
-      dayHasContent,
+      dayCombosByDate: gridDayCombos,
+      dayHeaders: gridDayHeaders,
       dayPrices,
       days,
-      dayStagesByDate,
-      daysWithFloor,
-      dayTiersByDate,
+      dayStagesByDate: gridDayStages,
+      daysWithFloor: gridDaysWithFloor,
+      dayTiersByDate: gridDayTiers,
       effectiveDayPrice,
-      groupBusy,
       harvestView,
       isGroupedView,
       isHarvestLabor,
@@ -713,25 +751,13 @@ export default function CycleDetail() {
       isPieceworkLabor,
       isPieceworkStagesLabor,
       isQtyLabor,
-      LEADER_LOCAL,
-      noteForDay,
-      openDayNote,
       overtimeDayView,
       pieceworkView,
       qrLocked,
       readOnly,
-      rutToLeader,
-      setAssignTempRut,
-      setBonusEdit,
       setEditingWorkerRut,
-      setLeaderPickerFor,
-      toggleAttendance,
-      toggleMonthly,
-      toggleFloor,
-      upsertOvertimeDayWorkday,
     }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [days, readOnly, qrLocked, isHarvestLabor, isPieceworkLabor, isPieceworkStagesLabor, isOvertimeDayLabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, catalogs, dayPrices, activeLabor, overtimeDayView, harvestView, pieceworkView, activeLaborDayNotes, legacyDayNotes, activeLaborDatesWithProduction, daysWithFloor, isMobile],
+    [activeLabor, allowsMonthly, catalogs, gridDayCombos, gridDayHeaders, dayPrices, days, gridDayStages, gridDaysWithFloor, gridDayTiers, effectiveDayPrice, harvestView, isGroupedView, isHarvestLabor, isMobile, isOvertimeDayLabor, isPieceworkLabor, isPieceworkStagesLabor, isQtyLabor, overtimeDayView, pieceworkView, qrLocked, readOnly, setEditingWorkerRut],
   );
 
   if (loading) return <ScreenLoader />;
@@ -744,32 +770,39 @@ export default function CycleDetail() {
           Agrega trabajadores para empezar.
         </div>
       ) : (
-        <AgGridReact
-          ref={gridRef}
-          theme="legacy"
-          rowData={rowData}
-          columnDefs={columnDefs}
-          onCellValueChanged={onCellValueChanged}
-          onCellKeyDown={onCellKeyDown}
-          onCellClicked={cellRange.onCellClicked}
-          onCellFocused={cellRange.onCellFocused}
-          isExternalFilterPresent={isExternalFilterPresent}
-          doesExternalFilterPass={doesExternalFilterPass}
-          onFilterChanged={handleGridFilterChanged}
-          singleClickEdit={false}
-          enterNavigatesVertically
-          enterNavigatesVerticallyAfterEdit
-          stopEditingWhenCellsLoseFocus
-          getRowId={(p) => p.data.rut}
-          enableCellTextSelection
-          ensureDomOrder
-          localeText={AG_GRID_LOCALE_ES}
-          defaultColDef={defaultColDef}
-          rowHeight={isOvertimeDayLabor ? 58 : (isQtyLabor ? 44 : undefined)}
-          isFullWidthRow={(p) => !!p.rowNode.data?._isHeader}
-          fullWidthCellRenderer={GroupHeaderRowRenderer}
-          getRowClass={(p) => (p.data?._isHeader ? "ag-group-header-row" : "")}
-        />
+        <GridCellsContext.Provider value={gridCells}>
+          <AgGridReact
+            ref={gridRef}
+            theme="legacy"
+            rowData={rowData}
+            columnDefs={columnDefs}
+            onCellValueChanged={onCellValueChanged}
+            onCellKeyDown={onCellKeyDown}
+            onCellClicked={cellRange.onCellClicked}
+            onCellFocused={cellRange.onCellFocused}
+            isExternalFilterPresent={isExternalFilterPresent}
+            doesExternalFilterPass={doesExternalFilterPass}
+            onFilterChanged={handleGridFilterChanged}
+            singleClickEdit={false}
+            enterNavigatesVertically
+            enterNavigatesVerticallyAfterEdit
+            stopEditingWhenCellsLoseFocus
+            getRowId={(p) => p.data.rut}
+            // ag-grid solo vuelve a dibujar una celda si cambió su propio valor,
+            // y las celdas también muestran otros campos de la fila (la
+            // asistencia, los bonos, el monto bajo la cantidad). Con datos nuevos
+            // se dibujan todas; la que se está editando no se toca.
+            onRowDataUpdated={(e) => e.api.refreshCells({ force: true })}
+            enableCellTextSelection
+            ensureDomOrder
+            localeText={AG_GRID_LOCALE_ES}
+            defaultColDef={defaultColDef}
+            rowHeight={isOvertimeDayLabor ? 58 : (isQtyLabor ? 44 : undefined)}
+            isFullWidthRow={(p) => !!p.rowNode.data?._isHeader}
+            fullWidthCellRenderer={GroupHeaderRowRenderer}
+            getRowClass={(p) => (p.data?._isHeader ? "ag-group-header-row" : "")}
+          />
+        </GridCellsContext.Provider>
       )}
     </div>
   );
@@ -1184,19 +1217,15 @@ export default function CycleDetail() {
             if (!rut) return;
             // Relee el trabajador y lo reemplaza en allWorkers: la grilla toma el
             // nombre y el líder de ahí (rutToName, rutToLeader).
-            try {
-              const updated = await workersService.getById(rut);
-              if (updated) {
-                setAllWorkers((prev) => {
-                  const idx = prev.findIndex((w) => w.id === rut);
-                  if (idx === -1) return [...prev, updated];
-                  const next = prev.slice();
-                  next[idx] = updated;
-                  return next;
-                });
-              }
-            } catch {
-              /* noop */
+            const { value: updated } = await attempt(() => workersService.getById(rut));
+            if (updated) {
+              setAllWorkers((prev) => {
+                const idx = prev.findIndex((w) => w.id === rut);
+                if (idx === -1) return [...prev, updated];
+                const next = prev.slice();
+                next[idx] = updated;
+                return next;
+              });
             }
           }}
         />

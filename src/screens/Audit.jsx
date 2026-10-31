@@ -6,6 +6,7 @@ import { fmtNumber } from "../utils/format";
 import { sessionize } from "../utils/auditLogs";
 import EntitySearchPanel from "./audit/EntitySearchPanel";
 import SessionCard from "./audit/SessionCard";
+import { attempt } from "../utils/attempt";
 
 // Auditoría por sesiones de inactividad: lee los logs del rango elegido, los
 // agrupa por usuario y corta una sesión cada vez que la pausa entre dos
@@ -42,7 +43,7 @@ export default function Audit() {
   const load = async () => {
     setError("");
     setLoading(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const from = new Date(fromDate + "T00:00:00");
       const to = new Date(toDate + "T23:59:59");
       const raw = await fetchLogsInRange(from, to);
@@ -50,11 +51,9 @@ export default function Audit() {
       setRanAt(new Date());
       setExpanded(new Set());
       setExpandAll(false);
-    } catch (err) {
-      setError(err.message || String(err));
-    } finally {
-      setLoading(false);
-    }
+    });
+    if (err) setError(err.message || String(err));
+    setLoading(false);
   };
 
   const sessions = useMemo(() => {

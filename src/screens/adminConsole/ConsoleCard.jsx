@@ -1,18 +1,15 @@
 import { useState } from "react";
+import { readStored, writeStored } from "../../utils/browserStorage";
 
 // Tarjeta colapsable, cerrada por defecto. Recuerda en localStorage si quedó
 // abierta, con una clave por tarjeta.
 export function ConsoleCard({ id, title, description, actions, children }) {
   const storageKey = `af.console.${id}`;
-  const [open, setOpen] = useState(() => {
-    try { return localStorage.getItem(storageKey) === "1"; } catch { return false; }
-  });
+  const [open, setOpen] = useState(() => readStored(storageKey) === "1");
 
   const toggle = () => {
-    setOpen((v) => {
-      try { localStorage.setItem(storageKey, v ? "0" : "1"); } catch { /* noop */ }
-      return !v;
-    });
+    setOpen(!open);
+    writeStored(storageKey, open ? "0" : "1");
   };
 
   return (

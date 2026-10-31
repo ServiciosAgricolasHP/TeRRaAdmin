@@ -7,6 +7,7 @@ import { CarrierEditModal } from "./CarrierEditModal";
 import { CarrierSummaryModal } from "./CarrierSummaryModal";
 import { UnpricedTripsModal } from "./UnpricedTripsModal";
 import { unpricedTripsByCarrier } from "../../utils/unpricedTrips";
+import { attempt } from "../../utils/attempt";
 
 // ============================================================
 // PESTAÑA TRANSPORTISTAS
@@ -36,7 +37,7 @@ export function CarriersTab({ onViewTrips }) {
     let cancelled = false;
     (async () => {
       setMetricsLoading(true);
-      try {
+      const { error: err } = await attempt(async () => {
         const [payments, trips] = await Promise.all([
           paymentsService.listAll(),
           tripsService.listPending(),
@@ -44,11 +45,9 @@ export function CarriersTab({ onViewTrips }) {
         if (cancelled) return;
         setPendingPayments(payments.filter((p) => p.status === "pending"));
         setAllPendingTrips(trips);
-      } catch (err) {
-        if (!cancelled) toast.error("No se pudieron cargar las métricas de transportistas: " + (err.message || err));
-      } finally {
-        if (!cancelled) setMetricsLoading(false);
-      }
+      });
+      if (err && !cancelled) toast.error("No se pudieron cargar las métricas de transportistas: " + (err.message || err));
+      if (!cancelled) setMetricsLoading(false);
     })();
     return () => { cancelled = true; };
   }, [toast, reloadKey]);
@@ -102,9 +101,11 @@ export function CarriersTab({ onViewTrips }) {
           return owedOf(b) - owedOf(a);
         case "alpha":
           return String(a.alias || "").localeCompare(String(b.alias || ""), "es");
-        case "type":
-          return String(a.type || "contracted").localeCompare(String(b.type || "contracted")) ||
-            String(a.alias || "").localeCompare(String(b.alias || ""), "es");
+        case "type": {
+          const byType = String(a.type || "contracted").localeCompare(String(b.type || "contracted"));
+          if (byType !== 0) return byType;
+          return String(a.alias || "").localeCompare(String(b.alias || ""), "es");
+        }
         default:
           return 0;
       }

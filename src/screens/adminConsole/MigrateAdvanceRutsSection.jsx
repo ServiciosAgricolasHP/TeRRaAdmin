@@ -4,6 +4,7 @@ import { db } from "../../firebase";
 import { workersService } from "../../services";
 import { advancesService } from "../../services/advancesService";
 import { ConsoleCard } from "./ConsoleCard";
+import { attempt } from "../../utils/attempt";
 
 // ============================================================
 // Migración única: anticipos al rut vigente
@@ -23,7 +24,7 @@ export function MigrateAdvanceRutsSection() {
   const preview = async () => {
     setLoading(true);
     setMsg("");
-    try {
+    const { error: err } = await attempt(async () => {
       const [workers, advances] = await Promise.all([
         workersService.list({ order: ["name", "asc"] }),
         advancesService.list({ order: ["date", "desc"] }),
@@ -66,18 +67,16 @@ export function MigrateAdvanceRutsSection() {
         advances: advances.length,
         divergent: workers.filter((w) => w.rut && w.rut !== w.id).length,
       });
-    } catch (err) {
-      setMsg(`Error: ${err.message || err}`);
-    } finally {
-      setLoading(false);
-    }
+    });
+    if (err) setMsg(`Error: ${err.message || err}`);
+    setLoading(false);
   };
 
   const apply = async () => {
     if (!toChange?.length) return;
     setRunning(true);
     setMsg("");
-    try {
+    const { error: err } = await attempt(async () => {
       for (let i = 0; i < toChange.length; i += 450) {
         const batch = writeBatch(db);
         for (const c of toChange.slice(i, i + 450)) {
@@ -88,11 +87,9 @@ export function MigrateAdvanceRutsSection() {
       advancesService.invalidate();
       setMsg(`✓ Migrados ${toChange.length} anticipo(s).`);
       await preview();
-    } catch (err) {
-      setMsg(`Error al migrar: ${err.message || err}`);
-    } finally {
-      setRunning(false);
-    }
+    });
+    if (err) setMsg(`Error al migrar: ${err.message || err}`);
+    setRunning(false);
   };
 
   const openCount = (toChange || []).filter((c) => c.status === "pending" || c.status === "partial").length;

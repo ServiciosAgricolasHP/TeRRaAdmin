@@ -2,10 +2,10 @@ import Modal from "../../components/Modal";
 import { parseAmount } from "../../utils/formula";
 import TextField from "../../components/TextField";
 import { useCycleDetail } from "./CycleDetailContext";
+import { attempt } from "../../utils/attempt";
 
 // Precio nuevo (tier) de un día en una labor a trato.
 export function AddPriceModal() {
-  "use no memo";
   const {
     addPriceBusy,
     addPriceModal,
@@ -36,7 +36,7 @@ export function AddPriceModal() {
               const price = parseAmount(addPriceModal.value) || 0;
               if (price === 0) return;
               setAddPriceBusy(true);
-              try {
+              const { error: err } = await attempt(async () => {
                 await persistComboConfig(
                   addPriceModal.laborId,
                   addPriceModal.date,
@@ -45,9 +45,9 @@ export function AddPriceModal() {
                   true,
                 );
                 setAddPriceModal(null);
-              } finally {
-                setAddPriceBusy(false);
-              }
+              });
+              setAddPriceBusy(false);
+              if (err) throw err;
             }}
             disabled={addPriceBusy || !(parseAmount(addPriceModal?.value) > 0)}
             className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
@@ -65,7 +65,7 @@ export function AddPriceModal() {
             if (price === 0 || addPriceBusy) return;
             (async () => {
               setAddPriceBusy(true);
-              try {
+              const { error: err } = await attempt(async () => {
                 await persistComboConfig(
                   addPriceModal.laborId,
                   addPriceModal.date,
@@ -74,9 +74,9 @@ export function AddPriceModal() {
                   true,
                 );
                 setAddPriceModal(null);
-              } finally {
-                setAddPriceBusy(false);
-              }
+              });
+              setAddPriceBusy(false);
+              if (err) throw err;
             })();
           }}
           className="space-y-2"

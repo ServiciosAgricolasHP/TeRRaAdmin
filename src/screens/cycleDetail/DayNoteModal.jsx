@@ -4,7 +4,6 @@ import { useCycleDetail } from "./CycleDetailContext";
 // Anotación de un día de la labor, con el paso al día anterior y al
 // siguiente que tengan contenido.
 export function DayNoteModal() {
-  "use no memo";
   const {
     closeDayNote,
     cycle,

@@ -3,6 +3,7 @@ import { countCollection } from "../../services/countsService";
 import { fmtNumber } from "../../utils/format";
 import { MAIN_COLLECTIONS, COLLECTION_GROUPS } from "./collections";
 import { ConsoleCard } from "./ConsoleCard";
+import { attempt } from "../../utils/attempt";
 
 // ============================================================
 // Sección: conteo de todas las colecciones
@@ -13,23 +14,22 @@ export function CollectionCountsSection() {
 
   const runOne = async (id) => {
     setResults((r) => ({ ...r, [id]: { busy: true } }));
-    try {
+    const { error: err } = await attempt(async () => {
       const count = await countCollection(id);
       setResults((r) => ({ ...r, [id]: { count } }));
-    } catch (err) {
-      setResults((r) => ({ ...r, [id]: { error: err.message || String(err) } }));
-    }
+    });
+    if (err) setResults((r) => ({ ...r, [id]: { error: err.message || String(err) } }));
   };
 
   const runAll = async () => {
     setRunningAll(true);
-    try {
+    const { error: err } = await attempt(async () => {
       for (const c of MAIN_COLLECTIONS) {
         await runOne(c.id);
       }
-    } finally {
-      setRunningAll(false);
-    }
+    });
+    setRunningAll(false);
+    if (err) throw err;
   };
 
   const totalRuns = Object.values(results).filter((r) => r.count != null).length;
@@ -56,11 +56,12 @@ export function CollectionCountsSection() {
     if (lines.length === 0) return;
     lines.push("", `TOTAL\t${total}`);
     const text = lines.join("\n");
-    try {
+    const { error: err } = await attempt(async () => {
       await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {
+    });
+    if (err) {
       // Sin acceso al portapapeles, muestra el texto para copiarlo a mano.
       window.prompt("Copia los conteos:", text);
     }

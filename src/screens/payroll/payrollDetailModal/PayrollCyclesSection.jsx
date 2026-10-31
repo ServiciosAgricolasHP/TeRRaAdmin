@@ -6,7 +6,6 @@ import { fmtDayShortEs } from "../helpers";
 // "✂ Editar contenido" se destildan ciclos o labores para sacarlos con
 // Recalcular.
 export function PayrollCyclesSection({ cycleBreakdown, cycleDetails, edit, isCollapsed, recalc, toggleSection }) {
-  "use no memo";
   const { activeRemoval, recalcBusy, removalSummary, setRemoval, startRecalc, toggleCycleRemoval, toggleLaborRemoval } = recalc;
   const { editBusy, editMode } = edit;
   return (

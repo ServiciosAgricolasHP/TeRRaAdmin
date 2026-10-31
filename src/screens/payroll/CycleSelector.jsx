@@ -5,6 +5,9 @@ import { fmtCurrency } from "../../utils/format";
 import { CycleGroupList } from "./CycleGroupList";
 import { PAY_SPLIT_HINT, PAY_UNKNOWN_HINT } from "./helpers";
 
+// Lo que se usa cuando no se pasa `chosen`: siempre el mismo objeto.
+const NOTHING_CHOSEN = new Map();
+
 // Paso 1 de "Generar": elegir los ciclos de la nómina y, además o en vez de
 // eso, personas sueltas con sus días puntuales. Por defecto solo se listan los
 // ciclos con plata pendiente; los demás quedan detrás del toggle "Sin
@@ -18,7 +21,7 @@ export function CycleSelector({
   subfaenaName,
   cycleStats,
   pendingCashPayrolls = [],
-  chosen = new Map(),
+  chosen = NOTHING_CHOSEN,
   people = [],
   onAddPerson,
   onEditPerson,
@@ -66,8 +69,7 @@ export function CycleSelector({
     selectedTotal, selectedBank, selectedCash, selectedUnknown,
   } = useMemo(
     () => cycleChecklistOf({ groups, cycleStats, selected, selectedLaborsByCycle, search, showEmpty, subfaenaName }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [groups, cycleStats, selected, selectedLaborsByCycle, search, showEmpty],
+    [groups, cycleStats, selected, selectedLaborsByCycle, search, showEmpty, subfaenaName],
   );
 
   if (groups.length === 0) {

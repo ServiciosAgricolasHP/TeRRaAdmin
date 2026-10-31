@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Fragment } from "react";
+import { useState, useEffect, useRef, Fragment, useEffectEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { cyclesService } from "../services";
 import { UNGROUPED_ID } from "../services/userPrefsService";
@@ -23,6 +23,7 @@ import { CycleFormModal } from "./jobs/CycleFormModal";
 import { FirstCycleOfferModal } from "./jobs/FirstCycleOfferModal";
 import { CloseCycleModal } from "./jobs/CloseCycleModal";
 import ScreenLoader from "../components/ScreenLoader";
+import { useValuesChanged } from "../hooks/useValuesChanged";
 
 const emptyJob = { name: "", location: "", notes: "" };
 
@@ -37,21 +38,19 @@ export default function Jobs() {
   const [selectedId, setSelectedId] = useState(() => searchParams.get("selected"));
 
   // Sincroniza selectedId con el parámetro `selected` de la URL (enlaces del breadcrumb de CycleDetail).
-  useEffect(() => {
-    const fromUrl = searchParams.get("selected");
-    if (fromUrl && fromUrl !== selectedId) setSelectedId(fromUrl);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  const fromUrl = searchParams.get("selected");
+  if (useValuesChanged([searchParams]) && fromUrl && fromUrl !== selectedId) setSelectedId(fromUrl);
 
-  useEffect(() => {
-    if (selectedId) {
-      if (searchParams.get("selected") !== selectedId) {
-        setSearchParams({ selected: selectedId }, { replace: true });
-      }
+  // Y al revés: la faena elegida queda en la URL.
+  const writeSelectedToUrl = useEffectEvent((id) => {
+    if (id) {
+      if (searchParams.get("selected") !== id) setSearchParams({ selected: id }, { replace: true });
     } else if (searchParams.get("selected")) {
       setSearchParams({}, { replace: true });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  });
+  useEffect(() => {
+    writeSelectedToUrl(selectedId);
   }, [selectedId]);
 
   const [busy, setBusy] = useState(false);

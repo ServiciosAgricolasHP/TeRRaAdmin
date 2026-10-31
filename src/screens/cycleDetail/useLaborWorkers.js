@@ -2,11 +2,11 @@ import { useState } from "react";
 import { workdayDocId, workdayMapKey } from "../../utils/cosechaCombos";
 import { SINGLE_COMBO } from "./rows";
 import { workdaysService } from "../../services";
+import { attempt } from "../../utils/attempt";
 
 // Trabajadores de la labor activa: agregar a alguien, sueldo mensual con su
 // asistencia, quitar a una persona y pasar un temporal a su RUT real.
-export function useLaborWorkers({ activeLabor, cycle, cycleWrite, id, isOvertimeDayLabor, readOnly, setCycle, setWorkdaysByLabor, showToast, toast, wdWrite, workdaysRef, workerIdFor, workers }) {
-  "use no memo";
+export function useLaborWorkers({ activeLabor, cycle, cycleWrite, id, isOvertimeDayLabor, readOnly, setCycle, setWorkdaysByLabor, showToast, toast, wdWrite, workdaysByLabor, workerIdFor, workers }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   // RUT sintético (TEMP-*) del temporal al que se le está asignando un RUT
   // real. Con valor, abre un segundo selector que reemplaza esa entrada (y
@@ -72,9 +72,7 @@ export function useLaborWorkers({ activeLabor, cycle, cycleWrite, id, isOvertime
       await setMonthlyFlag(rut, false);
       return;
     }
-    // Las columnas de la grilla guardan esta función de un render anterior:
-    // las jornadas se leen del ref para no decidir con datos viejos.
-    const lab = workdaysRef.current[activeLabor.id] || {};
+    const lab = workdaysByLabor[activeLabor.id] || {};
     const withAmount = Object.entries(lab).filter(
       ([, wd]) => wd?.workerRut === rut && Number(wd.amount) !== 0,
     );
@@ -98,7 +96,7 @@ export function useLaborWorkers({ activeLabor, cycle, cycleWrite, id, isOvertime
     const req = monthlyConfirm;
     if (!req || !activeLabor) return;
     setMonthlyBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       if (convert) {
         const patch = { amount: 0, attendanceOnly: true };
         if (isOvertimeDayLabor) {
@@ -118,11 +116,9 @@ export function useLaborWorkers({ activeLabor, cycle, cycleWrite, id, isOvertime
       }
       await setMonthlyFlag(req.rut, true);
       setMonthlyConfirm(null);
-    } catch (err) {
-      toast.error("No se pudo marcar como mensual: " + (err.message || err));
-    } finally {
-      setMonthlyBusy(false);
-    }
+    });
+    if (err) toast.error("No se pudo marcar como mensual: " + (err.message || err));
+    setMonthlyBusy(false);
   };
 
   // Crea o borra el workday en $0 (`attendanceOnly`) de un trabajador mensual:
@@ -201,12 +197,10 @@ export function useLaborWorkers({ activeLabor, cycle, cycleWrite, id, isOvertime
   const confirmRemoveWorker = async () => {
     if (!removeWorker) return;
     setRemoveBusy(true);
-    try {
-      await removeWorkerNow(removeWorker);
-    } finally {
-      setRemoveBusy(false);
-      setRemoveWorker(null);
-    }
+    const { error: err } = await attempt(() => removeWorkerNow(removeWorker));
+    setRemoveBusy(false);
+    setRemoveWorker(null);
+    if (err) throw err;
   };
 
   // Wrapper por rut para el modal mobile, que solo conoce el rut (viene de
@@ -231,7 +225,7 @@ export function useLaborWorkers({ activeLabor, cycle, cycleWrite, id, isOvertime
       return;
     }
     setAssignBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const wds = await workdaysService.list({
         wheres: [["cycleId", "==", id], ["workerRut", "==", tempRut]],
       });
@@ -268,12 +262,12 @@ export function useLaborWorkers({ activeLabor, cycle, cycleWrite, id, isOvertime
         return next;
       });
       setAssignTempRut(null);
-    } catch (err) {
+    });
+    if (err) {
       console.error(err);
       toast.error("No se pudo asignar el RUT: " + (err.message || err));
-    } finally {
-      setAssignBusy(false);
     }
+    setAssignBusy(false);
   };
   return {
     askRemoveWorker,

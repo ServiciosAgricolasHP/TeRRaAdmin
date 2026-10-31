@@ -4,7 +4,6 @@ import { useCycleDetail } from "./CycleDetailContext";
 // subfaena, labores y días, y las acciones del ciclo (catálogos, transportes,
 // resumen, cerrar o reabrir).
 export function CycleTitleBar() {
-  "use no memo";
   const {
     closed,
     cycle,

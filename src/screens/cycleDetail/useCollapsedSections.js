@@ -3,7 +3,6 @@ import { useState, useEffect } from "react";
 // Secciones plegables de la grilla del ciclo (la barra entera, las métricas y
 // los precios), guardadas en este dispositivo.
 export function useCollapsedSections() {
-  "use no memo";
   // Secciones colapsables (métricas y precios), persistidas por dispositivo,
   // para dejarle más alto a la grilla.
   const [metricsCollapsed, setMetricsCollapsed] = useState(() => {

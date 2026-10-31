@@ -4,7 +4,6 @@ import { useCycleDetail } from "./CycleDetailContext";
 
 // Agrega días al ciclo eligiéndolos en el calendario.
 export function AddDaysModal() {
-  "use no memo";
   const {
     addDayOpen,
     addSelectedDays,

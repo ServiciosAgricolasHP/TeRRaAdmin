@@ -1,10 +1,10 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useEffectEvent } from "react";
 import { tripsService } from "../../services/transportsService";
+import { attempt } from "../../utils/attempt";
 
 // Vueltas de transporte del ciclo y su total, que se muestra aparte del total
 // de las labores.
 export function useCycleTransports({ id }) {
-  "use no memo";
   const [cycleTrips, setCycleTrips] = useState([]);
 
   const transportTotal = useMemo(
@@ -14,17 +14,17 @@ export function useCycleTransports({ id }) {
 
   const reloadTransports = async () => {
     if (!id) return;
-    try {
+    const { error: err } = await attempt(async () => {
       const list = await tripsService.listByCycle(id);
       setCycleTrips(list);
-    } catch (err) {
-      console.error("[Transports] load failed:", err);
-    }
+    });
+    if (err) console.error("[Transports] load failed:", err);
   };
 
+  // Se vuelven a leer al cambiar de ciclo.
+  const reloadForCycle = useEffectEvent(() => reloadTransports());
   useEffect(() => {
-    reloadTransports();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    reloadForCycle();
   }, [id]);
   return { cycleTrips, reloadTransports, transportTotal };
 }

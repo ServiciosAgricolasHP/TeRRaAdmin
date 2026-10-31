@@ -16,6 +16,7 @@ import { hasChanges } from "../../utils/formChanges";
 import { CommonFields } from "./CommonFields";
 import { fmtDate } from "./helpers";
 import { btnCls, primaryCls, labelCls, inputCls } from "./styles";
+import { attempt } from "../../utils/attempt";
 
 const CHEQUE_BANKS = BANKS.filter((b) => b.code !== "EFE");
 
@@ -76,13 +77,9 @@ export function CommitmentModal({ initial, today, companies, counterparties, onC
 
   const submit = async () => {
     setBusy(true);
-    try {
-      await onSave(form, series);
-    } catch (err) {
-      toast.error(err.message || String(err));
-    } finally {
-      setBusy(false);
-    }
+    const { error: err } = await attempt(() => onSave(form, series));
+    if (err) toast.error(err.message || String(err));
+    setBusy(false);
   };
 
   const choice = (key, meta, selected, onPick) => (

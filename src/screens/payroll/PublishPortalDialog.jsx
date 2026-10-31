@@ -3,7 +3,6 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 // Confirmar la publicación de una nómina en el portal de trabajadores, con la
 // que está publicada ahora.
 export function PublishPortalDialog({ publishing, portal, busy, onConfirm, onCancel }) {
-  "use no memo";
   return (
     <ConfirmDialog
       open={!!publishing}

@@ -5,7 +5,6 @@ import { fmtDayShortEs } from "../helpers";
 // subfaena juntos o separados, con el selector de efectivo pendiente de otras
 // nóminas y sus acciones de copiar, descargar e imprimir.
 export function SummaryTable({ bonusAdvanceSummary, payroll, table }) {
-  "use no memo";
   const { activeSummary, cyclesApart, deferredCash, grandTotals, handleCopySummaryImage, handleDownloadSummaryXlsx, handlePrintSummary, hasSeveralCycles, labelColumns, laborSummaryLoading, pendingMode, pendingSummaryRows, summaryBusy, summaryCaptureRef, setCyclesApart, setSummaryPending, setSummaryShowLabor, summaryDisplayRows, summaryPending, summaryShowLabor, summaryTitle } = table;
   const labelSpan = labelColumns.length;
   return (

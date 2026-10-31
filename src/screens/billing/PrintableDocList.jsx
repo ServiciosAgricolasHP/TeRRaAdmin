@@ -6,11 +6,14 @@ import { fmtCurrency } from "../../utils/format";
 import { formatPeriodPretty, kindTitleLabel, groupDocsByCostCenter, CREDIT_NOTE_STATE, PAYMENT_STATUSES } from "./docs";
 import { pCell, pCellH } from "./printStyles";
 
+// Lo que se usa cuando no se pasa la prop: siempre el mismo objeto.
+const NO_COST_CENTERS = new Map();
+
 // Printable plano del listado de Facturas o Compras. Respeta los filtros y el
 // orden que ya trae `docs` (el llamador pasa `sortedFiltered`). Las NC van en
 // rojo y con signo "−" en los montos, como en el listado en pantalla.
 export const PrintableDocList = forwardRef(function PrintableDocList(
-  { kind, docs, company, periodo, totals, groupByCostCenter = false, costCentersById = new Map(), showEstado = true },
+  { kind, docs, company, periodo, totals, groupByCostCenter = false, costCentersById = NO_COST_CENTERS, showEstado = true },
   ref,
 ) {
   const periodLabel = formatPeriodPretty(periodo);

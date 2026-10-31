@@ -3,12 +3,12 @@ import { advancesService } from "../../services/advancesService";
 import WorkerAdvancesModal from "../../components/WorkerAdvancesModal";
 import LogsTable from "./LogsTable";
 import { useRecordSearch } from "./useRecordSearch";
+import { attempt } from "../../utils/attempt";
 
 // Buscador por registro: se elige un tipo (Trabajador, Ciclo, Faena…), se
 // busca el registro por nombre o rut y se trae todo su historial, sin rango de
 // fechas ni tope (`fetchRecordHistory`).
 export default function EntitySearchPanel() {
-  "use no memo";
   const [advancesFor, setAdvancesFor] = useState(null);
   const [advanceItems, setAdvanceItems] = useState([]);
   const [loadingAdvances, setLoadingAdvances] = useState(false);
@@ -118,7 +118,7 @@ export default function EntitySearchPanel() {
                       disabled={loadingAdvances}
                       onClick={async () => {
                         setLoadingAdvances(true);
-                        try {
+                        const { error: err } = await attempt(async () => {
                           // Mismos parámetros que la pantalla de Anticipos para
                           // compartir la entrada de caché en vez de releer.
                           const rows = await advancesService.list({
@@ -129,11 +129,9 @@ export default function EntitySearchPanel() {
                           });
                           setAdvanceItems(rows);
                           setAdvancesFor(selected);
-                        } catch (err) {
-                          console.error("No se pudieron cargar los anticipos:", err);
-                        } finally {
-                          setLoadingAdvances(false);
-                        }
+                        });
+                        if (err) console.error("No se pudieron cargar los anticipos:", err);
+                        setLoadingAdvances(false);
                       }}
                       className="text-xs text-[var(--color-muted)] underline hover:text-[var(--color-text)] disabled:opacity-60"
                     >

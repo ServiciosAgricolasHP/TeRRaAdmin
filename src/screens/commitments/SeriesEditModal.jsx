@@ -7,6 +7,7 @@ import { fmtCurrency } from "../../utils/format";
 import { fmtDate } from "./helpers";
 import { StatusChip } from "./StatusChip";
 import { btnCls, primaryCls } from "./styles";
+import { attempt } from "../../utils/attempt";
 
 // Ajuste de una serie (crédito, deuda personal en cuotas o pago recurrente):
 // fecha y monto de cada vencimiento abierto, a mano o con herramientas que se
@@ -60,15 +61,13 @@ export function SeriesEditModal({ item, items, today, onCancel, onSaved }) {
 
   const save = async () => {
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const series = recurring ? await commitmentSeriesService.getById(item.seriesId) : null;
       const n = await saveSeriesEdit(series, seriesItems, changes, seriesPatch);
       await onSaved(n);
-    } catch (err) {
-      toast.error(err.message || String(err));
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) toast.error(err.message || String(err));
+    setBusy(false);
   };
 
   const toolInputCls = "w-24 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm outline-none focus:border-[var(--color-accent)]";

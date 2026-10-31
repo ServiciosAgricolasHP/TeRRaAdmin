@@ -7,7 +7,6 @@ import { useWorkerEdit } from "./WorkerEditContext";
 // sub-vistas, reemplaza el contenido de este Modal en vez de abrir otro
 // encima.
 export function BonusEditor() {
-  "use no memo";
   const { activeLabor, readOnly, upsertOvertimeDayWorkday } = useCycleDetail();
   const {
     bonusDate,

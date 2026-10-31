@@ -27,10 +27,6 @@ import {
   displayStatus,
   kindMeta,
   directionOf,
-  statusLabel,
-  partialPaidOf,
-  extraOf,
-  paidTotalOf,
   remainingOf,
   upcomingMonthEnd,
   COMMITMENT_KINDS,
@@ -50,6 +46,9 @@ import { PartialPaymentModal } from "./commitments/PartialPaymentModal";
 import { SeriesEditModal } from "./commitments/SeriesEditModal";
 import { primaryCls, btnCls, inputCls } from "./commitments/styles";
 import ScreenLoader from "../components/ScreenLoader";
+import { attempt } from "../utils/attempt";
+import { readStored, writeStored } from "../utils/browserStorage";
+import { writeCommitmentsXlsx } from "./commitments/writeCommitmentsXlsx";
 
 const STATUS_FILTERS = [
   { v: "", label: "Todos" },
@@ -100,9 +99,7 @@ export default function Commitments() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState("upcoming");
   const [laterUntil, setLaterUntil] = useState(() => nextYearEnd(today));
-  const [byCounterparty, setByCounterparty] = useState(() => {
-    try { return localStorage.getItem(BY_COUNTERPARTY_KEY) === "true"; } catch { return false; }
-  });
+  const [byCounterparty, setByCounterparty] = useState(() => readStored(BY_COUNTERPARTY_KEY) === "true");
   const [kindFilter, setKindFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [companyFilter, setCompanyFilter] = useState("");
@@ -122,18 +119,16 @@ export default function Commitments() {
 
   const load = async () => {
     setLoading(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const [list, comps] = await Promise.all([
         listCommitments(),
         companiesService.list({ order: ["razonSocial", "asc"], cache: true, ttl: 600_000 }),
       ]);
       setItems(list);
       setCompanies(comps);
-    } catch (err) {
-      toast.error("No se pudieron cargar los vencimientos: " + (err.message || err));
-    } finally {
-      setLoading(false);
-    }
+    });
+    if (err) toast.error("No se pudieron cargar los vencimientos: " + (err.message || err));
+    setLoading(false);
   };
 
   // Carga al montar; `useEffectEvent` lee la versión actual de la función sin
@@ -164,7 +159,7 @@ export default function Commitments() {
   const toggleByCounterparty = () => {
     const next = !byCounterparty;
     setByCounterparty(next);
-    try { localStorage.setItem(BY_COUNTERPARTY_KEY, String(next)); } catch { /* noop */ }
+    writeStored(BY_COUNTERPARTY_KEY, String(next));
   };
 
   const filtered = useMemo(() => {
@@ -192,15 +187,13 @@ export default function Commitments() {
   const runConfirm = async () => {
     if (!confirm) return;
     setConfirmBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await confirm.run();
       setConfirm(null);
       await load();
-    } catch (err) {
-      toast.error(err.message || String(err));
-    } finally {
-      setConfirmBusy(false);
-    }
+    });
+    if (err) toast.error(err.message || String(err));
+    setConfirmBusy(false);
   };
 
   const askCancel = (c) =>
@@ -279,62 +272,8 @@ export default function Commitments() {
   };
 
   const exportXlsx = async () => {
-    try {
-      const ExcelJS = (await import("exceljs")).default;
-      const wb = new ExcelJS.Workbook();
-      const ws = wb.addWorksheet("Cheques y pagos");
-      ws.getColumn(1).width = 6;
-      const headers = ["Vencimiento", "Tipo", "Estado", "Banco", "N° cheque", "Contraparte", "Concepto", "Monto", "Abonado", "Interés / extra", "Total pagado", "Fecha de pago", "Empresa", "Observaciones"];
-      const head = ws.getRow(2);
-      headers.forEach((h, i) => {
-        const cell = head.getCell(i + 2);
-        cell.value = h;
-        cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF374151" } };
-      });
-      filtered.forEach((c, idx) => {
-        const row = ws.getRow(idx + 3);
-        [
-          fmtDate(c.dueDate),
-          kindMeta(c.kind).label,
-          statusLabel(c, today),
-          c.bank ? bankName(c.bank) : "",
-          c.chequeNumber || "",
-          c.counterparty || "",
-          c.concept || "",
-          Number(c.amount) || 0,
-          partialPaidOf(c) || "",
-          extraOf(c) || "",
-          c.status === "paid" ? paidTotalOf(c) : "",
-          fmtDate(c.paidAt),
-          companyName(c),
-          c.notes || "",
-        ].forEach((v, i) => {
-          row.getCell(i + 2).value = v;
-        });
-        [9, 10, 11, 12].forEach((col) => {
-          row.getCell(col).numFmt = '"$"#,##0';
-        });
-      });
-      const totalRow = ws.getRow(filtered.length + 3);
-      totalRow.getCell(8).value = "Total (sin anulados)";
-      totalRow.getCell(9).value = filteredTotal;
-      totalRow.getCell(9).numFmt = '"$"#,##0';
-      totalRow.font = { bold: true };
-      [12, 18, 12, 22, 12, 28, 26, 14, 14, 14, 14, 12, 18, 40].forEach((w, i) => {
-        ws.getColumn(i + 2).width = w;
-      });
-      const buf = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `Cheques_y_pagos_${today}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      toast.error("No se pudo generar el Excel: " + (err.message || err));
-    }
+    const { error: err } = await attempt(() => writeCommitmentsXlsx({ items: filtered, total: filteredTotal, today, companyName }));
+    if (err) toast.error("No se pudo generar el Excel: " + (err.message || err));
   };
 
   const rowProps = {
@@ -557,15 +496,14 @@ export default function Commitments() {
           onChange={(patch) => setDateAction((a) => ({ ...a, ...patch }))}
           onCancel={() => setDateAction(null)}
           onConfirm={async ({ item, mode, date, extra }) => {
-            try {
+            const { error: err } = await attempt(async () => {
               if (mode === "pay") await markPaid(item.id, date, extra);
               else await reschedule(item.id, date);
               setDateAction(null);
               toast.success(mode === "pay" ? paidLabel(item.kind) : `Reprogramado para el ${fmtDate(date)}`);
               await load();
-            } catch (err) {
-              toast.error(err.message || String(err));
-            }
+            });
+            if (err) toast.error(err.message || String(err));
           }}
         />
       )}

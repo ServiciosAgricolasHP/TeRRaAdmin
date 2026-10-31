@@ -4,7 +4,6 @@ import { fmtCurrency } from "../../../utils/format";
 import { formatDayLabel } from "./dayCards";
 
 export function ConfigureButton({ d }) {
-  "use no memo";
   const { readOnly } = useCycleDetail();
   const { setConfiguringDate } = useWorkerEdit();
   return !readOnly && (
@@ -20,7 +19,6 @@ export function ConfigureButton({ d }) {
 }
 
 export function TotalBadge({ amt }) {
-  "use no memo";
   return amt > 0 ? (
     <span className="rounded-full bg-[var(--color-accent-soft)] px-2 py-0.5 text-xs font-semibold tabular-nums text-[var(--color-accent)]">
       {fmtCurrency(amt)}
@@ -33,9 +31,9 @@ export function TotalBadge({ amt }) {
 // `amountField`: el total del día está en `${d}__total` en
 // cosecha/trato/tratoEtapas y en `${d}__amt` en tratoHE, que no tiene
 // `__total` (ver buildRowsOvertimeDay).
-export function WorkerDayHeader({ d, amountField = `${d}__total` }) {
-  "use no memo";
+export function WorkerDayHeader({ d, amountField: amountFieldProp }) {
   const { row } = useWorkerEdit();
+  const amountField = amountFieldProp ?? `${d}__total`;
   return <div className="mb-2 flex items-center justify-between gap-2">
     <div className="flex items-center gap-1.5">
       <div className="text-sm font-semibold">{formatDayLabel(d)}</div>

@@ -69,14 +69,16 @@ describe("paidCycleSectionsOf", () => {
     ]);
   });
 
-  // [bug conocido] En tratoHE `qty` guarda la base del día en pesos, pero acá
-  // se suma como jornadas: un día de $30.000 se muestra como "30.000
-  // jornadas". Es el mismo error del resumen del trabajador y del Calendario.
-  it("en tratoHE suma las horas extras [bug conocido: cuenta la base en pesos como jornadas]", () => {
+  it("en tratoHE cada día es una jornada, también uno de solo horas extras", () => {
+    // `qty` guarda la base del día en pesos, no una cantidad.
     const [sec] = paidCycleSectionsOf([
       wd("C1", "LH", "2026-10-01", { qty: 30000, overtimeHours: 2, amount: 37000 }),
+      wd("C1", "LH", "2026-10-02", { qty: 0, overtimeHours: 3, amount: 10500 }),
     ], snapshotCycles, cycleDetails);
-    expect([sec.rows[0].jornadas, sec.rows[0].overtimeHours]).toEqual([30000, 2]);
+    expect(sec.rows.map((r) => [r.date, r.jornadas, r.overtimeHours])).toEqual([
+      ["2026-10-01", 1, 2],
+      ["2026-10-02", 1, 3],
+    ]);
   });
 
   it("un ciclo sin datos en el snapshot ni en la nómina usa su id de encabezado", () => {

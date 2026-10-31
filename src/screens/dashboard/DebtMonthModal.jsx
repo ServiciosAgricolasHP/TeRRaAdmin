@@ -6,7 +6,6 @@ import { DebtDetailList } from "./DebtDetailList";
 // lo que se pagó y el saldo al cierre. `month` es una fila de
 // `transportDebtByMonth`; sin mes, el modal está cerrado.
 export function DebtMonthModal({ month, onClose }) {
-  "use no memo";
   return (
     <Modal
       open={!!month}

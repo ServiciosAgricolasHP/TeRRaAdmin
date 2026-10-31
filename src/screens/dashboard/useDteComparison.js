@@ -2,12 +2,13 @@ import { useState, useEffect } from "react";
 import { companiesService, dteDocumentsService } from "../../services";
 import { countedList } from "../../services/cache";
 import { DTE_MONTHS, dteMonthlyTotals, lastMonthKeys } from "../../utils/dashboard";
+import { attempt } from "../../utils/attempt";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 
 // Comparativa compras/ventas, de una empresa a la vez: `dteDocuments` es la
 // colección más grande del sistema y la consulta se acota a la empresa
 // elegida.
 export function useDteComparison() {
-  "use no memo";
   const [companies, setCompanies] = useState([]);
   const [companyId, setCompanyId] = useState("");
   const [rows, setRows] = useState(null);
@@ -20,7 +21,7 @@ export function useDteComparison() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      try {
+      const { error: err } = await attempt(async () => {
         const { data, reads } = await countedList(companiesService, {
           order: ["razonSocial", "asc"],
           cache: true,
@@ -30,9 +31,8 @@ export function useDteComparison() {
         setCompanies(data);
         setCompanyId((prev) => prev || data[0]?.id || "");
         setReads((r) => r + reads);
-      } catch (err) {
-        if (!cancelled) console.error("[dashboard] empresas:", err);
-      }
+      });
+      if (err && !cancelled) console.error("[dashboard] empresas:", err);
     })();
     return () => { cancelled = true; };
   }, []);
@@ -40,28 +40,26 @@ export function useDteComparison() {
   // Comparativa de la empresa elegida. Carga sola con la primera empresa y se
   // rehace al cambiar de empresa. Va por el servicio para quedar cacheada y
   // persistida: salir del Dashboard y volver dentro de 10 minutos no relee.
-  useEffect(() => {
-    if (!companyId) return;
-    let cancelled = false;
+  if (useValuesChanged([companyId], { onMount: true }) && companyId) {
     setRows(null);
     setError("");
     setBusy(true);
+  }
+  useEffect(() => {
+    if (!companyId) return;
+    let cancelled = false;
     (async () => {
-      try {
-        const { data, reads } = await countedList(dteDocumentsService, {
-          wheres: [
-            ["companyId", "==", companyId],
-            ["periodo", "in", lastMonthKeys(DTE_MONTHS)],
-          ],
-          cache: true,
-          persist: true,
-          ttl: 600_000,
-        });
-        if (cancelled) return;
-        setRows(dteMonthlyTotals(data, lastMonthKeys(DTE_MONTHS)));
-        setReads((r) => r + reads);
-      } catch (err) {
-        if (cancelled) return;
+      const { value, error: err } = await attempt(() => countedList(dteDocumentsService, {
+        wheres: [
+          ["companyId", "==", companyId],
+          ["periodo", "in", lastMonthKeys(DTE_MONTHS)],
+        ],
+        cache: true,
+        persist: true,
+        ttl: 600_000,
+      }));
+      if (cancelled) return;
+      if (err) {
         // La consulta cruza `companyId` con `periodo` y puede pedir un índice
         // compuesto. El mensaje de Firestore trae el link para crearlo: va a la
         // consola del navegador.
@@ -71,9 +69,11 @@ export function useDteComparison() {
             ? "Falta un índice en Firestore para esta consulta (el detalle está en la consola del navegador)."
             : "No se pudo cargar la facturación de esta empresa.",
         );
-      } finally {
-        if (!cancelled) setBusy(false);
+      } else {
+        setRows(dteMonthlyTotals(value.data, lastMonthKeys(DTE_MONTHS)));
+        setReads((r) => r + value.reads);
       }
+      setBusy(false);
     })();
     return () => { cancelled = true; };
   }, [companyId]);

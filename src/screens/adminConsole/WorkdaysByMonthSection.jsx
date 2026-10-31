@@ -1,7 +1,9 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { countWorkdaysInRange } from "../../services/countsService";
 import { fmtNumber } from "../../utils/format";
 import { ConsoleCard } from "./ConsoleCard";
+import { attempt } from "../../utils/attempt";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 
 const monthRange = (y, m) => {
   // m: 1..12
@@ -10,6 +12,9 @@ const monthRange = (y, m) => {
   const end = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
   return { start, end };
 };
+
+// Los meses del año, de 0 (enero) a 11.
+const MONTH_INDEXES = Array.from({ length: 12 }, (_, i) => i);
 
 // ============================================================
 // Sección: workdays por mes del año elegido
@@ -37,33 +42,31 @@ export function WorkdaysByMonthSection() {
     );
   };
 
-  useEffect(() => {
-    reset();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [year]);
+  if (useValuesChanged([year], { onMount: true })) reset();
 
   const runYear = async () => {
     setRunning(true);
-    try {
-      for (let i = 0; i < 12; i++) {
+    const { error: err } = await attempt(async () => {
+      for (const i of MONTH_INDEXES) {
         const { start, end } = monthRange(year, i + 1);
         setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, busy: true } : r)));
-        try {
+        const { error: monthErr } = await attempt(async () => {
           const count = await countWorkdaysInRange(start, end);
           setRows((prev) =>
             prev.map((r, idx) => (idx === i ? { ...r, count, busy: false } : r)),
           );
-        } catch (err) {
+        });
+        if (monthErr) {
           setRows((prev) =>
             prev.map((r, idx) =>
-              idx === i ? { ...r, error: err.message || String(err), busy: false } : r,
+              idx === i ? { ...r, error: monthErr.message || String(monthErr), busy: false } : r,
             ),
           );
         }
       }
-    } finally {
-      setRunning(false);
-    }
+    });
+    setRunning(false);
+    if (err) throw err;
   };
 
   const total = rows.reduce((s, r) => s + (r.count || 0), 0);

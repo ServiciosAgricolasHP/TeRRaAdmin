@@ -7,6 +7,7 @@ import { isOpen, remainingOf, allocatePartialPayment } from "../../utils/commitm
 import { fmtCurrency } from "../../utils/format";
 import { fmtDate } from "./helpers";
 import { btnCls, primaryCls, labelCls, inputCls } from "./styles";
+import { attempt } from "../../utils/attempt";
 
 // Orden de una serie: por fecha y, a igual fecha, por número de cuota.
 const bySeriesOrder = (a, b) =>
@@ -57,31 +58,27 @@ export function PartialPaymentModal({ item, items, today, onClose, onSaved }) {
 
   const save = async () => {
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const input = { date, amount: value, notes };
       if (target === "debt") await addDebtPartialPayment(debt, input);
       else await addPartialPayment(targetItem, input);
       setAmount("");
       setNotes("");
       await onSaved(`Abono de ${fmtCurrency(value)} registrado`);
-    } catch (err) {
-      toast.error(err.message || String(err));
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) toast.error(err.message || String(err));
+    setBusy(false);
   };
 
   const remove = async () => {
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await removePartialPayment(debt, removing.payment);
       setRemoving(null);
       await onSaved("Abono quitado");
-    } catch (err) {
-      toast.error(err.message || String(err));
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) toast.error(err.message || String(err));
+    setBusy(false);
   };
 
   return (

@@ -47,8 +47,7 @@ function EntityLabel({ entity, entityId, snapshot, changes }) {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entity, entityId]);
+  }, [initial, entity, entityId]);
   const idFallback = ENTITY_META[entity]?.idLabel?.(entityId) || entityId;
   const shown = label || idFallback;
   return (

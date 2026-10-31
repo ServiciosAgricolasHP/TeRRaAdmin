@@ -4,7 +4,6 @@ import { hasChanges } from "../../utils/formChanges";
 
 // Alta y edición de una subfaena: nombre y notas.
 export function SubjobFormModal({ busy, setSubjobForm, subjobForm, submitSubjob }) {
-  "use no memo";
   return (
     <Modal
       open={!!subjobForm}

@@ -1,7 +1,6 @@
 // El encabezado de Nómina: el título con el formato del archivo del banco, la
 // configuración, recargar los datos y las pestañas.
 export function PayrollHeader({ bankFormatLabel, onOpenSettings, onRefresh, refreshing, loading, tab, setTab, payrollCount }) {
-  "use no memo";
   return (
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
       <div>

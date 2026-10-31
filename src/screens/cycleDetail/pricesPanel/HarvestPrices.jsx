@@ -5,7 +5,6 @@ import { useCycleDetail } from "../CycleDetailContext";
 
 // Barra de precios de cosecha
 export function HarvestPrices() {
-  "use no memo";
   const {
     activeLabor,
     askApplyFloorToAll,
@@ -118,12 +117,10 @@ export function HarvestPrices() {
                           <input
                             type="number" min="0" disabled={readOnly}
                             value={getPriceInputValue(activeLabor.id, d, c.key)}
-                            onChange={(e) =>
-                              setLocalPriceInputs((prev) => ({
-                                ...prev,
-                                [inputKey(activeLabor.id, d, c.key)]: e.target.value,
-                              }))
-                            }
+                            onChange={(e) => {
+                              const key = inputKey(activeLabor.id, d, c.key);
+                              setLocalPriceInputs((prev) => ({ ...prev, [key]: e.target.value }));
+                            }}
                             onBlur={() => handlePriceBlur(activeLabor.id, d, c.key)}
                             placeholder={c.mode === "flat" ? "tarifa/trab." : `precio/${containerLabel(catalogs, c.y)}`}
                             className="w-full rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-0.5 text-right tabular-nums outline-none focus:border-[var(--color-accent)] disabled:opacity-50"

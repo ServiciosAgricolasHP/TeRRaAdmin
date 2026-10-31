@@ -1,9 +1,13 @@
+import { useGridCells } from "./GridCellsContext";
+
 // Encabezado de las columnas (o del grupo de columnas) de un día: la fecha y
 // un 📝 que se resalta si el día tiene anotación. Un click abre el modal de
-// la anotación y el tooltip muestra su texto. Con `clickable=false` (día sin
-// producción ni anotación en esta labor) muestra solo la fecha.
+// la anotación (`openDayNote`, de GridCellsContext) y el tooltip muestra su
+// texto. Con `clickable=false` (día sin producción ni anotación en esta
+// labor) muestra solo la fecha.
 export function DayHeader(props) {
-  const { date, note, onClickNote, displayName, clickable = true } = props;
+  const { actionsRef } = useGridCells();
+  const { date, note, displayName, clickable = true } = props;
   const hasNote = !!String(note || "").trim();
   if (!clickable) {
     return (
@@ -16,7 +20,7 @@ export function DayHeader(props) {
   }
   return (
     <span
-      onClick={(e) => { e.stopPropagation(); onClickNote?.(date); }}
+      onClick={(e) => { e.stopPropagation(); actionsRef.current.openDayNote(date); }}
       title={hasNote ? note : "Agregar anotación del día"}
       style={{
         display: "inline-flex",

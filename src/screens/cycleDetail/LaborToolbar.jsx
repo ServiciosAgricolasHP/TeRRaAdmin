@@ -6,7 +6,6 @@ import { useCycleDetail } from "./CycleDetailContext";
 // resumen, editar o quitar la labor, agregar días y trabajadores, y los días
 // del ciclo con su botón para quitarlos.
 export function LaborToolbar() {
-  "use no memo";
   const {
     activeLabor,
     askRemoveLabor,

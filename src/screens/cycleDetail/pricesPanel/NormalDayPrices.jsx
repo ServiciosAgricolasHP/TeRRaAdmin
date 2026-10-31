@@ -8,7 +8,6 @@ import { useCycleDetail } from "../CycleDetailContext";
 // precio sugerido por día, que las celdas vacías de la grilla
 // ofrecen con un click. Se guarda en dayPrices del ciclo.
 export function NormalDayPrices() {
-  "use no memo";
   const {
     activeLabor,
     dayPrices,

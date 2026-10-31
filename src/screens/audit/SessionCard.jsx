@@ -5,7 +5,6 @@ import LogsTable from "./LogsTable";
 // Una sesión: quién, cuándo y cuánto duró, con sus acciones por tipo y por
 // entidad. Al abrirla muestra sus acciones en orden.
 export default function SessionCard({ session, open, onToggle }) {
-  "use no memo";
   return (
     <div className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
       <button

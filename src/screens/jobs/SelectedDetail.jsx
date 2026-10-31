@@ -25,7 +25,8 @@ export function SelectedDetail({
 }) {
   const cyclesBySubjob = (cycles || []).reduce((acc, c) => {
     if (!c.subfaenaId) return acc;
-    (acc[c.subfaenaId] ||= []).push(c);
+    if (!acc[c.subfaenaId]) acc[c.subfaenaId] = [];
+    acc[c.subfaenaId].push(c);
     return acc;
   }, {});
   const orphanCycles = (cycles || []).filter((c) => !c.subfaenaId);

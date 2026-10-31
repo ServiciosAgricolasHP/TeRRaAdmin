@@ -6,6 +6,7 @@ import { newPayrollCycleDetails } from "../../utils/payrollItem";
 import { snapshotCycleOf, snapshotWorkdayOf, snapshotAdvanceOf, saveSnapshot } from "../../services/payrollSnapshots";
 import { payrollsService, tagWorkdaysWithPayroll } from "../../services/payrollsService";
 import { applyAdvancesToPayroll } from "../../services/advancesService";
+import { attempt } from "../../utils/attempt";
 
 // Guardar la nómina de la vista previa: confirma las cuotas y las cuentas con
 // problemas, crea la nómina con su JSON, etiqueta las jornadas y aplica los
@@ -29,7 +30,6 @@ export function useGeneratePayroll({
   subjobs,
   toast,
 }) {
-  "use no memo";
   // Confirmación genérica para flujos async que esperan la respuesta del
   // usuario a mitad de camino (ej. generateAndSave): `askConfirm` devuelve una
   // promesa que resuelve el diálogo.
@@ -94,7 +94,7 @@ export function useGeneratePayroll({
     }
     setBusy(true);
     setProgress({ step: "Armando datos de la nómina...", detail: "", percent: 2 });
-    try {
+    const { error: err } = await attempt(async () => {
       // Los ciclos de la nómina y qué labores abarca cada uno, para que
       // Recalcular no traiga después lo que quedó afuera: los elegidos con
       // alguna labor, y con `laborIds: []` los que traen las personas sueltas.
@@ -231,11 +231,11 @@ export function useGeneratePayroll({
       setTab("history");
       await load();
       setProgress({ step: "Listo ✓", detail: "", percent: 100 });
-    } finally {
-      setBusy(false);
-      // Pequeño delay para que el "Listo ✓" sea visible un instante.
-      setTimeout(() => setProgress(null), 400);
-    }
+    });
+    setBusy(false);
+    // Pequeño delay para que el "Listo ✓" sea visible un instante.
+    setTimeout(() => setProgress(null), 400);
+    if (err) throw err;
   };
   return {
     confirmState,

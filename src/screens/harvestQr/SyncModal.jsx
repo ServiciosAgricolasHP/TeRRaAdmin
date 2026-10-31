@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useToast } from "../../contexts/ToastContext";
 import { cyclesService, harvestWeightsService, workdaysService, qrPrefixesService } from "../../services";
@@ -7,12 +7,12 @@ import { mapHarvestCodes, comboKey, workdayDocId, getDayCombos } from "../../uti
 import Modal from "../../components/Modal";
 import { nextSyncRange, lastSyncLabel } from "./helpers";
 import { ProgressBar } from "./ProgressBar";
+import { attempt } from "../../utils/attempt";
 
 export function SyncModal({ prefix, cycle, onClose, onSynced }) {
   const toast = useToast();
-  const suggested = useRef(nextSyncRange(prefix.lastSync)).current;
-  const [dateFrom, setDateFrom] = useState(suggested.from);
-  const [dateTo, setDateTo] = useState(suggested.to);
+  const [dateFrom, setDateFrom] = useState(() => nextSyncRange(prefix.lastSync).from);
+  const [dateTo, setDateTo] = useState(() => nextSyncRange(prefix.lastSync).to);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
   const [progress, setProgress] = useState(null);
@@ -21,7 +21,7 @@ export function SyncModal({ prefix, cycle, onClose, onSynced }) {
     setBusy(true);
     setResult(null);
     setProgress({ label: "Leyendo el ciclo…" });
-    try {
+    const { error: err } = await attempt(async () => {
       // `days` y `labors` se reescriben enteros más abajo, así que hay que
       // partir del doc fresco y no de la copia que tiene la pantalla.
       const fresh = prefix.cycleId ? await cyclesService.getById(prefix.cycleId) : null;
@@ -181,12 +181,10 @@ export function SyncModal({ prefix, cycle, onClose, onSynced }) {
       });
       toast.success(`Sincronizado: ${written} jornada(s) actualizadas desde ${weights.length} pesaje(s)`);
       onSynced?.();
-    } catch (err) {
-      toast.error("No se pudo sincronizar: " + err.message);
-    } finally {
-      setBusy(false);
-      setProgress(null);
-    }
+    });
+    if (err) toast.error("No se pudo sincronizar: " + err.message);
+    setBusy(false);
+    setProgress(null);
   };
 
   return (

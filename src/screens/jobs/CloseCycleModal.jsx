@@ -2,7 +2,6 @@ import Modal from "../../components/Modal";
 
 // Cerrar un ciclo y, ya cerrado, ofrecer crear el siguiente.
 export function CloseCycleModal({ busy, closeFlow, confirmCloseCycle, createNextCycle, setCloseFlow }) {
-  "use no memo";
   return (
     <Modal
       open={!!closeFlow}

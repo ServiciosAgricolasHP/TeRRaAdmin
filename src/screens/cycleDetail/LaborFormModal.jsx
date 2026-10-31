@@ -10,7 +10,6 @@ import { useCycleDetail } from "./CycleDetailContext";
 // Formulario para crear o editar una labor: nombre, agrupación, tipo y la
 // configuración propia de cada tipo.
 export function LaborFormModal() {
-  "use no memo";
   const {
     catalogs,
     laborForm,

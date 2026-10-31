@@ -4,7 +4,6 @@ import { useCycleDetail } from "./CycleDetailContext";
 // Migas del ciclo (faena, subfaena y ciclo) y, con la barra plegada, una
 // línea con la navegación entre ciclos y la labor activa.
 export function CycleHeader() {
-  "use no memo";
   const {
     activeLabor,
     cycle,

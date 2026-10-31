@@ -3,12 +3,12 @@ import { cloneLabors, importedDayPrices, movedWorkday, importCandidatesOf, cycle
 import { newId, defaultLabors, todayStr, withInitial } from "./helpers";
 import { unshout } from "../../utils/textCase";
 import { cyclesService, workdaysService } from "../../services";
+import { attempt } from "../../utils/attempt";
 
 // Alta y edición de un ciclo, con la etiqueta "Faena/Subfaena/" fija. El alta
 // puede importar desde otro ciclo abierto de la subfaena: clona labores,
 // copia precios por día y mueve jornadas (`utils/cycleCreation.js`).
 export function useCycleForm({ cyclesByJob, jobs, loadCycles, setBusy, subjobsByJob, toast }) {
-  "use no memo";
   const [cycleForm, setCycleForm] = useState(null);
 
   const cyclePrefix = (jobId, subjobId) => {
@@ -32,7 +32,7 @@ export function useCycleForm({ cyclesByJob, jobs, loadCycles, setBusy, subjobsBy
       }
     }
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       // Labores y datos a importar desde el ciclo origen, si se pidió.
       let labors;
       let importPlan = null; // { source, picked, oldToNewLaborId }
@@ -129,11 +129,9 @@ export function useCycleForm({ cyclesByJob, jobs, loadCycles, setBusy, subjobsBy
 
       setCycleForm(null);
       await loadCycles(jobId);
-    } catch (err) {
-      toast.error("Error al guardar el ciclo: " + (err.message || err));
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) toast.error("Error al guardar el ciclo: " + (err.message || err));
+    setBusy(false);
   };
 
   const openCreateCycle = (jobId, subjobId) => {

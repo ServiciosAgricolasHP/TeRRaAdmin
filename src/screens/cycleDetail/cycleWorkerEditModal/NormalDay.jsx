@@ -7,7 +7,6 @@ import { useCycleDetail } from "../CycleDetailContext";
 import { useWorkerEdit } from "./WorkerEditContext";
 
 export function NormalDay({ d }) {
-  "use no memo";
   const { activeLabor, commitNormalAmount, dayPrices, readOnly } = useCycleDetail();
   const {
     clearDraft,

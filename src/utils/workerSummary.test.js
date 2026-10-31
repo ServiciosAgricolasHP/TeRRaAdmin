@@ -72,17 +72,19 @@ describe("buildCycleRows", () => {
     expect(rows[0].payrollNames).toEqual(["Nómina pagada"]);
   });
 
-  it("[bug conocido] en horas extras suma `qty` como jornadas", () => {
-    // En una labor con horas extras `qty` guarda el monto base del día, no la
-    // cantidad de jornadas: la fila muestra 30.000 jornadas. Si se arregla,
-    // este test se cae.
+  it("en horas extras cada día es una jornada, también uno de solo horas extras", () => {
+    // `qty` guarda el monto base del día en pesos, no una cantidad.
     const cycle = cycleWith([{ id: "L1", name: "Jornadas HE", type: "tratoHE", overtimeRate: 5000 }]);
     const workdays = {
-      L1: { a: { workerRut: ANA, date: "2026-10-01", qty: 30000, overtimeHours: 2, amount: 40000 } },
+      L1: {
+        a: { workerRut: ANA, date: "2026-10-01", qty: 30000, overtimeHours: 2, amount: 40000 },
+        b: { workerRut: ANA, date: "2026-10-02", qty: 0, overtimeHours: 3, amount: 15000 },
+      },
     };
     const { rows } = buildCycleRows(rutKeys, cycle, workdays, {}, null);
-    expect(rows[0].workdayCount).toBe(30000);
-    expect(rows[0].overtimeHours).toBe(2);
-    expect(rows[0].overtimeAmount).toBe(10000);
+    expect(rows.map((r) => [r.date, r.workdayCount, r.overtimeHours, r.overtimeAmount])).toEqual([
+      ["2026-10-01", 1, 2, 10000],
+      ["2026-10-02", 1, 3, 15000],
+    ]);
   });
 });

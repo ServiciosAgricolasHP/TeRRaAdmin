@@ -3,7 +3,6 @@ import { fmtCurrency } from "../../../utils/format";
 // Tarjetas de totales del resumen: transferencias, efectivo (con lo que falta
 // entregar y el estimador), anticipos, bonos y el total a pagar.
 export function PayrollTotalsCards({ bank, cash, cashGroups, cashPaidMode, items, owedCash, payroll, setShowCashEstimation }) {
-  "use no memo";
   // Totales para el encabezado del resumen.
   const bankTotal = bank.reduce((s, x) => s + (Number(x.amount) || 0), 0);
   const cashTotal = cash.reduce((s, x) => s + (Number(x.amount) || 0), 0);

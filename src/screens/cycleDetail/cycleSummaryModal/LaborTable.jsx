@@ -2,6 +2,9 @@ import { Fragment } from "react";
 import { cellText, laborColumns } from "../../../utils/summaryTables";
 import { cellH, cell, chargeDateInputStyle, inputVal, chargeInputStyle } from "./tableStyles";
 
+// Lo que se usa cuando no se pasa la prop: siempre el mismo objeto.
+const NO_HIDDEN_COLUMNS = new Set();
+
 // La tabla día a día de una labor (o de una tabla juntada) del resumen del
 // ciclo. Las columnas y sus valores salen de `laborColumns`, las mismas que
 // escribe el Excel; acá se dibujan, con los inputs del modo cobrar en edición.
@@ -11,7 +14,7 @@ export function LaborTable({
   section,
   mode,
   editMode = true,
-  hiddenColumns = new Set(),
+  hiddenColumns = NO_HIDDEN_COLUMNS,
   catalogs,
   onEditRow,
   onAddRow,
@@ -117,10 +120,10 @@ export function LaborTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => {
+          {rows.map((r, i) => {
             const dateIsRed = isHE && redDates && r.date && redDates.has(r.date);
             const dateCellStyle = dateIsRed ? { ...cell, color: "#c00", fontWeight: 700 } : cell;
-            const rowKey = r._key || r.rowKey || r.date || `r${Math.random()}`;
+            const rowKey = r._key || r.rowKey || r.date || `r${i}`;
             const badge = dateColumn.badge(r);
             return (
               <tr key={rowKey}>

@@ -3,7 +3,6 @@ import { useCycleDetail } from "../CycleDetailContext";
 
 // Barra de precios de tratoEtapas: precio por día de cada etapa (fijas de la labor)
 export function PieceworkStagesPrices() {
-  "use no memo";
   const {
     activeLabor,
     dayPrices,

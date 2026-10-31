@@ -2,6 +2,7 @@ import { useState } from "react";
 import BirthdayField from "./BirthdayField";
 import Modal, { ModalCloseButton } from "../../components/Modal";
 import { hasChanges } from "../../utils/formChanges";
+import { attempt } from "../../utils/attempt";
 
 // El cumpleaños de una cuenta, cargado por un admin. `onSave(birthday)` guarda
 // ("MM-DD", o vacío para quitarlo) y cierra.
@@ -11,11 +12,9 @@ export default function BirthdayModal({ profile, name, onClose, onSave }) {
 
   const save = async () => {
     setBusy(true);
-    try {
-      await onSave(birthday);
-    } finally {
-      setBusy(false);
-    }
+    const { error } = await attempt(() => onSave(birthday));
+    setBusy(false);
+    if (error) throw error;
   };
 
   return (

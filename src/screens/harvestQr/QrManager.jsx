@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useEffectEvent, useMemo } from "react";
 import { useToast } from "../../contexts/ToastContext";
 import { qrPrefixesService, harvestWeightsService } from "../../services";
 import { workersService, WORKERS_LIST } from "../../services/workersService";
@@ -11,6 +11,7 @@ import { BackfillQrModal } from "./BackfillQrModal";
 import { readsLabel, TAP } from "./helpers";
 import { TypeToConfirm } from "./TypeToConfirm";
 import ScreenLoader from "../../components/ScreenLoader";
+import { attempt } from "../../utils/attempt";
 
 // Gestión de los QR físicos asignados a trabajadores.
 //
@@ -34,23 +35,21 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
 
   const load = async () => {
     setLoading(true);
-    try {
+    const { error: err } = await attempt(async () => {
       // Mismas opciones que la pestaña de pesajes y que Trabajadores, Nómina y
       // Calendario: comparten clave de caché, así que la primera pantalla que
       // se abre paga y el resto sale de la caché.
       const { data, reads: readCount } = await countedList(workersService, WORKERS_LIST);
       setWorkers(data);
       setReads(readCount);
-    } catch (err) {
-      toast.error("No se pudieron cargar los trabajadores: " + (err.message || err));
-    } finally {
-      setLoading(false);
-    }
+    });
+    if (err) toast.error("No se pudieron cargar los trabajadores: " + (err.message || err));
+    setLoading(false);
   };
 
+  const loadOnMount = useEffectEvent(() => load());
   useEffect(() => {
-    load();
-    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+    loadOnMount();
   }, []);
 
   const prefixLabels = useMemo(
@@ -68,7 +67,7 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
   // No cuesta lecturas de trabajadores: usa la lista ya cargada.
   const rebuildRosters = async () => {
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const expected = new Map(); // prefijo -> { code: {rut, name} }
 
       for (const w of workers) {
@@ -125,11 +124,9 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
       // El diff se calcula contra `prefixes`, que viene del padre: se recarga
       // para que una segunda corrida compare contra los padrones nuevos.
       onPrefixesChanged?.();
-    } catch (err) {
-      toast.error("No se pudieron reconstruir los padrones: " + (err.message || err));
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) toast.error("No se pudieron reconstruir los padrones: " + (err.message || err));
+    setBusy(false);
   };
 
   const view = useMemo(() => {
@@ -212,7 +209,7 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
     if (!backfill) return;
     setBusy(true);
     setProgress({ done: 0, total: backfill.rows.length });
-    try {
+    const { error: err } = await attempt(async () => {
       let done = 0;
       for (const row of backfill.rows) {
         await harvestWeightsService.update(row.id, { idQr: backfill.code });
@@ -220,26 +217,22 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
         setProgress({ done, total: backfill.rows.length });
       }
       toast.success(`${done} pesaje(s) quedaron con ${backfill.code}`);
-    } catch (err) {
-      toast.error("Se interrumpió a mitad de camino: " + (err.message || err));
-    } finally {
-      setBusy(false);
-      setProgress(null);
-      setBackfill(null);
-    }
+    });
+    if (err) toast.error("Se interrumpió a mitad de camino: " + (err.message || err));
+    setBusy(false);
+    setProgress(null);
+    setBackfill(null);
   };
 
   const unassign = async (code, worker) => {
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await workersService.update(worker.id, { idQr: codesOf(worker).filter((c) => c !== code) });
       toast.success(`${code} liberado`);
       await load();
-    } catch (err) {
-      toast.error("No se pudo quitar: " + (err.message || err));
-    } finally {
-      setBusy(false);
-    }
+    });
+    if (err) toast.error("No se pudo quitar: " + (err.message || err));
+    setBusy(false);
   };
 
   const assign = async (code, toWorker, fromWorker) => {
@@ -247,7 +240,7 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
     if (!clean) { toast.error("El código es obligatorio"); return false; }
     if (fromWorker && fromWorker.id === toWorker.id) return true;
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const { released } = await assignQrCode(clean, toWorker, fromWorker);
       toast.success(
         released.length
@@ -255,19 +248,18 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
           : `${clean} → ${toWorker.name || toWorker.id}`,
       );
       await load();
-      try {
+      // El QR ya quedó asignado; los sueltos se pueden rellenar reasignando.
+      await attempt(async () => {
         const loose = await findLooseWeights(toWorker, clean);
         if (loose.length) setBackfill({ code: clean, worker: toWorker, rows: loose });
-      } catch {
-        // El QR ya quedó asignado; los sueltos se pueden rellenar reasignando.
-      }
-      return true;
-    } catch (err) {
+      });
+    });
+    setBusy(false);
+    if (err) {
       toast.error("No se pudo asignar: " + (err.message || err));
       return false;
-    } finally {
-      setBusy(false);
     }
+    return true;
   };
 
   // Limpiar hace una actualización por trabajador afectado, sin batch, para
@@ -278,7 +270,7 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
     const affected = workers.filter((w) => codesOf(w).some((c) => codes.has(c)));
     setBusy(true);
     setProgress({ done: 0, total: affected.length });
-    try {
+    const { error: err } = await attempt(async () => {
       let done = 0;
       for (const w of affected) {
         await workersService.update(w.id, { idQr: codesOf(w).filter((c) => !codes.has(c)) });
@@ -288,12 +280,10 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
       toast.success(`${codes.size} QR liberados de ${affected.length} trabajador(es)`);
       setClearing(null);
       await load();
-    } catch (err) {
-      toast.error("No se pudo completar la limpieza: " + (err.message || err));
-    } finally {
-      setBusy(false);
-      setProgress(null);
-    }
+    });
+    if (err) toast.error("No se pudo completar la limpieza: " + (err.message || err));
+    setBusy(false);
+    setProgress(null);
   };
 
   if (loading) return <ScreenLoader label="Cargando trabajadores…" />;

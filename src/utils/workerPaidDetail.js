@@ -91,7 +91,8 @@ export function paidCycleSectionsOf(wds, snapshotCycles, cycleDetails) {
           g.tratoUnits.add(Number(labor.tratoUnit));
         }
       } else if (labor?.type === "tratoHE") {
-        g.jornadas += wdQty;
+        // `qty` es la base del día en pesos: cada workday es una jornada.
+        g.jornadas += 1;
         g.overtimeHours += Number(wd.overtimeHours) || 0;
       } else {
         // main / supervision / extra: 1 jornada por wd

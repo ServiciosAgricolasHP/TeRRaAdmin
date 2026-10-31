@@ -3,11 +3,11 @@ import { cyclesService } from "../../services";
 import { closedCyclePatch } from "../../utils/cycleClosing";
 import { defaultLabors, newId, todayStr } from "./helpers";
 import { nextCycleLabors } from "../../utils/cycleCreation";
+import { attempt } from "../../utils/attempt";
 
 // Cerrar un ciclo y ofrecer crear el siguiente, con las mismas labores y, si
 // se pide, sus trabajadores.
 export function useCloseCycleFlow({ cyclePrefix, cyclesByJob, loadCycles, setBusy }) {
-  "use no memo";
   const [closeFlow, setCloseFlow] = useState(null);
 
   const openCloseFlow = (cycle, jobId) => {
@@ -17,19 +17,19 @@ export function useCloseCycleFlow({ cyclePrefix, cyclesByJob, loadCycles, setBus
   const confirmCloseCycle = async () => {
     if (!closeFlow) return;
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await cyclesService.update(closeFlow.cycle.id, closedCyclePatch(closeFlow.cycle));
       setCloseFlow((s) => ({ ...s, askNext: true }));
       await loadCycles(closeFlow.jobId);
-    } finally {
-      setBusy(false);
-    }
+    });
+    setBusy(false);
+    if (err) throw err;
   };
 
   const createNextCycle = async (copy) => {
     if (!closeFlow) return;
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const prev = closeFlow.cycle;
       const cycles = cyclesByJob[closeFlow.jobId] || [];
       const scope = cycles.filter((c) =>
@@ -52,9 +52,9 @@ export function useCloseCycleFlow({ cyclePrefix, cyclesByJob, loadCycles, setBus
       });
       setCloseFlow(null);
       await loadCycles(closeFlow.jobId);
-    } finally {
-      setBusy(false);
-    }
+    });
+    setBusy(false);
+    if (err) throw err;
   };
   return {
     closeFlow,

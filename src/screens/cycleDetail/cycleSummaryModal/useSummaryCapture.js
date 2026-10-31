@@ -1,12 +1,12 @@
 import { useState, useEffect, useEffectEvent } from "react";
 import { useCaptureActions } from "../../../hooks/useCaptureActions";
 import { PRINT_GRID_CSS } from "../../../utils/printWindow";
+import { attempt } from "../../../utils/attempt";
 
 // Copiar la imagen, descargar el PNG e imprimir el resumen. En el modo cobrar
 // en edición piden bloquearlo antes, para que la captura no salga con los
 // campos de edición ni la marca de agua.
 export function useSummaryCapture({ cycle, editMode, mode, printRef, titles }) {
-  "use no memo";
   // Captura pedida mientras el resumen estaba en edición. `captureAsk` abre el
   // diálogo de confirmación; `pendingCapture` es la acción que corre después
   // de bloquear (ver el efecto más abajo — hay que esperar el repintado).
@@ -50,11 +50,9 @@ export function useSummaryCapture({ cycle, editMode, mode, printRef, titles }) {
     requestAnimationFrame(() => {
       requestAnimationFrame(async () => {
         if (cancelled) return;
-        try {
-          await capturePending(pendingCapture);
-        } finally {
-          setPendingCapture(null);
-        }
+        const { error: err } = await attempt(() => capturePending(pendingCapture));
+        setPendingCapture(null);
+        if (err) throw err;
       });
     });
     return () => { cancelled = true; };

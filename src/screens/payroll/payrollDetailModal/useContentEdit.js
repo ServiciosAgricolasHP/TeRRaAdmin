@@ -9,6 +9,7 @@ import { resolveCurrentRut } from "../helpers";
 import { planAddWorkdays, withPaidPeriods, cycleDetailOf, stillFreeWorkdays, asPayrollWorker } from "../../../utils/payrollItem";
 import { extendSnapshot, snapshotCycleOf, snapshotWorkdayOf, snapshotAdvanceOf } from "../../../services/payrollSnapshots";
 import { workerKeys } from "../../../services/workersService";
+import { attempt } from "../../../utils/attempt";
 
 // Lo que pasó con la plata al agregar algo a una nómina, para el aviso.
 function additionSummary(lead, added = []) {
@@ -27,7 +28,6 @@ function additionSummary(lead, added = []) {
 // "✂ Editar contenido" de una nómina pendiente: sacar a un trabajador, agregar
 // ciclos o labores y agregar los días de una persona.
 export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged, payroll, subfaenas, toast, workers }) {
-  "use no memo";
   // Modo edición: sacar un trabajador, o destildar ciclos y labores y
   // recalcular sin ellos. Solo con la nómina pendiente.
   const isPending = payroll.status !== "paid";
@@ -44,14 +44,12 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
   };
   const doRemoveWorker = async (item) => {
     setEditBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await removeWorkerFromPayroll(payroll.id, item.rut);
       await onChanged?.();
-    } catch (err) {
-      toast.error(`Error al sacar el trabajador: ${err?.message || err}`);
-    } finally {
-      setEditBusy(false);
-    }
+    });
+    if (err) toast.error(`Error al sacar el trabajador: ${err?.message || err}`);
+    setEditBusy(false);
   };
   const confirmRemoveAction = () => {
     const cr = confirmRemove;
@@ -77,7 +75,7 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
   const handleAddCycles = async (selection) => {
     if (!selection?.length || editBusy) return;
     setEditBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const chosenLabors = new Map(selection.map((s) => [s.cycleId, new Set(s.laborIds)]));
       const cycleIdsToAdd = [...chosenLabors.keys()];
       const selectedCycles = cycles.filter((c) => chosenLabors.has(c.id));
@@ -149,11 +147,9 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
       setAddCyclesOpen(false);
       await onChanged?.();
       toast.success(additionSummary(`${selectedCycles.length} ciclo(s) agregado(s) a la nómina.`, plan.added));
-    } catch (err) {
-      toast.error(`Error al agregar ciclos: ${err?.message || err}`);
-    } finally {
-      setEditBusy(false);
-    }
+    });
+    if (err) toast.error(`Error al agregar ciclos: ${err?.message || err}`);
+    setEditBusy(false);
   };
 
   // Agregar los días puntuales de una persona, de cualquier ciclo abierto,
@@ -164,7 +160,7 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
   const handleAddWorkerDays = async ({ worker, workdayIds }) => {
     if (!worker || !workdayIds?.length || editBusy) return;
     setEditBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const keys = workerKeys(worker);
       // Se releen: entre que se abrió el modal y ahora, otra nómina pudo
       // tomar alguno de esos días.
@@ -233,11 +229,9 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
         additionSummary(`${dayCount} día(s) de ${worker.name || "la persona"} agregado(s) a la nómina.`, plan.added) +
           (takenCount > 0 ? ` ${takenCount} jornada(s) ya no estaban disponibles y quedaron afuera.` : ""),
       );
-    } catch (err) {
-      toast.error(`Error al agregar a la persona: ${err?.message || err}`);
-    } finally {
-      setEditBusy(false);
-    }
+    });
+    if (err) toast.error(`Error al agregar a la persona: ${err?.message || err}`);
+    setEditBusy(false);
   };
   return {
     addCyclesOpen,

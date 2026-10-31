@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useEffectEvent } from "react";
 import { parseAmount } from "../../utils/formula";
 
 // Editor de las celdas numéricas de la grilla. Si la celda ya tiene un valor,
@@ -21,9 +21,9 @@ export function FormulaCellEditor({ initialValue, onValueChange, eventKey }) {
 
   // Informa al proxy el valor inicial ya evaluado, así Enter sin editar
   // confirma ese mismo número.
+  const reportInitial = useEffectEvent(() => onValueChange?.(parseAmount(initial)));
   useEffect(() => {
-    onValueChange?.(parseAmount(initial));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    reportInitial();
   }, []);
 
   useEffect(() => {

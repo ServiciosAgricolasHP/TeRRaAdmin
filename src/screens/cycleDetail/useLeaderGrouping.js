@@ -7,7 +7,6 @@ import { EMPLOYMENT_GROUPS } from "../../utils/employment";
 // `employmentGroupOf`). También el filtro de "solo con producción" y el salto
 // a cada grupo.
 export function useLeaderGrouping({ employmentGroupOf, gridRef, groupView, onlyWithProduction, rowDataRaw, rutToLeader, setColumnFilterActive }) {
-  "use no memo";
   const LEADER_LOCAL = "CHILENOS";
   const LEADER_FOREIGN = "EXTRANJEROS";
   const LEADER_NONE = "__NONE__";

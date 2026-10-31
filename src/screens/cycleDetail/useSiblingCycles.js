@@ -4,7 +4,6 @@ import { cyclesService } from "../../services";
 // Ciclo anterior y siguiente de la misma faena y subfaena, para navegar entre
 // ellos.
 export function useSiblingCycles({ cycle, id }) {
-  "use no memo";
   // Navegación entre ciclos hermanos (misma faena y subfaena), ordenados por
   // su primer día trabajado (mínimo de cycle.days), no por el número del
   // label. Se recarga solo cuando cambia la faena o la subfaena.

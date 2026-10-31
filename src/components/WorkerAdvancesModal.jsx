@@ -10,8 +10,9 @@ const toDate = (ts) => (ts?.toDate ? ts.toDate() : ts ? new Date(ts) : null);
 
 // Quién puso o editó cada anticipo sale del log de auditoría, que guarda el
 // correo (el doc del anticipo solo guarda uids). Se pide por trabajador con
-// `meta.workerRut` (REF_META_FIELDS en firestoreBase).
-const whoLabel = (entry) => entry?.by || "—";
+// `meta.workerRut` (REF_META_FIELDS en firestoreBase). Se muestra lo que va
+// antes de la @, y el correo completo al pasar el mouse.
+const whoLabel = (entry) => (entry?.by ? String(entry.by).split("@")[0] : "—");
 
 const shortWhen = (d) =>
   d instanceof Date && !isNaN(d) ? d.toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "";
@@ -113,6 +114,7 @@ export default function WorkerAdvancesModal({ workerKeys, name, rut, items, onCl
       open
       onClose={onClose}
       title={`Anticipos y bonos — ${name || rut}`}
+      size="xl"
       footer={
         <button onClick={onClose} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
           Cerrar
@@ -159,14 +161,14 @@ export default function WorkerAdvancesModal({ workerKeys, name, rut, items, onCl
                   <div className="mt-2 space-y-0.5 text-xs text-[var(--color-muted)]">
                     {paid > 0 && <div>Liquidado: {fmtCurrency(paid)}</div>}
                     {who?.created ? (
-                      <div className="break-all">
+                      <div className="break-words">
                         Puesto por {whoLabel(who.created)} · {shortWhen(who.created.at)}
                       </div>
                     ) : (
                       <div>{loadingWho ? "Buscando quién lo puso…" : "Sin registro de quién lo puso"}</div>
                     )}
                     {who?.lastEdit && (
-                      <div className="break-all">
+                      <div className="break-words">
                         Editado por {whoLabel(who.lastEdit)} · {shortWhen(who.lastEdit.at)}
                       </div>
                     )}
@@ -177,8 +179,8 @@ export default function WorkerAdvancesModal({ workerKeys, name, rut, items, onCl
           </div>
         ) : (
           <div className="overflow-x-auto rounded-md border border-[var(--color-border)]">
-            <table className="w-full min-w-[520px] text-sm">
-              <thead className="bg-[var(--color-surface-2)] text-left text-xs uppercase tracking-wide text-[var(--color-muted)]">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead className="whitespace-nowrap bg-[var(--color-surface-2)] text-left text-xs uppercase tracking-wide text-[var(--color-muted)]">
                 <tr>
                   <th className="px-3 py-2">Fecha</th>
                   <th className="px-3 py-2">Tipo</th>
@@ -197,26 +199,26 @@ export default function WorkerAdvancesModal({ workerKeys, name, rut, items, onCl
                   return (
                     <tr key={a.id}>
                       <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">{a.date}</td>
-                      <td className="px-3 py-2 text-xs">
-                        <div>{meta.icon} {meta.label}</div>
+                      <td className="min-w-[10rem] px-3 py-2 text-xs">
+                        <div className="whitespace-nowrap">{meta.icon} {meta.label}</div>
                         {a.note && <div className="text-[var(--color-muted)]">{a.note}</div>}
                       </td>
-                      <td className={`px-3 py-2 text-right tabular-nums ${sign > 0 ? "text-[var(--color-success)]" : "text-[var(--color-warning)]"}`}>
+                      <td className={`whitespace-nowrap px-3 py-2 text-right tabular-nums ${sign > 0 ? "text-[var(--color-success)]" : "text-[var(--color-warning)]"}`}>
                         {sign > 0 ? "+" : "−"} {fmtCurrency(a.amount)}
                       </td>
-                      <td className="px-3 py-2 text-right text-xs tabular-nums text-[var(--color-muted)]">
+                      <td className="whitespace-nowrap px-3 py-2 text-right text-xs tabular-nums text-[var(--color-muted)]">
                         {paid > 0 ? fmtCurrency(paid) : "—"}
                       </td>
-                      <td className="px-3 py-2 text-xs">
+                      <td className="max-w-[12rem] px-3 py-2 text-xs">
                         {(() => {
                           const who = attribution.map.get(a.id);
                           if (!who?.created) return <span className="text-[var(--color-muted)]">{loadingWho ? "…" : "—"}</span>;
                           return (
                             <>
-                              <div className="break-all">{whoLabel(who.created)}</div>
+                              <div className="truncate" title={who.created.by || undefined}>{whoLabel(who.created)}</div>
                               <div className="text-[var(--color-muted)]">{shortWhen(who.created.at)}</div>
                               {who.lastEdit && (
-                                <div className="text-[var(--color-muted)]">
+                                <div className="truncate text-[var(--color-muted)]" title={who.lastEdit.by || undefined}>
                                   editado por {whoLabel(who.lastEdit)} · {shortWhen(who.lastEdit.at)}
                                 </div>
                               )}
@@ -224,7 +226,7 @@ export default function WorkerAdvancesModal({ workerKeys, name, rut, items, onCl
                           );
                         })()}
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="whitespace-nowrap px-3 py-2">
                         <span className={`inline-block rounded-full px-2 py-0.5 text-xs ${STATUS_CLASS[status]}`}>
                           {STATUS_LABEL[status]}
                         </span>

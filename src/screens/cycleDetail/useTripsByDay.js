@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 import { useToast } from "../../contexts/ToastContext";
 import { tripsService } from "../../services/transportsService";
+import { attempt } from "../../utils/attempt";
 
 // Las vueltas del ciclo mientras el modal de transportes está abierto: las
 // lee al abrir, las agrupa por día con su total, y guarda o elimina la vuelta
 // que se edita. `days` son los días del ciclo, que aparecen aunque no tengan
 // vueltas.
 export function useTripsByDay({ open, cycle, faena, subfaena, days }) {
-  "use no memo";
   const toast = useToast();
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -18,29 +19,28 @@ export function useTripsByDay({ open, cycle, faena, subfaena, days }) {
   const reload = async () => {
     if (!cycle?.id) return;
     setLoading(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const list = await tripsService.listByCycle(cycle.id);
       list.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
       setTrips(list);
-    } finally {
-      setLoading(false);
-    }
+    });
+    setLoading(false);
+    if (err) throw err;
   };
 
-  useEffect(() => {
-    if (open) {
-      reload();
-      setSelectedDate((d) => d || days[0] || null);
-    } else {
-      setEditing(null);
-      setConfirmDel(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, cycle?.id]);
+  // Al cerrar se descarta la vuelta en edición; abierto, siempre hay un día
+  // elegido.
+  if (useValuesChanged([open, cycle?.id], { onMount: true }) && !open) {
+    setEditing(null);
+    setConfirmDel(null);
+  }
+  if (open && !selectedDate && days[0]) setSelectedDate(days[0]);
 
+  // Las vueltas se leen al abrir y al cambiar de ciclo.
+  const reloadWhenOpen = useEffectEvent(() => reload());
   useEffect(() => {
-    if (open && !selectedDate && days[0]) setSelectedDate(days[0]);
-  }, [open, days, selectedDate]);
+    if (open) reloadWhenOpen();
+  }, [open, cycle?.id]);
 
   const tripsByDate = useMemo(() => {
     const m = new Map();
@@ -81,13 +81,12 @@ export function useTripsByDay({ open, cycle, faena, subfaena, days }) {
 
   const handleDelete = async () => {
     if (!confirmDel) return;
-    try {
+    const { error: err } = await attempt(async () => {
       await tripsService.remove(confirmDel.id);
       setConfirmDel(null);
       await reload();
-    } catch (err) {
-      toast.error(err.message || "Error al eliminar");
-    }
+    });
+    if (err) toast.error(err.message || "Error al eliminar");
   };
 
   return {

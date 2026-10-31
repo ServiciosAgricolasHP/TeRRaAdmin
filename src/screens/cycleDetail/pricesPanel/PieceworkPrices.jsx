@@ -5,7 +5,6 @@ import { useCycleDetail } from "../CycleDetailContext";
 
 // Barra de precios de trato
 export function PieceworkPrices() {
-  "use no memo";
   const {
     activeLabor,
     askApplyFloorToAll,
@@ -106,12 +105,10 @@ export function PieceworkPrices() {
                       <input
                         type="number" min="0" disabled={readOnly}
                         value={getPriceInputValue(activeLabor.id, d, t.key, true)}
-                        onChange={(e) =>
-                          setLocalPriceInputs((prev) => ({
-                            ...prev,
-                            [inputKey(activeLabor.id, d, t.key)]: e.target.value,
-                          }))
-                        }
+                        onChange={(e) => {
+                          const key = inputKey(activeLabor.id, d, t.key);
+                          setLocalPriceInputs((prev) => ({ ...prev, [key]: e.target.value }));
+                        }}
                         onBlur={() => handlePriceBlur(activeLabor.id, d, t.key, true)}
                         placeholder="precio"
                         className="w-20 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-0.5 text-right text-[10px] tabular-nums outline-none focus:border-[var(--color-accent)] disabled:opacity-50"

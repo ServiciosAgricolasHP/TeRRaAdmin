@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import Modal, { ModalCloseButton } from "../Modal";
 import { hasChanges } from "../../utils/formChanges";
+import { attempt } from "../../utils/attempt";
 
 // El alias es editable por el propio usuario y no por un admin: es cómo quiere
 // que lo nombren los documentos que firma, no un permiso.
@@ -12,12 +13,12 @@ export default function ProfileModal({ onClose }) {
 
   const save = async () => {
     setBusy(true);
-    try {
+    const { error } = await attempt(async () => {
       await updateAlias(alias);
       onClose();
-    } finally {
-      setBusy(false);
-    }
+    });
+    setBusy(false);
+    if (error) throw error;
   };
 
   return (

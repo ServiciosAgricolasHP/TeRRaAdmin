@@ -1,14 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useEffectEvent } from "react";
 import { jobsService, subjobsService, cyclesService, workersService, listWorkdaysByCycles, workdaysService } from "../../services";
 import { payrollsService } from "../../services/payrollsService";
 import { cycleStatsOf } from "../../utils/payrollCycles";
 import { WORKERS_LIST } from "../../services/workersService";
+import { attempt } from "../../utils/attempt";
 
 // Lo que usa la pantalla Nómina: faenas, subfaenas, ciclos, trabajadores, las
 // nóminas y lo pendiente de cada ciclo activo. `load` lo relee (con la caché) y
 // `refresh` lo relee sin ella.
 export function usePayrollData({ toast }) {
-  "use no memo";
   const [loading, setLoading] = useState(true);
   const [jobs, setJobs] = useState([]);
   const [subjobs, setSubjobs] = useState([]);
@@ -25,7 +25,7 @@ export function usePayrollData({ toast }) {
 
   const load = async () => {
     setLoading(true);
-    try {
+    const { value, error: err } = await attempt(async () => {
       const [f, s, c, w, p] = await Promise.all([
         jobsService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
         subjobsService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
@@ -47,16 +47,15 @@ export function usePayrollData({ toast }) {
       const stats = cycleStatsOf(c, w, wds);
       setCycleStats(stats);
       return { cycles: c, stats, payrolls: p };
-    } catch (err) {
-      toast.error("No se pudo cargar la nómina: " + (err.message || err));
-    } finally {
-      setLoading(false);
-    }
+    });
+    if (err) toast.error("No se pudo cargar la nómina: " + (err.message || err));
+    setLoading(false);
+    return value;
   };
 
+  const loadOnMount = useEffectEvent(() => load());
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadOnMount();
   }, []);
 
   // Relee desde Firestore sin la caché local (memoria y localStorage): invalida
@@ -65,7 +64,7 @@ export function usePayrollData({ toast }) {
   const refresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
-    try {
+    const { error: err } = await attempt(async () => {
       jobsService.invalidate();
       subjobsService.invalidate();
       cyclesService.invalidate();
@@ -74,12 +73,12 @@ export function usePayrollData({ toast }) {
       payrollsService.invalidate();
       await load();
       toast.success("Datos actualizados");
-    } catch (err) {
+    });
+    if (err) {
       console.error(err);
       toast.error("No se pudo recargar.");
-    } finally {
-      setRefreshing(false);
     }
+    setRefreshing(false);
   };
   return {
     cycles,

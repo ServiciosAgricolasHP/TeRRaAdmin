@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { toTitleName } from "../../utils/textCase";
 import { costCentersService } from "../../services";
+import { attempt } from "../../utils/attempt";
 
 // Crear, editar y eliminar centros de costo. Eliminar el centro que se está
 // viendo vuelve a la vista vacía.
 export function useCostCenterCatalog({ onChanged, selectedId, setSelectedId, toast }) {
-  "use no memo";
   // --- CRUD del catálogo ---
   const [editing, setEditing] = useState(null); // { id?, label, emoji }
   const [busy, setBusy] = useState(false);
@@ -20,7 +20,7 @@ export function useCostCenterCatalog({ onChanged, selectedId, setSelectedId, toa
       return;
     }
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const payload = { label: toTitleName(editing.label), emoji: (editing.emoji || "").trim() || null };
       if (editing.id) {
         await costCentersService.update(editing.id, payload);
@@ -29,23 +29,23 @@ export function useCostCenterCatalog({ onChanged, selectedId, setSelectedId, toa
       }
       setEditing(null);
       await onChanged();
-    } finally {
-      setBusy(false);
-    }
+    });
+    setBusy(false);
+    if (err) throw err;
   };
 
   const remove = (c) => setConfirmDelete(c);
   const doRemove = async () => {
     if (!confirmDelete) return;
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await costCentersService.remove(confirmDelete.id);
       if (selectedId === confirmDelete.id) setSelectedId("");
       await onChanged();
       setConfirmDelete(null);
-    } finally {
-      setBusy(false);
-    }
+    });
+    setBusy(false);
+    if (err) throw err;
   };
   return {
     busy,

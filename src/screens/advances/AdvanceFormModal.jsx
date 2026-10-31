@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   advancesService,
   ADVANCE_TYPES,
@@ -19,6 +19,8 @@ import { useToast } from "../../contexts/ToastContext";
 import { toTitleName } from "../../utils/textCase";
 import { fmtCurrency } from "../../utils/format";
 import { localIsoDate } from "../../utils/dates";
+import { attempt } from "../../utils/attempt";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 
 const todayStr = () => localIsoDate();
 
@@ -68,18 +70,16 @@ export default function AdvanceFormModal({ open, item, items = [], onClose, onSa
   // Con el buscador abierto se elige a otra persona.
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  useEffect(() => {
-    if (open) {
-      setForm(advanceForm(item));
-      setPickerOpen(false);
-    }
-  }, [open, item]);
+  if (useValuesChanged([open, item], { onMount: true }) && open) {
+    setForm(advanceForm(item));
+    setPickerOpen(false);
+  }
 
   const [dupConfirm, setDupConfirm] = useState(null);
 
   const doSave = async (newAmount) => {
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       // Con pagos aplicados, el estado se recalcula: si el monto queda en lo
       // pagado o menos, "applied" (saldo perdonado); si no, "partial".
       let status = item?.status || "pending";
@@ -111,9 +111,9 @@ export default function AdvanceFormModal({ open, item, items = [], onClose, onSa
       else await advancesService.create(data);
       setDupConfirm(null);
       onSaved();
-    } finally {
-      setBusy(false);
-    }
+    });
+    setBusy(false);
+    if (err) throw err;
   };
 
   const submit = async () => {
@@ -141,9 +141,10 @@ export default function AdvanceFormModal({ open, item, items = [], onClose, onSa
     if (dupes.length === 0) { await doSave(newAmount); return; }
 
     // El email de quien lo creó no está en el doc del anticipo (solo el uid);
-    // sale del log, que se puede pedir por trabajador.
+    // sale del log, que se puede pedir por trabajador. Si no se puede leer, el
+    // aviso sale igual, sin decir quién lo creó.
     const byId = new Map();
-    try {
+    await attempt(async () => {
       const chunks = await Promise.all(
         [...keys].map((k) =>
           logsService.list({ wheres: [["entity", "==", "advance"], ["meta.workerRut", "==", k]] }).catch(() => []),
@@ -152,7 +153,7 @@ export default function AdvanceFormModal({ open, item, items = [], onClose, onSa
       for (const row of chunks.flat()) {
         if (row.action === "create" && row.entityId) byId.set(row.entityId, row.email || row.uid);
       }
-    } catch { /* sin atribución el aviso igual sirve */ }
+    });
 
     const lineas = dupes.map((d) => {
       const meta = advanceTypeMeta(d.type);
@@ -362,7 +363,7 @@ export default function AdvanceFormModal({ open, item, items = [], onClose, onSa
       message={dupConfirm?.message || ""}
       confirmLabel="Crear igual"
       busy={busy}
-      onConfirm={() => doSave(dupConfirm.amount)}
+      onConfirm={() => dupConfirm && doSave(dupConfirm.amount)}
       onCancel={() => setDupConfirm(null)}
     />
     </>

@@ -4,6 +4,7 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import { useToast } from "../../contexts/ToastContext";
 import { fmtCurrency } from "../../utils/format";
 import { todayIso } from "./docs";
+import { attempt } from "../../utils/attempt";
 
 // Tipos de pago que se pueden registrar en una factura. Cada entrada del array
 // `payments` tiene un `kind` que sirve para categorizar (auditoría) y para
@@ -73,24 +74,22 @@ export function PaymentsSection({ dteDoc, payments, amountPaid, balance, onSaveP
       recordedAt: new Date().toISOString(),
     };
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await onSavePayments([...payments, entry]);
       setAdding(false);
-    } finally {
-      setBusy(false);
-    }
+    });
+    setBusy(false);
+    if (err) throw err;
   };
 
   const remove = (id) => setConfirmDeleteId(id);
   const doRemove = async () => {
     if (!confirmDeleteId) return;
     setBusy(true);
-    try {
-      await onSavePayments(payments.filter((p) => p.id !== confirmDeleteId));
-    } finally {
-      setBusy(false);
-      setConfirmDeleteId(null);
-    }
+    const { error: err } = await attempt(() => onSavePayments(payments.filter((p) => p.id !== confirmDeleteId)));
+    setBusy(false);
+    setConfirmDeleteId(null);
+    if (err) throw err;
   };
 
   const fullyPaid = balance <= 0.01;

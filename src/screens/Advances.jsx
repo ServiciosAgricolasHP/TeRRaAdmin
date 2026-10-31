@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import {
   advancesService,
   ADVANCE_TYPES,
@@ -21,6 +21,7 @@ import { localIsoDate } from "../utils/dates";
 import ScreenLoader from "../components/ScreenLoader";
 import { fmtCurrency } from "../utils/format";
 import AdvanceFormModal from "./advances/AdvanceFormModal";
+import { attempt } from "../utils/attempt";
 
 const STATUS_LABEL = {
   pending: "Pendiente",
@@ -69,7 +70,7 @@ export default function Advances() {
   // les faltan campos.
   const load = async () => {
     setLoading(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const list = await advancesService.list({
         order: ["date", "desc"],
         cache: true,
@@ -77,18 +78,18 @@ export default function Advances() {
         ttl: 5 * 60 * 1000,
       });
       setItems(list);
-    } catch (err) {
+    });
+    if (err) {
       console.error("Advances load failed:", err);
       toast.error("No se pudieron cargar los anticipos: " + (err.message || err));
       setItems([]);
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   };
 
+  const loadOnMount = useEffectEvent(() => load());
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadOnMount();
   }, []);
 
   const filtered = useMemo(() => {

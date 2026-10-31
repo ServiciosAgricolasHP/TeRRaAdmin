@@ -39,7 +39,6 @@ import { usePayrollDeletion } from "./payroll/usePayrollDeletion";
 import ScreenLoader from "../components/ScreenLoader";
 
 export default function Payroll() {
-  "use no memo";
   const toast = useToast();
   const { user, isAdmin } = useAuth();
   const { config: payrollConfig, bankFormat, currentBankFormat, save: savePayrollConfig } = usePayrollConfig();

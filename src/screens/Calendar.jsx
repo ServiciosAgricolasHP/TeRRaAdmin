@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useEffectEvent } from "react";
 import { cyclesService, jobsService, subjobsService, workersService } from "../services";
 import { useCarriers } from "../contexts/CarriersContext";
 import { useCatalogs } from "../contexts/CatalogsContext";
@@ -13,6 +13,8 @@ import { monthBounds, isWeekendDate } from "./calendar/helpers";
 import { Legend } from "./calendar/Legend";
 import { MonthGrid } from "./calendar/MonthGrid";
 import { WORKERS_LIST } from "../services/workersService";
+import { attempt } from "../utils/attempt";
+import { readStoredJson, writeStoredJson } from "../utils/browserStorage";
 
 // ============================================================================
 // CALENDARIO DE PRODUCCIÓN
@@ -119,15 +121,11 @@ export default function Calendar() {
   // cambia la consulta a Firestore: oculta sus barras en la grilla, el modal
   // del día y la impresión; la leyenda las muestra tachadas.
   const [excludedSubjobs, setExcludedSubjobs] = useState(() => {
-    try {
-      const raw = localStorage.getItem("calendar.excludedSubfaenas");
-      return raw ? new Set(JSON.parse(raw)) : new Set();
-    } catch { return new Set(); }
+    const saved = readStoredJson("calendar.excludedSubfaenas", []);
+    return new Set(Array.isArray(saved) ? saved : []);
   });
   useEffect(() => {
-    try {
-      localStorage.setItem("calendar.excludedSubfaenas", JSON.stringify([...excludedSubjobs]));
-    } catch { /* noop */ }
+    writeStoredJson("calendar.excludedSubfaenas", [...excludedSubjobs]);
   }, [excludedSubjobs]);
   const toggleSubjobFilter = (id) => {
     setExcludedSubjobs((prev) => {
@@ -151,23 +149,25 @@ export default function Calendar() {
   // servicios. No suma al contador de lecturas del mes.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const [c, f, s, w] = await Promise.all([
-          cyclesService.list({ cache: true, ttl: 5 * 60 * 1000 }),
-          jobsService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
-          subjobsService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
-          workersService.list(WORKERS_LIST),
-        ]);
-        if (cancelled) return;
-        setCycles(c);
-        setJobs(f);
-        setSubjobs(s);
-        setWorkers(w);
-      } catch (err) {
-        if (!cancelled) setError(err.message || String(err));
+    attempt(() =>
+      Promise.all([
+        cyclesService.list({ cache: true, ttl: 5 * 60 * 1000 }),
+        jobsService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
+        subjobsService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
+        workersService.list(WORKERS_LIST),
+      ]),
+    ).then(({ value, error: err }) => {
+      if (cancelled) return;
+      if (err) {
+        setError(err.message || String(err));
+        return;
       }
-    })();
+      const [c, f, s, w] = value;
+      setCycles(c);
+      setJobs(f);
+      setSubjobs(s);
+      setWorkers(w);
+    });
     return () => {
       cancelled = true;
     };
@@ -179,7 +179,7 @@ export default function Calendar() {
     setLoading(true);
     setError("");
     setFromCache(false);
-    try {
+    const { error: err } = await attempt(async () => {
       const { start, end } = monthBounds(y, m);
       let wds = forceFresh ? null : readMonthCache(y, m);
       if (wds) {
@@ -195,15 +195,16 @@ export default function Calendar() {
       // Las vueltas se leen siempre frescas, sin caché: son pocas.
       const ts = await fetchTripsInRange(start, end);
       setTrips(ts);
-    } catch (err) {
-      setError(err.message || String(err));
-    } finally {
-      setLoading(false);
-    }
+    });
+    if (err) setError(err.message || String(err));
+    setLoading(false);
   };
 
+  // `useEffectEvent` lee la versión actual de `loadMonth` sin volver a correr el
+  // efecto.
+  const loadShownMonth = useEffectEvent(() => loadMonth(year, month));
   useEffect(() => {
-    loadMonth(year, month);
+    loadShownMonth();
   }, [year, month]);
 
   // ─── Índices y agregaciones ──────────────────────────────────────────────
@@ -268,11 +269,10 @@ export default function Calendar() {
       e.workers.add(wd.workerId || wd.workerRut);
       e.harvestQty += Number(wd.qty) || 0;
       e.amount += Number(wd.amount) || 0;
-      // jornadas: qty en tratoHE y 1 por workday en las labores al día; cosecha y trato no suman
+      // jornadas: 1 por workday en tratoHE y en las labores al día; cosecha y trato no suman
       const labor = (cycle.labors || []).find((l) => l.id === wd.laborId);
       const t = labor?.type;
-      if (t === "tratoHE") e.workdayCount += Number(wd.qty) || 0;
-      else if (t === "main" || t === "supervision" || t === "extra") e.workdayCount += 1;
+      if (t === "tratoHE" || t === "main" || t === "supervision" || t === "extra") e.workdayCount += 1;
     }
     // Convierte los Sets en conteos y cada día en un array.
     const out = {};

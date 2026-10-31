@@ -4,6 +4,7 @@ import { isCheque, partialPaidOf, paidLabel, remainingOf } from "../../utils/com
 import { fmtCurrency } from "../../utils/format";
 import { fmtDate } from "./helpers";
 import { btnCls, primaryCls, labelCls, inputCls } from "./styles";
+import { attempt } from "../../utils/attempt";
 
 // Marcar pagado (con la fecha y lo que se pagó de verdad) o reprogramar algo
 // aplazado o protestado (con la fecha nueva).
@@ -20,11 +21,9 @@ export function DateActionModal({ action, onChange, onCancel, onConfirm }) {
 
   const confirm = async () => {
     setBusy(true);
-    try {
-      await onConfirm({ item, mode, date, extra });
-    } finally {
-      setBusy(false);
-    }
+    const { error: err } = await attempt(() => onConfirm({ item, mode, date, extra }));
+    setBusy(false);
+    if (err) throw err;
   };
 
   return (

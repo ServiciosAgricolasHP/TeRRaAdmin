@@ -5,7 +5,6 @@ import { useWorkerEdit } from "./WorkerEditContext";
 
 // Día de un trabajador de sueldo mensual: solo la asistencia, en $0.
 export function AttendanceDay({ d }) {
-  "use no memo";
   const { readOnly, toggleAttendance } = useCycleDetail();
   const { row, workerRut } = useWorkerEdit();
   const present = !!row[`${d}__present`];

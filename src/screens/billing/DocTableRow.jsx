@@ -10,7 +10,6 @@ import { PaymentStatusSelect } from "./PaymentStatusSelect";
 // Una fila de la tabla del listado en el escritorio: los mismos datos que
 // `DocCard`, en columnas.
 export function DocTableRow({ d, cancellingByDocId, costCenters, kindTab, saveDocCostCenter, setDetailDoc, setPaymentStatus }) {
-  "use no memo";
   const counterpartyName = kindTab === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
   const rut = kindTab === "venta" ? d.rutReceptor : d.rutEmisor;
   const isNC = CREDIT_NOTE_TYPES.has(Number(d.tipo));

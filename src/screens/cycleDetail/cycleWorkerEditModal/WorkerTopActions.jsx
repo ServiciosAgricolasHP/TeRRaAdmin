@@ -6,7 +6,6 @@ import { useWorkerEdit } from "./WorkerEditContext";
 // grilla de escritorio (toggleMonthly / assignLeaderToWorker /
 // removeWorkerByRut en CycleDetail.jsx).
 export function WorkerTopActions() {
-  "use no memo";
   const {
     assignLeaderToWorker,
     isGroupedView,

@@ -4,7 +4,6 @@ import { useCycleDetail } from "../CycleDetailContext";
 
 // Barra de configuración por día de tratoHE
 export function OvertimeDayConfig() {
-  "use no memo";
   const {
     activeLabor,
     dayPrices,

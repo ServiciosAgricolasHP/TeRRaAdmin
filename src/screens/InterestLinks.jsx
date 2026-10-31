@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { interestLinksService } from "../services";
 import Modal, { ModalCloseButton } from "../components/Modal";
 import { hasChanges } from "../utils/formChanges";
@@ -6,6 +6,7 @@ import TextField from "../components/TextField";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { useToast } from "../contexts/ToastContext";
 import ScreenLoader from "../components/ScreenLoader";
+import { attempt } from "../utils/attempt";
 
 const SEED = { text: "De PDF a Word", url: "https://www.ilovepdf.com/es/pdf_a_word" };
 
@@ -31,7 +32,7 @@ export default function InterestLinks() {
 
   const load = async () => {
     setLoading(true);
-    try {
+    const { error: err } = await attempt(async () => {
       // Ordena por `order` y, sin ese campo, al final por texto: el orden
       // queda estable aunque algunos links no tengan posición guardada.
       const list = await interestLinksService.list();
@@ -42,15 +43,13 @@ export default function InterestLinks() {
         return String(a.text || "").localeCompare(String(b.text || ""));
       });
       setLinks(list);
-    } catch (err) {
-      toast.error("No se pudieron cargar los links: " + (err.message || err));
-    } finally {
-      setLoading(false);
-    }
+    });
+    if (err) toast.error("No se pudieron cargar los links: " + (err.message || err));
+    setLoading(false);
   };
+  const loadOnMount = useEffectEvent(() => load());
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadOnMount();
   }, []);
 
   const [dragIndex, setDragIndex] = useState(null);
@@ -59,8 +58,9 @@ export default function InterestLinks() {
   const onDragStart = (i) => (e) => {
     setDragIndex(i);
     e.dataTransfer.effectAllowed = "move";
-    // Firefox no inicia el arrastre sin datos.
-    try { e.dataTransfer.setData("text/plain", String(i)); } catch { /* noop */ }
+    // Firefox no inicia el arrastre sin datos; si el navegador no deja
+    // escribirlos, se arrastra igual.
+    attempt(() => e.dataTransfer.setData("text/plain", String(i)));
   };
   const onDragOver = (i) => (e) => {
     e.preventDefault();
@@ -87,7 +87,7 @@ export default function InterestLinks() {
       if (l.order !== idx) updates.push({ id: l.id, idx });
     });
     for (const u of updates) {
-      try { await interestLinksService.update(u.id, { order: u.idx }); } catch { /* noop */ }
+      await attempt(async () => { await interestLinksService.update(u.id, { order: u.idx }); });
     }
   };
 
@@ -104,40 +104,41 @@ export default function InterestLinks() {
 
   const submitForm = async (e) => {
     e.preventDefault();
+    if (!form) return;
     const text = String(form.data.text || "").trim();
     const url = normalizeUrl(form.data.url);
     if (!text || !url) return;
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       if (form.mode === "create") await interestLinksService.create({ text, url });
       else await interestLinksService.update(form.data.id, { text, url });
       setForm(null);
       await load();
-    } finally {
-      setBusy(false);
-    }
+    });
+    setBusy(false);
+    if (err) throw err;
   };
 
   const doDelete = async () => {
     if (!confirmDelete) return;
     setBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await interestLinksService.remove(confirmDelete.id);
       setConfirmDelete(null);
       await load();
-    } finally {
-      setBusy(false);
-    }
+    });
+    setBusy(false);
+    if (err) throw err;
   };
 
   const seedFirst = async () => {
     setSeedBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await interestLinksService.create({ text: SEED.text, url: SEED.url });
       await load();
-    } finally {
-      setSeedBusy(false);
-    }
+    });
+    setSeedBusy(false);
+    if (err) throw err;
   };
 
   return (

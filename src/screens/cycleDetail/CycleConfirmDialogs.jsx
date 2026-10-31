@@ -6,7 +6,6 @@ import { useCycleDetail } from "./CycleDetailContext";
 // a todos, quitar a una persona, una labor, un día o un combo, y cerrar o
 // reabrir el ciclo.
 export function CycleConfirmDialogs() {
-  "use no memo";
   const {
     activeLabor,
     applyFloorToAll,

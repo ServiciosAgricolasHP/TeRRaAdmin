@@ -12,7 +12,6 @@ import { MONTH_NAMES_ES } from "./docs";
 // balance de IVA (débito − crédito) y sus exportaciones. El año lo guarda la
 // pantalla, así se conserva al cambiar de pestaña.
 export function AnnualSummaryTab({ docs, selectedCompany, selectedCompanyId, setSummaryYear, summaryYear }) {
-  "use no memo";
   const summaryPrintRef = useRef(null);
 
   const { busy: summaryBusy, run, copy, download, print } = useCaptureActions();

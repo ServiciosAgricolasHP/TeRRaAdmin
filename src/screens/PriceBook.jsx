@@ -8,6 +8,7 @@ import HiddenFaenasModal from "./priceBook/HiddenFaenasModal";
 import EntryFormModal from "./priceBook/EntryFormModal";
 import { DATALIST_ID, fmtRange } from "./priceBook/helpers";
 import { writePriceBookXlsx } from "./priceBook/writePriceBookXlsx";
+import { attempt } from "../utils/attempt";
 
 // Registro contable de precios por faena y labor, independiente de las
 // faenas, ciclos y labores reales: acepta faenas "dummy" (solo un nombre, sin
@@ -37,7 +38,7 @@ export default function PriceBook() {
 
   const reload = async () => {
     setLoading(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const [fa, en, cfg] = await Promise.all([
         jobsService.list({ order: ["name", "asc"], cache: true }),
         priceBookService.list({ order: ["dateFrom", "desc"] }),
@@ -47,11 +48,9 @@ export default function PriceBook() {
       setEntries(en);
       setHiddenFaenaIds(new Set(cfg?.hiddenFaenaIds || []));
       setUnits(cfg?.units?.length ? cfg.units : DEFAULT_UNITS);
-    } catch (err) {
-      toast.error("No se pudo cargar el libro de precios: " + err.message);
-    } finally {
-      setLoading(false);
-    }
+    });
+    if (err) toast.error("No se pudo cargar el libro de precios: " + err.message);
+    setLoading(false);
   };
 
   // Carga al montar; `useEffectEvent` lee la versión actual de la función sin
@@ -104,27 +103,21 @@ export default function PriceBook() {
   const handleDelete = async () => {
     if (!confirmDelete) return;
     setDeleteBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await priceBookService.remove(confirmDelete.id);
       setConfirmDelete(null);
       toast.success("Entrada eliminada");
       await reload();
-    } catch (err) {
-      toast.error("No se pudo eliminar: " + (err.message || err));
-    } finally {
-      setDeleteBusy(false);
-    }
+    });
+    if (err) toast.error("No se pudo eliminar: " + (err.message || err));
+    setDeleteBusy(false);
   };
 
   const handleExport = async () => {
     setExporting(true);
-    try {
-      await writePriceBookXlsx(groups);
-    } catch (err) {
-      toast.error("No se pudo exportar: " + err.message);
-    } finally {
-      setExporting(false);
-    }
+    const { error: err } = await attempt(() => writePriceBookXlsx(groups));
+    if (err) toast.error("No se pudo exportar: " + err.message);
+    setExporting(false);
   };
 
   return (

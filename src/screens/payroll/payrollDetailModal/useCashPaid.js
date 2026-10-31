@@ -5,7 +5,6 @@ import { setCashPaidRuts } from "../../../services/payrollsService";
 // pagaron y el efectivo quedó debiéndose: se marca por persona o por grupo y
 // se guarda en `cashPaidRuts`.
 export function useCashPaid({ cash, payroll, toast }) {
-  "use no memo";
   // Entrega del efectivo persona por persona. Solo tiene sentido cuando las
   // transferencias ya se pagaron y el efectivo quedó debiéndose: antes de eso
   // no hay deuda que descontar, y después de pagar la nómina ya no importa.

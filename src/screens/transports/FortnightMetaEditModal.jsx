@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Modal, { ModalCloseButton } from "../../components/Modal";
 import { hasChanges } from "../../utils/formChanges";
+import { attempt } from "../../utils/attempt";
 
 export function FortnightMetaEditModal({ fortnight, onClose, onSave }) {
   const [name, setName] = useState(fortnight?.name || "");
@@ -11,11 +12,9 @@ export function FortnightMetaEditModal({ fortnight, onClose, onSave }) {
   const onSubmit = async () => {
     if (!name.trim()) return;
     setBusy(true);
-    try {
-      await onSave({ name, periodFrom: periodFrom || null, periodTo: periodTo || null, notes });
-    } finally {
-      setBusy(false);
-    }
+    const { error } = await attempt(() => onSave({ name, periodFrom: periodFrom || null, periodTo: periodTo || null, notes }));
+    setBusy(false);
+    if (error) throw error;
   };
   const dirty =
     !busy &&

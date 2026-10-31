@@ -1,0 +1,75 @@
+# Tipos de labor en detalle
+
+Definidos en `src/utils/laborTypes.js` (`LABOR_TYPES`). Viven ahí y no en `CycleDetail.jsx` porque el form de crear ciclo también necesita la lista: importarla desde la pantalla del ciclo arrastraría esa pantalla entera, ag-grid incluido, al chunk de Faenas, que es justo la pantalla que se abre al entrar a la app. Cada labor tiene un campo `type` que determina columnas del grid, entrada de datos y métricas:
+
+| Tipo | Etiqueta | En la grilla | Datos |
+|---|---|---|---|
+| `main` | Pago al día | Una columna por día, con el monto `$` | `workdays: { amount }` |
+| `supervision` | Supervisión | Igual que `main` | Igual |
+| `extra` | Adicional | Igual que `main` | Igual |
+| `cosecha` | Cosecha | Varias columnas por día (calidad × envase); vista detalle o resumen | `workdays: { qualityX, containerY, qty, amount }` |
+| `trato` | A trato | Varios precios por día (`t0`, `t1`…), cada uno `/unid` o `/día`; vista detalle o resumen | `dayPrices: { t0: { price, mode }, t1: ... }`, `workdays: { qty, amount, tiers? }` |
+| `tratoEtapas` | A trato por etapas | Un grupo por día, con una columna por cada etapa con precio o con producción ese día | `labors[].stages: [{ id, name, counts }]`, `dayPrices: { [stageId]: { price, mode } }`, `workdays: { stageId, qty, amount }` |
+| `tratoHE` | Jornadas con horas extras | Columnas D, HE, M, S, X y `$`; vista detalle o resumen | `workdays: { qty, overtimeHours, hasManejo, hasSupervision, extras, amount }` |
+
+`main` se muestra como **"al día"** en las métricas y las pestañas.
+
+Abajo, cómo guarda y calcula cada uno sus precios y montos.
+
+## trato — multi-precio por día
+
+- Precios almacenados como `dayPrices[laborId][date]` = `{ t0: { price, mode }, t1: ... }`.
+- Legacy `{ price, mode }` o `{ "0_0": { price, mode } }` se normaliza automáticamente al cargar.
+- Workdays con tiers: `wd.tiers = { t0: { qty, amount }, t1: ... }`. Helper `getTratoTierTotals(wd)` suma todos los tiers.
+- Toggle `/unid` (qty × precio) vs `/día` (precio fijo) por tier — botones segmentados.
+
+## tratoHE
+
+- `baseDayDefault`, `bonusManejo`, `bonusSupervision`, `overtimeRate` en la definición de labor.
+- Config por día: `{ price, mode: "normal"|"overtimeOnly", isHoliday }`.
+- `effectiveDayPrice` usa `||` (no `??`) para que `price: 0` herede del `baseDayDefault`.
+- **Jornadas:** el `qty` del workday es la base del día en pesos, no una cantidad. Cada workday cuenta como una jornada, también uno de solo horas extras: así cuentan el resumen del trabajador, el detalle pagado de Nómina, el Calendario y la grilla por trabajador del resumen del ciclo. En Cobrar del resumen del ciclo las jornadas del día son solo las con base (ver `docs/screens/summaries.md`).
+
+## cosecha
+
+- Combos = calidad × envase, almacenados como `dayPrices[laborId][date]` con claves `${x}_${y}`.
+- Catálogos globales para `qualities`, `containers` — editables via ⚙ Catálogos.
+- **Unidad mostrada en métricas** sale del envase del catálogo, no de un literal "kg". Helper `cosechaUnit(catalogs, containersSet)` en `utils/cosechaCombos.js`: si todos los workdays del scope usan el mismo envase (`Saco`, `Kilo`, `Caja`…) devuelve su label; si hay mezcla cae a `"Unid."`. Aplica en Calendar, CycleSummaryModal, WorkerSummaryModal y los comprobantes de Payroll.
+- **Unidad mostrada para trato** sale de `catalogs.tratoTypes` via `tratoTypeLabel(catalogs, labor.tratoType)` — ej. una labor a trato configurada como "Poda" muestra `4.737 poda` en vez de `4.737 trato`. Si una grilla mezcla varios `tratoType` en el mismo ciclo cae al genérico "Trato".
+
+## tratoEtapas — qué ve el trabajador vs qué cuenta la empresa
+
+`counts` decide qué unidades se le **facturan al cliente**: una unidad física se
+cobra una sola vez, por etapas o como completo. **No decide qué produjo la
+persona.**
+
+- **Vistas del trabajador** (resumen de producción, comprobante de efectivo,
+  detalle de pago): muestran el `qty` de **todas** las etapas, con desglose por
+  etapa y **solo el nombre** — nunca el rótulo `(no cuenta)`. Es una distinción
+  de facturación de la empresa, y al lado de la producción de alguien se lee
+  como que su trabajo no vale. El rótulo del helper vive en `stageTag`.
+- **Vistas de la empresa**: ahí `counts` manda y se rotula. `getEtapasTotals`
+  devuelve `unidades` solo de las etapas que cuentan; el resumen por faena de
+  `CycleSummaryModal` (`formatRowMetric`) marca `(no cuenta)`; el tooltip de la
+  grilla del ciclo también. Igual el conteo de personas del
+  `ProductionSummaryModal` y el resumen por día de la barra de precios.
+
+La regla vive en un solo lugar, los helpers `describeStage` y `stageTag`
+(`utils/tratoEtapas.js`), que usan todas estas vistas.
+
+## Piso (bono para trato/cosecha)
+
+Bono adicional configurable por día para trato y cosecha. Pensado para compensar a los trabajadores cuando la producción del día fue baja. Siempre **suma** al monto de producción, no lo reemplaza (no es un floor en sentido estricto).
+
+- **Opt-in por día, sin default a nivel labor.** En el panel de Precios cada día tiene un botón discreto **"+ piso"** que solo está visible si el día no tiene piso configurado. Al click pasa a modo edición; al guardar muestra inline el monto con acciones ✎ editar / ✕ quitar. Mantiene la UI limpia: días sin piso no tienen ruido.
+- **Persistencia del default por día**: `dayPrices[laborId][date].piso: number`. Helper: `getDayPiso(dayPrices, laborId, date)`, `effectivePiso(labor, dayPrices, date)` (este último solo lee el día — no hay fallback a labor).
+- **Persistencia del workday**: workday separado con `comboKey: "_piso"` y `pisoOnly: true`. `qty: 0`, `amount: pisoAmount`. Un doc por (worker × date × labor). Hereda el `payrollId` como cualquier otro workday — al borrar la nómina, queda disponible nuevamente.
+- **Asignar el piso a todo un día de una**: junto al monto del piso, en el panel de Precios, un botón **👥 a todos (N)** con el contador de quiénes tienen producción y todavía no tienen el bono. **Pide confirmación** con el monto por persona, cuántas son y el total — es plata que se suma a cada una. Escribe exactamente los mismos workdays `_piso` que apretar los toggles uno por uno; queda deshabilitado cuando no falta nadie.
+- **Quién cuenta como "tiene producción"**: `pisoTargets(workdaysDeLaLabor, date)` en `utils/cosechaCombos.js`. Alcanza con que **exista** el workday, sin mirar `qty` ni `amount` — es el mismo criterio que habilita el toggle de la grilla, y un día en cero es justamente el caso que el piso compensa. Que las dos vías usen la misma regla es lo que hace que el botón sea equivalente a apretar todos los toggles habilitados; si divergen, el botón hace algo que no se puede replicar a mano. Un piso sin `pisoOnly` se detecta por la clave del mapa.
+- **Quitar el piso del día se lleva también los bonos ya asignados.** El ✕ (y dejar el monto en cero) **pide confirmación** con cuántos bonos se eliminan y por cuánto.
+- **Los bonos que ya se llevó una nómina no se tocan**, ni por el ✕ ni por el toggle individual: borrar un workday con `payrollId` le descuadra el total a algo que ya se pagó. El diálogo dice cuántos quedan en pie y por qué; el toggle avisa por toast. El reparto lo hace `pisoAssigned(workdaysDeLaLabor, date)` → `{ libres, liquidados }`. Es el único chequeo de `payrollId` de la pantalla: para todo lo demás, el corte es el cierre del ciclo (ver "Ciclo cerrado = congelado" en `docs/screens/jobs.md`).
+- **El piso NO se bloquea en labores sincronizadas por QR**: es un bono manual, vive en un workday aparte (`comboKey: "_piso"`) y la sincronización escribe combos de producción, así que nunca lo pisa.
+- **UI grilla**: la columna "P" 🪙 al final del día solo se renderiza cuando ese día tiene piso configurado en `dayPrices` **o** algún trabajador tiene un workday `pisoOnly` para ese día (`daysWithFloor`, calculado con `daysWithFloorOf` de `utils/cycleMetrics.js`). Días sin piso quedan sin columna extra. Click en el toggle crea/borra el workday `_piso` con el monto efectivo. El toggle está deshabilitado si no hay workday de producción todavía para ese (worker, date).
+- **Cálculo**: total del trabajador = producción + suma de pisoAmount. Reflejado en row.total del grid, métricas de la labor, CycleSummaryModal, WorkerSummaryModal, drawer del Calendar, comprobantes de Payroll.
+- **En Cobrar (CycleSummaryModal mode=cobrar)**: el piso NO se factura al cliente (es bono al trabajador). Se muestra en la tabla pero no entra al subtotal a cobrar.
+- **En `aggregateWorkerAmounts`**: el monto del piso fluye naturalmente porque `wd.amount` ya carga el valor; no requiere lógica especial.

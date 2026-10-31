@@ -2,13 +2,13 @@ import { useState } from "react";
 import { normalizeRut, parseSiiRcvCsv, extractRutFromFilename, buildDteDocId } from "../../utils/siiCsvParser";
 import { importDteRecords } from "../../services/dteImportService";
 import { auth } from "../../firebase";
+import { attempt } from "../../utils/attempt";
 
 // Importar el RCV del SII: elegir la empresa y los archivos, leer cada uno
 // (ventas o compras según su encabezado, con aviso si el RUT del nombre no es
 // el de la empresa), excluir los que no van y confirmar. Nada se escribe hasta
 // confirmar.
 export function useRcvImport({ companies, companiesById, loadAll, selectedCompanyId, toast }) {
-  "use no memo";
   // Modales
   const [importPreview, setImportPreview] = useState(null);
   const [importCompanyId, setImportCompanyId] = useState("");
@@ -38,7 +38,7 @@ export function useRcvImport({ companies, companiesById, loadAll, selectedCompan
     const companyRutNormalized = company?.rut ? normalizeRut(company.rut) : "";
     const parsedFiles = [];
     for (const file of files) {
-      try {
+      const { error: err } = await attempt(async () => {
         const buffer = await file.arrayBuffer();
         const parsed = parseSiiRcvCsv(buffer, { companyRut: company?.rut || "" });
         const detectedRut = extractRutFromFilename(file.name);
@@ -68,7 +68,8 @@ export function useRcvImport({ companies, companiesById, loadAll, selectedCompan
           rutMismatch,
           excluded: false, // el usuario puede excluir archivos sospechosos
         });
-      } catch (err) {
+      });
+      if (err) {
         parsedFiles.push({
           name: file.name,
           kind: null,
@@ -105,7 +106,7 @@ export function useRcvImport({ companies, companiesById, loadAll, selectedCompan
   const confirmImport = async () => {
     if (!importPreview) return;
     setImporting(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const allRecords = importPreview.files
         .filter((f) => !f.excluded && !f.parseFailed)
         .flatMap((f) => f.records);
@@ -129,11 +130,9 @@ export function useRcvImport({ companies, companiesById, loadAll, selectedCompan
       setImportPreview(null);
       setImportCompanyId("");
       await loadAll();
-    } catch (err) {
-      toast.error("Error al guardar: " + (err.message || String(err)));
-    } finally {
-      setImporting(false);
-    }
+    });
+    if (err) toast.error("Error al guardar: " + (err.message || String(err)));
+    setImporting(false);
   };
   return {
     confirmImport,

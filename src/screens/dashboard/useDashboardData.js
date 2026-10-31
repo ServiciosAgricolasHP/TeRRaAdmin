@@ -9,12 +9,12 @@ import { useToast } from "../../contexts/ToastContext";
 import { fmtMonthKey } from "../../utils/format";
 import { localIsoDate } from "../../utils/dates";
 import { commitmentsWeekOf, lastMonthKeys, monthRangeOfKey } from "../../utils/dashboard";
+import { attempt } from "../../utils/attempt";
 
 // Lo que lee el Dashboard al abrirse: faenas, ciclos, nóminas, quincenas y
 // resúmenes de transporte, el conteo de jornadas por mes y los Cheques y pagos
 // de la semana. `reads` suma las lecturas de las tres cargas.
 export function useDashboardData() {
-  "use no memo";
   const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [reads, setReads] = useState(0);
@@ -36,7 +36,7 @@ export function useDashboardData() {
     let cancelled = false;
     (async () => {
       const keys = lastMonthKeys(12);
-      try {
+      const { error: err } = await attempt(async () => {
         const counts = await Promise.all(
           keys.map((k) => {
             const { start, end } = monthRangeOfKey(k);
@@ -46,9 +46,8 @@ export function useDashboardData() {
         if (cancelled) return;
         setWorkdayMonths(keys.map((k, i) => ({ key: k, label: fmtMonthKey(k), workdayCount: counts[i] })));
         setCountReads(keys.length);
-      } catch (err) {
-        if (!cancelled) console.error("[dashboard] conteo de jornadas:", err);
-      }
+      });
+      if (err && !cancelled) console.error("[dashboard] conteo de jornadas:", err);
     })();
     return () => { cancelled = true; };
   }, []);
@@ -77,7 +76,7 @@ export function useDashboardData() {
     let cancelled = false;
     (async () => {
       setLoading(true);
-      try {
+      const { error: err } = await attempt(async () => {
         // Los resúmenes de transporte se traen siempre por 12 meses (la ventana
         // más larga que se puede pedir) y todo lo que depende del período se
         // filtra en cliente. Así cambiar de período no cuesta ninguna lectura,
@@ -99,18 +98,15 @@ export function useDashboardData() {
         setFortnights(q);
         setPayments(pays);
         setReads(f.reads + c.reads + p.reads + q.length + pays.length);
-      } catch (err) {
-        if (!cancelled) {
-          console.error("[dashboard] carga:", err);
-          toast.error("No se pudo cargar el dashboard: " + (err.message || err));
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+      });
+      if (err && !cancelled) {
+        console.error("[dashboard] carga:", err);
+        toast.error("No se pudo cargar el dashboard: " + (err.message || err));
       }
+      if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [toast]);
 
   return {
     commitmentsWeek,

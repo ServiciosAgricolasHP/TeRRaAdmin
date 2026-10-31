@@ -12,7 +12,6 @@ const withCurrentRuts = (items, rutOf) =>
 // Las descargas de una nómina: el Excel completo, solo la hoja del banco (en el
 // formato vigente, que se relee en cada descarga) y el JSON.
 export function usePayrollDownloads({ currentBankFormat, cycles, rutOf, toast }) {
-  "use no memo";
   // El formato del archivo del banco se relee en cada descarga: sin leerlo no
   // se descarga.
   const bankFormatForDownload = async () => {

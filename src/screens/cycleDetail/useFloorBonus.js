@@ -1,11 +1,11 @@
 import { useState, useMemo } from "react";
 import { normalizeDayPricesEntry, pisoAssigned, workdayDocId, PISO_COMBO_KEY, workdayMapKey, pisoTargets, effectivePiso } from "../../utils/cosechaCombos";
+import { attempt } from "../../utils/attempt";
 
 // Piso del día (bono para trato y cosecha): el monto de cada día, el bono de
 // cada persona, asignarlo a todos los que tienen producción y quitarlo con sus
 // bonos libres.
 export function useFloorBonus({ activeLabor, cycle, cycleWrite, dayPrices, id, setDayPrices, setWorkdaysByLabor, toast, wdWrite, workdaysByLabor, workerIdFor }) {
-  "use no memo";
   // Confirmación del piso masivo: { laborId, date, ruts, amount }.
   const [floorBulk, setFloorBulk] = useState(null);
   const [floorBulkBusy, setFloorBulkBusy] = useState(false);
@@ -44,7 +44,7 @@ export function useFloorBonus({ activeLabor, cycle, cycleWrite, dayPrices, id, s
     if (!floorRemove) return;
     const { laborId, date, libres } = floorRemove;
     setFloorRemoveBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const removedKeys = [];
       for (const wd of libres) {
         const docId = wd.id || workdayDocId(id, laborId, wd.workerRut, date, PISO_COMBO_KEY);
@@ -63,11 +63,9 @@ export function useFloorBonus({ activeLabor, cycle, cycleWrite, dayPrices, id, s
           ? `Piso del día quitado · ${removedKeys.length} bono${removedKeys.length === 1 ? "" : "s"} eliminado${removedKeys.length === 1 ? "" : "s"}.`
           : "Piso del día quitado.",
       );
-    } catch (err) {
-      toast.error("No se pudo quitar el piso: " + (err.message || err));
-    } finally {
-      setFloorRemoveBusy(false);
-    }
+    });
+    if (err) toast.error("No se pudo quitar el piso: " + (err.message || err));
+    setFloorRemoveBusy(false);
   };
 
   // Cuántos trabajadores con producción quedan sin piso, por día. Alimenta el
@@ -105,7 +103,7 @@ export function useFloorBonus({ activeLabor, cycle, cycleWrite, dayPrices, id, s
     if (!floorBulk) return;
     const { laborId, date, ruts, amount } = floorBulk;
     setFloorBulkBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const written = {};
       for (const rut of ruts) {
         const mapKey = workdayMapKey(rut, date, PISO_COMBO_KEY);
@@ -125,11 +123,9 @@ export function useFloorBonus({ activeLabor, cycle, cycleWrite, dayPrices, id, s
       }));
       setFloorBulk(null);
       toast.success(`Piso asignado a ${ruts.length} trabajador${ruts.length === 1 ? "" : "es"}.`);
-    } catch (err) {
-      toast.error("No se pudo asignar el piso: " + (err.message || err));
-    } finally {
-      setFloorBulkBusy(false);
-    }
+    });
+    if (err) toast.error("No se pudo asignar el piso: " + (err.message || err));
+    setFloorBulkBusy(false);
   };
 
   // Toggle del piso de un trabajador en un día: crea o borra su workday `_piso`

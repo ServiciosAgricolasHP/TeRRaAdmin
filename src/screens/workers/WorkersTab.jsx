@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useState, useRef } from "react";
 import { AgGridReact } from "ag-grid-react";
 import { ModuleRegistry, AllCommunityModule } from "ag-grid-community";
 import "ag-grid-community/styles/ag-grid.css";
@@ -27,8 +27,16 @@ import { useEmployers } from "../../hooks/useEmployers";
 import { useEmploymentsFrom } from "../../hooks/useEmploymentsFrom";
 import { localIsoDate } from "../../utils/dates";
 import { EMPLOYMENT_FILTERS, activeByWorker, matchesEmploymentFilter } from "../../utils/employment";
+import { attempt } from "../../utils/attempt";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
+
+// Lo que muestra la columna Titular: el nombre solo si la cuenta es de otra
+// persona, y un aviso si ese nombre falta.
+function payeeColumnText(w) {
+  if (lacksPaymentName(w)) return "⚠ Falta el titular";
+  return paysToOtherPerson(w.rut || w.id, w.bankDetails?.[0]) ? w.paymentName : "";
+}
 
 // Mínimo de caracteres para que la búsqueda libre filtre la lista. El filtro
 // corre en cliente sobre la lista cacheada, y los filtros de líder y forma de
@@ -72,23 +80,21 @@ export default function WorkersTab() {
   const ensureAllForModal = async () => {
     if (allWorkers.length) return allWorkers;
     setCacheLoading(true);
-    try {
-      const list = await workersService.list(WORKERS_LIST);
-      setAllWorkers(list);
-      return list;
-    } catch (err) {
+    const { value: list, error: err } = await attempt(() => workersService.list(WORKERS_LIST));
+    setCacheLoading(false);
+    if (err) {
       toast.error("No se pudo cargar la lista de trabajadores: " + (err.message || err));
       return [];
-    } finally {
-      setCacheLoading(false);
     }
+    setAllWorkers(list);
+    return list;
   };
 
   // Precarga la lista al montar, para que el filtro funcione desde el primer
   // carácter. Cuesta una lectura por trabajador una vez por TTL.
+  const loadOnMount = useEffectEvent(() => ensureAllForModal());
   useEffect(() => {
-    ensureAllForModal();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadOnMount();
   }, []);
 
   // Líderes únicos para el dropdown (extraídos del dataset completo cacheado).
@@ -148,10 +154,10 @@ export default function WorkersTab() {
   // Tras editar o eliminar, vuelve a tomar la lista de la caché, que
   // `workersService` ya actualizó en modo aditivo.
   const refreshCache = async () => {
-    try {
+    await attempt(async () => {
       const list = await workersService.list(WORKERS_LIST);
       setAllWorkers(list);
-    } catch { /* noop */ }
+    });
   };
 
   const onSaved = async () => {
@@ -173,31 +179,35 @@ export default function WorkersTab() {
   const copyRut = async (value, label = "RUT") => {
     const rut = formatRutForDisplay(value);
     if (!rut) return;
-    try {
+    const { error: err } = await attempt(async () => {
       await navigator.clipboard.writeText(rut);
       toast.success(`${label} ${rut} copiado`);
-    } catch {
-      toast.error(`No se pudo copiar el ${label}`);
-    }
+    });
+    if (err) toast.error(`No se pudo copiar el ${label}`);
   };
 
   const askDelete = (worker) => setConfirm({ worker });
   const doDelete = async () => {
     if (!confirm) return;
     setConfirm((c) => ({ ...c, busy: true }));
-    try {
+    const { error: err } = await attempt(async () => {
       await deleteWorkerSafe(confirm.worker);
       setConfirm(null);
       await refreshCache();
-    } catch (err) {
+    });
+    if (err) {
       toast.error(err.message || "Error al eliminar");
       setConfirm(null);
     }
   };
 
   // Las columnas se arman una vez: si cambiaran en cada render, ag-grid las
-  // volvería a aplicar. Sus botones usan las funciones del primer render; por
-  // eso "Editar" vuelve a pedir la lista de trabajadores, que sale de la caché.
+  // volvería a aplicar. Sus botones llaman a las acciones vigentes por
+  // `actionsRef`, que se pone al día después de cada render.
+  const actionsRef = useRef(null);
+  useEffect(() => {
+    actionsRef.current = { copyRut, openEdit, askDelete };
+  });
   const columnDefs = useMemo(
     () => [
       {
@@ -211,7 +221,7 @@ export default function WorkersTab() {
         cellRenderer: (p) => (
           <button
             type="button"
-            onClick={() => copyRut(p.value)}
+            onClick={() => actionsRef.current.copyRut(p.value)}
             title="Copiar RUT"
             className="w-full text-left hover:text-[var(--color-accent)] hover:underline"
           >
@@ -259,7 +269,7 @@ export default function WorkersTab() {
           p.value ? (
             <button
               type="button"
-              onClick={() => copyRut(p.value, "RUT de pago")}
+              onClick={() => actionsRef.current.copyRut(p.value, "RUT de pago")}
               title="Copiar RUT de pago"
               className="w-full text-left hover:text-[var(--color-accent)] hover:underline"
             >
@@ -270,12 +280,7 @@ export default function WorkersTab() {
       {
         // Solo cuando la cuenta es de otra persona; si falta el nombre, se marca.
         headerName: "Titular",
-        valueGetter: (p) =>
-          lacksPaymentName(p.data)
-            ? "⚠ Falta el titular"
-            : paysToOtherPerson(p.data.rut || p.data.id, p.data.bankDetails?.[0])
-              ? p.data.paymentName
-              : "",
+        valueGetter: (p) => payeeColumnText(p.data),
         width: 170,
         cellClass: (p) => (p.value === "⚠ Falta el titular" ? "text-[var(--color-warning)]" : ""),
       },
@@ -307,13 +312,13 @@ export default function WorkersTab() {
                 📊
               </button>
               <button
-                onClick={() => openEdit(p.data)}
+                onClick={() => actionsRef.current.openEdit(p.data)}
                 className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
               >
                 Editar
               </button>
               <button
-                onClick={() => askDelete(p.data)}
+                onClick={() => actionsRef.current.askDelete(p.data)}
                 className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
               >
                 ✕
@@ -323,7 +328,6 @@ export default function WorkersTab() {
         },
       },
     ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- las columnas se arman una vez (ver arriba)
     [],
   );
 
@@ -471,6 +475,7 @@ export default function WorkersTab() {
             {displayedResults.map((w) => {
               const isCash = isCashBank(w.bankDetails?.[3]);
               const leader = (w.groupLeader?.[0] || "").toUpperCase().trim() || "—";
+              const otherPayee = paysToOtherPerson(w.rut || w.id, w.bankDetails?.[0]);
               return (
                 <div
                   key={w.id}
@@ -503,7 +508,7 @@ export default function WorkersTab() {
                       </>
                     )}
                   </div>
-                  {paysToOtherPerson(w.rut || w.id, w.bankDetails?.[0]) && (
+                  {otherPayee && (
                     <div className="text-xs text-[var(--color-muted)]">
                       Cuenta de:{" "}
                       {lacksPaymentName(w) ? (

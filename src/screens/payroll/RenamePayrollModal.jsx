@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Modal from "../../components/Modal";
+import { attempt } from "../../utils/attempt";
 
 // Modal para renombrar una nómina. El nombre es solo una etiqueta: solo se
 // valida que no esté vacío. Enter confirma, Escape cancela (vía Modal).
@@ -9,11 +10,9 @@ export function RenamePayrollModal({ payroll, onCancel, onConfirm }) {
   const submit = async () => {
     if (!name.trim() || busy) return;
     setBusy(true);
-    try {
-      await onConfirm(name);
-    } finally {
-      setBusy(false);
-    }
+    const { error } = await attempt(() => onConfirm(name));
+    setBusy(false);
+    if (error) throw error;
   };
   return (
     <Modal

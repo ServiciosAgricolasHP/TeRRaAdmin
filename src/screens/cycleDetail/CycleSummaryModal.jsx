@@ -27,6 +27,7 @@ import { useSummarySettings } from "./cycleSummaryModal/useSummarySettings";
 import { useSummaryFlush } from "./cycleSummaryModal/useSummaryFlush";
 import { useImportCycles } from "./cycleSummaryModal/useImportCycles";
 import { useSummaryCapture } from "./cycleSummaryModal/useSummaryCapture";
+import { attempt } from "../../utils/attempt";
 
 // ============================================================
 // Componente principal
@@ -179,7 +180,7 @@ export default function CycleSummaryModal({
   });
   const handleXlsxSummary = async () => {
     setBusy("xlsx");
-    try {
+    const { error: err } = await attempt(async () => {
       await writeCycleSummaryXlsx({
         carrierById,
         catalogs,
@@ -198,11 +199,9 @@ export default function CycleSummaryModal({
         titles,
         transportData,
       });
-    } catch (err) {
-      toast.error("Error al exportar: " + (err.message || err));
-    } finally {
-      setBusy("");
-    }
+    });
+    if (err) toast.error("Error al exportar: " + (err.message || err));
+    setBusy("");
   };
 
   // El resumen es compartido: conviene ver quién lo dejó como está.

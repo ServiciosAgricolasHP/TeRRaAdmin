@@ -3,6 +3,7 @@ import { addDoc, collection, serverTimestamp, onSnapshot } from "firebase/firest
 import { db } from "../../firebase";
 import { useAuth } from "../../contexts/AuthContext";
 import { ConsoleCard } from "./ConsoleCard";
+import { attempt } from "../../utils/attempt";
 
 // ============================================================
 // Sección Debug: ping al backend
@@ -46,7 +47,7 @@ export function PingSection() {
     };
 
     let ref;
-    try {
+    const { error: err } = await attempt(async () => {
       ref = await addDoc(collection(db, FUNCTION_JOBS_COLLECTION), {
         type: "ping",
         status: "pending",
@@ -54,7 +55,8 @@ export function PingSection() {
         requestedByEmail: user?.email || null,
         requestedAt: serverTimestamp(),
       });
-    } catch (err) {
+    });
+    if (err) {
       finish({
         ok: false,
         message:

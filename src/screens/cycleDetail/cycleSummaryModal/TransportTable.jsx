@@ -1,13 +1,16 @@
 import { carrierColumns, cellText } from "../../../utils/summaryTables";
 import { cellH, cell, chargeDateInputStyle, inputVal, chargeInputStyle } from "./tableStyles";
 
+// Lo que se usa cuando no se pasa la prop: siempre el mismo objeto.
+const NO_HIDDEN_COLUMNS = new Set();
+
 // La tabla día a día de un transportista del resumen del ciclo. Las columnas
 // salen de `carrierColumns`, las mismas que escribe el Excel.
 export function TransportTable({
   section,
   mode,
   editMode = true,
-  hiddenColumns = new Set(),
+  hiddenColumns = NO_HIDDEN_COLUMNS,
   onEditRow,
   onAddRow,
   onRemoveRow,
@@ -58,8 +61,8 @@ export function TransportTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => {
-            const rowKey = r.rowKey || r.date || `r${Math.random()}`;
+          {rows.map((r, i) => {
+            const rowKey = r.rowKey || r.date || `r${i}`;
             return (
               <tr key={rowKey}>
                 <td style={cell}>

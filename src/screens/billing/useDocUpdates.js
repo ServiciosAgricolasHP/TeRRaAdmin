@@ -8,7 +8,6 @@ import { unshout } from "../../utils/textCase";
 // pagos. Cada una actualiza la lista y el detalle abierto en su lugar, sin
 // releer.
 export function useDocUpdates({ setDetailDoc, setDocs, toast }) {
-  "use no memo";
   // --- Marcar estado de pago de una factura ---
   // Fija el estado directamente; la UI lo ofrece como un `<select>` por fila.
   const setPaymentStatus = async (dteDoc, newStatus) => {

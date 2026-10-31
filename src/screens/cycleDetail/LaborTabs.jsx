@@ -3,7 +3,6 @@ import { useCycleDetail } from "./CycleDetailContext";
 // Pestañas de las labores del ciclo, con el candado QR de cada una, y el
 // botón para agregar una labor.
 export function LaborTabs() {
-  "use no memo";
   const {
     activeLabor,
     cycle,
