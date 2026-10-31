@@ -3,7 +3,7 @@
 - Pantalla: `src/screens/HarvestQr.jsx` (el componente de la ruta, con sus pestañas y la tabla de prefijos). Ruta `/harvest-qr`, para todas las cuentas (`/admin/harvest-qr` redirige ahí). Colecciones `harvestWeights` + `qrPrefixes` (CRUD).
 - Sus piezas, en `src/screens/harvestQr/`:
   - **Prefijos:** `PrefixFormModal` y `SyncModal` (la sincronización hacia jornadas).
-  - **Pesajes:** `WeightsExplorer` y `WeightFormModal`.
+  - **Pesajes:** `WeightsExplorer` (la búsqueda por QR, los totales por combo y las agrupaciones salen de `utils/harvestWeightsView.js`) y `WeightFormModal`.
   - **IDs QR:** `QrManager`, `AssignQrModal` y `BackfillQrModal`.
   - **Comunes:** `ProgressBar`, `TypeToConfirm` y `helpers.js` (TTL de las listas compartidas, contador de lecturas y fechas de la sincronización).
 - Fuera de la carpeta: `utils/qrCodes.js` (prefijo, número, dueño y códigos libres, con tests), `services/qrCodesService.js` (`assignQrCode` y el padrón, `syncRoster`) y `services/harvestSyncService.js` (`mirrorWeightToWorkdays`: el espejo pesaje → jornada al guardar un pesaje a mano).
