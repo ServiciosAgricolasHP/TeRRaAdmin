@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { fetchRecordHistory } from "../../services/auditService";
 import { ENTITY_META, searchableEntityTypes } from "../../utils/auditLabels";
+import { attempt } from "../../utils/attempt";
+import { useValuesChanged } from "../../hooks/useValuesChanged";
 
 // El buscador por registro: el tipo elegido y su catálogo (caché de 10 min),
 // lo que calza con lo escrito, y el historial del registro elegido.
 export function useRecordSearch() {
-  "use no memo";
   const types = useMemo(() => searchableEntityTypes(), []);
   const [entityType, setEntityType] = useState(types[0]?.value || "worker");
   const [query, setQuery] = useState("");
@@ -17,18 +18,20 @@ export function useRecordSearch() {
 
   const meta = ENTITY_META[entityType];
 
-  // Trae el catálogo completo del tipo elegido (caché de 10 min) para
-  // filtrarlo en el cliente a medida que se escribe.
-  useEffect(() => {
+  // Al cambiar de tipo se limpian la búsqueda y el registro elegido.
+  if (useValuesChanged([entityType], { onMount: true })) {
     setSelected(null);
     setRecordLogs(null);
     setQuery("");
-    if (!meta?.service) {
-      setAllRecords([]);
-      return;
-    }
+    if (meta?.service) setLoadingRecords(true);
+    else setAllRecords([]);
+  }
+
+  // Trae el catálogo completo del tipo elegido (caché de 10 min) para
+  // filtrarlo en el cliente a medida que se escribe.
+  useEffect(() => {
+    if (!meta?.service) return;
     let cancelled = false;
-    setLoadingRecords(true);
     meta.service
       .list({ cache: true, ttl: 600_000 })
       .then((rows) => {
@@ -40,13 +43,12 @@ export function useRecordSearch() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entityType]);
+  }, [meta]);
 
   const matches = useMemo(() => {
     if (!meta) return [];
     const q = query.trim().toLowerCase();
-    const fields = meta.searchFields || ["name"];
+    const fields = meta?.searchFields || ["name"];
     const pool = !q
       ? allRecords
       : allRecords.filter((d) => fields.some((f) => String(d[f] || "").toLowerCase().includes(q)));
@@ -58,14 +60,14 @@ export function useRecordSearch() {
     setSelected({ id: doc.id, label, doc });
     setRecordLogs(null);
     setLoadingLogs(true);
-    try {
+    const { error: err } = await attempt(async () => {
       setRecordLogs(await fetchRecordHistory(entityType, doc.id));
-    } catch (err) {
+    });
+    if (err) {
       setRecordLogs([]);
       console.error("No se pudo cargar el historial:", err);
-    } finally {
-      setLoadingLogs(false);
     }
+    setLoadingLogs(false);
   };
 
   const clearSelection = () => {
