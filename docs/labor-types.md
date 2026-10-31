@@ -1,17 +1,18 @@
 # Tipos de labor en detalle
 
-Definidos en `src/utils/laborTypes.js` (`LABOR_TYPES`). Viven ahí y no en `CycleDetail.jsx` porque el form de crear ciclo también necesita la lista: importarla desde la pantalla del ciclo arrastraría ese módulo entero —más de 6.000 líneas, ag-grid incluido— al chunk de Faenas, que es justo la pantalla que se abre al entrar a la app. Cada labor tiene un campo `type` que determina columnas del grid, entrada de datos y métricas:
+Definidos en `src/utils/laborTypes.js` (`LABOR_TYPES`). Viven ahí y no en `CycleDetail.jsx` porque el form de crear ciclo también necesita la lista: importarla desde la pantalla del ciclo arrastraría esa pantalla entera, ag-grid incluido, al chunk de Faenas, que es justo la pantalla que se abre al entrar a la app. Cada labor tiene un campo `type` que determina columnas del grid, entrada de datos y métricas:
 
-| Tipo / Type | Etiqueta / Label | Comportamiento del grid / Grid behavior | Forma de datos / Data shape |
-|------|-------|---------------|------------|
-| `main` | Pago al día | 1 columna/día, monto `$` directo | `workdays: { amount }` |
-| `supervision` | Supervisión | Igual que main / Same as main | Igual / Same |
-| `extra` | Adicional | Igual que main / Same as main | Igual / Same |
-| `cosecha` | Cosecha | Multi-columnas por día (calidad × envase); toggle detalle/resumen | `workdays: { qualityX, containerY, qty, amount }` |
-| `trato` | A trato | Multi-precio por día (`t0`, `t1`, ...); toggle `/unid` vs `/día` por tier; toggle detalle/resumen | `dayPrices: { t0: { price, mode }, t1: ... }`, `workdays: { qty, amount, tiers? }` |
-| `tratoHE` | Jornadas con horas extras | Columnas: D, HE, M, S, X, `$`; toggle detalle/resumen | `workdays: { qty, overtimeHours, hasManejo, hasSupervision, extras, amount }` |
+| Tipo | Etiqueta | En la grilla | Datos |
+|---|---|---|---|
+| `main` | Pago al día | Una columna por día, con el monto `$` | `workdays: { amount }` |
+| `supervision` | Supervisión | Igual que `main` | Igual |
+| `extra` | Adicional | Igual que `main` | Igual |
+| `cosecha` | Cosecha | Varias columnas por día (calidad × envase); vista detalle o resumen | `workdays: { qualityX, containerY, qty, amount }` |
+| `trato` | A trato | Varios precios por día (`t0`, `t1`…), cada uno `/unid` o `/día`; vista detalle o resumen | `dayPrices: { t0: { price, mode }, t1: ... }`, `workdays: { qty, amount, tiers? }` |
+| `tratoEtapas` | A trato por etapas | Un grupo por día, con una columna por cada etapa con precio o con producción ese día | `labors[].stages: [{ id, name, counts }]`, `dayPrices: { [stageId]: { price, mode } }`, `workdays: { stageId, qty, amount }` |
+| `tratoHE` | Jornadas con horas extras | Columnas D, HE, M, S, X y `$`; vista detalle o resumen | `workdays: { qty, overtimeHours, hasManejo, hasSupervision, extras, amount }` |
 
-El tag `main` se renderiza como **"al día"** en métricas y tabs.
+`main` se muestra como **"al día"** en las métricas y las pestañas.
 
 Abajo, cómo guarda y calcula cada uno sus precios y montos.
 

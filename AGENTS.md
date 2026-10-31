@@ -1,20 +1,20 @@
 # AGENTS.md
 
-## Comandos / Commands
+## Comandos
 
-| Comando / Command | Propósito / Purpose |
-|---------|---------|
-| `npm run dev` | Iniciar servidor de desarrollo (HMR) / Start Vite dev server (HMR) |
-| `npm run build` | Compilar para producción → `dist/` / Production build → `dist/` |
+| Comando | Para qué |
+|---|---|
+| `npm run dev` | Servidor de desarrollo (HMR) |
+| `npm run build` | Build de producción → `dist/` |
 | `npm run lint` | ESLint (flat config, `.js` y `.jsx`); falla con cualquier error o aviso |
-| `npm run preview` | Vista previa del build / Preview production build locally |
-| `npm test` | Vitest sobre lógica pura (~2s, sin red) / Pure-logic unit tests |
+| `npm run preview` | Vista previa del build |
+| `npm test` | Vitest sobre la lógica pura (~2 s, sin red) |
 | `npm run test:watch` | Vitest en modo watch |
-| `npm run test:e2e` | Ciclos end-to-end contra el emulador de Firestore / Integration cycles against the Firestore emulator |
-| `npm run test:rules` | `firestore.rules` contra el emulador / Security rules against the Firestore emulator |
+| `npm run test:e2e` | Ciclos end-to-end contra el emulador de Firestore |
+| `npm run test:rules` | `firestore.rules` contra el emulador |
 | `npm run test:all` | Los tres anteriores |
-| `npm run functions:verify` | Cloud Functions contra los emuladores de functions, firestore, auth y storage, sin deployar / Verify Cloud Functions locally |
-| `npm run deploy` | Deploy manual a GitHub Pages (`gh-pages -d dist -t`). **Escape hatch** — el camino normal es mergear a `main` y dejar que Actions deploye / Manual fallback; normal path is merge to `main` |
+| `npm run functions:verify` | Cloud Functions contra los emuladores de functions, firestore, auth y storage, sin deployar |
+| `npm run deploy` | Deploy manual a GitHub Pages (`gh-pages -d dist -t`). Solo si falla el camino normal, que es mergear a `main` y dejar que Actions despliegue |
 
 ## Tests
 
@@ -82,7 +82,7 @@ Los tests marcados `[bug conocido]` fijan el comportamiento **actual** de algo q
 parece estar mal, con el porqué en un comentario. No son la conducta deseada: si
 arreglas uno, el test se cae y eso es la señal de actualizar los dos.
 
-## Despliegue / Deploy
+## Despliegue
 
 - Desplegado en GitHub Pages en: `https://serviciosagricolashp.github.io/TeRRaAdmin/`
 - El path base `/TeRRaAdmin/` está en **dos archivos** — ambos deben coincidir:
@@ -90,7 +90,7 @@ arreglas uno, el test se cae y eso es la señal de actualizar los dos.
   - `src/App.jsx` → `<BrowserRouter basename="/TeRRaAdmin">`
 - El deploy y sus secrets, la URL anterior, la PWA y el truco del 404 de GitHub Pages: `docs/deploy.md`.
 
-### Flujo de trabajo Git / Git workflow
+### Flujo de trabajo en git
 
 - **Día a día en `develop`.** `main` es producción y solo recibe merges vía Pull Request.
 - **`docs/data-model.md` acompaña a cada cambio de modelo.** Una colección nueva, un campo nuevo, uno que cambia de tipo o de significado, o uno que se deja de escribir se documenta en el mismo commit; una colección nueva también va en `MAIN_COLLECTIONS` (`screens/adminConsole/collections.js`). Antes de un push se revisa que los commits que tocaron entidades lo hayan actualizado.
@@ -105,44 +105,27 @@ arreglas uno, el test se cae y eso es la señal de actualizar los dos.
 React 19 · Vite 7 · Tailwind CSS 4 · Firebase (Firestore + Auth) · ag-grid · React Router 7 · ExcelJS (lazy) · Recharts (lazy) · jsPDF (lazy) · html-to-image · ESLint flat config
 
 - **Solo JavaScript** (no TypeScript).
-- **React Compiler** habilitado via `babel-plugin-react-compiler`.
+- **React Compiler 1.0** habilitado vía `babel-plugin-react-compiler`.
 - Variables de entorno con prefijo `VITE_`.
 - `exceljs` se importa **lazy** (`await import("exceljs")`) solo al exportar — chunk separado de ~937 KB.
 - `recharts` idem, vía `React.lazy` sobre `screens/dashboard/DashboardCharts.jsx` y la dona `CommitmentsDonut`, en un chunk separado de ~340 KB. El chunk principal ya está sobre el límite de Vite, así que toda librería pesada nueva va lazy.
 - `jspdf` + `jspdf-autotable` también se importan lazy, solo al descargar el PDF del Informe de deudas.
 
-## Arquitectura / Architecture
+## Arquitectura
 
 ```
 src/
-  main.jsx              ← punto de entrada / entry point
-  App.jsx               ← router (react-router-dom)
-  firebase.js           ← Firebase init (Firestore db = "hpdatabase")
+  main.jsx              ← punto de entrada
+  App.jsx               ← las rutas (react-router-dom)
+  firebase.js           ← Firebase (Firestore db = "hpdatabase")
   components/           ← UI compartida (Layout, ProtectedRoute, Modal, ConfirmDialog, RowMenu, TripEditModal, WorkerEditModal, WorkerSummaryModal, etc.)
   hooks/                ← hooks que usan varias pantallas (useIsMobile, useWorkersList, useValuesChanged, useCaptureActions)
-  screens/              ← componentes de ruta / page-level route components
-                        (Dashboard, Jobs, CycleDetail, Workers, Transports, Payroll, Advances,
-                         InterestLinks, Calendar, AdminConsole, Users, NoAccess, MigrateWorkers,
-                         CleanupPaidWorkdays)
-    jobs/               ← las piezas de Faenas (ver "Componentes y archivos")
-    payroll/            ← las piezas de Nómina
-    transports/         ← las piezas de Transportes
-    billing/            ← las piezas de Facturación
-    cycleDetail/        ← las piezas de CycleDetail (ver `docs/screens/cycle-detail.md`); CycleSummaryModal, con las suyas en cycleSummaryModal/
-    harvestQr/          ← las piezas de Pesajes QR
-    commitments/        ← las piezas de Cheques y pagos
-    adminConsole/       ← las secciones de la Consola admin
-    calendar/           ← las piezas del Calendario
-    dashboard/          ← las piezas del Dashboard
-    advances/           ← las piezas de Anticipos / Bonos
-    priceBook/          ← las piezas del Libro de Precios
-    users/              ← las piezas de Usuarios
+  screens/              ← un componente por ruta (ver Rutas) y, al lado, la carpeta con sus piezas
+                        (jobs/, cycleDetail/, payroll/, transports/…; ver "Componentes y archivos")
   contexts/             ← Auth, Theme, Catalogs, Carriers y Toast: XContext.js + XProvider.jsx
-  services/             ← capa de datos (Firestore CRUD + caché + auditoría)
-                        firestoreBase, transportsService, carriersService,
-                        workersService, payrollsService, advancesService, logger
-  utils/                ← helpers de dominio (rutUtils, banks, payroll, cosechaCombos,
-                        agGridLocale, similarity, etc.)
+  services/             ← capa de datos (Firestore CRUD + caché + auditoría), reunida en services/index.js
+  utils/                ← cálculo y helpers de dominio, sin React ni Firestore (rutUtils, banks,
+                        payroll, cosechaCombos, agGridLocale, similarity, etc.)
 ```
 
 ### Componentes y archivos
@@ -207,32 +190,32 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 - `AuthContext` guarda en el perfil el `email` de la cuenta y `lastSeenAt` (`userPrefsService.recordVisit`) al abrir la app y, con la app abierta, al volver a ella o usarla (cambiar de pestaña, un clic, una tecla), como mucho una vez cada 30 minutos (`visitDue`, `utils/userAccounts.js`). Un computador que despierta de la suspensión sigue con la página cargada y no vuelve a iniciar sesión, así que solo el arranque no alcanza. Es lo que muestra Usuarios: el navegador no puede listar las cuentas de Authentication.
 - **`AuthContext` vuelca el doc `users/{uid}` entero en `user`**, así que cualquier campo que se le agregue queda disponible en toda la app sin pagar una lectura extra.
 
-### Servicios / Services
+### Servicios
 
-- `services/firestoreBase.js` exporta `createService(entityName, collectionName)` — factory CRUD.
-- Servicios invalidan caché en memoria y escriben logs de auditoría via `services/logger.js`.
-- `list()` soporta `cache: true` con TTL (60s default); `persist: true` guarda en `localStorage`.
-- Para batched updates usar `writeBatch(db)` directo (chunks de 450 — el límite Firestore es 500).
+- `services/firestoreBase.js` exporta `createService(entityName, collectionName)`, que arma el CRUD de una colección.
+- Cada servicio invalida su caché en memoria y escribe el log de auditoría con `services/logger.js`.
+- `list()` acepta `cache: true`, con un TTL de 60 s por defecto; `persist: true` la guarda además en `localStorage`.
+- Las escrituras en lote van con `writeBatch(db)`, en tandas de 450 (el límite de Firestore es 500).
 - **`update`, `upsert` y `remove` cuestan una lectura además de la escritura**: hacen un `getById` interno para armar el `before` del log de auditoría. `create` no lee.
 - **`remove` de un documento que ya no existe no borra ni escribe log**: un log de `delete` siempre trae el `before`, y de ahí sale su `meta`.
-- **`upsert(id, data, { before })`** deja pasar el documento que el llamador ya leyó y se saltea ese `getById`. `undefined` = "no me lo pasaron, leelo"; `null` = "lo leí y no existe". La diferencia decide si el doc se crea con `createdAt`/`createdBy`, así que **no se puede colapsar en un chequeo de verdad/falsedad** — escrito `knownBefore ? …` el ahorro desaparece sin que nada falle a la vista. Fijado en `tests/e2e/upsert-before.test.js`, que lo observa pasando `null` sobre un doc que sí existe (única forma de ver desde afuera si la lectura ocurrió).
+- **`upsert(id, data, { before })`** deja pasar el documento que el llamador ya leyó y se saltea ese `getById`. `undefined` = "no me lo pasaron, léelo"; `null` = "lo leí y no existe". La diferencia decide si el doc se crea con `createdAt`/`createdBy`, así que **no se puede colapsar en un chequeo de verdad/falsedad** — escrito `knownBefore ? …` el ahorro desaparece sin que nada falle a la vista. Fijado en `tests/e2e/upsert-before.test.js`, que lo observa pasando `null` sobre un doc que sí existe (única forma de ver desde afuera si la lectura ocurrió).
 - **`countedList(service, opts)`** (en `services/cache.js`) envuelve un `list()` y devuelve `{ data, reads }`, con `reads: 0` cuando salió de la caché. Es lo que alimenta los contadores de lecturas de Dashboard, Calendario y Pesajes QR. Las opciones que se le pasan tienen que ser **exactamente** las de la llamada real: reconstruye la clave `collection::{wheres,order,take}`, así que si divergen el contador miente en vez de avisar.
-- Nuevos servicios: agregar a `services/index.js` exports si son consumidos transversalmente.
+- Un servicio nuevo que usan varias pantallas se exporta desde `services/index.js`.
 
 ### Caché aditiva
 
-- `firestoreBase` soporta `additive: true` en `create`/`update`/`upsert`/`remove` — en vez de invalidar la entrada de caché correspondiente, la **muta in-place** (append / patch / filter). Útil cuando una colección se lista entera (sin `wheres`) y la queremos mantener fresca sin pagar el costo de re-leer todos los docs.
+- `firestoreBase` soporta `additive: true` en `create`/`update`/`upsert`/`remove` — en vez de invalidar la entrada de caché correspondiente, la **corrige en su lugar**: agrega, actualiza o quita el documento. Útil cuando una colección se lista entera (sin `wheres`) y la queremos mantener fresca sin pagar el costo de re-leer todos los docs.
 - `workersService` (en `services/index.js`) está envuelto para usar `additive: true` por defecto en todas las mutaciones — alta de trabajador no invalida la lista en caché.
-- Helpers internos: `mergeListItem`, `removeListItem` (sólo tocan claves de caché con `wheres` vacío).
+- Helpers internos: `mergeListItem` y `removeListItem` (solo tocan claves de caché con `wheres` vacío).
 
-### Contexts
+### Contextos
 
 - **Cada contexto va en dos archivos**: `XContext.js` con el contexto, su hook (`useAuth`, `useToast`…) y lo que exporta además (`ROLES`, `THEMES`), y `XProvider.jsx` con el componente que lo provee. Así cada `.jsx` exporta solo componentes y Fast Refresh no recarga la página entera. Las pantallas importan el hook desde `XContext`; solo `App.jsx` importa los proveedores.
 - Orden en `App.jsx`: `ThemeProvider` → `AuthProvider` → `CatalogsProvider` → `CarriersProvider` → `BrowserRouter`.
 - `CarriersProvider` precarga transportistas; expone `carriers`, `activeCarriers`, `addCarrier`, `updateCarrier`, `softDeleteCarrier`, `restoreCarrier`.
 - `CatalogsProvider` precarga tablas de lookup usadas en las pantallas.
 
-## Convenciones / Conventions
+## Convenciones
 
 - Organización de componentes, hooks y archivos: ver "Componentes y archivos" en Arquitectura.
 - ESLint: variables sin usar empezando con `A-Z_` son ignoradas. **El lint queda en cero** (el CI falla con cualquier error o aviso): una excepción con `eslint-disable` lleva su motivo al lado.
@@ -268,7 +251,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
   - Imprimir abre una ventana aparte con el HTML del nodo (`printNodes`, `utils/printWindow.js`): sin los controles marcados con `data-export-hide`, una hoja por nodo, el encabezado de cada tabla repetido en cada hoja y la orientación en un `@page` al nivel superior, porque anidado en `@media print` hay navegadores que lo ignoran. Las tablas imprimibles llevan su estilo en línea: la ventana no carga el CSS de la app.
   - Las impresiones que arman su propio HTML (los comprobantes y la tabla del resumen de Nómina, el informe de deudas y el mes del Calendario) abren la ventana con `openPrintWindow`. Si el navegador la bloquea, el aviso pide permitir las ventanas emergentes.
 
-### Alto de las listas / grids
+### Alto de las listas y grillas
 
 - **Regla**: la lista va `min-h-0 flex-1` dentro del `flex h-full flex-col` de la raíz y toma el alto que queda libre (Advances, Workers). Sin alto fijo ni control para arrastrarlo.
 - Si la lista tiene algo debajo, eso va con `shrink-0` y un `max-h` propio, y la lista lleva además un alto mínimo para que no desaparezca en pantallas bajas: es el caso de la vista previa de Nómina, con el panel de efectivo abajo (`min-h-[240px] flex-1`). Cuando no cabe, desplaza el `<main>`.
@@ -331,7 +314,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 
 Los nombres guardados en Firestore se conservan aunque no calcen con la tabla (las colecciones `faenas` y `transportPayrolls`, el campo `faenaId`, el campo `payrollId` de un resumen, los campos en español de `dteDocuments`): el código los lee y escribe con su nombre guardado. La lista con el nombre propuesto para cada uno está en `docs/data-model.md` ("Nombres en español pendientes de migración"); un campo nuevo nace en inglés.
 
-## Tipos de Labor / Labor Types
+## Tipos de labor
 
 Definidos en `src/utils/laborTypes.js` (`LABOR_TYPES`). Cada labor tiene un `type` que decide sus columnas en la grilla, cómo se cargan los datos y sus métricas. La tabla de los tipos, y cómo guarda y calcula cada uno sus precios y montos: `docs/labor-types.md`.
 
@@ -365,12 +348,11 @@ Lo que vale para varias pantallas está en este archivo; lo de una sola, en su a
 | Una colección o un campo de Firestore | `docs/data-model.md` |
 | El deploy, la PWA o la URL de GitHub Pages | `docs/deploy.md` |
 
-## Env
+## Variables de entorno
 
-- `.env` ignorado en git pero necesita credenciales de Firebase.
-- Copiar de un `.env` existente o desde Firebase console del proyecto.
+- `.env` está en `.gitignore` y lleva las credenciales de Firebase (las `VITE_FIREBASE_*`). Se copia de otro `.env` o de la consola de Firebase del proyecto.
 
-## Rutas / Routes
+## Rutas
 
 ```
 /                              Redirige a /faenas
