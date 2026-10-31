@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useEffectEvent, useMemo, useRef } from "react";
 import { buildWorkdaysByGroup } from "../printCommon";
 import { computeLaborSummary, summaryDisplayRowsOf, summaryLabelColumnsOf, summaryTitleOf } from "../../../utils/payrollDetail";
 import { printSummaryTable } from "../printSummaryTable";
 import { useCaptureActions } from "../../../hooks/useCaptureActions";
 import { writePayrollSummaryXlsx } from "./writePayrollSummaryXlsx";
+import { attempt } from "../../../utils/attempt";
 
 // La tabla del resumen del detalle: por subfaena o por labor, con los ciclos
 // de una subfaena juntos o separados (`cyclesApart`, que vive en el modal
@@ -11,7 +12,6 @@ import { writePayrollSummaryXlsx } from "./writePayrollSummaryXlsx";
 // pendiente de otras nóminas, sus totales y sus acciones de imprimir, copiar y
 // descargar.
 export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycleNameOf, cyclesApart, cyclesPeriod, getPayrollData, otherPendingCash, payroll, setCyclesApart, subfaenaSummary, toast }) {
-  "use no memo";
   const adjustedTotals = (base) => ({
     bank: base.bank + (bonusAdvanceSummary.bonus.bank || 0) - (bonusAdvanceSummary.advance.bank || 0),
     cash: base.cash + (bonusAdvanceSummary.bonus.cash || 0) - (bonusAdvanceSummary.advance.cash || 0),
@@ -33,26 +33,26 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
     ? computeLaborSummary(payroll, allGroups, workdaysByGroup, { byCycle: cyclesApart, cycleNameOf })
     : null;
   const [laborSummaryLoading, setLaborSummaryLoading] = useState(false);
-  useEffect(() => {
-    // No mira `laborSummaryLoading`: si la nómina cambia a mitad de una carga,
-    // el cleanup cancela la anterior (que ya no apaga el loading) y esta
-    // arranca igual.
+  // No mira `laborSummaryLoading`: si la nómina cambia a mitad de una carga,
+  // el cleanup cancela la anterior (que ya no apaga el loading) y esta arranca
+  // igual.
+  const loadLaborWorkdays = useEffectEvent((isCancelled) => {
     if (!summaryShowLabor || workdaysByGroup) return;
-    let cancelled = false;
     setLaborSummaryLoading(true);
     (async () => {
-      try {
+      const { error: err } = await attempt(async () => {
         const data = await getPayrollData();
-        if (cancelled) return;
+        if (isCancelled()) return;
         setLaborWorkdays({ payroll, data: buildWorkdaysByGroup(allGroups, data, catalogs) });
-      } catch (err) {
-        if (!cancelled) toast.error("No se pudo cargar el resumen por labor: " + (err?.message || err));
-      } finally {
-        if (!cancelled) setLaborSummaryLoading(false);
-      }
+      });
+      if (err && !isCancelled()) toast.error("No se pudo cargar el resumen por labor: " + (err?.message || err));
+      if (!isCancelled()) setLaborSummaryLoading(false);
     })();
+  });
+  useEffect(() => {
+    let cancelled = false;
+    loadLaborWorkdays(() => cancelled);
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [summaryShowLabor, payroll]);
   const activeSummary = summaryShowLabor ? laborSummaryData : subfaenaSummary;
   // El efectivo adeudado de nóminas anteriores se puede sumar a esta tabla,

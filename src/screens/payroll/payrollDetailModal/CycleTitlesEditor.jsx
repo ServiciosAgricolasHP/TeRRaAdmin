@@ -2,7 +2,6 @@
 // Editor de los encabezados de ciclo: cómo aparece cada uno en el XLSX, los
 // comprobantes y el detalle impreso.
 export function CycleTitlesEditor({ cycleDetails, cycleTitleOverrides, setCycleTitle, setShowTitleEditor }) {
-  "use no memo";
   return (
     <section className="rounded-lg border border-[var(--color-accent)]/50 bg-[var(--color-accent-soft)]/40 p-4">
       <div className="mb-2 flex items-center justify-between">

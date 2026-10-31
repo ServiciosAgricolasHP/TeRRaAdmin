@@ -6,7 +6,6 @@ import { payrollSnapshotsService } from "../../../services";
 // detalle muestra solo las 4 métricas básicas. Si no hay doc aparte o falla la
 // lectura, usa el embebido en la nómina. Con `payroll` null no lee nada.
 export function usePayrollSnapshot({ payroll }) {
-  "use no memo";
   // `loaded.id` es la nómina para la que se leyó: mientras no sea la de ahora,
   // está cargando.
   const [loaded, setLoaded] = useState({ id: null, snapshot: null });

@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { planPayrollRecalc, applyPayrollRecalc } from "../../../services/payrollRecalc";
 import { removalSummaryOf } from "../../../utils/payrollDetail";
+import { attempt } from "../../../utils/attempt";
+
+const NOTHING_REMOVED = new Map();
 
 // Recalcular una nómina pendiente, con lo marcado para sacar en la sección de
 // ciclos: la vista previa y su aplicación.
 export function usePayrollRecalc({ cycleBreakdown, cycles, faenas, onChanged, payroll, subfaenas, toast, workers }) {
-  "use no memo";
   // Recalcular: compara la nómina contra la producción vigente de sus ciclos
   // y muestra los cambios antes de escribir (`planPayrollRecalc` en
   // services/payrollRecalc.js). Con `removed` (lo destildado en la sección de
@@ -14,37 +16,33 @@ export function usePayrollRecalc({ cycleBreakdown, cycles, faenas, onChanged, pa
   const [recalcPreview, setRecalcPreview] = useState(null);
   const [recalcBusy, setRecalcBusy] = useState(false);
 
-  const computeRecalc = async (removed = new Map(), lines = []) => {
+  const computeRecalc = async (removed = NOTHING_REMOVED, lines = []) => {
     setRecalcBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       const plan = await planPayrollRecalc(payroll, { cycles, faenas, subfaenas, workers, removed });
       if (plan.empty) {
         toast.success("Sin cambios — la nómina ya está al día.");
         return;
       }
       setRecalcPreview({ ...plan, removalLines: lines });
-    } catch (err) {
-      toast.error(`Error al recalcular: ${err?.message || err}`);
-    } finally {
-      setRecalcBusy(false);
-    }
+    });
+    if (err) toast.error(`Error al recalcular: ${err?.message || err}`);
+    setRecalcBusy(false);
   };
 
   const applyRecalc = async () => {
     if (!recalcPreview) return;
     setRecalcBusy(true);
-    try {
+    const { error: err } = await attempt(async () => {
       await applyPayrollRecalc(payroll.id, recalcPreview);
       const removedSome = recalcPreview.removalLines.length > 0;
       setRecalcPreview(null);
       setRemoval(new Map());
       await onChanged?.();
       toast.success(removedSome ? "Listo: se sacó lo elegido y la nómina quedó recalculada." : "Nómina recalculada.");
-    } catch (err) {
-      toast.error(`Error al aplicar el recálculo: ${err?.message || err}`);
-    } finally {
-      setRecalcBusy(false);
-    }
+    });
+    if (err) toast.error(`Error al aplicar el recálculo: ${err?.message || err}`);
+    setRecalcBusy(false);
   };
 
   // Lo que se va a sacar, marcado con las casillas de la sección de ciclos:

@@ -4,7 +4,6 @@ import { payrollLeadersOf, filterPayrollItems } from "../../../utils/payrollDeta
 // Filtros del detalle: búsqueda, medio de pago, grupo y ciclo, con los items
 // que quedan y el panel de Grupo y Ciclo.
 export function useDetailFilters({ items, payroll, rutOf }) {
-  "use no memo";
   // Filtros y estado de la UI del detalle.
   const [search, setSearch] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("all"); // all | bank | cash

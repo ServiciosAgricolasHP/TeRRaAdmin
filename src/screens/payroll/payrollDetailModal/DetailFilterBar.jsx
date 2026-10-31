@@ -5,7 +5,6 @@ import { fmtCurrency } from "../../../utils/format";
 // encabezado y el cuerpo. Grupo y Ciclo van en un panel; lo que esté activo se
 // ve igual, como etiquetas que se quitan con ✕.
 export function DetailFilterBar({ cycleDetails, displayCycleLabel, filters, items }) {
-  "use no memo";
   const { activeCycleFilter, activeLeaderFilter, allLeaders, clearFilters, filteredItems, hasActiveFilter, moreFilterCount, paymentMethod, search, setCycleFilter, setLeaderFilter, setPaymentMethod, setSearch, setShowFilters, showFilters, toggleSetItem } = filters;
   return (
     <div className="shrink-0 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 sm:px-5 sm:py-2.5">

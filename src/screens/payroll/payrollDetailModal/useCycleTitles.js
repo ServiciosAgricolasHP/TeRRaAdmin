@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { payrollsService } from "../../../services/payrollsService";
+import { readStoredJson, writeStoredJson } from "../../../utils/browserStorage";
 
 // Los nombres con que cada ciclo aparece en el detalle, el XLSX, los
 // comprobantes y el detalle impreso.
 export function useCycleTitles({ payroll }) {
-  "use no memo";
   // Encabezados editables por ciclo, guardados en el doc de la nómina
   // (`payroll.cycleLabelOverrides`) y aplicados al XLSX, los comprobantes y el
   // detalle impreso. Si la nómina no tiene el campo, arranca desde la copia de
@@ -13,7 +13,7 @@ export function useCycleTitles({ payroll }) {
   const [cycleTitleOverrides, setCycleTitleOverrides] = useState(() => {
     const fromPayroll = payroll?.cycleLabelOverrides;
     if (fromPayroll && Object.keys(fromPayroll).length > 0) return { ...fromPayroll };
-    try { return JSON.parse(localStorage.getItem(titleStorageKey) || "{}"); } catch { return {}; }
+    return readStoredJson(titleStorageKey, {});
   });
 
   const setCycleTitle = (cid, val) => {
@@ -32,9 +32,7 @@ export function useCycleTitles({ payroll }) {
   useEffect(() => {
     if (!payroll?.id) return;
     const t = setTimeout(() => {
-      try { localStorage.setItem(titleStorageKey, JSON.stringify(cycleTitleOverrides)); } catch {
-        /* noop */
-      }
+      writeStoredJson(titleStorageKey, cycleTitleOverrides);
       payrollsService
         .update(payroll.id, { cycleLabelOverrides: cycleTitleOverrides })
         .catch((err) => console.warn("No se pudo guardar overrides:", err));
