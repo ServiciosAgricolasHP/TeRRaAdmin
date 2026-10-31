@@ -16,7 +16,7 @@ export function useSummaryFlush({ charge, cycleId, grandTotalCharge, grandTotalP
     if (payAmount <= 0 && chargeAmount <= 0) return; // modal cerrado antes de cargar
     const prev = lastTotalsRef.current;
     if (prev && prev.pagar === payAmount && prev.cobrar === chargeAmount) return;
-    lastTotalsRef.current = { pagar: payAmount, cobrar: chargeAmount };
+    lastTotalsRef.current = { cycleId, pagar: payAmount, cobrar: chargeAmount };
     cyclesService
       .update(cycleId, { summaryTotals: { pagar: payAmount, cobrar: chargeAmount, at: new Date().toISOString() } }, { additive: true })
       .catch((err) => {

@@ -63,9 +63,13 @@ export function useSummarySettings({ cycle, cycleId, faena, open, subfaena, toas
         setCharge(nextCharge);
         setTitles(nextTitles);
         lastSavedRef.current = { cobrar: JSON.stringify(nextCharge), titles: JSON.stringify(nextTitles) };
-        lastTotalsRef.current = cycle.summaryTotals
-          ? { pagar: Number(cycle.summaryTotals.pagar) || 0, cobrar: Number(cycle.summaryTotals.cobrar) || 0 }
-          : null;
+        // Lo que este resumen ya escribió en el ciclo manda sobre `cycle.summaryTotals`,
+        // que sigue con lo que se leyó al abrir la grilla.
+        if (lastTotalsRef.current?.cycleId !== cycleId) {
+          lastTotalsRef.current = cycle.summaryTotals
+            ? { cycleId, pagar: Number(cycle.summaryTotals.pagar) || 0, cobrar: Number(cycle.summaryTotals.cobrar) || 0 }
+            : null;
+        }
         setSummaryMeta(remote?.updatedAt ? { email: remote.updatedByEmail, at: remote.updatedAt.toDate?.() || null } : null);
         // Migración: si el ciclo no tiene doc en Firestore pero sí copia local,
         // la sube tal cual, sin avisar.

@@ -16,7 +16,12 @@ export function useCycleTitles({ payroll }) {
     return readStoredJson(titleStorageKey, {});
   });
 
+  // Solo se guarda después de que alguien cambia un título: abrir el detalle
+  // no escribe.
+  const [edited, setEdited] = useState(false);
+
   const setCycleTitle = (cid, val) => {
+    setEdited(true);
     setCycleTitleOverrides((prev) => {
       const next = { ...prev };
       const trimmed = String(val || "").trim();
@@ -30,7 +35,7 @@ export function useCycleTitles({ payroll }) {
   // Guarda en Firestore 500 ms después del último cambio; localStorage queda
   // como espejo.
   useEffect(() => {
-    if (!payroll?.id) return;
+    if (!payroll?.id || !edited) return;
     const t = setTimeout(() => {
       writeStoredJson(titleStorageKey, cycleTitleOverrides);
       payrollsService
@@ -38,7 +43,7 @@ export function useCycleTitles({ payroll }) {
         .catch((err) => console.warn("No se pudo guardar overrides:", err));
     }, 500);
     return () => clearTimeout(t);
-  }, [cycleTitleOverrides, payroll?.id, titleStorageKey]);
+  }, [cycleTitleOverrides, edited, payroll?.id, titleStorageKey]);
 
   // Helper para mostrar el label con override aplicado.
   const displayCycleLabel = (cycle) =>
