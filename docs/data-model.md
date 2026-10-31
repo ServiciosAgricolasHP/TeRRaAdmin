@@ -657,7 +657,7 @@ Ficha de cada respaldo en JSON de la base (`functions/backup.js`). El archivo es
 El archivo es `{ format: "terra-backup", version: 1, createdAt, database, excluded, collections: { <colección>: [{ id, data }] }, subcollections: { <grupo>: [{ path, data }] }, counts }`. Los valores que JSON no tiene van como `{ __type, … }`: `timestamp` (`seconds`, `nanoseconds`, `iso`), `reference` (`path`), `geopoint`, `bytes` (`base64`) y `number` (`NaN`, `Infinity`).
 
 ### `readLogs`
-El registro de lecturas (`services/readMeter.js`): un documento por persona, día y entorno mientras el registro está encendido. **DocId = `{fecha}_{uid}_{env}`** (`2026-11-03_abc123_prod`). La app no lo lee; lo suma con `setDoc` + `merge` e `increment`, cada 5 minutos y al ocultar la pestaña.
+El registro de lecturas (`services/readMeter.js`): un documento por persona, día y entorno mientras el registro está encendido. **DocId = `{fecha}_{uid}_{env}`** (`2026-11-03_abc123_prod`). El registro lo suma con `setDoc` + `merge` e `increment`, cada 5 minutos y al ocultar la pestaña, sin leerlo. Solo lo lee el informe de la Consola admin (**📊 Informe de lecturas**), por rango de `date`.
 | Campo | Tipo | Notas |
 |---|---|---|
 | `date` | string (YYYY-MM-DD) | |
