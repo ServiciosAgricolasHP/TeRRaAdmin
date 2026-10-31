@@ -1,7 +1,7 @@
 # Calendario / Calendar
 
 - Pantalla: `src/screens/Calendar.jsx` (el mes, la caché y la carga). Ruta `/calendar`.
-- Sus piezas, en `src/screens/calendar/`: `MonthGrid`, `Legend`, `DayDetailDrawer`, `DayExpandedModal` y `helpers.js` (fechas y formatos). Las lecturas están en `services/calendarService.js`.
+- Sus piezas, en `src/screens/calendar/`: `MonthGrid`, `Legend`, `DayDetailDrawer` (sus totales y agrupaciones salen de `utils/calendarDayDetail.js`), `DayExpandedModal` y `helpers.js` (fechas y formatos). Las lecturas están en `services/calendarService.js`.
 - Vista mensual. Cada celda lista las subfaenas que trabajaron ese día como barras de color (color estable derivado de un hash del nombre + paleta).
 - Dos interacciones:
   1. Click en una **barra** → `DayDetailDrawer` con detalle por labor + transportistas del día/subfaena. Métricas heterogéneas (kilos solo de cosecha, jornadas solo de los tipos que aportan jornada, trato/HE solo donde aplica). Las tarjetas con valor 0 se ocultan.
