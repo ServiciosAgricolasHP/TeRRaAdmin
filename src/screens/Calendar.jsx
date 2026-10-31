@@ -269,11 +269,10 @@ export default function Calendar() {
       e.workers.add(wd.workerId || wd.workerRut);
       e.harvestQty += Number(wd.qty) || 0;
       e.amount += Number(wd.amount) || 0;
-      // jornadas: qty en tratoHE y 1 por workday en las labores al día; cosecha y trato no suman
+      // jornadas: 1 por workday en tratoHE y en las labores al día; cosecha y trato no suman
       const labor = (cycle.labors || []).find((l) => l.id === wd.laborId);
       const t = labor?.type;
-      if (t === "tratoHE") e.workdayCount += Number(wd.qty) || 0;
-      else if (t === "main" || t === "supervision" || t === "extra") e.workdayCount += 1;
+      if (t === "tratoHE" || t === "main" || t === "supervision" || t === "extra") e.workdayCount += 1;
     }
     // Convierte los Sets en conteos y cada día en un array.
     const out = {};

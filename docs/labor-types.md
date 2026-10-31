@@ -14,6 +14,7 @@ La tabla con los seis tipos está en AGENTS.md ("Tipos de Labor"). Acá, cómo g
 - `baseDayDefault`, `bonusManejo`, `bonusSupervision`, `overtimeRate` en la definición de labor.
 - Config por día: `{ price, mode: "normal"|"overtimeOnly", isHoliday }`.
 - `effectiveDayPrice` usa `||` (no `??`) para que `price: 0` herede del `baseDayDefault`.
+- **Jornadas:** el `qty` del workday es la base del día en pesos, no una cantidad. Cada workday cuenta como una jornada, también uno de solo horas extras: así cuentan el resumen del trabajador, el detalle pagado de Nómina, el Calendario y la grilla por trabajador del resumen del ciclo. En Cobrar del resumen del ciclo las jornadas del día son solo las con base (ver `docs/screens/summaries.md`).
 
 ## cosecha
 

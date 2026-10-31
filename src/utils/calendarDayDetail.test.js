@@ -28,7 +28,7 @@ const workdays = [
   { cycleId: "C1", laborId: "LC", workerId: "W2", workerRut: "222", qty: 10, qualityX: 1, containerY: 1, amount: 4000 },
   { cycleId: "C1", laborId: "LC", workerId: "W2", workerRut: "222", pisoOnly: true, amount: 3000 },
   { cycleId: "C1", laborId: "LT", workerId: "W1", workerRut: "111", date: DATE, tiers: { 0: { qty: 5, amount: 500 }, 1: { qty: 2, amount: 300 } }, amount: 800 },
-  { cycleId: "C1", laborId: "LH", workerId: "W2", workerRut: "222", qty: 1, overtimeHours: 2, amount: 30000 },
+  { cycleId: "C1", laborId: "LH", workerId: "W2", workerRut: "222", qty: 23000, overtimeHours: 2, amount: 30000 },
   { cycleId: "C2", laborId: "LM", workerId: "W3", workerRut: "333", amount: 25000 },
 ];
 const trips = [
@@ -113,6 +113,20 @@ describe("dayByLaborOf", () => {
   it("jornadas con horas extras y labores al día cuentan jornadas", () => {
     expect(row("LH")).toMatchObject({ workdayCount: 1, overtimeHours: 2 });
     expect(row("LM", "C2")).toMatchObject({ workdayCount: 1, laborType: "main" });
+  });
+
+  it("en horas extras cuenta los días, no los pesos de la base, también los de solo horas extras", () => {
+    const overtime = [
+      { cycleId: "C1", laborId: "LH", workerId: "W1", workerRut: "111", qty: 25000, overtimeHours: 1, amount: 28500 },
+      { cycleId: "C1", laborId: "LH", workerId: "W2", workerRut: "222", qty: 0, overtimeHours: 3, amount: 10500 },
+    ];
+    expect(dayTotalsOf(overtime, [], cycleById, catalogs)).toMatchObject({ workdayCount: 2, overtimeHours: 4 });
+    const [h] = dayByLaborOf(overtime, { cycleById, subjobById, jobById, workerById });
+    expect(h).toMatchObject({ workdayCount: 2, overtimeHours: 4 });
+    expect(h.workersBreakdown.map((w) => [w.name, w.workdayCount, w.overtimeHours])).toEqual([
+      ["Ana", 1, 1],
+      ["Beto", 1, 3],
+    ]);
   });
 
   it("un trabajador sin ficha sale con su RUT", () => {

@@ -85,7 +85,8 @@ export function buildCycleRows(rutKeys, cycle, workdaysByLabor, catalogs, payrol
           acc.amount += stageAmount;
           stagesById.set(sid, acc);
         } else if (labor.type === "tratoHE") {
-          workdayCount += Number(wd.qty) || 0;
+          // `qty` es la base del día en pesos: cada workday es una jornada.
+          workdayCount += 1;
           const oh = Number(wd.overtimeHours) || 0;
           overtimeHours += oh;
           overtimeAmount += oh * hourlyOvertimeRate;

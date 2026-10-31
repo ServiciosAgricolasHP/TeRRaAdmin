@@ -41,7 +41,8 @@ export function dayTotalsOf(workdays, trips, cycleById, catalogs) {
       pieceworkTypes.add(labor?.tratoType ?? 0);
       pieceworkQty += getTratoTierTotals(wd).qty;
     } else if (t === "tratoHE") {
-      workdayCount += Number(wd.qty) || 0;
+      // `qty` es la base del día en pesos: cada workday es una jornada.
+      workdayCount += 1;
       overtimeHours += Number(wd.overtimeHours) || 0;
     } else {
       workdayCount += 1;
@@ -166,11 +167,10 @@ export function dayByLaborOf(workdays, { cycleById, subjobById, jobById, workerB
         }
       }
     } else if (t === "tratoHE") {
-      const j = Number(wd.qty) || 0;
       const oh = Number(wd.overtimeHours) || 0;
-      e.workdayCount += j;
+      e.workdayCount += 1;
       e.overtimeHours += oh;
-      wEntry.workdayCount += j;
+      wEntry.workdayCount += 1;
       wEntry.overtimeHours += oh;
     } else {
       e.workdayCount += 1;
