@@ -2,8 +2,7 @@ import { useMemo, useState, useEffect, useEffectEvent } from "react";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { useCarriers } from "../../contexts/CarriersContext";
 import { fortnightsService, paymentsService, tripsService } from "../../services/transportsService";
-import { cyclesService } from "../../services";
-import { listJobs, listSubjobs } from "../../services/jobLists";
+import { listCycles, listJobs, listSubjobs } from "../../services/jobLists";
 import { useToast } from "../../contexts/ToastContext";
 import { fmtCurrency } from "../../utils/format";
 import { FortnightCreateModal } from "./FortnightCreateModal";
@@ -54,7 +53,7 @@ export function FortnightsTab() {
         paymentsService.listAll(),
         listJobs(),
         listSubjobs(),
-        cyclesService.list({ cache: true, persist: true, ttl: 5 * 60 * 1000 }),
+        listCycles(),
         tripsService.listPendingUnlinked(),
       ]);
       setFortnights(pr.sort(compareFortnightPeriod));

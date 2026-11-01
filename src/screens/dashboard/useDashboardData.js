@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { cyclesService, transportPaymentsService } from "../../services";
-import { syncJobs } from "../../services/jobLists";
+import { transportPaymentsService } from "../../services";
+import { syncCycles, syncJobs } from "../../services/jobLists";
 import { payrollsService } from "../../services/payrollsService";
 import { fortnightsService } from "../../services/transportsService";
 import { commitmentsService } from "../../services/commitmentsService";
@@ -84,11 +84,11 @@ export function useDashboardData() {
         // y la curva de deuda tiene el histórico completo que necesita.
         const historyStart = `${lastMonthKeys(12)[0]}-01`;
         const [f, c, p, q, pays] = await Promise.all([
-          // Las faenas salen de la copia que comparten todas las pantallas. Los
-          // ciclos y las nóminas copian las opciones exactas de Transporte y
-          // Nómina para compartir clave de caché y salir gratis.
+          // Las faenas y los ciclos salen de la copia que comparten todas las
+          // pantallas. Las nóminas copian las opciones exactas de Nómina para
+          // compartir clave de caché y salir gratis.
           syncJobs(),
-          countedList(cyclesService, { cache: true, persist: true, ttl: 5 * 60 * 1000 }),
+          syncCycles(),
           countedList(payrollsService, { order: ["createdAt", "desc"], take: 50, cache: true, persist: true, ttl: 5 * 60 * 1000 }),
           fortnightsService.listAll(),
           transportPaymentsService.listSince(new Date(historyStart)),

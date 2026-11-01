@@ -45,6 +45,7 @@ Período de trabajo en una subfaena. Contiene labores anidadas y la matriz de pr
 | `dayPrices` | `{ [laborId]: { [date]: PriceEntry } }` | combos/tiers |
 | `dayNotes` | `{ [date]: string }` | anotación compartida del día (click sobre el header) |
 | `summaryTotals` | `{ pagar, cobrar, at }`? | totales del resumen del ciclo, escritos por `CycleSummaryModal` al cerrarse (solo si cambiaron). Alimentan el margen por ciclo del Dashboard: van acá y no en `cycleSummaries` porque el Dashboard ya carga la lista de ciclos y así le salen gratis. Ausente en los ciclos cuyo resumen nunca se abrió. |
+| `createdAt/By`, `updatedAt/By` | ts, string | toda escritura de TeRRa pone `updatedAt`. La copia que comparten las pantallas se pone al día con él (`listCycles`) |
 
 `Labor` (embebido en `cycles.labors`):
 - `id`, `name`, `type` (`cosecha` \| `trato` \| `tratoHE` \| `main` \| `supervision` \| `extra`)

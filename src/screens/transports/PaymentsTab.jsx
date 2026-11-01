@@ -2,8 +2,7 @@ import { useState, useEffect, useEffectEvent, useMemo } from "react";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { useCarriers } from "../../contexts/CarriersContext";
 import { paymentsService, fortnightsService } from "../../services/transportsService";
-import { cyclesService } from "../../services";
-import { listJobs, listSubjobs } from "../../services/jobLists";
+import { listCycles, listJobs, listSubjobs } from "../../services/jobLists";
 import { useToast } from "../../contexts/ToastContext";
 import { BalanceSummary } from "./BalanceSummary";
 import { GenerateSummaryModal } from "./GenerateSummaryModal";
@@ -59,7 +58,7 @@ export function PaymentsTab() {
         paymentsPromise,
         listJobs(),
         listSubjobs(),
-        cyclesService.list({ cache: true, persist: true, ttl: 5 * 60 * 1000 }),
+        listCycles(),
         fortnightsService.listAll(),
       ]);
       list.sort((a, b) => {

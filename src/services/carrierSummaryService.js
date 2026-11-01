@@ -1,10 +1,6 @@
 import { paymentsService, tripsService, fortnightsService } from "./transportsService";
-import { cyclesService } from "./index";
-import { listJobs, listSubjobs } from "./jobLists";
+import { listCycles, listJobs, listSubjobs } from "./jobLists";
 import { carrierSummaryPayments } from "../utils/carrierSummary";
-
-// Las mismas opciones que la pestaña Resúmenes, así comparten la caché.
-const CYCLES_LIST = { cache: true, persist: true, ttl: 5 * 60 * 1000 };
 
 // Lee lo que muestra el resumen de un transportista (`utils/carrierSummary.js`)
 // y devuelve `{ payments, fortnightsById, trips, faenaById, subfaenaById,
@@ -14,8 +10,9 @@ const CYCLES_LIST = { cache: true, persist: true, ttl: 5 * 60 * 1000 };
 //   pendientes y las que no están en ninguno;
 // - una lectura por cada vuelta y quincena pagada que entra. `paidCache` las
 //   guarda mientras el modal está abierto, porque lo pagado no cambia;
-// - las faenas y subfaenas, de la copia que comparten las pantallas. Los
-//   ciclos solo si alguna vuelta no trae su faena ni su subfaena.
+// - las faenas y subfaenas, de la copia que comparten las pantallas, y los
+//   ciclos, de la misma forma, solo si alguna vuelta no trae su faena ni su
+//   subfaena.
 export async function loadCarrierSummaryData(carrierId, { includePaid = false, from = "", to = "" } = {}, paidCache = new Map()) {
   const [allPayments, openFortnights, pendingTrips, faenas, subfaenas] = await Promise.all([
     paymentsService.listByCarrier(carrierId),
@@ -47,7 +44,7 @@ export async function loadCarrierSummaryData(carrierId, { includePaid = false, f
   for (const q of otherFortnights) if (q) fortnightsById.set(q.id, q);
   const trips = [...pendingTrips, ...otherTrips.filter(Boolean)];
 
-  const cycles = trips.some((t) => !t.faenaId && !t.subfaenaId) ? await cyclesService.list(CYCLES_LIST) : [];
+  const cycles = trips.some((t) => !t.faenaId && !t.subfaenaId) ? await listCycles() : [];
   return {
     payments,
     fortnightsById,

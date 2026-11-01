@@ -1,6 +1,5 @@
 import { useMemo, useState, useEffect, useEffectEvent } from "react";
-import { cyclesService } from "../services";
-import { listJobs, listSubjobs } from "../services/jobLists";
+import { listCycles, listJobs, listSubjobs } from "../services/jobLists";
 import { useCarriers } from "../contexts/CarriersContext";
 import { useCatalogs } from "../contexts/CatalogsContext";
 import { useAuth } from "../contexts/AuthContext";
@@ -151,7 +150,7 @@ export default function Calendar() {
     let cancelled = false;
     attempt(() =>
       Promise.all([
-        cyclesService.list({ cache: true, ttl: 5 * 60 * 1000 }),
+        listCycles(),
         listJobs(),
         listSubjobs(),
         listWorkers(),

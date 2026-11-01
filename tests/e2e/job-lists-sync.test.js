@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { deleteDoc, doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "../../src/firebase";
-import { jobsService, subjobsService } from "../../src/services";
-import { syncJobs, syncSubjobs } from "../../src/services/jobLists";
+import { cyclesService, jobsService, subjobsService } from "../../src/services";
+import { syncCycles, syncJobs, syncSubjobs } from "../../src/services/jobLists";
+import { newestFirst } from "../../src/utils/syncedList";
 
 // Las faenas y subfaenas que comparten las pantallas: se leen enteras una vez
 // y después se ponen al día con lo que cambió y con un conteo. Lo que hace
@@ -54,5 +55,22 @@ describe("las faenas y subfaenas en el navegador", () => {
     expect(names(after.data)).toEqual(["Cuartel Norte", "Cuartel Sur"]);
     // Sin la carga completa: lo escrito en los últimos 5 minutos y el conteo.
     expect(after.reads).toBe(3);
+  });
+
+  it("los ciclos: lo que otro equipo cambia llega, y lo que se edita acá corrige la copia", async () => {
+    await write("cycles", "c1", { label: "Fundo Los Robles/Cuartel Norte/Ciclo 1", faenaId: "f1", status: "open", days: [], createdAt: serverTimestamp() });
+    await write("cycles", "c2", { label: "Fundo Los Robles/Cuartel Norte/Ciclo 2", faenaId: "f1", status: "open", days: [], createdAt: serverTimestamp() });
+    await syncCycles();
+
+    await write("cycles", "c1", { status: "closed" });
+    await deleteDoc(doc(db, "cycles", "c2"));
+    const synced = await syncCycles({ fresh: true });
+    expect(synced.data.map((c) => [c.id, c.status])).toEqual([["c1", "closed"]]);
+
+    const created = await cyclesService.create({ label: "Fundo Los Robles/Cuartel Norte/Ciclo 3", faenaId: "f1", status: "open", days: [] });
+    await cyclesService.update(created.id, { days: ["2026-10-05"] });
+    const local = await syncCycles();
+    expect(local.reads).toBe(0);
+    expect(newestFirst(local.data).map((c) => [c.id, c.days])).toEqual([[created.id, ["2026-10-05"]], ["c1", []]]);
   });
 });

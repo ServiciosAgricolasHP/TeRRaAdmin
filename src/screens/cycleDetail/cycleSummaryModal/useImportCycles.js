@@ -1,5 +1,7 @@
 import { useState, useMemo } from "react";
 import { cyclesService, workdaysService } from "../../../services";
+import { listCycles } from "../../../services/jobLists";
+import { newestFirst } from "../../../utils/syncedList";
 import { workdayComboKeyOf, workdayMapKey, getDaySingle } from "../../../utils/cosechaCombos";
 import { buildDailyRows } from "../../../utils/cycleSummary";
 import { isRedDay } from "../../../utils/tratoHE";
@@ -55,17 +57,10 @@ export function useImportCycles({ charge, cycle, setBusy, setCharge, toast }) {
       return;
     }
     const { error: err } = await attempt(async () => {
-      const list = await cyclesService.list({
-        wheres: [
-          ["faenaId", "==", cycle.faenaId],
-          ["subfaenaId", "==", cycle.subfaenaId],
-        ],
-        cache: true,
-        ttl: 5 * 60 * 1000,
-      });
-      const filtered = list
-        .filter((c) => c.id !== cycle.id)
-        .sort((a, b) => String(b.createdAt || b.id).localeCompare(String(a.createdAt || a.id)));
+      const list = await listCycles();
+      const filtered = newestFirst(
+        list.filter((c) => c.faenaId === cycle.faenaId && c.subfaenaId === cycle.subfaenaId && c.id !== cycle.id),
+      );
       setAvailableCycles(filtered);
     });
     if (err) {

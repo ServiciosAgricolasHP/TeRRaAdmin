@@ -14,10 +14,11 @@ function additiveService(entityName, collectionName) {
   };
 }
 
-// Faenas y subfaenas: ver `listJobs` y `listSubjobs` en jobLists.js.
+// Faenas, subfaenas y ciclos: ver `listJobs`, `listSubjobs` y `listCycles` en
+// jobLists.js.
 export const jobsService = additiveService("faena", "faenas");
 export const subjobsService = additiveService("subfaena", "subfaenas");
-export const cyclesService = createService("cycle", "cycles");
+export const cyclesService = additiveService("cycle", "cycles");
 
 // Trabajadores: ver `listWorkers` en workersService.js.
 export const workersService = additiveService("worker", "worker");

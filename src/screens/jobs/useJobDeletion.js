@@ -19,7 +19,6 @@ export function useJobDeletion({ isAdmin, loadCycles, loadJobs, loadSubjobs, ord
   const deleteJob = async () => {
     if (!confirm) return;
     // Sin caché: los bloqueos y el log de diagnóstico salen de datos frescos.
-    cyclesService.invalidate();
     const subjobs = await subjobsService.list({ wheres: [["faenaId", "==", confirm.item.id]] });
     const jobCycles = await cyclesService.list({ wheres: [["faenaId", "==", confirm.item.id]] });
     console.log(`[Faena delete] Faena ${confirm.item.id} (${confirm.item.name})`);
@@ -142,7 +141,6 @@ export function useJobDeletion({ isAdmin, loadCycles, loadJobs, loadSubjobs, ord
       }
     }
     await cyclesService.remove(confirm.item.id);
-    cyclesService.invalidate();
     await loadCycles(confirm.item.faenaId);
   };
 

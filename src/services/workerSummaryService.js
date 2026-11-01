@@ -1,6 +1,6 @@
 import { workdayMapKey, tratoUnitLabel, tratoTypeLabel, cosechaUnit } from "../utils/cosechaCombos";
 import { workdaysService, cyclesService, jobsService, subjobsService } from "./index";
-import { listJobs, listSubjobs, pickByIds } from "./jobLists";
+import { listCycles, listJobs, listSubjobs, pickByIds } from "./jobLists";
 import { payrollsService } from "./payrollsService";
 import { workerKeys } from "./workersService";
 import { listPendingForWorkers, advanceRemaining, advanceSign } from "./advancesService";
@@ -43,7 +43,7 @@ export async function loadWorkerSummaryData(worker, catalogs, options = {}) {
   for (const p of payrollsRaw) {
     if (p?.id) payrollById.set(p.id, { name: p.name || p.id, status: p.status || "pending" });
   }
-  const cycles = (await Promise.all(cycleIds.map((id) => cyclesService.getById(id)))).filter(Boolean);
+  const cycles = await pickByIds(await listCycles(), cycleIds, cyclesService);
   const cyclesToShow = cycles.filter((c) => {
     if (c.status !== "closed") return true;
     return includeClosed;

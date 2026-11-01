@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useEffectEvent } from "react";
-import { cyclesService } from "../../services";
-import { listJobs, listSubjobs } from "../../services/jobLists";
+import { listCycles, listJobs, listSubjobs } from "../../services/jobLists";
+import { newestFirst } from "../../utils/syncedList";
 import { attempt } from "../../utils/attempt";
 import { readStoredJson, writeStoredJson } from "../../utils/browserStorage";
 
@@ -56,12 +56,7 @@ export function useJobsData({ selectedId, user }) {
   };
 
   const loadCycles = async (jobId) => {
-    const list = await cyclesService.list({
-      wheres: [["faenaId", "==", jobId]],
-      order: ["createdAt", "desc"],
-      cache: true,
-      ttl: 2 * 60 * 1000,
-    });
+    const list = newestFirst((await listCycles()).filter((c) => c.faenaId === jobId));
     setCyclesByJob((prev) => ({ ...prev, [jobId]: list }));
   };
 

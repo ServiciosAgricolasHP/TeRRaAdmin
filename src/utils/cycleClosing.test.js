@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { firstWorkedDay, lastWorkedDay, closedCyclePatch, settledOpenCycles, splitTaken, payrollStatusMap, takenSplitOf } from "./cycleClosing";
+import { firstWorkedDay, lastWorkedDay, closedCyclePatch, cycleSortDay, settledOpenCycles, splitTaken, payrollStatusMap, takenSplitOf } from "./cycleClosing";
 
 describe("fechas al cerrar un ciclo", () => {
   const today = "2026-10-17";
@@ -25,6 +25,15 @@ const payrolls = [
   { id: "pagada", status: "paid" },
   { id: "pendiente", status: "pending" },
 ];
+
+describe("cycleSortDay", () => {
+  it("el primer día trabajado, o el de inicio, o la creación, también guardada en el navegador", () => {
+    expect(cycleSortDay({ days: ["2026-10-08", "2026-10-03"], startDate: "2026-09-01" })).toBe("2026-10-03");
+    expect(cycleSortDay({ days: [], startDate: "2026-09-01" })).toBe("2026-09-01");
+    expect(cycleSortDay({ createdAt: { seconds: Date.UTC(2026, 8, 15) / 1000, nanoseconds: 0 } })).toBe("2026-09-15T00:00:00.000Z");
+    expect(cycleSortDay({})).toBe("");
+  });
+});
 
 describe("en nómina no es pagado", () => {
   const statusOf = payrollStatusMap(payrolls);

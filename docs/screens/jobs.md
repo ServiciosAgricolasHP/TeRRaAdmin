@@ -1,7 +1,7 @@
 # Faenas / Ciclos / Cycles
 
 - Pantalla: `src/screens/Jobs.jsx` (el componente de la ruta `/faenas`: las tarjetas de las faenas por grupo y el detalle de la elegida). Sus piezas, en `src/screens/jobs/`:
-  - **Carga:** `useJobsData` (las faenas con el orden de sus tarjetas, y las subfaenas y ciclos de la faena elegida). Las faenas y las subfaenas salen de la copia que comparten las pantallas (`listJobs`, `listSubjobs`); las subfaenas de una faena se filtran de ella.
+  - **Carga:** `useJobsData` (las faenas con el orden de sus tarjetas, y las subfaenas y ciclos de la faena elegida). Las faenas, las subfaenas y los ciclos salen de la copia que comparten las pantallas (`listJobs`, `listSubjobs`, `listCycles`); los de una faena se filtran de ella, y los ciclos van del más nuevo al más viejo (`newestFirst`). Lo que se revisa antes de eliminar una faena se lee directo.
   - **Grupos y colores:** `useJobLayout` (grupos, colores, grupos plegados y arrastrar para reordenar), `GroupHeader` (el encabezado de un grupo de faenas), `ColorPickerButton` y `ColorPalette`.
   - **Detalle de la faena:** `SelectedDetail`, `SubjobListBody` (sus subfaenas), `CycleRow` y `useSubjobDisplay` (subfaenas plegadas, ciclos cerrados a la vista y subfaenas ocultas).
   - **Faenas y subfaenas:** `useJobForms`, `JobFormModal`, `SubjobFormModal` y `FirstCycleOfferModal` (ofrecer el primer ciclo de una subfaena nueva).

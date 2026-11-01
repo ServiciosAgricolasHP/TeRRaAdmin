@@ -13,6 +13,25 @@ export function millisOf(value) {
   return 0;
 }
 
+// La fecha y hora ISO de un Timestamp de Firestore o de su forma guardada en
+// localStorage; "" si no hay.
+export function timestampIso(value) {
+  const ms = millisOf(value);
+  return ms ? new Date(ms).toISOString() : "";
+}
+
+// Del más nuevo al más viejo según `field` (un Timestamp). Los que no lo
+// tienen van primero: son los recién creados en este equipo, que la copia
+// guarda sin la hora del servidor hasta la siguiente puesta al día.
+export function newestFirst(list, field = "createdAt") {
+  const key = (d) => (d[field] ? millisOf(d[field]) : Infinity);
+  return [...list].sort((a, b) => {
+    const ka = key(a);
+    const kb = key(b);
+    return ka === kb ? 0 : ka > kb ? -1 : 1;
+  });
+}
+
 // La marca hasta donde llega la copia: el `field` más reciente de `docs`, o
 // `current` si ninguno es posterior. Sale de las horas de Firestore, no del
 // reloj del equipo.

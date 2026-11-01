@@ -4,8 +4,7 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import { TripEditModal } from "../../components/TripEditModal";
 import { useCarriers } from "../../contexts/CarriersContext";
 import { tripsService, titleCase } from "../../services/transportsService";
-import { cyclesService } from "../../services";
-import { listJobs, listSubjobs } from "../../services/jobLists";
+import { listCycles, listJobs, listSubjobs } from "../../services/jobLists";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useToast } from "../../contexts/ToastContext";
 import { fmtCurrency } from "../../utils/format";
@@ -47,7 +46,7 @@ export function TripsTab({ initialCarrierId = null }) {
         : tripsService.listSince(sinceDate);
       const [tripList, cyc, fa, sub] = await Promise.all([
         tripPromise,
-        cyclesService.list({ cache: true, persist: true, ttl: 5 * 60 * 1000 }),
+        listCycles(),
         listJobs(),
         listSubjobs(),
       ]);
