@@ -136,6 +136,8 @@ Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
 | `workdayIds` | ref→`workdays`[] | |
 | `advanceIds` | ref→`advances`[] | |
 | `advanceTotal` | number | |
+| `createdAt`, `createdBy` | ts, string? | |
+| `updatedAt`, `updatedBy` | ts, string? | toda escritura de `payrollsService` los pone. La copia que comparten Nómina y el Dashboard se pone al día con él (`listPayrolls`) |
 
 `PayrollItem` (embebido):
 - `rut` (el campo real en código es `rut`, no `workerRut` a pesar de lo que sugiere el nombre del doc — mismatch histórico), `workerId` (agregado en fase 2, ref estable al worker), `workerName`, `bankDetails`

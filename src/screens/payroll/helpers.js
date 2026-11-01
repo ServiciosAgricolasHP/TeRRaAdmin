@@ -1,6 +1,7 @@
 // Formatos y ayudas que comparten las piezas de Nómina.
 import { ACCOUNT_TYPES } from "../../utils/banks";
 import { currentRutResolver } from "../../utils/workerRut";
+import { millisOf } from "../../utils/syncedList";
 
 // "2026-08-31" -> "31/08". Etiqueta de día corta para las tablas de resumen.
 export const fmtDayShortEs = (d) => {
@@ -8,9 +9,12 @@ export const fmtDayShortEs = (d) => {
   return m ? `${m[3]}/${m[2]}` : (d || "");
 };
 
+// Un Timestamp (también el `{ seconds, nanoseconds }` de la copia guardada) o
+// un string ISO.
 export const fmtDate = (v) => {
   if (!v) return "—";
-  const d = v?.toDate ? v.toDate() : new Date(v);
+  const ms = millisOf(v);
+  const d = ms ? new Date(ms) : new Date(v);
   if (isNaN(d.getTime())) return "—";
   return d.toLocaleDateString("es-CL");
 };

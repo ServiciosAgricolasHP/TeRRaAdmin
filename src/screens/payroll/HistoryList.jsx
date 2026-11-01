@@ -6,6 +6,7 @@ import { usePagination } from "../../hooks/usePagination";
 import Pager from "../../components/Pager";
 import { fmtCurrency } from "../../utils/format";
 import { fmtDate } from "./helpers";
+import { millisOf } from "../../utils/syncedList";
 import { payStateOf } from "./payState";
 import { PortalBadge, PayStatePill, PaymentDatesLine } from "./PayStatePill";
 
@@ -28,7 +29,8 @@ export function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPai
   }, [payrolls]);
 
   const monthKey = (v) => {
-    const d = v?.toDate ? v.toDate() : v ? new Date(v) : null;
+    const ms = millisOf(v);
+    const d = ms ? new Date(ms) : v ? new Date(v) : null;
     if (!d || isNaN(d.getTime())) return "";
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   };

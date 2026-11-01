@@ -1,5 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
-import { payrollsService } from "../../services/payrollsService";
+import { listPayrolls } from "../../services/payrollsList";
 import { formatRutForDisplay } from "../../utils/rutUtils";
 import { workerSearchInput } from "../../utils/workerSearch";
 import { useToast } from "../../contexts/ToastContext";
@@ -58,7 +58,7 @@ export function WorkersHistory({ faenas, workers }) {
     (async () => {
       setLoading(true);
       const { error: err } = await attempt(async () => {
-        const list = await payrollsService.list({ order: ["createdAt", "desc"] });
+        const list = await listPayrolls();
         if (!cancelled) setAllPayrolls(list);
       });
       if (err) toast.error("No se pudieron cargar las nóminas: " + (err?.message || err));
