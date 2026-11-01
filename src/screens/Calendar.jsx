@@ -72,8 +72,9 @@ export default function Calendar() {
   const [jobs, setJobs] = useState([]);
   const [subjobs, setSubjobs] = useState([]);
   // Lista completa de trabajadores, para los nombres del detalle del día.
-  // Sale de `listWorkers`, la copia del navegador puesta al día.
-  const [workers, setWorkers] = useState([]);
+  // Sale de `listWorkers`, la copia del navegador puesta al día; `null` hasta
+  // que se abre el detalle de un día.
+  const [workers, setWorkers] = useState(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -109,8 +110,8 @@ export default function Calendar() {
 
   const isMobile = useIsMobile();
 
-  // Carga ciclos, faenas, subfaenas y trabajadores con la caché de los
-  // servicios. No suma al contador de lecturas del mes.
+  // Carga ciclos, faenas y subfaenas de las copias que comparten las
+  // pantallas. No suma al contador de lecturas del mes.
   useEffect(() => {
     let cancelled = false;
     attempt(() =>
@@ -118,7 +119,6 @@ export default function Calendar() {
         listCycles(),
         listJobs(),
         listSubjobs(),
-        listWorkers(),
       ]),
     ).then(({ value, error: err }) => {
       if (cancelled) return;
@@ -126,16 +126,30 @@ export default function Calendar() {
         setError(err.message || String(err));
         return;
       }
-      const [c, f, s, w] = value;
+      const [c, f, s] = value;
       setCycles(c);
       setJobs(f);
       setSubjobs(s);
-      setWorkers(w);
     });
     return () => {
       cancelled = true;
     };
   }, []);
+
+  // La lista de trabajadores solo da los nombres del detalle de un día: se
+  // carga la primera vez que se abre uno. Mientras tanto, el detalle muestra
+  // el RUT.
+  const detailOpen = selectedDay?.mode === "subjob";
+  useEffect(() => {
+    if (!detailOpen || workers) return;
+    let cancelled = false;
+    attempt(() => listWorkers()).then(({ value }) => {
+      if (!cancelled && value) setWorkers(value);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [detailOpen, workers]);
 
   // Carga las jornadas del mes y sus vueltas de transporte, de las copias del
   // navegador. `fresh` las pone al día sin esperar el minuto.
@@ -191,7 +205,7 @@ export default function Calendar() {
 
   const workerById = useMemo(() => {
     const m = new Map();
-    for (const w of workers) m.set(w.id, w);
+    for (const w of workers || []) m.set(w.id, w);
     return m;
   }, [workers]);
 
