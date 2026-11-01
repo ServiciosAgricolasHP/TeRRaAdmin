@@ -15,10 +15,10 @@ import { attempt } from "../../utils/attempt";
 // Cuesta 1 lectura por log del rango; por eso el rango arranca acotado y la
 // consulta tiene un tope de HARD_CAP logs.
 
-// Días que cubre el rango al abrir la pantalla. `logs` es con diferencia la
-// colección más grande del sistema, así que el default es lo mínimo útil y
-// ampliar el rango queda como acción explícita.
-const DEFAULT_DAYS = 3;
+// Días que cubre el rango al abrir la pantalla, hoy incluido. `logs` es con
+// diferencia la colección más grande del sistema, así que el default es lo
+// mínimo útil y ampliar el rango queda como acción explícita.
+const DEFAULT_DAYS = 2;
 
 const todayISO = () => localIsoDate();
 const daysAgoISO = (n) => {
@@ -28,7 +28,7 @@ const daysAgoISO = (n) => {
 };
 
 export default function SessionsTab() {
-  const [fromDate, setFromDate] = useState(daysAgoISO(DEFAULT_DAYS));
+  const [fromDate, setFromDate] = useState(daysAgoISO(DEFAULT_DAYS - 1));
   const [toDate, setToDate] = useState(todayISO());
   const [gapMinutes, setGapMinutes] = useState(30);
   const [emailFilter, setEmailFilter] = useState("");
@@ -86,6 +86,11 @@ export default function SessionsTab() {
 
   return (
     <>
+      <p className="text-sm text-[var(--color-muted)]">
+        Sesiones inferidas por gaps de inactividad. Cada sesión agrupa acciones consecutivas del mismo usuario separadas
+        por menos del gap configurado. No lee nada hasta tocar Cargar: una lectura por log del rango.
+      </p>
+
       {/* Filtros */}
       <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
         <div className="flex flex-wrap items-end gap-3">
