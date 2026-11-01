@@ -1,6 +1,8 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import RowMenu from "../../components/RowMenu";
+import Pager from "../../components/Pager";
+import { usePagination } from "../../hooks/usePagination";
 import { useToast } from "../../contexts/ToastContext";
 import {
   CONTACT_TYPES,
@@ -10,6 +12,7 @@ import {
   emptyPhoneContact,
   filterPhoneContacts,
   groupByCompany,
+  companyPageGroups,
 } from "../../utils/phoneBook";
 import { usePhoneBook } from "./usePhoneBook";
 import PhoneContactRow from "./PhoneContactRow";
@@ -21,8 +24,8 @@ import ScreenLoader from "../../components/ScreenLoader";
 import { attempt } from "../../utils/attempt";
 import { readStored, writeStored } from "../../utils/browserStorage";
 
-// Cuántos contactos se dibujan de una vez; "Mostrar más" suma otros tantos.
-const PAGE = 200;
+// Cuántos contactos se dibujan por página.
+const PAGE = 50;
 const BY_COMPANY_KEY = "infoAccounts.phoneBook.byCompany";
 
 const selectCls = "min-h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm outline-none focus:border-[var(--color-accent)]";
@@ -38,7 +41,6 @@ export default function PhoneBookTab() {
   const [department, setDepartment] = useState("");
   const [source, setSource] = useState("");
   const [byCompany, setByCompany] = useState(() => readStored(BY_COMPANY_KEY) === "true");
-  const [limit, setLimit] = useState(PAGE);
   // 📤 solo en un teléfono con menú de compartir.
   const [shareable] = useState(canShareContacts);
   const [editing, setEditing] = useState(null);
@@ -46,11 +48,6 @@ export default function PhoneBookTab() {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
-  // Cambiar la búsqueda o un filtro vuelve a la primera página.
-  const onFilter = (setter) => (value) => {
-    setter(value);
-    setLimit(PAGE);
-  };
   const toggleByCompany = () => {
     const next = !byCompany;
     setByCompany(next);
@@ -61,8 +58,17 @@ export default function PhoneBookTab() {
     () => filterPhoneContacts(contacts, { search, type, department, source }),
     [contacts, search, type, department, source],
   );
-  const visible = filtered.slice(0, limit);
-  const groups = byCompany ? groupByCompany(visible) : null;
+  // Con "Por empresa", las páginas siguen el orden de las empresas.
+  const groups = useMemo(() => (byCompany ? groupByCompany(filtered) : null), [byCompany, filtered]);
+  const ordered = useMemo(() => (groups ? groups.flatMap((g) => g.contacts) : filtered), [groups, filtered]);
+  // Cambiar la búsqueda, un filtro o la agrupación vuelve a la primera página.
+  const { page, pageCount, pageItems, setPage } = usePagination(ordered, PAGE, [search, type, department, source, byCompany]);
+  const pageGroups = groups ? companyPageGroups(groups, (page - 1) * PAGE, page * PAGE) : null;
+  const listTop = useRef(null);
+  const goToPage = (n) => {
+    setPage(n);
+    listTop.current?.scrollIntoView({ block: "start" });
+  };
   const departments = useMemo(() => departmentOptions(contacts, { inUse: true }), [contacts]);
   const sources = useMemo(() => Object.keys(PHONE_SOURCES).filter((s) => contacts.some((c) => (c.sources || []).includes(s))), [contacts]);
   const filtering = !!(search.trim() || type || department || source);
@@ -126,7 +132,7 @@ export default function PhoneBookTab() {
         <input
           type="text"
           value={search}
-          onChange={(e) => onFilter(setSearch)(e.target.value)}
+          onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar por nombre, empresa, cargo o número…"
           className="min-h-8 basis-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)] sm:min-w-[260px] sm:flex-1 sm:basis-auto"
         />
@@ -146,17 +152,17 @@ export default function PhoneBookTab() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <select aria-label="Tipo de contacto" value={type} onChange={(e) => onFilter(setType)(e.target.value)} className={selectCls}>
+        <select aria-label="Tipo de contacto" value={type} onChange={(e) => setType(e.target.value)} className={selectCls}>
           <option value="">Todos los tipos</option>
           {CONTACT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
           <option value="none">Sin tipo</option>
         </select>
-        <select aria-label="Departamento" value={department} onChange={(e) => onFilter(setDepartment)(e.target.value)} className={selectCls}>
+        <select aria-label="Departamento" value={department} onChange={(e) => setDepartment(e.target.value)} className={selectCls}>
           <option value="">Todos los departamentos</option>
           {departments.map((d) => <option key={d} value={d}>{d}</option>)}
         </select>
         {sources.length > 1 && (
-          <select aria-label="Origen" value={source} onChange={(e) => onFilter(setSource)(e.target.value)} className={selectCls}>
+          <select aria-label="Origen" value={source} onChange={(e) => setSource(e.target.value)} className={selectCls}>
             <option value="">Todos los orígenes</option>
             {sources.map((s) => <option key={s} value={s}>{PHONE_SOURCES[s]}</option>)}
           </select>
@@ -196,32 +202,44 @@ export default function PhoneBookTab() {
         <div className="rounded-md border border-dashed border-[var(--color-border)] py-8 text-center text-sm text-[var(--color-muted)]">
           Sin resultados para la búsqueda.
         </div>
-      ) : groups ? (
-        <div className="space-y-3">
-          {groups.map((g) => (
-            <section key={g.company || "_none"} className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
-              <h3 className="flex items-baseline justify-between gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm font-semibold">
-                <span className="break-words">{g.company || "Sin empresa"}</span>
-                <span className="shrink-0 text-xs font-normal text-[var(--color-muted)]">{g.contacts.length}</span>
-              </h3>
-              <ul className="divide-y divide-[var(--color-border)]">
-                {g.contacts.map((c) => <PhoneContactRow key={c.id} contact={c} hideCompany {...rowProps} />)}
-              </ul>
-            </section>
-          ))}
-        </div>
       ) : (
-        <ul className="divide-y divide-[var(--color-border)] overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
-          {visible.map((c) => <PhoneContactRow key={c.id} contact={c} {...rowProps} />)}
-        </ul>
-      )}
-
-      {filtered.length > limit && (
-        <div className="text-center">
-          <button type="button" onClick={() => setLimit((n) => n + PAGE)} className={btnCls}>
-            Mostrar más ({filtered.length - limit})
-          </button>
-        </div>
+        <>
+          <div ref={listTop} className="scroll-mt-2">
+            <Pager page={page} pageCount={pageCount} pageSize={PAGE} total={ordered.length} onPage={goToPage} />
+          </div>
+          {pageGroups ? (
+            <div className="space-y-3">
+              {pageGroups.map((g) => (
+                <section key={g.company || "_none"} className="overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+                  <h3 className="flex items-baseline justify-between gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm font-semibold">
+                    <span className="break-words">
+                      {g.company || "Sin empresa"}
+                      {g.fromPrevious && <span className="ml-1.5 text-xs font-normal text-[var(--color-muted)]">(viene de la página anterior)</span>}
+                    </span>
+                    <span className="shrink-0 text-xs font-normal text-[var(--color-muted)]">{g.total}</span>
+                  </h3>
+                  <ul className="divide-y divide-[var(--color-border)]">
+                    {g.contacts.map((c) => <PhoneContactRow key={c.id} contact={c} hideCompany {...rowProps} />)}
+                  </ul>
+                  {g.continues && (
+                    <button
+                      type="button"
+                      onClick={() => goToPage(page + 1)}
+                      className="block min-h-8 w-full border-t border-[var(--color-border)] px-3 py-1.5 text-right text-xs text-[var(--color-accent)] hover:bg-[var(--color-accent-soft)]"
+                    >
+                      Sigue en la página siguiente →
+                    </button>
+                  )}
+                </section>
+              ))}
+            </div>
+          ) : (
+            <ul className="divide-y divide-[var(--color-border)] overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
+              {pageItems.map((c) => <PhoneContactRow key={c.id} contact={c} {...rowProps} />)}
+            </ul>
+          )}
+          <Pager page={page} pageCount={pageCount} pageSize={PAGE} total={ordered.length} onPage={goToPage} />
+        </>
       )}
 
       {editing && (

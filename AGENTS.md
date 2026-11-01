@@ -274,7 +274,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 
 ### Páginas
 
-- **Una lista larga se pagina con `usePagination` (`hooks/`) y `Pager` (`components/`)**: el rango que se ve ("Mostrando 51–100 de 1.183"), los números de página con ventana (`pageWindow`, `utils/pagination.js`) y la vuelta a la página 1 al cambiar un filtro o la búsqueda. Los totales y las descargas usan la lista entera, no la página. Paginan así Facturación y el historial de Nómina.
+- **Una lista larga se pagina con `usePagination` (`hooks/`) y `Pager` (`components/`)**: el rango que se ve ("Mostrando 51–100 de 1.183"), los números de página con ventana (`pageWindow`, `utils/pagination.js`) y la vuelta a la página 1 al cambiar un filtro o la búsqueda. Los totales y las descargas usan la lista entera, no la página. Paginan así Facturación, el historial de Nómina y la Agenda.
 
 ## Referencia
 
