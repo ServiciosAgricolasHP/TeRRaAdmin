@@ -5,6 +5,20 @@
 - Sus piezas, en `src/screens/help/`: `HelpSearch` (el buscador), `GuideView` (una guía), `HelpIndex` (las tarjetas de las guías), `useMissingHelpReport` ("Avisar que falta"), `renderGuide.js` (Markdown → HTML con `marked`), `guides.js` (el registro de las guías), `guides/*.md` (el texto) e `imageSizes.json` (ancho y alto de cada captura, lo escribe el generador). El cálculo, en `utils/helpGuides.js` (leer una guía por secciones) y `utils/helpSearch.js` (la búsqueda), con tests; `screens/help/guides.test.js` revisa el contenido.
 - Costo: **0 lecturas**. Las guías son texto del bundle y se indexan en el navegador. Lo único que escribe es "Avisar que falta" (colección `helpQuestions`, ver `docs/data-model.md`).
 
+## Las guías y sus pantallas
+
+Un cambio de interfaz en una de estas pantallas actualiza su guía y regenera sus capturas (`HELP_GUIDES=<guía> npm run help:shots`) en el mismo commit.
+
+| Guía | Pantalla | Datos que siembra el guion además de la semilla |
+|---|---|---|
+| `primeros-pasos` | el inicio de sesión, el menú, el encabezado y la ayuda | |
+| `faenas-y-ciclos` | Faenas (`/faenas`) | |
+| `grilla-del-ciclo` | la grilla del ciclo (`/cycles/:id`) | |
+| `precios-del-dia` | los precios y el piso de cada tipo de labor, en la grilla del ciclo | `seedLaborTypes` |
+| `nomina` | Nómina: generar, el historial, el detalle, descargar, imprimir y pagar | `seedCashWorkers` |
+| `corregir-nomina` | el detalle de una nómina: recalcular, agregar y sacar | `seedCashWorkers`, `seedLaborTypes` |
+| `anticipos-y-bonos` | Anticipos / Bonos (`/advances`) y cómo los aplica Nómina | `seedCashWorkers`, `seedAdvances` |
+
 ## Cómo se escribe una guía
 
 - Un `.md` en `src/screens/help/guides/`, registrado en `guides.js` con su `id` (el de la URL), su ícono y, si es solo para admins, `adminOnly: true`.

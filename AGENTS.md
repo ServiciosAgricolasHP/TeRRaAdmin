@@ -270,7 +270,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 
 ### Ayuda
 
-- **Una pantalla con guía en la ayuda mantiene su guía al día.** Un cambio de interfaz en esa pantalla actualiza el texto de la guía y regenera sus capturas (`HELP_GUIDES=<guía> npm run help:shots`) en el mismo commit; una tarea nueva suma su sección, con sus preguntas de ejemplo. Si el guion de captura falla, la guía quedó vieja. Cómo se escribe una guía: `docs/screens/help.md`.
+- **Una pantalla con guía en la ayuda mantiene su guía al día** (la lista, en "Las guías y sus pantallas" de `docs/screens/help.md`). Un cambio de interfaz en esa pantalla actualiza el texto de la guía y regenera sus capturas (`HELP_GUIDES=<guía> npm run help:shots`) en el mismo commit; una tarea nueva suma su sección, con sus preguntas de ejemplo. Si el guion de captura falla, la guía quedó vieja. Cómo se escribe una guía: `docs/screens/help.md`.
 
 ### Alto de las listas y grillas
 
