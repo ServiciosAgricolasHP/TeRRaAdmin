@@ -4,6 +4,7 @@ import WorkerAdvancesModal from "../../components/WorkerAdvancesModal";
 import LogsTable from "./LogsTable";
 import { useRecordSearch } from "./useRecordSearch";
 import { attempt } from "../../utils/attempt";
+import { labelKey } from "../../utils/auditLabels";
 
 // Buscador por registro: se elige un tipo (Trabajador, Ciclo, Faena…), se
 // carga su lista con un botón, se busca el registro por nombre o rut y se
@@ -31,6 +32,9 @@ export default function EntitySearchPanel() {
     setQuery,
     types,
   } = useRecordSearch();
+  // El nombre del registro elegido ya se sabe: sus filas no lo buscan.
+  const selectedKey = selected ? labelKey(entityType, selected.id) : null;
+  const knownLabels = selectedKey ? { [selectedKey]: selected.label } : null;
 
   return (
     <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
@@ -160,7 +164,7 @@ export default function EntitySearchPanel() {
               </div>
             ) : recordLogs ? (
               <div className="overflow-x-auto rounded-md border border-[var(--color-border)]" style={{ WebkitOverflowScrolling: "touch" }}>
-                <LogsTable logs={recordLogs} />
+                <LogsTable logs={recordLogs} knownLabels={knownLabels} />
               </div>
             ) : null}
           </div>
