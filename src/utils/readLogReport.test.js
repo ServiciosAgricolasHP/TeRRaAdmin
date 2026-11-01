@@ -14,6 +14,8 @@ import {
   weekdayOf,
   personName,
   readsByPerson,
+  exportPayload,
+  reportText,
 } from "./readLogReport";
 
 // Arma un documento de `readLogs` como lo deja el registro: las mismas sumas
@@ -184,5 +186,37 @@ describe("readsByPerson", () => {
       ["ana@ejemplo.cl", true, 550, 1, ["1.3.4"]],
       ["Beto", false, 340, 1, ["1.3.3", "1.3.4"]],
     ]);
+  });
+});
+
+describe("exportPayload", () => {
+  it("lleva los registros, el rango, los filtros y de cada persona solo el uid y si es admin", () => {
+    const out = exportPayload({ logs: [ana, beto], profiles, from: "2026-11-02", to: "2026-11-08", person: "all", env: "prod", exportedAt: "x" });
+    expect(out).toMatchObject({ format: "terra-read-logs", range: { from: "2026-11-02", to: "2026-11-08" }, filters: { person: "all", env: "prod" } });
+    expect(out.people).toEqual([{ userId: "u-ana", admin: true }, { userId: "u-beto", admin: false }]);
+    expect(out.logs).toHaveLength(2);
+    expect(JSON.stringify(out)).not.toContain("ejemplo.cl");
+  });
+});
+
+describe("reportText", () => {
+  const text = reportText({ logs: [ana, beto], from: "2026-11-02", to: "2026-11-08", filters: "Producción" });
+
+  it("trae el encabezado y los totales", () => {
+    expect(text).toContain("# Informe de lecturas, del 2026-11-02 al 2026-11-08 (Producción)");
+    expect(text).toContain("Lecturas cobradas: 750 · ahorradas por caché: 3.000");
+  });
+
+  it("los días, las pantallas con sus modales y sus consultas", () => {
+    expect(text).toContain("| Lun 2026-11-02 | 550 | 3.000 | 1 | 1 |");
+    expect(text).toContain("| /payroll | 1 | 3m | 550 | 73,3% | 550 | 183 | 3.000 |");
+    expect(text).toContain("| › Detalle de nómina | 1 | 1m | 500 | 66,7% | 500 | 500 | — |");
+    expect(text).toContain("**/payroll › Detalle de nómina**");
+    expect(text).toContain("- `workdays · cycleId ==`: 500 en 2 peticiones");
+  });
+
+  it("las consultas y las colecciones", () => {
+    expect(text).toContain("| `workdays · cycleId ==` | 3 | 700 | 93,3% | 233 | — | 2 |");
+    expect(text).toContain("| `worker` | 0 | 0,0% | 0 | 3.000 | — |");
   });
 });

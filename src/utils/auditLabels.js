@@ -164,13 +164,39 @@ export function diffLabelHint(entity, changes) {
 const _cache = new Map(); // `${entity}:${id}` -> label | null
 const _inflight = new Map();
 
+export const labelKey = (entity, entityId) => `${entity}:${entityId}`;
+
+// El label de un log sin leer nada: el del documento creado o eliminado, el
+// nombre nuevo si la edición lo cambió, o el que ya se buscó antes.
+// `undefined` si hace falta leer el registro para saberlo.
+export function knownEntityLabel(log) {
+  const label = snapshotLabel(log.entity, log.after || log.before) || diffLabelHint(log.entity, log.changes);
+  if (label) return label;
+  const key = labelKey(log.entity, log.entityId);
+  return _cache.has(key) ? _cache.get(key) : undefined;
+}
+
+// Los registros de `logs` cuyo nombre solo se sabe leyéndolos: uno por
+// registro y solo de las entidades con servicio.
+export function missingLabelKeys(logs) {
+  const missing = new Map();
+  for (const log of logs) {
+    if (!log.entityId || !ENTITY_META[log.entity]?.service) continue;
+    const key = labelKey(log.entity, log.entityId);
+    if (!missing.has(key) && knownEntityLabel(log) === undefined) {
+      missing.set(key, { key, entity: log.entity, entityId: log.entityId });
+    }
+  }
+  return [...missing.values()];
+}
+
 // Lee el doc en vivo y cachea el label. Devuelve null si la entidad no tiene
 // service registrado, si el doc ya no existe o si la lectura falla.
 export async function resolveEntityLabel(entity, entityId) {
   if (!entityId) return null;
   const meta = ENTITY_META[entity];
   if (!meta?.service) return null;
-  const key = `${entity}:${entityId}`;
+  const key = labelKey(entity, entityId);
   if (_cache.has(key)) return _cache.get(key);
   if (_inflight.has(key)) return _inflight.get(key);
   const p = meta.service
