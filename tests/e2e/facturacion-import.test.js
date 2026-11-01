@@ -3,6 +3,7 @@ import { importDteRecords } from "../../src/services/dteImportService";
 import { dteDocumentsService } from "../../src/services";
 import { parseSiiRcvCsv, buildDteDocId } from "../../src/utils/siiCsvParser";
 import { get, all } from "./helpers/seed";
+import { syncDteDocuments } from "../../src/services/dteDocumentsList";
 
 const EMPRESA = "empresa-1";
 const RUT_EMPRESA = "76123456-7";
@@ -223,5 +224,28 @@ describe("compras", () => {
 
     expect(res.totalDeleted).toBe(0);
     expect(await all("dteDocuments")).toHaveLength(4);
+  });
+});
+
+describe("la copia de Facturación en el navegador", () => {
+  const folios = (list) => list.map((d) => d.folio);
+
+  it("importar y reimportar la corrigen en su lugar, sin leerla entera", async () => {
+    await syncDteDocuments();
+    await importar(csvVentas(MARZO));
+    const imported = await syncDteDocuments();
+    expect(imported.reads).toBe(0);
+    expect(folios(imported.data)).toEqual([103, 102, 101]);
+    expect(imported.data.every((d) => d.paymentStatus === "unpaid")).toBe(true);
+
+    await dteDocumentsService.update(idDe(101), { paymentStatus: "paid" });
+    await importar(csvVentas(MARZO.slice(0, 2)));
+    const local = await syncDteDocuments();
+    expect(local.data.map((d) => [d.folio, d.paymentStatus])).toEqual([[102, "unpaid"], [101, "paid"]]);
+
+    // La puesta al día trae lo escrito y el conteo calza: sin la carga completa.
+    const synced = await syncDteDocuments({ fresh: true });
+    expect(folios(synced.data)).toEqual([102, 101]);
+    expect(synced.reads).toBe(3);
   });
 });

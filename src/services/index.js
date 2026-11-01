@@ -61,7 +61,8 @@ export const companiesService = createService("company", "companies");
 // (`{companyId}_V_{tipo}_{folio}` para ventas; `{companyId}_C_{rutProveedorSinDV}_{tipo}_{folio}`
 // para compras), así reimportar el mismo período es idempotente: escribe
 // encima del existente sin duplicar.
-export const dteDocumentsService = createService("dteDocument", "dteDocuments");
+// Ver `listDteDocuments` en dteDocumentsList.js.
+export const dteDocumentsService = createAdditiveService("dteDocument", "dteDocuments");
 export { tripsService as transportsService, paymentsService as transportPaymentsService } from "./transportsService";
 export const logsService = createService("log", "logs");
 

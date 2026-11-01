@@ -5,6 +5,7 @@ import { doc, serverTimestamp } from "firebase/firestore";
 import { writeBatch } from "./readMeter";
 import { db } from "../firebase";
 import { dteDocumentsService } from "./index";
+import { mergeListItem, removeListItem } from "./cache";
 
 // El límite de Firestore es 500 operaciones por batch.
 const CHUNK = 450;
@@ -60,6 +61,18 @@ async function writeScope({ records, existingIds, orphans, uid }) {
   }
 }
 
+// Corrige la copia del navegador (`listDteDocuments`) con lo que escribió un
+// ámbito: saca los huérfanos, así el conteo sigue calzando, y deja cada
+// registro sobre lo que ya tenía el documento (su estado de pago, abonos y
+// notas). La siguiente puesta al día trae lo escrito con sus horas.
+function patchCopy(existing, records, orphans) {
+  for (const o of orphans) removeListItem("dteDocuments", o.id);
+  const existingById = new Map(existing.map((e) => [e.id, e]));
+  for (const r of records) {
+    mergeListItem("dteDocuments", { ...(existingById.get(r.id) || { paymentStatus: "unpaid" }), ...r });
+  }
+}
+
 // Importa los registros ya parseados y con id asignado. Devuelve el conteo
 // que la pantalla muestra en el toast.
 export async function importDteRecords({ companyId, records = [], uid = null }) {
@@ -80,6 +93,7 @@ export async function importDteRecords({ companyId, records = [], uid = null }) 
     const existingIds = new Set(existing.map((e) => e.id));
 
     await writeScope({ records: scope.records, existingIds, orphans, uid });
+    patchCopy(existing, scope.records, orphans);
 
     totalDeleted += orphans.length;
     for (const r of scope.records) {
@@ -88,6 +102,5 @@ export async function importDteRecords({ companyId, records = [], uid = null }) 
     }
   }
 
-  dteDocumentsService.invalidate();
   return { totalNew, totalOverwrite, totalDeleted };
 }

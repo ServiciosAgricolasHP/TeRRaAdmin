@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useEffectEvent } from "react";
-import { companiesService, dteDocumentsService, costCentersService, informalExpensesService } from "../../services";
+import { companiesService, costCentersService, informalExpensesService } from "../../services";
+import { listDteDocuments } from "../../services/dteDocumentsList";
 import { attempt } from "../../utils/attempt";
 import { readStored, writeStored } from "../../utils/browserStorage";
 
@@ -7,8 +8,9 @@ import { readStored, writeStored } from "../../utils/browserStorage";
 // sesiones.
 const LS_SELECTED_COMPANY = "facturacion.selectedCompanyId";
 
-// Lo que Facturación carga al abrir: empresas, documentos del RCV, centros de
-// costo y gastos informales, cacheados 10 minutos. Recuerda la empresa elegida
+// Lo que Facturación carga al abrir: empresas, centros de costo y gastos
+// informales, cacheados 10 minutos, y los documentos del RCV, de la copia que
+// comparte con el Dashboard (`listDteDocuments`). Recuerda la empresa elegida
 // en el dispositivo y, si ya no existe, toma la primera.
 export function useBillingData() {
   const [companies, setCompanies] = useState([]);
@@ -39,7 +41,7 @@ export function useBillingData() {
     const { error: err } = await attempt(async () => {
       const [comps, list, centers, expenses] = await Promise.all([
         companiesService.list({ order: ["razonSocial", "asc"], cache: true, ttl: 600_000 }),
-        dteDocumentsService.list({ order: ["fechaEmision", "desc"], cache: true, ttl: 600_000 }),
+        listDteDocuments(),
         costCentersService.list({ order: ["label", "asc"], cache: true, ttl: 600_000 }),
         informalExpensesService.list({ order: ["date", "desc"], cache: true, ttl: 600_000 }),
       ]);
