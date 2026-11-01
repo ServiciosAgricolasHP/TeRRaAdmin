@@ -26,6 +26,7 @@
 
 - Libreta compartida de contactos (persona o empresa) con datos bancarios listos para copiar/pegar. **Modelo independiente**: no se vincula a `worker` ni a `companies` — el usuario crea sus propias fichas, aunque dupliquen a alguien que ya existe en otra colección.
 - Cada ficha tiene N cuentas (`accounts[]`), con la misma convención de `bankCode`/`accountType` que `worker.bankDetails`.
+- El RUT de una ficha o de una cuenta se muestra con puntos y, al tocarlo, se copia sin ellos, con guion. Los textos completos (`accountToText`, `cardToText`) lo llevan como se ve.
 - `favorite` fija la ficha arriba; `includeRut` decide si el RUT viaja junto con los datos copiados (siempre `true` en empresas).
 - El buscador filtra también las favoritas y encuentra por los datos de las cuentas (etiqueta, titular, RUT, banco y número) y por un RUT o número escrito con puntos y guion (`cardMatchesSearch`).
 - La lista se cachea 10 minutos en memoria; guardar, borrar y marcar favorita la actualizan en su lugar.

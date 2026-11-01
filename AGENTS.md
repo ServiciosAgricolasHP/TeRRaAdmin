@@ -236,6 +236,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 
 ### Exportar, copiar e imprimir
 
+- **Un RUT se muestra con puntos (`formatRutForDisplay`) y se copia sin ellos, con guion (`normalizeRut`).** Los buscadores de trabajadores (por nombre o RUT) quitan los puntos apenas se escriben o se pegan (`workerSearchInput`, `utils/workerSearch.js`); los que también buscan textos con puntos, como una razón social "S.A.", los dejan.
 - **Lo que se exporta es lo que se ve.** Un Excel, una imagen, una impresión o un PDF muestran exactamente lo de la pantalla: las mismas filas, ajustes, columnas y totales. Se arman desde los mismos datos que dibuja la pantalla, sin recalcular por su cuenta; si difieren, el error es del archivo.
 - **Las imágenes que se copian o descargan salen siempre en el tema claro**, sea cual sea el tema de quien las genera: `captureFullWidthBlob` / `captureFullWidthDataUrl` (`utils/imageCapture.js`) le ponen al clon fondo blanco y redefinen las variables `--color-*` con `LIGHT_PALETTE`. Esa lista es copia de `:root` en `index.css`, y un test (`imageCapture.test.js`) falla si se separan.
 - **Copiar la imagen, descargar el PNG e imprimir pasan por `useCaptureActions`** (`hooks/`). Cada acción recibe el nodo al llamarla, así una pantalla con varias tablas usa un solo hook; `busy` dice qué está en curso, y `run` corre cualquier otra exportación (el Excel) con el mismo aviso si falla. Una pantalla no arma su propio `try`/`finally` para esto.

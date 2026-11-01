@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { formatRutForDisplay } from "../../utils/rutUtils";
+import { workerSearchInput } from "../../utils/workerSearch";
 import { isCashBank, CASH_BANK_CODE, bankName } from "../../utils/banks";
 import { normalizeLeader } from "../../utils/payroll";
 import { matchesSearchQuery } from "../../utils/textSearch";
@@ -151,7 +152,7 @@ export function PreviewTable({
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
         <input
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => setSearch(workerSearchInput(e.target.value))}
           placeholder="Buscar por nombre o RUT..."
           className="w-64 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm outline-none focus:border-[var(--color-accent)]"
         />

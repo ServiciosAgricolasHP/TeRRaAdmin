@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { searchWorkerList, workerMatchesQuery, workerQueryReady } from "./workerSearch";
+import { searchWorkerList, workerMatchesQuery, workerQueryReady, workerSearchInput } from "./workerSearch";
 
 const ana = { id: "11111111-1", rut: "11111111-1", name: "Ana María Pérez Soto" };
 const beto = { id: "12345678-5", rut: "12345678-5", name: "Beto Soto" };
 // RUT corregido: el id sigue siendo el de creación.
 const caro = { id: "22222222-2", rut: "12345670-K", name: "Caro Díaz" };
+
+describe("workerSearchInput", () => {
+  it("quita los puntos de un RUT escrito o pegado y deja el resto como viene", () => {
+    expect(workerSearchInput("12.345.678-9")).toBe("12345678-9");
+    expect(workerSearchInput("Ana Pérez")).toBe("Ana Pérez");
+    expect(workerSearchInput(".")).toBe("");
+    expect(workerSearchInput(undefined)).toBe("");
+  });
+});
 
 describe("workerMatchesQuery", () => {
   it("por cualquier palabra del nombre, en cualquier orden y sin acentos", () => {

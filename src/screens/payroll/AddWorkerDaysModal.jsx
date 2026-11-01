@@ -3,6 +3,7 @@ import { workdaysService } from "../../services";
 import { listPendingForWorkers } from "../../services/advancesService";
 import { workerKeys } from "../../services/workersService";
 import { formatRutForDisplay } from "../../utils/rutUtils";
+import { workerSearchInput } from "../../utils/workerSearch";
 import { getTratoTierTotals } from "../../utils/cosechaCombos";
 import { useCatalogs } from "../../contexts/CatalogsContext";
 import { inChosenCycles, workerDayRows, asPayrollWorker, planAddWorkdays } from "../../utils/payrollItem";
@@ -310,7 +311,7 @@ export function AddWorkerDaysModal({
           <input
             autoFocus
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => setQuery(workerSearchInput(e.target.value))}
             placeholder="🔍 Buscar por nombre o RUT…"
             className="mb-3 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
           />

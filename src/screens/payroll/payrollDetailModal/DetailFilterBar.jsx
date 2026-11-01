@@ -1,5 +1,6 @@
 import { FilterChips, FilterToken } from "../FilterChips";
 import { fmtCurrency } from "../../../utils/format";
+import { workerSearchInput } from "../../../utils/workerSearch";
 
 // Barra de filtros fija, fuera del scroll, de borde a borde entre el
 // encabezado y el cuerpo. Grupo y Ciclo van en un panel; lo que esté activo se
@@ -14,7 +15,7 @@ export function DetailFilterBar({ cycleDetails, displayCycleLabel, filters, item
           <input
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => setSearch(workerSearchInput(e.target.value))}
             placeholder="Buscar por RUT, nombre o líder"
             className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-2)] py-1.5 pl-8 pr-2.5 text-sm outline-none focus:border-[var(--color-accent)] focus:bg-[var(--color-surface)]"
           />
