@@ -208,8 +208,15 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 
 - `firestoreBase` soporta `additive: true` en `create`/`update`/`upsert`/`remove` — en vez de invalidar la entrada de caché correspondiente, la **corrige en su lugar**: agrega, actualiza o quita el documento. Útil cuando una colección se lista entera (sin `wheres`) y la queremos mantener fresca sin pagar el costo de re-leer todos los docs.
 - `workersService` (en `services/index.js`) está envuelto para usar `additive: true` por defecto en todas las mutaciones — alta de trabajador no invalida la lista en caché.
-- **La lista completa de trabajadores se pide con `listWorkers()`** (`services/workersService.js`), nunca con un `workersService.list()` propio. La copia del navegador no vence: se lee entera la primera vez del día en cada navegador y, entre medio, se pone al día con lo que cambió (`updatedAt`), como mucho una vez por minuto. Así cuesta unas pocas lecturas en vez de una por trabajador. Lo que se escribe sin `updatedAt` (el escáner, la consola de Firebase) y lo que se elimina en otro equipo entran con la carga completa del día siguiente o con Recargar en Nómina.
+- **La lista completa de trabajadores se pide con `listWorkers()`** (`services/workersService.js`), nunca con un `workersService.list()` propio. Es una lista sincronizada (abajo) que se lee entera la primera vez del día en cada navegador, así cuesta unas pocas lecturas en vez de una por trabajador. Lo que se escribe sin `updatedAt` (el escáner, la consola de Firebase) y lo que se elimina en otro equipo entran con la carga completa del día siguiente o con Recargar en Nómina.
 - Helpers internos: `mergeListItem` y `removeListItem` (solo tocan claves de caché con `wheres` vacío).
+
+### Listas sincronizadas
+
+- **Una colección que se lee entera se guarda en el navegador y se pone al día** con `createSyncedList(service, { order, syncKey, fullEveryDays, checkCount })` (`services/syncedList.js`). La copia no vence: cada vez que se pide, como mucho una vez por minuto, se traen solo los documentos con `updatedAt` desde la marca (1 lectura si no cambió nada) y se juntan con la copia. El cálculo, en `utils/syncedList.js`, con tests.
+- Las escrituras de este equipo la corrigen en su lugar (`additive`), y **toda escritura de la colección pone `updatedAt`**: `firestoreBase` lo hace, y un `writeBatch` propio lo escribe a mano.
+- **Lo que la consulta por `updatedAt` no ve** (lo escrito sin `updatedAt` y lo que se elimina en otro equipo) entra con la carga completa, cada `fullEveryDays` días, o al borrar la caché de la colección (`service.invalidate()`). Con `checkCount`, cada puesta al día cuenta además los documentos en el servidor (una lectura por cada 1.000) y, si no calzan con la copia, la lee entera: un borrado en otro equipo llega con la siguiente puesta al día.
+- `sync()` devuelve la lista y cuántas lecturas costó; `list()`, solo la lista.
 
 ### Escrituras
 

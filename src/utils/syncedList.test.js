@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { millisOf, markOf, applyWorkerChanges, syncMode } from "./syncedList";
+import { millisOf, markOf, applyChanges, syncMode } from "./syncedList";
 
 describe("millisOf y markOf", () => {
   it("lee un Timestamp y el objeto en que queda guardado", () => {
@@ -17,26 +17,37 @@ describe("millisOf y markOf", () => {
   });
 });
 
-describe("applyWorkerChanges", () => {
+describe("applyChanges", () => {
   const list = [
     { id: "1", name: "Ana" },
     { id: "2", name: "Beto" },
     { id: "3", name: "Caro" },
   ];
+  const byName = ["name", "asc"];
 
-  it("reemplaza por id, agrega los nuevos y ordena por nombre", () => {
-    const out = applyWorkerChanges(list, [{ id: "2", name: "Zoe" }, { id: "4", name: "Bruno" }]);
+  it("reemplaza por id, agrega los nuevos y ordena por el campo", () => {
+    const out = applyChanges(list, [{ id: "2", name: "Zoe" }, { id: "4", name: "Bruno" }], byName);
     expect(out.map((w) => w.id)).toEqual(["1", "4", "3", "2"]);
     expect(out.find((w) => w.id === "2").name).toBe("Zoe");
   });
 
-  it("deja fuera a quien no tiene nombre, como la consulta ordenada", () => {
-    const out = applyWorkerChanges(list, [{ id: "5", rut: "5-5" }]);
+  it("deja fuera a quien no tiene el campo del orden, como la consulta ordenada", () => {
+    const out = applyChanges(list, [{ id: "5", rut: "5-5" }], byName);
     expect(out).toHaveLength(3);
   });
 
+  it("en orden descendente, de mayor a menor", () => {
+    const out = applyChanges(list, [{ id: "4", name: "Bruno" }], ["name", "desc"]);
+    expect(out.map((w) => w.name)).toEqual(["Caro", "Bruno", "Beto", "Ana"]);
+  });
+
+  it("sin orden, conserva el de la copia, agrega los nuevos al final y no deja a nadie fuera", () => {
+    const out = applyChanges(list, [{ id: "2", name: "Zoe" }, { id: "5", rut: "5-5" }]);
+    expect(out.map((w) => w.id)).toEqual(["1", "2", "3", "5"]);
+  });
+
   it("no cambia la copia que recibe", () => {
-    applyWorkerChanges(list, [{ id: "9", name: "Al" }]);
+    applyChanges(list, [{ id: "9", name: "Al" }], byName);
     expect(list.map((w) => w.id)).toEqual(["1", "2", "3"]);
   });
 });
@@ -47,6 +58,14 @@ describe("syncMode", () => {
   it("sin copia o con la carga completa de otro día, lee entera", () => {
     expect(syncMode({ ...base, hasCopy: false })).toBe("full");
     expect(syncMode({ ...base, fullDate: "2026-11-01" })).toBe("full");
+    expect(syncMode({ ...base, fullDate: "2026-11-03" })).toBe("full");
+    expect(syncMode({ ...base, fullDate: undefined })).toBe("full");
+  });
+
+  it("con una carga completa cada 7 días, la copia de hace 6 se pone al día y la de hace 7 se lee entera", () => {
+    const weekly = { ...base, fullEveryDays: 7, now: 61_001 };
+    expect(syncMode({ ...weekly, fullDate: "2026-10-27" })).toBe("delta");
+    expect(syncMode({ ...weekly, fullDate: "2026-10-26" })).toBe("full");
   });
 
   it("puesta al día hace menos de un minuto: la copia", () => {
