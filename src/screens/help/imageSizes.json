@@ -1,4 +1,40 @@
 {
+  "help/faenas-y-ciclos/01-nueva-faena.webp": [
+    256,
+    58
+  ],
+  "help/faenas-y-ciclos/02-datos-faena.webp": [
+    448,
+    364
+  ],
+  "help/faenas-y-ciclos/03-faena-sin-subfaenas.webp": [
+    1148,
+    226
+  ],
+  "help/faenas-y-ciclos/04-primer-ciclo.webp": [
+    448,
+    202
+  ],
+  "help/faenas-y-ciclos/05-nuevo-ciclo.webp": [
+    448,
+    642
+  ],
+  "help/faenas-y-ciclos/06-fila-del-ciclo.webp": [
+    1116,
+    65
+  ],
+  "help/faenas-y-ciclos/07-cerrar-ciclo.webp": [
+    448,
+    162
+  ],
+  "help/faenas-y-ciclos/08-ciclo-siguiente.webp": [
+    448,
+    194
+  ],
+  "help/faenas-y-ciclos/09-reabrir.webp": [
+    1116,
+    65
+  ],
   "help/grilla-del-ciclo/01-abrir-ciclo.webp": [
     1200,
     844
