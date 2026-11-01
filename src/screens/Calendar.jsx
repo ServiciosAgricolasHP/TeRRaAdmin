@@ -7,7 +7,7 @@ import { useIsMobile } from "../hooks/useIsMobile";
 import { useCaptureActions } from "../hooks/useCaptureActions";
 import { openPrintWindow } from "../utils/printWindow";
 import { syncWorkdayMonth } from "../services/workdayMonths";
-import { fetchTripsInRange } from "../services/calendarService";
+import { listTrips } from "../services/transportLists";
 import { DayDetailDrawer } from "./calendar/DayDetailDrawer";
 import { DayExpandedModal } from "./calendar/DayExpandedModal";
 import { monthBounds, isWeekendDate } from "./calendar/helpers";
@@ -28,7 +28,7 @@ import { readStoredJson, writeStoredJson } from "../utils/browserStorage";
 // Lecturas: las jornadas del mes salen de su copia en el navegador
 // (`syncWorkdayMonth`, services/workdayMonths.js), que se lee entera la primera
 // vez y después se pone al día con unas pocas lecturas, y se agregan en el
-// cliente.
+// cliente. Las vueltas salen de la copia de Transportes.
 // ============================================================================
 
 const COLOR_PALETTE = [
@@ -137,20 +137,20 @@ export default function Calendar() {
     };
   }, []);
 
-  // Carga las jornadas del mes, de su copia en el navegador (`fresh` la pone
-  // al día sin esperar el minuto), y sus vueltas de transporte.
+  // Carga las jornadas del mes y sus vueltas de transporte, de las copias del
+  // navegador. `fresh` las pone al día sin esperar el minuto.
   const loadMonth = async (y, m, { fresh = false } = {}) => {
     setLoading(true);
     setError("");
     const { error: err } = await attempt(async () => {
       const { start, end } = monthBounds(y, m);
-      const [monthWorkdays, monthTrips] = await Promise.all([
+      const [monthWorkdays, allTrips] = await Promise.all([
         syncWorkdayMonth(start.slice(0, 7), { fresh }),
-        fetchTripsInRange(start, end),
+        listTrips({ fresh }),
       ]);
       setWorkdays(monthWorkdays.data);
       setReadCount(monthWorkdays.reads);
-      setTrips(monthTrips);
+      setTrips(allTrips.filter((t) => typeof t.date === "string" && t.date >= start && t.date <= end));
     });
     if (err) setError(err.message || String(err));
     setLoading(false);
