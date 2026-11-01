@@ -424,7 +424,7 @@ Un vencimiento de la pantalla **Cheques y pagos**: un cheque emitido o recibido,
 | `seriesId` | ref→`commitmentSeries`? | si lo generó un crédito o un pago recurrente |
 | `installment` | `{ n, of }` | null | número de cuota; `null` en un pago recurrente |
 | `source` | `"excel_import"`? | solo lo importado de la planilla |
-| `createdAt/By`, `updatedAt/By` | ts, string | toda escritura de TeRRa pone `updatedAt`. La copia que comparten Cheques y pagos y el Dashboard se pone al día con él (`listCommitments`) |
+| `createdAt/By`, `updatedAt/By` | ts, string | toda escritura de TeRRa pone `updatedAt`, también la función diaria al generar un vencimiento (`createdBy` y `updatedBy` en `null`). La copia que comparten Cheques y pagos y el Dashboard se pone al día con él (`listCommitments`); un vencimiento escrito sin él entra porque el conteo deja de calzar |
 
 ### `commitmentSeries`
 Un crédito en cuotas (`kind: "installment"`), una deuda personal en cuotas (`kind: "personalDebt"`) o un pago recurrente mensual (`kind: "payment"`). Los vencimientos son docs propios de `commitments`, con el mismo `kind` de la serie; la serie solo los genera.

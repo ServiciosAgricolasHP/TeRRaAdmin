@@ -314,6 +314,10 @@ export async function extendRecurringSeries(db, today) {
           installment: null,
           createdAt: FieldValue.serverTimestamp(),
           createdBy: null,
+          // La copia de los vencimientos que guarda cada navegador se pone al
+          // día con `updatedAt` (`listCommitments` en la app).
+          updatedAt: FieldValue.serverTimestamp(),
+          updatedBy: null,
         });
         created += 1;
       } catch (err) {
