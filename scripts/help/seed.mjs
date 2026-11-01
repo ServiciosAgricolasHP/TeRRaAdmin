@@ -102,6 +102,71 @@ export async function seedDemo() {
   return { uid: user.uid };
 }
 
+// Un ciclo con una labor de cada tipo que tiene precios propios (cosecha, a
+// trato, a trato por etapas y jornadas con horas extras), en otra faena, para
+// la guía de precios. Tres días, cuatro personas y algo de producción.
+export const LABOR_TYPES_CYCLE = "C2";
+
+export async function seedLaborTypes() {
+  const db = getFirestore("hpdatabase");
+  const days = DEMO_DAYS.slice(0, 3);
+  const people = DEMO_WORKERS.slice(0, 4);
+  const workers = people.map((w) => ({ rut: w.rut, id: w.id, name: w.name }));
+  await db.collection("faenas").doc("F2").set({ name: "Agrícola Santa Elena", createdAt: new Date("2026-09-15") });
+  await db.collection("subfaenas").doc("S2").set({ name: "Parronal", faenaId: "F2", createdAt: new Date("2026-09-15") });
+
+  const perDay = (entry) => Object.fromEntries(days.map((d, i) => [d, typeof entry === "function" ? entry(d, i) : entry]));
+  await db.collection("cycles").doc(LABOR_TYPES_CYCLE).set({
+    label: "Agrícola Santa Elena/Parronal/Ciclo 1",
+    faenaId: "F2",
+    subfaenaId: "S2",
+    status: "open",
+    startDate: days[0],
+    days,
+    labors: [
+      { id: "L2", name: "Cosecha", type: "cosecha", workers },
+      { id: "L3", name: "Poda", type: "trato", tratoType: 0, workers },
+      {
+        id: "L4", name: "Embalaje", type: "tratoEtapas", workers,
+        stages: [{ id: "s1", name: "Armado", counts: false }, { id: "s2", name: "Embalado", counts: true }],
+      },
+      { id: "L5", name: "Riego", type: "tratoHE", workers, baseDayDefault: 30000, overtimeRate: 5000, bonusManejo: 5000, bonusSupervision: 8000 },
+    ],
+    dayPrices: {
+      L2: perDay({ "0_1": { price: 350, mode: "unit" }, "1_0": { price: 200, mode: "unit" } }),
+      L3: perDay((d, i) => ({
+        t0: { price: 120, mode: "unit", unit: 3 },
+        ...(i === 0 ? { t1: { price: 15000, mode: "flat" } } : {}),
+      })),
+      L4: perDay({ s1: { price: 50, mode: "unit" }, s2: { price: 80, mode: "unit" } }),
+      L5: {
+        [days[0]]: { "0_0": { price: 30000, mode: "normal", isHoliday: false } },
+        [days[1]]: { "0_0": { price: 0, mode: "overtimeOnly", isHoliday: false } },
+        [days[2]]: { "0_0": { price: 45000, mode: "normal", isHoliday: true } },
+      },
+    },
+    dayNotesByLabor: {},
+    createdAt: new Date("2026-10-04"),
+  });
+
+  const batch = db.batch();
+  const wd = (labor, w, date, ck, data) =>
+    batch.set(db.collection("workdays").doc(`${LABOR_TYPES_CYCLE}__${labor}__${w.rut}__${date}__${ck}`), {
+      cycleId: LABOR_TYPES_CYCLE, laborId: labor, workerRut: w.rut, workerId: w.id, date, payrollId: null, ...data,
+    });
+  people.forEach((w, i) => {
+    days.forEach((d, j) => {
+      const kilos = 18 + i * 3 + j * 2;
+      wd("L2", w, d, "0_1", { qualityX: 0, containerY: 1, qty: kilos, amount: kilos * 350 });
+      const plants = 90 + i * 10 + j * 5;
+      wd("L3", w, d, "t0", { qty: plants, amount: plants * 120 });
+      const boxes = 40 + i * 4;
+      wd("L4", w, d, "s2", { stageId: "s2", qty: boxes, amount: boxes * 80 });
+    });
+  });
+  await batch.commit();
+}
+
 if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, "/")}`) {
   await seedDemo();
   console.log("datos de la ayuda sembrados");

@@ -1,6 +1,7 @@
 import firstSteps from "./guides/primeros-pasos.md?raw";
 import cycleGrid from "./guides/grilla-del-ciclo.md?raw";
 import jobsAndCycles from "./guides/faenas-y-ciclos.md?raw";
+import dayPrices from "./guides/precios-del-dia.md?raw";
 
 // Las guías de la ayuda, en el orden del índice. El texto de cada una vive en
 // su `.md` de `guides/` y sus capturas en `public/help/<id>/`, que regenera
@@ -9,4 +10,5 @@ export const GUIDES = [
   { id: "primeros-pasos", icon: "👋", source: firstSteps },
   { id: "faenas-y-ciclos", icon: "🌾", source: jobsAndCycles },
   { id: "grilla-del-ciclo", icon: "🗓", source: cycleGrid },
+  { id: "precios-del-dia", icon: "💲", source: dayPrices },
 ];
