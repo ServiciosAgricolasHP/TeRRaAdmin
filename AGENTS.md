@@ -217,6 +217,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 - Las escrituras de este equipo la corrigen en su lugar (`additive`), y **toda escritura de la colección pone `updatedAt`**: `firestoreBase` lo hace, y un `writeBatch` propio lo escribe a mano.
 - **Lo que la consulta por `updatedAt` no ve** (lo escrito sin `updatedAt` y lo que se elimina en otro equipo) entra con la carga completa, cada `fullEveryDays` días, o al borrar la caché de la colección (`service.invalidate()`). Con `checkCount`, cada puesta al día cuenta además los documentos en el servidor (una lectura por cada 1.000) y, si no calzan con la copia, la lee entera: un borrado en otro equipo llega con la siguiente puesta al día.
 - `sync()` devuelve la lista y cuántas lecturas costó; `list()`, solo la lista.
+- Las usan los trabajadores (`listWorkers`: carga completa diaria, porque el escáner escribe sin `updatedAt`) y la agenda telefónica (`listPhoneContacts`: carga completa semanal y conteo).
 
 ### Escrituras
 

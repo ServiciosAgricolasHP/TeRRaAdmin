@@ -32,7 +32,7 @@ const btnCls = "min-h-8 rounded-md border border-[var(--color-border)] bg-[var(-
 // importar contactos.
 export default function PhoneBookTab() {
   const toast = useToast();
-  const { contacts, loading, loadError, save, remove, applyImported } = usePhoneBook();
+  const { contacts, loading, loadError, reload, save, remove, applyImported } = usePhoneBook();
   const [search, setSearch] = useState("");
   const [type, setType] = useState("");
   const [department, setDepartment] = useState("");
@@ -169,8 +169,18 @@ export default function PhoneBookTab() {
         >
           🏢 Por empresa
         </button>
-        <span className="ml-auto text-xs text-[var(--color-muted)]">
+        <span className="ml-auto flex items-center gap-1 text-xs text-[var(--color-muted)]">
           {filtering ? `${filtered.length} de ${contacts.length}` : contacts.length} {contacts.length === 1 ? "contacto" : "contactos"}
+          <button
+            type="button"
+            onClick={reload}
+            disabled={loading}
+            aria-label="Volver a leer la agenda"
+            title="Volver a leer la agenda entera (una lectura por contacto). Lo que cambia en otro equipo llega solo al abrirla."
+            className="min-h-8 min-w-8 rounded-md text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-40"
+          >
+            ↻
+          </button>
         </span>
       </div>
 

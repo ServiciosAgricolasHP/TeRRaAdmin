@@ -506,7 +506,7 @@ Agenda telefónica — pestaña "📞 Agenda telefónica" de Agenda y Cuentas. S
 | `emails` | string[] | en minúsculas |
 | `notes` | string | |
 | `sources` | (`"sheet"` \| `"google"` \| `"outlook"` \| `"vcard"` \| `"manual"`)[] | de dónde vino |
-| `createdAt/By`, `updatedAt/By` | ts, string | |
+| `createdAt/By`, `updatedAt/By` | ts, string | toda escritura de TeRRa pone `updatedAt`, también la importación. La agenda del navegador se pone al día con él (`listPhoneContacts`) |
 
 Una importación deja **un** log (`action: "import"`, `entity: "phoneContact"`, sin `entityId`) con `meta: { created, updated, unchanged, sources, files }`, en vez de uno por contacto.
 

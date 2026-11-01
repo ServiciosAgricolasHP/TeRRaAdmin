@@ -2,6 +2,7 @@ import { doc, collection, serverTimestamp } from "firebase/firestore";
 import { writeBatch } from "./readMeter";
 import { db, auth } from "../firebase";
 import { createService } from "./firestoreBase";
+import { createSyncedList } from "./syncedList";
 import { mergeListItem } from "./cache";
 import { logAction } from "./logger";
 import { phoneContactFields } from "../utils/phoneBook";
@@ -13,12 +14,21 @@ const COLLECTION = "phoneContacts";
 
 export const phoneContactsService = createService("phoneContact", COLLECTION);
 
-// La agenda completa, cacheada 2 horas también en `localStorage`: son cerca
-// de 1.200 lecturas la primera vez. Las escrituras la actualizan en su lugar
-// (`additive`).
-export const PHONE_CONTACTS_LIST = { cache: true, persist: true, ttl: 2 * 60 * 60 * 1000 };
+// La agenda completa es una lista sincronizada (`createSyncedList`): la copia
+// del navegador se pone al día con lo que cambió y con un conteo de los
+// contactos, que la vuelve a leer entera si alguno se eliminó en otro equipo.
+// Se lee entera además una vez por semana, por lo que se escriba sin
+// `updatedAt` (la consola de Firebase). Las escrituras de este equipo la
+// corrigen en su lugar (`additive`).
+const phoneContactsList = createSyncedList(phoneContactsService, {
+  syncKey: "phoneContacts.sync",
+  fullEveryDays: 7,
+  checkCount: true,
+});
 
-export const listPhoneContacts = () => phoneContactsService.list(PHONE_CONTACTS_LIST);
+export const syncPhoneContacts = (opts) => phoneContactsList.sync(opts);
+
+export const listPhoneContacts = (opts) => phoneContactsList.list(opts);
 
 const CHUNK = 450;
 
