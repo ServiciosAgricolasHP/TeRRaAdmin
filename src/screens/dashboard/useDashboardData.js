@@ -3,11 +3,11 @@ import { syncCycles, syncJobs } from "../../services/jobLists";
 import { syncPayrolls } from "../../services/payrollsList";
 import { syncFortnights, syncTransportPayments } from "../../services/transportLists";
 import { syncCommitments } from "../../services/commitmentsService";
-import { countWorkdaysInRange } from "../../services/countsService";
+import { countWorkdaysByMonth } from "../../services/countsService";
 import { useToast } from "../../contexts/ToastContext";
 import { fmtMonthKey } from "../../utils/format";
 import { localIsoDate } from "../../utils/dates";
-import { commitmentsWeekOf, lastMonthKeys, monthRangeOfKey, paymentsCreatedSince } from "../../utils/dashboard";
+import { commitmentsWeekOf, lastMonthKeys, paymentsCreatedSince } from "../../utils/dashboard";
 import { attempt } from "../../utils/attempt";
 
 // Lo que lee el Dashboard al abrirse: faenas, ciclos, nóminas, quincenas y
@@ -27,24 +27,20 @@ export function useDashboardData() {
   const [commitments, setCommitments] = useState(null);
   const [commitmentReads, setCommitmentReads] = useState(0);
 
-  // Serie de actividad de los últimos 12 meses. Un `getCountFromServer` por mes
-  // = 12 lecturas para el año entero, contra las decenas de miles que costaría
-  // traerse las filas. No depende del selector de período: se pide una sola vez
-  // por sesión y alimenta tanto la tarjeta como el gráfico de historia.
+  // Serie de actividad de los últimos 12 meses. Un `getCountFromServer` por mes,
+  // contra las decenas de miles de lecturas que costaría traerse las filas, y
+  // los meses cerrados salen de lo guardado (`countWorkdaysByMonth`). No
+  // depende del selector de período: alimenta tanto la tarjeta como el gráfico
+  // de historia.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const keys = lastMonthKeys(12);
       const { error: err } = await attempt(async () => {
-        const counts = await Promise.all(
-          keys.map((k) => {
-            const { start, end } = monthRangeOfKey(k);
-            return countWorkdaysInRange(start, end);
-          }),
-        );
+        const { counts, reads } = await countWorkdaysByMonth(keys);
         if (cancelled) return;
         setWorkdayMonths(keys.map((k, i) => ({ key: k, label: fmtMonthKey(k), workdayCount: counts[i] })));
-        setCountReads(keys.length);
+        setCountReads(reads);
       });
       if (err && !cancelled) console.error("[dashboard] conteo de jornadas:", err);
     })();

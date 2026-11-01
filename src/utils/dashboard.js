@@ -7,7 +7,7 @@
 // fecha de hoy).
 
 import { pendingCashOf } from "../services/payrollsService";
-import { groupUpcoming, directionOf, summarize } from "./commitments";
+import { daysUntil, groupUpcoming, directionOf, summarize } from "./commitments";
 import { CREDIT_NOTE_TYPES } from "./cashFlowProjection";
 import { fmtMonthKey, fmtShortDate } from "./format";
 
@@ -38,6 +38,26 @@ export function monthRangeOfKey(key) {
   const [y, m] = String(key).split("-").map(Number);
   const lastDay = new Date(y, m, 0).getDate();
   return { start: `${key}-01`, end: `${key}-${String(lastDay).padStart(2, "0")}` };
+}
+
+// El mes actual y el anterior todavía reciben jornadas: su conteo se pide
+// cada vez. El de un mes más viejo se guarda `WORKDAY_COUNT_KEEP_DAYS` días.
+const OPEN_COUNT_MONTHS = 2;
+export const WORKDAY_COUNT_KEEP_DAYS = 7;
+
+// Los meses de `keys` (del más viejo al más nuevo) cuyo conteo de jornadas hay
+// que pedir: los dos últimos siempre, y los más viejos si no tienen un conteo
+// guardado (`saved`: { [mes]: { count, date } }) de hace menos de
+// `WORKDAY_COUNT_KEEP_DAYS` días.
+export function workdayMonthsToCount(keys, saved, today) {
+  const open = new Set(keys.slice(-OPEN_COUNT_MONTHS));
+  return keys.filter((k) => {
+    if (open.has(k)) return true;
+    const s = saved?.[k];
+    if (typeof s?.count !== "number") return true;
+    const left = daysUntil(s.date, today);
+    return left === null || left > 0 || -left >= WORKDAY_COUNT_KEEP_DAYS;
+  });
 }
 
 // Timestamp de Firestore -> "YYYY-MM-DD". Devuelve "" si no hay fecha.

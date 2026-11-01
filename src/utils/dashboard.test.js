@@ -19,6 +19,7 @@ const {
   transportDebtByMonth,
   transportStats,
   tsToIso,
+  workdayMonthsToCount,
 } = await import("./dashboard");
 
 // 21 de octubre de 2026, hora local.
@@ -41,6 +42,31 @@ describe("meses", () => {
     expect(tsToIso(ts(2026, 9, 10))).toBe("2026-09-10");
     expect(tsToIso({ seconds: new Date(2026, 8, 10, 12).getTime() / 1000 })).toBe("2026-09-10");
     expect(tsToIso(null)).toBe("");
+  });
+});
+
+describe("workdayMonthsToCount", () => {
+  const keys = ["2026-07", "2026-08", "2026-09", "2026-10"];
+
+  it("cuenta siempre el mes actual y el anterior, y los viejos sin conteo guardado", () => {
+    expect(workdayMonthsToCount(keys, {}, "2026-10-21")).toEqual(keys);
+    const saved = {
+      "2026-07": { count: 900, date: "2026-10-20" },
+      "2026-08": { count: 1200, date: "2026-10-20" },
+      "2026-09": { count: 1500, date: "2026-10-20" },
+      "2026-10": { count: 300, date: "2026-10-20" },
+    };
+    expect(workdayMonthsToCount(keys, saved, "2026-10-21")).toEqual(["2026-09", "2026-10"]);
+  });
+
+  it("vuelve a contar un mes viejo guardado hace una semana o más, o con una fecha que no sirve", () => {
+    const saved = {
+      "2026-07": { count: 900, date: "2026-10-14" },
+      "2026-08": { count: 1200, date: "2026-10-15" },
+    };
+    expect(workdayMonthsToCount(keys, saved, "2026-10-21")).toEqual(["2026-07", "2026-09", "2026-10"]);
+    expect(workdayMonthsToCount(keys, { "2026-07": { count: 900, date: "" }, "2026-08": { count: 5, date: "2026-10-25" } }, "2026-10-21"))
+      .toEqual(keys);
   });
 });
 
