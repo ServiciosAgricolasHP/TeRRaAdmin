@@ -84,8 +84,8 @@ src/
   main.jsx              ← punto de entrada
   App.jsx               ← las rutas (react-router-dom)
   firebase.js           ← Firebase (Firestore db = "hpdatabase")
-  components/           ← UI compartida (Layout, ProtectedRoute, Modal, ConfirmDialog, RowMenu, TripEditModal, WorkerEditModal, WorkerSummaryModal, etc.)
-  hooks/                ← hooks que usan varias pantallas (useIsMobile, useWorkersList, useValuesChanged, useCaptureActions)
+  components/           ← UI compartida (Layout, ProtectedRoute, Modal, ConfirmDialog, RowMenu, Pager, TripEditModal, WorkerEditModal, WorkerSummaryModal, etc.)
+  hooks/                ← hooks que usan varias pantallas (useIsMobile, useWorkersList, useValuesChanged, useCaptureActions, usePagination)
   screens/              ← un componente por ruta (ver Rutas) y, al lado, la carpeta con sus piezas
                         (jobs/, cycleDetail/, payroll/, transports/…; ver "Componentes y archivos")
   contexts/             ← Auth, Theme, Catalogs, Carriers y Toast: XContext.js + XProvider.jsx
@@ -271,6 +271,10 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 
 - **Regla**: la lista va `min-h-0 flex-1` dentro del `flex h-full flex-col` de la raíz y toma el alto que queda libre (Advances, Workers). Sin alto fijo ni control para arrastrarlo.
 - Si la lista tiene algo debajo, eso va con `shrink-0` y un `max-h` propio, y la lista lleva además un alto mínimo para que no desaparezca en pantallas bajas: es el caso de la vista previa de Nómina, con el panel de efectivo abajo (`min-h-[240px] flex-1`). Cuando no cabe, desplaza el `<main>`.
+
+### Páginas
+
+- **Una lista larga se pagina con `usePagination` (`hooks/`) y `Pager` (`components/`)**: el rango que se ve ("Mostrando 51–100 de 1.183"), los números de página con ventana (`pageWindow`, `utils/pagination.js`) y la vuelta a la página 1 al cambiar un filtro o la búsqueda. Los totales y las descargas usan la lista entera, no la página. Paginan así Facturación y el historial de Nómina.
 
 ## Referencia
 
