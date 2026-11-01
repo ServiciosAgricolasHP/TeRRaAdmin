@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { millisOf, markOf, applyWorkerChanges, syncMode } from "./workersSync";
+import { millisOf, markOf, applyWorkerChanges, syncMode } from "./syncedList";
 
 describe("millisOf y markOf", () => {
   it("lee un Timestamp y el objeto en que queda guardado", () => {

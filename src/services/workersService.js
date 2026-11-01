@@ -7,7 +7,7 @@ import { normalizeRut, validateRut } from "../utils/rutUtils";
 import { toProperName } from "../utils/nameUtils";
 import { localIsoDate } from "../utils/dates";
 import { readStoredJson, writeStoredJson } from "../utils/browserStorage";
-import { applyWorkerChanges, markOf, syncMode } from "../utils/workersSync";
+import { applyWorkerChanges, markOf, syncMode } from "../utils/syncedList";
 
 // Si empieza con un dígito se busca por RUT; si no, por nombre.
 export function detectQueryKind(q) {
