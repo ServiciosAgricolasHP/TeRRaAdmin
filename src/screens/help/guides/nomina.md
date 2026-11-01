@@ -73,7 +73,7 @@ Cada fila muestra el estado, cuántas personas, lo de banco, lo de efectivo y el
 - **Estimar efectivo**: cuántos billetes y monedas sacar para armar los sobres, y cuánto lleva cada persona.
 - La tabla del resumen, por subfaena (**Sin labores**) o por subfaena y labor (**Con labores**), con **Copiar**, **Descargar** e **Imprimir**.
 - Más abajo, los ciclos de la nómina y las personas por líder, de banco y de efectivo.
-- Arriba, **Editar contenido** y **Recalcular** sirven para corregirla.
+- Arriba, **Editar contenido** y **Recalcular** sirven para corregirla (ver la guía [Corregir una nómina](/ayuda/corregir-nomina)).
 
 ## Descargar el archivo del banco
 <!-- preguntas: cómo descargo el archivo del banco; subir la nómina al banco; descargar el excel de la nómina; archivo para transferencias -->

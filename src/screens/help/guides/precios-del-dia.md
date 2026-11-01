@@ -96,7 +96,7 @@ En la grilla aparece la columna **Piso** de ese día. Cada 🪙 se puede quitar 
 
 - **Cosecha, a trato, por etapas y horas extras**: al cambiar el precio, la unidad o el modo de un día, TeRRa recalcula los montos de ese día con las cantidades ya anotadas.
 - **Pago al día, Supervisión y Adicional**: cambia solo el precio sugerido; los montos anotados quedan como están.
-- Una nómina ya generada guarda sus propios montos y no cambia sola. Para traer los nuevos montos, ver la guía de corregir una nómina.
+- Una nómina ya generada guarda sus propios montos y no cambia sola. Para traer los nuevos montos, ver [Traer los cambios de la grilla](/ayuda/corregir-nomina#traer-los-cambios-de-la-grilla-recalcular).
 
 ## Si algo no funciona
 <!-- preguntas: no aparece el piso; no puedo cambiar el precio; no me deja escribir el precio; precio en gris -->

@@ -194,6 +194,15 @@ export async function pinPayrollDates() {
   }
 }
 
+// Una corrección en la grilla después de generar la nómina: el último día
+// anotado de Ana Pérez pasa de $30.000 a $35.000.
+export async function correctDemoDay() {
+  const db = getFirestore("hpdatabase");
+  const ana = DEMO_WORKERS[0];
+  await db.collection("workdays").doc(`${DEMO_CYCLE}__L1__${ana.rut}__${DEMO_DAYS[2]}`)
+    .update({ amount: 35000, updatedAt: FieldValue.serverTimestamp() });
+}
+
 if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, "/")}`) {
   await seedDemo();
   console.log("datos de la ayuda sembrados");
