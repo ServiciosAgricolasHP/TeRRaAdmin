@@ -20,7 +20,6 @@ import {
   counterpartyOptions,
   docTotals,
   filterDocs,
-  pageWindow,
   periodOptionsOf,
   receivablesOf,
   receivablesTotalsOf,
@@ -50,6 +49,7 @@ import { useBillingData } from "./billing/useBillingData";
 import { useRcvImport } from "./billing/useRcvImport";
 import { useDocUpdates } from "./billing/useDocUpdates";
 import ScreenLoader from "../components/ScreenLoader";
+import { pageWindow } from "../utils/pagination";
 
 // Tamaño de página de la tabla principal. La vista plana pagina siempre, haya
 // o no búsqueda, para que meses con cientos de docs no rendericen todo.

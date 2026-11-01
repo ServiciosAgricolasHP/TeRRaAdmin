@@ -13,7 +13,7 @@
   - **Resumen anual:** `AnnualSummaryTab`, `PrintableAnnualSummary` y `writeAnnualSummaryXlsx.js`.
   - **Proyección:** `ProjectionTab` y `writeProjectionXlsx.js`.
   - **Comunes:** `docs.js` (período, estados de pago y agrupado por centro de costo) y `printStyles.js` (celdas de las tablas imprimibles).
-- **El cálculo vive en `utils/billingDocs.js`**, con tests: los filtros, el orden y las páginas del listado, los totales con signo, las retenciones por contraparte, lo pendiente de cobro (`pendingFor`, `RECEIVABLE_CATEGORIES`), las NC que pueden anular una factura y el resumen anual.
+- **El cálculo vive en `utils/billingDocs.js`**, con tests: los filtros y el orden del listado, los totales con signo, las retenciones por contraparte, lo pendiente de cobro (`pendingFor`, `RECEIVABLE_CATEGORIES`), las NC que pueden anular una factura y el resumen anual.
 - El año del Resumen y el mes de inicio y el porcentaje de la Proyección los guarda la pantalla, así se conservan al cambiar de pestaña.
 - Servicios: `companiesService` (colección `companies`) + `dteDocumentsService` (colección `dteDocuments`) en `services/index.js`. TTL del list = **10 min** (`ttl: 600_000`) — las mutaciones locales (status, notas, pagos, import) actualizan el state en memoria, así que el TTL solo afecta al re-entrar a la pantalla.
 - **Multi-empresa**: el sistema soporta N empresas (probado con 3). Cada empresa tiene `{ rut, razonSocial, alias, enabled }`. CRUD inline desde el modal **🏢 Empresas**. Los DTE quedan namespaceados por `companyId` así no se colisionan folios entre empresas (mismo proveedor puede facturar a varias empresas con el mismo folio).
