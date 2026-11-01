@@ -15,12 +15,17 @@ import {
 } from "./readMeter";
 import { db, auth } from "../firebase";
 import { logAction } from "./logger";
+import { removeListItem } from "./cache";
+import { FORTNIGHTS, PAYMENTS, TRIPS, listFortnights, listTransportPayments, listTrips } from "./transportLists";
 import { localIsoDate } from "../utils/dates";
+import { millisOf } from "../utils/syncedList";
 import { toTitleName, unshout } from "../utils/textCase";
 
-const TRIPS = "transports";
-const PAYMENTS = "transportPayments";
-const FORTNIGHTS = "transportPayrolls";
+// Las listas salen de las copias sincronizadas (services/transportLists.js),
+// puestas al día cada vez que se piden: con la copia al día cuesta unas pocas
+// lecturas, y lo que muestran es lo que hay en el servidor. Cada lista es un
+// arreglo nuevo, que la pantalla puede ordenar sin tocar la copia.
+const FRESH = { fresh: true };
 
 export const TRIP_KINDS = [
   { value: "regular", label: "Vuelta" },
@@ -128,6 +133,7 @@ async function recalcPaymentTotal(paymentId, { pruneMissingTrips = false } = {})
   // tiene abonos se conserva, porque esos pagos ya se hicieron.
   if (prunes && alive.length === 0 && !(data.abonos || []).length) {
     await deleteDoc(doc(db, PAYMENTS, paymentId));
+    removeListItem(PAYMENTS, paymentId);
     await logAction({
       action: "delete",
       entity: "transportPayment",
@@ -175,6 +181,7 @@ async function recalcFortnightTotal(payrollId, { pruneMissingPayments = false, d
   const alive = paymentIds.filter((_, i) => paySnaps[i].exists());
   if (dropIfEmpty && alive.length === 0) {
     await deleteDoc(doc(db, FORTNIGHTS, payrollId));
+    removeListItem(FORTNIGHTS, payrollId);
     await logAction({
       action: "delete",
       entity: "transportPayroll",
@@ -202,49 +209,42 @@ async function recalcFortnightTotal(payrollId, { pruneMissingPayments = false, d
 }
 
 export const tripsService = {
+  // Directo, sin la copia: lo usa la grilla del ciclo, que no necesita las
+  // demás vueltas.
   async listByCycle(cycleId) {
     const q = query(collection(db, TRIPS), where("cycleId", "==", cycleId));
     const snap = await getDocs(q);
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   },
 
-  // Con `onlyPending`, el filtro de estado va en la consulta.
   async listByCarrier(carrierId, { onlyPending = false } = {}) {
-    const parts = [where("carrierId", "==", carrierId)];
-    if (onlyPending) parts.push(where("status", "==", "pending"));
-    const q = query(collection(db, TRIPS), ...parts);
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return (await listTrips(FRESH)).filter(
+      (t) => t.carrierId === carrierId && (!onlyPending || t.status === "pending"),
+    );
   },
 
-  // Lee la colección entera, que crece sin límite. En pantallas conviene
-  // listSince(), acotada por fecha.
   async listAll() {
-    const snap = await getDocs(collection(db, TRIPS));
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return [...(await listTrips(FRESH))];
   },
 
-  // Filtra en el servidor por fecha (YYYY-MM-DD) y, opcionalmente, por estado.
+  // Desde una fecha (YYYY-MM-DD) y, opcionalmente, con un estado. Como en una
+  // consulta de Firestore, una vuelta sin fecha queda afuera.
   async listSince(sinceDate, { status } = {}) {
-    const parts = [where("date", ">=", String(sinceDate || ""))];
-    if (status) parts.push(where("status", "==", status));
-    const q = query(collection(db, TRIPS), ...parts);
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const since = String(sinceDate || "");
+    return (await listTrips(FRESH)).filter(
+      (t) => typeof t.date === "string" && t.date >= since && (!status || t.status === status),
+    );
   },
 
-  // Vueltas pendientes que no están en ningún resumen. El filtro por
-  // `paymentId` vacío va en JS: una consulta de Firestore no encuentra los
-  // documentos a los que les falta el campo.
+  // Vueltas pendientes que no están en ningún resumen (sin `paymentId`, o
+  // sin el campo).
   async listPendingUnlinked() {
     return (await this.listPending()).filter((t) => !t.paymentId);
   },
 
   // Todas las vueltas pendientes, estén o no en un resumen.
   async listPending() {
-    const q = query(collection(db, TRIPS), where("status", "==", "pending"));
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return (await listTrips(FRESH)).filter((t) => t.status === "pending");
   },
 
   async getById(id) {
@@ -280,6 +280,7 @@ export const tripsService = {
     const before = (await getDoc(doc(db, TRIPS, id))).data();
     if (before?.status === "paid") throw new Error("No se puede eliminar una vuelta pagada");
     await deleteDoc(doc(db, TRIPS, id));
+    removeListItem(TRIPS, id);
     // Además del total hay que sacar el ID del array: si queda colgado, el
     // conteo de vueltas del resumen miente y markPaid/deleteSummary tienen que
     // filtrarlo a mano (ver filterExistingTripIds).
@@ -305,22 +306,18 @@ async function filterExistingTripIds(tripIds) {
 
 export const paymentsService = {
   async listByCarrier(carrierId) {
-    const q = query(collection(db, PAYMENTS), where("carrierId", "==", carrierId));
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return (await listTransportPayments(FRESH)).filter((p) => p.carrierId === carrierId);
   },
 
   async listAll() {
-    const snap = await getDocs(collection(db, PAYMENTS));
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return [...(await listTransportPayments(FRESH))];
   },
 
-  // Resúmenes creados desde `sinceDate` (filtra por createdAt).
+  // Resúmenes creados desde `sinceDate` (filtra por createdAt; uno sin
+  // createdAt queda afuera).
   async listSince(sinceDate) {
-    const ts = sinceDate instanceof Date ? sinceDate : new Date(sinceDate);
-    const q = query(collection(db, PAYMENTS), where("createdAt", ">=", ts));
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const since = (sinceDate instanceof Date ? sinceDate : new Date(sinceDate)).getTime();
+    return (await listTransportPayments(FRESH)).filter((p) => p.createdAt && millisOf(p.createdAt) >= since);
   },
 
   async getById(id) {
@@ -520,6 +517,7 @@ export const paymentsService = {
     }
     batch.delete(doc(db, PAYMENTS, paymentId));
     await batch.commit();
+    removeListItem(PAYMENTS, paymentId);
     // Sale de su quincena, que se elimina si queda vacía.
     await recalcFortnightTotal(before.payrollId, { pruneMissingPayments: true, dropIfEmpty: true });
     await logAction({ action: "delete", entity: "transportPayment", entityId: paymentId, before, meta: carrierMeta(before.carrierId) });
@@ -602,15 +600,12 @@ export const paymentsService = {
 
 export const fortnightsService = {
   async listAll() {
-    const snap = await getDocs(collection(db, FORTNIGHTS));
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return [...(await listFortnights(FRESH))];
   },
 
   // Las quincenas sin pagar.
   async listOpen() {
-    const q = query(collection(db, FORTNIGHTS), where("status", "==", "pending"));
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return (await listFortnights(FRESH)).filter((q) => q.status === "pending");
   },
 
   async getById(id) {
@@ -726,6 +721,7 @@ export const fortnightsService = {
     }
     batch.delete(doc(db, FORTNIGHTS, id));
     await batch.commit();
+    removeListItem(FORTNIGHTS, id);
     await logAction({ action: "delete", entity: "transportPayroll", entityId: id, before });
   },
 

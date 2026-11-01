@@ -309,6 +309,8 @@ Transportistas (propios o contratados).
 | `notes` | string? | |
 | `status` | `"pending"` \| `"paid"` | una vuelta `paid` queda congelada: `tripsService.update`/`remove` la rechazan |
 | `paymentId` | ref→`transportPayments` \| null | null = "vuelta suelta", disponible para entrar a un resumen nuevo |
+| `createdAt`, `createdBy` | ts, string? | |
+| `updatedAt`, `updatedBy` | ts, string? | toda escritura de `transportsService` los pone. La copia del navegador se pone al día con él (`listTrips`) |
 
 ### `transportPayments`
 Resumen de pago a un transportista (lote de `transports`).

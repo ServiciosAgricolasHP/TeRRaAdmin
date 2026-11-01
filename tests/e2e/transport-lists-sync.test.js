@@ -1,12 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { deleteDoc, doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "../../src/firebase";
-import { fortnightsService, paymentsService } from "../../src/services/transportsService";
-import { syncFortnights, syncTransportPayments } from "../../src/services/transportLists";
+import { fortnightsService, paymentsService, tripsService } from "../../src/services/transportsService";
+import { syncFortnights, syncTransportPayments, syncTrips } from "../../src/services/transportLists";
 
-// Los resúmenes de transporte y las quincenas que lee el Dashboard: se leen
-// enteros una vez y después se ponen al día con lo que cambió y con un conteo.
-// Lo que hace "otro equipo" se escribe directo en Firestore.
+// Las vueltas, los resúmenes de transporte y las quincenas que leen Transportes
+// y el Dashboard: se leen enteros una vez y después se ponen al día con lo que
+// cambió y con un conteo. Lo que hace "otro equipo" se escribe directo en
+// Firestore.
 const write = (collection, id, data) =>
   setDoc(doc(db, collection, id), { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
 
@@ -16,6 +17,12 @@ async function seed() {
 }
 
 const byId = (list) => Object.fromEntries(list.map((d) => [d.id, d]));
+
+const trip = (over = {}) =>
+  tripsService.create({
+    carrierId: "c1", vehicleAlias: "Camión 1", cycleId: "ciclo-1", date: "2026-10-05",
+    kind: "regular", qty: 1, rate: 40000, status: "pending", ...over,
+  });
 
 describe("los resúmenes de transporte y las quincenas en el navegador", () => {
   it("se leen enteros una vez y después salen de la copia", async () => {
@@ -47,5 +54,30 @@ describe("los resúmenes de transporte y las quincenas en el navegador", () => {
 
     const { data } = await syncTransportPayments({ fresh: true });
     expect(data.map((p) => p.id)).toEqual(["r1"]);
+  });
+
+  it("Transportes filtra la copia de vueltas y la pone al día cada vez que la pide", async () => {
+    const a = await trip({ date: "2026-10-01" });
+    const b = await trip({ date: "2026-10-08", carrierId: "c2" });
+    expect((await syncTrips()).reads).toBe(2);
+
+    // Otro equipo agrega una vuelta: la próxima lista de Transportes ya la trae.
+    await setDoc(doc(db, "transports", "otra"), {
+      carrierId: "c1", date: "2026-10-09", status: "pending", amount: 0, updatedAt: serverTimestamp(),
+    });
+    expect((await tripsService.listByCarrier("c1")).map((t) => t.id).sort()).toEqual([a.id, "otra"].sort());
+    expect((await tripsService.listSince("2026-10-08")).map((t) => t.id).sort()).toEqual([b.id, "otra"].sort());
+    expect((await tripsService.listPendingUnlinked()).length).toBe(3);
+  });
+
+  it("una vuelta eliminada acá sale de la copia sin volver a leerla entera", async () => {
+    const a = await trip();
+    const b = await trip();
+    await syncTrips();
+    await tripsService.remove(a.id);
+
+    const { data, reads } = await syncTrips({ fresh: true });
+    expect(data.map((t) => t.id)).toEqual([b.id]);
+    expect(reads).toBe(2);
   });
 });

@@ -1,6 +1,8 @@
 // Ayudas de las quincenas: el rango compacto del encabezado, cuánto de cada
 // resumen está cobrado y el orden por período.
 
+import { millisOf } from "../../utils/syncedList";
+
 // "2026-04-16" → "16-04-26". Así el rango del encabezado de cada quincena va en
 // dos líneas (~55 px) y el ancho de la columna lo decide el nombre, que se
 // envuelve; en ISO y en una línea ocuparía ~145 px, por encima del `minWidth`.
@@ -31,7 +33,5 @@ export function compareFortnightPeriod(a, b) {
     return a.periodFrom < b.periodFrom ? 1 : -1; // desc: más reciente primero
   }
   if (!!a.periodFrom !== !!b.periodFrom) return a.periodFrom ? -1 : 1;
-  const ta = a.createdAt?.toMillis?.() ?? a.createdAt?.seconds ?? 0;
-  const tb = b.createdAt?.toMillis?.() ?? b.createdAt?.seconds ?? 0;
-  return tb - ta;
+  return millisOf(b.createdAt) - millisOf(a.createdAt);
 }
