@@ -7,6 +7,10 @@ export const MIN_WORKER_QUERY = 2;
 
 const compact = (s) => String(s || "").replace(/[.\s-]/g, "").toUpperCase();
 
+// Lo que se escribe o se pega en un buscador de trabajadores, sin puntos: un
+// RUT con puntos queda como se guarda, y un nombre no los lleva.
+export const workerSearchInput = (text) => String(text ?? "").replace(/\./g, "");
+
 // Si lo escrito alcanza para buscar.
 export const workerQueryReady = (query) => compact(query).length >= MIN_WORKER_QUERY;
 

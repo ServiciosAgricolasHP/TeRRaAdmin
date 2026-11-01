@@ -1,6 +1,6 @@
 import { accountToText } from "../../utils/contactCards";
 import { bankName, accountTypeLabel } from "../../utils/banks";
-import { formatRutForDisplay } from "../../utils/rutUtils";
+import { formatRutForDisplay, normalizeRut } from "../../utils/rutUtils";
 import Field from "./Field";
 
 // Bloque de una cuenta bancaria con copia por dato y copia del bloque entero.
@@ -22,7 +22,7 @@ export default function AccountBlock({ acc, index, multi, onCopy }) {
       </div>
       <div className="flex flex-col gap-0.5">
         <Field label="Titular" value={acc.titular} onCopy={onCopy} />
-        <Field label="RUT" value={acc.rutTitular ? formatRutForDisplay(acc.rutTitular) : ""} copyValue={formatRutForDisplay(acc.rutTitular)} onCopy={onCopy} mono />
+        <Field label="RUT" value={acc.rutTitular ? formatRutForDisplay(acc.rutTitular) : ""} copyValue={normalizeRut(acc.rutTitular)} onCopy={onCopy} mono />
         <Field label="Banco" value={bankName(acc.bankCode)} onCopy={onCopy} />
         <Field label="Tipo" value={accountTypeLabel(acc.accountType)} onCopy={onCopy} />
         <Field label="N° Cuenta" value={acc.accountNumber} onCopy={onCopy} mono />
