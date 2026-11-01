@@ -44,7 +44,13 @@ async function writeScope({ records, existingIds, orphans, uid }) {
         continue;
       }
       const { id, ...rest } = w.record;
-      const patch = { ...rest, importedAt: serverTimestamp(), importedBy: uid };
+      const patch = {
+        ...rest,
+        importedAt: serverTimestamp(),
+        importedBy: uid,
+        updatedAt: serverTimestamp(),
+        updatedBy: uid,
+      };
       // Reimportar no puede pisar el estado de pago que se cargó a mano; solo
       // los documentos nuevos arrancan en "unpaid".
       if (!existingIds.has(id)) patch.paymentStatus = "unpaid";

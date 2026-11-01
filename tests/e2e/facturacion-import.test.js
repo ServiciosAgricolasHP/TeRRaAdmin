@@ -76,6 +76,13 @@ describe("import del RCV: primera pasada", () => {
       expect((await get("dteDocuments", idDe(folio))).paymentStatus).toBe("unpaid");
     }
   });
+
+  it("cada documento queda con la hora de escritura, para la copia del navegador", async () => {
+    await importar(csvVentas(MARZO));
+    for (const folio of [101, 102, 103]) {
+      expect((await get("dteDocuments", idDe(folio))).updatedAt).toBeTruthy();
+    }
+  });
 });
 
 describe("reimportar el mismo período", () => {

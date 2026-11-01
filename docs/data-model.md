@@ -377,6 +377,7 @@ Documento tributario electrónico (factura / boleta / NC / etc.) importado del *
 | `payments` | `Payment[]` | abonos (ver abajo) |
 | `notes` | string? | notas editables / auditoría de anulación por NC |
 | `importedAt`, `importedBy` | ts, string? | sello del import (writeBatch chunks de 450) |
+| `updatedAt`, `updatedBy` | ts, string? | la última escritura: la importación y cada cambio desde Facturación (pago, abonos, notas, centro de costo) |
 
 `Payment` (embebido en `dteDocuments.payments`):
 - `id` (local), `date` (YYYY-MM-DD), `kind` (`abono` \| `neto` \| `iva` \| `total`), `amount: number`, `notes: string`
