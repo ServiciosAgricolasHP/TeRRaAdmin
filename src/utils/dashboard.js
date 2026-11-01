@@ -164,6 +164,15 @@ export function operationStats(cycles, jobs, workdayMonths, now = new Date()) {
   };
 }
 
+// Los resúmenes de transporte con `createdAt` desde `fromIso` (YYYY-MM-DD).
+// Uno sin `createdAt` queda afuera.
+export function paymentsCreatedSince(payments, fromIso) {
+  return payments.filter((p) => {
+    const created = tsToIso(p.createdAt);
+    return created !== "" && created >= fromIso;
+  });
+}
+
 // Gasto en transporte del período por transportista, lo pendiente, el gasto
 // de los últimos 6 meses y las quincenas pendientes.
 export function transportStats(payments, fortnights, carriers, periodMonths, now = new Date()) {
@@ -222,9 +231,9 @@ export function transportStats(payments, fortnights, carriers, periodMonths, now
 // los pagos, por su fecha real.
 //
 // Lo anterior a la ventana de 12 meses se acumula en un saldo inicial, así la
-// línea es el saldo vigente y no solo el flujo de la ventana. Los resúmenes
-// se traen por `createdAt` de los últimos 12 meses: una deuda impaga más
-// vieja que eso no entra en el saldo.
+// línea es el saldo vigente y no solo el flujo de la ventana. Recibe los
+// resúmenes creados en los últimos 12 meses (`paymentsCreatedSince`): una
+// deuda impaga más vieja que eso no entra en el saldo.
 export function transportDebtByMonth(payments, carriers, fortnights, now = new Date()) {
   const alias = new Map(carriers.map((c) => [c.id, c.alias || c.name || c.id]));
   const fortnightName = new Map(fortnights.map((q) => [q.id, q.name || q.id]));

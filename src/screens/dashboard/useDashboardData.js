@@ -1,15 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
-import { transportPaymentsService } from "../../services";
 import { syncCycles, syncJobs } from "../../services/jobLists";
 import { payrollsService } from "../../services/payrollsService";
-import { fortnightsService } from "../../services/transportsService";
+import { syncFortnights, syncTransportPayments } from "../../services/transportLists";
 import { syncCommitments } from "../../services/commitmentsService";
 import { countedList } from "../../services/cache";
 import { countWorkdaysInRange } from "../../services/countsService";
 import { useToast } from "../../contexts/ToastContext";
 import { fmtMonthKey } from "../../utils/format";
 import { localIsoDate } from "../../utils/dates";
-import { commitmentsWeekOf, lastMonthKeys, monthRangeOfKey } from "../../utils/dashboard";
+import { commitmentsWeekOf, lastMonthKeys, monthRangeOfKey, paymentsCreatedSince } from "../../utils/dashboard";
 import { attempt } from "../../utils/attempt";
 
 // Lo que lee el Dashboard al abrirse: faenas, ciclos, nóminas, quincenas y
@@ -78,28 +77,29 @@ export function useDashboardData() {
     (async () => {
       setLoading(true);
       const { error: err } = await attempt(async () => {
-        // Los resúmenes de transporte se traen siempre por 12 meses (la ventana
+        // Los resúmenes de transporte se toman siempre por 12 meses (la ventana
         // más larga que se puede pedir) y todo lo que depende del período se
         // filtra en cliente. Así cambiar de período no cuesta ninguna lectura,
         // y la curva de deuda tiene el histórico completo que necesita.
         const historyStart = `${lastMonthKeys(12)[0]}-01`;
         const [f, c, p, q, pays] = await Promise.all([
-          // Las faenas y los ciclos salen de la copia que comparten todas las
-          // pantallas. Las nóminas copian las opciones exactas de Nómina para
-          // compartir clave de caché y salir gratis.
+          // Las faenas, los ciclos, las quincenas y los resúmenes de
+          // transporte salen de copias sincronizadas. Las nóminas copian las
+          // opciones exactas de Nómina para compartir clave de caché y salir
+          // gratis.
           syncJobs(),
           syncCycles(),
           countedList(payrollsService, { order: ["createdAt", "desc"], take: 50, cache: true, persist: true, ttl: 5 * 60 * 1000 }),
-          fortnightsService.listAll(),
-          transportPaymentsService.listSince(new Date(historyStart)),
+          syncFortnights(),
+          syncTransportPayments(),
         ]);
         if (cancelled) return;
         setJobs(f.data);
         setCycles(c.data);
         setPayrolls(p.data);
-        setFortnights(q);
-        setPayments(pays);
-        setReads(f.reads + c.reads + p.reads + q.length + pays.length);
+        setFortnights(q.data);
+        setPayments(paymentsCreatedSince(pays.data, historyStart));
+        setReads(f.reads + c.reads + p.reads + q.reads + pays.reads);
       });
       if (err && !cancelled) {
         console.error("[dashboard] carga:", err);

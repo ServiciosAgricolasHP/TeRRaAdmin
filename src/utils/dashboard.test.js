@@ -12,6 +12,7 @@ const {
   monthRangeOfKey,
   operationStats,
   paymentPeriodDate,
+  paymentsCreatedSince,
   payrollMoneyStats,
   payrollMonthKey,
   pendingOfPayment,
@@ -52,6 +53,18 @@ describe("paymentPeriodDate", () => {
   it("con una sola punta usa esa fecha, y sin período cae a createdAt", () => {
     expect(paymentPeriodDate({ periodTo: "2026-09-20" })).toBe("2026-09-20");
     expect(paymentPeriodDate({ createdAt: ts(2026, 10, 2) })).toBe("2026-10-02");
+  });
+});
+
+describe("paymentsCreatedSince", () => {
+  it("deja los creados desde la fecha, también los guardados como `seconds`, y saca los que no tienen createdAt", () => {
+    const payments = [
+      { id: "viejo", createdAt: ts(2025, 10, 31) },
+      { id: "borde", createdAt: ts(2025, 11, 1) },
+      { id: "guardado", createdAt: { seconds: new Date(2026, 2, 4, 12).getTime() / 1000, nanoseconds: 0 } },
+      { id: "sinFecha" },
+    ];
+    expect(paymentsCreatedSince(payments, "2025-11-01").map((p) => p.id)).toEqual(["borde", "guardado"]);
   });
 });
 

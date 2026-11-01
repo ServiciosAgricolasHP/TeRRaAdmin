@@ -323,6 +323,8 @@ Resumen de pago a un transportista (lote de `transports`).
 | `status` | `"pending"` \| `"paid"` | `paid` congela el doc: no se recalcula ni se edita |
 | `paidAt`, `paidBy` | ts?, string? | |
 | `notes` | string? | |
+| `createdAt`, `createdBy` | ts, string? | |
+| `updatedAt`, `updatedBy` | ts, string? | toda escritura de `transportsService` los pone. La copia del navegador se pone al día con él (`listTransportPayments`) |
 
 ### `transportPayrolls` (quincenas)
 Agrupa N `transportPayments` de **varios** transportistas para pagar en bloque. Relación 1:N estricta: un resumen pertenece a una quincena o a ninguna.
@@ -336,6 +338,8 @@ Agrupa N `transportPayments` de **varios** transportistas para pagar en bloque. 
 | `status` | `"pending"` \| `"paid"` | |
 | `paidAt`, `paidBy` | ts?, string? | |
 | `notes` | string? | |
+| `createdAt`, `createdBy` | ts, string? | |
+| `updatedAt`, `updatedBy` | ts, string? | toda escritura de `transportsService` los pone. La copia del navegador se pone al día con él (`listFortnights`) |
 
 > **Cascada de pago**: marcar la quincena pagada marca cada resumen y cada vuelta de cada resumen. Marcar un item suelto marca solo ese resumen y sus vueltas — la quincena sigue `pending` hasta que se marque explícitamente. Revertir hace la cascada inversa.
 
