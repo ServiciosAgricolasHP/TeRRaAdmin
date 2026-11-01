@@ -1,9 +1,10 @@
 import { collection, orderBy, query, Timestamp, where } from "firebase/firestore";
 import { db } from "../firebase";
-import { cacheKey, getCache, setCache, subscribe } from "./cache";
+import { cacheKey, dropStoredCache, getCache, onListPatched, setCache, subscribe } from "./cache";
 import { getCountFromServer, getDocs, recordCacheHit } from "./readMeter";
+import { idbAvailable, idbDelete, idbGet, idbSet } from "./idbStore";
 import { localIsoDate } from "../utils/dates";
-import { readStoredJson, writeStoredJson } from "../utils/browserStorage";
+import { writeStored } from "../utils/browserStorage";
 import { applyChanges, markOf, syncMode } from "../utils/syncedList";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -14,14 +15,32 @@ const MIN_GAP_MS = 60 * 1000;
 const MARGIN_MS = 5 * 60 * 1000;
 // Un conteo cobra una lectura por cada 1.000 documentos contados.
 const COUNT_BATCH = 1000;
+// Espera antes de guardar la copia después de una escritura de este equipo,
+// para juntar varias seguidas en un solo guardado.
+const PERSIST_DELAY_MS = 1000;
 
-// Una colección que se lista entera y se guarda en el navegador: en la caché
-// de `list`, en memoria y en localStorage, con la misma clave, así las
-// escrituras `additive` de este equipo la corrigen en su lugar. Se pone al día
-// con una consulta: los documentos con `updatedAt` desde la marca.
+// Lo guardado en IndexedDB: la marca y la copia en JSON (un Timestamp queda
+// como `{ seconds, nanoseconds }`). `null` si no hay o no se puede leer.
+async function readSaved(syncKey) {
+  const saved = await idbGet(syncKey);
+  if (!saved?.meta || typeof saved.json !== "string") return null;
+  try {
+    const data = JSON.parse(saved.json);
+    return Array.isArray(data) ? { meta: saved.meta, data } : null;
+  } catch {
+    return null;
+  }
+}
+
+// Una colección que se lista entera y se guarda en el navegador. La copia vive
+// en memoria, en la caché de `list` y con la misma clave, así las escrituras
+// `additive` de este equipo la corrigen en su lugar; entre una carga de página
+// y otra se guarda en IndexedDB (services/idbStore.js) con su marca, y sin
+// IndexedDB queda solo en memoria. Se pone al día con una consulta: los
+// documentos con `updatedAt` desde la marca.
 // - `order`: el orden de la lista, como en `list`.
-// - `syncKey`: la clave de localStorage con la fecha de la última carga
-//   completa y la marca.
+// - `syncKey`: la clave en IndexedDB de la copia, con la fecha de la última
+//   carga completa y la marca.
 // - `fullEveryDays`: cada cuántos días se lee entera, para que entre lo que se
 //   escribió sin `updatedAt`. Con 1, la primera vez del día.
 // - `checkCount`: cada puesta al día cuenta además los documentos en el
@@ -33,25 +52,46 @@ export function createSyncedList(service, { order, syncKey, fullEveryDays = 1, c
   const name = service.collectionName;
   const listKey = cacheKey(name, { wheres: [], order, take: undefined });
   const keepMs = (fullEveryDays + 7) * DAY_MS;
-  let meta; // undefined: sin leer de localStorage todavía
+  let meta; // undefined: sin leer todavía lo guardado en IndexedDB
   let lastSyncAt = 0;
   let pending = null;
+  let persistTimer = null;
+
+  // La copia no va en localStorage: lo que haya de la colección ahí se borra.
+  dropStoredCache(name);
+  writeStored(syncKey, null);
 
   // Las escrituras de este equipo agregan o reemplazan documentos en la copia
   // sin moverlos de lugar; con `order`, la copia se entrega ordenada.
   const ordered = (data) => (order ? applyChanges(data, [], order) : data);
 
+  function persistNow() {
+    persistTimer = null;
+    const data = getCache(listKey);
+    if (!meta || !Array.isArray(data)) return;
+    idbSet(syncKey, { meta, json: JSON.stringify(data) });
+  }
+
+  // Guarda la copia corregida por una escritura de este equipo.
+  onListPatched(name, () => {
+    if (!idbAvailable() || !meta) return;
+    clearTimeout(persistTimer);
+    persistTimer = setTimeout(persistNow, PERSIST_DELAY_MS);
+  });
+
   subscribe(name, () => {
     meta = null;
     lastSyncAt = 0;
-    writeStoredJson(syncKey, null);
+    clearTimeout(persistTimer);
+    idbDelete(syncKey);
   });
 
   function save(data, nextMeta, { changed }) {
-    if (changed) setCache(listKey, data, { ttl: keepMs, persist: true });
     meta = nextMeta;
-    writeStoredJson(syncKey, nextMeta);
     lastSyncAt = Date.now();
+    if (!changed) return;
+    setCache(listKey, data, { ttl: keepMs });
+    persistNow();
   }
 
   async function readFull(today) {
@@ -70,8 +110,12 @@ export function createSyncedList(service, { order, syncKey, fullEveryDays = 1, c
   }
 
   async function run(fresh) {
-    if (meta === undefined) meta = readStoredJson(syncKey, null);
-    const copy = getCache(listKey, { persist: true });
+    if (meta === undefined) {
+      const saved = await readSaved(syncKey);
+      meta = saved?.meta || null;
+      if (saved && getCache(listKey) === undefined) setCache(listKey, saved.data, { ttl: keepMs });
+    }
+    const copy = getCache(listKey);
     const today = localIsoDate();
     const mode = syncMode({
       hasCopy: Array.isArray(copy) && !!meta,
