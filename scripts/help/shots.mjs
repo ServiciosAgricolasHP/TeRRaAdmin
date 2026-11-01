@@ -19,6 +19,7 @@ import * as jobsAndCycles from "./guides/faenas-y-ciclos.mjs";
 import * as dayPrices from "./guides/precios-del-dia.mjs";
 import * as payroll from "./guides/nomina.mjs";
 import * as payrollFixes from "./guides/corregir-nomina.mjs";
+import * as advances from "./guides/anticipos-y-bonos.mjs";
 
 const SCRIPTS = {
   "primeros-pasos": firstSteps,
@@ -27,6 +28,7 @@ const SCRIPTS = {
   "precios-del-dia": dayPrices,
   nomina: payroll,
   "corregir-nomina": payrollFixes,
+  "anticipos-y-bonos": advances,
 };
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const SIZES_FILE = path.join(ROOT, "src", "screens", "help", "imageSizes.json");

@@ -8,7 +8,7 @@ Una nómina junta lo que se le debe a cada persona por los días anotados en uno
 
 - Los días de cada persona tienen que estar anotados en la grilla de sus ciclos.
 - Cada persona necesita su cuenta en la ficha (en **Trabajadores**). Quien cobra en efectivo lleva **Efectivo** como banco; su efectivo se reparte en un sobre por **líder de grupo**.
-- Los anticipos y bonos pendientes se descuentan solos al armar la nómina.
+- Los anticipos y bonos pendientes se descuentan solos al armar la nómina (ver la guía [Anticipos y bonos](/ayuda/anticipos-y-bonos)).
 - El formato del archivo del banco se elige en **⚙ Configuración**, arriba en Nómina.
 
 ## Elegir los ciclos

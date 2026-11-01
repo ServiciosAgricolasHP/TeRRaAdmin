@@ -203,6 +203,26 @@ export async function correctDemoDay() {
     .update({ amount: 35000, updatedAt: FieldValue.serverTimestamp() });
 }
 
+// Para la guía de anticipos y bonos: un anticipo en dos cuotas, uno sin
+// cuotas y un bono, todos pendientes.
+export async function seedAdvances() {
+  const db = getFirestore("hpdatabase");
+  const [ana, bruno, carla] = DEMO_WORKERS;
+  const base = (w) => ({ workerRut: w.rut, workerId: w.id, workerName: w.name, status: "pending", amountPaid: 0, payments: [], appliedPayrollId: null });
+  await db.collection("advances").doc("A1").set({
+    ...base(ana), type: "anticipo", amount: 50000, date: "2026-10-01", note: "Arreglo de la bicicleta",
+    installments: { count: 2, amount: 25000, cadence: "porPago" }, createdAt: new Date("2026-10-01T12:00:00-03:00"),
+  });
+  await db.collection("advances").doc("A2").set({
+    ...base(bruno), type: "anticipo", amount: 20000, date: "2026-10-03", note: "", installments: null,
+    createdAt: new Date("2026-10-03T12:00:00-03:00"),
+  });
+  await db.collection("advances").doc("B1").set({
+    ...base(carla), type: "bono", amount: 15000, date: "2026-10-06", note: "Bono de asistencia", installments: null,
+    createdAt: new Date("2026-10-06T12:00:00-03:00"),
+  });
+}
+
 if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, "/")}`) {
   await seedDemo();
   console.log("datos de la ayuda sembrados");
