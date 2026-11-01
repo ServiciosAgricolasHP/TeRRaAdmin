@@ -9,6 +9,19 @@ import { attempt } from "../../utils/attempt";
 // Sección: workdays por ciclo (abiertos; los cerrados, opcionales)
 // ============================================================
 export function WorkdaysByCycleSection() {
+  return (
+    <ConsoleCard
+      id="workdays-por-ciclo"
+      title="Jornadas por ciclo"
+      description={<>1 lectura por ciclo. Útil para ver dónde está concentrada la data.</>}
+    >
+      <WorkdaysByCyclePanel />
+    </ConsoleCard>
+  );
+}
+
+// Lee los ciclos y las faenas al abrir la tarjeta, no al abrir la consola.
+function WorkdaysByCyclePanel() {
   const [cycles, setCycles] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -63,9 +76,9 @@ export function WorkdaysByCycleSection() {
   const total = numericCounts.reduce((s, n) => s + n, 0);
 
   return (
-    <ConsoleCard id="workdays-por-ciclo" title="Jornadas por ciclo" 
-      description={<>1 lectura por ciclo. Útil para ver dónde está concentrada la data.</>} 
-      actions={<><div className="flex items-center gap-2">
+    <>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2">
           <label className="flex items-center gap-1 text-xs">
             <input
               type="checkbox"
@@ -84,7 +97,8 @@ export function WorkdaysByCycleSection() {
               ? "Ejecutando…"
               : `▶ Contar ${visibleCycles.length} ciclo${visibleCycles.length === 1 ? "" : "s"} (~${visibleCycles.length} lecturas)`}
           </button>
-        </div></>}>
+        </div>
+      </div>
 
       {loading ? (
         <p className="text-xs text-[var(--color-muted)]">Cargando ciclos…</p>
@@ -142,6 +156,6 @@ export function WorkdaysByCycleSection() {
           workdays
         </p>
       )}
-    </ConsoleCard>
+    </>
   );
 }

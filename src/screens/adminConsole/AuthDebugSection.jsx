@@ -12,6 +12,15 @@ import { ConsoleCard } from "./ConsoleCard";
 // Muestra qué recibe el AuthContext (uid, email, rol calculado) y qué contiene
 // el doc `users/{uid}` en Firestore.
 export function AuthDebugSection() {
+  return (
+    <ConsoleCard id="debug-de-rol-admin" title="🕵️ Diagnóstico del rol admin">
+      <AuthDebugPanel />
+    </ConsoleCard>
+  );
+}
+
+// Lee `users/{uid}` al abrir la tarjeta, no al abrir la consola.
+function AuthDebugPanel() {
   const { user, isAdmin } = useAuth();
   const [docState, setDocState] = useState({ loading: true });
   const [copied, setCopied] = useState(false);
@@ -45,7 +54,7 @@ export function AuthDebugSection() {
   };
 
   return (
-    <ConsoleCard id="debug-de-rol-admin" title="🕵️ Diagnóstico del rol admin">
+    <>
       <p className="mb-3 text-xs text-[var(--color-muted)]">
         El AuthContext lee <code>users/{"{uid}"}</code> y toma el campo <code>role</code>.
         Si dice <code>"admin"</code> (sin importar mayúsculas), activa el modo admin.
@@ -138,6 +147,6 @@ export function AuthDebugSection() {
           )}
         </div>
       </div>
-    </ConsoleCard>
+    </>
   );
 }
