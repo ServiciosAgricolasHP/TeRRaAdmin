@@ -3,6 +3,7 @@
 export const HELP_GUIDE_BY_PATH = [
   ["/faenas", "faenas-y-ciclos"],
   ["/cycles/", "grilla-del-ciclo"],
+  ["/payroll", "nomina"],
 ];
 
 export function helpPathFor(pathname) {

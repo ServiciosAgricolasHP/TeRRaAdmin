@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 const require = createRequire(new URL("../../functions/package.json", import.meta.url));
 const { initializeApp, getApps } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
-const { getFirestore } = require("firebase-admin/firestore");
+const { FieldValue, getFirestore, Timestamp } = require("firebase-admin/firestore");
 
 export const DEMO_PROJECT = "demo-terra-test";
 export const DEMO_USER = { email: "demo@terra.test", password: "demo1234", alias: "Demo" };
@@ -173,6 +173,25 @@ export async function seedLaborTypes() {
     });
   });
   await batch.commit();
+}
+
+// Para las guías de Nómina: dos personas del Grupo Sur cobran en efectivo, así
+// la nómina tiene transferencias y efectivo.
+export async function seedCashWorkers() {
+  const db = getFirestore("hpdatabase");
+  for (const w of DEMO_WORKERS.filter((x) => ["Diego Muñoz Vera", "Felipe Torres Lagos"].includes(x.name))) {
+    await db.collection("worker").doc(w.id).update({ bankDetails: [w.rut, "", 0, "EFE"] });
+  }
+}
+
+// La fecha de creación de las nóminas la pone el servidor: se fija al día de
+// las capturas, así no cambian con el día en que se generan.
+export async function pinPayrollDates() {
+  const db = getFirestore("hpdatabase");
+  const snap = await db.collection("payrolls").get();
+  for (const d of snap.docs) {
+    await d.ref.update({ createdAt: Timestamp.fromDate(new Date("2026-10-09T10:30:00-03:00")), updatedAt: FieldValue.serverTimestamp() });
+  }
 }
 
 if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, "/")}`) {

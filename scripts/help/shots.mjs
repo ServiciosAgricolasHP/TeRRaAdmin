@@ -17,12 +17,14 @@ import * as firstSteps from "./guides/primeros-pasos.mjs";
 import * as cycleGrid from "./guides/grilla-del-ciclo.mjs";
 import * as jobsAndCycles from "./guides/faenas-y-ciclos.mjs";
 import * as dayPrices from "./guides/precios-del-dia.mjs";
+import * as payroll from "./guides/nomina.mjs";
 
 const SCRIPTS = {
   "primeros-pasos": firstSteps,
   "grilla-del-ciclo": cycleGrid,
   "faenas-y-ciclos": jobsAndCycles,
   "precios-del-dia": dayPrices,
+  nomina: payroll,
 };
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const SIZES_FILE = path.join(ROOT, "src", "screens", "help", "imageSizes.json");
