@@ -2,6 +2,8 @@
 // rango (uno por persona, día y entorno; ver services/readMeter.js) por
 // pantalla, consulta, colección, hora y persona. Las claves vienen
 // codificadas con `encodeKey` (utils/readMeterKeys.js).
+import { fmtDuration } from "./auditLogs";
+import { fmtNumber, fmtPercent } from "./format";
 import { isAdminRole } from "./userAccounts";
 
 // Lecturas por día que Firestore no cobra.
@@ -253,4 +255,99 @@ export function readsByPerson(logs, profiles = []) {
   return [...people.values()]
     .map((row) => ({ ...row, days: row.days.size, versions: [...row.versions].sort() }))
     .sort((a, b) => byDocs(a, b) || a.name.localeCompare(b.name));
+}
+
+// Lo que se baja en JSON: los registros tal cual, el rango, los filtros y, de
+// cada persona, solo su uid y si es admin (sin nombre ni correo).
+export function exportPayload({ logs, profiles = [], from, to, person, env, exportedAt }) {
+  const admins = new Set(profiles.filter((p) => isAdminRole(p.role)).map((p) => p.id));
+  const people = [...new Set(logs.map((l) => l.userId))].map((userId) => ({ userId, admin: admins.has(userId) }));
+  return { format: "terra-read-logs", version: 1, exportedAt, range: { from, to }, filters: { person, env }, people, logs };
+}
+
+const SCREENS_IN_TEXT = 25;
+const QUERIES_IN_TEXT = 30;
+const QUERIES_PER_SCREEN = 8;
+
+const dash = (n) => (n ? fmtNumber(n) : "—");
+const rate = (v) => (v == null ? "—" : fmtNumber(Math.round(v)));
+const duration = (seconds) => (seconds ? fmtDuration(seconds * 1000) : "—");
+
+function table(header, rows) {
+  return [`| ${header.join(" | ")} |`, `|${header.map(() => "---").join("|")}|`, ...rows.map((r) => `| ${r.join(" | ")} |`)];
+}
+
+// El informe en texto (tablas de Markdown), para pegarlo en un mensaje: los
+// totales, cada día, las pantallas con sus modales, las consultas de cada
+// una, y las consultas y colecciones que más leen. `filters` describe los
+// filtros aplicados ("Producción · Sin los admin").
+export function reportText({ logs, from, to, filters = "" }) {
+  const totals = reportTotals(logs);
+  const share = (n) => (totals.docs ? fmtPercent((100 * n) / totals.docs, 1) : "—");
+  const screens = readsByScreen(logs).slice(0, SCREENS_IN_TEXT);
+  const lines = [
+    `# Informe de lecturas, del ${from} al ${to}${filters ? ` (${filters})` : ""}`,
+    "",
+    `Lecturas cobradas: ${fmtNumber(totals.docs)} · ahorradas por caché: ${fmtNumber(totals.cacheDocs)} · escrituras: ${fmtNumber(totals.writes)} · visitas: ${fmtNumber(totals.visits)} · tiempo: ${duration(totals.seconds)} · personas: ${totals.people}`,
+    "",
+    "## Por día",
+    "",
+    ...table(
+      ["Día", "Lecturas", "Ahorro caché", "Escrituras", "Personas"],
+      readsByDay(logs).map((d) => [`${WEEKDAYS[weekdayOf(d.date)]} ${d.date}`, fmtNumber(d.docs), dash(d.cacheDocs), dash(d.writes), d.people]),
+    ),
+    "",
+    "## Pantallas",
+    "",
+    "La fila de una pantalla suma sus modales (› debajo); sus visitas son las de la ruta.",
+    "",
+    ...table(
+      ["Pantalla", "Visitas", "Tiempo", "Lecturas", "%", "Por visita", "Por minuto", "Ahorro caché"],
+      screens.flatMap((screen) =>
+        [screen, ...screen.sections].map((row) => {
+          const { perVisit, perMinute } = ratesOf(row);
+          const name = row.label ? `› ${row.label}` : screen.screen;
+          return [name, fmtNumber(row.visits), duration(row.seconds), fmtNumber(row.docs), share(row.docs), rate(perVisit), rate(perMinute), dash(row.cacheDocs)];
+        }),
+      ),
+    ),
+    "",
+    "## Consultas de cada pantalla",
+    "",
+  ];
+  for (const screen of screens) {
+    for (const row of [screen, ...screen.sections]) {
+      if (!row.queries.length) continue;
+      lines.push(`**${row.label ? `${screen.screen} › ${row.label}` : `${screen.screen} (sin sus modales)`}**`, "");
+      for (const q of row.queries.slice(0, QUERIES_PER_SCREEN)) {
+        lines.push(`- \`${q.query}\`: ${fmtNumber(q.docs)} en ${fmtNumber(q.requests)} peticiones${q.cacheDocs ? `, caché ${fmtNumber(q.cacheDocs)}` : ""}`);
+      }
+      if (row.queries.length > QUERIES_PER_SCREEN) lines.push(`- y ${row.queries.length - QUERIES_PER_SCREEN} más`);
+      lines.push("");
+    }
+  }
+  lines.push(
+    "## Consultas",
+    "",
+    ...table(
+      ["Consulta", "Peticiones", "Lecturas", "%", "Por petición", "Ahorro caché", "Pantallas"],
+      readsByQuery(logs).slice(0, QUERIES_IN_TEXT).map((q) => [
+        `\`${q.query}\``,
+        fmtNumber(q.requests),
+        fmtNumber(q.docs),
+        share(q.docs),
+        rate(q.requests ? q.docs / q.requests : null),
+        dash(q.cacheDocs),
+        q.screens.length,
+      ]),
+    ),
+    "",
+    "## Colecciones",
+    "",
+    ...table(
+      ["Colección", "Lecturas", "%", "Peticiones", "Ahorro caché", "Escrituras"],
+      readsByCollection(logs).map((c) => [`\`${c.collection}\``, fmtNumber(c.docs), share(c.docs), fmtNumber(c.requests), dash(c.cacheDocs), dash(c.writes)]),
+    ),
+  );
+  return lines.join("\n");
 }

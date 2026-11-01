@@ -2,9 +2,10 @@ import { useState } from "react";
 import { addDays } from "../../utils/commitments";
 import { localIsoDate } from "../../utils/dates";
 import { fmtNumber, fmtShortDate } from "../../utils/format";
-import { filterLogs, personName, reportTotals } from "../../utils/readLogReport";
+import { exportPayload, filterLogs, personName, reportText, reportTotals } from "../../utils/readLogReport";
 import { ConsoleCard } from "./ConsoleCard";
 import { CollectionsTab } from "./readReportSection/CollectionsTab";
+import { copyReportText, downloadReportJson } from "./readReportSection/exportReport";
 import { HoursTab } from "./readReportSection/HoursTab";
 import { PeopleTab } from "./readReportSection/PeopleTab";
 import { QueriesTab } from "./readReportSection/QueriesTab";
@@ -38,6 +39,8 @@ const TABS = [
   { value: "people", label: "Personas", Content: PeopleTab },
 ];
 const PRESETS = [7, 14, 30];
+const ENV_LABELS = { prod: "Producción", local: "Local", all: "Producción y local" };
+const PERSON_LABELS = { all: "Todos", noAdmins: "Sin los admin" };
 
 const field =
   "mt-1 block min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-text)]";
@@ -51,6 +54,7 @@ function ReadReportPanel() {
   const [person, setPerson] = useState("all");
   const [env, setEnv] = useState("prod");
   const [tab, setTab] = useState("screens");
+  const [copied, setCopied] = useState(false);
   const { data, loading, error, load } = useReadReport();
 
   const loadLast = (days) => {
@@ -68,6 +72,29 @@ function ReadReportPanel() {
         .sort((a, b) => a.name.localeCompare(b.name))
     : [];
   const { Content } = TABS.find((t) => t.value === tab);
+
+  const downloadJson = () => {
+    if (!data) return;
+    const payload = exportPayload({
+      logs,
+      profiles: data.profiles,
+      from: data.from,
+      to: data.to,
+      person,
+      env,
+      exportedAt: new Date().toISOString(),
+    });
+    downloadReportJson(`lecturas_${data.from}_${data.to}.json`, payload);
+  };
+
+  const copyText = async () => {
+    if (!data) return;
+    const filters = `${ENV_LABELS[env]} · ${PERSON_LABELS[person] || "Una persona"}`;
+    const ok = await copyReportText(reportText({ logs, from: data.from, to: data.to, filters }));
+    if (!ok) return;
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <div className="space-y-4">
@@ -135,6 +162,14 @@ function ReadReportPanel() {
                     <option value="all">Ambos</option>
                   </select>
                 </label>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={downloadJson} className={ghostBtn} title="Los registros con estos filtros, sin nombres ni correos">
+                    ⬇ Descargar JSON
+                  </button>
+                  <button type="button" onClick={copyText} className={ghostBtn} title="Totales, días, pantallas, consultas y colecciones, en texto">
+                    {copied ? "✓ Copiado" : "📋 Copiar resumen"}
+                  </button>
+                </div>
               </div>
 
               <ReportSummary logs={logs} totals={totals} />
