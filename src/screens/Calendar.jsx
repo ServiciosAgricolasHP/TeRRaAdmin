@@ -6,7 +6,8 @@ import { useAuth } from "../contexts/AuthContext";
 import { useIsMobile } from "../hooks/useIsMobile";
 import { useCaptureActions } from "../hooks/useCaptureActions";
 import { openPrintWindow } from "../utils/printWindow";
-import { fetchWorkdaysInRange, fetchTripsInRange } from "../services/calendarService";
+import { syncWorkdayMonth } from "../services/workdayMonths";
+import { fetchTripsInRange } from "../services/calendarService";
 import { DayDetailDrawer } from "./calendar/DayDetailDrawer";
 import { DayExpandedModal } from "./calendar/DayExpandedModal";
 import { monthBounds, isWeekendDate } from "./calendar/helpers";
@@ -24,10 +25,10 @@ import { readStoredJson, writeStoredJson } from "../utils/browserStorage";
 // de esa subfaena en el día (DayDetailDrawer); click en la celda, todas las
 // subfaenas del día (DayExpandedModal).
 //
-// Lecturas: lee los workdays del rango del mes y agrega en el cliente
-// (~3.000 lecturas en un mes pico, ~US$0,02). Un caché de sesión de 5 min
-// evita releer al ir y volver entre meses. `fetchWorkdaysInRange` es el único
-// punto que lee workdays.
+// Lecturas: las jornadas del mes salen de su copia en el navegador
+// (`syncWorkdayMonth`, services/workdayMonths.js), que se lee entera la primera
+// vez y después se pone al día con unas pocas lecturas, y se agregan en el
+// cliente.
 // ============================================================================
 
 const COLOR_PALETTE = [
@@ -51,41 +52,6 @@ const MONTH_NAMES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
-
-// ============================================================================
-// Caché de sesión por mes (TTL 5 min)
-// ============================================================================
-
-const CACHE_TTL = 5 * 60 * 1000;
-
-const cacheKey = (y, m) => `af.calendar.${y}.${String(m).padStart(2, "0")}`;
-
-function readMonthCache(y, m) {
-  try {
-    const raw = sessionStorage.getItem(cacheKey(y, m));
-    if (!raw) return null;
-    const { ts, workdays } = JSON.parse(raw);
-    if (Date.now() - ts > CACHE_TTL) return null;
-    return workdays;
-  } catch {
-    return null;
-  }
-}
-
-function writeMonthCache(y, m, workdays) {
-  try {
-    sessionStorage.setItem(
-      cacheKey(y, m),
-      JSON.stringify({ ts: Date.now(), workdays }),
-    );
-  } catch {
-    // Sin espacio en sessionStorage: se sigue sin caché.
-  }
-}
-
-function invalidateMonthCache(y, m) {
-  try { sessionStorage.removeItem(cacheKey(y, m)); } catch { /* noop */ }
-}
 
 // ============================================================================
 // Componente
@@ -112,7 +78,6 @@ export default function Calendar() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [readCount, setReadCount] = useState(0); // lecturas de workdays del mes, para el contador
-  const [fromCache, setFromCache] = useState(false);
 
   const [selectedDay, setSelectedDay] = useState(null); // { date, mode: "all" | "subjob", subjobId?, from? }
 
@@ -172,28 +137,20 @@ export default function Calendar() {
     };
   }, []);
 
-  // Carga los workdays del mes (con el caché de sesión de 5 min) y después
-  // sus vueltas de transporte.
-  const loadMonth = async (y, m, { forceFresh = false } = {}) => {
+  // Carga las jornadas del mes, de su copia en el navegador (`fresh` la pone
+  // al día sin esperar el minuto), y sus vueltas de transporte.
+  const loadMonth = async (y, m, { fresh = false } = {}) => {
     setLoading(true);
     setError("");
-    setFromCache(false);
     const { error: err } = await attempt(async () => {
       const { start, end } = monthBounds(y, m);
-      let wds = forceFresh ? null : readMonthCache(y, m);
-      if (wds) {
-        setWorkdays(wds);
-        setReadCount(0);
-        setFromCache(true);
-      } else {
-        wds = await fetchWorkdaysInRange(start, end);
-        writeMonthCache(y, m, wds);
-        setWorkdays(wds);
-        setReadCount(wds.length);
-      }
-      // Las vueltas se leen siempre frescas, sin caché: son pocas.
-      const ts = await fetchTripsInRange(start, end);
-      setTrips(ts);
+      const [monthWorkdays, monthTrips] = await Promise.all([
+        syncWorkdayMonth(start.slice(0, 7), { fresh }),
+        fetchTripsInRange(start, end),
+      ]);
+      setWorkdays(monthWorkdays.data);
+      setReadCount(monthWorkdays.reads);
+      setTrips(monthTrips);
     });
     if (err) setError(err.message || String(err));
     setLoading(false);
@@ -400,10 +357,7 @@ export default function Calendar() {
     </body></html>`), { error: "No se pudo imprimir" });
   };
 
-  const refresh = () => {
-    invalidateMonthCache(year, month);
-    loadMonth(year, month, { forceFresh: true });
-  };
+  const refresh = () => loadMonth(year, month, { fresh: true });
 
   // ─── Render ──────────────────────────────────────────────────────────────
 
@@ -415,7 +369,7 @@ export default function Calendar() {
           <p className="text-sm text-[var(--color-muted)]">
             Producción diaria por subfaena.
             {/* Contador de lecturas de Firestore, para diagnóstico; solo lo ve un admin. */}
-            {isAdmin && (fromCache ? " · resultado de caché" : ` · ${readCount} lecturas`)}
+            {isAdmin && (readCount === 0 ? " · desde caché" : ` · ${readCount} lecturas`)}
           </p>
         </div>
         <div className="flex items-center gap-1">

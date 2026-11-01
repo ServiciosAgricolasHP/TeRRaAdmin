@@ -115,6 +115,8 @@ Una fila por (cycleId × laborId × workerRut × date). Es la tabla "transaccion
 | `tiers` | `{ [tierKey]: { qty, amount } }` | trato multi-precio; suma con `getTratoTierTotals(wd)` |
 | `overtimeHours`, `hasManejo`, `hasSupervision`, `extras` | number? / bool? | solo `tratoHE` |
 | `pisoOnly` | bool? | `true` para workdays de piso (combo `_piso`). `qty: 0`, `amount: pisoAmount`. Un doc por (worker × date × labor). Solo trato/cosecha. Tag con `payrollId` igual que cualquier otro workday. |
+| `createdAt`, `createdBy` | ts, string? | |
+| `updatedAt`, `updatedBy` | ts, string? | la última escritura de `workdaysService` (la grilla, Pesajes QR, mover jornadas de ciclo). Etiquetar con la nómina y marcar pagado no lo ponen. Las copias por mes del Calendario se ponen al día con él (`syncWorkdayMonth`) |
 
 ### `payrolls`
 Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.

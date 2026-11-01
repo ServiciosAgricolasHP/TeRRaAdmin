@@ -127,8 +127,8 @@ export async function setSettlementStatus(ids, status, date) {
 // Lo que hace falta para contar días en un rango: los días trabajados de cada
 // persona por faena (`workedDays`), los contratos y honorarios vigentes en el
 // rango, y las faenas con su nombre. Las jornadas se leen enteras (una lectura
-// por jornada, como el Calendario); `reads` dice cuántas fueron. La usan las
-// listas de honorarios y de imposiciones.
+// por jornada); `reads` dice cuántas fueron. La usan las listas de honorarios
+// y de imposiciones.
 export async function loadWorkedDays(from, to, workers) {
   const [workdays, cycles, faenas, employments] = await Promise.all([
     fetchWorkdaysInRange(from, to),
