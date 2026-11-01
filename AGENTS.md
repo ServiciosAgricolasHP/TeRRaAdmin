@@ -155,7 +155,7 @@ Un componente se ubica según quién lo usa:
 
 - **Cada contexto va en dos archivos**: `XContext.js` con el contexto, su hook (`useAuth`, `useToast`…) y lo que exporta además (`ROLES`, `THEMES`), y `XProvider.jsx` con el componente que lo provee. Así cada `.jsx` exporta solo componentes y Fast Refresh no recarga la página entera. Las pantallas importan el hook desde `XContext`; solo `App.jsx` importa los proveedores.
 - Orden en `App.jsx`: `ThemeProvider` → `AuthProvider` → `CatalogsProvider` → `CarriersProvider` → `BrowserRouter`.
-- `CarriersProvider` precarga transportistas; expone `carriers`, `activeCarriers`, `addCarrier`, `updateCarrier`, `softDeleteCarrier`, `restoreCarrier`.
+- `CarriersProvider` precarga transportistas; expone `carriers`, `activeCarriers`, `addCarrier`, `updateCarrier`, `softDeleteCarrier`, `restoreCarrier`. La lista se guarda 30 min también en `localStorage` (`CARRIERS_LIST`, `services/carriersService.js`): lo que se escribe en este navegador la corrige sin releerla, y lo que cambie en otro equipo llega cuando vence.
 - `CatalogsProvider` precarga tablas de lookup usadas en las pantallas.
 
 ## Datos

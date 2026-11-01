@@ -7,5 +7,6 @@
 - **Versión en el header** — `TeRRA v{mayor}.{menor}.{commits}`, armada en build-time por `vite.config.js` e inyectada como `__APP_VERSION__`. Sirve para diagnosticar caché PWA viejo de un vistazo: si el header sigue mostrando una versión anterior tras un deploy, el SW tiene un bundle stale.
   - **Mayor y menor salen del `version` de `package.json`**; su tercer número no se usa.
   - **El último número son los commits desde el último que cambió esa línea, sin contar merges** (`git log -G'"version":' -- package.json` + `git rev-list --count --no-merges`). Sin merges, cada PR no suma uno de más, y el mismo código muestra el mismo número en `develop` y en producción.
+  - **En el servidor de desarrollo lleva la rama** (`v1.3.12 · develop`): el número cuenta los commits de la rama que se está corriendo, que puede ir por delante de producción. El registro de lecturas guarda la versión así, y su entorno es `local`.
   - **Subir de versión**: `npm version minor --no-git-tag-version` (actualiza `package.json` y el lock) y commit; el conteo vuelve a 0 solo. Un commit que reformatee la línea `"version"` también reinicia el conteo.
   - Ojo en CI: sin `fetch-depth: 0` el conteo da 0.
