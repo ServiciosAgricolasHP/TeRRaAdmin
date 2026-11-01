@@ -2,7 +2,7 @@ import { useState, useEffect, useEffectEvent, useMemo } from "react";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { useCarriers } from "../../contexts/CarriersContext";
 import { paymentsService, fortnightsService } from "../../services/transportsService";
-import { jobsService, subjobsService, cyclesService } from "../../services";
+import { listCycles, listJobs, listSubjobs } from "../../services/jobLists";
 import { useToast } from "../../contexts/ToastContext";
 import { BalanceSummary } from "./BalanceSummary";
 import { GenerateSummaryModal } from "./GenerateSummaryModal";
@@ -56,9 +56,9 @@ export function PaymentsTab() {
         : paymentsService.listSince(isoDateNDaysAgo(DEFAULT_HISTORY_DAYS));
       const [list, fa, sub, cyc, tp] = await Promise.all([
         paymentsPromise,
-        jobsService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
-        subjobsService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
-        cyclesService.list({ cache: true, persist: true, ttl: 5 * 60 * 1000 }),
+        listJobs(),
+        listSubjobs(),
+        listCycles(),
         fortnightsService.listAll(),
       ]);
       list.sort((a, b) => {

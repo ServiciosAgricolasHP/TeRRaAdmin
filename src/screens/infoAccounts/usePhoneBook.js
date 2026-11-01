@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { listPhoneContacts, phoneContactsService } from "../../services/phoneContactsService";
 import { cleanIncoming, phoneContactFields, fixNameCase } from "../../utils/phoneBook";
+import { attempt } from "../../utils/attempt";
 
 // La agenda telefónica cargada, con sus altas, ediciones y borrados. Las
-// escrituras actualizan la lista en pantalla y la caché sin releer la agenda.
+// escrituras actualizan la lista en pantalla y la copia del navegador sin
+// releer la agenda.
 export function usePhoneBook() {
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -17,6 +19,19 @@ export function usePhoneBook() {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
+
+  // Vuelve a leer la agenda entera, sin la copia del navegador.
+  const reload = async () => {
+    phoneContactsService.invalidate();
+    setLoading(true);
+    const { value, error: err } = await attempt(() => listPhoneContacts());
+    if (err) setLoadError(err.message || String(err));
+    else {
+      setContacts(value);
+      setLoadError("");
+    }
+    setLoading(false);
+  };
 
   // Guarda lo que se editó a mano: los números normalizados, los correos en
   // minúsculas y el nombre corregido como en la importación. Un contacto
@@ -46,5 +61,5 @@ export function usePhoneBook() {
     setContacts((prev) => [...prev.filter((c) => !byId.has(c.id)), ...saved]);
   };
 
-  return { contacts, loading, loadError, save, remove, applyImported };
+  return { contacts, loading, loadError, reload, save, remove, applyImported };
 }

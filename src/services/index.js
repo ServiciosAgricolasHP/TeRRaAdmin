@@ -1,20 +1,13 @@
-import { createService } from "./firestoreBase";
+import { createService, createAdditiveService } from "./firestoreBase";
 
-export const jobsService = createService("faena", "faenas");
-export const subjobsService = createService("subfaena", "subfaenas");
-export const cyclesService = createService("cycle", "cycles");
+// Faenas, subfaenas y ciclos: ver `listJobs`, `listSubjobs` y `listCycles` en
+// jobLists.js.
+export const jobsService = createAdditiveService("faena", "faenas");
+export const subjobsService = createAdditiveService("subfaena", "subfaenas");
+export const cyclesService = createAdditiveService("cycle", "cycles");
 
-// Trabajadores: todas las mutaciones corrigen la lista guardada en el
-// navegador en su lugar (modo aditivo), así no se relee la colección entera
-// después de cada alta (ver `listWorkers` en workersService.js).
-const _workers = createService("worker", "worker");
-export const workersService = {
-  ..._workers,
-  create: (data, opts = {}) => _workers.create(data, { additive: true, ...opts }),
-  update: (id, data, opts = {}) => _workers.update(id, data, { additive: true, ...opts }),
-  upsert: (id, data, opts = {}) => _workers.upsert(id, data, { additive: true, ...opts }),
-  remove: (id, opts = {}) => _workers.remove(id, { additive: true, ...opts }),
-};
+// Trabajadores: ver `listWorkers` en workersService.js.
+export const workersService = createAdditiveService("worker", "worker");
 
 export const workdaysService = createService("workday", "workdays");
 
@@ -68,7 +61,8 @@ export const companiesService = createService("company", "companies");
 // (`{companyId}_V_{tipo}_{folio}` para ventas; `{companyId}_C_{rutProveedorSinDV}_{tipo}_{folio}`
 // para compras), así reimportar el mismo período es idempotente: escribe
 // encima del existente sin duplicar.
-export const dteDocumentsService = createService("dteDocument", "dteDocuments");
+// Ver `listDteDocuments` en dteDocumentsList.js.
+export const dteDocumentsService = createAdditiveService("dteDocument", "dteDocuments");
 export { tripsService as transportsService, paymentsService as transportPaymentsService } from "./transportsService";
 export const logsService = createService("log", "logs");
 
@@ -121,6 +115,10 @@ export const informalExpensesService = createService("informalExpense", "informa
 // sin reemplazar el id local de la labor: workdays y nómina usan
 // cycleId+laborId. Ver CycleDetail.jsx (alta/edición de labor).
 export const laborGroupsService = createService("laborGroup", "laborGroups");
+
+// Lo que alguien buscó en la ayuda sin encontrarlo, guardado con "Avisar que
+// falta". Dice qué guías o secciones faltan.
+export const helpQuestionsService = createService("helpQuestion", "helpQuestions");
 
 // Estado editable del resumen de ciclo (tarifas de cobro, overrides por fila,
 // títulos), compartido entre usuarios. Servicio propio, no `createService`:

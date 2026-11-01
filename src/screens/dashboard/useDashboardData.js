@@ -1,14 +1,13 @@
 import { useState, useEffect, useMemo } from "react";
-import { jobsService, cyclesService, transportPaymentsService } from "../../services";
-import { payrollsService } from "../../services/payrollsService";
-import { fortnightsService } from "../../services/transportsService";
-import { commitmentsService } from "../../services/commitmentsService";
-import { countedList } from "../../services/cache";
-import { countWorkdaysInRange } from "../../services/countsService";
+import { syncCycles, syncJobs } from "../../services/jobLists";
+import { syncPayrolls } from "../../services/payrollsList";
+import { syncFortnights, syncTransportPayments } from "../../services/transportLists";
+import { syncCommitments } from "../../services/commitmentsService";
+import { countWorkdaysByMonth } from "../../services/countsService";
 import { useToast } from "../../contexts/ToastContext";
 import { fmtMonthKey } from "../../utils/format";
 import { localIsoDate } from "../../utils/dates";
-import { commitmentsWeekOf, lastMonthKeys, monthRangeOfKey } from "../../utils/dashboard";
+import { commitmentsWeekOf, lastMonthKeys, paymentsCreatedSince } from "../../utils/dashboard";
 import { attempt } from "../../utils/attempt";
 
 // Lo que lee el Dashboard al abrirse: faenas, ciclos, nóminas, quincenas y
@@ -28,24 +27,20 @@ export function useDashboardData() {
   const [commitments, setCommitments] = useState(null);
   const [commitmentReads, setCommitmentReads] = useState(0);
 
-  // Serie de actividad de los últimos 12 meses. Un `getCountFromServer` por mes
-  // = 12 lecturas para el año entero, contra las decenas de miles que costaría
-  // traerse las filas. No depende del selector de período: se pide una sola vez
-  // por sesión y alimenta tanto la tarjeta como el gráfico de historia.
+  // Serie de actividad de los últimos 12 meses. Un `getCountFromServer` por mes,
+  // contra las decenas de miles de lecturas que costaría traerse las filas, y
+  // los meses cerrados salen de lo guardado (`countWorkdaysByMonth`). No
+  // depende del selector de período: alimenta tanto la tarjeta como el gráfico
+  // de historia.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const keys = lastMonthKeys(12);
       const { error: err } = await attempt(async () => {
-        const counts = await Promise.all(
-          keys.map((k) => {
-            const { start, end } = monthRangeOfKey(k);
-            return countWorkdaysInRange(start, end);
-          }),
-        );
+        const { counts, reads } = await countWorkdaysByMonth(keys);
         if (cancelled) return;
         setWorkdayMonths(keys.map((k, i) => ({ key: k, label: fmtMonthKey(k), workdayCount: counts[i] })));
-        setCountReads(keys.length);
+        setCountReads(reads);
       });
       if (err && !cancelled) console.error("[dashboard] conteo de jornadas:", err);
     })();
@@ -53,11 +48,11 @@ export function useDashboardData() {
   }, []);
 
   // Cheques y pagos, aparte de la carga principal: si falla, el resto del
-  // tablero se muestra igual. Las opciones son las de `listCommitments`, así
-  // comparte la caché con la pantalla.
+  // tablero se muestra igual. Sale de la copia que comparte con la pantalla
+  // (`syncCommitments`).
   useEffect(() => {
     let cancelled = false;
-    countedList(commitmentsService, { order: ["dueDate", "asc"], cache: true, ttl: 300_000 })
+    syncCommitments()
       .then(({ data, reads }) => {
         if (cancelled) return;
         setCommitments(data);
@@ -77,27 +72,26 @@ export function useDashboardData() {
     (async () => {
       setLoading(true);
       const { error: err } = await attempt(async () => {
-        // Los resúmenes de transporte se traen siempre por 12 meses (la ventana
+        // Los resúmenes de transporte se toman siempre por 12 meses (la ventana
         // más larga que se puede pedir) y todo lo que depende del período se
         // filtra en cliente. Así cambiar de período no cuesta ninguna lectura,
         // y la curva de deuda tiene el histórico completo que necesita.
         const historyStart = `${lastMonthKeys(12)[0]}-01`;
         const [f, c, p, q, pays] = await Promise.all([
-          // Las tres primeras copian las opciones exactas de Faenas/Transporte/
-          // Nóminas para compartir clave de caché y salir gratis.
-          countedList(jobsService, { order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
-          countedList(cyclesService, { cache: true, persist: true, ttl: 5 * 60 * 1000 }),
-          countedList(payrollsService, { order: ["createdAt", "desc"], take: 50, cache: true, persist: true, ttl: 5 * 60 * 1000 }),
-          fortnightsService.listAll(),
-          transportPaymentsService.listSince(new Date(historyStart)),
+          // Todo sale de copias sincronizadas que comparten las pantallas.
+          syncJobs(),
+          syncCycles(),
+          syncPayrolls(),
+          syncFortnights(),
+          syncTransportPayments(),
         ]);
         if (cancelled) return;
         setJobs(f.data);
         setCycles(c.data);
         setPayrolls(p.data);
-        setFortnights(q);
-        setPayments(pays);
-        setReads(f.reads + c.reads + p.reads + q.length + pays.length);
+        setFortnights(q.data);
+        setPayments(paymentsCreatedSince(pays.data, historyStart));
+        setReads(f.reads + c.reads + p.reads + q.reads + pays.reads);
       });
       if (err && !cancelled) {
         console.error("[dashboard] carga:", err);

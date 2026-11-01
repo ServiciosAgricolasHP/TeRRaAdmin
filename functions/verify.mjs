@@ -299,7 +299,8 @@ console.log("avisos de Cheques y pagos");
 
   const series = (await db.collection("commitmentSeries").doc("series-1").get()).data();
   check("extiende el pago recurrente hasta 60 días", series?.generatedUntil === "2026-12-15", series?.generatedUntil);
-  check("crea el vencimiento que faltaba", (await db.collection("commitments").doc("series-1_2026-12-05").get()).exists);
+  const generated = (await db.collection("commitments").doc("series-1_2026-12-05").get()).data();
+  check("crea el vencimiento que faltaba, con la hora de escritura", !!generated?.updatedAt, generated);
   check(
     "no recrea lo que ya se había generado",
     !(await db.collection("commitments").doc("series-1_2026-11-05").get()).exists,

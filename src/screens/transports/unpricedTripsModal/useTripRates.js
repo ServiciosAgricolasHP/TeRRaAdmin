@@ -1,11 +1,8 @@
 import { useEffect, useState } from "react";
-import { jobsService, subjobsService } from "../../../services/index";
+import { listJobs, listSubjobs } from "../../../services/jobLists";
 import { tripsService } from "../../../services/transportsService";
 import { useToast } from "../../../contexts/ToastContext";
 import { hasChanges } from "../../../utils/formChanges";
-
-// Las mismas opciones que la pestaña Resúmenes, así comparten la caché.
-const JOBS_LIST = { cache: true, persist: true, ttl: 10 * 60 * 1000 };
 
 // Las tarifas que se escriben en el modal de vueltas sin precio y su guardado.
 // Guarda de a una vuelta (`tripsService.update`), que recalcula el monto y el
@@ -21,7 +18,7 @@ export function useTripRates({ onSaved }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [faenas, subfaenas] = await Promise.all([jobsService.list(JOBS_LIST), subjobsService.list(JOBS_LIST)]).catch(() => [[], []]);
+      const [faenas, subfaenas] = await Promise.all([listJobs(), listSubjobs()]).catch(() => [[], []]);
       if (!cancelled) setRefs({ faenaById: new Map(faenas.map((f) => [f.id, f])), subfaenaById: new Map(subfaenas.map((s) => [s.id, s])) });
     })();
     return () => { cancelled = true; };

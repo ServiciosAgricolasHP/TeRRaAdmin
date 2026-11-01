@@ -1,14 +1,14 @@
 # Calendario / Calendar
 
 - Pantalla: `src/screens/Calendar.jsx` (el mes, la caché y la carga). Ruta `/calendar`.
-- Sus piezas, en `src/screens/calendar/`: `MonthGrid`, `Legend`, `DayDetailDrawer` (sus totales y agrupaciones salen de `utils/calendarDayDetail.js`), `DayExpandedModal` y `helpers.js` (fechas y formatos). Las lecturas están en `services/calendarService.js`.
+- Sus piezas, en `src/screens/calendar/`: `MonthGrid`, `Legend`, `DayDetailDrawer` (sus totales y agrupaciones salen de `utils/calendarDayDetail.js`), `DayExpandedModal` y `helpers.js` (fechas y formatos). Las jornadas del mes salen de `syncWorkdayMonth` (`services/workdayMonths.js`).
 - Vista mensual. Cada celda lista las subfaenas que trabajaron ese día como barras de color (color estable derivado de un hash del nombre + paleta).
 - Dos interacciones:
   1. Click en una **barra** → `DayDetailDrawer` con detalle por labor + transportistas del día/subfaena. Métricas heterogéneas (kilos solo de cosecha, jornadas solo de los tipos que aportan jornada, trato/HE solo donde aplica). Las tarjetas con valor 0 se ocultan.
   2. Click en la **celda** (zona blanca) → `DayExpandedModal` con todas las subfaenas del día. Click en una subfaena dentro de este modal pasa a `DayDetailDrawer` con `from: "all"` para que al cerrar el drawer se vuelva al modal del día (cadena de modales).
-- **Cache de sesión por mes**: `sessionStorage` con TTL 5 min, key `af.calendar.{year}.{month}`. Reduce reads al navegar atrás/adelante.
-- **Estrategia de lecturas**: lee todos los workdays del rango del mes (~3k lecturas en un mes pico, ~US$0.02). `fetchWorkdaysInRange(start, end)` (`services/calendarService.js`) es el único punto que los lee: si el volumen pasa de ~5k workdays/mes o la carga de 2 s, ahí se puede combinar un snapshot agregado de los ciclos cerrados con los abiertos sin tocar el resto de la UI.
-- **Workers**: además de workdays/trips, el Calendar pre-carga la lista completa de trabajadores con `listWorkers()`, la copia del navegador puesta al día (ver `docs/screens/workers.md`). Necesario para mostrar nombres (no solo RUT) en los breakdowns por trabajador del drawer.
+- **Lecturas: las jornadas de cada mes se guardan en el navegador** (`syncWorkdayMonth`, ver "Listas sincronizadas" en AGENTS.md). La primera vez que se abre un mes en un navegador se lee entero (~3.000 lecturas en un mes pico) y después cuesta unas pocas: lo que cambió desde la última vez, en una consulta para todos los meses guardados, y un conteo del mes (una lectura por cada 1.000 jornadas) que encuentra lo eliminado. Cada mes se relee entero una vez por semana, y se guardan los 6 abiertos más recientemente. Ir y volver entre meses en menos de un minuto no lee nada; **↻** pone al día sin esperar el minuto. El contador del admin cuenta solo las lecturas de jornadas.
+- **Las vueltas del mes salen de la copia de Transportes** (`listTrips`, `services/transportLists.js`), filtradas por fecha.
+- **Trabajadores**: el detalle de un día muestra los nombres con la lista completa de trabajadores (`listWorkers()`, la copia del navegador, ver `docs/screens/workers.md`), que se carga recién la primera vez que se abre un detalle: mirar solo la grilla no la lee. Mientras carga, el detalle muestra el RUT.
 - **DayDetailDrawer — fila expandible por labor**: cada fila de la tabla "Por labor" es clickeable (▸/▾). Al expandir se muestra:
   - Para **cosecha**: cards con `qualityLabel / containerLabel · kg · %` por combo (calidad×envase) — sale del catálogo, no `Q1/E2`.
   - **Trabajadores** que participaron: nombre + RUT + producción (kilos / tratoQty / jornadas / HE / piso) + monto, ordenados por monto desc. Estado expandido en memoria (no persistido).

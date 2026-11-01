@@ -4,6 +4,7 @@
 const mem = new Map();
 const LS_PREFIX = "af.cache.";
 const SUBS = new Map(); // prefijo del scope -> Set<fn>
+const PATCH_SUBS = new Map(); // prefijo del scope -> Set<fn>
 
 const now = () => Date.now();
 
@@ -40,6 +41,11 @@ function dropLS(prefix) {
   } catch {
     /* se ignora */
   }
+}
+
+// Borra de localStorage todo lo guardado de un scope (`collection::`).
+export function dropStoredCache(scopePrefix) {
+  dropLS(`${scopePrefix}::`);
 }
 
 export function getCache(key, { persist = false } = {}) {
@@ -105,6 +111,20 @@ export function subscribe(scopePrefix, fn) {
   return () => SUBS.get(scopePrefix)?.delete(fn);
 }
 
+// Avisa cada vez que una escritura aditiva corrige las listas del scope en
+// memoria (`mergeListItem`, `removeListItem`). Lo usa la lista sincronizada,
+// que guarda su copia fuera de esta caché.
+export function onListPatched(scopePrefix, fn) {
+  if (!PATCH_SUBS.has(scopePrefix)) PATCH_SUBS.set(scopePrefix, new Set());
+  PATCH_SUBS.get(scopePrefix).add(fn);
+  return () => PATCH_SUBS.get(scopePrefix)?.delete(fn);
+}
+
+function notifyPatched(scopePrefix) {
+  const subs = PATCH_SUBS.get(scopePrefix);
+  if (subs) subs.forEach((fn) => { try { fn(); } catch { /* */ } });
+}
+
 // Recupera el objeto de parámetros desde el sufijo de la clave, para revisar
 // sus filtros. Solo lo usa la actualización aditiva.
 function parseKeyParams(key, scopePrefix) {
@@ -159,6 +179,7 @@ export function mergeListItem(scopePrefix, item, { idKey = "id" } = {}) {
       localStorage.setItem(k, JSON.stringify({ data: nextData, expires: parsed.expires }));
     }
   } catch { /* se ignora */ }
+  notifyPatched(scopePrefix);
 }
 
 export function removeListItem(scopePrefix, id, { idKey = "id" } = {}) {
@@ -183,4 +204,5 @@ export function removeListItem(scopePrefix, id, { idKey = "id" } = {}) {
       localStorage.setItem(k, JSON.stringify({ data: filtered, expires: parsed.expires }));
     }
   } catch { /* se ignora */ }
+  notifyPatched(scopePrefix);
 }

@@ -2,9 +2,11 @@ import { useState, useMemo } from "react";
 import { pendingCashOf } from "../../services/payrollsService";
 import RowMenu from "../../components/RowMenu";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import { useValuesChanged } from "../../hooks/useValuesChanged";
+import { usePagination } from "../../hooks/usePagination";
+import Pager from "../../components/Pager";
 import { fmtCurrency } from "../../utils/format";
 import { fmtDate } from "./helpers";
+import { millisOf } from "../../utils/syncedList";
 import { payStateOf } from "./payState";
 import { PortalBadge, PayStatePill, PaymentDatesLine } from "./PayStatePill";
 
@@ -27,7 +29,8 @@ export function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPai
   }, [payrolls]);
 
   const monthKey = (v) => {
-    const d = v?.toDate ? v.toDate() : v ? new Date(v) : null;
+    const ms = millisOf(v);
+    const d = ms ? new Date(ms) : v ? new Date(v) : null;
     if (!d || isNaN(d.getTime())) return "";
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   };
@@ -76,27 +79,7 @@ export function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPai
   // solo se pagina lo que se dibuja. Cambiar filtro, pestaña o búsqueda vuelve
   // a la página 1.
   const PAGE_SIZE = 15;
-  const [page, setPage] = useState(1);
-  if (useValuesChanged([classificationTab, statusFilter, monthFilter, search])) setPage(1);
-  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const currentPage = Math.min(page, pageCount);
-  const paged = useMemo(
-    () => filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
-    [filtered, currentPage],
-  );
-  const pageNumbers = useMemo(() => {
-    if (pageCount <= 7) return Array.from({ length: pageCount }, (_, i) => i + 1);
-    const set = new Set([1, pageCount, currentPage - 1, currentPage, currentPage + 1]);
-    const nums = [...set].filter((n) => n >= 1 && n <= pageCount).sort((a, b) => a - b);
-    const out = [];
-    let prev = 0;
-    for (const n of nums) {
-      if (n - prev > 1) out.push("…");
-      out.push(n);
-      prev = n;
-    }
-    return out;
-  }, [pageCount, currentPage]);
+  const { page, pageCount, pageItems: paged, setPage } = usePagination(filtered, PAGE_SIZE, [classificationTab, statusFilter, monthFilter, search]);
 
   // Una acción principal según el estado de la nómina (ninguna si ya está
   // pagada) y el resto en el menú ⋯. Eliminar se muestra siempre: apagado,
@@ -159,50 +142,8 @@ export function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPai
     };
   };
 
-  const pager = filtered.length > 0 && (
-    <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 pt-1 text-xs">
-      <span className="text-[var(--color-muted)]">
-        Mostrando {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filtered.length)} de {filtered.length}
-      </span>
-      {pageCount > 1 && (
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setPage(Math.max(1, currentPage - 1))}
-            disabled={currentPage <= 1}
-            className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 hover:bg-[var(--color-accent-soft)] disabled:opacity-40"
-          >
-            ‹
-          </button>
-          {pageNumbers.map((n, i) =>
-            n === "…" ? (
-              <span key={`e_${i}`} className="px-1 text-[var(--color-muted)]">…</span>
-            ) : (
-              <button
-                key={n}
-                type="button"
-                onClick={() => setPage(n)}
-                className={`min-h-[32px] min-w-[32px] rounded-md border px-2 py-1 tabular-nums ${
-                  n === currentPage
-                    ? "border-[var(--color-accent)] bg-[var(--color-accent)] font-semibold text-[var(--color-accent-fg)]"
-                    : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
-                }`}
-              >
-                {n}
-              </button>
-            ),
-          )}
-          <button
-            type="button"
-            onClick={() => setPage(Math.min(pageCount, currentPage + 1))}
-            disabled={currentPage >= pageCount}
-            className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 hover:bg-[var(--color-accent-soft)] disabled:opacity-40"
-          >
-            ›
-          </button>
-        </div>
-      )}
-    </div>
+  const pager = (
+    <Pager page={page} pageCount={pageCount} pageSize={PAGE_SIZE} total={filtered.length} onPage={setPage} className="shrink-0 pt-1" />
   );
 
   if (payrolls.length === 0) {

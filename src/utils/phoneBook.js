@@ -447,6 +447,30 @@ export function groupByCompany(contacts) {
   });
 }
 
+// Los grupos de `groupByCompany` que caen en una página, cuando la agenda se
+// pagina en ese orden: la página va de la posición `from` a la `to` (sin
+// incluirla). Cada grupo lleva solo sus contactos de la página, el total de la
+// empresa y si empieza en la página anterior (`fromPrevious`) o sigue en la
+// siguiente (`continues`).
+export function companyPageGroups(groups, from, to) {
+  const out = [];
+  let start = 0;
+  for (const g of groups) {
+    const end = start + g.contacts.length;
+    if (end > from && start < to) {
+      out.push({
+        company: g.company,
+        total: g.contacts.length,
+        contacts: g.contacts.slice(Math.max(0, from - start), to - start),
+        fromPrevious: start < from,
+        continues: end > to,
+      });
+    }
+    start = end;
+  }
+  return out;
+}
+
 // Los departamentos que usa la agenda, más los de la planilla, sin repetir y
 // por nombre. Con `inUse`, solo los que usa la agenda (para filtrar).
 export function departmentOptions(contacts, { inUse = false } = {}) {

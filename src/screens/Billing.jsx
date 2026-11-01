@@ -10,7 +10,6 @@ import { formatRutForDisplay } from "../utils/rutUtils";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useIsMobile } from "../hooks/useIsMobile";
-import { useValuesChanged } from "../hooks/useValuesChanged";
 import {
   DEFAULT_PROJECTION_PERCENT,
 } from "../utils/cashFlowProjection";
@@ -20,7 +19,6 @@ import {
   counterpartyOptions,
   docTotals,
   filterDocs,
-  pageWindow,
   periodOptionsOf,
   receivablesOf,
   receivablesTotalsOf,
@@ -50,6 +48,8 @@ import { useBillingData } from "./billing/useBillingData";
 import { useRcvImport } from "./billing/useRcvImport";
 import { useDocUpdates } from "./billing/useDocUpdates";
 import ScreenLoader from "../components/ScreenLoader";
+import Pager from "../components/Pager";
+import { usePagination } from "../hooks/usePagination";
 
 // Tamaño de página de la tabla principal. La vista plana pagina siempre, haya
 // o no búsqueda, para que meses con cientos de docs no rendericen todo.
@@ -132,17 +132,9 @@ export default function Billing() {
   // Paginación de la tabla plana. No aplica al modo "por centro de costo" ni a
   // retenciones/resumen: son vistas de reporte con subtotales, y cortar filas
   // los distorsionaría. Cualquier cambio de filtro u orden vuelve a la página 1.
-  const [page, setPage] = useState(1);
-  if (useValuesChanged([kindTab, selectedCompanyId, periodFilter, typeFilter, paymentFilter, search, sortBy])) setPage(1);
-  const pageCount = Math.max(1, Math.ceil(sortedFiltered.length / PAGE_SIZE));
-  // Acota la página al total: si la lista se achica (p. ej. al cambiar de
-  // empresa) antes de que corra el reset, no muestra una página vacía.
-  const currentPage = Math.min(page, pageCount);
-  const pagedDocs = useMemo(
-    () => sortedFiltered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
-    [sortedFiltered, currentPage],
-  );
-  const pageNumbers = useMemo(() => pageWindow(pageCount, currentPage), [pageCount, currentPage]);
+  const { page, pageCount, pageItems: pagedDocs, setPage } = usePagination(sortedFiltered, PAGE_SIZE, [
+    kindTab, selectedCompanyId, periodFilter, typeFilter, paymentFilter, search, sortBy,
+  ]);
 
   const counterpartySuggestions = useMemo(() => counterpartyOptions({ docs, kindTab, isWithholdingsView, selectedCompanyId }), [docs, kindTab, isWithholdingsView, selectedCompanyId]);
 
@@ -576,50 +568,8 @@ export default function Billing() {
 
         {/* Paginación — solo en la tabla plana. En modo "por centro de costo"
             se muestra todo (los subtotales por grupo no se pueden cortar). */}
-        {!groupByCostCenter && sortedFiltered.length > 0 && (
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs">
-            <span className="text-[var(--color-muted)]">
-              Mostrando {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, sortedFiltered.length)} de {fmtNumber(sortedFiltered.length)}
-            </span>
-            {pageCount > 1 && (
-              <div className="flex flex-wrap items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setPage(Math.max(1, currentPage - 1))}
-                  disabled={currentPage <= 1}
-                  className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 hover:bg-[var(--color-accent-soft)] disabled:opacity-40"
-                >
-                  ‹ Anterior
-                </button>
-                {pageNumbers.map((n, i) =>
-                  n === "…" ? (
-                    <span key={`e_${i}`} className="px-1 text-[var(--color-muted)]">…</span>
-                  ) : (
-                    <button
-                      key={n}
-                      type="button"
-                      onClick={() => setPage(n)}
-                      className={`min-h-[32px] min-w-[32px] rounded-md border px-2 py-1 tabular-nums ${
-                        n === currentPage
-                          ? "border-[var(--color-accent)] bg-[var(--color-accent)] font-semibold text-[var(--color-accent-fg)]"
-                          : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
-                      }`}
-                    >
-                      {n}
-                    </button>
-                  ),
-                )}
-                <button
-                  type="button"
-                  onClick={() => setPage(Math.min(pageCount, currentPage + 1))}
-                  disabled={currentPage >= pageCount}
-                  className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 hover:bg-[var(--color-accent-soft)] disabled:opacity-40"
-                >
-                  Siguiente ›
-                </button>
-              </div>
-            )}
-          </div>
+        {!groupByCostCenter && (
+          <Pager page={page} pageCount={pageCount} pageSize={PAGE_SIZE} total={sortedFiltered.length} onPage={setPage} className="mt-2" />
         )}
         </>
       )}

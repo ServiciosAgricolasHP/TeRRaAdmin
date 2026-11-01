@@ -25,7 +25,8 @@ servicio, así que tampoco necesitan invoker público:
 
 - `commitmentsDaily` (`commitments.js`): todos los días a las 8:00 de Chile
   envía un correo con los cheques, cuotas y pagos que vencen en los días
-  configurados, y extiende los pagos recurrentes.
+  configurados, y extiende los pagos recurrentes. Los vencimientos que genera
+  llevan `updatedAt`, con el que la app pone al día su copia.
 - `weeklyBackup` (`backup.js`): los domingos a las 3:00 de Chile genera el
   respaldo en JSON.
 

@@ -12,12 +12,14 @@ const {
   monthRangeOfKey,
   operationStats,
   paymentPeriodDate,
+  paymentsCreatedSince,
   payrollMoneyStats,
   payrollMonthKey,
   pendingOfPayment,
   transportDebtByMonth,
   transportStats,
   tsToIso,
+  workdayMonthsToCount,
 } = await import("./dashboard");
 
 // 21 de octubre de 2026, hora local.
@@ -43,6 +45,31 @@ describe("meses", () => {
   });
 });
 
+describe("workdayMonthsToCount", () => {
+  const keys = ["2026-07", "2026-08", "2026-09", "2026-10"];
+
+  it("cuenta siempre el mes actual y el anterior, y los viejos sin conteo guardado", () => {
+    expect(workdayMonthsToCount(keys, {}, "2026-10-21")).toEqual(keys);
+    const saved = {
+      "2026-07": { count: 900, date: "2026-10-20" },
+      "2026-08": { count: 1200, date: "2026-10-20" },
+      "2026-09": { count: 1500, date: "2026-10-20" },
+      "2026-10": { count: 300, date: "2026-10-20" },
+    };
+    expect(workdayMonthsToCount(keys, saved, "2026-10-21")).toEqual(["2026-09", "2026-10"]);
+  });
+
+  it("vuelve a contar un mes viejo guardado hace una semana o más, o con una fecha que no sirve", () => {
+    const saved = {
+      "2026-07": { count: 900, date: "2026-10-14" },
+      "2026-08": { count: 1200, date: "2026-10-15" },
+    };
+    expect(workdayMonthsToCount(keys, saved, "2026-10-21")).toEqual(["2026-07", "2026-09", "2026-10"]);
+    expect(workdayMonthsToCount(keys, { "2026-07": { count: 900, date: "" }, "2026-08": { count: 5, date: "2026-10-25" } }, "2026-10-21"))
+      .toEqual(keys);
+  });
+});
+
 describe("paymentPeriodDate", () => {
   it("fecha el resumen por el punto medio de su período, en el mes con más días", () => {
     expect(paymentPeriodDate({ periodFrom: "2026-08-28", periodTo: "2026-09-03" })).toBe("2026-08-31");
@@ -52,6 +79,18 @@ describe("paymentPeriodDate", () => {
   it("con una sola punta usa esa fecha, y sin período cae a createdAt", () => {
     expect(paymentPeriodDate({ periodTo: "2026-09-20" })).toBe("2026-09-20");
     expect(paymentPeriodDate({ createdAt: ts(2026, 10, 2) })).toBe("2026-10-02");
+  });
+});
+
+describe("paymentsCreatedSince", () => {
+  it("deja los creados desde la fecha, también los guardados como `seconds`, y saca los que no tienen createdAt", () => {
+    const payments = [
+      { id: "viejo", createdAt: ts(2025, 10, 31) },
+      { id: "borde", createdAt: ts(2025, 11, 1) },
+      { id: "guardado", createdAt: { seconds: new Date(2026, 2, 4, 12).getTime() / 1000, nanoseconds: 0 } },
+      { id: "sinFecha" },
+    ];
+    expect(paymentsCreatedSince(payments, "2025-11-01").map((p) => p.id)).toEqual(["borde", "guardado"]);
   });
 });
 

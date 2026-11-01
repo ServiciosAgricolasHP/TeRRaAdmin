@@ -1,7 +1,7 @@
 import { doc, serverTimestamp } from "firebase/firestore";
 import { updateDoc, writeBatch } from "./readMeter";
 import { db, auth } from "../firebase";
-import { createService } from "./firestoreBase";
+import { createAdditiveService, createService } from "./firestoreBase";
 import { workdaysService, listWorkdaysByCycles } from "./index";
 import { isCashBank } from "../utils/banks";
 import { bankFormatOf } from "../utils/bankFormats";
@@ -17,7 +17,8 @@ export const PAYROLL_STATUSES = [
   { value: "paid", label: "Pagada" },
 ];
 
-export const payrollsService = createService("payroll", "payrolls");
+// Ver `listPayrolls` en payrollsList.js.
+export const payrollsService = createAdditiveService("payroll", "payrolls");
 
 // Configuración compartida de la nómina, en un único doc `payrollConfig/main`.
 export const payrollConfigService = createService("payrollConfig", "payrollConfig");

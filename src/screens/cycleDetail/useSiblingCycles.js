@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { cyclesService } from "../../services";
+import { listCycles } from "../../services/jobLists";
+import { cycleSortDay } from "../../utils/cycleClosing";
 
 // Ciclo anterior y siguiente de la misma faena y subfaena, para navegar entre
 // ellos.
@@ -14,23 +15,10 @@ export function useSiblingCycles({ cycle, id }) {
     const subjobId = cycle?.subfaenaId || null;
     let cancelled = false;
     (async () => {
-      const list = await cyclesService.list({
-        wheres: [["faenaId", "==", jobId]],
-        cache: true,
-        ttl: 2 * 60 * 1000,
-      });
+      const list = await listCycles();
       if (cancelled) return;
-      const scope = list.filter((c) => (c.subfaenaId || null) === subjobId);
-      // Un ciclo sin días se ordena por startDate o createdAt, nunca por hoy
-      // (a diferencia de firstWorkedDay).
-      const firstDayForSort = (c) => {
-        const days = c.days;
-        if (Array.isArray(days) && days.length > 0) {
-          return days.reduce((min, d) => (d < min ? d : min), days[0]);
-        }
-        return c.startDate || c.createdAt?.toDate?.()?.toISOString?.() || "";
-      };
-      scope.sort((a, b) => firstDayForSort(a).localeCompare(firstDayForSort(b)));
+      const scope = list.filter((c) => c.faenaId === jobId && (c.subfaenaId || null) === subjobId);
+      scope.sort((a, b) => cycleSortDay(a).localeCompare(cycleSortDay(b)));
       setSiblingCycles(scope.map((c) => ({ id: c.id, label: c.label })));
     })();
     return () => { cancelled = true; };

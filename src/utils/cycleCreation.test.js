@@ -14,7 +14,7 @@ const ids = () => {
 };
 
 describe("importCandidatesOf", () => {
-  const ts = (iso) => ({ toDate: () => new Date(iso) });
+  const ts = (iso) => ({ toDate: () => new Date(iso), toMillis: () => Date.parse(iso) });
   const cycles = [
     { id: "a", subfaenaId: "S1", status: "open", startDate: "2026-09-01" },
     { id: "b", subfaenaId: "S1", status: "closed", startDate: "2026-10-01" },

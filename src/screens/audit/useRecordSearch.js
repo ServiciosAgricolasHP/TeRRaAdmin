@@ -1,15 +1,19 @@
 import { useMemo, useState } from "react";
 import { fetchRecordHistory } from "../../services/auditService";
 import { listWorkers } from "../../services/workersService";
+import { listCycles, listJobs, listSubjobs } from "../../services/jobLists";
 import { ENTITY_META, searchableEntityTypes } from "../../utils/auditLabels";
 import { attempt } from "../../utils/attempt";
 import { useValuesChanged } from "../../hooks/useValuesChanged";
 
-// El catálogo de un tipo de registro. Los trabajadores salen de la copia que
-// se pone al día (`listWorkers`); los demás, de su servicio, con caché de
-// 10 min.
+// El catálogo de un tipo de registro. Los trabajadores, las faenas, las
+// subfaenas y los ciclos salen de la copia que comparten las pantallas; los
+// demás, de su servicio, con caché de 10 min.
+const SYNCED_LISTS = { worker: listWorkers, faena: listJobs, subfaena: listSubjobs, cycle: listCycles };
+
 function listRecords(entityType, meta) {
-  if (entityType === "worker") return listWorkers();
+  const synced = SYNCED_LISTS[entityType];
+  if (synced) return synced();
   return meta.service.list({ cache: true, ttl: 600_000 });
 }
 

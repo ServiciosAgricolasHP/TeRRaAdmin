@@ -1,4 +1,5 @@
 import { localIsoDate } from "./dates";
+import { timestampIso } from "./syncedList";
 
 // Primer y último día de la grilla del ciclo (`cycle.days`). Al cerrar el
 // ciclo, startDate y endDate toman estos valores: el rango de lo trabajado, no
@@ -14,6 +15,15 @@ export function lastWorkedDay(cycle, today = localIsoDate()) {
   const days = cycle?.days;
   if (Array.isArray(days) && days.length > 0) return days.reduce((max, d) => (d > max ? d : max), days[0]);
   return cycle?.endDate || today;
+}
+
+// El día con que se ordenan los ciclos entre sí (las columnas del resumen de
+// producción y la navegación anterior/siguiente de la grilla): el primero
+// trabajado y, sin días, el de inicio o el de creación, nunca hoy.
+export function cycleSortDay(cycle) {
+  const days = cycle?.days;
+  if (Array.isArray(days) && days.length > 0) return days.reduce((min, d) => (d < min ? d : min), days[0]);
+  return cycle?.startDate || timestampIso(cycle?.createdAt);
 }
 
 // Lo que se escribe en un ciclo al cerrarlo, desde cualquier pantalla.

@@ -1,10 +1,11 @@
 import { useState, useEffect, useEffectEvent, useMemo } from "react";
 import { useToast } from "../contexts/ToastContext";
-import { qrPrefixesService, jobsService, cyclesService } from "../services";
+import { qrPrefixesService, cyclesService } from "../services";
+import { syncJobs } from "../services/jobLists";
 import { countedList } from "../services/cache";
 import { useAuth } from "../contexts/AuthContext";
 import ConfirmDialog from "../components/ConfirmDialog";
-import { JOBS_TTL_MS, readsLabel, TAP, lastSyncLabel, dayMonth } from "./harvestQr/helpers";
+import { readsLabel, TAP, lastSyncLabel, dayMonth } from "./harvestQr/helpers";
 import { PrefixFormModal } from "./harvestQr/PrefixFormModal";
 import { QrManager } from "./harvestQr/QrManager";
 import { SyncModal } from "./harvestQr/SyncModal";
@@ -72,7 +73,7 @@ export default function HarvestQr() {
       // que hay que reapuntar al abrir un ciclo, así que se muestra al día.
       const [px, jobsResult] = await Promise.all([
         countedList(qrPrefixesService, { order: ["label", "asc"] }),
-        countedList(jobsService, { order: ["name", "asc"], cache: true, persist: true, ttl: JOBS_TTL_MS }),
+        syncJobs(),
       ]);
       setPrefixes(px.data);
       setJobs(jobsResult.data);

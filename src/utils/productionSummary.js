@@ -5,6 +5,7 @@
 // trae textos para mostrar.
 import { getTratoTierTotals } from "./cosechaCombos";
 import { countingStageIds } from "./tratoEtapas";
+import { cycleSortDay } from "./cycleClosing";
 
 export function laborGroupsByIdOf(laborGroupsBySubjob) {
   const m = new Map();
@@ -15,17 +16,10 @@ export function laborGroupsByIdOf(laborGroupsBySubjob) {
 }
 
 // Orden de columnas y chips: agrupados por subfaena y, dentro de cada
-// grupo, del más viejo al más nuevo por el primer día de `days` (el mismo
-// criterio que la navegación anterior/siguiente de CycleDetail). Los grupos
+// grupo, del más viejo al más nuevo por su primer día (`cycleSortDay`, el
+// mismo criterio que la navegación anterior/siguiente de CycleDetail). Los grupos
 // se ordenan por su ciclo más antiguo.
 export function orderCycles(cycles) {
-  const sortKeyFor = (c) => {
-    const days = c.days;
-    if (Array.isArray(days) && days.length > 0) {
-      return days.reduce((min, d) => (d < min ? d : min), days[0]);
-    }
-    return c.startDate || c.createdAt?.toDate?.()?.toISOString?.() || "";
-  };
   const groups = new Map(); // subfaenaId (o "" para huérfanos) -> cycles[]
   for (const c of cycles) {
     const key = c.subfaenaId || "";
@@ -33,8 +27,8 @@ export function orderCycles(cycles) {
     groups.get(key).push(c);
   }
   const groupList = [...groups.values()].map((list) => {
-    const sorted = [...list].sort((a, b) => sortKeyFor(a).localeCompare(sortKeyFor(b)));
-    return { sorted, groupKey: sorted.length > 0 ? sortKeyFor(sorted[0]) : "" };
+    const sorted = [...list].sort((a, b) => cycleSortDay(a).localeCompare(cycleSortDay(b)));
+    return { sorted, groupKey: sorted.length > 0 ? cycleSortDay(sorted[0]) : "" };
   });
   groupList.sort((a, b) => a.groupKey.localeCompare(b.groupKey));
   return groupList.flatMap((g) => g.sorted);

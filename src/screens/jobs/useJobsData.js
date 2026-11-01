@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useEffectEvent } from "react";
-import { jobsService, subjobsService, cyclesService } from "../../services";
+import { listCycles, listJobs, listSubjobs } from "../../services/jobLists";
+import { newestFirst } from "../../utils/syncedList";
 import { attempt } from "../../utils/attempt";
 import { readStoredJson, writeStoredJson } from "../../utils/browserStorage";
 
@@ -37,12 +38,7 @@ export function useJobsData({ selectedId, user }) {
   const loadJobs = async () => {
     setLoading(true);
     const { error: err } = await attempt(async () => {
-      const list = await jobsService.list({
-        order: ["name", "asc"],
-        cache: true,
-        persist: true,
-        ttl: 10 * 60 * 1000,
-      });
+      const list = await listJobs();
       setRawJobs(list);
       const ids = list.map((f) => f.id);
       const cleaned = order.filter((id) => ids.includes(id));
@@ -55,23 +51,12 @@ export function useJobsData({ selectedId, user }) {
   };
 
   const loadSubjobs = async (jobId) => {
-    const list = await subjobsService.list({
-      wheres: [["faenaId", "==", jobId]],
-      order: ["name", "asc"],
-      cache: true,
-      persist: true,
-      ttl: 10 * 60 * 1000,
-    });
+    const list = (await listSubjobs()).filter((s) => s.faenaId === jobId);
     setSubjobsByJob((prev) => ({ ...prev, [jobId]: list }));
   };
 
   const loadCycles = async (jobId) => {
-    const list = await cyclesService.list({
-      wheres: [["faenaId", "==", jobId]],
-      order: ["createdAt", "desc"],
-      cache: true,
-      ttl: 2 * 60 * 1000,
-    });
+    const list = newestFirst((await listCycles()).filter((c) => c.faenaId === jobId));
     setCyclesByJob((prev) => ({ ...prev, [jobId]: list }));
   };
 

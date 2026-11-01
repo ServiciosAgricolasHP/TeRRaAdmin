@@ -3,12 +3,13 @@
 // cerrar uno y separar el sufijo editable de la etiqueta. `makeId` genera el
 // id de cada labor nueva.
 import { workdayDocId } from "./cosechaCombos";
+import { timestampIso } from "./syncedList";
 
 // Ciclos abiertos de la subfaena que pueden servir de origen para importar,
 // del más reciente al más antiguo.
 export function importCandidatesOf(cycles, subjobId) {
   const scope = cycles.filter((c) => c.subfaenaId === subjobId);
-  const sortKey = (c) => c.endDate || c.startDate || c.createdAt?.toDate?.()?.toISOString?.() || "";
+  const sortKey = (c) => c.endDate || c.startDate || timestampIso(c.createdAt);
   return scope
     .filter((c) => c.status !== "closed")
     .sort((a, b) => sortKey(b).localeCompare(sortKey(a)));

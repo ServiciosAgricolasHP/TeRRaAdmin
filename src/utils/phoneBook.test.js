@@ -13,6 +13,7 @@ import {
   displayName,
   filterPhoneContacts,
   groupByCompany,
+  companyPageGroups,
   departmentOptions,
   phoneContactText,
 } from "./phoneBook";
@@ -255,6 +256,25 @@ describe("filterPhoneContacts, groupByCompany y departmentOptions", () => {
       ["transportes del sur", ["1", "4"]],
       ["", ["3"]],
     ]);
+  });
+
+  it("en una página, cada empresa con sus contactos de la página, su total y si viene o sigue", () => {
+    const groups = groupByCompany(filterPhoneContacts(list));
+    const page = (from, to) => companyPageGroups(groups, from, to).map((g) => [g.company, g.contacts.map((c) => c.id), g.total, g.fromPrevious, g.continues]);
+    expect(page(0, 2)).toEqual([
+      ["Comercial Los Robles", ["2"], 1, false, false],
+      ["transportes del sur", ["1"], 2, false, true],
+    ]);
+    expect(page(2, 4)).toEqual([
+      ["transportes del sur", ["4"], 2, true, false],
+      ["", ["3"], 1, false, false],
+    ]);
+    expect(page(0, 50).map(([company, ids]) => [company, ids])).toEqual([
+      ["Comercial Los Robles", ["2"]],
+      ["transportes del sur", ["1", "4"]],
+      ["", ["3"]],
+    ]);
+    expect(page(4, 6)).toEqual([]);
   });
 
   it("los departamentos de la planilla más los que usa la agenda, sin repetir", () => {

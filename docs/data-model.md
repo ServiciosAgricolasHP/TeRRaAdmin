@@ -17,6 +17,7 @@ Lugar de trabajo (campo, predio).
 | `id` (docId) | string | autoId |
 | `name` | string | |
 | `notes` | string? | |
+| `createdAt/By`, `updatedAt/By` | ts, string | toda escritura de TeRRa pone `updatedAt`. La copia que comparten las pantallas se pone al día con él (`listJobs`) |
 
 ### `subfaenas`
 Subdivisión dentro de una faena (cuartel, sector). Los ciclos siempre cuelgan de una.
@@ -26,6 +27,7 @@ Subdivisión dentro de una faena (cuartel, sector). Los ciclos siempre cuelgan d
 | `faenaId` | ref→`faenas` | |
 | `name` | string | |
 | `notes` | string? | |
+| `createdAt/By`, `updatedAt/By` | ts, string | toda escritura de TeRRa pone `updatedAt`. La copia que comparten las pantallas se pone al día con él (`listSubjobs`) |
 
 ### `cycles`
 Período de trabajo en una subfaena. Contiene labores anidadas y la matriz de precios por día.
@@ -43,6 +45,7 @@ Período de trabajo en una subfaena. Contiene labores anidadas y la matriz de pr
 | `dayPrices` | `{ [laborId]: { [date]: PriceEntry } }` | combos/tiers |
 | `dayNotes` | `{ [date]: string }` | anotación compartida del día (click sobre el header) |
 | `summaryTotals` | `{ pagar, cobrar, at }`? | totales del resumen del ciclo, escritos por `CycleSummaryModal` al cerrarse (solo si cambiaron). Alimentan el margen por ciclo del Dashboard: van acá y no en `cycleSummaries` porque el Dashboard ya carga la lista de ciclos y así le salen gratis. Ausente en los ciclos cuyo resumen nunca se abrió. |
+| `createdAt/By`, `updatedAt/By` | ts, string | toda escritura de TeRRa pone `updatedAt`. La copia que comparten las pantallas se pone al día con él (`listCycles`) |
 
 `Labor` (embebido en `cycles.labors`):
 - `id`, `name`, `type` (`cosecha` \| `trato` \| `tratoHE` \| `main` \| `supervision` \| `extra`)
@@ -112,6 +115,8 @@ Una fila por (cycleId × laborId × workerRut × date). Es la tabla "transaccion
 | `tiers` | `{ [tierKey]: { qty, amount } }` | trato multi-precio; suma con `getTratoTierTotals(wd)` |
 | `overtimeHours`, `hasManejo`, `hasSupervision`, `extras` | number? / bool? | solo `tratoHE` |
 | `pisoOnly` | bool? | `true` para workdays de piso (combo `_piso`). `qty: 0`, `amount: pisoAmount`. Un doc por (worker × date × labor). Solo trato/cosecha. Tag con `payrollId` igual que cualquier otro workday. |
+| `createdAt`, `createdBy` | ts, string? | |
+| `updatedAt`, `updatedBy` | ts, string? | la última escritura de `workdaysService` (la grilla, Pesajes QR, mover jornadas de ciclo). Etiquetar con la nómina y marcar pagado no lo ponen. Las copias por mes del Calendario se ponen al día con él (`syncWorkdayMonth`) |
 
 ### `payrolls`
 Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
@@ -133,6 +138,8 @@ Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
 | `workdayIds` | ref→`workdays`[] | |
 | `advanceIds` | ref→`advances`[] | |
 | `advanceTotal` | number | |
+| `createdAt`, `createdBy` | ts, string? | |
+| `updatedAt`, `updatedBy` | ts, string? | toda escritura de `payrollsService` los pone. La copia que comparten Nómina y el Dashboard se pone al día con él (`listPayrolls`) |
 
 `PayrollItem` (embebido):
 - `rut` (el campo real en código es `rut`, no `workerRut` a pesar de lo que sugiere el nombre del doc — mismatch histórico), `workerId` (agregado en fase 2, ref estable al worker), `workerName`, `bankDetails`
@@ -304,6 +311,8 @@ Transportistas (propios o contratados).
 | `notes` | string? | |
 | `status` | `"pending"` \| `"paid"` | una vuelta `paid` queda congelada: `tripsService.update`/`remove` la rechazan |
 | `paymentId` | ref→`transportPayments` \| null | null = "vuelta suelta", disponible para entrar a un resumen nuevo |
+| `createdAt`, `createdBy` | ts, string? | |
+| `updatedAt`, `updatedBy` | ts, string? | toda escritura de `transportsService` los pone. La copia del navegador se pone al día con él (`listTrips`) |
 
 ### `transportPayments`
 Resumen de pago a un transportista (lote de `transports`).
@@ -320,6 +329,8 @@ Resumen de pago a un transportista (lote de `transports`).
 | `status` | `"pending"` \| `"paid"` | `paid` congela el doc: no se recalcula ni se edita |
 | `paidAt`, `paidBy` | ts?, string? | |
 | `notes` | string? | |
+| `createdAt`, `createdBy` | ts, string? | |
+| `updatedAt`, `updatedBy` | ts, string? | toda escritura de `transportsService` los pone. La copia del navegador se pone al día con él (`listTransportPayments`) |
 
 ### `transportPayrolls` (quincenas)
 Agrupa N `transportPayments` de **varios** transportistas para pagar en bloque. Relación 1:N estricta: un resumen pertenece a una quincena o a ninguna.
@@ -333,6 +344,8 @@ Agrupa N `transportPayments` de **varios** transportistas para pagar en bloque. 
 | `status` | `"pending"` \| `"paid"` | |
 | `paidAt`, `paidBy` | ts?, string? | |
 | `notes` | string? | |
+| `createdAt`, `createdBy` | ts, string? | |
+| `updatedAt`, `updatedBy` | ts, string? | toda escritura de `transportsService` los pone. La copia del navegador se pone al día con él (`listFortnights`) |
 
 > **Cascada de pago**: marcar la quincena pagada marca cada resumen y cada vuelta de cada resumen. Marcar un item suelto marca solo ese resumen y sus vueltas — la quincena sigue `pending` hasta que se marque explícitamente. Revertir hace la cascada inversa.
 
@@ -374,6 +387,7 @@ Documento tributario electrónico (factura / boleta / NC / etc.) importado del *
 | `payments` | `Payment[]` | abonos (ver abajo) |
 | `notes` | string? | notas editables / auditoría de anulación por NC |
 | `importedAt`, `importedBy` | ts, string? | sello del import (writeBatch chunks de 450) |
+| `updatedAt`, `updatedBy` | ts, string? | la última escritura: la importación y cada cambio desde Facturación (pago, abonos, notas, centro de costo). La copia que comparten Facturación y el Dashboard se pone al día con él (`listDteDocuments`) |
 
 `Payment` (embebido en `dteDocuments.payments`):
 - `id` (local), `date` (YYYY-MM-DD), `kind` (`abono` \| `neto` \| `iva` \| `total`), `amount: number`, `notes: string`
@@ -421,6 +435,7 @@ Un vencimiento de la pantalla **Cheques y pagos**: un cheque emitido o recibido,
 | `seriesId` | ref→`commitmentSeries`? | si lo generó un crédito o un pago recurrente |
 | `installment` | `{ n, of }` | null | número de cuota; `null` en un pago recurrente |
 | `source` | `"excel_import"`? | solo lo importado de la planilla |
+| `createdAt/By`, `updatedAt/By` | ts, string | toda escritura de TeRRa pone `updatedAt`, también la función diaria al generar un vencimiento (`createdBy` y `updatedBy` en `null`). La copia que comparten Cheques y pagos y el Dashboard se pone al día con él (`listCommitments`); un vencimiento escrito sin él entra porque el conteo deja de calzar |
 
 ### `commitmentSeries`
 Un crédito en cuotas (`kind: "installment"`), una deuda personal en cuotas (`kind: "personalDebt"`) o un pago recurrente mensual (`kind: "payment"`). Los vencimientos son docs propios de `commitments`, con el mismo `kind` de la serie; la serie solo los genera.
@@ -506,7 +521,7 @@ Agenda telefónica — pestaña "📞 Agenda telefónica" de Agenda y Cuentas. S
 | `emails` | string[] | en minúsculas |
 | `notes` | string | |
 | `sources` | (`"sheet"` \| `"google"` \| `"outlook"` \| `"vcard"` \| `"manual"`)[] | de dónde vino |
-| `createdAt/By`, `updatedAt/By` | ts, string | |
+| `createdAt/By`, `updatedAt/By` | ts, string | toda escritura de TeRRa pone `updatedAt`, también la importación. La agenda del navegador se pone al día con él (`listPhoneContacts`) |
 
 Una importación deja **un** log (`action: "import"`, `entity: "phoneContact"`, sin `entityId`) con `meta: { created, updated, unchanged, sources, files }`, en vez de uno por contacto.
 
@@ -655,6 +670,15 @@ Ficha de cada respaldo en JSON de la base (`functions/backup.js`). El archivo es
 | `bytes` | number | tamaño del archivo comprimido |
 
 El archivo es `{ format: "terra-backup", version: 1, createdAt, database, excluded, collections: { <colección>: [{ id, data }] }, subcollections: { <grupo>: [{ path, data }] }, counts }`. Los valores que JSON no tiene van como `{ __type, … }`: `timestamp` (`seconds`, `nanoseconds`, `iso`), `reference` (`path`), `geopoint`, `bytes` (`base64`) y `number` (`NaN`, `Infinity`).
+
+### `helpQuestions`
+Lo que alguien buscó en la ayuda (`/ayuda`) sin encontrarlo, guardado con **Avisar que falta**: dice qué guías o secciones faltan. Se escribe solo al tocar el botón, una vez por pregunta; buscar no escribe. La app no la muestra: se lee desde la consola de Firebase.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `question` | string | lo que se escribió en "¿Qué quieres hacer?" |
+| `guideId` | string? | la guía abierta al buscar, si había una |
+| `fromPath` | string? | la pantalla desde donde se abrió la ayuda con el botón **?** (`/cycles/C1`) |
+| `createdAt/By`, `updatedAt/By` | ts, string | |
 
 ### `readLogs`
 El registro de lecturas (`services/readMeter.js`): un documento por persona, día y entorno mientras el registro está encendido. **DocId = `{fecha}_{uid}_{env}`** (`2026-11-03_abc123_prod`). El registro lo suma con `setDoc` + `merge` e `increment`, cada 5 minutos y al ocultar la pestaña, sin leerlo. Solo lo lee el informe de la Consola admin (**📊 Informe de lecturas**), por rango de `date`.

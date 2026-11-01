@@ -1,11 +1,5 @@
-// Ayudas que comparten las piezas de Pesajes QR: los TTL de las listas
-// compartidas, el contador de lecturas, el alto de toque y las fechas de la
-// sincronización.
-
-// TTL de la lista de faenas, que esta pantalla comparte con el resto de la app,
-// con el mismo valor que usan las otras pantallas. La clave de caché (`collection::{wheres,order,take}`) no
-// incluye el TTL, así que el último que escribe fija el vencimiento para todos.
-export const JOBS_TTL_MS = 10 * 60 * 1000;
+// Ayudas que comparten las piezas de Pesajes QR: el contador de lecturas, el
+// alto de toque y las fechas de la sincronización.
 
 // Contador de lecturas que ve el admin junto al título. Permite verificar que
 // las listas compartidas salen de la caché ("desde caché" = 0 lecturas).

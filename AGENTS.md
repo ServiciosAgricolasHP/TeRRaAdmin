@@ -11,7 +11,14 @@ Las reglas de este repo, para personas y agentes. Lo de una sola pantalla está 
 
 ### Flujo de trabajo en git
 
-- **Día a día en `develop`.** `main` es producción y solo recibe merges vía Pull Request.
+- **Tres caminos.** `main` es producción y solo recibe Pull Requests. `develop` junta los hitos de la próxima versión menor. Una rama `hotfix/<nombre>` lleva a producción un arreglo rápido sin lo que está a medio hacer en `develop`.
+- **Un hito, un PR; la versión completa, un cambio de versión.** Los hitos de cada versión menor se anotan en el backlog. Cada hito pasa de `develop` a `main` en su propio PR apenas está completo, y el PR del último sube la versión (`npm version minor --no-git-tag-version`, en un commit propio). Entre medio, producción sigue en la versión anterior con el conteo de commits (v1.3.12).
+  - El PR lleva todo lo que tiene `develop`: se trabaja un hito a la vez, o el que está a medio hacer espera a que esté completo. Lo que no puede esperar sale como hotfix.
+- **Hotfix.** Cuando se pide un hotfix, el arreglo sale de `main` y no lleva nada de lo que está en `develop`:
+  1. `git fetch` y `git switch -c hotfix/<nombre> --no-track origin/main`. Lo que haya sin commitear en `develop` se guarda antes (`git stash`) y se recupera al volver.
+  2. El arreglo y sus tests, con las mismas reglas de cualquier commit (lint, tests, `docs/data-model.md`, la guía de la ayuda). Después, `git push -u origin hotfix/<nombre>` y el PR a `main`. El encabezado muestra el número siguiente (v1.3.1), porque cuenta los commits desde la última subida de versión.
+  3. Mergeado el PR, `main` vuelve a `develop` con un merge (`git switch develop && git merge origin/main`) y la rama se borra. Va con merge, no con cherry-pick: el mismo cambio en dos commits choca en el próximo PR de `develop`.
+- **Los conflictos se resuelven en `develop`, antes de abrir el PR a `main`**, nunca en el PR. Si `develop` no tiene algo de `main` (un hotfix sin volver), se mergea `origin/main` primero y se corren lint y tests sobre el resultado.
 - **`docs/data-model.md` acompaña a cada cambio de modelo.** Una colección nueva, un campo nuevo, uno que cambia de tipo o de significado, o uno que se deja de escribir se documenta en el mismo commit; una colección nueva también va en `MAIN_COLLECTIONS` (`screens/adminConsole/collections.js`). Antes de un push se revisa que los commits que tocaron entidades lo hayan actualizado.
 - `.github/workflows/ci.yml` — corre en push/PR dos jobs, los dos bloqueantes:
   - `build`: `npm run lint`, que falla con cualquier error o aviso (`--max-warnings=0`), y `npm run build`. Este build en Linux es lo que caza los imports con casing incorrecto que Windows esconde.
@@ -53,6 +60,7 @@ Lo que vale para varias pantallas está en este archivo; lo de una sola, en su a
 | La barra lateral, el encabezado y la versión | `docs/screens/layout.md` |
 | La pantalla de carga | `docs/screens/screen-loader.md` |
 | Una colección o un campo de Firestore | `docs/data-model.md` |
+| La ayuda (`/ayuda`): sus guías, la búsqueda y las capturas | `docs/screens/help.md` |
 | El deploy, la PWA o la URL de GitHub Pages | `docs/deploy.md` |
 
 ## Código
@@ -67,6 +75,7 @@ React 19 · Vite 7 · Tailwind CSS 4 · Firebase (Firestore + Auth) · ag-grid �
 - `exceljs` se importa **lazy** (`await import("exceljs")`) solo al exportar — chunk separado de ~937 KB.
 - `recharts` idem, vía `React.lazy` sobre `screens/dashboard/DashboardCharts.jsx` y la dona `CommitmentsDonut`, en un chunk separado de ~340 KB. El chunk principal ya está sobre el límite de Vite, así que toda librería pesada nueva va lazy.
 - `jspdf` + `jspdf-autotable` también se importan lazy, solo al descargar el PDF del Informe de deudas.
+- `marked` y `minisearch` van solo en el chunk de la ayuda (`screens/Help.jsx`, cargada con `React.lazy`).
 
 ### Arquitectura
 
@@ -75,8 +84,8 @@ src/
   main.jsx              ← punto de entrada
   App.jsx               ← las rutas (react-router-dom)
   firebase.js           ← Firebase (Firestore db = "hpdatabase")
-  components/           ← UI compartida (Layout, ProtectedRoute, Modal, ConfirmDialog, RowMenu, TripEditModal, WorkerEditModal, WorkerSummaryModal, etc.)
-  hooks/                ← hooks que usan varias pantallas (useIsMobile, useWorkersList, useValuesChanged, useCaptureActions)
+  components/           ← UI compartida (Layout, ProtectedRoute, Modal, ConfirmDialog, RowMenu, Pager, TripEditModal, WorkerEditModal, WorkerSummaryModal, etc.)
+  hooks/                ← hooks que usan varias pantallas (useIsMobile, useWorkersList, useValuesChanged, useCaptureActions, usePagination)
   screens/              ← un componente por ruta (ver Rutas) y, al lado, la carpeta con sus piezas
                         (jobs/, cycleDetail/, payroll/, transports/…; ver "Componentes y archivos")
   contexts/             ← Auth, Theme, Catalogs, Carriers y Toast: XContext.js + XProvider.jsx
@@ -198,9 +207,21 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 ### Caché aditiva
 
 - `firestoreBase` soporta `additive: true` en `create`/`update`/`upsert`/`remove` — en vez de invalidar la entrada de caché correspondiente, la **corrige en su lugar**: agrega, actualiza o quita el documento. Útil cuando una colección se lista entera (sin `wheres`) y la queremos mantener fresca sin pagar el costo de re-leer todos los docs.
-- `workersService` (en `services/index.js`) está envuelto para usar `additive: true` por defecto en todas las mutaciones — alta de trabajador no invalida la lista en caché.
-- **La lista completa de trabajadores se pide con `listWorkers()`** (`services/workersService.js`), nunca con un `workersService.list()` propio. La copia del navegador no vence: se lee entera la primera vez del día en cada navegador y, entre medio, se pone al día con lo que cambió (`updatedAt`), como mucho una vez por minuto. Así cuesta unas pocas lecturas en vez de una por trabajador. Lo que se escribe sin `updatedAt` (el escáner, la consola de Firebase) y lo que se elimina en otro equipo entran con la carga completa del día siguiente o con Recargar en Nómina.
+- Los servicios de las listas sincronizadas (abajo) se crean con `createAdditiveService` (`services/firestoreBase.js`), que usa `additive: true` por defecto en todas las mutaciones: un alta no invalida la lista guardada.
+- **La lista completa de trabajadores se pide con `listWorkers()`** (`services/workersService.js`), nunca con un `workersService.list()` propio. Es una lista sincronizada (abajo) que se lee entera la primera vez del día en cada navegador, así cuesta unas pocas lecturas en vez de una por trabajador. Lo que se escribe sin `updatedAt` (el escáner, la consola de Firebase) y lo que se elimina en otro equipo entran con la carga completa del día siguiente o con Recargar en Nómina.
 - Helpers internos: `mergeListItem` y `removeListItem` (solo tocan claves de caché con `wheres` vacío).
+
+### Listas sincronizadas
+
+- **Una colección que se lee entera se guarda en el navegador y se pone al día** con `createSyncedList(service, { order, syncKey, fullEveryDays, checkCount })` (`services/syncedList.js`). La copia no vence: cada vez que se pide, como mucho una vez por minuto, se traen solo los documentos con `updatedAt` desde la marca (1 lectura si no cambió nada) y se juntan con la copia. El cálculo, en `utils/syncedList.js`, con tests.
+- **La copia vive en memoria y se guarda en IndexedDB** (`services/idbStore.js`), no en `localStorage`: las listas juntas pasan de los ~5 MB que permite. Se guarda con su marca después de cada puesta al día y, un segundo después, de cada escritura de este equipo. Sin IndexedDB (una ventana privada, los tests) queda solo en memoria y la primera vez de cada carga de página se lee entera.
+- **El Calendario guarda así las jornadas de cada mes que abre** (`syncWorkdayMonth`, `services/workdayMonths.js`; el cálculo, en `utils/workdayMonths.js`): una consulta por `updatedAt` pone al día todos los meses guardados, y un conteo del mes encuentra lo eliminado. Guarda los 6 meses abiertos más recientemente y relee cada uno entero una vez por semana.
+- Las escrituras de este equipo la corrigen en su lugar (`additive`), y **toda escritura de la colección pone `updatedAt`**: `firestoreBase` lo hace, y un `writeBatch` propio lo escribe a mano.
+- **Lo que la consulta por `updatedAt` no ve** (lo escrito sin `updatedAt` y lo que se elimina en otro equipo) entra con la carga completa, cada `fullEveryDays` días, o al borrar la caché de la colección (`service.invalidate()`). Con `checkCount`, cada puesta al día cuenta además los documentos en el servidor (una lectura por cada 1.000) y, si no calzan con la copia, la lee entera: un borrado en otro equipo llega con la siguiente puesta al día.
+- `sync()` devuelve la lista y cuántas lecturas costó; `list()`, solo la lista.
+- Las usan los trabajadores (`listWorkers`: carga completa diaria, porque el escáner escribe sin `updatedAt`), la agenda telefónica (`listPhoneContacts`) las faenas, subfaenas y ciclos (`listJobs`, `listSubjobs`, `listCycles`, en `services/jobLists.js`), los Cheques y pagos (`listCommitments`), los documentos del SII (`listDteDocuments`), las vueltas, los resúmenes de transporte y las quincenas (`listTrips`, `listTransportPayments`, `listFortnights`, en `services/transportLists.js`) y las nóminas (`listPayrolls`, en `services/payrollsList.js`), estas con carga completa semanal y conteo. Los ciclos van sin orden y quien los quiere del más nuevo al más viejo usa `newestFirst` (`utils/syncedList.js`); las nóminas ya se entregan así. Un `createdAt` que pasó por `localStorage` queda como `{ seconds, nanoseconds }`, sin `toDate()`: se lee con `millisOf` o `timestampIso`.
+- **Una colección con lista sincronizada se pide entera con su función, nunca con un `list()` propio**, y una pantalla que necesita una parte (las subfaenas de una faena) filtra la copia. Otra clave arma otra copia que se vuelve a leer, y con la misma clave su TTL pisa el de la lista. Solo lee directo lo que tiene que estar recién actualizado: el ciclo abierto en la grilla, los ciclos de los que se importa, los de Pesajes QR y lo que se revisa antes de eliminar; y las vueltas de un ciclo (`tripsService.listByCycle`), que no necesitan las demás.
+- **Las escrituras de `transportsService` no corrigen las copias de transporte**, salvo las eliminaciones, que sacan el documento: sus listas (`tripsService.listAll`, `paymentsService.listByCarrier`, `fortnightsService.listOpen`…) filtran la copia después de ponerla al día (`fresh`), así Transportes siempre ve lo del servidor por unas pocas lecturas.
 
 ### Escrituras
 
@@ -247,10 +268,18 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 
 - **Los colores salen de las variables del tema** (`var(--color-*)`), nunca fijos: el accent es naranja en donDiego y violeta en sheridan y aetiskPastel, así que un verde o un violeta escrito a mano se ve fuera de lugar en los otros temas.
 
+### Ayuda
+
+- **Una pantalla con guía en la ayuda mantiene su guía al día.** Un cambio de interfaz en esa pantalla actualiza el texto de la guía y regenera sus capturas (`HELP_GUIDES=<guía> npm run help:shots`) en el mismo commit; una tarea nueva suma su sección, con sus preguntas de ejemplo. Si el guion de captura falla, la guía quedó vieja. Cómo se escribe una guía: `docs/screens/help.md`.
+
 ### Alto de las listas y grillas
 
 - **Regla**: la lista va `min-h-0 flex-1` dentro del `flex h-full flex-col` de la raíz y toma el alto que queda libre (Advances, Workers). Sin alto fijo ni control para arrastrarlo.
 - Si la lista tiene algo debajo, eso va con `shrink-0` y un `max-h` propio, y la lista lleva además un alto mínimo para que no desaparezca en pantallas bajas: es el caso de la vista previa de Nómina, con el panel de efectivo abajo (`min-h-[240px] flex-1`). Cuando no cabe, desplaza el `<main>`.
+
+### Páginas
+
+- **Una lista larga se pagina con `usePagination` (`hooks/`) y `Pager` (`components/`)**: el rango que se ve ("Mostrando 51–100 de 1.183"), los números de página con ventana (`pageWindow`, `utils/pagination.js`) y la vuelta a la página 1 al cambiar un filtro o la búsqueda. Los totales y las descargas usan la lista entera, no la página. Paginan así Facturación, el historial de Nómina y la Agenda.
 
 ## Referencia
 
@@ -268,6 +297,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 | `npm run test:rules` | `firestore.rules` contra el emulador |
 | `npm run test:all` | Los tres anteriores |
 | `npm run functions:verify` | Cloud Functions contra los emuladores de functions, firestore, auth y storage, sin deployar |
+| `npm run help:shots` | Regenera las capturas de la ayuda contra los emuladores, con datos inventados (`HELP_GUIDES=<id>` para algunas guías) |
 | `npm run deploy` | Deploy manual a GitHub Pages (`gh-pages -d dist -t`). Solo si falla el camino normal, que es mergear a `main` y dejar que Actions despliegue |
 
 ### Tests
@@ -388,6 +418,8 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Tarea del backend (Cloud Functions) | `functionJob` | `functionJobs` |
 | Respaldo en JSON | `backup` | `backups` |
 | Agenda telefónica / contacto de la agenda | `phoneBook` / `phoneContact` | `phoneContacts` |
+| Ayuda / guía de la ayuda | `help` / `helpGuide` | |
+| Pregunta sin respuesta en la ayuda ("Avisar que falta") | `helpQuestion` | `helpQuestions` |
 | Pantalla de carga | `screenLoader` | |
 | Registro de lecturas (lo que lee cada pantalla) | `readLog` | `readLogs` (y su interruptor, `readLogConfig`) |
 | Cumpleaños | `birthday` | dentro de `users` |
@@ -435,5 +467,6 @@ Definidos en `src/utils/laborTypes.js` (`LABOR_TYPES`). Cada labor tiene un `typ
 /admin/console                 Consola admin: Firestore counts (admin only)
 /admin/users                   Usuarios: rol, suspensión, contraseña, saludos y cumpleaños (admin)
 /harvest-qr                    Pesajes QR: explorador y sincronización → workdays (/admin/harvest-qr redirige)
+/ayuda                         Ayuda: las guías de uso y el buscador (/ayuda/:guideId abre una guía)
 *                              NotFound (catch-all dentro y fuera del Layout)
 ```

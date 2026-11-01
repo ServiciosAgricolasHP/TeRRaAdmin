@@ -1,23 +1,17 @@
 import { useState } from "react";
 import PhoneBookTab from "./infoAccounts/PhoneBookTab";
 import ContactCardsTab from "./infoAccounts/ContactCardsTab";
-import { readStored, writeStored } from "../utils/browserStorage";
 
 const TABS = [
-  { value: "phoneBook", label: "📞 Agenda telefónica" },
   { value: "cards", label: "🏦 Información y cuentas" },
+  { value: "phoneBook", label: "📞 Agenda telefónica" },
 ];
-const TAB_KEY = "infoAccounts.tab";
 
-// Agenda y Cuentas: la agenda telefónica y las fichas con datos
-// bancarios, en dos pestañas. Abre en la última elegida (la agenda, la
-// primera vez).
+// Agenda y Cuentas: las fichas con datos bancarios y la agenda telefónica,
+// en dos pestañas. Abre siempre en las fichas: la agenda se lee solo al
+// elegir su pestaña.
 export default function InfoAccounts() {
-  const [tab, setTab] = useState(() => (readStored(TAB_KEY) === "cards" ? "cards" : "phoneBook"));
-  const choose = (value) => {
-    setTab(value);
-    writeStored(TAB_KEY, value);
-  };
+  const [tab, setTab] = useState("cards");
 
   return (
     <div>
@@ -29,7 +23,7 @@ export default function InfoAccounts() {
             type="button"
             role="tab"
             aria-selected={tab === t.value}
-            onClick={() => choose(t.value)}
+            onClick={() => setTab(t.value)}
             className={`relative px-4 py-2 text-sm transition-colors ${
               tab === t.value ? "font-medium text-[var(--color-accent)]" : "text-[var(--color-muted)] hover:text-[var(--color-text)]"
             }`}
@@ -39,7 +33,7 @@ export default function InfoAccounts() {
           </button>
         ))}
       </div>
-      {tab === "phoneBook" ? <PhoneBookTab /> : <ContactCardsTab />}
+      {tab === "cards" ? <ContactCardsTab /> : <PhoneBookTab />}
     </div>
   );
 }

@@ -6,7 +6,7 @@
 
 - **La pantalla no lee nada sola.**
   - **Sesiones:** el rango parte en 2 días, hoy incluido, y lee al tocar **▶ Cargar**: una lectura por log del rango, con tope de 5.000.
-  - **Buscar por registro:** parte sin tipo elegido. Al elegir uno aparece **▶ Cargar**, que trae la lista de ese tipo para buscar en ella: los trabajadores salen de la copia que se pone al día (`listWorkers`), y los demás de su servicio, con caché de 10 min. Elegir un registro trae su historial.
+  - **Buscar por registro:** parte sin tipo elegido. Al elegir uno aparece **▶ Cargar**, que trae la lista de ese tipo para buscar en ella: los trabajadores, las faenas y las subfaenas salen de la copia que comparten las pantallas (`listWorkers`, `listJobs`, `listSubjobs`), y los demás de su servicio, con caché de 10 min. Elegir un registro trae su historial.
   - **El nombre de cada fila sale del log**: el del documento creado o eliminado, o el nuevo si la edición lo cambió (`knownEntityLabel`, `utils/auditLabels.js`). Una edición guarda solo lo que cambió, así que muchas filas muestran el id (en una jornada, el RUT y la fecha). **🔎 Buscar nombres** trae los que faltan, una lectura por registro, y en el buscador el registro elegido ya trae el suyo.
 
 - **Nada la borra, nunca.** No existe un solo `logsService.remove` en el repo: es append-only y crece con cada escritura de cualquier colección, porque `logAction` lo llama `firestoreBase` en todos los `create`/`update`/`upsert`/`remove`.
