@@ -3,6 +3,7 @@ import { jobsService, subjobsService, cyclesService, workersService, listWorkday
 import { payrollsService } from "../../services/payrollsService";
 import { cycleStatsOf } from "../../utils/payrollCycles";
 import { listWorkers } from "../../services/workersService";
+import { listJobs, listSubjobs } from "../../services/jobLists";
 import { attempt } from "../../utils/attempt";
 
 // Lo que usa la pantalla Nómina: faenas, subfaenas, ciclos, trabajadores, las
@@ -27,8 +28,8 @@ export function usePayrollData({ toast }) {
     setLoading(true);
     const { value, error: err } = await attempt(async () => {
       const [f, s, c, w, p] = await Promise.all([
-        jobsService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
-        subjobsService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
+        listJobs(),
+        listSubjobs(),
         cyclesService.list({ order: ["createdAt", "desc"], cache: true, persist: true, ttl: 5 * 60 * 1000 }),
         listWorkers(),
         payrollsService.list({ order: ["createdAt", "desc"], take: 50, cache: true, persist: true, ttl: 5 * 60 * 1000 }),

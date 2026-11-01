@@ -17,6 +17,7 @@ Lugar de trabajo (campo, predio).
 | `id` (docId) | string | autoId |
 | `name` | string | |
 | `notes` | string? | |
+| `createdAt/By`, `updatedAt/By` | ts, string | toda escritura de TeRRa pone `updatedAt`. La copia que comparten las pantallas se pone al día con él (`listJobs`) |
 
 ### `subfaenas`
 Subdivisión dentro de una faena (cuartel, sector). Los ciclos siempre cuelgan de una.
@@ -26,6 +27,7 @@ Subdivisión dentro de una faena (cuartel, sector). Los ciclos siempre cuelgan d
 | `faenaId` | ref→`faenas` | |
 | `name` | string | |
 | `notes` | string? | |
+| `createdAt/By`, `updatedAt/By` | ts, string | toda escritura de TeRRa pone `updatedAt`. La copia que comparten las pantallas se pone al día con él (`listSubjobs`) |
 
 ### `cycles`
 Período de trabajo en una subfaena. Contiene labores anidadas y la matriz de precios por día.

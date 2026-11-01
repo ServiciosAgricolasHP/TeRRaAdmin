@@ -1,20 +1,26 @@
 import { createService } from "./firestoreBase";
 
-export const jobsService = createService("faena", "faenas");
-export const subjobsService = createService("subfaena", "subfaenas");
+// Un servicio cuyas escrituras corrigen en su lugar la lista guardada en el
+// navegador (modo aditivo), en vez de borrarla: es lo que usan las listas
+// sincronizadas, que así no se releen enteras después de cada cambio.
+function additiveService(entityName, collectionName) {
+  const base = createService(entityName, collectionName);
+  return {
+    ...base,
+    create: (data, opts = {}) => base.create(data, { additive: true, ...opts }),
+    update: (id, data, opts = {}) => base.update(id, data, { additive: true, ...opts }),
+    upsert: (id, data, opts = {}) => base.upsert(id, data, { additive: true, ...opts }),
+    remove: (id, opts = {}) => base.remove(id, { additive: true, ...opts }),
+  };
+}
+
+// Faenas y subfaenas: ver `listJobs` y `listSubjobs` en jobLists.js.
+export const jobsService = additiveService("faena", "faenas");
+export const subjobsService = additiveService("subfaena", "subfaenas");
 export const cyclesService = createService("cycle", "cycles");
 
-// Trabajadores: todas las mutaciones corrigen la lista guardada en el
-// navegador en su lugar (modo aditivo), así no se relee la colección entera
-// después de cada alta (ver `listWorkers` en workersService.js).
-const _workers = createService("worker", "worker");
-export const workersService = {
-  ..._workers,
-  create: (data, opts = {}) => _workers.create(data, { additive: true, ...opts }),
-  update: (id, data, opts = {}) => _workers.update(id, data, { additive: true, ...opts }),
-  upsert: (id, data, opts = {}) => _workers.upsert(id, data, { additive: true, ...opts }),
-  remove: (id, opts = {}) => _workers.remove(id, { additive: true, ...opts }),
-};
+// Trabajadores: ver `listWorkers` en workersService.js.
+export const workersService = additiveService("worker", "worker");
 
 export const workdaysService = createService("workday", "workdays");
 

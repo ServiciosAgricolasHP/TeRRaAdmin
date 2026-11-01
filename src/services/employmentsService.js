@@ -4,7 +4,8 @@ import { db, auth } from "../firebase";
 import { createService } from "./firestoreBase";
 import { invalidate } from "./cache";
 import { logAction } from "./logger";
-import { cyclesService, jobsService } from "./index";
+import { cyclesService } from "./index";
+import { listJobs } from "./jobLists";
 import { fetchWorkdaysInRange } from "./calendarService";
 import { workedDays } from "../utils/employment";
 import { workerIdResolver } from "../utils/workerRut";
@@ -127,7 +128,6 @@ export async function setSettlementStatus(ids, status, date) {
 // Las mismas opciones que Transportes y Calendario, así comparten la caché. Sin
 // orden: un `orderBy` deja afuera los ciclos que no tienen ese campo.
 const CYCLES_LIST = { cache: true, persist: true, ttl: 5 * 60 * 1000 };
-const FAENAS_LIST = { cache: true, persist: true, ttl: 10 * 60 * 1000 };
 
 // Lo que hace falta para contar días en un rango: los días trabajados de cada
 // persona por faena (`workedDays`), los contratos y honorarios vigentes en el
@@ -138,7 +138,7 @@ export async function loadWorkedDays(from, to, workers) {
   const [workdays, cycles, faenas, employments] = await Promise.all([
     fetchWorkdaysInRange(from, to),
     cyclesService.list(CYCLES_LIST),
-    jobsService.list(FAENAS_LIST),
+    listJobs(),
     listEmploymentsFrom(from),
   ]);
   const faenaOfCycle = new Map(cycles.map((c) => [c.id, c.faenaId || ""]));

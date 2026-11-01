@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import { useToast } from "../contexts/ToastContext";
-import { jobsService, priceBookService, priceBookConfigService } from "../services";
+import { priceBookService, priceBookConfigService } from "../services";
+import { listJobs } from "../services/jobLists";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ScreenLoader from "../components/ScreenLoader";
 import { fmtCurrency } from "../utils/format";
@@ -40,7 +41,7 @@ export default function PriceBook() {
     setLoading(true);
     const { error: err } = await attempt(async () => {
       const [fa, en, cfg] = await Promise.all([
-        jobsService.list({ order: ["name", "asc"], cache: true }),
+        listJobs(),
         priceBookService.list({ order: ["dateFrom", "desc"] }),
         priceBookConfigService.getById("main"),
       ]);

@@ -1,7 +1,8 @@
 import { useState, useEffect, useEffectEvent, useMemo } from "react";
 import { useCarriers } from "../../contexts/CarriersContext";
 import { tripsService, paymentsService, titleCase } from "../../services/transportsService";
-import { jobsService, subjobsService, cyclesService } from "../../services";
+import { cyclesService } from "../../services";
+import { listJobs, listSubjobs } from "../../services/jobLists";
 import { useToast } from "../../contexts/ToastContext";
 import { fmtCurrency } from "../../utils/format";
 import ScreenLoader from "../../components/ScreenLoader";
@@ -30,8 +31,8 @@ export function FaenaBatchTab() {
     setLoading(true);
     const { error: err } = await attempt(async () => {
       const [f, s, c, pendingT] = await Promise.all([
-        jobsService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
-        subjobsService.list({ order: ["name", "asc"], cache: true, persist: true, ttl: 10 * 60 * 1000 }),
+        listJobs(),
+        listSubjobs(),
         cyclesService.list({ order: ["createdAt", "desc"], cache: true, persist: true, ttl: 5 * 60 * 1000 }),
         tripsService.listPendingUnlinked(),
       ]);

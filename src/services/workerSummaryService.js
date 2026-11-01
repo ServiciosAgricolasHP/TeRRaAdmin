@@ -1,5 +1,6 @@
 import { workdayMapKey, tratoUnitLabel, tratoTypeLabel, cosechaUnit } from "../utils/cosechaCombos";
 import { workdaysService, cyclesService, jobsService, subjobsService } from "./index";
+import { listJobs, listSubjobs, pickByIds } from "./jobLists";
 import { payrollsService } from "./payrollsService";
 import { workerKeys } from "./workersService";
 import { listPendingForWorkers, advanceRemaining, advanceSign } from "./advancesService";
@@ -49,10 +50,13 @@ export async function loadWorkerSummaryData(worker, catalogs, options = {}) {
   });
   const jobIds = [...new Set(cyclesToShow.map((c) => c.faenaId).filter(Boolean))];
   const subjobIds = [...new Set(cyclesToShow.map((c) => c.subfaenaId).filter(Boolean))];
-  const jobs = await Promise.all(jobIds.map((id) => jobsService.getById(id)));
-  const subjobs = await Promise.all(subjobIds.map((id) => subjobsService.getById(id)));
-  const jobById = new Map(jobs.filter(Boolean).map((f) => [f.id, f]));
-  const subjobById = new Map(subjobs.filter(Boolean).map((s) => [s.id, s]));
+  const [allJobs, allSubjobs] = await Promise.all([listJobs(), listSubjobs()]);
+  const [jobs, subjobs] = await Promise.all([
+    pickByIds(allJobs, jobIds, jobsService),
+    pickByIds(allSubjobs, subjobIds, subjobsService),
+  ]);
+  const jobById = new Map(jobs.map((f) => [f.id, f]));
+  const subjobById = new Map(subjobs.map((s) => [s.id, s]));
 
   const inClosedRange = (wd) => {
     if (closedFrom && wd.date < closedFrom) return false;

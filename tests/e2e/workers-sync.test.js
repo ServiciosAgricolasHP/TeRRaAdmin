@@ -26,7 +26,7 @@ describe("la lista de trabajadores en el navegador", () => {
 
     const again = await syncWorkers();
     expect(again.reads).toBe(0);
-    expect(again.data).toBe(first.data);
+    expect(again.data).toEqual(first.data);
   });
 
   it("pone al día lo que otro equipo cambió y agregó", async () => {

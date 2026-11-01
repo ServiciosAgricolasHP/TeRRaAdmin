@@ -64,7 +64,6 @@ export function useSubjobDisplay({ loadSubjobs, selectedId, subjobsByJob, toast,
   const toggleHideSubjob = async (subjob) => {
     const { error: err } = await attempt(async () => {
       await subjobsService.update(subjob.id, { hidden: !subjob.hidden });
-      subjobsService.invalidate();
       // Al ocultarla se pliega. Al mostrarla queda como esté, plegada o no.
       if (!subjob.hidden) {
         setCollapsedSubjobs((prev) => new Set(prev).add(subjob.id));

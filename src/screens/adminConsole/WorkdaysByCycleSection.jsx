@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { cyclesService, jobsService } from "../../services";
+import { cyclesService } from "../../services";
+import { listJobs } from "../../services/jobLists";
 import { countWorkdaysByCycle } from "../../services/countsService";
 import { fmtNumber } from "../../utils/format";
 import { ConsoleCard } from "./ConsoleCard";
@@ -35,7 +36,7 @@ function WorkdaysByCyclePanel() {
       const { error: err } = await attempt(async () => {
         const [c, f] = await Promise.all([
           cyclesService.list({ cache: true, ttl: 60_000 }),
-          jobsService.list({ cache: true, persist: true, ttl: 10 * 60 * 1000 }),
+          listJobs(),
         ]);
         setCycles(c);
         setJobs(f);

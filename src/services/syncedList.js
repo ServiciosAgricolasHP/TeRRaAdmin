@@ -37,6 +37,10 @@ export function createSyncedList(service, { order, syncKey, fullEveryDays = 1, c
   let lastSyncAt = 0;
   let pending = null;
 
+  // Las escrituras de este equipo agregan o reemplazan documentos en la copia
+  // sin moverlos de lugar; con `order`, la copia se entrega ordenada.
+  const ordered = (data) => (order ? applyChanges(data, [], order) : data);
+
   subscribe(name, () => {
     meta = null;
     lastSyncAt = 0;
@@ -81,7 +85,7 @@ export function createSyncedList(service, { order, syncKey, fullEveryDays = 1, c
     });
     if (mode === "cached") {
       recordCacheHit({ collection: name, order }, copy.length);
-      return { data: copy, reads: 0 };
+      return { data: ordered(copy), reads: 0 };
     }
     if (mode === "full") return readFull(today);
 
@@ -91,7 +95,7 @@ export function createSyncedList(service, { order, syncKey, fullEveryDays = 1, c
       checkCount ? countAll() : null,
     ]);
     const changed = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    const data = changed.length ? applyChanges(copy, changed, order) : copy;
+    const data = changed.length ? applyChanges(copy, changed, order) : ordered(copy);
     const deltaReads = Math.max(1, changed.length) + (checkCount ? Math.max(1, Math.ceil(count / COUNT_BATCH)) : 0);
     if (checkCount && count !== data.length) {
       const full = await readFull(today);

@@ -207,7 +207,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 ### Caché aditiva
 
 - `firestoreBase` soporta `additive: true` en `create`/`update`/`upsert`/`remove` — en vez de invalidar la entrada de caché correspondiente, la **corrige en su lugar**: agrega, actualiza o quita el documento. Útil cuando una colección se lista entera (sin `wheres`) y la queremos mantener fresca sin pagar el costo de re-leer todos los docs.
-- `workersService` (en `services/index.js`) está envuelto para usar `additive: true` por defecto en todas las mutaciones — alta de trabajador no invalida la lista en caché.
+- Los servicios de las listas sincronizadas (abajo) están envueltos con `additiveService` (`services/index.js`), que usa `additive: true` por defecto en todas las mutaciones: un alta no invalida la lista guardada.
 - **La lista completa de trabajadores se pide con `listWorkers()`** (`services/workersService.js`), nunca con un `workersService.list()` propio. Es una lista sincronizada (abajo) que se lee entera la primera vez del día en cada navegador, así cuesta unas pocas lecturas en vez de una por trabajador. Lo que se escribe sin `updatedAt` (el escáner, la consola de Firebase) y lo que se elimina en otro equipo entran con la carga completa del día siguiente o con Recargar en Nómina.
 - Helpers internos: `mergeListItem` y `removeListItem` (solo tocan claves de caché con `wheres` vacío).
 
@@ -217,7 +217,8 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 - Las escrituras de este equipo la corrigen en su lugar (`additive`), y **toda escritura de la colección pone `updatedAt`**: `firestoreBase` lo hace, y un `writeBatch` propio lo escribe a mano.
 - **Lo que la consulta por `updatedAt` no ve** (lo escrito sin `updatedAt` y lo que se elimina en otro equipo) entra con la carga completa, cada `fullEveryDays` días, o al borrar la caché de la colección (`service.invalidate()`). Con `checkCount`, cada puesta al día cuenta además los documentos en el servidor (una lectura por cada 1.000) y, si no calzan con la copia, la lee entera: un borrado en otro equipo llega con la siguiente puesta al día.
 - `sync()` devuelve la lista y cuántas lecturas costó; `list()`, solo la lista.
-- Las usan los trabajadores (`listWorkers`: carga completa diaria, porque el escáner escribe sin `updatedAt`) y la agenda telefónica (`listPhoneContacts`: carga completa semanal y conteo).
+- Las usan los trabajadores (`listWorkers`: carga completa diaria, porque el escáner escribe sin `updatedAt`), la agenda telefónica (`listPhoneContacts`) y las faenas y subfaenas (`listJobs`, `listSubjobs`, en `services/jobLists.js`), estas con carga completa semanal y conteo.
+- **Una colección con lista sincronizada se pide entera con su función, nunca con un `list()` propio**, y una pantalla que necesita una parte (las subfaenas de una faena) filtra la copia. Otra clave arma otra copia que se vuelve a leer, y con la misma clave su TTL pisa el de la lista. Solo lee directo lo que tiene que estar recién actualizado, como lo que se revisa antes de eliminar.
 
 ### Escrituras
 
