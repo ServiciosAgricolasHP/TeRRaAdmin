@@ -1,5 +1,5 @@
 import { TYPE_META, rutIncluded, cardToText } from "../../utils/contactCards";
-import { formatRutForDisplay } from "../../utils/rutUtils";
+import { formatRutForDisplay, normalizeRut } from "../../utils/rutUtils";
 import Field from "./Field";
 import AccountBlock from "./AccountBlock";
 
@@ -32,7 +32,7 @@ export default function ContactCard({ card, onCopy, onCopyImage, onToggleFavorit
       {/* Datos */}
       <div className="flex flex-col gap-0.5 px-3 py-2">
         {rutIncluded(card) && (
-          <Field label="RUT" value={card.rut ? formatRutForDisplay(card.rut) : ""} copyValue={formatRutForDisplay(card.rut)} onCopy={onCopy} mono />
+          <Field label="RUT" value={card.rut ? formatRutForDisplay(card.rut) : ""} copyValue={normalizeRut(card.rut)} onCopy={onCopy} mono />
         )}
         {card.type === "empresa" && <Field label="Giro" value={card.giro} onCopy={onCopy} />}
         <Field label="Dirección" value={card.address} onCopy={onCopy} />

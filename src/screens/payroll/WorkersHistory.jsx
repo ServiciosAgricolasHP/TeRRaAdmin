@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { payrollsService } from "../../services/payrollsService";
 import { formatRutForDisplay } from "../../utils/rutUtils";
+import { workerSearchInput } from "../../utils/workerSearch";
 import { useToast } from "../../contexts/ToastContext";
 import { matchesSearchQuery } from "../../utils/textSearch";
 import { localIsoDate } from "../../utils/dates";
@@ -233,7 +234,7 @@ export function WorkersHistory({ faenas, workers }) {
             type="text"
             value={search}
             onChange={(e) => {
-              setSearch(e.target.value);
+              setSearch(workerSearchInput(e.target.value));
               // Escribir una búsqueda vuelve al listado filtrado, sin pasar
               // por "Volver".
               if (selectedRut) setSelectedRut(null);

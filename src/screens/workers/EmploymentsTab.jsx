@@ -7,7 +7,7 @@ import { useEmployers } from "../../hooks/useEmployers";
 import { useWorkersList } from "../../hooks/useWorkersList";
 import { setSettlementStatus } from "../../services/employmentsService";
 import { formatRutForDisplay } from "../../utils/rutUtils";
-import { workerMatchesQuery } from "../../utils/workerSearch";
+import { workerMatchesQuery, workerSearchInput } from "../../utils/workerSearch";
 import { EMPLOYMENT_TYPES, END_REASONS, SETTLEMENT_STATUSES } from "../../utils/employment";
 import EmployersModal from "./EmployersModal";
 import StartEmploymentsModal from "./StartEmploymentsModal";
@@ -147,7 +147,7 @@ export default function EmploymentsTab() {
           <option value="">Todos los empleadores</option>
           {employers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
         </select>
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Nombre o RUT…" className={`${selectCls} w-full sm:w-56`} />
+        <input value={query} onChange={(e) => setQuery(workerSearchInput(e.target.value))} placeholder="Nombre o RUT…" className={`${selectCls} w-full sm:w-56`} />
       </div>
 
       {picked.length > 0 && (

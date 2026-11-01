@@ -5,7 +5,7 @@ import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-quartz.css";
 import { AG_GRID_LOCALE_ES } from "../../utils/agGridLocale";
 import { deleteWorkerSafe, detectQueryKind, listWorkers } from "../../services/workersService";
-import { formatRutForDisplay } from "../../utils/rutUtils";
+import { formatRutForDisplay, normalizeRut } from "../../utils/rutUtils";
 import {
   bankName,
   accountTypeLabel,
@@ -19,7 +19,7 @@ import { useToast } from "../../contexts/ToastContext";
 import WorkerSummaryModal from "../../components/WorkerSummaryModal";
 import GroupSummaryModal from "../../components/GroupSummaryModal";
 import ConfirmDialog from "../../components/ConfirmDialog";
-import { MIN_WORKER_QUERY, workerMatchesQuery, workerQueryReady } from "../../utils/workerSearch";
+import { MIN_WORKER_QUERY, workerMatchesQuery, workerQueryReady, workerSearchInput } from "../../utils/workerSearch";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import ScreenLoader from "../../components/ScreenLoader";
 import { useEmployers } from "../../hooks/useEmployers";
@@ -174,9 +174,9 @@ export default function WorkersTab() {
     setEdit({ mode: "edit", worker });
   };
 
-  // Copia el RUT con puntos y guion.
+  // Copia el RUT sin puntos y con guion; en pantalla se muestra con puntos.
   const copyRut = async (value, label = "RUT") => {
-    const rut = formatRutForDisplay(value);
+    const rut = normalizeRut(value);
     if (!rut) return;
     const { error: err } = await attempt(async () => {
       await navigator.clipboard.writeText(rut);
@@ -346,7 +346,7 @@ export default function WorkersTab() {
           <div className="relative w-full sm:w-80">
             <input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => setSearch(workerSearchInput(e.target.value))}
               placeholder="Buscar por nombre, apellido o RUT…"
               className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 pr-16 text-sm shadow-sm outline-none focus:border-[var(--color-accent)]"
             />
