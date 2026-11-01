@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
 import { cyclesService, jobsService, subjobsService, laborGroupsService, workdaysService } from "../../services";
+import { listJobs, listSubjobs, pickByIds } from "../../services/jobLists";
 import { normalizeCycle } from "./rows";
 import { normalizeTratoDayPrices, normalizeDayPricesEntry, workdayComboKeyOf, PISO_COMBO_KEY, normalizeTratoWorkday, workdayMapKey } from "../../utils/cosechaCombos";
 
 // Carga del ciclo: el ciclo con sus labores y precios por día (normalizados,
-// y guardados si venían en un formato anterior), su faena y subfaena, las
-// agrupaciones de labor y las jornadas de cada labor.
+// y guardados si venían en un formato anterior), su faena y subfaena (de la
+// copia que comparten las pantallas), las agrupaciones de labor y las
+// jornadas de cada labor. El ciclo se lee directo: la grilla escribe sobre él.
 export function useCycleLoader({ id }) {
   const [cycle, setCycle] = useState(null);
   const [job, setJob] = useState(null);
@@ -54,9 +56,13 @@ export function useCycleLoader({ id }) {
       setDayPrices(normalizedDP);
       if (dpChanged) await cyclesService.update(id, { dayPrices: normalizedDP });
 
-      if (normalized.faenaId) setJob(await jobsService.getById(normalized.faenaId));
+      if (normalized.faenaId) {
+        const [found] = await pickByIds(await listJobs(), [normalized.faenaId], jobsService);
+        setJob(found || null);
+      }
       if (normalized.subfaenaId) {
-        setSubjob(await subjobsService.getById(normalized.subfaenaId));
+        const [found] = await pickByIds(await listSubjobs(), [normalized.subfaenaId], subjobsService);
+        setSubjob(found || null);
         // Sin `order`: where(subfaenaId) + orderBy(name) pediría un índice
         // compuesto en Firestore. La lista es chica y se ordena en el cliente.
         const groups = await laborGroupsService.list({ wheres: [["subfaenaId", "==", normalized.subfaenaId]] });
