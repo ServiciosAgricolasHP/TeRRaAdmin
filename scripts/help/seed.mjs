@@ -37,6 +37,14 @@ export const DEMO_WORKERS = [
   { num: 21890127, name: "Gloria Herrera Pino", leader: "GRUPO SUR", notInCycle: true },
 ].map((w) => ({ ...w, rut: rut(w.num), id: rut(w.num) }));
 
+// Vacía la base del emulador, para que cada guía parta de los mismos datos.
+export async function clearDemo() {
+  const host = process.env.FIRESTORE_EMULATOR_HOST;
+  if (!host) throw new Error("Los datos de la ayuda se borran solo en el emulador (falta FIRESTORE_EMULATOR_HOST).");
+  const res = await fetch(`http://${host}/emulator/v1/projects/${DEMO_PROJECT}/databases/hpdatabase/documents`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`No se pudo vaciar el emulador (${res.status}).`);
+}
+
 export async function seedDemo() {
   if (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_HOST) {
     throw new Error("Los datos de la ayuda se siembran solo en los emuladores (falta FIRESTORE_EMULATOR_HOST o FIREBASE_AUTH_EMULATOR_HOST).");

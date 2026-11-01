@@ -1,5 +1,5 @@
-// Regenera las capturas de la ayuda: levanta Vite contra los emuladores,
-// siembra los datos de demo y corre el guion de cada guía. Se corre con
+// Regenera las capturas de la ayuda: levanta Vite contra los emuladores y,
+// para cada guía, vacía la base, siembra los datos de demo y corre su guion. Se corre con
 // `npm run help:shots`, que levanta los emuladores; con
 // `HELP_GUIDES=grilla-del-ciclo` regenera solo esa guía.
 //
@@ -11,7 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { createServer } from "vite";
-import { seedDemo, DEMO_PROJECT } from "./seed.mjs";
+import { clearDemo, seedDemo, DEMO_PROJECT } from "./seed.mjs";
 import { DESKTOP, login, preparePage, shooterFor } from "./lib.mjs";
 import * as firstSteps from "./guides/primeros-pasos.mjs";
 import * as cycleGrid from "./guides/grilla-del-ciclo.mjs";
@@ -74,8 +74,10 @@ const sizes = JSON.parse(fs.readFileSync(SIZES_FILE, "utf8"));
 let failed = false;
 
 try {
-  await seedDemo();
   for (const guideId of guideIds) {
+    // Cada guía parte de los mismos datos, se genere sola o con las demás.
+    await clearDemo();
+    await seedDemo();
     const context = await browser.newContext({ viewport: DESKTOP, locale: "es-CL", timezoneId: "America/Santiago" });
     const page = await context.newPage();
     await preparePage(page);
