@@ -165,3 +165,18 @@ export function createService(entityName, collectionName = entityName) {
     collectionName,
   };
 }
+
+// Un servicio cuyas escrituras corrigen en su lugar la lista guardada en el
+// navegador (modo aditivo), en vez de borrarla: es lo que usan las listas
+// sincronizadas (services/syncedList.js), que así no se releen enteras
+// después de cada cambio.
+export function createAdditiveService(entityName, collectionName = entityName) {
+  const base = createService(entityName, collectionName);
+  return {
+    ...base,
+    create: (data, opts = {}) => base.create(data, { additive: true, ...opts }),
+    update: (id, data, opts = {}) => base.update(id, data, { additive: true, ...opts }),
+    upsert: (id, data, opts = {}) => base.upsert(id, data, { additive: true, ...opts }),
+    remove: (id, opts = {}) => base.remove(id, { additive: true, ...opts }),
+  };
+}

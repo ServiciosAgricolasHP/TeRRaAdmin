@@ -1,27 +1,13 @@
-import { createService } from "./firestoreBase";
-
-// Un servicio cuyas escrituras corrigen en su lugar la lista guardada en el
-// navegador (modo aditivo), en vez de borrarla: es lo que usan las listas
-// sincronizadas, que así no se releen enteras después de cada cambio.
-function additiveService(entityName, collectionName) {
-  const base = createService(entityName, collectionName);
-  return {
-    ...base,
-    create: (data, opts = {}) => base.create(data, { additive: true, ...opts }),
-    update: (id, data, opts = {}) => base.update(id, data, { additive: true, ...opts }),
-    upsert: (id, data, opts = {}) => base.upsert(id, data, { additive: true, ...opts }),
-    remove: (id, opts = {}) => base.remove(id, { additive: true, ...opts }),
-  };
-}
+import { createService, createAdditiveService } from "./firestoreBase";
 
 // Faenas, subfaenas y ciclos: ver `listJobs`, `listSubjobs` y `listCycles` en
 // jobLists.js.
-export const jobsService = additiveService("faena", "faenas");
-export const subjobsService = additiveService("subfaena", "subfaenas");
-export const cyclesService = additiveService("cycle", "cycles");
+export const jobsService = createAdditiveService("faena", "faenas");
+export const subjobsService = createAdditiveService("subfaena", "subfaenas");
+export const cyclesService = createAdditiveService("cycle", "cycles");
 
 // Trabajadores: ver `listWorkers` en workersService.js.
-export const workersService = additiveService("worker", "worker");
+export const workersService = createAdditiveService("worker", "worker");
 
 export const workdaysService = createService("workday", "workdays");
 

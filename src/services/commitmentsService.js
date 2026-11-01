@@ -3,7 +3,8 @@
 // configuración de los avisos por correo (`commitmentConfig/main`). Los avisos
 // los envía la función programada de `functions/index.js`.
 import { auth } from "../firebase";
-import { createService } from "./firestoreBase";
+import { createAdditiveService, createService } from "./firestoreBase";
+import { createSyncedList } from "./syncedList";
 import {
   isCheque,
   isOpen,
@@ -17,7 +18,7 @@ import {
 } from "../utils/commitments";
 import { toTitleName, unshout } from "../utils/textCase";
 
-export const commitmentsService = createService("commitment", "commitments");
+export const commitmentsService = createAdditiveService("commitment", "commitments");
 export const commitmentSeriesService = createService("commitmentSeries", "commitmentSeries");
 export const commitmentConfigService = createService("commitmentConfig", "commitmentConfig");
 
@@ -28,9 +29,23 @@ export const DEFAULT_COMMITMENT_CONFIG = {
   sender: "",
 };
 
-export function listCommitments() {
-  return commitmentsService.list({ order: ["dueDate", "asc"], cache: true, ttl: 300_000 });
-}
+// Los vencimientos, por fecha: una lista sincronizada (`createSyncedList`) que
+// comparten Cheques y pagos y el Dashboard. Se lee entera una vez por semana
+// en cada navegador, o cuando el conteo no calza con la copia (la función
+// diaria generó vencimientos o se eliminó uno en otro equipo), y entre medio
+// se pone al día con lo que cambió. Las escrituras de este equipo la corrigen
+// en su lugar (`additive`).
+const commitmentsList = createSyncedList(commitmentsService, {
+  order: ["dueDate", "asc"],
+  syncKey: "commitments.sync",
+  fullEveryDays: 7,
+  checkCount: true,
+});
+
+// La lista y cuántas lecturas costó (0 si salió de la copia).
+export const syncCommitments = (opts) => commitmentsList.sync(opts);
+
+export const listCommitments = (opts) => commitmentsList.list(opts);
 
 // Campos editables de un vencimiento, con el texto normalizado. El estado se
 // cambia aparte (`markPaid`, `markPending`, `cancelCommitment`, etc.).

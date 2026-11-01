@@ -3,7 +3,7 @@ import { transportPaymentsService } from "../../services";
 import { syncCycles, syncJobs } from "../../services/jobLists";
 import { payrollsService } from "../../services/payrollsService";
 import { fortnightsService } from "../../services/transportsService";
-import { commitmentsService } from "../../services/commitmentsService";
+import { syncCommitments } from "../../services/commitmentsService";
 import { countedList } from "../../services/cache";
 import { countWorkdaysInRange } from "../../services/countsService";
 import { useToast } from "../../contexts/ToastContext";
@@ -54,11 +54,11 @@ export function useDashboardData() {
   }, []);
 
   // Cheques y pagos, aparte de la carga principal: si falla, el resto del
-  // tablero se muestra igual. Las opciones son las de `listCommitments`, así
-  // comparte la caché con la pantalla.
+  // tablero se muestra igual. Sale de la copia que comparte con la pantalla
+  // (`syncCommitments`).
   useEffect(() => {
     let cancelled = false;
-    countedList(commitmentsService, { order: ["dueDate", "asc"], cache: true, ttl: 300_000 })
+    syncCommitments()
       .then(({ data, reads }) => {
         if (cancelled) return;
         setCommitments(data);
