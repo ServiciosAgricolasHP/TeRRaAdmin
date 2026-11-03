@@ -6,6 +6,7 @@ export const HELP_GUIDE_BY_PATH = [
   ["/payroll", "nomina"],
   ["/advances", "anticipos-y-bonos"],
   ["/workers", "trabajadores"],
+  ["/transports", "transportes"],
 ];
 
 export function helpPathFor(pathname) {

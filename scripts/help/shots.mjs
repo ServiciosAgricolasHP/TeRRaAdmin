@@ -23,6 +23,8 @@ import * as advances from "./guides/anticipos-y-bonos.mjs";
 import * as workers from "./guides/trabajadores.mjs";
 import * as employments from "./guides/contratos.mjs";
 import * as cycleSummary from "./guides/resumen-del-ciclo.mjs";
+import * as transports from "./guides/transportes.mjs";
+import * as transportPayments from "./guides/pagar-transportes.mjs";
 
 const SCRIPTS = {
   "primeros-pasos": firstSteps,
@@ -35,6 +37,8 @@ const SCRIPTS = {
   trabajadores: workers,
   contratos: employments,
   "resumen-del-ciclo": cycleSummary,
+  transportes: transports,
+  "pagar-transportes": transportPayments,
 };
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const SIZES_FILE = path.join(ROOT, "src", "screens", "help", "imageSizes.json");

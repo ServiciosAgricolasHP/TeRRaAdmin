@@ -223,6 +223,38 @@
     672,
     298
   ],
+  "help/pagar-transportes/01-pago-por-faena.webp": [
+    1200,
+    844
+  ],
+  "help/pagar-transportes/02-vista-previa.webp": [
+    1200,
+    844
+  ],
+  "help/pagar-transportes/03-resumenes.webp": [
+    1200,
+    844
+  ],
+  "help/pagar-transportes/04-abono.webp": [
+    896,
+    674
+  ],
+  "help/pagar-transportes/05-nueva-quincena.webp": [
+    896,
+    662
+  ],
+  "help/pagar-transportes/06-quincena.webp": [
+    896,
+    510
+  ],
+  "help/pagar-transportes/07-confirmar-pago.webp": [
+    448,
+    252
+  ],
+  "help/pagar-transportes/08-balance.webp": [
+    1164,
+    397
+  ],
   "help/precios-del-dia/01-nueva-labor.webp": [
     448,
     570
@@ -340,6 +372,38 @@
     564
   ],
   "help/trabajadores/06-telefono.webp": [
+    412,
+    900
+  ],
+  "help/transportes/01-transportistas.webp": [
+    1168,
+    444
+  ],
+  "help/transportes/02-transportista.webp": [
+    672,
+    452
+  ],
+  "help/transportes/03-vueltas-del-ciclo.webp": [
+    896,
+    476
+  ],
+  "help/transportes/04-agregar-vuelta.webp": [
+    672,
+    576
+  ],
+  "help/transportes/05-vueltas.webp": [
+    1200,
+    844
+  ],
+  "help/transportes/06-sin-precio.webp": [
+    672,
+    278
+  ],
+  "help/transportes/07-resumen-transportista.webp": [
+    896,
+    640
+  ],
+  "help/transportes/08-telefono.webp": [
     412,
     900
   ]

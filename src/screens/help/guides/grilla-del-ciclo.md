@@ -22,6 +22,8 @@ La grilla del ciclo es donde se anota lo que trabajó cada persona cada día. Es
 
 Arriba, las **métricas** muestran cuánto suma cada labor y el ciclo entero. **▼** pliega las métricas y los precios para darle más espacio a la grilla.
 
+En la barra del ciclo, **🚐 Transportes** anota las vueltas de los buses (ver [Anotar las vueltas del ciclo](/ayuda/transportes#anotar-las-vueltas-del-ciclo)) y **📊 Resumen ciclo** abre el resumen para pagar y para cobrar (ver [El resumen del ciclo](/ayuda/resumen-del-ciclo)).
+
 ## Anotar el monto de un día
 <!-- preguntas: cómo anoto el monto de un día; cómo pongo lo que ganó una persona; cómo escribo en una celda; cómo cambio un monto; cómo uso fórmulas -->
 

@@ -21,6 +21,8 @@ Un cambio de interfaz en una de estas pantallas actualiza su guía y regenera su
 | `anticipos-y-bonos` | Anticipos / Bonos (`/advances`) y cómo los aplica Nómina | `seedCashWorkers`, `seedAdvances` |
 | `trabajadores` | Trabajadores (`/workers`): la lista, la ficha, la forma de pago, los datos personales y el resumen | `seedCashWorkers`, `seedWorkerDetails` |
 | `contratos` | Las pestañas Contratos, Honorarios e Imposiciones de Trabajadores, el historial de la ficha y la vista "Por contrato" de la grilla | `seedEmployments` |
+| `transportes` | Transportes (`/transports`): transportistas, vueltas (también las del ciclo), vueltas sin precio y el resumen del transportista | `seedLaborTypes`, `seedTransports` |
+| `pagar-transportes` | Transportes: pago por faena, resúmenes, abonos, quincenas y los balances | `seedLaborTypes`, `seedTransports` |
 
 ## Cómo se escribe una guía
 

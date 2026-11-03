@@ -8,6 +8,8 @@ import advances from "./guides/anticipos-y-bonos.md?raw";
 import workers from "./guides/trabajadores.md?raw";
 import employments from "./guides/contratos.md?raw";
 import cycleSummary from "./guides/resumen-del-ciclo.md?raw";
+import transports from "./guides/transportes.md?raw";
+import transportPayments from "./guides/pagar-transportes.md?raw";
 
 // Las guías de la ayuda, en el orden del índice. El texto de cada una vive en
 // su `.md` de `guides/` y sus capturas en `public/help/<id>/`, que regenera
@@ -23,4 +25,6 @@ export const GUIDES = [
   { id: "anticipos-y-bonos", icon: "🪙", source: advances },
   { id: "trabajadores", icon: "👷", source: workers },
   { id: "contratos", icon: "📄", source: employments },
+  { id: "transportes", icon: "🚐", source: transports },
+  { id: "pagar-transportes", icon: "💸", source: transportPayments },
 ];

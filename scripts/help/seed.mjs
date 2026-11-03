@@ -223,6 +223,45 @@ export async function seedAdvances() {
   });
 }
 
+// Para las guías de Transportes: dos transportistas contratados y uno propio,
+// con vueltas pendientes en el ciclo de demo (una sin tarifa) y una en el de
+// Santa Elena (`seedLaborTypes`), que queda suelta para la quincena.
+export const DEMO_CARRIERS = [
+  {
+    id: "K1", alias: "Ríos", name: "Transportes Ríos Ltda.", type: "contracted", defaultRate: 25000,
+    vehicles: [{ alias: "Bus 1", plate: "KXTR12", capacity: "40" }, { alias: "Bus 2", plate: "LBPT34", capacity: "40" }],
+  },
+  { id: "K2", alias: "Furgón Norte", name: "Furgones del Norte", type: "contracted", defaultRate: 18000, vehicles: [{ alias: "Van", plate: "JJKL56", capacity: "12" }] },
+  { id: "K3", alias: "Camioneta del Fundo", name: "Vehículos del fundo", type: "own", defaultRate: 0, vehicles: [{ alias: "Hilux" }] },
+];
+
+export async function seedTransports() {
+  const db = getFirestore("hpdatabase");
+  const at = new Date("2026-10-04T12:00:00-03:00");
+  for (const { id, ...c } of DEMO_CARRIERS) {
+    await db.collection("carriers").doc(id).set({ ...c, notes: "", active: true, createdAt: at, updatedAt: at });
+  }
+  const trip = (id, data) => {
+    const qty = data.qty || 1;
+    return db.collection("transports").doc(id).set({
+      cycleId: DEMO_CYCLE, faenaId: "F1", subfaenaId: "S1", kind: "regular", lugar: "Rengo", destino: "Fundo Los Aromos",
+      notes: "", status: "pending", paymentId: null, createdAt: at, updatedAt: at, ...data, qty, amount: qty * data.rate,
+    });
+  };
+  const [d1, d2, d3] = DEMO_DAYS;
+  for (const [i, date] of [d1, d2, d3].entries()) {
+    await trip(`T${i + 1}`, { carrierId: "K1", vehicleAlias: "Bus 1", date, qty: 2, rate: 25000, personCount: 38 });
+  }
+  await trip("T4", { carrierId: "K2", vehicleAlias: "Van", date: d1, rate: 18000, personCount: 11 });
+  await trip("T5", { carrierId: "K2", vehicleAlias: "Van", date: d2, rate: 18000, personCount: 10 });
+  await trip("T6", { carrierId: "K2", vehicleAlias: "Van", date: d3, rate: 0, personCount: 11 });
+  await trip("T7", { carrierId: "K3", vehicleAlias: "Hilux", date: d2, rate: 0, personCount: 4, kind: "approach" });
+  await trip("T8", {
+    carrierId: "K1", vehicleAlias: "Bus 2", date: d2, rate: 25000, personCount: 36,
+    cycleId: LABOR_TYPES_CYCLE, faenaId: "F2", subfaenaId: "S2", destino: "Parronal",
+  });
+}
+
 // Para la guía del resumen del ciclo: una nota en un día del ciclo de demo,
 // que el resumen para pagar muestra en las observaciones.
 export async function seedDayNote() {
