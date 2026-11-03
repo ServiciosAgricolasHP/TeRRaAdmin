@@ -22,6 +22,8 @@ La grilla del ciclo es donde se anota lo que trabajó cada persona cada día. Es
 
 Arriba, las **métricas** muestran cuánto suma cada labor y el ciclo entero. **▼** pliega las métricas y los precios para darle más espacio a la grilla.
 
+En la barra del ciclo, **🚐 Transportes** anota las vueltas de los buses (ver [Anotar las vueltas del ciclo](/ayuda/transportes#anotar-las-vueltas-del-ciclo)) y **📊 Resumen ciclo** abre el resumen para pagar y para cobrar (ver [El resumen del ciclo](/ayuda/resumen-del-ciclo)).
+
 ## Anotar el monto de un día
 <!-- preguntas: cómo anoto el monto de un día; cómo pongo lo que ganó una persona; cómo escribo en una celda; cómo cambio un monto; cómo uso fórmulas -->
 
@@ -107,6 +109,7 @@ Sus días no entran a la nómina. Si ya tenía días con monto, TeRRa pregunta s
 <!-- preguntas: ver por grupo; ver por líder; ocultar a los que no trabajaron; filtrar la grilla; ver solo los que tienen producción -->
 
 - **Por grupo** junta a las personas según su líder de grupo, con un salto a cada grupo.
+- **Por contrato** las junta en con contrato, a honorarios y sin nada: ver [Ver en la grilla quién tiene contrato](/ayuda/contratos#ver-en-la-grilla-quien-tiene-contrato).
 - **Con producción** oculta a quien no tiene nada anotado en esta labor.
 
 ![Las vistas de la grilla](help/grilla-del-ciclo/10-por-grupo.webp)

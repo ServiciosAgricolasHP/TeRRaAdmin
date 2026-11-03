@@ -1,4 +1,140 @@
 {
+  "help/anticipos-y-bonos/01-lista.webp": [
+    1168,
+    314
+  ],
+  "help/anticipos-y-bonos/02-nuevo-anticipo.webp": [
+    448,
+    564
+  ],
+  "help/anticipos-y-bonos/03-vista-previa.webp": [
+    1158,
+    247
+  ],
+  "help/anticipos-y-bonos/04-confirmar-cuotas.webp": [
+    448,
+    274
+  ],
+  "help/anticipos-y-bonos/05-despues-de-la-nomina.webp": [
+    1158,
+    196
+  ],
+  "help/contratos/01-empleadores.webp": [
+    448,
+    334
+  ],
+  "help/contratos/02-contratar.webp": [
+    672,
+    512
+  ],
+  "help/contratos/03-vigentes.webp": [
+    1167,
+    516
+  ],
+  "help/contratos/04-terminar.webp": [
+    448,
+    296
+  ],
+  "help/contratos/05-finiquitos.webp": [
+    1167,
+    308
+  ],
+  "help/contratos/06-historial.webp": [
+    642,
+    170
+  ],
+  "help/contratos/07-grilla-por-contrato.webp": [
+    1168,
+    374
+  ],
+  "help/contratos/08-generar-honorarios.webp": [
+    896,
+    672
+  ],
+  "help/contratos/09-boletas.webp": [
+    896,
+    372
+  ],
+  "help/contratos/10-generar-imposiciones.webp": [
+    896,
+    660
+  ],
+  "help/contratos/11-enviar-imposiciones.webp": [
+    896,
+    446
+  ],
+  "help/contratos/12-telefono.webp": [
+    412,
+    900
+  ],
+  "help/corregir-nomina/01-botones.webp": [
+    1126,
+    42
+  ],
+  "help/corregir-nomina/02-recalcular.webp": [
+    672,
+    222
+  ],
+  "help/corregir-nomina/03-editar-contenido.webp": [
+    1126,
+    48
+  ],
+  "help/corregir-nomina/04-agregar-persona.webp": [
+    896,
+    810
+  ],
+  "help/corregir-nomina/05-editar-ciclos.webp": [
+    896,
+    640
+  ],
+  "help/corregir-nomina/06-revisar-cambios.webp": [
+    672,
+    578
+  ],
+  "help/corregir-nomina/07-sacar-persona.webp": [
+    1116,
+    39
+  ],
+  "help/corregir-nomina/08-confirmar-sacar.webp": [
+    384,
+    242
+  ],
+  "help/faenas-y-ciclos/01-nueva-faena.webp": [
+    256,
+    58
+  ],
+  "help/faenas-y-ciclos/02-datos-faena.webp": [
+    448,
+    364
+  ],
+  "help/faenas-y-ciclos/03-faena-sin-subfaenas.webp": [
+    1148,
+    226
+  ],
+  "help/faenas-y-ciclos/04-primer-ciclo.webp": [
+    448,
+    202
+  ],
+  "help/faenas-y-ciclos/05-nuevo-ciclo.webp": [
+    448,
+    642
+  ],
+  "help/faenas-y-ciclos/06-fila-del-ciclo.webp": [
+    1116,
+    65
+  ],
+  "help/faenas-y-ciclos/07-cerrar-ciclo.webp": [
+    448,
+    162
+  ],
+  "help/faenas-y-ciclos/08-ciclo-siguiente.webp": [
+    448,
+    194
+  ],
+  "help/faenas-y-ciclos/09-reabrir.webp": [
+    1116,
+    65
+  ],
   "help/grilla-del-ciclo/01-abrir-ciclo.webp": [
     1200,
     844
@@ -47,6 +183,122 @@
     412,
     900
   ],
+  "help/nomina/01-elegir-ciclos.webp": [
+    1164,
+    174
+  ],
+  "help/nomina/02-continuar.webp": [
+    1152,
+    64
+  ],
+  "help/nomina/03-vista-previa.webp": [
+    1168,
+    668
+  ],
+  "help/nomina/04-historial.webp": [
+    1150,
+    89
+  ],
+  "help/nomina/05-mas-acciones.webp": [
+    248,
+    235
+  ],
+  "help/nomina/06-detalle.webp": [
+    1152,
+    810
+  ],
+  "help/nomina/07-descargar.webp": [
+    248,
+    247
+  ],
+  "help/nomina/08-imprimir.webp": [
+    249,
+    122
+  ],
+  "help/nomina/09-marcar-pagada.webp": [
+    448,
+    352
+  ],
+  "help/nomina/10-cerrar-ciclos.webp": [
+    672,
+    298
+  ],
+  "help/pagar-transportes/01-pago-por-faena.webp": [
+    1200,
+    844
+  ],
+  "help/pagar-transportes/02-vista-previa.webp": [
+    1200,
+    844
+  ],
+  "help/pagar-transportes/03-resumenes.webp": [
+    1200,
+    844
+  ],
+  "help/pagar-transportes/04-abono.webp": [
+    896,
+    674
+  ],
+  "help/pagar-transportes/05-nueva-quincena.webp": [
+    896,
+    662
+  ],
+  "help/pagar-transportes/06-quincena.webp": [
+    896,
+    510
+  ],
+  "help/pagar-transportes/07-confirmar-pago.webp": [
+    448,
+    252
+  ],
+  "help/pagar-transportes/08-balance.webp": [
+    1164,
+    397
+  ],
+  "help/precios-del-dia/01-nueva-labor.webp": [
+    448,
+    570
+  ],
+  "help/precios-del-dia/02-cosecha.webp": [
+    222,
+    318
+  ],
+  "help/precios-del-dia/03-agregar-tipo.webp": [
+    448,
+    336
+  ],
+  "help/precios-del-dia/04-trato.webp": [
+    414,
+    190
+  ],
+  "help/precios-del-dia/05-piso.webp": [
+    403,
+    190
+  ],
+  "help/precios-del-dia/06-piso-a-todos.webp": [
+    384,
+    242
+  ],
+  "help/precios-del-dia/07-piso-grilla.webp": [
+    1156,
+    263
+  ],
+  "help/precios-del-dia/08-etapas.webp": [
+    237,
+    179
+  ],
+  "help/precios-del-dia/09-etapas-editar.webp": [
+    448,
+    628
+  ],
+  "help/precios-del-dia/10-horas-extras.webp": [
+    1146,
+    90
+  ],
+  "help/precios-del-dia/11-configurar-dia.webp": [
+    448,
+    402
+  ],
   "help/primeros-pasos/01-entrar.webp": [
     432,
     406
@@ -61,7 +313,7 @@
   ],
   "help/primeros-pasos/04-buscar.webp": [
     784,
-    447
+    534
   ],
   "help/primeros-pasos/05-tema.webp": [
     217,
@@ -72,6 +324,86 @@
     47
   ],
   "help/primeros-pasos/07-menu-telefono.webp": [
+    412,
+    900
+  ],
+  "help/resumen-del-ciclo/01-abrir.webp": [
+    564,
+    50
+  ],
+  "help/resumen-del-ciclo/02-pagar.webp": [
+    896,
+    810
+  ],
+  "help/resumen-del-ciclo/03-tarifas.webp": [
+    866,
+    210
+  ],
+  "help/resumen-del-ciclo/04-ajustar.webp": [
+    830,
+    229
+  ],
+  "help/resumen-del-ciclo/05-total.webp": [
+    830,
+    111
+  ],
+  "help/resumen-del-ciclo/06-bloquear.webp": [
+    384,
+    262
+  ],
+  "help/trabajadores/01-lista.webp": [
+    1168,
+    324
+  ],
+  "help/trabajadores/02-nuevo.webp": [
+    672,
+    810
+  ],
+  "help/trabajadores/03-forma-de-pago.webp": [
+    642,
+    344
+  ],
+  "help/trabajadores/04-datos-personales.webp": [
+    642,
+    375
+  ],
+  "help/trabajadores/05-resumen.webp": [
+    896,
+    564
+  ],
+  "help/trabajadores/06-telefono.webp": [
+    412,
+    900
+  ],
+  "help/transportes/01-transportistas.webp": [
+    1168,
+    444
+  ],
+  "help/transportes/02-transportista.webp": [
+    672,
+    452
+  ],
+  "help/transportes/03-vueltas-del-ciclo.webp": [
+    896,
+    476
+  ],
+  "help/transportes/04-agregar-vuelta.webp": [
+    672,
+    576
+  ],
+  "help/transportes/05-vueltas.webp": [
+    1200,
+    844
+  ],
+  "help/transportes/06-sin-precio.webp": [
+    672,
+    278
+  ],
+  "help/transportes/07-resumen-transportista.webp": [
+    896,
+    640
+  ],
+  "help/transportes/08-telefono.webp": [
     412,
     900
   ]

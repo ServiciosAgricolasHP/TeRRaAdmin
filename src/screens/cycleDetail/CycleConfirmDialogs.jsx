@@ -112,7 +112,7 @@ export function CycleConfirmDialogs() {
       <ConfirmDialog
         open={closeFlow}
         title="Cerrar ciclo"
-        message={`¿Cerrar "${cycle.label}"? No se podrá editar a menos que seas admin.`}
+        message={`¿Cerrar "${cycle.label}"? Queda congelado: para corregir algo hay que reabrirlo.`}
         confirmLabel="Cerrar ciclo"
         danger busy={closeBusy}
         onCancel={() => !closeBusy && setCloseFlow(false)}

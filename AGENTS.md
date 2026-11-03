@@ -14,10 +14,13 @@ Las reglas de este repo, para personas y agentes. Lo de una sola pantalla está 
 - **Tres caminos.** `main` es producción y solo recibe Pull Requests. `develop` junta los hitos de la próxima versión menor. Una rama `hotfix/<nombre>` lleva a producción un arreglo rápido sin lo que está a medio hacer en `develop`.
 - **Un hito, un PR; la versión completa, un cambio de versión.** Los hitos de cada versión menor se anotan en el backlog. Cada hito pasa de `develop` a `main` en su propio PR apenas está completo, y el PR del último sube la versión (`npm version minor --no-git-tag-version`, en un commit propio). Entre medio, producción sigue en la versión anterior con el conteo de commits (v1.3.12).
   - El PR lleva todo lo que tiene `develop`: se trabaja un hito a la vez, o el que está a medio hacer espera a que esté completo. Lo que no puede esperar sale como hotfix.
-- **Hotfix.** Cuando se pide un hotfix, el arreglo sale de `main` y no lleva nada de lo que está en `develop`:
-  1. `git fetch` y `git switch -c hotfix/<nombre> --no-track origin/main`. Lo que haya sin commitear en `develop` se guarda antes (`git stash`) y se recupera al volver.
-  2. El arreglo y sus tests, con las mismas reglas de cualquier commit (lint, tests, `docs/data-model.md`, la guía de la ayuda). Después, `git push -u origin hotfix/<nombre>` y el PR a `main`. El encabezado muestra el número siguiente (v1.3.1), porque cuenta los commits desde la última subida de versión.
-  3. Mergeado el PR, `main` vuelve a `develop` con un merge (`git switch develop && git merge origin/main`) y la rama se borra. Va con merge, no con cherry-pick: el mismo cambio en dos commits choca en el próximo PR de `develop`.
+- **Hotfix.** Cuando se pide un hotfix, el arreglo sale de `main` y no lleva nada de lo que está en `develop`. Se hace en una segunda copia del repo, la carpeta `../TeRRaAdmin-hotfix` (un `git worktree`): la carpeta de siempre sigue en `develop`, con lo que tenga sin commitear y su servidor corriendo.
+  1. `git fetch` y, en la carpeta del hotfix, `git switch -c hotfix/<nombre> --no-track origin/main`. Si cambió `package-lock.json` (o el de `functions/`) desde el hotfix anterior, `npm ci` donde cambió.
+  2. El arreglo y sus tests, con las mismas reglas de cualquier commit (lint, tests, `docs/data-model.md`, la guía de la ayuda).
+  3. Antes del PR, el servidor de la carpeta del hotfix en el puerto 5190 (`npm run dev -- --port 5190 --strictPort`), para ver el arreglo en vivo en `http://localhost:5190/TeRRaAdmin/` con los mismos datos que el servidor de `develop`. Para el navegador es otro sitio: la primera vez pide iniciar sesión y lee las listas enteras.
+  4. `git push -u origin hotfix/<nombre>` y el PR a `main`, que se mergea después de ver el arreglo en vivo. El encabezado muestra el número siguiente (v1.3.1), porque cuenta los commits desde la última subida de versión.
+  5. Mergeado el PR, se apaga el servidor del hotfix y `main` vuelve a `develop` con un merge (`git merge origin/main` en la carpeta de siempre). La carpeta del hotfix queda en `main` sin rama (`git switch --detach origin/main`), lista para el próximo, y la rama se borra. Va con merge, no con cherry-pick: el mismo cambio en dos commits choca en el próximo PR de `develop`.
+  - **La carpeta se arma una vez:** `git worktree add --detach ../TeRRaAdmin-hotfix origin/main`, `npm ci` en la raíz y en `functions/`, y una copia del `.env`, que no está en git.
 - **Los conflictos se resuelven en `develop`, antes de abrir el PR a `main`**, nunca en el PR. Si `develop` no tiene algo de `main` (un hotfix sin volver), se mergea `origin/main` primero y se corren lint y tests sobre el resultado.
 - **`docs/data-model.md` acompaña a cada cambio de modelo.** Una colección nueva, un campo nuevo, uno que cambia de tipo o de significado, o uno que se deja de escribir se documenta en el mismo commit; una colección nueva también va en `MAIN_COLLECTIONS` (`screens/adminConsole/collections.js`). Antes de un push se revisa que los commits que tocaron entidades lo hayan actualizado.
 - `.github/workflows/ci.yml` — corre en push/PR dos jobs, los dos bloqueantes:
@@ -270,7 +273,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 
 ### Ayuda
 
-- **Una pantalla con guía en la ayuda mantiene su guía al día.** Un cambio de interfaz en esa pantalla actualiza el texto de la guía y regenera sus capturas (`HELP_GUIDES=<guía> npm run help:shots`) en el mismo commit; una tarea nueva suma su sección, con sus preguntas de ejemplo. Si el guion de captura falla, la guía quedó vieja. Cómo se escribe una guía: `docs/screens/help.md`.
+- **Una pantalla con guía en la ayuda mantiene su guía al día** (la lista, en "Las guías y sus pantallas" de `docs/screens/help.md`). Un cambio de interfaz en esa pantalla actualiza el texto de la guía y regenera sus capturas (`HELP_GUIDES=<guía> npm run help:shots`) en el mismo commit; una tarea nueva suma su sección, con sus preguntas de ejemplo. Si el guion de captura falla, la guía quedó vieja. Cómo se escribe una guía: `docs/screens/help.md`.
 
 ### Alto de las listas y grillas
 

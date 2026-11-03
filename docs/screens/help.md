@@ -5,9 +5,29 @@
 - Sus piezas, en `src/screens/help/`: `HelpSearch` (el buscador), `GuideView` (una guía), `HelpIndex` (las tarjetas de las guías), `useMissingHelpReport` ("Avisar que falta"), `renderGuide.js` (Markdown → HTML con `marked`), `guides.js` (el registro de las guías), `guides/*.md` (el texto) e `imageSizes.json` (ancho y alto de cada captura, lo escribe el generador). El cálculo, en `utils/helpGuides.js` (leer una guía por secciones) y `utils/helpSearch.js` (la búsqueda), con tests; `screens/help/guides.test.js` revisa el contenido.
 - Costo: **0 lecturas**. Las guías son texto del bundle y se indexan en el navegador. Lo único que escribe es "Avisar que falta" (colección `helpQuestions`, ver `docs/data-model.md`).
 
+## Las guías y sus pantallas
+
+Un cambio de interfaz en una de estas pantallas actualiza su guía y regenera sus capturas (`HELP_GUIDES=<guía> npm run help:shots`) en el mismo commit.
+
+| Guía | Pantalla | Datos que siembra el guion además de la semilla |
+|---|---|---|
+| `primeros-pasos` | el inicio de sesión, el menú, el encabezado y la ayuda | |
+| `faenas-y-ciclos` | Faenas (`/faenas`) | |
+| `grilla-del-ciclo` | la grilla del ciclo (`/cycles/:id`) | |
+| `precios-del-dia` | los precios y el piso de cada tipo de labor, en la grilla del ciclo | `seedLaborTypes` |
+| `resumen-del-ciclo` | el resumen del ciclo (`CycleSummaryModal`): para pagar y para cobrar | `seedDayNote` |
+| `nomina` | Nómina: generar, el historial, el detalle, descargar, imprimir y pagar | `seedCashWorkers` |
+| `corregir-nomina` | el detalle de una nómina: recalcular, agregar y sacar | `seedCashWorkers`, `seedLaborTypes` |
+| `anticipos-y-bonos` | Anticipos / Bonos (`/advances`) y cómo los aplica Nómina | `seedCashWorkers`, `seedAdvances` |
+| `trabajadores` | Trabajadores (`/workers`): la lista, la ficha, la forma de pago, los datos personales y el resumen | `seedCashWorkers`, `seedWorkerDetails` |
+| `contratos` | Las pestañas Contratos, Honorarios e Imposiciones de Trabajadores, el historial de la ficha y la vista "Por contrato" de la grilla | `seedEmployments` |
+| `transportes` | Transportes (`/transports`): transportistas, vueltas (también las del ciclo), vueltas sin precio y el resumen del transportista | `seedLaborTypes`, `seedTransports` |
+| `pagar-transportes` | Transportes: pago por faena, resúmenes, abonos, quincenas y los balances | `seedLaborTypes`, `seedTransports` |
+
 ## Cómo se escribe una guía
 
 - Un `.md` en `src/screens/help/guides/`, registrado en `guides.js` con su `id` (el de la URL), su ícono y, si es solo para admins, `adminOnly: true`.
+- **Las pantallas solo para admin (las rutas con `adminOnly`) se explican solo en guías `adminOnly`.** Una guía para todos puede decir que algo lo hace un admin ("pídele a un administrador…"), sin explicar cómo.
 - `# Título`, una introducción corta y una sección `## ` por tarea. **La búsqueda sugiere secciones**, así que cada `##` es una tarea con título propio ("Agregar a una persona a la labor"), y el enlace a una sección es `/ayuda/<guía>#<sección>` (el slug del título).
 - Debajo de cada título, las preguntas con que alguien buscaría esa sección, escondidas: `<!-- preguntas: cómo agrego a alguien; falta una persona en la grilla -->`. Pesan más que el texto al ordenar los resultados y son lo que hace que una pregunta encuentre su sección aunque use otras palabras. `guides.test.js` exige al menos una por sección.
 - Las palabras son las de la pantalla (la columna "En pantalla" del Glosario de AGENTS.md), tratando de "tú", sin voseo. Pasos numerados, con una captura donde ayuda; al final de la guía, lo que hay que saber si algo no funciona.
@@ -25,8 +45,8 @@
 
 ## Las capturas
 
-- Se generan, no se sacan a mano: **`npm run help:shots`** (con `HELP_GUIDES=<id>,<id>` solo esas guías). Levanta los emuladores de Firestore y Authentication (`emulators:exec`), arranca Vite contra ellos con un proyecto `demo-`, siembra los datos de demo y corre el guion de cada guía con Playwright sobre el Edge o el Chrome instalados (`HELP_BROWSER` para otra ruta). Necesita JDK 21 (por los emuladores) y las dependencias de `functions/` (la semilla usa `firebase-admin`).
-- `scripts/help/seed.mjs`: una faena, un ciclo de cinco días y siete personas, todo inventado (el repo es público). Solo escribe en los emuladores.
+- Se generan, no se sacan a mano: **`npm run help:shots`** (con `HELP_GUIDES=<id>,<id>` solo esas guías). Levanta los emuladores de Firestore y Authentication (`emulators:exec`), arranca Vite contra ellos con un proyecto `demo-` y, para cada guía, vacía la base, siembra los datos de demo y corre su guion con Playwright sobre el Edge o el Chrome instalados (`HELP_BROWSER` para otra ruta). Necesita JDK 21 (por los emuladores) y las dependencias de `functions/` (la semilla usa `firebase-admin`).
+- `scripts/help/seed.mjs`: una faena, un ciclo de cinco días y siete personas, todo inventado (el repo es público). Solo escribe en los emuladores. Cada guía parte de esos datos, así sus capturas salen iguales se genere sola o con las demás; lo que necesita además (como el ciclo con una labor de cada tipo, `seedLaborTypes`) lo siembra su guion al empezar.
 - `scripts/help/guides/<guía>.mjs`: hace el flujo por la interfaz con clics reales y saca una captura por paso. Si un paso ya no existe en la pantalla, el guion falla y avisa que la guía quedó vieja; la pantalla al fallar queda en la carpeta temporal del sistema.
 - `scripts/help/lib.mjs`: fecha fija (`page.clock`, 9 de octubre de 2026), tema claro, la versión del encabezado sin número, el mouse fuera de la zona, un borde (y un número, si son varios) sobre lo que hay que tocar, y el recorte del elemento o de varios a la vez. Guarda WebP (con `sharp`) en `public/help/<guía>/` y anota el ancho y alto en `imageSizes.json`. Regenerar una guía borra antes su carpeta.
 - Las capturas **no se precargan**: `globIgnores: ['help/**']` en la PWA (`vite.config.js`). Cada una se baja al abrir su guía, y después queda en la caché del navegador.

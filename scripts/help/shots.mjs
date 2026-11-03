@@ -1,5 +1,5 @@
-// Regenera las capturas de la ayuda: levanta Vite contra los emuladores,
-// siembra los datos de demo y corre el guion de cada guía. Se corre con
+// Regenera las capturas de la ayuda: levanta Vite contra los emuladores y,
+// para cada guía, vacía la base, siembra los datos de demo y corre su guion. Se corre con
 // `npm run help:shots`, que levanta los emuladores; con
 // `HELP_GUIDES=grilla-del-ciclo` regenera solo esa guía.
 //
@@ -11,12 +11,35 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { createServer } from "vite";
-import { seedDemo, DEMO_PROJECT } from "./seed.mjs";
+import { clearDemo, seedDemo, DEMO_PROJECT } from "./seed.mjs";
 import { DESKTOP, login, preparePage, shooterFor } from "./lib.mjs";
 import * as firstSteps from "./guides/primeros-pasos.mjs";
 import * as cycleGrid from "./guides/grilla-del-ciclo.mjs";
+import * as jobsAndCycles from "./guides/faenas-y-ciclos.mjs";
+import * as dayPrices from "./guides/precios-del-dia.mjs";
+import * as payroll from "./guides/nomina.mjs";
+import * as payrollFixes from "./guides/corregir-nomina.mjs";
+import * as advances from "./guides/anticipos-y-bonos.mjs";
+import * as workers from "./guides/trabajadores.mjs";
+import * as employments from "./guides/contratos.mjs";
+import * as cycleSummary from "./guides/resumen-del-ciclo.mjs";
+import * as transports from "./guides/transportes.mjs";
+import * as transportPayments from "./guides/pagar-transportes.mjs";
 
-const SCRIPTS = { "primeros-pasos": firstSteps, "grilla-del-ciclo": cycleGrid };
+const SCRIPTS = {
+  "primeros-pasos": firstSteps,
+  "grilla-del-ciclo": cycleGrid,
+  "faenas-y-ciclos": jobsAndCycles,
+  "precios-del-dia": dayPrices,
+  nomina: payroll,
+  "corregir-nomina": payrollFixes,
+  "anticipos-y-bonos": advances,
+  trabajadores: workers,
+  contratos: employments,
+  "resumen-del-ciclo": cycleSummary,
+  transportes: transports,
+  "pagar-transportes": transportPayments,
+};
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const SIZES_FILE = path.join(ROOT, "src", "screens", "help", "imageSizes.json");
 const PORT = 5196;
@@ -67,8 +90,10 @@ const sizes = JSON.parse(fs.readFileSync(SIZES_FILE, "utf8"));
 let failed = false;
 
 try {
-  await seedDemo();
   for (const guideId of guideIds) {
+    // Cada guía parte de los mismos datos, se genere sola o con las demás.
+    await clearDemo();
+    await seedDemo();
     const context = await browser.newContext({ viewport: DESKTOP, locale: "es-CL", timezoneId: "America/Santiago" });
     const page = await context.newPage();
     await preparePage(page);

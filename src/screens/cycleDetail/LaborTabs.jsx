@@ -1,4 +1,5 @@
 import { useCycleDetail } from "./CycleDetailContext";
+import { laborTypeLabel } from "../../utils/laborTypes";
 
 // Pestañas de las labores del ciclo, con el candado QR de cada una, y el
 // botón para agregar una labor.
@@ -25,7 +26,17 @@ export function LaborTabs() {
             : isOvertimeDay
               ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
               : "bg-[var(--color-surface-2)] text-[var(--color-muted)]";
-        const tagIcon = isCo ? "🌾" : isTr ? "🛠" : isOvertimeDay ? "⏱" : l.type === "main" ? "al día" : l.type;
+        const tagIcon = isCo
+          ? "🌾"
+          : isTr
+            ? "🛠"
+            : isOvertimeDay
+              ? "⏱"
+              : l.type === "tratoEtapas"
+                ? "🏕"
+                : l.type === "main"
+                  ? "al día"
+                  : laborTypeLabel(l.type).toLowerCase();
         return (
           <button
             key={l.id}
