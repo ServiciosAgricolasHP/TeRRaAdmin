@@ -9,7 +9,7 @@ import { setSettlementStatus } from "../../services/employmentsService";
 import { formatRutForDisplay } from "../../utils/rutUtils";
 import { workerMatchesQuery, workerSearchInput } from "../../utils/workerSearch";
 import { EMPLOYMENT_TYPES, END_REASONS, SETTLEMENT_STATUSES } from "../../utils/employment";
-import EmployersModal from "./EmployersModal";
+import CompanyListModal from "./CompanyListModal";
 import StartEmploymentsModal from "./StartEmploymentsModal";
 import { useEmployments } from "./useEmployments";
 
@@ -270,7 +270,7 @@ export default function EmploymentsTab() {
           }}
         />
       )}
-      {employersOpen && <EmployersModal employers={employers} onClose={() => setEmployersOpen(false)} onChanged={reloadEmployers} />}
+      {employersOpen && <CompanyListModal employers={employers} onClose={() => setEmployersOpen(false)} onChanged={reloadEmployers} />}
       {card && (
         <WorkerEditModal
           open

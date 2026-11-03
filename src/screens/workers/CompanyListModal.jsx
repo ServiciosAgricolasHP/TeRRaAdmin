@@ -8,7 +8,7 @@ const inputCls =
 
 // Las empresas empleadoras: alta, edición y desactivar. Una desactivada no se
 // ofrece para períodos nuevos, pero sigue en los que ya tiene.
-export default function EmployersModal({ employers, onClose, onChanged }) {
+export default function CompanyListModal({ employers, onClose, onChanged }) {
   const [form, setForm] = useState({ id: null, name: "", rut: "" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
