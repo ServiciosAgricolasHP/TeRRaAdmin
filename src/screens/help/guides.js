@@ -7,6 +7,7 @@ import payrollFixes from "./guides/corregir-nomina.md?raw";
 import advances from "./guides/anticipos-y-bonos.md?raw";
 import workers from "./guides/trabajadores.md?raw";
 import employments from "./guides/contratos.md?raw";
+import cycleSummary from "./guides/resumen-del-ciclo.md?raw";
 
 // Las guías de la ayuda, en el orden del índice. El texto de cada una vive en
 // su `.md` de `guides/` y sus capturas en `public/help/<id>/`, que regenera
@@ -16,6 +17,7 @@ export const GUIDES = [
   { id: "faenas-y-ciclos", icon: "🌾", source: jobsAndCycles },
   { id: "grilla-del-ciclo", icon: "🗓", source: cycleGrid },
   { id: "precios-del-dia", icon: "💲", source: dayPrices },
+  { id: "resumen-del-ciclo", icon: "📊", source: cycleSummary },
   { id: "nomina", icon: "💰", source: payroll },
   { id: "corregir-nomina", icon: "🛠", source: payrollFixes },
   { id: "anticipos-y-bonos", icon: "🪙", source: advances },

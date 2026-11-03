@@ -22,6 +22,7 @@ import * as payrollFixes from "./guides/corregir-nomina.mjs";
 import * as advances from "./guides/anticipos-y-bonos.mjs";
 import * as workers from "./guides/trabajadores.mjs";
 import * as employments from "./guides/contratos.mjs";
+import * as cycleSummary from "./guides/resumen-del-ciclo.mjs";
 
 const SCRIPTS = {
   "primeros-pasos": firstSteps,
@@ -33,6 +34,7 @@ const SCRIPTS = {
   "anticipos-y-bonos": advances,
   trabajadores: workers,
   contratos: employments,
+  "resumen-del-ciclo": cycleSummary,
 };
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const SIZES_FILE = path.join(ROOT, "src", "screens", "help", "imageSizes.json");

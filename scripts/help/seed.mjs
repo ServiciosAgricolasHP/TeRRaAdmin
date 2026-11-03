@@ -223,6 +223,15 @@ export async function seedAdvances() {
   });
 }
 
+// Para la guía del resumen del ciclo: una nota en un día del ciclo de demo,
+// que el resumen para pagar muestra en las observaciones.
+export async function seedDayNote() {
+  const db = getFirestore("hpdatabase");
+  await db.collection("cycles").doc(DEMO_CYCLE).update({
+    dayNotesByLabor: { L1: { [DEMO_DAYS[1]]: "Llovió en la tarde; se trabajó hasta las 15:00." } },
+  });
+}
+
 // Para la guía de Trabajadores: los datos personales de Ana, Bruno cobra en la
 // cuenta de otra persona con su nombre anotado y Elena en la de otra sin él.
 export async function seedWorkerDetails() {
