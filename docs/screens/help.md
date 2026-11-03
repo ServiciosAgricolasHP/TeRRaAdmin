@@ -24,6 +24,7 @@ Un cambio de interfaz en una de estas pantallas actualiza su guía y regenera su
 ## Cómo se escribe una guía
 
 - Un `.md` en `src/screens/help/guides/`, registrado en `guides.js` con su `id` (el de la URL), su ícono y, si es solo para admins, `adminOnly: true`.
+- **Las pantallas solo para admin (las rutas con `adminOnly`) se explican solo en guías `adminOnly`.** Una guía para todos puede decir que algo lo hace un admin ("pídele a un administrador…"), sin explicar cómo.
 - `# Título`, una introducción corta y una sección `## ` por tarea. **La búsqueda sugiere secciones**, así que cada `##` es una tarea con título propio ("Agregar a una persona a la labor"), y el enlace a una sección es `/ayuda/<guía>#<sección>` (el slug del título).
 - Debajo de cada título, las preguntas con que alguien buscaría esa sección, escondidas: `<!-- preguntas: cómo agrego a alguien; falta una persona en la grilla -->`. Pesan más que el texto al ordenar los resultados y son lo que hace que una pregunta encuentre su sección aunque use otras palabras. `guides.test.js` exige al menos una por sección.
 - Las palabras son las de la pantalla (la columna "En pantalla" del Glosario de AGENTS.md), tratando de "tú", sin voseo. Pasos numerados, con una captura donde ayuda; al final de la guía, lo que hay que saber si algo no funciona.
