@@ -5,6 +5,8 @@ import dayPrices from "./guides/precios-del-dia.md?raw";
 import payroll from "./guides/nomina.md?raw";
 import payrollFixes from "./guides/corregir-nomina.md?raw";
 import advances from "./guides/anticipos-y-bonos.md?raw";
+import workers from "./guides/trabajadores.md?raw";
+import employments from "./guides/contratos.md?raw";
 
 // Las guías de la ayuda, en el orden del índice. El texto de cada una vive en
 // su `.md` de `guides/` y sus capturas en `public/help/<id>/`, que regenera
@@ -17,4 +19,6 @@ export const GUIDES = [
   { id: "nomina", icon: "💰", source: payroll },
   { id: "corregir-nomina", icon: "🛠", source: payrollFixes },
   { id: "anticipos-y-bonos", icon: "🪙", source: advances },
+  { id: "trabajadores", icon: "👷", source: workers },
+  { id: "contratos", icon: "📄", source: employments },
 ];

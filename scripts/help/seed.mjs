@@ -25,7 +25,7 @@ function rutDv(num) {
   const r = 11 - (sum % 11);
   return r === 11 ? "0" : r === 10 ? "K" : String(r);
 }
-const rut = (num) => `${num}-${rutDv(num)}`;
+export const rut = (num) => `${num}-${rutDv(num)}`;
 
 export const DEMO_WORKERS = [
   { num: 15234561, name: "Ana Pérez Soto", leader: "GRUPO NORTE" },
@@ -221,6 +221,50 @@ export async function seedAdvances() {
     ...base(carla), type: "bono", amount: 15000, date: "2026-10-06", note: "Bono de asistencia", installments: null,
     createdAt: new Date("2026-10-06T12:00:00-03:00"),
   });
+}
+
+// Para la guía de Trabajadores: los datos personales de Ana, Bruno cobra en la
+// cuenta de otra persona con su nombre anotado y Elena en la de otra sin él.
+export async function seedWorkerDetails() {
+  const db = getFirestore("hpdatabase");
+  const [ana, bruno, , , elena] = DEMO_WORKERS;
+  await db.collection("worker").doc(ana.id).update({
+    email: "ana.perez@correo.test", address: "Los Aromos 1234, Villa El Sol", commune: "Rengo", nationality: "Chilena",
+    maritalStatus: "single", birthDate: "1990-04-12", pensionFund: "Modelo", healthInsurance: "Fonasa",
+  });
+  const rosa = rut(14567892);
+  await db.collection("worker").doc(bruno.id).update({ bankDetails: [rosa, "14567892", 3, "012"], paymentName: "Rosa Mella Díaz" });
+  const other = rut(13456781);
+  await db.collection("worker").doc(elena.id).update({ bankDetails: [other, "13456781", 3, "012"] });
+}
+
+// Para la guía de contratos: dos empleadores, Ana y Bruno con contrato, Carla
+// y Diego a honorarios (Carla con la dirección que pide la boleta), y el
+// contrato de Gloria terminado en septiembre con el finiquito solicitado.
+export const DEMO_EMPLOYERS = [
+  { id: "E1", name: "Agrícola Los Aromos SpA", rut: rut(76543218) },
+  { id: "E2", name: "Servicios del Valle Ltda.", rut: rut(77654329) },
+];
+
+export async function seedEmployments() {
+  const db = getFirestore("hpdatabase");
+  for (const e of DEMO_EMPLOYERS) {
+    await db.collection("employers").doc(e.id).set({ name: e.name, rut: e.rut, enabled: true, createdAt: new Date("2026-08-01") });
+  }
+  const [ana, bruno, carla, diego, , , gloria] = DEMO_WORKERS;
+  const period = (id, w, data) => db.collection("employments").doc(id).set({
+    workerId: w.id, workerRut: w.rut, workerName: w.name, employerId: "E1", endDate: "", endReason: null,
+    settlementStatus: null, notes: "", createdAt: new Date("2026-09-01T12:00:00-03:00"), updatedAt: new Date("2026-09-01T12:00:00-03:00"), ...data,
+  });
+  await period("P1", ana, { type: "contract", startDate: "2026-09-01" });
+  await period("P2", bruno, { type: "contract", startDate: "2026-09-01" });
+  await period("P3", carla, { type: "fees", startDate: "2026-09-15" });
+  await period("P4", diego, { type: "fees", startDate: "2026-09-15" });
+  await period("P5", gloria, {
+    type: "contract", startDate: "2026-03-02", endDate: "2026-09-30", endReason: "jobEnd",
+    settlementStatus: "requested", settlementRequestedAt: "2026-10-02",
+  });
+  await db.collection("worker").doc(carla.id).update({ address: "Pasaje Las Rosas 45", commune: "Requínoa" });
 }
 
 if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, "/")}`) {

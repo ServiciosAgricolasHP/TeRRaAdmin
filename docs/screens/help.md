@@ -18,6 +18,8 @@ Un cambio de interfaz en una de estas pantallas actualiza su guía y regenera su
 | `nomina` | Nómina: generar, el historial, el detalle, descargar, imprimir y pagar | `seedCashWorkers` |
 | `corregir-nomina` | el detalle de una nómina: recalcular, agregar y sacar | `seedCashWorkers`, `seedLaborTypes` |
 | `anticipos-y-bonos` | Anticipos / Bonos (`/advances`) y cómo los aplica Nómina | `seedCashWorkers`, `seedAdvances` |
+| `trabajadores` | Trabajadores (`/workers`): la lista, la ficha, la forma de pago, los datos personales y el resumen | `seedCashWorkers`, `seedWorkerDetails` |
+| `contratos` | Las pestañas Contratos, Honorarios e Imposiciones de Trabajadores, el historial de la ficha y la vista "Por contrato" de la grilla | `seedEmployments` |
 
 ## Cómo se escribe una guía
 

@@ -27,7 +27,7 @@ Abajo se ve cuánto suma lo elegido. Toca **Continuar →**.
 ![Lo elegido y el botón para seguir](help/nomina/02-continuar.webp)
 
 ## Revisar la vista previa
-<!-- preguntas: cómo reviso la nómina antes de guardar; cambiar a efectivo; cambiar a transferencia; sacar a alguien de la nómina; cambiar el monto a pagar; datos faltantes; cuenta sospechosa; qué es una diferencia -->
+<!-- preguntas: cómo reviso la nómina antes de guardar; cambiar a efectivo; cambiar a efectivo solo en esta nómina; pagar en efectivo solo esta vez; cambiar a transferencia; sacar a alguien de la nómina; cambiar el monto a pagar; datos faltantes; cuenta sospechosa; qué es una diferencia -->
 
 La vista previa muestra a cada persona con lo que se le paga.
 

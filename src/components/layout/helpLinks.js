@@ -5,6 +5,7 @@ export const HELP_GUIDE_BY_PATH = [
   ["/cycles/", "grilla-del-ciclo"],
   ["/payroll", "nomina"],
   ["/advances", "anticipos-y-bonos"],
+  ["/workers", "trabajadores"],
 ];
 
 export function helpPathFor(pathname) {

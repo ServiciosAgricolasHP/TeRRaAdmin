@@ -19,6 +19,54 @@
     1158,
     196
   ],
+  "help/contratos/01-empleadores.webp": [
+    448,
+    334
+  ],
+  "help/contratos/02-contratar.webp": [
+    672,
+    512
+  ],
+  "help/contratos/03-vigentes.webp": [
+    1167,
+    516
+  ],
+  "help/contratos/04-terminar.webp": [
+    448,
+    296
+  ],
+  "help/contratos/05-finiquitos.webp": [
+    1167,
+    308
+  ],
+  "help/contratos/06-historial.webp": [
+    642,
+    170
+  ],
+  "help/contratos/07-grilla-por-contrato.webp": [
+    1168,
+    374
+  ],
+  "help/contratos/08-generar-honorarios.webp": [
+    896,
+    672
+  ],
+  "help/contratos/09-boletas.webp": [
+    896,
+    372
+  ],
+  "help/contratos/10-generar-imposiciones.webp": [
+    896,
+    660
+  ],
+  "help/contratos/11-enviar-imposiciones.webp": [
+    896,
+    446
+  ],
+  "help/contratos/12-telefono.webp": [
+    412,
+    900
+  ],
   "help/corregir-nomina/01-botones.webp": [
     1126,
     42
@@ -244,6 +292,30 @@
     47
   ],
   "help/primeros-pasos/07-menu-telefono.webp": [
+    412,
+    900
+  ],
+  "help/trabajadores/01-lista.webp": [
+    1168,
+    324
+  ],
+  "help/trabajadores/02-nuevo.webp": [
+    672,
+    810
+  ],
+  "help/trabajadores/03-forma-de-pago.webp": [
+    642,
+    344
+  ],
+  "help/trabajadores/04-datos-personales.webp": [
+    642,
+    375
+  ],
+  "help/trabajadores/05-resumen.webp": [
+    896,
+    564
+  ],
+  "help/trabajadores/06-telefono.webp": [
     412,
     900
   ]

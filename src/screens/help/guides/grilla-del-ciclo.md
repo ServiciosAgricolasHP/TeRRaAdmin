@@ -107,6 +107,7 @@ Sus días no entran a la nómina. Si ya tenía días con monto, TeRRa pregunta s
 <!-- preguntas: ver por grupo; ver por líder; ocultar a los que no trabajaron; filtrar la grilla; ver solo los que tienen producción -->
 
 - **Por grupo** junta a las personas según su líder de grupo, con un salto a cada grupo.
+- **Por contrato** las junta en con contrato, a honorarios y sin nada: ver [Ver en la grilla quién tiene contrato](/ayuda/contratos#ver-en-la-grilla-quien-tiene-contrato).
 - **Con producción** oculta a quien no tiene nada anotado en esta labor.
 
 ![Las vistas de la grilla](help/grilla-del-ciclo/10-por-grupo.webp)
