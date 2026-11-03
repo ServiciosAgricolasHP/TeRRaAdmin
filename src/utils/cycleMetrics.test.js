@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   peopleByDateOf,
+  overtimeHoursByDateOf,
   daysWithFloorOf,
   dayCombosOf,
   dayTiersOf,
@@ -134,6 +135,24 @@ describe("días de la labor activa", () => {
     const byDate = peopleByDateOf(workdaysByLabor, "LM");
     expect([...byDate.keys()]).toEqual([D1]);
     expect([...byDate.get(D1)].sort()).toEqual([ANA, BETO].sort());
+  });
+
+  it("cuenta como jornada a quien solo tiene horas extras y suma las horas del día", () => {
+    const overtimeOnly = {
+      LH: Object.fromEntries([
+        entry(ANA, D1, "0_0", { qty: 30000, overtimeHours: 2, amount: 37000 }),
+        entry(BETO, D1, "0_0", { qty: 0, overtimeHours: 3.5, amount: 12250 }),
+        entry(CARLA, D1, "0_0", { qty: 30000, amount: 30000 }),
+        entry(ANA, D2, "0_0", { qty: 35000, amount: 35000 }),
+      ]),
+    };
+    const people = peopleByDateOf(overtimeOnly, "LH");
+    expect([...people.get(D1)].sort()).toEqual([ANA, BETO, CARLA].sort());
+    expect(people.get(D2).size).toBe(1);
+    const hours = overtimeHoursByDateOf(overtimeOnly, "LH");
+    expect(hours.get(D1)).toBe(5.5);
+    expect(hours.has(D2)).toBe(false);
+    expect(overtimeHoursByDateOf(overtimeOnly, "LX").size).toBe(0);
   });
 
   it("muestra la columna Piso en los días con piso configurado o asignado", () => {

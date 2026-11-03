@@ -25,6 +25,18 @@ export function peopleByDateOf(workdaysByLabor, shownLaborId) {
   return byDate;
 }
 
+// Horas extras anotadas por fecha en la labor activa, para las tarjetas de
+// configuración por día de las jornadas con horas extras.
+export function overtimeHoursByDateOf(workdaysByLabor, shownLaborId) {
+  const byDate = new Map();
+  for (const wd of Object.values(workdaysByLabor[shownLaborId] || {})) {
+    const hours = Number(wd?.overtimeHours) || 0;
+    if (!wd?.date || !hours) continue;
+    byDate.set(wd.date, (byDate.get(wd.date) || 0) + hours);
+  }
+  return byDate;
+}
+
 // Días de la labor activa que muestran la columna "Piso": los que tienen
 // piso configurado en `dayPrices` o algún workday pisoOnly.
 export function daysWithFloorOf(activeLabor, isHarvestLabor, isPieceworkLabor, dayPrices, wdMap) {
