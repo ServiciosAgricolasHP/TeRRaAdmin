@@ -1,5 +1,6 @@
 import { getDaySingle } from "../../../utils/cosechaCombos";
 import { isRedDay, isWeekendDate, DEFAULT_BASE_DAY } from "../../../utils/tratoHE";
+import { fmtNumber } from "../../../utils/format";
 import { useCycleDetail } from "../CycleDetailContext";
 
 // Barra de configuración por día de tratoHE
@@ -9,6 +10,8 @@ export function OvertimeDayConfig() {
     dayPrices,
     days,
     isOvertimeDayLabor,
+    overtimeHoursByDate,
+    peopleByDate,
     pricesCollapsed,
     readOnly,
     setDayModeEdit,
@@ -35,6 +38,10 @@ export function OvertimeDayConfig() {
               const cfg = getDaySingle(dayPrices, activeLabor.id, d, "normal");
               const red = isRedDay(d, cfg);
               const isWeekend = isWeekendDate(d);
+              // Cada persona con algo anotado ese día es una jornada, aunque
+              // solo tenga horas extras.
+              const people = peopleByDate.get(d)?.size || 0;
+              const hours = overtimeHoursByDate.get(d) || 0;
               return (
                 <div
                   key={d}
@@ -58,10 +65,16 @@ export function OvertimeDayConfig() {
                   <div className="text-[10px] text-[var(--color-muted)]">
                     Base: ${(cfg.price || activeLabor.baseDayDefault || DEFAULT_BASE_DAY).toLocaleString("es-CL")}
                   </div>
-                  <div className="text-[10px]">
+                  <div className="flex flex-wrap items-center gap-1 text-[10px]">
+                    {people > 0 && (
+                      <span className="text-[var(--color-muted)]">
+                        👥 {people} {people === 1 ? "jornada" : "jornadas"}
+                        {hours > 0 && ` · ${fmtNumber(hours)} HE`}
+                      </span>
+                    )}
                     {cfg.mode === "overtimeOnly" ? (
                       <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">solo HE</span>
-                    ) : (
+                    ) : people === 0 && (
                       <span className="text-[var(--color-muted)]">jornada normal</span>
                     )}
                   </div>
