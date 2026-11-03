@@ -29,6 +29,7 @@ import { qrLockedLaborsOf } from "../utils/harvestSync";
 import { currentRutResolver } from "../utils/workerRut";
 import {
   peopleByDateOf,
+  overtimeHoursByDateOf,
   daysWithFloorOf,
   dayCombosOf,
   dayTiersOf,
@@ -306,6 +307,7 @@ export default function CycleDetail() {
   const wdMap = (activeLabor && workdaysByLabor[activeLabor.id]) || NO_WORKDAYS;
   const shownLaborId = activeLabor?.id;
   const peopleByDate = useMemo(() => peopleByDateOf(workdaysByLabor, shownLaborId), [workdaysByLabor, shownLaborId]);
+  const overtimeHoursByDate = useMemo(() => overtimeHoursByDateOf(workdaysByLabor, shownLaborId), [workdaysByLabor, shownLaborId]);
   // Fechas con al menos un workday de esta labor. El ciclo comparte `days`
   // entre todas sus labores; esto acota en qué fechas se ofrece anotar.
   const activeLaborDatesWithProduction = new Set(
@@ -897,6 +899,7 @@ export default function CycleDetail() {
     orderedGroups,
     overtimeDayMetricsByLabor,
     overtimeDayView,
+    overtimeHoursByDate,
     peopleByDate,
     persistComboConfig,
     persistDayFloor,
