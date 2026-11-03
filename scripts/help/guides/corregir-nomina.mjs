@@ -1,8 +1,8 @@
 // Capturas de la guía "Corregir una nómina"
 // (src/screens/help/guides/corregir-nomina.md): genera una nómina con el
 // ciclo de demo, la recalcula después de una corrección en la grilla, le
-// agrega un ciclo, le saca una labor y muestra cómo sacar o agregar a una
-// persona.
+// cambia un ciclo por otro sin una de sus labores y muestra cómo sacar o
+// agregar a una persona.
 import { correctDemoDay, pinPayrollDates, seedCashWorkers, seedLaborTypes } from "../seed.mjs";
 
 // El modal abierto con ese título.
@@ -51,10 +51,10 @@ export async function run({ page, base, login, shot }) {
 
   // Editar contenido: agregar a una persona, con sus días de otro ciclo.
   await editContent.click();
-  const addCycle = detail.getByRole("button", { name: "+ Agregar ciclo" });
+  const editCycles = detail.getByRole("button", { name: "✎ Editar ciclos" });
   const addPerson = detail.getByRole("button", { name: "+ Agregar persona" });
-  await addCycle.waitFor();
-  await shot(page, "03-editar-contenido", addCycle.locator("xpath=.."), { pad: 8, marks: [addCycle, addPerson] });
+  await editCycles.waitFor();
+  await shot(page, "03-editar-contenido", editCycles.locator("xpath=.."), { pad: 8, marks: [editCycles, addPerson] });
   await addPerson.click();
   const personModal = modal(page, "Agregar persona a la nómina");
   await personModal.getByPlaceholder("🔍 Buscar por nombre o RUT…").fill("Ana");
@@ -67,48 +67,36 @@ export async function run({ page, base, login, shot }) {
   if (await discard.isVisible().catch(() => false)) await discard.click();
   await personModal.waitFor({ state: "detached" });
 
-  // Agregar un ciclo.
-  await addCycle.click();
-  const addModal = modal(page, "Agregar ciclos o labores a la nómina");
-  await checkboxOf(addModal, "Agrícola Santa Elena/Parronal/Ciclo 1").check();
+  // Editar los ciclos: sale el de Los Aromos y entra el de Santa Elena sin
+  // Embalaje, en un solo paso.
+  await editCycles.click();
+  const editModal = modal(page, "Ciclos de la nómina");
+  await editModal.waitFor();
   await page.waitForTimeout(800);
-  await shot(page, "05-agregar-ciclo", addModal, { pad: 0 });
-  await addModal.getByRole("button", { name: /^Agregar \(/ }).click();
-  await addModal.waitFor({ state: "detached", timeout: 60000 });
-  await page.waitForTimeout(2000);
-
-  // El detalle se vuelve a abrir: los montos por labor de lo agregado salen
-  // de su respaldo, que se lee al abrirlo.
-  await detail.getByRole("button", { name: /Cerrar/ }).first().click();
-  await detail.waitFor({ state: "detached" });
-  await page.getByText("2026OctubreSemana41").first().click();
-  await detail.waitFor();
-  await page.waitForTimeout(1500);
-  await detail.getByRole("button", { name: /Editar contenido/ }).first().click();
+  const leaving = checkboxOf(editModal, "Fundo Los Aromos/Cuartel Norte/Ciclo 1");
+  const entering = checkboxOf(editModal, "Agrícola Santa Elena/Parronal/Ciclo 1");
+  await leaving.uncheck();
+  await entering.check();
+  const withoutLabor = checkboxOf(editModal, "Embalaje");
+  await withoutLabor.uncheck();
   await page.waitForTimeout(800);
-
-  // Sacar una labor: se destilda y se recalcula sin ella.
-  const cycleCard = detail.getByText("Agrícola Santa Elena/Parronal/Ciclo 1", { exact: true }).last()
-    .locator("xpath=ancestor::li[1]");
-  await cycleCard.scrollIntoViewIfNeeded();
-  await checkboxOf(cycleCard, "Embalaje").uncheck();
-  const recalcWithout = detail.getByRole("button", { name: "🔄 Recalcular sin esto" });
-  await recalcWithout.waitFor();
-  await shot(page, "06-sacar-labor", [cycleCard, recalcWithout], { pad: 6, marks: [checkboxOf(cycleCard, "Embalaje"), recalcWithout] });
-  await recalcWithout.click();
-  const removeModal = modal(page, "Sacar de la nómina y recalcular");
-  await removeModal.waitFor({ timeout: 60000 });
-  await shot(page, "07-sacar-y-recalcular", removeModal, { pad: 0 });
-  await removeModal.getByRole("button", { name: "Aplicar cambios", exact: true }).click();
-  await removeModal.waitFor({ state: "detached", timeout: 60000 });
+  await shot(page, "05-editar-ciclos", editModal, { pad: 0, marks: [leaving, entering, withoutLabor] });
+  await editModal.getByRole("button", { name: "Revisar cambios", exact: true }).click();
+  const changesModal = modal(page, "Cambiar los ciclos y recalcular");
+  await changesModal.waitFor({ timeout: 60000 });
+  await page.waitForTimeout(500);
+  await shot(page, "06-revisar-cambios", changesModal, { pad: 0 });
+  await changesModal.getByRole("button", { name: "Aplicar cambios", exact: true }).click();
+  await changesModal.waitFor({ state: "detached", timeout: 60000 });
+  await editModal.waitFor({ state: "detached", timeout: 60000 });
   await page.waitForTimeout(1500);
 
   // Sacar a una persona.
   const removeWorker = detail.getByTitle("Sacar trabajador de la nómina").first();
   await removeWorker.scrollIntoViewIfNeeded();
-  await shot(page, "08-sacar-persona", removeWorker.locator("xpath=ancestor::tr[1]"), { pad: 4, marks: [removeWorker] });
+  await shot(page, "07-sacar-persona", removeWorker.locator("xpath=ancestor::tr[1]"), { pad: 4, marks: [removeWorker] });
   await removeWorker.click();
   const confirmModal = modal(page, "Sacar trabajador de la nómina");
-  await shot(page, "09-confirmar-sacar", confirmModal, { pad: 0 });
+  await shot(page, "08-confirmar-sacar", confirmModal, { pad: 0 });
   await confirmModal.getByRole("button", { name: "Cancelar", exact: true }).click();
 }

@@ -26,7 +26,7 @@ Toca **Aplicar cambios** para guardarlo. Recalcular también trae los días que 
 
 1. Toca **Editar contenido** y después **+ Agregar persona**.
 
-![Agregar ciclo y Agregar persona](help/corregir-nomina/03-editar-contenido.webp)
+![Editar ciclos y Agregar persona](help/corregir-nomina/03-editar-contenido.webp)
 
 2. Busca a la persona por nombre o RUT. Aparecen sus días sin pagar, agrupados; los que ya están en una nómina se ven sin casilla.
 3. Marca los días que entran (o **Todos**, en un grupo) y toca **Agregar días**.
@@ -35,48 +35,37 @@ Toca **Aplicar cambios** para guardarlo. Recalcular también trae los días que 
 
 Si tiene anticipos o bonos pendientes, se descuentan o se suman al agregarla.
 
-## Agregar un ciclo o una labor
-<!-- preguntas: agregar un ciclo a la nómina; sumar otro ciclo a una nómina hecha; agregar una labor a la nómina; faltó un ciclo en la nómina -->
+## Agregar o sacar ciclos y labores
+<!-- preguntas: agregar un ciclo a la nómina; sumar otro ciclo a una nómina hecha; agregar una labor a la nómina; faltó un ciclo en la nómina; sacar un ciclo de la nómina; quitar una labor de la nómina; un ciclo no debía ir en la nómina; sacar días de la nómina; cambiar los ciclos de la nómina; cambiar una labor por otra -->
 
-1. Toca **Editar contenido** y después **+ Agregar ciclo**.
-2. Marca el ciclo. Si tiene varias labores, desmarca las que no entran.
-3. Toca **Agregar**.
+1. Toca **Editar contenido** y después **Editar ciclos**. Aparecen los ciclos abiertos, como al generar la nómina. Los de esta nómina vienen marcados, con sus labores y lo que paga cada una.
+2. Marca lo que entra y desmarca lo que sale: ciclos enteros o labores sueltas, todo de una vez. Abajo se ve cuánto entra y cuánto sale; **Deshacer** vuelve a como estaba.
 
-![Agregar un ciclo a la nómina](help/corregir-nomina/05-agregar-ciclo.webp)
+![Un ciclo que sale y otro que entra sin una de sus labores](help/corregir-nomina/05-editar-ciclos.webp)
 
-Quien ya estaba en la nómina suma lo del ciclo nuevo; quien no estaba, entra. Un ciclo que ya está entero en la nómina no aparece en la lista.
+3. Toca **Revisar cambios**. TeRRa muestra lo que entra y lo que sale, quién sale de la nómina, a quién le cambia el monto y quién entra. Toca **Aplicar cambios**.
 
-## Sacar un ciclo o una labor
-<!-- preguntas: sacar un ciclo de la nómina; quitar una labor de la nómina; un ciclo no debía ir en la nómina; sacar días de la nómina -->
+![Cómo queda la nómina con los cambios](help/corregir-nomina/06-revisar-cambios.webp)
 
-1. Toca **Editar contenido**. En **Ciclos de esta nómina**, cada ciclo muestra sus labores, con cuántas personas, cuántas jornadas y cuánto paga cada una.
-2. Desmarca el ciclo entero o las labores que salen. La barra de abajo dice cuánto se saca; **Deshacer** vuelve atrás.
-3. Toca **Recalcular sin esto**.
-
-![Una labor desmarcada para sacarla](help/corregir-nomina/06-sacar-labor.webp)
-
-4. TeRRa muestra lo que se saca y cómo queda cada persona. Toca **Aplicar cambios**.
-
-![Lo que se saca y cómo queda la nómina](help/corregir-nomina/07-sacar-y-recalcular.webp)
-
-Los días de lo que se sacó vuelven a quedar pendientes, para otra nómina. Quien se queda sin nada sale de la nómina. Una nómina no puede quedar sin ciclos: para eso, se elimina.
+Quien ya estaba en la nómina suma lo que entra, y quien no estaba, entra. Los días de lo que sale vuelven a quedar pendientes, para otra nómina, y quien se queda sin nada sale de la nómina. Una nómina no puede quedar sin ciclos: para eso, se elimina.
 
 ## Sacar a una persona
 <!-- preguntas: sacar a un trabajador de la nómina; quitar a alguien de la nómina; una persona no debía cobrar en esta nómina -->
 
 Con **Editar contenido** activo, cada persona tiene una **✕** al final de su fila.
 
-![La ✕ para sacar a una persona](help/corregir-nomina/08-sacar-persona.webp)
+![La ✕ para sacar a una persona](help/corregir-nomina/07-sacar-persona.webp)
 
 Tócala y confirma con **Sacar**. Sus días vuelven a quedar pendientes y sus anticipos vuelven a estar por cobrar. Se puede volver a sumar con **+ Agregar persona**.
 
-![Confirmar que sale de la nómina](help/corregir-nomina/09-confirmar-sacar.webp)
+![Confirmar que sale de la nómina](help/corregir-nomina/08-confirmar-sacar.webp)
 
 ## Qué pasa con los anticipos y bonos
 <!-- preguntas: qué pasa con los anticipos si corrijo la nómina; el anticipo no se descontó entero; anticipo vuelve a quedar pendiente -->
 
 - Si a alguien le baja lo que cobra y su anticipo ya no cabe entero, la parte que no cabe vuelve al mismo anticipo, con sus cuotas, para descontarse en la próxima nómina.
 - Al agregarle días a alguien, se le descuentan los anticipos pendientes que esta nómina todavía no le tocaba. Lo que ya descuenta de un anticipo no crece.
+- Quien entra a la nómina con un ciclo o una labor trae sus anticipos y bonos pendientes, como al generarla.
 - Quien sale de la nómina recupera todos sus anticipos y bonos de esta nómina.
 
 ## Cambiar los nombres de los ciclos en el resumen
@@ -89,4 +78,4 @@ Tócala y confirma con **Sacar**. Sus días vuelven a quedar pendientes y sus an
 
 - **No se puede editar**: la nómina está pagada o tiene las transferencias selladas. Reviértelo desde **⋯** en el historial.
 - **No se puede sacar el último ciclo**: una nómina no queda vacía. Elimínala desde **⋯**.
-- **No aparece un ciclo en + Agregar ciclo**: está cerrado, no tiene nada pendiente (**Sin pendientes**) o ya está entero en esta nómina.
+- **No aparece un ciclo en Editar ciclos**: está cerrado, o no tiene nada pendiente y queda detrás de **Sin pendientes**. Los ciclos de la nómina aparecen siempre.
