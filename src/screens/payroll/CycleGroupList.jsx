@@ -4,8 +4,11 @@ import { PAY_SPLIT_HINT } from "./helpers";
 
 // Los ciclos para elegir, por faena: lo pendiente de cada uno, lo pagado y lo
 // que está en una nómina sin pagar y, al marcarlo, sus labores con lo
-// pendiente de cada una. La usan Generar y "+ Agregar ciclo" del detalle de
-// una nómina; `cycleNote` agrega una línea bajo un ciclo.
+// pendiente de cada una. La usan Generar y "✎ Editar ciclos" del detalle de
+// una nómina; `cycleNote` agrega una línea bajo un ciclo. `payrollPart`
+// (Map(cycleId → { amount, labors }), de `editableCyclesOf`) es lo que la
+// nómina que se edita ya paga de cada ciclo y labor: esos ciclos se pueden
+// desmarcar y volver a marcar aunque no tengan pendiente.
 export function CycleGroupList({
   visibleGroups,
   emptyCount,
@@ -17,11 +20,13 @@ export function CycleGroupList({
   takenSplit = {},
   payrollNameOf = () => "",
   cycleNote = () => null,
+  payrollPart = null,
 }) {
   // "Todos / ninguno" por faena: solo opera sobre los ciclos que están a la
   // vista, así el botón nunca marca algo que el usuario no ve.
+  const canToggle = (r) => r.hasPending || r.isSelected || !!payrollPart?.has(r.cycle.id);
   const toggleGroup = (rows) => {
-    const selectable = rows.filter((r) => r.hasPending || r.isSelected);
+    const selectable = rows.filter(canToggle);
     const allOn = selectable.length > 0 && selectable.every((r) => r.isSelected);
     for (const r of selectable) {
       if (allOn === r.isSelected) toggle(r.cycle.id);
@@ -47,7 +52,7 @@ export function CycleGroupList({
         </div>
       ) : (
         visibleGroups.map(({ faena, rows, groupPending, groupBank, groupCash }) => {
-          const selectable = rows.filter((r) => r.hasPending || r.isSelected);
+          const selectable = rows.filter(canToggle);
           const allOn = selectable.length > 0 && selectable.every((r) => r.isSelected);
           return (
             <div
@@ -109,12 +114,14 @@ export function CycleGroupList({
                   // esa nómina se marca pagada.
                   const taken = takenSplit[c.id] || { paid: 0, inPayroll: 0, openPayrollIds: [] };
                   const note = cycleNote(c);
+                  // Lo que la nómina que se edita ya paga de este ciclo.
+                  const part = payrollPart?.get(c.id);
                   const inPayrollTitle = `En nómina${taken.openPayrollIds.length === 1 ? "" : "s"} que todavía no se marca${taken.openPayrollIds.length === 1 ? "" : "n"} pagada${taken.openPayrollIds.length === 1 ? "" : "s"}: ${taken.openPayrollIds.map((id) => payrollNameOf(id) || id).join(", ")}`;
                   return (
                     <div
                       key={c.id}
                       className={`relative ${isSelected ? "bg-[var(--color-accent-soft)]/40" : ""} ${
-                        hasPending ? "" : "opacity-60"
+                        hasPending || part ? "" : "opacity-60"
                       }`}
                     >
                       {isSelected && (
@@ -125,11 +132,11 @@ export function CycleGroupList({
                           type="checkbox"
                           checked={isSelected}
                           onChange={() => toggle(c.id)}
-                          disabled={!hasPending && !isSelected}
+                          disabled={!hasPending && !isSelected && !part}
                           className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--color-accent)]"
                         />
                         <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium">{c.label || c.id}</div>
+                          <div className={`text-sm font-medium ${part && !isSelected ? "line-through opacity-60" : ""}`}>{c.label || c.id}</div>
                           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-[var(--color-muted)]">
                             {sub && <span>{sub}</span>}
                             {periodLabel && (
@@ -152,13 +159,23 @@ export function CycleGroupList({
                           {isSelected && labors.length > 0 && !allLaborsOn && (
                             <div className="mt-0.5 text-xs text-amber-700 dark:text-amber-400">
                               {noneOn
-                                ? "⚠ Sin labores seleccionadas — no entra a la vista previa"
+                                ? part ? "⚠ Sin labores seleccionadas — sale de la nómina" : "⚠ Sin labores seleccionadas — no entra a la vista previa"
                                 : `Pagar ${selectedLabors.size} de ${labors.length} labores`}
                             </div>
                           )}
                         </div>
                         <div className="shrink-0 text-right" title={splitTitle}>
-                          {hasPending ? (
+                          {part ? (
+                            <>
+                              <div className={`text-sm font-semibold tabular-nums text-[var(--color-accent)] ${isSelected ? "" : "line-through opacity-60"}`}>
+                                {fmtCurrency(part.amount)}
+                              </div>
+                              <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">en esta nómina</div>
+                              {hasPending && (
+                                <div className="text-[10px] tabular-nums text-[var(--color-warning)]">+ {fmtCurrency(stat.unpaid)} pendiente</div>
+                              )}
+                            </>
+                          ) : hasPending ? (
                             <>
                               <div className="text-sm font-semibold tabular-nums text-[var(--color-warning)]">
                                 {fmtCurrency(partialLabors ? pendingOfChosenLabors(c, stat, selectedLaborsByCycle).unpaid : stat.unpaid)}
@@ -185,6 +202,9 @@ export function CycleGroupList({
                             {labors.map((l) => {
                               const on = selectedLabors.has(l.id);
                               const pl = stat.unpaidByLabor?.[l.id];
+                              // Lo que la nómina que se edita ya paga de esta labor.
+                              const lp = part?.labors.get(l.id);
+                              const paidHere = lp && lp.jornadas > 0;
                               return (
                                 <li key={l.id}>
                                   <label className="flex min-h-8 cursor-pointer items-center gap-2 rounded px-1 text-xs hover:bg-[var(--color-accent-soft)]">
@@ -196,18 +216,28 @@ export function CycleGroupList({
                                     />
                                     <span className={`min-w-0 flex-1 truncate ${on ? "" : "text-[var(--color-muted)] line-through"}`}>
                                       {l.name}
+                                      {lp && (
+                                        <span
+                                          className="ml-1 text-[10px] text-[var(--color-accent)]"
+                                          title={lp.inScope ? undefined : "Solo están los días que se agregaron a mano."}
+                                        >
+                                          · {lp.inScope ? "en nómina" : "días a mano"}
+                                        </span>
+                                      )}
                                     </span>
-                                    {pl?.unpaid > 0 && (
+                                    {(paidHere || pl?.unpaid > 0) && (
                                       <span className="shrink-0 tabular-nums text-[var(--color-muted)]">
-                                        {pl.ruts.size} pers.
+                                        {paidHere ? lp.people : pl.ruts.size} pers.
                                       </span>
                                     )}
                                     <span
                                       className={`w-24 shrink-0 text-right tabular-nums ${
-                                        pl?.unpaid > 0 && on ? "font-semibold" : "text-[var(--color-muted)]"
+                                        (paidHere || pl?.unpaid > 0) && on ? "font-semibold" : "text-[var(--color-muted)]"
                                       }`}
                                     >
-                                      {pl?.unpaid > 0 ? fmtCurrency(pl.unpaid) : "sin pendiente"}
+                                      {paidHere
+                                        ? lp.amount == null ? "—" : fmtCurrency(lp.amount)
+                                        : pl?.unpaid > 0 ? fmtCurrency(pl.unpaid) : "sin pendiente"}
                                     </span>
                                   </label>
                                 </li>

@@ -11,10 +11,18 @@ const formatProfileValue = (field, value) => {
 };
 
 // Modal de revisión del recálculo — muestra montos/trabajadores/datos que
-// cambiaron desde que se generó la nómina, antes de escribir nada.
+// cambiaron desde que se generó la nómina, y lo que entra o sale si se
+// editaron sus ciclos, antes de escribir nada.
 export function RecalcModal({ preview, busy, onClose, onConfirm }) {
   if (!preview) return null;
-  const { amountChanges, profileChanges, advanceChanges, newWorkers, leavingWorkers = [], removalLines = [], releasedCount = 0, cycleChanges = [] } = preview;
+  const { amountChanges, profileChanges, advanceChanges, newWorkers, leavingWorkers = [], removalLines = [], additionLines = [], releasedCount = 0, cycleChanges = [] } = preview;
+  const title = additionLines.length && removalLines.length
+    ? "Cambiar los ciclos y recalcular"
+    : additionLines.length
+      ? "Agregar a la nómina y recalcular"
+      : removalLines.length
+        ? "Sacar de la nómina y recalcular"
+        : "Recalcular nómina";
   const fmtRange = ([first, last]) =>
     first ? (last && last !== first ? `${fmtDayShortEs(first)} → ${fmtDayShortEs(last)}` : fmtDayShortEs(first)) : "sin período";
   const fmtCycleValue = (field, value) => (field === "period" ? fmtRange(value) : value || "—");
@@ -22,7 +30,7 @@ export function RecalcModal({ preview, busy, onClose, onConfirm }) {
     <Modal
       open={!!preview}
       onClose={onClose}
-      title={removalLines.length ? "Sacar de la nómina y recalcular" : "Recalcular nómina"}
+      title={title}
       size="lg"
       footer={
         <>
@@ -40,6 +48,17 @@ export function RecalcModal({ preview, busy, onClose, onConfirm }) {
       }
     >
       <div className="max-h-[60vh] space-y-4 overflow-y-auto text-sm">
+        {additionLines.length > 0 && (
+          <div>
+            <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">Entra a la nómina</h4>
+            <ul className="space-y-0.5 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2.5 py-1.5 text-xs">
+              {additionLines.map((line) => (
+                <li key={line}>+ {line}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {removalLines.length > 0 && (
           <div>
             <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">Se saca de la nómina</h4>
@@ -139,6 +158,8 @@ export function RecalcModal({ preview, busy, onClose, onConfirm }) {
                   <tr>
                     <th className="px-2 py-1.5">Trabajador</th>
                     <th className="px-2 py-1.5 text-right">Bruto</th>
+                    <th className="px-2 py-1.5 text-right">Anticipo</th>
+                    <th className="px-2 py-1.5 text-right">Bono</th>
                     <th className="px-2 py-1.5 text-right">Neto</th>
                   </tr>
                 </thead>
@@ -147,6 +168,8 @@ export function RecalcModal({ preview, busy, onClose, onConfirm }) {
                     <tr key={w.key} className="border-t border-[var(--color-border)]">
                       <td className="px-2 py-1.5">{w.name}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(w.gross)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{w.advance > 0 ? `− ${fmtCurrency(w.advance)}` : "—"}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{w.bonus > 0 ? `+ ${fmtCurrency(w.bonus)}` : "—"}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmtCurrency(w.net)}</td>
                     </tr>
                   ))}

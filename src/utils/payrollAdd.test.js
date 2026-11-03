@@ -17,6 +17,7 @@ const {
   asPayrollWorker,
   isRemovedFromPayroll,
   cycleScopeAfterRemoval,
+  cycleScopeAfterEdit,
   payrollCycleBreakdown,
 } = await import("./payrollItem");
 
@@ -167,6 +168,63 @@ describe("sacar ciclos o labores (lo destildado en el detalle)", () => {
     const r = cycleScopeAfterRemoval({ cycleDetails: detalles, cycleIds: ["A", "B", "C"], cycleLabels: ["a", "b", "c"], laborIdsOf });
     expect(r.cycleDetails).toEqual(detalles);
     expect(r.cycleLabels).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("cycleScopeAfterEdit (sacar y agregar ciclos en un solo paso)", () => {
+  const cycles = [
+    { id: "A", label: "Ciclo A", faenaId: "F", subfaenaId: "S", days: ["2026-03-03", "2026-03-02"], labors: [{ id: "L1" }, { id: "L2" }] },
+    { id: "B", label: "Ciclo B", labors: [{ id: "L1" }, { id: "L2" }, { id: "LT" }] },
+    { id: "C", label: "Ciclo C", labors: [{ id: "L1" }, { id: "L2" }] },
+    { id: "D", label: "Ciclo D", labors: [{ id: "L3" }, { id: "L4" }] },
+  ];
+  const faenas = [{ id: "F", name: "Fundo" }];
+  const subfaenas = [{ id: "S", name: "Norte" }];
+  const base = {
+    cycleDetails: [{ id: "B", label: "Ciclo B" }, { id: "C", label: "Ciclo C", laborIds: ["L1"] }],
+    cycleIds: ["B", "C"],
+    cycleLabels: ["Ciclo B", "Ciclo C"],
+    cycles,
+    faenas,
+    subfaenas,
+  };
+
+  it("un ciclo nuevo con todas sus labores entra entero, con sus nombres y su período, al final", () => {
+    const r = cycleScopeAfterEdit({ ...base, added: new Map([["A", new Set(["L1", "L2"])]]) });
+    expect(r.cycleIds).toEqual(["B", "C", "A"]);
+    expect(r.cycleLabels).toEqual(["Ciclo B", "Ciclo C", "Ciclo A"]);
+    expect(r.addedCycleIds).toEqual(["A"]);
+    expect(r.cycleDetails[2]).toEqual({
+      id: "A", label: "Ciclo A", faenaId: "F", faenaName: "Fundo", subfaenaId: "S", subfaenaName: "Norte",
+      firstDay: "2026-03-02", lastDay: "2026-03-03",
+    });
+  });
+
+  it("un ciclo nuevo con algunas labores entra con la lista; a uno que ya estaba se le suman", () => {
+    const r = cycleScopeAfterEdit({ ...base, added: new Map([["D", new Set(["L4"])], ["C", new Set(["L2"])]]) });
+    expect(r.cycleDetails.find((c) => c.id === "D").laborIds).toEqual(["L4"]);
+    expect(r.cycleDetails.find((c) => c.id === "C").laborIds).toEqual(["L1", "L2"]);
+    expect(r.cycleIds).toEqual(["B", "C", "D"]);
+    expect(r.addedCycleIds).toEqual(["D"]);
+  });
+
+  it("saca y agrega a la vez: un ciclo sale entero, otro cambia una labor por otra y entra uno nuevo", () => {
+    const r = cycleScopeAfterEdit({
+      ...base,
+      removed: new Map([["B", true], ["C", new Set(["L1"])]]),
+      added: new Map([["C", new Set(["L2"])], ["A", new Set(["L1"])]]),
+    });
+    expect(r.cycleIds).toEqual(["C", "A"]);
+    expect(r.cycleLabels).toEqual(["Ciclo C", "Ciclo A"]);
+    expect(r.removedCycleIds).toEqual(["B"]);
+    expect(r.cycleDetails.map((c) => [c.id, c.laborIds])).toEqual([["C", ["L2"]], ["A", ["L1"]]]);
+  });
+
+  it("sin cambios, todo queda igual", () => {
+    const r = cycleScopeAfterEdit(base);
+    expect(r.cycleDetails).toEqual(base.cycleDetails);
+    expect(r.cycleIds).toEqual(["B", "C"]);
+    expect(r.addedCycleIds).toEqual([]);
   });
 });
 

@@ -1,6 +1,7 @@
 // Los ciclos en Nómina: lo pendiente de cada ciclo activo, la lista para
 // elegirlos, los ciclos abiertos por faena, cuáles se eligieron y con qué
-// labores, y los ciclos de una nómina tal como van al Excel.
+// labores, lo que cambia al editar los ciclos de una nómina ya creada, y los
+// ciclos de una nómina tal como van al Excel.
 import { isCashBank } from "./banks";
 import { getTratoTierTotals } from "./cosechaCombos";
 import { matchesSearchQuery } from "./textSearch";
@@ -101,9 +102,10 @@ export function pendingOfChosenLabors(cycle, stat, selectedLaborsByCycle) {
 }
 
 // La lista de ciclos para elegir, por faena: los que se ven con la búsqueda y
-// con "Sin pendientes" (un ciclo marcado se ve siempre), lo pendiente de
-// cada uno y de cada faena, y los totales de lo pendiente y de lo elegido.
-export function cycleChecklistOf({ groups, cycleStats, selected, selectedLaborsByCycle, search, showEmpty, subfaenaName }) {
+// con "Sin pendientes" (un ciclo marcado se ve siempre, igual que los de
+// `keep`, que tampoco cuentan como sin pendientes), lo pendiente de cada uno y
+// de cada faena, y los totales de lo pendiente y de lo elegido.
+export function cycleChecklistOf({ groups, cycleStats, selected, selectedLaborsByCycle, search, showEmpty, subfaenaName, keep = null }) {
   const statOf = (id) =>
     cycleStats?.[id] || {
       unpaid: 0, taken: 0, total: 0, firstDay: "", lastDay: "",
@@ -124,13 +126,14 @@ export function cycleChecklistOf({ groups, cycleStats, selected, selectedLaborsB
       const stat = statOf(c.id);
       const isSelected = selected.has(c.id);
       const hasPending = stat.unpaid > 0;
+      const kept = !!keep?.has(c.id);
       if (hasPending) {
         withPending += 1;
         pendingSum += stat.unpaid;
         bankSum += stat.unpaidBank || 0;
         cashSum += stat.unpaidCash || 0;
         unknownSum += stat.unpaidUnknown || 0;
-      } else {
+      } else if (!kept) {
         empty += 1;
       }
       if (isSelected) {
@@ -140,7 +143,7 @@ export function cycleChecklistOf({ groups, cycleStats, selected, selectedLaborsB
         selCash += parte.cash;
         selUnknown += parte.unknown;
       }
-      if (!hasPending && !showEmpty && !isSelected) continue;
+      if (!hasPending && !showEmpty && !isSelected && !kept) continue;
       const sub = subfaenaName(c.subfaenaId);
       if (!matchesSearchQuery(`${c.label || c.id} ${sub} ${faena.name || ""}`, search)) continue;
       if (hasPending) {
@@ -167,49 +170,97 @@ export function cycleChecklistOf({ groups, cycleStats, selected, selectedLaborsB
   };
 }
 
-// Lo que se le puede sumar a una nómina ya creada con "+ Agregar ciclo", en la
-// forma de `cycleChecklistOf`: los ciclos abiertos por faena, cada uno con las
-// labores que todavía no están en la nómina, y lo pendiente de cada ciclo
-// contando solo esas labores. Un ciclo que está entero en la nómina no
-// aparece; uno que está con algunas labores aparece con las que le faltan y va
-// en `partial`. Un ciclo en `cycleIds` sin detalle en `cycleDetails` está
-// entero.
-export function addableCyclesOf({ jobs, cycles, cycleStats = {}, payroll }) {
+// Los ciclos de una nómina ya creada para "✎ Editar ciclos", en la forma de
+// `cycleChecklistOf`: los abiertos por faena, más los de la nómina aunque
+// estén cerrados, cada uno con todas sus labores.
+//
+//   - `initial`: lo que la nómina paga hoy, Map(cycleId → Set de labores): las
+//     de su alcance (`cycleDetails[].laborIds`, o todas si está entero) y las
+//     que tienen días agregados a mano. Un ciclo en `cycleIds` sin detalle en
+//     `cycleDetails` está entero.
+//   - `part`: lo que la nómina paga de cada ciclo y de cada labor, de
+//     `payrollCycleBreakdown`, para mostrarlo junto a lo pendiente.
+export function editableCyclesOf({ jobs, cycles, cycleStats = {}, payroll, cycleBreakdown = [] }) {
   const details = new Map((payroll.cycleDetails || []).map((cd) => [cd.id, cd]));
-  const whole = new Set((payroll.cycleIds || []).filter((id) => !details.has(id)));
+  const inPayroll = new Set([...(payroll.cycleIds || []), ...details.keys()]);
+  const breakdownById = new Map((cycleBreakdown || []).map((c) => [c.id, c]));
   const byJob = new Map(jobs.map((f) => [f.id, { faena: f, cycles: [] }]));
-  const stats = {};
-  const partial = new Set();
+  const initial = new Map();
+  const part = new Map();
   for (const c of cycles) {
-    if (c.status === "closed" || whole.has(c.id)) continue;
-    const inPayroll = details.get(c.id);
-    if (inPayroll && !Array.isArray(inPayroll.laborIds)) continue;
+    const isIn = inPayroll.has(c.id);
+    if (c.status === "closed" && !isIn) continue;
     const group = byJob.get(c.faenaId);
     if (!group) continue;
-    const already = new Set(inPayroll?.laborIds || []);
-    const labors = (c.labors || []).filter((l) => !already.has(l.id));
-    if (labors.length === 0) continue;
-    group.cycles.push(already.size > 0 ? { ...c, labors } : c);
-    if (inPayroll) partial.add(c.id);
-    const stat = cycleStats[c.id];
-    if (stat) stats[c.id] = already.size > 0 ? statOfLabors(stat, labors) : stat;
+    group.cycles.push(c);
+    if (!isIn) continue;
+    const allLaborIds = (c.labors || []).map((l) => l.id);
+    const cd = details.get(c.id);
+    const b = breakdownById.get(c.id);
+    const scoped = cd && Array.isArray(cd.laborIds) ? cd.laborIds : allLaborIds;
+    const withDays = (b?.labors || []).filter((l) => l.jornadas > 0).map((l) => l.id);
+    initial.set(c.id, new Set([...scoped, ...withDays].filter((id) => allLaborIds.includes(id))));
+    part.set(c.id, { amount: b?.amount || 0, labors: new Map((b?.labors || []).map((l) => [l.id, l])) });
   }
-  return { groups: [...byJob.values()].filter((g) => g.cycles.length > 0), stats, partial };
+  return { groups: [...byJob.values()].filter((g) => g.cycles.length > 0), stats: cycleStats, initial, part };
 }
 
-// Lo pendiente de un ciclo contando solo esas labores.
-function statOfLabors(stat, labors) {
-  const out = { ...stat, unpaid: 0, unpaidBank: 0, unpaidCash: 0, unpaidUnknown: 0, unpaidByLabor: {} };
-  for (const l of labors) {
-    const pl = stat.unpaidByLabor?.[l.id];
-    if (!pl) continue;
-    out.unpaidByLabor[l.id] = pl;
-    out.unpaid += pl.unpaid;
-    out.unpaidBank += pl.bank;
-    out.unpaidCash += pl.cash;
-    out.unpaidUnknown += pl.unknown;
+// Lo que cambia entre los ciclos que la nómina paga (`initial`, de
+// `editableCyclesOf`) y lo marcado (`selected`, Map(cycleId → Set de
+// labores)):
+//
+//   - `removed`: Map(cycleId → `true` para el ciclo entero, o un Set con las
+//     labores que salen), la forma que recibe `planPayrollRecalc`. Un ciclo de
+//     la nómina desmarcado, o que queda sin ninguna labor, sale entero.
+//   - `added`: Map(cycleId → Set con las labores que entran), de ciclos nuevos
+//     o de uno que ya estaba.
+export function cycleEditDiff(initial = new Map(), selected = new Map()) {
+  const removed = new Map();
+  const added = new Map();
+  for (const [cid, before] of initial) {
+    if (!selected.has(cid)) {
+      removed.set(cid, true);
+      continue;
+    }
+    const now = selected.get(cid);
+    const out = [...before].filter((id) => !now.has(id));
+    if (out.length === 0) continue;
+    removed.set(cid, now.size > 0 ? new Set(out) : true);
   }
-  return out;
+  for (const [cid, now] of selected) {
+    const before = initial.get(cid) || new Set();
+    const entering = [...now].filter((id) => !before.has(id));
+    if (entering.length) added.set(cid, new Set(entering));
+  }
+  return { removed, added };
+}
+
+// Lo que entra al editar los ciclos de una nómina, para el pie del modal y la
+// vista previa: los ciclos nuevos, las labores que se suman a uno que ya
+// estaba, lo pendiente de lo que entra (un estimado: el monto real sale del
+// recálculo) y una línea por ciclo.
+export function additionSummaryOf(added = new Map(), { cycles = [], stats = {}, initial = new Map() } = {}) {
+  let cyclesIn = 0;
+  let laborsIn = 0;
+  let amount = 0;
+  const lines = [];
+  for (const [cid, chosen] of added) {
+    const c = cycles.find((x) => x.id === cid);
+    if (!c) continue;
+    const all = c.labors || [];
+    const labors = all.filter((l) => chosen.has(l.id));
+    for (const l of labors) amount += stats[cid]?.unpaidByLabor?.[l.id]?.unpaid || 0;
+    const label = c.label || c.id;
+    const names = labors.map((l) => l.name).join(", ");
+    if (initial.has(cid)) {
+      laborsIn += labors.length;
+      lines.push(`${label}: ${names}`);
+    } else {
+      cyclesIn += 1;
+      lines.push(labors.length === all.length ? `${label} (ciclo entero)` : `${label}: ${names}`);
+    }
+  }
+  return { cyclesIn, laborsIn, amount, lines };
 }
 
 // Ciclos activos agrupados por faena.
