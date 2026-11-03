@@ -132,12 +132,20 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
 
   const cycleDetails = payroll.cycleDetails || [];
 
+  const { snapshot, snapshotLoading, reload: reloadSnapshot } = usePayrollSnapshot({ payroll });
+  // Después de editar la nómina, el detalle se arma con la nómina y el JSON
+  // nuevos: los montos por labor salen del JSON.
+  const contentChanged = async () => {
+    await onChanged?.();
+    reloadSnapshot();
+  };
+
   const edit = useContentEdit({
     cycleDetails,
     cycles,
     faenas,
     items,
-    onChanged,
+    onChanged: contentChanged,
     payroll,
     subfaenas,
     toast,
@@ -198,8 +206,6 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
   const [showTitleEditor, setShowTitleEditor] = useState(false);
   const [showCashEstimation, setShowCashEstimation] = useState(false);
 
-  const { snapshot, snapshotLoading } = usePayrollSnapshot({ payroll });
-
 
   // Lo que paga la nómina por ciclo y por labor. El monto de cada labor sale
   // de las jornadas del snapshot; sin snapshot quedan las jornadas y personas.
@@ -228,7 +234,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
   } = usePayrollRecalc({
     cycles,
     faenas,
-    onChanged,
+    onChanged: contentChanged,
     payroll,
     subfaenas,
     toast,
