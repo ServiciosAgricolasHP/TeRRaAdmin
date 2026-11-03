@@ -155,10 +155,14 @@ export async function pruneSnapshot(payrollId, { items, aggregates, cycleIds = n
 // Deja el snapshot igual a una nómina recalculada (`applyPayrollRecalc`): los
 // trabajadores y sus jornadas, ya con la forma del snapshot, los anticipos que
 // la nómina sigue tocando más los que se le aplicaron ahora, y la cabecera al
-// día. Con `cycleIds` (se sacó algo), quedan solo esos ciclos. Con
-// `cycleDetails`, cada ciclo toma de ahí sus nombres vigentes; el período sale
-// de las jornadas (`withPaidPeriods`). Nunca tira.
-export async function syncSnapshotAfterRecalc(payrollId, { items, aggregates, workdays = [], newAdvances = [], cycleIds = null, cycleDetails = null }) {
+// día. Con `cycleIds` (cambiaron los ciclos), quedan solo esos, más los que
+// entran (`addedCycles`, ya con la forma del snapshot). Con `cycleDetails`,
+// cada ciclo toma de ahí sus nombres vigentes; el período sale de las jornadas
+// (`withPaidPeriods`). Nunca tira.
+export async function syncSnapshotAfterRecalc(
+  payrollId,
+  { items, aggregates, workdays = [], newAdvances = [], cycleIds = null, cycleDetails = null, addedCycles = [] },
+) {
   try {
     const snap = await payrollSnapshotsService.getById(payrollId);
     if (!snap) return false;
@@ -180,7 +184,8 @@ export async function syncSnapshotAfterRecalc(payrollId, { items, aggregates, wo
         for (const k of ["label", "faenaName", "subfaenaName"]) if (cd[k]) names[k] = cd[k];
         return { ...c, ...names };
       });
-      patch.cycles = withPaidPeriods(keptCycles, workdays);
+      const ya = new Set(keptCycles.map((c) => c.id));
+      patch.cycles = withPaidPeriods([...keptCycles, ...addedCycles.filter((c) => !ya.has(c.id))], workdays);
     }
     if (snap.payroll && aggregates) patch.payroll = headerTotals(snap.payroll, aggregates, items);
     await payrollSnapshotsService.update(payrollId, patch);

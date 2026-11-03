@@ -141,20 +141,16 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
     payroll,
     subfaenas,
     toast,
-    workers,
   });
   const {
-    addCyclesOpen,
     addWorkerOpen,
     confirmRemove,
     confirmRemoveAction,
     editBusy,
     editMode,
-    handleAddCycles,
     handleAddWorkerDays,
     handleRemoveWorker,
     isPending,
-    setAddCyclesOpen,
     setAddWorkerOpen,
     setConfirmRemove,
     setEditMode,
@@ -204,6 +200,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
 
   const { snapshot, snapshotLoading } = usePayrollSnapshot({ payroll });
 
+
   // Lo que paga la nómina por ciclo y por labor. El monto de cada labor sale
   // de las jornadas del snapshot; sin snapshot quedan las jornadas y personas.
   const cycleBreakdown = useMemo(() => {
@@ -219,8 +216,16 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
     });
   }, [payroll.cycleDetails, payroll.items, cycles, snapshot]);
 
-  const recalc = usePayrollRecalc({
-    cycleBreakdown,
+  const {
+    applyRecalc,
+    cyclesEditOpen,
+    recalcBusy,
+    recalcPreview,
+    setCyclesEditOpen,
+    setRecalcPreview,
+    startCycleEdit,
+    startRecalc,
+  } = usePayrollRecalc({
     cycles,
     faenas,
     onChanged,
@@ -229,14 +234,6 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
     toast,
     workers,
   });
-  const {
-    applyRecalc,
-    recalcBusy,
-    recalcPreview,
-    setRecalcPreview,
-    setRemoval,
-    startRecalc,
-  } = recalc;
 
   const {
     handlePrint,
@@ -345,8 +342,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
               {isPending && (
                 <button
                   onClick={() => {
-                    if (editMode) setRemoval(new Map());
-                    else setCollapsedSections((prev) => new Set([...prev].filter((k) => k !== "cycles")));
+                    if (!editMode) setCollapsedSections((prev) => new Set([...prev].filter((k) => k !== "cycles")));
                     setEditMode(!editMode);
                   }}
                   className={`rounded-md border px-2 py-1 text-xs ${
@@ -354,7 +350,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
                       ? "border-[var(--color-danger)] bg-[var(--color-danger-soft)] text-[var(--color-danger)]"
                       : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
                   }`}
-                  title="Sacar trabajadores, ciclos o labores de esta nómina"
+                  title="Agregar o sacar ciclos, labores o personas de esta nómina"
                 >
                   {editMode ? "✕ Cerrar edición" : "✂ Editar contenido"}
                 </button>
@@ -363,12 +359,12 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
                 <>
                   <button
                     type="button"
-                    disabled={editBusy}
-                    onClick={() => setAddCyclesOpen(true)}
+                    disabled={editBusy || recalcBusy}
+                    onClick={() => setCyclesEditOpen(true)}
                     className="min-h-8 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-xs text-[var(--color-accent)] hover:opacity-80 disabled:opacity-50"
-                    title="Agregar otro ciclo, o las labores que le faltan a uno que ya está"
+                    title="Agregar o sacar ciclos y labores en un solo paso, y recalcular la nómina"
                   >
-                    + Agregar ciclo
+                    ✎ Editar ciclos
                   </button>
                   <button
                     type="button"
@@ -455,9 +451,8 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
             <PayrollCyclesSection
               cycleBreakdown={cycleBreakdown}
               cycleDetails={cycleDetails}
-              edit={edit}
+              editMode={editMode}
               isCollapsed={isCollapsed}
-              recalc={recalc}
               toggleSection={toggleSection}
             />
           )}
@@ -737,17 +732,18 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
           onClose={() => setShowCashEstimation(false)}
         />
       )}
-      {addCyclesOpen && (
+      {cyclesEditOpen && (
         <EditCyclesModal
-          onClose={() => setAddCyclesOpen(false)}
+          onClose={() => setCyclesEditOpen(false)}
           payroll={payroll}
           cycles={cycles}
           faenas={faenas}
           subfaenas={subfaenas}
           cycleStats={cycleStats}
           allPayrolls={allPayrolls}
-          onConfirm={handleAddCycles}
-          busy={editBusy}
+          cycleBreakdown={cycleBreakdown}
+          onConfirm={startCycleEdit}
+          busy={recalcBusy}
         />
       )}
       {addWorkerOpen && (

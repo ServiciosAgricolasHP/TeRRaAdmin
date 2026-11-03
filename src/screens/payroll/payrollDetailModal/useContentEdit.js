@@ -4,8 +4,6 @@ import { removeWorkerFromPayroll, addWorkdaysToPayroll } from "../../../services
 import { liveProfileOf } from "../../../services/payrollRecalc";
 import { workdaysService } from "../../../services";
 import { listPendingForWorkers } from "../../../services/advancesService";
-import { aggregateWorkerAmounts } from "../../../utils/payroll";
-import { resolveCurrentRut } from "../helpers";
 import { planAddWorkdays, withPaidPeriods, cycleDetailOf, stillFreeWorkdays, asPayrollWorker } from "../../../utils/payrollItem";
 import { extendSnapshot, snapshotCycleOf, snapshotWorkdayOf, snapshotAdvanceOf } from "../../../services/payrollSnapshots";
 import { workerKeys } from "../../../services/workersService";
@@ -25,11 +23,12 @@ function additionSummary(lead, added = []) {
   return parts.join(" ");
 }
 
-// "✂ Editar contenido" de una nómina pendiente: sacar a un trabajador, agregar
-// ciclos o labores y agregar los días de una persona.
-export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged, payroll, subfaenas, toast, workers }) {
-  // Modo edición: sacar un trabajador, o destildar ciclos y labores y
-  // recalcular sin ellos. Solo con la nómina pendiente.
+// "✂ Editar contenido" de una nómina pendiente: sacar a un trabajador y
+// agregar los días de una persona. Los ciclos y labores se cambian con
+// "✎ Editar ciclos" (`usePayrollRecalc`).
+export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged, payroll, subfaenas, toast }) {
+  // Modo edición: sacar un trabajador, agregar personas y editar los ciclos.
+  // Solo con la nómina pendiente.
   const isPending = payroll.status !== "paid";
   const [editMode, setEditMode] = useState(false);
   const [editBusy, setEditBusy] = useState(false);
@@ -55,101 +54,6 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
     const cr = confirmRemove;
     setConfirmRemove(null);
     if (cr) doRemoveWorker(cr.target);
-  };
-
-  // Datos de cuenta y grupo de la ficha del trabajador: con estos entra quien
-  // se agrega a la nómina, y contra estos compara Recalcular.
-  const workerByKey = (key) => workers.find((w) => w.id === key) || workers.find((w) => w.rut === key);
-  const profileForAgg = (a) => {
-    const w = workerByKey(a.workerId || a.rut) || workers.find((x) => x.id === a.rut);
-    return w ? liveProfileOf(w) : null;
-  };
-
-  // Agregar ciclos o labores (de la misma u otra subfaena) a una nómina ya
-  // creada. `selection` es [{ cycleId, laborIds }]: se eligen las labores, y
-  // un ciclo que ya está en la nómina con algunas aparece con las que le
-  // faltan. La cuenta vive en `planAddWorkdays` (src/utils/payrollItem.js):
-  // quien ya está suma la producción y los anticipos pendientes que esta
-  // nómina no le tocaba; quien no está entra con el reparto completo.
-  const [addCyclesOpen, setAddCyclesOpen] = useState(false);
-  const handleAddCycles = async (selection) => {
-    if (!selection?.length || editBusy) return;
-    setEditBusy(true);
-    const { error: err } = await attempt(async () => {
-      const chosenLabors = new Map(selection.map((s) => [s.cycleId, new Set(s.laborIds)]));
-      const cycleIdsToAdd = [...chosenLabors.keys()];
-      const selectedCycles = cycles.filter((c) => chosenLabors.has(c.id));
-      const laborTypeById = new Map();
-      for (const cycle of selectedCycles) {
-        for (const labor of cycle.labors || []) laborTypeById.set(labor.id, labor.type);
-      }
-
-      // Directo de Firestore, sin caché: de acá sale lo que se etiqueta.
-      const newWorkdays = [];
-      for (let i = 0; i < cycleIdsToAdd.length; i += 10) {
-        const chunk = cycleIdsToAdd.slice(i, i + 10);
-        const wds = await workdaysService.list({ wheres: [["cycleId", "in", chunk]] });
-        for (const wd of wds) {
-          if (wd.payrollId) continue;
-          if (String(wd.workerRut || "").startsWith("TEMP-")) continue;
-          if (!chosenLabors.get(wd.cycleId)?.has(wd.laborId)) continue;
-          newWorkdays.push(wd);
-        }
-      }
-      const pendingAdvances = await listPendingForWorkers(
-        aggregateWorkerAmounts(newWorkdays, laborTypeById).map(resolveCurrentRut(workers)),
-      );
-      const plan = planAddWorkdays({
-        items,
-        workdays: newWorkdays,
-        laborTypeById,
-        pendingAdvances,
-        profileFor: profileForAgg,
-      });
-      if (plan.workdayIds.length === 0) {
-        toast.warning("No hay producción disponible para agregar en esas labores (ya está en otra nómina o no tiene monto).");
-        return;
-      }
-
-      // El período de cada ciclo es el de los días que se agregan; en uno que
-      // ya estaba, el servicio lo estira para cubrirlos.
-      const includedIds = new Set(plan.workdayIds);
-      const addedWorkdays = newWorkdays.filter((wd) => includedIds.has(wd.id));
-      const cycleDetailsToAdd = withPaidPeriods(selectedCycles.map((c) => {
-        const detail = cycleDetailOf(c, { faenas, subfaenas });
-        const allLaborIds = (c.labors || []).map((l) => l.id);
-        const laborIds = allLaborIds.filter((id) => chosenLabors.get(c.id).has(id));
-        // Entero solo si es nuevo en la nómina y se eligieron todas sus
-        // labores; si no, Recalcular traería después lo que se dejó afuera.
-        const alreadyIn = cycleDetails.some((cd) => cd.id === c.id);
-        return !alreadyIn && laborIds.length === allLaborIds.length ? detail : { ...detail, laborIds };
-      }), addedWorkdays);
-
-      const aggregates = await addWorkdaysToPayroll(payroll.id, {
-        items: plan.items,
-        cycleDetailsToAdd,
-        workdayIds: plan.workdayIds,
-        workdays: addedWorkdays,
-        advanceApplications: plan.newAdvanceApplications,
-      });
-      const advanceById = new Map(pendingAdvances.map((a) => [a.id, a]));
-      await extendSnapshot(payroll.id, {
-        items: plan.items,
-        aggregates,
-        cycles: cycleDetailsToAdd.map((cd) => snapshotCycleOf(cd, selectedCycles.find((c) => c.id === cd.id))),
-        workdays: addedWorkdays.map(snapshotWorkdayOf),
-        advances: plan.newAdvanceApplications
-          .map((x) => advanceById.get(x.advanceId))
-          .filter(Boolean)
-          .map(snapshotAdvanceOf),
-      });
-
-      setAddCyclesOpen(false);
-      await onChanged?.();
-      toast.success(additionSummary(`${selectedCycles.length} ciclo(s) agregado(s) a la nómina.`, plan.added));
-    });
-    if (err) toast.error(`Error al agregar ciclos: ${err?.message || err}`);
-    setEditBusy(false);
   };
 
   // Agregar los días puntuales de una persona, de cualquier ciclo abierto,
@@ -234,17 +138,14 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
     setEditBusy(false);
   };
   return {
-    addCyclesOpen,
     addWorkerOpen,
     confirmRemove,
     confirmRemoveAction,
     editBusy,
     editMode,
-    handleAddCycles,
     handleAddWorkerDays,
     handleRemoveWorker,
     isPending,
-    setAddCyclesOpen,
     setAddWorkerOpen,
     setConfirmRemove,
     setEditMode,

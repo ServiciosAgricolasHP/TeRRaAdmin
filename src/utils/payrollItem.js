@@ -463,6 +463,46 @@ export function cycleScopeAfterRemoval({ cycleDetails = [], cycleIds = null, cyc
   };
 }
 
+// Los ciclos de la nómina después de editarlos en un solo paso: primero sale
+// `removed` (ver `cycleScopeAfterRemoval`) y después entra `added`,
+// Map(cycleId → Set de labores). Un ciclo nuevo entra entero si se eligieron
+// todas sus labores y con la lista si no; a uno que ya estaba se le suman las
+// labores (`mergeCycleDetails`). Los ciclos nuevos van al final de `cycleIds` y
+// `cycleLabels`, y quedan en `addedCycleIds`.
+export function cycleScopeAfterEdit({
+  cycleDetails = [],
+  cycleIds = null,
+  cycleLabels = null,
+  removed = new Map(),
+  added = new Map(),
+  cycles = [],
+  faenas = [],
+  subfaenas = [],
+}) {
+  const laborIdsOf = (cid) => (cycles.find((c) => c.id === cid)?.labors || []).map((l) => l.id);
+  const afterRemoval = cycleScopeAfterRemoval({ cycleDetails, cycleIds, cycleLabels, removed, laborIdsOf });
+  const present = new Set([...afterRemoval.cycleIds, ...afterRemoval.cycleDetails.map((cd) => cd.id)]);
+  const toAdd = [];
+  for (const [cid, chosen] of added || []) {
+    const cycle = cycles.find((c) => c.id === cid);
+    const all = laborIdsOf(cid);
+    const laborIds = all.filter((id) => chosen?.has(id));
+    if (!cycle || laborIds.length === 0) continue;
+    const detail = cycleDetailOf(cycle, { faenas, subfaenas });
+    toAdd.push(!present.has(cid) && laborIds.length === all.length ? detail : { ...detail, laborIds });
+  }
+  const nextDetails = mergeCycleDetails(afterRemoval.cycleDetails, toAdd);
+  const addedCycleIds = toAdd.map((cd) => cd.id).filter((id) => !present.has(id));
+  const labelOf = (id) => nextDetails.find((cd) => cd.id === id)?.label || id;
+  return {
+    cycleDetails: nextDetails,
+    cycleIds: [...afterRemoval.cycleIds, ...addedCycleIds],
+    cycleLabels: [...afterRemoval.cycleLabels, ...addedCycleIds.map(labelOf)],
+    removedCycleIds: afterRemoval.removedCycleIds,
+    addedCycleIds,
+  };
+}
+
 // Firestore rechaza `undefined`: un ciclo entero se guarda SIN `laborIds`, no
 // con `laborIds: undefined`.
 function conLabores(cd, laborIds) {
