@@ -14,7 +14,7 @@ import { PAY_SPLIT_HINT, PAY_UNKNOWN_HINT } from "./helpers";
 //
 // Se monta solo mientras está abierto, así cada apertura arranca con el estado
 // limpio.
-export function AddCyclesModal({ onClose, payroll, cycles, faenas, subfaenas, cycleStats = {}, allPayrolls = [], onConfirm, busy }) {
+export function EditCyclesModal({ onClose, payroll, cycles, faenas, subfaenas, cycleStats = {}, allPayrolls = [], onConfirm, busy }) {
   // cycleId → labores elegidas. Un ciclo marcado puede quedar sin labores, y
   // ese no se agrega.
   const [selected, setSelected] = useState(() => new Map());

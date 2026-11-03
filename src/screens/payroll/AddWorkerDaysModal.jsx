@@ -34,7 +34,7 @@ function rutDigits(s) {
 //     elegido. `previous` tiene lo que ya se le eligió a cada persona, para
 //     poder corregirlo, e `initialWorker` abre el modal directo en una.
 //
-// Se monta solo mientras está abierto, igual que `AddCyclesModal`.
+// Se monta solo mientras está abierto, igual que `EditCyclesModal`.
 export function AddWorkerDaysModal({
   onClose,
   payroll = null,

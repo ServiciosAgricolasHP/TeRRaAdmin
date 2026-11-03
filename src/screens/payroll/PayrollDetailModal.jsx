@@ -25,7 +25,7 @@ import {
   summaryCycleName,
 } from "../../utils/payrollDetail";
 import { fmtCurrency } from "../../utils/format";
-import { AddCyclesModal } from "./AddCyclesModal";
+import { EditCyclesModal } from "./EditCyclesModal";
 import { AddWorkerDaysModal } from "./AddWorkerDaysModal";
 import { CashEstimationModal } from "./CashEstimationModal";
 import { PAY_STATE_PILL, payStateOf, paymentDates } from "./payState";
@@ -738,7 +738,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
         />
       )}
       {addCyclesOpen && (
-        <AddCyclesModal
+        <EditCyclesModal
           onClose={() => setAddCyclesOpen(false)}
           payroll={payroll}
           cycles={cycles}
