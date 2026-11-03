@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  activeCyclesByJob, addableCyclesOf, chosenCyclesOf, cycleChecklistOf, cycleStatsOf, exportCyclesOf, laborScopeOf,
+  activeCyclesByJob, additionSummaryOf, chosenCyclesOf, cycleEditDiff, cycleChecklistOf, cycleStatsOf, editableCyclesOf, exportCyclesOf, laborScopeOf,
   pendingOfChosenLabors,
 } from "./payrollCycles";
 
@@ -109,7 +109,7 @@ describe("cycleChecklistOf", () => {
   });
 });
 
-describe("addableCyclesOf", () => {
+describe("editableCyclesOf", () => {
   const jobs = [{ id: "F1" }, { id: "F2" }];
   const labors = (...ids) => ids.map((id) => ({ id, name: `Labor ${id}` }));
   const all = [
@@ -120,43 +120,114 @@ describe("addableCyclesOf", () => {
     { id: "E", faenaId: "F2", status: "closed", labors: labors("L8") },
     { id: "G", faenaId: "F9", labors: labors("L9") },
     { id: "H", faenaId: "F1", labors: labors("L10") },
+    { id: "K", faenaId: "F1", status: "closed", labors: labors("L11") },
   ];
-  const pl = (unpaid, bank, cash, unknown) => ({ unpaid, bank, cash, unknown, ruts: new Set(["X"]) });
-  const cycleStats = {
-    A: { unpaid: 600, unpaidBank: 300, unpaidCash: 200, unpaidUnknown: 100, unpaidByLabor: { L1: pl(100, 100, 0, 0), L2: pl(200, 0, 200, 0), L3: pl(300, 200, 0, 100) } },
-    C: { unpaid: 70, unpaidBank: 70, unpaidCash: 0, unpaidUnknown: 0, unpaidByLabor: { L5: pl(70, 70, 0, 0) } },
-  };
+  const cycleStats = { A: { unpaid: 600 } };
   const payroll = {
-    // A con L1, B entero en cycleDetails, C solo por días agregados a mano,
-    // H entero sin detalle (nómina antigua).
-    cycleIds: ["A", "B", "C", "H"],
-    cycleDetails: [{ id: "A", laborIds: ["L1"] }, { id: "B" }, { id: "C", laborIds: [] }],
+    // A con L1, B entero en cycleDetails, C solo por días agregados a mano en
+    // L6, H entero sin detalle (nómina antigua) y K cerrado pero en la nómina.
+    cycleIds: ["A", "B", "C", "H", "K"],
+    cycleDetails: [{ id: "A", laborIds: ["L1"] }, { id: "B" }, { id: "C", laborIds: [] }, { id: "K" }],
   };
-  const r = addableCyclesOf({ jobs, cycles: all, cycleStats, payroll });
+  const lab = (id, jornadas, amount) => ({ id, jornadas, people: jornadas ? 1 : 0, amount, inScope: true });
+  const cycleBreakdown = [
+    { id: "A", amount: 100, labors: [lab("L1", 2, 100)] },
+    { id: "B", amount: 50, labors: [lab("L4", 1, 50)] },
+    { id: "C", amount: 30, labors: [{ ...lab("L6", 1, 30), inScope: false }] },
+  ];
+  const r = editableCyclesOf({ jobs, cycles: all, cycleStats, payroll, cycleBreakdown });
 
-  it("deja afuera lo que está entero en la nómina, lo cerrado y lo de faenas que no están", () => {
-    expect(r.groups.map((g) => [g.faena.id, g.cycles.map((c) => c.id)])).toEqual([["F1", ["A"]], ["F2", ["C", "D"]]]);
+  it("muestra los abiertos y los de la nómina aunque estén cerrados, sin los de faenas que no están", () => {
+    expect(r.groups.map((g) => [g.faena.id, g.cycles.map((c) => c.id)])).toEqual([["F1", ["A", "B", "H", "K"]], ["F2", ["C", "D"]]]);
+    expect(r.groups[0].cycles[0]).toBe(all[0]);
+    expect(r.stats).toBe(cycleStats);
   });
 
-  it("un ciclo que ya está muestra solo las labores que le faltan, y lo pendiente de esas", () => {
-    const a = r.groups[0].cycles[0];
-    expect(a.labors.map((l) => l.id)).toEqual(["L2", "L3"]);
-    expect([r.stats.A.unpaid, r.stats.A.unpaidBank, r.stats.A.unpaidCash, r.stats.A.unpaidUnknown]).toEqual([500, 200, 200, 100]);
-    expect(Object.keys(r.stats.A.unpaidByLabor)).toEqual(["L2", "L3"]);
+  it("parte con lo que la nómina paga: su alcance y las labores con días agregados a mano", () => {
+    expect([...r.initial].map(([id, set]) => [id, [...set]])).toEqual([
+      ["A", ["L1"]],
+      ["B", ["L4"]],
+      ["C", ["L6"]],
+      ["H", ["L10"]],
+      ["K", ["L11"]],
+    ]);
   });
 
-  it("un ciclo que está solo por días a mano sigue con todas sus labores y su pendiente", () => {
-    expect(r.groups[1].cycles[0]).toBe(all[2]);
-    expect(r.stats.C).toBe(cycleStats.C);
-    expect([...r.partial]).toEqual(["A", "C"]);
+  it("guarda lo que la nómina paga de cada ciclo y de cada labor", () => {
+    expect(r.part.get("A").amount).toBe(100);
+    expect(r.part.get("C").labors.get("L6")).toMatchObject({ amount: 30, inScope: false });
+    expect(r.part.get("H")).toEqual({ amount: 0, labors: new Map() });
+    expect(r.part.has("D")).toBe(false);
   });
 
-  it("lo pendiente que da la lista es el de las labores que faltan", () => {
+  it("los ciclos de la nómina se ven aunque no tengan pendiente, y no cuentan como sin pendientes", () => {
     const list = cycleChecklistOf({
-      groups: r.groups, cycleStats: r.stats, selected: new Set(["A"]), selectedLaborsByCycle: new Map([["A", new Set(["L2", "L3"])]]),
-      search: "", showEmpty: false, subfaenaName: () => "",
+      groups: r.groups, cycleStats: r.stats, selected: new Set(), selectedLaborsByCycle: new Map(),
+      search: "", showEmpty: false, subfaenaName: () => "", keep: r.part,
     });
-    expect([list.totalPending, list.selectedTotal, list.emptyCount]).toEqual([570, 500, 1]);
+    expect(list.visibleGroups.map((g) => [g.faena.id, g.rows.map((row) => row.cycle.id)])).toEqual([["F1", ["A", "B", "H", "K"]], ["F2", ["C"]]]);
+    expect(list.emptyCount).toBe(1);
+  });
+});
+
+describe("cycleEditDiff", () => {
+  const initial = new Map([
+    ["A", new Set(["L1", "L2"])],
+    ["B", new Set(["L4"])],
+    ["C", new Set()],
+  ]);
+  const sel = (entries) => new Map(entries.map(([id, labs]) => [id, new Set(labs)]));
+  const plain = ({ removed, added }) => ({
+    removed: [...removed].map(([id, r]) => [id, r === true ? true : [...r]]),
+    added: [...added].map(([id, set]) => [id, [...set]]),
+  });
+
+  it("sin cambios no saca ni agrega nada", () => {
+    expect(plain(cycleEditDiff(initial, sel([["A", ["L1", "L2"]], ["B", ["L4"]], ["C", []]])))).toEqual({ removed: [], added: [] });
+  });
+
+  it("un ciclo desmarcado, o que queda sin labores, sale entero", () => {
+    expect(plain(cycleEditDiff(initial, sel([["A", []], ["C", []]])))).toEqual({ removed: [["A", true], ["B", true]], added: [] });
+  });
+
+  it("saca las labores desmarcadas y agrega las nuevas, también en el mismo ciclo", () => {
+    const diff = cycleEditDiff(initial, sel([["A", ["L2", "L3"]], ["B", ["L4"]], ["C", ["L5"]], ["D", ["L7"]]]));
+    expect(plain(diff)).toEqual({
+      removed: [["A", ["L1"]]],
+      added: [["A", ["L3"]], ["C", ["L5"]], ["D", ["L7"]]],
+    });
+  });
+
+  it("cambiar todas las labores de un ciclo por otras no lo saca entero", () => {
+    expect(plain(cycleEditDiff(initial, sel([["A", ["L3"]], ["B", ["L4"]], ["C", []]])))).toEqual({
+      removed: [["A", ["L1", "L2"]]],
+      added: [["A", ["L3"]]],
+    });
+  });
+});
+
+describe("additionSummaryOf", () => {
+  const cycles = [
+    { id: "A", label: "Ciclo A", labors: [{ id: "L1", name: "Poda" }, { id: "L2", name: "Riego" }] },
+    { id: "D", label: "Ciclo D", labors: [{ id: "L7", name: "Cosecha" }] },
+    { id: "E", label: "Ciclo E", labors: [{ id: "L8", name: "Poda" }, { id: "L9", name: "Amarre" }] },
+  ];
+  const pl = (unpaid) => ({ unpaid });
+  const stats = { A: { unpaidByLabor: { L2: pl(40) } }, D: { unpaidByLabor: { L7: pl(100) } }, E: { unpaidByLabor: { L8: pl(5), L9: pl(7) } } };
+  const initial = new Map([["A", new Set(["L1"])]]);
+
+  it("cuenta ciclos nuevos y labores sumadas, con lo pendiente de lo que entra", () => {
+    const added = new Map([["A", new Set(["L2"])], ["D", new Set(["L7"])], ["E", new Set(["L9"])]]);
+    expect(additionSummaryOf(added, { cycles, stats, initial })).toEqual({
+      cyclesIn: 2,
+      laborsIn: 1,
+      amount: 147,
+      lines: ["Ciclo A: Riego", "Ciclo D (ciclo entero)", "Ciclo E: Amarre"],
+    });
+  });
+
+  it("sin nada que entre queda en cero", () => {
+    expect(additionSummaryOf(new Map(), { cycles, stats, initial })).toEqual({ cyclesIn: 0, laborsIn: 0, amount: 0, lines: [] });
   });
 });
 

@@ -1,12 +1,13 @@
 // Recalcular una nómina pendiente: compararla contra la producción vigente de
-// sus ciclos y dejarla como si se armara hoy. También es la forma de sacarle
-// ciclos o labores: lo que se saca (`removed`) no entra a la cuenta, así la
-// nómina queda como si se hubiera armado sin eso.
+// sus ciclos y dejarla como si se armara hoy. También es la forma de cambiarle
+// los ciclos o las labores en un solo paso: lo que se saca (`removed`) no entra
+// a la cuenta y lo que se agrega (`added`) entra a su alcance, así la nómina
+// queda como si se hubiera armado con esos ciclos.
 //
 // `planPayrollRecalc` arma la vista previa sin escribir nada y
 // `applyPayrollRecalc` la guarda. La regla de cada parte vive en
 // src/utils/payrollItem.js (`planRecalcExisting`, `allocateAdvances`,
-// `inRecalcScope`, `cycleScopeAfterRemoval`).
+// `inRecalcScope`, `cycleScopeAfterEdit`).
 import { workdaysService } from "./index";
 import {
   payrollsService,
@@ -23,7 +24,7 @@ import {
   advanceRemaining,
   advanceSign,
 } from "./advancesService";
-import { syncSnapshotAfterRecalc, snapshotWorkdayOf, snapshotAdvanceOf } from "./payrollSnapshots";
+import { syncSnapshotAfterRecalc, snapshotCycleOf, snapshotWorkdayOf, snapshotAdvanceOf } from "./payrollSnapshots";
 import { aggregateWorkerAmounts, normalizeLeader } from "../utils/payroll";
 import {
   allocateAdvances,
@@ -33,7 +34,7 @@ import {
   payrollLaborScope,
   inRecalcScope,
   isRemovedFromPayroll,
-  cycleScopeAfterRemoval,
+  cycleScopeAfterEdit,
   withPaidPeriods,
   withLiveNames,
   cycleDetailChanges,
@@ -69,45 +70,55 @@ const PROFILE_FIELDS = [
 ];
 
 // Vista previa del recálculo. Trae las jornadas vigentes de los ciclos de la
-// nómina, de las labores que abarca (`inRecalcScope`), menos lo que se saca, y
-// las compara con lo guardado: ediciones o días nuevos, trabajadores nuevos
-// con producción (entran como en "+ Agregar ciclo"), anticipos o bonos
-// cargados después, datos de cuenta o grupo que cambiaron en la ficha, y el
-// nombre, la faena, la subfaena y el período de cada ciclo (`cycleChanges`,
-// ver `withLiveNames` y `withPaidPeriods`). Si el
-// bruto de alguien baja, lo ya descontado se re-encaja y lo que no cabe vuelve
-// al mismo anticipo; quien se queda sin producción sale.
+// nómina y de los que se agregan, de las labores que abarca después del cambio
+// (`inRecalcScope`), menos lo que se saca, y las compara con lo guardado:
+// ediciones o días nuevos, trabajadores nuevos con producción (entran con el
+// reparto completo, como al generar), anticipos o bonos cargados después,
+// datos de cuenta o grupo que cambiaron en la ficha, y el nombre, la faena, la
+// subfaena y el período de cada ciclo (`cycleChanges`, ver `withLiveNames` y
+// `withPaidPeriods`). Si el bruto de alguien baja, lo ya descontado se
+// re-encaja y lo que no cabe vuelve al mismo anticipo; quien se queda sin
+// producción sale.
 //
 // `cycles`, `faenas`, `subfaenas` y `workers` son las listas ya cargadas en
-// pantalla. Devuelve
-// `empty: true` si no hay nada que cambiar. Tira si sacar `removed` deja la
-// nómina sin ciclos o sin nadie: para eso se elimina la nómina.
-export async function planPayrollRecalc(payroll, { cycles = [], faenas = [], subfaenas = [], workers = [], removed = new Map() } = {}) {
+// pantalla; `removed` y `added`, lo que cambia en los ciclos (ver
+// `cycleEditDiff`, src/utils/payrollCycles.js). Devuelve `empty: true` si no
+// hay nada que cambiar. Tira si el cambio deja la nómina sin ciclos o sin
+// nadie: para eso se elimina la nómina.
+export async function planPayrollRecalc(
+  payroll,
+  { cycles = [], faenas = [], subfaenas = [], workers = [], removed = new Map(), added = new Map() } = {},
+) {
   const items = payroll.items || [];
   const cycleDetails = payroll.cycleDetails || [];
-  const recalcCycleIds = payroll.cycleIds || cycleDetails.map((c) => c.id);
-  const laborTypeById = new Map();
-  for (const cycle of cycles.filter((c) => recalcCycleIds.includes(c.id))) {
-    for (const labor of cycle.labors || []) laborTypeById.set(labor.id, labor.type);
-  }
 
-  const scope = removed.size
-    ? cycleScopeAfterRemoval({
+  const scope = removed.size || added.size
+    ? cycleScopeAfterEdit({
         cycleDetails,
         cycleIds: payroll.cycleIds,
         cycleLabels: payroll.cycleLabels,
         removed,
-        laborIdsOf: (cid) => (cycles.find((c) => c.id === cid)?.labors || []).map((l) => l.id),
+        added,
+        cycles,
+        faenas,
+        subfaenas,
       })
     : null;
   if (scope && scope.cycleIds.length === 0) {
     throw new Error("Eso deja la nómina sin ciclos: para sacar todo, elimina la nómina.");
   }
+  const addedIds = new Set(scope?.addedCycleIds || []);
+  const recalcCycleIds = [...(payroll.cycleIds || cycleDetails.map((c) => c.id)), ...addedIds];
+  const laborTypeById = new Map();
+  for (const cycle of cycles.filter((c) => recalcCycleIds.includes(c.id))) {
+    for (const labor of cycle.labors || []) laborTypeById.set(labor.id, labor.type);
+  }
 
-  // Lo etiquetado con esta nómina, más lo pendiente de las labores que abarca.
-  // Lo que se dejó afuera al generarla o al agregarle cosas no vuelve a entrar
-  // solo. Lo sacado se separa: si está etiquetado con la nómina, se suelta.
-  const alcance = payrollLaborScope(cycleDetails);
+  // Lo etiquetado con esta nómina, más lo pendiente de las labores que abarca
+  // después del cambio. Lo que se dejó afuera al generarla o al agregarle
+  // cosas no vuelve a entrar solo. Lo sacado se separa: si está etiquetado con
+  // la nómina, se suelta.
+  const alcance = payrollLaborScope(scope ? scope.cycleDetails : cycleDetails);
   const current = [];
   const released = [];
   for (let i = 0; i < recalcCycleIds.length; i += 10) {
@@ -131,7 +142,7 @@ export async function planPayrollRecalc(payroll, { cycles = [], faenas = [], sub
   const claveDe = (x) => rutOf(x.rut, x.workerId);
 
   // Trabajadores con producción en estos ciclos que todavía no están en la
-  // nómina: mismo criterio que "+ Agregar ciclo" para uno nuevo.
+  // nómina: entra quien tiene bruto, igual que al generar.
   const newWorkerAggs = aggregates.filter((a) => a.total > 0 && !existingByKey.has(a.workerId || a.rut));
 
   // Anticipos y bonos pendientes de todos los involucrados: uno creado
@@ -281,7 +292,7 @@ export async function planPayrollRecalc(payroll, { cycles = [], faenas = [], sub
       workdayIds: a.workdayIds || [],
     };
     newWorkerItems.push(item);
-    newWorkers.push({ key, rut: a.rut, name: item.name, gross: grossInt, net: item.amount });
+    newWorkers.push({ key, rut: a.rut, name: item.name, gross: grossInt, advance: anticiposTotal, bonus: bonosTotal, net: item.amount });
   }
 
   const mergedItems = [
@@ -301,7 +312,8 @@ export async function planPayrollRecalc(payroll, { cycles = [], faenas = [], sub
     withLiveNames(prevDetails, { cycles, faenas, subfaenas }),
     current.filter((wd) => paidIds.has(wd.id)),
   );
-  const cycleChanges = cycleDetailChanges(prevDetails, nextCycleDetails);
+  // Un ciclo que entra no tiene un antes con qué compararse.
+  const cycleChanges = cycleDetailChanges(prevDetails.filter((cd) => !addedIds.has(cd.id)), nextCycleDetails);
   const finalIds = scope ? scope.cycleIds : recalcCycleIds;
   const prevLabels = scope ? scope.cycleLabels : payroll.cycleLabels || [];
   const labelById = new Map(nextCycleDetails.map((cd) => [cd.id, cd.label]));
@@ -336,13 +348,17 @@ export async function planPayrollRecalc(payroll, { cycles = [], faenas = [], sub
     cycleDetails: nextCycleDetails,
     cycleLabels: nextCycleLabels,
     cycleChanges,
+    // Los ciclos que entran, con la forma del snapshot.
+    addedSnapshotCycles: nextCycleDetails
+      .filter((cd) => addedIds.has(cd.id))
+      .map((cd) => snapshotCycleOf(cd, cycles.find((c) => c.id === cd.id))),
   };
 }
 
 // Guarda una vista previa de `planPayrollRecalc`. Mismo orden que "Generar":
-// primero el documento de la nómina (con los ciclos que le quedan, si se sacó
-// algo, con sus nombres y su período al día), después las jornadas, los
-// anticipos y el snapshot.
+// primero el documento de la nómina (con sus ciclos después del cambio, con
+// sus nombres y su período al día), después las jornadas, los anticipos y el
+// snapshot.
 export async function applyPayrollRecalc(payrollId, plan) {
   const p = await payrollsService.getById(payrollId);
   if (!p) throw new Error("Nómina no encontrada");
@@ -357,6 +373,7 @@ export async function applyPayrollRecalc(payrollId, plan) {
     cycleDetails = null,
     cycleLabels = null,
     cycleChanges = [],
+    addedSnapshotCycles = [],
   } = plan;
 
   const aggregates = recalcPayrollAggregates(items);
@@ -393,6 +410,7 @@ export async function applyPayrollRecalc(payrollId, plan) {
     newAdvances: pendingAdvances.filter((a) => nuevos.has(a.id)).map(snapshotAdvanceOf),
     cycleIds: scope ? scope.cycleIds : null,
     cycleDetails: nextDetails,
+    addedCycles: addedSnapshotCycles,
   });
   return aggregates;
 }
