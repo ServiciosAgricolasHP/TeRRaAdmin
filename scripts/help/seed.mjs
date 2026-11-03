@@ -68,7 +68,7 @@ export async function seedDemo() {
   for (const w of DEMO_WORKERS) {
     await db.collection("worker").doc(w.id).set({
       rut: w.rut, name: w.name, groupLeader: [w.leader], email: "", idQr: [],
-      bankDetails: [w.rut, String(w.num), 4, "012"],
+      bankDetails: [w.rut, String(w.num), 3, "012"],
     });
   }
 
