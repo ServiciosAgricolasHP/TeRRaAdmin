@@ -9,7 +9,7 @@ import { FortnightCreateModal } from "./FortnightCreateModal";
 import { FortnightDetailModal } from "./FortnightDetailModal";
 import { FortnightMetaEditModal } from "./FortnightMetaEditModal";
 import { FortnightBalanceSummary } from "./FortnightBalanceSummary";
-import { compareFortnightPeriod } from "./fortnights";
+import { compareFortnightPeriod, paymentSplit } from "./fortnights";
 import { TypeToConfirmModal } from "./TypeToConfirmModal";
 import ScreenLoader from "../../components/ScreenLoader";
 import { attempt } from "../../utils/attempt";
@@ -82,10 +82,13 @@ export function FortnightsTab() {
     [payments],
   );
 
+  // Las confirmaciones de pago dicen lo que falta pagar: lo abonado ya se pagó.
   const askMarkFortnightPaid = (fortnight) => {
+    const ids = fortnight.paymentIds || [];
+    const pending = ids.reduce((s, pid) => s + paymentSplit(paymentsById.get(pid)).pending, 0);
     setConfirmPay({
       verb: "Pagada",
-      label: `Marcar la quincena "${fortnight.name}" como PAGADA. Esto marca todos sus resúmenes (${(fortnight.paymentIds || []).length}) y sus vueltas como pagados.`,
+      label: `Marcar la quincena "${fortnight.name}" como PAGADA. Esto marca todos sus resúmenes (${ids.length}) y sus vueltas como pagados. Falta pagar ${fmtCurrency(pending)}.`,
       onConfirm: async () => {
         await fortnightsService.markPaid(fortnight.id);
         setConfirmPay(null);
@@ -105,9 +108,13 @@ export function FortnightsTab() {
     });
   };
   const askMarkItemPaid = (payment) => {
+    const name = carriersById.get(payment.carrierId)?.alias || payment.carrierId;
+    const { pending, paid, total } = paymentSplit(payment);
     setConfirmPay({
       verb: "Pagada",
-      label: `Marcar el resumen "${carriersById.get(payment.carrierId)?.alias || payment.carrierId}" (${fmtCurrency(payment.total)}) como pagado.`,
+      label: paid > 0
+        ? `Marcar el resumen "${name}" como pagado. De ${fmtCurrency(total)} ya se abonaron ${fmtCurrency(paid)}: falta pagar ${fmtCurrency(pending)}.`
+        : `Marcar el resumen "${name}" (${fmtCurrency(total)}) como pagado.`,
       onConfirm: async () => {
         await paymentsService.markPaid(payment.id);
         setConfirmPay(null);

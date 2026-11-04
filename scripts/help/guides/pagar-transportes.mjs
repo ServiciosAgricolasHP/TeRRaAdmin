@@ -1,7 +1,7 @@
 // Capturas de la guía "Pagar a los transportistas"
 // (src/screens/help/guides/pagar-transportes.md): el pago por faena, los
 // resúmenes, un abono, una quincena nueva, su detalle, la confirmación del
-// pago y el balance de quincenas.
+// pago, la de liquidar el resumen con el abono y el balance de quincenas.
 import { seedLaborTypes, seedTransports } from "../seed.mjs";
 
 // El modal abierto con ese título.
@@ -77,7 +77,7 @@ export async function run({ page, base, login, shot }) {
   await page.getByText("Quincena 1-15 de Octubre").first().waitFor({ timeout: 60000 });
   await page.waitForTimeout(1000);
   const balance = page.getByText(/Balance de quincenas/).first().locator("xpath=ancestor::div[contains(@class,'rounded')][1]");
-  await shot(page, "08-balance", balance, { pad: 6 });
+  await shot(page, "09-balance", balance, { pad: 6 });
   await page.getByText("Quincena 1-15 de Octubre").last().click();
   const fortnight = modal(page, /Quincena 1-15 de Octubre/);
   await fortnight.getByText("TOTAL").first().waitFor({ timeout: 60000 });
@@ -91,4 +91,13 @@ export async function run({ page, base, login, shot }) {
   await confirm.getByRole("textbox").fill("Pagada");
   await shot(page, "07-confirmar-pago", confirm, { pad: 0 });
   await confirm.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await confirm.waitFor({ state: "detached" });
+
+  // Liquidar solo el resumen de Ríos, que ya tiene el abono.
+  await fortnight.locator("tr", { hasText: "Ríos" }).filter({ hasText: "$150.000" }).getByRole("button", { name: "💰 Pagar" }).click();
+  const settle = modal(page, "Marcar como pagada");
+  await settle.getByText(/falta pagar/).waitFor();
+  await settle.getByRole("textbox").fill("Pagada");
+  await shot(page, "08-liquidar", settle, { pad: 0 });
+  await settle.getByRole("button", { name: "Cancelar", exact: true }).click();
 }

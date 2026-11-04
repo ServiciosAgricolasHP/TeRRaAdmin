@@ -22,7 +22,7 @@ Un cambio de interfaz en una de estas pantallas actualiza su guía y regenera su
 | `trabajadores` | Trabajadores (`/workers`): la lista, la ficha, la forma de pago, los datos personales y el resumen | `seedCashWorkers`, `seedWorkerDetails` |
 | `contratos` | Las pestañas Contratos (con los empleadores y los mandantes), Honorarios e Imposiciones de Trabajadores, el historial de la ficha y la vista "Por contrato" de la grilla | `seedEmployments` |
 | `transportes` | Transportes (`/transports`): transportistas, vueltas (también las del ciclo), vueltas sin precio y el resumen del transportista | `seedLaborTypes`, `seedTransports` |
-| `pagar-transportes` | Transportes: pago por faena, resúmenes, abonos, quincenas y los balances | `seedLaborTypes`, `seedTransports` |
+| `pagar-transportes` | Transportes: pago por faena, resúmenes, abonos, quincenas, liquidar un resumen y los balances | `seedLaborTypes`, `seedTransports` |
 
 ## Cómo se escribe una guía
 

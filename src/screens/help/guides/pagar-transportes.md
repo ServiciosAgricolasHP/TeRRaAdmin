@@ -62,7 +62,7 @@ Al tocar una quincena se abre su tabla: un resumen por transportista, con sus vu
 
 ![El detalle de una quincena](help/pagar-transportes/06-quincena.webp)
 
-- **💰 Marcar quincena pagada** marca pagados todos sus resúmenes y sus vueltas. Para confirmarlo, escribe **Pagada**.
+- **💰 Marcar quincena pagada** marca pagados todos sus resúmenes y sus vueltas. La confirmación dice cuánto falta pagar, descontados los abonos; escribe **Pagada** para confirmarlo.
 - En cada fila, **👁** abre el detalle del resumen, **💰 Pagar** paga solo ese y **✕** lo saca de la quincena (vuelve a quedar suelto).
 - **↶ Revertir pago** lo deshace; se confirma escribiendo **Revertir**.
 - **📋 Copiar**, **📥 PNG** e **🖨 Imprimir** sacan la tabla; **🖨 Imprimir quincena + resúmenes** agrega el detalle de cada resumen, uno por hoja.
@@ -72,18 +72,33 @@ Al tocar una quincena se abre su tabla: un resumen por transportista, con sus vu
 
 Un resumen o una vuelta pagados ya no se editan: para corregirlos, primero se revierte el pago.
 
+## Liquidar un resumen
+<!-- preguntas: liquidar un resumen con abonos; pagar el saldo del resumen; terminar de pagar un resumen; cerrar un resumen abonado; pagar lo que falta de un resumen -->
+
+Un resumen con abonos sigue **Pendiente** hasta que se marca pagado, aunque lo abonado ya cubra todo. Se liquida en su quincena:
+
+1. Paga lo que falta: es el **Pendiente** que muestra el detalle del resumen.
+2. Si el resumen no está en una quincena, súmalo: con **▸ + Agregar resumen** en una quincena pendiente, o marcándolo en **Importar resúmenes existentes** al crear una.
+3. En la quincena, toca **💰 Pagar** en su fila. La confirmación dice cuánto falta pagar. Escribe **Pagada** y toca **Confirmar pago**.
+
+![Liquidar un resumen en su quincena](help/pagar-transportes/08-liquidar.webp)
+
+El resumen y sus vueltas quedan pagados, y lo abonado queda como está, ya sin editar. Si se revierte el pago, el resumen vuelve a pendiente con lo mismo abonado.
+
 ## Ver cuánto se debe
 <!-- preguntas: cuánto se le debe a los transportistas; balance de transporte; balance de quincenas; deuda de transporte -->
 
 - **Balance de quincenas**, arriba de **Quincenas**, cruza a los transportistas con las quincenas que tienen algo pendiente. **Todos los resúmenes** muestra también a quien ya cobró lo suyo. El nombre de un transportista abre su resumen.
 - **Balance general de transportes**, arriba de **Resúmenes**, suma por transportista lo que se debe en vueltas sueltas, resúmenes y quincenas, en un rango de fechas.
 
-![El balance de quincenas](help/pagar-transportes/08-balance.webp)
+![El balance de quincenas](help/pagar-transportes/09-balance.webp)
 
 ## Si algo no funciona
-<!-- preguntas: no aparece el transportista en la quincena; no puedo eliminar un resumen; el resumen no cuadra -->
+<!-- preguntas: no aparece el transportista en la quincena; no puedo eliminar un resumen; el resumen no cuadra; el resumen quedó en cero pero sigue pendiente; no puedo pagar un resumen -->
 
 - **Un transportista no aparece al armar la quincena**: no tiene vueltas sueltas en esas fechas o en esas faenas. Si ya tiene un resumen, impórtalo.
 - **No se puede eliminar un resumen**: está en una quincena. Sácalo con **✕** en la quincena.
+- **El pendiente de un resumen está en $0, pero sigue Pendiente**: los abonos no lo cierran solos. Márcalo pagado en su quincena (ver [Liquidar un resumen](/ayuda/pagar-transportes#liquidar-un-resumen)).
+- **No encuentro dónde pagar un resumen**: se paga en su quincena, con **💰 Pagar** en su fila.
 - **No se puede editar una vuelta o un resumen**: ya está pagado. Revierte el pago primero.
 - **El total de un resumen cambió**: se corrigió una de sus vueltas. TeRRa recalcula el resumen y la quincena solo.
