@@ -92,6 +92,7 @@ describe("preguntas típicas", () => {
     ["marcar la quincena pagada", "pagar-transportes#pagar-la-quincena"],
     ["liquidar un resumen con abonos", "pagar-transportes#liquidar-un-resumen"],
     ["pagar el saldo del resumen", "pagar-transportes#liquidar-un-resumen"],
+    ["portal de trabajadores", "nomina#la-nomina-en-el-portal-de-trabajadores"],
     ["cómo agrego un trabajador nuevo", "trabajadores#agregar-un-trabajador"],
     ["cambiar la cuenta de un trabajador", "trabajadores#como-cobra-banco-o-efectivo"],
     ["el trabajador cobra en la cuenta de otro", "trabajadores#cobrar-en-la-cuenta-de-otra-persona"],

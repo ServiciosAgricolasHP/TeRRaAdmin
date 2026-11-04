@@ -121,6 +121,13 @@ Cuando salen las transferencias pero el efectivo se entrega después:
 
 Mientras se debe, el efectivo aparece en **Generar** (**💵 Efectivo pendiente de antes**) y se puede sumar en **Estimar efectivo**, para llevar todo junto. Con las transferencias selladas la nómina no se puede editar ni eliminar; **⋯ → Revertir transferencias** lo deshace.
 
+## La nómina en el portal de trabajadores
+<!-- preguntas: portal de trabajadores; publicar la nómina en el portal; los trabajadores ven su pago; cuál nómina está en el portal; qué es el ícono del portal -->
+
+En el portal de trabajadores, cada persona escribe su RUT y ve el detalle de su pago. El portal muestra una nómina a la vez: la que lleva **🌐 Portal** en el historial y en su detalle.
+
+Publicar una nómina, o cambiar cuál se ve, lo hace un administrador. Si se corrige una nómina ya publicada, pídele que la vuelva a publicar: el portal sigue mostrando la versión de antes.
+
 ## Si algo no funciona
 <!-- preguntas: no aparece un trabajador en la nómina; falta alguien en la nómina; no puedo eliminar la nómina; no aparece el ciclo en nómina; datos faltantes en la nómina -->
 

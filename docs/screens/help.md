@@ -16,7 +16,7 @@ Un cambio de interfaz en una de estas pantallas actualiza su guía y regenera su
 | `grilla-del-ciclo` | la grilla del ciclo (`/cycles/:id`) | |
 | `precios-del-dia` | los precios y el piso de cada tipo de labor, en la grilla del ciclo | `seedLaborTypes` |
 | `resumen-del-ciclo` | el resumen del ciclo (`CycleSummaryModal`): para pagar y para cobrar | `seedDayNote` |
-| `nomina` | Nómina: generar, el historial, el detalle, descargar, imprimir y pagar | `seedCashWorkers` |
+| `nomina` | Nómina: generar, el historial, el detalle, descargar, imprimir, pagar y el portal de trabajadores | `seedCashWorkers` |
 | `corregir-nomina` | el detalle de una nómina: recalcular, agregar y sacar | `seedCashWorkers`, `seedLaborTypes` |
 | `anticipos-y-bonos` | Anticipos / Bonos (`/advances`) y cómo los aplica Nómina | `seedCashWorkers`, `seedAdvances` |
 | `trabajadores` | Trabajadores (`/workers`): la lista, la ficha, la forma de pago, los datos personales y el resumen | `seedCashWorkers`, `seedWorkerDetails` |
