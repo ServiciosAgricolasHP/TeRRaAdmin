@@ -12,6 +12,9 @@ export const HELP_GUIDE_BY_PATH = [
   ["/harvest-qr", "cosecha-qr"],
   ["/calendar", "calendario-y-dashboard"],
   ["/dashboard", "calendario-y-dashboard"],
+  ["/info-cuentas", "agenda-precios-y-links"],
+  ["/price-book", "agenda-precios-y-links"],
+  ["/links", "agenda-precios-y-links"],
 ];
 
 export function helpPathFor(pathname) {

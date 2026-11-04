@@ -503,3 +503,52 @@ export async function seedPayrollHistory() {
     });
   }
 }
+
+// Para la guía de Agenda y Cuentas, Libro de Precios y Links útiles: dos
+// fichas con cuentas, unos contactos de la agenda, dos entradas del libro y
+// tres links.
+export async function seedInfoAndLinks() {
+  const db = getFirestore("hpdatabase");
+  const at = new Date("2026-10-01T12:00:00-03:00");
+  await db.collection("contactCards").doc("K1").set({
+    type: "empresa", name: "Transportes Ríos Ltda.", rut: rut(76987650), includeRut: true, phone: "+56912345601",
+    email: "pagos@transportesrios.cl", address: "Camino a Rengo 1200", giro: "Transporte de pasajeros", note: "", favorite: true,
+    accounts: [{ id: "a1", label: "Cuenta corriente", titular: "Transportes Ríos Ltda.", rutTitular: rut(76987650), bankCode: "037", accountType: 0, accountNumber: "61234509", email: "pagos@transportesrios.cl" }],
+  });
+  await db.collection("contactCards").doc("K2").set({
+    type: "persona", name: "Mario Fuentes", rut: rut(12345678), includeRut: true, phone: "+56987654321", email: "", address: "",
+    giro: "", note: "Préstamo para la cosecha", favorite: false,
+    accounts: [{ id: "a1", label: "Cuenta RUT", titular: "Mario Fuentes", rutTitular: rut(12345678), bankCode: "012", accountType: 3, accountNumber: "12345678", email: "" }],
+  });
+
+  const contacts = [
+    { name: "Carolina Muñoz", company: "Frutícola Cerro Verde S.A.", contactType: "client", department: "Operaciones", role: "Jefa de campo", phones: [{ number: "+56911112222", label: "Móvil" }], emails: ["cmunoz@cerroverde.cl"] },
+    { name: "Pedro Ríos", company: "Transportes Ríos Ltda.", contactType: "carrier", department: "", role: "Dueño", phones: [{ number: "+56912345601", label: "Móvil" }], emails: [] },
+    { name: "Mesa central", company: "Exportadora Las Brisas SpA", contactType: "client", department: "Administración", role: "", phones: [{ number: "+56722345678", label: "Oficina" }], emails: ["contacto@lasbrisas.cl"] },
+    { name: "Luis Soto", company: "Repuestos Agrícolas Sur SpA", contactType: "supplier", department: "Ventas", role: "Vendedor", phones: [{ number: "+56933334444", label: "Móvil" }], emails: ["lsoto@repuestossur.cl"] },
+  ];
+  for (const [i, c] of contacts.entries()) {
+    await db.collection("phoneContacts").doc(`P${i + 1}`).set({
+      otherNames: [], companyRut: "", notes: "", sources: ["sheet"], createdAt: at, updatedAt: at, ...c,
+    });
+  }
+
+  await db.collection("priceBookEntries").doc("B1").set({
+    faenaId: "F1", faenaLabel: "Fundo Los Aromos", labor: "Cosecha",
+    prices: [{ unit: "Kilo", label: "Exportación", payPrice: 350, chargePrice: 480, hasOvertime: false }],
+    transportIncluded: true, transportWhere: null, transportCost: null, dateFrom: "2026-01-05", dateTo: null, periodNote: "Temporada 2025-2026", notes: null,
+  });
+  await db.collection("priceBookEntries").doc("B2").set({
+    faenaId: null, faenaLabel: "Fundo Los Alerces — 2025", labor: "Poda",
+    prices: [{ unit: "Jornada", label: "", payPrice: 30000, chargePrice: 42000, hasOvertime: true, overtimePayPrice: 4800, overtimeChargePrice: 6500 }],
+    transportIncluded: false, transportWhere: "Rengo → Fundo Los Alerces", transportCost: 25000, dateFrom: "2025-06-01", dateTo: "2025-08-31", periodNote: "Invierno 2025", notes: null,
+  });
+  await db.collection("priceBookConfig").doc("main").set({ units: ["Kilo", "Jornada"], hiddenFaenaIds: [] });
+
+  const links = [
+    { text: "SII — Registro de Compras y Ventas", url: "https://www4.sii.cl/consdcvinternetui/" },
+    { text: "Previred", url: "https://www.previred.com/" },
+    { text: "Banco de Chile — Empresas", url: "https://portalempresas.bancochile.cl/" },
+  ];
+  for (const [i, l] of links.entries()) await db.collection("interestLinks").doc(`L${i + 1}`).set({ ...l, order: i });
+}

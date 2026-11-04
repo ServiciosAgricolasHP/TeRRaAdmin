@@ -27,6 +27,7 @@ Un cambio de interfaz en una de estas pantallas actualiza su guía y regenera su
 | `cheques-y-pagos` | Cheques y pagos (`/cheques-pagos`): los próximos, anotar un cheque o un crédito, pagar, aplazar, abonar, ajustar una serie, el informe y los avisos | `seedCommitments` |
 | `cosecha-qr` | Cosecha QR (`/harvest-qr`): los prefijos, sincronizar, los pesajes y los QR de cada persona | `seedLaborTypes`, `seedHarvestQr` |
 | `calendario-y-dashboard` | Calendario (`/calendar`) y Dashboard (`/dashboard`) | `seedLaborTypes`, `seedTransports`, `seedCommitments`, `seedBilling`, `seedPayrollHistory` |
+| `agenda-precios-y-links` | Agenda y Cuentas (`/info-cuentas`), Libro de Precios (`/price-book`) y Links útiles (`/links`) | `seedInfoAndLinks` |
 
 ## Cómo se escribe una guía
 
