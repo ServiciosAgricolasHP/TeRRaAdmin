@@ -9,6 +9,7 @@ export const HELP_GUIDE_BY_PATH = [
   ["/transports", "transportes"],
   ["/facturacion", "facturacion"],
   ["/cheques-pagos", "cheques-y-pagos"],
+  ["/harvest-qr", "cosecha-qr"],
 ];
 
 export function helpPathFor(pathname) {

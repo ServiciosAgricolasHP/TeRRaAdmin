@@ -452,3 +452,36 @@ export async function seedCommitments() {
     });
   }
 }
+
+// Para la guía de Cosecha QR (después de `seedLaborTypes`): el prefijo SE
+// apuntado a la cosecha de Santa Elena, otro sin apuntar, un QR para cada
+// cosechero y los pesajes del 7 de octubre, también de Elena, que todavía no
+// está en la labor.
+export async function seedHarvestQr() {
+  const db = getFirestore("hpdatabase");
+  const at = new Date("2026-10-07T18:00:00-03:00");
+  const pickers = [...DEMO_WORKERS.slice(0, 4), DEMO_WORKERS[4]];
+  const padron = {};
+  for (const [i, w] of pickers.entries()) {
+    const code = `SE-${101 + i}`;
+    padron[code] = { rut: w.id, name: w.name };
+    await db.collection("worker").doc(w.id).update({ idQr: [code] });
+  }
+  await db.collection("qrPrefixes").doc("SE").set({
+    label: "SE — Santa Elena", faenaId: "F2", cycleId: LABOR_TYPES_CYCLE, laborId: "L2", active: true, padron, createdAt: at, updatedAt: at,
+  });
+  await db.collection("qrPrefixes").doc("LA").set({
+    label: "LA — Los Aromos", faenaId: "F1", cycleId: null, laborId: null, active: false, padron: {}, createdAt: at, updatedAt: at,
+  });
+
+  const batch = db.batch();
+  pickers.forEach((w, i) => {
+    [9.4, 10.1, 8.7].forEach((kilos, j) => {
+      batch.set(db.collection("harvestWeights").doc(`W${i}${j}`), {
+        prefix: "SE", rut: w.id, dateKey: "2026-10-07", amount: Math.round((kilos + i * 0.6) * 10) / 10,
+        weightProcess: 0, weightType: 1, idQr: `SE-${101 + i}`, supervisor: "Marta", dateInsert: Timestamp.fromDate(new Date(at.getTime() + (i * 3 + j) * 60000)),
+      });
+    });
+  });
+  await batch.commit();
+}
