@@ -10,6 +10,8 @@ export const HELP_GUIDE_BY_PATH = [
   ["/facturacion", "facturacion"],
   ["/cheques-pagos", "cheques-y-pagos"],
   ["/harvest-qr", "cosecha-qr"],
+  ["/calendar", "calendario-y-dashboard"],
+  ["/dashboard", "calendario-y-dashboard"],
 ];
 
 export function helpPathFor(pathname) {

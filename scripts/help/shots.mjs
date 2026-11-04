@@ -28,6 +28,7 @@ import * as transportPayments from "./guides/pagar-transportes.mjs";
 import * as billing from "./guides/facturacion.mjs";
 import * as commitments from "./guides/cheques-y-pagos.mjs";
 import * as harvestQr from "./guides/cosecha-qr.mjs";
+import * as calendarAndDashboard from "./guides/calendario-y-dashboard.mjs";
 
 const SCRIPTS = {
   "primeros-pasos": firstSteps,
@@ -45,6 +46,7 @@ const SCRIPTS = {
   facturacion: billing,
   "cheques-y-pagos": commitments,
   "cosecha-qr": harvestQr,
+  "calendario-y-dashboard": calendarAndDashboard,
 };
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const SIZES_FILE = path.join(ROOT, "src", "screens", "help", "imageSizes.json");

@@ -106,6 +106,8 @@ describe("preguntas típicas", () => {
     ["apuntar el qr al ciclo nuevo", "cosecha-qr#apuntar-un-prefijo-al-ciclo"],
     ["pasar la cosecha a la grilla", "cosecha-qr#pasar-los-pesajes-a-la-grilla"],
     ["darle un qr a un trabajador", "cosecha-qr#asignar-un-qr-a-un-trabajador"],
+    ["quién trabajó ese día", "calendario-y-dashboard#lo-que-se-hizo-en-un-dia"],
+    ["ciclos sin movimiento", "calendario-y-dashboard#los-numeros-en-el-dashboard"],
     ["portal de trabajadores", "nomina#la-nomina-en-el-portal-de-trabajadores"],
     ["cómo agrego un trabajador nuevo", "trabajadores#agregar-un-trabajador"],
     ["cambiar la cuenta de un trabajador", "trabajadores#como-cobra-banco-o-efectivo"],

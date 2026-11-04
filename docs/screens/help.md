@@ -26,6 +26,7 @@ Un cambio de interfaz en una de estas pantallas actualiza su guía y regenera su
 | `facturacion` | Facturación (`/facturacion`): las empresas, importar el RCV, los estados de pago y los abonos, los pendientes, las retenciones, los centros de costo y el resumen del año | `seedBilling` |
 | `cheques-y-pagos` | Cheques y pagos (`/cheques-pagos`): los próximos, anotar un cheque o un crédito, pagar, aplazar, abonar, ajustar una serie, el informe y los avisos | `seedCommitments` |
 | `cosecha-qr` | Cosecha QR (`/harvest-qr`): los prefijos, sincronizar, los pesajes y los QR de cada persona | `seedLaborTypes`, `seedHarvestQr` |
+| `calendario-y-dashboard` | Calendario (`/calendar`) y Dashboard (`/dashboard`) | `seedLaborTypes`, `seedTransports`, `seedCommitments`, `seedBilling`, `seedPayrollHistory` |
 
 ## Cómo se escribe una guía
 

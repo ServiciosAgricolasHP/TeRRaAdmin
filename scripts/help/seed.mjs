@@ -485,3 +485,21 @@ export async function seedHarvestQr() {
   });
   await batch.commit();
 }
+
+// Para el Dashboard: tres nóminas ya pagadas (agosto, septiembre y octubre),
+// solo con los totales que lee el tablero.
+export async function seedPayrollHistory() {
+  const db = getFirestore("hpdatabase");
+  const payrolls = [
+    { id: "N1", name: "Nómina 1-15 de agosto", paidAt: "2026-08-20", bankTotal: 3150000, cashTotal: 420000, advanceTotal: 150000, workerCount: 6 },
+    { id: "N2", name: "Nómina 1-15 de septiembre", paidAt: "2026-09-19", bankTotal: 3480000, cashTotal: 390000, advanceTotal: 90000, workerCount: 6 },
+    { id: "N3", name: "Nómina 16-30 de septiembre", paidAt: "2026-10-03", bankTotal: 2960000, cashTotal: 510000, advanceTotal: 120000, workerCount: 6 },
+  ];
+  for (const { id, ...p } of payrolls) {
+    const at = new Date(`${p.paidAt}T12:00:00-03:00`);
+    await db.collection("payrolls").doc(id).set({
+      ...p, total: p.bankTotal + p.cashTotal, status: "paid", bankPaidAt: p.paidAt, cycleIds: [], cycleLabels: [],
+      createdAt: Timestamp.fromDate(at), updatedAt: Timestamp.fromDate(at),
+    });
+  }
+}
