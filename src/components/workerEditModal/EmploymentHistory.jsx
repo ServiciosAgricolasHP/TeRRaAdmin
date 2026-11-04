@@ -11,8 +11,9 @@ import { EMPLOYMENT_TYPES, END_REASONS, SETTLEMENT_STATUSES, isActiveOn } from "
 const fmt = (iso) => (iso ? iso.split("-").reverse().join("-") : "");
 
 // Contratos y honorarios de la persona: su situación de hoy y el historial,
-// con alta, corrección, término y borrado de cada período. Lee los períodos
-// al abrir la ficha (una lectura por período).
+// con alta, corrección, término y borrado de cada período. Al abrir la ficha
+// pone al día la lista sincronizada de períodos, que es con la que se revisa
+// que uno nuevo no se cruce.
 export default function EmploymentHistory({ worker }) {
   const today = localIsoDate();
   const { employers, nameOf } = useEmployers();
@@ -25,12 +26,13 @@ export default function EmploymentHistory({ worker }) {
   const [removing, setRemoving] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  // Cada guardado sube `version` y el historial se vuelve a leer.
+  // Cada guardado sube `version` y el historial se vuelve a pedir; la copia ya
+  // trae lo que se guardó en este equipo.
   const [version, setVersion] = useState(0);
   const load = () => setVersion((v) => v + 1);
   useEffect(() => {
     let cancelled = false;
-    listWorkerEmployments(worker.id)
+    listWorkerEmployments(worker.id, { fresh: version === 0 })
       .then((l) => !cancelled && setList(l))
       .catch((e) => !cancelled && setError(e.message || "No se pudo leer el historial."));
     return () => {

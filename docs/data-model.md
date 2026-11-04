@@ -226,7 +226,7 @@ Anticipos (descuento) y bonos (suma) sobre la próxima nómina. El signo lo da `
 > **Ojo con los filtros**: `pending` y `partial` van juntos en el bucket "Pendientes" (`Advances.jsx` → `STATUS_BUCKET`, y `listPendingForWorkers()`). Un parcial que quede fuera de ese bucket desaparece de la vista sin que su saldo deje de existir.
 
 ### `employers`
-Empresas empleadoras de los contratos y los honorarios (Transporte HP, Frutos La Aguada…). Lista propia, aparte de las `companies` de Facturación.
+Empresas empleadoras de los contratos y los honorarios (Transporte HP, Frutos La Aguada…). Lista propia, aparte de las `companies` de Facturación. La app la lee como lista sincronizada (`listEmployers`), igual que los mandantes (`listPrincipals`).
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | string | autoId |
@@ -259,8 +259,9 @@ Un período de contrato o de honorarios de un trabajador con un empleador. El hi
 | `settlementStatus` | `"pending"` \| `"requested"` \| `"done"` \| null | el finiquito; solo en contratos terminados. Terminar un contrato lo deja en `pending` |
 | `settlementRequestedAt`, `settlementDoneAt` | string (YYYY-MM-DD)? | cuándo se pidió al contador y cuándo quedó listo |
 | `notes` | string | |
+| `updatedAt`, `updatedBy` | timestamp, string | los ponen el servicio y las acciones en lote en cada escritura. La lista sincronizada de períodos (`listEmployments`, `services/employmentsService.js`) se pone al día con él |
 
-> **Dos períodos de una persona no se cruzan** (`employmentError`, `utils/employment.js`): su estado en una fecha es uno solo. Las consultas van por un solo campo (`endDate == ""`, `endDate >= fecha`, `workerId`, `settlementStatus in`, `settlementDoneAt >=`) y no necesitan índice compuesto.
+> **Dos períodos de una persona no se cruzan** (`employmentError`, `utils/employment.js`): su estado en una fecha es uno solo. La app no consulta por campo: lee la colección como lista sincronizada y filtra la copia (`openFrom`, `settlementsSince`, `employmentsOf`).
 
 ### `feeLists`
 Una lista de boletas de honorarios: las personas a honorarios con un empleador en un rango de fechas, con sus días y montos. Es un registro: guarda la tarifa, los datos de cada persona y los montos tal como estaban al generarla.

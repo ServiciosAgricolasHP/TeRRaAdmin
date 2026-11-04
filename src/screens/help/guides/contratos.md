@@ -39,7 +39,7 @@ El mandante es la empresa para la que se presta el servicio. Cada contrato o per
 ![Contratar a la gente de un ciclo](help/contratos/03-contratar.webp)
 
 ## Ver quién tiene contrato
-<!-- preguntas: lista de contratos vigentes; quién está a honorarios; ver los contratos; cuántos tienen contrato -->
+<!-- preguntas: lista de contratos vigentes; quién está a honorarios; ver los contratos; cuántos tienen contrato; ver los contratos que hizo otra persona -->
 
 **Vigentes** lista los contratos y honorarios de hoy, con el empleador, el mandante y las fechas. Arriba se cuenta cuántos tienen contrato, cuántos están a honorarios y cuántos finiquitos faltan por cerrar.
 
@@ -47,6 +47,7 @@ El mandante es la empresa para la que se presta el servicio. Cada contrato o per
 
 - Se filtra por tipo, por empleador, por mandante (o **Sin mandante**, para ver a quién le falta) y por nombre o RUT.
 - El nombre de una persona abre su ficha.
+- Lo que otra persona contrata o termina en su computador aparece al entrar a la pestaña, como mucho un minuto después. Para verlo al tiro, toca **↻**, al lado de los totales.
 - En **👷 Trabajadores**, el filtro **📄 Contrato** muestra a quienes tienen contrato, están a honorarios o no tienen nada, y se puede afinar por empleador y por mandante.
 
 ## Terminar contratos
@@ -142,8 +143,9 @@ En el teléfono, los contratos y los finiquitos pasan a tarjetas, cada una con s
 ![Los contratos en el teléfono](help/contratos/16-telefono.webp)
 
 ## Si algo no funciona
-<!-- preguntas: no aparece en la lista de honorarios; faltan días en las imposiciones; no puedo contratar a alguien; no me deja eliminar la lista -->
+<!-- preguntas: no aparece en la lista de honorarios; faltan días en las imposiciones; no puedo contratar a alguien; no me deja eliminar la lista; no veo el contrato que hizo otra persona -->
 
+- **No ves un contrato que otra persona acaba de hacer**: la lista se pone al día al entrar a la pestaña, como mucho una vez por minuto. Toca **↻**, al lado de los totales, para traerlo al tiro.
 - **Alguien quedó afuera al contratar**: ya tiene un período en esa fecha. Revisa su historial en la ficha.
 - **Falta alguien en la lista de honorarios o de imposiciones**: no tenía honorarios o contrato con ese empleador (o con ese mandante) en esas fechas, o no tiene jornadas. Revisa su mandante en **Vigentes**, o súmalo con **Sumar a alguien**.
 - **Los días no calzan con la grilla**: un día con jornadas en dos faenas cuenta una sola vez, en la de mayor monto. Corrige los días antes de guardar.

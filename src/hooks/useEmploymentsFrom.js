@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { listEmploymentsFrom } from "../services/employmentsService";
 
-// Los contratos y honorarios vigentes desde `date` (en caché por 2 horas).
+// Los contratos y honorarios que pueden estar vigentes desde `date`, de la
+// lista sincronizada de períodos.
 // Con `enabled` en false no lee nada: el filtro que los usa está apagado.
 export function useEmploymentsFrom(date, enabled = true) {
   const [state, setState] = useState({ key: "", employments: [], error: "" });
