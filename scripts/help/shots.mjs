@@ -30,6 +30,7 @@ import * as commitments from "./guides/cheques-y-pagos.mjs";
 import * as harvestQr from "./guides/cosecha-qr.mjs";
 import * as calendarAndDashboard from "./guides/calendario-y-dashboard.mjs";
 import * as infoAndLinks from "./guides/agenda-precios-y-links.mjs";
+import * as admin from "./guides/administracion.mjs";
 
 const SCRIPTS = {
   "primeros-pasos": firstSteps,
@@ -49,6 +50,7 @@ const SCRIPTS = {
   "cosecha-qr": harvestQr,
   "calendario-y-dashboard": calendarAndDashboard,
   "agenda-precios-y-links": infoAndLinks,
+  administracion: admin,
 };
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const SIZES_FILE = path.join(ROOT, "src", "screens", "help", "imageSizes.json");

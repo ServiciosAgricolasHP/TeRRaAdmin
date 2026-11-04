@@ -552,3 +552,22 @@ export async function seedInfoAndLinks() {
   ];
   for (const [i, l] of links.entries()) await db.collection("interestLinks").doc(`L${i + 1}`).set({ ...l, order: i });
 }
+
+// Para la guía de Administración: dos cuentas más (una suspendida) y los
+// cambios de una mañana en la auditoría.
+export async function seedAdmin() {
+  const db = getFirestore("hpdatabase");
+  const { uid } = await getAuth().getUserByEmail(DEMO_USER.email);
+  const ts = (time) => Timestamp.fromDate(new Date(`2026-10-09T${time}:00-03:00`));
+  await db.collection("users").doc("U2").set({ role: "user", email: "secretaria@terra.test", alias: "Paula", lastSeenAt: ts("09:12") });
+  await db.collection("users").doc("U3").set({ role: "user", email: "bodega@terra.test", alias: "Jorge", disabled: true, lastSeenAt: Timestamp.fromDate(new Date("2026-09-12T17:40:00-03:00")) });
+
+  const [ana, bruno] = DEMO_WORKERS;
+  const logs = [
+    { uid: "U2", email: "secretaria@terra.test", action: "update", entity: "worker", entityId: ana.id, changes: { email: { from: "", to: "ana.perez@correo.cl" } }, meta: { workerRut: ana.rut }, timestamp: ts("08:41") },
+    { uid: "U2", email: "secretaria@terra.test", action: "create", entity: "advance", entityId: "AD1", after: { type: "anticipo", workerRut: bruno.rut, amount: 50000, status: "pending" }, meta: { workerRut: bruno.rut }, timestamp: ts("08:47") },
+    { uid: "U2", email: "secretaria@terra.test", action: "update", entity: "workday", entityId: `${DEMO_CYCLE}__L1__${bruno.rut}__2026-10-08`, changes: { amount: { from: 0, to: 30000 } }, meta: { workerRut: bruno.rut, cycleId: DEMO_CYCLE }, timestamp: ts("08:55") },
+    { uid, email: DEMO_USER.email, action: "update", entity: "cycle", entityId: DEMO_CYCLE, changes: { days: { from: ["2026-10-05"], to: ["2026-10-05", "2026-10-06"] } }, meta: {}, timestamp: ts("10:05") },
+  ];
+  for (const [i, l] of logs.entries()) await db.collection("logs").doc(`LG${i + 1}`).set(l);
+}

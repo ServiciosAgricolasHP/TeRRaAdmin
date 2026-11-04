@@ -28,6 +28,7 @@ Un cambio de interfaz en una de estas pantallas actualiza su guía y regenera su
 | `cosecha-qr` | Cosecha QR (`/harvest-qr`): los prefijos, sincronizar, los pesajes y los QR de cada persona | `seedLaborTypes`, `seedHarvestQr` |
 | `calendario-y-dashboard` | Calendario (`/calendar`) y Dashboard (`/dashboard`) | `seedLaborTypes`, `seedTransports`, `seedCommitments`, `seedBilling`, `seedPayrollHistory` |
 | `agenda-precios-y-links` | Agenda y Cuentas (`/info-cuentas`), Libro de Precios (`/price-book`) y Links útiles (`/links`) | `seedInfoAndLinks` |
+| `administracion` | Solo admin: Usuarios, Auditoría, la consola, publicar en el portal y los ajustes de admin de otras pantallas | `seedAdmin` |
 
 ## Cómo se escribe una guía
 

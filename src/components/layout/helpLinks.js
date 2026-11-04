@@ -15,6 +15,8 @@ export const HELP_GUIDE_BY_PATH = [
   ["/info-cuentas", "agenda-precios-y-links"],
   ["/price-book", "agenda-precios-y-links"],
   ["/links", "agenda-precios-y-links"],
+  ["/admin/", "administracion"],
+  ["/audit", "administracion"],
 ];
 
 export function helpPathFor(pathname) {
