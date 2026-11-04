@@ -122,6 +122,15 @@ export async function run({ browser, page, base, login, shot }) {
   await fees.getByText(/jornadas leídas/).waitFor({ timeout: 60000 });
   await page.waitForTimeout(500);
   await shot(page, "10-generar-honorarios", fees, { pad: 0, marks: [fees.locator("button[aria-pressed]").first()] });
+
+  // La dirección de Diego, que la boleta pide, desde la misma lista.
+  await fees.getByRole("button", { name: /Falta la dirección · agregar/ }).first().click();
+  const address = modal(page, "Dirección de Diego Muñoz Vera");
+  await field(address, "Dirección").fill("Camino Los Robles 210");
+  await field(address, "Comuna").fill("Rengo");
+  await shot(page, "11-direccion", address, { pad: 0 });
+  await address.getByRole("button", { name: "Guardar" }).click();
+  await address.waitFor({ state: "detached", timeout: 30000 });
   await fees.getByRole("button", { name: "Guardar lista" }).click();
 
   // La lista guardada: la boleta de Carla, con su folio.
@@ -130,7 +139,7 @@ export async function run({ browser, page, base, login, shot }) {
   const folio = feeList.getByRole("textbox", { name: "Folio de Carla Rojas Fuentes" }).first();
   await folio.fill("1045");
   const saveFees = feeList.getByRole("button", { name: "Guardar", exact: true });
-  await shot(page, "11-boletas", feeList, { pad: 0, marks: [folio, saveFees] });
+  await shot(page, "12-boletas", feeList, { pad: 0, marks: [folio, saveFees] });
   await saveFees.click();
   await feeList.waitFor({ state: "detached", timeout: 60000 });
 
@@ -144,7 +153,7 @@ export async function run({ browser, page, base, login, shot }) {
   await contributions.getByRole("button", { name: "Calcular días" }).click();
   await contributions.getByText(/jornadas leídas/).waitFor({ timeout: 60000 });
   await page.waitForTimeout(500);
-  await shot(page, "12-generar-imposiciones", contributions, { pad: 0 });
+  await shot(page, "13-generar-imposiciones", contributions, { pad: 0 });
 
   // El calendario de los días que trabajó Ana. Se abre con un clic, que lo
   // deja abierto mientras la captura saca el mouse de la zona.
@@ -152,14 +161,14 @@ export async function run({ browser, page, base, login, shot }) {
   await anaDays.click();
   const calendar = page.getByRole("dialog", { name: "Días trabajados de Ana Pérez Soto" });
   await calendar.waitFor();
-  await shot(page, "13-dias-trabajados", [contributions.locator("tbody tr", { hasText: "Ana Pérez Soto" }).first(), calendar], { pad: 8, marks: [anaDays] });
+  await shot(page, "14-dias-trabajados", [contributions.locator("tbody tr", { hasText: "Ana Pérez Soto" }).first(), calendar], { pad: 8, marks: [anaDays] });
   await page.keyboard.press("Escape");
   await calendar.waitFor({ state: "detached" });
   await contributions.getByRole("button", { name: "Guardar lista" }).click();
   const saved = modal(page, /^Imposiciones /);
   await saved.waitFor({ timeout: 60000 });
   await page.waitForTimeout(500);
-  await shot(page, "14-enviar-imposiciones", saved, {
+  await shot(page, "15-enviar-imposiciones", saved, {
     pad: 0, marks: [saved.getByRole("button", { name: "📊 Excel" }), saved.getByRole("button", { name: "Marcar enviada al contador" })],
   });
 
@@ -173,6 +182,6 @@ export async function run({ browser, page, base, login, shot }) {
   // La tabla de escritorio también está, oculta: se espera la tarjeta.
   await p.locator("text=Ana Pérez Soto >> visible=true").first().waitFor({ timeout: 120000 });
   await p.waitForTimeout(800);
-  await shot(p, "15-telefono", null);
+  await shot(p, "16-telefono", null);
   await phone.close();
 }

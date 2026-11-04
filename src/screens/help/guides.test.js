@@ -103,6 +103,7 @@ describe("preguntas típicas", () => {
     ["anotar el folio de la boleta", "contratos#anotar-las-boletas-emitidas"],
     ["cómo hago las imposiciones", "contratos#generar-la-lista-de-imposiciones-del-mes"],
     ["honorarios de una sola faena", "contratos#generar-la-lista-de-honorarios"],
+    ["agregar la dirección para la boleta", "contratos#generar-la-lista-de-honorarios"],
     ["imposiciones de una sola faena", "contratos#generar-la-lista-de-imposiciones-del-mes"],
     ["cómo se calcula el bono de las imposiciones", "contratos#generar-la-lista-de-imposiciones-del-mes"],
     ["mandar las imposiciones al contador", "contratos#enviar-las-imposiciones-al-contador"],

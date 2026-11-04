@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import Modal, { ModalCloseButton } from "../../components/Modal";
 import WorkerSearchPicker from "../../components/WorkerSearchPicker";
-import { useWorkersList } from "../../hooks/useWorkersList";
 import { loadWorkedDays } from "../../services/employmentsService";
+import { listWorkers } from "../../services/workersService";
 import { feeListsService, getEmploymentConfig } from "../../services/feeListsService";
 import { localIsoDate } from "../../utils/dates";
 import { feeRows } from "../../utils/employment";
@@ -23,7 +23,6 @@ const monthStart = (today) => `${today.slice(0, 7)}-01`;
 // vienen de la configuración y se pueden cambiar para esta lista.
 export default function GenerateFeeListModal({ employers, principals, onClose, onSaved }) {
   const today = localIsoDate();
-  const { workers } = useWorkersList();
   const [employerId, setEmployerId] = useState("");
   const [principalId, setPrincipalId] = useState("");
   const [from, setFrom] = useState(monthStart(today));
@@ -58,6 +57,9 @@ export default function GenerateFeeListModal({ employers, principals, onClose, o
     setBusy("calc");
     setError("");
     try {
+      // La lista de trabajadores al día, con las direcciones que se acaban de
+      // completar desde la tabla.
+      const workers = await listWorkers();
       const data = await loadWorkedDays(from, to, workers);
       const rows = feeRows(data.employments, data.worked, { employerId, principalId, from, to });
       const workersById = new Map(workers.map((w) => [w.id, w]));
@@ -208,7 +210,7 @@ export default function GenerateFeeListModal({ employers, principals, onClose, o
             <FaenaPicker groups={itemsByFaena(items)} excluded={excluded} onChange={setExcluded} />
             {noAddress.length > 0 && (
               <p className="text-xs text-[var(--color-warning)]">
-                Sin dirección ({noAddress.length}): {noAddress.join(", ")}. La boleta la pide; se completa en la ficha de cada persona.
+                Sin dirección ({noAddress.length}): {noAddress.join(", ")}. La boleta la pide: tócala en la tabla («Falta la dirección · agregar») para completarla.
               </p>
             )}
             {items.length === 0 ? (
