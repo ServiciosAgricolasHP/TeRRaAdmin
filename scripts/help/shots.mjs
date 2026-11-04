@@ -25,6 +25,7 @@ import * as employments from "./guides/contratos.mjs";
 import * as cycleSummary from "./guides/resumen-del-ciclo.mjs";
 import * as transports from "./guides/transportes.mjs";
 import * as transportPayments from "./guides/pagar-transportes.mjs";
+import * as billing from "./guides/facturacion.mjs";
 
 const SCRIPTS = {
   "primeros-pasos": firstSteps,
@@ -39,6 +40,7 @@ const SCRIPTS = {
   "resumen-del-ciclo": cycleSummary,
   transportes: transports,
   "pagar-transportes": transportPayments,
+  facturacion: billing,
 };
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const SIZES_FILE = path.join(ROOT, "src", "screens", "help", "imageSizes.json");

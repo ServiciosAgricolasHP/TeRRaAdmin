@@ -23,6 +23,7 @@ Un cambio de interfaz en una de estas pantallas actualiza su guía y regenera su
 | `contratos` | Las pestañas Contratos (con los empleadores y los mandantes), Honorarios e Imposiciones de Trabajadores, el historial de la ficha y la vista "Por contrato" de la grilla | `seedEmployments` |
 | `transportes` | Transportes (`/transports`): transportistas, vueltas (también las del ciclo), vueltas sin precio y el resumen del transportista | `seedLaborTypes`, `seedTransports` |
 | `pagar-transportes` | Transportes: pago por faena, resúmenes, abonos, quincenas, liquidar un resumen y los balances | `seedLaborTypes`, `seedTransports` |
+| `facturacion` | Facturación (`/facturacion`): las empresas, importar el RCV, los estados de pago y los abonos, los pendientes, las retenciones, los centros de costo y el resumen del año | `seedBilling` |
 
 ## Cómo se escribe una guía
 

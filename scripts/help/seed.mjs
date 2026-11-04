@@ -345,3 +345,72 @@ if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, "/")}`) {
   console.log("datos de la ayuda sembrados");
   process.exit(0);
 }
+
+// Para la guía de Facturación: una empresa, dos centros de costo, las ventas y
+// compras de octubre (una factura con abono, una solo neto, una que anula una
+// nota de crédito y un combustible) y algunas de agosto y septiembre para el
+// resumen del año.
+export const DEMO_COMPANY = { id: "E1", rut: rut(76543210), razonSocial: "Servicios Agrícolas Demo SpA", alias: "Agrícola Demo" };
+
+export async function seedBilling() {
+  const db = getFirestore("hpdatabase");
+  const at = new Date("2026-10-08T12:00:00-03:00");
+  const { id: companyId, ...company } = DEMO_COMPANY;
+  await db.collection("companies").doc(companyId).set({ ...company, enabled: true });
+  await db.collection("costCenters").doc("CC1").set({ label: "Arriendo", emoji: "🏠" });
+  await db.collection("costCenters").doc("CC2").set({ label: "Mantención", emoji: "🔧" });
+  await db.collection("informalExpenses").doc("G1").set({
+    costCenterId: "CC2", companyId, date: "2026-10-04", amount: 45000, detail: "Soldadura del portón",
+  });
+
+  const sale = (tipo, folio, client, date, neto, extra = {}) => {
+    const iva = Math.round(neto * 0.19);
+    return db.collection("dteDocuments").doc(`${companyId}_V_${tipo}_${folio}`).set({
+      companyId, companyAlias: company.alias, kind: "venta", tipo, tipoLabel: tipo === 61 ? "Nota de Crédito Electrónica" : "Factura Electrónica",
+      folio, fechaEmision: date, periodo: date.slice(0, 7),
+      rutEmisor: company.rut, razonSocialEmisor: company.razonSocial,
+      rutReceptor: rut(client.num), razonSocialReceptor: client.name,
+      exento: 0, neto, iva, otrosImpuestos: 0, total: neto + iva,
+      source: "sii_import", sourceFile: `RCV_VENTA_${date.slice(0, 7)}.csv`, importedAt: at, updatedAt: at,
+      paymentStatus: "unpaid", payments: [], amountPaid: 0, notes: "", ...extra,
+    });
+  };
+  const purchase = (folio, supplier, date, neto, extra = {}) => {
+    const iva = Math.round(neto * 0.19);
+    const other = extra.otrosImpuestos || 0;
+    return db.collection("dteDocuments").doc(`${companyId}_C_${supplier.num}_33_${folio}`).set({
+      companyId, companyAlias: company.alias, kind: "compra", tipo: 33, tipoLabel: "Factura Electrónica",
+      folio, fechaEmision: date, periodo: date.slice(0, 7),
+      rutEmisor: rut(supplier.num), razonSocialEmisor: supplier.name,
+      rutReceptor: company.rut, razonSocialReceptor: company.razonSocial,
+      exento: 0, neto, iva, otrosImpuestos: other, total: neto + iva + other,
+      source: "sii_import", sourceFile: `RCV_COMPRA_${date.slice(0, 7)}.csv`, importedAt: at, updatedAt: at,
+      paymentStatus: "unpaid", payments: [], amountPaid: 0, ...extra,
+    });
+  };
+
+  const cerroVerde = { num: 96123450, name: "Frutícola Cerro Verde S.A." };
+  const brisas = { num: 77234561, name: "Exportadora Las Brisas SpA" };
+  const sanPedro = { num: 78345672, name: "Agrícola San Pedro Ltda." };
+  const roble = { num: 79456783, name: "Comercial El Roble SpA" };
+  await sale(33, 1201, cerroVerde, "2026-10-03", 2000000);
+  await sale(33, 1202, brisas, "2026-10-06", 1500000, {
+    payments: [{ id: "p1", date: "2026-10-08", kind: "abono", amount: 800000, notes: "Transferencia", recordedAt: "2026-10-08T12:00:00.000Z" }],
+    amountPaid: 800000,
+  });
+  await sale(33, 1203, sanPedro, "2026-10-07", 900000, { paymentStatus: "net_only" });
+  await sale(33, 1204, roble, "2026-10-07", 300000);
+  await sale(61, 46, roble, "2026-10-08", 300000);
+  await sale(33, 1190, cerroVerde, "2026-09-15", 2400000, { paymentStatus: "paid" });
+  await sale(33, 1185, brisas, "2026-08-20", 1800000, { paymentStatus: "paid" });
+
+  const fuel = { num: 96654320, name: "Combustibles del Valle S.A." };
+  const olmos = { num: 76765431, name: "Inmobiliaria Los Olmos Ltda." };
+  const parts = { num: 77876542, name: "Repuestos Agrícolas Sur SpA" };
+  await purchase(88123, fuel, "2026-10-02", 400000, { otrosImpuestos: 52000, otroImpuestoCodigo: 28, otroImpuestoCategory: "combustible" });
+  await purchase(5501, olmos, "2026-10-01", 600000, { costCenterId: "CC1" });
+  await purchase(3307, parts, "2026-10-05", 250000, { costCenterId: "CC2" });
+  await purchase(5487, olmos, "2026-09-01", 600000, { costCenterId: "CC1" });
+  await purchase(87410, fuel, "2026-09-12", 380000, { otrosImpuestos: 49000, otroImpuestoCodigo: 28, otroImpuestoCategory: "combustible" });
+  await purchase(5470, olmos, "2026-08-01", 600000, { costCenterId: "CC1" });
+}

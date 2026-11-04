@@ -10,6 +10,7 @@ import employments from "./guides/contratos.md?raw";
 import cycleSummary from "./guides/resumen-del-ciclo.md?raw";
 import transports from "./guides/transportes.md?raw";
 import transportPayments from "./guides/pagar-transportes.md?raw";
+import billing from "./guides/facturacion.md?raw";
 
 // Las guías de la ayuda, en el orden del índice. El texto de cada una vive en
 // su `.md` de `guides/` y sus capturas en `public/help/<id>/`, que regenera
@@ -27,4 +28,5 @@ export const GUIDES = [
   { id: "contratos", icon: "📄", source: employments },
   { id: "transportes", icon: "🚐", source: transports },
   { id: "pagar-transportes", icon: "💸", source: transportPayments },
+  { id: "facturacion", icon: "🧾", source: billing },
 ];
