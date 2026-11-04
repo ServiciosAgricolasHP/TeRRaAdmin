@@ -18,6 +18,7 @@ const ACTION_STYLE = {
   bulkStart: { color: "#166534", bg: "#dcfce7", label: "contratar" },
   bulkEnd: { color: "#b91c1c", bg: "#fee2e2", label: "terminar" },
   settlement: { color: "#92400e", bg: "#fef3c7", label: "finiquito" },
+  setPrincipal: { color: "#92400e", bg: "#fef3c7", label: "mandante" },
 };
 
 function actionPill(action) {

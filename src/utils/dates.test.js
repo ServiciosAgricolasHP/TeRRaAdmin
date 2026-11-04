@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { localIsoDate } from "./dates";
+import { localIsoDate, monthCells } from "./dates";
 
 describe("localIsoDate", () => {
   it("usa el día local, también de noche", () => {
@@ -18,5 +18,17 @@ describe("localIsoDate", () => {
 
   it("devuelve vacío con una fecha inválida", () => {
     expect(localIsoDate(new Date("no es fecha"))).toBe("");
+  });
+});
+
+describe("monthCells", () => {
+  it("arma el mes con la semana desde el lunes y completa las semanas", () => {
+    const oct = monthCells("2026-10");
+    expect(oct.slice(0, 4)).toEqual([null, null, null, "2026-10-01"]);
+    expect(oct.indexOf("2026-10-05") % 7).toBe(0);
+    expect(oct.length % 7).toBe(0);
+    expect(oct.filter(Boolean)).toHaveLength(31);
+    expect(monthCells("2026-02").filter(Boolean)).toHaveLength(28);
+    expect(monthCells("2026-06")[0]).toBe("2026-06-01");
   });
 });

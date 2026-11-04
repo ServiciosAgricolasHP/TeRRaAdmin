@@ -6,22 +6,25 @@ import { invalidate } from "./cache";
 import { logAction } from "./logger";
 import { listCycles, listJobs } from "./jobLists";
 import { fetchWorkdaysInRange } from "./calendarService";
-import { workedDays } from "../utils/employment";
+import { earnedByDay, workedDays } from "../utils/employment";
+import { workdayPayAmount } from "../utils/payroll";
 import { workerIdResolver } from "../utils/workerRut";
 
-// Contratos y honorarios de los trabajadores (`employments`) y las empresas
-// empleadoras (`employers`). Las altas y ediciones de a uno pasan por el
-// servicio común; las acciones masivas escriben en lotes con un solo registro
-// de auditoría.
+// Contratos y honorarios de los trabajadores (`employments`), las empresas
+// empleadoras (`employers`) y las mandantes (`principals`). Las altas y
+// ediciones de a uno pasan por el servicio común; las acciones masivas
+// escriben en lotes con un solo registro de auditoría.
 
 const COLLECTION = "employments";
 
 export const employersService = createService("employer", "employers");
+export const principalsService = createService("principal", "principals");
 export const employmentsService = createService("employment", COLLECTION);
 
-// Los empleadores son pocos y cambian poco: un día en caché, también en
-// `localStorage`.
+// Los empleadores y los mandantes son pocos y cambian poco: un día en caché,
+// también en `localStorage`.
 export const EMPLOYERS_LIST = { order: ["name", "asc"], cache: true, persist: true, ttl: 24 * 60 * 60 * 1000 };
+export const PRINCIPALS_LIST = EMPLOYERS_LIST;
 
 const EMPLOYMENTS_TTL = 2 * 60 * 60 * 1000;
 
@@ -124,9 +127,17 @@ export async function setSettlementStatus(ids, status, date) {
   await logAction({ action: "settlement", entity: "employment", entityId: null, meta: { ids, count: ids.length, status, date } });
 }
 
+// Le pone el mismo mandante a varios períodos (`""` se lo quita) y deja un
+// solo registro de auditoría.
+export async function setPrincipal(ids, principalId) {
+  await commitInChunks(ids.map((id) => (batch) => batch.update(doc(db, COLLECTION, id), { principalId, ...stamp() })));
+  invalidate(COLLECTION);
+  await logAction({ action: "setPrincipal", entity: "employment", entityId: null, meta: { ids, count: ids.length, principalId } });
+}
+
 // Lo que hace falta para contar días en un rango: los días trabajados de cada
-// persona por faena (`workedDays`), los contratos y honorarios vigentes en el
-// rango, y las faenas con su nombre. Las jornadas se leen enteras (una lectura
+// persona por faena (`workedDays`), lo ganado cada día (`earnedByDay`), los
+// contratos y honorarios vigentes en el rango, y las faenas con su nombre. Las jornadas se leen enteras (una lectura
 // por jornada); `reads` dice cuántas fueron. La usan las listas de honorarios
 // y de imposiciones.
 export async function loadWorkedDays(from, to, workers) {
@@ -137,9 +148,12 @@ export async function loadWorkedDays(from, to, workers) {
     listEmploymentsFrom(from),
   ]);
   const faenaOfCycle = new Map(cycles.map((c) => [c.id, c.faenaId || ""]));
+  const laborTypeOf = new Map(cycles.flatMap((c) => (c.labors || []).map((l) => [`${c.id}|${l.id}`, l.type])));
   const names = new Map(faenas.map((f) => [f.id, f.name || ""]));
+  const workerIdOf = workerIdResolver(workers);
   return {
-    worked: workedDays(workdays, faenaOfCycle, { workerIdOf: workerIdResolver(workers) }),
+    worked: workedDays(workdays, faenaOfCycle, { workerIdOf }),
+    earned: earnedByDay(workdays, { workerIdOf, amountOf: (wd) => workdayPayAmount(wd, laborTypeOf.get(`${wd.cycleId}|${wd.laborId}`)) }),
     employments,
     faenas: faenas.map((f) => ({ id: f.id, name: f.name || "" })).sort((a, b) => a.name.localeCompare(b.name, "es")),
     faenaNameOf: (id) => names.get(id) || "",

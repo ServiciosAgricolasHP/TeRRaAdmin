@@ -234,6 +234,15 @@ Empresas empleadoras de los contratos y los honorarios (Transporte HP, Frutos La
 | `rut` | string | normalizado `"76123456-7"` |
 | `enabled` | bool | un empleador desactivado no se ofrece para períodos nuevos |
 
+### `principals`
+Empresas mandantes: aquellas para las que se presta el servicio. Cada período de contrato u honorarios puede llevar una, y con eso se filtran los contratos y se arman las listas de un solo mandante. Lista propia, con los mismos campos que `employers`.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | autoId |
+| `name` | string | |
+| `rut` | string | normalizado `"76123456-7"` |
+| `enabled` | bool | un mandante desactivado no se ofrece para períodos nuevos |
+
 ### `employments`
 Un período de contrato o de honorarios de un trabajador con un empleador. El historial de una persona es la lista de sus períodos; "sin nada" es no tener ninguno vigente.
 | Campo | Tipo | Notas |
@@ -243,6 +252,7 @@ Un período de contrato o de honorarios de un trabajador con un empleador. El hi
 | `workerRut`, `workerName` | string | copia al crear, para mostrar sin cruzar con `worker` |
 | `type` | `"contract"` \| `"fees"` | contrato u honorarios |
 | `employerId` | ref→`employers` | |
+| `principalId` | ref→`principals` \| `""` | el mandante. `""` o sin el campo: sin mandante. Se elige al contratar, en la ficha o en bloque desde Contratos (`setPrincipal`) |
 | `startDate` | string (YYYY-MM-DD) | |
 | `endDate` | string (YYYY-MM-DD) \| `""` | `""` = sin término. Con una fecha futura (plazo fijo) sigue vigente hasta ese día. **Vigente en `d`**: `startDate <= d` y (`endDate` vacío o `endDate >= d`) |
 | `endReason` | `"jobEnd"` \| `"companyNeeds"` \| `"resignation"` \| `"mutualAgreement"` \| `"other"` \| null | término de faena, necesidad de la empresa, renuncia, mutuo acuerdo |
@@ -258,21 +268,24 @@ Una lista de boletas de honorarios: las personas a honorarios con un empleador e
 |---|---|---|
 | `id` (docId) | string | autoId |
 | `employerId`, `employerName` | ref→`employers`, string | el nombre, copiado al generar |
+| `principalId`, `principalName` | ref→`principals`, string | la lista de un solo mandante, con el nombre copiado al generar. `""`: todos los mandantes |
 | `from`, `to` | string (YYYY-MM-DD) | el rango de las jornadas |
 | `dailyNet` | number | líquido por día con que se generó |
 | `withholdingRate` | number | retención de la boleta (0,1525 = 15,25%) |
-| `items` | `[{ workerId, rut, name, faenaId, faenaName, days, net, withholding, gross, address, commune, issued, folio, issuedAt }]` | una fila por persona y faena. Bruto por día = `round(dailyNet / (1 − withholdingRate))`; bruto = días × eso; retención = bruto − líquido (`feeAmounts`, `utils/employment.js`). `issued`, `folio` e `issuedAt`: la boleta emitida |
+| `items` | `[{ workerId, rut, name, faenaId, faenaName, days, dates, net, withholding, gross, address, commune, issued, folio, issuedAt }]` | una fila por persona y faena. `dates`: `[{ date, amount }]`, las fechas trabajadas con lo ganado cada día (todas sus jornadas del día; `[]` si se sumó a mano; las listas anteriores no lo tienen). Bruto por día = `round(dailyNet / (1 − withholdingRate))`; bruto = días × eso; retención = bruto − líquido (`feeAmounts`, `utils/employment.js`). `issued`, `folio` e `issuedAt`: la boleta emitida |
 | `totals` | `{ people, days, gross, withholding, net, issued, count }` | denormalizado de `items` (`feeListTotals`), para la lista de la pestaña |
 
 ### `contributionLists`
-Una lista de imposiciones para el contador: por empleador y mes, los días imponibles de cada persona con contrato, por faena (el centro de costo). Sueldo y bono los completa el contador. Es un registro: guarda las filas como estaban al generarla.
+Una lista de imposiciones para el contador: por empleador y mes, los días imponibles de cada persona con contrato, por faena (el centro de costo), con lo ganado esos días, el sueldo y el bono. Es un registro: guarda las filas como estaban al generarla.
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | string | autoId |
 | `employerId`, `employerName` | ref→`employers`, string | el nombre, copiado al generar |
+| `principalId`, `principalName` | ref→`principals`, string | la lista de un solo mandante, con el nombre copiado al generar. `""`: todos los mandantes |
 | `month` | string (YYYY-MM) | |
-| `items` | `[{ workerId, rut, name, faenaId, faenaName, days, request, endDate, endReason }]` | una fila por persona y faena; quien tuvo contrato y no trabajó va con `faenaId: ""` y 0 días. `request`: `"payslip"` (liquidación) o `"payslipAndSettlement"` (liquidación y finiquito, si el contrato terminó ese mes, con `endDate` y `endReason`) |
-| `totals` | `{ people, days, count, settlements }` | denormalizado de `items` (`contributionTotals`) |
+| `dailyBase` | number | el mínimo por día con que se calculó el sueldo (el indicador `dia`, que se puede cambiar para la lista) |
+| `items` | `[{ workerId, rut, name, faenaId, faenaName, days, dates, earned, baseSalary, bonus, request, endDate, endReason }]` | una fila por persona y faena; quien tuvo contrato y no trabajó va con `faenaId: ""` y 0 días. `dates`: `[{ date, amount }]`, las fechas trabajadas con lo ganado cada día; `earned`, su suma. `baseSalary` = días × `dailyBase` y `bonus` = lo ganado por sobre eso, 0 si ganó menos (`contributionPay`, `utils/employment.js`). Las listas anteriores no traen `dates`, `earned`, `baseSalary` ni `bonus`. `request`: `"payslip"` (liquidación) o `"payslipAndSettlement"` (liquidación y finiquito, si el contrato terminó ese mes, con `endDate` y `endReason`) |
+| `totals` | `{ people, days, count, settlements, earned, baseSalary, bonus }` | denormalizado de `items` (`contributionTotals`) |
 | `sentAt` | string (YYYY-MM-DD) \| `""` | cuándo se marcó enviada al contador |
 
 ### `employmentConfig`
@@ -713,7 +726,7 @@ Auditoría — una fila por mutación.
 |---|---|---|
 | `id` (docId) | string | autoId |
 | `uid`, `email` | string? | quién |
-| `action` | `"create"` \| `"update"` \| `"delete"` \| `"import"` \| `"bulkStart"` \| `"bulkEnd"` \| `"settlement"` | `"import"` solo lo escribe la importación de la agenda telefónica; los otros tres, las acciones masivas de contratos (`entity: "employment"`) |
+| `action` | `"create"` \| `"update"` \| `"delete"` \| `"import"` \| `"bulkStart"` \| `"bulkEnd"` \| `"settlement"` \| `"setPrincipal"` | `"import"` solo lo escribe la importación de la agenda telefónica; los otros cuatro, las acciones masivas de contratos (`entity: "employment"`) |
 | `entity`, `entityId` | string | qué |
 | `before` | objeto? | solo en `delete` (snapshot completo). Borrar un documento que no existe no deja log |
 | `after` | objeto? | solo en `create` (snapshot completo) |
@@ -799,6 +812,7 @@ erDiagram
     WORKER ||--o{ ADVANCES : "recibe"
     WORKER ||--o{ EMPLOYMENTS : "tiene (workerId)"
     EMPLOYERS ||--o{ EMPLOYMENTS : "contrata (employerId)"
+    PRINCIPALS |o--o{ EMPLOYMENTS : "mandante (principalId)"
     PAYROLLS ||--o{ WORKDAYS : "tag (payrollId)"
     PAYROLLS ||--o{ ADVANCES : "aplica (appliedPayrollId)"
     CYCLES ||--o| CYCLE_SUMMARIES : "configura cobro"

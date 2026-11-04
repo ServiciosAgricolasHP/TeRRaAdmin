@@ -1,14 +1,15 @@
 import { useState } from "react";
 import Modal from "../../components/Modal";
-import { employersService } from "../../services/employmentsService";
 import { normalizeRut, validateRut, formatRutForDisplay } from "../../utils/rutUtils";
 
 const inputCls =
   "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]";
 
-// Las empresas empleadoras: alta, edición y desactivar. Una desactivada no se
-// ofrece para períodos nuevos, pero sigue en los que ya tiene.
-export default function EmployersModal({ employers, onClose, onChanged }) {
+// Una lista de empresas de los contratos (los empleadores o los mandantes):
+// alta, edición y desactivar. Una desactivada no se ofrece para períodos
+// nuevos, pero sigue en los que ya tiene. `noun` es el nombre de una, en
+// minúscula ("empleador").
+export default function CompanyListModal({ title, noun, placeholder, items, service, onClose, onChanged }) {
   const [form, setForm] = useState({ id: null, name: "", rut: "" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -19,7 +20,7 @@ export default function EmployersModal({ employers, onClose, onChanged }) {
     if (!name) return setError("Falta el nombre.");
     if (rut && !validateRut(rut)) return setError("RUT inválido.");
     const id = form.id;
-    const write = id ? () => employersService.update(id, { name, rut }) : () => employersService.create({ name, rut, enabled: true });
+    const write = id ? () => service.update(id, { name, rut }) : () => service.create({ name, rut, enabled: true });
     setBusy(true);
     try {
       await write();
@@ -36,7 +37,7 @@ export default function EmployersModal({ employers, onClose, onChanged }) {
     const enabled = x.enabled === false;
     setBusy(true);
     try {
-      await employersService.update(x.id, { enabled });
+      await service.update(x.id, { enabled });
       await onChanged();
     } catch (e) {
       setError(e.message || "No se pudo guardar.");
@@ -45,11 +46,11 @@ export default function EmployersModal({ employers, onClose, onChanged }) {
   };
 
   return (
-    <Modal open onClose={onClose} title="Empleadores" size="md">
+    <Modal open onClose={onClose} title={title} size="md">
       <div className="space-y-4">
         <ul className="divide-y divide-[var(--color-border)] rounded-md border border-[var(--color-border)]">
-          {employers.length === 0 && <li className="px-3 py-2 text-sm text-[var(--color-muted)]">Todavía no hay empleadores.</li>}
-          {employers.map((x) => (
+          {items.length === 0 && <li className="px-3 py-2 text-sm text-[var(--color-muted)]">Todavía no hay {title.toLowerCase()}.</li>}
+          {items.map((x) => (
             <li key={x.id} className={`flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm ${x.enabled === false ? "opacity-60" : ""}`}>
               <span>
                 <b>{x.name}</b>
@@ -68,9 +69,9 @@ export default function EmployersModal({ employers, onClose, onChanged }) {
           ))}
         </ul>
         <div className="rounded-md border border-[var(--color-border)] p-3">
-          <div className="mb-2 text-sm font-medium">{form.id ? "Editar empleador" : "Nuevo empleador"}</div>
+          <div className="mb-2 text-sm font-medium">{form.id ? `Editar ${noun}` : `Nuevo ${noun}`}</div>
           <div className="grid gap-2 sm:grid-cols-[1fr_10rem_auto]">
-            <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Nombre (Transporte HP)" className={inputCls} />
+            <input value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder={placeholder} className={inputCls} />
             <input value={form.rut} onChange={(e) => setForm((f) => ({ ...f, rut: e.target.value }))} placeholder="RUT" className={inputCls} />
             <button type="button" onClick={save} disabled={busy} className="rounded-md bg-[var(--color-accent)] px-3 py-2 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-60">
               {form.id ? "Guardar" : "+ Agregar"}

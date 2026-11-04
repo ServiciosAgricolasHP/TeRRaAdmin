@@ -23,9 +23,10 @@ import { MIN_WORKER_QUERY, workerMatchesQuery, workerQueryReady, workerSearchInp
 import { useIsMobile } from "../../hooks/useIsMobile";
 import ScreenLoader from "../../components/ScreenLoader";
 import { useEmployers } from "../../hooks/useEmployers";
+import { usePrincipals } from "../../hooks/usePrincipals";
 import { useEmploymentsFrom } from "../../hooks/useEmploymentsFrom";
 import { localIsoDate } from "../../utils/dates";
-import { EMPLOYMENT_FILTERS, activeByWorker, matchesEmploymentFilter } from "../../utils/employment";
+import { EMPLOYMENT_FILTERS, NO_PRINCIPAL, activeByWorker, matchesEmploymentFilter } from "../../utils/employment";
 import { attempt } from "../../utils/attempt";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -60,14 +61,16 @@ export default function WorkersTab() {
   const [payFilter, setPayFilter] = useState("");
   // Solo quienes cobran en la cuenta de otra persona sin su nombre.
   const [missingPayeeOnly, setMissingPayeeOnly] = useState(false);
-  // Contrato u honorarios vigentes hoy: "" | "contract" | "fees" | "none", y
-  // el empleador. Los períodos se leen solo con el filtro en uso.
+  // Contrato u honorarios vigentes hoy: "" | "contract" | "fees" | "none", el
+  // empleador y el mandante. Los períodos se leen solo con el filtro en uso.
   const [employmentFilter, setEmploymentFilter] = useState("");
   const [employerFilter, setEmployerFilter] = useState("");
+  const [principalFilter, setPrincipalFilter] = useState("");
   const today = localIsoDate();
-  const employmentOn = employmentFilter !== "" || employerFilter !== "";
+  const employmentOn = employmentFilter !== "" || employerFilter !== "" || principalFilter !== "";
   const { employments, loading: employmentsLoading } = useEmploymentsFrom(today, employmentOn);
   const { employers } = useEmployers();
+  const { principals } = usePrincipals();
 
   const queryKind = detectQueryKind(search);
   const queryRaw = search.trim();
@@ -135,11 +138,13 @@ export default function WorkersTab() {
     if (missingPayeeOnly) arr = arr.filter(lacksPaymentName);
     if (employmentOn) {
       const active = activeByWorker(employments, today);
-      arr = arr.filter((w) => matchesEmploymentFilter(active.get(w.id), { type: employmentFilter, employerId: employerFilter }));
+      arr = arr.filter((w) =>
+        matchesEmploymentFilter(active.get(w.id), { type: employmentFilter, employerId: employerFilter, principalId: principalFilter }),
+      );
     }
     if (queryReady) arr = arr.filter((w) => workerMatchesQuery(w, queryRaw));
     return arr;
-  }, [queryReady, filtersActive, leaderFilter, payFilter, missingPayeeOnly, allWorkers, queryRaw, employmentOn, employments, today, employmentFilter, employerFilter]);
+  }, [queryReady, filtersActive, leaderFilter, payFilter, missingPayeeOnly, allWorkers, queryRaw, employmentOn, employments, today, employmentFilter, employerFilter, principalFilter]);
 
   const showResults = filtersActive || queryReady;
   const clearFilters = () => {
@@ -148,6 +153,7 @@ export default function WorkersTab() {
     setMissingPayeeOnly(false);
     setEmploymentFilter("");
     setEmployerFilter("");
+    setPrincipalFilter("");
   };
 
   // Tras editar o eliminar, vuelve a tomar la lista de la caché, que
@@ -440,6 +446,18 @@ export default function WorkersTab() {
           >
             <option value="">🏢 Empleador: todos</option>
             {employers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </select>
+        )}
+        {employmentFilter !== "none" && principals.length > 0 && (
+          <select
+            value={principalFilter}
+            onChange={(e) => setPrincipalFilter(e.target.value)}
+            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-xs shadow-sm focus:border-[var(--color-accent)] outline-none"
+            aria-label="Mandante"
+          >
+            <option value="">🤝 Mandante: todos</option>
+            {principals.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            <option value={NO_PRINCIPAL}>Sin mandante</option>
           </select>
         )}
         {employmentOn && employmentsLoading && <span className="text-[var(--color-muted)]">Cargando contratos…</span>}

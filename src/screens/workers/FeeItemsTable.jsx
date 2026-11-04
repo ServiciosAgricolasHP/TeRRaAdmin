@@ -1,18 +1,35 @@
+import { useState } from "react";
 import { fmtCurrency } from "../../utils/format";
 import { formatRutForDisplay } from "../../utils/rutUtils";
 import { feeItemKey, itemsByFaena } from "../../utils/feeLists";
+import WorkedDatesButton from "./WorkedDatesButton";
+import WorkerAddressModal from "./WorkerAddressModal";
 
 const daysLabel = (n) => `${n} día${n === 1 ? "" : "s"}`;
 
 const cellInput =
   "rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1.5 py-1 text-sm outline-none focus:border-[var(--color-accent)]";
 
-// Las filas de una lista de honorarios, por faena y con su total. Al armarla
-// (`mode="draft"`) se editan los días y se quitan filas; en una lista guardada
-// (`mode="saved"`) se marca cada boleta emitida con su folio. `onChange(key,
-// patch)` y `onRemove(key)` usan `feeItemKey` (`utils/feeLists.js`).
+// Las filas de una lista de honorarios, por faena y con su total; 📅 muestra
+// el calendario de las fechas de una fila con lo ganado cada día. Al armarla
+// (`mode="draft"`) se editan los días y se quitan filas, y a quien le falta la
+// dirección se le completa ahí mismo (`WorkerAddressModal`), en todas sus
+// filas; en una lista guardada (`mode="saved"`) se marca cada boleta emitida
+// con su folio. `onChange(key, patch)` y `onRemove(key)` usan `feeItemKey`
+// (`utils/feeLists.js`).
 export default function FeeItemsTable({ items, mode, onChange, onRemove }) {
   const draft = mode === "draft";
+  const [addressFor, setAddressFor] = useState(null);
+  const missingAddress = (it) => (
+    <button type="button" onClick={() => setAddressFor(it)} className="min-h-8 rounded text-[var(--color-warning)] underline decoration-dotted hover:opacity-80">
+      Falta la dirección · agregar
+    </button>
+  );
+  const addressSaved = (patch) => {
+    if (!addressFor) return;
+    for (const x of items.filter((x) => x.workerId === addressFor.workerId)) onChange(feeItemKey(x), patch);
+    setAddressFor(null);
+  };
   const days = (it) =>
     draft ? (
       <input
@@ -74,12 +91,14 @@ export default function FeeItemsTable({ items, mode, onChange, onRemove }) {
                       <div className="font-medium">{it.name}</div>
                       <div className="text-xs text-[var(--color-muted)]">{formatRutForDisplay(it.rut)}</div>
                     </td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">{days(it)}</td>
+                    <td className="w-28 whitespace-nowrap px-2 py-1.5 text-right tabular-nums">
+                      <WorkedDatesButton it={it} /> {days(it)}
+                    </td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(it.gross)}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums text-[var(--color-muted)]">{fmtCurrency(it.withholding)}</td>
                     <td className="px-2 py-1.5 text-right font-medium tabular-nums">{fmtCurrency(it.net)}</td>
                     <td className="px-2 py-1.5 text-xs">
-                      {it.address ? `${it.address}${it.commune ? `, ${it.commune}` : ""}` : <span className="text-[var(--color-warning)]">Falta la dirección</span>}
+                      {it.address ? `${it.address}${it.commune ? `, ${it.commune}` : ""}` : missingAddress(it)}
                     </td>
                     <td className="w-px whitespace-nowrap px-2 py-1.5">
                       {draft ? (
@@ -109,8 +128,8 @@ export default function FeeItemsTable({ items, mode, onChange, onRemove }) {
                   </div>
                 </div>
                 <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs">
-                  <span className="inline-flex items-center gap-1">Días {days(it)}</span>
-                  {!it.address && <span className="text-[var(--color-warning)]">Falta la dirección</span>}
+                  <span className="inline-flex items-center gap-1">Días {days(it)} <WorkedDatesButton it={it} /></span>
+                  {!it.address && missingAddress(it)}
                   <span className="ml-auto">
                     {draft ? (
                       <button type="button" onClick={() => onRemove(feeItemKey(it))} className="rounded border border-[var(--color-border)] px-2 py-1">
@@ -126,6 +145,7 @@ export default function FeeItemsTable({ items, mode, onChange, onRemove }) {
           </div>
         </section>
       ))}
+      {addressFor && <WorkerAddressModal item={addressFor} onClose={() => setAddressFor(null)} onSaved={addressSaved} />}
     </div>
   );
 }

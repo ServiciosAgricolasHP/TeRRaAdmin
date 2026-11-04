@@ -10,11 +10,11 @@ const faenaNameOf = (id) => ({ aguada: "La Aguada", lingues: "Los Lingues" })[id
 describe("lista de honorarios", () => {
   const items = buildFeeListItems(
     [
-      { workerId: "w2", faenaId: "lingues", days: 2 },
-      { workerId: "w1", faenaId: "lingues", days: 1 },
-      { workerId: "w1", faenaId: "aguada", days: 3 },
+      { workerId: "w2", faenaId: "lingues", days: 2, dates: ["2026-09-04", "2026-09-03"] },
+      { workerId: "w1", faenaId: "lingues", days: 1, dates: ["2026-09-05"] },
+      { workerId: "w1", faenaId: "aguada", days: 3, dates: ["2026-09-01", "2026-09-02", "2026-09-03"] },
     ],
-    { workersById, faenaNameOf, dailyNet: 18452, rate: 0.1525 },
+    { workersById, faenaNameOf, dailyNet: 18452, rate: 0.1525, earned: new Map([["w2", new Map([["2026-09-03", 20000]])]]) },
   );
 
   it("arma una fila por persona y faena con los datos de la ficha y los montos", () => {
@@ -24,6 +24,7 @@ describe("lista de honorarios", () => {
       ["Los Lingues", "Beto Soto", 2, 43544, 36904],
     ]);
     expect(items[0]).toMatchObject({ rut: "11111111-1", address: "Pasaje 1", commune: "Osorno", issued: false, folio: "" });
+    expect(items[2].dates).toEqual([{ date: "2026-09-03", amount: 20000 }, { date: "2026-09-04", amount: 0 }]);
   });
 
   it("recalcula con otra tarifa y suma los totales", () => {
