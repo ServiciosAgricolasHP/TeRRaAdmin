@@ -26,6 +26,7 @@ import * as cycleSummary from "./guides/resumen-del-ciclo.mjs";
 import * as transports from "./guides/transportes.mjs";
 import * as transportPayments from "./guides/pagar-transportes.mjs";
 import * as billing from "./guides/facturacion.mjs";
+import * as commitments from "./guides/cheques-y-pagos.mjs";
 
 const SCRIPTS = {
   "primeros-pasos": firstSteps,
@@ -41,6 +42,7 @@ const SCRIPTS = {
   transportes: transports,
   "pagar-transportes": transportPayments,
   facturacion: billing,
+  "cheques-y-pagos": commitments,
 };
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const SIZES_FILE = path.join(ROOT, "src", "screens", "help", "imageSizes.json");

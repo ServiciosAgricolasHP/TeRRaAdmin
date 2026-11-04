@@ -24,6 +24,7 @@ Un cambio de interfaz en una de estas pantallas actualiza su guía y regenera su
 | `transportes` | Transportes (`/transports`): transportistas, vueltas (también las del ciclo), vueltas sin precio y el resumen del transportista | `seedLaborTypes`, `seedTransports` |
 | `pagar-transportes` | Transportes: pago por faena, resúmenes, abonos, quincenas, liquidar un resumen y los balances | `seedLaborTypes`, `seedTransports` |
 | `facturacion` | Facturación (`/facturacion`): las empresas, importar el RCV, los estados de pago y los abonos, los pendientes, las retenciones, los centros de costo y el resumen del año | `seedBilling` |
+| `cheques-y-pagos` | Cheques y pagos (`/cheques-pagos`): los próximos, anotar un cheque o un crédito, pagar, aplazar, abonar, ajustar una serie, el informe y los avisos | `seedCommitments` |
 
 ## Cómo se escribe una guía
 

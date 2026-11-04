@@ -414,3 +414,41 @@ export async function seedBilling() {
   await purchase(87410, fuel, "2026-09-12", 380000, { otrosImpuestos: 49000, otroImpuestoCodigo: 28, otroImpuestoCategory: "combustible" });
   await purchase(5470, olmos, "2026-08-01", 600000, { costCenterId: "CC1" });
 }
+
+// Para la guía de Cheques y pagos: un cheque emitido y uno recibido, un pago
+// vencido, otro aplazado, un crédito de doce cuotas con dos pagadas y una
+// deuda personal con un abono.
+export async function seedCommitments() {
+  const db = getFirestore("hpdatabase");
+  const at = new Date("2026-10-08T12:00:00-03:00");
+  const { id: companyId, ...company } = DEMO_COMPANY;
+  await db.collection("companies").doc(companyId).set({ ...company, enabled: true });
+  const base = {
+    concept: "", notes: "", bank: "", chequeNumber: "", companyId, status: "pending", paidAt: "", extra: 0,
+    seriesId: null, installment: null, createdAt: at, updatedAt: at,
+  };
+  const put = (id, data) => db.collection("commitments").doc(id).set({ ...base, ...data });
+
+  await put("A1", { kind: "chequeIssued", counterparty: "Inmobiliaria Los Olmos Ltda.", concept: "Arriendo de octubre", dueDate: "2026-10-12", issueDate: "2026-10-01", amount: 714000, bank: "012", chequeNumber: "004512" });
+  await put("A2", { kind: "payment", counterparty: "Combustibles del Valle S.A.", concept: "Petróleo de septiembre", dueDate: "2026-10-06", amount: 481000 });
+  await put("A3", { kind: "chequeReceived", counterparty: "Frutícola Cerro Verde S.A.", concept: "Factura 1190", dueDate: "2026-10-20", amount: 2856000, bank: "001", chequeNumber: "118733" });
+  await put("A4", { kind: "payment", counterparty: "Repuestos Agrícolas Sur SpA", concept: "Repuestos del tractor", dueDate: "2026-09-30", amount: 297500, status: "postponed" });
+  await put("A5", {
+    kind: "personalDebt", counterparty: "Mario Fuentes", concept: "Préstamo para la cosecha", dueDate: "2026-10-25", amount: 300000,
+    partialPayments: [{ id: "pp1", date: "2026-10-05", amount: 100000, notes: "Efectivo", createdAt: "2026-10-05T12:00:00.000Z", createdBy: null }],
+  });
+
+  await db.collection("commitmentSeries").doc("SR1").set({
+    kind: "installment", counterparty: "Banco del Estado", concept: "Crédito del tractor", notes: "", amount: 350000, companyId,
+    frequency: "monthly", firstDate: "2026-08-15", count: 12, active: true, createdAt: at, updatedAt: at,
+  });
+  for (let n = 1; n <= 12; n++) {
+    const month = 7 + n;
+    const dueDate = `${2026 + Math.floor((month - 1) / 12)}-${String(((month - 1) % 12) + 1).padStart(2, "0")}-15`;
+    const paid = n <= 2;
+    await put(`SR1_${dueDate}`, {
+      kind: "installment", counterparty: "Banco del Estado", concept: "Crédito del tractor", dueDate, amount: 350000,
+      seriesId: "SR1", installment: { n, of: 12 }, status: paid ? "paid" : "pending", paidAt: paid ? dueDate : "",
+    });
+  }
+}
