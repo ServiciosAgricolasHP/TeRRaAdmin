@@ -1,4 +1,32 @@
 {
+  "help/administracion/01-usuarios.webp": [
+    1200,
+    844
+  ],
+  "help/administracion/02-auditoria.webp": [
+    1200,
+    844
+  ],
+  "help/administracion/03-consola.webp": [
+    1200,
+    844
+  ],
+  "help/agenda-precios-y-links/01-ficha.webp": [
+    1200,
+    844
+  ],
+  "help/agenda-precios-y-links/02-agenda.webp": [
+    1200,
+    844
+  ],
+  "help/agenda-precios-y-links/03-libro-de-precios.webp": [
+    1200,
+    844
+  ],
+  "help/agenda-precios-y-links/04-links.webp": [
+    1200,
+    844
+  ],
   "help/anticipos-y-bonos/01-lista.webp": [
     1168,
     314
@@ -18,6 +46,46 @@
   "help/anticipos-y-bonos/05-despues-de-la-nomina.webp": [
     1158,
     196
+  ],
+  "help/calendario-y-dashboard/01-calendario.webp": [
+    1200,
+    844
+  ],
+  "help/calendario-y-dashboard/02-dia.webp": [
+    1440,
+    900
+  ],
+  "help/calendario-y-dashboard/03-dashboard.webp": [
+    1200,
+    844
+  ],
+  "help/cheques-y-pagos/01-proximos.webp": [
+    1200,
+    844
+  ],
+  "help/cheques-y-pagos/02-cheque.webp": [
+    672,
+    698
+  ],
+  "help/cheques-y-pagos/03-credito.webp": [
+    672,
+    744
+  ],
+  "help/cheques-y-pagos/04-pagar.webp": [
+    384,
+    326
+  ],
+  "help/cheques-y-pagos/05-menu.webp": [
+    1162,
+    254
+  ],
+  "help/cheques-y-pagos/06-abono.webp": [
+    672,
+    442
+  ],
+  "help/cheques-y-pagos/07-informe.webp": [
+    1152,
+    810
   ],
   "help/contratos/01-empleadores.webp": [
     448,
@@ -114,6 +182,54 @@
   "help/corregir-nomina/08-confirmar-sacar.webp": [
     384,
     242
+  ],
+  "help/cosecha-qr/01-prefijo.webp": [
+    384,
+    536
+  ],
+  "help/cosecha-qr/02-sincronizar.webp": [
+    384,
+    504
+  ],
+  "help/cosecha-qr/03-pesajes.webp": [
+    1200,
+    844
+  ],
+  "help/cosecha-qr/04-asignar.webp": [
+    384,
+    298
+  ],
+  "help/facturacion/01-empresas.webp": [
+    672,
+    236
+  ],
+  "help/facturacion/02-importar.webp": [
+    1280,
+    554
+  ],
+  "help/facturacion/03-facturas.webp": [
+    1200,
+    844
+  ],
+  "help/facturacion/04-nota-de-credito.webp": [
+    672,
+    802
+  ],
+  "help/facturacion/05-abono.webp": [
+    672,
+    780
+  ],
+  "help/facturacion/06-pendientes.webp": [
+    1280,
+    594
+  ],
+  "help/facturacion/07-centros-de-costo.webp": [
+    1384,
+    484
+  ],
+  "help/facturacion/08-resumen.webp": [
+    1200,
+    844
   ],
   "help/faenas-y-ciclos/01-nueva-faena.webp": [
     256,
@@ -251,23 +367,31 @@
     1200,
     844
   ],
-  "help/pagar-transportes/04-abono.webp": [
+  "help/pagar-transportes/04-pagar-suelto.webp": [
     896,
-    674
+    612
   ],
-  "help/pagar-transportes/05-nueva-quincena.webp": [
+  "help/pagar-transportes/05-abono.webp": [
+    896,
+    716
+  ],
+  "help/pagar-transportes/06-nueva-quincena.webp": [
     896,
     662
   ],
-  "help/pagar-transportes/06-quincena.webp": [
+  "help/pagar-transportes/07-quincena.webp": [
     896,
     510
   ],
-  "help/pagar-transportes/07-confirmar-pago.webp": [
+  "help/pagar-transportes/08-confirmar-pago.webp": [
+    448,
+    272
+  ],
+  "help/pagar-transportes/09-liquidar.webp": [
     448,
     252
   ],
-  "help/pagar-transportes/08-balance.webp": [
+  "help/pagar-transportes/10-balance.webp": [
     1164,
     397
   ],

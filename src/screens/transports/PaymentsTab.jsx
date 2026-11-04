@@ -10,6 +10,8 @@ import { isoDateNDaysAgo, DEFAULT_HISTORY_DAYS } from "./historyRange";
 import { PaymentDetailModal } from "./PaymentDetailModal";
 import { PaymentSection } from "./PaymentSection";
 import { PrintMultipleModal } from "./PrintMultipleModal";
+import { TypeToConfirmModal } from "./TypeToConfirmModal";
+import { payPaymentMessage } from "./fortnights";
 import ScreenLoader from "../../components/ScreenLoader";
 import { attempt } from "../../utils/attempt";
 import { readStored, writeStored } from "../../utils/browserStorage";
@@ -32,7 +34,9 @@ export function PaymentsTab() {
   const [generating, setGenerating] = useState(false);
   const [printingMany, setPrintingMany] = useState(false);
   const [viewing, setViewing] = useState(null);
-  const [confirmAction, setConfirmAction] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  // Pagar o revertir un resumen suelto: { verb, label, paymentId, run }.
+  const [confirmPay, setConfirmPay] = useState(null);
   const [showHistoricPaid, setShowHistoricPaid] = useState(false);
   // Se incrementa para que el balance vuelva a leer después de generar,
   // editar, pagar, revertir o eliminar un resumen.
@@ -333,9 +337,19 @@ export function PaymentsTab() {
         faenaById={faenaById}
         subfaenaById={subfaenaById}
         cycleById={cycleById}
-        onPay={() => setConfirmAction({ type: "pay", payment: viewing })}
-        onRevert={() => setConfirmAction({ type: "revert", payment: viewing })}
-        onDelete={() => setConfirmAction({ type: "delete", payment: viewing })}
+        onDelete={() => setConfirmDelete(viewing)}
+        onPay={(p) => setConfirmPay({
+          verb: "Pagada",
+          label: payPaymentMessage(carrierById.get(p.carrierId)?.alias || p.carrierId, p),
+          paymentId: p.id,
+          run: () => paymentsService.markPaid(p.id),
+        })}
+        onRevert={(p) => setConfirmPay({
+          verb: "Revertir",
+          label: `Revertir el pago del resumen "${carrierById.get(p.carrierId)?.alias || p.carrierId}". El resumen y sus vueltas vuelven a pendiente, con sus abonos.`,
+          paymentId: p.id,
+          run: () => paymentsService.revertPaid(p.id),
+        })}
         onChanged={async () => {
           // Recarga la lista y el balance, y vuelve a leer el resumen abierto:
           // su total cambia al editar las vueltas.
@@ -348,29 +362,38 @@ export function PaymentsTab() {
         }}
       />
 
+      {confirmPay && (
+        <TypeToConfirmModal
+          word={confirmPay.verb}
+          title={confirmPay.verb === "Revertir" ? "Revertir pago" : "Marcar como pagado"}
+          message={confirmPay.label}
+          confirmLabel={confirmPay.verb === "Revertir" ? "Revertir" : "Confirmar pago"}
+          danger={confirmPay.verb === "Revertir"}
+          onCancel={() => setConfirmPay(null)}
+          onConfirm={async () => {
+            if (!confirmPay) return;
+            await confirmPay.run();
+            setConfirmPay(null);
+            await reload();
+            setBalanceVersion((v) => v + 1);
+            const updated = await paymentsService.getById(confirmPay.paymentId);
+            if (updated) setViewing(updated);
+          }}
+        />
+      )}
+
       <ConfirmDialog
-        open={!!confirmAction}
-        title={
-          confirmAction?.type === "pay" ? "Marcar como pagado" :
-          confirmAction?.type === "revert" ? "Revertir pago" :
-          "Eliminar resumen"
-        }
-        message={
-          confirmAction?.type === "pay"
-            ? "Todas las vueltas de este resumen se marcarán como pagadas."
-            : confirmAction?.type === "revert"
-              ? "El resumen volverá a pendiente y las vueltas también."
-              : "El resumen será eliminado. Las vueltas vinculadas vuelven a quedar pendientes."
-        }
-        danger={confirmAction?.type === "delete"}
-        onCancel={() => setConfirmAction(null)}
+        open={!!confirmDelete}
+        title="Eliminar resumen"
+        message="El resumen será eliminado. Las vueltas vinculadas vuelven a quedar pendientes."
+        danger
+        onCancel={() => setConfirmDelete(null)}
         onConfirm={async () => {
-          const a = confirmAction;
-          setConfirmAction(null);
+          if (!confirmDelete) return;
+          const id = confirmDelete.id;
+          setConfirmDelete(null);
           const { error: err } = await attempt(async () => {
-            if (a.type === "pay") await paymentsService.markPaid(a.payment.id);
-            else if (a.type === "revert") await paymentsService.revertPaid(a.payment.id);
-            else if (a.type === "delete") await paymentsService.deleteSummary(a.payment.id);
+            await paymentsService.deleteSummary(id);
             setViewing(null);
             await reload();
             setBalanceVersion((v) => v + 1);

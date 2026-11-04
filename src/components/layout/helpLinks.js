@@ -7,6 +7,16 @@ export const HELP_GUIDE_BY_PATH = [
   ["/advances", "anticipos-y-bonos"],
   ["/workers", "trabajadores"],
   ["/transports", "transportes"],
+  ["/facturacion", "facturacion"],
+  ["/cheques-pagos", "cheques-y-pagos"],
+  ["/harvest-qr", "cosecha-qr"],
+  ["/calendar", "calendario-y-dashboard"],
+  ["/dashboard", "calendario-y-dashboard"],
+  ["/info-cuentas", "agenda-precios-y-links"],
+  ["/price-book", "agenda-precios-y-links"],
+  ["/links", "agenda-precios-y-links"],
+  ["/admin/", "administracion"],
+  ["/audit", "administracion"],
 ];
 
 export function helpPathFor(pathname) {

@@ -16,13 +16,19 @@ Un cambio de interfaz en una de estas pantallas actualiza su guía y regenera su
 | `grilla-del-ciclo` | la grilla del ciclo (`/cycles/:id`) | |
 | `precios-del-dia` | los precios y el piso de cada tipo de labor, en la grilla del ciclo | `seedLaborTypes` |
 | `resumen-del-ciclo` | el resumen del ciclo (`CycleSummaryModal`): para pagar y para cobrar | `seedDayNote` |
-| `nomina` | Nómina: generar, el historial, el detalle, descargar, imprimir y pagar | `seedCashWorkers` |
+| `nomina` | Nómina: generar, el historial, el detalle, descargar, imprimir, pagar y el portal de trabajadores | `seedCashWorkers` |
 | `corregir-nomina` | el detalle de una nómina: recalcular, agregar y sacar | `seedCashWorkers`, `seedLaborTypes` |
 | `anticipos-y-bonos` | Anticipos / Bonos (`/advances`) y cómo los aplica Nómina | `seedCashWorkers`, `seedAdvances` |
 | `trabajadores` | Trabajadores (`/workers`): la lista, la ficha, la forma de pago, los datos personales y el resumen | `seedCashWorkers`, `seedWorkerDetails` |
 | `contratos` | Las pestañas Contratos (con los empleadores y los mandantes), Honorarios e Imposiciones de Trabajadores, el historial de la ficha y la vista "Por contrato" de la grilla | `seedEmployments` |
 | `transportes` | Transportes (`/transports`): transportistas, vueltas (también las del ciclo), vueltas sin precio y el resumen del transportista | `seedLaborTypes`, `seedTransports` |
-| `pagar-transportes` | Transportes: pago por faena, resúmenes, abonos, quincenas y los balances | `seedLaborTypes`, `seedTransports` |
+| `pagar-transportes` | Transportes: pago por faena, resúmenes, abonos, quincenas, liquidar un resumen y los balances | `seedLaborTypes`, `seedTransports` |
+| `facturacion` | Facturación (`/facturacion`): las empresas, importar el RCV, los estados de pago y los abonos, los pendientes, las retenciones, los centros de costo y el resumen del año | `seedBilling` |
+| `cheques-y-pagos` | Cheques y pagos (`/cheques-pagos`): los próximos, anotar un cheque o un crédito, pagar, aplazar, abonar, ajustar una serie, el informe y los avisos | `seedCommitments` |
+| `cosecha-qr` | Cosecha QR (`/harvest-qr`): los prefijos, sincronizar, los pesajes y los QR de cada persona | `seedLaborTypes`, `seedHarvestQr` |
+| `calendario-y-dashboard` | Calendario (`/calendar`) y Dashboard (`/dashboard`) | `seedLaborTypes`, `seedTransports`, `seedCommitments`, `seedBilling`, `seedPayrollHistory` |
+| `agenda-precios-y-links` | Agenda y Cuentas (`/info-cuentas`), Libro de Precios (`/price-book`) y Links útiles (`/links`) | `seedInfoAndLinks` |
+| `administracion` | Solo admin: Usuarios, Auditoría, la consola, publicar en el portal y los ajustes de admin de otras pantallas | `seedAdmin` |
 
 ## Cómo se escribe una guía
 

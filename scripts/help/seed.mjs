@@ -345,3 +345,229 @@ if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, "/")}`) {
   console.log("datos de la ayuda sembrados");
   process.exit(0);
 }
+
+// Para la guía de Facturación: una empresa, dos centros de costo, las ventas y
+// compras de octubre (una factura con abono, una solo neto, una que anula una
+// nota de crédito y un combustible) y algunas de agosto y septiembre para el
+// resumen del año.
+export const DEMO_COMPANY = { id: "E1", rut: rut(76543210), razonSocial: "Servicios Agrícolas Demo SpA", alias: "Agrícola Demo" };
+
+export async function seedBilling() {
+  const db = getFirestore("hpdatabase");
+  const at = new Date("2026-10-08T12:00:00-03:00");
+  const { id: companyId, ...company } = DEMO_COMPANY;
+  await db.collection("companies").doc(companyId).set({ ...company, enabled: true });
+  await db.collection("costCenters").doc("CC1").set({ label: "Arriendo", emoji: "🏠" });
+  await db.collection("costCenters").doc("CC2").set({ label: "Mantención", emoji: "🔧" });
+  await db.collection("informalExpenses").doc("G1").set({
+    costCenterId: "CC2", companyId, date: "2026-10-04", amount: 45000, detail: "Soldadura del portón",
+  });
+
+  const sale = (tipo, folio, client, date, neto, extra = {}) => {
+    const iva = Math.round(neto * 0.19);
+    return db.collection("dteDocuments").doc(`${companyId}_V_${tipo}_${folio}`).set({
+      companyId, companyAlias: company.alias, kind: "venta", tipo, tipoLabel: tipo === 61 ? "Nota de Crédito Electrónica" : "Factura Electrónica",
+      folio, fechaEmision: date, periodo: date.slice(0, 7),
+      rutEmisor: company.rut, razonSocialEmisor: company.razonSocial,
+      rutReceptor: rut(client.num), razonSocialReceptor: client.name,
+      exento: 0, neto, iva, otrosImpuestos: 0, total: neto + iva,
+      source: "sii_import", sourceFile: `RCV_VENTA_${date.slice(0, 7)}.csv`, importedAt: at, updatedAt: at,
+      paymentStatus: "unpaid", payments: [], amountPaid: 0, notes: "", ...extra,
+    });
+  };
+  const purchase = (folio, supplier, date, neto, extra = {}) => {
+    const iva = Math.round(neto * 0.19);
+    const other = extra.otrosImpuestos || 0;
+    return db.collection("dteDocuments").doc(`${companyId}_C_${supplier.num}_33_${folio}`).set({
+      companyId, companyAlias: company.alias, kind: "compra", tipo: 33, tipoLabel: "Factura Electrónica",
+      folio, fechaEmision: date, periodo: date.slice(0, 7),
+      rutEmisor: rut(supplier.num), razonSocialEmisor: supplier.name,
+      rutReceptor: company.rut, razonSocialReceptor: company.razonSocial,
+      exento: 0, neto, iva, otrosImpuestos: other, total: neto + iva + other,
+      source: "sii_import", sourceFile: `RCV_COMPRA_${date.slice(0, 7)}.csv`, importedAt: at, updatedAt: at,
+      paymentStatus: "unpaid", payments: [], amountPaid: 0, ...extra,
+    });
+  };
+
+  const cerroVerde = { num: 96123450, name: "Frutícola Cerro Verde S.A." };
+  const brisas = { num: 77234561, name: "Exportadora Las Brisas SpA" };
+  const sanPedro = { num: 78345672, name: "Agrícola San Pedro Ltda." };
+  const roble = { num: 79456783, name: "Comercial El Roble SpA" };
+  await sale(33, 1201, cerroVerde, "2026-10-03", 2000000);
+  await sale(33, 1202, brisas, "2026-10-06", 1500000, {
+    payments: [{ id: "p1", date: "2026-10-08", kind: "abono", amount: 800000, notes: "Transferencia", recordedAt: "2026-10-08T12:00:00.000Z" }],
+    amountPaid: 800000,
+  });
+  await sale(33, 1203, sanPedro, "2026-10-07", 900000, { paymentStatus: "net_only" });
+  await sale(33, 1204, roble, "2026-10-07", 300000);
+  await sale(61, 46, roble, "2026-10-08", 300000);
+  await sale(33, 1190, cerroVerde, "2026-09-15", 2400000, { paymentStatus: "paid" });
+  await sale(33, 1185, brisas, "2026-08-20", 1800000, { paymentStatus: "paid" });
+
+  const fuel = { num: 96654320, name: "Combustibles del Valle S.A." };
+  const olmos = { num: 76765431, name: "Inmobiliaria Los Olmos Ltda." };
+  const parts = { num: 77876542, name: "Repuestos Agrícolas Sur SpA" };
+  await purchase(88123, fuel, "2026-10-02", 400000, { otrosImpuestos: 52000, otroImpuestoCodigo: 28, otroImpuestoCategory: "combustible" });
+  await purchase(5501, olmos, "2026-10-01", 600000, { costCenterId: "CC1" });
+  await purchase(3307, parts, "2026-10-05", 250000, { costCenterId: "CC2" });
+  await purchase(5487, olmos, "2026-09-01", 600000, { costCenterId: "CC1" });
+  await purchase(87410, fuel, "2026-09-12", 380000, { otrosImpuestos: 49000, otroImpuestoCodigo: 28, otroImpuestoCategory: "combustible" });
+  await purchase(5470, olmos, "2026-08-01", 600000, { costCenterId: "CC1" });
+}
+
+// Para la guía de Cheques y pagos: un cheque emitido y uno recibido, un pago
+// vencido, otro aplazado, un crédito de doce cuotas con dos pagadas y una
+// deuda personal con un abono.
+export async function seedCommitments() {
+  const db = getFirestore("hpdatabase");
+  const at = new Date("2026-10-08T12:00:00-03:00");
+  const { id: companyId, ...company } = DEMO_COMPANY;
+  await db.collection("companies").doc(companyId).set({ ...company, enabled: true });
+  const base = {
+    concept: "", notes: "", bank: "", chequeNumber: "", companyId, status: "pending", paidAt: "", extra: 0,
+    seriesId: null, installment: null, createdAt: at, updatedAt: at,
+  };
+  const put = (id, data) => db.collection("commitments").doc(id).set({ ...base, ...data });
+
+  await put("A1", { kind: "chequeIssued", counterparty: "Inmobiliaria Los Olmos Ltda.", concept: "Arriendo de octubre", dueDate: "2026-10-12", issueDate: "2026-10-01", amount: 714000, bank: "012", chequeNumber: "004512" });
+  await put("A2", { kind: "payment", counterparty: "Combustibles del Valle S.A.", concept: "Petróleo de septiembre", dueDate: "2026-10-06", amount: 481000 });
+  await put("A3", { kind: "chequeReceived", counterparty: "Frutícola Cerro Verde S.A.", concept: "Factura 1190", dueDate: "2026-10-20", amount: 2856000, bank: "001", chequeNumber: "118733" });
+  await put("A4", { kind: "payment", counterparty: "Repuestos Agrícolas Sur SpA", concept: "Repuestos del tractor", dueDate: "2026-09-30", amount: 297500, status: "postponed" });
+  await put("A5", {
+    kind: "personalDebt", counterparty: "Mario Fuentes", concept: "Préstamo para la cosecha", dueDate: "2026-10-25", amount: 300000,
+    partialPayments: [{ id: "pp1", date: "2026-10-05", amount: 100000, notes: "Efectivo", createdAt: "2026-10-05T12:00:00.000Z", createdBy: null }],
+  });
+
+  await db.collection("commitmentSeries").doc("SR1").set({
+    kind: "installment", counterparty: "Banco del Estado", concept: "Crédito del tractor", notes: "", amount: 350000, companyId,
+    frequency: "monthly", firstDate: "2026-08-15", count: 12, active: true, createdAt: at, updatedAt: at,
+  });
+  for (let n = 1; n <= 12; n++) {
+    const month = 7 + n;
+    const dueDate = `${2026 + Math.floor((month - 1) / 12)}-${String(((month - 1) % 12) + 1).padStart(2, "0")}-15`;
+    const paid = n <= 2;
+    await put(`SR1_${dueDate}`, {
+      kind: "installment", counterparty: "Banco del Estado", concept: "Crédito del tractor", dueDate, amount: 350000,
+      seriesId: "SR1", installment: { n, of: 12 }, status: paid ? "paid" : "pending", paidAt: paid ? dueDate : "",
+    });
+  }
+}
+
+// Para la guía de Cosecha QR (después de `seedLaborTypes`): el prefijo SE
+// apuntado a la cosecha de Santa Elena, otro sin apuntar, un QR para cada
+// cosechero y los pesajes del 7 de octubre, también de Elena, que todavía no
+// está en la labor.
+export async function seedHarvestQr() {
+  const db = getFirestore("hpdatabase");
+  const at = new Date("2026-10-07T18:00:00-03:00");
+  const pickers = [...DEMO_WORKERS.slice(0, 4), DEMO_WORKERS[4]];
+  const padron = {};
+  for (const [i, w] of pickers.entries()) {
+    const code = `SE-${101 + i}`;
+    padron[code] = { rut: w.id, name: w.name };
+    await db.collection("worker").doc(w.id).update({ idQr: [code] });
+  }
+  await db.collection("qrPrefixes").doc("SE").set({
+    label: "SE — Santa Elena", faenaId: "F2", cycleId: LABOR_TYPES_CYCLE, laborId: "L2", active: true, padron, createdAt: at, updatedAt: at,
+  });
+  await db.collection("qrPrefixes").doc("LA").set({
+    label: "LA — Los Aromos", faenaId: "F1", cycleId: null, laborId: null, active: false, padron: {}, createdAt: at, updatedAt: at,
+  });
+
+  const batch = db.batch();
+  pickers.forEach((w, i) => {
+    [9.4, 10.1, 8.7].forEach((kilos, j) => {
+      batch.set(db.collection("harvestWeights").doc(`W${i}${j}`), {
+        prefix: "SE", rut: w.id, dateKey: "2026-10-07", amount: Math.round((kilos + i * 0.6) * 10) / 10,
+        weightProcess: 0, weightType: 1, idQr: `SE-${101 + i}`, supervisor: "Marta", dateInsert: Timestamp.fromDate(new Date(at.getTime() + (i * 3 + j) * 60000)),
+      });
+    });
+  });
+  await batch.commit();
+}
+
+// Para el Dashboard: tres nóminas ya pagadas (agosto, septiembre y octubre),
+// solo con los totales que lee el tablero.
+export async function seedPayrollHistory() {
+  const db = getFirestore("hpdatabase");
+  const payrolls = [
+    { id: "N1", name: "Nómina 1-15 de agosto", paidAt: "2026-08-20", bankTotal: 3150000, cashTotal: 420000, advanceTotal: 150000, workerCount: 6 },
+    { id: "N2", name: "Nómina 1-15 de septiembre", paidAt: "2026-09-19", bankTotal: 3480000, cashTotal: 390000, advanceTotal: 90000, workerCount: 6 },
+    { id: "N3", name: "Nómina 16-30 de septiembre", paidAt: "2026-10-03", bankTotal: 2960000, cashTotal: 510000, advanceTotal: 120000, workerCount: 6 },
+  ];
+  for (const { id, ...p } of payrolls) {
+    const at = new Date(`${p.paidAt}T12:00:00-03:00`);
+    await db.collection("payrolls").doc(id).set({
+      ...p, total: p.bankTotal + p.cashTotal, status: "paid", bankPaidAt: p.paidAt, cycleIds: [], cycleLabels: [],
+      createdAt: Timestamp.fromDate(at), updatedAt: Timestamp.fromDate(at),
+    });
+  }
+}
+
+// Para la guía de Agenda y Cuentas, Libro de Precios y Links útiles: dos
+// fichas con cuentas, unos contactos de la agenda, dos entradas del libro y
+// tres links.
+export async function seedInfoAndLinks() {
+  const db = getFirestore("hpdatabase");
+  const at = new Date("2026-10-01T12:00:00-03:00");
+  await db.collection("contactCards").doc("K1").set({
+    type: "empresa", name: "Transportes Ríos Ltda.", rut: rut(76987650), includeRut: true, phone: "+56912345601",
+    email: "pagos@transportesrios.cl", address: "Camino a Rengo 1200", giro: "Transporte de pasajeros", note: "", favorite: true,
+    accounts: [{ id: "a1", label: "Cuenta corriente", titular: "Transportes Ríos Ltda.", rutTitular: rut(76987650), bankCode: "037", accountType: 0, accountNumber: "61234509", email: "pagos@transportesrios.cl" }],
+  });
+  await db.collection("contactCards").doc("K2").set({
+    type: "persona", name: "Mario Fuentes", rut: rut(12345678), includeRut: true, phone: "+56987654321", email: "", address: "",
+    giro: "", note: "Préstamo para la cosecha", favorite: false,
+    accounts: [{ id: "a1", label: "Cuenta RUT", titular: "Mario Fuentes", rutTitular: rut(12345678), bankCode: "012", accountType: 3, accountNumber: "12345678", email: "" }],
+  });
+
+  const contacts = [
+    { name: "Carolina Muñoz", company: "Frutícola Cerro Verde S.A.", contactType: "client", department: "Operaciones", role: "Jefa de campo", phones: [{ number: "+56911112222", label: "Móvil" }], emails: ["cmunoz@cerroverde.cl"] },
+    { name: "Pedro Ríos", company: "Transportes Ríos Ltda.", contactType: "carrier", department: "", role: "Dueño", phones: [{ number: "+56912345601", label: "Móvil" }], emails: [] },
+    { name: "Mesa central", company: "Exportadora Las Brisas SpA", contactType: "client", department: "Administración", role: "", phones: [{ number: "+56722345678", label: "Oficina" }], emails: ["contacto@lasbrisas.cl"] },
+    { name: "Luis Soto", company: "Repuestos Agrícolas Sur SpA", contactType: "supplier", department: "Ventas", role: "Vendedor", phones: [{ number: "+56933334444", label: "Móvil" }], emails: ["lsoto@repuestossur.cl"] },
+  ];
+  for (const [i, c] of contacts.entries()) {
+    await db.collection("phoneContacts").doc(`P${i + 1}`).set({
+      otherNames: [], companyRut: "", notes: "", sources: ["sheet"], createdAt: at, updatedAt: at, ...c,
+    });
+  }
+
+  await db.collection("priceBookEntries").doc("B1").set({
+    faenaId: "F1", faenaLabel: "Fundo Los Aromos", labor: "Cosecha",
+    prices: [{ unit: "Kilo", label: "Exportación", payPrice: 350, chargePrice: 480, hasOvertime: false }],
+    transportIncluded: true, transportWhere: null, transportCost: null, dateFrom: "2026-01-05", dateTo: null, periodNote: "Temporada 2025-2026", notes: null,
+  });
+  await db.collection("priceBookEntries").doc("B2").set({
+    faenaId: null, faenaLabel: "Fundo Los Alerces — 2025", labor: "Poda",
+    prices: [{ unit: "Jornada", label: "", payPrice: 30000, chargePrice: 42000, hasOvertime: true, overtimePayPrice: 4800, overtimeChargePrice: 6500 }],
+    transportIncluded: false, transportWhere: "Rengo → Fundo Los Alerces", transportCost: 25000, dateFrom: "2025-06-01", dateTo: "2025-08-31", periodNote: "Invierno 2025", notes: null,
+  });
+  await db.collection("priceBookConfig").doc("main").set({ units: ["Kilo", "Jornada"], hiddenFaenaIds: [] });
+
+  const links = [
+    { text: "SII — Registro de Compras y Ventas", url: "https://www4.sii.cl/consdcvinternetui/" },
+    { text: "Previred", url: "https://www.previred.com/" },
+    { text: "Banco de Chile — Empresas", url: "https://portalempresas.bancochile.cl/" },
+  ];
+  for (const [i, l] of links.entries()) await db.collection("interestLinks").doc(`L${i + 1}`).set({ ...l, order: i });
+}
+
+// Para la guía de Administración: dos cuentas más (una suspendida) y los
+// cambios de una mañana en la auditoría.
+export async function seedAdmin() {
+  const db = getFirestore("hpdatabase");
+  const { uid } = await getAuth().getUserByEmail(DEMO_USER.email);
+  const ts = (time) => Timestamp.fromDate(new Date(`2026-10-09T${time}:00-03:00`));
+  await db.collection("users").doc("U2").set({ role: "user", email: "secretaria@terra.test", alias: "Paula", lastSeenAt: ts("09:12") });
+  await db.collection("users").doc("U3").set({ role: "user", email: "bodega@terra.test", alias: "Jorge", disabled: true, lastSeenAt: Timestamp.fromDate(new Date("2026-09-12T17:40:00-03:00")) });
+
+  const [ana, bruno] = DEMO_WORKERS;
+  const logs = [
+    { uid: "U2", email: "secretaria@terra.test", action: "update", entity: "worker", entityId: ana.id, changes: { email: { from: "", to: "ana.perez@correo.cl" } }, meta: { workerRut: ana.rut }, timestamp: ts("08:41") },
+    { uid: "U2", email: "secretaria@terra.test", action: "create", entity: "advance", entityId: "AD1", after: { type: "anticipo", workerRut: bruno.rut, amount: 50000, status: "pending" }, meta: { workerRut: bruno.rut }, timestamp: ts("08:47") },
+    { uid: "U2", email: "secretaria@terra.test", action: "update", entity: "workday", entityId: `${DEMO_CYCLE}__L1__${bruno.rut}__2026-10-08`, changes: { amount: { from: 0, to: 30000 } }, meta: { workerRut: bruno.rut, cycleId: DEMO_CYCLE }, timestamp: ts("08:55") },
+    { uid, email: DEMO_USER.email, action: "update", entity: "cycle", entityId: DEMO_CYCLE, changes: { days: { from: ["2026-10-05"], to: ["2026-10-05", "2026-10-06"] } }, meta: {}, timestamp: ts("10:05") },
+  ];
+  for (const [i, l] of logs.entries()) await db.collection("logs").doc(`LG${i + 1}`).set(l);
+}
