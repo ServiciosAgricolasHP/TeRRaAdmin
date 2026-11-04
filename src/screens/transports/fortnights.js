@@ -1,6 +1,7 @@
 // Ayudas de las quincenas: el rango compacto del encabezado, cuánto de cada
-// resumen está cobrado y el orden por período.
+// resumen está cobrado, el texto para confirmar su pago y el orden por período.
 
+import { fmtCurrency } from "../../utils/format";
 import { millisOf } from "../../utils/syncedList";
 
 // "2026-04-16" → "16-04-26". Así el rango del encabezado de cada quincena va en
@@ -22,6 +23,15 @@ export function paymentSplit(p) {
   if (p?.status === "paid") return { pending: 0, paid: total, total };
   const abonado = (p?.abonos || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
   return { pending: Math.max(0, total - abonado), paid: Math.min(abonado, total), total };
+}
+
+// La confirmación de pagar un resumen dice lo que falta pagar: lo abonado ya se
+// pagó. La usan la quincena y el detalle de un resumen suelto.
+export function payPaymentMessage(name, payment) {
+  const { pending, paid, total } = paymentSplit(payment);
+  return paid > 0
+    ? `Marcar el resumen "${name}" como pagado. De ${fmtCurrency(total)} ya se abonaron ${fmtCurrency(paid)}: falta pagar ${fmtCurrency(pending)}.`
+    : `Marcar el resumen "${name}" (${fmtCurrency(total)}) como pagado.`;
 }
 
 // Ordena quincenas por período (periodFrom, la más reciente primero), no por

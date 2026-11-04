@@ -9,7 +9,7 @@ import { FortnightCreateModal } from "./FortnightCreateModal";
 import { FortnightDetailModal } from "./FortnightDetailModal";
 import { FortnightMetaEditModal } from "./FortnightMetaEditModal";
 import { FortnightBalanceSummary } from "./FortnightBalanceSummary";
-import { compareFortnightPeriod, paymentSplit } from "./fortnights";
+import { compareFortnightPeriod, payPaymentMessage, paymentSplit } from "./fortnights";
 import { TypeToConfirmModal } from "./TypeToConfirmModal";
 import ScreenLoader from "../../components/ScreenLoader";
 import { attempt } from "../../utils/attempt";
@@ -108,13 +108,9 @@ export function FortnightsTab() {
     });
   };
   const askMarkItemPaid = (payment) => {
-    const name = carriersById.get(payment.carrierId)?.alias || payment.carrierId;
-    const { pending, paid, total } = paymentSplit(payment);
     setConfirmPay({
       verb: "Pagada",
-      label: paid > 0
-        ? `Marcar el resumen "${name}" como pagado. De ${fmtCurrency(total)} ya se abonaron ${fmtCurrency(paid)}: falta pagar ${fmtCurrency(pending)}.`
-        : `Marcar el resumen "${name}" (${fmtCurrency(total)}) como pagado.`,
+      label: payPaymentMessage(carriersById.get(payment.carrierId)?.alias || payment.carrierId, payment),
       onConfirm: async () => {
         await paymentsService.markPaid(payment.id);
         setConfirmPay(null);

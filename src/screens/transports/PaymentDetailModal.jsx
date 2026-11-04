@@ -12,7 +12,7 @@ import { PaymentAbonos } from "./PaymentAbonos";
 import { attempt } from "../../utils/attempt";
 import { useValuesChanged } from "../../hooks/useValuesChanged";
 
-export function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], faenaById, subfaenaById, cycleById, onDelete, onChanged }) {
+export function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], faenaById, subfaenaById, cycleById, onPay, onRevert, onDelete, onChanged }) {
   const toast = useToast();
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -214,10 +214,27 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
               + Vuelta suelta
             </button>
           )}
-          {/* Marcar pagado y revertir se hacen desde "Quincenas"; acá solo se
-              edita o elimina el resumen. Abierto desde una quincena, `onDelete`
-              llega null y el botón no se muestra: para eliminar el resumen
+          {/* Un resumen suelto se paga y se revierte acá; uno que está en una
+              quincena, desde la quincena. Pagar lleva los abonos que se ven,
+              aunque el padre todavía no haya releído el resumen. Abierto desde una quincena, `onPay`,
+              `onRevert` y `onDelete` llegan null: para eliminar el resumen
               primero hay que sacarlo de la quincena. */}
+          {!isPaid && onPay && !payment.payrollId && (
+            <button
+              onClick={() => onPay({ ...payment, abonos })}
+              className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]"
+            >
+              💰 Marcar pagado
+            </button>
+          )}
+          {isPaid && onRevert && !payment.payrollId && (
+            <button
+              onClick={() => onRevert(payment)}
+              className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]"
+            >
+              ↶ Revertir pago
+            </button>
+          )}
           {!isPaid && onDelete && (
             <button
               onClick={onDelete}

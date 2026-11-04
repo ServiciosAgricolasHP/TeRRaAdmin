@@ -92,6 +92,7 @@ describe("preguntas típicas", () => {
     ["marcar la quincena pagada", "pagar-transportes#pagar-la-quincena"],
     ["liquidar un resumen con abonos", "pagar-transportes#liquidar-un-resumen"],
     ["pagar el saldo del resumen", "pagar-transportes#liquidar-un-resumen"],
+    ["pagar un resumen sin quincena", "pagar-transportes#pagar-un-resumen-suelto"],
     ["cómo importo las facturas del SII", "facturacion#importar-el-registro-del-sii"],
     ["marcar una factura pagada", "facturacion#marcar-si-una-factura-esta-pagada"],
     ["abono a una factura", "facturacion#anotar-un-pago-o-un-abono"],

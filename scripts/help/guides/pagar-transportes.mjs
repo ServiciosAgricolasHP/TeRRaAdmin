@@ -1,6 +1,6 @@
 // Capturas de la guía "Pagar a los transportistas"
 // (src/screens/help/guides/pagar-transportes.md): el pago por faena, los
-// resúmenes, un abono, una quincena nueva, su detalle, la confirmación del
+// resúmenes, pagar uno suelto, un abono, una quincena nueva, su detalle, la confirmación del
 // pago, la de liquidar el resumen con el abono y el balance de quincenas.
 import { seedLaborTypes, seedTransports } from "../seed.mjs";
 
@@ -47,13 +47,14 @@ export async function run({ page, base, login, shot }) {
   await page.getByRole("button", { name: /📅/ }).filter({ hasText: "$150.000" }).first().click();
   const detail = modal(page, /^Resumen — /);
   await detail.waitFor({ timeout: 60000 });
+  await shot(page, "04-pagar-suelto", detail, { pad: 0, marks: [detail.getByRole("button", { name: /Marcar pagado/ })] });
   const abonos = detail.getByText(/💰 Abonos/).locator("xpath=ancestor::div[contains(@class,'rounded-md')][1]");
   await abonos.locator("input[type=number]").last().fill("50000");
   await abonos.getByPlaceholder("ej. transferencia, efectivo, cheque...").fill("Transferencia");
   await abonos.getByRole("button", { name: "+ Abono" }).click();
   await abonos.getByText("Transferencia").first().waitFor({ timeout: 60000 });
   await page.waitForTimeout(800);
-  await shot(page, "04-abono", detail, { pad: 0 });
+  await shot(page, "05-abono", detail, { pad: 0 });
   await detail.getByRole("button", { name: "Cerrar", exact: true }).click();
   await detail.waitFor({ state: "detached" });
 
@@ -69,7 +70,7 @@ export async function run({ page, base, login, shot }) {
   for (const box of await importBox.locator("input[type=checkbox]").all()) await box.check();
   await page.waitForTimeout(500);
   const createButton = create.getByRole("button", { name: /^Crear quincena/ });
-  await shot(page, "05-nueva-quincena", create, { pad: 0, marks: [createButton] });
+  await shot(page, "06-nueva-quincena", create, { pad: 0, marks: [createButton] });
   await createButton.click();
   await create.waitFor({ state: "detached", timeout: 60000 });
 
@@ -77,19 +78,19 @@ export async function run({ page, base, login, shot }) {
   await page.getByText("Quincena 1-15 de Octubre").first().waitFor({ timeout: 60000 });
   await page.waitForTimeout(1000);
   const balance = page.getByText(/Balance de quincenas/).first().locator("xpath=ancestor::div[contains(@class,'rounded')][1]");
-  await shot(page, "09-balance", balance, { pad: 6 });
+  await shot(page, "10-balance", balance, { pad: 6 });
   await page.getByText("Quincena 1-15 de Octubre").last().click();
   const fortnight = modal(page, /Quincena 1-15 de Octubre/);
   await fortnight.getByText("TOTAL").first().waitFor({ timeout: 60000 });
   await page.waitForTimeout(800);
   const payAll = fortnight.getByRole("button", { name: "💰 Marcar quincena pagada" });
-  await shot(page, "06-quincena", fortnight, { pad: 0, marks: [payAll] });
+  await shot(page, "07-quincena", fortnight, { pad: 0, marks: [payAll] });
 
   // Confirmar el pago escribiendo la palabra.
   await payAll.click();
   const confirm = modal(page, "Marcar como pagada");
   await confirm.getByRole("textbox").fill("Pagada");
-  await shot(page, "07-confirmar-pago", confirm, { pad: 0 });
+  await shot(page, "08-confirmar-pago", confirm, { pad: 0 });
   await confirm.getByRole("button", { name: "Cancelar", exact: true }).click();
   await confirm.waitFor({ state: "detached" });
 
@@ -98,6 +99,6 @@ export async function run({ page, base, login, shot }) {
   const settle = modal(page, "Marcar como pagada");
   await settle.getByText(/falta pagar/).waitFor();
   await settle.getByRole("textbox").fill("Pagada");
-  await shot(page, "08-liquidar", settle, { pad: 0 });
+  await shot(page, "09-liquidar", settle, { pad: 0 });
   await settle.getByRole("button", { name: "Cancelar", exact: true }).click();
 }

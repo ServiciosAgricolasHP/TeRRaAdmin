@@ -10,6 +10,8 @@ import { isoDateNDaysAgo, DEFAULT_HISTORY_DAYS } from "./historyRange";
 import { PaymentDetailModal } from "./PaymentDetailModal";
 import { PaymentSection } from "./PaymentSection";
 import { PrintMultipleModal } from "./PrintMultipleModal";
+import { TypeToConfirmModal } from "./TypeToConfirmModal";
+import { payPaymentMessage } from "./fortnights";
 import ScreenLoader from "../../components/ScreenLoader";
 import { attempt } from "../../utils/attempt";
 import { readStored, writeStored } from "../../utils/browserStorage";
@@ -33,9 +35,11 @@ export function PaymentsTab() {
   const [printingMany, setPrintingMany] = useState(false);
   const [viewing, setViewing] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  // Pagar o revertir un resumen suelto: { verb, label, paymentId, run }.
+  const [confirmPay, setConfirmPay] = useState(null);
   const [showHistoricPaid, setShowHistoricPaid] = useState(false);
   // Se incrementa para que el balance vuelva a leer después de generar,
-  // editar o eliminar un resumen.
+  // editar, pagar, revertir o eliminar un resumen.
   const [balanceVersion, setBalanceVersion] = useState(0);
 
   // Filtros y orden de la lista de resúmenes; solo el orden se guarda en
@@ -334,6 +338,18 @@ export function PaymentsTab() {
         subfaenaById={subfaenaById}
         cycleById={cycleById}
         onDelete={() => setConfirmDelete(viewing)}
+        onPay={(p) => setConfirmPay({
+          verb: "Pagada",
+          label: payPaymentMessage(carrierById.get(p.carrierId)?.alias || p.carrierId, p),
+          paymentId: p.id,
+          run: () => paymentsService.markPaid(p.id),
+        })}
+        onRevert={(p) => setConfirmPay({
+          verb: "Revertir",
+          label: `Revertir el pago del resumen "${carrierById.get(p.carrierId)?.alias || p.carrierId}". El resumen y sus vueltas vuelven a pendiente, con sus abonos.`,
+          paymentId: p.id,
+          run: () => paymentsService.revertPaid(p.id),
+        })}
         onChanged={async () => {
           // Recarga la lista y el balance, y vuelve a leer el resumen abierto:
           // su total cambia al editar las vueltas.
@@ -345,6 +361,26 @@ export function PaymentsTab() {
           }
         }}
       />
+
+      {confirmPay && (
+        <TypeToConfirmModal
+          word={confirmPay.verb}
+          title={confirmPay.verb === "Revertir" ? "Revertir pago" : "Marcar como pagado"}
+          message={confirmPay.label}
+          confirmLabel={confirmPay.verb === "Revertir" ? "Revertir" : "Confirmar pago"}
+          danger={confirmPay.verb === "Revertir"}
+          onCancel={() => setConfirmPay(null)}
+          onConfirm={async () => {
+            if (!confirmPay) return;
+            await confirmPay.run();
+            setConfirmPay(null);
+            await reload();
+            setBalanceVersion((v) => v + 1);
+            const updated = await paymentsService.getById(confirmPay.paymentId);
+            if (updated) setViewing(updated);
+          }}
+        />
+      )}
 
       <ConfirmDialog
         open={!!confirmDelete}

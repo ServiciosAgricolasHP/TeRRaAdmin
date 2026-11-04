@@ -367,27 +367,31 @@
     1200,
     844
   ],
-  "help/pagar-transportes/04-abono.webp": [
+  "help/pagar-transportes/04-pagar-suelto.webp": [
     896,
-    674
+    612
   ],
-  "help/pagar-transportes/05-nueva-quincena.webp": [
+  "help/pagar-transportes/05-abono.webp": [
+    896,
+    716
+  ],
+  "help/pagar-transportes/06-nueva-quincena.webp": [
     896,
     662
   ],
-  "help/pagar-transportes/06-quincena.webp": [
+  "help/pagar-transportes/07-quincena.webp": [
     896,
     510
   ],
-  "help/pagar-transportes/07-confirmar-pago.webp": [
+  "help/pagar-transportes/08-confirmar-pago.webp": [
     448,
     272
   ],
-  "help/pagar-transportes/08-liquidar.webp": [
+  "help/pagar-transportes/09-liquidar.webp": [
     448,
     252
   ],
-  "help/pagar-transportes/09-balance.webp": [
+  "help/pagar-transportes/10-balance.webp": [
     1164,
     397
   ],
