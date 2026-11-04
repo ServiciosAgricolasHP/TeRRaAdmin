@@ -1,12 +1,12 @@
 import { doc, collection, serverTimestamp } from "firebase/firestore";
 import { writeBatch } from "./readMeter";
 import { db, auth } from "../firebase";
-import { createService } from "./firestoreBase";
-import { invalidate } from "./cache";
+import { createAdditiveService } from "./firestoreBase";
+import { createSyncedList } from "./syncedList";
 import { logAction } from "./logger";
 import { listCycles, listJobs } from "./jobLists";
 import { fetchWorkdaysInRange } from "./calendarService";
-import { earnedByDay, workedDays } from "../utils/employment";
+import { earnedByDay, employmentsOf, openFrom, settlementsSince, workedDays } from "../utils/employment";
 import { workdayPayAmount } from "../utils/payroll";
 import { workerIdResolver } from "../utils/workerRut";
 
@@ -17,57 +17,49 @@ import { workerIdResolver } from "../utils/workerRut";
 
 const COLLECTION = "employments";
 
-export const employersService = createService("employer", "employers");
-export const principalsService = createService("principal", "principals");
-export const employmentsService = createService("employment", COLLECTION);
+export const employersService = createAdditiveService("employer", "employers");
+export const principalsService = createAdditiveService("principal", "principals");
+export const employmentsService = createAdditiveService("employment", COLLECTION);
 
-// Los empleadores y los mandantes son pocos y cambian poco: un día en caché,
-// también en `localStorage`.
-export const EMPLOYERS_LIST = { order: ["name", "asc"], cache: true, persist: true, ttl: 24 * 60 * 60 * 1000 };
-export const PRINCIPALS_LIST = EMPLOYERS_LIST;
+// Los períodos, los empleadores y los mandantes son listas sincronizadas
+// (`createSyncedList`): la copia del navegador se pone al día con lo que
+// cambió en cualquier equipo, como mucho una vez por minuto, y con un conteo
+// que la vuelve a leer entera si se eliminó algo en otro equipo. Se leen
+// enteras una vez por semana. Las altas y ediciones de a uno la corrigen en
+// su lugar (`additive`) y las acciones masivas la ponen al día al terminar.
+// Las pantallas filtran la copia, sin consultas propias.
+const SYNC_OPTS = { fullEveryDays: 7, checkCount: true };
+const employmentsList = createSyncedList(employmentsService, { ...SYNC_OPTS, syncKey: "employments.sync" });
+const employersList = createSyncedList(employersService, { ...SYNC_OPTS, order: ["name", "asc"], syncKey: "employers.sync" });
+const principalsList = createSyncedList(principalsService, { ...SYNC_OPTS, order: ["name", "asc"], syncKey: "principals.sync" });
 
-const EMPLOYMENTS_TTL = 2 * 60 * 60 * 1000;
+// `fresh` pone al día sin esperar el minuto.
+export const listEmployments = (opts) => employmentsList.list(opts);
+export const listEmployers = (opts) => employersList.list(opts);
+export const listPrincipals = (opts) => principalsList.list(opts);
 
-// Los períodos vigentes desde una fecha: los que no tienen término y los que
-// terminan ese día o después. Son dos consultas por un solo campo (sin índice
-// compuesto) y ninguna lee la colección entera. Las comparten Trabajadores y
-// la grilla del ciclo, en caché por 2 horas.
-export async function listEmploymentsFrom(date) {
-  const opts = { cache: true, persist: true, ttl: EMPLOYMENTS_TTL };
-  const [open, ending] = await Promise.all([
-    employmentsService.list({ wheres: [["endDate", "==", ""]], ...opts }),
-    employmentsService.list({ wheres: [["endDate", ">=", date]], ...opts }),
-  ]);
-  const byId = new Map([...open, ...ending].map((e) => [e.id, e]));
-  return [...byId.values()];
+// Los períodos que pueden estar vigentes desde una fecha (`openFrom`). Los
+// comparten Contratos, el filtro de Trabajadores, la grilla del ciclo y las
+// listas de honorarios e imposiciones.
+export async function listEmploymentsFrom(date, opts) {
+  return openFrom(await listEmployments(opts), date);
 }
 
 // Todos los períodos de una persona, del más nuevo al más antiguo.
-export async function listWorkerEmployments(workerId) {
-  const list = await employmentsService.list({ wheres: [["workerId", "==", workerId]] });
-  return list.sort((a, b) => (a.startDate < b.startDate ? 1 : a.startDate > b.startDate ? -1 : 0));
+export async function listWorkerEmployments(workerId, opts) {
+  return employmentsOf(await listEmployments(opts), [workerId]);
 }
 
 // Todos los períodos de varias personas, para revisar que uno nuevo no se
-// cruce. `in` acepta hasta 30 valores por consulta.
+// cruce. Pone al día la copia antes de revisar.
 export async function listEmploymentsOfWorkers(workerIds) {
-  const ids = [...new Set(workerIds)].filter(Boolean);
-  const out = [];
-  for (let i = 0; i < ids.length; i += 30) {
-    out.push(...(await employmentsService.list({ wheres: [["workerId", "in", ids.slice(i, i + 30)]] })));
-  }
-  return out;
+  return employmentsOf(await listEmployments({ fresh: true }), workerIds);
 }
 
 // Contratos terminados con el finiquito pendiente o solicitado, y los que
 // quedaron listos desde `doneSince`.
-export async function listSettlements(doneSince) {
-  const [open, done] = await Promise.all([
-    employmentsService.list({ wheres: [["settlementStatus", "in", ["pending", "requested"]]] }),
-    employmentsService.list({ wheres: [["settlementDoneAt", ">=", doneSince]] }),
-  ]);
-  const byId = new Map([...open, ...done].map((e) => [e.id, e]));
-  return [...byId.values()];
+export async function listSettlements(doneSince, opts) {
+  return settlementsSince(await listEmployments(opts), doneSince);
 }
 
 const CHUNK = 450;
@@ -82,6 +74,16 @@ async function commitInChunks(writes) {
 
 const stamp = () => ({ updatedAt: serverTimestamp(), updatedBy: auth.currentUser?.uid || null });
 
+// Después de una escritura en lote, la copia trae lo escrito. Si no se puede,
+// lo trae la próxima puesta al día: la escritura ya está hecha.
+async function catchUp() {
+  try {
+    await employmentsList.sync({ fresh: true });
+  } catch {
+    /* la copia se pone al día la próxima vez que se pida */
+  }
+}
+
 // Crea los períodos de un plan de `planStartEmployments` (`utils/employment.js`)
 // y deja un solo registro de auditoría con los ids, el tipo, el empleador y
 // la fecha. Devuelve los períodos creados, con su id.
@@ -93,7 +95,7 @@ export async function startEmployments(drafts) {
       batch.set(doc(db, COLLECTION, id), { ...data, createdAt: serverTimestamp(), createdBy: uid, ...stamp() }),
     ),
   );
-  invalidate(COLLECTION);
+  await catchUp();
   const first = drafts[0] || {};
   await logAction({
     action: "bulkStart",
@@ -107,7 +109,7 @@ export async function startEmployments(drafts) {
 // Escribe un plan de `planEndEmployments` y deja un solo registro de auditoría.
 export async function endEmployments(updates, { endDate, endReason }) {
   await commitInChunks(updates.map(({ id, patch }) => (batch) => batch.update(doc(db, COLLECTION, id), { ...patch, ...stamp() })));
-  invalidate(COLLECTION);
+  await catchUp();
   await logAction({
     action: "bulkEnd",
     entity: "employment",
@@ -123,7 +125,7 @@ export async function setSettlementStatus(ids, status, date) {
   if (status === "requested") patch.settlementRequestedAt = date;
   if (status === "done") patch.settlementDoneAt = date;
   await commitInChunks(ids.map((id) => (batch) => batch.update(doc(db, COLLECTION, id), { ...patch, ...stamp() })));
-  invalidate(COLLECTION);
+  await catchUp();
   await logAction({ action: "settlement", entity: "employment", entityId: null, meta: { ids, count: ids.length, status, date } });
 }
 
@@ -131,7 +133,7 @@ export async function setSettlementStatus(ids, status, date) {
 // solo registro de auditoría.
 export async function setPrincipal(ids, principalId) {
   await commitInChunks(ids.map((id) => (batch) => batch.update(doc(db, COLLECTION, id), { principalId, ...stamp() })));
-  invalidate(COLLECTION);
+  await catchUp();
   await logAction({ action: "setPrincipal", entity: "employment", entityId: null, meta: { ids, count: ids.length, principalId } });
 }
 

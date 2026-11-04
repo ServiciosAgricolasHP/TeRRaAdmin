@@ -1,36 +1,48 @@
 import { useEffect, useState } from "react";
-import { listEmploymentsFrom, listSettlements } from "../../services/employmentsService";
+import { listEmployments } from "../../services/employmentsService";
 import { localIsoDate } from "../../utils/dates";
+import { openFrom, settlementsSince } from "../../utils/employment";
 
 // Lo que muestra la pestaña Contratos: los períodos vigentes desde hoy
 // (también los que empiezan más adelante) y los finiquitos pendientes,
-// solicitados o listos en los últimos 90 días. `reload` los vuelve a leer
-// después de una acción.
+// solicitados o listos en los últimos 90 días, de la lista sincronizada de
+// períodos. `reload` los vuelve a pedir después de una acción y `refresh`
+// trae lo que cambió en otro equipo sin esperar el minuto.
 export function useEmployments() {
   const today = localIsoDate();
   const [active, setActive] = useState([]);
   const [settlements, setSettlements] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
-  const [version, setVersion] = useState(0);
+  const [request, setRequest] = useState({ version: 0, fresh: false });
 
   useEffect(() => {
     let cancelled = false;
     const since = new Date();
     since.setDate(since.getDate() - 90);
-    Promise.all([listEmploymentsFrom(today), listSettlements(localIsoDate(since))])
-      .then(([a, s]) => {
+    listEmployments({ fresh: request.fresh })
+      .then((all) => {
         if (cancelled) return;
-        setActive(a);
-        setSettlements(s);
+        setActive(openFrom(all, today));
+        setSettlements(settlementsSince(all, localIsoDate(since)));
         setError("");
       })
       .catch((e) => !cancelled && setError(e.message || "No se pudieron leer los contratos."))
-      .finally(() => !cancelled && setLoading(false));
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+        setRefreshing(false);
+      });
     return () => {
       cancelled = true;
     };
-  }, [today, version]);
+  }, [today, request]);
 
-  return { active, settlements, loading, error, today, reload: () => setVersion((v) => v + 1) };
+  const reload = () => setRequest((r) => ({ version: r.version + 1, fresh: false }));
+  const refresh = () => {
+    setRefreshing(true);
+    setRequest((r) => ({ version: r.version + 1, fresh: true }));
+  };
+  return { active, settlements, loading, refreshing, error, today, reload, refresh };
 }

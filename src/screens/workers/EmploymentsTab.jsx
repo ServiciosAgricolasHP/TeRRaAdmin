@@ -34,7 +34,7 @@ const SETTLEMENT_TONE = {
 // ficha de la persona, con su historial.
 export default function EmploymentsTab() {
   const toast = useToast();
-  const { active, settlements, loading, error, today, reload } = useEmployments();
+  const { active, settlements, loading, refreshing, error, today, reload, refresh } = useEmployments();
   const { employers, nameOf, reload: reloadEmployers } = useEmployers();
   const { principals, nameOf: principalNameOf, reload: reloadPrincipals } = usePrincipals();
   const { workers } = useWorkersList();
@@ -128,8 +128,18 @@ export default function EmploymentsTab() {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-[var(--color-muted)]">
+        <p className="flex items-center gap-1 text-sm text-[var(--color-muted)]">
           {counts.contract} con contrato · {counts.fees} a honorarios · {counts.pending} finiquito{counts.pending === 1 ? "" : "s"} por cerrar
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={loading || refreshing}
+            aria-label="Traer lo que cambió en otro equipo"
+            title="Traer los contratos que se crearon o cambiaron en otro equipo. La lista también se pone al día sola al entrar a la pestaña."
+            className="min-h-8 min-w-8 rounded-md hover:bg-[var(--color-accent-soft)] disabled:opacity-40"
+          >
+            <span className={refreshing ? "inline-block animate-spin" : "inline-block"}>↻</span>
+          </button>
         </p>
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => setStarting(true)} className="min-h-9 rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]">

@@ -1,9 +1,9 @@
-import { principalsService, PRINCIPALS_LIST } from "../services/employmentsService";
+import { listPrincipals } from "../services/employmentsService";
 import { useNamedList } from "./useNamedList";
 
-// Las empresas mandantes, en caché por un día. `reload` vuelve a leerlas
-// después de editarlas.
+// Las empresas mandantes, de su lista sincronizada. `reload` vuelve a
+// pedirlas después de editarlas.
 export function usePrincipals() {
-  const { items, ...rest } = useNamedList(principalsService, PRINCIPALS_LIST);
+  const { items, ...rest } = useNamedList(listPrincipals);
   return { principals: items, ...rest };
 }

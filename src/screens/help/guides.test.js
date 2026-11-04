@@ -126,6 +126,7 @@ describe("preguntas típicas", () => {
     ["ponerle el mandante a los contratos", "contratos#los-mandantes"],
     ["terminar un contrato", "contratos#terminar-contratos"],
     ["finiquitos pendientes", "contratos#seguir-los-finiquitos"],
+    ["no veo el contrato que hizo otra persona", "contratos#si-algo-no-funciona"],
     ["cómo hago las boletas de honorarios", "contratos#generar-la-lista-de-honorarios"],
     ["anotar el folio de la boleta", "contratos#anotar-las-boletas-emitidas"],
     ["cómo hago las imposiciones", "contratos#generar-la-lista-de-imposiciones-del-mes"],

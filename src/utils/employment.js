@@ -54,6 +54,25 @@ export function activeByWorker(employments, from, to = from) {
   return map;
 }
 
+// Los períodos que pueden estar vigentes desde `date`: sin término o que
+// terminan ese día o después, también los que empiezan más adelante.
+export const openFrom = (employments, date) => employments.filter((e) => endOf(e) >= date);
+
+// Los contratos con el finiquito pendiente o solicitado, y los que quedaron
+// listos desde `doneSince`.
+export const settlementsSince = (employments, doneSince) =>
+  employments.filter(
+    (e) => e.settlementStatus === "pending" || e.settlementStatus === "requested" || (!!e.settlementDoneAt && e.settlementDoneAt >= doneSince),
+  );
+
+// Los períodos de esas personas, del más nuevo al más antiguo.
+export function employmentsOf(employments, workerIds) {
+  const ids = new Set(workerIds);
+  return employments
+    .filter((e) => ids.has(e.workerId))
+    .sort((a, b) => (a.startDate < b.startDate ? 1 : a.startDate > b.startDate ? -1 : 0));
+}
+
 // Valor del filtro de mandante para los períodos que no tienen uno.
 export const NO_PRINCIPAL = "__none__";
 

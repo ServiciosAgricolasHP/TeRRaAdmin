@@ -3,6 +3,9 @@ import {
   isActiveOn,
   isActiveIn,
   activeByWorker,
+  openFrom,
+  settlementsSince,
+  employmentsOf,
   matchesEmploymentFilter,
   matchesPrincipal,
   NO_PRINCIPAL,
@@ -70,6 +73,40 @@ describe("vigencia", () => {
     expect(matchesEmploymentFilter([withPrincipal], { type: "fees", principalId: "m1" })).toBe(false);
     expect(matchesEmploymentFilter([contract()], { principalId: "m1" })).toBe(false);
     expect(matchesEmploymentFilter([], { principalId: NO_PRINCIPAL })).toBe(false);
+  });
+
+  it("desde una fecha quedan los sin término, los que terminan ese día o después y los que empiezan más adelante", () => {
+    const list = [
+      contract({ id: "open" }),
+      contract({ id: "ends", endDate: "2026-10-15" }),
+      contract({ id: "ended", endDate: "2026-10-14" }),
+      contract({ id: "later", startDate: "2026-12-01" }),
+      contract({ id: "noEnd", endDate: undefined }),
+    ];
+    expect(openFrom(list, "2026-10-15").map((e) => e.id)).toEqual(["open", "ends", "later", "noEnd"]);
+  });
+
+  it("los finiquitos son los pendientes, los solicitados y los listos desde una fecha", () => {
+    const list = [
+      contract({ id: "p", settlementStatus: "pending" }),
+      contract({ id: "r", settlementStatus: "requested" }),
+      contract({ id: "doneNew", settlementStatus: "done", settlementDoneAt: "2026-10-01" }),
+      contract({ id: "doneOld", settlementStatus: "done", settlementDoneAt: "2026-09-30" }),
+      contract({ id: "none", settlementStatus: null }),
+    ];
+    expect(settlementsSince(list, "2026-10-01").map((e) => e.id)).toEqual(["p", "r", "doneNew"]);
+  });
+
+  it("los períodos de unas personas van del más nuevo al más antiguo", () => {
+    const list = [
+      contract({ id: "a1", workerId: "w1", startDate: "2026-01-01" }),
+      contract({ id: "b1", workerId: "w2", startDate: "2026-05-01" }),
+      contract({ id: "a2", workerId: "w1", startDate: "2026-06-01" }),
+      contract({ id: "c1", workerId: "w3", startDate: "2026-07-01" }),
+    ];
+    expect(employmentsOf(list, ["w1"]).map((e) => e.id)).toEqual(["a2", "a1"]);
+    expect(employmentsOf(list, ["w1", "w2"]).map((e) => e.id)).toEqual(["a2", "b1", "a1"]);
+    expect(employmentsOf(list, [])).toEqual([]);
   });
 
   it("una lista lleva el empleador y, si es de un solo mandante, el mandante", () => {

@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
+import { deleteDoc, doc, serverTimestamp, setDoc, updateDoc } from "firebase/firestore";
+import { db } from "../../src/firebase";
 import {
+  listEmployers,
   loadWorkedDays,
   startEmployments,
   endEmployments,
@@ -91,6 +94,40 @@ describe("contratos en bloque", () => {
     const logs = (await all("logs")).filter((l) => l.action === "setPrincipal");
     expect(logs).toHaveLength(1);
     expect(logs[0]).toMatchObject({ entity: "employment", meta: { count: 2, principalId: "m2" } });
+  });
+});
+
+// Lo que hace "otro equipo" se escribe directo en Firestore, sin pasar por la
+// copia de este navegador.
+describe("lo que se hace en otro equipo", () => {
+  it("un contrato creado o terminado en otro equipo llega al poner al día la copia", async () => {
+    const { created } = await contratar([people[0]], { type: "contract", employerId: "hp", startDate: "2026-09-01" });
+    expect((await listEmploymentsFrom("2026-10-21")).map((e) => e.workerId)).toEqual([ANA.id]);
+
+    await setDoc(doc(db, "employments", "otro"), {
+      workerId: BETO.id, workerRut: BETO.id, workerName: BETO.name, type: "fees", employerId: "hp",
+      startDate: "2026-10-01", endDate: "", updatedAt: serverTimestamp(),
+    });
+    await updateDoc(doc(db, "employments", created[0].id), { endDate: "2026-10-15", updatedAt: serverTimestamp() });
+
+    expect((await listEmploymentsFrom("2026-10-21", { fresh: true })).map((e) => e.workerId)).toEqual([BETO.id]);
+    expect((await listWorkerEmployments(ANA.id)).map((e) => e.endDate)).toEqual(["2026-10-15"]);
+  });
+
+  it("un período eliminado en otro equipo sale por el conteo", async () => {
+    const { created } = await contratar(people.slice(0, 2), { type: "contract", employerId: "hp", startDate: "2026-09-01" });
+    expect(await listEmploymentsFrom("2026-10-21")).toHaveLength(2);
+
+    await deleteDoc(doc(db, "employments", created[0].id));
+    expect((await listEmploymentsFrom("2026-10-21", { fresh: true })).map((e) => e.id)).toEqual([created[1].id]);
+  });
+
+  it("un empleador creado en otro equipo aparece al poner al día la lista", async () => {
+    await setDoc(doc(db, "employers", "hp"), { name: "HP", rut: "", enabled: true, updatedAt: serverTimestamp() });
+    expect((await listEmployers()).map((e) => e.name)).toEqual(["HP"]);
+
+    await setDoc(doc(db, "employers", "aguada"), { name: "Aguada", rut: "", enabled: true, updatedAt: serverTimestamp() });
+    expect((await listEmployers({ fresh: true })).map((e) => e.name)).toEqual(["Aguada", "HP"]);
   });
 });
 
