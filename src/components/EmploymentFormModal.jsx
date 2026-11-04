@@ -20,6 +20,7 @@ function Field({ label, children }) {
 const formOf = (e) => ({
   type: e?.type || "contract",
   employerId: e?.employerId || "",
+  principalId: e?.principalId || "",
   startDate: e?.startDate || localIsoDate(),
   endDate: e?.endDate || "",
   endReason: e?.endReason || "",
@@ -29,13 +30,14 @@ const formOf = (e) => ({
 
 // Un período de contrato u honorarios de una persona: alta o corrección. No
 // deja guardar uno que se cruce con otro de la misma persona (`history`).
-export default function EmploymentFormModal({ worker, employment, history, employers, onClose, onSaved }) {
+export default function EmploymentFormModal({ worker, employment, history, employers, principals, onClose, onSaved }) {
   const [initial] = useState(() => formOf(employment));
   const [form, setForm] = useState(initial);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
   const choices = employers.filter((x) => x.enabled !== false || x.id === form.employerId);
+  const principalChoices = principals.filter((x) => x.enabled !== false || x.id === form.principalId);
   const ended = !!form.endDate;
 
   const save = async () => {
@@ -45,6 +47,7 @@ export default function EmploymentFormModal({ worker, employment, history, emplo
       workerName: worker.name || employment?.workerName || "",
       type: form.type,
       employerId: form.employerId,
+      principalId: form.principalId,
       startDate: form.startDate,
       endDate: form.endDate,
       endReason: ended ? form.endReason || "other" : null,
@@ -106,6 +109,12 @@ export default function EmploymentFormModal({ worker, employment, history, emplo
             <select value={form.employerId} onChange={set("employerId")} className={inputCls}>
               <option value="">Elige…</option>
               {choices.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Mandante">
+            <select value={form.principalId} onChange={set("principalId")} className={inputCls}>
+              <option value="">Sin mandante</option>
+              {principalChoices.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
             </select>
           </Field>
           <Field label="Desde">

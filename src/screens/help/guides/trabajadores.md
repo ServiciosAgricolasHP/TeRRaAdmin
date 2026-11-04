@@ -10,7 +10,7 @@ La lista aparece al buscar o al elegir un filtro. Escribe parte del nombre, en c
 
 ![La lista de trabajadores](help/trabajadores/01-lista.webp)
 
-- Los filtros se combinan con la búsqueda: **👥 Líder**, **💵 Efectivo** o **🏦 Transferencia**, **📄 Contrato** (con contrato, a honorarios o sin nada, y el empleador) y **⚠ Sin titular**. **✕ Limpiar filtros** los quita todos.
+- Los filtros se combinan con la búsqueda: **👥 Líder**, **💵 Efectivo** o **🏦 Transferencia**, **📄 Contrato** (con contrato, a honorarios o sin nada, el empleador y el mandante) y **⚠ Sin titular**. **✕ Limpiar filtros** los quita todos.
 - Toca un RUT para copiarlo sin puntos y con guion, listo para pegar.
 - Cada fila dice si la persona cobra por **🏦 Transferencia** o en **💵 Efectivo**, y tiene **📊** (su resumen), **Editar** (su ficha) y **✕** (eliminarla).
 

@@ -4,7 +4,9 @@ import Modal, { ModalCloseButton } from "../../components/Modal";
 import { contributionListsService } from "../../services/contributionListsService";
 import { localIsoDate } from "../../utils/dates";
 import { contributionTotals, monthTitle } from "../../utils/contributionLists";
-import ContributionItemsTable from "./ContributionItemsTable";
+import { listCompanyLabel } from "../../utils/employment";
+import { fmtCurrency } from "../../utils/format";
+import ContributionItemsTable, { PayTotals } from "./ContributionItemsTable";
 import { writeContributionListXlsx } from "./writeContributionListXlsx";
 
 const fmt = (iso) => (iso ? iso.split("-").reverse().join("-") : "");
@@ -48,7 +50,7 @@ export default function ContributionListModal({ list, onClose, onChanged }) {
     <Modal
       open
       onClose={() => !busy && onClose()}
-      title={`Imposiciones ${monthTitle(list.month)} · ${list.employerName || ""}`}
+      title={`Imposiciones ${monthTitle(list.month)} · ${listCompanyLabel(list)}`}
       size="xl"
       footer={
         <>
@@ -72,6 +74,8 @@ export default function ContributionListModal({ list, onClose, onChanged }) {
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md bg-[var(--color-surface-2)] px-3 py-2 text-sm">
           <span><b>{totals.people}</b> persona{totals.people === 1 ? "" : "s"} · {totals.days} días</span>
+          <PayTotals items={list.items || []} totals={totals} />
+          {list.dailyBase > 0 && <span className="text-[var(--color-muted)]">mínimo {fmtCurrency(list.dailyBase)} por día</span>}
           {totals.settlements > 0 && <span className="text-[var(--color-warning)]">{totals.settlements} con finiquito</span>}
           <span className="ml-auto">{sent ? <span className="text-[var(--color-success)]">Enviada el {fmt(list.sentAt)}</span> : "Sin enviar"}</span>
         </div>
@@ -81,7 +85,7 @@ export default function ContributionListModal({ list, onClose, onChanged }) {
       <ConfirmDialog
         open={confirmDelete}
         title="Eliminar lista"
-        message={`¿Eliminar la lista de imposiciones de ${list.employerName || ""} de ${monthTitle(list.month)}? No se ha enviado al contador.`}
+        message={`¿Eliminar la lista de imposiciones de ${listCompanyLabel(list)} de ${monthTitle(list.month)}? No se ha enviado al contador.`}
         confirmLabel="Eliminar"
         danger
         busy={busy === "delete"}

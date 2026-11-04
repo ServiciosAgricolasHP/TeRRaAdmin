@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import ScreenLoader from "../../components/ScreenLoader";
 import { useToast } from "../../contexts/ToastContext";
 import { useEmployers } from "../../hooks/useEmployers";
+import { usePrincipals } from "../../hooks/usePrincipals";
 import { contributionListsService, CONTRIBUTION_LISTS } from "../../services/contributionListsService";
 import { monthTitle } from "../../utils/contributionLists";
+import { listCompanyLabel } from "../../utils/employment";
 import ContributionListModal from "./ContributionListModal";
 import GenerateContributionListModal from "./GenerateContributionListModal";
 
@@ -15,6 +17,7 @@ const fmt = (iso) => (iso ? iso.split("-").reverse().join("-") : "");
 export default function ContributionListsTab() {
   const toast = useToast();
   const { employers } = useEmployers();
+  const { principals } = usePrincipals();
   const [lists, setLists] = useState(null);
   const [error, setError] = useState("");
   const [version, setVersion] = useState(0);
@@ -56,7 +59,7 @@ export default function ContributionListsTab() {
             <li key={l.id}>
               <button type="button" onClick={() => setOpen(l)} className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2.5 text-left text-sm hover:bg-[var(--color-surface-2)]">
                 <span className="font-medium">{monthTitle(l.month)}</span>
-                <span>{l.employerName || "—"}</span>
+                <span>{listCompanyLabel(l) || "—"}</span>
                 <span className="text-[var(--color-muted)]">
                   {l.totals?.people || 0} persona{l.totals?.people === 1 ? "" : "s"} · {l.totals?.days || 0} días
                   {l.totals?.settlements ? ` · ${l.totals.settlements} con finiquito` : ""}
@@ -73,6 +76,7 @@ export default function ContributionListsTab() {
       {generating && (
         <GenerateContributionListModal
           employers={employers}
+          principals={principals}
           onClose={() => setGenerating(false)}
           onSaved={(saved) => {
             setGenerating(false);

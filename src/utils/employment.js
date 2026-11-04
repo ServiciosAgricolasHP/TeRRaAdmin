@@ -1,6 +1,7 @@
 // Contratos y honorarios de los trabajadores (`employments`): qué está vigente
 // en una fecha o en un rango, qué períodos se cruzan, los días trabajados por
-// faena y las filas de las listas de honorarios e imposiciones.
+// faena, lo ganado cada día y las filas de las listas de honorarios e
+// imposiciones, con el sueldo y el bono de las imposiciones.
 //
 // Las fechas son etiquetas `YYYY-MM-DD` y se comparan como texto. Un período
 // sin `endDate` sigue vigente; con una fecha futura, lo está hasta ese día.
@@ -53,13 +54,25 @@ export function activeByWorker(employments, from, to = from) {
   return map;
 }
 
+// Valor del filtro de mandante para los períodos que no tienen uno.
+export const NO_PRINCIPAL = "__none__";
+
+// Si un período calza con el mandante pedido: "" es cualquiera y
+// `NO_PRINCIPAL`, los que no tienen mandante.
+export const matchesPrincipal = (e, principalId = "") =>
+  !principalId || (principalId === NO_PRINCIPAL ? !e?.principalId : e?.principalId === principalId);
+
 // Si los períodos de una persona en el rango calzan con un filtro: el tipo
-// (`contract`, `fees` o `none`) y, si se pide, el empleador.
-export function matchesEmploymentFilter(active = [], { type = "", employerId = "" } = {}) {
-  if (!type && !employerId) return true;
+// (`contract`, `fees` o `none`) y, si se piden, el empleador y el mandante.
+export function matchesEmploymentFilter(active = [], { type = "", employerId = "", principalId = "" } = {}) {
+  if (!type && !employerId && !principalId) return true;
   if (type === "none") return active.length === 0;
-  return active.some((e) => (!type || e.type === type) && (!employerId || e.employerId === employerId));
+  return active.some((e) => (!type || e.type === type) && (!employerId || e.employerId === employerId) && matchesPrincipal(e, principalId));
 }
+
+// El nombre de una lista de honorarios o imposiciones: su empleador y, si es
+// de un solo mandante, el mandante.
+export const listCompanyLabel = (list) => [list?.employerName, list?.principalName].filter(Boolean).join(" · ");
 
 // Grupos de la grilla del ciclo en la vista "Por contrato", en su orden.
 export const EMPLOYMENT_GROUPS = [
@@ -111,7 +124,7 @@ export function employmentError(employments, draft) {
 // Contratar o pasar a honorarios a varias personas desde la misma fecha.
 // `existing`: los períodos que ya tienen esas personas. Quien se cruzaría con
 // otro período queda en `skipped`, con el motivo.
-export function planStartEmployments(existing, people, { type, employerId, startDate, notes = "" }) {
+export function planStartEmployments(existing, people, { type, employerId, principalId = "", startDate, notes = "" }) {
   const create = [];
   const skipped = [];
   for (const p of people) {
@@ -121,6 +134,7 @@ export function planStartEmployments(existing, people, { type, employerId, start
       workerName: p.name || "",
       type,
       employerId,
+      principalId,
       startDate,
       endDate: "",
       endReason: null,
@@ -174,12 +188,34 @@ export function workedDays(workdays, faenaOfCycle, { workerIdOf = (wd) => wd.wor
   return out;
 }
 
+// Lo ganado por persona cada día: la suma de todas sus jornadas de ese día,
+// en cualquier faena. `amountOf(wd)` es lo que la jornada suma al bruto
+// (`workdayPayAmount`, `utils/payroll.js`). Devuelve
+// Map(workerId → Map(date → monto)).
+export function earnedByDay(workdays, { workerIdOf = (wd) => wd.workerId || wd.workerRut, amountOf = (wd) => Number(wd.amount) || 0 } = {}) {
+  const out = new Map();
+  for (const wd of workdays) {
+    const workerId = workerIdOf(wd);
+    if (!workerId || !wd.date) continue;
+    if (!out.has(workerId)) out.set(workerId, new Map());
+    const days = out.get(workerId);
+    days.set(wd.date, (days.get(wd.date) || 0) + amountOf(wd));
+  }
+  return out;
+}
+
+// Las fechas de una fila con lo ganado cada día, del más antiguo al más
+// nuevo: [{ date, amount }].
+export const datesWithEarnings = (dates = [], earnedOfWorker) =>
+  [...dates].sort().map((date) => ({ date, amount: earnedOfWorker?.get(date) || 0 }));
+
 // Filas de una lista: por persona y faena, los días trabajados dentro del
-// rango que caen en un período del tipo y el empleador pedidos.
-function rowsFor(employments, worked, { type, employerId, from, to }) {
+// rango que caen en un período del tipo, el empleador y el mandante pedidos
+// (`principalId` vacío: cualquier mandante).
+function rowsFor(employments, worked, { type, employerId, principalId, from, to }) {
   const periods = new Map();
   for (const e of employments) {
-    if (e.type !== type || e.employerId !== employerId || !isActiveIn(e, from, to)) continue;
+    if (e.type !== type || e.employerId !== employerId || !matchesPrincipal(e, principalId) || !isActiveIn(e, from, to)) continue;
     if (!periods.has(e.workerId)) periods.set(e.workerId, []);
     periods.get(e.workerId).push(e);
   }
@@ -188,7 +224,8 @@ function rowsFor(employments, worked, { type, employerId, from, to }) {
     const byFaena = new Map();
     for (const [date, faenaId] of worked.get(workerId) || []) {
       if (date < from || date > to || !list.some((e) => isActiveOn(e, date))) continue;
-      byFaena.set(faenaId, (byFaena.get(faenaId) || 0) + 1);
+      if (!byFaena.has(faenaId)) byFaena.set(faenaId, []);
+      byFaena.get(faenaId).push(date);
     }
     rows.push({ workerId, periods: list, byFaena });
   }
@@ -209,10 +246,11 @@ export function feeAmounts(days, dailyNet, rate) {
 }
 
 // Filas de la lista de honorarios: quienes estuvieron a honorarios con el
-// empleador en el rango y trabajaron algún día, una fila por faena.
-export function feeRows(employments, worked, { employerId, from, to }) {
-  return rowsFor(employments, worked, { type: "fees", employerId, from, to }).flatMap(({ workerId, byFaena }) =>
-    [...byFaena].map(([faenaId, days]) => ({ workerId, faenaId, days })),
+// empleador (y el mandante, si se pide) en el rango y trabajaron algún día,
+// una fila por faena con sus días y sus fechas.
+export function feeRows(employments, worked, { employerId, principalId = "", from, to }) {
+  return rowsFor(employments, worked, { type: "fees", employerId, principalId, from, to }).flatMap(({ workerId, byFaena }) =>
+    [...byFaena].map(([faenaId, dates]) => ({ workerId, faenaId, days: dates.length, dates: dates.sort() })),
   );
 }
 
@@ -228,12 +266,14 @@ export function monthRange(month) {
 }
 
 // Filas de la lista de imposiciones del mes: quienes tuvieron contrato con el
-// empleador ese mes, una fila por faena con sus días. Quien tuvo contrato y no
-// trabajó va con 0 días y sin faena. Si el contrato terminó ese mes, la fila
-// pide liquidación y finiquito, con la fecha y el motivo.
-export function contributionRows(employments, worked, { employerId, month }) {
+// empleador (y el mandante, si se pide) ese mes, una fila por faena con sus
+// días y sus fechas. Quien tuvo contrato y no trabajó va con 0 días y sin
+// faena. Si el
+// contrato terminó ese mes, la fila pide liquidación y finiquito, con la fecha
+// y el motivo.
+export function contributionRows(employments, worked, { employerId, principalId = "", month }) {
   const { from, to } = monthRange(month);
-  return rowsFor(employments, worked, { type: "contract", employerId, from, to }).flatMap(({ workerId, periods, byFaena }) => {
+  return rowsFor(employments, worked, { type: "contract", employerId, principalId, from, to }).flatMap(({ workerId, periods, byFaena }) => {
     const ended = periods.find((e) => e.endDate && e.endDate >= from && e.endDate <= to);
     const base = {
       workerId,
@@ -241,10 +281,24 @@ export function contributionRows(employments, worked, { employerId, month }) {
       endDate: ended?.endDate || "",
       endReason: ended?.endReason || null,
     };
-    if (byFaena.size === 0) return [{ ...base, faenaId: "", days: 0 }];
-    return [...byFaena].map(([faenaId, days]) => ({ ...base, faenaId, days }));
+    if (byFaena.size === 0) return [{ ...base, faenaId: "", days: 0, dates: [] }];
+    return [...byFaena].map(([faenaId, dates]) => ({ ...base, faenaId, days: dates.length, dates: dates.sort() }));
   });
 }
+
+// Sueldo y bono de una fila de imposiciones. Se declara el mínimo por día
+// trabajado (`dailyBase`, el valor "Día" de los indicadores) y lo que ganó
+// por sobre eso va como bono: 10 días a $17.967 son $179.670 de sueldo, y de
+// $250.000 ganados quedan $70.330 de bono. Si ganó menos que el mínimo, el
+// sueldo sigue siendo el mínimo y el bono queda en 0.
+export function contributionPay(days, earned, dailyBase) {
+  const baseSalary = Math.round(Math.max(0, Number(days) || 0) * (Number(dailyBase) || 0));
+  const total = Number(earned) || 0;
+  return { baseSalary, bonus: Math.max(0, total - baseSalary) };
+}
+
+// Si lo ganado no alcanza el mínimo de los días declarados.
+export const isBelowMinimum = (it) => Number(it?.baseSalary) > 0 && (Number(it?.earned) || 0) < Number(it.baseSalary);
 
 export const CONTRIBUTION_REQUESTS = {
   payslip: "Liquidación",

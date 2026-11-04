@@ -3,6 +3,7 @@ import ConfirmDialog from "../ConfirmDialog";
 import EmploymentFormModal from "../EmploymentFormModal";
 import EndEmploymentsModal from "../EndEmploymentsModal";
 import { useEmployers } from "../../hooks/useEmployers";
+import { usePrincipals } from "../../hooks/usePrincipals";
 import { employmentsService, listWorkerEmployments } from "../../services/employmentsService";
 import { localIsoDate } from "../../utils/dates";
 import { EMPLOYMENT_TYPES, END_REASONS, SETTLEMENT_STATUSES, isActiveOn } from "../../utils/employment";
@@ -15,6 +16,8 @@ const fmt = (iso) => (iso ? iso.split("-").reverse().join("-") : "");
 export default function EmploymentHistory({ worker }) {
   const today = localIsoDate();
   const { employers, nameOf } = useEmployers();
+  const { principals, nameOf: principalNameOf } = usePrincipals();
+  const forPrincipal = (e) => (e.principalId ? `, para ${principalNameOf(e.principalId)}` : "");
   const [list, setList] = useState(null);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState(null); // { employment } (null = nuevo)
@@ -62,7 +65,8 @@ export default function EmploymentHistory({ worker }) {
             Hoy:{" "}
             {current ? (
               <b>
-                {EMPLOYMENT_TYPES[current.type]?.icon} {EMPLOYMENT_TYPES[current.type]?.label} con {nameOf(current.employerId)} desde el {fmt(current.startDate)}
+                {EMPLOYMENT_TYPES[current.type]?.icon} {EMPLOYMENT_TYPES[current.type]?.label} con {nameOf(current.employerId)}
+                {forPrincipal(current)} desde el {fmt(current.startDate)}
                 {current.endDate ? ` hasta el ${fmt(current.endDate)}` : ""}
               </b>
             ) : (
@@ -74,7 +78,8 @@ export default function EmploymentHistory({ worker }) {
               {list.map((e) => (
                 <li key={e.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
                   <span>
-                    {EMPLOYMENT_TYPES[e.type]?.icon} {EMPLOYMENT_TYPES[e.type]?.label} · {nameOf(e.employerId)} · {fmt(e.startDate)} → {e.endDate ? fmt(e.endDate) : "sin término"}
+                    {EMPLOYMENT_TYPES[e.type]?.icon} {EMPLOYMENT_TYPES[e.type]?.label} · {nameOf(e.employerId)}
+                    {e.principalId && ` · 🤝 ${principalNameOf(e.principalId)}`} · {fmt(e.startDate)} → {e.endDate ? fmt(e.endDate) : "sin término"}
                     {e.endReason && <span className="text-[var(--color-muted)]"> · {END_REASONS[e.endReason]}</span>}
                     {e.settlementStatus && <span className="text-[var(--color-muted)]"> · finiquito {SETTLEMENT_STATUSES[e.settlementStatus]?.toLowerCase()}</span>}
                   </span>
@@ -95,6 +100,7 @@ export default function EmploymentHistory({ worker }) {
           employment={editing.employment}
           history={list || []}
           employers={employers}
+          principals={principals}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);

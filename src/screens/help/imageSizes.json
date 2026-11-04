@@ -23,47 +23,63 @@
     448,
     334
   ],
-  "help/contratos/02-contratar.webp": [
+  "help/contratos/02-mandantes.webp": [
+    448,
+    334
+  ],
+  "help/contratos/03-contratar.webp": [
     672,
-    512
+    514
   ],
-  "help/contratos/03-vigentes.webp": [
+  "help/contratos/04-vigentes.webp": [
     1167,
-    516
+    520
   ],
-  "help/contratos/04-terminar.webp": [
+  "help/contratos/05-mandante-en-bloque.webp": [
+    448,
+    242
+  ],
+  "help/contratos/06-terminar.webp": [
     448,
     296
   ],
-  "help/contratos/05-finiquitos.webp": [
+  "help/contratos/07-finiquitos.webp": [
     1167,
     308
   ],
-  "help/contratos/06-historial.webp": [
+  "help/contratos/08-historial.webp": [
     642,
-    170
+    186
   ],
-  "help/contratos/07-grilla-por-contrato.webp": [
+  "help/contratos/09-grilla-por-contrato.webp": [
     1168,
     374
   ],
-  "help/contratos/08-generar-honorarios.webp": [
+  "help/contratos/10-generar-honorarios.webp": [
     896,
-    672
+    810
   ],
-  "help/contratos/09-boletas.webp": [
+  "help/contratos/11-direccion.webp": [
+    448,
+    298
+  ],
+  "help/contratos/12-boletas.webp": [
     896,
-    372
+    540
   ],
-  "help/contratos/10-generar-imposiciones.webp": [
+  "help/contratos/13-generar-imposiciones.webp": [
     896,
-    660
+    810
   ],
-  "help/contratos/11-enviar-imposiciones.webp": [
+  "help/contratos/14-dias-trabajados.webp": [
+    868,
+    395
+  ],
+  "help/contratos/15-enviar-imposiciones.webp": [
     896,
-    446
+    540
   ],
-  "help/contratos/12-telefono.webp": [
+  "help/contratos/16-telefono.webp": [
     412,
     900
   ],

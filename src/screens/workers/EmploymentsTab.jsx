@@ -4,12 +4,14 @@ import WorkerEditModal from "../../components/WorkerEditModal";
 import ScreenLoader from "../../components/ScreenLoader";
 import { useToast } from "../../contexts/ToastContext";
 import { useEmployers } from "../../hooks/useEmployers";
+import { usePrincipals } from "../../hooks/usePrincipals";
 import { useWorkersList } from "../../hooks/useWorkersList";
-import { setSettlementStatus } from "../../services/employmentsService";
+import { employersService, principalsService, setSettlementStatus } from "../../services/employmentsService";
 import { formatRutForDisplay } from "../../utils/rutUtils";
 import { workerMatchesQuery, workerSearchInput } from "../../utils/workerSearch";
-import { EMPLOYMENT_TYPES, END_REASONS, SETTLEMENT_STATUSES } from "../../utils/employment";
-import EmployersModal from "./EmployersModal";
+import { EMPLOYMENT_TYPES, END_REASONS, NO_PRINCIPAL, SETTLEMENT_STATUSES, matchesPrincipal } from "../../utils/employment";
+import CompanyListModal from "./CompanyListModal";
+import SetPrincipalModal from "./SetPrincipalModal";
 import StartEmploymentsModal from "./StartEmploymentsModal";
 import { useEmployments } from "./useEmployments";
 
@@ -27,22 +29,26 @@ const SETTLEMENT_TONE = {
 };
 
 // Contratos y honorarios vigentes, y los finiquitos. Se filtra por tipo,
-// empleador y nombre o RUT, se eligen varios y se terminan o se marca su
-// finiquito de una vez. El nombre abre la ficha de la persona, con su
-// historial.
+// empleador, mandante y nombre o RUT, se eligen varios y se terminan, se les
+// pone el mandante o se marca su finiquito de una vez. El nombre abre la
+// ficha de la persona, con su historial.
 export default function EmploymentsTab() {
   const toast = useToast();
   const { active, settlements, loading, error, today, reload } = useEmployments();
   const { employers, nameOf, reload: reloadEmployers } = useEmployers();
+  const { principals, nameOf: principalNameOf, reload: reloadPrincipals } = usePrincipals();
   const { workers } = useWorkersList();
   const [view, setView] = useState("active");
   const [type, setType] = useState("");
   const [employerId, setEmployerId] = useState("");
+  const [principalId, setPrincipalId] = useState("");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(() => new Set());
   const [starting, setStarting] = useState(false);
   const [ending, setEnding] = useState(null);
-  const [employersOpen, setEmployersOpen] = useState(false);
+  const [assigning, setAssigning] = useState(null);
+  // La lista que se edita: "employers" o "principals".
+  const [companyList, setCompanyList] = useState("");
   const [card, setCard] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -51,9 +57,10 @@ export default function EmploymentsTab() {
     return source
       .filter((e) => !type || e.type === type)
       .filter((e) => !employerId || e.employerId === employerId)
+      .filter((e) => matchesPrincipal(e, principalId))
       .filter((e) => !query.trim() || workerMatchesQuery({ id: e.workerId, rut: e.workerRut, name: e.workerName }, query))
       .sort((a, b) => String(a.workerName).localeCompare(String(b.workerName), "es"));
-  }, [view, active, settlements, type, employerId, query]);
+  }, [view, active, settlements, type, employerId, principalId, query]);
 
   const picked = rows.filter((e) => selected.has(e.id));
   const allPicked = rows.length > 0 && picked.length === rows.length;
@@ -128,8 +135,11 @@ export default function EmploymentsTab() {
           <button type="button" onClick={() => setStarting(true)} className="min-h-9 rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]">
             + Contratar
           </button>
-          <button type="button" onClick={() => setEmployersOpen(true)} className={btnCls}>
+          <button type="button" onClick={() => setCompanyList("employers")} className={btnCls}>
             ⚙ Empleadores
+          </button>
+          <button type="button" onClick={() => setCompanyList("principals")} className={btnCls}>
+            ⚙ Mandantes
           </button>
         </div>
       </div>
@@ -147,12 +157,22 @@ export default function EmploymentsTab() {
           <option value="">Todos los empleadores</option>
           {employers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
         </select>
+        {principals.length > 0 && (
+          <select value={principalId} onChange={(e) => setPrincipalId(e.target.value)} className={selectCls} aria-label="Mandante">
+            <option value="">Todos los mandantes</option>
+            {principals.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            <option value={NO_PRINCIPAL}>Sin mandante</option>
+          </select>
+        )}
         <input value={query} onChange={(e) => setQuery(workerSearchInput(e.target.value))} placeholder="Nombre o RUT…" className={`${selectCls} w-full sm:w-56`} />
       </div>
 
       {picked.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-3 py-2 text-sm">
           <span className="font-medium">{picked.length} elegido{picked.length === 1 ? "" : "s"}</span>
+          <button type="button" onClick={() => setAssigning(picked)} className={btnCls}>
+            🤝 Mandante ({picked.length})
+          </button>
           {view === "active" ? (
             <button type="button" onClick={() => setEnding(picked)} className="min-h-8 rounded-md bg-[var(--color-danger)] px-3 py-1 text-sm font-medium text-white">
               Terminar ({picked.length})
@@ -193,6 +213,7 @@ export default function EmploymentsTab() {
                   <th className="px-3 py-2">Persona</th>
                   <th className="px-3 py-2">Tipo</th>
                   <th className="px-3 py-2">Empleador</th>
+                  <th className="px-3 py-2">Mandante</th>
                   <th className="px-3 py-2">Desde</th>
                   <th className="px-3 py-2">Hasta</th>
                   {view === "settlements" && <th className="px-3 py-2">Motivo</th>}
@@ -213,6 +234,7 @@ export default function EmploymentsTab() {
                     </td>
                     <td className="whitespace-nowrap px-3 py-2">{typeTag(e)}</td>
                     <td className="px-3 py-2">{nameOf(e.employerId)}</td>
+                    <td className="px-3 py-2">{principalNameOf(e.principalId)}</td>
                     <td className="whitespace-nowrap px-3 py-2 tabular-nums">{fmt(e.startDate)}</td>
                     <td className="whitespace-nowrap px-3 py-2 tabular-nums">{e.endDate ? fmt(e.endDate) : <span className="text-[var(--color-muted)]">sin término</span>}</td>
                     {view === "settlements" && <td className="px-3 py-2">{END_REASONS[e.endReason] || "—"}</td>}
@@ -236,6 +258,7 @@ export default function EmploymentsTab() {
                   </button>
                   <div className="text-xs text-[var(--color-muted)]">
                     {formatRutForDisplay(e.workerRut)} · {typeTag(e)} · {nameOf(e.employerId)}
+                    {e.principalId && ` · 🤝 ${principalNameOf(e.principalId)}`}
                   </div>
                   <div className="text-xs">
                     {fmt(e.startDate)} → {e.endDate ? fmt(e.endDate) : "sin término"}
@@ -252,6 +275,7 @@ export default function EmploymentsTab() {
       {starting && (
         <StartEmploymentsModal
           employers={employers}
+          principals={principals}
           activeEmployments={active}
           onClose={() => setStarting(false)}
           onDone={(n) => {
@@ -270,7 +294,39 @@ export default function EmploymentsTab() {
           }}
         />
       )}
-      {employersOpen && <EmployersModal employers={employers} onClose={() => setEmployersOpen(false)} onChanged={reloadEmployers} />}
+      {assigning && (
+        <SetPrincipalModal
+          items={assigning}
+          principals={principals}
+          onClose={() => setAssigning(null)}
+          onDone={(n) => {
+            setAssigning(null);
+            afterAction(`Mandante cambiado en ${n} período${n === 1 ? "" : "s"}`);
+          }}
+        />
+      )}
+      {companyList === "employers" && (
+        <CompanyListModal
+          title="Empleadores"
+          noun="empleador"
+          placeholder="Nombre (Transporte HP)"
+          items={employers}
+          service={employersService}
+          onClose={() => setCompanyList("")}
+          onChanged={reloadEmployers}
+        />
+      )}
+      {companyList === "principals" && (
+        <CompanyListModal
+          title="Mandantes"
+          noun="mandante"
+          placeholder="Nombre"
+          items={principals}
+          service={principalsService}
+          onClose={() => setCompanyList("")}
+          onChanged={reloadPrincipals}
+        />
+      )}
       {card && (
         <WorkerEditModal
           open
