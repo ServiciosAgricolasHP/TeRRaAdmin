@@ -53,13 +53,25 @@ export function activeByWorker(employments, from, to = from) {
   return map;
 }
 
+// Valor del filtro de mandante para los períodos que no tienen uno.
+export const NO_PRINCIPAL = "__none__";
+
+// Si un período calza con el mandante pedido: "" es cualquiera y
+// `NO_PRINCIPAL`, los que no tienen mandante.
+export const matchesPrincipal = (e, principalId = "") =>
+  !principalId || (principalId === NO_PRINCIPAL ? !e?.principalId : e?.principalId === principalId);
+
 // Si los períodos de una persona en el rango calzan con un filtro: el tipo
-// (`contract`, `fees` o `none`) y, si se pide, el empleador.
-export function matchesEmploymentFilter(active = [], { type = "", employerId = "" } = {}) {
-  if (!type && !employerId) return true;
+// (`contract`, `fees` o `none`) y, si se piden, el empleador y el mandante.
+export function matchesEmploymentFilter(active = [], { type = "", employerId = "", principalId = "" } = {}) {
+  if (!type && !employerId && !principalId) return true;
   if (type === "none") return active.length === 0;
-  return active.some((e) => (!type || e.type === type) && (!employerId || e.employerId === employerId));
+  return active.some((e) => (!type || e.type === type) && (!employerId || e.employerId === employerId) && matchesPrincipal(e, principalId));
 }
+
+// El nombre de una lista de honorarios o imposiciones: su empleador y, si es
+// de un solo mandante, el mandante.
+export const listCompanyLabel = (list) => [list?.employerName, list?.principalName].filter(Boolean).join(" · ");
 
 // Grupos de la grilla del ciclo en la vista "Por contrato", en su orden.
 export const EMPLOYMENT_GROUPS = [
@@ -111,7 +123,7 @@ export function employmentError(employments, draft) {
 // Contratar o pasar a honorarios a varias personas desde la misma fecha.
 // `existing`: los períodos que ya tienen esas personas. Quien se cruzaría con
 // otro período queda en `skipped`, con el motivo.
-export function planStartEmployments(existing, people, { type, employerId, startDate, notes = "" }) {
+export function planStartEmployments(existing, people, { type, employerId, principalId = "", startDate, notes = "" }) {
   const create = [];
   const skipped = [];
   for (const p of people) {
@@ -121,6 +133,7 @@ export function planStartEmployments(existing, people, { type, employerId, start
       workerName: p.name || "",
       type,
       employerId,
+      principalId,
       startDate,
       endDate: "",
       endReason: null,
@@ -175,11 +188,12 @@ export function workedDays(workdays, faenaOfCycle, { workerIdOf = (wd) => wd.wor
 }
 
 // Filas de una lista: por persona y faena, los días trabajados dentro del
-// rango que caen en un período del tipo y el empleador pedidos.
-function rowsFor(employments, worked, { type, employerId, from, to }) {
+// rango que caen en un período del tipo, el empleador y el mandante pedidos
+// (`principalId` vacío: cualquier mandante).
+function rowsFor(employments, worked, { type, employerId, principalId, from, to }) {
   const periods = new Map();
   for (const e of employments) {
-    if (e.type !== type || e.employerId !== employerId || !isActiveIn(e, from, to)) continue;
+    if (e.type !== type || e.employerId !== employerId || !matchesPrincipal(e, principalId) || !isActiveIn(e, from, to)) continue;
     if (!periods.has(e.workerId)) periods.set(e.workerId, []);
     periods.get(e.workerId).push(e);
   }
@@ -209,9 +223,10 @@ export function feeAmounts(days, dailyNet, rate) {
 }
 
 // Filas de la lista de honorarios: quienes estuvieron a honorarios con el
-// empleador en el rango y trabajaron algún día, una fila por faena.
-export function feeRows(employments, worked, { employerId, from, to }) {
-  return rowsFor(employments, worked, { type: "fees", employerId, from, to }).flatMap(({ workerId, byFaena }) =>
+// empleador (y el mandante, si se pide) en el rango y trabajaron algún día,
+// una fila por faena.
+export function feeRows(employments, worked, { employerId, principalId = "", from, to }) {
+  return rowsFor(employments, worked, { type: "fees", employerId, principalId, from, to }).flatMap(({ workerId, byFaena }) =>
     [...byFaena].map(([faenaId, days]) => ({ workerId, faenaId, days })),
   );
 }
@@ -228,12 +243,13 @@ export function monthRange(month) {
 }
 
 // Filas de la lista de imposiciones del mes: quienes tuvieron contrato con el
-// empleador ese mes, una fila por faena con sus días. Quien tuvo contrato y no
-// trabajó va con 0 días y sin faena. Si el contrato terminó ese mes, la fila
-// pide liquidación y finiquito, con la fecha y el motivo.
-export function contributionRows(employments, worked, { employerId, month }) {
+// empleador (y el mandante, si se pide) ese mes, una fila por faena con sus
+// días. Quien tuvo contrato y no trabajó va con 0 días y sin faena. Si el
+// contrato terminó ese mes, la fila pide liquidación y finiquito, con la fecha
+// y el motivo.
+export function contributionRows(employments, worked, { employerId, principalId = "", month }) {
   const { from, to } = monthRange(month);
-  return rowsFor(employments, worked, { type: "contract", employerId, from, to }).flatMap(({ workerId, periods, byFaena }) => {
+  return rowsFor(employments, worked, { type: "contract", employerId, principalId, from, to }).flatMap(({ workerId, periods, byFaena }) => {
     const ended = periods.find((e) => e.endDate && e.endDate >= from && e.endDate <= to);
     const base = {
       workerId,

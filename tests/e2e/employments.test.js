@@ -4,6 +4,7 @@ import {
   startEmployments,
   endEmployments,
   setSettlementStatus,
+  setPrincipal,
   listEmploymentsFrom,
   listEmploymentsOfWorkers,
   listSettlements,
@@ -76,6 +77,20 @@ describe("contratos en bloque", () => {
     const again = await contratar([people[0]], { type: "fees", employerId: "hp", startDate: "2026-10-16" });
     expect(again.created).toHaveLength(1);
     expect((await listWorkerEmployments(ANA.id)).map((e) => e.type)).toEqual(["fees", "contract"]);
+  });
+
+  it("pone el mandante a varios con un solo log, y los vigentes lo traen aunque estuvieran en caché", async () => {
+    const { created } = await contratar(people, { type: "contract", employerId: "hp", principalId: "m1", startDate: "2026-09-01" });
+    expect((await all("employments")).every((e) => e.principalId === "m1")).toBe(true);
+    expect(await listEmploymentsFrom("2026-10-21")).toHaveLength(3);
+
+    await setPrincipal(created.slice(0, 2).map((e) => e.id), "m2");
+    const byWorker = new Map((await listEmploymentsFrom("2026-10-21")).map((e) => [e.workerId, e.principalId]));
+    expect(byWorker).toEqual(new Map([[ANA.id, "m2"], [BETO.id, "m2"], [CARO.id, "m1"]]));
+
+    const logs = (await all("logs")).filter((l) => l.action === "setPrincipal");
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({ entity: "employment", meta: { count: 2, principalId: "m2" } });
   });
 });
 

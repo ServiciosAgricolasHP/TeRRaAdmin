@@ -4,6 +4,9 @@ import {
   isActiveIn,
   activeByWorker,
   matchesEmploymentFilter,
+  matchesPrincipal,
+  NO_PRINCIPAL,
+  listCompanyLabel,
   employmentGroupOf,
   overlapping,
   employmentError,
@@ -50,6 +53,26 @@ describe("vigencia", () => {
     expect(matchesEmploymentFilter(active.get("w1"), { type: "none" })).toBe(false);
     expect(matchesEmploymentFilter(active.get("w3"), {})).toBe(true);
   });
+
+  it("filtra por mandante, también a los que no tienen", () => {
+    const withPrincipal = contract({ principalId: "m1" });
+    expect(matchesPrincipal(withPrincipal, "")).toBe(true);
+    expect(matchesPrincipal(withPrincipal, "m1")).toBe(true);
+    expect(matchesPrincipal(withPrincipal, "m2")).toBe(false);
+    expect(matchesPrincipal(withPrincipal, NO_PRINCIPAL)).toBe(false);
+    expect(matchesPrincipal(contract(), NO_PRINCIPAL)).toBe(true);
+    expect(matchesPrincipal(contract({ principalId: "" }), NO_PRINCIPAL)).toBe(true);
+    expect(matchesEmploymentFilter([withPrincipal], { type: "contract", principalId: "m1" })).toBe(true);
+    expect(matchesEmploymentFilter([withPrincipal], { type: "fees", principalId: "m1" })).toBe(false);
+    expect(matchesEmploymentFilter([contract()], { principalId: "m1" })).toBe(false);
+    expect(matchesEmploymentFilter([], { principalId: NO_PRINCIPAL })).toBe(false);
+  });
+
+  it("una lista lleva el empleador y, si es de un solo mandante, el mandante", () => {
+    expect(listCompanyLabel({ employerName: "HP", principalName: "Frutícola" })).toBe("HP · Frutícola");
+    expect(listCompanyLabel({ employerName: "HP", principalName: "" })).toBe("HP");
+    expect(listCompanyLabel({ employerName: "HP" })).toBe("HP");
+  });
 });
 
 describe("grupos de la grilla", () => {
@@ -88,9 +111,9 @@ describe("acciones masivas", () => {
   it("contrata a varios y deja afuera a quien se cruzaría con otro período", () => {
     const existing = [contract({ workerId: "w2", endDate: "" })];
     const people = [{ workerId: "w1", rut: "1-9", name: "Ana" }, { workerId: "w2", rut: "2-7", name: "Beto" }, { workerId: "w1", rut: "1-9", name: "Ana" }];
-    const plan = planStartEmployments(existing, people, { type: "fees", employerId: "hp", startDate: "2026-10-01" });
+    const plan = planStartEmployments(existing, people, { type: "fees", employerId: "hp", principalId: "m1", startDate: "2026-10-01" });
     expect(plan.create).toEqual([
-      { workerId: "w1", workerRut: "1-9", workerName: "Ana", type: "fees", employerId: "hp", startDate: "2026-10-01", endDate: "", endReason: null, settlementStatus: null, notes: "" },
+      { workerId: "w1", workerRut: "1-9", workerName: "Ana", type: "fees", employerId: "hp", principalId: "m1", startDate: "2026-10-01", endDate: "", endReason: null, settlementStatus: null, notes: "" },
     ]);
     expect(plan.skipped.map((s) => [s.person.name, s.reason])).toEqual([
       ["Beto", "Se cruza con contrato del 2026-09-01 sin término."],
@@ -154,6 +177,25 @@ describe("honorarios", () => {
       { workerId: "w1", faenaId: "lingues", days: 1 },
     ]);
   });
+
+  it("con un mandante, toma solo los días de los períodos de ese mandante", () => {
+    const employments = [
+      { id: "f1", workerId: "w1", type: "fees", employerId: "hp", principalId: "m1", startDate: "2026-09-01", endDate: "2026-09-10" },
+      { id: "f2", workerId: "w1", type: "fees", employerId: "hp", principalId: "m2", startDate: "2026-09-11", endDate: "" },
+      { id: "f3", workerId: "w2", type: "fees", employerId: "hp", startDate: "2026-09-01", endDate: "" },
+    ];
+    const worked = new Map([
+      ["w1", new Map([["2026-09-05", "aguada"], ["2026-09-12", "aguada"], ["2026-09-13", "aguada"]])],
+      ["w2", new Map([["2026-09-05", "aguada"]])],
+    ]);
+    const range = { employerId: "hp", from: "2026-09-01", to: "2026-09-30" };
+    expect(feeRows(employments, worked, { ...range, principalId: "m2" })).toEqual([{ workerId: "w1", faenaId: "aguada", days: 2 }]);
+    expect(feeRows(employments, worked, { ...range, principalId: NO_PRINCIPAL })).toEqual([{ workerId: "w2", faenaId: "aguada", days: 1 }]);
+    expect(feeRows(employments, worked, range)).toEqual([
+      { workerId: "w1", faenaId: "aguada", days: 3 },
+      { workerId: "w2", faenaId: "aguada", days: 1 },
+    ]);
+  });
 });
 
 describe("imposiciones", () => {
@@ -176,5 +218,14 @@ describe("imposiciones", () => {
       { workerId: "w1", request: "payslipAndSettlement", endDate: "2026-09-10", endReason: "jobEnd", faenaId: "aguada", days: 1 },
       { workerId: "w2", request: "payslip", endDate: "", endReason: null, faenaId: "", days: 0 },
     ]);
+  });
+
+  it("con un mandante, lleva solo los contratos de ese mandante", () => {
+    const employments = [
+      { id: "c1", workerId: "w1", type: "contract", employerId: "hp", principalId: "m1", startDate: "2026-09-01", endDate: "" },
+      { id: "c2", workerId: "w2", type: "contract", employerId: "hp", principalId: "m2", startDate: "2026-09-01", endDate: "" },
+    ];
+    const worked = new Map([["w1", new Map([["2026-09-05", "aguada"]])], ["w2", new Map([["2026-09-05", "aguada"]])]]);
+    expect(contributionRows(employments, worked, { employerId: "hp", principalId: "m1", month: "2026-09" }).map((r) => r.workerId)).toEqual(["w1"]);
   });
 });

@@ -428,6 +428,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Cumpleaños | `birthday` | dentro de `users` |
 | Contrato u honorarios (un período) | `employment` | `employments` |
 | Empleador | `employer` | `employers` |
+| Empresa mandante (para la que se presta el servicio) | `principal` | `principals` |
 | Honorarios | `fees` | tipo de `employment` (guardado como `"fees"`) |
 | Boleta de honorarios | `feeReceipt` | |
 | Lista de honorarios | `feeList` | `feeLists` |

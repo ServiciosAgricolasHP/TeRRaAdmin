@@ -1,3 +1,4 @@
+import { listCompanyLabel } from "../../utils/employment";
 import { itemsByFaena, feeListTotals, rutParts } from "../../utils/feeLists";
 
 const MONEY = '"$"#,##0';
@@ -30,7 +31,7 @@ export async function writeFeeListXlsx(list) {
   const head = { font: { bold: true, color: { argb: "FFFFFFFF" } }, fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF374151" } } };
   const total = { font: { bold: true }, fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F4F6" } } };
 
-  ws.getCell("B2").value = `Boletas de honorarios — ${list.employerName || ""}`;
+  ws.getCell("B2").value = `Boletas de honorarios — ${listCompanyLabel(list)}`;
   ws.getCell("B2").font = { bold: true, size: 14 };
   ws.getCell("B3").value = `Del ${fmt(list.from)} al ${fmt(list.to)} · $${Number(list.dailyNet).toLocaleString("es-CL")} líquido por día · retención ${pct(list.withholdingRate)}`;
   ws.getCell("B3").font = { color: { argb: "FF4B5563" } };
@@ -54,7 +55,7 @@ export async function writeFeeListXlsx(list) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `Honorarios_${String(list.employerName || "").replace(/[^\w-]+/g, "_")}_${list.from}_${list.to}.xlsx`;
+  a.download = `Honorarios_${listCompanyLabel(list).replace(/[^\w-]+/g, "_")}_${list.from}_${list.to}.xlsx`;
   a.click();
   URL.revokeObjectURL(url);
 }

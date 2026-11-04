@@ -1,6 +1,6 @@
 import { contributionsByFaena, contributionTotals, monthTitle } from "../../utils/contributionLists";
 import { rutParts } from "../../utils/feeLists";
-import { CONTRIBUTION_REQUESTS, END_REASONS } from "../../utils/employment";
+import { CONTRIBUTION_REQUESTS, END_REASONS, listCompanyLabel } from "../../utils/employment";
 
 const fmt = (iso) => (iso ? iso.split("-").reverse().join("-") : "");
 
@@ -28,7 +28,7 @@ export async function writeContributionListXlsx(list) {
   const head = { font: { bold: true, color: { argb: "FFFFFFFF" } }, fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FF374151" } } };
   const total = { font: { bold: true }, fill: { type: "pattern", pattern: "solid", fgColor: { argb: "FFF3F4F6" } } };
 
-  ws.getCell("B2").value = `Imposiciones ${monthTitle(list.month)} — ${list.employerName || ""}`;
+  ws.getCell("B2").value = `Imposiciones ${monthTitle(list.month)} — ${listCompanyLabel(list)}`;
   ws.getCell("B2").font = { bold: true, size: 14 };
   const t = contributionTotals(list.items || []);
   ws.getCell("B3").value = `${t.people} persona${t.people === 1 ? "" : "s"} · ${t.days} días${t.settlements ? ` · ${t.settlements} con finiquito` : ""}`;
@@ -63,7 +63,7 @@ export async function writeContributionListXlsx(list) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `Imposiciones_${String(list.employerName || "").replace(/[^\w-]+/g, "_")}_${list.month}.xlsx`;
+  a.download = `Imposiciones_${listCompanyLabel(list).replace(/[^\w-]+/g, "_")}_${list.month}.xlsx`;
   a.click();
   URL.revokeObjectURL(url);
 }

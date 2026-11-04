@@ -5,6 +5,7 @@ import { feeListsService } from "../../services/feeListsService";
 import { hasChanges } from "../../utils/formChanges";
 import { localIsoDate } from "../../utils/dates";
 import { feeItemKey, feeListTotals } from "../../utils/feeLists";
+import { listCompanyLabel } from "../../utils/employment";
 import { fmtCurrency } from "../../utils/format";
 import FeeItemsTable from "./FeeItemsTable";
 import { writeFeeListXlsx } from "./writeFeeListXlsx";
@@ -74,7 +75,7 @@ export default function FeeListModal({ list, onClose, onChanged }) {
     <Modal
       open
       onClose={() => !busy && onClose()}
-      title={`Honorarios · ${list.employerName || ""}`}
+      title={`Honorarios · ${listCompanyLabel(list)}`}
       size="xl"
       dirty={dirty && !busy}
       footer={
@@ -111,7 +112,7 @@ export default function FeeListModal({ list, onClose, onChanged }) {
       <ConfirmDialog
         open={confirmDelete}
         title="Eliminar lista"
-        message={`¿Eliminar la lista de honorarios de ${list.employerName || ""} del ${fmt(list.from)} al ${fmt(list.to)}? No tiene boletas emitidas.`}
+        message={`¿Eliminar la lista de honorarios de ${listCompanyLabel(list)} del ${fmt(list.from)} al ${fmt(list.to)}? No tiene boletas emitidas.`}
         confirmLabel="Eliminar"
         danger
         busy={busy === "delete"}

@@ -294,22 +294,30 @@ export const DEMO_EMPLOYERS = [
   { id: "E2", name: "Servicios del Valle Ltda.", rut: rut(77654329) },
 ];
 
+export const DEMO_PRINCIPALS = [
+  { id: "M1", name: "Frutícola Cerro Verde S.A.", rut: rut(96812345) },
+  { id: "M2", name: "Exportadora Las Brisas SpA", rut: rut(76987612) },
+];
+
 export async function seedEmployments() {
   const db = getFirestore("hpdatabase");
   for (const e of DEMO_EMPLOYERS) {
     await db.collection("employers").doc(e.id).set({ name: e.name, rut: e.rut, enabled: true, createdAt: new Date("2026-08-01") });
+  }
+  for (const m of DEMO_PRINCIPALS) {
+    await db.collection("principals").doc(m.id).set({ name: m.name, rut: m.rut, enabled: true, createdAt: new Date("2026-08-01") });
   }
   const [ana, bruno, carla, diego, , , gloria] = DEMO_WORKERS;
   const period = (id, w, data) => db.collection("employments").doc(id).set({
     workerId: w.id, workerRut: w.rut, workerName: w.name, employerId: "E1", endDate: "", endReason: null,
     settlementStatus: null, notes: "", createdAt: new Date("2026-09-01T12:00:00-03:00"), updatedAt: new Date("2026-09-01T12:00:00-03:00"), ...data,
   });
-  await period("P1", ana, { type: "contract", startDate: "2026-09-01" });
-  await period("P2", bruno, { type: "contract", startDate: "2026-09-01" });
-  await period("P3", carla, { type: "fees", startDate: "2026-09-15" });
+  await period("P1", ana, { type: "contract", principalId: "M1", startDate: "2026-09-01" });
+  await period("P2", bruno, { type: "contract", principalId: "M2", startDate: "2026-09-01" });
+  await period("P3", carla, { type: "fees", principalId: "M1", startDate: "2026-09-15" });
   await period("P4", diego, { type: "fees", startDate: "2026-09-15" });
   await period("P5", gloria, {
-    type: "contract", startDate: "2026-03-02", endDate: "2026-09-30", endReason: "jobEnd",
+    type: "contract", principalId: "M1", startDate: "2026-03-02", endDate: "2026-09-30", endReason: "jobEnd",
     settlementStatus: "requested", settlementRequestedAt: "2026-10-02",
   });
   await db.collection("worker").doc(carla.id).update({ address: "Pasaje Las Rosas 45", commune: "Requínoa" });

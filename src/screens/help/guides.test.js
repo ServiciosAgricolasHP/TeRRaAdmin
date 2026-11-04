@@ -95,6 +95,8 @@ describe("preguntas típicas", () => {
     ["el trabajador cobra en la cuenta de otro", "trabajadores#cobrar-en-la-cuenta-de-otra-persona"],
     ["dirección del trabajador", "trabajadores#datos-personales"],
     ["contratar a todos los del ciclo", "contratos#contratar-a-varias-personas-de-una-vez"],
+    ["empresa mandante", "contratos#los-mandantes"],
+    ["ponerle el mandante a los contratos", "contratos#los-mandantes"],
     ["terminar un contrato", "contratos#terminar-contratos"],
     ["finiquitos pendientes", "contratos#seguir-los-finiquitos"],
     ["cómo hago las boletas de honorarios", "contratos#generar-la-lista-de-honorarios"],

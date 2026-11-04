@@ -15,15 +15,16 @@ const inputCls =
 
 const monthStart = (today) => `${today.slice(0, 7)}-01`;
 
-// Generar una lista de honorarios: el empleador y el rango de fechas arman una
-// fila por persona y faena con los días que trabajó a honorarios con ese
-// empleador. Los días se editan, las filas se quitan y se puede sumar a
-// alguien. La tarifa y la retención vienen de la configuración y se pueden
-// cambiar para esta lista.
-export default function GenerateFeeListModal({ employers, onClose, onSaved }) {
+// Generar una lista de honorarios: el empleador, el mandante (o todos) y el
+// rango de fechas arman una fila por persona y faena con los días que trabajó
+// a honorarios con ese empleador. Los días se editan, las filas se quitan y se
+// puede sumar a alguien. La tarifa y la retención vienen de la configuración
+// y se pueden cambiar para esta lista.
+export default function GenerateFeeListModal({ employers, principals, onClose, onSaved }) {
   const today = localIsoDate();
   const { workers } = useWorkersList();
   const [employerId, setEmployerId] = useState("");
+  const [principalId, setPrincipalId] = useState("");
   const [from, setFrom] = useState(monthStart(today));
   const [to, setTo] = useState(today);
   const [dailyNet, setDailyNet] = useState("");
@@ -47,13 +48,14 @@ export default function GenerateFeeListModal({ employers, onClose, onSaved }) {
   const net = Number(dailyNet) || 0;
   const rate = (Number(String(ratePct).replace(",", ".")) || 0) / 100;
   const employer = employers.find((x) => x.id === employerId);
+  const principal = principals.find((x) => x.id === principalId);
 
   const calculate = async () => {
     setBusy("calc");
     setError("");
     try {
       const data = await loadWorkedDays(from, to, workers);
-      const rows = feeRows(data.employments, data.worked, { employerId, from, to });
+      const rows = feeRows(data.employments, data.worked, { employerId, principalId, from, to });
       const workersById = new Map(workers.map((w) => [w.id, w]));
       setItems(buildFeeListItems(rows, { workersById, faenaNameOf: data.faenaNameOf, dailyNet: net, rate }));
       setFaenas(data.faenas);
@@ -94,6 +96,8 @@ export default function GenerateFeeListModal({ employers, onClose, onSaved }) {
     const data = {
       employerId,
       employerName: employer?.name || "",
+      principalId,
+      principalName: principal?.name || "",
       from,
       to,
       dailyNet: net,
@@ -140,7 +144,7 @@ export default function GenerateFeeListModal({ employers, onClose, onSaved }) {
       }
     >
       <div className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-[2fr_1fr_1fr_auto] sm:items-end">
+        <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
             <span className="mb-1 block text-sm text-[var(--color-muted)]">Empleador</span>
             <select value={employerId} onChange={(e) => { setEmployerId(e.target.value); setItems(null); }} className={inputCls}>
@@ -148,6 +152,15 @@ export default function GenerateFeeListModal({ employers, onClose, onSaved }) {
               {employers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
             </select>
           </label>
+          <label className="block">
+            <span className="mb-1 block text-sm text-[var(--color-muted)]">Mandante</span>
+            <select value={principalId} onChange={(e) => { setPrincipalId(e.target.value); setItems(null); }} className={inputCls}>
+              <option value="">Todos los mandantes</option>
+              {principals.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </select>
+          </label>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
           <label className="block">
             <span className="mb-1 block text-sm text-[var(--color-muted)]">Desde</span>
             <input type="date" value={from} onChange={(e) => { setFrom(e.target.value); setItems(null); }} className={inputCls} />
@@ -189,7 +202,8 @@ export default function GenerateFeeListModal({ employers, onClose, onSaved }) {
             )}
             {items.length === 0 ? (
               <p className="rounded-md border border-dashed border-[var(--color-border)] py-6 text-center text-sm text-[var(--color-muted)]">
-                Nadie trabajó a honorarios con {employer?.name || "ese empleador"} en esas fechas.
+                Nadie trabajó a honorarios con {employer?.name || "ese empleador"}
+                {principal ? ` para ${principal.name}` : ""} en esas fechas.
               </p>
             ) : (
               <FeeItemsTable items={items} mode="draft" onChange={change} onRemove={remove} />

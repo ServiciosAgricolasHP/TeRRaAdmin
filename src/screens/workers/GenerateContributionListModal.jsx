@@ -19,12 +19,14 @@ function previousMonth(today) {
 }
 
 // Generar la lista de imposiciones de un mes: quienes tuvieron contrato con el
-// empleador ese mes, una fila por faena con sus días trabajados (dentro del
-// período del contrato), y la liquidación con finiquito si el contrato terminó
-// ese mes. Los días se editan, las filas se quitan y se puede sumar a alguien.
-export default function GenerateContributionListModal({ employers, onClose, onSaved }) {
+// empleador (y el mandante, si se elige uno) ese mes, una fila por faena con
+// sus días trabajados (dentro del período del contrato), y la liquidación con
+// finiquito si el contrato terminó ese mes. Los días se editan, las filas se
+// quitan y se puede sumar a alguien.
+export default function GenerateContributionListModal({ employers, principals, onClose, onSaved }) {
   const { workers } = useWorkersList();
   const [employerId, setEmployerId] = useState("");
+  const [principalId, setPrincipalId] = useState("");
   const [month, setMonth] = useState(() => previousMonth(localIsoDate()));
   const [items, setItems] = useState(null);
   const [faenas, setFaenas] = useState([]);
@@ -33,6 +35,7 @@ export default function GenerateContributionListModal({ employers, onClose, onSa
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const employer = employers.find((x) => x.id === employerId);
+  const principal = principals.find((x) => x.id === principalId);
 
   const calculate = async () => {
     const { from, to } = monthRange(month);
@@ -41,7 +44,7 @@ export default function GenerateContributionListModal({ employers, onClose, onSa
     setError("");
     try {
       const data = await loadWorkedDays(from, to, workers);
-      const rows = contributionRows(data.employments, data.worked, { employerId, month });
+      const rows = contributionRows(data.employments, data.worked, { employerId, principalId, month });
       setItems(buildContributionItems(rows, { workersById, faenaNameOf: data.faenaNameOf }));
       setFaenas(data.faenas);
       setReads(data.reads);
@@ -76,6 +79,8 @@ export default function GenerateContributionListModal({ employers, onClose, onSa
     const data = {
       employerId,
       employerName: employer?.name || "",
+      principalId,
+      principalName: principal?.name || "",
       month,
       items,
       totals: contributionTotals(items),
@@ -112,12 +117,19 @@ export default function GenerateContributionListModal({ employers, onClose, onSa
       }
     >
       <div className="space-y-4">
-        <div className="grid gap-3 sm:grid-cols-[2fr_1fr_auto] sm:items-end">
+        <div className="grid gap-3 sm:grid-cols-[1fr_1fr_10rem_auto] sm:items-end">
           <label className="block">
             <span className="mb-1 block text-sm text-[var(--color-muted)]">Empleador</span>
             <select value={employerId} onChange={(e) => { setEmployerId(e.target.value); setItems(null); }} className={inputCls}>
               <option value="">Elige…</option>
               {employers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm text-[var(--color-muted)]">Mandante</span>
+            <select value={principalId} onChange={(e) => { setPrincipalId(e.target.value); setItems(null); }} className={inputCls}>
+              <option value="">Todos los mandantes</option>
+              {principals.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
             </select>
           </label>
           <label className="block">
@@ -141,7 +153,8 @@ export default function GenerateContributionListModal({ employers, onClose, onSa
             </div>
             {items.length === 0 ? (
               <p className="rounded-md border border-dashed border-[var(--color-border)] py-6 text-center text-sm text-[var(--color-muted)]">
-                Nadie tuvo contrato con {employer?.name || "ese empleador"} en {monthTitle(month)}.
+                Nadie tuvo contrato con {employer?.name || "ese empleador"}
+                {principal ? ` para ${principal.name}` : ""} en {monthTitle(month)}.
               </p>
             ) : (
               <ContributionItemsTable items={items} editable onChange={change} onRemove={remove} />

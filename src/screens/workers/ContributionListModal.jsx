@@ -4,6 +4,7 @@ import Modal, { ModalCloseButton } from "../../components/Modal";
 import { contributionListsService } from "../../services/contributionListsService";
 import { localIsoDate } from "../../utils/dates";
 import { contributionTotals, monthTitle } from "../../utils/contributionLists";
+import { listCompanyLabel } from "../../utils/employment";
 import ContributionItemsTable from "./ContributionItemsTable";
 import { writeContributionListXlsx } from "./writeContributionListXlsx";
 
@@ -48,7 +49,7 @@ export default function ContributionListModal({ list, onClose, onChanged }) {
     <Modal
       open
       onClose={() => !busy && onClose()}
-      title={`Imposiciones ${monthTitle(list.month)} · ${list.employerName || ""}`}
+      title={`Imposiciones ${monthTitle(list.month)} · ${listCompanyLabel(list)}`}
       size="xl"
       footer={
         <>
@@ -81,7 +82,7 @@ export default function ContributionListModal({ list, onClose, onChanged }) {
       <ConfirmDialog
         open={confirmDelete}
         title="Eliminar lista"
-        message={`¿Eliminar la lista de imposiciones de ${list.employerName || ""} de ${monthTitle(list.month)}? No se ha enviado al contador.`}
+        message={`¿Eliminar la lista de imposiciones de ${listCompanyLabel(list)} de ${monthTitle(list.month)}? No se ha enviado al contador.`}
         confirmLabel="Eliminar"
         danger
         busy={busy === "delete"}

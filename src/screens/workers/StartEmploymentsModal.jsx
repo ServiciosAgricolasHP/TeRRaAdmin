@@ -11,14 +11,15 @@ import { EMPLOYMENT_TYPES, activeByWorker, planStartEmployments } from "../../ut
 const inputCls =
   "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]";
 
-// Contratar o pasar a honorarios a varias personas desde la misma fecha. Se
-// suman una por una o "desde un ciclo": quienes están en sus labores y no
+// Contratar o pasar a honorarios a varias personas desde la misma fecha, con
+// el mismo empleador y, si corresponde, el mismo mandante. Se suman una por una o "desde un ciclo": quienes están en sus labores y no
 // tienen un período vigente en esa fecha. Antes de escribir se leen los
 // períodos de esas personas, y quien se cruzaría con otro queda afuera.
-export default function StartEmploymentsModal({ employers, activeEmployments, onClose, onDone }) {
+export default function StartEmploymentsModal({ employers, principals, activeEmployments, onClose, onDone }) {
   const { workers } = useWorkersList();
   const [type, setType] = useState("contract");
   const [employerId, setEmployerId] = useState("");
+  const [principalId, setPrincipalId] = useState("");
   const [startDate, setStartDate] = useState(localIsoDate());
   const [notes, setNotes] = useState("");
   const [people, setPeople] = useState([]);
@@ -65,7 +66,7 @@ export default function StartEmploymentsModal({ employers, activeEmployments, on
   // afuera, lo muestra y espera la confirmación; si no, escribe de una.
   const review = async () => {
     const ids = people.map((p) => p.workerId);
-    const fields = { type, employerId, startDate, notes: notes.trim() };
+    const fields = { type, employerId, principalId, startDate, notes: notes.trim() };
     setBusy(true);
     setError("");
     try {
@@ -140,10 +141,19 @@ export default function StartEmploymentsModal({ employers, activeEmployments, on
             <input type="date" value={startDate} onChange={(e) => { setStartDate(e.target.value); setPlan(null); }} className={inputCls} />
           </label>
         </div>
-        <label className="block">
-          <span className="mb-1 block text-sm text-[var(--color-muted)]">Notas (opcional)</span>
-          <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
-        </label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block">
+            <span className="mb-1 block text-sm text-[var(--color-muted)]">Mandante (opcional)</span>
+            <select value={principalId} onChange={(e) => { setPrincipalId(e.target.value); setPlan(null); }} className={inputCls}>
+              <option value="">Sin mandante</option>
+              {principals.filter((x) => x.enabled !== false).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-sm text-[var(--color-muted)]">Notas (opcional)</span>
+            <input value={notes} onChange={(e) => setNotes(e.target.value)} className={inputCls} />
+          </label>
+        </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
           <div>

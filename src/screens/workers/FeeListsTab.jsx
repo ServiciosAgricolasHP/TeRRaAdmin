@@ -3,7 +3,9 @@ import ScreenLoader from "../../components/ScreenLoader";
 import { useAuth } from "../../contexts/AuthContext";
 import { useToast } from "../../contexts/ToastContext";
 import { useEmployers } from "../../hooks/useEmployers";
+import { usePrincipals } from "../../hooks/usePrincipals";
 import { feeListsService, FEE_LISTS } from "../../services/feeListsService";
+import { listCompanyLabel } from "../../utils/employment";
 import { fmtCurrency } from "../../utils/format";
 import FeeConfigModal from "./FeeConfigModal";
 import FeeListModal from "./FeeListModal";
@@ -18,6 +20,7 @@ export default function FeeListsTab() {
   const toast = useToast();
   const { isAdmin } = useAuth();
   const { employers } = useEmployers();
+  const { principals } = usePrincipals();
   const [lists, setLists] = useState(null);
   const [error, setError] = useState("");
   const [version, setVersion] = useState(0);
@@ -76,7 +79,7 @@ export default function FeeListsTab() {
           {lists.map((l) => (
             <li key={l.id}>
               <button type="button" onClick={() => setOpen(l)} className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2.5 text-left text-sm hover:bg-[var(--color-surface-2)]">
-                <span className="font-medium">{l.employerName || "—"}</span>
+                <span className="font-medium">{listCompanyLabel(l) || "—"}</span>
                 <span className="tabular-nums">{fmt(l.from)} → {fmt(l.to)}</span>
                 <span className="text-[var(--color-muted)]">
                   {l.totals?.people || 0} persona{l.totals?.people === 1 ? "" : "s"} · {l.totals?.days || 0} días
@@ -94,6 +97,7 @@ export default function FeeListsTab() {
       {generating && (
         <GenerateFeeListModal
           employers={employers}
+          principals={principals}
           onClose={() => setGenerating(false)}
           onSaved={(saved) => {
             setGenerating(false);
