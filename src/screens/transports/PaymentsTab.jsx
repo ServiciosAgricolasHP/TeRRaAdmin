@@ -32,10 +32,10 @@ export function PaymentsTab() {
   const [generating, setGenerating] = useState(false);
   const [printingMany, setPrintingMany] = useState(false);
   const [viewing, setViewing] = useState(null);
-  const [confirmAction, setConfirmAction] = useState(null);
+  const [confirmDelete, setConfirmDelete] = useState(null);
   const [showHistoricPaid, setShowHistoricPaid] = useState(false);
   // Se incrementa para que el balance vuelva a leer después de generar,
-  // editar, pagar, revertir o eliminar un resumen.
+  // editar o eliminar un resumen.
   const [balanceVersion, setBalanceVersion] = useState(0);
 
   // Filtros y orden de la lista de resúmenes; solo el orden se guarda en
@@ -333,9 +333,7 @@ export function PaymentsTab() {
         faenaById={faenaById}
         subfaenaById={subfaenaById}
         cycleById={cycleById}
-        onPay={() => setConfirmAction({ type: "pay", payment: viewing })}
-        onRevert={() => setConfirmAction({ type: "revert", payment: viewing })}
-        onDelete={() => setConfirmAction({ type: "delete", payment: viewing })}
+        onDelete={() => setConfirmDelete(viewing)}
         onChanged={async () => {
           // Recarga la lista y el balance, y vuelve a leer el resumen abierto:
           // su total cambia al editar las vueltas.
@@ -349,28 +347,17 @@ export function PaymentsTab() {
       />
 
       <ConfirmDialog
-        open={!!confirmAction}
-        title={
-          confirmAction?.type === "pay" ? "Marcar como pagado" :
-          confirmAction?.type === "revert" ? "Revertir pago" :
-          "Eliminar resumen"
-        }
-        message={
-          confirmAction?.type === "pay"
-            ? "Todas las vueltas de este resumen se marcarán como pagadas."
-            : confirmAction?.type === "revert"
-              ? "El resumen volverá a pendiente y las vueltas también."
-              : "El resumen será eliminado. Las vueltas vinculadas vuelven a quedar pendientes."
-        }
-        danger={confirmAction?.type === "delete"}
-        onCancel={() => setConfirmAction(null)}
+        open={!!confirmDelete}
+        title="Eliminar resumen"
+        message="El resumen será eliminado. Las vueltas vinculadas vuelven a quedar pendientes."
+        danger
+        onCancel={() => setConfirmDelete(null)}
         onConfirm={async () => {
-          const a = confirmAction;
-          setConfirmAction(null);
+          if (!confirmDelete) return;
+          const id = confirmDelete.id;
+          setConfirmDelete(null);
           const { error: err } = await attempt(async () => {
-            if (a.type === "pay") await paymentsService.markPaid(a.payment.id);
-            else if (a.type === "revert") await paymentsService.revertPaid(a.payment.id);
-            else if (a.type === "delete") await paymentsService.deleteSummary(a.payment.id);
+            await paymentsService.deleteSummary(id);
             setViewing(null);
             await reload();
             setBalanceVersion((v) => v + 1);
