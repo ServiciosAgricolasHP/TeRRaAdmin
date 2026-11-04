@@ -110,7 +110,8 @@ describe("días trabajados para las listas", () => {
     expect(data.reads).toBe(3);
     expect(data.faenaNameOf(FAENA)).toBe("Faena Uno");
     expect(feeRows(data.employments, data.worked, { employerId: "hp", from: "2026-03-01", to: "2026-03-08" })).toEqual([
-      { workerId: ANA.id, faenaId: FAENA, days: 2 },
+      { workerId: ANA.id, faenaId: FAENA, days: 2, dates: ["2026-03-02", "2026-03-03"] },
     ]);
+    expect([...data.earned.get(ANA.id)].filter(([date]) => date <= "2026-03-08")).toEqual([["2026-03-02", 20000], ["2026-03-03", 20000]]);
   });
 });

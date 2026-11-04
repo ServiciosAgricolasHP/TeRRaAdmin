@@ -6,7 +6,8 @@ import { invalidate } from "./cache";
 import { logAction } from "./logger";
 import { listCycles, listJobs } from "./jobLists";
 import { fetchWorkdaysInRange } from "./calendarService";
-import { workedDays } from "../utils/employment";
+import { earnedByDay, workedDays } from "../utils/employment";
+import { workdayPayAmount } from "../utils/payroll";
 import { workerIdResolver } from "../utils/workerRut";
 
 // Contratos y honorarios de los trabajadores (`employments`), las empresas
@@ -135,8 +136,8 @@ export async function setPrincipal(ids, principalId) {
 }
 
 // Lo que hace falta para contar días en un rango: los días trabajados de cada
-// persona por faena (`workedDays`), los contratos y honorarios vigentes en el
-// rango, y las faenas con su nombre. Las jornadas se leen enteras (una lectura
+// persona por faena (`workedDays`), lo ganado cada día (`earnedByDay`), los
+// contratos y honorarios vigentes en el rango, y las faenas con su nombre. Las jornadas se leen enteras (una lectura
 // por jornada); `reads` dice cuántas fueron. La usan las listas de honorarios
 // y de imposiciones.
 export async function loadWorkedDays(from, to, workers) {
@@ -147,9 +148,12 @@ export async function loadWorkedDays(from, to, workers) {
     listEmploymentsFrom(from),
   ]);
   const faenaOfCycle = new Map(cycles.map((c) => [c.id, c.faenaId || ""]));
+  const laborTypeOf = new Map(cycles.flatMap((c) => (c.labors || []).map((l) => [`${c.id}|${l.id}`, l.type])));
   const names = new Map(faenas.map((f) => [f.id, f.name || ""]));
+  const workerIdOf = workerIdResolver(workers);
   return {
-    worked: workedDays(workdays, faenaOfCycle, { workerIdOf: workerIdResolver(workers) }),
+    worked: workedDays(workdays, faenaOfCycle, { workerIdOf }),
+    earned: earnedByDay(workdays, { workerIdOf, amountOf: (wd) => workdayPayAmount(wd, laborTypeOf.get(`${wd.cycleId}|${wd.laborId}`)) }),
     employments,
     faenas: faenas.map((f) => ({ id: f.id, name: f.name || "" })).sort((a, b) => a.name.localeCompare(b.name, "es")),
     faenaNameOf: (id) => names.get(id) || "",

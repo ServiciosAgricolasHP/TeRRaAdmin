@@ -104,6 +104,7 @@ describe("preguntas típicas", () => {
     ["cómo hago las imposiciones", "contratos#generar-la-lista-de-imposiciones-del-mes"],
     ["honorarios de una sola faena", "contratos#generar-la-lista-de-honorarios"],
     ["imposiciones de una sola faena", "contratos#generar-la-lista-de-imposiciones-del-mes"],
+    ["cómo se calcula el bono de las imposiciones", "contratos#generar-la-lista-de-imposiciones-del-mes"],
     ["mandar las imposiciones al contador", "contratos#enviar-las-imposiciones-al-contador"],
     ["olvidé mi contraseña", "primeros-pasos#entrar-a-terra"],
     ["cómo pongo el modo oscuro", "primeros-pasos#cambiar-los-colores"],

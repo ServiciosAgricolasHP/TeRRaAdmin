@@ -145,11 +145,21 @@ export async function run({ browser, page, base, login, shot }) {
   await contributions.getByText(/jornadas leídas/).waitFor({ timeout: 60000 });
   await page.waitForTimeout(500);
   await shot(page, "12-generar-imposiciones", contributions, { pad: 0 });
+
+  // El calendario de los días que trabajó Ana. Se abre con un clic, que lo
+  // deja abierto mientras la captura saca el mouse de la zona.
+  const anaDays = contributions.getByRole("button", { name: "Días trabajados de Ana Pérez Soto" }).first();
+  await anaDays.click();
+  const calendar = page.getByRole("dialog", { name: "Días trabajados de Ana Pérez Soto" });
+  await calendar.waitFor();
+  await shot(page, "13-dias-trabajados", [contributions.locator("tbody tr", { hasText: "Ana Pérez Soto" }).first(), calendar], { pad: 8, marks: [anaDays] });
+  await page.keyboard.press("Escape");
+  await calendar.waitFor({ state: "detached" });
   await contributions.getByRole("button", { name: "Guardar lista" }).click();
   const saved = modal(page, /^Imposiciones /);
   await saved.waitFor({ timeout: 60000 });
   await page.waitForTimeout(500);
-  await shot(page, "13-enviar-imposiciones", saved, {
+  await shot(page, "14-enviar-imposiciones", saved, {
     pad: 0, marks: [saved.getByRole("button", { name: "📊 Excel" }), saved.getByRole("button", { name: "Marcar enviada al contador" })],
   });
 
@@ -163,6 +173,6 @@ export async function run({ browser, page, base, login, shot }) {
   // La tabla de escritorio también está, oculta: se espera la tarjeta.
   await p.locator("text=Ana Pérez Soto >> visible=true").first().waitFor({ timeout: 120000 });
   await p.waitForTimeout(800);
-  await shot(p, "14-telefono", null);
+  await shot(p, "15-telefono", null);
   await phone.close();
 }

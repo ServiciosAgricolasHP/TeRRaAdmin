@@ -87,12 +87,12 @@ En la grilla del ciclo, **Por contrato** junta a las personas en **Con contrato*
 ![La grilla por contrato](help/contratos/09-grilla-por-contrato.webp)
 
 ## Generar la lista de honorarios
-<!-- preguntas: cómo hago las boletas de honorarios; lista de boletas; cuánto pagar a honorarios; calcular los honorarios; nómina de honorarios; honorarios de una sola faena -->
+<!-- preguntas: cómo hago las boletas de honorarios; lista de boletas; cuánto pagar a honorarios; calcular los honorarios; nómina de honorarios; honorarios de una sola faena; días trabajados de honorarios -->
 
 1. En **🧾 Honorarios**, toca **+ Generar lista**.
 2. Elige el **Empleador**, el **Mandante** (o **Todos los mandantes**) y las fechas (**Desde** y **Hasta**; vienen del primero del mes a hoy), y toca **Calcular días**.
 3. TeRRa arma una fila por persona y faena con los días que trabajó a honorarios con ese empleador y, si elegiste uno, para ese mandante. Un día cuenta si tiene al menos una jornada, y un día con jornadas en dos faenas cuenta una sola vez.
-4. Corrige los **Días**, quita a alguien con **✕** o súmalo en **Sumar a alguien**. Si hay varias faenas, en **Faenas** toca las que no van para sacarlas de la lista (otro toque las vuelve a poner). Para quedarte con unas pocas, toca **Ninguna** y después las que sí.
+4. Corrige los **Días**, quita a alguien con **✕** o súmalo en **Sumar a alguien**. **📅**, al lado de los días, muestra un calendario con los días que trabajó y lo ganado cada uno: aparece al pasar el mouse, y con un clic (o un toque, en el teléfono) queda abierto. Si hay varias faenas, en **Faenas** toca las que no van para sacarlas de la lista (otro toque las vuelve a poner). Para quedarte con unas pocas, toca **Ninguna** y después las que sí.
 5. Revisa el aviso **Sin dirección**: la boleta la pide, y se completa en la ficha de cada persona.
 6. Toca **Guardar lista**.
 
@@ -112,30 +112,32 @@ Al guardarla, la lista se abre. Escribe el **Folio** de cada boleta emitida (que
 - Una lista sin boletas emitidas se puede eliminar con **🗑 Eliminar lista**.
 
 ## Generar la lista de imposiciones del mes
-<!-- preguntas: cómo hago las imposiciones; lista para el contador; días imponibles; imposiciones del mes; pedir las liquidaciones; imposiciones de una sola faena -->
+<!-- preguntas: cómo hago las imposiciones; lista para el contador; días imponibles; imposiciones del mes; pedir las liquidaciones; imposiciones de una sola faena; sueldo base y bono de las imposiciones; qué días trabajó -->
 
 1. En **🏛 Imposiciones**, toca **+ Generar lista**.
-2. Elige el **Empleador**, el **Mandante** (o **Todos los mandantes**) y el **Mes** (viene el mes anterior), y toca **Calcular días**.
-3. TeRRa arma una fila por persona y faena con los días que trabajó dentro de su contrato. Con un mandante, entran solo los contratos de ese mandante. Si el contrato terminó ese mes, la fila pide **Liquidación + finiquito**, con la fecha y el motivo; si no, **Liquidación**. Quien tuvo contrato y no trabajó va en **Sin días trabajados**.
+2. Elige el **Empleador**, el **Mandante** (o **Todos los mandantes**) y el **Mes** (viene el mes anterior). Revisa el **Mínimo por día**, que viene del indicador **Día**, y toca **Calcular días**.
+3. TeRRa arma una fila por persona y faena con los días que trabajó dentro de su contrato, lo que ganó esos días, el **Sueldo base** y el **Bono**. Con un mandante, entran solo los contratos de ese mandante. **📅** muestra el calendario de los días que trabajó, con lo ganado cada día. Si el contrato terminó ese mes, la fila pide **Liquidación + finiquito**, con la fecha y el motivo; si no, **Liquidación**. Quien tuvo contrato y no trabajó va en **Sin días trabajados**.
 4. Corrige los días, quita o suma a alguien, y deja en **Faenas** solo las que van, igual que en honorarios. Toca **Guardar lista**.
 
-![Una lista de imposiciones](help/contratos/12-generar-imposiciones.webp)
+![Una lista de imposiciones, con el sueldo y el bono](help/contratos/12-generar-imposiciones.webp)
 
-La lista lleva solo los días: el sueldo y los bonos los completa el contador.
+![Los días que trabajó una persona, al pasar por 📅](help/contratos/13-dias-trabajados.webp)
+
+**El sueldo y el bono**: se declara el mínimo por cada día trabajado, y lo que ganó por sobre eso va como bono. Por ejemplo, 10 días a $17.967 son $179.670 de sueldo base; si ganó $250.000, el bono es $70.330. Si ganó menos que el mínimo, el sueldo queda en el mínimo, el bono en $0 y la fila se marca con **⚠** para que la revises. Al corregir los días, el sueldo y el bono se recalculan.
 
 ## Enviar las imposiciones al contador
 <!-- preguntas: mandar las imposiciones al contador; excel de imposiciones; lista enviada al contador -->
 
-En la lista guardada, **📊 Excel** la baja con una sección por faena. Después de mandarla, toca **Marcar enviada al contador**: queda con la fecha del día. Mientras no se envíe, se puede eliminar.
+En la lista guardada, **📊 Excel** la baja con una sección por faena, con los días, lo ganado, el sueldo y el bono. Después de mandarla, toca **Marcar enviada al contador**: queda con la fecha del día. Mientras no se envíe, se puede eliminar.
 
-![La lista guardada, lista para enviar](help/contratos/13-enviar-imposiciones.webp)
+![La lista guardada, lista para enviar](help/contratos/14-enviar-imposiciones.webp)
 
 ## En el teléfono
 <!-- preguntas: contratos en el celular; terminar contratos desde el teléfono -->
 
 En el teléfono, los contratos y los finiquitos pasan a tarjetas, cada una con su casilla para elegirla.
 
-![Los contratos en el teléfono](help/contratos/14-telefono.webp)
+![Los contratos en el teléfono](help/contratos/15-telefono.webp)
 
 ## Si algo no funciona
 <!-- preguntas: no aparece en la lista de honorarios; faltan días en las imposiciones; no puedo contratar a alguien; no me deja eliminar la lista -->
@@ -143,5 +145,6 @@ En el teléfono, los contratos y los finiquitos pasan a tarjetas, cada una con s
 - **Alguien quedó afuera al contratar**: ya tiene un período en esa fecha. Revisa su historial en la ficha.
 - **Falta alguien en la lista de honorarios o de imposiciones**: no tenía honorarios o contrato con ese empleador (o con ese mandante) en esas fechas, o no tiene jornadas. Revisa su mandante en **Vigentes**, o súmalo con **Sumar a alguien**.
 - **Los días no calzan con la grilla**: un día con jornadas en dos faenas cuenta una sola vez, en la de mayor monto. Corrige los días antes de guardar.
+- **Una fila de imposiciones tiene ⚠**: lo que ganó esos días no alcanza el mínimo, como un mensual que solo tiene asistencia. El sueldo queda en el mínimo y el bono en $0; revisa sus días con **📅**.
 - **No se puede eliminar una lista**: la de honorarios ya tiene boletas emitidas, o la de imposiciones ya se marcó enviada (**Marcar no enviada** lo deshace).
 - **No aparece un empleador o un mandante al contratar**: está desactivado. Actívalo en **⚙ Empleadores** o **⚙ Mandantes**.

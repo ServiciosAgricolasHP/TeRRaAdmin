@@ -1,13 +1,21 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Modal, { ModalCloseButton } from "../../components/Modal";
 import WorkerSearchPicker from "../../components/WorkerSearchPicker";
 import { useWorkersList } from "../../hooks/useWorkersList";
+import { indicatorsService } from "../../services";
 import { loadWorkedDays } from "../../services/employmentsService";
 import { contributionListsService } from "../../services/contributionListsService";
 import { localIsoDate } from "../../utils/dates";
 import { contributionRows, monthRange } from "../../utils/employment";
-import { buildContributionItems, contributionItemKey, contributionTotals, contributionsByFaena, monthTitle } from "../../utils/contributionLists";
-import ContributionItemsTable from "./ContributionItemsTable";
+import {
+  buildContributionItems,
+  contributionItem,
+  contributionItemKey,
+  contributionTotals,
+  contributionsByFaena,
+  monthTitle,
+} from "../../utils/contributionLists";
+import ContributionItemsTable, { PayTotals } from "./ContributionItemsTable";
 import FaenaPicker from "./FaenaPicker";
 
 const inputCls =
@@ -21,14 +29,17 @@ function previousMonth(today) {
 
 // Generar la lista de imposiciones de un mes: quienes tuvieron contrato con el
 // empleador (y el mandante, si se elige uno) ese mes, una fila por faena con
-// sus días trabajados (dentro del período del contrato), y la liquidación con
-// finiquito si el contrato terminó ese mes. Los días se editan, las filas y
-// las faenas enteras se quitan y se puede sumar a alguien.
+// sus días trabajados (dentro del período del contrato), lo ganado esos días,
+// el sueldo (el mínimo por día, del indicador "Día") y el bono, y la
+// liquidación con finiquito si el contrato terminó ese mes. Los días y el
+// mínimo por día se editan, las filas y las faenas enteras se quitan y se
+// puede sumar a alguien.
 export default function GenerateContributionListModal({ employers, principals, onClose, onSaved }) {
   const { workers } = useWorkersList();
   const [employerId, setEmployerId] = useState("");
   const [principalId, setPrincipalId] = useState("");
   const [month, setMonth] = useState(() => previousMonth(localIsoDate()));
+  const [dailyBaseInput, setDailyBaseInput] = useState("");
   const [items, setItems] = useState(null);
   // Las faenas que quedan fuera de la lista (`faenaId`; "" es "Sin días
   // trabajados").
@@ -41,6 +52,14 @@ export default function GenerateContributionListModal({ employers, principals, o
   const [error, setError] = useState("");
   const employer = employers.find((x) => x.id === employerId);
   const principal = principals.find((x) => x.id === principalId);
+  const dailyBase = Number(dailyBaseInput) || 0;
+
+  useEffect(() => {
+    indicatorsService
+      .getById("main")
+      .then((doc) => setDailyBaseInput(doc?.dia ? String(doc.dia) : ""))
+      .catch(() => {});
+  }, []);
 
   const calculate = async () => {
     const { from, to } = monthRange(month);
@@ -50,7 +69,7 @@ export default function GenerateContributionListModal({ employers, principals, o
     try {
       const data = await loadWorkedDays(from, to, workers);
       const rows = contributionRows(data.employments, data.worked, { employerId, principalId, month });
-      setItems(buildContributionItems(rows, { workersById, faenaNameOf: data.faenaNameOf }));
+      setItems(buildContributionItems(rows, { workersById, faenaNameOf: data.faenaNameOf, earned: data.earned, dailyBase }));
       setFaenas(data.faenas);
       setReads(data.reads);
     } catch (e) {
@@ -59,23 +78,33 @@ export default function GenerateContributionListModal({ employers, principals, o
     setBusy("");
   };
 
-  const change = (key, patch) => setItems((list) => list.map((it) => (contributionItemKey(it) === key ? { ...it, ...patch } : it)));
+  const changeDailyBase = (v) => {
+    setDailyBaseInput(v);
+    setItems((list) => (list ? list.map((it) => contributionItem(it, Number(v) || 0)) : list));
+  };
+  const change = (key, patch) =>
+    setItems((list) => list.map((it) => (contributionItemKey(it) === key ? contributionItem({ ...it, ...patch }, dailyBase) : it)));
   const remove = (key) => setItems((list) => list.filter((it) => contributionItemKey(it) !== key));
 
   const addPerson = () => {
     const w = adding.worker;
     if (!w) return;
-    const item = {
-      workerId: w.id,
-      rut: w.rut || w.id,
-      name: w.name || "",
-      faenaId: adding.faenaId,
-      faenaName: faenas.find((f) => f.id === adding.faenaId)?.name || "",
-      days: Number(adding.days) || 0,
-      request: "payslip",
-      endDate: "",
-      endReason: null,
-    };
+    const item = contributionItem(
+      {
+        workerId: w.id,
+        rut: w.rut || w.id,
+        name: w.name || "",
+        faenaId: adding.faenaId,
+        faenaName: faenas.find((f) => f.id === adding.faenaId)?.name || "",
+        days: Number(adding.days) || 0,
+        dates: [],
+        earned: 0,
+        request: "payslip",
+        endDate: "",
+        endReason: null,
+      },
+      dailyBase,
+    );
     setItems((list) => [...list.filter((it) => contributionItemKey(it) !== contributionItemKey(item)), item]);
     setExcluded((prev) => {
       if (!prev.has(item.faenaId)) return prev;
@@ -93,6 +122,7 @@ export default function GenerateContributionListModal({ employers, principals, o
       principalId,
       principalName: principal?.name || "",
       month,
+      dailyBase,
       items: shown,
       totals: contributionTotals(shown),
       sentAt: "",
@@ -108,6 +138,7 @@ export default function GenerateContributionListModal({ employers, principals, o
   };
 
   const totals = shown ? contributionTotals(shown) : null;
+  const ready = employerId && month && dailyBase > 0;
 
   return (
     <Modal
@@ -147,10 +178,15 @@ export default function GenerateContributionListModal({ employers, principals, o
             <span className="mb-1 block text-sm text-[var(--color-muted)]">Mes</span>
             <input type="month" value={month} onChange={(e) => { setMonth(e.target.value); setItems(null); }} className={inputCls} />
           </label>
-          <button type="button" onClick={calculate} disabled={!employerId || !month || !!busy} className="min-h-10 rounded-md border border-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent)] hover:bg-[var(--color-accent-soft)] disabled:opacity-50">
+          <button type="button" onClick={calculate} disabled={!ready || !!busy} className="min-h-10 rounded-md border border-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent)] hover:bg-[var(--color-accent-soft)] disabled:opacity-50">
             {busy === "calc" ? "Calculando…" : items ? "Volver a calcular" : "Calcular días"}
           </button>
         </div>
+        <label className="block sm:w-80">
+          <span className="mb-1 block text-sm text-[var(--color-muted)]">Mínimo por día (sueldo base de cada día)</span>
+          <input type="number" min="0" value={dailyBaseInput} onChange={(e) => changeDailyBase(e.target.value)} className={inputCls} />
+          <span className="mt-1 block text-xs text-[var(--color-muted)]">Viene del indicador «Día». Lo ganado por sobre el mínimo va como bono.</span>
+        </label>
 
         {error && <p className="text-sm text-[var(--color-danger)]">{error}</p>}
 
@@ -159,6 +195,7 @@ export default function GenerateContributionListModal({ employers, principals, o
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md bg-[var(--color-surface-2)] px-3 py-2 text-sm">
               <span>{monthTitle(month)}</span>
               <span><b>{totals.people}</b> persona{totals.people === 1 ? "" : "s"} · {totals.days} días</span>
+              <PayTotals items={shown} totals={totals} />
               {totals.settlements > 0 && <span className="text-[var(--color-warning)]">{totals.settlements} con finiquito</span>}
               <span className="ml-auto text-xs text-[var(--color-muted)]">{reads} jornadas leídas</span>
             </div>

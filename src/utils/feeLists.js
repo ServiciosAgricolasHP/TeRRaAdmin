@@ -1,7 +1,7 @@
 // Listas de honorarios (`feeLists`): una fila por persona y faena con sus
 // días, el bruto, la retención y el líquido de su boleta, y los datos que pide
 // la boleta (dirección y comuna) tal como estaban al generar la lista.
-import { feeAmounts } from "./employment";
+import { datesWithEarnings, feeAmounts } from "./employment";
 
 // Tarifa líquida por día y retención de 2026, hasta que un admin las cambie.
 export const DEFAULT_FEE_CONFIG = { feeDailyNet: 18452, feeWithholdingRate: 0.1525 };
@@ -15,9 +15,10 @@ export const feeItem = (item, dailyNet, rate) => ({ ...item, ...feeAmounts(item.
 const byFaenaThenName = (a, b) =>
   String(a.faenaName).localeCompare(String(b.faenaName), "es") || String(a.name).localeCompare(String(b.name), "es");
 
-// Las filas de `feeRows` (`utils/employment.js`) con los datos de la persona y
-// el nombre de la faena, ordenadas por faena y nombre.
-export function buildFeeListItems(rows, { workersById, faenaNameOf, dailyNet, rate }) {
+// Las filas de `feeRows` (`utils/employment.js`) con los datos de la persona,
+// el nombre de la faena y sus fechas con lo ganado cada día (`earned`, de
+// `earnedByDay`), ordenadas por faena y nombre.
+export function buildFeeListItems(rows, { workersById, faenaNameOf, dailyNet, rate, earned }) {
   return rows
     .map((r) => {
       const w = workersById.get(r.workerId) || {};
@@ -29,6 +30,7 @@ export function buildFeeListItems(rows, { workersById, faenaNameOf, dailyNet, ra
           faenaId: r.faenaId || "",
           faenaName: faenaNameOf(r.faenaId),
           days: r.days,
+          dates: datesWithEarnings(r.dates, earned?.get(r.workerId)),
           address: w.address || "",
           commune: w.commune || "",
           issued: false,

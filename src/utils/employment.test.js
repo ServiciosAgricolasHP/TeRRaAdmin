@@ -13,6 +13,10 @@ import {
   planStartEmployments,
   planEndEmployments,
   workedDays,
+  earnedByDay,
+  datesWithEarnings,
+  contributionPay,
+  isBelowMinimum,
   feeAmounts,
   feeRows,
   monthRange,
@@ -151,6 +155,22 @@ describe("días trabajados", () => {
     expect([...worked.get("w1")]).toEqual([["2026-09-01", "aguada"], ["2026-09-02", "aguada"]]);
     expect([...worked.get("w2")]).toEqual([["2026-09-03", "lingues"]]);
   });
+
+  it("lo ganado cada día suma todas las jornadas del día, en cualquier faena", () => {
+    const earned = earnedByDay([
+      { workerId: "w1", cycleId: "c-a", date: "2026-09-01", amount: 20000 },
+      { workerId: "w1", cycleId: "c-b", date: "2026-09-01", amount: 5000 },
+      { workerId: "w1", cycleId: "c-a", date: "2026-09-02", amount: 9000 },
+      { workerRut: "w2", cycleId: "c-b", date: "2026-09-03", amount: 0, attendanceOnly: true },
+    ]);
+    expect([...earned.get("w1")]).toEqual([["2026-09-01", 25000], ["2026-09-02", 9000]]);
+    expect([...earned.get("w2")]).toEqual([["2026-09-03", 0]]);
+    expect(datesWithEarnings(["2026-09-02", "2026-09-01", "2026-09-05"], earned.get("w1"))).toEqual([
+      { date: "2026-09-01", amount: 25000 },
+      { date: "2026-09-02", amount: 9000 },
+      { date: "2026-09-05", amount: 0 },
+    ]);
+  });
 });
 
 describe("honorarios", () => {
@@ -173,8 +193,8 @@ describe("honorarios", () => {
       ["w3", new Map([["2026-09-02", "aguada"]])],
     ]);
     expect(feeRows(employments, worked, { employerId: "hp", from: "2026-09-01", to: "2026-09-15" })).toEqual([
-      { workerId: "w1", faenaId: "aguada", days: 1 },
-      { workerId: "w1", faenaId: "lingues", days: 1 },
+      { workerId: "w1", faenaId: "aguada", days: 1, dates: ["2026-09-02"] },
+      { workerId: "w1", faenaId: "lingues", days: 1, dates: ["2026-09-03"] },
     ]);
   });
 
@@ -189,12 +209,9 @@ describe("honorarios", () => {
       ["w2", new Map([["2026-09-05", "aguada"]])],
     ]);
     const range = { employerId: "hp", from: "2026-09-01", to: "2026-09-30" };
-    expect(feeRows(employments, worked, { ...range, principalId: "m2" })).toEqual([{ workerId: "w1", faenaId: "aguada", days: 2 }]);
-    expect(feeRows(employments, worked, { ...range, principalId: NO_PRINCIPAL })).toEqual([{ workerId: "w2", faenaId: "aguada", days: 1 }]);
-    expect(feeRows(employments, worked, range)).toEqual([
-      { workerId: "w1", faenaId: "aguada", days: 3 },
-      { workerId: "w2", faenaId: "aguada", days: 1 },
-    ]);
+    expect(feeRows(employments, worked, { ...range, principalId: "m2" }).map((r) => [r.workerId, r.days])).toEqual([["w1", 2]]);
+    expect(feeRows(employments, worked, { ...range, principalId: NO_PRINCIPAL }).map((r) => [r.workerId, r.days])).toEqual([["w2", 1]]);
+    expect(feeRows(employments, worked, range).map((r) => [r.workerId, r.days])).toEqual([["w1", 3], ["w2", 1]]);
   });
 });
 
@@ -215,8 +232,8 @@ describe("imposiciones", () => {
       ["w1", new Map([["2026-09-05", "aguada"], ["2026-09-12", "aguada"], ["2026-08-30", "aguada"]])],
     ]);
     expect(contributionRows(employments, worked, { employerId: "hp", month: "2026-09" })).toEqual([
-      { workerId: "w1", request: "payslipAndSettlement", endDate: "2026-09-10", endReason: "jobEnd", faenaId: "aguada", days: 1 },
-      { workerId: "w2", request: "payslip", endDate: "", endReason: null, faenaId: "", days: 0 },
+      { workerId: "w1", request: "payslipAndSettlement", endDate: "2026-09-10", endReason: "jobEnd", faenaId: "aguada", days: 1, dates: ["2026-09-05"] },
+      { workerId: "w2", request: "payslip", endDate: "", endReason: null, faenaId: "", days: 0, dates: [] },
     ]);
   });
 
@@ -227,5 +244,19 @@ describe("imposiciones", () => {
     ];
     const worked = new Map([["w1", new Map([["2026-09-05", "aguada"]])], ["w2", new Map([["2026-09-05", "aguada"]])]]);
     expect(contributionRows(employments, worked, { employerId: "hp", principalId: "m1", month: "2026-09" }).map((r) => r.workerId)).toEqual(["w1"]);
+  });
+
+  it("declara el mínimo por día y lo que ganó por sobre eso va como bono", () => {
+    expect(contributionPay(10, 250000, 17967)).toEqual({ baseSalary: 179670, bonus: 70330 });
+    expect(contributionPay(10, 150000, 17967)).toEqual({ baseSalary: 179670, bonus: 0 });
+    expect(contributionPay(0, 0, 17967)).toEqual({ baseSalary: 0, bonus: 0 });
+    expect(contributionPay(3, 60000, 0)).toEqual({ baseSalary: 0, bonus: 60000 });
+  });
+
+  it("marca la fila que ganó menos que el mínimo", () => {
+    expect(isBelowMinimum({ earned: 150000, baseSalary: 179670 })).toBe(true);
+    expect(isBelowMinimum({ earned: 250000, baseSalary: 179670 })).toBe(false);
+    expect(isBelowMinimum({ earned: 0, baseSalary: 0 })).toBe(false);
+    expect(isBelowMinimum({ days: 3 })).toBe(false);
   });
 });

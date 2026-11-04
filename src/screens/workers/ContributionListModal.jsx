@@ -5,7 +5,8 @@ import { contributionListsService } from "../../services/contributionListsServic
 import { localIsoDate } from "../../utils/dates";
 import { contributionTotals, monthTitle } from "../../utils/contributionLists";
 import { listCompanyLabel } from "../../utils/employment";
-import ContributionItemsTable from "./ContributionItemsTable";
+import { fmtCurrency } from "../../utils/format";
+import ContributionItemsTable, { PayTotals } from "./ContributionItemsTable";
 import { writeContributionListXlsx } from "./writeContributionListXlsx";
 
 const fmt = (iso) => (iso ? iso.split("-").reverse().join("-") : "");
@@ -73,6 +74,8 @@ export default function ContributionListModal({ list, onClose, onChanged }) {
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md bg-[var(--color-surface-2)] px-3 py-2 text-sm">
           <span><b>{totals.people}</b> persona{totals.people === 1 ? "" : "s"} · {totals.days} días</span>
+          <PayTotals items={list.items || []} totals={totals} />
+          {list.dailyBase > 0 && <span className="text-[var(--color-muted)]">mínimo {fmtCurrency(list.dailyBase)} por día</span>}
           {totals.settlements > 0 && <span className="text-[var(--color-warning)]">{totals.settlements} con finiquito</span>}
           <span className="ml-auto">{sent ? <span className="text-[var(--color-success)]">Enviada el {fmt(list.sentAt)}</span> : "Sin enviar"}</span>
         </div>

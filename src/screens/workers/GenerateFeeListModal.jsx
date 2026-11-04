@@ -61,7 +61,7 @@ export default function GenerateFeeListModal({ employers, principals, onClose, o
       const data = await loadWorkedDays(from, to, workers);
       const rows = feeRows(data.employments, data.worked, { employerId, principalId, from, to });
       const workersById = new Map(workers.map((w) => [w.id, w]));
-      setItems(buildFeeListItems(rows, { workersById, faenaNameOf: data.faenaNameOf, dailyNet: net, rate }));
+      setItems(buildFeeListItems(rows, { workersById, faenaNameOf: data.faenaNameOf, dailyNet: net, rate, earned: data.earned }));
       setFaenas(data.faenas);
       setReads(data.reads);
     } catch (e) {
@@ -87,7 +87,7 @@ export default function GenerateFeeListModal({ employers, principals, onClose, o
     if (!w) return;
     const faenaName = faenas.find((f) => f.id === adding.faenaId)?.name || "";
     const item = feeItem(
-      { workerId: w.id, rut: w.rut || w.id, name: w.name || "", faenaId: adding.faenaId, faenaName, days: Number(adding.days) || 0, address: w.address || "", commune: w.commune || "", issued: false, folio: "", issuedAt: "" },
+      { workerId: w.id, rut: w.rut || w.id, name: w.name || "", faenaId: adding.faenaId, faenaName, days: Number(adding.days) || 0, dates: [], address: w.address || "", commune: w.commune || "", issued: false, folio: "", issuedAt: "" },
       net,
       rate,
     );
