@@ -121,7 +121,7 @@ export async function run({ browser, page, base, login, shot }) {
   await fees.getByRole("button", { name: "Calcular días" }).click();
   await fees.getByText(/jornadas leídas/).waitFor({ timeout: 60000 });
   await page.waitForTimeout(500);
-  await shot(page, "10-generar-honorarios", fees, { pad: 0 });
+  await shot(page, "10-generar-honorarios", fees, { pad: 0, marks: [fees.locator("button[aria-pressed]").first()] });
   await fees.getByRole("button", { name: "Guardar lista" }).click();
 
   // La lista guardada: la boleta de Carla, con su folio.

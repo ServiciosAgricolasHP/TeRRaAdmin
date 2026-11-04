@@ -87,16 +87,16 @@ En la grilla del ciclo, **Por contrato** junta a las personas en **Con contrato*
 ![La grilla por contrato](help/contratos/09-grilla-por-contrato.webp)
 
 ## Generar la lista de honorarios
-<!-- preguntas: cómo hago las boletas de honorarios; lista de boletas; cuánto pagar a honorarios; calcular los honorarios; nómina de honorarios -->
+<!-- preguntas: cómo hago las boletas de honorarios; lista de boletas; cuánto pagar a honorarios; calcular los honorarios; nómina de honorarios; honorarios de una sola faena -->
 
 1. En **🧾 Honorarios**, toca **+ Generar lista**.
 2. Elige el **Empleador**, el **Mandante** (o **Todos los mandantes**) y las fechas (**Desde** y **Hasta**; vienen del primero del mes a hoy), y toca **Calcular días**.
 3. TeRRa arma una fila por persona y faena con los días que trabajó a honorarios con ese empleador y, si elegiste uno, para ese mandante. Un día cuenta si tiene al menos una jornada, y un día con jornadas en dos faenas cuenta una sola vez.
-4. Corrige los **Días**, quita a alguien con **✕** o súmalo en **Sumar a alguien**.
+4. Corrige los **Días**, quita a alguien con **✕** o súmalo en **Sumar a alguien**. Si hay varias faenas, en **Faenas** toca las que no van para sacarlas de la lista (otro toque las vuelve a poner). Para quedarte con unas pocas, toca **Ninguna** y después las que sí.
 5. Revisa el aviso **Sin dirección**: la boleta la pide, y se completa en la ficha de cada persona.
 6. Toca **Guardar lista**.
 
-![Una lista de honorarios recién calculada](help/contratos/10-generar-honorarios.webp)
+![Una lista de honorarios recién calculada, con sus dos faenas](help/contratos/10-generar-honorarios.webp)
 
 **Los montos**: cada día se paga un **Líquido por día** fijo, y la boleta retiene un porcentaje (**Retención**). El bruto es lo que va en la boleta. Por ejemplo, 3 días a $18.452 son $55.356 líquidos y $65.316 brutos. La tarifa se puede cambiar para una lista; la de siempre la cambia un admin en **⚙ Tarifa**.
 
@@ -112,12 +112,12 @@ Al guardarla, la lista se abre. Escribe el **Folio** de cada boleta emitida (que
 - Una lista sin boletas emitidas se puede eliminar con **🗑 Eliminar lista**.
 
 ## Generar la lista de imposiciones del mes
-<!-- preguntas: cómo hago las imposiciones; lista para el contador; días imponibles; imposiciones del mes; pedir las liquidaciones -->
+<!-- preguntas: cómo hago las imposiciones; lista para el contador; días imponibles; imposiciones del mes; pedir las liquidaciones; imposiciones de una sola faena -->
 
 1. En **🏛 Imposiciones**, toca **+ Generar lista**.
 2. Elige el **Empleador**, el **Mandante** (o **Todos los mandantes**) y el **Mes** (viene el mes anterior), y toca **Calcular días**.
 3. TeRRa arma una fila por persona y faena con los días que trabajó dentro de su contrato. Con un mandante, entran solo los contratos de ese mandante. Si el contrato terminó ese mes, la fila pide **Liquidación + finiquito**, con la fecha y el motivo; si no, **Liquidación**. Quien tuvo contrato y no trabajó va en **Sin días trabajados**.
-4. Corrige los días, quita o suma a alguien, y toca **Guardar lista**.
+4. Corrige los días, quita o suma a alguien, y deja en **Faenas** solo las que van, igual que en honorarios. Toca **Guardar lista**.
 
 ![Una lista de imposiciones](help/contratos/12-generar-imposiciones.webp)
 

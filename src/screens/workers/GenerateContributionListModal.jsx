@@ -6,8 +6,9 @@ import { loadWorkedDays } from "../../services/employmentsService";
 import { contributionListsService } from "../../services/contributionListsService";
 import { localIsoDate } from "../../utils/dates";
 import { contributionRows, monthRange } from "../../utils/employment";
-import { buildContributionItems, contributionItemKey, contributionTotals, monthTitle } from "../../utils/contributionLists";
+import { buildContributionItems, contributionItemKey, contributionTotals, contributionsByFaena, monthTitle } from "../../utils/contributionLists";
 import ContributionItemsTable from "./ContributionItemsTable";
+import FaenaPicker from "./FaenaPicker";
 
 const inputCls =
   "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]";
@@ -21,14 +22,18 @@ function previousMonth(today) {
 // Generar la lista de imposiciones de un mes: quienes tuvieron contrato con el
 // empleador (y el mandante, si se elige uno) ese mes, una fila por faena con
 // sus días trabajados (dentro del período del contrato), y la liquidación con
-// finiquito si el contrato terminó ese mes. Los días se editan, las filas se
-// quitan y se puede sumar a alguien.
+// finiquito si el contrato terminó ese mes. Los días se editan, las filas y
+// las faenas enteras se quitan y se puede sumar a alguien.
 export default function GenerateContributionListModal({ employers, principals, onClose, onSaved }) {
   const { workers } = useWorkersList();
   const [employerId, setEmployerId] = useState("");
   const [principalId, setPrincipalId] = useState("");
   const [month, setMonth] = useState(() => previousMonth(localIsoDate()));
   const [items, setItems] = useState(null);
+  // Las faenas que quedan fuera de la lista (`faenaId`; "" es "Sin días
+  // trabajados").
+  const [excluded, setExcluded] = useState(() => new Set());
+  const shown = items ? items.filter((it) => !excluded.has(it.faenaId || "")) : null;
   const [faenas, setFaenas] = useState([]);
   const [reads, setReads] = useState(0);
   const [adding, setAdding] = useState({ worker: null, faenaId: "", days: 1 });
@@ -72,6 +77,12 @@ export default function GenerateContributionListModal({ employers, principals, o
       endReason: null,
     };
     setItems((list) => [...list.filter((it) => contributionItemKey(it) !== contributionItemKey(item)), item]);
+    setExcluded((prev) => {
+      if (!prev.has(item.faenaId)) return prev;
+      const next = new Set(prev);
+      next.delete(item.faenaId);
+      return next;
+    });
     setAdding({ worker: null, faenaId: "", days: 1 });
   };
 
@@ -82,8 +93,8 @@ export default function GenerateContributionListModal({ employers, principals, o
       principalId,
       principalName: principal?.name || "",
       month,
-      items,
-      totals: contributionTotals(items),
+      items: shown,
+      totals: contributionTotals(shown),
       sentAt: "",
     };
     setBusy("save");
@@ -96,7 +107,7 @@ export default function GenerateContributionListModal({ employers, principals, o
     }
   };
 
-  const totals = items ? contributionTotals(items) : null;
+  const totals = shown ? contributionTotals(shown) : null;
 
   return (
     <Modal
@@ -110,7 +121,7 @@ export default function GenerateContributionListModal({ employers, principals, o
           <ModalCloseButton disabled={!!busy} className="rounded-md border border-[var(--color-border)] px-4 py-2 text-sm hover:bg-[var(--color-surface-2)]">
             Cancelar
           </ModalCloseButton>
-          <button type="button" onClick={save} disabled={!!busy || !items?.length} className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-60">
+          <button type="button" onClick={save} disabled={!!busy || !shown?.length} className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-60">
             {busy === "save" ? "Guardando…" : "Guardar lista"}
           </button>
         </>
@@ -151,13 +162,18 @@ export default function GenerateContributionListModal({ employers, principals, o
               {totals.settlements > 0 && <span className="text-[var(--color-warning)]">{totals.settlements} con finiquito</span>}
               <span className="ml-auto text-xs text-[var(--color-muted)]">{reads} jornadas leídas</span>
             </div>
+            <FaenaPicker groups={contributionsByFaena(items)} excluded={excluded} onChange={setExcluded} />
             {items.length === 0 ? (
               <p className="rounded-md border border-dashed border-[var(--color-border)] py-6 text-center text-sm text-[var(--color-muted)]">
                 Nadie tuvo contrato con {employer?.name || "ese empleador"}
                 {principal ? ` para ${principal.name}` : ""} en {monthTitle(month)}.
               </p>
+            ) : shown.length === 0 ? (
+              <p className="rounded-md border border-dashed border-[var(--color-border)] py-6 text-center text-sm text-[var(--color-muted)]">
+                Todas las faenas quedaron fuera: elige al menos una.
+              </p>
             ) : (
-              <ContributionItemsTable items={items} editable onChange={change} onRemove={remove} />
+              <ContributionItemsTable items={shown} editable onChange={change} onRemove={remove} />
             )}
             <div className="rounded-md border border-[var(--color-border)] p-3">
               <div className="mb-2 text-sm font-medium">Sumar a alguien</div>

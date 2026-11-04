@@ -286,8 +286,9 @@ export async function seedWorkerDetails() {
   await db.collection("worker").doc(elena.id).update({ bankDetails: [other, "13456781", 3, "012"] });
 }
 
-// Para la guía de contratos: dos empleadores, Ana y Bruno con contrato, Carla
-// y Diego a honorarios (Carla con la dirección que pide la boleta), y el
+// Para la guía de contratos: dos empleadores y dos mandantes, Ana y Bruno con
+// contrato, Carla y Diego a honorarios (Carla con la dirección que pide la
+// boleta), un día de Ana, Carla y Diego en otra faena (Viña Los Robles), y el
 // contrato de Gloria terminado en septiembre con el finiquito solicitado.
 export const DEMO_EMPLOYERS = [
   { id: "E1", name: "Agrícola Los Aromos SpA", rut: rut(76543218) },
@@ -321,6 +322,22 @@ export async function seedEmployments() {
     settlementStatus: "requested", settlementRequestedAt: "2026-10-02",
   });
   await db.collection("worker").doc(carla.id).update({ address: "Pasaje Las Rosas 45", commune: "Requínoa" });
+
+  await db.collection("faenas").doc("F3").set({ name: "Viña Los Robles", createdAt: new Date("2026-09-01") });
+  await db.collection("subfaenas").doc("S3").set({ name: "Cuartel Sur", faenaId: "F3", createdAt: new Date("2026-09-01") });
+  const robles = [ana, carla, diego];
+  await db.collection("cycles").doc("C3").set({
+    label: "Viña Los Robles/Cuartel Sur/Ciclo 1", faenaId: "F3", subfaenaId: "S3", status: "closed",
+    startDate: "2026-10-08", days: ["2026-10-08"],
+    labors: [{ id: "L1", name: "Principal", type: "main", workers: robles.map((w) => ({ rut: w.rut, id: w.id, name: w.name })) }],
+    dayPrices: { L1: { "2026-10-08": { "0_0": { price: 35000, mode: "unit" } } } },
+    dayNotesByLabor: {}, createdAt: new Date("2026-10-07"),
+  });
+  for (const w of robles) {
+    await db.collection("workdays").doc(`C3__L1__${w.rut}__2026-10-08`).set({
+      cycleId: "C3", laborId: "L1", workerRut: w.rut, workerId: w.id, date: "2026-10-08", payrollId: null, amount: 35000, qty: 1,
+    });
+  }
 }
 
 if (import.meta.url === `file:///${process.argv[1]?.replace(/\\/g, "/")}`) {

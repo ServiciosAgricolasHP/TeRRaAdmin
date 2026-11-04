@@ -6,8 +6,9 @@ import { loadWorkedDays } from "../../services/employmentsService";
 import { feeListsService, getEmploymentConfig } from "../../services/feeListsService";
 import { localIsoDate } from "../../utils/dates";
 import { feeRows } from "../../utils/employment";
-import { buildFeeListItems, feeItem, feeItemKey, feeListTotals, missingAddress } from "../../utils/feeLists";
+import { buildFeeListItems, feeItem, feeItemKey, feeListTotals, itemsByFaena, missingAddress } from "../../utils/feeLists";
 import { fmtCurrency } from "../../utils/format";
+import FaenaPicker from "./FaenaPicker";
 import FeeItemsTable from "./FeeItemsTable";
 
 const inputCls =
@@ -17,9 +18,9 @@ const monthStart = (today) => `${today.slice(0, 7)}-01`;
 
 // Generar una lista de honorarios: el empleador, el mandante (o todos) y el
 // rango de fechas arman una fila por persona y faena con los días que trabajó
-// a honorarios con ese empleador. Los días se editan, las filas se quitan y se
-// puede sumar a alguien. La tarifa y la retención vienen de la configuración
-// y se pueden cambiar para esta lista.
+// a honorarios con ese empleador. Los días se editan, las filas y las faenas
+// enteras se quitan y se puede sumar a alguien. La tarifa y la retención
+// vienen de la configuración y se pueden cambiar para esta lista.
 export default function GenerateFeeListModal({ employers, principals, onClose, onSaved }) {
   const today = localIsoDate();
   const { workers } = useWorkersList();
@@ -30,6 +31,9 @@ export default function GenerateFeeListModal({ employers, principals, onClose, o
   const [dailyNet, setDailyNet] = useState("");
   const [ratePct, setRatePct] = useState("");
   const [items, setItems] = useState(null);
+  // Las faenas que quedan fuera de la lista (`faenaId`).
+  const [excluded, setExcluded] = useState(() => new Set());
+  const shown = items ? items.filter((it) => !excluded.has(it.faenaId || "")) : null;
   const [faenas, setFaenas] = useState([]);
   const [reads, setReads] = useState(0);
   const [adding, setAdding] = useState({ worker: null, faenaId: "", days: 1 });
@@ -88,11 +92,17 @@ export default function GenerateFeeListModal({ employers, principals, onClose, o
       rate,
     );
     setItems((list) => [...list.filter((it) => feeItemKey(it) !== feeItemKey(item)), item]);
+    setExcluded((prev) => {
+      if (!prev.has(item.faenaId)) return prev;
+      const next = new Set(prev);
+      next.delete(item.faenaId);
+      return next;
+    });
     setAdding({ worker: null, faenaId: "", days: 1 });
   };
 
   const save = async () => {
-    const kept = items.filter((it) => it.days > 0);
+    const kept = shown.filter((it) => it.days > 0);
     const data = {
       employerId,
       employerName: employer?.name || "",
@@ -116,8 +126,8 @@ export default function GenerateFeeListModal({ employers, principals, onClose, o
     }
   };
 
-  const totals = items ? feeListTotals(items) : null;
-  const noAddress = items ? missingAddress(items) : [];
+  const totals = shown ? feeListTotals(shown) : null;
+  const noAddress = shown ? missingAddress(shown) : [];
   const ready = employerId && from && to && from <= to && net > 0;
 
   return (
@@ -135,7 +145,7 @@ export default function GenerateFeeListModal({ employers, principals, onClose, o
           <button
             type="button"
             onClick={save}
-            disabled={!!busy || !items?.some((it) => it.days > 0)}
+            disabled={!!busy || !shown?.some((it) => it.days > 0)}
             className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-60"
           >
             {busy === "save" ? "Guardando…" : "Guardar lista"}
@@ -195,6 +205,7 @@ export default function GenerateFeeListModal({ employers, principals, onClose, o
               <span>Líquido <b>{fmtCurrency(totals.net)}</b></span>
               <span className="ml-auto text-xs text-[var(--color-muted)]">{reads} jornadas leídas</span>
             </div>
+            <FaenaPicker groups={itemsByFaena(items)} excluded={excluded} onChange={setExcluded} />
             {noAddress.length > 0 && (
               <p className="text-xs text-[var(--color-warning)]">
                 Sin dirección ({noAddress.length}): {noAddress.join(", ")}. La boleta la pide; se completa en la ficha de cada persona.
@@ -205,8 +216,12 @@ export default function GenerateFeeListModal({ employers, principals, onClose, o
                 Nadie trabajó a honorarios con {employer?.name || "ese empleador"}
                 {principal ? ` para ${principal.name}` : ""} en esas fechas.
               </p>
+            ) : shown.length === 0 ? (
+              <p className="rounded-md border border-dashed border-[var(--color-border)] py-6 text-center text-sm text-[var(--color-muted)]">
+                Todas las faenas quedaron fuera: elige al menos una.
+              </p>
             ) : (
-              <FeeItemsTable items={items} mode="draft" onChange={change} onRemove={remove} />
+              <FeeItemsTable items={shown} mode="draft" onChange={change} onRemove={remove} />
             )}
             <div className="rounded-md border border-[var(--color-border)] p-3">
               <div className="mb-2 text-sm font-medium">Sumar a alguien</div>
