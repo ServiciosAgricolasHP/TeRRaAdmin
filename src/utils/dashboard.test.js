@@ -7,6 +7,7 @@ vi.mock("../firebase", () => ({ db: {}, auth: { currentUser: null } }));
 const {
   commitmentsWeekOf,
   cycleMargins,
+  DEBT_KIND_LABEL,
   dteMonthlyTotals,
   lastMonthKeys,
   monthRangeOfKey,
@@ -276,6 +277,8 @@ describe("transportDebtByMonth", () => {
     const sep = transportDebtByMonth(payments, carriers, fortnights, NOW).find((r) => r.key === "2026-09");
     expect(sep.createdItems).toHaveLength(1);
     expect(sep.createdItems[0].period).toContain("→");
+    const kinds = [...sep.createdItems, ...oct.paidItems].map((i) => DEBT_KIND_LABEL[i.kind]);
+    expect(kinds).toEqual(["Resumen", "Resumen", "Abono"]);
   });
 });
 

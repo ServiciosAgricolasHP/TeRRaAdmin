@@ -240,6 +240,9 @@ export function transportStats(payments, fortnights, carriers, periodMonths, now
   };
 }
 
+// Cómo se nombra en pantalla el `kind` de cada movimiento de la deuda.
+export const DEBT_KIND_LABEL = { summary: "Resumen", partialPayment: "Abono" };
+
 // Cómo fue variando la deuda con los transportistas.
 //
 // La unidad de deuda es el resumen (`transportPayments`), no la quincena,

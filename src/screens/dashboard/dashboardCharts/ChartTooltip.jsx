@@ -1,3 +1,4 @@
+import { DEBT_KIND_LABEL } from "../../../utils/dashboard";
 import { fmtCurrency, fmtPercent } from "../../../utils/format";
 import { WARNING, ACCENT } from "./chartTheme";
 
@@ -27,7 +28,7 @@ function TooltipDetail({ items, max = 4 }) {
         <div key={`${it.name}-${it.kind}-${i}`} className="flex items-center gap-2 text-[10px]">
           <span className="truncate text-[var(--color-muted)]">
             {it.name}
-            <span className="ml-1 opacity-70">· {it.kind}</span>
+            <span className="ml-1 opacity-70">· {DEBT_KIND_LABEL[it.kind]}</span>
           </span>
           <span className="ml-auto shrink-0 tabular-nums text-[var(--color-muted)]">{fmtCurrency(it.amount)}</span>
         </div>

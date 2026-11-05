@@ -1,3 +1,4 @@
+import { DEBT_KIND_LABEL } from "../../utils/dashboard";
 import { fmtCurrency, fmtShortDate } from "../../utils/format";
 
 // Listado completo de los movimientos de un mes en el modal de detalle. En el
@@ -28,7 +29,7 @@ export function DebtDetailList({ title, items, total, color }) {
                       : "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
                   }`}
                 >
-                  {it.kind}
+                  {DEBT_KIND_LABEL[it.kind]}
                 </span>
                 <span className="ml-auto shrink-0 tabular-nums">{fmtCurrency(it.amount)}</span>
               </div>
