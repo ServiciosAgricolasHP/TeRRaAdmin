@@ -3,7 +3,7 @@ import { useToast } from "../../contexts/ToastContext";
 import { qrPrefixesService, harvestWeightsService } from "../../services";
 import { workersService, syncWorkers } from "../../services/workersService";
 import { useAuth } from "../../contexts/AuthContext";
-import { assignQrCode } from "../../services/qrCodesService";
+import { assignQrCode, releaseFromRosters } from "../../services/qrCodesService";
 import { codesOfWorker, prefixOfCode } from "../../utils/qrCodes";
 import { AssignQrModal } from "./AssignQrModal";
 import { BackfillQrModal } from "./BackfillQrModal";
@@ -260,7 +260,8 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
   };
 
   // Limpiar hace una actualización por trabajador afectado, sin batch, para
-  // que cada borrado quede en el log de auditoría.
+  // que cada borrado quede en el log de auditoría, y después saca los códigos
+  // del padrón de cada prefijo, que lee el escáner sin señal.
   const runClear = async () => {
     if (!clearing) return;
     const codes = new Set(clearing.codes);
@@ -274,6 +275,7 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
         done += 1;
         setProgress({ done, total: affected.length });
       }
+      await releaseFromRosters([...codes]);
       toast.success(`${codes.size} QR liberados de ${affected.length} trabajador(es)`);
       setClearing(null);
       await load();
