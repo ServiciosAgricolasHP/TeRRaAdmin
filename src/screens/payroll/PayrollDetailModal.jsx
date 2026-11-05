@@ -23,6 +23,7 @@ import {
   subfaenaSummaryOf,
   cyclesPeriodOf,
   summaryCycleName,
+  lastEditLabel,
 } from "../../utils/payrollDetail";
 import { fmtCurrency } from "../../utils/format";
 import { EditCyclesModal } from "./EditCyclesModal";
@@ -132,6 +133,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
   const detailSummaries = detailSummariesOf(allGroups, payroll.cycleDetails);
 
   const cycleDetails = payroll.cycleDetails || [];
+  const lastEdit = lastEditLabel(payroll);
 
   const { snapshot, snapshotLoading, reload: reloadSnapshot } = usePayrollSnapshot({ payroll });
   // Después de editar la nómina, el detalle se arma con la nómina y el JSON
@@ -310,6 +312,11 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
               {paymentDates(payroll).length > 0 && (
                 <p className="mt-0.5 text-xs tabular-nums text-[var(--color-muted)]">
                   {paymentDates(payroll).map((d) => `${d.label} ${d.date}`).join(" · ")}
+                </p>
+              )}
+              {lastEdit && (
+                <p className="mt-0.5 truncate text-xs text-[var(--color-muted)]" title={lastEdit}>
+                  {lastEdit}
                 </p>
               )}
             </div>

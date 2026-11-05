@@ -2,6 +2,7 @@ import { doc, serverTimestamp } from "firebase/firestore";
 import { updateDoc, writeBatch } from "./readMeter";
 import { db, auth } from "../firebase";
 import { createAdditiveService, createService } from "./firestoreBase";
+import { signerName } from "./signer";
 import { workdaysService, listWorkdaysByCycles } from "./index";
 import { isCashBank } from "../utils/banks";
 import { bankFormatOf } from "../utils/bankFormats";
@@ -17,8 +18,17 @@ export const PAYROLL_STATUSES = [
   { value: "paid", label: "Pagada" },
 ];
 
-// Ver `listPayrolls` en payrollsList.js.
-export const payrollsService = createAdditiveService("payroll", "payrolls");
+// Ver `listPayrolls` en payrollsList.js. Cada escritura firma con el nombre de
+// quien la hace (`updatedByName`, `signerName`), que el detalle muestra junto
+// a `updatedAt`.
+const payrollsBase = createAdditiveService("payroll", "payrolls");
+const signed = (data) => ({ ...data, updatedByName: signerName() });
+export const payrollsService = {
+  ...payrollsBase,
+  create: (data, opts) => payrollsBase.create(signed(data), opts),
+  update: (id, data, opts) => payrollsBase.update(id, signed(data), opts),
+  upsert: (id, data, opts) => payrollsBase.upsert(id, signed(data), opts),
+};
 
 // Configuración compartida de la nómina, en un único doc `payrollConfig/main`.
 export const payrollConfigService = createService("payrollConfig", "payrollConfig");
