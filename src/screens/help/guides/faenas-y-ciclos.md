@@ -14,7 +14,7 @@ Todo lo que se anota en TeRRa cuelga de una **faena** (el fundo o el cliente). C
 
 ![Los datos de la faena](help/faenas-y-ciclos/02-datos-faena.webp)
 
-El nombre se guarda con mayúscula al comienzo de cada palabra: "fundo el peumo" queda "Fundo El Peumo". Para cambiar los datos después, toca **Editar** en la tarjeta de la faena.
+El nombre se guarda con mayúscula al comienzo de cada palabra: "fundo el peumo" queda "Fundo El Peumo", y "SANTA ANGELA" queda "Santa Angela". Una sigla en mayúsculas entre palabras en minúscula se respeta: "Ensayo INIA". Para cambiar los datos después, toca **Editar** en la tarjeta de la faena.
 
 ## Crear una subfaena
 <!-- preguntas: cómo creo una subfaena; agregar un cuartel; nuevo sector; dividir una faena -->

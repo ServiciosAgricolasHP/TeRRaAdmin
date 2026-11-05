@@ -8,7 +8,7 @@ import { codesOfWorker, prefixOfCode } from "../../utils/qrCodes";
 import { AssignQrModal } from "./AssignQrModal";
 import { BackfillQrModal } from "./BackfillQrModal";
 import { readsLabel, TAP } from "./helpers";
-import { TypeToConfirm } from "./TypeToConfirm";
+import { TypeToConfirm } from "../../components/TypeToConfirm";
 import ScreenLoader from "../../components/ScreenLoader";
 import { attempt } from "../../utils/attempt";
 

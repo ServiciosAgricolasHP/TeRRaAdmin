@@ -64,7 +64,17 @@ describe("toTitleName", () => {
   it("respeta una palabra en mayúsculas si el nombre tiene minúsculas", () => {
     expect(toTitleName("Ensayo INIA")).toBe("Ensayo INIA");
     expect(toTitleName("ensayo INIA-2")).toBe("Ensayo INIA-2");
+    expect(toTitleName("Ensayo INIA 2026 de Paine")).toBe("Ensayo INIA 2026 de Paine");
     expect(toTitleName("ENSAYO INIA")).toBe("Ensayo Inia");
+    expect(toTitleName("INIA")).toBe("Inia");
+  });
+
+  it("dos o más palabras seguidas en mayúsculas son texto gritado y pasan a título", () => {
+    expect(toTitleName("SANTA ANGELA (Juan Pérez) ")).toBe("Santa Angela (Juan Pérez)");
+    expect(toTitleName("Fundo SANTA-ANGELA")).toBe("Fundo Santa-Angela");
+    expect(toTitleName("FUNDO 2 NORTE de Juan")).toBe("Fundo 2 Norte de Juan");
+    expect(toTitleName("CAMPO KWS NORTE (Juan)")).toBe("Campo KWS Norte (Juan)");
+    expect(toTitleName("Ensayo INIA Paine SAG")).toBe("Ensayo INIA Paine SAG");
   });
 
   it("los conectores en mayúsculas no se respetan", () => {

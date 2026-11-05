@@ -1,4 +1,4 @@
-import { workdayMapKey, comboLabel, containerLabel } from "../../../utils/cosechaCombos";
+import { workdayMapKey, comboLabel, containerLabel, floorContainersOf, floorKeyOf } from "../../../utils/cosechaCombos";
 import { fmtCurrency } from "../../../utils/format";
 import { FloorDayRow } from "../FloorDayRow";
 import { useCycleDetail } from "../CycleDetailContext";
@@ -12,6 +12,7 @@ export function HarvestPrices() {
     dayCombosByDate,
     dayPrices,
     days,
+    floorsByDate,
     getPriceInputValue,
     handlePriceBlur,
     inputKey,
@@ -70,7 +71,7 @@ export function HarvestPrices() {
                           <span className="font-medium text-[var(--color-text)]">
                             {comboLabel(catalogs, c.x, c.y)}
                           </span>
-                          {!readOnly && (
+                          {!readOnly && !c.placeholder && (
                             <button
                               onClick={() =>
                                 setRemoveCombo({
@@ -149,10 +150,27 @@ export function HarvestPrices() {
                     dayPrices={dayPrices}
                     date={d}
                     readOnly={readOnly}
-                    pendingCount={floorPendingByDate[d] || 0}
+                    pendingCount={floorPendingByDate[d]?._piso || 0}
                     onApplyAll={() => askApplyFloorToAll(activeLabor.id, d)}
                     onPersist={(v) => persistDayFloor(activeLabor.id, d, v)}
                   />
+                  {floorContainersOf(combos, floorsByDate[d]).map((y) => {
+                    const key = floorKeyOf(y);
+                    return (
+                      <FloorDayRow
+                        key={key}
+                        labor={activeLabor}
+                        dayPrices={dayPrices}
+                        date={d}
+                        readOnly={readOnly}
+                        floorKey={key}
+                        label={`Piso ${containerLabel(catalogs, y)}`}
+                        pendingCount={floorPendingByDate[d]?.[key] || 0}
+                        onApplyAll={() => askApplyFloorToAll(activeLabor.id, d, key)}
+                        onPersist={(v) => persistDayFloor(activeLabor.id, d, v, key)}
+                      />
+                    );
+                  })}
                 </div>
               );
             })}

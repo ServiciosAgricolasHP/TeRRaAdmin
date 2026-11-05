@@ -70,6 +70,21 @@ export async function run({ page, base, login, shot }) {
     page.locator(".ag-pinned-right-cols-container .ag-row").last(),
   ], { pad: 4 });
 
+  // Piso por envase, en la cosecha: el de bandeja el segundo día, asignado a
+  // quienes cosecharon en bandeja.
+  await tab("Cosecha");
+  await page.getByRole("button", { name: "+ piso bandeja", exact: true }).nth(1).click();
+  await page.keyboard.type("8000");
+  await page.keyboard.press("Enter");
+  const containerFloor = page.getByText(/🪙 Piso bandeja/).first().locator("xpath=..");
+  const containerAll = containerFloor.getByRole("button", { name: /a todos \(\d+\)/ });
+  await containerAll.click();
+  const containerModal = modal(page, "Asignar piso a todos");
+  await containerModal.getByRole("button", { name: "Asignar piso", exact: true }).click();
+  await containerModal.waitFor({ state: "detached" });
+  await page.waitForTimeout(1500);
+  await shot(page, "07-piso-por-envase", dayCard(containerFloor, "2026-10-06"), { pad: 6, marks: [containerFloor] });
+
   // A trato por etapas.
   await tab("Embalaje");
   const stage = page.getByText("Armado", { exact: true }).first();

@@ -42,7 +42,7 @@ Período de trabajo en una subfaena. Contiene labores anidadas y la matriz de pr
 | `notes` | string? | |
 | `days` | string[] | fechas YYYY-MM-DD |
 | `labors` | `Labor[]` | embebido (ver abajo) |
-| `dayPrices` | `{ [laborId]: { [date]: PriceEntry } }` | combos/tiers |
+| `dayPrices` | `{ [laborId]: { [date]: PriceEntry } }` | combos/tiers. En cosecha y trato, el día puede llevar `piso` (monto del piso del día) y, en cosecha, `floorByContainer` (`{ [envase]: monto }`, un piso por envase; ver `docs/labor-types.md`) |
 | `dayNotes` | `{ [date]: string }` | anotación compartida del día (click sobre el header) |
 | `summaryTotals` | `{ pagar, cobrar, at }`? | totales del resumen del ciclo, escritos por `CycleSummaryModal` al cerrarse (solo si cambiaron). Alimentan el margen por ciclo del Dashboard: van acá y no en `cycleSummaries` porque el Dashboard ya carga la lista de ciclos y así le salen gratis. Ausente en los ciclos cuyo resumen nunca se abrió. |
 | `createdAt/By`, `updatedAt/By` | ts, string | toda escritura de TeRRa pone `updatedAt`. La copia que comparten las pantallas se pone al día con él (`listCycles`) |
@@ -79,12 +79,16 @@ el id/workerId, nunca el campo `rut`.
 |---|---|---|
 | `id` (docId) | string | `workerId` estable — rut de creación, no cambia nunca |
 | `rut` | string | rut legal ACTUAL, editable (campo agregado en fase 1; workers viejos necesitan backfill, ver AdminConsole → "Backfill: campo rut en trabajadores") |
+| `rutHistory` | string[]? | los otros RUT de la persona: el que tenía al corregirse el RUT en la ficha (`WorkerEditModal`) y los de una ficha duplicada que se le unió (Unir fichas). Las búsquedas de sus jornadas y su resumen los incluyen (`workerKeys`), y la importación de cosecha calza con ellos |
 | `name` | string | UPPERCASE típicamente |
 | `email` | string? | |
 | `bankDetails` | `[paymentRut, accountNumber, accountType, bankCode]` | tupla. accountType: 0 cta corriente, 1 cta vista, 3 cuenta RUT. bankCode `EFE` = efectivo. |
 | `paymentName` | string? | nombre de a quién se le paga: el titular de la cuenta o, en efectivo, quien cobra. Obligatorio cuando `paymentRut` es de otra persona (`paysToOtherPerson`, `utils/banks.js`); opcional si es el mismo RUT del trabajador |
 | `groupLeader` | string[] | historial; `[0]` = actual (ej. `CHILENOS`, `EXTRANJEROS`) |
 | `idQr` | string[] | códigos QR asignados |
+| `fileAliases` | `{ rut, name }[]`? | cómo trae a la persona el archivo de cosecha de una empresa cuando no calza solo con la ficha: otro RUT (típico de un extranjero) o un nombre distinto (le dicen Patricio y la empresa lo trae como José). El RUT va sin puntos y el nombre, como viene en el archivo. Lo guarda **Importar cosecha** al elegir la ficha a mano, y la importación siguiente calza sola con un RUT de la ficha o de esta lista si el nombre se parece al de la ficha o a uno guardado con ese RUT: una empresa puede reasignar un RUT (`matchFilePeople`, `utils/harvestImport.js`) |
+| `mergedInto` | ref→`worker`? | la ficha a la que se unió esta, que era un duplicado (**Unir fichas**, `services/workerMergeService.js`). Es un borrado suave: la ficha queda para las nóminas y jornadas pagadas que la nombran, pero no aparece en las listas ni en los buscadores (`activeWorkers`, `utils/workerMerge.js`), y `findWorkerByRut` devuelve la otra. Sus RUT quedan en el `rutHistory` de la otra |
+| `mergedAt`, `mergedBy` | ts, string? | cuándo y quién la unió |
 | `address`, `commune` | string? | dirección y comuna; las piden las boletas de honorarios |
 | `nationality` | string? | texto libre ("Chilena") |
 | `maritalStatus` | `"single"` \| `"married"` \| `"civilUnion"` \| `"divorced"` \| `"widowed"` \| `""` | |
@@ -114,9 +118,10 @@ Una fila por (cycleId × laborId × workerRut × date). Es la tabla "transaccion
 | `attendanceOnly` | bool? | `true` para asistencia de trabajador mensual (amount = 0, no entra al payroll) |
 | `tiers` | `{ [tierKey]: { qty, amount } }` | trato multi-precio; suma con `getTratoTierTotals(wd)` |
 | `overtimeHours`, `hasManejo`, `hasSupervision`, `extras` | number? / bool? | solo `tratoHE` |
-| `pisoOnly` | bool? | `true` para workdays de piso (combo `_piso`). `qty: 0`, `amount: pisoAmount`. Un doc por (worker × date × labor). Solo trato/cosecha. Tag con `payrollId` igual que cualquier otro workday. |
+| `pisoOnly` | bool? | `true` para workdays de piso: combo `_piso` (el del día) o `_piso_<envase>` (piso por envase, con `containerY`). `qty: 0`, `amount: pisoAmount`. Un doc por (worker × date × labor × piso). Solo trato/cosecha (el piso por envase, solo cosecha). Tag con `payrollId` igual que cualquier otro workday. |
+| `harvestImported` | bool? | `true` en la producción y los pisos que escribió **Importar cosecha** (`services/harvestImportService.js`). Volver a importar las mismas fechas borra los importados de esas personas que ya no vienen; lo escrito a mano no se borra |
 | `createdAt`, `createdBy` | ts, string? | |
-| `updatedAt`, `updatedBy` | ts, string? | la última escritura de `workdaysService` (la grilla, Pesajes QR, mover jornadas de ciclo). Etiquetar con la nómina y marcar pagado no lo ponen. Las copias por mes del Calendario se ponen al día con él (`syncWorkdayMonth`) |
+| `updatedAt`, `updatedBy` | ts, string? | la última escritura de `workdaysService` (la grilla, un pesaje editado en Pesajes QR) o de una escritura en lote (Importar cosecha, Limpiar labor, Unir fichas y lo que pasa por `writeWorkdays`, en `services/workdayBatches.js`: la cascada, mover jornadas de ciclo, el piso a todos y sincronizar Pesajes QR), que lo escribe en cada jornada. Etiquetar con la nómina y marcar pagado no lo ponen. Las copias por mes del Calendario se ponen al día con él (`syncWorkdayMonth`) |
 
 ### `payrolls`
 Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
@@ -727,7 +732,7 @@ Auditoría — una fila por mutación.
 |---|---|---|
 | `id` (docId) | string | autoId |
 | `uid`, `email` | string? | quién |
-| `action` | `"create"` \| `"update"` \| `"delete"` \| `"import"` \| `"bulkStart"` \| `"bulkEnd"` \| `"settlement"` \| `"setPrincipal"` | `"import"` solo lo escribe la importación de la agenda telefónica; los otros cuatro, las acciones masivas de contratos (`entity: "employment"`) |
+| `action` | `"create"` \| `"update"` \| `"delete"` \| `"import"` \| `"bulkStart"` \| `"bulkEnd"` \| `"settlement"` \| `"setPrincipal"` \| `"harvestImport"` \| `"laborClear"` \| `"workerMerge"` \| `"cascadeDelete"` \| `"workdaysMove"` \| `"floorApplyAll"` \| `"floorRemove"` \| `"harvestSync"` | `"import"` solo lo escribe la importación de la agenda telefónica; `"harvestImport"` y `"laborClear"`, importar la cosecha y limpiar una labor en la grilla del ciclo (`entity: "cycle"`); `"workerMerge"`, unir una ficha duplicada a otra (`entity: "worker"`, el id de la que queda); `"cascadeDelete"`, `"workdaysMove"`, `"floorApplyAll"`, `"floorRemove"` y `"harvestSync"`, las jornadas que esas acciones escriben o borran en lote, en un solo registro (`services/workdayBatches.js`; ver su `meta` abajo); los otros cuatro, las acciones masivas de contratos (`entity: "employment"`) |
 | `entity`, `entityId` | string | qué |
 | `before` | objeto? | solo en `delete` (snapshot completo). Borrar un documento que no existe no deja log |
 | `after` | objeto? | solo en `create` (snapshot completo) |
@@ -746,6 +751,13 @@ Auditoría — una fila por mutación.
 | `addedAbono`, `editedAbonoId`, `removedAbonoId` | `paymentsService` | detalle del abono tocado |
 | `jobId`, `payrollId`, `workerCount`, `removed` | `publishPortal` (`functions/portal.js`) | qué nómina se publicó en el portal, cuántas fichas quedaron y cuántas se borraron (`entity: "portalMeta"`) |
 | `created`, `updated`, `unchanged`, `sources`, `files` | `importPhoneContacts` (`services/phoneContactsService.js`) | una importación de la agenda telefónica (`action: "import"`, `entity: "phoneContact"`) |
+| `laborId`, `file`, `written`, `deleted`, `blocked`, `floors`, `created`, `aliases`, `daysAdded`, `workersAdded`, `floorDays` | `importHarvest` (`services/harvestImportService.js`) | una importación de cosecha (`action: "harvestImport"`): `created`, los RUT de las fichas nuevas; `aliases`, `[{ workerId, added }]` con los pares RUT y nombre que se guardaron en cada ficha |
+| `laborId`, `laborName`, `deleted`, `kept`, `workersRemoved`, `daysRemoved`, `tripDays`, `pendingTrips` | `clearLabor` (`services/laborClearService.js`) | limpiar una labor (`action: "laborClear"`): cuántas jornadas borró y cuántas quedaron por estar en una nómina, cuántas personas sacó, qué días quitó, cuáles quedaron por tener vueltas y cuántas vueltas sin pagar había esos días |
+| `cloneId`, `cloneRut`, `moved`, `conflicts`, `paidLeft`, `cycles` | `mergeWorkers` (`services/workerMergeService.js`) | unir una ficha duplicada (`action: "workerMerge"`): cuántas jornadas pasaron sin choque, cada choque con lo que se eligió (`[{ id, choice }]`, `kept`/`clone`/`sum`), cuántas quedaron en el clon por estar en una nómina y los ciclos cuyas labores cambiaron |
+| `workdays`, `byCycle` | `deleteCascade` (`services/workdayBatches.js`) | eliminar una faena o un ciclo en cascada (`action: "cascadeDelete"`, `entity: "faena"` o `"cycle"`): cuántas jornadas borró y cuántas de cada ciclo. Los ciclos y las subfaenas dejan su propio `delete` |
+| `fromCycleId`, `moved`, `skippedPaid` | `moveWorkdaysToCycle` (`services/workdayBatches.js`) | mover jornadas al crear un ciclo desde otro (`action: "workdaysMove"`, a nombre del ciclo nuevo): cuántas pasaron y cuántas quedaron en el origen por estar en una nómina |
+| `laborId`, `date`, `floorKey`, `amount`, `workers` / `deleted` | `addFloorBonuses`, `removeFloorBonuses` (`services/workdayBatches.js`) | asignar un piso del día a todos (`action: "floorApplyAll"`) o quitarlo con sus bonos (`action: "floorRemove"`), en el ciclo: el piso (`_piso` o `_piso_<envase>`), el monto y cuántos bonos escribió o borró |
+| `cycleId`, `laborId`, `from`, `to`, `written`, `blocked`, `daysAdded`, `workersAdded` | `syncPrefixRange` (`services/harvestSyncService.js`) | sincronizar un prefijo de Pesajes QR (`action: "harvestSync"`, `entity: "qrPrefix"`): el rango, cuántas jornadas escribió, cuántas no tocó por estar en una nómina, y los días y las personas que agregó al ciclo |
 | `ids`, `count`, `type`, `employerId`, `startDate` / `endDate`, `endReason` / `status`, `date` | `startEmployments`, `endEmployments`, `setSettlementStatus` (`services/employmentsService.js`) | una acción masiva sobre contratos y honorarios (`entity: "employment"`, sin `entityId`): los períodos que creó o tocó |
 | `op: "applyAdvances"`, `count`, `total`, `advanceIds`, `sobrantes?` | `applyAdvancesToPayroll` | un log por nómina (`entity: "payroll"`) con los anticipos que descontó. `sobrantes: [{ advanceId, pedido, aplicado }]` son las aplicaciones recortadas |
 | `op: "restoreAdvances"`, `count`, `advanceIds` | `restoreAdvancesFromPayroll` | los anticipos que soltó la nómina |

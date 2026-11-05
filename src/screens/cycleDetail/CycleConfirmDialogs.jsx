@@ -1,6 +1,13 @@
 import ConfirmDialog from "../../components/ConfirmDialog";
+import { containerLabel, floorContainerOf } from "../../utils/cosechaCombos";
 import { fmtCurrency } from "../../utils/format";
 import { useCycleDetail } from "./CycleDetailContext";
+
+// "el piso" o "el piso de capacho", según la clave del piso.
+const floorName = (catalogs, floorKey) => {
+  const container = floorContainerOf(floorKey);
+  return container == null ? "el piso" : `el piso de ${containerLabel(catalogs, container)}`;
+};
 
 // Confirmaciones de la grilla del ciclo: quitar el piso del día o asignarlo
 // a todos, quitar a una persona, una labor, un día o un combo, y cerrar o
@@ -9,6 +16,7 @@ export function CycleConfirmDialogs() {
   const {
     activeLabor,
     applyFloorToAll,
+    catalogs,
     closeBusy,
     closeFlow,
     confirmRemoveDay,
@@ -21,6 +29,7 @@ export function CycleConfirmDialogs() {
     handleCloseCycle,
     floorBulk,
     floorBulkBusy,
+    floorProgress,
     floorRemove,
     floorRemoveBusy,
     removeBusy,
@@ -47,10 +56,10 @@ export function CycleConfirmDialogs() {
           floorRemove
             ? [
                 floorRemove.libres.length
-                  ? `Se quitará el piso del ${floorRemove.date} y se eliminará el bono de ` +
+                  ? `Se quitará ${floorName(catalogs, floorRemove.floorKey)} del ${floorRemove.date} y se eliminará el bono de ` +
                     `${floorRemove.libres.length} trabajador${floorRemove.libres.length === 1 ? "" : "es"} ` +
                     `(${fmtCurrency(floorRemove.libres.reduce((a, w) => a + (Number(w.amount) || 0), 0))}).`
-                  : `Se quitará el piso del ${floorRemove.date}.`,
+                  : `Se quitará ${floorName(catalogs, floorRemove.floorKey)} del ${floorRemove.date}.`,
                 floorRemove.liquidados.length
                   ? `${floorRemove.liquidados.length} bono${floorRemove.liquidados.length === 1 ? " ya está" : "s ya están"} ` +
                     "en una nómina y se mantienen: hay que eliminar o editar esa nómina para tocarlos."
@@ -62,6 +71,7 @@ export function CycleConfirmDialogs() {
         }
         confirmLabel="Quitar piso"
         danger busy={floorRemoveBusy}
+        progress={floorProgress}
         onCancel={() => !floorRemoveBusy && setFloorRemove(null)}
         onConfirm={removeDayFloor}
       />
@@ -71,7 +81,7 @@ export function CycleConfirmDialogs() {
         title="Asignar piso a todos"
         message={
           floorBulk
-            ? `Se le asignará el piso de ${fmtCurrency(floorBulk.amount)} a ${floorBulk.ruts.length} ` +
+            ? `Se le asignará ${floorName(catalogs, floorBulk.floorKey)} (${fmtCurrency(floorBulk.amount)}) a ${floorBulk.ruts.length} ` +
               `trabajador${floorBulk.ruts.length === 1 ? "" : "es"} con producción del ${floorBulk.date} ` +
               `que todavía no lo tienen. Total: ${fmtCurrency(floorBulk.amount * floorBulk.ruts.length)}. ` +
               "Los que ya tienen piso quedan como están, y después se puede quitar uno por uno desde la columna 🪙."
@@ -79,6 +89,7 @@ export function CycleConfirmDialogs() {
         }
         confirmLabel="Asignar piso"
         busy={floorBulkBusy}
+        progress={floorProgress}
         onCancel={() => !floorBulkBusy && setFloorBulk(null)}
         onConfirm={applyFloorToAll}
       />

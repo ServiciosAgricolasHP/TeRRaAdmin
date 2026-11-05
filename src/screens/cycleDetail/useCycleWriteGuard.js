@@ -39,5 +39,11 @@ export function useCycleWriteGuard({ cycle, id, toast }) {
       return workdaysService.remove(docId);
     },
   };
-  return { closed, cycleWrite, readOnly, wdWrite };
+  // Una escritura en lote que tiene su propio servicio (importar la cosecha):
+  // pasa por el mismo candado.
+  const guardedWrite = async (write) => {
+    assertOpen();
+    return write();
+  };
+  return { closed, cycleWrite, guardedWrite, readOnly, wdWrite };
 }

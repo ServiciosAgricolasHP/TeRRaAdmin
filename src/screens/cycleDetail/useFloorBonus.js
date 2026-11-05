@@ -1,25 +1,64 @@
 import { useState, useMemo } from "react";
-import { normalizeDayPricesEntry, pisoAssigned, workdayDocId, PISO_COMBO_KEY, workdayMapKey, pisoTargets, effectivePiso } from "../../utils/cosechaCombos";
+import {
+  dayFloorAmount,
+  floorContainerOf,
+  floorsByDateOf,
+  normalizeDayPricesEntry,
+  pisoAssigned,
+  pisoTargets,
+  workdayDocId,
+  workdayMapKey,
+  PISO_COMBO_KEY,
+} from "../../utils/cosechaCombos";
 import { attempt } from "../../utils/attempt";
+import { addFloorBonuses, removeFloorBonuses } from "../../services/workdayBatches";
 
 // Piso del día (bono para trato y cosecha): el monto de cada día, el bono de
 // cada persona, asignarlo a todos los que tienen producción y quitarlo con sus
-// bonos libres.
-export function useFloorBonus({ activeLabor, cycle, cycleWrite, dayPrices, id, setDayPrices, setWorkdaysByLabor, toast, wdWrite, workdaysByLabor, workerIdFor }) {
-  // Confirmación del piso masivo: { laborId, date, ruts, amount }.
+// bonos libres. En cosecha, cada día puede tener además un piso por envase
+// (`floorKey` = `_piso_<envase>`, ver utils/cosechaCombos.js), con su monto y
+// sus bonos; todo lo de abajo recibe la clave del piso. Asignar un piso a
+// todos y quitarlo con sus bonos escriben en lotes (services/workdayBatches.js),
+// con su avance en `floorProgress`.
+export function useFloorBonus({ activeLabor, cycle, cycleWrite, dayPrices, guardedWrite, id, setDayPrices, setWorkdaysByLabor, toast, wdWrite, workdaysByLabor, workerIdFor }) {
+  // Confirmación del piso masivo: { laborId, date, floorKey, ruts, amount }.
   const [floorBulk, setFloorBulk] = useState(null);
   const [floorBulkBusy, setFloorBulkBusy] = useState(false);
-  // Confirmación de quitar el piso del día: { laborId, date, libres, liquidados }.
+  // Confirmación de quitar un piso del día: { laborId, date, floorKey, libres, liquidados }.
   const [floorRemove, setFloorRemove] = useState(null);
   const [floorRemoveBusy, setFloorRemoveBusy] = useState(false);
+  // { label, done, total } mientras se asigna o se quita un piso.
+  const [floorProgress, setFloorProgress] = useState(null);
+
+  // El workday de un bono de piso. El de un envase guarda además el envase.
+  const floorWorkday = (laborId, date, workerRut, floorKey, amount) => {
+    const container = floorContainerOf(floorKey);
+    return {
+      cycleId: id, laborId, workerRut, date,
+      qty: 0, amount,
+      pisoOnly: true,
+      ...(container == null ? {} : { containerY: container }),
+      workerId: workerIdFor(laborId, workerRut),
+    };
+  };
 
   // Piso: monto fijo por día, guardado como campo `piso` de
-  // `dayPrices[laborId][date]`, junto a los combos o tiers. En 0 se quita el
-  // campo.
-  const writeDayFloor = async (laborId, date, value) => {
+  // `dayPrices[laborId][date]`, junto a los combos o tiers; el de un envase, en
+  // `floorByContainer[envase]`. En 0 se quita.
+  const writeDayFloor = async (laborId, date, value, floorKey = PISO_COMBO_KEY) => {
     const dayEntry = normalizeDayPricesEntry(dayPrices[laborId]?.[date]);
-    const nextDay = { ...dayEntry, piso: Number(value) || 0 };
-    if (!nextDay.piso) delete nextDay.piso;
+    const amount = Number(value) || 0;
+    const container = floorContainerOf(floorKey);
+    const nextDay = { ...dayEntry };
+    if (container == null) {
+      nextDay.piso = amount;
+      if (!amount) delete nextDay.piso;
+    } else {
+      const byContainer = { ...(dayEntry.floorByContainer || {}), [container]: amount };
+      if (!amount) delete byContainer[container];
+      nextDay.floorByContainer = byContainer;
+      if (!Object.keys(byContainer).length) delete nextDay.floorByContainer;
+    }
     const next = { ...dayPrices, [laborId]: { ...(dayPrices[laborId] || {}), [date]: nextDay } };
     setDayPrices(next);
     await cycleWrite({ dayPrices: next });
@@ -28,35 +67,34 @@ export function useFloorBonus({ activeLabor, cycle, cycleWrite, dayPrices, id, s
   // Quitar el piso del día (el ✕, o dejar el monto en cero) también borra los
   // bonos de ese día que no están en una nómina. Si hay bonos asignados, antes
   // pide confirmación.
-  const persistDayFloor = async (laborId, date, value) => {
+  const persistDayFloor = async (laborId, date, value, floorKey = PISO_COMBO_KEY) => {
     const floorAmount = Number(value) || 0;
     if (!floorAmount) {
-      const { libres, liquidados } = pisoAssigned(workdaysByLabor[laborId] || {}, date);
+      const { libres, liquidados } = pisoAssigned(workdaysByLabor[laborId] || {}, date, floorKey);
       if (libres.length || liquidados.length) {
-        setFloorRemove({ laborId, date, libres, liquidados });
+        setFloorRemove({ laborId, date, floorKey, libres, liquidados });
         return;
       }
     }
-    await writeDayFloor(laborId, date, floorAmount);
+    await writeDayFloor(laborId, date, floorAmount, floorKey);
   };
 
   const removeDayFloor = async () => {
     if (!floorRemove) return;
-    const { laborId, date, libres } = floorRemove;
+    const { laborId, date, floorKey, libres } = floorRemove;
     setFloorRemoveBusy(true);
     const { error: err } = await attempt(async () => {
-      const removedKeys = [];
-      for (const wd of libres) {
-        const docId = wd.id || workdayDocId(id, laborId, wd.workerRut, date, PISO_COMBO_KEY);
-        await wdWrite.remove(docId);
-        removedKeys.push(workdayMapKey(wd.workerRut, date, PISO_COMBO_KEY));
-      }
+      const ids = libres.map((wd) => wd.id || workdayDocId(id, laborId, wd.workerRut, date, floorKey));
+      const onProgress = (done, total) => setFloorProgress({ label: "Quitando los bonos…", done, total });
+      onProgress(0, ids.length);
+      await guardedWrite(() => removeFloorBonuses({ cycleId: id, laborId, date, floorKey, ids, onProgress }));
+      const removedKeys = libres.map((wd) => workdayMapKey(wd.workerRut, date, floorKey));
       setWorkdaysByLabor((prev) => {
         const lab = { ...(prev[laborId] || {}) };
         for (const k of removedKeys) delete lab[k];
         return { ...prev, [laborId]: lab };
       });
-      await writeDayFloor(laborId, date, 0);
+      await writeDayFloor(laborId, date, 0, floorKey);
       setFloorRemove(null);
       toast.success(
         removedKeys.length
@@ -66,57 +104,58 @@ export function useFloorBonus({ activeLabor, cycle, cycleWrite, dayPrices, id, s
     });
     if (err) toast.error("No se pudo quitar el piso: " + (err.message || err));
     setFloorRemoveBusy(false);
+    setFloorProgress(null);
   };
 
-  // Cuántos trabajadores con producción quedan sin piso, por día. Alimenta el
-  // contador del botón "a todos" del panel de precios.
+  // Cuántos trabajadores con producción quedan sin cada piso, por día:
+  // `{ [fecha]: { [floorKey]: n } }`. Alimenta el contador del botón "a todos"
+  // del panel de precios.
   const floorPendingByDate = useMemo(() => {
     const out = {};
     if (!activeLabor) return out;
     const wds = workdaysByLabor[activeLabor.id] || {};
-    const dates = new Set(Object.values(wds).map((wd) => wd?.date).filter(Boolean));
-    for (const d of dates) out[d] = pisoTargets(wds, d).length;
+    for (const [date, floors] of Object.entries(floorsByDateOf(dayPrices, activeLabor.id, wds))) {
+      out[date] = {};
+      for (const f of floors) out[date][f.key] = pisoTargets(wds, date, f.key).length;
+    }
     return out;
-  }, [activeLabor, workdaysByLabor]);
+  }, [activeLabor, dayPrices, workdaysByLabor]);
 
   // Abre la confirmación del piso masivo, con la cantidad de personas y el
   // total. No escribe nada.
-  const askApplyFloorToAll = (laborId, date) => {
+  const askApplyFloorToAll = (laborId, date, floorKey = PISO_COMBO_KEY) => {
     const labor = cycle.labors.find((l) => l.id === laborId);
     if (!labor) return;
-    const amount = effectivePiso(labor, dayPrices, date);
+    const amount = dayFloorAmount(dayPrices, laborId, date, floorKey);
     if (!amount) {
-      toast.warning("Configura primero el piso de este día.");
+      toast.warning("Configura primero el monto de este piso.");
       return;
     }
-    const ruts = pisoTargets(workdaysByLabor[laborId] || {}, date);
+    const ruts = pisoTargets(workdaysByLabor[laborId] || {}, date, floorKey);
     if (ruts.length === 0) {
       toast.info("Todos los que tienen producción ese día ya tienen el piso.");
       return;
     }
-    setFloorBulk({ laborId, date, ruts, amount });
+    setFloorBulk({ laborId, date, floorKey, ruts, amount });
   };
 
-  // Escribe un workday `_piso` por cada trabajador pendiente. Es exactamente lo
+  // Escribe un workday de piso por cada trabajador pendiente. Es exactamente lo
   // mismo que apretar el toggle de cada uno en la columna 🪙, en lote.
   const applyFloorToAll = async () => {
     if (!floorBulk) return;
-    const { laborId, date, ruts, amount } = floorBulk;
+    const { laborId, date, floorKey, ruts, amount } = floorBulk;
     setFloorBulkBusy(true);
     const { error: err } = await attempt(async () => {
+      const workdays = ruts.map((rut) => ({
+        rut,
+        id: workdayDocId(id, laborId, rut, date, floorKey),
+        data: floorWorkday(laborId, date, rut, floorKey, amount),
+      }));
+      const onProgress = (done, total) => setFloorProgress({ label: "Asignando el piso…", done, total });
+      onProgress(0, workdays.length);
+      await guardedWrite(() => addFloorBonuses({ cycleId: id, laborId, date, floorKey, amount, workdays, onProgress }));
       const written = {};
-      for (const rut of ruts) {
-        const mapKey = workdayMapKey(rut, date, PISO_COMBO_KEY);
-        const docId = workdayDocId(id, laborId, rut, date, PISO_COMBO_KEY);
-        const next = {
-          cycleId: id, laborId, workerRut: rut, date,
-          qty: 0, amount,
-          pisoOnly: true,
-          workerId: workerIdFor(laborId, rut),
-        };
-        await wdWrite.upsert(docId, next);
-        written[mapKey] = { id: docId, ...next };
-      }
+      for (const w of workdays) written[workdayMapKey(w.rut, date, floorKey)] = { id: w.id, ...w.data };
       setWorkdaysByLabor((prev) => ({
         ...prev,
         [laborId]: { ...(prev[laborId] || {}), ...written },
@@ -126,15 +165,16 @@ export function useFloorBonus({ activeLabor, cycle, cycleWrite, dayPrices, id, s
     });
     if (err) toast.error("No se pudo asignar el piso: " + (err.message || err));
     setFloorBulkBusy(false);
+    setFloorProgress(null);
   };
 
-  // Toggle del piso de un trabajador en un día: crea o borra su workday `_piso`
-  // (`pisoOnly: true`) con el piso configurado para ese día.
-  const toggleFloor = async (laborId, date, workerRut) => {
+  // Toggle de un piso de un trabajador en un día: crea o borra su workday
+  // (`pisoOnly: true`) con el monto configurado para ese piso.
+  const toggleFloor = async (laborId, date, workerRut, floorKey = PISO_COMBO_KEY) => {
     const labor = cycle.labors.find((l) => l.id === laborId);
     if (!labor) return;
-    const mapKey = workdayMapKey(workerRut, date, PISO_COMBO_KEY);
-    const docId = workdayDocId(id, laborId, workerRut, date, PISO_COMBO_KEY);
+    const mapKey = workdayMapKey(workerRut, date, floorKey);
+    const docId = workdayDocId(id, laborId, workerRut, date, floorKey);
     const existing = (workdaysByLabor[laborId] || {})[mapKey];
     if (existing) {
       // Un piso que ya está en una nómina no se borra: le descuadraría el total.
@@ -150,17 +190,12 @@ export function useFloorBonus({ activeLabor, cycle, cycleWrite, dayPrices, id, s
       });
       return;
     }
-    const amount = effectivePiso(labor, dayPrices, date);
+    const amount = dayFloorAmount(dayPrices, laborId, date, floorKey);
     if (!amount) {
-      toast.warning("Configura primero el piso por día o el piso por defecto de la labor.");
+      toast.warning("Configura primero el monto de este piso en Precios.");
       return;
     }
-    const next = {
-      cycleId: id, laborId, workerRut, date,
-      qty: 0, amount,
-      pisoOnly: true,
-      workerId: workerIdFor(laborId, workerRut),
-    };
+    const next = floorWorkday(laborId, date, workerRut, floorKey, amount);
     await wdWrite.upsert(docId, next);
     setWorkdaysByLabor((prev) => {
       const lab = { ...(prev[laborId] || {}) };
@@ -174,6 +209,7 @@ export function useFloorBonus({ activeLabor, cycle, cycleWrite, dayPrices, id, s
     floorBulk,
     floorBulkBusy,
     floorPendingByDate,
+    floorProgress,
     floorRemove,
     floorRemoveBusy,
     persistDayFloor,

@@ -1,6 +1,6 @@
 import Modal from "../../components/Modal";
 import { prefixOfCode } from "../../utils/qrCodes";
-import { ProgressBar } from "./ProgressBar";
+import { ProgressBar } from "../../components/ProgressBar";
 
 export function BackfillQrModal({ code, worker, count, busy, progress, onConfirm, onCancel }) {
   return (

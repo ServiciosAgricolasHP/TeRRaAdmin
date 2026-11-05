@@ -20,7 +20,7 @@ Cada labor de un ciclo tiene un **tipo**, y el tipo decide cómo se paga: qué p
 Se paga un monto por día. En **Precios por día** se anota el precio de cada día, que es el que aparece sugerido en las celdas vacías (ver [Cambiar el precio de un día](/ayuda/grilla-del-ciclo#cambiar-el-precio-de-un-dia)). Cambiarlo no toca los montos que ya están anotados.
 
 ## Cosecha: un precio por calidad y envase
-<!-- preguntas: precio de la cosecha; precio por kilo; precio por bandeja; agregar calidad; agregar envase; cosecha por calidad -->
+<!-- preguntas: precio de la cosecha; precio por kilo; precio por bandeja; agregar calidad; agregar envase; cosecha por calidad; día nuevo sin tipos de cosecha; exportación kilo que no se quita -->
 
 Cada día tiene sus **tipos**: una calidad y un envase (por ejemplo, Exportación / bandeja), cada uno con su precio. En la grilla, cada tipo es una columna del día, donde se anota la cantidad de cada persona; el monto es cantidad × precio.
 
@@ -28,7 +28,9 @@ Cada día tiene sus **tipos**: una calidad y un envase (por ejemplo, Exportació
 
 - **$/unidad** paga cada unidad al precio; **$/día** paga el precio una vez, sin importar la cantidad.
 - **+ tipo** agrega otro tipo a ese día. Elige la calidad y el envase; si no están, **+ Nueva calidad** y **+ Nuevo envase** los crean.
-- La **✕** de un tipo lo quita del día.
+- La **✕** de un tipo lo quita del día. Un día no queda sin tipos: para quitar el último, agrega otro antes o quita el día.
+- Un día nuevo trae los tipos del día más cercano que los tenga, sin precio. Al ponerle precio a uno, o al agregar o quitar uno, quedan guardados los de ese día.
+- Mientras la labor no tiene ningún tipo, cada día muestra **Exportación / kilo** para empezar. No se guarda ni tiene **✕**: al agregar el primer tipo, desaparece.
 
 ![Agregar un tipo de cosecha](help/precios-del-dia/03-agregar-tipo.webp)
 
@@ -73,7 +75,7 @@ En **Configuración por día** cada día muestra su base y su modo. Toca un día
 En la grilla, cada día tiene la **Base** y las horas extras (**HE**) de cada persona. Debajo de la base van los bonos y el total del día: tócalos para marcar el bono de manejo, el de supervisión o un monto adicional. **⚑ Líderes / Manejo** deja marcados de antemano a quienes manejan o lideran.
 
 ## Piso: un bono del día
-<!-- preguntas: qué es el piso; cómo pongo el piso; bono por día bajo; asignar el piso a todos; quitar el piso; bono de piso -->
+<!-- preguntas: qué es el piso; cómo pongo el piso; bono por día bajo; asignar el piso a todos; quitar el piso; bono de piso; piso por envase; dos pisos el mismo día; piso de capacho y de totem -->
 
 El piso es un bono que se suma a lo que cada persona produjo un día, pensado para compensar un día de baja producción. Existe en las labores de **Cosecha** y **A trato**.
 
@@ -90,6 +92,10 @@ En la grilla aparece la columna **Piso** de ese día. Cada 🪙 se puede quitar 
 
 - **✎** cambia el monto del piso.
 - **✕** quita el piso del día junto con los bonos ya asignados. Los que ya están en una nómina no se quitan.
+
+En cosecha, si la empresa cuenta el piso por envase (por ejemplo, más de 9 capachos y más de 9 totems), un día con dos o más envases ofrece también **+ piso** de cada envase. Cada uno tiene su monto, su **👥 a todos** (para quienes cosecharon en ese envase) y su columna en la grilla. Una persona puede tener los dos el mismo día, y se suman.
+
+![Un día con el piso del día y el de un envase](help/precios-del-dia/07-piso-por-envase.webp)
 
 ## Cambiar un precio que ya se usó
 <!-- preguntas: cambié el precio y qué pasa con los montos; corregir un precio; precio mal puesto; se recalculan los montos -->

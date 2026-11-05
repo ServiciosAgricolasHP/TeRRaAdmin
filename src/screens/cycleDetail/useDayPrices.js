@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { getDayCombos, parseComboKey, workdayMapKey, workdayDocId, normalizeDayPricesEntry, comboKey as makeComboKey, getDaySingle } from "../../utils/cosechaCombos";
+import { getDayCombos, parseComboKey, workdayMapKey, workdayDocId, normalizeDayPricesEntry, comboKey as makeComboKey, getDaySingle, storedDayCombos } from "../../utils/cosechaCombos";
 import { computeStageDayAmount } from "../../utils/tratoEtapas";
 import { DEFAULT_BONUS_MANEJO, DEFAULT_BONUS_SUPERVISION, DEFAULT_OVERTIME_RATE, DEFAULT_BASE_DAY, calcTratoHEAmount } from "../../utils/tratoHE";
 import { SINGLE_COMBO } from "./rows";
@@ -19,6 +19,20 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
   // ============================================================
   // Combos y precio único por día
   // ============================================================
+
+  // Lo que se guarda de un día al cambiar sus tipos. Un día de la cosecha
+  // activa sin tipos guardados parte de los que muestra (los de su producción
+  // y los del día con tipos más cercano, `dayCombosOf`), sin el tipo por
+  // defecto: así agregar, cambiar o quitar uno no hace desaparecer los demás.
+  const dayEntryToWrite = (laborId, date) => {
+    const entry = normalizeDayPricesEntry(dayPrices[laborId]?.[date]);
+    if (laborId !== activeLabor?.id || !isHarvestLabor || storedDayCombos(dayPrices, laborId, date).length) return entry;
+    const out = { ...entry };
+    for (const c of dayCombosByDate[date] || []) {
+      if (!c.placeholder) out[c.key] = { price: c.price, mode: c.mode };
+    }
+    return out;
+  };
 
   const getCombo = (laborId, date, ck) => {
     const combos = laborId === activeLabor?.id && isHarvestLabor
@@ -60,7 +74,7 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
   };
 
   const persistComboConfig = async (laborId, date, ck, patch, isPiecework = false) => {
-    const dayEntry = normalizeDayPricesEntry(dayPrices[laborId]?.[date]);
+    const dayEntry = isPiecework ? normalizeDayPricesEntry(dayPrices[laborId]?.[date]) : dayEntryToWrite(laborId, date);
     const current = dayEntry[ck] || { price: 0, mode: defaultMode };
     const merged = { ...current, ...patch };
     const nextDay = { ...dayEntry, [ck]: merged };
@@ -114,7 +128,7 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
 
   const addComboToDay = async (laborId, date, x, y) => {
     const ck = makeComboKey(x, y);
-    const dayEntry = normalizeDayPricesEntry(dayPrices[laborId]?.[date]);
+    const dayEntry = dayEntryToWrite(laborId, date);
     if (dayEntry[ck]) return;
     const nextDay = { ...dayEntry, [ck]: { price: 0, mode: defaultMode } };
     const next = { ...dayPrices, [laborId]: { ...(dayPrices[laborId] || {}), [date]: nextDay } };
@@ -219,8 +233,14 @@ export function useDayPrices({ activeLabor, cycle, cycleWrite, dayCombosByDate, 
         }
       }
     }
-    const dayEntry = normalizeDayPricesEntry(dayPrices[laborId]?.[date]);
+    const dayEntry = { ...dayEntryToWrite(laborId, date) };
     delete dayEntry[ck];
+    // Un día de cosecha no queda sin tipos: sin ninguno guardado, mostraría
+    // los de otro día.
+    if (/^\d+_\d+$/.test(ck) && !Object.keys(dayEntry).some((k) => /^\d+_\d+$/.test(k))) {
+      toast.warning("Un día de cosecha necesita al menos un tipo: agrega otro antes de quitar este, o quita el día.");
+      return false;
+    }
     const next = { ...dayPrices, [laborId]: { ...(dayPrices[laborId] || {}), [date]: dayEntry } };
     setDayPrices(next);
     await cycleWrite({ dayPrices: next });

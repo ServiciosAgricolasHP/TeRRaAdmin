@@ -19,6 +19,14 @@ const ACTION_STYLE = {
   bulkEnd: { color: "#b91c1c", bg: "#fee2e2", label: "terminar" },
   settlement: { color: "#92400e", bg: "#fef3c7", label: "finiquito" },
   setPrincipal: { color: "#92400e", bg: "#fef3c7", label: "mandante" },
+  harvestImport: { color: "#1e40af", bg: "#dbeafe", label: "importar cosecha" },
+  harvestSync: { color: "#1e40af", bg: "#dbeafe", label: "sincronizar QR" },
+  laborClear: { color: "#b91c1c", bg: "#fee2e2", label: "limpiar labor" },
+  cascadeDelete: { color: "#b91c1c", bg: "#fee2e2", label: "eliminar en cascada" },
+  workerMerge: { color: "#92400e", bg: "#fef3c7", label: "unir fichas" },
+  workdaysMove: { color: "#92400e", bg: "#fef3c7", label: "mover jornadas" },
+  floorApplyAll: { color: "#166534", bg: "#dcfce7", label: "piso a todos" },
+  floorRemove: { color: "#b91c1c", bg: "#fee2e2", label: "quitar piso" },
 };
 
 function actionPill(action) {

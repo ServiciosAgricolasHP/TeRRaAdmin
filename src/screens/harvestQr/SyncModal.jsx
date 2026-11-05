@@ -1,14 +1,24 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useToast } from "../../contexts/ToastContext";
-import { cyclesService, harvestWeightsService, workdaysService, qrPrefixesService } from "../../services";
-import { findWorkerByRut } from "../../services/workersService";
-import { mapHarvestCodes, comboKey, workdayDocId, getDayCombos } from "../../utils/cosechaCombos";
+import { syncPrefixRange } from "../../services/harvestSyncService";
 import Modal from "../../components/Modal";
 import { nextSyncRange, lastSyncLabel } from "./helpers";
-import { ProgressBar } from "./ProgressBar";
+import { ProgressBar } from "../../components/ProgressBar";
 import { attempt } from "../../utils/attempt";
 
+const STAGE_LABELS = {
+  cycle: "Leyendo el ciclo…",
+  weights: "Leyendo pesajes…",
+  workers: "Buscando trabajadores…",
+  attach: "Agregando días y trabajadores al ciclo…",
+  check: "Revisando jornadas ya liquidadas…",
+  write: "Escribiendo jornadas…",
+  save: "Guardando el resultado…",
+};
+
+// Sincroniza un rango de fechas de un prefijo (`syncPrefixRange`,
+// services/harvestSyncService.js) y muestra lo que hizo.
 export function SyncModal({ prefix, cycle, onClose, onSynced }) {
   const toast = useToast();
   const [dateFrom, setDateFrom] = useState(() => nextSyncRange(prefix.lastSync).from);
@@ -20,169 +30,15 @@ export function SyncModal({ prefix, cycle, onClose, onSynced }) {
   const run = async () => {
     setBusy(true);
     setResult(null);
-    setProgress({ label: "Leyendo el ciclo…" });
-    const { error: err } = await attempt(async () => {
-      // `days` y `labors` se reescriben enteros más abajo, así que hay que
-      // partir del doc fresco y no de la copia que tiene la pantalla.
-      const fresh = prefix.cycleId ? await cyclesService.getById(prefix.cycleId) : null;
-      const labor = (fresh?.labors || []).find((l) => l.id === prefix.laborId);
-      if (!fresh || !labor) throw new Error("Ciclo/labor vigente no disponible");
-      // `healthOf` ya deshabilita el botón, pero el ciclo pudo cerrarse desde
-      // otra pantalla después de que esta lo cargó: se revisa el doc fresco.
-      if (fresh.status === "closed") {
-        throw new Error("El ciclo vigente se cerró. Reapunta el prefijo al ciclo abierto antes de sincronizar.");
-      }
-
-      setProgress({ label: "Leyendo pesajes…" });
-      const weights = await harvestWeightsService.list({
-        wheres: [
-          ["prefix", "==", prefix.id],
-          ["dateKey", ">=", dateFrom],
-          ["dateKey", "<=", dateTo],
-        ],
-      });
-
-      // Agrupa por (trabajador, día, combo calidad/envase) y suma los kilos.
-      // Sin `qualityMap`/`containerMap` el mapeo es identidad: los catálogos
-      // usan la misma numeración que la app de escaneo.
-      const groups = new Map();
-      for (const w of weights) {
-        if (!w.rut || !w.dateKey) continue;
-        const { x, y } = mapHarvestCodes(prefix, w);
-        const ck = comboKey(x, y);
-        const gKey = `${w.rut}__${w.dateKey}__${ck}`;
-        const g = groups.get(gKey) || { rut: w.rut, dateKey: w.dateKey, x, y, ck, qty: 0 };
-        g.qty += Number(w.amount) || 0;
-        groups.set(gKey, g);
-      }
-
-      // Una lectura de `worker` por RUT distinto, no una por grupo. Da el
-      // `workerId` de la jornada y la entrada del trabajador en la labor.
-      const workerByRut = new Map();
-      const resolveWorker = async (rut) => {
-        if (workerByRut.has(rut)) return workerByRut.get(rut);
-        const w = await findWorkerByRut(rut);
-        workerByRut.set(rut, w);
-        return w;
-      };
-      const rutsToResolve = [...new Set([...groups.values()].map((g) => g.rut))];
-      let resolved = 0;
-      setProgress({ label: "Buscando trabajadores…", done: 0, total: rutsToResolve.length });
-      for (const rut of rutsToResolve) {
-        await resolveWorker(rut);
-        resolved += 1;
-        setProgress({ label: "Buscando trabajadores…", done: resolved, total: rutsToResolve.length });
-      }
-
-      // La grilla del ciclo se dibuja con `cycle.days` (columnas) y
-      // `labor.workers` (filas): una jornada cuyo día o trabajador no esté en
-      // esas listas no tiene celda donde mostrarse. Lo que falte se agrega en
-      // una sola actualización del ciclo.
-      const neededDays = [...new Set([...groups.values()].map((g) => g.dateKey))];
-      const neededRuts = [...new Set([...groups.values()].map((g) => g.rut))];
-      const laborWorkerKeys = new Set((labor.workers || []).flatMap((w) => [w.rut, w.id].filter(Boolean)));
-
-      const daysAdded = neededDays.filter((d) => !(fresh.days || []).includes(d)).sort();
-      const rutsToAdd = neededRuts.filter((r) => !laborWorkerKeys.has(r));
-      // Sin ficha en `worker` no hay con qué armar la entrada de la labor: esos
-      // RUT se reportan.
-      const unknownRuts = rutsToAdd.filter((r) => !workerByRut.get(r));
-      // El `rut` de la entrada es el de `harvestWeights`, no el del doc del
-      // trabajador: la grilla arma con ese valor el docId de la jornada para
-      // buscar la celda. Se deduplica por id porque dos RUT distintos pueden
-      // resolver al mismo trabajador.
-      const seenWorkerIds = new Set();
-      const workersToAdd = [];
-      for (const r of rutsToAdd) {
-        const w = workerByRut.get(r);
-        if (!w) continue;
-        const entryId = w.id || r;
-        if (seenWorkerIds.has(entryId) || laborWorkerKeys.has(entryId)) continue;
-        seenWorkerIds.add(entryId);
-        workersToAdd.push({ id: entryId, rut: r, name: w.name || r });
-      }
-
-      if (daysAdded.length || workersToAdd.length) {
-        setProgress({ label: "Agregando días y trabajadores al ciclo…" });
-        const nextDays = [...(fresh.days || []), ...daysAdded].sort();
-        const nextLabor = { ...labor, workers: [...(labor.workers || []), ...workersToAdd] };
-        const nextLabors = (fresh.labors || []).map((l) => (l.id === labor.id ? nextLabor : l));
-        await cyclesService.update(fresh.id, { days: nextDays, labors: nextLabors });
-      }
-
-      // Una jornada ya liquidada no se toca: el upsert hace merge y la dejaría
-      // con monto nuevo y el `payrollId` viejo, contando como pagada sin que
-      // la diferencia se pague nunca.
-      //
-      // Se leen por id, en tandas de 25 en paralelo.
-      setProgress({ label: "Revisando jornadas ya liquidadas…", done: 0, total: groups.size });
-      const workdayKeys = [...groups.values()].map((g) => ({
-        g,
-        docId: workdayDocId(fresh.id, labor.id, g.rut, g.dateKey, g.ck),
-      }));
-      const blockedIds = new Set();
-      const blocked = [];
-      // Guarda cada doc leído para pasárselo a `upsert` como `before`, así el
-      // servicio no lo vuelve a leer: una lectura por jornada.
-      const alreadyRead = new Map();
-      for (let i = 0; i < workdayKeys.length; i += 25) {
-        const batch = workdayKeys.slice(i, i + 25);
-        const docs = await Promise.all(batch.map((k) => workdaysService.getById(k.docId)));
-        docs.forEach((doc, j) => {
-          alreadyRead.set(batch[j].docId, doc ?? null);
-          if (!doc?.payrollId) return;
-          blockedIds.add(batch[j].docId);
-          blocked.push(`${batch[j].g.rut} · ${batch[j].g.dateKey}`);
-        });
-        setProgress({ label: "Revisando jornadas ya liquidadas…", done: Math.min(i + 25, workdayKeys.length), total: workdayKeys.length });
-      }
-
-      let written = 0;
-      const zeroPriceDays = new Set();
-      setProgress({ label: "Escribiendo jornadas…", done: 0, total: groups.size });
-      for (const { g, docId } of workdayKeys) {
-        if (blockedIds.has(docId)) continue;
-        const combos = getDayCombos(fresh.dayPrices, labor.id, g.dateKey, "unit");
-        const combo = combos.find((c) => c.key === g.ck) || { price: 0, mode: "unit" };
-        const amount = combo.mode === "flat" ? combo.price : g.qty * combo.price;
-        if (g.qty > 0 && amount === 0) zeroPriceDays.add(g.dateKey);
-        const worker = workerByRut.get(g.rut);
-        await workdaysService.upsert(docId, {
-          cycleId: fresh.id,
-          laborId: labor.id,
-          workerRut: g.rut,
-          workerId: worker?.id || g.rut,
-          date: g.dateKey,
-          qualityX: g.x,
-          containerY: g.y,
-          qty: g.qty,
-          amount,
-          harvestSynced: true,
-          harvestPrefix: prefix.id,
-        }, { before: alreadyRead.get(docId) ?? null });
-        written++;
-        setProgress({ label: "Escribiendo jornadas…", done: written, total: workdayKeys.length });
-      }
-
-      setProgress({ label: "Guardando el resultado…" });
-      await qrPrefixesService.update(prefix.id, {
-        lastSync: { at: new Date().toISOString(), days: [...neededDays].sort(), written },
-      });
-
-      setResult({
-        weightsRead: weights.length,
-        groups: groups.size,
-        written,
-        daysAdded,
-        workersAdded: workersToAdd.length,
-        unknownRuts,
-        blocked,
-        zeroPriceDays: [...zeroPriceDays].sort(),
-      });
-      toast.success(`Sincronizado: ${written} jornada(s) actualizadas desde ${weights.length} pesaje(s)`);
-      onSynced?.();
-    });
+    const { value, error: err } = await attempt(() =>
+      syncPrefixRange({ prefix, dateFrom, dateTo, onProgress: (p) => setProgress({ ...p, label: STAGE_LABELS[p.stage] }) }),
+    );
     if (err) toast.error("No se pudo sincronizar: " + err.message);
+    if (value) {
+      setResult(value);
+      toast.success(`Sincronizado: ${value.written} jornada(s) actualizadas desde ${value.weightsRead} pesaje(s)`);
+      onSynced?.();
+    }
     setBusy(false);
     setProgress(null);
   };

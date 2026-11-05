@@ -1,10 +1,26 @@
 // Filas de la grilla del ciclo según el tipo de labor, y la forma en que se
 // normaliza un ciclo al cargarlo.
-import { workdayMapKey, PISO_COMBO_KEY } from "../../utils/cosechaCombos";
+import { workdayMapKey, floorField } from "../../utils/cosechaCombos";
 
 export const newId = () => (crypto?.randomUUID?.() || `id_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`);
 
 export const SINGLE_COMBO = "0_0";
+
+// Los pisos de una persona en un día: el monto de cada uno en su campo
+// (`floorField`) y si se puede asignar, que pide producción ese día (en el
+// envase del piso, si es por envase). Devuelve la suma de los pisos.
+function addFloorFields(row, rut, d, wdMap, floors, hasProduction, containersWithWd) {
+  let sum = 0;
+  for (const f of floors || []) {
+    const floorWd = wdMap[workdayMapKey(rut, d, f.key)];
+    const amount = floorWd ? Number(floorWd.amount) || 0 : 0;
+    const field = floorField(d, f.key);
+    row[field] = amount;
+    row[`${field}_has_wd`] = f.container == null ? hasProduction : containersWithWd.has(f.container);
+    sum += amount;
+  }
+  return sum;
+}
 
 export function normalizeCycle(c) {
   let days = Array.isArray(c.days) ? [...c.days] : null;
@@ -25,7 +41,7 @@ export function normalizeCycle(c) {
   return { ...c, days, labors };
 }
 
-export function buildRowsHarvest(workers, days, wdMap, dayCombosByDate) {
+export function buildRowsHarvest(workers, days, wdMap, dayCombosByDate, floorsByDate = {}) {
   return workers.map((w) => {
     const row = { rut: w.rut, name: w.name, _isTemp: !!w.isTemp, _isOrphan: !!w.isOrphan };
     let total = 0;
@@ -33,20 +49,20 @@ export function buildRowsHarvest(workers, days, wdMap, dayCombosByDate) {
       const combos = dayCombosByDate[d] || [];
       let dayTotal = 0;
       let hasProduction = false;
+      const containersWithWd = new Set();
       for (const c of combos) {
         const wd = wdMap[workdayMapKey(w.rut, d, c.key)];
         const qty = Number(wd?.qty) || 0;
         const amt = Number(wd?.amount) || 0;
-        if (wd) hasProduction = true;
+        if (wd) {
+          hasProduction = true;
+          containersWithWd.add(c.y);
+        }
         row[`${d}__${c.key}`] = qty;
         row[`${d}__${c.key}__amt`] = amt;
         dayTotal += amt;
       }
-      const pisoWd = wdMap[workdayMapKey(w.rut, d, PISO_COMBO_KEY)];
-      const pisoAmt = pisoWd ? Number(pisoWd.amount) || 0 : 0;
-      row[`${d}__piso`] = pisoAmt;
-      row[`${d}__piso_has_wd`] = hasProduction;
-      dayTotal += pisoAmt;
+      dayTotal += addFloorFields(row, w.rut, d, wdMap, floorsByDate[d], hasProduction, containersWithWd);
       row[`${d}__total`] = dayTotal;
       total += dayTotal;
     }
@@ -82,7 +98,7 @@ export function buildRowsOvertimeDay(workers, days, wdMap) {
   });
 }
 
-export function buildRowsPiecework(workers, days, wdMap, dayTiersByDate) {
+export function buildRowsPiecework(workers, days, wdMap, dayTiersByDate, floorsByDate = {}) {
   return workers.map((w) => {
     const row = { rut: w.rut, name: w.name, _isTemp: !!w.isTemp, _isOrphan: !!w.isOrphan };
     let total = 0;
@@ -99,11 +115,7 @@ export function buildRowsPiecework(workers, days, wdMap, dayTiersByDate) {
         row[`${d}__${t.key}__amt`] = amt;
         dayTotal += amt;
       }
-      const pisoWd = wdMap[workdayMapKey(w.rut, d, PISO_COMBO_KEY)];
-      const pisoAmt = pisoWd ? Number(pisoWd.amount) || 0 : 0;
-      row[`${d}__piso`] = pisoAmt;
-      row[`${d}__piso_has_wd`] = hasProduction;
-      dayTotal += pisoAmt;
+      dayTotal += addFloorFields(row, w.rut, d, wdMap, floorsByDate[d], hasProduction, null);
       row[`${d}__total`] = dayTotal;
       total += dayTotal;
     }

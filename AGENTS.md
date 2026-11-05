@@ -192,7 +192,8 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 - `services/firestoreBase.js` exporta `createService(entityName, collectionName)`, que arma el CRUD de una colección.
 - Cada servicio invalida su caché en memoria y escribe el log de auditoría con `services/logger.js`.
 - `list()` acepta `cache: true`, con un TTL de 60 s por defecto; `persist: true` la guarda además en `localStorage`.
-- Las escrituras en lote van con `writeBatch(db)`, en tandas de 450 (el límite de Firestore es 500).
+- Las escrituras en lote van con `writeBatch(db)`, en tandas de 450 (el límite de Firestore es 500): `commitInChunks` (`services/batchWrites.js`).
+- **Una acción que escribe o borra muchas jornadas usa `writeWorkdays`** (`services/workdayBatches.js`), no `workdaysService` una por una: cada jornada cuesta solo su escritura, sin la lectura y el registro de auditoría del servicio; la acción deja un solo registro, con lo que hizo en `meta`, y muestra su avance con `ProgressBar` (`components/`; en un `ConfirmDialog`, con su `progress`).
 - **`update`, `upsert` y `remove` cuestan una lectura además de la escritura**: hacen un `getById` interno para armar el `before` del log de auditoría. `create` no lee.
 - **`remove` de un documento que ya no existe no borra ni escribe log**: un log de `delete` siempre trae el `before`, y de ahí sale su `meta`.
 - **`upsert(id, data, { before })`** deja pasar el documento que el llamador ya leyó y se saltea ese `getById`. `undefined` = "no me lo pasaron, léelo"; `null` = "lo leí y no existe". La diferencia decide si el doc se crea con `createdAt`/`createdBy`, así que **no se puede colapsar en un chequeo de verdad/falsedad** — escrito `knownBefore ? …` el ahorro desaparece sin que nada falle a la vista. Fijado en `tests/e2e/upsert-before.test.js`, que lo observa pasando `null` sobre un doc que sí existe (única forma de ver desde afuera si la lectura ocurrió).
@@ -211,7 +212,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 
 - `firestoreBase` soporta `additive: true` en `create`/`update`/`upsert`/`remove` — en vez de invalidar la entrada de caché correspondiente, la **corrige en su lugar**: agrega, actualiza o quita el documento. Útil cuando una colección se lista entera (sin `wheres`) y la queremos mantener fresca sin pagar el costo de re-leer todos los docs.
 - Los servicios de las listas sincronizadas (abajo) se crean con `createAdditiveService` (`services/firestoreBase.js`), que usa `additive: true` por defecto en todas las mutaciones: un alta no invalida la lista guardada.
-- **La lista completa de trabajadores se pide con `listWorkers()`** (`services/workersService.js`), nunca con un `workersService.list()` propio. Es una lista sincronizada (abajo) que se lee entera la primera vez del día en cada navegador, así cuesta unas pocas lecturas en vez de una por trabajador. Lo que se escribe sin `updatedAt` (el escáner, la consola de Firebase) y lo que se elimina en otro equipo entran con la carga completa del día siguiente o con Recargar en Nómina.
+- **La lista completa de trabajadores se pide con `listWorkers()`** (`services/workersService.js`), nunca con un `workersService.list()` propio. Trae también las fichas unidas a otra (`mergedInto`, ver Unir fichas en `docs/screens/workers.md`), que nombran nóminas y jornadas pagadas: lo que se muestra o se elige pasa por `activeWorkers` (`utils/workerMerge.js`). Es una lista sincronizada (abajo) que se lee entera la primera vez del día en cada navegador, así cuesta unas pocas lecturas en vez de una por trabajador. Lo que se escribe sin `updatedAt` (el escáner, la consola de Firebase) y lo que se elimina en otro equipo entran con la carga completa del día siguiente o con Recargar en Nómina.
 - Helpers internos: `mergeListItem` y `removeListItem` (solo tocan claves de caché con `wheres` vacío).
 
 ### Listas sincronizadas
@@ -248,7 +249,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 ### Formularios
 
 - **Mayúsculas de lo que se escribe a mano** (`utils/textCase.js`, con tests). Se corrigen al guardar, no mientras se escribe:
-  - **Nombres de registros como título** (`toTitleName`): faena, ubicación, subfaena, labor y su agrupación, quincena, transportista (nombre y alias), centro de costo, alias de empresa, ficha de Agenda y Cuentas, faena, labor y lugar del Libro de Precios, y la nota de anticipos y bonos. Los conectores van en minúscula ("Poda y Amarre de Parrones") y los artículos solo después de "de"/"del" ("Fundo Los Robles", "Quincena de la Cosecha"). Las siglas van en mayúsculas: una palabra sin vocales siempre ("kws" → "KWS"; "Kg" y "Km" no cuentan) y, si el nombre tiene alguna minúscula, la palabra que se escribió entera en mayúsculas ("Ensayo INIA"). Lugar y destino de las vueltas pasan por `titleCase` en `transportsService`.
+  - **Nombres de registros como título** (`toTitleName`): faena, ubicación, subfaena, labor y su agrupación, quincena, transportista (nombre y alias), centro de costo, alias de empresa, ficha de Agenda y Cuentas, faena, labor y lugar del Libro de Precios, y la nota de anticipos y bonos. Los conectores van en minúscula ("Poda y Amarre de Parrones") y los artículos solo después de "de"/"del" ("Fundo Los Robles", "Quincena de la Cosecha"). Las siglas van en mayúsculas: una palabra sin vocales siempre ("kws" → "KWS"; "Kg" y "Km" no cuentan) y, si el nombre tiene alguna minúscula, una palabra escrita entera en mayúsculas entre palabras con minúsculas ("Ensayo INIA"). Dos o más palabras seguidas en mayúsculas son texto gritado y pasan a título ("SANTA ANGELA (Juan)" → "Santa Angela (Juan)"). Lugar y destino de las vueltas pasan por `titleCase` en `transportsService`.
   - **Notas libres**: `unshout` solo las corrige si vienen **enteras en mayúsculas** (pasan a oración). Si tienen alguna minúscula, se respetan. Cubre las notas de faena, subfaena, ciclo, día del ciclo, transportista, vuelta, abono, resumen, quincena, factura y pago de factura, ficha y Libro de Precios.
   - **Quedan fuera a propósito**: la razón social (es el nombre legal del SII), el titular y el giro de las fichas (se copian al banco y al SII), el alias de los vehículos (las vueltas lo guardan como texto y dejarían de calzar), los líderes de grupo (se comparan como texto: `CHILENOS`, `EXTRANJEROS`) y los nombres de trabajadores (`toProperName`, con su propio flujo).
   - Al editar un ciclo, el prefijo "Faena/Subfaena/" de su etiqueta se reconoce sin distinguir mayúsculas, porque un ciclo antiguo puede traerlo en mayúsculas.
@@ -406,6 +407,12 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Quincena | `fortnight` | `transportPayrolls` |
 | Pesaje | `harvestWeight` | `harvestWeights` |
 | Padrón de un prefijo QR | `roster` | dentro de `qrPrefixes` (guardado como `padron`) |
+| Importar la cosecha de la empresa | `harvestImport` | escribe en `workdays` (`harvestImported`) |
+| Formato del archivo de cosecha de una empresa | `harvestFormat` (`harvestLaguada`…) | |
+| Cómo trae a una persona el archivo de una empresa (RUT y nombre) | `fileAliases` | dentro de `worker` |
+| Limpiar una labor del ciclo | `laborClear` | borra en `workdays` |
+| Unir fichas (una duplicada a la que queda) | `workerMerge` | marca `mergedInto` en `worker` |
+| Piso por envase | `floorByContainer` | dentro de `cycles.dayPrices` |
 | Facturación | `billing` | |
 | Factura (DTE) | `dteDocument` | `dteDocuments` |
 | Nota de crédito | `creditNote` | dentro de `dteDocuments` |

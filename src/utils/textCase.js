@@ -37,17 +37,44 @@ const capitalize = (word, keepUpper) =>
     .map((part) => titlePart(part, keepUpper))
     .join("");
 
+// Por cada palabra, si va en un tramo gritado: dos o más grupos de letras
+// seguidos sin minúsculas ("SANTA ANGELA", "SANTA-ANGELA"). Las palabras sin
+// letras ("16-31") no cortan el tramo; una con minúsculas, sí.
+function shoutedWords(words) {
+  const shouted = [];
+  let start = 0;
+  let groups = 0;
+  const close = (end) => {
+    for (let j = start; j < end; j += 1) shouted[j] = groups >= 2;
+  };
+  for (let i = 0; i < words.length; i += 1) {
+    if (words[i] !== words[i].toUpperCase()) {
+      close(i);
+      shouted[i] = false;
+      start = i + 1;
+      groups = 0;
+    } else {
+      groups += (words[i].match(/\p{L}+/gu) || []).length;
+    }
+  }
+  close(words.length);
+  return shouted;
+}
+
 // Nombre de un registro como título: cada palabra con mayúscula inicial,
 // salvo los conectores (ver LINKS y ARTICLES), y las siglas en mayúsculas.
 // Si el nombre tiene alguna minúscula, una palabra escrita entera en
-// mayúsculas es una sigla elegida por quien la escribió ("Ensayo INIA") y se
-// respeta; un nombre entero en mayúsculas solo reconoce las siglas sin
-// vocales. Junta los espacios repetidos.
+// mayúsculas entre palabras con minúsculas es una sigla elegida por quien la
+// escribió ("Ensayo INIA") y se respeta; dos o más seguidas son texto gritado
+// ("SANTA ANGELA (Juan Pérez)") y pasan a título, como un nombre entero en
+// mayúsculas. Ahí solo se reconocen las siglas sin vocales. Junta los
+// espacios repetidos.
 export function toTitleName(input) {
   if (input == null) return input;
   const words = String(input).trim().replace(/\s+/g, " ").split(" ");
   if (words.length === 1 && words[0] === "") return "";
   const hasLower = words.some((w) => w !== w.toUpperCase());
+  const shouted = shoutedWords(words);
   const lower = words.map((w) => w.toLowerCase());
   return words
     .map((word, i) => {
@@ -55,7 +82,7 @@ export function toTitleName(input) {
       const connector = LINKS.has(w) || ARTICLES.has(w);
       if (i > 0 && LINKS.has(w)) return w;
       if (i > 0 && ARTICLES.has(w) && (lower[i - 1] === "de" || lower[i - 1] === "del")) return w;
-      return capitalize(word, hasLower && !connector);
+      return capitalize(word, hasLower && !shouted[i] && !connector);
     })
     .join(" ");
 }

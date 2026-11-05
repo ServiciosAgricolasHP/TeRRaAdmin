@@ -38,6 +38,26 @@ export const cosechaUnit = (catalogs, containersSet) => {
 // de Precios).
 export const PISO_COMBO_KEY = "_piso";
 
+// Piso por envase: además del piso del día, un día de cosecha puede tener uno
+// por envase (`floorByContainer`, { [envase]: monto }, en
+// `dayPrices[laborId][date]`), cada bono en su propio workday con comboKey
+// `_piso_<envase>`. Es para cuando la regla de la empresa cuenta cada envase
+// por separado: una persona puede tener los dos el mismo día, y se suman.
+export const floorKeyOf = (container = null) => (container == null ? PISO_COMBO_KEY : `${PISO_COMBO_KEY}_${container}`);
+
+export const isFloorKey = (key) => key === PISO_COMBO_KEY || String(key ?? "").startsWith(`${PISO_COMBO_KEY}_`);
+
+// El envase de un piso por envase; null para el piso del día.
+export function floorContainerOf(key) {
+  if (!isFloorKey(key) || key === PISO_COMBO_KEY) return null;
+  const n = Number(String(key).slice(PISO_COMBO_KEY.length + 1));
+  return Number.isInteger(n) ? n : null;
+}
+
+// Campo de la fila de la grilla con el monto de un piso (`2026-03-02__piso`,
+// `2026-03-02__piso_2`).
+export const floorField = (date, key) => `${date}__${String(key).slice(1)}`;
+
 export const getDayPiso = (dayPrices, laborId, date) => {
   const entry = dayPrices?.[laborId]?.[date];
   if (!entry || typeof entry !== "object") return null;
@@ -48,6 +68,83 @@ export const getDayPiso = (dayPrices, laborId, date) => {
 export const effectivePiso = (labor, dayPrices, date) =>
   Number(getDayPiso(dayPrices, labor?.id, date)) || 0;
 
+// Los pisos por envase configurados en un día, con monto mayor que cero.
+export function getDayFloorByContainer(dayPrices, laborId, date) {
+  const raw = dayPrices?.[laborId]?.[date]?.floorByContainer;
+  const out = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [container, value] of Object.entries(raw)) {
+    const amount = Number(value) || 0;
+    if (amount > 0) out[container] = amount;
+  }
+  return out;
+}
+
+// Monto configurado de un piso del día: el del día (`_piso`) o el de su envase.
+export function dayFloorAmount(dayPrices, laborId, date, key = PISO_COMBO_KEY) {
+  const container = floorContainerOf(key);
+  if (container == null) return Number(getDayPiso(dayPrices, laborId, date)) || 0;
+  return getDayFloorByContainer(dayPrices, laborId, date)[container] || 0;
+}
+
+// Los envases que pueden llevar su propio piso en un día de cosecha, para
+// ofrecerlos en Precios: con dos o más envases en los combos del día, cada
+// uno; además, los que ya tienen piso (`floors`, de `floorsByDateOf`). Con un
+// solo envase, el piso del día ya es el de ese envase.
+export function floorContainersOf(combos, floors) {
+  const fromCombos = [...new Set((combos || []).map((c) => c.y))];
+  const withFloor = (floors || []).filter((f) => f.container != null).map((f) => f.container);
+  return [...new Set([...(fromCombos.length > 1 ? fromCombos : []), ...withFloor])].sort((a, b) => a - b);
+}
+
+// Clave de combo de una entrada de `workdaysByLabor[laborId]`, que es
+// `rut__fecha__combo`.
+const comboOfMapKey = (mapKey) => String(mapKey).split("__").slice(2).join("__");
+
+// Qué piso es una entrada del mapa, o null si es producción. Un piso se
+// reconoce por la clave aunque no traiga `pisoOnly`.
+function floorKeyOfEntry(mapKey, wd) {
+  const ck = comboOfMapKey(mapKey);
+  if (isFloorKey(ck)) return ck;
+  return wd?.pisoOnly ? PISO_COMBO_KEY : null;
+}
+
+// El envase de una jornada de producción de cosecha.
+function containerOfEntry(mapKey, wd) {
+  const ck = comboOfMapKey(mapKey);
+  return /^\d+_\d+$/.test(ck) ? parseComboKey(ck).y : Number(wd?.containerY) || 0;
+}
+
+// Los pisos de cada día de la labor: el del día y uno por envase, en ese
+// orden, con su monto configurado. Entra también un piso sin monto que ya
+// tiene bonos, para que se vean y se puedan quitar.
+export function floorsByDateOf(dayPrices, laborId, workdaysOfLabor) {
+  const byDate = {};
+  const add = (date, key, amount) => {
+    if (!byDate[date]) byDate[date] = new Map();
+    const day = byDate[date];
+    if (!day.has(key) || amount > 0) day.set(key, amount);
+  };
+  for (const [date, entry] of Object.entries(dayPrices?.[laborId] || {})) {
+    const dayAmount = Number(entry?.piso) || 0;
+    if (dayAmount > 0) add(date, PISO_COMBO_KEY, dayAmount);
+    for (const [container, amount] of Object.entries(getDayFloorByContainer(dayPrices, laborId, date))) {
+      add(date, floorKeyOf(Number(container)), amount);
+    }
+  }
+  for (const [mapKey, wd] of Object.entries(workdaysOfLabor || {})) {
+    const key = wd?.date ? floorKeyOfEntry(mapKey, wd) : null;
+    if (key) add(wd.date, key, 0);
+  }
+  const out = {};
+  for (const [date, day] of Object.entries(byDate)) {
+    out[date] = [...day]
+      .map(([key, amount]) => ({ key, container: floorContainerOf(key), amount }))
+      .sort((a, b) => (a.container ?? -1) - (b.container ?? -1));
+  }
+  return out;
+}
+
 // A quiénes les toca el piso de un día: los que tienen producción cargada y
 // no tienen el bono. Lo usa el botón "a todos" del panel de Precios.
 //
@@ -55,14 +152,21 @@ export const effectivePiso = (labor, dayPrices, date) =>
 // del piso en la grilla: alcanza con que exista el workday, sin mirar `qty`
 // ni `amount` (un día en cero es justo el caso que el piso compensa). Con el
 // mismo criterio, el botón equivale a apretar todos los toggles habilitados.
-export function pisoTargets(workdaysOfLabor, date) {
+//
+// Con un piso por envase (`floorKey` = `_piso_<envase>`), cuentan los que
+// tienen producción en ese envase.
+export function pisoTargets(workdaysOfLabor, date, floorKey = PISO_COMBO_KEY) {
+  const container = floorContainerOf(floorKey);
   const conProduccion = new Set();
   const yaTienen = new Set();
   for (const [key, wd] of Object.entries(workdaysOfLabor || {})) {
     if (!wd || !wd.workerRut || wd.date !== date) continue;
-    // Un piso sin `pisoOnly` se reconoce por la clave del mapa.
-    if (wd.pisoOnly || String(key).endsWith(`__${PISO_COMBO_KEY}`)) yaTienen.add(wd.workerRut);
-    else conProduccion.add(wd.workerRut);
+    const entryFloor = floorKeyOfEntry(key, wd);
+    if (entryFloor) {
+      if (entryFloor === floorKey) yaTienen.add(wd.workerRut);
+    } else if (container == null || containerOfEntry(key, wd) === container) {
+      conProduccion.add(wd.workerRut);
+    }
   }
   return [...conProduccion].filter((rut) => !yaTienen.has(rut)).sort();
 }
@@ -73,12 +177,12 @@ export function pisoTargets(workdaysOfLabor, date) {
 //
 // Los `liquidados` no se tocan: borrar un workday que una nómina referencia le
 // descuadra el total a algo que ya se pagó.
-export function pisoAssigned(workdaysOfLabor, date) {
+export function pisoAssigned(workdaysOfLabor, date, floorKey = PISO_COMBO_KEY) {
   const libres = [];
   const liquidados = [];
   for (const [key, wd] of Object.entries(workdaysOfLabor || {})) {
     if (!wd || !wd.workerRut || wd.date !== date) continue;
-    if (!wd.pisoOnly && !String(key).endsWith(`__${PISO_COMBO_KEY}`)) continue;
+    if (floorKeyOfEntry(key, wd) !== floorKey) continue;
     (wd.payrollId ? liquidados : libres).push(wd);
   }
   return { libres, liquidados };
@@ -163,6 +267,16 @@ export function getDayCombos(dayPrices, laborId, date, defaultMode = "unit") {
   if (!out.length) return [{ key: "0_0", x: 0, y: 0, price: 0, mode: defaultMode }];
   out.sort((a, b) => a.x - b.x || a.y - b.y);
   return out;
+}
+
+// Los combos guardados de (laborId, date): los de `getDayCombos` sin el 0_0
+// que agrega cuando el día no tiene ninguno.
+export function storedDayCombos(dayPrices, laborId, date, defaultMode = "unit") {
+  const entry = dayPrices?.[laborId]?.[date];
+  if (!entry || typeof entry !== "object") return [];
+  const flat = "price" in entry || "mode" in entry;
+  if (!flat && !Object.keys(entry).some((k) => /^\d+_\d+$/.test(k))) return [];
+  return getDayCombos(dayPrices, laborId, date, defaultMode);
 }
 
 // Config de precio del día para una labor sin combos (un solo precio por día).

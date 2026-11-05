@@ -43,10 +43,11 @@ export async function findWorkerByRut(rut) {
   // consulta por el campo `rut` corre solo si esa falla: el trabajador cambió
   // de rut y el actual ya no coincide con el id. Quien llama recibe el doc
   // completo; para escribir contra ese trabajador usa `.id`, no el rut buscado.
+  // Una ficha unida a otra (`mergedInto`, ver Unir fichas) devuelve la otra.
   const byId = await workersService.getById(normalized);
-  if (byId) return byId;
-  const [byField] = await workersService.list({ wheres: [["rut", "==", normalized]], take: 1 });
-  return byField || null; // { id, rut, name, groupLeader?, idQr?, bankDetails? } o null
+  const [found] = byId ? [byId] : await workersService.list({ wheres: [["rut", "==", normalized]], take: 1 });
+  if (!found?.mergedInto) return found || null; // { id, rut, name, groupLeader?, idQr?, bankDetails? } o null
+  return (await workersService.getById(found.mergedInto)) || found;
 }
 
 export async function createWorker({ rut, name }) {

@@ -69,8 +69,24 @@ Si el **RUT de pago** no es el del trabajador, la ficha pide el **Nombre del tit
 <!-- preguntas: corregir el rut; cambiar rut provisorio; cédula extranjera; eliminar un trabajador; borrar un trabajador duplicado -->
 
 - El **RUT** se corrige en la ficha, por ejemplo de una cédula provisoria al RUT definitivo. Lo ya registrado con el RUT anterior sigue siendo de la misma persona.
-- **✕** elimina a una persona solo si no tiene días registrados.
+- **✕** elimina a una persona solo si no tiene días registrados. Una ficha duplicada con días se une a la otra con **🔀** (ver "Unir una ficha duplicada").
 - Los **IDs QR** se ven en la ficha, pero se asignan en **Pesajes QR**.
+
+## Unir una ficha duplicada
+<!-- preguntas: trabajador duplicado; dos fichas de la misma persona; unir fichas; pasar las jornadas a otra ficha; rut provisorio de otra empresa; juntar dos trabajadores -->
+
+Si una persona quedó con dos fichas, por ejemplo porque la importación de cosecha la creó con el RUT provisorio que le dio otra empresa, une la duplicada a la que se queda:
+
+1. En la fila de la ficha duplicada, toca **🔀**.
+2. Busca la ficha que se queda y toca **Unir con esta**.
+3. Revisa lo que pasa. Si las dos tienen jornada el mismo día, en la misma labor y el mismo tipo, elige cuál queda; en cosecha también se pueden sumar.
+4. Escribe **unir** y toca **Unir fichas**.
+
+![Unir una ficha duplicada](help/trabajadores/07-unir-fichas.webp)
+
+- Las jornadas sin nómina pasan a la ficha que se queda. Las que ya están en una nómina no se tocan.
+- La ficha duplicada deja de aparecer, y su RUT queda apuntando a la que se queda: la próxima importación calza con ella, y no se puede crear otra ficha con ese RUT.
+- No se puede unir una ficha con QR, con anticipos o bonos con saldo, con contratos, o con jornadas sin nómina en un ciclo cerrado: el aviso dice qué resolver antes.
 
 ## En el teléfono
 <!-- preguntas: trabajadores en el celular; buscar un trabajador desde el teléfono -->

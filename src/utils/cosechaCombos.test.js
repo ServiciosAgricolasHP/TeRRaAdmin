@@ -11,12 +11,21 @@ import {
   mapHarvestCodes,
   invertHarvestCodes,
   getDayCombos,
+  storedDayCombos,
   getDaySingle,
   normalizeDayPricesEntry,
   workdayDocId,
   workdayMapKey,
   getTratoTierTotals,
   PISO_COMBO_KEY,
+  floorKeyOf,
+  isFloorKey,
+  floorContainerOf,
+  floorField,
+  getDayFloorByContainer,
+  dayFloorAmount,
+  floorsByDateOf,
+  floorContainersOf,
 } from "./cosechaCombos";
 
 describe("workdayDocId", () => {
@@ -118,6 +127,18 @@ describe("getTratoTierTotals", () => {
       qty: 0,
       amount: 0,
     });
+  });
+});
+
+describe("storedDayCombos", () => {
+  it("solo los combos guardados, sin el 0_0 que agrega getDayCombos", () => {
+    expect(storedDayCombos({}, "l1", "2026-01-01")).toEqual([]);
+    expect(storedDayCombos({ l1: { "2026-01-01": { piso: 5000, floorByContainer: { 2: 1 } } } }, "l1", "2026-01-01")).toEqual([]);
+    expect(storedDayCombos({ l1: { "2026-01-01": { "0_2": { price: 900 } } } }, "l1", "2026-01-01").map((c) => c.key)).toEqual(["0_2"]);
+    // El formato antiguo, un precio plano, es el combo 0_0 guardado.
+    expect(storedDayCombos({ l1: { "2026-01-01": { price: 700, mode: "unit" } } }, "l1", "2026-01-01")).toEqual([
+      { key: "0_0", x: 0, y: 0, price: 700, mode: "unit" },
+    ]);
   });
 });
 
@@ -376,5 +397,83 @@ describe("workdayComboKeyOf", () => {
   it("sin 5.º segmento, en el resto sale de calidad y envase", () => {
     expect(workdayComboKeyOf({ id: "c1__l1__11111111-1__2026-10-01", qualityX: 1, containerY: 2 }, "cosecha")).toBe("1_2");
     expect(workdayComboKeyOf({ id: "c1__l1__11111111-1__2026-10-01" }, "main")).toBe("0_0");
+  });
+});
+
+describe("piso por envase", () => {
+  const mapa = (...wds) => {
+    const out = {};
+    for (const wd of wds) out[workdayMapKey(wd.workerRut, wd.date, wd.ck || "0_0")] = wd;
+    return out;
+  };
+  const prod = (workerRut, date, ck) => ({ workerRut, date, ck, qty: 5, amount: 5000 });
+  const piso = (workerRut, date, ck, extra = {}) => ({ workerRut, date, ck, qty: 0, amount: 15000, pisoOnly: true, ...extra });
+
+  it("las claves distinguen el piso del día del de cada envase", () => {
+    expect(floorKeyOf()).toBe(PISO_COMBO_KEY);
+    expect(floorKeyOf(2)).toBe("_piso_2");
+    expect(isFloorKey("_piso")).toBe(true);
+    expect(isFloorKey("_piso_2")).toBe(true);
+    expect(isFloorKey("1_2")).toBe(false);
+    expect(floorContainerOf("_piso_2")).toBe(2);
+    expect(floorContainerOf("_piso")).toBe(null);
+    expect(floorContainerOf("1_2")).toBe(null);
+    expect(floorField("2026-03-02", "_piso")).toBe("2026-03-02__piso");
+    expect(floorField("2026-03-02", "_piso_2")).toBe("2026-03-02__piso_2");
+  });
+
+  it("lee el monto del día y el de cada envase, sin los que están en cero", () => {
+    const dp = { l1: { d: { piso: 5000, floorByContainer: { 2: 15000, 4: 20000, 5: 0 } } } };
+    expect(getDayFloorByContainer(dp, "l1", "d")).toEqual({ 2: 15000, 4: 20000 });
+    expect(dayFloorAmount(dp, "l1", "d")).toBe(5000);
+    expect(dayFloorAmount(dp, "l1", "d", "_piso_4")).toBe(20000);
+    expect(dayFloorAmount(dp, "l1", "d", "_piso_5")).toBe(0);
+    expect(getDayFloorByContainer({}, "l1", "d")).toEqual({});
+  });
+
+  it("los pisos de cada día van en orden: el del día y después los envases", () => {
+    const dp = { l1: { d1: { piso: 5000, floorByContainer: { 4: 20000, 2: 15000 } }, d2: {} } };
+    expect(floorsByDateOf(dp, "l1", {})).toEqual({
+      d1: [
+        { key: "_piso", container: null, amount: 5000 },
+        { key: "_piso_2", container: 2, amount: 15000 },
+        { key: "_piso_4", container: 4, amount: 20000 },
+      ],
+    });
+  });
+
+  it("un piso sin monto que ya tiene bonos también aparece", () => {
+    const wds = mapa(piso("A", "d3", "_piso_2"));
+    expect(floorsByDateOf({}, "l1", wds)).toEqual({ d3: [{ key: "_piso_2", container: 2, amount: 0 }] });
+  });
+
+  it("a un piso por envase le toca a quien cosechó en ese envase", () => {
+    // Capacho = envase 2, totem = envase 4.
+    const wds = mapa(prod("A", "d", "0_2"), prod("B", "d", "0_4"), prod("C", "d", "0_2"), prod("C", "d", "0_4"));
+    expect(pisoTargets(wds, "d", "_piso_2")).toEqual(["A", "C"]);
+    expect(pisoTargets(wds, "d", "_piso_4")).toEqual(["B", "C"]);
+    expect(pisoTargets(wds, "d")).toEqual(["A", "B", "C"]);
+  });
+
+  it("un piso de un envase no bloquea el del otro ni el del día", () => {
+    const wds = mapa(prod("C", "d", "0_2"), prod("C", "d", "0_4"), piso("C", "d", "_piso_2"));
+    expect(pisoTargets(wds, "d", "_piso_2")).toEqual([]);
+    expect(pisoTargets(wds, "d", "_piso_4")).toEqual(["C"]);
+    expect(pisoTargets(wds, "d")).toEqual(["C"]);
+  });
+
+  it("ofrece piso por envase con dos o más envases, o si ya hay uno", () => {
+    const combos = [{ x: 0, y: 2 }, { x: 1, y: 2 }, { x: 0, y: 4 }];
+    expect(floorContainersOf(combos, [])).toEqual([2, 4]);
+    expect(floorContainersOf([{ x: 0, y: 2 }], [])).toEqual([]);
+    expect(floorContainersOf([{ x: 0, y: 2 }], [{ key: "_piso_2", container: 2, amount: 0 }])).toEqual([2]);
+    expect(floorContainersOf(undefined, undefined)).toEqual([]);
+  });
+
+  it("los bonos asignados se separan por piso", () => {
+    const wds = mapa(piso("A", "d", "_piso_2"), piso("B", "d", "_piso_4", { payrollId: "n1" }), piso("C", "d", "_piso"));
+    expect(pisoAssigned(wds, "d", "_piso_2").libres.map((w) => w.workerRut)).toEqual(["A"]);
+    expect(pisoAssigned(wds, "d", "_piso_4").liquidados.map((w) => w.workerRut)).toEqual(["B"]);
+    expect(pisoAssigned(wds, "d").libres.map((w) => w.workerRut)).toEqual(["C"]);
   });
 });

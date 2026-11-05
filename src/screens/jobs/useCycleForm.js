@@ -1,13 +1,17 @@
 import { useState } from "react";
-import { cloneLabors, importedDayPrices, movedWorkday, importCandidatesOf, cycleLabelSuffix } from "../../utils/cycleCreation";
+import { cloneLabors, importedDayPrices, importCandidatesOf, cycleLabelSuffix } from "../../utils/cycleCreation";
 import { newId, defaultLabors, todayStr, withInitial } from "./helpers";
 import { unshout } from "../../utils/textCase";
-import { cyclesService, workdaysService } from "../../services";
+import { cyclesService } from "../../services";
+import { moveWorkdaysToCycle } from "../../services/workdayBatches";
 import { attempt } from "../../utils/attempt";
+
+const MOVE_LABELS = { read: "Leyendo las jornadas…", move: "Moviendo las jornadas…" };
 
 // Alta y edición de un ciclo, con la etiqueta "Faena/Subfaena/" fija. El alta
 // puede importar desde otro ciclo abierto de la subfaena: clona labores,
-// copia precios por día y mueve jornadas (`utils/cycleCreation.js`).
+// copia precios por día y mueve jornadas (`utils/cycleCreation.js`), en
+// lotes y con su avance en `cycleForm.progress`.
 export function useCycleForm({ cyclesByJob, jobs, loadCycles, setBusy, subjobsByJob, toast }) {
   const [cycleForm, setCycleForm] = useState(null);
 
@@ -96,33 +100,21 @@ export function useCycleForm({ cyclesByJob, jobs, loadCycles, setBusy, subjobsBy
         await cyclesService.update(data.id, payload);
       }
 
-      // Mover jornadas: por cada labor importada, se leen sus jornadas en el
-      // origen y se recrean en el ciclo nuevo (crear + borrar, ver
-      // `movedWorkday`). Las jornadas con payrollId se saltan para no romper
-      // nóminas ya generadas.
+      // Mover jornadas: las de las labores y días importados pasan al ciclo
+      // nuevo. Las que están en una nómina quedan en el origen.
       if (mode === "create" && importPlan && data.importMoveWorkdays && createdCycleId) {
-        const oldCycleId = importPlan.source.id;
-        let skippedPaid = 0;
-        let moved = 0;
-        for (const oldLabor of importPlan.picked) {
-          const newLaborId = importPlan.oldToNewLaborId.get(oldLabor.id);
-          const wds = await workdaysService.list({
-            wheres: [["cycleId", "==", oldCycleId], ["laborId", "==", oldLabor.id]],
-          });
-          for (const w of wds) {
-            if (w.payrollId) { skippedPaid += 1; continue; }
-            if (!importDaysSet.has(w.date)) continue;
-            const target = movedWorkday(w, createdCycleId, newLaborId);
-            await workdaysService.upsert(target.id, target.data);
-            await workdaysService.remove(w.id);
-            moved += 1;
-          }
-        }
-        if (skippedPaid > 0) {
-          toast.success(`Se movieron ${moved} jornada(s). ${skippedPaid} ya estaban en una nómina y quedaron en el ciclo origen.`);
-        } else {
-          toast.success(mode === "create" ? "Ciclo creado" : "Ciclo actualizado");
-        }
+        const { moved, skippedPaid } = await moveWorkdaysToCycle({
+          fromCycleId: importPlan.source.id,
+          toCycleId: createdCycleId,
+          labors: importPlan.picked.map((l) => ({ from: l.id, to: importPlan.oldToNewLaborId.get(l.id) })),
+          days: importDaysSet,
+          onProgress: (p) => setCycleForm((f) => (f ? { ...f, progress: { ...p, label: MOVE_LABELS[p.stage] } } : f)),
+        });
+        toast.success(
+          skippedPaid > 0
+            ? `Se movieron ${moved} jornada(s). ${skippedPaid} ya estaban en una nómina y quedaron en el ciclo origen.`
+            : `Ciclo creado · se movieron ${moved} jornada(s).`,
+        );
       } else {
         toast.success(mode === "create" ? "Ciclo creado" : "Ciclo actualizado");
       }

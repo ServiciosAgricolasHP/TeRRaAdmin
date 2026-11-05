@@ -1,8 +1,11 @@
 // Lleva los pesajes de `harvestWeights` a las jornadas del ciclo y la labor a
 // los que apunta cada prefijo.
-import { cyclesService, harvestWeightsService, workdaysService } from "./index";
-import { findWorkerByRut } from "./workersService";
+import { cyclesService, harvestWeightsService, qrPrefixesService, workdaysService } from "./index";
+import { findWorkerByRut, listWorkers } from "./workersService";
+import { writeWorkdays } from "./workdayBatches";
+import { logAction } from "./logger";
 import { comboKey, mapHarvestCodes, workdayDocId, getDayCombos } from "../utils/cosechaCombos";
+import { workerByRutResolver } from "../utils/workerRut";
 
 // Una jornada es el agregado de (trabajador × día × combo). Al guardar un
 // pesaje se conocen las claves afectadas —la de antes y la de después—, así
@@ -139,4 +142,157 @@ export async function mirrorWeightToWorkdays(prefixes, keys) {
   }
   total.zeroPriceDays = [...new Set(total.zeroPriceDays)].sort();
   return reached ? total : null;
+}
+
+// Sincroniza un rango de fechas de un prefijo (Sincronizar, en Pesajes QR):
+// suma sus pesajes por trabajador, día y combo, y deja esas jornadas en el
+// ciclo y la labor del prefijo. Se puede repetir: recalcula desde cero.
+// - Lee el ciclo de nuevo, porque reescribe sus días y labores enteros; no
+//   escribe en un ciclo cerrado.
+// - Las fichas salen de la lista de trabajadores (`listWorkers`); solo un RUT
+//   que no está ahí, como uno que el escáner creó hoy, se busca aparte.
+// - Agrega al ciclo los días y a la labor las personas que faltan, para que
+//   las jornadas se vean en la grilla.
+// - Lee cada jornada por su id, en tandas de 25: una que ya está en una
+//   nómina no se toca.
+// - Escribe las jornadas en lotes y deja un solo registro, `harvestSync`.
+//
+// `onProgress({ stage, done, total })`: "cycle", "weights", "workers",
+// "attach", "check" y "write" (estas dos, con `done` y `total`), y "save".
+export async function syncPrefixRange({ prefix, dateFrom, dateTo, onProgress = () => {} }) {
+  onProgress({ stage: "cycle" });
+  const fresh = prefix.cycleId ? await cyclesService.getById(prefix.cycleId) : null;
+  const labor = (fresh?.labors || []).find((l) => l.id === prefix.laborId);
+  if (!fresh || !labor) throw new Error("Ciclo/labor vigente no disponible");
+  if (fresh.status === "closed") {
+    throw new Error("El ciclo vigente se cerró. Reapunta el prefijo al ciclo abierto antes de sincronizar.");
+  }
+
+  onProgress({ stage: "weights" });
+  const weights = await harvestWeightsService.list({
+    wheres: [["prefix", "==", prefix.id], ["dateKey", ">=", dateFrom], ["dateKey", "<=", dateTo]],
+  });
+  // Sin `qualityMap`/`containerMap` el mapeo es identidad: los catálogos usan
+  // la misma numeración que la app de escaneo.
+  const groups = new Map();
+  for (const w of weights) {
+    if (!w.rut || !w.dateKey) continue;
+    const { x, y } = mapHarvestCodes(prefix, w);
+    const ck = comboKey(x, y);
+    const gKey = `${w.rut}__${w.dateKey}__${ck}`;
+    const g = groups.get(gKey) || { rut: w.rut, dateKey: w.dateKey, x, y, ck, qty: 0 };
+    g.qty += Number(w.amount) || 0;
+    groups.set(gKey, g);
+  }
+
+  onProgress({ stage: "workers" });
+  const fromList = workerByRutResolver(await listWorkers());
+  const workerByRut = new Map();
+  for (const rut of new Set([...groups.values()].map((g) => g.rut))) {
+    workerByRut.set(rut, fromList(rut) || (await findWorkerByRut(rut)));
+  }
+
+  // La grilla se dibuja con `cycle.days` (columnas) y `labor.workers`
+  // (filas): una jornada cuyo día o persona falte no tiene celda.
+  const neededDays = [...new Set([...groups.values()].map((g) => g.dateKey))];
+  const laborWorkerKeys = new Set((labor.workers || []).flatMap((w) => [w.rut, w.id].filter(Boolean)));
+  const daysAdded = neededDays.filter((d) => !(fresh.days || []).includes(d)).sort();
+  const rutsToAdd = [...workerByRut.keys()].filter((r) => !laborWorkerKeys.has(r));
+  // Sin ficha no hay con qué armar la entrada de la labor: esos RUT se avisan.
+  const unknownRuts = rutsToAdd.filter((r) => !workerByRut.get(r));
+  // El `rut` de la entrada es el de los pesajes, no el de la ficha: con él
+  // arma la grilla el id de la jornada. Dos RUT pueden ser la misma ficha.
+  const workersToAdd = [];
+  const seenWorkerIds = new Set();
+  for (const r of rutsToAdd) {
+    const w = workerByRut.get(r);
+    if (!w) continue;
+    const entryId = w.id || r;
+    if (seenWorkerIds.has(entryId) || laborWorkerKeys.has(entryId)) continue;
+    seenWorkerIds.add(entryId);
+    workersToAdd.push({ id: entryId, rut: r, name: w.name || r });
+  }
+  if (daysAdded.length || workersToAdd.length) {
+    onProgress({ stage: "attach" });
+    const nextLabor = { ...labor, workers: [...(labor.workers || []), ...workersToAdd] };
+    await cyclesService.update(fresh.id, {
+      days: [...(fresh.days || []), ...daysAdded].sort(),
+      labors: (fresh.labors || []).map((l) => (l.id === labor.id ? nextLabor : l)),
+    });
+  }
+
+  // Una jornada ya liquidada no se toca: con el monto nuevo y el `payrollId`
+  // viejo contaría como pagada sin que la diferencia se pague nunca.
+  const keys = [...groups.values()].map((g) => ({ g, docId: workdayDocId(fresh.id, labor.id, g.rut, g.dateKey, g.ck) }));
+  const existing = new Map();
+  onProgress({ stage: "check", done: 0, total: keys.length });
+  for (let i = 0; i < keys.length; i += 25) {
+    const part = keys.slice(i, i + 25);
+    const docs = await Promise.all(part.map((k) => workdaysService.getById(k.docId)));
+    docs.forEach((d, j) => existing.set(part[j].docId, d ?? null));
+    onProgress({ stage: "check", done: Math.min(i + 25, keys.length), total: keys.length });
+  }
+  const blocked = keys.filter((k) => existing.get(k.docId)?.payrollId).map((k) => `${k.g.rut} · ${k.g.dateKey}`);
+
+  const zeroPriceDays = new Set();
+  const sets = [];
+  for (const { g, docId } of keys) {
+    if (existing.get(docId)?.payrollId) continue;
+    const combos = getDayCombos(fresh.dayPrices, labor.id, g.dateKey, "unit");
+    const combo = combos.find((c) => c.key === g.ck) || { price: 0, mode: "unit" };
+    const amount = combo.mode === "flat" ? combo.price : g.qty * combo.price;
+    if (g.qty > 0 && amount === 0) zeroPriceDays.add(g.dateKey);
+    const worker = workerByRut.get(g.rut);
+    sets.push({
+      id: docId,
+      isNew: !existing.get(docId),
+      merge: true,
+      data: {
+        cycleId: fresh.id,
+        laborId: labor.id,
+        workerRut: g.rut,
+        workerId: worker?.id || g.rut,
+        date: g.dateKey,
+        qualityX: g.x,
+        containerY: g.y,
+        qty: g.qty,
+        amount,
+        harvestSynced: true,
+        harvestPrefix: prefix.id,
+      },
+    });
+  }
+  onProgress({ stage: "write", done: 0, total: sets.length });
+  await writeWorkdays({ sets, onProgress: (done, total) => onProgress({ stage: "write", done, total }) });
+
+  onProgress({ stage: "save" });
+  await qrPrefixesService.update(prefix.id, {
+    lastSync: { at: new Date().toISOString(), days: [...neededDays].sort(), written: sets.length },
+  });
+  const result = {
+    weightsRead: weights.length,
+    groups: groups.size,
+    written: sets.length,
+    daysAdded,
+    workersAdded: workersToAdd.length,
+    unknownRuts,
+    blocked,
+    zeroPriceDays: [...zeroPriceDays].sort(),
+  };
+  await logAction({
+    action: "harvestSync",
+    entity: "qrPrefix",
+    entityId: prefix.id,
+    meta: {
+      cycleId: fresh.id,
+      laborId: labor.id,
+      from: dateFrom,
+      to: dateTo,
+      written: result.written,
+      blocked: blocked.length,
+      daysAdded,
+      workersAdded: result.workersAdded,
+    },
+  });
+  return result;
 }

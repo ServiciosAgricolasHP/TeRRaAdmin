@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   peopleByDateOf,
   overtimeHoursByDateOf,
-  daysWithFloorOf,
+  dayFloorsOf,
   dayCombosOf,
   dayTiersOf,
   dayStagesOf,
@@ -156,10 +156,16 @@ describe("días de la labor activa", () => {
   });
 
   it("muestra la columna Piso en los días con piso configurado o asignado", () => {
-    expect([...daysWithFloorOf(harvest, true, false, dayPrices, workdaysByLabor.LC)]).toEqual([D1]);
-    expect([...daysWithFloorOf(piecework, false, true, dayPrices, workdaysByLabor.LT)]).toEqual([D2]);
-    expect(daysWithFloorOf(normal, false, false, dayPrices, workdaysByLabor.LM).size).toBe(0);
-    expect(daysWithFloorOf(null, true, false, dayPrices, {}).size).toBe(0);
+    expect(Object.keys(dayFloorsOf(harvest, true, false, dayPrices, workdaysByLabor.LC))).toEqual([D1]);
+    expect(Object.keys(dayFloorsOf(piecework, false, true, dayPrices, workdaysByLabor.LT))).toEqual([D2]);
+    expect(dayFloorsOf(normal, false, false, dayPrices, workdaysByLabor.LM)).toEqual({});
+    expect(dayFloorsOf(null, true, false, dayPrices, {})).toEqual({});
+  });
+
+  it("en cosecha agrega una columna por cada envase con piso; en trato, solo la del día", () => {
+    const byContainer = { LC: { [D1]: { piso: 5000, floorByContainer: { 2: 15000 } } }, LT: { [D1]: { piso: 4000, floorByContainer: { 2: 9000 } } } };
+    expect(dayFloorsOf(harvest, true, false, byContainer, {})[D1].map((f) => f.key)).toEqual(["_piso", "_piso_2"]);
+    expect(dayFloorsOf(piecework, false, true, byContainer, {})[D1].map((f) => f.key)).toEqual(["_piso"]);
   });
 
   it("suma a los combos con precio los que solo tienen producción", () => {
@@ -174,6 +180,40 @@ describe("días de la labor activa", () => {
       ],
     });
     expect(dayCombosOf(false, harvest, days, dayPrices, "unit", workdaysByLabor)).toEqual({});
+  });
+
+  it("un día sin tipos guardados sigue con los del día con tipos más cercano, sin precio", () => {
+    const D0 = "2026-10-04";
+    const D3 = "2026-10-07";
+    const prices = { LC: { [D1]: { "0_2": { price: 900, mode: "unit" }, "0_4": { price: 1800, mode: "flat" } }, [D3]: { piso: 5000 } } };
+    const out = dayCombosOf(true, harvest, [D0, D1, D2, D3], prices, "unit", {});
+    const tipos = [
+      { key: "0_2", x: 0, y: 2, price: 0, mode: "unit" },
+      { key: "0_4", x: 0, y: 4, price: 0, mode: "flat" },
+    ];
+    // El anterior manda; sin anterior, el siguiente. Un día solo con piso no tiene tipos.
+    expect(out[D2]).toEqual(tipos);
+    expect(out[D3]).toEqual(tipos);
+    expect(out[D0]).toEqual(tipos);
+    expect(out[D1].map((c) => c.price)).toEqual([900, 1800]);
+  });
+
+  it("sin tipos guardados, la producción del día se suma a los heredados", () => {
+    const prices = { LC: { [D1]: { "0_2": { price: 900, mode: "unit" } } } };
+    const wds = { LC: { [`${ANA}__${D2}__0_4`]: { workerRut: ANA, date: D2, qualityX: 0, containerY: 4, qty: 7 } } };
+    expect(dayCombosOf(true, harvest, [D1, D2], prices, "unit", wds)[D2].map((c) => c.key)).toEqual(["0_2", "0_4"]);
+  });
+
+  it("el tipo por defecto aparece solo si la labor no tiene ningún tipo, y no queda junto a la producción", () => {
+    const empty = dayCombosOf(true, harvest, [D1], {}, "unit", {});
+    expect(empty[D1]).toEqual([{ key: "0_0", x: 0, y: 0, price: 0, mode: "unit", placeholder: true }]);
+    // Un día agregado antes de importar: solo los tipos de lo importado, aunque tenga piso.
+    const wds = { LC: {
+      [`${ANA}__${D1}__0_2`]: { workerRut: ANA, date: D1, qualityX: 0, containerY: 2, qty: 10 },
+      [`${ANA}__${D1}___piso_2`]: { workerRut: ANA, date: D1, containerY: 2, qty: 0, amount: 15000, pisoOnly: true },
+    } };
+    const imported = dayCombosOf(true, harvest, [D1], { LC: { [D1]: { floorByContainer: { 2: 15000 } } } }, "unit", wds);
+    expect(imported[D1].map((c) => c.key)).toEqual(["0_2"]);
   });
 
   it("devuelve los tiers del trato de cada día", () => {

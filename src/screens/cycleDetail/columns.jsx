@@ -1,6 +1,6 @@
 import { fmtCurrency } from "../../utils/format";
 import { DayHeader } from "./DayHeader";
-import { comboLabel, containerLabel, getDaySingle, effectivePiso } from "../../utils/cosechaCombos";
+import { comboLabel, containerLabel, getDaySingle, floorField } from "../../utils/cosechaCombos";
 import { parseAmount } from "../../utils/formula";
 import { FormulaCellEditor } from "./FormulaCellEditor";
 import { DEFAULT_BONUS_MANEJO, DEFAULT_BONUS_SUPERVISION, DEFAULT_OVERTIME_RATE, isRedDay } from "../../utils/tratoHE";
@@ -16,18 +16,20 @@ import {
   RutCell,
 } from "./GridCells";
 
-// Columna "Piso" al final de cada día en cosecha/trato (ver FloorCell).
-function buildFloorChildCol(date, labor, dayPrices) {
-  const eff = effectivePiso(labor, dayPrices, date);
+// Columnas de piso al final de cada día en cosecha/trato (ver FloorCell): la
+// del piso del día y, en cosecha, una por cada envase con piso.
+function buildFloorChildCol(date, floor, labor, catalogs) {
+  const eff = floor.amount;
+  const what = floor.container == null ? "Piso del día" : `Piso de ${containerLabel(catalogs, floor.container)}`;
   return {
-    headerName: "Piso",
-    headerTooltip: eff > 0 ? `Piso del día: ${fmtCurrency(eff)}` : "Sin piso configurado",
-    field: `${date}__piso`,
+    headerName: floor.container == null ? "Piso" : `Piso ${containerLabel(catalogs, floor.container)}`,
+    headerTooltip: eff > 0 ? `${what}: ${fmtCurrency(eff)}` : `${what} sin monto configurado`,
+    field: floorField(date, floor.key),
     editable: false,
-    width: 80,
+    width: floor.container == null ? 80 : 96,
     cellStyle: { textAlign: "center", padding: 0 },
     cellRenderer: FloorCell,
-    cellRendererParams: { date, eff, laborId: labor.id },
+    cellRendererParams: { date, eff, floorKey: floor.key, laborId: labor.id },
   };
 }
 
@@ -46,7 +48,7 @@ export function buildColumnDefs(ctx) {
     dayPrices,
     days,
     dayStagesByDate,
-    daysWithFloor,
+    floorsByDate,
     dayTiersByDate,
     effectiveDayPrice,
     harvestView,
@@ -146,8 +148,8 @@ export function buildColumnDefs(ctx) {
         editable: !readOnly && !qrLocked,
         cellRendererParams: { amtField: `${d}__${c.key}__amt`, unit: containerLabel(catalogs, c.y) },
       }));
-      if (daysWithFloor.has(d)) {
-        children.push(buildFloorChildCol(d, activeLabor, dayPrices));
+      for (const floor of floorsByDate[d] || []) {
+        children.push(buildFloorChildCol(d, floor, activeLabor, catalogs));
       }
       return {
         headerName: d, groupId: `g_${d}`,
@@ -169,8 +171,8 @@ export function buildColumnDefs(ctx) {
       const children = tiers.map((t) => qtyCol(d, t.key, {
         headerName: `${fmtCurrency(t.price)} ${t.mode === "flat" ? "/día" : "/unid"}`,
       }));
-      if (daysWithFloor.has(d)) {
-        children.push(buildFloorChildCol(d, activeLabor, dayPrices));
+      for (const floor of floorsByDate[d] || []) {
+        children.push(buildFloorChildCol(d, floor, activeLabor, catalogs));
       }
       return {
         headerName: d, groupId: `g_${d}`,

@@ -1,13 +1,19 @@
 import { useState } from "react";
 import { cyclesService, subjobsService, workdaysService, jobsService } from "../../services";
 import { payrollsService } from "../../services/payrollsService";
+import { deleteCascade } from "../../services/workdayBatches";
 import { attempt } from "../../utils/attempt";
+
+const STAGE_LABELS = { workdays: "Borrando las jornadas…", cycles: "Borrando los ciclos…" };
 
 // Eliminar una faena, una subfaena o un ciclo. Con subfaenas, ciclos o
 // jornadas adentro, solo un admin borra en cascada, y nunca si alguna jornada
-// ya está en una nómina.
+// ya está en una nómina. La cascada borra las jornadas en lotes
+// (`deleteCascade`, services/workdayBatches.js), con su avance en `progress`.
 export function useJobDeletion({ isAdmin, loadCycles, loadJobs, loadSubjobs, order, persistOrder, selectedId, setSelectedId, toast }) {
   const [confirm, setConfirm] = useState(null);
+  const [progress, setProgress] = useState(null);
+  const onProgress = (p) => setProgress({ ...p, label: STAGE_LABELS[p.stage] });
   // Segunda confirmación (cascada) dentro de doDelete: un diálogo que se
   // puede esperar con await.
   const [cascadeConfirm, setCascadeConfirm] = useState(null);
@@ -69,21 +75,15 @@ export function useJobDeletion({ isAdmin, loadCycles, loadJobs, loadSubjobs, ord
       if (!ok) { setConfirm(null); return; }
 
       // Reusa las jornadas ya leídas arriba para no volver a leerlas.
-      const wdsByCycle = new Map();
-      for (const w of allCycleWds) {
-        if (!wdsByCycle.has(w.cycleId)) wdsByCycle.set(w.cycleId, []);
-        wdsByCycle.get(w.cycleId).push(w);
-      }
-      for (const c of jobCycles) {
-        const wds = wdsByCycle.get(c.id) || [];
-        console.log(`  Borrando ciclo ${c.id} (${c.label}) con ${wds.length} jornadas`);
-        for (const w of wds) await workdaysService.remove(w.id);
-        await cyclesService.remove(c.id);
-      }
-      for (const s of subjobs) {
-        console.log(`  Borrando subfaena ${s.id} (${s.name})`);
-        await subjobsService.remove(s.id);
-      }
+      console.log(`  Borrando ${allCycleWds.length} jornadas, ${jobCycles.length} ciclos y ${subjobs.length} subfaenas`);
+      await deleteCascade({
+        entity: "faena",
+        entityId: confirm.item.id,
+        cycles: jobCycles,
+        subjobs,
+        workdays: allCycleWds,
+        onProgress,
+      });
     }
 
     console.log(`  Borrando faena ${confirm.item.id}`);
@@ -122,16 +122,7 @@ export function useJobDeletion({ isAdmin, loadCycles, loadJobs, loadSubjobs, ord
         setConfirm(null);
         return;
       }
-      if (isAdmin) {
-        const ok = await askCascadeConfirm(
-          `El ciclo "${confirm.item.label}" tiene ${wds.length} registro(s) de producción.\n\n¿Eliminar TODO en cascada (producción + ciclo)?\nEsta acción no se puede deshacer.`,
-        );
-        if (!ok) {
-          setConfirm(null);
-          return;
-        }
-        for (const w of wds) await workdaysService.remove(w.id);
-      } else {
+      if (!isAdmin) {
         toast.error(
           `El ciclo tiene ${wds.length} registro(s) de producción. (Pide a un admin para cascada)`,
           { title: "No se puede eliminar" },
@@ -139,6 +130,16 @@ export function useJobDeletion({ isAdmin, loadCycles, loadJobs, loadSubjobs, ord
         setConfirm(null);
         return;
       }
+      const ok = await askCascadeConfirm(
+        `El ciclo "${confirm.item.label}" tiene ${wds.length} registro(s) de producción.\n\n¿Eliminar TODO en cascada (producción + ciclo)?\nEsta acción no se puede deshacer.`,
+      );
+      if (!ok) {
+        setConfirm(null);
+        return;
+      }
+      await deleteCascade({ entity: "cycle", entityId: confirm.item.id, cycles: [confirm.item], workdays: wds, onProgress });
+      await loadCycles(confirm.item.faenaId);
+      return;
     }
     await cyclesService.remove(confirm.item.id);
     await loadCycles(confirm.item.faenaId);
@@ -171,12 +172,14 @@ export function useJobDeletion({ isAdmin, loadCycles, loadJobs, loadSubjobs, ord
       setConfirm(null);
     }
     setConfirm((c) => (c ? { ...c, busy: false } : null));
+    setProgress(null);
   };
 
   return {
     cascadeConfirm,
     confirm,
     doDelete,
+    progress,
     setCascadeConfirm,
     setConfirm,
   };

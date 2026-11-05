@@ -28,6 +28,8 @@ import { useEmploymentsFrom } from "../../hooks/useEmploymentsFrom";
 import { localIsoDate } from "../../utils/dates";
 import { EMPLOYMENT_FILTERS, NO_PRINCIPAL, activeByWorker, matchesEmploymentFilter } from "../../utils/employment";
 import { attempt } from "../../utils/attempt";
+import { activeWorkers } from "../../utils/workerMerge";
+import WorkerMergeModal from "./WorkerMergeModal";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -47,6 +49,8 @@ export default function WorkersTab() {
   const isMobile = useIsMobile();
   const [edit, setEdit] = useState(null);
   const [confirm, setConfirm] = useState(null);
+  // La ficha duplicada que se está uniendo a otra (Unir fichas).
+  const [merging, setMerging] = useState(null);
   const [summary, setSummary] = useState(null);
   const [groupSummaryOpen, setGroupSummaryOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -88,8 +92,9 @@ export default function WorkersTab() {
       toast.error("No se pudo cargar la lista de trabajadores: " + (err.message || err));
       return [];
     }
-    setAllWorkers(list);
-    return list;
+    const active = activeWorkers(list);
+    setAllWorkers(active);
+    return active;
   };
 
   // Precarga la lista al montar, para que el filtro funcione desde el primer
@@ -161,7 +166,7 @@ export default function WorkersTab() {
   const refreshCache = async () => {
     await attempt(async () => {
       const list = await listWorkers();
-      setAllWorkers(list);
+      setAllWorkers(activeWorkers(list));
     });
   };
 
@@ -192,6 +197,7 @@ export default function WorkersTab() {
   };
 
   const askDelete = (worker) => setConfirm({ worker });
+  const askMerge = (worker) => setMerging(worker);
   const doDelete = async () => {
     if (!confirm) return;
     setConfirm((c) => ({ ...c, busy: true }));
@@ -211,7 +217,7 @@ export default function WorkersTab() {
   // `actionsRef`, que se pone al día después de cada render.
   const actionsRef = useRef(null);
   useEffect(() => {
-    actionsRef.current = { copyRut, openEdit, askDelete };
+    actionsRef.current = { copyRut, openEdit, askDelete, askMerge };
   });
   const columnDefs = useMemo(
     () => [
@@ -321,6 +327,13 @@ export default function WorkersTab() {
                 className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
               >
                 Editar
+              </button>
+              <button
+                onClick={() => actionsRef.current.askMerge(p.data)}
+                title="Unir con otra ficha (para una ficha duplicada)"
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+              >
+                🔀
               </button>
               <button
                 onClick={() => actionsRef.current.askDelete(p.data)}
@@ -564,6 +577,13 @@ export default function WorkersTab() {
                       Editar
                     </button>
                     <button
+                      onClick={() => askMerge(w)}
+                      title="Unir con otra ficha (para una ficha duplicada)"
+                      className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+                    >
+                      🔀
+                    </button>
+                    <button
                       onClick={() => askDelete(w)}
                       className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
                     >
@@ -594,6 +614,17 @@ export default function WorkersTab() {
         onClose={() => setEdit(null)}
         onSaved={onSaved}
       />
+
+      {merging && (
+        <WorkerMergeModal
+          clone={merging}
+          onClose={() => setMerging(null)}
+          onDone={async () => {
+            setMerging(null);
+            await refreshCache();
+          }}
+        />
+      )}
 
       <WorkerSummaryModal
         open={!!summary}

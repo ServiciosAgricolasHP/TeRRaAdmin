@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { listWorkers } from "../services/workersService";
+import { activeWorkers } from "../utils/workerMerge";
 
-// La lista completa de trabajadores (`listWorkers`): la copia del navegador,
-// puesta al día con lo que cambió.
+// La lista completa de trabajadores (`listWorkers`) para mostrar y elegir: la
+// copia del navegador, puesta al día con lo que cambió, sin las fichas unidas
+// a otra (`activeWorkers`).
 export function useWorkersList() {
   const [workers, setWorkers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -12,7 +14,7 @@ export function useWorkersList() {
     let alive = true;
     listWorkers()
       .then((list) => {
-        if (alive) setWorkers(list);
+        if (alive) setWorkers(activeWorkers(list));
       })
       .catch((err) => {
         if (alive) setError(err?.message || String(err));
