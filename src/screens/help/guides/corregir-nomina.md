@@ -19,7 +19,7 @@ Una nómina guarda los montos que tenía cada día al generarla. Si después se 
 
 ![Lo que cambia al recalcular](help/corregir-nomina/02-recalcular.webp)
 
-Toca **Aplicar cambios** para guardarlo. Recalcular también trae los días que se anotaron después en las labores de la nómina, y los nombres al día de los ciclos.
+Toca **Aplicar cambios** para guardarlo. Mientras compara y mientras guarda, una barra muestra en qué va. Recalcular también trae los días que se anotaron después en las labores de la nómina, y los nombres al día de los ciclos.
 
 ## Agregar los días de una persona
 <!-- preguntas: se me olvidó una persona en la nómina; agregar a alguien a una nómina ya creada; sumar un trabajador a la nómina; agregar días a la nómina -->
@@ -33,7 +33,7 @@ Toca **Aplicar cambios** para guardarlo. Recalcular también trae los días que 
 
 ![Los días de una persona](help/corregir-nomina/04-agregar-persona.webp)
 
-Si tiene anticipos o bonos pendientes, se descuentan o se suman al agregarla.
+Si tiene anticipos o bonos pendientes, se descuentan o se suman al agregarla. Mientras guarda, una barra muestra en qué va.
 
 ## Agregar o sacar ciclos y labores
 <!-- preguntas: agregar un ciclo a la nómina; sumar otro ciclo a una nómina hecha; agregar una labor a la nómina; faltó un ciclo en la nómina; sacar un ciclo de la nómina; quitar una labor de la nómina; un ciclo no debía ir en la nómina; sacar días de la nómina; cambiar los ciclos de la nómina; cambiar una labor por otra -->
@@ -56,7 +56,7 @@ Con **Editar contenido** activo, cada persona tiene una **✕** al final de su f
 
 ![La ✕ para sacar a una persona](help/corregir-nomina/07-sacar-persona.webp)
 
-Tócala y confirma con **Sacar**. Sus días vuelven a quedar pendientes y sus anticipos vuelven a estar por cobrar. Se puede volver a sumar con **+ Agregar persona**.
+Tócala y confirma con **Sacar**. Mientras la saca, una barra muestra en qué va. Sus días vuelven a quedar pendientes y sus anticipos vuelven a estar por cobrar. Se puede volver a sumar con **+ Agregar persona**.
 
 ![Confirmar que sale de la nómina](help/corregir-nomina/08-confirmar-sacar.webp)
 

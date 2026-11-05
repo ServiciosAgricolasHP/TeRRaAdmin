@@ -85,9 +85,12 @@ const PROFILE_FIELDS = [
 // `cycleEditDiff`, src/utils/payrollCycles.js). Devuelve `empty: true` si no
 // hay nada que cambiar. Tira si el cambio deja la nómina sin ciclos o sin
 // nadie: para eso se elimina la nómina.
+//
+// `onProgress(paso, hechos, total)` avisa el paso en curso: "workdays" (los
+// ciclos leídos de cuántos) y "advances".
 export async function planPayrollRecalc(
   payroll,
-  { cycles = [], faenas = [], subfaenas = [], workers = [], removed = new Map(), added = new Map() } = {},
+  { cycles = [], faenas = [], subfaenas = [], workers = [], removed = new Map(), added = new Map(), onProgress } = {},
 ) {
   const items = payroll.items || [];
   const cycleDetails = payroll.cycleDetails || [];
@@ -121,10 +124,12 @@ export async function planPayrollRecalc(
   const alcance = payrollLaborScope(scope ? scope.cycleDetails : cycleDetails);
   const current = [];
   const released = [];
+  onProgress?.("workdays", 0, recalcCycleIds.length);
   for (let i = 0; i < recalcCycleIds.length; i += 10) {
     const chunk = recalcCycleIds.slice(i, i + 10);
     // Directo de Firestore, sin caché: de acá sale lo que se etiqueta.
     const wds = await workdaysService.list({ wheres: [["cycleId", "in", chunk]] });
+    onProgress?.("workdays", i + chunk.length, recalcCycleIds.length);
     for (const wd of wds) {
       if (isRemovedFromPayroll(wd, removed)) {
         if (wd.payrollId === payroll.id) released.push(wd);
@@ -148,6 +153,7 @@ export async function planPayrollRecalc(
   // Anticipos y bonos pendientes de todos los involucrados: uno creado
   // después de generar la nómina se aplica acá, igual que al armarla.
   const allIds = [...items.map(claveDe), ...newWorkerAggs.map(claveDe)];
+  onProgress?.("advances");
   const pendingAdvances = allIds.length ? await listPendingForWorkers(allIds) : [];
   const advancesByKey = new Map();
   for (const adv of pendingAdvances) {
@@ -358,8 +364,11 @@ export async function planPayrollRecalc(
 // Guarda una vista previa de `planPayrollRecalc`. Mismo orden que "Generar":
 // primero el documento de la nómina (con sus ciclos después del cambio, con
 // sus nombres y su período al día), después las jornadas, los anticipos y el
-// snapshot.
-export async function applyPayrollRecalc(payrollId, plan) {
+// snapshot. `onProgress(paso, hechas, total)` avisa el paso en curso:
+// "payroll", "untag" y "tag" (las jornadas, cuántas van), "advances" y
+// "snapshot".
+export async function applyPayrollRecalc(payrollId, plan, onProgress) {
+  onProgress?.("payroll");
   const p = await payrollsService.getById(payrollId);
   if (!p) throw new Error("Nómina no encontrada");
   assertEditable(p, "recalcular");
@@ -392,17 +401,21 @@ export async function applyPayrollRecalc(payrollId, plan) {
   const enNomina = new Set(items.flatMap((it) => it.workdayIds || []));
   await untagWorkdaysFromPayroll(
     workdays.filter((wd) => !enNomina.has(wd.id) && wd.payrollId === payrollId).map((wd) => wd.id),
+    (done, total) => onProgress?.("untag", done, total),
   );
   await tagWorkdaysWithPayroll(
     workdays.filter((wd) => enNomina.has(wd.id)).map((wd) => wd.id),
     payrollId,
+    (done, total) => onProgress?.("tag", done, total),
   );
   // Primero se achica lo ya aplicado y después se aplica lo nuevo: son
   // anticipos distintos (lo nuevo excluye lo que la nómina ya tenía).
+  onProgress?.("advances");
   if (advanceTargets.length) await setPayrollAdvanceAmounts(payrollId, advanceTargets);
   if (newAdvanceApplications.length) await applyAdvancesToPayroll(newAdvanceApplications, payrollId);
 
   const nuevos = new Set(newAdvanceApplications.map((x) => x.advanceId));
+  onProgress?.("snapshot");
   await syncSnapshotAfterRecalc(payrollId, {
     items,
     aggregates,
