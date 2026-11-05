@@ -1,9 +1,10 @@
 // Capturas de la guía "Trabajadores" (src/screens/help/guides/trabajadores.md):
 // la lista con sus filtros, un trabajador nuevo con un posible duplicado, la
 // forma de pago de quien cobra en la cuenta de otra persona, los datos
-// personales, el resumen de una persona y la lista en el teléfono.
+// personales, el resumen de una persona, unir una ficha duplicada
+// (`seedDuplicateWorker`) y la lista en el teléfono.
 import { PHONE, login as loginOn, preparePage } from "../lib.mjs";
-import { rut, seedCashWorkers, seedWorkerDetails } from "../seed.mjs";
+import { DEMO_WORKERS, DUPLICATE_WORKER, rut, seedCashWorkers, seedDuplicateWorker, seedWorkerDetails } from "../seed.mjs";
 
 // El modal abierto con ese título.
 const modal = (page, title) =>
@@ -24,9 +25,10 @@ async function cancel(page, form) {
 export async function run({ browser, page, base, login, shot }) {
   await seedCashWorkers();
   await seedWorkerDetails();
+  await seedDuplicateWorker();
   await login();
   await page.goto(`${base}/workers`);
-  await page.getByText(/· 7 trabajadores/).waitFor({ timeout: 120000 });
+  await page.getByText(/· 8 trabajadores/).waitFor({ timeout: 120000 });
 
   // La lista con quienes cobran por transferencia, corrida hasta el titular.
   // La grilla dibuja solo las columnas a la vista: se corre antes de esperar
@@ -65,8 +67,9 @@ export async function run({ browser, page, base, login, shot }) {
   });
   await cancel(page, brunoForm);
 
-  // Los datos personales de Ana.
-  await search.fill("Ana");
+  // Los datos personales de Ana, buscada por su RUT: su ficha duplicada se
+  // llama casi igual.
+  await search.fill(DEMO_WORKERS[0].rut.split("-")[0]);
   await page.waitForTimeout(500);
   await page.getByRole("button", { name: "Editar", exact: true }).first().click();
   const anaForm = modal(page, /^Editar /);
@@ -84,13 +87,28 @@ export async function run({ browser, page, base, login, shot }) {
   await shot(page, "05-resumen", summary, { pad: 0 });
   await summary.getByRole("button", { name: "Cerrar", exact: true }).click();
 
+  // Unir la ficha duplicada de Ana a la suya, sin confirmar. Cobra en
+  // efectivo: se quita el filtro de transferencia.
+  await page.getByRole("button", { name: /Limpiar filtros/ }).click();
+  await search.fill(DUPLICATE_WORKER.id.split("-")[0]);
+  await page.waitForTimeout(500);
+  await page.getByTitle("Unir con otra ficha (para una ficha duplicada)").first().click();
+  const merge = modal(page, `Unir ficha · ${DUPLICATE_WORKER.name}`);
+  await merge.getByPlaceholder("Buscar por nombre, apellido o RUT…").fill("Ana Pérez");
+  await merge.getByRole("button", { name: /Ana Pérez Soto.*Unir con esta/ }).click();
+  await merge.getByText("Choques (1)").waitFor({ timeout: 60000 });
+  await merge.locator("input[type=text]").last().fill("unir");
+  await page.waitForTimeout(500);
+  await shot(page, "07-unir-fichas", merge, { pad: 0, marks: [merge.getByRole("combobox", { name: "Qué queda" }), merge.getByRole("button", { name: "Unir fichas" })] });
+  await cancel(page, merge);
+
   // En el teléfono: las tarjetas.
   const phone = await browser.newContext({ viewport: PHONE, locale: "es-CL", timezoneId: "America/Santiago", isMobile: true, hasTouch: true });
   const p = await phone.newPage();
   await preparePage(p);
   await loginOn(p, base);
   await p.goto(`${base}/workers`);
-  await p.getByText(/· 7 trabajadores/).waitFor({ timeout: 120000 });
+  await p.getByText(/· 8 trabajadores/).waitFor({ timeout: 120000 });
   await p.getByRole("button", { name: "🏦 Transferencia", exact: true }).click();
   await p.getByText("Rosa Mella Díaz").first().waitFor();
   await p.waitForTimeout(800);

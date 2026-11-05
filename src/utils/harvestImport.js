@@ -195,9 +195,10 @@ function nameSearchOf(workers) {
 //   La decide quien importa, con `candidates`.
 // - `new`: ni el RUT ni el nombre calzan con nadie.
 // `rutTaken` dice si el RUT ya es de alguna ficha: entonces no se puede crear
-// otra con ese RUT.
+// otra con ese RUT. Una ficha unida a otra (`mergedInto`) no se ofrece: su
+// RUT ya está en los RUT anteriores de la que quedó.
 export function matchFilePeople(people, workers) {
-  const list = workers || [];
+  const list = (workers || []).filter((w) => !w.mergedInto);
   const byRut = new Map();
   for (const w of list) {
     for (const k of workerRutKeys(w)) {

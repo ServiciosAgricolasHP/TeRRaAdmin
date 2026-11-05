@@ -184,6 +184,24 @@ export async function seedCashWorkers() {
   }
 }
 
+// Una ficha duplicada de Ana Pérez, como la que crea la importación de
+// cosecha con el RUT provisorio que le dio otra empresa, con dos días en el
+// ciclo de demo: uno que Ana no tiene y otro que choca con el suyo.
+export const DUPLICATE_WORKER = { id: rut(31234567), name: "Ana Perez Soto" };
+
+export async function seedDuplicateWorker() {
+  const db = getFirestore("hpdatabase");
+  const w = DUPLICATE_WORKER;
+  await db.collection("worker").doc(w.id).set({
+    rut: w.id, name: w.name, groupLeader: ["EXTRANJEROS"], bankDetails: [w.id, w.id.split("-")[0], 3, "EFE"], updatedAt: FieldValue.serverTimestamp(),
+  });
+  for (const d of [DEMO_DAYS[2], DEMO_DAYS[3]]) {
+    await db.collection("workdays").doc(`${DEMO_CYCLE}__L1__${w.id}__${d}`).set({
+      cycleId: DEMO_CYCLE, laborId: "L1", workerRut: w.id, workerId: w.id, date: d, payrollId: null, amount: 30000, qty: 1,
+    });
+  }
+}
+
 // La fecha de creación de las nóminas la pone el servidor: se fija al día de
 // las capturas, así no cambian con el día en que se generan.
 export async function pinPayrollDates() {

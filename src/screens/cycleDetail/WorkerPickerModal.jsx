@@ -21,6 +21,7 @@ import { matchesSearchQuery } from "../../utils/textSearch";
 import { greeting, GREETING_SLOTS } from "../../utils/greetings";
 import { attempt } from "../../utils/attempt";
 import { useValuesChanged } from "../../hooks/useValuesChanged";
+import { activeWorkers } from "../../utils/workerMerge";
 
 const MIN_SEARCH = 3;
 const WORKERS_TTL_MS = 2 * 60 * 60 * 1000;
@@ -89,7 +90,7 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
       .list({ cache: true, persist: true, ttl: WORKERS_TTL_MS })
       .then((list) => {
         if (cancelled) return;
-        setAllWorkers(list);
+        setAllWorkers(activeWorkers(list));
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };

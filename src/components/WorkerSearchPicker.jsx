@@ -7,8 +7,8 @@ import { MIN_WORKER_QUERY, searchWorkerList, workerQueryReady, workerSearchInput
 // cualquier palabra del nombre o una parte del RUT, y muestra los resultados
 // debajo del campo (no flotando, así un modal no los corta). Enter elige el
 // primero. `pickedIds` (Set): los ya elegidos, que se ven pero no se eligen
-// otra vez.
-export default function WorkerSearchPicker({ onPick, pickedIds, actionLabel = "Elegir", autoFocus = false, take = 30 }) {
+// otra vez, con `pickedLabel`.
+export default function WorkerSearchPicker({ onPick, pickedIds, actionLabel = "Elegir", pickedLabel = "✓ ya está", autoFocus = false, take = 30 }) {
   const { workers, loading, error } = useWorkersList();
   const [query, setQuery] = useState("");
   const ready = workerQueryReady(query);
@@ -70,7 +70,7 @@ export default function WorkerSearchPicker({ onPick, pickedIds, actionLabel = "E
                   <span className="block truncate font-medium">{w.name}</span>
                   <span className="block font-mono text-[10px] text-[var(--color-muted)]">{formatRutForDisplay(w.rut || w.id)}</span>
                 </span>
-                <span className="shrink-0 text-xs text-[var(--color-accent)]">{already ? "✓ ya está" : actionLabel}</span>
+                <span className="shrink-0 text-xs text-[var(--color-accent)]">{already ? pickedLabel : actionLabel}</span>
               </button>
             );
           })}

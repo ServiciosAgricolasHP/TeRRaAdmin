@@ -79,6 +79,7 @@ el id/workerId, nunca el campo `rut`.
 |---|---|---|
 | `id` (docId) | string | `workerId` estable — rut de creación, no cambia nunca |
 | `rut` | string | rut legal ACTUAL, editable (campo agregado en fase 1; workers viejos necesitan backfill, ver AdminConsole → "Backfill: campo rut en trabajadores") |
+| `rutHistory` | string[]? | los otros RUT de la persona: el que tenía al corregirse el RUT en la ficha (`WorkerEditModal`) y los de una ficha duplicada que se le unió (Unir fichas). Las búsquedas de sus jornadas y su resumen los incluyen (`workerKeys`), y la importación de cosecha calza con ellos |
 | `name` | string | UPPERCASE típicamente |
 | `email` | string? | |
 | `bankDetails` | `[paymentRut, accountNumber, accountType, bankCode]` | tupla. accountType: 0 cta corriente, 1 cta vista, 3 cuenta RUT. bankCode `EFE` = efectivo. |
@@ -86,6 +87,8 @@ el id/workerId, nunca el campo `rut`.
 | `groupLeader` | string[] | historial; `[0]` = actual (ej. `CHILENOS`, `EXTRANJEROS`) |
 | `idQr` | string[] | códigos QR asignados |
 | `fileAliases` | `{ rut, name }[]`? | cómo trae a la persona el archivo de cosecha de una empresa cuando no calza solo con la ficha: otro RUT (típico de un extranjero) o un nombre distinto (le dicen Patricio y la empresa lo trae como José). El RUT va sin puntos y el nombre, como viene en el archivo. Lo guarda **Importar cosecha** al elegir la ficha a mano, y la importación siguiente calza sola con un RUT de la ficha o de esta lista si el nombre se parece al de la ficha o a uno guardado con ese RUT: una empresa puede reasignar un RUT (`matchFilePeople`, `utils/harvestImport.js`) |
+| `mergedInto` | ref→`worker`? | la ficha a la que se unió esta, que era un duplicado (**Unir fichas**, `services/workerMergeService.js`). Es un borrado suave: la ficha queda para las nóminas y jornadas pagadas que la nombran, pero no aparece en las listas ni en los buscadores (`activeWorkers`, `utils/workerMerge.js`), y `findWorkerByRut` devuelve la otra. Sus RUT quedan en el `rutHistory` de la otra |
+| `mergedAt`, `mergedBy` | ts, string? | cuándo y quién la unió |
 | `address`, `commune` | string? | dirección y comuna; las piden las boletas de honorarios |
 | `nationality` | string? | texto libre ("Chilena") |
 | `maritalStatus` | `"single"` \| `"married"` \| `"civilUnion"` \| `"divorced"` \| `"widowed"` \| `""` | |
@@ -729,7 +732,7 @@ Auditoría — una fila por mutación.
 |---|---|---|
 | `id` (docId) | string | autoId |
 | `uid`, `email` | string? | quién |
-| `action` | `"create"` \| `"update"` \| `"delete"` \| `"import"` \| `"bulkStart"` \| `"bulkEnd"` \| `"settlement"` \| `"setPrincipal"` \| `"harvestImport"` \| `"laborClear"` | `"import"` solo lo escribe la importación de la agenda telefónica; `"harvestImport"` y `"laborClear"`, importar la cosecha y limpiar una labor en la grilla del ciclo (`entity: "cycle"`); los otros cuatro, las acciones masivas de contratos (`entity: "employment"`) |
+| `action` | `"create"` \| `"update"` \| `"delete"` \| `"import"` \| `"bulkStart"` \| `"bulkEnd"` \| `"settlement"` \| `"setPrincipal"` \| `"harvestImport"` \| `"laborClear"` \| `"workerMerge"` | `"import"` solo lo escribe la importación de la agenda telefónica; `"harvestImport"` y `"laborClear"`, importar la cosecha y limpiar una labor en la grilla del ciclo (`entity: "cycle"`); `"workerMerge"`, unir una ficha duplicada a otra (`entity: "worker"`, el id de la que queda); los otros cuatro, las acciones masivas de contratos (`entity: "employment"`) |
 | `entity`, `entityId` | string | qué |
 | `before` | objeto? | solo en `delete` (snapshot completo). Borrar un documento que no existe no deja log |
 | `after` | objeto? | solo en `create` (snapshot completo) |
@@ -750,6 +753,7 @@ Auditoría — una fila por mutación.
 | `created`, `updated`, `unchanged`, `sources`, `files` | `importPhoneContacts` (`services/phoneContactsService.js`) | una importación de la agenda telefónica (`action: "import"`, `entity: "phoneContact"`) |
 | `laborId`, `file`, `written`, `deleted`, `blocked`, `floors`, `created`, `aliases`, `daysAdded`, `workersAdded`, `floorDays` | `importHarvest` (`services/harvestImportService.js`) | una importación de cosecha (`action: "harvestImport"`): `created`, los RUT de las fichas nuevas; `aliases`, `[{ workerId, added }]` con los pares RUT y nombre que se guardaron en cada ficha |
 | `laborId`, `laborName`, `deleted`, `kept`, `workersRemoved`, `daysRemoved`, `tripDays`, `pendingTrips` | `clearLabor` (`services/laborClearService.js`) | limpiar una labor (`action: "laborClear"`): cuántas jornadas borró y cuántas quedaron por estar en una nómina, cuántas personas sacó, qué días quitó, cuáles quedaron por tener vueltas y cuántas vueltas sin pagar había esos días |
+| `cloneId`, `cloneRut`, `moved`, `conflicts`, `paidLeft`, `cycles` | `mergeWorkers` (`services/workerMergeService.js`) | unir una ficha duplicada (`action: "workerMerge"`): cuántas jornadas pasaron sin choque, cada choque con lo que se eligió (`[{ id, choice }]`, `kept`/`clone`/`sum`), cuántas quedaron en el clon por estar en una nómina y los ciclos cuyas labores cambiaron |
 | `ids`, `count`, `type`, `employerId`, `startDate` / `endDate`, `endReason` / `status`, `date` | `startEmployments`, `endEmployments`, `setSettlementStatus` (`services/employmentsService.js`) | una acción masiva sobre contratos y honorarios (`entity: "employment"`, sin `entityId`): los períodos que creó o tocó |
 | `op: "applyAdvances"`, `count`, `total`, `advanceIds`, `sobrantes?` | `applyAdvancesToPayroll` | un log por nómina (`entity: "payroll"`) con los anticipos que descontó. `sobrantes: [{ advanceId, pedido, aplicado }]` son las aplicaciones recortadas |
 | `op: "restoreAdvances"`, `count`, `advanceIds` | `restoreAdvancesFromPayroll` | los anticipos que soltó la nómina |
