@@ -194,6 +194,9 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
           if (mirror.daysAdded.length) parts.push(`${mirror.daysAdded.length} día(s) agregado(s) al ciclo`);
           if (mirror.workersAdded) parts.push(`${mirror.workersAdded} trabajador(es) agregado(s)`);
           if (parts.length) toast.success("Jornadas al día: " + parts.join(" · "));
+          if (mirror.closed.length) {
+            toast.warning(`El ciclo de ${mirror.closed.join(", ")} está cerrado: el pesaje quedó guardado, pero sus jornadas no cambiaron. Para llevarlo, reabre el ciclo y sincroniza.`);
+          }
           if (mirror.noTarget.length) {
             toast.warning(`Sin ciclo/labor asignado: ${mirror.noTarget.join(", ")} — esos pesajes no llegan a ninguna jornada.`);
           }
