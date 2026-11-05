@@ -71,7 +71,7 @@ export function HarvestPrices() {
                           <span className="font-medium text-[var(--color-text)]">
                             {comboLabel(catalogs, c.x, c.y)}
                           </span>
-                          {!readOnly && (
+                          {!readOnly && !c.placeholder && (
                             <button
                               onClick={() =>
                                 setRemoveCombo({

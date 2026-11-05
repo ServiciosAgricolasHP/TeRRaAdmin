@@ -269,6 +269,16 @@ export function getDayCombos(dayPrices, laborId, date, defaultMode = "unit") {
   return out;
 }
 
+// Los combos guardados de (laborId, date): los de `getDayCombos` sin el 0_0
+// que agrega cuando el día no tiene ninguno.
+export function storedDayCombos(dayPrices, laborId, date, defaultMode = "unit") {
+  const entry = dayPrices?.[laborId]?.[date];
+  if (!entry || typeof entry !== "object") return [];
+  const flat = "price" in entry || "mode" in entry;
+  if (!flat && !Object.keys(entry).some((k) => /^\d+_\d+$/.test(k))) return [];
+  return getDayCombos(dayPrices, laborId, date, defaultMode);
+}
+
 // Config de precio del día para una labor sin combos (un solo precio por día).
 // Lee dayPrices[laborId][date]["0_0"] o la entrada plana { price, mode }.
 export function getDaySingle(dayPrices, laborId, date, defaultMode = "unit") {

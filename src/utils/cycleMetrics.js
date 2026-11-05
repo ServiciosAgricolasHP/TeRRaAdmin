@@ -4,6 +4,7 @@
 import {
   workdayMapKey,
   getDayCombos,
+  storedDayCombos,
   comboKey as makeComboKey,
   getTratoTiers,
   getTratoTierTotals,
@@ -55,12 +56,29 @@ export function dayFloorsOf(activeLabor, isHarvestLabor, isPieceworkLabor, dayPr
   return out;
 }
 
+// Los tipos (combos) de cosecha de cada día:
+// - los guardados del día y los que tienen producción;
+// - un día sin tipos guardados muestra, además de los de su producción, los
+//   del día con tipos guardados más cercano (el anterior o, si no hay, el
+//   siguiente), sin precio: así un día nuevo sigue con lo que se cosecha;
+// - si la labor no tiene tipos en ningún día, el tipo por defecto (el 0_0 del
+//   catálogo, Exportación / kilo), marcado `placeholder`: no está guardado ni
+//   se puede quitar, y se reemplaza al agregar el primero.
+// Los tipos que se ven sin estar guardados se guardan apenas se agrega,
+// cambia o quita uno (`useDayPrices`).
 export function dayCombosOf(isHarvestLabor, activeLabor, days, dayPrices, defaultMode, workdaysByLabor) {
   if (!isHarvestLabor || !activeLabor) return {};
   const wdMapForLabor = workdaysByLabor[activeLabor.id] || {};
+  const stored = {};
+  for (const d of days) stored[d] = storedDayCombos(dayPrices, activeLabor.id, d, defaultMode);
+  const withTypes = days.filter((d) => stored[d].length).sort();
   const out = {};
   for (const d of days) {
-    const fromPrices = getDayCombos(dayPrices, activeLabor.id, d, defaultMode);
+    let fromPrices = stored[d];
+    if (!fromPrices.length) {
+      const near = [...withTypes].reverse().find((x) => x < d) ?? withTypes.find((x) => x > d);
+      fromPrices = near ? stored[near].map((c) => ({ ...c, price: 0 })) : [];
+    }
     const seen = new Set(fromPrices.map((c) => c.key));
     const result = [...fromPrices];
     for (const k in wdMapForLabor) {
@@ -74,6 +92,7 @@ export function dayCombosOf(isHarvestLabor, activeLabor, days, dayPrices, defaul
         seen.add(ck);
       }
     }
+    if (!result.length) result.push({ ...getDayCombos(dayPrices, activeLabor.id, d, defaultMode)[0], placeholder: true });
     result.sort((a, b) => a.x - b.x || a.y - b.y);
     out[d] = result;
   }

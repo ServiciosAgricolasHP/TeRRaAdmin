@@ -20,7 +20,7 @@ Cada labor de un ciclo tiene un **tipo**, y el tipo decide cómo se paga: qué p
 Se paga un monto por día. En **Precios por día** se anota el precio de cada día, que es el que aparece sugerido en las celdas vacías (ver [Cambiar el precio de un día](/ayuda/grilla-del-ciclo#cambiar-el-precio-de-un-dia)). Cambiarlo no toca los montos que ya están anotados.
 
 ## Cosecha: un precio por calidad y envase
-<!-- preguntas: precio de la cosecha; precio por kilo; precio por bandeja; agregar calidad; agregar envase; cosecha por calidad -->
+<!-- preguntas: precio de la cosecha; precio por kilo; precio por bandeja; agregar calidad; agregar envase; cosecha por calidad; día nuevo sin tipos de cosecha; exportación kilo que no se quita -->
 
 Cada día tiene sus **tipos**: una calidad y un envase (por ejemplo, Exportación / bandeja), cada uno con su precio. En la grilla, cada tipo es una columna del día, donde se anota la cantidad de cada persona; el monto es cantidad × precio.
 
@@ -28,7 +28,9 @@ Cada día tiene sus **tipos**: una calidad y un envase (por ejemplo, Exportació
 
 - **$/unidad** paga cada unidad al precio; **$/día** paga el precio una vez, sin importar la cantidad.
 - **+ tipo** agrega otro tipo a ese día. Elige la calidad y el envase; si no están, **+ Nueva calidad** y **+ Nuevo envase** los crean.
-- La **✕** de un tipo lo quita del día.
+- La **✕** de un tipo lo quita del día. Un día no queda sin tipos: para quitar el último, agrega otro antes o quita el día.
+- Un día nuevo trae los tipos del día más cercano que los tenga, sin precio. Al ponerle precio a uno, o al agregar o quitar uno, quedan guardados los de ese día.
+- Mientras la labor no tiene ningún tipo, cada día muestra **Exportación / kilo** para empezar. No se guarda ni tiene **✕**: al agregar el primer tipo, desaparece.
 
 ![Agregar un tipo de cosecha](help/precios-del-dia/03-agregar-tipo.webp)
 

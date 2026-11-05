@@ -1116,7 +1116,7 @@ export default function CycleDetail() {
           open={!!addComboFor}
           onClose={() => setAddComboFor(null)}
           catalogs={catalogs}
-          existingCombos={addComboFor ? (dayCombosByDate[addComboFor.date] || []) : []}
+          existingCombos={addComboFor ? (dayCombosByDate[addComboFor.date] || []).filter((c) => !c.placeholder) : []}
           date={addComboFor?.date}
           onAddCatalogEntry={addCatalogEntry}
           onAdd={async (x, y) => {

@@ -11,6 +11,7 @@ import {
   mapHarvestCodes,
   invertHarvestCodes,
   getDayCombos,
+  storedDayCombos,
   getDaySingle,
   normalizeDayPricesEntry,
   workdayDocId,
@@ -126,6 +127,18 @@ describe("getTratoTierTotals", () => {
       qty: 0,
       amount: 0,
     });
+  });
+});
+
+describe("storedDayCombos", () => {
+  it("solo los combos guardados, sin el 0_0 que agrega getDayCombos", () => {
+    expect(storedDayCombos({}, "l1", "2026-01-01")).toEqual([]);
+    expect(storedDayCombos({ l1: { "2026-01-01": { piso: 5000, floorByContainer: { 2: 1 } } } }, "l1", "2026-01-01")).toEqual([]);
+    expect(storedDayCombos({ l1: { "2026-01-01": { "0_2": { price: 900 } } } }, "l1", "2026-01-01").map((c) => c.key)).toEqual(["0_2"]);
+    // El formato antiguo, un precio plano, es el combo 0_0 guardado.
+    expect(storedDayCombos({ l1: { "2026-01-01": { price: 700, mode: "unit" } } }, "l1", "2026-01-01")).toEqual([
+      { key: "0_0", x: 0, y: 0, price: 700, mode: "unit" },
+    ]);
   });
 });
 

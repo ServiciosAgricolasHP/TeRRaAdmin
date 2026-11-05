@@ -200,7 +200,7 @@ export default function DayConfigContent({
           <RemovableRow
             key={c.key}
             label={comboLabel(catalogs, c.x, c.y)}
-            disabled={readOnly}
+            disabled={readOnly || !!c.placeholder}
             onRemove={() => removeComboFromDay(laborId, date, c.key)}
           >
             <div className="flex items-center gap-2">
@@ -211,7 +211,7 @@ export default function DayConfigContent({
         ))}
         <AddComboInline
           catalogs={catalogs}
-          existingCombos={combos}
+          existingCombos={combos.filter((c) => !c.placeholder)}
           disabled={readOnly}
           onAdd={(x, y) => addComboToDay(laborId, date, x, y)}
         />

@@ -33,6 +33,10 @@ Abajo, cómo guarda y calcula cada uno sus precios y montos.
 ## cosecha
 
 - Combos = calidad × envase, almacenados como `dayPrices[laborId][date]` con claves `${x}_${y}`.
+- **Los tipos que muestra cada día** (`dayCombosOf`, `utils/cycleMetrics.js`, con tests): los guardados (`storedDayCombos`, `utils/cosechaCombos.js`) y los que tienen producción. Un día sin tipos guardados muestra, además de los de su producción, los del día con tipos guardados más cercano (el anterior o, si no hay, el siguiente), sin precio. Si la labor no tiene tipos en ningún día y el día no tiene producción, muestra el 0_0 del catálogo (Exportación / kilo) marcado `placeholder`: no se guarda, no se puede quitar y no cuenta como existente al agregar un tipo.
+  - Agregar, cambiar o quitar un tipo en un día sin tipos guardados guarda primero los que muestra, sin el `placeholder` (`dayEntryToWrite`, `useDayPrices`): los demás no desaparecen.
+  - Un día no queda sin tipos guardados: quitar el último avisa y no lo quita.
+  - Los cálculos de precio (`getDayCombos`) siguen leyendo un día sin tipos como un 0_0 sin precio.
 - Catálogos globales para `qualities`, `containers` — editables via ⚙ Catálogos.
 - **Unidad mostrada en métricas** sale del envase del catálogo, no de un literal "kg". Helper `cosechaUnit(catalogs, containersSet)` en `utils/cosechaCombos.js`: si todos los workdays del scope usan el mismo envase (`Saco`, `Kilo`, `Caja`…) devuelve su label; si hay mezcla cae a `"Unid."`. Aplica en Calendar, CycleSummaryModal, WorkerSummaryModal y los comprobantes de Payroll.
 - **Unidad mostrada para trato** sale de `catalogs.tratoTypes` via `tratoTypeLabel(catalogs, labor.tratoType)` — ej. una labor a trato configurada como "Poda" muestra `4.737 poda` en vez de `4.737 trato`. Si una grilla mezcla varios `tratoType` en el mismo ciclo cae al genérico "Trato".
