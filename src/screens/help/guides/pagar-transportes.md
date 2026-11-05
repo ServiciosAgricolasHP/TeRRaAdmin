@@ -70,9 +70,9 @@ Arriba se ven lo **Abonado** y lo **Pendiente**, y lo que se copia o imprime cie
 ![Una quincena nueva](help/pagar-transportes/06-nueva-quincena.webp)
 
 ## Pagar la quincena
-<!-- preguntas: marcar la quincena pagada; pagar a un solo transportista; revertir un pago de transporte; me equivoqué al marcar pagado -->
+<!-- preguntas: marcar la quincena pagada; pagar a un solo transportista; revertir un pago de transporte; me equivoqué al marcar pagado; cuánto se le debe a cada transportista en la quincena; cuánto se le abonó a un transportista -->
 
-Al tocar una quincena se abre su tabla: un resumen por transportista, con sus vueltas, período, estado y total.
+Al tocar una quincena se abre su tabla: un resumen por transportista, con sus vueltas, período, estado y total, y lo que se le ha **Abonado** y lo **Pendiente** de cada uno (en el teléfono, bajo el total). Un resumen con abonos que todavía no se paga aparece **Con abonos**.
 
 ![El detalle de una quincena](help/pagar-transportes/07-quincena.webp)
 
@@ -87,7 +87,7 @@ Al tocar una quincena se abre su tabla: un resumen por transportista, con sus vu
 Un resumen o una vuelta pagados ya no se editan: para corregirlos, primero se revierte el pago.
 
 ## Liquidar un resumen
-<!-- preguntas: liquidar un resumen con abonos; pagar el saldo del resumen; terminar de pagar un resumen; cerrar un resumen abonado; pagar lo que falta de un resumen -->
+<!-- preguntas: liquidar un resumen con abonos; pagar el saldo del resumen; terminar de pagar un resumen; cerrar un resumen abonado; pagar lo que falta de un resumen; qué es la liquidación; cuánto se pagó al liquidar -->
 
 Un resumen con abonos sigue **Pendiente** hasta que se marca pagado, aunque lo abonado ya cubra todo. Para liquidarlo:
 
@@ -97,7 +97,11 @@ Un resumen con abonos sigue **Pendiente** hasta que se marca pagado, aunque lo a
 
 ![Liquidar un resumen en su quincena](help/pagar-transportes/09-liquidar.webp)
 
-El resumen y sus vueltas quedan pagados, y lo abonado queda como está, ya sin editar. **↶ Revertir pago**, en la quincena o en el detalle del resumen suelto, lo vuelve a pendiente con lo mismo abonado.
+El resumen y sus vueltas quedan pagados, y lo abonado queda como está, ya sin editar. En **💰 Abonos**, al final, aparece la **Liquidación**: lo que faltaba, con el día en que se marcó pagado. El pendiente queda en $0, y lo que se copia o imprime cierra igual.
+
+![Un resumen liquidado](help/pagar-transportes/11-liquidacion.webp)
+
+**↶ Revertir pago**, en la quincena o en el detalle del resumen suelto, lo vuelve a pendiente con lo mismo abonado, y la liquidación desaparece.
 
 ## Ver cuánto se debe
 <!-- preguntas: cuánto se le debe a los transportistas; balance de transporte; balance de quincenas; deuda de transporte -->

@@ -337,3 +337,28 @@ export function removalSummaryOf(cycleBreakdown, activeRemoval) {
   const allOut = cycleBreakdown.length > 0 && cycleBreakdown.every((c) => activeRemoval.get(c.id) === true);
   return { cyclesOut, laborsOut, amount, unknown, lines, allOut };
 }
+
+// Los anticipos y los bonos que aplicó la nómina, una fila por cada uno: la
+// persona, la fecha y la nota (de `advances`, los del snapshot) y lo que se
+// aplicó en esta nómina. Cada lista va por persona y, dentro, por fecha.
+export function advancesAndBonusesOf(items, advances = []) {
+  const byId = new Map((advances || []).map((a) => [a.id, a]));
+  const rowsOf = (key) => items
+    .flatMap((it) => (it[key] || []).map((app) => {
+      const adv = byId.get(app.advanceId);
+      return {
+        advanceId: app.advanceId,
+        name: it.name || it.rut || "",
+        rut: it.rut || "",
+        date: adv?.date || "",
+        note: adv?.note || "",
+        amount: Number(app.amount) || 0,
+      };
+    }))
+    .filter((r) => r.amount > 0)
+    .sort((a, b) => a.name.localeCompare(b.name, "es") || a.date.localeCompare(b.date));
+  const sum = (rows) => rows.reduce((s, r) => s + r.amount, 0);
+  const advanceRows = rowsOf("anticipoApplications");
+  const bonusRows = rowsOf("bonoApplications");
+  return { advances: advanceRows, bonuses: bonusRows, advanceTotal: sum(advanceRows), bonusTotal: sum(bonusRows) };
+}

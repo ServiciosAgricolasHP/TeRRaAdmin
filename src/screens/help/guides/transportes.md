@@ -68,7 +68,7 @@ Las vueltas de un transportista propio no aparecen: van en $0 a propósito.
 ## El resumen de un transportista
 <!-- preguntas: cuánto se le debe a un transportista; resumen del transportista; deuda con el transportista; mandarle el detalle al transportista -->
 
-Al tocar la tarjeta de un transportista se abre su resumen: una fila por quincena, los resúmenes sueltos (**Sin quincena**) y las **Vueltas sin resumen**, con lo pagado y lo pendiente de cada uno. Debajo, el detalle de las vueltas.
+Al tocar la tarjeta de un transportista se abre su resumen: una fila por quincena, los resúmenes sueltos (**Sin quincena**) y las **Vueltas sin resumen**, con lo pagado y lo pendiente de cada uno. Debajo, el detalle de las vueltas, con los abonos de cada resumen y, en uno pagado, su liquidación.
 
 ![El resumen de un transportista](help/transportes/07-resumen-transportista.webp)
 

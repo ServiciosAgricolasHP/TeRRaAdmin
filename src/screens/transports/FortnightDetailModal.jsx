@@ -92,7 +92,7 @@ export function FortnightDetailModal({
       open
       onClose={onClose}
       title={`📅 ${fortnight.name}`}
-      size="xl"
+      size="2xl"
       footer={
         <>
           <button onClick={onClose} className="rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm">
@@ -277,6 +277,8 @@ export function FortnightDetailModal({
                 <th className="hidden px-2 py-2 text-left md:table-cell">Período</th>
                 <th className="px-2 py-2 text-left">Estado</th>
                 <th className="px-2 py-2 text-right">Total</th>
+                <th className="hidden px-2 py-2 text-right md:table-cell">Abonado</th>
+                <th className="hidden px-2 py-2 text-right md:table-cell">Pendiente</th>
                 {!isPaid && <th className="px-2 py-2 text-right">Acciones</th>}
               </tr>
             </thead>
@@ -285,6 +287,10 @@ export function FortnightDetailModal({
                 const carrier = carriersById.get(it.carrierId);
                 const itemPaid = it.status === "paid";
                 const itemPeriod = (it.periodFrom || it.periodTo) ? `${it.periodFrom || "?"} → ${it.periodTo || "?"}` : "—";
+                // Lo abonado y lo que se le debe a este transportista; en uno
+                // pagado, lo abonado es el total.
+                const split = paymentSplit(it);
+                const withAbonos = !itemPaid && split.paid > 0;
                 return (
                   <tr
                     key={it.id}
@@ -295,15 +301,33 @@ export function FortnightDetailModal({
                     <td className="px-2 py-2 text-[var(--color-muted)] tabular-nums">{i + 1}</td>
                     <td className="px-2 py-2 font-medium">{carrier?.alias || it.carrierId}</td>
                     <td className="px-2 py-2 text-center tabular-nums">{(it.tripIds || []).length}</td>
-                    <td className="hidden px-2 py-2 text-xs text-[var(--color-muted)] md:table-cell">{itemPeriod}</td>
+                    <td className="hidden whitespace-nowrap px-2 py-2 text-xs text-[var(--color-muted)] md:table-cell">{itemPeriod}</td>
                     <td className="px-2 py-2">
-                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                        itemPaid ? "bg-[var(--color-success-soft)] text-[var(--color-success)]" : "bg-[var(--color-warning-soft)] text-[var(--color-warning)]"
+                      <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                        itemPaid
+                          ? "bg-[var(--color-success-soft)] text-[var(--color-success)]"
+                          : withAbonos
+                            ? "bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                            : "bg-[var(--color-warning-soft)] text-[var(--color-warning)]"
                       }`}>
-                        {itemPaid ? "Pagado" : "Pendiente"}
+                        {itemPaid ? "Pagado" : withAbonos ? "Con abonos" : "Pendiente"}
                       </span>
                     </td>
-                    <td className="px-2 py-2 text-right font-semibold tabular-nums">{fmtCurrency(it.total)}</td>
+                    <td className="px-2 py-2 text-right font-semibold tabular-nums">
+                      {fmtCurrency(it.total)}
+                      {withAbonos && (
+                        <div className="text-[10px] font-normal md:hidden">
+                          <div className="text-[var(--color-muted)]">abonado {fmtCurrency(split.paid)}</div>
+                          <div className="text-[var(--color-warning)]">pendiente {fmtCurrency(split.pending)}</div>
+                        </div>
+                      )}
+                    </td>
+                    <td className={`hidden px-2 py-2 text-right tabular-nums md:table-cell ${split.paid > 0 ? "" : "text-[var(--color-muted)]"}`}>
+                      {fmtCurrency(split.paid)}
+                    </td>
+                    <td className={`hidden px-2 py-2 text-right tabular-nums md:table-cell ${split.pending > 0 ? "font-semibold text-[var(--color-warning)]" : "text-[var(--color-muted)]"}`}>
+                      {fmtCurrency(split.pending)}
+                    </td>
                     {!isPaid && (
                       <td className="px-2 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex justify-end gap-1">
@@ -355,10 +379,18 @@ export function FortnightDetailModal({
                 <td className="px-2 py-2 text-right font-semibold tabular-nums">
                   {fmtCurrency(totalAll)}
                 </td>
+                <td className="hidden px-2 py-2 text-right font-semibold tabular-nums md:table-cell">
+                  {fmtCurrency(totalPaid)}
+                </td>
+                <td className={`hidden px-2 py-2 text-right font-semibold tabular-nums md:table-cell ${totalPending > 0 ? "text-[var(--color-warning)]" : ""}`}>
+                  {fmtCurrency(totalPending)}
+                </td>
                 {!isPaid && <td />}
               </tr>
+              {/* En el teléfono, sin las columnas de lo abonado y lo
+                  pendiente, sus totales van en filas aparte. */}
               {totalPaid > 0 && totalPending > 0 && (
-                <tr className="bg-[var(--color-surface)]">
+                <tr className="bg-[var(--color-surface)] md:hidden">
                   <td className="px-2 py-1.5 text-xs text-[var(--color-muted)]" colSpan={2}>
                     Pagado y abonado
                   </td>
@@ -372,7 +404,7 @@ export function FortnightDetailModal({
                 </tr>
               )}
               {pendingCount > 0 && !isPaid && (
-                <tr className="bg-[var(--color-warning-soft)]">
+                <tr className="bg-[var(--color-warning-soft)] md:hidden">
                   <td className="px-2 py-2 text-sm font-semibold text-[var(--color-warning)]" colSpan={2}>
                     PENDIENTE ({pendingCount})
                   </td>

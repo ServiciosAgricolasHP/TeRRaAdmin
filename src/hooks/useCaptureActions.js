@@ -2,11 +2,13 @@ import { useState } from "react";
 import { useToast } from "../contexts/ToastContext";
 import { copyNodeImage, downloadNodePng } from "../utils/imageCapture";
 import { PopupBlockedError, printNodeAsImage, printNodes } from "../utils/printWindow";
+import { errorText } from "../utils/errorText";
 
 const IMAGE_COPIED = "Imagen copiada al portapapeles";
 
 // Corre una exportación con `key` como ocupada mientras dura. Si falla avisa,
-// como advertencia si lo que falló es que el navegador bloqueó la ventana.
+// como advertencia si lo que falló es que el navegador bloqueó la ventana. El
+// motivo va en español (`errorText`): el de una librería queda en la consola.
 async function runTask(setBusy, toast, key, task, { success, error = "No se pudo exportar" } = {}) {
   setBusy(key);
   try {
@@ -14,7 +16,7 @@ async function runTask(setBusy, toast, key, task, { success, error = "No se pudo
     if (success) toast.success(success);
   } catch (err) {
     if (err instanceof PopupBlockedError) toast.warning(err.message);
-    else toast.error(`${error}: ${err?.message || err}`);
+    else toast.error(`${error}. ${errorText(err, "Revisa la consola del navegador para ver el detalle.")}`);
   } finally {
     setBusy("");
   }

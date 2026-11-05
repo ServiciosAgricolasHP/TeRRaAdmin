@@ -40,6 +40,12 @@ export async function assignQrCode(code, toWorker, fromWorker) {
   return { released, code: clean };
 }
 
+// Saca `codes` del padrón de sus prefijos, una escritura por prefijo. Lo usa
+// liberar los QR en bloque, después de quitarlos de cada ficha.
+export async function releaseFromRosters(codes) {
+  await syncRoster({ released: codes });
+}
+
 // Espejo de código → trabajador dentro de `qrPrefixes/{PREFIJO}.padron`. La
 // app de scan lo lee de una vez para resolver un QR sin señal: `idQr` guarda
 // códigos completos y no hay consulta de trabajadores por prefijo.

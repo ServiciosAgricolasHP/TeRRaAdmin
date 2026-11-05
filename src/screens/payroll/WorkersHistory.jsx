@@ -12,6 +12,7 @@ import { FaenaFilterPopover } from "./FaenaFilterPopover";
 import ScreenLoader from "../../components/ScreenLoader";
 import { attempt } from "../../utils/attempt";
 import { writeWorkerPaymentsXlsx } from "./writeWorkerPaymentsXlsx";
+import { errorText } from "../../utils/errorText";
 
 // ─────────────────── Pagos anteriores (WorkersHistory) ───────────────────
 // Buscador de pagos por trabajador. Carga todas las nóminas (sin tope) y
@@ -217,7 +218,7 @@ export function WorkersHistory({ faenas, workers }) {
     if (!selectedWorker) return;
     setExporting(true);
     const { error: err } = await attempt(() => writeWorkerPaymentsXlsx({ selectedWorker, dateFrom, dateTo, classification }));
-    if (err) toast.error("No se pudo exportar: " + (err?.message || err));
+    if (err) toast.error(`No se pudo exportar. ${errorText(err, "Revisa la consola del navegador para ver el detalle.")}`);
     setExporting(false);
   };
 

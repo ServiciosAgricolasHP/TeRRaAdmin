@@ -75,6 +75,16 @@ describe("carrierSummaryGroups", () => {
     ]);
   });
 
+  it("un resumen pagado con abonos trae su liquidación; sin abonos o pendiente, no", () => {
+    const paidAt = { toDate: () => new Date(2026, 9, 14, 12) };
+    const [g] = carrierSummaryGroups({
+      payments: [payment("P", { tripIds: ["T"], status: "paid", paidAt, abonos: [{ id: "a", amount: 15000, date: "2026-10-04" }] })],
+      trips: [trip("T", "2026-10-01", 40000, { paymentId: "P", status: "paid" })],
+    });
+    expect(g.summaries[0].payoff).toEqual({ amount: 25000, date: "2026-10-14" });
+    expect(groups[1].summaries.map((s) => s.payoff)).toEqual([null, null]);
+  });
+
   it("una quincena abierta junta lo pendiente y lo pagado, con los abonos como pagado", () => {
     const g = groups[1];
     expect(g.summaries.map((s) => s.payment.id)).toEqual(["P1", "P4"]);

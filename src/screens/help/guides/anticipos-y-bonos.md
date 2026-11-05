@@ -53,12 +53,16 @@ Al armar una nómina, TeRRa busca los anticipos y bonos pendientes de cada perso
 - En la vista previa se puede cambiar el **Anticipo** (hasta lo que se debe) y el **Bono** (hasta su monto). Lo que no se aplica queda pendiente.
 
 ## Después de la nómina
-<!-- preguntas: el anticipo quedó parcial; qué significa parcial; anticipo aplicado; cuánto falta del anticipo -->
+<!-- preguntas: el anticipo quedó parcial; qué significa parcial; anticipo aplicado; cuánto falta del anticipo; qué anticipos descontó la nómina; ver los bonos de una nómina; bruto de la nómina -->
 
 ![Los anticipos y el bono después de la nómina](help/anticipos-y-bonos/05-despues-de-la-nomina.webp)
 
 - **Aplicado**: se descontó (o se pagó) entero.
 - **Parcial**: se descontó una parte; queda el resto (**Resta**) para las nóminas siguientes.
+- En el detalle de la nómina, el **Resumen** muestra el **Bruto** (lo producido, antes de los anticipos y los bonos) y **📋 Ver anticipos y bonos** lista cada uno, por persona, con su fecha, su nota y lo que se aplicó en esa nómina.
+
+![Los anticipos y bonos de una nómina](help/anticipos-y-bonos/06-en-la-nomina.webp)
+
 - Si la nómina se elimina, o se saca a la persona, el anticipo vuelve a quedar pendiente como estaba. Ver la guía [Corregir una nómina](/ayuda/corregir-nomina#que-pasa-con-los-anticipos-y-bonos).
 
 ## Corregir o eliminar un anticipo

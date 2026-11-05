@@ -1,5 +1,6 @@
 import { dateLabel } from "../../../utils/cycleSummary";
 import { carrierColumns, laborColumns, sectionTotal, summarySections } from "../../../utils/summaryTables";
+import { sheetNamer } from "../../../utils/sheetNames";
 
 // XLSX del resumen del ciclo: lo mismo que se ve en pantalla. Una hoja por
 // tabla (labor, tabla juntada o transportista) con sus mismas columnas, filas
@@ -68,17 +69,7 @@ export function buildCycleSummaryWorkbook(ExcelJS, {
 }) {
   const isCharge = mode === "charge";
   const wb = new ExcelJS.Workbook();
-  const usedNames = new Set();
-  const safeName = (s) => {
-    const base = String(s || "Hoja").substring(0, 28).replace(/[\\/?*[\]:]/g, "_");
-    let name = base, i = 2;
-    while (usedNames.has(name)) {
-      name = `${base} ${i}`.substring(0, 31);
-      i++;
-    }
-    usedNames.add(name);
-    return name;
-  };
+  const safeName = sheetNamer();
 
   const sections = summarySections({
     mode,

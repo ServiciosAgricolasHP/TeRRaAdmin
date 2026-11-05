@@ -4,6 +4,7 @@ import { paymentsService } from "../../services/transportsService";
 import { useToast } from "../../contexts/ToastContext";
 import { localIsoDate } from "../../utils/dates";
 import { fmtCurrency } from "../../utils/format";
+import { payoffOf } from "../../utils/transportPayoff";
 import { attempt } from "../../utils/attempt";
 
 // Los abonos de un resumen de transporte: lo abonado y el saldo, y agregar,
@@ -22,9 +23,12 @@ export function PaymentAbonos({ payment, abonos, setAbonos, isPaid, onChanged })
   const askConfirm = (message) => new Promise((resolve) => setConfirmState({ message, resolve }));
 
   // Abonado y saldo, desde el estado local `abonos` (no `payment.abonos`),
-  // para reflejar al instante un abono agregado o quitado.
+  // para reflejar al instante un abono agregado o quitado. Un resumen pagado no
+  // debe nada: lo que faltaba se pagó al marcarlo, y va al final de la lista
+  // como su liquidación.
   const totalAbonado = abonos.reduce((s, a) => s + (Number(a.amount) || 0), 0);
-  const pendingAmount = Math.max(0, (Number(payment.total) || 0) - totalAbonado);
+  const pendingAmount = isPaid ? 0 : Math.max(0, (Number(payment.total) || 0) - totalAbonado);
+  const payoff = abonos.length > 0 ? payoffOf(payment, { abonos }) : null;
 
   const handleAddAbono = async () => {
     const amt = Number(newAbono.amount) || 0;
@@ -101,7 +105,7 @@ export function PaymentAbonos({ payment, abonos, setAbonos, isPaid, onChanged })
   return (
     <>
       {/* Abonos: se muestran si hay alguno o si el resumen está pendiente;
-          con el resumen pagado quedan de solo lectura. */}
+          con el resumen pagado quedan de solo lectura, con su liquidación. */}
       {(abonos.length > 0 || !isPaid) && (
         <div className="mb-3 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-3 text-sm">
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
@@ -208,6 +212,13 @@ export function PaymentAbonos({ payment, abonos, setAbonos, isPaid, onChanged })
                   )}
                 </li>
               )))}
+              {payoff && (
+                <li className="flex flex-wrap items-center gap-2 rounded border border-[var(--color-success)] bg-[var(--color-success-soft)] px-2 py-1 text-xs">
+                  <span className="font-mono text-[var(--color-muted)]">{payoff.date || "—"}</span>
+                  <span className="font-semibold tabular-nums">{fmtCurrency(payoff.amount)}</span>
+                  <span className="text-[var(--color-muted)]">— Liquidación, al marcarlo pagado</span>
+                </li>
+              )}
             </ul>
           )}
 

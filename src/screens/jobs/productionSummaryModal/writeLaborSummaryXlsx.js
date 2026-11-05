@@ -1,4 +1,5 @@
 import { fmtNum } from "./helpers";
+import { sheetName } from "../../../utils/sheetNames";
 import { toArgbFill, HDR_BLUE, XLSX_BORDER, XLSX_MONEY_FMT, ROW_TOTAL_LIGHT } from "./tableStyles";
 
 // Excel de la tarjeta de una labor: un día por fila con su producción, precio,
@@ -6,7 +7,7 @@ import { toArgbFill, HDR_BLUE, XLSX_BORDER, XLSX_MONEY_FMT, ROW_TOTAL_LIGHT } fr
 export async function writeLaborSummaryXlsx({ col, typeLabel, rows, totalQty, unit, persons, totalAmount }) {
   const ExcelJS = (await import("exceljs")).default;
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet((col.labor.name || "Resumen").slice(0, 31));
+  const ws = wb.addWorksheet(sheetName(col.labor.name || "Resumen"));
   ws.getColumn(1).width = 6; // restricción de layout: col A vacía
 
   let r = 2; // fila 1 vacía

@@ -1,8 +1,15 @@
-import { collection, serverTimestamp } from "firebase/firestore";
+import { collection, deleteField, FieldValue, serverTimestamp } from "firebase/firestore";
 import { addDoc } from "./readMeter";
 import { db, auth } from "../firebase";
 
 const LOGS = "logs";
+
+// Un valor especial de Firestore (borrar el campo, la hora del servidor…) no
+// se puede guardar dentro de un registro: va como texto.
+const loggable = (v) => {
+  if (!(v instanceof FieldValue)) return v;
+  return v.isEqual(deleteField()) ? "(borrado)" : "(lo calcula la base)";
+};
 
 function diff(before, after) {
   if (!before || !after) return null;
@@ -11,7 +18,7 @@ function diff(before, after) {
   for (const k of keys) {
     const a = before[k];
     const b = after[k];
-    if (JSON.stringify(a) !== JSON.stringify(b)) changes[k] = { from: a ?? null, to: b ?? null };
+    if (JSON.stringify(a) !== JSON.stringify(b)) changes[k] = { from: loggable(a) ?? null, to: loggable(b) ?? null };
   }
   return Object.keys(changes).length ? changes : null;
 }

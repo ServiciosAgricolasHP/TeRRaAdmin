@@ -66,8 +66,8 @@ export function DebtMonthModal({ month, onClose }) {
             </div>
             <p className="mt-2 text-[11px] text-[var(--color-muted)]">
               La deuda se cuenta en el mes del período que cubre el resumen, no en el día en que se armó. Los pagos y
-              abonos van por su fecha real. Un resumen saldado muestra el remanente que se pagó al marcarlo, no su
-              total original: lo que ya se había abonado antes aparece en el mes de cada abono.
+              abonos van por su fecha real. Un resumen saldado muestra lo que faltaba al marcarlo pagado (la liquidación, si
+              tenía abonos), no su total original: lo que ya se había abonado antes aparece en el mes de cada abono.
             </p>
           </div>
         </div>

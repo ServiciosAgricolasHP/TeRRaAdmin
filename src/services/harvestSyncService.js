@@ -110,7 +110,9 @@ async function syncWorkdayKeys(prefixDoc, target, keys) {
 
 // Lleva cada clave tocada a su jornada, creándola si no existía. Un prefijo
 // sin ciclo y labor asignados no tiene dónde escribir y se reporta en
-// `noTarget`; si ningún prefijo tiene destino, devuelve null.
+// `noTarget`; uno cuyo ciclo está cerrado no se toca y se reporta en `closed`,
+// porque lo de ese ciclo ya se liquidó o está por liquidarse. Si ningún
+// prefijo tiene destino, devuelve null.
 export async function mirrorWeightToWorkdays(prefixes, keys) {
   const byPrefix = new Map();
   const seen = new Set();
@@ -123,7 +125,7 @@ export async function mirrorWeightToWorkdays(prefixes, keys) {
 
   const total = {
     written: 0, removed: 0, blocked: [], unknownRuts: [],
-    daysAdded: [], workersAdded: 0, zeroPriceDays: [], noTarget: [],
+    daysAdded: [], workersAdded: 0, zeroPriceDays: [], noTarget: [], closed: [],
   };
   let reached = false;
   for (const [prefixId, group] of byPrefix) {
@@ -131,6 +133,7 @@ export async function mirrorWeightToWorkdays(prefixes, keys) {
     const t = doc ? await loadSyncTarget(doc) : null;
     if (!t) { total.noTarget.push(prefixId); continue; }
     reached = true;
+    if (t.cycle.status === "closed") { total.closed.push(prefixId); continue; }
     const r = await syncWorkdayKeys(doc, t, group);
     total.written += r.written;
     total.removed += r.removed;

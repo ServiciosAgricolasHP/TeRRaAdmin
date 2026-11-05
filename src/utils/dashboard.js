@@ -10,6 +10,7 @@ import { pendingCashOf } from "../services/payrollsService";
 import { daysUntil, groupUpcoming, directionOf, summarize } from "./commitments";
 import { CREDIT_NOTE_TYPES } from "./cashFlowProjection";
 import { fmtMonthKey, fmtShortDate } from "./format";
+import { payoffOf } from "./transportPayoff";
 
 // Un ciclo abierto cuyo último día cargado tiene más días que esto se lista
 // como sin movimiento. El cierre de un ciclo es manual.
@@ -240,6 +241,9 @@ export function transportStats(payments, fortnights, carriers, periodMonths, now
   };
 }
 
+// Cómo se nombra en pantalla el `kind` de cada movimiento de la deuda.
+export const DEBT_KIND_LABEL = { summary: "Resumen", partialPayment: "Abono", payoff: "Liquidación" };
+
 // Cómo fue variando la deuda con los transportistas.
 //
 // La unidad de deuda es el resumen (`transportPayments`), no la quincena,
@@ -294,17 +298,16 @@ export function transportDebtByMonth(payments, carriers, fortnights, now = new D
       fortnight: p.payrollId ? fortnightName.get(p.payrollId) || "" : "",
     };
     apply(paymentPeriodDate(p), "generated", total, { ...ctx, amount: total, kind: "summary" });
-    let partiallyPaid = 0;
     for (const a of p.abonos || []) {
       const amt = Number(a.amount) || 0;
-      partiallyPaid += amt;
       const date = String(a.date || "").slice(0, 10);
       apply(date, "paid", amt, { ...ctx, amount: amt, kind: "partialPayment", date, notes: a.notes || "" });
     }
-    if (p.status === "paid") {
-      const remainder = Math.max(0, total - partiallyPaid);
-      const date = tsToIso(p.paidAt);
-      apply(date, "paid", remainder, { ...ctx, amount: remainder, kind: "summary", date, marked: true });
+    // Lo que faltaba se paga al marcarlo pagado: con abonos, es la liquidación.
+    const payoff = payoffOf(p);
+    if (payoff) {
+      const kind = p.abonos?.length ? "payoff" : "summary";
+      apply(payoff.date, "paid", payoff.amount, { ...ctx, amount: payoff.amount, kind, date: payoff.date, marked: true });
     }
   }
   const byAmount = (a, b) => b.amount - a.amount;

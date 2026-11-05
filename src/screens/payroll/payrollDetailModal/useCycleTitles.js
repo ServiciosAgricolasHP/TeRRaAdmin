@@ -1,6 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useEffectEvent } from "react";
 import { payrollsService } from "../../../services/payrollsService";
 import { readStoredJson, writeStoredJson } from "../../../utils/browserStorage";
+
+// Guarda los encabezados en la nómina, con localStorage como espejo.
+function saveTitles(payrollId, storageKey, overrides) {
+  writeStoredJson(storageKey, overrides);
+  payrollsService
+    .update(payrollId, { cycleLabelOverrides: overrides })
+    .catch((err) => console.warn("No se pudo guardar overrides:", err));
+}
 
 // Los nombres con que cada ciclo aparece en el detalle, el XLSX, los
 // comprobantes y el detalle impreso.
@@ -16,12 +24,12 @@ export function useCycleTitles({ payroll }) {
     return readStoredJson(titleStorageKey, {});
   });
 
-  // Solo se guarda después de que alguien cambia un título: abrir el detalle
-  // no escribe.
-  const [edited, setEdited] = useState(false);
+  // Hay un cambio sin guardar. Solo se guarda después de que alguien cambia un
+  // título: abrir el detalle no escribe.
+  const [pending, setPending] = useState(false);
 
   const setCycleTitle = (cid, val) => {
-    setEdited(true);
+    setPending(true);
     setCycleTitleOverrides((prev) => {
       const next = { ...prev };
       const trimmed = String(val || "").trim();
@@ -32,18 +40,21 @@ export function useCycleTitles({ payroll }) {
     });
   };
 
-  // Guarda en Firestore 500 ms después del último cambio; localStorage queda
-  // como espejo.
+  // Guarda 500 ms después del último cambio.
   useEffect(() => {
-    if (!payroll?.id || !edited) return;
+    if (!payroll?.id || !pending) return;
     const t = setTimeout(() => {
-      writeStoredJson(titleStorageKey, cycleTitleOverrides);
-      payrollsService
-        .update(payroll.id, { cycleLabelOverrides: cycleTitleOverrides })
-        .catch((err) => console.warn("No se pudo guardar overrides:", err));
+      saveTitles(payroll.id, titleStorageKey, cycleTitleOverrides);
+      setPending(false);
     }, 500);
     return () => clearTimeout(t);
-  }, [cycleTitleOverrides, edited, payroll?.id, titleStorageKey]);
+  }, [cycleTitleOverrides, pending, payroll?.id, titleStorageKey]);
+
+  // Al cerrar el detalle antes de esos 500 ms, guarda lo que quedó pendiente.
+  const flushPending = useEffectEvent(() => {
+    if (pending && payroll?.id) saveTitles(payroll.id, titleStorageKey, cycleTitleOverrides);
+  });
+  useEffect(() => () => flushPending(), []);
 
   // Helper para mostrar el label con override aplicado.
   const displayCycleLabel = (cycle) =>

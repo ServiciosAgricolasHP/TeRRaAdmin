@@ -1,5 +1,6 @@
 import { containerLabel, getDayCombos, getTratoTiers, qualityLabel, tratoTypeLabel } from "../../../utils/cosechaCombos";
 import { dateLabel } from "../../../utils/cycleSummary";
+import { sheetName } from "../../../utils/sheetNames";
 
 // Exporta la grilla a XLSX con fórmulas de Excel.
 // Restricciones de layout:
@@ -18,7 +19,7 @@ import { dateLabel } from "../../../utils/cycleSummary";
 export async function writeLaborWorkerGridXlsx({ catalogs, dates, dayPrices, displayName, labor, redDates, unit, workers, xlsxFilename }) {
   const ExcelJS = (await import("exceljs")).default;
   const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet(displayName.slice(0, 30) || "Resumen");
+  const ws = wb.addWorksheet(sheetName(displayName || "Resumen"));
 
   const t = labor?.type;
   const isHE = t === "tratoHE";

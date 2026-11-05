@@ -262,12 +262,17 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 
 ### Exportar, copiar e imprimir
 
+- **El nombre de una hoja de Excel pasa por `sheetName` o `sheetNamer`** (`utils/sheetNames.js`): Excel no acepta `* ? : \ / [ ]`, más de 31 caracteres, un apóstrofe en los bordes, "History" ni dos hojas con el mismo nombre, y un título escrito por alguien (una labor, una nómina) puede traer cualquiera.
 - **Un RUT se muestra con puntos (`formatRutForDisplay`) y se copia sin ellos, con guion (`normalizeRut`).** Los buscadores de trabajadores (por nombre o RUT) quitan los puntos apenas se escriben o se pegan (`workerSearchInput`, `utils/workerSearch.js`); los que también buscan textos con puntos, como una razón social "S.A.", los dejan.
 - **Lo que se exporta es lo que se ve.** Un Excel, una imagen, una impresión o un PDF muestran exactamente lo de la pantalla: las mismas filas, ajustes, columnas y totales. Se arman desde los mismos datos que dibuja la pantalla, sin recalcular por su cuenta; si difieren, el error es del archivo.
 - **Las imágenes que se copian o descargan salen siempre en el tema claro**, sea cual sea el tema de quien las genera: `captureFullWidthBlob` / `captureFullWidthDataUrl` (`utils/imageCapture.js`) le ponen al clon fondo blanco y redefinen las variables `--color-*` con `LIGHT_PALETTE`. Esa lista es copia de `:root` en `index.css`, y un test (`imageCapture.test.js`) falla si se separan.
 - **Copiar la imagen, descargar el PNG e imprimir pasan por `useCaptureActions`** (`hooks/`). Cada acción recibe el nodo al llamarla, así una pantalla con varias tablas usa un solo hook; `busy` dice qué está en curso, y `run` corre cualquier otra exportación (el Excel) con el mismo aviso si falla. Una pantalla no arma su propio `try`/`finally` para esto.
   - Imprimir abre una ventana aparte con el HTML del nodo (`printNodes`, `utils/printWindow.js`): sin los controles marcados con `data-export-hide`, una hoja por nodo, el encabezado de cada tabla repetido en cada hoja y la orientación en un `@page` al nivel superior, porque anidado en `@media print` hay navegadores que lo ignoran. Las tablas imprimibles llevan su estilo en línea: la ventana no carga el CSS de la app.
   - Las impresiones que arman su propio HTML (los comprobantes y la tabla del resumen de Nómina, el informe de deudas y el mes del Calendario) abren la ventana con `openPrintWindow`. Si el navegador la bloquea, el aviso pide permitir las ventanas emergentes.
+
+### Avisos
+
+- **Los avisos y los mensajes de error van en español.** El motivo de un error pasa por `errorText` (`utils/errorText.js`): traduce los de Firebase y del navegador por su código, deja tal cual los que lanza la app y cambia el de una librería por un texto propio, con el original en la consola. Nunca `err.message` directo en un `toast` o en pantalla.
 
 ### Colores
 
@@ -404,6 +409,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Transportista | `carrier` | `carriers` |
 | Vuelta | `trip` | `transports` |
 | Resumen de transporte | `transportPayment` (`payment` dentro de Transportes) | `transportPayments` |
+| Liquidación de un resumen (lo que faltaba al marcarlo pagado) | `payoff` | se calcula desde `transportPayments`, no se guarda |
 | Quincena | `fortnight` | `transportPayrolls` |
 | Pesaje | `harvestWeight` | `harvestWeights` |
 | Padrón de un prefijo QR | `roster` | dentro de `qrPrefixes` (guardado como `padron`) |

@@ -49,6 +49,7 @@ import ScreenLoader from "../components/ScreenLoader";
 import { attempt } from "../utils/attempt";
 import { readStored, writeStored } from "../utils/browserStorage";
 import { writeCommitmentsXlsx } from "./commitments/writeCommitmentsXlsx";
+import { errorText } from "../utils/errorText";
 
 const STATUS_FILTERS = [
   { v: "", label: "Todos" },
@@ -273,7 +274,7 @@ export default function Commitments() {
 
   const exportXlsx = async () => {
     const { error: err } = await attempt(() => writeCommitmentsXlsx({ items: filtered, total: filteredTotal, today, companyName }));
-    if (err) toast.error("No se pudo generar el Excel: " + (err.message || err));
+    if (err) toast.error(`No se pudo generar el Excel. ${errorText(err, "Revisa la consola del navegador para ver el detalle.")}`);
   };
 
   const rowProps = {

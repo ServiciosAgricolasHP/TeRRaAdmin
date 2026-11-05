@@ -51,8 +51,8 @@ function TripRow({ t, refs }) {
 // Las vueltas de un grupo del resumen del transportista (una quincena, los
 // resúmenes sin quincena o las vueltas sin resumen), con su total y, si hay
 // algo pagado, lo pagado y lo pendiente. Con más de un resumen, cada uno lleva
-// una fila con su período, su total y su estado. Los abonos se listan en los
-// resúmenes pendientes; en uno pagado ya no queda nada que explicar.
+// una fila con su período, su total y su estado. Los abonos se listan en cada
+// resumen y, en uno pagado, también su liquidación.
 export function CarrierGroupTable({ group, refs }) {
   const several = group.summaries.length > 1;
   return (
@@ -130,13 +130,20 @@ function SummaryRows({ s, refs, withHeader }) {
         </tr>
       )}
       {s.trips.map((t) => <TripRow key={t.id} t={t} refs={refs} />)}
-      {!s.isPaid && s.abonos.map((a, i) => (
+      {s.abonos.map((a, i) => (
         <tr key={a.id || i}>
           <td style={{ ...cell, color: "#166534" }} colSpan={LABEL_SPAN}>Abono {tripDateLabel(a.date)}</td>
           <td style={{ ...cell, ...money, color: "#166534" }}>− {fmtCurrency(a.amount)}</td>
           <td style={cell}>{a.notes || ""}</td>
         </tr>
       ))}
+      {s.payoff && (
+        <tr>
+          <td style={{ ...cell, color: "#166534" }} colSpan={LABEL_SPAN}>Liquidación {tripDateLabel(s.payoff.date)}</td>
+          <td style={{ ...cell, ...money, color: "#166534" }}>− {fmtCurrency(s.payoff.amount)}</td>
+          <td style={cell}></td>
+        </tr>
+      )}
     </>
   );
 }

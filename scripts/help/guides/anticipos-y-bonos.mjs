@@ -1,7 +1,7 @@
 // Capturas de la guía "Anticipos y bonos"
 // (src/screens/help/guides/anticipos-y-bonos.md): la lista con un anticipo en
-// cuotas, uno sin cuotas y un bono, el formulario, y cómo los descuenta la
-// nómina.
+// cuotas, uno sin cuotas y un bono, el formulario, cómo los descuenta la
+// nómina y su lista en el detalle de la nómina.
 import { seedAdvances, seedCashWorkers } from "../seed.mjs";
 
 // El modal abierto con ese título.
@@ -62,4 +62,17 @@ export async function run({ page, base, login, shot }) {
   await page.getByText("Arreglo de la bicicleta").first().waitFor();
   await page.waitForTimeout(800);
   await shot(page, "05-despues-de-la-nomina", [page.locator("thead").first(), page.locator("tr", { hasText: "Ana Pérez Soto" }).first()], { pad: 4 });
+
+  // Los anticipos y bonos de la nómina, desde su detalle.
+  await page.goto(`${base}/payroll`);
+  await page.getByRole("button", { name: /Historial Nómina/ }).click();
+  await page.getByText("2026OctubreSemana41").first().waitFor({ timeout: 120000 });
+  await page.getByText("2026OctubreSemana41").first().click();
+  const openList = page.getByRole("button", { name: "📋 Ver anticipos y bonos" });
+  await openList.waitFor({ timeout: 60000 });
+  await page.waitForTimeout(1500);
+  await openList.click();
+  const list = modal(page, /Anticipos y bonos de la nómina/);
+  await list.getByText("Carla Rojas Fuentes").waitFor({ timeout: 60000 });
+  await shot(page, "06-en-la-nomina", list, { pad: 0 });
 }
