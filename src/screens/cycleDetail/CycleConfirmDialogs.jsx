@@ -29,6 +29,7 @@ export function CycleConfirmDialogs() {
     handleCloseCycle,
     floorBulk,
     floorBulkBusy,
+    floorProgress,
     floorRemove,
     floorRemoveBusy,
     removeBusy,
@@ -70,6 +71,7 @@ export function CycleConfirmDialogs() {
         }
         confirmLabel="Quitar piso"
         danger busy={floorRemoveBusy}
+        progress={floorProgress}
         onCancel={() => !floorRemoveBusy && setFloorRemove(null)}
         onConfirm={removeDayFloor}
       />
@@ -87,6 +89,7 @@ export function CycleConfirmDialogs() {
         }
         confirmLabel="Asignar piso"
         busy={floorBulkBusy}
+        progress={floorProgress}
         onCancel={() => !floorBulkBusy && setFloorBulk(null)}
         onConfirm={applyFloorToAll}
       />

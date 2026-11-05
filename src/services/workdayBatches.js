@@ -96,3 +96,19 @@ export async function moveWorkdaysToCycle({ fromCycleId, toCycleId, labors, days
   }
   return { moved: moves.length, skippedPaid };
 }
+
+// Asigna un piso del día a varias personas (👥 a todos): una jornada de piso
+// por persona (`workdays`: `[{ id, data }]`, armadas por la grilla), en lotes.
+// Deja un solo registro, `floorApplyAll`.
+export async function addFloorBonuses({ cycleId, laborId, date, floorKey, amount, workdays, onProgress }) {
+  await writeWorkdays({ sets: workdays.map((w) => ({ id: w.id, data: w.data, isNew: true, merge: true })), onProgress });
+  await logAction({ action: "floorApplyAll", entity: "cycle", entityId: cycleId, meta: { laborId, date, floorKey, amount, workers: workdays.length } });
+}
+
+// Borra los bonos de un piso del día que no están en una nómina (`ids`), al
+// quitar ese piso. Deja un solo registro, `floorRemove`.
+export async function removeFloorBonuses({ cycleId, laborId, date, floorKey, ids, onProgress }) {
+  if (!ids.length) return;
+  await writeWorkdays({ deletes: ids, onProgress });
+  await logAction({ action: "floorRemove", entity: "cycle", entityId: cycleId, meta: { laborId, date, floorKey, deleted: ids.length } });
+}

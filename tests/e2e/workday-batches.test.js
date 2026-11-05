@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { updateDoc, doc } from "firebase/firestore";
 import { db } from "../../src/firebase";
-import { deleteCascade, moveWorkdaysToCycle } from "../../src/services/workdayBatches";
+import { addFloorBonuses, deleteCascade, moveWorkdaysToCycle, removeFloorBonuses } from "../../src/services/workdayBatches";
 import { workdayDocId } from "../../src/utils/cosechaCombos";
 import { ANA, BETO, CICLO, FAENA, LABOR, SUBFAENA, all, get, seedCycle, seedWorkday } from "./helpers/seed";
 
@@ -69,5 +69,27 @@ describe("jornadas en lotes", () => {
     expect(await get("workdays", otherDay)).toBeTruthy();
     expect(await logsOf("workdaysMove")).toMatchObject([{ entity: "cycle", entityId: "ciclo-2", meta: { fromCycleId: CICLO, moved: 1, skippedPaid: 1 } }]);
     expect([...new Set(progress.map((p) => p.stage))]).toEqual(["read", "move"]);
+  });
+
+  it("asignar un piso a todos y quitarlo escriben en lotes, con un registro cada uno", async () => {
+    await seedCycle();
+    const ids = [ANA.id, BETO.id].map((rut) => workdayDocId(CICLO, LABOR, rut, "2026-03-02", "_piso"));
+    const workdays = [ANA.id, BETO.id].map((rut, i) => ({
+      id: ids[i],
+      data: { cycleId: CICLO, laborId: LABOR, workerRut: rut, workerId: rut, date: "2026-03-02", qty: 0, amount: 15000, pisoOnly: true },
+    }));
+    const done = [];
+    await addFloorBonuses({ cycleId: CICLO, laborId: LABOR, date: "2026-03-02", floorKey: "_piso", amount: 15000, workdays, onProgress: (n, total) => done.push([n, total]) });
+    const written = await all("workdays");
+    expect(written.map((w) => w.id).sort()).toEqual([...ids].sort());
+    expect(written.every((w) => w.pisoOnly && w.amount === 15000 && w.createdAt && w.updatedAt)).toBe(true);
+    expect(done).toEqual([[2, 2]]);
+    expect(await logsOf("floorApplyAll")).toMatchObject([{ entity: "cycle", entityId: CICLO, meta: { laborId: LABOR, floorKey: "_piso", amount: 15000, workers: 2 } }]);
+
+    await removeFloorBonuses({ cycleId: CICLO, laborId: LABOR, date: "2026-03-02", floorKey: "_piso", ids });
+    expect(await all("workdays")).toEqual([]);
+    expect(await logsOf("floorRemove")).toMatchObject([{ meta: { deleted: 2 } }]);
+    // Sin ninguna jornada en un registro propio.
+    expect((await all("logs")).filter((l) => l.entity === "workday")).toEqual([]);
   });
 });
