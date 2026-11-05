@@ -1,9 +1,12 @@
 // Cálculos del detalle de una nómina: los líderes y el filtro de sus items,
 // los resúmenes por grupo, por subfaena y por labor, el período de sus
-// ciclos, las filas de la tabla del resumen y lo marcado para sacar.
+// ciclos, las filas de la tabla del resumen, lo marcado para sacar y la
+// última edición.
 import { isCashBank } from "./banks";
 import { normalizeLeader } from "./payroll";
 import { matchesSearchQuery } from "./textSearch";
+import { millisOf } from "./syncedList";
+import { lastSeenLabel } from "./userAccounts";
 
 // Líderes únicos en la nómina (para el filtro de grupo).
 export function payrollLeadersOf(items) {
@@ -361,4 +364,14 @@ export function advancesAndBonusesOf(items, advances = []) {
   const advanceRows = rowsOf("anticipoApplications");
   const bonusRows = rowsOf("bonoApplications");
   return { advances: advanceRows, bonuses: bonusRows, advanceTotal: sum(advanceRows), bonusTotal: sum(bonusRows) };
+}
+
+// "Última edición: hace 5 min · Ana": cuándo se escribió la nómina por última
+// vez (`updatedAt`, como "Visto por última vez" en Usuarios) y quién
+// (`updatedByName`, si lo tiene). Sin `updatedAt`, null.
+export function lastEditLabel(payroll, now = new Date()) {
+  const ms = millisOf(payroll?.updatedAt);
+  if (!ms) return null;
+  const who = payroll.updatedByName ? ` · ${payroll.updatedByName}` : "";
+  return `Última edición: ${lastSeenLabel(new Date(ms), now)}${who}`;
 }

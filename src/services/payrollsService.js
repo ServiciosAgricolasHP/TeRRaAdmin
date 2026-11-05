@@ -2,6 +2,7 @@ import { doc, serverTimestamp } from "firebase/firestore";
 import { updateDoc, writeBatch } from "./readMeter";
 import { db, auth } from "../firebase";
 import { createAdditiveService, createService } from "./firestoreBase";
+import { signerName } from "./signer";
 import { workdaysService, listWorkdaysByCycles } from "./index";
 import { isCashBank } from "../utils/banks";
 import { bankFormatOf } from "../utils/bankFormats";
@@ -17,8 +18,17 @@ export const PAYROLL_STATUSES = [
   { value: "paid", label: "Pagada" },
 ];
 
-// Ver `listPayrolls` en payrollsList.js.
-export const payrollsService = createAdditiveService("payroll", "payrolls");
+// Ver `listPayrolls` en payrollsList.js. Cada escritura firma con el nombre de
+// quien la hace (`updatedByName`, `signerName`), que el detalle muestra junto
+// a `updatedAt`.
+const payrollsBase = createAdditiveService("payroll", "payrolls");
+const signed = (data) => ({ ...data, updatedByName: signerName() });
+export const payrollsService = {
+  ...payrollsBase,
+  create: (data, opts) => payrollsBase.create(signed(data), opts),
+  update: (id, data, opts) => payrollsBase.update(id, signed(data), opts),
+  upsert: (id, data, opts) => payrollsBase.upsert(id, signed(data), opts),
+};
 
 // Configuración compartida de la nómina, en un único doc `payrollConfig/main`.
 export const payrollConfigService = createService("payrollConfig", "payrollConfig");
@@ -287,7 +297,9 @@ export function recalcPayrollAggregates(items) {
   };
 }
 
-export async function removeWorkerFromPayroll(payrollId, workerRut) {
+// `onProgress(paso, hechas, total)` avisa el paso en curso: "untag" (las
+// jornadas, cuántas van), "advances", "payroll" y "snapshot".
+export async function removeWorkerFromPayroll(payrollId, workerRut, onProgress) {
   const p = await payrollsService.getById(payrollId);
   if (!p) throw new Error("Nómina no encontrada");
   assertEditable(p);
@@ -295,14 +307,17 @@ export async function removeWorkerFromPayroll(payrollId, workerRut) {
   const item = items.find((it) => it.rut === workerRut);
   if (!item) throw new Error(`Trabajador ${workerRut} no está en esta nómina`);
 
-  await untagWorkdaysFromPayroll(item.workdayIds || []);
+  await untagWorkdaysFromPayroll(item.workdayIds || [], (done, total) => onProgress?.("untag", done, total));
   if ((item.advanceIds || []).length) {
+    onProgress?.("advances");
     await restoreAdvancesFromPayroll(item.advanceIds, payrollId);
   }
 
   const newItems = items.filter((it) => it.rut !== workerRut);
   const aggregates = recalcPayrollAggregates(newItems);
+  onProgress?.("payroll");
   await payrollsService.update(payrollId, aggregates);
+  onProgress?.("snapshot");
   await pruneSnapshot(payrollId, {
     items: newItems,
     aggregates,
@@ -342,14 +357,20 @@ export async function addCyclesToPayroll(payrollId, { items, cycleDetailsToAdd =
 // anticipos y bonos nuevos. Mismo orden que "Generar": primero el documento,
 // para que una falla a mitad de camino no deje jornadas etiquetadas a una
 // nómina que no las cuenta. El guard de `assertEditable` corre antes de
-// tocar nada.
+// tocar nada. `onProgress(paso, hechas, total)` avisa el paso en curso:
+// "payroll", "tag" (las jornadas, cuántas van) y "advances".
 export async function addWorkdaysToPayroll(
   payrollId,
   { items, cycleDetailsToAdd = [], workdayIds = [], workdays = [], advanceApplications = [] },
+  onProgress,
 ) {
+  onProgress?.("payroll");
   const aggregates = await addCyclesToPayroll(payrollId, { items, cycleDetailsToAdd, workdays });
-  await tagWorkdaysWithPayroll(workdayIds, payrollId);
-  if (advanceApplications.length) await applyAdvancesToPayroll(advanceApplications, payrollId);
+  await tagWorkdaysWithPayroll(workdayIds, payrollId, (done, total) => onProgress?.("tag", done, total));
+  if (advanceApplications.length) {
+    onProgress?.("advances");
+    await applyAdvancesToPayroll(advanceApplications, payrollId);
+  }
   return aggregates;
 }
 

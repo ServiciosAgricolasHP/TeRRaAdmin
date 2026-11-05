@@ -24,7 +24,8 @@ import {
   advanceRemaining,
   advanceSign,
 } from "./advancesService";
-import { syncSnapshotAfterRecalc, snapshotCycleOf, snapshotWorkdayOf, snapshotAdvanceOf } from "./payrollSnapshots";
+import { syncSnapshotAfterRecalc, snapshotCycleOf, snapshotLaborsOf, snapshotWorkdayOf, snapshotAdvanceOf } from "./payrollSnapshots";
+import { withFreshCycles } from "./jobLists";
 import { aggregateWorkerAmounts, normalizeLeader } from "../utils/payroll";
 import {
   allocateAdvances,
@@ -85,9 +86,12 @@ const PROFILE_FIELDS = [
 // `cycleEditDiff`, src/utils/payrollCycles.js). Devuelve `empty: true` si no
 // hay nada que cambiar. Tira si el cambio deja la nómina sin ciclos o sin
 // nadie: para eso se elimina la nómina.
+//
+// `onProgress(paso, hechos, total)` avisa el paso en curso: "workdays" (los
+// ciclos leídos de cuántos) y "advances".
 export async function planPayrollRecalc(
   payroll,
-  { cycles = [], faenas = [], subfaenas = [], workers = [], removed = new Map(), added = new Map() } = {},
+  { cycles = [], faenas = [], subfaenas = [], workers = [], removed = new Map(), added = new Map(), onProgress } = {},
 ) {
   const items = payroll.items || [];
   const cycleDetails = payroll.cycleDetails || [];
@@ -109,10 +113,6 @@ export async function planPayrollRecalc(
   }
   const addedIds = new Set(scope?.addedCycleIds || []);
   const recalcCycleIds = [...(payroll.cycleIds || cycleDetails.map((c) => c.id)), ...addedIds];
-  const laborTypeById = new Map();
-  for (const cycle of cycles.filter((c) => recalcCycleIds.includes(c.id))) {
-    for (const labor of cycle.labors || []) laborTypeById.set(labor.id, labor.type);
-  }
 
   // Lo etiquetado con esta nómina, más lo pendiente de las labores que abarca
   // después del cambio. Lo que se dejó afuera al generarla o al agregarle
@@ -121,10 +121,12 @@ export async function planPayrollRecalc(
   const alcance = payrollLaborScope(scope ? scope.cycleDetails : cycleDetails);
   const current = [];
   const released = [];
+  onProgress?.("workdays", 0, recalcCycleIds.length);
   for (let i = 0; i < recalcCycleIds.length; i += 10) {
     const chunk = recalcCycleIds.slice(i, i + 10);
     // Directo de Firestore, sin caché: de acá sale lo que se etiqueta.
     const wds = await workdaysService.list({ wheres: [["cycleId", "in", chunk]] });
+    onProgress?.("workdays", i + chunk.length, recalcCycleIds.length);
     for (const wd of wds) {
       if (isRemovedFromPayroll(wd, removed)) {
         if (wd.payrollId === payroll.id) released.push(wd);
@@ -132,6 +134,14 @@ export async function planPayrollRecalc(
         current.push(wd);
       }
     }
+  }
+
+  // Los ciclos como están ahora: la copia de la pantalla, con los que no
+  // conocen la labor de alguna jornada releídos (`withFreshCycles`).
+  const liveCycles = await withFreshCycles(cycles, current);
+  const laborTypeById = new Map();
+  for (const cycle of liveCycles.filter((c) => recalcCycleIds.includes(c.id))) {
+    for (const labor of cycle.labors || []) laborTypeById.set(labor.id, labor.type);
   }
 
   const aggregates = aggregateWorkerAmounts(current, laborTypeById);
@@ -148,6 +158,7 @@ export async function planPayrollRecalc(
   // Anticipos y bonos pendientes de todos los involucrados: uno creado
   // después de generar la nómina se aplica acá, igual que al armarla.
   const allIds = [...items.map(claveDe), ...newWorkerAggs.map(claveDe)];
+  onProgress?.("advances");
   const pendingAdvances = allIds.length ? await listPendingForWorkers(allIds) : [];
   const advancesByKey = new Map();
   for (const adv of pendingAdvances) {
@@ -309,7 +320,7 @@ export async function planPayrollRecalc(
   const paidIds = new Set(mergedItems.flatMap((it) => it.workdayIds || []));
   const prevDetails = scope ? scope.cycleDetails : cycleDetails;
   const nextCycleDetails = withPaidPeriods(
-    withLiveNames(prevDetails, { cycles, faenas, subfaenas }),
+    withLiveNames(prevDetails, { cycles: liveCycles, faenas, subfaenas }),
     current.filter((wd) => paidIds.has(wd.id)),
   );
   // Un ciclo que entra no tiene un antes con qué compararse.
@@ -351,15 +362,23 @@ export async function planPayrollRecalc(
     // Los ciclos que entran, con la forma del snapshot.
     addedSnapshotCycles: nextCycleDetails
       .filter((cd) => addedIds.has(cd.id))
-      .map((cd) => snapshotCycleOf(cd, cycles.find((c) => c.id === cd.id))),
+      .map((cd) => snapshotCycleOf(cd, liveCycles.find((c) => c.id === cd.id))),
+    // Las labores y los precios del día vigentes de los ciclos que quedan,
+    // para el snapshot (`withLiveLabors`).
+    cycleLabors: liveCycles
+      .filter((c) => finalIds.includes(c.id))
+      .map((c) => ({ id: c.id, ...snapshotLaborsOf(c) })),
   };
 }
 
 // Guarda una vista previa de `planPayrollRecalc`. Mismo orden que "Generar":
 // primero el documento de la nómina (con sus ciclos después del cambio, con
 // sus nombres y su período al día), después las jornadas, los anticipos y el
-// snapshot.
-export async function applyPayrollRecalc(payrollId, plan) {
+// snapshot. `onProgress(paso, hechas, total)` avisa el paso en curso:
+// "payroll", "untag" y "tag" (las jornadas, cuántas van), "advances" y
+// "snapshot".
+export async function applyPayrollRecalc(payrollId, plan, onProgress) {
+  onProgress?.("payroll");
   const p = await payrollsService.getById(payrollId);
   if (!p) throw new Error("Nómina no encontrada");
   assertEditable(p, "recalcular");
@@ -374,6 +393,7 @@ export async function applyPayrollRecalc(payrollId, plan) {
     cycleLabels = null,
     cycleChanges = [],
     addedSnapshotCycles = [],
+    cycleLabors = [],
   } = plan;
 
   const aggregates = recalcPayrollAggregates(items);
@@ -392,17 +412,21 @@ export async function applyPayrollRecalc(payrollId, plan) {
   const enNomina = new Set(items.flatMap((it) => it.workdayIds || []));
   await untagWorkdaysFromPayroll(
     workdays.filter((wd) => !enNomina.has(wd.id) && wd.payrollId === payrollId).map((wd) => wd.id),
+    (done, total) => onProgress?.("untag", done, total),
   );
   await tagWorkdaysWithPayroll(
     workdays.filter((wd) => enNomina.has(wd.id)).map((wd) => wd.id),
     payrollId,
+    (done, total) => onProgress?.("tag", done, total),
   );
   // Primero se achica lo ya aplicado y después se aplica lo nuevo: son
   // anticipos distintos (lo nuevo excluye lo que la nómina ya tenía).
+  onProgress?.("advances");
   if (advanceTargets.length) await setPayrollAdvanceAmounts(payrollId, advanceTargets);
   if (newAdvanceApplications.length) await applyAdvancesToPayroll(newAdvanceApplications, payrollId);
 
   const nuevos = new Set(newAdvanceApplications.map((x) => x.advanceId));
+  onProgress?.("snapshot");
   await syncSnapshotAfterRecalc(payrollId, {
     items,
     aggregates,
@@ -411,6 +435,7 @@ export async function applyPayrollRecalc(payrollId, plan) {
     cycleIds: scope ? scope.cycleIds : null,
     cycleDetails: nextDetails,
     addedCycles: addedSnapshotCycles,
+    cycleLabors,
   });
   return aggregates;
 }

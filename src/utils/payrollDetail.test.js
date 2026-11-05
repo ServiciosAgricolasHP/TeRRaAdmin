@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   advancesAndBonusesOf,
+  lastEditLabel,
   payrollLeadersOf,
   filterPayrollItems,
   detailSummariesOf,
@@ -349,5 +350,29 @@ describe("advancesAndBonusesOf", () => {
     const r = advancesAndBonusesOf(items, undefined);
     expect(r.advances.map((x) => [x.date, x.note])).toEqual([["", ""], ["", ""]]);
     expect(advancesAndBonusesOf([], []).advanceTotal).toBe(0);
+  });
+});
+
+describe("lastEditLabel", () => {
+  const now = new Date("2026-11-05T15:40:00-03:00");
+  const at = (iso) => ({ seconds: Math.floor(Date.parse(iso) / 1000), nanoseconds: 0 });
+
+  it("dice cuándo se editó y quién", () => {
+    const payroll = { updatedAt: at("2026-11-05T15:35:00-03:00"), updatedByName: "Ana" };
+    expect(lastEditLabel(payroll, now)).toBe("Última edición: hace 5 min · Ana");
+  });
+
+  it("sin quién, solo cuándo; desde la semana, la fecha", () => {
+    expect(lastEditLabel({ updatedAt: at("2026-10-20T09:00:00-03:00") }, now)).toBe("Última edición: 20-10-2026");
+  });
+
+  it("acepta un Timestamp de Firestore", () => {
+    const payroll = { updatedAt: { toMillis: () => Date.parse("2026-11-05T13:40:00-03:00") }, updatedByName: "demo@terra.test" };
+    expect(lastEditLabel(payroll, now)).toBe("Última edición: hace 2 h · demo@terra.test");
+  });
+
+  it("sin updatedAt, null", () => {
+    expect(lastEditLabel({ updatedByName: "Ana" }, now)).toBeNull();
+    expect(lastEditLabel(null, now)).toBeNull();
   });
 });

@@ -12,7 +12,7 @@
      - **domingo, la que duerme**.
 
   El día de la semana y los turnos salen de los días corridos (`dayNumber`), sin zona horaria.
-- **Los procesos largos de Nómina** (`screens/payroll/ProgressOverlay.jsx`) muestran un gato en vez de un spinner: el de la rueda al generar y pagar (`BUSY_LOADER_FILE`), y el que persigue su cola al deshacer, o sea, al eliminar una nómina o revertir su pago o sus transferencias (`UNDO_LOADER_FILE`, con `undo: true` en el progreso).
+- **Los procesos largos de Nómina** (`screens/payroll/ProgressOverlay.jsx`) muestran un gato en vez de un spinner: el de la rueda al generar, pagar, recalcular y agregar a una persona (`BUSY_LOADER_FILE`), y el que persigue su cola al deshacer, o sea, al eliminar una nómina, sacar a una persona o revertir su pago o sus transferencias (`UNDO_LOADER_FILE`, con `undo: true` en el progreso).
 - **Los archivos viven en `public/loaders/`** (WebP animado, de 30 a 730 KB) y se nombran en `SCREEN_LOADER_FILES`, `BUSY_LOADER_FILE` y `UNDO_LOADER_FILE`. Un test falla si sobra o falta uno. Para sumar una fecha: el archivo, su entrada en `SCREEN_LOADER_FILES` y su rango en `FESTIVITIES`.
 - **Nadie descarga las de todas las fechas**: la app instalada guarda la general y las dos de los procesos largos al instalarse (`globPatterns` en `vite.config.js`), y cada una de las otras la primera vez que sale (`CacheFirst`, caché `screen-loaders`).
 - **Al abrir la app el perfil todavía no llegó**: el cumpleaños de la última cuenta que la abrió en ese navegador queda en `localStorage` (`screenLoader.birthday`, `rememberBirthday` en `services/userPrefsService.js`), así la primera carga no cambia de animación cuando llega el perfil.

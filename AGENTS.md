@@ -186,6 +186,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 - **Sin perfil, o con `disabled: true`, la cuenta no entra.** `user.access` vale `"none"` o `"disabled"` y `ProtectedRoute` muestra `NoAccess` con el correo de la cuenta, que es lo que necesita un admin para darle acceso desde Usuarios. Si leer el perfil falla, la app entra igual como usuario y las reglas deciden qué datos ve.
 - `AuthContext` guarda en el perfil el `email` de la cuenta y `lastSeenAt` (`userPrefsService.recordVisit`) al abrir la app y, con la app abierta, al volver a ella o usarla (cambiar de pestaña, un clic, una tecla), como mucho una vez cada 30 minutos (`visitDue`, `utils/userAccounts.js`). Un computador que despierta de la suspensión sigue con la página cargada y no vuelve a iniciar sesión, así que solo el arranque no alcanza. Es lo que muestra Usuarios: el navegador no puede listar las cuentas de Authentication.
 - **`AuthContext` vuelca el doc `users/{uid}` entero en `user`**, así que cualquier campo que se le agregue queda disponible en toda la app sin pagar una lectura extra.
+- **Un servicio que guarda quién escribió con un nombre legible usa `signerName()`** (`services/signer.js`): el alias o, sin alias, el correo, igual que `displayName`. `AuthProvider` le fija el alias al cargar el perfil y al cambiarlo. Lo usa `payrollsService` para `updatedByName`.
 
 ### Servicios
 

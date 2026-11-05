@@ -4,6 +4,7 @@ import { doc } from "firebase/firestore";
 import { getDoc } from "../services/readMeter";
 import { auth, db } from "../firebase";
 import { rememberBirthday, userPrefsService } from "../services/userPrefsService";
+import { setSignerAlias } from "../services/signer";
 import { accessOf, visitDue } from "../utils/userAccounts";
 import { AuthContext, ROLES } from "./AuthContext";
 
@@ -35,6 +36,7 @@ export function AuthProvider({ children }) {
         try {
           const profile = await loadProfile(fbUser);
           setUser(profile);
+          setSignerAlias(profile.alias);
           rememberBirthday(profile.birthday);
           if (profile.access !== "none") {
             lastVisitRef.current = Date.now();
@@ -43,9 +45,11 @@ export function AuthProvider({ children }) {
         } catch (e) {
           console.error("Failed to load profile", e);
           setUser({ uid: fbUser.uid, email: fbUser.email, role: ROLES.SUPERVISOR, access: "ok" });
+          setSignerAlias("");
         }
       } else {
         setUser(null);
+        setSignerAlias("");
       }
       setLoading(false);
     });
@@ -98,6 +102,7 @@ export function AuthProvider({ children }) {
     const clean = String(alias || "").trim();
     await userPrefsService.saveAlias(user.uid, clean);
     setUser((u) => (u ? { ...u, alias: clean } : u));
+    setSignerAlias(clean);
   };
 
   return (

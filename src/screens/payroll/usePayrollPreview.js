@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo } from "react";
 import { workdaysForNewPayroll } from "../../services/payrollsService";
+import { withFreshCycles } from "../../services/jobLists";
 import { workerKeys } from "../../services/workersService";
 import { newPayrollCycleDetails } from "../../utils/payrollItem";
 import { aggregateWorkerAmounts, payrollSuggestedName, groupCashByLeader } from "../../utils/payroll";
@@ -18,9 +19,10 @@ export function usePayrollPreview({ chosenCycles, cycles, jobs, people, subjobs,
   const [step, setStep] = useState(1); // 1 = elegir ciclos, 2 = vista previa
   const [previewItems, setPreviewItems] = useState([]); // items de la vista previa; la forma se arma en buildPreview
   // Datos de origen de buildPreview, con los que generateAndSave arma el
-  // snapshot sin volver a leer jornadas ni anticipos.
+  // snapshot sin volver a leer jornadas, anticipos ni ciclos.
   const previewWorkdaysRef = useRef([]);
   const previewAdvancesRef = useRef([]);
+  const previewCycleDocsRef = useRef([]);
   const [busy, setBusy] = useState(false);
 
   const [payrollName, setPayrollName] = useState("");
@@ -32,15 +34,6 @@ export function usePayrollPreview({ chosenCycles, cycles, jobs, people, subjobs,
     if (chosenCycles.size === 0 && people.length === 0) return;
     setBusy(true);
     const { error: err } = await attempt(async () => {
-      // Los tipos de labor de todos los ciclos: los días de una persona suelta
-      // pueden ser de un ciclo que no se eligió.
-      const laborTypeById = new Map();
-      for (const cycle of cycles) {
-        for (const labor of cycle.labors || []) {
-          laborTypeById.set(labor.id, labor.type);
-        }
-      }
-
       // Lo pendiente de los ciclos y labores elegidos, más los días de las
       // personas sueltas, releídos (ver `workdaysForNewPayroll`). Las labores
       // no marcadas quedan disponibles para una próxima nómina. Los ciclos se
@@ -50,11 +43,23 @@ export function usePayrollPreview({ chosenCycles, cycles, jobs, people, subjobs,
         chosen: chosenCycles,
         people: people.map((p) => ({ keys: workerKeys(p.worker), workdayIds: p.workdayIds })),
       });
+      // Los ciclos como están ahora: la copia de la pantalla, con los que no
+      // conocen la labor de alguna jornada releídos. De ahí salen los tipos de
+      // labor, los ciclos de la nómina y las labores de su JSON.
+      const liveCycles = await withFreshCycles(cycles, allWorkdays);
+      // Los tipos de labor de todos los ciclos: los días de una persona suelta
+      // pueden ser de un ciclo que no se eligió.
+      const laborTypeById = new Map();
+      for (const cycle of liveCycles) {
+        for (const labor of cycle.labors || []) {
+          laborTypeById.set(labor.id, labor.type);
+        }
+      }
       // Los ciclos de la nómina: los elegidos con alguna labor y los que traen
       // las personas sueltas. Cada item lleva una entrada por cada uno, incluso
       // en $0.
       const payrollCycles = newPayrollCycleDetails({
-        cycles,
+        cycles: liveCycles,
         chosen: chosenCycles,
         workdays: allWorkdays,
         faenas: jobs,
@@ -70,6 +75,7 @@ export function usePayrollPreview({ chosenCycles, cycles, jobs, people, subjobs,
       const pendingAdvances = await listPendingForWorkers(candidateIds);
       previewWorkdaysRef.current = allWorkdays;
       previewAdvancesRef.current = pendingAdvances;
+      previewCycleDocsRef.current = liveCycles;
       const items = previewItemsOf({ aggregates, workers, payrollCycles, pendingAdvances });
 
       setPreviewItems(items);
@@ -123,6 +129,7 @@ export function usePayrollPreview({ chosenCycles, cycles, jobs, people, subjobs,
     payrollClassification,
     payrollName,
     previewAdvancesRef,
+    previewCycleDocsRef,
     previewCycles,
     previewItems,
     previewWorkdaysRef,

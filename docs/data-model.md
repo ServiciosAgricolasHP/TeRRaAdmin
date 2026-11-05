@@ -145,6 +145,7 @@ Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
 | `advanceTotal` | number | |
 | `createdAt`, `createdBy` | ts, string? | |
 | `updatedAt`, `updatedBy` | ts, string? | toda escritura de `payrollsService` los pone. La copia que comparten Nómina y el Dashboard se pone al día con él (`listPayrolls`) |
+| `updatedByName` | string? | quién hizo la última escritura: su alias o, sin alias, su correo (`signerName`, `services/signer.js`). Toda escritura de `payrollsService` lo pone, y el detalle lo muestra con `updatedAt`. Las nóminas escritas antes no lo tienen |
 
 `PayrollItem` (embebido):
 - `rut` (el campo real en código es `rut`, no `workerRut` a pesar de lo que sugiere el nombre del doc — mismatch histórico), `workerId` (agregado en fase 2, ref estable al worker), `workerName`, `bankDetails`
@@ -161,17 +162,18 @@ Configuración compartida de la nómina. **Un único doc `payrollConfig/main`**;
 | `bankFormat` | string | id del formato del archivo del banco (`utils/bankFormats.js`); por defecto `"pagoFacilBchile"`. Lo usan "🏦 Sólo Nómina" y la primera hoja del XLSX completo, también al volver a descargar una nómina anterior |
 
 ### `payrollSnapshots`
-Snapshot JSON inmutable de cada nómina, separado del documento de `payrolls` para no engordar la lista. Lo escribe la app al generar la nómina y lo consume el **portal de trabajadores** (read-only) para construir su resumen.
+Snapshot JSON de cada nómina, separado del documento de `payrolls` para no engordar la lista. Lo escribe la app al generar la nómina, lo pone al día al editarla mientras está pendiente (sacar o agregar a una persona, Recalcular, "✎ Editar ciclos") y lo consume el **portal de trabajadores** (read-only) para construir su resumen. Las formas de cada parte salen de `services/payrollSnapshots.js` (`snapshotCycleOf`, `snapshotWorkdayOf`, `snapshotAdvanceOf`).
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | string | mismo id de la `payroll` (1:1) |
 | `payrollId` | ref→`payrolls` | |
+| `version` | number | `1` |
 | `generatedAt` | string (ISO) | |
-| `name`, `format`, `status` | string | snapshot de la payroll |
-| `cycleIds`, `cycleLabels`, `cycleDetails` | snapshot | |
-| `items` | `PayrollItem[]` | trabajadores + amounts (mismo shape que `payrolls.items`) |
-| `total`, `bankTotal`, `cashTotal`, `advanceTotal` | number | |
-| `workerCount`, `bankCount`, `cashCount` | number | |
+| `payroll` | object | la cabecera: `name`, `format`, `classification`, `status` y los totales (`total`, `bankTotal`, `cashTotal`, `workerCount`, `bankCount`, `cashCount`, `advanceTotal`, `bonusTotal`) |
+| `cycles` | array | cada ciclo de la nómina: su `id`, etiqueta, faena, subfaena y período (como `cycleDetails`, sin `laborIds`), más `labors` (id, nombre, tipo y su configuración de precios) y `dayPrices`. Al generar, las labores son las del ciclo; Recalcular y agregar a una persona las ponen al día y suman las que falten. Una labor que el ciclo ya no tiene queda |
+| `workers` | `PayrollItem[]` | mismo shape que `payrolls.items` |
+| `workdays` | array | las jornadas que paga, con su labor, fecha, cantidad y monto |
+| `advances` | array | los anticipos y bonos que aplica |
 
 > Se baja como `.json` desde el detalle de la nómina (📥 Descargar → JSON).
 

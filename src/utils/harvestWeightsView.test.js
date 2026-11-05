@@ -98,3 +98,28 @@ describe("groupDayByWorker", () => {
     expect(groups.map((g) => [g.name, g.entries.length, g.total])).toEqual([["Ana", 2, 15], ["Beto", 2, null]]);
   });
 });
+
+describe("una ficha unida a otra", () => {
+  const people = [
+    { id: "W1", rut: "11111111-1", name: "Ana", idQr: [], rutHistory: ["W9", "99999999-9"] },
+    { id: "W9", rut: "99999999-9", name: "Ana Duplicada", mergedInto: "W1", idQr: [] },
+  ];
+  const ws = [
+    { id: "q1", dateKey: "2026-10-05", prefix: "P1", rut: "W1", amount: 3, weightProcess: 1, weightType: 2, idQr: "A001" },
+    { id: "q2", dateKey: "2026-10-05", prefix: "P1", rut: "W9", amount: 2, weightProcess: 1, weightType: 2, idQr: "C009" },
+  ];
+
+  it("un QR que usó la ficha unida lleva a la que queda, con los pesajes de las dos", () => {
+    const m = resolveQrSearch("C009", people, ws);
+    expect(m.owners.map((o) => o.id)).toEqual(["W1"]);
+    expect(weightsView(ws, { ...base, qrMatch: m, search: "C009" }).detail.map((d) => d.id)).toEqual(["q1", "q2"]);
+  });
+
+  it("sus pesajes se agrupan con los de la que queda, por el RUT vigente", () => {
+    const current = { W1: "11111111-1", W9: "11111111-1" };
+    const v = weightsView(ws, { ...base, rutOf: (r) => current[r] || r, workerNames: new Map([["W1", "Ana"], ["W9", "Ana"]]) });
+    expect(v.workersCount).toBe(1);
+    expect(v.byWorker.map((g) => [g.name, g.rut, g.count])).toEqual([["Ana", "11111111-1", 2]]);
+    expect(groupDayByWorker(v.byDay[0].entries).map((g) => [g.rut, g.entries.length])).toEqual([["11111111-1", 2]]);
+  });
+});

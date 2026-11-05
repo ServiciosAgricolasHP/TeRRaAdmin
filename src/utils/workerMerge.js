@@ -26,6 +26,23 @@ export const MERGE_CHOICES = ["kept", "clone", "sum"];
 // Las fichas que se muestran y se eligen: sin las unidas a otra.
 export const activeWorkers = (list) => (list || []).filter((w) => !w?.mergedInto);
 
+// La ficha que queda para el id o el RUT de una ficha: el de una unida a otra
+// (`mergedInto`) lleva a la otra, siguiendo la cadena; el de una activa o
+// desconocida queda igual. Así lo que guardó una ficha unida (los items de las
+// nóminas viejas) se ve como de la que queda.
+export function mergedTargetResolver(workers) {
+  const into = new Map();
+  for (const w of workers || []) {
+    if (!w?.mergedInto) continue;
+    for (const k of [w.id, w.rut]) if (k) into.set(k, w.mergedInto);
+  }
+  return (key) => {
+    let current = key;
+    for (let hops = 0; hops < 10 && into.has(current); hops += 1) current = into.get(current);
+    return current;
+  };
+}
+
 // La labor de una jornada: la suya o, si no la guarda, la primera del ciclo
 // (como en la grilla).
 const laborIdOf = (wd, cycle) => wd.laborId || cycle?.labors?.[0]?.id || "";

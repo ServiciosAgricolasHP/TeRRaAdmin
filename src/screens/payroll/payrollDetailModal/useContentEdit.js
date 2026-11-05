@@ -5,9 +5,11 @@ import { liveProfileOf } from "../../../services/payrollRecalc";
 import { workdaysService } from "../../../services";
 import { listPendingForWorkers } from "../../../services/advancesService";
 import { planAddWorkdays, withPaidPeriods, cycleDetailOf, stillFreeWorkdays, asPayrollWorker } from "../../../utils/payrollItem";
-import { extendSnapshot, snapshotCycleOf, snapshotWorkdayOf, snapshotAdvanceOf } from "../../../services/payrollSnapshots";
+import { extendSnapshot, snapshotCycleOf, snapshotLaborsOf, snapshotWorkdayOf, snapshotAdvanceOf } from "../../../services/payrollSnapshots";
+import { withFreshCycles } from "../../../services/jobLists";
 import { workerKeys } from "../../../services/workersService";
 import { attempt } from "../../../utils/attempt";
+import { progressOf } from "./progressSteps";
 
 // Lo que pasó con la plata al agregar algo a una nómina, para el aviso.
 function additionSummary(lead, added = []) {
@@ -23,6 +25,22 @@ function additionSummary(lead, added = []) {
   return parts.join(" ");
 }
 
+// Los pasos de sacar y de agregar a una persona, con el tramo de la barra de
+// cada uno (`progressOf`). Sacar deshace: lleva el gato que persigue su cola.
+const REMOVE_STEPS = {
+  untag: { step: "Soltando sus jornadas...", unit: "Jornadas", from: 5, to: 60 },
+  advances: { step: "Devolviendo sus anticipos y bonos...", from: 65, to: 65 },
+  payroll: { step: "Guardando la nómina...", from: 75, to: 75 },
+  snapshot: { step: "Guardando el JSON de la nómina...", from: 85, to: 85 },
+};
+const ADD_STEPS = {
+  read: { step: "Revisando sus días y anticipos...", from: 5, to: 5 },
+  payroll: { step: "Guardando la nómina...", from: 20, to: 20 },
+  tag: { step: "Etiquetando las jornadas...", unit: "Jornadas", from: 25, to: 70 },
+  advances: { step: "Aplicando anticipos y bonos...", from: 75, to: 75 },
+  snapshot: { step: "Guardando el JSON de la nómina...", from: 85, to: 85 },
+};
+
 // "✂ Editar contenido" de una nómina pendiente: sacar a un trabajador y
 // agregar los días de una persona. Los ciclos y labores se cambian con
 // "✎ Editar ciclos" (`usePayrollRecalc`).
@@ -32,6 +50,8 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
   const isPending = payroll.status !== "paid";
   const [editMode, setEditMode] = useState(false);
   const [editBusy, setEditBusy] = useState(false);
+  // El gato con la barra (`ProgressOverlay`) mientras saca o agrega.
+  const [editProgress, setEditProgress] = useState(null);
   const [confirmRemove, setConfirmRemove] = useState(null); // { target, message }
   const handleRemoveWorker = (item) => {
     if (!isPending || editBusy) return;
@@ -43,11 +63,19 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
   };
   const doRemoveWorker = async (item) => {
     setEditBusy(true);
+    const show = (info) => setEditProgress(info && { ...info, undo: true });
+    show({ step: REMOVE_STEPS.untag.step, detail: "", percent: 2 });
     const { error: err } = await attempt(async () => {
-      await removeWorkerFromPayroll(payroll.id, item.rut);
+      await removeWorkerFromPayroll(payroll.id, item.rut, (key, done, total) => {
+        const info = progressOf(REMOVE_STEPS, key, done, total);
+        if (info) show(info);
+      });
+      show({ step: "Actualizando...", detail: "", percent: 95 });
       await onChanged?.();
+      show({ step: "Listo ✓", detail: "", percent: 100 });
     });
     if (err) toast.error(`Error al sacar el trabajador: ${err?.message || err}`);
+    setTimeout(() => setEditProgress(null), err ? 0 : 400);
     setEditBusy(false);
   };
   const confirmRemoveAction = () => {
@@ -64,6 +92,8 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
   const handleAddWorkerDays = async ({ worker, workdayIds }) => {
     if (!worker || !workdayIds?.length || editBusy) return;
     setEditBusy(true);
+    const step = (key, done, total) => setEditProgress((prev) => progressOf(ADD_STEPS, key, done, total) || prev);
+    step("read");
     const { error: err } = await attempt(async () => {
       const keys = workerKeys(worker);
       // Se releen: entre que se abrió el modal y ahora, otra nómina pudo
@@ -82,7 +112,10 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
         workdays: freeWorkdays,
         advances: await listPendingForWorkers(keys),
       });
-      const laborTypeById = new Map(cycles.flatMap((c) => (c.labors || []).map((l) => [l.id, l.type])));
+      // Los ciclos como están ahora: con los que no conocen la labor de alguno
+      // de esos días releídos.
+      const liveCycles = await withFreshCycles(cycles, freeWorkdays);
+      const laborTypeById = new Map(liveCycles.flatMap((c) => (c.labors || []).map((l) => [l.id, l.type])));
       const plan = planAddWorkdays({
         items,
         workdays: person.workdays,
@@ -98,7 +131,7 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
       const alreadyInIds = new Set([...cycleDetails.map((c) => c.id), ...(payroll.cycleIds || [])]);
       const newCycles = [...new Set(freeWorkdays.map((wd) => wd.cycleId))]
         .filter((cid) => !alreadyInIds.has(cid))
-        .map((cid) => cycles.find((c) => c.id === cid))
+        .map((cid) => liveCycles.find((c) => c.id === cid))
         .filter(Boolean);
       const includedIds = new Set(plan.workdayIds);
       const addedWorkdays = freeWorkdays.filter((wd) => includedIds.has(wd.id));
@@ -113,12 +146,15 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
         workdayIds: plan.workdayIds,
         workdays: addedWorkdays,
         advanceApplications: plan.newAdvanceApplications,
-      });
+      }, step);
+      step("snapshot");
       const advanceById = new Map(person.advances.map((a) => [a.id, a]));
+      const addedCycleIds = new Set(addedWorkdays.map((wd) => wd.cycleId));
       await extendSnapshot(payroll.id, {
         items: plan.items,
         aggregates,
         cycles: cycleDetailsToAdd.map((cd) => snapshotCycleOf(cd, newCycles.find((c) => c.id === cd.id))),
+        cycleLabors: liveCycles.filter((c) => addedCycleIds.has(c.id)).map((c) => ({ id: c.id, ...snapshotLaborsOf(c) })),
         workdays: addedWorkdays.map(snapshotWorkdayOf),
         advances: plan.newAdvanceApplications
           .map((x) => advanceById.get(x.advanceId))
@@ -126,8 +162,10 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
           .map(snapshotAdvanceOf),
       });
 
+      setEditProgress({ step: "Actualizando...", detail: "", percent: 95 });
       setAddWorkerOpen(false);
       await onChanged?.();
+      setEditProgress({ step: "Listo ✓", detail: "", percent: 100 });
       const dayCount = new Set(freeWorkdays.map((wd) => `${wd.cycleId}|${wd.laborId}|${wd.date}`)).size;
       toast.success(
         additionSummary(`${dayCount} día(s) de ${worker.name || "la persona"} agregado(s) a la nómina.`, plan.added) +
@@ -135,6 +173,7 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
       );
     });
     if (err) toast.error(`Error al agregar a la persona: ${err?.message || err}`);
+    setTimeout(() => setEditProgress(null), err ? 0 : 400);
     setEditBusy(false);
   };
   return {
@@ -143,6 +182,7 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
     confirmRemoveAction,
     editBusy,
     editMode,
+    editProgress,
     handleAddWorkerDays,
     handleRemoveWorker,
     isPending,

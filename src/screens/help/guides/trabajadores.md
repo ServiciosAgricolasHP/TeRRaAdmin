@@ -85,7 +85,8 @@ Si una persona quedó con dos fichas, por ejemplo porque la importación de cose
 ![Unir una ficha duplicada](help/trabajadores/07-unir-fichas.webp)
 
 - Las jornadas sin nómina pasan a la ficha que se queda. Las que ya están en una nómina no se tocan.
-- La ficha duplicada deja de aparecer, y su RUT queda apuntando a la que se queda: la próxima importación calza con ella, y no se puede crear otra ficha con ese RUT.
+- La ficha duplicada deja de aparecer en Trabajadores y en los buscadores. Sus pagos anteriores se ven en el historial de Nómina de la que se queda, y sus pesajes, en Cosecha QR con los de ella.
+- Su RUT queda apuntando a la que se queda: la próxima importación calza con ella, y no se puede crear otra ficha con ese RUT.
 - No se puede unir una ficha con QR, con anticipos o bonos con saldo, con contratos, o con jornadas sin nómina en un ciclo cerrado: el aviso dice qué resolver antes.
 
 ## En el teléfono

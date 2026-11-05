@@ -65,7 +65,7 @@ Cada fila muestra el estado, cuántas personas, lo de banco, lo de efectivo y el
 - **Eliminar**: borra la nómina, libera sus días (vuelven a quedar pendientes) y devuelve los anticipos. Si no se puede, dice qué hacer antes.
 
 ## El detalle de una nómina
-<!-- preguntas: ver el detalle de la nómina; cuánto efectivo tengo que sacar; billetes y monedas; resumen por subfaena; copiar el resumen de la nómina; total bruto de la nómina; cuánto se produjo antes de anticipos -->
+<!-- preguntas: ver el detalle de la nómina; cuánto efectivo tengo que sacar; billetes y monedas; resumen por subfaena; copiar el resumen de la nómina; total bruto de la nómina; cuánto se produjo antes de anticipos; quién editó la nómina; cuándo se modificó la nómina -->
 
 ![El detalle de una nómina](help/nomina/06-detalle.webp)
 
@@ -73,6 +73,7 @@ Cada fila muestra el estado, cuántas personas, lo de banco, lo de efectivo y el
 - **Estimar efectivo**: cuántos billetes y monedas sacar para armar los sobres, y cuánto lleva cada persona.
 - La tabla del resumen, por subfaena (**Sin labores**) o por subfaena y labor (**Con labores**), con **Copiar**, **Descargar** e **Imprimir**.
 - Más abajo, los ciclos de la nómina y las personas por líder, de banco y de efectivo.
+- Arriba, bajo el nombre, cuándo se editó por última vez y quién.
 - Arriba, **Editar contenido** y **Recalcular** sirven para corregirla (ver la guía [Corregir una nómina](/ayuda/corregir-nomina)).
 
 ## Descargar el archivo del banco

@@ -23,6 +23,7 @@ import {
   subfaenaSummaryOf,
   cyclesPeriodOf,
   summaryCycleName,
+  lastEditLabel,
 } from "../../utils/payrollDetail";
 import { fmtCurrency } from "../../utils/format";
 import { EditCyclesModal } from "./EditCyclesModal";
@@ -34,6 +35,7 @@ import {
   computeBonusAdvanceSummary,
   fetchPayrollWorkdays,
 } from "./printCommon";
+import { ProgressOverlay } from "./ProgressOverlay";
 import { RecalcModal } from "./RecalcModal";
 import { WorkerDetailRow } from "./WorkerDetailRow";
 import { useDetailFilters } from "./payrollDetailModal/useDetailFilters";
@@ -131,6 +133,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
   const detailSummaries = detailSummariesOf(allGroups, payroll.cycleDetails);
 
   const cycleDetails = payroll.cycleDetails || [];
+  const lastEdit = lastEditLabel(payroll);
 
   const { snapshot, snapshotLoading, reload: reloadSnapshot } = usePayrollSnapshot({ payroll });
   // Después de editar la nómina, el detalle se arma con la nómina y el JSON
@@ -156,6 +159,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
     confirmRemoveAction,
     editBusy,
     editMode,
+    editProgress,
     handleAddWorkerDays,
     handleRemoveWorker,
     isPending,
@@ -227,6 +231,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
     cyclesEditOpen,
     recalcBusy,
     recalcPreview,
+    recalcProgress,
     setCyclesEditOpen,
     setRecalcPreview,
     startCycleEdit,
@@ -307,6 +312,11 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
               {paymentDates(payroll).length > 0 && (
                 <p className="mt-0.5 text-xs tabular-nums text-[var(--color-muted)]">
                   {paymentDates(payroll).map((d) => `${d.label} ${d.date}`).join(" · ")}
+                </p>
+              )}
+              {lastEdit && (
+                <p className="mt-0.5 truncate text-xs text-[var(--color-muted)]" title={lastEdit}>
+                  {lastEdit}
                 </p>
               )}
             </div>
@@ -772,6 +782,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
         onClose={() => setRecalcPreview(null)}
         onConfirm={applyRecalc}
       />
+      <ProgressOverlay info={recalcProgress || editProgress} />
       <ConfirmDialog
         open={!!confirmRemove}
         title="Sacar trabajador de la nómina"
