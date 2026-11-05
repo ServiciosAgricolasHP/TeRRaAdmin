@@ -26,10 +26,13 @@
    - Bulk actions sobre el subset visible: incluir/excluir, → Efectivo / → Banco.
    - Columnas: Bruto (read-only), Anticipo (editable), A pagar (= bruto − anticipo, override manual), Pago (toggle banco/efectivo).
 3. **Generar y guardar** — crea la nómina, etiqueta workdays con `payrollId`, marca anticipos como `applied`, y escribe un **snapshot JSON** inmutable en `payrollSnapshots/{payrollId}`. El archivo no se descarga al generar: se baja cuando se quiere desde 📥 Descargar → JSON, en el detalle.
+   - Los ciclos salen de la copia de la pantalla, y la vista previa relee el que no conoce la labor de alguna jornada (una labor creada en otro equipo después de la última puesta al día de la copia; `withFreshCycles`, `services/jobLists.js`). De esos ciclos salen los tipos de labor, `cycleDetails` y las labores del JSON, que generar toma de la vista previa (`previewCycleDocsRef`). Agregar a una persona y Recalcular releen igual.
 
 **El período de cada ciclo en la nómina** (`cycleDetails[].firstDay/lastDay`, la columna Período de los resúmenes y del XLSX) va del primer al último día que la nómina le paga, sacado de sus jornadas (`withPaidPeriods`, `utils/payrollItem.js`), no del ciclo entero: un ciclo que se paga en dos nóminas muestra en cada una sus propios días. Se arma al generar y se pone al día al recalcular y al agregar ciclos o personas, donde solo crece. El snapshot acompaña.
 
 **Recalcular también trae los nombres vigentes** de cada ciclo: su etiqueta y los nombres de su faena y subfaena (`withLiveNames`), en `cycleDetails`, `cycleLabels` y el snapshot. La vista previa muestra lo que cambió en "Ciclos actualizados" (`cycleDetailChanges`), y eso solo ya cuenta como cambio. Los nombres que se editan en "📝 Editar encabezados" (`cycleLabelOverrides`) no se tocan. La etiqueta sale del ciclo, y renombrar una subfaena no cambia la de sus ciclos ya creados: el prefijo "Faena/Subfaena/" sigue con el nombre anterior hasta que se edita el ciclo.
+
+**Recalcular también pone al día las labores del JSON**: las labores y los precios del día de cada ciclo que queda (`cycleLabors` del plan, `withLiveLabors`, `utils/snapshotLabors.js`). Cada labor toma su versión vigente, entran las que faltaban y quedan las que el ciclo ya no tiene. Sin otros cambios en la nómina, Recalcular igual las pone al día (`refreshSnapshotLabors`) y avisa que lo hizo; escribe solo si algo cambió.
 
 ## Snapshot JSON (`payrollSnapshots`)
 
@@ -37,7 +40,8 @@
 - Lo escribe `payrollSnapshotsService` en el mismo flujo de "Generar y guardar".
 - Se baja desde el detalle de la nómina: **📥 Descargar → JSON**.
 - El schema es **contrato externo** con el portal público de trabajadores (otra app, ver "Portal de trabajadores"): cambiarlo coordinadamente.
-- **Escribir, borrar y releer el snapshot viven en `services/payrollSnapshots.js`** (`saveSnapshot`, `deleteSnapshot`, `readSnapshot`). Los `catch` silenciosos son deliberados: el snapshot es un derivado y que falle no puede tumbar la generación ni el borrado de la nómina, que son las operaciones que mueven la plata. `readSnapshot` saca el `id` que inyecta Firestore (el JSON es contrato externo) y, si el doc no existe, lee el campo `snapshot` embebido en la nómina. También viven ahí las formas de ciclo, jornada y anticipo (`snapshotCycleOf`, `snapshotWorkdayOf`, `snapshotAdvanceOf`), que usan todos los caminos que escriben el JSON, y los ajustes al achicar, agrandar o recalcular la nómina (`pruneSnapshot`, `extendSnapshot`, `syncSnapshotAfterRecalc`). Renombrar sigue en `Payroll.jsx` como llamada directa al servicio.
+- **Escribir, borrar y releer el snapshot viven en `services/payrollSnapshots.js`** (`saveSnapshot`, `deleteSnapshot`, `readSnapshot`). Los `catch` silenciosos son deliberados: el snapshot es un derivado y que falle no puede tumbar la generación ni el borrado de la nómina, que son las operaciones que mueven la plata. `readSnapshot` saca el `id` que inyecta Firestore (el JSON es contrato externo) y, si el doc no existe, lee el campo `snapshot` embebido en la nómina. También viven ahí las formas de ciclo, jornada y anticipo (`snapshotCycleOf`, `snapshotWorkdayOf`, `snapshotAdvanceOf`), que usan todos los caminos que escriben el JSON, y los ajustes al achicar, agrandar o recalcular la nómina (`pruneSnapshot`, `extendSnapshot`, `syncSnapshotAfterRecalc`, `refreshSnapshotLabors`). Renombrar sigue en `Payroll.jsx` como llamada directa al servicio.
+- **El detalle completa la labor que le falta al JSON** (`completeSnapshotLabors`, desde `usePayrollSnapshot`): si una jornada es de una labor que su ciclo en el JSON no tiene, la toma del ciclo en Firestore, con sus precios del día, sin escribir. Las labores que el JSON ya tiene no cambian, porque son las que se pagaron. Sin faltantes no lee nada. El cálculo, en `utils/snapshotLabors.js`, con tests.
 
 ## Portal de trabajadores
 
@@ -158,7 +162,7 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 - **Quien ya está** (al agregar los días de una persona) suma bruto, jornadas (también las de $0) y su `byCycle` **sumado, no pisado**: el ciclo puede estar ya con otras labores u otros días. Además **se le aplican los anticipos y bonos pendientes que esta nómina todavía no le tocaba**, con el mismo reparto incremental que Recalcular.
 - **Quien no está** entra con el reparto completo si su bruto es mayor que 0. Sin bruto no entra, y sus días de $0 siguen pendientes, igual que al generar.
 - **Lo que esta nómina ya descuenta de un anticipo no crece** al agregar: re-encajar hacia arriba obligaría a revisar cuotas. Mismo criterio que Recalcular ("Solo achica, nunca agranda").
-- **El snapshot acompaña** (`extendSnapshot`): suma ciclos, jornadas y anticipos sin repetir y deja la cabecera al día. `laborIds` **no viaja** al JSON (`snapshotCycleOf` lo saca): es interno y el JSON es contrato externo.
+- **El snapshot acompaña** (`extendSnapshot`): suma ciclos, jornadas y anticipos sin repetir, pone al día las labores de los ciclos de los días agregados (`cycleLabors`) y deja la cabecera al día. `laborIds` **no viaja** al JSON (`snapshotCycleOf` lo saca): es interno y el JSON es contrato externo.
 - "✎ Editar ciclos" y "+ Agregar persona" se montan solo mientras están abiertos, así arrancan con el estado limpio sin un `useEffect` que lo resetee.
 
 ## Editar los ciclos de una nómina pendiente
@@ -170,7 +174,7 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
 - **Nada se escribe hasta aplicar.** "Revisar cambios" arma el recálculo (`planPayrollRecalc` con `removed` y `added`) y muestra la vista previa encima del modal, que queda abierto para ajustar: lo que entra y lo que sale, quién sale de la nómina y el anticipo que le vuelve, los montos que cambian y lo que se devuelve de un anticipo, quién entra con su anticipo y su bono, y los anticipos o bonos pendientes que se aplican a quien ya estaba. "Aplicar cambios" lo guarda (`applyPayrollRecalc`) y cierra los dos.
 - **El alcance después del cambio lo arma `cycleScopeAfterEdit`** (`utils/payrollItem.js`): primero sale `removed` (`cycleScopeAfterRemoval`) y después entra `added`. Un ciclo nuevo entra entero si se eligieron todas sus labores y con su lista si no; a uno que ya estaba se le suman las labores (`mergeCycleDetails`). Los ciclos nuevos van al final de `cycleIds` y `cycleLabels`.
 - **Los anticipos siguen las reglas de achicar y agrandar:** quien se queda sin producción sale y suelta sus anticipos y bonos; a quien baja de bruto se le re-encaja lo descontado y lo que no cabe vuelve al anticipo; quien entra recibe el reparto completo; y a quien ya estaba se le aplican los anticipos y bonos pendientes que esta nómina no le tocaba. Lo ya descontado de un anticipo no crece.
-- **El snapshot acompaña** (`syncSnapshotAfterRecalc`): queda sin los ciclos que salen y con los que entran (`addedSnapshotCycles` del plan, con la forma de `snapshotCycleOf`).
+- **El snapshot acompaña** (`syncSnapshotAfterRecalc`): queda sin los ciclos que salen y con los que entran (`addedSnapshotCycles` del plan, con la forma de `snapshotCycleOf`), y los que quedan, con sus labores al día (`cycleLabors`).
 - La sección "Ciclos de esta nómina" del detalle solo muestra lo que paga cada ciclo y labor; los cambios se hacen desde el modal.
 
 ## Historial

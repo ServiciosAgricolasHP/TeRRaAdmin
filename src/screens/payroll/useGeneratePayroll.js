@@ -14,12 +14,12 @@ import { attempt } from "../../utils/attempt";
 export function useGeneratePayroll({
   bankFormat,
   chosenCycles,
-  cycles,
   jobs,
   load,
   payrollClassification,
   payrollName,
   previewAdvancesRef,
+  previewCycleDocsRef,
   previewItems,
   previewWorkdaysRef,
   resetPreview,
@@ -98,7 +98,9 @@ export function useGeneratePayroll({
       // Los ciclos de la nómina y qué labores abarca cada uno, para que
       // Recalcular no traiga después lo que quedó afuera: los elegidos con
       // alguna labor, y con `laborIds: []` los que traen las personas sueltas.
-      // El ciclo de una persona entra solo si ella quedó incluida.
+      // El ciclo de una persona entra solo si ella quedó incluida. Los ciclos
+      // son los de la vista previa, ya con las labores de sus jornadas.
+      const cycles = previewCycleDocsRef.current || [];
       const includedWorkdayIds = new Set(items.flatMap((p) => p.workdayIds || []));
       const cycleDetails = newPayrollCycleDetails({
         cycles,

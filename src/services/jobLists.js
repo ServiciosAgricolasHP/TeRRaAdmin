@@ -1,5 +1,6 @@
 import { cyclesService, jobsService, subjobsService } from "./index";
 import { createSyncedList } from "./syncedList";
+import { cyclesMissingLabors } from "../utils/snapshotLabors";
 
 // Faenas, subfaenas y ciclos: listas sincronizadas (`createSyncedList`) que
 // comparten todas las pantallas. Se leen enteras una vez por semana en cada
@@ -33,4 +34,17 @@ export async function pickByIds(list, ids, service) {
   const fetched = await Promise.all(missing.map((id) => service.getById(id)));
   for (const d of fetched) if (d) byId.set(d.id, d);
   return ids.map((id) => byId.get(id)).filter(Boolean);
+}
+
+// Los ciclos de `cycles` con los que no conocen la labor de alguna de esas
+// jornadas releídos de Firestore (`cyclesMissingLabors`): una labor creada en
+// otro equipo después de la última puesta al día de la copia. Un ciclo que no
+// estaba se suma al final. Sin faltantes no lee nada.
+export async function withFreshCycles(cycles, workdays) {
+  const ids = cyclesMissingLabors(cycles, workdays);
+  if (!ids.length) return cycles;
+  const fetched = (await Promise.all(ids.map((id) => cyclesService.getById(id)))).filter(Boolean);
+  const byId = new Map(fetched.map((c) => [c.id, c]));
+  const known = new Set(cycles.map((c) => c.id));
+  return [...cycles.map((c) => byId.get(c.id) || c), ...fetched.filter((c) => !known.has(c.id))];
 }

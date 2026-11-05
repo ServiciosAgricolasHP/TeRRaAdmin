@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { planPayrollRecalc, applyPayrollRecalc } from "../../../services/payrollRecalc";
+import { refreshSnapshotLabors } from "../../../services/payrollSnapshots";
 import { attempt } from "../../../utils/attempt";
 import { progressOf } from "./progressSteps";
 
@@ -46,7 +47,15 @@ export function usePayrollRecalc({ cycles, faenas, onChanged, payroll, subfaenas
     const { error: err } = await attempt(async () => {
       const plan = await planPayrollRecalc(payroll, { cycles, faenas, subfaenas, workers, removed, added, onProgress });
       if (plan.empty) {
-        toast.success("Sin cambios — la nómina ya está al día.");
+        // Sin otros cambios, igual pone al día las labores del JSON: a una
+        // nómina armada antes de crear una labor le puede faltar su nombre.
+        const repaired = await refreshSnapshotLabors(payroll.id, plan.cycleLabors);
+        if (repaired) await onChanged?.();
+        toast.success(
+          repaired
+            ? "Sin cambios en la nómina. Se pusieron al día las labores de su detalle."
+            : "Sin cambios — la nómina ya está al día.",
+        );
         return;
       }
       setRecalcPreview({

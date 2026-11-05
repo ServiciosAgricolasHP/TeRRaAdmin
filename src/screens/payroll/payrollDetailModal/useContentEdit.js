@@ -5,7 +5,8 @@ import { liveProfileOf } from "../../../services/payrollRecalc";
 import { workdaysService } from "../../../services";
 import { listPendingForWorkers } from "../../../services/advancesService";
 import { planAddWorkdays, withPaidPeriods, cycleDetailOf, stillFreeWorkdays, asPayrollWorker } from "../../../utils/payrollItem";
-import { extendSnapshot, snapshotCycleOf, snapshotWorkdayOf, snapshotAdvanceOf } from "../../../services/payrollSnapshots";
+import { extendSnapshot, snapshotCycleOf, snapshotLaborsOf, snapshotWorkdayOf, snapshotAdvanceOf } from "../../../services/payrollSnapshots";
+import { withFreshCycles } from "../../../services/jobLists";
 import { workerKeys } from "../../../services/workersService";
 import { attempt } from "../../../utils/attempt";
 import { progressOf } from "./progressSteps";
@@ -111,7 +112,10 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
         workdays: freeWorkdays,
         advances: await listPendingForWorkers(keys),
       });
-      const laborTypeById = new Map(cycles.flatMap((c) => (c.labors || []).map((l) => [l.id, l.type])));
+      // Los ciclos como están ahora: con los que no conocen la labor de alguno
+      // de esos días releídos.
+      const liveCycles = await withFreshCycles(cycles, freeWorkdays);
+      const laborTypeById = new Map(liveCycles.flatMap((c) => (c.labors || []).map((l) => [l.id, l.type])));
       const plan = planAddWorkdays({
         items,
         workdays: person.workdays,
@@ -127,7 +131,7 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
       const alreadyInIds = new Set([...cycleDetails.map((c) => c.id), ...(payroll.cycleIds || [])]);
       const newCycles = [...new Set(freeWorkdays.map((wd) => wd.cycleId))]
         .filter((cid) => !alreadyInIds.has(cid))
-        .map((cid) => cycles.find((c) => c.id === cid))
+        .map((cid) => liveCycles.find((c) => c.id === cid))
         .filter(Boolean);
       const includedIds = new Set(plan.workdayIds);
       const addedWorkdays = freeWorkdays.filter((wd) => includedIds.has(wd.id));
@@ -145,10 +149,12 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
       }, step);
       step("snapshot");
       const advanceById = new Map(person.advances.map((a) => [a.id, a]));
+      const addedCycleIds = new Set(addedWorkdays.map((wd) => wd.cycleId));
       await extendSnapshot(payroll.id, {
         items: plan.items,
         aggregates,
         cycles: cycleDetailsToAdd.map((cd) => snapshotCycleOf(cd, newCycles.find((c) => c.id === cd.id))),
+        cycleLabors: liveCycles.filter((c) => addedCycleIds.has(c.id)).map((c) => ({ id: c.id, ...snapshotLaborsOf(c) })),
         workdays: addedWorkdays.map(snapshotWorkdayOf),
         advances: plan.newAdvanceApplications
           .map((x) => advanceById.get(x.advanceId))

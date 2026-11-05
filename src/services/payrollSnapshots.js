@@ -4,8 +4,9 @@
 // Los `catch` silenciosos son deliberados y hay que conservarlos: el
 // snapshot es un derivado, y que falle no puede tumbar la generación ni el
 // borrado de la nómina, que son las operaciones que mueven la plata.
-import { payrollSnapshotsService } from "./index";
+import { payrollSnapshotsService, cyclesService } from "./index";
 import { withPaidPeriods } from "../utils/payrollItem";
+import { cyclesMissingLabors, withLiveLabors, withMissingLabors, sameData } from "../utils/snapshotLabors";
 
 // Devuelve `true` si quedó guardado. La nómina ya existe cuando esto corre,
 // así que un fallo acá deja una nómina sin snapshot, no una nómina rota.
@@ -58,8 +59,12 @@ export async function readSnapshot(payroll) {
 // el portal de trabajadores no lo necesita.
 export function snapshotCycleOf(detail, cycle) {
   const { laborIds: _interno, ...cd } = detail || {};
+  return { ...cd, ...snapshotLaborsOf(cycle) };
+}
+
+// Las labores y los precios del día de un ciclo, con la forma del snapshot.
+export function snapshotLaborsOf(cycle) {
   return {
-    ...cd,
     dayPrices: cycle?.dayPrices || {},
     labors: (cycle?.labors || []).map((l) => ({
       id: l.id, name: l.name, type: l.type,
@@ -157,11 +162,13 @@ export async function pruneSnapshot(payrollId, { items, aggregates, cycleIds = n
 // la nómina sigue tocando más los que se le aplicaron ahora, y la cabecera al
 // día. Con `cycleIds` (cambiaron los ciclos), quedan solo esos, más los que
 // entran (`addedCycles`, ya con la forma del snapshot). Con `cycleDetails`,
-// cada ciclo toma de ahí sus nombres vigentes; el período sale de las jornadas
-// (`withPaidPeriods`). Nunca tira.
+// cada ciclo toma de ahí sus nombres vigentes, y de `cycleLabors` (`{ id }`
+// más `snapshotLaborsOf`) sus labores y precios del día vigentes
+// (`withLiveLabors`); el período sale de las jornadas (`withPaidPeriods`).
+// Nunca tira.
 export async function syncSnapshotAfterRecalc(
   payrollId,
-  { items, aggregates, workdays = [], newAdvances = [], cycleIds = null, cycleDetails = null, addedCycles = [] },
+  { items, aggregates, workdays = [], newAdvances = [], cycleIds = null, cycleDetails = null, addedCycles = [], cycleLabors = [] },
 ) {
   try {
     const snap = await payrollSnapshotsService.getById(payrollId);
@@ -177,12 +184,12 @@ export async function syncSnapshotAfterRecalc(
     if (Array.isArray(snap.cycles)) {
       const kept = cycleIds ? new Set(cycleIds) : null;
       const detailById = new Map((cycleDetails || []).map((cd) => [cd.id, cd]));
+      const liveById = new Map(cycleLabors.map((c) => [c.id, c]));
       const keptCycles = (kept ? snap.cycles.filter((c) => kept.has(c.id)) : snap.cycles).map((c) => {
         const cd = detailById.get(c.id);
-        if (!cd) return c;
         const names = {};
-        for (const k of ["label", "faenaName", "subfaenaName"]) if (cd[k]) names[k] = cd[k];
-        return { ...c, ...names };
+        if (cd) for (const k of ["label", "faenaName", "subfaenaName"]) if (cd[k]) names[k] = cd[k];
+        return withLiveLabors({ ...c, ...names }, liveById.get(c.id));
       });
       const ya = new Set(keptCycles.map((c) => c.id));
       patch.cycles = withPaidPeriods([...keptCycles, ...addedCycles.filter((c) => !ya.has(c.id))], workdays);
@@ -199,8 +206,10 @@ export async function syncSnapshotAfterRecalc(
 // Lo mismo para una nómina que creció (se le agregaron ciclos, labores o días
 // de una persona): suma lo que no estaba —ciclos, jornadas y anticipos, ya con
 // la forma del snapshot— y deja los trabajadores y la cabecera al día. El
-// período de un ciclo que ya estaba crece con los días nuevos. Nunca tira.
-export async function extendSnapshot(payrollId, { items, aggregates, cycles = [], workdays = [], advances = [] }) {
+// período de un ciclo que ya estaba crece con los días nuevos, y sus labores y
+// precios del día quedan al día con `cycleLabors` (`withLiveLabors`). Nunca
+// tira.
+export async function extendSnapshot(payrollId, { items, aggregates, cycles = [], workdays = [], advances = [], cycleLabors = [] }) {
   try {
     const snap = await payrollSnapshotsService.getById(payrollId);
     if (!snap) return false;
@@ -209,8 +218,10 @@ export async function extendSnapshot(payrollId, { items, aggregates, cycles = []
       return [...(antes || []), ...nuevos.filter((x) => !ya.has(x.id))];
     };
     const patch = { workers: items };
-    if (cycles.length || (workdays.length && Array.isArray(snap.cycles))) {
-      patch.cycles = withPaidPeriods(sumar(snap.cycles, cycles), workdays, { extend: true });
+    if (cycles.length || ((workdays.length || cycleLabors.length) && Array.isArray(snap.cycles))) {
+      const liveById = new Map(cycleLabors.map((c) => [c.id, c]));
+      const withLabors = sumar(snap.cycles, cycles).map((c) => withLiveLabors(c, liveById.get(c.id)));
+      patch.cycles = withPaidPeriods(withLabors, workdays, { extend: true });
     }
     if (workdays.length) patch.workdays = sumar(snap.workdays, workdays);
     if (advances.length) patch.advances = sumar(snap.advances, advances);
@@ -220,5 +231,45 @@ export async function extendSnapshot(payrollId, { items, aggregates, cycles = []
   } catch (err) {
     console.warn("No se pudo extender el snapshot de la nómina:", err);
     return false;
+  }
+}
+
+// Pone al día las labores y los precios del día de los ciclos del snapshot
+// con `cycleLabors` (`withLiveLabors`), sin tocar lo demás: es lo que hace
+// Recalcular cuando la nómina no tiene otros cambios. Escribe solo si algo
+// cambió y devuelve si escribió. Nunca tira.
+export async function refreshSnapshotLabors(payrollId, cycleLabors = []) {
+  if (!cycleLabors.length) return false;
+  try {
+    const snap = await payrollSnapshotsService.getById(payrollId);
+    if (!Array.isArray(snap?.cycles)) return false;
+    const liveById = new Map(cycleLabors.map((c) => [c.id, c]));
+    const cycles = snap.cycles.map((c) => withLiveLabors(c, liveById.get(c.id)));
+    if (sameData(cycles, snap.cycles)) return false;
+    await payrollSnapshotsService.update(payrollId, { cycles });
+    return true;
+  } catch (err) {
+    console.warn("No se pudieron poner al día las labores del snapshot:", err);
+    return false;
+  }
+}
+
+// El snapshot como se muestra: si a uno de sus ciclos le falta la labor de
+// alguna de sus jornadas, la toma del ciclo en Firestore (`withMissingLabors`),
+// sin escribir. Sin faltantes no lee nada. Nunca tira: si la lectura falla,
+// devuelve el snapshot como estaba.
+export async function completeSnapshotLabors(snapshot) {
+  const cycles = snapshot?.cycles;
+  if (!Array.isArray(cycles)) return snapshot;
+  const inSnapshot = new Set(cycles.map((c) => c.id));
+  const ids = cyclesMissingLabors(cycles, snapshot.workdays).filter((id) => inSnapshot.has(id));
+  if (!ids.length) return snapshot;
+  try {
+    const live = (await Promise.all(ids.map((id) => cyclesService.getById(id)))).filter(Boolean);
+    const liveById = new Map(live.map((c) => [c.id, snapshotLaborsOf(c)]));
+    return { ...snapshot, cycles: cycles.map((c) => withMissingLabors(c, liveById.get(c.id))) };
+  } catch (err) {
+    console.warn("No se pudieron leer las labores que faltan en el snapshot:", err);
+    return snapshot;
   }
 }

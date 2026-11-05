@@ -19,7 +19,7 @@ Una nómina guarda los montos que tenía cada día al generarla. Si después se 
 
 ![Lo que cambia al recalcular](help/corregir-nomina/02-recalcular.webp)
 
-Toca **Aplicar cambios** para guardarlo. Mientras compara y mientras guarda, una barra muestra en qué va. Recalcular también trae los días que se anotaron después en las labores de la nómina, y los nombres al día de los ciclos.
+Toca **Aplicar cambios** para guardarlo. Mientras compara y mientras guarda, una barra muestra en qué va. Recalcular también trae los días que se anotaron después en las labores de la nómina, y los nombres al día de los ciclos y de sus labores.
 
 ## Agregar los días de una persona
 <!-- preguntas: se me olvidó una persona en la nómina; agregar a alguien a una nómina ya creada; sumar un trabajador a la nómina; agregar días a la nómina -->

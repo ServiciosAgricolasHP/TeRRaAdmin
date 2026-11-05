@@ -24,7 +24,8 @@ import {
   advanceRemaining,
   advanceSign,
 } from "./advancesService";
-import { syncSnapshotAfterRecalc, snapshotCycleOf, snapshotWorkdayOf, snapshotAdvanceOf } from "./payrollSnapshots";
+import { syncSnapshotAfterRecalc, snapshotCycleOf, snapshotLaborsOf, snapshotWorkdayOf, snapshotAdvanceOf } from "./payrollSnapshots";
+import { withFreshCycles } from "./jobLists";
 import { aggregateWorkerAmounts, normalizeLeader } from "../utils/payroll";
 import {
   allocateAdvances,
@@ -112,10 +113,6 @@ export async function planPayrollRecalc(
   }
   const addedIds = new Set(scope?.addedCycleIds || []);
   const recalcCycleIds = [...(payroll.cycleIds || cycleDetails.map((c) => c.id)), ...addedIds];
-  const laborTypeById = new Map();
-  for (const cycle of cycles.filter((c) => recalcCycleIds.includes(c.id))) {
-    for (const labor of cycle.labors || []) laborTypeById.set(labor.id, labor.type);
-  }
 
   // Lo etiquetado con esta nómina, más lo pendiente de las labores que abarca
   // después del cambio. Lo que se dejó afuera al generarla o al agregarle
@@ -137,6 +134,14 @@ export async function planPayrollRecalc(
         current.push(wd);
       }
     }
+  }
+
+  // Los ciclos como están ahora: la copia de la pantalla, con los que no
+  // conocen la labor de alguna jornada releídos (`withFreshCycles`).
+  const liveCycles = await withFreshCycles(cycles, current);
+  const laborTypeById = new Map();
+  for (const cycle of liveCycles.filter((c) => recalcCycleIds.includes(c.id))) {
+    for (const labor of cycle.labors || []) laborTypeById.set(labor.id, labor.type);
   }
 
   const aggregates = aggregateWorkerAmounts(current, laborTypeById);
@@ -315,7 +320,7 @@ export async function planPayrollRecalc(
   const paidIds = new Set(mergedItems.flatMap((it) => it.workdayIds || []));
   const prevDetails = scope ? scope.cycleDetails : cycleDetails;
   const nextCycleDetails = withPaidPeriods(
-    withLiveNames(prevDetails, { cycles, faenas, subfaenas }),
+    withLiveNames(prevDetails, { cycles: liveCycles, faenas, subfaenas }),
     current.filter((wd) => paidIds.has(wd.id)),
   );
   // Un ciclo que entra no tiene un antes con qué compararse.
@@ -357,7 +362,12 @@ export async function planPayrollRecalc(
     // Los ciclos que entran, con la forma del snapshot.
     addedSnapshotCycles: nextCycleDetails
       .filter((cd) => addedIds.has(cd.id))
-      .map((cd) => snapshotCycleOf(cd, cycles.find((c) => c.id === cd.id))),
+      .map((cd) => snapshotCycleOf(cd, liveCycles.find((c) => c.id === cd.id))),
+    // Las labores y los precios del día vigentes de los ciclos que quedan,
+    // para el snapshot (`withLiveLabors`).
+    cycleLabors: liveCycles
+      .filter((c) => finalIds.includes(c.id))
+      .map((c) => ({ id: c.id, ...snapshotLaborsOf(c) })),
   };
 }
 
@@ -383,6 +393,7 @@ export async function applyPayrollRecalc(payrollId, plan, onProgress) {
     cycleLabels = null,
     cycleChanges = [],
     addedSnapshotCycles = [],
+    cycleLabors = [],
   } = plan;
 
   const aggregates = recalcPayrollAggregates(items);
@@ -424,6 +435,7 @@ export async function applyPayrollRecalc(payrollId, plan, onProgress) {
     cycleIds: scope ? scope.cycleIds : null,
     cycleDetails: nextDetails,
     addedCycles: addedSnapshotCycles,
+    cycleLabors,
   });
   return aggregates;
 }

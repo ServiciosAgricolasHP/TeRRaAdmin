@@ -13,7 +13,7 @@ import {
 } from "../../src/services/advancesService";
 import { workdaysService } from "../../src/services";
 import { aggregateWorkerAmounts } from "../../src/utils/payroll";
-import { saveSnapshot } from "../../src/services/payrollSnapshots";
+import { saveSnapshot, snapshotLaborsOf } from "../../src/services/payrollSnapshots";
 import { allocateAdvances } from "../../src/utils/payrollItem";
 import { ANA, BETO, LABOR, FAENA, SUBFAENA, seedCycle, seedWorker, seedWorkday, seedAdvance, set, get, all } from "./helpers/seed";
 
@@ -334,6 +334,7 @@ describe("los ciclos de la nómina siguen a lo que paga y a sus nombres vigentes
     const payroll = await get("payrolls", id);
     expect(payroll.total).toBe(250000);
     expect(payroll.cycleDetails).toEqual([{ id: CICLO_A, ...LIVE, firstDay: "2026-03-02", lastDay: "2026-03-04" }]);
+    // El JSON queda además con las labores vigentes del ciclo.
     expect((await get("payrollSnapshots", id)).cycles).toEqual([
       {
         id: CICLO_A,
@@ -342,6 +343,7 @@ describe("los ciclos de la nómina siguen a lo que paga y a sus nombres vigentes
         subfaenaName: LIVE.subfaenaName,
         firstDay: "2026-03-02",
         lastDay: "2026-03-04",
+        ...snapshotLaborsOf(await get("cycles", CICLO_A)),
       },
     ]);
   });
@@ -437,6 +439,7 @@ describe("el snapshot de la nómina acompaña lo que se saca", () => {
         subfaenaName: "Sub Uno",
         firstDay: "2026-03-02",
         lastDay: "2026-03-02",
+        ...snapshotLaborsOf(await get("cycles", CICLO_B)),
       },
     ]);
     expect(snap.payroll).toMatchObject({ name: "Nómina", total: 150000, workerCount: 1, advanceTotal: 0 });
