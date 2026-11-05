@@ -1,7 +1,10 @@
 import { useEffect } from "react";
 import Modal from "./Modal";
+import { ProgressBar } from "./ProgressBar";
 
-export default function ConfirmDialog({ open, title = "Confirmar", message, onConfirm, onCancel, confirmLabel = "Confirmar", danger = false, busy = false }) {
+// `progress` ({ label, done, total }) muestra la barra de avance mientras
+// `busy`, para una confirmación que dispara algo largo.
+export default function ConfirmDialog({ open, title = "Confirmar", message, onConfirm, onCancel, confirmLabel = "Confirmar", danger = false, busy = false, progress = null }) {
   // Enter confirma. El diálogo no tiene campos de texto, así que no le quita
   // el Enter a ningún input.
   useEffect(() => {
@@ -43,6 +46,11 @@ export default function ConfirmDialog({ open, title = "Confirmar", message, onCo
       }
     >
       <p className="whitespace-pre-line break-words text-sm text-[var(--color-muted)]">{message}</p>
+      {busy && progress && (
+        <div className="mt-3">
+          <ProgressBar label={progress.label} done={progress.done} total={progress.total} />
+        </div>
+      )}
     </Modal>
   );
 }
