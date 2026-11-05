@@ -1,4 +1,4 @@
-import{c as G,u as Ye,a as ja,r as K,j as f,L as ee,b as Sa,d as Ea,h as Ta,e as Ra,f as Aa}from"./index-CIGPxc4t.js";const qe=/<!--\s*preguntas:([\s\S]*?)-->/gi;function _e(n){return String(n||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"")}function Pe(n){const e=[];for(const a of n.matchAll(qe))for(const o of a[1].split(";")){const r=o.trim();r&&e.push(r)}return e}const Ie=n=>n.replace(qe,"").replace(/\n{3,}/g,`
+import{c as G,u as Ye,a as ja,r as K,j as f,L as ee,b as Sa,d as Ea,h as Ta,e as Ra,f as Aa}from"./index-DMqPPBrN.js";const qe=/<!--\s*preguntas:([\s\S]*?)-->/gi;function _e(n){return String(n||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"")}function Pe(n){const e=[];for(const a of n.matchAll(qe))for(const o of a[1].split(";")){const r=o.trim();r&&e.push(r)}return e}const Ie=n=>n.replace(qe,"").replace(/\n{3,}/g,`
 
 `).trim();function Ke(n){return String(n||"").replace(qe," ").replace(/!\[[^\]]*\]\([^)]*\)/g," ").replace(/\[([^\]]+)\]\([^)]*\)/g,"$1").replace(/\*\*([^*]+)\*\*/g,"$1").replace(/`([^`]+)`/g,"$1").replace(/[>#|]/g," ").replace(/^\s*[-+]\s+/gm," ").replace(/^\s*\d+\.\s+/gm," ").replace(/\s+/g," ").trim()}function La(n,e){const a=String(e||"").replace(/\r\n/g,`
 `).split(`
@@ -538,7 +538,7 @@ Cada fila muestra el estado, cuántas personas, lo de banco, lo de efectivo y el
 - **Eliminar**: borra la nómina, libera sus días (vuelven a quedar pendientes) y devuelve los anticipos. Si no se puede, dice qué hacer antes.
 
 ## El detalle de una nómina
-<!-- preguntas: ver el detalle de la nómina; cuánto efectivo tengo que sacar; billetes y monedas; resumen por subfaena; copiar el resumen de la nómina; total bruto de la nómina; cuánto se produjo antes de anticipos -->
+<!-- preguntas: ver el detalle de la nómina; cuánto efectivo tengo que sacar; billetes y monedas; resumen por subfaena; copiar el resumen de la nómina; total bruto de la nómina; cuánto se produjo antes de anticipos; quién editó la nómina; cuándo se modificó la nómina -->
 
 ![El detalle de una nómina](help/nomina/06-detalle.webp)
 
@@ -546,6 +546,7 @@ Cada fila muestra el estado, cuántas personas, lo de banco, lo de efectivo y el
 - **Estimar efectivo**: cuántos billetes y monedas sacar para armar los sobres, y cuánto lleva cada persona.
 - La tabla del resumen, por subfaena (**Sin labores**) o por subfaena y labor (**Con labores**), con **Copiar**, **Descargar** e **Imprimir**.
 - Más abajo, los ciclos de la nómina y las personas por líder, de banco y de efectivo.
+- Arriba, bajo el nombre, cuándo se editó por última vez y quién.
 - Arriba, **Editar contenido** y **Recalcular** sirven para corregirla (ver la guía [Corregir una nómina](/ayuda/corregir-nomina)).
 
 ## Descargar el archivo del banco
@@ -629,7 +630,7 @@ Una nómina guarda los montos que tenía cada día al generarla. Si después se 
 
 ![Lo que cambia al recalcular](help/corregir-nomina/02-recalcular.webp)
 
-Toca **Aplicar cambios** para guardarlo. Recalcular también trae los días que se anotaron después en las labores de la nómina, y los nombres al día de los ciclos.
+Toca **Aplicar cambios** para guardarlo. Mientras compara y mientras guarda, una barra muestra en qué va. Recalcular también trae los días que se anotaron después en las labores de la nómina, y los nombres al día de los ciclos y de sus labores.
 
 ## Agregar los días de una persona
 <!-- preguntas: se me olvidó una persona en la nómina; agregar a alguien a una nómina ya creada; sumar un trabajador a la nómina; agregar días a la nómina -->
@@ -643,7 +644,7 @@ Toca **Aplicar cambios** para guardarlo. Recalcular también trae los días que 
 
 ![Los días de una persona](help/corregir-nomina/04-agregar-persona.webp)
 
-Si tiene anticipos o bonos pendientes, se descuentan o se suman al agregarla.
+Si tiene anticipos o bonos pendientes, se descuentan o se suman al agregarla. Mientras guarda, una barra muestra en qué va.
 
 ## Agregar o sacar ciclos y labores
 <!-- preguntas: agregar un ciclo a la nómina; sumar otro ciclo a una nómina hecha; agregar una labor a la nómina; faltó un ciclo en la nómina; sacar un ciclo de la nómina; quitar una labor de la nómina; un ciclo no debía ir en la nómina; sacar días de la nómina; cambiar los ciclos de la nómina; cambiar una labor por otra -->
@@ -666,7 +667,7 @@ Con **Editar contenido** activo, cada persona tiene una **✕** al final de su f
 
 ![La ✕ para sacar a una persona](help/corregir-nomina/07-sacar-persona.webp)
 
-Tócala y confirma con **Sacar**. Sus días vuelven a quedar pendientes y sus anticipos vuelven a estar por cobrar. Se puede volver a sumar con **+ Agregar persona**.
+Tócala y confirma con **Sacar**. Mientras la saca, una barra muestra en qué va. Sus días vuelven a quedar pendientes y sus anticipos vuelven a estar por cobrar. Se puede volver a sumar con **+ Agregar persona**.
 
 ![Confirmar que sale de la nómina](help/corregir-nomina/08-confirmar-sacar.webp)
 
@@ -855,7 +856,8 @@ Si una persona quedó con dos fichas, por ejemplo porque la importación de cose
 ![Unir una ficha duplicada](help/trabajadores/07-unir-fichas.webp)
 
 - Las jornadas sin nómina pasan a la ficha que se queda. Las que ya están en una nómina no se tocan.
-- La ficha duplicada deja de aparecer, y su RUT queda apuntando a la que se queda: la próxima importación calza con ella, y no se puede crear otra ficha con ese RUT.
+- La ficha duplicada deja de aparecer en Trabajadores y en los buscadores. Sus pagos anteriores se ven en el historial de Nómina de la que se queda, y sus pesajes, en Cosecha QR con los de ella.
+- Su RUT queda apuntando a la que se queda: la próxima importación calza con ella, y no se puede crear otra ficha con ese RUT.
 - No se puede unir una ficha con QR, con anticipos o bonos con saldo, con contratos, o con jornadas sin nómina en un ciclo cerrado: el aviso dice qué resolver antes.
 
 ## En el teléfono
