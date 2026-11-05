@@ -6,7 +6,7 @@ import { findWorkerByRut } from "../../services/workersService";
 import { mapHarvestCodes, comboKey, workdayDocId, getDayCombos } from "../../utils/cosechaCombos";
 import Modal from "../../components/Modal";
 import { nextSyncRange, lastSyncLabel } from "./helpers";
-import { ProgressBar } from "./ProgressBar";
+import { ProgressBar } from "../../components/ProgressBar";
 import { attempt } from "../../utils/attempt";
 
 export function SyncModal({ prefix, cycle, onClose, onSynced }) {

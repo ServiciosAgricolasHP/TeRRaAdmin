@@ -5,7 +5,7 @@
   - **Prefijos:** `PrefixFormModal` y `SyncModal` (la sincronización hacia jornadas).
   - **Pesajes:** `WeightsExplorer` (la búsqueda por QR, los totales por combo y las agrupaciones salen de `utils/harvestWeightsView.js`) y `WeightFormModal`.
   - **IDs QR:** `QrManager`, `AssignQrModal` y `BackfillQrModal`.
-  - **Comunes:** `ProgressBar`, `TypeToConfirm` y `helpers.js` (TTL de las listas compartidas, contador de lecturas y fechas de la sincronización).
+  - **Comunes:** `helpers.js` (TTL de las listas compartidas, contador de lecturas y fechas de la sincronización). La barra de avance y la confirmación que pide escribir una palabra son `ProgressBar` y `TypeToConfirm`, de `components/`.
 - Fuera de la carpeta: `utils/qrCodes.js` (prefijo, número, dueño y códigos libres, con tests), `services/qrCodesService.js` (`assignQrCode` y el padrón, `syncRoster`) y `services/harvestSyncService.js` (`mirrorWeightToWorkdays`: el espejo pesaje → jornada al guardar un pesaje a mano).
 - `harvestWeights` la escribe una **app externa de escaneo** y es la fuente de verdad de la producción. Acá se lee para sincronizar hacia `workdays`, y además se puede corregir a mano desde el explorador: agregar o editar un pesaje (`WeightFormModal`, que firma con `supervisor`) y completar el `idQr` de pesajes viejos.
 - `qrPrefixes` (docId = el prefijo, ej. `"HP"`) es el puente entre un QR físico y el (faena, ciclo, labor) vigente al que hay que mandar sus pesajes. **Se reapunta a mano cada vez que se abre un ciclo nuevo** — semi-manual a propósito, no hay forma segura de adivinar el ciclo destino.
