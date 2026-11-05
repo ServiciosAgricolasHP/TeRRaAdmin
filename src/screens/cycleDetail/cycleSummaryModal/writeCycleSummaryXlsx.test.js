@@ -116,6 +116,13 @@ describe("Excel del resumen: lo mismo que la pantalla", () => {
     expect(perTable.reduce((s, v) => s + v, 0)).toBe(subtotalCharge);
   });
 
+  it("un título con / o repetido igual se exporta: la hoja lo lleva con _, y la celda, tal cual", () => {
+    const named = { ...titles, laborNames: { LM: "Poda/Amarre", LX: "poda/amarre", LH: "History" } };
+    const wb = buildCycleSummaryWorkbook(ExcelJS, { ...argsFor("pay"), titles: named });
+    expect(wb.worksheets.slice(0, 3).map((ws) => ws.name)).toEqual(["Poda_Amarre", "poda_amarre 2", "History_"]);
+    expect(wb.worksheets[0].getCell("B2").value).toBe("Poda/Amarre");
+  });
+
   it("en pagar, el total de cada tabla suma el total general", () => {
     const wb = buildCycleSummaryWorkbook(ExcelJS, argsFor("pay"));
     const ws = wb.getWorksheet("Total");

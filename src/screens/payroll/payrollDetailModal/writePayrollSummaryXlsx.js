@@ -4,11 +4,12 @@
 // elegido, los ajustes (bonos, anticipos y efectivo que queda pendiente) y el
 // total.
 import { fmtDayShortEs } from "../helpers";
+import { sheetName } from "../../../utils/sheetNames";
 
 export async function writePayrollSummaryXlsx({ bonusAdvanceSummary, deferredCash, grandTotals, labelColumns, payroll, pendingMode, pendingSummaryRows, summaryDisplayRows, summaryTitle }) {
     const ExcelJS = (await import("exceljs")).default;
     const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet(`Resumen ${summaryTitle}`);
+    const ws = wb.addWorksheet(sheetName(`Resumen ${summaryTitle}`));
     ws.getColumn(1).width = 6; // restricción de layout: col A vacía
 
     const HEADER_FILL = { type: "pattern", pattern: "solid", fgColor: { argb: "FFB7DEE8" } };
