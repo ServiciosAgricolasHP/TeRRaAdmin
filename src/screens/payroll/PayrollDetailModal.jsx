@@ -432,6 +432,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
             {!isCollapsed("summary") && (
               <>
                 <PayrollTotalsCards
+                  advances={snapshot?.advances}
                   bank={bank}
                   cash={cash}
                   cashGroups={cashGroups}

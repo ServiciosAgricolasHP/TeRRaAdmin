@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  advancesAndBonusesOf,
   payrollLeadersOf,
   filterPayrollItems,
   detailSummariesOf,
@@ -319,5 +320,34 @@ describe("removalSummaryOf", () => {
     expect(removalSummaryOf(breakdown, new Map([["C2", new Set(["L1"])]])).unknown).toBe(true);
     expect(removalSummaryOf(breakdown, new Map([["C1", true], ["C2", true]])).allOut).toBe(true);
     expect(removalSummaryOf([], new Map()).allOut).toBe(false);
+  });
+});
+
+describe("advancesAndBonusesOf", () => {
+  const items = [
+    { rut: "2-7", name: "Bruno Díaz", anticipoApplications: [{ advanceId: "a2", amount: 20000 }, { advanceId: "a3", amount: 0 }] },
+    { rut: "1-9", name: "Ana Pérez", anticipoApplications: [{ advanceId: "a1", amount: 30000, maxAmount: 50000 }], bonoApplications: [{ advanceId: "b1", amount: 15000 }] },
+    { rut: "3-5", name: "Carla Soto" },
+  ];
+  const advances = [
+    { id: "a1", type: "anticipo", date: "2026-10-03", note: "Gas" },
+    { id: "a2", type: "anticipo", date: "2026-10-01", note: "" },
+    { id: "b1", type: "bono", date: "2026-10-08", note: "Asistencia" },
+  ];
+
+  it("lista lo que aplicó la nómina por persona, con la fecha y la nota de cada uno", () => {
+    const r = advancesAndBonusesOf(items, advances);
+    expect(r.advances.map((x) => [x.name, x.date, x.note, x.amount])).toEqual([
+      ["Ana Pérez", "2026-10-03", "Gas", 30000],
+      ["Bruno Díaz", "2026-10-01", "", 20000],
+    ]);
+    expect(r.bonuses.map((x) => [x.name, x.note, x.amount])).toEqual([["Ana Pérez", "Asistencia", 15000]]);
+    expect([r.advanceTotal, r.bonusTotal]).toEqual([50000, 15000]);
+  });
+
+  it("sin el snapshot, las filas van sin fecha ni nota", () => {
+    const r = advancesAndBonusesOf(items, undefined);
+    expect(r.advances.map((x) => [x.date, x.note])).toEqual([["", ""], ["", ""]]);
+    expect(advancesAndBonusesOf([], []).advanceTotal).toBe(0);
   });
 });
