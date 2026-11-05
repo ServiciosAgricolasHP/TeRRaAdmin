@@ -12,7 +12,10 @@ export function WorkerPayrollDetailModal({ open, payment, worker, catalogs, onCl
   const { snapshot, snapshotLoading } = usePayrollSnapshot({ payroll: open ? payroll : null });
 
   if (!payroll) return null;
-  const item = (payroll.items || []).find((it) => (it.workerId || it.rut) === worker.workerId) || null;
+  // El pago guarda con qué clave figura la persona en esa nómina: la de una
+  // ficha unida a otra no es la de la ficha que se muestra.
+  const itemKey = payment?.itemKey ?? worker.workerId;
+  const item = (payroll.items || []).find((it) => (it.workerId || it.rut) === itemKey) || null;
   const cycleDetails = payroll.cycleDetails || [];
   const displayCycleLabel = (cycle) => payroll.cycleLabelOverrides?.[cycle.id] || cycle.label || cycle.id;
 

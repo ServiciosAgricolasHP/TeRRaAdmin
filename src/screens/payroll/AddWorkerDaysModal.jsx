@@ -12,6 +12,7 @@ import { matchesSearchQuery } from "../../utils/textSearch";
 import { fmtCurrency } from "../../utils/format";
 import { formatWorkerDetailProd, workerDetailDateLabel } from "./workerDetailLabels";
 import { attempt } from "../../utils/attempt";
+import { activeWorkers } from "../../utils/workerMerge";
 
 // Dígitos (y la K) de un RUT, para buscar sin puntos ni guion.
 function rutDigits(s) {
@@ -78,7 +79,9 @@ export function AddWorkerDaysModal({
     const q = query.trim();
     if (q.length < 2) return [];
     const qRut = /\d/.test(q) ? rutDigits(q) : "";
-    return workers
+    // Sin las fichas unidas a otra: la lista trae todas porque las nóminas
+    // viejas las nombran.
+    return activeWorkers(workers)
       .filter((w) => matchesSearchQuery(w.name || "", q) || (qRut.length >= 2 && rutDigits(w.rut || w.id).includes(qRut)))
       .slice(0, 30);
   }, [workers, query]);

@@ -6,7 +6,8 @@ import { countedList } from "../../services/cache";
 import { useCatalogs } from "../../contexts/CatalogsContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useAuth } from "../../contexts/AuthContext";
-import { currentRutResolver } from "../../utils/workerRut";
+import { workerByRutResolver } from "../../utils/workerRut";
+import { activeWorkers } from "../../utils/workerMerge";
 import { daysAgoKey, todayKey, readsLabel, TAP } from "./helpers";
 import { WeightFormModal } from "./WeightFormModal";
 import ScreenLoader from "../../components/ScreenLoader";
@@ -71,19 +72,24 @@ export function WeightsExplorer({ prefixes, jobById }) {
     return set;
   }, [weights]);
 
-  // Se indexa por las dos llaves porque el pesaje guarda el rut que escaneó la
-  // app, que puede ser el docId (id estable) o el rut legal actual si el
-  // trabajador cambió de cédula.
+  // El pesaje guarda el rut que escaneó la app: el docId (id estable), el rut
+  // legal actual o uno anterior, que puede ser el de una ficha unida a otra.
+  // Se indexan todas las llaves de las fichas activas; las propias ganan a
+  // las anteriores.
   const workerNames = useMemo(() => {
     const map = new Map();
-    for (const w of workers) {
-      if (w.id) map.set(w.id, w.name);
-      if (w.rut) map.set(w.rut, w.name);
-    }
+    const active = activeWorkers(workers);
+    for (const w of active) for (const k of [w.id, w.rut]) if (k && !map.has(k)) map.set(k, w.name);
+    for (const w of active) for (const k of w.rutHistory || []) if (k && !map.has(k)) map.set(k, w.name);
     return map;
   }, [workers]);
-  // Rut vigente de la ficha, para mostrar (ver utils/workerRut.js).
-  const rutOf = useMemo(() => currentRutResolver(workers), [workers]);
+  // Rut vigente de la ficha, para mostrar y agrupar: el de un RUT anterior o
+  // de una ficha unida a otra es el de la que queda (ver utils/workerRut.js).
+  const personOf = useMemo(() => workerByRutResolver(workers), [workers]);
+  const rutOf = useMemo(() => (rut) => {
+    const w = personOf(rut);
+    return w ? w.rut || w.id : rut;
+  }, [personOf]);
 
   const qrMatch = useMemo(() => resolveQrSearch(search, workers, weights), [workers, weights, search]);
 

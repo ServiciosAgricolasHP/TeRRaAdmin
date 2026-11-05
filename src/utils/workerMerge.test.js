@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { activeWorkers, mergeBlockers, planWorkerMerge, retargetDocId } from "./workerMerge";
+import { activeWorkers, mergeBlockers, mergedTargetResolver, planWorkerMerge, retargetDocId } from "./workerMerge";
 
 // Datos inventados: el clon lo creó la importación con el RUT provisorio de
 // otra empresa; la ficha que queda es la de siempre.
@@ -115,5 +115,23 @@ describe("unir fichas", () => {
 
   it("las listas no muestran las fichas unidas", () => {
     expect(activeWorkers([clone, { ...clone, id: "x", mergedInto: kept.id }, kept]).map((w) => w.id)).toEqual([clone.id, kept.id]);
+  });
+});
+
+describe("mergedTargetResolver", () => {
+  const workers = [
+    { id: "K", rut: "11111111-1" },
+    { id: "C", rut: "22222222-2", mergedInto: "K" },
+    { id: "D", rut: "33333333-3", mergedInto: "C" },
+  ];
+
+  it("el id o el RUT de una ficha unida llevan a la que queda, también en cadena", () => {
+    const targetOf = mergedTargetResolver(workers);
+    expect(["C", "22222222-2", "D", "33333333-3"].map(targetOf)).toEqual(["K", "K", "K", "K"]);
+  });
+
+  it("una ficha activa o desconocida queda igual", () => {
+    const targetOf = mergedTargetResolver(workers);
+    expect(["K", "11111111-1", "Z"].map(targetOf)).toEqual(["K", "11111111-1", "Z"]);
   });
 });

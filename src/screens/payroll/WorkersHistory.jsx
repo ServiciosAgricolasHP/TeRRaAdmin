@@ -6,6 +6,7 @@ import { useToast } from "../../contexts/ToastContext";
 import { matchesSearchQuery } from "../../utils/textSearch";
 import { localIsoDate } from "../../utils/dates";
 import { currentRutResolver } from "../../utils/workerRut";
+import { mergedTargetResolver } from "../../utils/workerMerge";
 import { fmtCurrency } from "../../utils/format";
 import { WorkerDetail } from "./WorkerDetail";
 import { FaenaFilterPopover } from "./FaenaFilterPopover";
@@ -42,6 +43,9 @@ const normRut = (r) => String(r || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
 
 export function WorkersHistory({ faenas, workers }) {
   const rutOf = useMemo(() => currentRutResolver(workers), [workers]);
+  // Los pagos de una ficha unida a otra se ven en la que queda, con su nombre.
+  const targetOf = useMemo(() => mergedTargetResolver(workers), [workers]);
+  const nameById = useMemo(() => new Map((workers || []).map((w) => [w.id, w.name])), [workers]);
   const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [allPayrolls, setAllPayrolls] = useState([]);
@@ -81,19 +85,23 @@ export function WorkersHistory({ faenas, workers }) {
   }, [allPayrolls, dateFrom, dateTo, classification]);
 
   // 2) Índice por trabajador con sus pagos. La clave es el workerId (estable
-  // aunque el rut se corrija); se muestra el rut vigente de la ficha.
+  // aunque el rut se corrija) o, si la ficha se unió a otra, el de la que
+  // queda; se muestra el rut vigente de la ficha. Cada pago guarda la clave
+  // con que figura en su nómina (`itemKey`), para abrir su detalle.
   const workersIndex = useMemo(() => {
     const map = new Map();
     for (const p of filteredPayrolls) {
       for (const it of (p.items || [])) {
         if (!it.rut) continue;
-        const key = it.workerId || it.rut;
+        const itemKey = it.workerId || it.rut;
+        const key = targetOf(itemKey);
+        const merged = key !== itemKey;
         if (!map.has(key)) {
           map.set(key, {
             key,
             workerId: key,
-            rut: rutOf(it.rut, it.workerId),
-            name: it.name || "",
+            rut: rutOf(it.rut, key),
+            name: (merged && nameById.get(key)) || it.name || "",
             totalAmount: 0,
             totalGross: 0,
             totalAdvance: 0,
@@ -102,7 +110,7 @@ export function WorkersHistory({ faenas, workers }) {
           });
         }
         const w = map.get(key);
-        if (it.name && (!w.name || w.name === it.rut)) w.name = it.name;
+        if (!merged && it.name && (!w.name || w.name === it.rut)) w.name = it.name;
         const amount = Number(it.amount) || 0;
         const gross = Number(it.grossAmount) || amount;
         const advance = Number(it.advance) || Number(it.anticiposTotal) || 0;
@@ -123,6 +131,7 @@ export function WorkersHistory({ faenas, workers }) {
         w.totalAdvance += advance;
         w.totalBonus += bonus;
         w.payments.push({
+          itemKey,
           payrollId: p.id,
           payrollName: p.name || "(sin nombre)",
           payrollDate: payrollDate(p),
@@ -144,7 +153,7 @@ export function WorkersHistory({ faenas, workers }) {
       w.payments.sort((a, b) => b.payrollDate - a.payrollDate);
     }
     return map;
-  }, [filteredPayrolls, rutOf]);
+  }, [filteredPayrolls, rutOf, targetOf, nameById]);
 
   // 3) Filtro por faena, a nivel de pago: quedan los pagos con alguna faena del filtro.
   const workersAfterFaena = useMemo(() => {

@@ -1,4 +1,5 @@
 import { comboKey, containerLabel, mapHarvestCodes, qualityLabel } from "./cosechaCombos";
+import { workerByRutResolver } from "./workerRut";
 
 // El explorador de pesajes de Pesajes QR: la búsqueda por QR, los totales
 // por combo calidad/envase y las agrupaciones por trabajador y por día.
@@ -9,10 +10,17 @@ import { comboKey, containerLabel, mapHarvestCodes, qualityLabel } from "./cosec
 export function resolveQrSearch(search, workers, weights) {
   const needle = search.trim().toUpperCase();
   if (!needle) return null;
-  const owner = workers.find((w) =>
+  // Las llaves de una ficha: su id, su RUT y los anteriores, que incluyen los
+  // de una ficha unida a ella.
+  const keysOf = (w) => [w.id, w.rut, ...(w.rutHistory || [])].filter(Boolean);
+  const byId = new Map(workers.map((w) => [w.id, w]));
+  const found = workers.find((w) =>
     (w.idQr || []).some((c) => String(c || "").trim().toUpperCase() === needle),
   );
-  if (owner) return { code: needle, owners: [owner], keys: new Set([owner.id, owner.rut].filter(Boolean)) };
+  if (found) {
+    const owner = (found.mergedInto && byId.get(found.mergedInto)) || found;
+    return { code: needle, owners: [owner], keys: new Set(keysOf(owner)) };
+  }
 
   // Un código liberado no es de nadie hoy: se resuelve por los pesajes que
   // lo anotaron. Puede traer más de una persona si el código pasó por varias
@@ -22,17 +30,17 @@ export function resolveQrSearch(search, workers, weights) {
     if (String(w.idQr || "").trim().toUpperCase() === needle && w.rut) keys.add(w.rut);
   }
   if (keys.size === 0) return null;
-  const owners = workers.filter((w) => keys.has(w.id) || keys.has(w.rut));
-  for (const w of owners) {
-    if (w.id) keys.add(w.id);
-    if (w.rut) keys.add(w.rut);
-  }
+  const personOf = workerByRutResolver(workers);
+  const owners = [...new Set([...keys].map(personOf).filter(Boolean))];
+  for (const w of owners) for (const k of keysOf(w)) keys.add(k);
   return { code: needle, owners, keys, freed: true };
 }
 
 // Los pesajes que pasan el prefijo y la búsqueda (o el QR resuelto), con los
 // totales por combo y las agrupaciones por trabajador y por día. El prefijo se
-// filtra también acá porque la consulta puede venir sin él.
+// filtra también acá porque la consulta puede venir sin él. Se agrupa por
+// persona, con el RUT vigente de su ficha (`rutOf`), no por el RUT que guardó
+// el pesaje: el id, el RUT legal y uno anterior son la misma persona.
 export function weightsView(weights, { catalogs, prefixById, prefixFilter, qrMatch, rutOf, search, workerNames }) {
   const needle = search.trim().toLowerCase();
   const combos = new Map();
@@ -69,7 +77,7 @@ export function weightsView(weights, { catalogs, prefixById, prefixFilter, qrMat
 
     count += 1;
     days.add(w.dateKey);
-    ruts.add(rut);
+    ruts.add(displayRut);
 
     const bucket = (map, key, extra) => {
       if (!map.has(key)) map.set(key, { key, qtyByCombo: new Map(), count: 0, prefixes: new Set(), ...extra });
@@ -81,9 +89,9 @@ export function weightsView(weights, { catalogs, prefixById, prefixFilter, qrMat
     };
     const entry = { id: w.id, rut, displayRut, name, date: w.dateKey, prefixId, comboLabel: combo.label, qty, x, y, idQr: w.idQr || "", supervisor: w.supervisor || "" };
 
-    bucket(byWorker, rut, { rut, displayRut, name, days: new Set() }).days.add(w.dateKey);
+    bucket(byWorker, displayRut, { rut: displayRut, displayRut, name, days: new Set() }).days.add(w.dateKey);
     const dayGroup = bucket(byDay, w.dateKey, { date: w.dateKey, ruts: new Set(), entries: [] });
-    dayGroup.ruts.add(rut);
+    dayGroup.ruts.add(displayRut);
     dayGroup.entries.push(entry);
 
     detail.push(entry);
@@ -103,13 +111,15 @@ export function weightsView(weights, { catalogs, prefixById, prefixFilter, qrMat
   };
 }
 
-// Agrupa los pesajes de un día por trabajador. El subtotal solo aparece si
-// todos sus pesajes son del mismo combo — sumar kilos con bandejas no da nada.
+// Agrupa los pesajes de un día por trabajador, con el RUT vigente de su ficha
+// (`displayRut`). El subtotal solo aparece si todos sus pesajes son del mismo
+// combo — sumar kilos con bandejas no da nada.
 export function groupDayByWorker(entries) {
   const map = new Map();
   for (const e of entries) {
-    if (!map.has(e.rut)) map.set(e.rut, { rut: e.rut, name: e.name, entries: [] });
-    map.get(e.rut).entries.push(e);
+    const key = e.displayRut || e.rut;
+    if (!map.has(key)) map.set(key, { rut: key, displayRut: key, name: e.name, entries: [] });
+    map.get(key).entries.push(e);
   }
   return [...map.values()]
     .map((w) => {
