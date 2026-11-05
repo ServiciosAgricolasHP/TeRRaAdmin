@@ -1,5 +1,52 @@
 import { describe, it, expect } from "vitest";
-import { nameSimilarity, findSimilarWorkers } from "./similarity";
+import { nameSimilarity, findSimilarWorkers, nameTokens, tokenNameSimilarity, tokenSimilarity, tokensSimilarity } from "./similarity";
+
+describe("tokenNameSimilarity", () => {
+  it("no le importa el orden de las palabras", () => {
+    expect(tokenNameSimilarity("PEREZ SOTO JUAN", "Juan Pérez Soto")).toEqual({ score: 1, matched: 3, size: 3 });
+  });
+
+  it("un nombre más corto calza entero con uno más largo", () => {
+    expect(tokenNameSimilarity("JUAN PEREZ", "JUAN CARLOS PEREZ SOTO")).toEqual({ score: 1, matched: 2, size: 2 });
+  });
+
+  it("tolera un error de tipeo en una palabra", () => {
+    expect(tokenNameSimilarity("CLAUIDA ROJAS", "CLAUDIA ROJAS").score).toBe(1);
+  });
+
+  it("dos personas distintas no calzan", () => {
+    expect(tokenNameSimilarity("MIGUEL TAPIA", "CLAUDIA ROJAS")).toEqual({ score: 0, matched: 0, size: 2 });
+  });
+
+  it("una palabra en común sola no alcanza para decir que es la misma persona", () => {
+    const r = tokenNameSimilarity("JUAN TAPIA", "JUAN ROJAS");
+    expect(r.score).toBe(0.5);
+    expect(r.matched).toBe(1);
+  });
+
+  it("cada palabra calza una sola vez", () => {
+    expect(tokenNameSimilarity("JUAN JUAN", "JUAN PEREZ").matched).toBe(1);
+  });
+
+  it("sin nombre da cero", () => {
+    expect(tokenNameSimilarity("", "JUAN")).toEqual({ score: 0, matched: 0, size: 0 });
+    expect(tokenNameSimilarity("J.", "JUAN")).toEqual({ score: 0, matched: 0, size: 0 });
+  });
+});
+
+describe("tokenSimilarity", () => {
+  it("un error de tipeo se parece; un largo muy distinto da 0 sin comparar", () => {
+    expect(tokenSimilarity("CLAUDIA", "CLAUIDA")).toBeGreaterThanOrEqual(0.8);
+    expect(tokenSimilarity("ANA", "ANA")).toBe(1);
+    expect(tokenSimilarity("ANA", "ANABELLA")).toBe(0);
+  });
+
+  it("con los nombres ya separados da lo mismo que con el texto", () => {
+    const a = "José Luis Mendoza";
+    const b = "MENDOZA JOSE";
+    expect(tokensSimilarity(nameTokens(a), nameTokens(b))).toEqual(tokenNameSimilarity(a, b));
+  });
+});
 
 describe("nameSimilarity", () => {
   it("un nombre idéntico da 1", () => {
