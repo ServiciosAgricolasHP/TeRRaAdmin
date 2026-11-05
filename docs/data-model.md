@@ -85,6 +85,7 @@ el id/workerId, nunca el campo `rut`.
 | `paymentName` | string? | nombre de a quién se le paga: el titular de la cuenta o, en efectivo, quien cobra. Obligatorio cuando `paymentRut` es de otra persona (`paysToOtherPerson`, `utils/banks.js`); opcional si es el mismo RUT del trabajador |
 | `groupLeader` | string[] | historial; `[0]` = actual (ej. `CHILENOS`, `EXTRANJEROS`) |
 | `idQr` | string[] | códigos QR asignados |
+| `fileAliases` | `{ rut, name }[]`? | cómo trae a la persona el archivo de cosecha de una empresa cuando no calza solo con la ficha: otro RUT (típico de un extranjero) o un nombre distinto (le dicen Patricio y la empresa lo trae como José). El RUT va sin puntos y el nombre, como viene en el archivo. Lo guarda **Importar cosecha** al elegir la ficha a mano, y la importación siguiente calza sola con un RUT de la ficha o de esta lista si el nombre se parece al de la ficha o a uno guardado con ese RUT: una empresa puede reasignar un RUT (`matchFilePeople`, `utils/harvestImport.js`) |
 | `address`, `commune` | string? | dirección y comuna; las piden las boletas de honorarios |
 | `nationality` | string? | texto libre ("Chilena") |
 | `maritalStatus` | `"single"` \| `"married"` \| `"civilUnion"` \| `"divorced"` \| `"widowed"` \| `""` | |
@@ -115,8 +116,9 @@ Una fila por (cycleId × laborId × workerRut × date). Es la tabla "transaccion
 | `tiers` | `{ [tierKey]: { qty, amount } }` | trato multi-precio; suma con `getTratoTierTotals(wd)` |
 | `overtimeHours`, `hasManejo`, `hasSupervision`, `extras` | number? / bool? | solo `tratoHE` |
 | `pisoOnly` | bool? | `true` para workdays de piso: combo `_piso` (el del día) o `_piso_<envase>` (piso por envase, con `containerY`). `qty: 0`, `amount: pisoAmount`. Un doc por (worker × date × labor × piso). Solo trato/cosecha (el piso por envase, solo cosecha). Tag con `payrollId` igual que cualquier otro workday. |
+| `harvestImported` | bool? | `true` en la producción y los pisos que escribió **Importar cosecha** (`services/harvestImportService.js`). Volver a importar las mismas fechas borra los importados de esas personas que ya no vienen; lo escrito a mano no se borra |
 | `createdAt`, `createdBy` | ts, string? | |
-| `updatedAt`, `updatedBy` | ts, string? | la última escritura de `workdaysService` (la grilla, Pesajes QR, mover jornadas de ciclo). Etiquetar con la nómina y marcar pagado no lo ponen. Las copias por mes del Calendario se ponen al día con él (`syncWorkdayMonth`) |
+| `updatedAt`, `updatedBy` | ts, string? | la última escritura de `workdaysService` (la grilla, Pesajes QR, mover jornadas de ciclo) o de Importar cosecha, que lo escribe en su lote. Etiquetar con la nómina y marcar pagado no lo ponen. Las copias por mes del Calendario se ponen al día con él (`syncWorkdayMonth`) |
 
 ### `payrolls`
 Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
@@ -727,7 +729,7 @@ Auditoría — una fila por mutación.
 |---|---|---|
 | `id` (docId) | string | autoId |
 | `uid`, `email` | string? | quién |
-| `action` | `"create"` \| `"update"` \| `"delete"` \| `"import"` \| `"bulkStart"` \| `"bulkEnd"` \| `"settlement"` \| `"setPrincipal"` | `"import"` solo lo escribe la importación de la agenda telefónica; los otros cuatro, las acciones masivas de contratos (`entity: "employment"`) |
+| `action` | `"create"` \| `"update"` \| `"delete"` \| `"import"` \| `"bulkStart"` \| `"bulkEnd"` \| `"settlement"` \| `"setPrincipal"` \| `"harvestImport"` | `"import"` solo lo escribe la importación de la agenda telefónica; `"harvestImport"`, importar la cosecha en la grilla del ciclo (`entity: "cycle"`); los otros cuatro, las acciones masivas de contratos (`entity: "employment"`) |
 | `entity`, `entityId` | string | qué |
 | `before` | objeto? | solo en `delete` (snapshot completo). Borrar un documento que no existe no deja log |
 | `after` | objeto? | solo en `create` (snapshot completo) |
@@ -746,6 +748,7 @@ Auditoría — una fila por mutación.
 | `addedAbono`, `editedAbonoId`, `removedAbonoId` | `paymentsService` | detalle del abono tocado |
 | `jobId`, `payrollId`, `workerCount`, `removed` | `publishPortal` (`functions/portal.js`) | qué nómina se publicó en el portal, cuántas fichas quedaron y cuántas se borraron (`entity: "portalMeta"`) |
 | `created`, `updated`, `unchanged`, `sources`, `files` | `importPhoneContacts` (`services/phoneContactsService.js`) | una importación de la agenda telefónica (`action: "import"`, `entity: "phoneContact"`) |
+| `laborId`, `file`, `written`, `deleted`, `blocked`, `floors`, `created`, `aliases`, `daysAdded`, `workersAdded`, `floorDays` | `importHarvest` (`services/harvestImportService.js`) | una importación de cosecha (`action: "harvestImport"`): `created`, los RUT de las fichas nuevas; `aliases`, `[{ workerId, added }]` con los pares RUT y nombre que se guardaron en cada ficha |
 | `ids`, `count`, `type`, `employerId`, `startDate` / `endDate`, `endReason` / `status`, `date` | `startEmployments`, `endEmployments`, `setSettlementStatus` (`services/employmentsService.js`) | una acción masiva sobre contratos y honorarios (`entity: "employment"`, sin `entityId`): los períodos que creó o tocó |
 | `op: "applyAdvances"`, `count`, `total`, `advanceIds`, `sobrantes?` | `applyAdvancesToPayroll` | un log por nómina (`entity: "payroll"`) con los anticipos que descontó. `sobrantes: [{ advanceId, pedido, aplicado }]` son las aplicaciones recortadas |
 | `op: "restoreAdvances"`, `count`, `advanceIds` | `restoreAdvancesFromPayroll` | los anticipos que soltó la nómina |

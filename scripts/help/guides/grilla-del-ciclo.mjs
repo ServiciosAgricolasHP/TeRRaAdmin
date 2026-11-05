@@ -1,7 +1,16 @@
 // Capturas de la guía "Anotar jornadas en la grilla del ciclo"
-// (src/screens/help/guides/grilla-del-ciclo.md), sobre el ciclo de demo.
+// (src/screens/help/guides/grilla-del-ciclo.md), sobre el ciclo de demo, e
+// importar la cosecha de la empresa en un ciclo de cerezas
+// (`seedHarvestImport`, con el archivo `demoHarvestFile`).
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { PHONE, login as loginOn, preparePage } from "../lib.mjs";
-import { DEMO_CYCLE } from "../seed.mjs";
+import { DEMO_CYCLE, DEMO_WORKERS, HARVEST_CYCLE, demoHarvestFile, seedHarvestImport } from "../seed.mjs";
+
+// El modal abierto con ese título.
+const modal = (page, title) =>
+  page.getByRole("heading", { name: title }).locator("xpath=ancestor::div[contains(@class,'rounded-xl')][1]");
 
 export async function run({ browser, page, base, login, shot }) {
   await login();
@@ -106,4 +115,31 @@ export async function run({ browser, page, base, login, shot }) {
   await p.waitForTimeout(800);
   await shot(p, "11-telefono", null);
   await phone.close();
+
+  // Importar la cosecha de la empresa.
+  await seedHarvestImport();
+  const file = path.join(os.tmpdir(), "cosecha-demo.json");
+  fs.writeFileSync(file, JSON.stringify(demoHarvestFile()));
+  await page.goto(`${base}/cycles/${HARVEST_CYCLE}`);
+  const importBtn = page.getByRole("button", { name: "📥 Importar cosecha" });
+  await importBtn.waitFor({ timeout: 120000 });
+  await importBtn.click();
+  const imp = modal(page, /^Importar cosecha/);
+  await imp.locator("input[type=file]").setInputFiles(file);
+  await imp.getByText("CHANGA CEREZAS 5 A 6 OCTUBRE.xlsx").waitFor();
+  const next = imp.getByRole("button", { name: "Siguiente ›" });
+  await shot(page, "12-importar-archivo", imp, { pad: 0, marks: [imp.locator("fieldset"), next] });
+  await next.click();
+  const felipe = DEMO_WORKERS[5];
+  const felipeSel = imp.getByRole("combobox", { name: "Ficha de FELIPE TORRES LAGOS" });
+  const felipeOption = (await felipeSel.locator("option").allTextContents()).find((o) => o.startsWith(`Ficha: ${felipe.name}`));
+  await felipeSel.selectOption({ label: felipeOption });
+  const miguelSel = imp.getByRole("combobox", { name: "Ficha de MIGUEL TAPIA ROJAS" });
+  const miguelSearch = imp.locator("li", { hasText: "MIGUEL TAPIA ROJAS" }).getByRole("button", { name: "🔍 Buscar otra ficha" });
+  await shot(page, "13-importar-personas", imp, { pad: 0, marks: [felipeSel, miguelSel, miguelSearch] });
+  await miguelSel.selectOption("skip");
+  await next.click();
+  await imp.getByText("✓ Calza con lo que se importa").waitFor();
+  const importNow = imp.getByRole("button", { name: "Importar", exact: true });
+  await shot(page, "14-importar-revisar", imp, { pad: 0, marks: [importNow] });
 }

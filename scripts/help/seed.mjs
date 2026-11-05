@@ -571,3 +571,79 @@ export async function seedAdmin() {
   ];
   for (const [i, l] of logs.entries()) await db.collection("logs").doc(`LG${i + 1}`).set(l);
 }
+
+// Para importar la cosecha de la empresa (guía de la grilla del ciclo): un
+// ciclo de cerezas con su labor de cosecha, los precios de capacho y totem, y
+// esos envases en el catálogo. El archivo es `demoHarvestFile`.
+export const HARVEST_CYCLE = "C4";
+
+export async function seedHarvestImport() {
+  const db = getFirestore("hpdatabase");
+  await db.collection("catalogs").doc("qualities").set({ entries: [{ value: 0, label: "Exportación" }, { value: 1, label: "IQF" }] });
+  await db.collection("catalogs").doc("containers").set({
+    entries: [{ value: 0, label: "kilo" }, { value: 1, label: "bandeja" }, { value: 2, label: "capacho" }, { value: 4, label: "totem" }],
+  });
+  const prices = { "0_2": { price: 900, mode: "unit" }, "0_4": { price: 1800, mode: "unit" } };
+  await db.collection("cycles").doc(HARVEST_CYCLE).set({
+    label: "Fundo Los Aromos/Cuartel Norte/Cerezas",
+    faenaId: "F1",
+    subfaenaId: "S1",
+    status: "open",
+    startDate: "2026-10-05",
+    days: ["2026-10-05"],
+    labors: [{ id: "L1", name: "Cosecha", type: "cosecha", workers: [] }],
+    dayPrices: { L1: { "2026-10-05": prices, "2026-10-06": prices } },
+    dayNotesByLabor: {},
+    createdAt: new Date("2026-10-04"),
+  });
+}
+
+// El JSON que entrega la empresa, como lo genera el script de las planillas:
+// dos días de cerezas en capacho y totem, de dos contratistas. Ana, Bruno y
+// Carla calzan; Felipe viene con otro RUT; el RUT de Gloria viene con otro
+// nombre, y Pedro no tiene ficha. Ana saca los dos pisos el 06-10, uno por
+// envase.
+export function demoHarvestFile() {
+  const [ana, bruno, carla, , , felipe, gloria] = DEMO_WORKERS;
+  const own = "CONTRATISTA DEMO SPA";
+  const row = (r, nombre, fecha, envase, cajas, contratista = own) => ({
+    rut: r, nombre, contratista, hoja: "Hoja1", fecha, campo: "Los Aromos", especie: "CEREZOS", calidad: "EXP",
+    envase, kilos: cajas * (envase === "TOTEM CZ" ? 10 : 4.5), cajas, precio_empresa: envase === "TOTEM CZ" ? 2200 : 1100,
+  });
+  const floor = (r, nombre, fecha, envase, monto) => ({
+    rut: r, nombre, fecha, monto, por: "envase", grupo: envase, regla: `${envase} ${fecha.slice(8)}-${fecha.slice(5, 7)}: más de 9 cajas`,
+  });
+  return {
+    formato: "harvestLaguada",
+    version: 1,
+    nota: "Datos inventados para la ayuda.",
+    archivo: "CHANGA CEREZAS 5 A 6 OCTUBRE.xlsx",
+    generado: "09-10-2026 10:00",
+    semana: "2026-S41",
+    estado: "OK",
+    periodo: { desde: "2026-10-05", hasta: "2026-10-06" },
+    unidad_pago: "caja",
+    totales: {},
+    cosechas: [{ hoja: "Hoja1", especies: ["CEREZOS"], filas: 9, desde: "2026-10-05", hasta: "2026-10-06", calibrada: true }],
+    produccion: [
+      row(ana.rut, "ANA PEREZ SOTO", "2026-10-05", "CAPACHO CZ", 12),
+      row(ana.rut, "ANA PEREZ SOTO", "2026-10-06", "CAPACHO CZ", 14),
+      row(ana.rut, "ANA PEREZ SOTO", "2026-10-06", "TOTEM CZ", 11),
+      row(bruno.rut, "BRUNO DIAZ MELLA", "2026-10-05", "CAPACHO CZ", 8),
+      row(bruno.rut, "BRUNO DIAZ MELLA", "2026-10-06", "CAPACHO CZ", 13),
+      row(carla.rut, "CARLA ROJAS FUENTES", "2026-10-06", "TOTEM CZ", 6),
+      row(rut(23456781), "FELIPE TORRES LAGOS", "2026-10-05", "CAPACHO CZ", 9),
+      row(gloria.rut, "MIGUEL TAPIA ROJAS", "2026-10-06", "CAPACHO CZ", 7),
+      row(rut(24567892), "PEDRO SALAS VERA", "2026-10-06", "CAPACHO CZ", 10),
+      row(rut(25678903), "LUIS CAMPOS ORTIZ", "2026-10-06", "CAPACHO CZ", 11, "OTRO CONTRATISTA LTDA"),
+    ],
+    pisos: [
+      floor(ana.rut, "ANA PEREZ SOTO", "2026-10-05", "CAPACHO CZ", 15000),
+      floor(ana.rut, "ANA PEREZ SOTO", "2026-10-06", "CAPACHO CZ", 15000),
+      floor(ana.rut, "ANA PEREZ SOTO", "2026-10-06", "TOTEM CZ", 20000),
+      floor(bruno.rut, "BRUNO DIAZ MELLA", "2026-10-06", "CAPACHO CZ", 15000),
+      floor(rut(24567892), "PEDRO SALAS VERA", "2026-10-06", "CAPACHO CZ", 15000),
+    ],
+    advertencias: ["Trabajadores con más de un piso el mismo día, porque la regla cuenta cada envase por separado: 06-10-2026: 1 (ANA PEREZ SOTO). Revisa si corresponde."],
+  };
+}

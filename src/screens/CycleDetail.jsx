@@ -191,7 +191,7 @@ export default function CycleDetail() {
   // oculta mientras la grilla no se ve (mobile con CycleWorkerList).
   const gridVisible = !isMobile || showDesktopGrid;
 
-  const { closed, cycleWrite, readOnly, wdWrite } = useCycleWriteGuard({ cycle, id, toast });
+  const { closed, cycleWrite, guardedWrite, readOnly, wdWrite } = useCycleWriteGuard({ cycle, id, toast });
 
   // Prefijos QR (`qrPrefixes`): pocos documentos que cambian poco, en caché
   // persistida con TTL de 1 h. Dicen qué labores alimenta la app de escaneo
@@ -863,6 +863,7 @@ export default function CycleDetail() {
     floorRemoveBusy,
     getPriceInputValue,
     goToDayNote,
+    guardedWrite,
     grandTotal,
     gridVisible,
     groupView,
@@ -883,6 +884,7 @@ export default function CycleDetail() {
     job,
     laborForm,
     laborGroups,
+    loadAllWorkers,
     LEADER_LOCAL,
     LEADER_NONE,
     localPriceInputs,
@@ -911,6 +913,7 @@ export default function CycleDetail() {
     pieceworkView,
     prevCycle,
     pricesCollapsed,
+    qrLocked,
     qrLockedLabors,
     readOnly,
     removeBusy,
@@ -930,6 +933,7 @@ export default function CycleDetail() {
     setAddPriceModal,
     setCatalogsOpen,
     setCloseFlow,
+    setCycle,
     setConfirmRemoveDay,
     setConfirmReopen,
     setDayModeEdit,
@@ -973,7 +977,10 @@ export default function CycleDetail() {
     upsertOvertimeDayWorkday,
     viewMonth,
     wdMap,
+    workdaysByLabor,
     workers,
+    setWorkdaysByLabor,
+    allWorkers,
   };
 
   return (

@@ -29,6 +29,7 @@
 - Una labor apuntada por un prefijo QR activo se marca en `CycleDetail` con un chip **📱 \<PREFIJO\>** (en las tarjetas y en la barra de pestañas) y sus **celdas de producción quedan de solo lectura**, con un aviso arriba de la grilla.
 - El motivo no es de permisos: la sincronización hace `upsert` sobre el mismo docId, así que **pisa `qty` y `amount`**. Lo que se tipee a mano no queda compitiendo con el scan — desaparece en la próxima corrida sin dejar rastro. Bloquear es más honesto que advertir.
 - El **piso sigue editable**: es un bono manual, vive en un workday aparte (`comboKey: "_piso"`) y la sincronización no lo toca.
+- **📥 Importar cosecha** (la cosecha que entrega la empresa, ver `docs/screens/cycle-detail.md`) queda apagado en una labor sincronizada: son dos caminos aparte y no escriben en la misma labor.
 - La fuente es `qrPrefixes`, **no** el campo `harvestSynced` de los workdays: hay que saberlo antes de que llegue el primer pesaje, que es justo cuando la grilla está vacía y tienta llenarla a mano. Cuesta 4 lecturas cacheadas a 1 h.
 - El predicado vive en `utils/harvestSync.js` (`isPrefixSyncing`, `qrLockedLaborsOf`) con tests: decide si se puede escribir en una grilla de la que sale plata. Ojo con `active`: ausente cuenta como **activo**, igual que en la pantalla de Pesajes QR.
 - Además de `editable`, el candado se chequea al pegar y al borrar varias celdas (`writeBlockedReason`, en `useCellEdits`): son los caminos que escriben celdas sin pasar por ahí.

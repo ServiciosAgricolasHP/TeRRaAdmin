@@ -121,9 +121,38 @@ En el teléfono, la grilla pasa a ser una lista de personas con su total del cic
 
 ![La lista de personas en el teléfono](help/grilla-del-ciclo/11-telefono.webp)
 
+## Importar la cosecha de la empresa
+<!-- preguntas: importar la cosecha; cargar el archivo de la empresa; importar el json de cosecha; la empresa manda lo cosechado; cosecha de otro contratista; extranjero con otro rut en la cosecha; la empresa cambió el rut; la persona viene con otro nombre; no aparece la ficha al importar -->
+
+Cuando la empresa entrega lo que cosechó cada persona, se importa en una labor de **Cosecha** en vez de anotarlo a mano. El archivo es el JSON de cosecha de la empresa (hoy, el que genera el script de las planillas de Laguada). Los montos salen de los precios del ciclo: ponlos en **Precios** antes o después de importar, y se recalculan solos.
+
+1. En la labor de cosecha, toca **📥 Importar cosecha** y elige el archivo.
+2. Marca los contratistas que importas. Viene marcado el que trae más personas; si también le pagas a gente de otro, márcalo.
+3. Revisa con qué calidad y envase del catálogo calza cada combo del archivo, y si se paga **por unidad del envase** o **por kilo**. Lo que elijas se recuerda para la próxima vez. Toca **Siguiente**.
+
+![El archivo, los contratistas y los combos](help/grilla-del-ciclo/12-importar-archivo.webp)
+
+4. Quien tiene el RUT y el nombre de una ficha calza solo. En **Por revisar** está el resto:
+   - **Hay una ficha con el mismo nombre y otro RUT**: elige esa ficha.
+   - **Su RUT es de una ficha con otro nombre**: la empresa pudo reasignar el RUT. Elige la ficha que corresponde o déjala fuera.
+   - **Si la ficha no está en la lista** (por ejemplo, le dicen Patricio y la empresa lo trae como José), toca **🔍 Buscar otra ficha** y búscala por nombre o RUT.
+
+   Cuando eliges a mano una ficha que no calzaba, el RUT y el nombre del archivo quedan guardados en ella, y la próxima vez calza sola. En **Nuevas** está quien no tiene ficha: se le crea una con el RUT del archivo. Con un RUT bajo 22 millones queda en el grupo **CHILENOS**; sobre 30 millones, en **EXTRANJEROS** y con pago en efectivo. Entre medio queda sin grupo ni forma de pago: complétala después en **Trabajadores**. Toca **Siguiente**.
+
+![Las personas por revisar](help/grilla-del-ciclo/13-importar-personas.webp)
+
+5. Revisa lo que se importa, día por día y comparado con lo que dice el archivo, y toca **Importar**. Las cantidades van por envase, y los kilos aparte. Mientras importa, la barra muestra en qué va.
+
+![La revisión antes de importar](help/grilla-del-ciclo/14-importar-revisar.webp)
+
+- Los pisos van con el mismo monto de la planilla. Si la empresa cuenta el piso por envase, cada envase lleva el suyo (ver [Piso](/ayuda/precios-del-dia#piso-un-bono-del-dia)).
+- Volver a importar la misma semana reemplaza lo importado antes. Lo que ya está en una nómina no se toca.
+- Los pisos escritos a mano en la planilla, sin fecha, no se importan: hay que anotarlos en la grilla.
+- Si TeRRa dice que el archivo no es de un formato que conoce, o que su versión es otra, vuelve a generarlo con el script de las planillas y elígelo de nuevo.
+
 ## Si algo no se deja editar
 <!-- preguntas: no puedo editar; no me deja escribir en la celda; celda bloqueada; por qué no puedo cambiar un monto; ciclo cerrado -->
 
 - **El ciclo está cerrado.** Un ciclo cerrado queda congelado: para corregir algo hay que reabrirlo con **Reabrir ciclo**, arriba en la pantalla del ciclo o en su fila de Faenas.
 - **La persona tiene sueldo mensual.** Sus celdas son de asistencia, no reciben montos (ver "Sueldo mensual").
-- **La labor está sincronizada por QR.** La cantidad la escriben los pesajes; se corrige en **Cosecha QR**.
+- **La labor está sincronizada por QR.** La cantidad la escriben los pesajes; se corrige en **Cosecha QR**. Por lo mismo, en esa labor no se puede usar **📥 Importar cosecha**.
