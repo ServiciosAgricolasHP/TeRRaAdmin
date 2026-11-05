@@ -166,6 +166,7 @@ export default function Jobs() {
     cascadeConfirm,
     confirm,
     doDelete,
+    progress: deletionProgress,
     setCascadeConfirm,
     setConfirm,
   } = useJobDeletion({
@@ -451,6 +452,7 @@ export default function Jobs() {
         danger
         message={confirm?.message}
         busy={confirm?.busy}
+        progress={deletionProgress}
         onCancel={() => !confirm?.busy && setConfirm(null)}
         onConfirm={doDelete}
       />

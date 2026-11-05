@@ -192,7 +192,8 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 - `services/firestoreBase.js` exporta `createService(entityName, collectionName)`, que arma el CRUD de una colección.
 - Cada servicio invalida su caché en memoria y escribe el log de auditoría con `services/logger.js`.
 - `list()` acepta `cache: true`, con un TTL de 60 s por defecto; `persist: true` la guarda además en `localStorage`.
-- Las escrituras en lote van con `writeBatch(db)`, en tandas de 450 (el límite de Firestore es 500).
+- Las escrituras en lote van con `writeBatch(db)`, en tandas de 450 (el límite de Firestore es 500): `commitInChunks` (`services/batchWrites.js`).
+- **Una acción que escribe o borra muchas jornadas usa `writeWorkdays`** (`services/workdayBatches.js`), no `workdaysService` una por una: cada jornada cuesta solo su escritura, sin la lectura y el registro de auditoría del servicio; la acción deja un solo registro, con lo que hizo en `meta`, y muestra su avance con `ProgressBar` (`components/`; en un `ConfirmDialog`, con su `progress`).
 - **`update`, `upsert` y `remove` cuestan una lectura además de la escritura**: hacen un `getById` interno para armar el `before` del log de auditoría. `create` no lee.
 - **`remove` de un documento que ya no existe no borra ni escribe log**: un log de `delete` siempre trae el `before`, y de ahí sale su `meta`.
 - **`upsert(id, data, { before })`** deja pasar el documento que el llamador ya leyó y se saltea ese `getById`. `undefined` = "no me lo pasaron, léelo"; `null` = "lo leí y no existe". La diferencia decide si el doc se crea con `createdAt`/`createdBy`, así que **no se puede colapsar en un chequeo de verdad/falsedad** — escrito `knownBefore ? …` el ahorro desaparece sin que nada falle a la vista. Fijado en `tests/e2e/upsert-before.test.js`, que lo observa pasando `null` sobre un doc que sí existe (única forma de ver desde afuera si la lectura ocurrió).
