@@ -96,7 +96,7 @@ Para corregir algo en un ciclo cerrado, toca **↻ Reabrir** en su fila (o **Rea
 <!-- preguntas: cómo elimino un ciclo; borrar un ciclo; eliminar una faena; borrar una subfaena; no me deja eliminar -->
 
 - **Un ciclo**: **Eliminar** en su fila. Se borra con sus jornadas. Si alguna de sus jornadas ya está en una nómina, TeRRa no lo deja: primero hay que eliminar esa nómina.
-- **Una subfaena**: **Eliminar** en su fila. Elimina antes sus ciclos.
+- **Una subfaena**: **Eliminar** en su fila. Si tiene ciclos, solo un admin puede borrarla, en cascada con sus ciclos y sus jornadas, y solo si ninguna de esas jornadas está en una nómina.
 - **Una faena**: **Eliminar** en su tarjeta. Solo se puede si no tiene subfaenas ni ciclos; un admin puede borrarla en cascada, con todo lo que tiene adentro, si ninguna de sus jornadas está en una nómina.
 
 Eliminar no se puede deshacer.
@@ -107,9 +107,9 @@ Eliminar no se puede deshacer.
 Arrastra una tarjeta para cambiarla de lugar. **⚙ Organizar** permite además crear grupos (**+ Grupo**), mover las faenas entre ellos y elegir colores. **✓ Listo** termina.
 
 ## Si algo no funciona
-<!-- preguntas: no puedo editar un ciclo; no aparece un ciclo; no encuentro un ciclo cerrado; no me deja eliminar una faena -->
+<!-- preguntas: no puedo editar un ciclo; no aparece un ciclo; no encuentro un ciclo cerrado; no me deja eliminar una faena; no me deja eliminar una subfaena -->
 
 - **No se puede editar nada del ciclo**: está cerrado. Reábrelo (ver "Reabrir un ciclo").
 - **No aparece un ciclo cerrado**: toca **▾ Ver N ciclos cerrados** en su subfaena.
 - **No se puede eliminar un ciclo**: alguna de sus jornadas está en una nómina.
-- **No se puede eliminar una faena**: todavía tiene subfaenas o ciclos.
+- **No se puede eliminar una faena o una subfaena**: todavía tiene subfaenas o ciclos. Un admin puede borrarla en cascada.

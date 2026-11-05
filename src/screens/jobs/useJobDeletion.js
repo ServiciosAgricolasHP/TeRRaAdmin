@@ -20,6 +20,36 @@ export function useJobDeletion({ isAdmin, loadCycles, loadJobs, loadSubjobs, ord
   const askCascadeConfirm = (message) =>
     new Promise((resolve) => setCascadeConfirm({ message, resolve }));
 
+  // Las jornadas de varios ciclos, leídas sin caché.
+  const workdaysOf = async (cycles) => {
+    const out = [];
+    for (const c of cycles) out.push(...(await workdaysService.list({ wheres: [["cycleId", "==", c.id]] })));
+    return out;
+  };
+
+  // Una cascada no borra jornadas que ya están en una nómina: la dejaría
+  // apuntando a documentos que no existen, y borrarla, revertirla o marcarla
+  // pagada fallaría. Si hay alguna, avisa en qué nóminas están, cierra el
+  // diálogo y devuelve true: primero hay que eliminar esas nóminas.
+  const blockedByPayrolls = async (wds, title) => {
+    const ids = [...new Set(wds.map((w) => w.payrollId).filter(Boolean))];
+    if (!ids.length) return false;
+    const payrolls = await Promise.all(ids.map((pid) => payrollsService.getById(pid).catch(() => null)));
+    const names = payrolls
+      .filter(Boolean)
+      .map((p) => `· ${p.name}${p.status === "paid" ? " (pagada)" : ""}`)
+      .join("\n");
+    const taggedCount = wds.filter((w) => w.payrollId).length;
+    toast.error(
+      `${taggedCount} jornada(s) ya forman parte de ${ids.length} nómina(s):\n` +
+        `${names || "(nómina sin nombre)"}\n\n` +
+        `Elimina primero esas nóminas y vuelve a intentar.`,
+      { title },
+    );
+    setConfirm(null);
+    return true;
+  };
+
   // Cada función cierra el diálogo y vuelve sin borrar nada si algo lo
   // bloquea o si se cancela la cascada.
   const deleteJob = async () => {
@@ -41,33 +71,8 @@ export function useJobDeletion({ isAdmin, loadCycles, loadJobs, loadSubjobs, ord
         setConfirm(null);
         return;
       }
-      // La cascada se bloquea si alguna jornada ya forma parte de una
-      // nómina: borrarla dejaría la nómina huérfana. Primero hay que
-      // eliminar esas nóminas.
-      const allCycleWds = [];
-      for (const c of jobCycles) {
-        const wds = await workdaysService.list({ wheres: [["cycleId", "==", c.id]] });
-        allCycleWds.push(...wds);
-      }
-      const taggedPayrollIds = [...new Set(allCycleWds.map((w) => w.payrollId).filter(Boolean))];
-      if (taggedPayrollIds.length > 0) {
-        const payrolls = await Promise.all(
-          taggedPayrollIds.map((id) => payrollsService.getById(id).catch(() => null)),
-        );
-        const names = payrolls
-          .filter(Boolean)
-          .map((p) => `· ${p.name}${p.status === "paid" ? " (pagada)" : ""}`)
-          .join("\n");
-        const taggedCount = allCycleWds.filter((w) => w.payrollId).length;
-        toast.error(
-          `${taggedCount} jornada(s) ya forman parte de ${taggedPayrollIds.length} nómina(s):\n` +
-            `${names || "(nómina sin nombre)"}\n\n` +
-            `Elimina primero esas nóminas y vuelve a intentar.`,
-          { title: "No se puede eliminar en cascada" },
-        );
-        setConfirm(null);
-        return;
-      }
+      const allCycleWds = await workdaysOf(jobCycles);
+      if (await blockedByPayrolls(allCycleWds, "No se puede eliminar en cascada")) return;
 
       const ok = await askCascadeConfirm(
         `Bloqueado por:\n - ${blockers.join("\n - ")}\n\n¿Eliminar TODO en cascada (subfaenas + ciclos + producción)?\nRevisa la consola del navegador para ver los IDs.\nEsta acción no se puede deshacer.`,
@@ -99,29 +104,7 @@ export function useJobDeletion({ isAdmin, loadCycles, loadJobs, loadSubjobs, ord
       wheres: [["cycleId", "==", confirm.item.id]],
     });
     if (wds.length) {
-      // Antes de proponer la cascada, bloquea si alguna jornada tiene
-      // `payrollId`: borrar el ciclo dejaría los `workdayIds` de la
-      // nómina apuntando a docs inexistentes, y borrarla, revertirla o
-      // marcarla pagada fallaría. Primero hay que eliminar esas nóminas.
-      const taggedPayrollIds = [...new Set(wds.map((w) => w.payrollId).filter(Boolean))];
-      if (taggedPayrollIds.length > 0) {
-        const payrolls = await Promise.all(
-          taggedPayrollIds.map((id) => payrollsService.getById(id).catch(() => null)),
-        );
-        const names = payrolls
-          .filter(Boolean)
-          .map((p) => `· ${p.name}${p.status === "paid" ? " (pagada)" : ""}`)
-          .join("\n");
-        const taggedCount = wds.filter((w) => w.payrollId).length;
-        toast.error(
-          `${taggedCount} jornada(s) ya forman parte de ${taggedPayrollIds.length} nómina(s):\n` +
-            `${names || "(nómina sin nombre)"}\n\n` +
-            `Elimina primero esas nóminas y vuelve a intentar.`,
-          { title: `No se puede eliminar el ciclo "${confirm.item.label}"` },
-        );
-        setConfirm(null);
-        return;
-      }
+      if (await blockedByPayrolls(wds, `No se puede eliminar el ciclo "${confirm.item.label}"`)) return;
       if (!isAdmin) {
         toast.error(
           `El ciclo tiene ${wds.length} registro(s) de producción. (Pide a un admin para cascada)`,
@@ -145,13 +128,39 @@ export function useJobDeletion({ isAdmin, loadCycles, loadJobs, loadSubjobs, ord
     await loadCycles(confirm.item.faenaId);
   };
 
+  // Una subfaena con ciclos se elimina como una faena: solo un admin, en
+  // cascada con sus ciclos y sus jornadas, y nunca si alguna está en una nómina.
+  const deleteSubjob = async () => {
+    if (!confirm) return;
+    const subCycles = await cyclesService.list({ wheres: [["subfaenaId", "==", confirm.item.id]] });
+    if (!subCycles.length) {
+      await subjobsService.remove(confirm.item.id);
+      await loadSubjobs(confirm.item.faenaId);
+      return;
+    }
+    const labels = subCycles.map((c) => c.label).join(", ");
+    if (!isAdmin) {
+      toast.error(`${subCycles.length} ciclo(s): ${labels}\n\n(Pide a un admin para borrado en cascada)`, { title: "No se puede eliminar" });
+      setConfirm(null);
+      return;
+    }
+    const wds = await workdaysOf(subCycles);
+    if (await blockedByPayrolls(wds, "No se puede eliminar en cascada")) return;
+    const ok = await askCascadeConfirm(
+      `La subfaena "${confirm.item.name}" tiene ${subCycles.length} ciclo(s): ${labels}.\n\n¿Eliminar TODO en cascada (ciclos + producción)?\nEsta acción no se puede deshacer.`,
+    );
+    if (!ok) { setConfirm(null); return; }
+    await deleteCascade({ entity: "subfaena", entityId: confirm.item.id, cycles: subCycles, subjobs: [confirm.item], workdays: wds, onProgress });
+    await loadSubjobs(confirm.item.faenaId);
+    await loadCycles(confirm.item.faenaId);
+  };
+
   const deleteConfirmed = async () => {
     if (!confirm) return;
     if (confirm.kind === "job") {
       await deleteJob();
     } else if (confirm.kind === "subjob") {
-      await subjobsService.remove(confirm.item.id);
-      await loadSubjobs(confirm.item.faenaId);
+      await deleteSubjob();
     } else if (confirm.kind === "cycle") {
       const { error: err } = await attempt(deleteCycle);
       if (err) {
