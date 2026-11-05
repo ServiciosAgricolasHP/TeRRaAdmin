@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { updateDoc, doc } from "firebase/firestore";
 import { db } from "../../src/firebase";
+import { workersService } from "../../src/services";
 import { addFloorBonuses, deleteCascade, moveWorkdaysToCycle, removeFloorBonuses } from "../../src/services/workdayBatches";
+import { syncPrefixRange } from "../../src/services/harvestSyncService";
 import { workdayDocId } from "../../src/utils/cosechaCombos";
-import { ANA, BETO, CICLO, FAENA, LABOR, SUBFAENA, all, get, seedCycle, seedWorkday } from "./helpers/seed";
+import { ANA, BETO, CICLO, FAENA, LABOR, SUBFAENA, all, get, set, seedCycle, seedWorkday, seedWorker } from "./helpers/seed";
 
 // Las acciones que escriben muchas jornadas lo hacen en lotes, con un solo
 // registro de auditoría por acción. Datos inventados.
@@ -91,5 +93,42 @@ describe("jornadas en lotes", () => {
     expect(await logsOf("floorRemove")).toMatchObject([{ meta: { deleted: 2 } }]);
     // Sin ninguna jornada en un registro propio.
     expect((await all("logs")).filter((l) => l.entity === "workday")).toEqual([]);
+  });
+
+  it("sincronizar pesajes escribe las jornadas en lotes, agrega días y personas, y no toca lo de una nómina", async () => {
+    workersService.invalidate();
+    await seedWorker(ANA);
+    await seedWorker(BETO);
+    await seedCycle({ dias: ["2026-03-02"] });
+    await set("qrPrefixes", "AB", { cycleId: CICLO, laborId: LABOR });
+    const weight = (id, rut, dateKey, amount) =>
+      set("harvestWeights", id, { prefix: "AB", rut, dateKey, amount, weightProcess: 1, weightType: 1 });
+    await weight("w1", ANA.id, "2026-03-02", 4);
+    await weight("w2", ANA.id, "2026-03-02", 6);
+    await weight("w3", BETO.id, "2026-03-03", 5);
+    await weight("w4", "99999999-9", "2026-03-03", 2);
+    // La de Beto ya está en una nómina.
+    const paid = await seedWorkday({ rut: BETO.id, date: "2026-03-03", amount: 500, qty: 5 });
+    await updateDoc(doc(db, "workdays", paid), { payrollId: "N1" });
+
+    const progress = [];
+    const res = await syncPrefixRange({
+      prefix: { id: "AB", cycleId: CICLO, laborId: LABOR },
+      dateFrom: "2026-03-01",
+      dateTo: "2026-03-05",
+      onProgress: (p) => progress.push(p),
+    });
+
+    expect(res).toMatchObject({ weightsRead: 4, groups: 3, written: 2, daysAdded: ["2026-03-03"], workersAdded: 2, unknownRuts: ["99999999-9"] });
+    expect(res.blocked).toEqual([`${BETO.id} · 2026-03-03`]);
+    expect(await get("workdays", workdayDocId(CICLO, LABOR, ANA.id, "2026-03-02", "1_1"))).toMatchObject({ qty: 10, harvestSynced: true, harvestPrefix: "AB", workerId: ANA.id });
+    expect(await get("workdays", paid)).toMatchObject({ qty: 5, amount: 500, payrollId: "N1" });
+    const cycle = await get("cycles", CICLO);
+    expect(cycle.days).toEqual(["2026-03-02", "2026-03-03"]);
+    expect(cycle.labors[0].workers.map((w) => w.id).sort()).toEqual([ANA.id, BETO.id].sort());
+    expect((await get("qrPrefixes", "AB")).lastSync).toMatchObject({ written: 2 });
+    expect(await logsOf("harvestSync")).toMatchObject([{ entity: "qrPrefix", entityId: "AB", meta: { cycleId: CICLO, written: 2, blocked: 1 } }]);
+    expect((await all("logs")).filter((l) => l.entity === "workday")).toEqual([]);
+    expect(progress.filter((p) => p.stage === "write").at(-1)).toMatchObject({ done: 2, total: 2 });
   });
 });

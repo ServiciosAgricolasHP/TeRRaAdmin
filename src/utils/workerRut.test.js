@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { currentRutResolver, workerIdResolver } from "./workerRut";
+import { currentRutResolver, workerByRutResolver, workerIdResolver } from "./workerRut";
 
 const workers = [
   { id: "11111111-1", rut: "11111111-1" },
@@ -51,5 +51,33 @@ describe("workerIdResolver", () => {
     expect(idOf({ workerRut: "22222222-2" })).toBe("11111111-1");
     expect(idOf({ workerRut: "33333333-3" })).toBe("11111111-1");
     expect(idOf({ workerRut: "99999999-9" })).toBe("99999999-9");
+  });
+});
+
+describe("workerByRutResolver", () => {
+  const workers = [
+    { id: "11111111-1", rut: "22222222-2", rutHistory: ["11111111-1", "33333333-3"], name: "Ana" },
+    { id: "44444444-4", name: "Beto" },
+    // Una ficha duplicada, unida a la de Ana.
+    { id: "55555555-5", rut: "55555555-5", mergedInto: "11111111-1", name: "Ana duplicada" },
+    // Otra persona cuyo RUT vigente es uno que Ana tuvo antes.
+    { id: "66666666-6", rut: "33333333-3", name: "Caro" },
+  ];
+  const byRut = workerByRutResolver(workers);
+
+  it("busca por id, por RUT vigente y por uno anterior, sin puntos", () => {
+    expect(byRut("11.111.111-1").name).toBe("Ana");
+    expect(byRut("22222222-2").name).toBe("Ana");
+    expect(byRut("44444444-4").name).toBe("Beto");
+  });
+
+  it("el RUT vigente de otra ficha manda sobre uno anterior", () => {
+    expect(byRut("33333333-3").name).toBe("Caro");
+  });
+
+  it("una ficha unida a otra devuelve la otra, y sin ficha devuelve null", () => {
+    expect(byRut("55555555-5").name).toBe("Ana");
+    expect(byRut("99999999-9")).toBeNull();
+    expect(byRut("")).toBeNull();
   });
 });
