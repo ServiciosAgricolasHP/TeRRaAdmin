@@ -409,6 +409,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Importar la cosecha de la empresa | `harvestImport` | escribe en `workdays` (`harvestImported`) |
 | Formato del archivo de cosecha de una empresa | `harvestFormat` (`harvestLaguada`…) | |
 | Cómo trae a una persona el archivo de una empresa (RUT y nombre) | `fileAliases` | dentro de `worker` |
+| Limpiar una labor del ciclo | `laborClear` | borra en `workdays` |
 | Piso por envase | `floorByContainer` | dentro de `cycles.dayPrices` |
 | Facturación | `billing` | |
 | Factura (DTE) | `dteDocument` | `dteDocuments` |

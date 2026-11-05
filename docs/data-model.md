@@ -729,7 +729,7 @@ Auditoría — una fila por mutación.
 |---|---|---|
 | `id` (docId) | string | autoId |
 | `uid`, `email` | string? | quién |
-| `action` | `"create"` \| `"update"` \| `"delete"` \| `"import"` \| `"bulkStart"` \| `"bulkEnd"` \| `"settlement"` \| `"setPrincipal"` \| `"harvestImport"` | `"import"` solo lo escribe la importación de la agenda telefónica; `"harvestImport"`, importar la cosecha en la grilla del ciclo (`entity: "cycle"`); los otros cuatro, las acciones masivas de contratos (`entity: "employment"`) |
+| `action` | `"create"` \| `"update"` \| `"delete"` \| `"import"` \| `"bulkStart"` \| `"bulkEnd"` \| `"settlement"` \| `"setPrincipal"` \| `"harvestImport"` \| `"laborClear"` | `"import"` solo lo escribe la importación de la agenda telefónica; `"harvestImport"` y `"laborClear"`, importar la cosecha y limpiar una labor en la grilla del ciclo (`entity: "cycle"`); los otros cuatro, las acciones masivas de contratos (`entity: "employment"`) |
 | `entity`, `entityId` | string | qué |
 | `before` | objeto? | solo en `delete` (snapshot completo). Borrar un documento que no existe no deja log |
 | `after` | objeto? | solo en `create` (snapshot completo) |
@@ -749,6 +749,7 @@ Auditoría — una fila por mutación.
 | `jobId`, `payrollId`, `workerCount`, `removed` | `publishPortal` (`functions/portal.js`) | qué nómina se publicó en el portal, cuántas fichas quedaron y cuántas se borraron (`entity: "portalMeta"`) |
 | `created`, `updated`, `unchanged`, `sources`, `files` | `importPhoneContacts` (`services/phoneContactsService.js`) | una importación de la agenda telefónica (`action: "import"`, `entity: "phoneContact"`) |
 | `laborId`, `file`, `written`, `deleted`, `blocked`, `floors`, `created`, `aliases`, `daysAdded`, `workersAdded`, `floorDays` | `importHarvest` (`services/harvestImportService.js`) | una importación de cosecha (`action: "harvestImport"`): `created`, los RUT de las fichas nuevas; `aliases`, `[{ workerId, added }]` con los pares RUT y nombre que se guardaron en cada ficha |
+| `laborId`, `laborName`, `deleted`, `kept`, `workersRemoved`, `daysRemoved`, `tripDays`, `pendingTrips` | `clearLabor` (`services/laborClearService.js`) | limpiar una labor (`action: "laborClear"`): cuántas jornadas borró y cuántas quedaron por estar en una nómina, cuántas personas sacó, qué días quitó, cuáles quedaron por tener vueltas y cuántas vueltas sin pagar había esos días |
 | `ids`, `count`, `type`, `employerId`, `startDate` / `endDate`, `endReason` / `status`, `date` | `startEmployments`, `endEmployments`, `setSettlementStatus` (`services/employmentsService.js`) | una acción masiva sobre contratos y honorarios (`entity: "employment"`, sin `entityId`): los períodos que creó o tocó |
 | `op: "applyAdvances"`, `count`, `total`, `advanceIds`, `sobrantes?` | `applyAdvancesToPayroll` | un log por nómina (`entity: "payroll"`) con los anticipos que descontó. `sobrantes: [{ advanceId, pedido, aplicado }]` son las aplicaciones recortadas |
 | `op: "restoreAdvances"`, `count`, `advanceIds` | `restoreAdvancesFromPayroll` | los anticipos que soltó la nómina |

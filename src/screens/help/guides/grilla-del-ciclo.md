@@ -149,6 +149,22 @@ Cuando la empresa entrega lo que cosechó cada persona, se importa en una labor 
 - Volver a importar la misma semana reemplaza lo importado antes. Lo que ya está en una nómina no se toca.
 - Los pisos escritos a mano en la planilla, sin fecha, no se importan: hay que anotarlos en la grilla.
 - Si TeRRa dice que el archivo no es de un formato que conoce, o que su versión es otra, vuelve a generarlo con el script de las planillas y elígelo de nuevo.
+- Para empezar de nuevo, por ejemplo después de una importación de prueba, usa **🧹 Limpiar labor** (ver "Limpiar una labor").
+
+## Limpiar una labor
+<!-- preguntas: limpiar la labor; borrar todas las jornadas de una labor; deshacer una importación; empezar la labor de nuevo; borrar la cosecha importada; vaciar el ciclo -->
+
+**🧹 Limpiar labor**, en la barra de cualquier labor, borra todas sus jornadas (producción, pisos y asistencia), saca a sus personas y quita del ciclo los días que quedan vacíos. Sirve para volver a cargar una labor, por ejemplo una cosecha importada de prueba.
+
+1. Abre la labor y toca **🧹 Limpiar labor**.
+2. Lee lo que se borra y lo que queda, escribe **limpiar** y toca **Limpiar**.
+
+![Limpiar una labor](help/grilla-del-ciclo/15-limpiar-labor.webp)
+
+- Las jornadas que ya están en una nómina no se tocan, y su persona y su día quedan.
+- Un día que usa otra labor, o que tiene vueltas de transporte, queda. Las vueltas no se borran: si hay vueltas sin pagar en los días de la labor, el diálogo lo avisa, para revisarlas en **🚐 Transportes**.
+- Los precios y la labor quedan.
+- No se puede con el ciclo cerrado ni en una labor sincronizada por QR.
 
 ## Si algo no se deja editar
 <!-- preguntas: no puedo editar; no me deja escribir en la celda; celda bloqueada; por qué no puedo cambiar un monto; ciclo cerrado -->

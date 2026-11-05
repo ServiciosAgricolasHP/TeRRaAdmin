@@ -47,6 +47,8 @@ describe("preguntas típicas", () => {
     ["importar la cosecha que manda la empresa", "grilla-del-ciclo#importar-la-cosecha-de-la-empresa"],
     ["extranjero con otro rut en la cosecha", "grilla-del-ciclo#importar-la-cosecha-de-la-empresa"],
     ["la persona viene con otro nombre en la cosecha", "grilla-del-ciclo#importar-la-cosecha-de-la-empresa"],
+    ["borrar todas las jornadas de una labor", "grilla-del-ciclo#limpiar-una-labor"],
+    ["deshacer una importación", "grilla-del-ciclo#limpiar-una-labor"],
     ["cómo creo un fundo nuevo", "faenas-y-ciclos#crear-una-faena"],
     ["cómo agrego un cuartel a la faena", "faenas-y-ciclos#crear-una-subfaena"],
     ["cómo cierro un ciclo", "faenas-y-ciclos#cerrar-un-ciclo"],

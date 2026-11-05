@@ -1,7 +1,8 @@
 // Capturas de la guía "Anotar jornadas en la grilla del ciclo"
 // (src/screens/help/guides/grilla-del-ciclo.md), sobre el ciclo de demo, e
 // importar la cosecha de la empresa en un ciclo de cerezas
-// (`seedHarvestImport`, con el archivo `demoHarvestFile`).
+// (`seedHarvestImport`, con el archivo `demoHarvestFile`) y limpiar esa
+// labor.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -142,4 +143,13 @@ export async function run({ browser, page, base, login, shot }) {
   await imp.getByText("✓ Calza con lo que se importa").waitFor();
   const importNow = imp.getByRole("button", { name: "Importar", exact: true });
   await shot(page, "14-importar-revisar", imp, { pad: 0, marks: [importNow] });
+
+  // Limpiar la labor recién importada.
+  await importNow.click();
+  await imp.waitFor({ state: "detached", timeout: 60000 });
+  await page.getByRole("button", { name: "🧹 Limpiar labor" }).click();
+  const clear = modal(page, /^Limpiar la labor/);
+  await clear.locator("input[type=text]").fill("limpiar");
+  await shot(page, "15-limpiar-labor", clear, { pad: 0, marks: [clear.locator("input[type=text]"), clear.getByRole("button", { name: "Limpiar", exact: true })] });
+  await clear.getByRole("button", { name: "Cancelar", exact: true }).click();
 }

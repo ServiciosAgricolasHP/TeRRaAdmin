@@ -3,11 +3,12 @@ import { tratoTypeLabel } from "../../utils/cosechaCombos";
 import { DEFAULT_BASE_DAY, DEFAULT_OVERTIME_RATE, DEFAULT_BONUS_MANEJO, DEFAULT_BONUS_SUPERVISION } from "../../utils/tratoHE";
 import { useCycleDetail } from "./CycleDetailContext";
 import ImportHarvestModal from "./ImportHarvestModal";
+import ClearLaborModal from "./ClearLaborModal";
 
 // Barra de la labor activa: qué se ingresa en ella, la vista detalle o
-// resumen, editar o quitar la labor, agregar días y trabajadores, importar
-// la cosecha que entrega la empresa, y los días del ciclo con su botón para
-// quitarlos.
+// resumen, editar, limpiar o quitar la labor, agregar días y trabajadores,
+// importar la cosecha que entrega la empresa, y los días del ciclo con su
+// botón para quitarlos.
 export function LaborToolbar() {
   const {
     activeLabor,
@@ -39,6 +40,7 @@ export function LaborToolbar() {
     workers,
   } = useCycleDetail();
   const [importOpen, setImportOpen] = useState(false);
+  const [clearOpen, setClearOpen] = useState(false);
   return (
     <>
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -153,6 +155,14 @@ export function LaborToolbar() {
           <button onClick={openEditLabor} disabled={readOnly} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-40">
             Editar labor
           </button>
+          <button
+            onClick={() => setClearOpen(true)}
+            disabled={readOnly || qrLocked}
+            title={qrLocked ? "Esta labor la sincroniza Pesajes QR: no se limpia a mano" : "Borrar las jornadas de la labor y sacar a sus personas, para cargarla de nuevo"}
+            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:opacity-40"
+          >
+            🧹 Limpiar labor
+          </button>
           <button onClick={askRemoveLabor} disabled={readOnly || cycle.labors.length === 1} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:opacity-40">
             Quitar labor
           </button>
@@ -176,6 +186,7 @@ export function LaborToolbar() {
       </div>
 
       {importOpen && <ImportHarvestModal onClose={() => setImportOpen(false)} />}
+      {clearOpen && <ClearLaborModal onClose={() => setClearOpen(false)} />}
 
       {days.length > 0 && !readOnly && (
         <div className="mb-2 flex flex-wrap gap-1">
