@@ -1,4 +1,5 @@
 import { ImportSection } from "./ImportSection";
+import { ProgressBar } from "../../components/ProgressBar";
 import { LABOR_TYPES } from "../../utils/laborTypes";
 import Modal, { ModalCloseButton } from "../../components/Modal";
 import Select from "../../components/Select";
@@ -106,6 +107,9 @@ export function CycleFormModal({ busy, cycleForm, cyclePrefix, selectedSubjobs, 
                   }. Podrás agregar más al abrirlo.`
                 : "Podrás agregar más labores al abrir el ciclo."}
           </p>
+          {busy && cycleForm.progress && (
+            <ProgressBar label={cycleForm.progress.label} done={cycleForm.progress.done} total={cycleForm.progress.total} />
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <ModalCloseButton
               disabled={busy}

@@ -3,6 +3,7 @@ import { db, auth } from "../firebase";
 import { cyclesService, subjobsService, workdaysService } from "./index";
 import { commitInChunks } from "./batchWrites";
 import { logAction } from "./logger";
+import { movedWorkday } from "../utils/cycleCreation";
 
 // Una jornada movida se escribe en su id nuevo y se borra del viejo en el
 // mismo lote: dos operaciones.
@@ -64,4 +65,34 @@ export async function deleteCascade({ entity, entityId, cycles, subjobs = [], wo
     for (const w of workdays) byCycle[w.cycleId] = (byCycle[w.cycleId] || 0) + 1;
     await logAction({ action: "cascadeDelete", entity, entityId, meta: { workdays: ids.length, byCycle } });
   }
+}
+
+// Mueve al ciclo nuevo las jornadas de las labores que se importaron de otro
+// ciclo (`labors`: `[{ from, to }]`, los ids de la labor en cada uno), solo
+// las de los días elegidos (`days`, un Set). Las que están en una nómina
+// quedan en el origen. Cada una se recrea con su id nuevo (`movedWorkday`,
+// utils/cycleCreation.js) y se borra del origen en el mismo lote. Deja un solo
+// registro, `workdaysMove`, a nombre del ciclo nuevo.
+//
+// `onProgress({ stage, done, total })`: "read" y "move" (con `done` y
+// `total`). Devuelve `{ moved, skippedPaid }`.
+export async function moveWorkdaysToCycle({ fromCycleId, toCycleId, labors, days, onProgress = () => {} }) {
+  onProgress({ stage: "read" });
+  const moves = [];
+  let skippedPaid = 0;
+  for (const { from, to } of labors) {
+    const wds = await workdaysService.list({ wheres: [["cycleId", "==", fromCycleId], ["laborId", "==", from]] });
+    for (const w of wds) {
+      if (!days.has(w.date)) continue;
+      if (w.payrollId) { skippedPaid += 1; continue; }
+      const target = movedWorkday(w, toCycleId, to);
+      moves.push({ fromId: w.id, toId: target.id, data: target.data });
+    }
+  }
+  onProgress({ stage: "move", done: 0, total: moves.length });
+  await writeWorkdays({ moves, onProgress: (done, total) => onProgress({ stage: "move", done, total }) });
+  if (moves.length) {
+    await logAction({ action: "workdaysMove", entity: "cycle", entityId: toCycleId, meta: { fromCycleId, moved: moves.length, skippedPaid } });
+  }
+  return { moved: moves.length, skippedPaid };
 }
