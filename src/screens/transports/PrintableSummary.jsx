@@ -1,6 +1,7 @@
 import { forwardRef } from "react";
 import { titleCase } from "../../services/transportsService";
 import { fmtCurrency } from "../../utils/format";
+import { payoffOf } from "../../utils/transportPayoff";
 import { cellH, cell } from "./printStyles";
 import { MONTH_NAMES, tripDateLabel, tripLaborLabel, tripObservation } from "./tripCells";
 
@@ -27,11 +28,13 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
   // Abonos del resumen y lo que queda pendiente, al pie de la tabla: es lo que
   // ve el transportista. `abonosProp` llega del modal, que los edita en vivo;
   // si no, salen del resumen. El pendiente se calcula contra el total de las
-  // vueltas, el mismo que muestra la tabla.
+  // vueltas, el mismo que muestra la tabla. Uno pagado suma su liquidación (lo
+  // que faltaba al marcarlo pagado) y cierra con el saldo en cero.
   const abonos = abonosProp || payment?.abonos || [];
   const abonado = abonos.reduce((s, a) => s + (Number(a.amount) || 0), 0);
   const isPaid = payment?.status === "paid";
   const pending = isPaid ? 0 : Math.max(0, total - abonado);
+  const payoff = abonos.length > 0 ? payoffOf(payment, { abonos, total }) : null;
   const labelSpan = 6;
   const trailingCells = 1 + (showActions ? 1 : 0);
 
@@ -144,10 +147,21 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
               <td style={cell} colSpan={trailingCells}>{a.notes || ""}</td>
             </tr>
           ))}
+          {payoff && (
+            <tr>
+              <td style={{ ...cell, color: "#166534" }} colSpan={labelSpan}>
+                Liquidación {tripDateLabel(payoff.date)}
+              </td>
+              <td style={{ ...cell, textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#166534" }}>
+                − {fmtCurrency(payoff.amount)}
+              </td>
+              <td style={cell} colSpan={trailingCells}></td>
+            </tr>
+          )}
           {abonos.length > 0 && (
             <tr style={{ background: pending > 0 ? "#fef3c7" : "#c6efce" }}>
               <td style={{ ...cell, fontWeight: 700 }} colSpan={labelSpan}>
-                {isPaid ? "PAGADO" : "PENDIENTE"}
+                {isPaid ? "SALDO (PAGADO)" : "PENDIENTE"}
               </td>
               <td style={{ ...cell, textAlign: "right", fontWeight: 700, fontVariantNumeric: "tabular-nums", color: pending > 0 ? "#a16207" : "#166534" }}>
                 {fmtCurrency(pending)}

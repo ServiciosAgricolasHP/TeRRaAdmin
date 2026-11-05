@@ -1,7 +1,7 @@
 // Capturas de la guía "Pagar a los transportistas"
 // (src/screens/help/guides/pagar-transportes.md): el pago por faena, los
 // resúmenes, pagar uno suelto, un abono, una quincena nueva, su detalle, la confirmación del
-// pago, la de liquidar el resumen con el abono y el balance de quincenas.
+// pago, la de liquidar el resumen con el abono, el resumen liquidado y el balance de quincenas.
 import { seedLaborTypes, seedTransports } from "../seed.mjs";
 
 // El modal abierto con ese título.
@@ -100,5 +100,17 @@ export async function run({ page, base, login, shot }) {
   await settle.getByText(/falta pagar/).waitFor();
   await settle.getByRole("textbox").fill("Pagada");
   await shot(page, "09-liquidar", settle, { pad: 0 });
-  await settle.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await settle.getByRole("button", { name: "Confirmar pago", exact: true }).click();
+  await settle.waitFor({ state: "detached", timeout: 60000 });
+
+  // El resumen liquidado: el abono y la liquidación.
+  const settledRow = fortnight.locator("tr", { hasText: "Ríos" }).filter({ hasText: "$150.000" })
+    .filter({ has: page.getByTitle("Ver detalle del resumen") });
+  await settledRow.getByText("Pagado", { exact: true }).waitFor({ timeout: 60000 });
+  await settledRow.getByTitle("Ver detalle del resumen").click();
+  const settled = modal(page, /^Resumen — /);
+  await settled.getByText(/Liquidación/).first().waitFor({ timeout: 60000 });
+  await page.waitForTimeout(800);
+  const settledAbonos = settled.getByText(/💰 Abonos/).locator("xpath=ancestor::div[contains(@class,'rounded-md')][1]");
+  await shot(page, "11-liquidacion", settledAbonos, { pad: 6 });
 }

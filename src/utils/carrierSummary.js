@@ -7,6 +7,7 @@
 // el resumen, así la tabla suma lo que dicen sus filas.
 
 import { localIsoDate } from "./dates";
+import { payoffOf } from "./transportPayoff";
 
 const LOOSE_KEY = "loose";
 const UNLINKED_KEY = "unlinked";
@@ -46,7 +47,8 @@ export function carrierSummaryPayments(payments, { openFortnightIds = new Set(),
 }
 
 // Un resumen tal como se muestra: sus vueltas por fecha, el total, los abonos,
-// lo pagado y lo que falta. Uno pagado no debe nada.
+// lo pagado y lo que falta. Uno pagado no debe nada y, si tenía abonos, trae su
+// liquidación.
 function summaryOf(p, trips) {
   const total = sumOf(trips, (t) => t.amount);
   const isPaid = p.status === "paid";
@@ -57,6 +59,7 @@ function summaryOf(p, trips) {
     payment: p,
     trips,
     abonos,
+    payoff: abonos.length > 0 ? payoffOf(p, { abonos, total }) : null,
     isPaid,
     total,
     qty: sumOf(trips, (t) => t.qty),

@@ -270,7 +270,7 @@ describe("transportDebtByMonth", () => {
   it("el detalle del mes trae el transportista, el período y la quincena, de mayor a menor monto", () => {
     const oct = transportDebtByMonth(payments, carriers, fortnights, NOW).find((r) => r.key === "2026-10");
     expect(oct.paidItems.map((i) => [i.amount, i.kind, i.date, i.marked || false])).toEqual([
-      [400, "summary", "2026-10-10", true],
+      [400, "payoff", "2026-10-10", true],
       [200, "partialPayment", "2026-10-02", false],
     ]);
     expect(oct.paidItems[1]).toMatchObject({ name: "JC", fortnight: "Quincena 1-15 de Septiembre", notes: "Adelanto" });
@@ -278,7 +278,7 @@ describe("transportDebtByMonth", () => {
     expect(sep.createdItems).toHaveLength(1);
     expect(sep.createdItems[0].period).toContain("→");
     const kinds = [...sep.createdItems, ...oct.paidItems].map((i) => DEBT_KIND_LABEL[i.kind]);
-    expect(kinds).toEqual(["Resumen", "Resumen", "Abono"]);
+    expect(kinds).toEqual(["Resumen", "Liquidación", "Abono"]);
   });
 });
 

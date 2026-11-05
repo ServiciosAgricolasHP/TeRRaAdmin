@@ -409,6 +409,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Transportista | `carrier` | `carriers` |
 | Vuelta | `trip` | `transports` |
 | Resumen de transporte | `transportPayment` (`payment` dentro de Transportes) | `transportPayments` |
+| Liquidación de un resumen (lo que faltaba al marcarlo pagado) | `payoff` | se calcula desde `transportPayments`, no se guarda |
 | Quincena | `fortnight` | `transportPayrolls` |
 | Pesaje | `harvestWeight` | `harvestWeights` |
 | Padrón de un prefijo QR | `roster` | dentro de `qrPrefixes` (guardado como `padron`) |
