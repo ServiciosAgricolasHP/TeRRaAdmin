@@ -11,7 +11,7 @@ export function HarvestDay({ d }) {
     catalogs,
     commitHarvestCombo,
     dayCombosByDate,
-    daysWithFloor,
+    floorsByDate,
     readOnly,
   } = useCycleDetail();
   const {
@@ -26,7 +26,7 @@ export function HarvestDay({ d }) {
     workerRut,
   } = useWorkerEdit();
   const combos = dayCombosByDate[d] || [];
-  if (combos.length === 0 && !daysWithFloor?.has(d)) {
+  if (combos.length === 0 && !floorsByDate?.[d]?.length) {
     return (
       <div key={d} className="rounded-lg border border-dashed border-[var(--color-border)] p-3.5">
         <div className="mb-1 flex items-center justify-between gap-2">

@@ -30,7 +30,7 @@ import { currentRutResolver } from "../utils/workerRut";
 import {
   peopleByDateOf,
   overtimeHoursByDateOf,
-  daysWithFloorOf,
+  dayFloorsOf,
   dayCombosOf,
   dayTiersOf,
   dayStagesOf,
@@ -323,7 +323,7 @@ export default function CycleDetail() {
     return labor?.workers?.find((w) => w.rut === rut)?.id || rut;
   };
 
-  const daysWithFloor = useMemo(() => daysWithFloorOf(activeLabor, isHarvestLabor, isPieceworkLabor, dayPrices, wdMap), [activeLabor, isHarvestLabor, isPieceworkLabor, dayPrices, wdMap]);
+  const floorsByDate = useMemo(() => dayFloorsOf(activeLabor, isHarvestLabor, isPieceworkLabor, dayPrices, wdMap), [activeLabor, isHarvestLabor, isPieceworkLabor, dayPrices, wdMap]);
 
   const dayCombosByDate = useMemo(() => dayCombosOf(isHarvestLabor, activeLabor, days, dayPrices, defaultMode, workdaysByLabor), [isHarvestLabor, activeLabor, days, dayPrices, defaultMode, workdaysByLabor]);
 
@@ -373,13 +373,13 @@ export default function CycleDetail() {
   const rutOf = useMemo(() => currentRutResolver(allWorkers), [allWorkers]);
   const rowDataRaw = useMemo(() => {
     let rows;
-    if (isHarvestLabor) rows = buildRowsHarvest(gridWorkers, days, wdMap, dayCombosByDate);
-    else if (isPieceworkLabor) rows = buildRowsPiecework(gridWorkers, days, wdMap, dayTiersByDate);
+    if (isHarvestLabor) rows = buildRowsHarvest(gridWorkers, days, wdMap, dayCombosByDate, floorsByDate);
+    else if (isPieceworkLabor) rows = buildRowsPiecework(gridWorkers, days, wdMap, dayTiersByDate, floorsByDate);
     else if (isPieceworkStagesLabor) rows = buildRowsPieceworkStages(gridWorkers, days, wdMap, dayStagesByDate);
     else if (isOvertimeDayLabor) rows = buildRowsOvertimeDay(gridWorkers, days, wdMap);
     else rows = buildRowsNormal(gridWorkers, days, wdMap);
     return rows.map((r) => (r._isTemp ? r : { ...r, _displayRut: rutOf(r.rut) }));
-  }, [gridWorkers, days, wdMap, isHarvestLabor, isPieceworkLabor, isPieceworkStagesLabor, isOvertimeDayLabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, rutOf]);
+  }, [gridWorkers, days, wdMap, isHarvestLabor, isPieceworkLabor, isPieceworkStagesLabor, isOvertimeDayLabor, dayCombosByDate, dayTiersByDate, dayStagesByDate, floorsByDate, rutOf]);
 
   // Orden alfabético — mismo criterio que CycleWorkerList.jsx — para que el
   // modal mobile pueda navegar "‹ Anterior/Siguiente ›" entre trabajadores
@@ -728,7 +728,7 @@ export default function CycleDetail() {
   const gridDayCombos = useStableValue(dayCombosByDate, JSON.stringify(dayCombosByDate));
   const gridDayTiers = useStableValue(dayTiersByDate, JSON.stringify(dayTiersByDate));
   const gridDayStages = useStableValue(dayStagesByDate, JSON.stringify(dayStagesByDate));
-  const gridDaysWithFloor = useStableValue(daysWithFloor, [...daysWithFloor].sort().join(","));
+  const gridFloorsByDate = useStableValue(floorsByDate, JSON.stringify(floorsByDate));
   const dayHeaderInfo = Object.fromEntries(days.map((d) => [d, { note: noteForDay(d), clickable: dayHasContent(d) }]));
   const gridDayHeaders = useStableValue(dayHeaderInfo, JSON.stringify(dayHeaderInfo));
 
@@ -742,7 +742,7 @@ export default function CycleDetail() {
       dayPrices,
       days,
       dayStagesByDate: gridDayStages,
-      daysWithFloor: gridDaysWithFloor,
+      floorsByDate: gridFloorsByDate,
       dayTiersByDate: gridDayTiers,
       effectiveDayPrice,
       harvestView,
@@ -759,7 +759,7 @@ export default function CycleDetail() {
       readOnly,
       setEditingWorkerRut,
     }),
-    [activeLabor, allowsMonthly, catalogs, gridDayCombos, gridDayHeaders, dayPrices, days, gridDayStages, gridDaysWithFloor, gridDayTiers, effectiveDayPrice, harvestView, isGroupedView, isHarvestLabor, isMobile, isOvertimeDayLabor, isPieceworkLabor, isPieceworkStagesLabor, isQtyLabor, overtimeDayView, pieceworkView, qrLocked, readOnly, setEditingWorkerRut],
+    [activeLabor, allowsMonthly, catalogs, gridDayCombos, gridDayHeaders, dayPrices, days, gridDayStages, gridFloorsByDate, gridDayTiers, effectiveDayPrice, harvestView, isGroupedView, isHarvestLabor, isMobile, isOvertimeDayLabor, isPieceworkLabor, isPieceworkStagesLabor, isQtyLabor, overtimeDayView, pieceworkView, qrLocked, readOnly, setEditingWorkerRut],
   );
 
   if (loading) return <ScreenLoader />;
@@ -847,7 +847,7 @@ export default function CycleDetail() {
     dayPrices,
     days,
     dayStagesByDate,
-    daysWithFloor,
+    floorsByDate,
     dayTiersByDate,
     defaultMode,
     doRemoveDay,

@@ -180,25 +180,25 @@ function AttendanceCell({ data, d }) {
 // la suma.
 export function FloorCell(p) {
   const { actionsRef, readOnly } = useGridCells();
-  const { date, eff, laborId } = p;
+  const { date, eff, floorKey, laborId } = p;
   const rut = p.data?.rut;
   const amt = Number(p.value) || 0;
   const checked = amt > 0;
   const dayTotal = Number(p.data?.[`${date}__total`]) || 0;
-  const production = dayTotal - amt;
-  const hasWd = !!p.data?.[`${date}__piso_has_wd`];
+  const rest = dayTotal - amt;
+  const hasWd = !!p.data?.[`${p.colDef.field}_has_wd`];
   const canToggle = !readOnly && hasWd && eff > 0;
-  const breakdown = dayTotal > 0 ? `\n${fmtCurrency(production)} producción + ${fmtCurrency(amt)} piso = ${fmtCurrency(dayTotal)}` : "";
+  const breakdown = dayTotal > 0 ? `\n${fmtCurrency(rest)} del resto del día + ${fmtCurrency(amt)} piso = ${fmtCurrency(dayTotal)}` : "";
   const title = !hasWd
     ? "Asigna primero producción este día"
     : eff === 0
-      ? "Configura el piso del día o el piso por defecto de la labor"
+      ? "Configura el monto de este piso en Precios"
       : `${checked ? "Quitar piso" : "Asignar piso"} (${fmtCurrency(eff)})${breakdown}`;
   return (
     <button
       onClick={(e) => {
         e.stopPropagation();
-        if (canToggle && !e.shiftKey) actionsRef.current.toggleFloor(laborId, date, rut);
+        if (canToggle && !e.shiftKey) actionsRef.current.toggleFloor(laborId, date, rut, floorKey);
       }}
       disabled={!canToggle}
       title={title}

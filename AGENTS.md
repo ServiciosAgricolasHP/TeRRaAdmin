@@ -406,6 +406,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Quincena | `fortnight` | `transportPayrolls` |
 | Pesaje | `harvestWeight` | `harvestWeights` |
 | Padrón de un prefijo QR | `roster` | dentro de `qrPrefixes` (guardado como `padron`) |
+| Piso por envase | `floorByContainer` | dentro de `cycles.dayPrices` |
 | Facturación | `billing` | |
 | Factura (DTE) | `dteDocument` | `dteDocuments` |
 | Nota de crédito | `creditNote` | dentro de `dteDocuments` |

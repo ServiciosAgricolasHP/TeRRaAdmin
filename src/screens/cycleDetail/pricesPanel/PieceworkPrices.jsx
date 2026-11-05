@@ -223,7 +223,7 @@ export function PieceworkPrices() {
                     dayPrices={dayPrices}
                     date={d}
                     readOnly={readOnly}
-                    pendingCount={floorPendingByDate[d] || 0}
+                    pendingCount={floorPendingByDate[d]?._piso || 0}
                     onApplyAll={() => askApplyFloorToAll(activeLabor.id, d)}
                     onPersist={(v) => persistDayFloor(activeLabor.id, d, v)}
                   />

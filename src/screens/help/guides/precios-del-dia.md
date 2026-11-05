@@ -73,7 +73,7 @@ En **Configuración por día** cada día muestra su base y su modo. Toca un día
 En la grilla, cada día tiene la **Base** y las horas extras (**HE**) de cada persona. Debajo de la base van los bonos y el total del día: tócalos para marcar el bono de manejo, el de supervisión o un monto adicional. **⚑ Líderes / Manejo** deja marcados de antemano a quienes manejan o lideran.
 
 ## Piso: un bono del día
-<!-- preguntas: qué es el piso; cómo pongo el piso; bono por día bajo; asignar el piso a todos; quitar el piso; bono de piso -->
+<!-- preguntas: qué es el piso; cómo pongo el piso; bono por día bajo; asignar el piso a todos; quitar el piso; bono de piso; piso por envase; dos pisos el mismo día; piso de capacho y de totem -->
 
 El piso es un bono que se suma a lo que cada persona produjo un día, pensado para compensar un día de baja producción. Existe en las labores de **Cosecha** y **A trato**.
 
@@ -90,6 +90,10 @@ En la grilla aparece la columna **Piso** de ese día. Cada 🪙 se puede quitar 
 
 - **✎** cambia el monto del piso.
 - **✕** quita el piso del día junto con los bonos ya asignados. Los que ya están en una nómina no se quitan.
+
+En cosecha, si la empresa cuenta el piso por envase (por ejemplo, más de 9 capachos y más de 9 totems), un día con dos o más envases ofrece también **+ piso** de cada envase. Cada uno tiene su monto, su **👥 a todos** (para quienes cosecharon en ese envase) y su columna en la grilla. Una persona puede tener los dos el mismo día, y se suman.
+
+![Un día con el piso del día y el de un envase](help/precios-del-dia/07-piso-por-envase.webp)
 
 ## Cambiar un precio que ya se usó
 <!-- preguntas: cambié el precio y qué pasa con los montos; corregir un precio; precio mal puesto; se recalculan los montos -->

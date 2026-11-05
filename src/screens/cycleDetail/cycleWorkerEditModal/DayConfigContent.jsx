@@ -1,7 +1,7 @@
 import { useState } from "react";
 import Select from "../../../components/Select";
 import { parseAmount } from "../../../utils/formula";
-import { comboLabel, getDayPiso, getDaySingle } from "../../../utils/cosechaCombos";
+import { comboLabel, containerLabel, dayFloorAmount, floorContainersOf, floorKeyOf, getDaySingle, PISO_COMBO_KEY } from "../../../utils/cosechaCombos";
 import { useCycleDetail } from "../CycleDetailContext";
 import { fmtCurrency } from "../../../utils/format";
 
@@ -143,15 +143,16 @@ function AddComboInline({ catalogs, existingCombos, disabled, onAdd }) {
   );
 }
 
-function FloorConfig({ date, activeLabor, dayPrices, readOnly, fmtCurrency, persistDayFloor }) {
-  const current = getDayPiso(dayPrices, activeLabor.id, date) || 0;
+// Un piso del día: el del día (`_piso`) o el de un envase (`_piso_<envase>`).
+function FloorConfig({ date, activeLabor, dayPrices, readOnly, fmtCurrency, persistDayFloor, floorKey = PISO_COMBO_KEY, label = "Piso del día" }) {
+  const current = dayFloorAmount(dayPrices, activeLabor.id, date, floorKey);
   return (
     <div className="rounded-lg border border-[var(--color-border)] p-3.5">
       <div className="mb-2 flex items-center justify-between">
-        <span className="text-sm font-medium">🪙 Piso del día</span>
+        <span className="text-sm font-medium">🪙 {label}</span>
         {current > 0 && <span className="text-xs text-[var(--color-muted)]">{fmtCurrency(current)}</span>}
       </div>
-      <PriceInput value={current} disabled={readOnly} onCommit={(v) => persistDayFloor(activeLabor.id, date, v)} />
+      <PriceInput value={current} disabled={readOnly} onCommit={(v) => persistDayFloor(activeLabor.id, date, v, floorKey)} />
     </div>
   );
 }
@@ -171,6 +172,7 @@ export default function DayConfigContent({
     dayTiersByDate,
     dayStagesByDate,
     catalogs,
+    floorsByDate,
     readOnly,
     persistComboConfig,
     addComboToDay,
@@ -214,6 +216,19 @@ export default function DayConfigContent({
           onAdd={(x, y) => addComboToDay(laborId, date, x, y)}
         />
         <FloorConfig date={date} activeLabor={activeLabor} dayPrices={dayPrices} readOnly={readOnly} fmtCurrency={fmtCurrency} persistDayFloor={persistDayFloor} />
+        {floorContainersOf(combos, floorsByDate?.[date]).map((y) => (
+          <FloorConfig
+            key={y}
+            date={date}
+            activeLabor={activeLabor}
+            dayPrices={dayPrices}
+            readOnly={readOnly}
+            fmtCurrency={fmtCurrency}
+            persistDayFloor={persistDayFloor}
+            floorKey={floorKeyOf(y)}
+            label={`Piso ${containerLabel(catalogs, y)}`}
+          />
+        ))}
       </div>
     );
   }

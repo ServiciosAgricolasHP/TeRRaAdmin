@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   peopleByDateOf,
   overtimeHoursByDateOf,
-  daysWithFloorOf,
+  dayFloorsOf,
   dayCombosOf,
   dayTiersOf,
   dayStagesOf,
@@ -156,10 +156,16 @@ describe("días de la labor activa", () => {
   });
 
   it("muestra la columna Piso en los días con piso configurado o asignado", () => {
-    expect([...daysWithFloorOf(harvest, true, false, dayPrices, workdaysByLabor.LC)]).toEqual([D1]);
-    expect([...daysWithFloorOf(piecework, false, true, dayPrices, workdaysByLabor.LT)]).toEqual([D2]);
-    expect(daysWithFloorOf(normal, false, false, dayPrices, workdaysByLabor.LM).size).toBe(0);
-    expect(daysWithFloorOf(null, true, false, dayPrices, {}).size).toBe(0);
+    expect(Object.keys(dayFloorsOf(harvest, true, false, dayPrices, workdaysByLabor.LC))).toEqual([D1]);
+    expect(Object.keys(dayFloorsOf(piecework, false, true, dayPrices, workdaysByLabor.LT))).toEqual([D2]);
+    expect(dayFloorsOf(normal, false, false, dayPrices, workdaysByLabor.LM)).toEqual({});
+    expect(dayFloorsOf(null, true, false, dayPrices, {})).toEqual({});
+  });
+
+  it("en cosecha agrega una columna por cada envase con piso; en trato, solo la del día", () => {
+    const byContainer = { LC: { [D1]: { piso: 5000, floorByContainer: { 2: 15000 } } }, LT: { [D1]: { piso: 4000, floorByContainer: { 2: 9000 } } } };
+    expect(dayFloorsOf(harvest, true, false, byContainer, {})[D1].map((f) => f.key)).toEqual(["_piso", "_piso_2"]);
+    expect(dayFloorsOf(piecework, false, true, byContainer, {})[D1].map((f) => f.key)).toEqual(["_piso"]);
   });
 
   it("suma a los combos con precio los que solo tienen producción", () => {

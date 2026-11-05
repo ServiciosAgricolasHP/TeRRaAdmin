@@ -8,6 +8,8 @@ import {
   getTratoTiers,
   getTratoTierTotals,
   getDaySingle,
+  floorsByDateOf,
+  PISO_COMBO_KEY,
 } from "./cosechaCombos";
 import { isRedDay } from "./tratoHE";
 import { getDayStages, getEtapasTotals, countingStageIds } from "./tratoEtapas";
@@ -37,20 +39,20 @@ export function overtimeHoursByDateOf(workdaysByLabor, shownLaborId) {
   return byDate;
 }
 
-// Días de la labor activa que muestran la columna "Piso": los que tienen
-// piso configurado en `dayPrices` o algún workday pisoOnly.
-export function daysWithFloorOf(activeLabor, isHarvestLabor, isPieceworkLabor, dayPrices, wdMap) {
-  if (!activeLabor || (!isHarvestLabor && !isPieceworkLabor)) return new Set();
-  const s = new Set();
-  const dp = dayPrices[activeLabor.id] || {};
-  for (const d in dp) {
-    if ((Number(dp[d]?.piso) || 0) > 0) s.add(d);
+// Las columnas de piso de cada día de la labor activa: el piso del día y, en
+// cosecha, uno por envase (`floorsByDateOf`, utils/cosechaCombos.js). Entran
+// los pisos con monto configurado en `dayPrices` y los que ya tienen bonos.
+// Solo cosecha y trato llevan piso, y el trato no tiene envases.
+export function dayFloorsOf(activeLabor, isHarvestLabor, isPieceworkLabor, dayPrices, wdMap) {
+  if (!activeLabor || (!isHarvestLabor && !isPieceworkLabor)) return {};
+  const byDate = floorsByDateOf(dayPrices, activeLabor.id, wdMap);
+  if (isHarvestLabor) return byDate;
+  const out = {};
+  for (const [date, floors] of Object.entries(byDate)) {
+    const dayFloor = floors.filter((f) => f.key === PISO_COMBO_KEY);
+    if (dayFloor.length) out[date] = dayFloor;
   }
-  for (const k in wdMap) {
-    const wd = wdMap[k];
-    if (wd?.pisoOnly && wd.date) s.add(wd.date);
-  }
-  return s;
+  return out;
 }
 
 export function dayCombosOf(isHarvestLabor, activeLabor, days, dayPrices, defaultMode, workdaysByLabor) {

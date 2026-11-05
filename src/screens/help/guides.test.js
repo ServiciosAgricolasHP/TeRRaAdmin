@@ -52,6 +52,7 @@ describe("preguntas típicas", () => {
     ["no me deja eliminar una faena", "faenas-y-ciclos#eliminar-un-ciclo-una-subfaena-o-una-faena"],
     ["cómo pago las horas extras", "precios-del-dia#jornadas-con-horas-extras"],
     ["qué es el piso", "precios-del-dia#piso-un-bono-del-dia"],
+    ["piso por envase", "precios-del-dia#piso-un-bono-del-dia"],
     ["precio por kilo de la cosecha", "precios-del-dia#cosecha-un-precio-por-calidad-y-envase"],
     ["varios precios en un día de trato", "precios-del-dia#a-trato-uno-o-varios-precios-por-dia"],
     ["cambié el precio y qué pasa con los montos", "precios-del-dia#cambiar-un-precio-que-ya-se-uso"],

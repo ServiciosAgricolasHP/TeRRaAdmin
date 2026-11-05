@@ -1,14 +1,15 @@
 import { useState } from "react";
 import { useValuesChanged } from "../../hooks/useValuesChanged";
-import { getDayPiso } from "../../utils/cosechaCombos";
+import { dayFloorAmount, PISO_COMBO_KEY } from "../../utils/cosechaCombos";
 import { fmtCurrency } from "../../utils/format";
 
-// Piso opcional por día. Sin piso configurado muestra solo el botón "+ piso",
-// que abre la edición. Con piso, muestra el monto y las acciones editar,
-// asignar a todos y quitar.
-export function FloorDayRow({ labor, dayPrices, date, readOnly, onPersist, pendingCount = 0, onApplyAll }) {
-  const dayPiso = getDayPiso(dayPrices, labor.id, date);
-  const hasPiso = dayPiso != null && dayPiso > 0;
+// Piso opcional de un día: el del día (`floorKey` = `_piso`) o el de un envase
+// (`_piso_<envase>`), con su nombre en `label`. Sin monto muestra solo el
+// botón "+ piso", que abre la edición. Con monto, muestra el monto y las
+// acciones editar, asignar a todos y quitar.
+export function FloorDayRow({ labor, dayPrices, date, readOnly, onPersist, pendingCount = 0, onApplyAll, floorKey = PISO_COMBO_KEY, label = "Piso" }) {
+  const dayPiso = dayFloorAmount(dayPrices, labor.id, date, floorKey);
+  const hasPiso = dayPiso > 0;
   const [editing, setEditing] = useState(false);
   const [local, setLocal] = useState("");
   if (useValuesChanged([editing, dayPiso, hasPiso], { onMount: true }) && !editing) setLocal(hasPiso ? String(dayPiso) : "");
@@ -19,9 +20,9 @@ export function FloorDayRow({ labor, dayPrices, date, readOnly, onPersist, pendi
       <button
         onClick={() => { setLocal(""); setEditing(true); }}
         className="self-start text-[var(--color-muted)] text-[10px] hover:text-[var(--color-accent)] hover:underline"
-        title="Agregar bono piso para este día"
+        title={`Agregar ${label.toLowerCase()} para este día`}
       >
-        + piso
+        + {label.toLowerCase()}
       </button>
     );
   }
@@ -34,7 +35,7 @@ export function FloorDayRow({ labor, dayPrices, date, readOnly, onPersist, pendi
     };
     return (
       <div className="mt-1 flex items-center gap-1 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-[10px]">
-        <span className="font-medium text-[var(--color-muted)]">🪙 Piso $</span>
+        <span className="font-medium text-[var(--color-muted)]">🪙 {label} $</span>
         <input
           type="number" min="0" autoFocus disabled={readOnly}
           value={local}
@@ -49,7 +50,7 @@ export function FloorDayRow({ labor, dayPrices, date, readOnly, onPersist, pendi
 
   return (
     <div className="mt-1 flex items-center gap-1 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-[10px]">
-      <span className="font-medium text-[var(--color-text)]">🪙 Piso {fmtCurrency(dayPiso)}</span>
+      <span className="font-medium text-[var(--color-text)]">🪙 {label} {fmtCurrency(dayPiso)}</span>
       {!readOnly && (
         <>
           <button
@@ -66,7 +67,7 @@ export function FloorDayRow({ labor, dayPrices, date, readOnly, onPersist, pendi
             title={
               pendingCount
                 ? `Asignar este piso a los ${pendingCount} con producción que aún no lo tienen`
-                : "Todos los que tienen producción ese día ya tienen el piso"
+                : "Todos los que tienen producción para este piso ya lo tienen"
             }
           >
             👥 a todos{pendingCount ? ` (${pendingCount})` : ""}
@@ -74,7 +75,7 @@ export function FloorDayRow({ labor, dayPrices, date, readOnly, onPersist, pendi
           <button
             onClick={() => onPersist(0)}
             className="text-[var(--color-danger)] hover:underline"
-            title="Quitar piso del día"
+            title={`Quitar ${label.toLowerCase()}`}
           >
             ✕
           </button>

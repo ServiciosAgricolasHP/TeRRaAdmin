@@ -10,7 +10,7 @@ export function PieceworkDay({ d }) {
   const {
     catalogs,
     commitPieceworkTier,
-    daysWithFloor,
+    floorsByDate,
     dayTiersByDate,
     readOnly,
   } = useCycleDetail();
@@ -26,7 +26,7 @@ export function PieceworkDay({ d }) {
     workerRut,
   } = useWorkerEdit();
   const tiers = dayTiersByDate[d] || [];
-  if (tiers.length === 0 && !daysWithFloor?.has(d)) {
+  if (tiers.length === 0 && !floorsByDate?.[d]?.length) {
     return (
       <div key={d} className="rounded-lg border border-dashed border-[var(--color-border)] p-3.5">
         <div className="mb-1 flex items-center justify-between gap-2">

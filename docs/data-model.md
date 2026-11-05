@@ -42,7 +42,7 @@ Período de trabajo en una subfaena. Contiene labores anidadas y la matriz de pr
 | `notes` | string? | |
 | `days` | string[] | fechas YYYY-MM-DD |
 | `labors` | `Labor[]` | embebido (ver abajo) |
-| `dayPrices` | `{ [laborId]: { [date]: PriceEntry } }` | combos/tiers |
+| `dayPrices` | `{ [laborId]: { [date]: PriceEntry } }` | combos/tiers. En cosecha y trato, el día puede llevar `piso` (monto del piso del día) y, en cosecha, `floorByContainer` (`{ [envase]: monto }`, un piso por envase; ver `docs/labor-types.md`) |
 | `dayNotes` | `{ [date]: string }` | anotación compartida del día (click sobre el header) |
 | `summaryTotals` | `{ pagar, cobrar, at }`? | totales del resumen del ciclo, escritos por `CycleSummaryModal` al cerrarse (solo si cambiaron). Alimentan el margen por ciclo del Dashboard: van acá y no en `cycleSummaries` porque el Dashboard ya carga la lista de ciclos y así le salen gratis. Ausente en los ciclos cuyo resumen nunca se abrió. |
 | `createdAt/By`, `updatedAt/By` | ts, string | toda escritura de TeRRa pone `updatedAt`. La copia que comparten las pantallas se pone al día con él (`listCycles`) |
@@ -114,7 +114,7 @@ Una fila por (cycleId × laborId × workerRut × date). Es la tabla "transaccion
 | `attendanceOnly` | bool? | `true` para asistencia de trabajador mensual (amount = 0, no entra al payroll) |
 | `tiers` | `{ [tierKey]: { qty, amount } }` | trato multi-precio; suma con `getTratoTierTotals(wd)` |
 | `overtimeHours`, `hasManejo`, `hasSupervision`, `extras` | number? / bool? | solo `tratoHE` |
-| `pisoOnly` | bool? | `true` para workdays de piso (combo `_piso`). `qty: 0`, `amount: pisoAmount`. Un doc por (worker × date × labor). Solo trato/cosecha. Tag con `payrollId` igual que cualquier otro workday. |
+| `pisoOnly` | bool? | `true` para workdays de piso: combo `_piso` (el del día) o `_piso_<envase>` (piso por envase, con `containerY`). `qty: 0`, `amount: pisoAmount`. Un doc por (worker × date × labor × piso). Solo trato/cosecha (el piso por envase, solo cosecha). Tag con `payrollId` igual que cualquier otro workday. |
 | `createdAt`, `createdBy` | ts, string? | |
 | `updatedAt`, `updatedBy` | ts, string? | la última escritura de `workdaysService` (la grilla, Pesajes QR, mover jornadas de ciclo). Etiquetar con la nómina y marcar pagado no lo ponen. Las copias por mes del Calendario se ponen al día con él (`syncWorkdayMonth`) |
 
