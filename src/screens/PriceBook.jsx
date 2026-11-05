@@ -10,6 +10,7 @@ import EntryFormModal from "./priceBook/EntryFormModal";
 import { DATALIST_ID, fmtRange } from "./priceBook/helpers";
 import { writePriceBookXlsx } from "./priceBook/writePriceBookXlsx";
 import { attempt } from "../utils/attempt";
+import { errorText } from "../utils/errorText";
 
 // Registro contable de precios por faena y labor, independiente de las
 // faenas, ciclos y labores reales: acepta faenas "dummy" (solo un nombre, sin
@@ -117,7 +118,7 @@ export default function PriceBook() {
   const handleExport = async () => {
     setExporting(true);
     const { error: err } = await attempt(() => writePriceBookXlsx(groups));
-    if (err) toast.error("No se pudo exportar: " + err.message);
+    if (err) toast.error(`No se pudo exportar. ${errorText(err, "Revisa la consola del navegador para ver el detalle.")}`);
     setExporting(false);
   };
 

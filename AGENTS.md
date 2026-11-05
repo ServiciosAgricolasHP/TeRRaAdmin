@@ -270,6 +270,10 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
   - Imprimir abre una ventana aparte con el HTML del nodo (`printNodes`, `utils/printWindow.js`): sin los controles marcados con `data-export-hide`, una hoja por nodo, el encabezado de cada tabla repetido en cada hoja y la orientación en un `@page` al nivel superior, porque anidado en `@media print` hay navegadores que lo ignoran. Las tablas imprimibles llevan su estilo en línea: la ventana no carga el CSS de la app.
   - Las impresiones que arman su propio HTML (los comprobantes y la tabla del resumen de Nómina, el informe de deudas y el mes del Calendario) abren la ventana con `openPrintWindow`. Si el navegador la bloquea, el aviso pide permitir las ventanas emergentes.
 
+### Avisos
+
+- **Los avisos y los mensajes de error van en español.** El motivo de un error pasa por `errorText` (`utils/errorText.js`): traduce los de Firebase y del navegador por su código, deja tal cual los que lanza la app y cambia el de una librería por un texto propio, con el original en la consola. Nunca `err.message` directo en un `toast` o en pantalla.
+
 ### Colores
 
 - **Los colores salen de las variables del tema** (`var(--color-*)`), nunca fijos: el accent es naranja en donDiego y violeta en sheridan y aetiskPastel, así que un verde o un violeta escrito a mano se ve fuera de lugar en los otros temas.

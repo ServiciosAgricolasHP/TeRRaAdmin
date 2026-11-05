@@ -23,6 +23,7 @@ import { writePhoneBookXlsx } from "./writePhoneBookXlsx";
 import ScreenLoader from "../../components/ScreenLoader";
 import { attempt } from "../../utils/attempt";
 import { readStored, writeStored } from "../../utils/browserStorage";
+import { errorText } from "../../utils/errorText";
 
 // Cuántos contactos se dibujan por página.
 const PAGE = 50;
@@ -121,7 +122,7 @@ export default function PhoneBookTab() {
   // Las descargas llevan lo filtrado en pantalla.
   const exportXlsx = async () => {
     const { error: err } = await attempt(() => writePhoneBookXlsx(filtered));
-    if (err) toast.error("No se pudo generar el Excel: " + (err.message || err));
+    if (err) toast.error(`No se pudo generar el Excel. ${errorText(err, "Revisa la consola del navegador para ver el detalle.")}`);
   };
 
   const rowProps = { onCopy: copy, onShare: shareable ? onShare : null, onDownload, onEdit: setEditing, onDelete: setConfirmDelete };
