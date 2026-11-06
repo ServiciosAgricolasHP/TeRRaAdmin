@@ -2,7 +2,7 @@
 
 - Pantalla: `src/screens/Billing.jsx` (el componente de la ruta: la empresa, las pestañas, los filtros y el listado). Ruta `/facturacion`. Nav label: "Facturación" (icono 🧾). Acceso para todas las cuentas.
 - Sus piezas, en `src/screens/billing/`:
-  - **Carga y escrituras:** `useBillingData` (empresas, documentos, centros de costo y gastos informales, y la empresa elegida) y `useDocUpdates` (estado de pago, notas, centro de costo y pagos de un documento).
+  - **Carga y escrituras:** `useBillingData` (empresas, documentos, centros de costo y gastos informales, y la empresa elegida) y `useDocUpdates` (estado de pago, notas, centro de costo y pagos de un documento; cada escritura pone al día la lista y el detalle abierto; el estado de pago devuelve si quedó guardado).
   - **Listado:** `DocTableRow` (una fila en el escritorio), `DocCard` (en el teléfono), `DocListToolbar` (exportaciones del listado, agrupar por centro de costo), `SummaryCard`, `SortHeader`, `OtherTaxChip`, `PaymentStatusSelect`, `CostCenterSelect`, `PrintableDocList` y `writeDocListXlsx.js`.
   - **Documento:** `DocDetailModal` y `PaymentsSection` (sus pagos).
   - **Importar:** `useRcvImport` (leer los archivos, la vista previa y confirmar), `CompanySelectAndPickModal`, `ImportPreviewModal` y `FileRow`.
