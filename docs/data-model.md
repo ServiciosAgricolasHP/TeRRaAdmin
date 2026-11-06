@@ -403,12 +403,13 @@ Documento tributario electrónico (factura / boleta / NC / etc.) importado del *
 | `otroImpuestoCategory` | string? | `combustible` \| `alcohol` \| `tabaco` \| `bebidas` \| `otros` |
 | `source` | `"sii_import"` | |
 | `sourceFile` | string | filename original del CSV |
-| `paymentStatus` | `"unpaid"`\|`"paid"`\|`"net_only"`\|`"factored"`\|`"cancelled"` | default `unpaid` al importar; **preservado al reimportar** |
+| `paymentStatus` | `"unpaid"`\|`"paid"`\|`"net_only"`\|`"factored"`\|`"cancelled"` | default `unpaid` al importar; **preservado al reimportar**. Lo cambia Facturación: en el listado, en el detalle o en Pendientes, donde también se marcan varias de una vez (`setPaymentStatusMany`, `services/dtePaymentStatus.js`) |
+| `paymentStatusSetAt`, `paymentStatusSetBy` | ts, string? | cuándo y quién cambió `paymentStatus` por última vez |
 | `amountPaid` | number | denormalizado = `Σ payments[].amount` |
 | `payments` | `Payment[]` | abonos (ver abajo) |
 | `notes` | string? | notas editables / auditoría de anulación por NC |
 | `importedAt`, `importedBy` | ts, string? | sello del import (writeBatch chunks de 450) |
-| `updatedAt`, `updatedBy` | ts, string? | la última escritura: la importación y cada cambio desde Facturación (pago, abonos, notas, centro de costo). La copia que comparten Facturación y el Dashboard se pone al día con él (`listDteDocuments`) |
+| `updatedAt`, `updatedBy` | ts, string? | la última escritura: la importación y cada cambio desde Facturación (pago, abonos, notas, centro de costo, también el estado de varias de una vez). La copia que comparten Facturación y el Dashboard se pone al día con él (`listDteDocuments`) |
 
 `Payment` (embebido en `dteDocuments.payments`):
 - `id` (local), `date` (YYYY-MM-DD), `kind` (`abono` \| `neto` \| `iva` \| `total`), `amount: number`, `notes: string`
@@ -734,7 +735,7 @@ Auditoría — una fila por mutación.
 |---|---|---|
 | `id` (docId) | string | autoId |
 | `uid`, `email` | string? | quién |
-| `action` | `"create"` \| `"update"` \| `"delete"` \| `"import"` \| `"bulkStart"` \| `"bulkEnd"` \| `"settlement"` \| `"setPrincipal"` \| `"harvestImport"` \| `"laborClear"` \| `"workerMerge"` \| `"cascadeDelete"` \| `"workdaysMove"` \| `"floorApplyAll"` \| `"floorRemove"` \| `"harvestSync"` | `"import"` solo lo escribe la importación de la agenda telefónica; `"harvestImport"` y `"laborClear"`, importar la cosecha y limpiar una labor en la grilla del ciclo (`entity: "cycle"`); `"workerMerge"`, unir una ficha duplicada a otra (`entity: "worker"`, el id de la que queda); `"cascadeDelete"`, `"workdaysMove"`, `"floorApplyAll"`, `"floorRemove"` y `"harvestSync"`, las jornadas que esas acciones escriben o borran en lote, en un solo registro (`services/workdayBatches.js`; ver su `meta` abajo); los otros cuatro, las acciones masivas de contratos (`entity: "employment"`) |
+| `action` | `"create"` \| `"update"` \| `"delete"` \| `"import"` \| `"bulkStart"` \| `"bulkEnd"` \| `"settlement"` \| `"setPrincipal"` \| `"harvestImport"` \| `"laborClear"` \| `"workerMerge"` \| `"cascadeDelete"` \| `"workdaysMove"` \| `"floorApplyAll"` \| `"floorRemove"` \| `"harvestSync"` \| `"paymentStatusBatch"` | `"import"` solo lo escribe la importación de la agenda telefónica; `"harvestImport"` y `"laborClear"`, importar la cosecha y limpiar una labor en la grilla del ciclo (`entity: "cycle"`); `"workerMerge"`, unir una ficha duplicada a otra (`entity: "worker"`, el id de la que queda); `"cascadeDelete"`, `"workdaysMove"`, `"floorApplyAll"`, `"floorRemove"` y `"harvestSync"`, las jornadas que esas acciones escriben o borran en lote, en un solo registro (`services/workdayBatches.js`; ver su `meta` abajo); `"paymentStatusBatch"`, marcar de una vez el estado de pago de varias facturas en Pendientes de Facturación (`entity: "dteDocument"`, sin `entityId`); los otros cuatro, las acciones masivas de contratos (`entity: "employment"`) |
 | `entity`, `entityId` | string | qué |
 | `before` | objeto? | solo en `delete` (snapshot completo). Borrar un documento que no existe no deja log |
 | `after` | objeto? | solo en `create` (snapshot completo) |
@@ -759,6 +760,7 @@ Auditoría — una fila por mutación.
 | `workdays`, `byCycle` | `deleteCascade` (`services/workdayBatches.js`) | eliminar una faena o un ciclo en cascada (`action: "cascadeDelete"`, `entity: "faena"`, `"subfaena"` o `"cycle"`): cuántas jornadas borró y cuántas de cada ciclo. Los ciclos y las subfaenas dejan su propio `delete` |
 | `fromCycleId`, `moved`, `skippedPaid` | `moveWorkdaysToCycle` (`services/workdayBatches.js`) | mover jornadas al crear un ciclo desde otro (`action: "workdaysMove"`, a nombre del ciclo nuevo): cuántas pasaron y cuántas quedaron en el origen por estar en una nómina |
 | `laborId`, `date`, `floorKey`, `amount`, `workers` / `deleted` | `addFloorBonuses`, `removeFloorBonuses` (`services/workdayBatches.js`) | asignar un piso del día a todos (`action: "floorApplyAll"`) o quitarlo con sus bonos (`action: "floorRemove"`), en el ciclo: el piso (`_piso` o `_piso_<envase>`), el monto y cuántos bonos escribió o borró |
+| `status`, `count`, `docs` | `setPaymentStatusMany` (`services/dtePaymentStatus.js`) | marcar varias facturas de una vez (`action: "paymentStatusBatch"`): el estado nuevo, cuántas, y de cada una su `id`, su `folio` y el estado que tenía (`before`) |
 | `cycleId`, `laborId`, `from`, `to`, `written`, `blocked`, `daysAdded`, `workersAdded` | `syncPrefixRange` (`services/harvestSyncService.js`) | sincronizar un prefijo de Pesajes QR (`action: "harvestSync"`, `entity: "qrPrefix"`): el rango, cuántas jornadas escribió, cuántas no tocó por estar en una nómina, y los días y las personas que agregó al ciclo |
 | `ids`, `count`, `type`, `employerId`, `startDate` / `endDate`, `endReason` / `status`, `date` | `startEmployments`, `endEmployments`, `setSettlementStatus` (`services/employmentsService.js`) | una acción masiva sobre contratos y honorarios (`entity: "employment"`, sin `entityId`): los períodos que creó o tocó |
 | `op: "applyAdvances"`, `count`, `total`, `advanceIds`, `sobrantes?` | `applyAdvancesToPayroll` | un log por nómina (`entity: "payroll"`) con los anticipos que descontó. `sobrantes: [{ advanceId, pedido, aplicado }]` son las aplicaciones recortadas |
