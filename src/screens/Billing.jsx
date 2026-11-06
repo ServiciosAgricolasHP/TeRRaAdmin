@@ -21,7 +21,6 @@ import {
   filterDocs,
   periodOptionsOf,
   receivablesOf,
-  receivablesTotalsOf,
   sortDocs,
   typeOptionsOf,
   withholdingsByCounterpartyOf,
@@ -35,7 +34,7 @@ import {
   currentPeriod,
 } from "./billing/docs";
 import { ImportPreviewModal } from "./billing/ImportPreviewModal";
-import { ReceivablesModal } from "./billing/ReceivablesModal";
+import { ReceivablesTab } from "./billing/ReceivablesTab";
 import { SortHeader } from "./billing/SortHeader";
 import { SummaryCard } from "./billing/SummaryCard";
 import { AnnualSummaryTab } from "./billing/AnnualSummaryTab";
@@ -55,6 +54,9 @@ import { usePagination } from "../hooks/usePagination";
 // o no búsqueda, para que meses con cientos de docs no rendericen todo.
 const PAGE_SIZE = 20;
 
+// La opción "Todas las empresas" del selector, que existe solo en Pendientes.
+const ALL_COMPANIES = "__all";
+
 export default function Billing() {
   const toast = useToast();
   const isMobile = useIsMobile();
@@ -73,6 +75,17 @@ export default function Billing() {
     setSelectedCompanyId,
   } = useBillingData();
   const [kindTab, setKindTab] = useState("venta");
+  // "Todas las empresas" en Pendientes. Al cambiar a otra pestaña se apaga, y
+  // el selector vuelve a la empresa elegida.
+  const [allCompanies, setAllCompanies] = useState(false);
+  const openTab = (tab) => {
+    setKindTab(tab);
+    if (tab !== "pendientes") setAllCompanies(false);
+  };
+  const onCompanyChange = (value) => {
+    setAllCompanies(value === ALL_COMPANIES);
+    if (value !== ALL_COMPANIES) setSelectedCompanyId(value);
+  };
   // Vista por defecto = mes actual. El selector de período permite ir a
   // cualquier mes pasado o pedir "Todos los períodos".
   const [periodFilter, setPeriodFilter] = useState(currentPeriod());
@@ -83,7 +96,6 @@ export default function Billing() {
   // defecto, fechaEmision desc.
   const [sortBy, setSortBy] = useState({ key: "fechaEmision", dir: "desc" });
   const [companiesModalOpen, setCompaniesModalOpen] = useState(false);
-  const [receivablesModalOpen, setReceivablesModalOpen] = useState(false);
   // Modal de centros de costo: crear/editar/eliminar + vista global de TODOS
   // los documentos de un centro elegido, de todas las empresas y períodos
   // (ignora los filtros de la tabla principal), ordenados cronológicamente.
@@ -117,10 +129,15 @@ export default function Billing() {
   // estado `net_only`, agrupados por contraparte. No es un `kind`, pero va como
   // un valor más de `kindTab` para que las pestañas usen un solo estado.
   const isWithholdingsView = kindTab === "retenciones";
-  // Las pestañas de análisis cruzan varios meses por su cuenta, así que apagan
+  // Las pestañas de análisis cruzan varios meses por su cuenta, y Pendientes
+  // junta todos los meses con sus propios filtros, así que las tres apagan
   // los filtros, las tarjetas y la tabla del listado. Todos esos lugares leen
-  // este predicado: una pestaña de análisis nueva se agrega solo aquí.
+  // `hidesListing`: una pestaña así se agrega solo aquí.
   const isAnalysisTab = kindTab === "resumen" || kindTab === "proyeccion";
+  const isPendingTab = kindTab === "pendientes";
+  const hidesListing = isAnalysisTab || isPendingTab;
+  // La empresa de Pendientes: la del selector, o vacía para todas.
+  const pendingCompanyId = isPendingTab && allCompanies ? "" : selectedCompanyId;
 
   const filtered = useMemo(() => filterDocs({ docs, kindTab, isWithholdingsView, selectedCompanyId, periodFilter, typeFilter, paymentFilter, search }), [docs, kindTab, isWithholdingsView, selectedCompanyId, periodFilter, typeFilter, paymentFilter, search]);
 
@@ -148,9 +165,9 @@ export default function Billing() {
 
   const cancellingByDocId = useMemo(() => cancellingNcsByDoc(docs), [docs]);
 
-  const receivablesList = useMemo(() => receivablesOf(docs, selectedCompanyId), [docs, selectedCompanyId]);
-
-  const receivablesTotals = useMemo(() => receivablesTotalsOf(receivablesList), [receivablesList]);
+  // Cuántas ventas con saldo tiene lo que muestra el selector: el número de la
+  // pestaña Pendientes.
+  const pendingCount = useMemo(() => receivablesOf(docs, pendingCompanyId).length, [docs, pendingCompanyId]);
 
   const {
     confirmImport,
@@ -202,14 +219,16 @@ export default function Billing() {
         </div>
       </div>
 
-      {/* Selector de empresa + pestañas + botón de pendientes */}
+      {/* Selector de empresa y pestañas. En Pendientes el selector suma
+          "Todas las empresas". */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <select
-          value={selectedCompanyId}
-          onChange={(e) => setSelectedCompanyId(e.target.value)}
+          value={isPendingTab && allCompanies ? ALL_COMPANIES : selectedCompanyId}
+          onChange={(e) => onCompanyChange(e.target.value)}
           disabled={noCompany}
           className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm font-medium"
         >
+          {isPendingTab && companies.length > 1 && <option value={ALL_COMPANIES}>🏢 Todas las empresas</option>}
           {companies.map((c) => (
             <option key={c.id} value={c.id}>
               🏢 {c.alias || c.razonSocial}
@@ -227,10 +246,11 @@ export default function Billing() {
             // Proyectar es una decisión de plata a futuro, no operación del día:
             // solo admin.
             ...(isAdmin ? [{ v: "proyeccion", label: "📈 Proyección" }] : []),
+            { v: "pendientes", label: "⏳ Pendientes", badge: pendingCount },
           ].map((t) => (
             <button
               key={t.v}
-              onClick={() => setKindTab(t.v)}
+              onClick={() => openTab(t.v)}
               className={`min-h-[32px] rounded px-3 py-1 ${
                 kindTab === t.v
                   ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]"
@@ -238,29 +258,18 @@ export default function Billing() {
               }`}
             >
               {t.label}
+              {t.badge > 0 && (
+                <span className="ml-1.5 rounded-full bg-[var(--color-warning-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-warning)]">
+                  {t.badge}
+                </span>
+              )}
             </button>
           ))}
         </div>
-
-        {!isAnalysisTab && (<>
-        <button
-          onClick={() => setReceivablesModalOpen(true)}
-          disabled={noCompany}
-          title="Ver todas las facturas con saldo pendiente (cualquier período): factura completa, abonos parciales o IVA pendiente."
-          className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
-        >
-          ⏳ Ver pendientes
-          {receivablesList.length > 0 && (
-            <span className="ml-1.5 rounded-full bg-[var(--color-warning-soft)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--color-warning)]">
-              {receivablesList.length}
-            </span>
-          )}
-        </button>
-        </>)}
       </div>
 
       {/* Sub-filtros */}
-      {!isAnalysisTab && (
+      {!hidesListing && (
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <select
           value={search.trim() ? "" : periodFilter}
@@ -331,7 +340,7 @@ export default function Billing() {
       </div>
       )}
 
-      {!isAnalysisTab && (
+      {!hidesListing && (
       <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
         <SummaryCard label="Documentos" value={fmtNumber(totals.count)} />
         <SummaryCard label="Neto" value={fmtCurrency(totals.neto)} />
@@ -345,7 +354,7 @@ export default function Billing() {
       </div>
       )}
 
-      {selectedCompany && !isWithholdingsView && !isAnalysisTab && (
+      {selectedCompany && !isWithholdingsView && !hidesListing && (
         <div className="mb-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
           <SummaryCard label="No pagado del período" value={fmtCurrency(totals.unpaidTotal)} warning />
           <SummaryCard label="Solo neto (IVA retenido)" value={fmtCurrency(totals.netOnlyTotal)} />
@@ -372,6 +381,16 @@ export default function Billing() {
             🏢 Registrar la primera empresa
           </button>
         </div>
+      ) : isPendingTab ? (
+        <ReceivablesTab
+          docs={docs}
+          companyId={pendingCompanyId}
+          companiesById={companiesById}
+          setDocs={setDocs}
+          setDetailDoc={setDetailDoc}
+          setPaymentStatus={setPaymentStatus}
+          toast={toast}
+        />
       ) : kindTab === "resumen" ? (
         <AnnualSummaryTab
           docs={docs}
@@ -601,16 +620,6 @@ export default function Billing() {
           companies={companies}
           onClose={() => setCompaniesModalOpen(false)}
           onChanged={loadAll}
-        />
-      )}
-
-      {receivablesModalOpen && (
-        <ReceivablesModal
-          items={receivablesList}
-          totals={receivablesTotals}
-          company={selectedCompany}
-          onClose={() => setReceivablesModalOpen(false)}
-          onSelectDoc={(d) => { setReceivablesModalOpen(false); setDetailDoc(d); }}
         />
       )}
 

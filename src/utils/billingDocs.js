@@ -5,7 +5,8 @@
 // "compra" o "retenciones".
 import { CREDIT_NOTE_TYPES } from "./cashFlowProjection";
 
-// Categorías de facturas pendientes que aparecen en el modal "Ver pendientes".
+// Categorías de facturas pendientes que muestra la pestaña Pendientes
+// (`receivablesView`, utils/receivables.js).
 // Cada factura no anulada y no pagada cae en una sola categoría según su
 // estado y sus pagos registrados:
 //   - full:    estado "unpaid" sin abonos → debe el total completo.
@@ -13,9 +14,9 @@ import { CREDIT_NOTE_TYPES } from "./cashFlowProjection";
 //   - iva:     estado "net_only" → IVA pendiente (el IVA menos lo que ya
 //              cubren los pagos registrados por encima del neto).
 export const RECEIVABLE_CATEGORIES = {
-  full:    { key: "full",    label: "Factura completa pendiente", order: 1, hex: "#ffd6d6" },
-  partial: { key: "partial", label: "Abono parcial",              order: 2, hex: "#fff2cc" },
-  iva:     { key: "iva",     label: "IVA pendiente",              order: 3, hex: "#dde9ff" },
+  full:    { key: "full",    label: "Factura completa", order: 1 },
+  partial: { key: "partial", label: "Abono parcial",    order: 2 },
+  iva:     { key: "iva",     label: "IVA pendiente",    order: 3 },
 };
 
 // Devuelve `{ category, amount }` para una factura pendiente, o null si no
@@ -258,10 +259,11 @@ export function cancellingNcsByDoc(docs) {
   return m;
 }
 
-// Lista global de facturas pendientes (cualquier período) para la empresa
-// seleccionada; alimenta el modal "Ver pendientes". **Solo ventas** (kind
-// === "venta"): las compras tienen su propio flujo de seguimiento, y las
-// cuentas por cobrar no se mezclan con las cuentas por pagar.
+// Las facturas pendientes (cualquier período) de una empresa o, sin
+// `selectedCompanyId`, de todas: el número de la pestaña Pendientes. **Solo
+// ventas** (kind === "venta"): las compras tienen su propio flujo de
+// seguimiento, y las cuentas por cobrar no se mezclan con las cuentas por
+// pagar.
 // Cada item lleva `_category` y `_pending` calculados por `pendingFor`.
 // Ordenado por categoría (full → partial → iva) y luego por fecha ascendente.
 export function receivablesOf(docs, selectedCompanyId) {
@@ -280,16 +282,6 @@ export function receivablesOf(docs, selectedCompanyId) {
     return String(a.fechaEmision || "").localeCompare(String(b.fechaEmision || ""));
   });
   return arr;
-}
-
-export function receivablesTotalsOf(receivablesList) {
-  const t = { full: 0, partial: 0, iva: 0, total: 0, count: { full: 0, partial: 0, iva: 0 } };
-  for (const d of receivablesList) {
-    t[d._category] += d._pending;
-    t.total += d._pending;
-    t.count[d._category]++;
-  }
-  return t;
 }
 
 // ===== Resumen anual (pestaña "Resumen") =====

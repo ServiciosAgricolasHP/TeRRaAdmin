@@ -10,7 +10,6 @@ import {
   periodOptionsOf,
   projectionYearsOf,
   receivablesOf,
-  receivablesTotalsOf,
   sortDocs,
   summaryYearsOf,
   typeOptionsOf,
@@ -197,7 +196,7 @@ describe("withholdingsByCounterpartyOf", () => {
   });
 });
 
-describe("receivablesOf y receivablesTotalsOf", () => {
+describe("receivablesOf", () => {
   const docs = [
     sale("a", { paymentStatus: "net_only", amountPaid: 100, fechaEmision: "2026-09-01" }),
     sale("b", { amountPaid: 50, fechaEmision: "2026-10-09" }),
@@ -210,7 +209,10 @@ describe("receivablesOf y receivablesTotalsOf", () => {
   it("solo ventas de la empresa, por categoría y después por fecha", () => {
     const list = receivablesOf(docs, "CO1");
     expect(list.map((d) => [d.id, d._category, d._pending])).toEqual([["d", "full", 119], ["c", "full", 119], ["b", "partial", 69], ["a", "iva", 19]]);
-    expect(receivablesTotalsOf(list)).toEqual({ full: 238, partial: 69, iva: 19, total: 326, count: { full: 2, partial: 1, iva: 1 } });
+  });
+
+  it("sin empresa, las ventas de todas", () => {
+    expect(receivablesOf(docs, "").map((d) => d.id).sort()).toEqual(["a", "b", "c", "d", "e"]);
   });
 });
 
