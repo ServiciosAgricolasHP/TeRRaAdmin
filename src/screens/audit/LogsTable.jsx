@@ -27,6 +27,7 @@ const ACTION_STYLE = {
   workdaysMove: { color: "#92400e", bg: "#fef3c7", label: "mover jornadas" },
   floorApplyAll: { color: "#166534", bg: "#dcfce7", label: "piso a todos" },
   floorRemove: { color: "#b91c1c", bg: "#fee2e2", label: "quitar piso" },
+  paymentStatusBatch: { color: "#166534", bg: "#dcfce7", label: "estado de pago" },
 };
 
 function actionPill(action) {

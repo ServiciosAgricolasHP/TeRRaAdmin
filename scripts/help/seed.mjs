@@ -433,6 +433,37 @@ export async function seedBilling() {
   await purchase(5470, olmos, "2026-08-01", 600000, { costCenterId: "CC1" });
 }
 
+// Una segunda empresa, para la pestaña Pendientes de Facturación.
+export const DEMO_COMPANY_2 = { id: "E2", rut: rut(76987650), razonSocial: "Transportes Agrícolas Demo SpA", alias: "Transportes Demo" };
+
+// Para la pestaña Pendientes, sobre `seedBilling`: la segunda empresa le
+// factura a dos clientes de la primera, y Agrícola San Pedro tiene IVA
+// retenido en septiembre (de las dos empresas) y en octubre.
+export async function seedBillingPending() {
+  const db = getFirestore("hpdatabase");
+  const at = new Date("2026-10-08T12:00:00-03:00");
+  const { id: companyId2, ...company2 } = DEMO_COMPANY_2;
+  await db.collection("companies").doc(companyId2).set({ ...company2, enabled: true });
+  const sale = (company, companyId, folio, client, date, neto, extra = {}) => {
+    const iva = Math.round(neto * 0.19);
+    return db.collection("dteDocuments").doc(`${companyId}_V_33_${folio}`).set({
+      companyId, companyAlias: company.alias, kind: "venta", tipo: 33, tipoLabel: "Factura Electrónica",
+      folio, fechaEmision: date, periodo: date.slice(0, 7),
+      rutEmisor: company.rut, razonSocialEmisor: company.razonSocial,
+      rutReceptor: rut(client.num), razonSocialReceptor: client.name,
+      exento: 0, neto, iva, otrosImpuestos: 0, total: neto + iva,
+      source: "sii_import", sourceFile: `RCV_VENTA_${date.slice(0, 7)}.csv`, importedAt: at, updatedAt: at,
+      paymentStatus: "unpaid", payments: [], amountPaid: 0, notes: "", ...extra,
+    });
+  };
+  const { id: companyId, ...company } = DEMO_COMPANY;
+  const cerroVerde = { num: 96123450, name: "Frutícola Cerro Verde S.A." };
+  const sanPedro = { num: 78345672, name: "Agrícola San Pedro Ltda." };
+  await sale(company2, companyId2, 313, cerroVerde, "2026-10-05", 800000);
+  await sale(company, companyId, 1195, sanPedro, "2026-09-18", 700000, { paymentStatus: "net_only" });
+  await sale(company2, companyId2, 310, sanPedro, "2026-09-25", 500000, { paymentStatus: "net_only" });
+}
+
 // Para la guía de Cheques y pagos: un cheque emitido y uno recibido, un pago
 // vencido, otro aplazado, un crédito de doce cuotas con dos pagadas y una
 // deuda personal con un abono.

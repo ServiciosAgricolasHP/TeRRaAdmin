@@ -3,6 +3,7 @@ import { dteDocumentsService } from "../../services";
 import { serverTimestamp } from "firebase/firestore";
 import { auth } from "../../firebase";
 import { unshout } from "../../utils/textCase";
+import { errorText } from "../../utils/errorText";
 
 // Escrituras sobre un documento: estado de pago, notas, centro de costo y
 // pagos. Cada una actualiza la lista y el detalle abierto en su lugar, sin
@@ -10,9 +11,10 @@ import { unshout } from "../../utils/textCase";
 export function useDocUpdates({ setDetailDoc, setDocs, toast }) {
   // --- Marcar estado de pago de una factura ---
   // Fija el estado directamente; la UI lo ofrece como un `<select>` por fila.
+  // Devuelve si quedó guardado.
   const setPaymentStatus = async (dteDoc, newStatus) => {
-    if (!PAYMENT_STATUSES[newStatus]) return;
-    if ((dteDoc.paymentStatus || "unpaid") === newStatus) return;
+    if (!PAYMENT_STATUSES[newStatus]) return false;
+    if ((dteDoc.paymentStatus || "unpaid") === newStatus) return true;
     try {
       await dteDocumentsService.update(dteDoc.id, {
         paymentStatus: newStatus,
@@ -20,8 +22,11 @@ export function useDocUpdates({ setDetailDoc, setDocs, toast }) {
         paymentStatusSetBy: auth.currentUser?.uid || null,
       });
       setDocs((prev) => prev.map((d) => (d.id === dteDoc.id ? { ...d, paymentStatus: newStatus } : d)));
+      setDetailDoc((cur) => (cur?.id === dteDoc.id ? { ...cur, paymentStatus: newStatus } : cur));
+      return true;
     } catch (err) {
-      toast.error("Error al cambiar estado: " + (err.message || err));
+      toast.error(`Error al cambiar estado: ${errorText(err)}`);
+      return false;
     }
   };
 
@@ -34,7 +39,7 @@ export function useDocUpdates({ setDetailDoc, setDocs, toast }) {
       setDocs((prev) => prev.map((d) => (d.id === dteDoc.id ? { ...d, notes } : d)));
       setDetailDoc((cur) => (cur?.id === dteDoc.id ? { ...cur, notes } : cur));
     } catch (err) {
-      toast.error("Error al guardar notas: " + (err.message || err));
+      toast.error(`Error al guardar notas: ${errorText(err)}`);
     }
   };
 
@@ -48,7 +53,7 @@ export function useDocUpdates({ setDetailDoc, setDocs, toast }) {
       setDocs((prev) => prev.map((d) => (d.id === dteDoc.id ? { ...d, costCenterId: next } : d)));
       setDetailDoc((cur) => (cur?.id === dteDoc.id ? { ...cur, costCenterId: next } : cur));
     } catch (err) {
-      toast.error("Error al asignar centro de costo: " + (err.message || err));
+      toast.error(`Error al asignar centro de costo: ${errorText(err)}`);
     }
   };
 
@@ -62,7 +67,7 @@ export function useDocUpdates({ setDetailDoc, setDocs, toast }) {
       setDocs((prev) => prev.map((d) => (d.id === dteDoc.id ? { ...d, payments, amountPaid } : d)));
       setDetailDoc((cur) => (cur?.id === dteDoc.id ? { ...cur, payments, amountPaid } : cur));
     } catch (err) {
-      toast.error("Error al guardar pagos: " + (err.message || err));
+      toast.error(`Error al guardar pagos: ${errorText(err)}`);
     }
   };
   return { saveDocCostCenter, saveDocNotes, saveDocPayments, setPaymentStatus };

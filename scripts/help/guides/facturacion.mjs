@@ -1,11 +1,11 @@
 // Capturas de la guía "Facturación" (src/screens/help/guides/facturacion.md):
 // las empresas, importar un mes de ventas, la lista, una nota de crédito que
-// anula una factura, un abono, los pendientes, un centro de costo y el
-// resumen del año.
+// anula una factura, un abono, los pendientes de las dos empresas, un centro
+// de costo y el resumen del año.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DEMO_COMPANY, rut, seedBilling } from "../seed.mjs";
+import { DEMO_COMPANY, rut, seedBilling, seedBillingPending } from "../seed.mjs";
 
 const modal = (page, title) =>
   page.getByRole("heading", { name: title }).locator("xpath=ancestor::div[contains(@class,'rounded-xl')][1]");
@@ -32,6 +32,7 @@ function salesCsv() {
 
 export async function run({ page, base, login, shot }) {
   await seedBilling();
+  await seedBillingPending();
   await login();
   await page.goto(`${base}/facturacion`);
   await page.getByText("Frutícola Cerro Verde S.A.").first().waitFor({ timeout: 120000 });
@@ -80,13 +81,24 @@ export async function run({ page, base, login, shot }) {
   await doc.getByText("Saldo:").first().waitFor();
   await close(doc);
 
-  // Lo que falta por cobrar.
-  await page.getByRole("button", { name: /⏳ Ver pendientes/ }).click();
-  const receivables = modal(page, /^Pendientes — /);
-  await receivables.getByText("TOTAL PENDIENTE").first().waitFor();
+  // Lo que falta por cobrar, de las dos empresas.
+  await page.getByRole("button", { name: /⏳ Pendientes/ }).click();
+  const companySelect = page.locator("select").filter({ has: page.locator('option[value="__all"]') });
+  await companySelect.selectOption("__all");
+  await page.getByText("IVA pendiente total Agrícola San Pedro Ltda.").first().waitFor();
   await page.waitForTimeout(500);
-  await shot(page, "06-pendientes", receivables, { pad: 0 });
-  await close(receivables);
+  await shot(page, "06-pendientes", page.locator("main"), { pad: 0, marks: [companySelect] });
+
+  // El IVA pendiente de San Pedro, por mes.
+  await page.locator("button", { hasText: /^IVA pendiente$/ }).first().click();
+  await page.getByRole("button", { name: "✓ Septiembre pagado" }).waitFor();
+  await page.waitForTimeout(300);
+  await shot(page, "07-iva-pendiente", page.locator("main"), {
+    pad: 0,
+    marks: [page.locator("tbody select").first(), page.getByRole("button", { name: "✓ Septiembre pagado" })],
+  });
+  await page.locator("button", { hasText: /^Todos$/ }).first().click();
+  await page.getByRole("button", { name: /📤 Facturas/ }).click();
 
   // Los documentos y el gasto informal de Mantención.
   await page.getByRole("button", { name: /Gestionar centros de costo/ }).click();
@@ -94,12 +106,12 @@ export async function run({ page, base, login, shot }) {
   await centers.locator("select").first().selectOption({ label: "🔧 Mantención" });
   await centers.getByText("Soldadura del portón").first().waitFor();
   await page.waitForTimeout(500);
-  await shot(page, "07-centros-de-costo", centers, { pad: 0, marks: [centers.getByRole("button", { name: "+ Gasto informal" })] });
+  await shot(page, "08-centros-de-costo", centers, { pad: 0, marks: [centers.getByRole("button", { name: "+ Gasto informal" })] });
   await close(centers);
 
   // El resumen del año.
   await page.getByRole("button", { name: /Resumen$/ }).click();
   await page.getByText("IVA Débito").first().waitFor();
   await page.waitForTimeout(800);
-  await shot(page, "08-resumen", page.locator("main"), { pad: 0 });
+  await shot(page, "09-resumen", page.locator("main"), { pad: 0 });
 }
