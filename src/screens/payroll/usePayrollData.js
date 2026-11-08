@@ -1,6 +1,6 @@
 import { useState, useEffect, useEffectEvent } from "react";
-import { listWorkdaysByCycles, workdaysService } from "../../services";
 import { listPayrolls } from "../../services/payrollsList";
+import { listCycleWorkdays } from "../../services/workdayCycles";
 import { cycleStatsOf } from "../../utils/payrollCycles";
 import { listWorkers } from "../../services/workersService";
 import { listCycles, listJobs, listSubjobs } from "../../services/jobLists";
@@ -8,8 +8,8 @@ import { newestFirst } from "../../utils/syncedList";
 import { attempt } from "../../utils/attempt";
 
 // Lo que usa la pantalla Nómina: faenas, subfaenas, ciclos, trabajadores, las
-// nóminas y lo pendiente de cada ciclo activo. `load` lo relee (con la caché) y
-// `refresh` pone al día las listas al tiro y relee las jornadas.
+// nóminas y lo pendiente de cada ciclo activo. `load` lo relee (con las copias
+// del navegador) y `refresh` las pone al día al tiro.
 export function usePayrollData({ toast }) {
   const [loading, setLoading] = useState(true);
   const [jobs, setJobs] = useState([]);
@@ -25,7 +25,8 @@ export function usePayrollData({ toast }) {
   // la pantalla con "Cargando…".
   const [refreshing, setRefreshing] = useState(false);
 
-  // Con `fresh`, las listas se ponen al día sin esperar el minuto.
+  // Con `fresh`, las listas y las jornadas se ponen al día sin esperar el
+  // minuto.
   const load = async (opts) => {
     const fresh = !!opts?.fresh;
     setLoading(true);
@@ -48,9 +49,11 @@ export function usePayrollData({ toast }) {
 
       // Pendiente, lo que ya entró a nómina y rango de fechas de los ciclos activos.
       const activeIds = c.filter((x) => x.status !== "closed").map((x) => x.id);
-      // Por ciclo y cacheado: `buildPreview` vuelve a pedir estos mismos
-      // documentos al elegir los ciclos y los toma de la misma clave de caché.
-      const wds = await listWorkdaysByCycles(activeIds);
+      // De las copias por ciclo (`syncWorkdayCycles`), las mismas con que
+      // `buildPreview` arma la nómina. Después de generar, pagar o cualquier
+      // escritura de jornadas en este equipo, se ponen al día sin esperar el
+      // minuto.
+      const wds = await listCycleWorkdays(activeIds, { fresh });
       const stats = cycleStatsOf(c, w, wds);
       setCycleStats(stats);
       return { cycles: c, stats, payrolls: p };
@@ -66,14 +69,12 @@ export function usePayrollData({ toast }) {
   }, []);
 
   // Trae al tiro lo que otra persona cambió en trabajadores, labores o
-  // jornadas: las listas sincronizadas se ponen al día (lo cambiado más el
-  // conteo, sin releerlas enteras) y las jornadas de los ciclos activos se
-  // releen.
+  // jornadas: las listas sincronizadas y las jornadas de los ciclos activos se
+  // ponen al día (lo cambiado más el conteo, sin releerlas enteras).
   const refresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
     const { error: err } = await attempt(async () => {
-      workdaysService.invalidate();
       await load({ fresh: true });
       toast.success("Datos actualizados");
     });

@@ -7,7 +7,8 @@ import {
   recalcPayrollAggregates,
   workdaysForNewPayroll,
 } from "../../src/services/payrollsService";
-import { workdaysService, listWorkdaysByCycles } from "../../src/services";
+import { workdaysService } from "../../src/services";
+import { syncWorkdayCycles } from "../../src/services/workdayCycles";
 import { workerKeys } from "../../src/services/workersService";
 import { aggregateWorkerAmounts } from "../../src/utils/payroll";
 import {
@@ -172,13 +173,13 @@ describe("generar una nómina con personas sueltas", () => {
     expect(taken).toBe(1);
   });
 
-  it("si la caché de los ciclos da libre un día que la relectura muestra tomado, no entra", async () => {
+  it("si la copia de los ciclos da libre un día que la relectura muestra tomado, no entra", async () => {
     await ciclo(CICLO_A, [COSECHA]);
     await seedWorker(ANA);
     const diaAna = await seedWorkday({ cycleId: CICLO_A, laborId: COSECHA, rut: ANA.id, date: "2026-03-02", amount: 100000 });
-    // La pantalla ya leyó el ciclo (caché de un minuto), y después otra sesión
-    // se llevó el día: esa escritura no pasa por la caché de esta.
-    await listWorkdaysByCycles([CICLO_A]);
+    // La pantalla ya guardó el ciclo, y después otra sesión se llevó el día
+    // con una escritura sin `updatedAt`, que la puesta al día no ve.
+    await syncWorkdayCycles([CICLO_A]);
     await updateDoc(doc(db, "workdays", diaAna), { payrollId: "otra-nomina" });
 
     const { workdays, taken } = await workdaysForNewPayroll({
