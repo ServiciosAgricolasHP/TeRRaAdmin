@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { deleteDoc, doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "../../src/firebase";
 import { syncWorkdayMonth } from "../../src/services/workdayMonths";
@@ -44,6 +44,23 @@ describe("las jornadas de un mes en el Calendario", () => {
     expect(oct.reads).toBe(4 + 1);
     const sep = await syncWorkdayMonth("2026-09", { fresh: true });
     expect(ids(sep.data)).toEqual(["w3", "w4"]);
+  });
+
+  it("pasados unos minutos sin escrituras, no vuelve a traer lo último escrito", async () => {
+    await seed();
+    await syncWorkdayMonth("2026-10");
+    // Recién escritas, las tres jornadas caen en los minutos antes de la marca.
+    expect((await syncWorkdayMonth("2026-10", { fresh: true })).reads).toBe(3 + 1);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(Date.now() + 5 * 60 * 1000 + 1000);
+      // Esta las ve todas por última vez y asienta la marca.
+      expect((await syncWorkdayMonth("2026-10", { fresh: true })).reads).toBe(3 + 1);
+      // La consulta vacía y el conteo del mes.
+      expect((await syncWorkdayMonth("2026-10", { fresh: true })).reads).toBe(1 + 1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("lo eliminado o escrito sin updatedAt entra porque el conteo no calza", async () => {

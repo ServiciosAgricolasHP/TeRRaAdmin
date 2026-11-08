@@ -3,7 +3,8 @@ import { updateDoc, writeBatch } from "./readMeter";
 import { db, auth } from "../firebase";
 import { createAdditiveService, createService } from "./firestoreBase";
 import { signerName } from "./signer";
-import { workdaysService, listWorkdaysByCycles } from "./index";
+import { workdaysService } from "./index";
+import { listCycleWorkdays } from "./workdayCycles";
 import { isCashBank } from "../utils/banks";
 import { bankFormatOf } from "../utils/bankFormats";
 import {
@@ -48,12 +49,13 @@ export function savePayrollConfig({ bankFormat }) {
 // puntuales de las personas sueltas (`people`: [{ keys, workdayIds }], con
 // `keys` = `workerKeys` de la persona).
 //
-// Los ciclos se leen con la caché corta de `listWorkdaysByCycles`: es la misma
-// lectura que la pantalla acaba de hacer para mostrar lo pendiente. Los días
-// de las personas se releen sin caché, porque se eligieron en un modal que
-// pudo quedar abierto un buen rato y otra nómina pudo tomar alguno. Lo que esa
-// relectura muestra tomado queda afuera, aunque la caché de los ciclos lo diera
-// libre. `taken` cuenta los días elegidos que quedaron afuera, para avisarlo.
+// Los ciclos salen de las copias por ciclo (`syncWorkdayCycles`), las mismas
+// con que la pantalla muestra lo pendiente, puestas al día al tiro: lo
+// cambiado y el conteo de los ciclos. Los días de las personas se releen sin
+// copia, porque se eligieron en un modal que pudo quedar abierto un buen rato
+// y otra nómina pudo tomar alguno. Lo que esa relectura muestra tomado queda
+// afuera, aunque la copia de los ciclos lo diera libre. `taken` cuenta los
+// días elegidos que quedaron afuera, para avisarlo.
 //
 // Lo etiquetado con otra nómina no entra, ni los trabajadores temporales
 // (TEMP-*), que no entran a una nómina hasta que se les asigna RUT.
@@ -61,7 +63,7 @@ export async function workdaysForNewPayroll({ chosen = new Map(), people = [] })
   const conLabores = [...chosen].filter(([, laborIds]) => !Array.isArray(laborIds) || laborIds.length > 0);
   const workdays = [];
   const vistas = new Set();
-  for (const wd of await listWorkdaysByCycles(conLabores.map(([cycleId]) => cycleId))) {
+  for (const wd of await listCycleWorkdays(conLabores.map(([cycleId]) => cycleId), { fresh: true })) {
     if (wd.payrollId) continue;
     if (String(wd.workerRut || "").startsWith("TEMP-")) continue;
     if (!inChosenCycles(wd, chosen)) continue;
@@ -114,7 +116,9 @@ export async function unmarkWorkdaysPaid(workdayIds, onProgress) {
   await batchUpdateWorkdays(workdayIds, { paidAt: null, paidBy: null }, onProgress);
 }
 
-// Aplica un patch a una lista de workdays, en dos niveles:
+// Aplica un patch a una lista de workdays, con `updatedAt` y `updatedBy`
+// (las copias de jornadas del navegador se ponen al día con `updatedAt`), en
+// dos niveles:
 //
 // - `writeBatch` de hasta 500 updates, con los commits en paralelo.
 // - `batch.update` es atómico: si UN workday del batch ya no existe (p. ej. se
@@ -146,8 +150,9 @@ async function updateWorkdaysIndividually(ids, patch) {
   return skipped;
 }
 
-async function batchUpdateWorkdays(ids, patch, onProgress) {
+async function batchUpdateWorkdays(ids, fields, onProgress) {
   if (!ids || ids.length === 0) return;
+  const patch = { ...fields, updatedAt: serverTimestamp(), updatedBy: auth.currentUser?.uid || null };
   const total = ids.length;
   let done = 0;
   let skipped = 0;

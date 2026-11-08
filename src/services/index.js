@@ -17,16 +17,10 @@ export const readLogConfigService = createService("readLogConfig", "readLogConfi
 // lo lee el informe de la Consola admin.
 export const readLogsService = createService("readLog", "readLogs");
 
-// Los workdays de un ciclo, la consulta más repetida de la app (Nómina y el
-// resumen de producción por faena). Las pantallas pasan por acá para compartir
-// la clave de caché `workdays::{wheres,order,take}` y el TTL: cualquier
-// diferencia en cómo se escribe la consulta forma otra clave, y el TTL lo sella
-// el último que escribe la entrada.
-//
-// Un minuto, porque de estos documentos sale lo que se le paga a la gente:
-// alcanza para que dos lecturas seguidas de un mismo flujo no se paguen dos
-// veces, sin armar una nómina sobre datos viejos. Cualquier escritura por
-// `workdaysService` invalida el scope completo.
+// Los workdays de un ciclo para el resumen de producción por faena, con una
+// caché de un minuto. Cualquier escritura por `workdaysService` invalida el
+// scope completo. Nómina usa las copias por ciclo (`syncWorkdayCycles`,
+// services/workdayCycles.js).
 export const WORKDAYS_BY_CYCLE_TTL = 60_000;
 
 export function listWorkdaysByCycle(cycleId) {
@@ -37,12 +31,6 @@ export function listWorkdaysByCycle(cycleId) {
   });
 }
 
-// Los workdays de varios ciclos en un solo array plano, sin repetir ciclos.
-export async function listWorkdaysByCycles(cycleIds) {
-  const uniq = [...new Set(cycleIds)].filter(Boolean);
-  const porCiclo = await Promise.all(uniq.map((id) => listWorkdaysByCycle(id)));
-  return porCiclo.flat();
-}
 export const groupLeadersService = createService("groupLeader", "groupLeader");
 export const payrollSnapshotsService = createService("payrollSnapshot", "payrollSnapshots");
 export const interestLinksService = createService("interestLink", "interestLinks");
