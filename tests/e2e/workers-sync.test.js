@@ -1,12 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { deleteDoc, doc, serverTimestamp, setDoc } from "firebase/firestore";
+import { deleteDoc, doc, serverTimestamp, setDoc, Timestamp } from "firebase/firestore";
 import { db } from "../../src/firebase";
 import { workersService } from "../../src/services";
 import { syncWorkers } from "../../src/services/workersService";
 
 // La lista completa de trabajadores se lee entera una vez y después se pone al
-// día con lo que cambió (`updatedAt`). Lo que hace "otro equipo" se escribe
-// directo en Firestore, sin pasar por la caché.
+// día con lo que cambió (`updatedAt`), contando los documentos para ver lo que
+// se creó o se eliminó. Lo que hace "otro equipo" se escribe directo en
+// Firestore, sin pasar por la caché.
 const write = (id, data) => setDoc(doc(db, "worker", id), { ...data, updatedAt: serverTimestamp() }, { merge: true });
 
 async function seedThree() {
@@ -39,17 +40,13 @@ describe("la lista de trabajadores en el navegador", () => {
     expect(names(data)).toEqual(["Ana Pérez Lagos", "Beto Ruiz", "Carla Soto", "Dina Mora"]);
   });
 
-  it("quien se eliminó en otro equipo sale con la próxima carga completa", async () => {
+  it("quien se eliminó en otro equipo sale con la próxima puesta al día, por el conteo", async () => {
     await seedThree();
     await syncWorkers();
     await deleteDoc(doc(db, "worker", "3-5"));
 
-    const delta = await syncWorkers({ fresh: true });
-    expect(names(delta.data)).toContain("Beto Ruiz");
-
-    workersService.invalidate();
-    const full = await syncWorkers();
-    expect(names(full.data)).toEqual(["Ana Pérez", "Carla Soto"]);
+    const { data } = await syncWorkers({ fresh: true });
+    expect(names(data)).toEqual(["Ana Pérez", "Carla Soto"]);
   });
 
   it("eliminar en este equipo lo saca de la copia al tiro", async () => {
@@ -60,19 +57,30 @@ describe("la lista de trabajadores en el navegador", () => {
     expect(names(data)).toEqual(["Ana Pérez", "Carla Soto"]);
   });
 
-  it("lo que se escribe sin updatedAt entra con la próxima carga completa", async () => {
+  it("una persona creada sin updatedAt entra por el conteo", async () => {
     await seedThree();
     await syncWorkers();
-    // Como el escáner, que no marca la hora.
-    await setDoc(doc(db, "worker", "6-K"), { name: "Fito Escáner", rut: "6-K", idQr: [] });
+    await setDoc(doc(db, "worker", "6-K"), { name: "Fito Sinhora", rut: "6-K", idQr: [] });
+
+    const { data } = await syncWorkers({ fresh: true });
+    expect(names(data)).toContain("Fito Sinhora");
+  });
+
+  it("una edición sin updatedAt entra con la próxima carga completa", async () => {
+    await seedThree();
+    // Una ficha guardada hace dos horas: queda fuera del margen de la marca.
+    await setDoc(doc(db, "worker", "2-7"), { updatedAt: Timestamp.fromMillis(Date.now() - 2 * 60 * 60 * 1000) }, { merge: true });
+    await syncWorkers();
+    // Como una edición a mano en la consola de Firebase, que no marca la hora.
+    await setDoc(doc(db, "worker", "2-7"), { name: "Ana Pérez Editada" }, { merge: true });
 
     const delta = await syncWorkers({ fresh: true });
-    expect(names(delta.data)).not.toContain("Fito Escáner");
+    expect(names(delta.data)).toContain("Ana Pérez");
 
-    // Borrar la caché (Recargar en Nómina) la vuelve a leer entera.
+    // Borrar la caché de la colección la vuelve a leer entera.
     workersService.invalidate();
     const full = await syncWorkers();
-    expect(full.reads).toBe(4);
-    expect(names(full.data)).toContain("Fito Escáner");
+    expect(full.reads).toBe(3);
+    expect(names(full.data)).toContain("Ana Pérez Editada");
   });
 });

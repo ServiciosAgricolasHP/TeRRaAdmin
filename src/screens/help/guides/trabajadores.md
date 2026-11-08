@@ -103,4 +103,4 @@ En el teléfono la lista pasa a tarjetas, con los mismos datos y botones. Toca e
 - **"Ya existe un trabajador con ese RUT"**: búscalo por el RUT; puede estar con otro nombre.
 - **"El RUT de pago es de otra persona"**: falta el **Nombre del titular**.
 - **No se puede eliminar**: la persona tiene días registrados.
-- **Alguien inscrito con el escáner no aparece**: entra al día siguiente, o al tocar **Recargar datos** en Nómina.
+- **Alguien inscrito con el escáner no aparece**: aparece solo en menos de un minuto, o al tiro con **Recargar datos** en Nómina.
