@@ -18,9 +18,7 @@ import { applyMonthChanges, monthOfDate, monthsToDrop } from "../utils/workdayMo
 // - un conteo del mes (una lectura por cada 1.000 jornadas) encuentra lo
 //   eliminado y lo escrito sin `updatedAt`: si no calza con la copia, el mes
 //   se lee entero.
-// Lo que la nómina escribe en una jornada (`payrollId`, `paidAt`) no pone
-// `updatedAt`, y el Calendario no lo usa. El id de una jornada lleva su fecha,
-// así que una jornada nunca cambia de mes.
+// El id de una jornada lleva su fecha, así que una jornada nunca cambia de mes.
 //
 // Se guardan los `KEEP_MONTHS` meses abiertos más recientemente, cada uno en
 // su entrada de IndexedDB (services/idbStore.js), y la marca con la lista de

@@ -114,7 +114,9 @@ export async function unmarkWorkdaysPaid(workdayIds, onProgress) {
   await batchUpdateWorkdays(workdayIds, { paidAt: null, paidBy: null }, onProgress);
 }
 
-// Aplica un patch a una lista de workdays, en dos niveles:
+// Aplica un patch a una lista de workdays, con `updatedAt` y `updatedBy`
+// (las copias de jornadas del navegador se ponen al día con `updatedAt`), en
+// dos niveles:
 //
 // - `writeBatch` de hasta 500 updates, con los commits en paralelo.
 // - `batch.update` es atómico: si UN workday del batch ya no existe (p. ej. se
@@ -146,8 +148,9 @@ async function updateWorkdaysIndividually(ids, patch) {
   return skipped;
 }
 
-async function batchUpdateWorkdays(ids, patch, onProgress) {
+async function batchUpdateWorkdays(ids, fields, onProgress) {
   if (!ids || ids.length === 0) return;
+  const patch = { ...fields, updatedAt: serverTimestamp(), updatedBy: auth.currentUser?.uid || null };
   const total = ids.length;
   let done = 0;
   let skipped = 0;
