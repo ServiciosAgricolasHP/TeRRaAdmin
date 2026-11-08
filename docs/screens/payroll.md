@@ -11,7 +11,8 @@
   - **Configuración:** `PayrollSettingsModal` (⚙, el formato del archivo del banco) y `usePayrollConfig` (lo lee y lo guarda).
   - **Comunes:** `helpers.js` (formatos de fecha y de cuenta, RUT vigente).
 - Servicio: `services/payrollsService.js` (colección `payrolls`).
-- **Las nóminas salen de `listPayrolls`** (`services/payrollsList.js`), una lista sincronizada que comparten la pantalla, los pagos anteriores y el Dashboard (ver "Listas sincronizadas" en AGENTS.md), de la más nueva a la más vieja. Cada nómina pesa unos 120 KB: se leen enteras una vez por semana en cada navegador, o cuando el conteo no calza, y la pantalla se pone al día cada vez que carga (al abrir y después de cada acción) con unas 2 lecturas. Lo que se hace acá corrige la copia en su lugar. Recargar la lee entera.
+- **Las nóminas salen de `listPayrolls`** (`services/payrollsList.js`), una lista sincronizada que comparten la pantalla, los pagos anteriores y el Dashboard (ver "Listas sincronizadas" en AGENTS.md), de la más nueva a la más vieja. Cada nómina pesa unos 120 KB: se leen enteras una vez por semana en cada navegador, o cuando el conteo no calza, y la pantalla se pone al día cada vez que carga (al abrir y después de cada acción) con unas 2 lecturas. Lo que se hace acá corrige la copia en su lugar.
+- **Recargar datos** (`refresh`, `usePayrollData`) trae al tiro lo que otra persona cambió: pone al día las listas sincronizadas (faenas, subfaenas, ciclos, trabajadores y nóminas) sin esperar el minuto, con lo cambiado y el conteo, sin releerlas enteras, y relee las jornadas de los ciclos activos.
 - Helpers: `utils/payroll.js` — `aggregateWorkerAmounts`, `splitBankAndCash`, `groupCashByLeader`, `validateAccountNumber`, `downloadPayrollXlsx` y `downloadBankFileXlsx`. Los formatos del archivo del banco, en `utils/bankFormats.js` (ver XLSX).
 
 ## Flujo

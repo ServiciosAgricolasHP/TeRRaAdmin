@@ -1,6 +1,5 @@
 import { useState, useEffect, useEffectEvent } from "react";
-import { jobsService, subjobsService, cyclesService, workersService, listWorkdaysByCycles, workdaysService } from "../../services";
-import { payrollsService } from "../../services/payrollsService";
+import { listWorkdaysByCycles, workdaysService } from "../../services";
 import { listPayrolls } from "../../services/payrollsList";
 import { cycleStatsOf } from "../../utils/payrollCycles";
 import { listWorkers } from "../../services/workersService";
@@ -10,7 +9,7 @@ import { attempt } from "../../utils/attempt";
 
 // Lo que usa la pantalla Nómina: faenas, subfaenas, ciclos, trabajadores, las
 // nóminas y lo pendiente de cada ciclo activo. `load` lo relee (con la caché) y
-// `refresh` lo relee sin ella.
+// `refresh` pone al día las listas al tiro y relee las jornadas.
 export function usePayrollData({ toast }) {
   const [loading, setLoading] = useState(true);
   const [jobs, setJobs] = useState([]);
@@ -26,14 +25,16 @@ export function usePayrollData({ toast }) {
   // la pantalla con "Cargando…".
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = async () => {
+  // Con `fresh`, las listas se ponen al día sin esperar el minuto.
+  const load = async (opts) => {
+    const fresh = !!opts?.fresh;
     setLoading(true);
     const { value, error: err } = await attempt(async () => {
       const [f, s, c, w, p] = await Promise.all([
-        listJobs(),
-        listSubjobs(),
-        listCycles().then(newestFirst),
-        listWorkers(),
+        listJobs({ fresh }),
+        listSubjobs({ fresh }),
+        listCycles({ fresh }).then(newestFirst),
+        listWorkers({ fresh }),
         // Al día cada vez: la pantalla vuelve a cargar después de cada acción,
         // y lo que cambió otra persona (o la hora de una nómina recién
         // generada) llega con la puesta al día.
@@ -64,20 +65,16 @@ export function usePayrollData({ toast }) {
     loadOnMount();
   }, []);
 
-  // Relee desde Firestore sin la caché local (memoria y navegador): invalida
-  // lo que alimenta el armado de la nómina y recarga. Sirve cuando otro usuario
-  // cambió trabajadores, labores o jornadas y la caché todavía no vence.
+  // Trae al tiro lo que otra persona cambió en trabajadores, labores o
+  // jornadas: las listas sincronizadas se ponen al día (lo cambiado más el
+  // conteo, sin releerlas enteras) y las jornadas de los ciclos activos se
+  // releen.
   const refresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
     const { error: err } = await attempt(async () => {
-      jobsService.invalidate();
-      subjobsService.invalidate();
-      cyclesService.invalidate();
-      workersService.invalidate();
       workdaysService.invalidate();
-      payrollsService.invalidate();
-      await load();
+      await load({ fresh: true });
       toast.success("Datos actualizados");
     });
     if (err) {
