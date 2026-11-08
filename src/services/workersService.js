@@ -13,11 +13,17 @@ export function detectQueryKind(q) {
 // ── La lista completa de trabajadores ────────────────────────────────────────
 // Toda pantalla que la necesita la pide con `listWorkers()`. Es una lista
 // sincronizada (`createSyncedList`, services/syncedList.js): la copia del
-// navegador se pone al día con lo que cambió y se lee entera la primera vez
-// del día en cada navegador. Así entra lo que se escribe sin `updatedAt` (el
-// escáner, la consola de Firebase) y sale quien se eliminó en otro equipo.
-// Recargar en Nómina (`workersService.invalidate()`) también la relee entera.
-const workersList = createSyncedList(workersService, { order: ["name", "asc"], syncKey: "workers.sync" });
+// navegador se pone al día con lo que cambió, y cada puesta al día cuenta los
+// trabajadores (4 lecturas por ~3.300) para que entre lo que se creó o se
+// eliminó en otro equipo. Se lee entera en un navegador nuevo, si el conteo no
+// calza y cada 30 días, por lo que se edite sin `updatedAt` (a mano en la
+// consola de Firebase; el escáner, si vuelve a usarse, tiene que mandarlo).
+const workersList = createSyncedList(workersService, {
+  order: ["name", "asc"],
+  syncKey: "workers.sync",
+  fullEveryDays: 30,
+  checkCount: true,
+});
 
 // La lista y cuántas lecturas costó (0 si salió de la copia). `fresh` pone
 // al día sin esperar el minuto.

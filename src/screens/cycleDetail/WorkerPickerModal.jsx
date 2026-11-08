@@ -4,7 +4,7 @@ import { hasChanges } from "../../utils/formChanges";
 import TextField from "../../components/TextField";
 import Select from "../../components/Select";
 import { workersService } from "../../services";
-import { findWorkerByRut, createWorker } from "../../services/workersService";
+import { findWorkerByRut, createWorker, listWorkers } from "../../services/workersService";
 import { formatRutForDisplay, normalizeRut, validateRut, isForeignRut } from "../../utils/rutUtils";
 import { useAuth } from "../../contexts/AuthContext";
 import {
@@ -24,7 +24,6 @@ import { useValuesChanged } from "../../hooks/useValuesChanged";
 import { activeWorkers } from "../../utils/workerMerge";
 
 const MIN_SEARCH = 3;
-const WORKERS_TTL_MS = 2 * 60 * 60 * 1000;
 const LEADER_LOCAL = "CHILENOS";
 const LEADER_FOREIGN = "EXTRANJEROS";
 
@@ -80,14 +79,13 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
     setTempLeader(LEADER_LOCAL);
     setLoading(true);
   }
-  // Carga la lista de trabajadores, de la caché si está vigente. La caché es
-  // aditiva: un trabajador creado desde este modal aparece en las búsquedas
-  // siguientes sin releer la colección.
+  // Carga la lista de trabajadores compartida (`listWorkers`), puesta al día
+  // con lo que cambió. Un trabajador creado desde este modal entra a esa copia
+  // al crearse y aparece en las búsquedas siguientes.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    workersService
-      .list({ cache: true, persist: true, ttl: WORKERS_TTL_MS })
+    listWorkers()
       .then((list) => {
         if (cancelled) return;
         setAllWorkers(activeWorkers(list));

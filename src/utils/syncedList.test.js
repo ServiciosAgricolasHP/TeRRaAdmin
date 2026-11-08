@@ -86,6 +86,12 @@ describe("syncMode", () => {
     expect(syncMode({ ...weekly, fullDate: "2026-10-26" })).toBe("full");
   });
 
+  it("con una carga completa cada 30 días, la copia de hace 29 se pone al día y la de hace 30 se lee entera", () => {
+    const monthly = { ...base, fullEveryDays: 30, now: 61_001 };
+    expect(syncMode({ ...monthly, fullDate: "2026-10-04" })).toBe("delta");
+    expect(syncMode({ ...monthly, fullDate: "2026-10-03" })).toBe("full");
+  });
+
   it("puesta al día hace menos de un minuto: la copia", () => {
     expect(syncMode(base)).toBe("cached");
   });
