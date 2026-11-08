@@ -1,7 +1,9 @@
 // Piezas comunes de las impresiones de la nómina: las grillas de producción
 // por ciclo, las jornadas de la nómina y los resúmenes por labor, anticipos y
 // bonos.
-import { cyclesService, workdaysService } from "../../services";
+import { cyclesService } from "../../services";
+import { listCycles, pickByIds, withFreshCycles } from "../../services/jobLists";
+import { listCycleWorkdays } from "../../services/workdayCycles";
 import { isCashBank } from "../../utils/banks";
 import { getTratoTierTotals, getTratoTiers, formatLaborDayPrice, comboLabel } from "../../utils/cosechaCombos";
 import { normalizeStages, describeStage, stageTag } from "../../utils/tratoEtapas";
@@ -375,23 +377,24 @@ export const LABOR_TYPE_LABEL = {
 // a la gente (`wdIdSet` sale de `payroll.items[].workdayIds`, la unión de todos
 // los grupos), así que se pide una vez por nómina y la reusan el detalle de
 // pago, los comprobantes de efectivo y la hoja de cada líder.
+//
+// Los ciclos salen de la lista sincronizada, y el que no conoce la labor de
+// alguna jornada se relee (`withFreshCycles`). Las jornadas, de las copias por
+// ciclo que comparte con Nómina (`syncWorkdayCycles`): volver a abrir una
+// nómina cuesta unas pocas lecturas.
 export async function fetchPayrollWorkdays(payroll) {
   const cycleIds = payroll.cycleIds || (payroll.cycleDetails || []).map((c) => c.id);
-  const cycles = await Promise.all(cycleIds.map((id) => cyclesService.getById(id)));
-  const cyclesById = {};
-  for (const c of cycles) if (c) cyclesById[c.id] = c;
-
   const items = payroll.items || [];
+  const wdIdSet = new Set(items.flatMap((it) => it.workdayIds || []));
+  const [listed, cycleWorkdays] = await Promise.all([
+    listCycles().then((list) => pickByIds(list, cycleIds, cyclesService)),
+    listCycleWorkdays(cycleIds),
+  ]);
   // Solo las jornadas de esta nómina: sus ciclos también tienen jornadas de
   // otras nóminas.
-  const wdIdSet = new Set(items.flatMap((it) => it.workdayIds || []));
-  const workdays = [];
-  for (let i = 0; i < cycleIds.length; i += 10) {
-    const chunk = cycleIds.slice(i, i + 10);
-    if (chunk.length === 0) continue;
-    const wds = await workdaysService.list({ wheres: [["cycleId", "in", chunk]] });
-    for (const w of wds) if (wdIdSet.has(w.id)) workdays.push(w);
-  }
+  const workdays = cycleWorkdays.filter((w) => wdIdSet.has(w.id));
+  const cyclesById = {};
+  for (const c of await withFreshCycles(listed, workdays)) cyclesById[c.id] = c;
 
   const nameByRut = new Map(items.map((it) => [it.rut, it.name]));
   return { cycleIds, cyclesById, workdays, nameByRut };
