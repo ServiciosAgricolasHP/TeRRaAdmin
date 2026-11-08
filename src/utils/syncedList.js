@@ -39,6 +39,28 @@ export function markOf(docs, field, current = 0) {
   return docs.reduce((mark, d) => Math.max(mark, millisOf(d[field])), current);
 }
 
+// Desde dónde (sin incluirlo) trae la próxima puesta al día lo que cambió:
+// `safe` si ya se sabe que todo lo escrito hasta ahí está en la copia; si no,
+// unos minutos antes de la marca (`marginMs`), por si una escritura con una
+// hora anterior a la marca todavía no se veía en Firestore.
+export const deltaSince = ({ mark, safe }, marginMs) => safe ?? mark - marginMs;
+
+// La marca después de una puesta al día que empezó en `start` y terminó en
+// `end` (horas del equipo) y trajo hasta `newMark` (hora de Firestore). Cada
+// puesta al día anota que, a la hora `end` del equipo, Firestore ya iba en su
+// marca (`checkpoints`). Una puesta al día que empieza `marginMs` o más
+// después de una anotación ve todo lo escrito hasta esa marca, así que la
+// marca pasa a `safe`: la siguiente ya no vuelve a traer lo de esos minutos.
+export function advanceMarks(state, { start, end, newMark, marginMs }) {
+  const all = state.checkpoints || [];
+  const ripe = all.filter((c) => start - c.at >= marginMs);
+  const rest = all.filter((c) => start - c.at < marginMs);
+  const safe = Math.max(deltaSince(state, marginMs), ...ripe.map((c) => c.mark));
+  const last = rest[rest.length - 1];
+  const known = newMark <= safe || last?.mark === newMark;
+  return { mark: newMark, safe, checkpoints: known ? rest : [...rest, { mark: newMark, at: end }] };
+}
+
 // Junta la copia con los documentos que cambiaron: reemplaza por id y agrega
 // los nuevos. Con `order` (`[campo, "asc" | "desc"]`), como `orderBy` en
 // Firestore, deja fuera a los que no tienen el campo y ordena por él.

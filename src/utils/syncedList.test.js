@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { millisOf, markOf, applyChanges, syncMode, timestampIso, newestFirst } from "./syncedList";
+import { millisOf, markOf, applyChanges, syncMode, timestampIso, newestFirst, deltaSince, advanceMarks } from "./syncedList";
 
 describe("millisOf y markOf", () => {
   it("lee un Timestamp y el objeto en que queda guardado", () => {
@@ -32,6 +32,34 @@ describe("timestampIso y newestFirst", () => {
     ];
     expect(newestFirst(list).map((d) => d.id)).toEqual(["recién creado", "nuevo", "viejo"]);
     expect(list.map((d) => d.id)).toEqual(["viejo", "recién creado", "nuevo"]);
+  });
+});
+
+describe("deltaSince y advanceMarks", () => {
+  const margin = 5 * 60_000;
+
+  it("sin nada asentado, trae desde unos minutos antes de la marca y anota la marca nueva", () => {
+    expect(deltaSince({ mark: 1_000_000 }, margin)).toBe(700_000);
+    const next = advanceMarks({ mark: 1_000_000 }, { start: 50, end: 60, newMark: 1_200_000, marginMs: margin });
+    expect(next).toEqual({ mark: 1_200_000, safe: 700_000, checkpoints: [{ mark: 1_200_000, at: 60 }] });
+  });
+
+  it("una puesta al día que empieza el margen o más después de una anotación asienta esa marca", () => {
+    const state = { mark: 1_200_000, safe: 700_000, checkpoints: [{ mark: 1_200_000, at: 60 }] };
+    const early = advanceMarks(state, { start: 60 + margin - 1, end: 0, newMark: 1_200_000, marginMs: margin });
+    expect(early.safe).toBe(700_000);
+    const late = advanceMarks(state, { start: 60 + margin, end: 0, newMark: 1_200_000, marginMs: margin });
+    expect(late).toEqual({ mark: 1_200_000, safe: 1_200_000, checkpoints: [] });
+    // Sin escrituras nuevas, la siguiente trae solo lo posterior a la marca.
+    expect(deltaSince(late, margin)).toBe(1_200_000);
+  });
+
+  it("guarda una anotación por marca, con la hora más temprana, y suelta las asentadas", () => {
+    const state = { mark: 2_000, safe: 500, checkpoints: [{ mark: 1_000, at: 10 }, { mark: 2_000, at: 20 }] };
+    const same = advanceMarks(state, { start: 30, end: 40, newMark: 2_000, marginMs: 100 });
+    expect(same.checkpoints).toEqual(state.checkpoints);
+    const later = advanceMarks(state, { start: 115, end: 120, newMark: 3_000, marginMs: 100 });
+    expect(later).toEqual({ mark: 3_000, safe: 1_000, checkpoints: [{ mark: 2_000, at: 20 }, { mark: 3_000, at: 120 }] });
   });
 });
 

@@ -4,7 +4,7 @@ import { subscribe } from "./cache";
 import { getCountFromServer, getDocs, recordCacheHit } from "./readMeter";
 import { idbDelete, idbGet, idbSet } from "./idbStore";
 import { localIsoDate } from "../utils/dates";
-import { markOf, millisOf, syncMode } from "../utils/syncedList";
+import { advanceMarks, deltaSince, markOf, millisOf, syncMode } from "../utils/syncedList";
 import { applyMonthChanges, monthOfDate, monthsToDrop } from "../utils/workdayMonths";
 
 // Las jornadas de un mes para el Calendario, guardadas en el navegador. Cada
@@ -12,7 +12,9 @@ import { applyMonthChanges, monthOfDate, monthsToDrop } from "../utils/workdayMo
 // abrirlo cuesta unas pocas lecturas:
 // - una consulta trae las jornadas con `updatedAt` desde la marca, de
 //   cualquier mes, y las reparte en los meses guardados (una para todos, como
-//   mucho una vez por minuto);
+//   mucho una vez por minuto). Lo escrito en los minutos antes de la marca se
+//   vuelve a traer hasta que pasan esos minutos (`advanceMarks`,
+//   utils/syncedList.js);
 // - un conteo del mes (una lectura por cada 1.000 jornadas) encuentra lo
 //   eliminado y lo escrito sin `updatedAt`: si no calza con la copia, el mes
 //   se lee entero.
@@ -38,8 +40,9 @@ const FULL_EVERY_DAYS = 7;
 const KEEP_MONTHS = 6;
 
 // `mark`: la hora de la jornada escrita más recientemente que ya está en las
-// copias; `syncedAt`: cuándo se puso al día por última vez; `months`: la fecha
-// de la última lectura completa de cada mes y cuándo se abrió.
+// copias, con `safe` y `checkpoints` (ver `advanceMarks`); `syncedAt`: cuándo
+// se puso al día por última vez; `months`: la fecha de la última lectura
+// completa de cada mes y cuándo se abrió.
 const emptyMeta = () => ({ mark: 0, syncedAt: 0, months: {} });
 
 let meta; // undefined: sin leer todavía lo guardado
@@ -110,21 +113,23 @@ async function runDelta() {
     forget(Object.keys(meta.months));
     const snap = await getDocs(query(collection(db, WORKDAYS), orderBy("updatedAt", "desc"), limit(1)));
     // Sin ninguna jornada con `updatedAt`, la próxima consulta las trae todas.
-    meta.mark = snap.empty ? 1 : millisOf(snap.docs[0].data().updatedAt);
+    const mark = snap.empty ? 1 : millisOf(snap.docs[0].data().updatedAt);
+    Object.assign(meta, { mark, safe: undefined, checkpoints: [{ mark, at: Date.now() }] });
     meta.syncedAt = now;
     lastDeltaAt = now;
     saveMeta();
     return 1;
   }
-  const since = Timestamp.fromMillis(Math.max(0, meta.mark - MARGIN_MS));
-  const changed = docsOf(await getDocs(query(collection(db, WORKDAYS), where("updatedAt", ">=", since))));
+  const since = Timestamp.fromMillis(Math.max(0, deltaSince(meta, MARGIN_MS)));
+  const changed = docsOf(await getDocs(query(collection(db, WORKDAYS), where("updatedAt", ">", since))));
   const touched = new Set(changed.map((d) => monthOfDate(d.date)));
   for (const month of Object.keys(meta.months)) {
     if (!touched.has(month)) continue;
     const list = await monthData(month);
     if (list) saveMonth(month, applyMonthChanges(list, changed, month));
   }
-  meta.mark = markOf(changed, "updatedAt", meta.mark);
+  const newMark = markOf(changed, "updatedAt", meta.mark);
+  Object.assign(meta, advanceMarks(meta, { start: now, end: Date.now(), newMark, marginMs: MARGIN_MS }));
   meta.syncedAt = now;
   lastDeltaAt = now;
   saveMeta();
