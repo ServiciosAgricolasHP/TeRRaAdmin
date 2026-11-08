@@ -37,13 +37,20 @@ import { useClosableCycles } from "./payroll/useClosableCycles";
 import { usePayConfirm } from "./payroll/usePayConfirm";
 import { usePayrollDeletion } from "./payroll/usePayrollDeletion";
 import ScreenLoader from "../components/ScreenLoader";
+import { useReadSection } from "../hooks/useReadSection";
+
+// El nombre de cada pestaña en el registro de lecturas.
+const TAB_READ_SECTIONS = { create: "Generar", history: "Historial", workers: "Pagos anteriores" };
 
 export default function Payroll() {
   const toast = useToast();
   const { user, isAdmin } = useAuth();
+  const [tab, setTab] = useState("create"); // create | history | workers
+  // Antes que las cargas de la pantalla: lo que se lee al entrar queda en
+  // Generar, y cada pestaña, con sus modales debajo, en la suya.
+  useReadSection(TAB_READ_SECTIONS[tab]);
   const { config: payrollConfig, bankFormat, currentBankFormat, save: savePayrollConfig } = usePayrollConfig();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [tab, setTab] = useState("create"); // create | history | workers
   const {
     cycles,
     cycleStats,
