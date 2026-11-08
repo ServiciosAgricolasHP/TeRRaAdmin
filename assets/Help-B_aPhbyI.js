@@ -1,4 +1,4 @@
-import{c as G,u as Ye,a as ja,r as K,j as f,L as ee,b as Sa,d as Ea,h as Ta,e as Ra,f as Aa}from"./index-BtZ0L5vr.js";const qe=/<!--\s*preguntas:([\s\S]*?)-->/gi;function _e(n){return String(n||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"")}function Pe(n){const e=[];for(const a of n.matchAll(qe))for(const o of a[1].split(";")){const r=o.trim();r&&e.push(r)}return e}const Ie=n=>n.replace(qe,"").replace(/\n{3,}/g,`
+import{c as G,u as Ye,a as ja,r as K,j as f,L as ee,b as Sa,d as Ea,h as Ta,e as Ra,f as Aa}from"./index-C5c6pLV-.js";const qe=/<!--\s*preguntas:([\s\S]*?)-->/gi;function _e(n){return String(n||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"")}function Pe(n){const e=[];for(const a of n.matchAll(qe))for(const o of a[1].split(";")){const r=o.trim();r&&e.push(r)}return e}const Ie=n=>n.replace(qe,"").replace(/\n{3,}/g,`
 
 `).trim();function Ke(n){return String(n||"").replace(qe," ").replace(/!\[[^\]]*\]\([^)]*\)/g," ").replace(/\[([^\]]+)\]\([^)]*\)/g,"$1").replace(/\*\*([^*]+)\*\*/g,"$1").replace(/`([^`]+)`/g,"$1").replace(/[>#|]/g," ").replace(/^\s*[-+]\s+/gm," ").replace(/^\s*\d+\.\s+/gm," ").replace(/\s+/g," ").trim()}function La(n,e){const a=String(e||"").replace(/\r\n/g,`
 `).split(`
@@ -874,7 +874,7 @@ En el teléfono la lista pasa a tarjetas, con los mismos datos y botones. Toca e
 - **"Ya existe un trabajador con ese RUT"**: búscalo por el RUT; puede estar con otro nombre.
 - **"El RUT de pago es de otra persona"**: falta el **Nombre del titular**.
 - **No se puede eliminar**: la persona tiene días registrados.
-- **Alguien inscrito con el escáner no aparece**: entra al día siguiente, o al tocar **Recargar datos** en Nómina.
+- **Alguien inscrito con el escáner no aparece**: aparece solo en menos de un minuto, o al tiro con **Recargar datos** en Nómina.
 `,rn=`# Contratos, honorarios e imposiciones
 
 En **Trabajadores** se lleva quién tiene contrato, quién trabaja a honorarios y quién no tiene nada, con qué empleador, para qué mandante y desde cuándo. Con eso TeRRa arma la lista de boletas de honorarios y la de imposiciones del mes para el contador, con los días que trabajó cada persona. Todo está en las pestañas **📄 Contratos**, **🧾 Honorarios** y **🏛 Imposiciones**.
