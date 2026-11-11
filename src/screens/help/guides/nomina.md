@@ -133,6 +133,6 @@ Publicar una nómina, o cambiar cuál se ve, lo hace un administrador. Si se cor
 <!-- preguntas: no aparece un trabajador en la nómina; falta alguien en la nómina; no puedo eliminar la nómina; no aparece el ciclo en nómina; datos faltantes en la nómina -->
 
 - **No aparece un ciclo en Generar**: está cerrado o no tiene nada pendiente (**Sin pendientes**).
-- **No aparece una persona en la vista previa**: sus días ya están en otra nómina, todavía no tiene RUT (es temporal) o tiene sueldo mensual, que no se paga por día.
+- **No aparece una persona en la vista previa**: sus días ya están en otra nómina o todavía no tiene RUT (es temporal).
 - **⚠ Datos faltantes**: a la persona le falta la cuenta o el banco. Complétalo en su ficha, en **Trabajadores**, y vuelve a armar la nómina, o pásala a efectivo.
 - **No se puede eliminar ni editar la nómina**: tiene las transferencias selladas o está pagada. Revierte eso primero desde **⋯**.

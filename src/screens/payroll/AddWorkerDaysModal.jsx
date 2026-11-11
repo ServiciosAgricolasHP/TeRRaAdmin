@@ -258,13 +258,7 @@ export function AddWorkerDaysModal({
                 {elegidas.length} día{elegidas.length === 1 ? "" : "s"} · {fmtCurrency(totalElegido)}
               </div>
               {generando ? (
-                totalElegido > 0 ? (
-                  <div className="text-[var(--color-muted)]">Los anticipos y bonos se descuentan en la vista previa.</div>
-                ) : (
-                  <div className="text-amber-700 dark:text-amber-400">
-                    Lo elegido suma $0: solo entra si tiene otra producción en la nómina.
-                  </div>
-                )
+                <div className="text-[var(--color-muted)]">Los anticipos y bonos se descuentan en la vista previa.</div>
               ) : preview ? (
                 <div className="tabular-nums text-[var(--color-muted)]">
                   {preview.isNew
@@ -278,11 +272,7 @@ export function AddWorkerDaysModal({
                   {preview.isNew ? "" : `${fmtCurrency(preview.oldNet)} → `}
                   <span className="font-semibold text-[var(--color-text)]">{fmtCurrency(preview.newNet)}</span>
                 </div>
-              ) : (
-                <div className="text-amber-700 dark:text-amber-400">
-                  Lo elegido suma $0 y no está en la nómina: no hay nada que pagarle.
-                </div>
-              )}
+              ) : null}
             </div>
           )}
           <button onClick={onClose} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm">

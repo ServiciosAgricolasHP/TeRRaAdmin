@@ -71,7 +71,7 @@ export function usePayrollPreview({ chosenCycles, cycles, jobs, people, subjobs,
       // Anticipos vigentes de todos los de la vista previa; el servidor
       // devuelve solo pending/partial.
       const keyOf = resolveCurrentRut(workers);
-      const candidateIds = aggregates.filter((a) => a.total > 0).map(keyOf);
+      const candidateIds = aggregates.map(keyOf);
       const pendingAdvances = await listPendingForWorkers(candidateIds);
       previewWorkdaysRef.current = allWorkdays;
       previewAdvancesRef.current = pendingAdvances;

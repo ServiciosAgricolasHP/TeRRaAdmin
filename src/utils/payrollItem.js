@@ -206,7 +206,9 @@ export function itemAdvanceFields(refit) {
   };
 }
 
-const brutoDe = (it) => Math.round(Number(it?.grossAmount || it?.amount) || 0);
+// Un item sin `grossAmount` es de antes de que se guardara: su bruto es el
+// neto. Con `grossAmount` en 0, el bruto es 0 aunque el neto lleve un bono.
+const brutoDe = (it) => Math.round(Number(it?.grossAmount ?? it?.amount) || 0);
 const idsDe = (ids) => [...(ids || [])].sort().join(",");
 
 // Más descontado del que el bruto (más bonos) respalda. Recalcular re-reparte
@@ -222,19 +224,20 @@ export function isOverApplied(it) {
 export function recalcNeedsRefit(it, fresh) {
   const newGross = Math.round(Number(fresh?.total) || 0);
   return (
-    newGross <= 0 ||
+    !fresh ||
     newGross !== brutoDe(it) ||
     idsDe(fresh?.workdayIds) !== idsDe(it?.workdayIds) ||
     isOverApplied(it)
   );
 }
 
-// El lado "achicar" del recálculo: quien se quedó sin producción sale entero
-// y suelta todo (también sus bonos y sus jornadas de $0); quien sigue
-// re-encaja lo ya aplicado en su bruto nuevo, y lo que no cabe vuelve al
-// mismo anticipo. Lo que el recálculo AGREGA (anticipos nuevos, trabajadores
-// nuevos, datos de cuenta) se resuelve después, en la pantalla, sobre lo que
-// devuelve esto.
+// El lado "achicar" del recálculo: quien se quedó sin jornadas en la nómina
+// sale entero y suelta todo (también sus bonos); quien sigue, aunque sume $0
+// (un sueldo mensual con sus días de asistencia), re-encaja lo ya aplicado en
+// su bruto nuevo, y lo que no cabe vuelve al mismo anticipo. Los bonos quedan
+// enteros, así que quien suma $0 sigue cobrando los suyos. Lo que el
+// recálculo AGREGA (anticipos nuevos, trabajadores nuevos, datos de cuenta) se
+// resuelve después, en la pantalla, sobre lo que devuelve esto.
 export function planRecalcExisting({ items = [], freshByKey = new Map(), appliedByAdvance = new Map() }) {
   const patches = new Map();
   const leaving = [];
@@ -250,7 +253,7 @@ export function planRecalcExisting({ items = [], freshByKey = new Map(), applied
     const aplicado = appliedFromItem(it, appliedByAdvance);
     const oldNet = Math.round(Number(it.amount) || 0);
 
-    if (newGross <= 0) {
+    if (!fresh) {
       for (const a of aplicado) {
         if (!a.missing) advanceTargets.push({ advanceId: a.advanceId, amount: 0 });
       }
@@ -542,9 +545,9 @@ export function mergeCycleDetails(existing = [], toAdd = []) {
 //     otras labores u otros días. Además se le aplican los anticipos y bonos
 //     pendientes que esta nómina todavía no le tocaba, con el mismo reparto
 //     incremental que usa Recalcular.
-//   - Quien no está entra si su bruto es mayor que 0, con el reparto completo,
-//     igual que al generar. Sin bruto no entra (va a `sinBruto`) y sus
-//     jornadas de $0 siguen pendientes.
+//   - Quien no está entra con el reparto completo, igual que al generar,
+//     también si lo elegido suma $0 (los días de asistencia de un sueldo
+//     mensual): esos días quedan pagados con la nómina y cobra sus bonos.
 //
 // Lo que esta nómina ya descuenta de un anticipo no crece acá: re-encajar
 // hacia arriba obligaría a revisar cuotas, y Recalcular sigue la misma regla.
@@ -589,7 +592,6 @@ export function planAddWorkdays({
   const workdayIds = [];
   const newAdvanceApplications = [];
   const added = [];
-  const sinBruto = [];
 
   for (const [key, a] of porClave) {
     const suma = Math.round(a.total);
@@ -651,11 +653,6 @@ export function planAddWorkdays({
       continue;
     }
 
-    if (suma <= 0) {
-      sinBruto.push({ key, rut: a.rut, workdayIds: a.workdayIds });
-      continue;
-    }
-
     const perfil = profileFor(a) || {};
     const reparto = allocateAdvances({ gross: suma, anticipos: pendientes.anticipos, bonos: pendientes.bonos });
     const ant = reparto.anticipoApplications.map(limpio);
@@ -708,7 +705,7 @@ export function planAddWorkdays({
     });
   }
 
-  return { items: out, workdayIds, newAdvanceApplications, added, sinBruto };
+  return { items: out, workdayIds, newAdvanceApplications, added };
 }
 
 // Los días y anticipos de UNA persona, listos para `planAddWorkdays`, bajo la

@@ -179,6 +179,19 @@ describe("planRecalcExisting — recalcular cuando la producción bajó", () => 
     expect(plan.advanceTargets).toEqual([{ advanceId: "adv", amount: 0 }]);
   });
 
+  it("quien suma $0 pero tiene jornadas sigue en la nómina, con su bono", () => {
+    // Un sueldo mensual con sus días de asistencia y un bono de 20.000.
+    const it = item({ gross: 0, byCycle: { A: 0 }, workdayIds: [wd("A", "P", 1)], bonos: [bon("bono", 20000)] });
+    const plan = planRecalcExisting({
+      items: [it],
+      freshByKey: new Map([fresco("P", 0, { A: 0 }, [wd("A", "P", 1)])]),
+      appliedByAdvance: leidos(bon("bono", 20000)),
+    });
+    expect(plan.leavingKeys.size).toBe(0);
+    expect(plan.patches.size).toBe(0);
+    expect(plan.advanceTargets).toEqual([]);
+  });
+
   it("[reparación] la nómina que dejó el bug viejo de sacar ciclo se arregla al recalcular", () => {
     // Bruto 0, sin jornadas y con el anticipo aplicado: isOverApplied lo detecta
     // aunque la producción no haya cambiado, y la persona sale.

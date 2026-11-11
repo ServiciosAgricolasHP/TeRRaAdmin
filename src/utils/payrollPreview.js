@@ -6,9 +6,12 @@ import { isCashBank } from "./banks";
 import { normalizeLeader, splitBankAndCash, validateAccountNumber } from "./payroll";
 import { advanceNote, allocateAdvances } from "./payrollItem";
 
-// Una fila por trabajador con bruto, con sus datos de pago y el reparto de sus
-// anticipos y bonos pendientes, ordenadas por nombre. `payrollCycles` son los
-// ciclos de la nómina: cada fila lleva una entrada por cada uno, incluso en $0.
+// Una fila por trabajador con jornadas en la nómina, con sus datos de pago y el
+// reparto de sus anticipos y bonos pendientes, ordenadas por nombre. Entra
+// también quien suma $0, como un sueldo mensual con sus días de asistencia:
+// sus días quedan pagados con la nómina y cobra los bonos que tenga
+// pendientes. `payrollCycles` son los ciclos de la nómina: cada fila lleva una
+// entrada por cada uno, incluso en $0.
 export function previewItemsOf({ aggregates, workers, payrollCycles, pendingAdvances }) {
   const workerById = (rut) => workers.find((w) => w.id === rut);
   const advancesByRut = new Map();
@@ -21,7 +24,6 @@ export function previewItemsOf({ aggregates, workers, payrollCycles, pendingAdva
   }
 
   return aggregates
-    .filter((a) => a.total > 0)
     .map((a) => {
       const w = workerById(a.rut);
       const bd = w?.bankDetails || [];

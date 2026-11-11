@@ -123,10 +123,6 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
         pendingAdvances: person.advances,
         profileFor: () => liveProfileOf(worker),
       });
-      if (plan.workdayIds.length === 0) {
-        toast.warning("Lo elegido suma $0 y esta persona no está en la nómina: no hay nada que pagarle.");
-        return;
-      }
 
       const alreadyInIds = new Set([...cycleDetails.map((c) => c.id), ...(payroll.cycleIds || [])]);
       const newCycles = [...new Set(freeWorkdays.map((wd) => wd.cycleId))]

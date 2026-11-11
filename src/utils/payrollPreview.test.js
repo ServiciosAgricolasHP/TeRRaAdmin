@@ -18,22 +18,24 @@ const workers = [
   { id: "A", name: "Ana", email: "ana@x.cl", groupLeader: ["grupo norte"], bankDetails: ["P-A", "123456", 0, "001"], paymentName: "Pía Ruiz" },
   { id: "B", name: "Beto", groupLeader: [], bankDetails: ["B", "", 3, "EFE"] },
   { id: "C", name: "Caro", bankDetails: ["C", "12", 1, "012"] },
+  { id: "D", name: "Dora", bankDetails: ["D", "", 3, "EFE"] },
 ];
 const agg = (rut, total, byCycle = {}) => ({ rut, workerId: rut, total, byCycle, workdayIds: [`${rut}-1`] });
 
 describe("previewItemsOf", () => {
   const items = previewItemsOf({
-    aggregates: [agg("C", 30000, { K1: 30000 }), agg("A", 100000.4, { K1: 60000, K2: 40000.4 }), agg("B", 50000, { K2: 50000 }), agg("Z", 0)],
+    aggregates: [agg("C", 30000, { K1: 30000 }), agg("A", 100000.4, { K1: 60000, K2: 40000.4 }), agg("B", 50000, { K2: 50000 }), agg("D", 0)],
     workers,
     payrollCycles: [{ id: "K1" }, { id: "K2" }],
     pendingAdvances: [
       { id: "ADV1", type: "anticipo", workerRut: "A", amount: 30000, amountPaid: 0, date: "2026-09-01" },
       { id: "BON1", type: "bono", workerRut: "B", amount: 5000, amountPaid: 0, date: "2026-09-02" },
+      { id: "BON2", type: "bono", workerRut: "D", amount: 20000, amountPaid: 0, date: "2026-09-03" },
     ],
   });
 
-  it("una fila por trabajador con bruto, por nombre, con todos los ciclos", () => {
-    expect(items.map((i) => i.name)).toEqual(["Ana", "Beto", "Caro"]);
+  it("una fila por trabajador con jornadas, por nombre, con todos los ciclos", () => {
+    expect(items.map((i) => i.name)).toEqual(["Ana", "Beto", "Caro", "Dora"]);
     expect(items[0].byCycle).toEqual({ K1: 60000, K2: 40000 });
     expect(items[2].byCycle).toEqual({ K1: 30000, K2: 0 });
   });
@@ -52,11 +54,17 @@ describe("previewItemsOf", () => {
     expect([beto.bonus, beto.amount]).toEqual([5000, 55000]);
   });
 
+  it("quien suma $0 (un sueldo mensual con días de asistencia) entra y cobra su bono", () => {
+    const dora = items.find((i) => i.name === "Dora");
+    expect([dora.grossAmount, dora.bonus, dora.amount, dora.workdayIds]).toEqual([0, 20000, 20000, ["D-1"]]);
+  });
+
   it("marca datos faltantes y cuentas sospechosas, salvo en efectivo", () => {
     expect(items.map((i) => [i.name, i._missing, i._accountIssue])).toEqual([
       ["Ana", false, null],
       ["Beto", false, null],
       ["Caro", false, "muy corta (<4 dígitos)"],
+      ["Dora", false, null],
     ]);
     const [sinFicha] = previewItemsOf({ aggregates: [agg("X", 1000)], workers, payrollCycles: [], pendingAdvances: [] });
     expect([sinFicha.name, sinFicha._missing, sinFicha.accountType]).toEqual(["(sin nombre)", true, 3]);
