@@ -206,7 +206,9 @@ export function itemAdvanceFields(refit) {
   };
 }
 
-const brutoDe = (it) => Math.round(Number(it?.grossAmount || it?.amount) || 0);
+// Un item sin `grossAmount` es de antes de que se guardara: su bruto es el
+// neto. Con `grossAmount` en 0, el bruto es 0 aunque el neto lleve un bono.
+const brutoDe = (it) => Math.round(Number(it?.grossAmount ?? it?.amount) || 0);
 const idsDe = (ids) => [...(ids || [])].sort().join(",");
 
 // Más descontado del que el bruto (más bonos) respalda. Recalcular re-reparte
