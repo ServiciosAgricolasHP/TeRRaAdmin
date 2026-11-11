@@ -294,6 +294,33 @@ describe("sacar labores sueltas, y varias cosas a la vez", () => {
   });
 });
 
+describe("quien suma $0 también entra a la nómina", () => {
+  it("un sueldo mensual con un día de asistencia y un bono entra al recalcular, cobra el bono y su día queda en la nómina", async () => {
+    await seedCycle({ id: CICLO_A });
+    await seedWorker(ANA);
+    await seedWorker(BETO);
+    await seedWorkday({ cycleId: CICLO_A, rut: ANA.id, date: "2026-03-02", amount: 100000 });
+    const id = await armarNomina([CICLO_A]);
+
+    // Beto, mensual: un día de asistencia en $0, y un bono pendiente.
+    const asistencia = await seedWorkday({ cycleId: CICLO_A, rut: BETO.id, date: "2026-03-02", amount: 0, qty: 0 });
+    await seedAdvance("bono-beto", { rut: BETO.id, amount: 20000, type: "bono" });
+    const plan = await sacar(id, new Map());
+
+    expect(plan.newWorkers).toMatchObject([{ rut: BETO.id, gross: 0, bonus: 20000, net: 20000 }]);
+    const nomina = await get("payrolls", id);
+    expect(itemDe(nomina, BETO.id)).toMatchObject({ grossAmount: 0, bonus: 20000, amount: 20000, workdayIds: [asistencia] });
+    expect(nomina.total).toBe(120000);
+    expect((await get("workdays", asistencia)).payrollId).toBe(id);
+    expect(await get("advances", "bono-beto")).toMatchObject({ status: "applied", amountPaid: 20000 });
+
+    // Un segundo recálculo no lo saca: sigue con su día y su bono.
+    const otra = await sacar(id, new Map());
+    expect(otra.leavingWorkers).toEqual([]);
+    expect(itemDe(await get("payrolls", id), BETO.id)).toMatchObject({ grossAmount: 0, bonus: 20000, amount: 20000 });
+  });
+});
+
 describe("los ciclos de la nómina siguen a lo que paga y a sus nombres vigentes", () => {
   const LIVE = {
     label: `Faena Uno/Sub Uno/${CICLO_A}`,

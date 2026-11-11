@@ -56,14 +56,13 @@ export function useGeneratePayroll({
   };
 
   const generateAndSave = async () => {
-    // También entran los items en $0 con anticipo aplicado (el anticipo cubrió
-    // todo el bruto), para que sus jornadas se etiqueten y sus anticipos queden
-    // aplicados. El XLSX del banco filtra los de $0.
-    const rawItems = previewItems.filter(
-      (p) => p.include && (Number(p.amount) > 0 || Number(p.advance) > 0),
-    );
+    // Entran todos los incluidos, también los de $0 (un anticipo que cubrió
+    // todo el bruto, o un sueldo mensual con solo días de asistencia), para que
+    // sus jornadas queden pagadas y sus anticipos aplicados. El archivo del
+    // banco filtra los de $0.
+    const rawItems = previewItems.filter((p) => p.include);
     if (rawItems.length === 0) {
-      toast.warning("No hay trabajadores seleccionados con monto > 0 ni anticipos por aplicar.");
+      toast.warning("No hay trabajadores seleccionados.");
       return;
     }
     // Cuotas: si hay anticipos con plan entre los incluidos, espera que el

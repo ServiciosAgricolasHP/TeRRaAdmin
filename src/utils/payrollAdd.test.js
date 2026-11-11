@@ -470,11 +470,20 @@ describe("planAddWorkdays", () => {
     expect(plan.added).toMatchObject([{ key: "BETO", isNew: true, gross: 50000, anticipos: 60000, bonos: 10000, newNet: 0 }]);
   });
 
-  it("quien no está y solo trae días en $0 no entra, y esos días no se etiquetan", () => {
-    const plan = planAddWorkdays({ items: [], workdays: [wd("c1", { rut: "CARO", amount: 0 })], laborTypeById: tipos });
-    expect(plan.items).toEqual([]);
-    expect(plan.workdayIds).toEqual([]);
-    expect(plan.sinBruto).toEqual([{ key: "CARO", rut: "CARO", workdayIds: ["c1"] }]);
+  it("quien no está y solo trae días en $0 entra igual: sus días quedan en la nómina y cobra su bono", () => {
+    const sinBono = planAddWorkdays({ items: [], workdays: [wd("c1", { rut: "CARO", amount: 0 })], laborTypeById: tipos });
+    expect(sinBono.items).toMatchObject([{ rut: "CARO", grossAmount: 0, amount: 0, workdayIds: ["c1"] }]);
+    expect(sinBono.workdayIds).toEqual(["c1"]);
+    expect(sinBono.added).toMatchObject([{ key: "CARO", isNew: true, newNet: 0 }]);
+
+    const conBono = planAddWorkdays({
+      items: [],
+      workdays: [wd("c1", { rut: "CARO", amount: 0 })],
+      laborTypeById: tipos,
+      pendingAdvances: [bono("bon", "CARO", 20000)],
+    });
+    expect(conBono.items).toMatchObject([{ grossAmount: 0, bonus: 20000, amount: 20000 }]);
+    expect(conBono.newAdvanceApplications).toEqual([{ advanceId: "bon", amount: 20000 }]);
   });
 
   it("a quien ya está sí se le etiquetan los días en $0", () => {

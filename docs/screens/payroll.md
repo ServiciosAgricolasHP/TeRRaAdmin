@@ -76,6 +76,12 @@
   `amount > 0`, y el comprobante de efectivo saca a los de bruto **y** neto en
   cero — el corte es por bruto, así que quien produjo y quedó en cero porque un
   anticipo se llevó todo SÍ aparece en la hoja que firma el líder.
+- **Entra a la nómina quien tiene jornadas en lo que paga, aunque sume $0**:
+  al generar (`previewItemsOf`), al recalcular o editar ciclos
+  (`planPayrollRecalc`) y al agregarla a mano (`planAddWorkdays`). Así un
+  sueldo mensual con solo días de asistencia queda con sus días pagados, y
+  cobra los bonos que tenga pendientes (bruto 0 + bono 20.000 = 20.000 a
+  pagar). Recalcular saca a alguien solo cuando se queda sin jornadas.
 
 ## Pago en dos tiempos (transferencias / efectivo)
 Para cuando salen las transferencias y el efectivo queda debiéndose para la vuelta siguiente.
@@ -138,13 +144,13 @@ Descargas e impresiones:
   - No deja la nómina sin ciclos ni sin nadie: para eso se elimina la nómina.
 - **El cálculo y la escritura viven en `services/payrollRecalc.js`**, no en la pantalla: `planPayrollRecalc(payroll, { cycles, workers, removed })` arma la vista previa sin escribir, y `applyPayrollRecalc(payrollId, plan)` la guarda (`assertEditable` incluido). Así el camino que usa la pantalla es el mismo que prueban los e2e.
 
-- **Quien se queda con bruto 0 sale entero** (`planRecalcExisting`). El corte es por bruto y no por las claves de `byCycle`, que guarda una entrada por **cada** ciclo de la nómina aunque esté en $0: es el mismo criterio que usa "Generar" (`a.total > 0`), y eso deja el resultado "como si se hubiera armado sin eso". Suelta todos sus anticipos **y bonos** de esa nómina (el bono se paga en la nómina donde sí tenga producción) y todas sus jornadas, incluidas las de $0 de otros ciclos.
+- **Quien se queda sin jornadas en la nómina sale entero** (`planRecalcExisting`). El corte es por jornadas y no por las claves de `byCycle`, que guarda una entrada por **cada** ciclo de la nómina aunque esté en $0: es el mismo criterio que usa "Generar", y eso deja el resultado "como si se hubiera armado sin eso". Suelta todos sus anticipos **y bonos** de esa nómina (el bono se paga en la nómina donde sí tenga jornadas). Quien sigue con jornadas, aunque sumen $0, se queda: los anticipos se re-encajan en su bruto y los bonos quedan enteros.
 - **Quien sigue re-encaja lo ya aplicado en su bruto nuevo** (`refitAppliedAdvances`): bonos enteros, anticipos del más viejo al más nuevo topeados por `bruto + bonos` — el mismo orden que `allocateAdvances`, así que se achica primero el más nuevo. Lo que no cabe **vuelve al mismo anticipo**, con su fecha y su plan de cuotas originales.
   - **Solo achica, nunca agranda.** Cada monto ya se validó contra el saldo del anticipo al aplicarlo, así que bajarlo siempre es válido sin mirar cuotas. Si la producción sube, lo ya aplicado no crece solo; un anticipo pendiente lo toma el resto del recálculo como anticipo nuevo.
   - El neto sale como `bruto − anticipos + bonos` **sin ningún `Math.max`**: los anticipos ya se toparon, y un tope ahí haría figurar como cobrado algo que no se retuvo.
 - **La fuente de verdad de "cuánto descontó esta nómina" es el `payments[]` del anticipo** (`readPayrollApplications`), no la copia en el item. Es lo mismo que leen el borrado de la nómina y la pantalla de Anticipos. Si el documento del anticipo ya no existe se respeta lo que dice el item (marcado `missing`, no se escribe): descontar de menos por algo que no se puede verificar es peor.
 - **`setPayrollAdvanceAmounts(payrollId, targets)`** fija cuánto descuenta UNA nómina de cada anticipo sin tocar lo de otras nóminas; es lo que permite descontar una parte (`restoreAdvancesFromPayroll` solo suelta entero). Reescribe la entrada **en su lugar y con su `paidAt` original** —el hint "última cuota hace N días" sale de ahí, y achicar no es un pago nuevo— y topea contra el saldo que dejan las otras nóminas. Con 0 equivale a restaurar.
-- **Recalcular**, además de aplicar los cambios de producción, re-reparte a quien tenga más descontado del que su bruto respalda (`isOverApplied`) y saca a quien quedó con bruto 0.
+- **Recalcular**, además de aplicar los cambios de producción, re-reparte a quien tenga más descontado del que su bruto respalda (`isOverApplied`) y saca a quien quedó sin jornadas.
 - **Recalcular etiqueta exactamente las jornadas de los items** y suelta las que le quedaron etiquetadas sin estar en ninguno.
 - **Sacar un ciclo o una labor también suelta sus jornadas de $0.**
 - **El snapshot acompaña** (`services/payrollSnapshots.js`): sacar un trabajador (`pruneSnapshot`) o recalcular (`syncSnapshotAfterRecalc`) deja el JSON sin quien salió, sin sus jornadas y sin sus anticipos, con la cabecera de totales al día; si se sacó un ciclo, también sin ese ciclo.
@@ -162,7 +168,7 @@ Misma regla que achicarla, al revés: **la nómina tiene que quedar como si se h
   - `asPayrollWorker` junta los días y anticipos de la persona bajo la clave que tiene en la nómina: sus jornadas pueden guardar un rut anterior, y sin eso entraría partida en dos items.
   - Los días se **releen al confirmar**: si otra nómina tomó alguno mientras el modal estaba abierto, queda afuera y el aviso lo dice.
 - **Quien ya está** (al agregar los días de una persona) suma bruto, jornadas (también las de $0) y su `byCycle` **sumado, no pisado**: el ciclo puede estar ya con otras labores u otros días. Además **se le aplican los anticipos y bonos pendientes que esta nómina todavía no le tocaba**, con el mismo reparto incremental que Recalcular.
-- **Quien no está** entra con el reparto completo si su bruto es mayor que 0. Sin bruto no entra, y sus días de $0 siguen pendientes, igual que al generar.
+- **Quien no está** entra con el reparto completo, igual que al generar, también si lo elegido suma $0: sus días quedan en la nómina y cobra sus bonos pendientes.
 - **Lo que esta nómina ya descuenta de un anticipo no crece** al agregar: re-encajar hacia arriba obligaría a revisar cuotas. Mismo criterio que Recalcular ("Solo achica, nunca agranda").
 - **El snapshot acompaña** (`extendSnapshot`): suma ciclos, jornadas y anticipos sin repetir, pone al día las labores de los ciclos de los días agregados (`cycleLabors`) y deja la cabecera al día. `laborIds` **no viaja** al JSON (`snapshotCycleOf` lo saca): es interno y el JSON es contrato externo.
 - "✎ Editar ciclos" y "+ Agregar persona" se montan solo mientras están abiertos, así arrancan con el estado limpio sin un `useEffect` que lo resetee.

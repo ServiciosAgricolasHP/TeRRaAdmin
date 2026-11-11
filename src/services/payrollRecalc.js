@@ -73,13 +73,13 @@ const PROFILE_FIELDS = [
 // Vista previa del recálculo. Trae las jornadas vigentes de los ciclos de la
 // nómina y de los que se agregan, de las labores que abarca después del cambio
 // (`inRecalcScope`), menos lo que se saca, y las compara con lo guardado:
-// ediciones o días nuevos, trabajadores nuevos con producción (entran con el
+// ediciones o días nuevos, trabajadores nuevos con jornadas (entran con el
 // reparto completo, como al generar), anticipos o bonos cargados después,
 // datos de cuenta o grupo que cambiaron en la ficha, y el nombre, la faena, la
 // subfaena y el período de cada ciclo (`cycleChanges`, ver `withLiveNames` y
 // `withPaidPeriods`). Si el bruto de alguien baja, lo ya descontado se
 // re-encaja y lo que no cabe vuelve al mismo anticipo; quien se queda sin
-// producción sale.
+// jornadas sale.
 //
 // `cycles`, `faenas`, `subfaenas` y `workers` son las listas ya cargadas en
 // pantalla; `removed` y `added`, lo que cambia en los ciclos (ver
@@ -151,9 +151,9 @@ export async function planPayrollRecalc(
   const rutOf = currentRutResolver(workers);
   const claveDe = (x) => rutOf(x.rut, x.workerId);
 
-  // Trabajadores con producción en estos ciclos que todavía no están en la
-  // nómina: entra quien tiene bruto, igual que al generar.
-  const newWorkerAggs = aggregates.filter((a) => a.total > 0 && !existingByKey.has(a.workerId || a.rut));
+  // Trabajadores con jornadas en estos ciclos que todavía no están en la
+  // nómina: entran todos, también quien suma $0, igual que al generar.
+  const newWorkerAggs = aggregates.filter((a) => !existingByKey.has(a.workerId || a.rut));
 
   // Anticipos y bonos pendientes de todos los involucrados: uno creado
   // después de generar la nómina se aplica acá, igual que al armarla.
@@ -173,7 +173,7 @@ export async function planPayrollRecalc(
   const advanceChanges = [];
   const updatedByKey = new Map();
 
-  // Primero se achica: quien se quedó sin producción sale, y a quien sigue se
+  // Primero se achica: quien se quedó sin jornadas sale, y a quien sigue se
   // le re-encaja lo ya descontado en su bruto nuevo. Los anticipos se leen
   // solo de quienes cambian.
   const appliedByAdvance = await readPayrollApplications(
