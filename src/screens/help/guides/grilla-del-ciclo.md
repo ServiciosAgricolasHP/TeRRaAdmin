@@ -103,7 +103,7 @@ A quien tiene sueldo mensual no se le anotan montos, solo los días que vino:
 
 ![Una persona con sueldo mensual](help/grilla-del-ciclo/09-mensual.webp)
 
-Sus días no entran a la nómina. Si ya tenía días con monto, TeRRa pregunta si pasarlos a asistencia en $0; los que ya están en una nómina no se tocan.
+Sus días entran a la nómina en $0: quedan pagados con ella y, si tiene un bono pendiente, lo cobra ahí. Si ya tenía días con monto, TeRRa pregunta si pasarlos a asistencia en $0; los que ya están en una nómina no se tocan.
 
 ## Ver la grilla por grupo
 <!-- preguntas: ver por grupo; ver por líder; ocultar a los que no trabajaron; filtrar la grilla; ver solo los que tienen producción -->
