@@ -1,4 +1,4 @@
-import{c as G,u as Ye,a as ja,r as K,j as f,L as ee,b as Sa,d as Ea,h as Ta,e as Ra,f as Aa}from"./index-_E8G2hAX.js";const qe=/<!--\s*preguntas:([\s\S]*?)-->/gi;function _e(n){return String(n||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"")}function Pe(n){const e=[];for(const a of n.matchAll(qe))for(const o of a[1].split(";")){const r=o.trim();r&&e.push(r)}return e}const Ie=n=>n.replace(qe,"").replace(/\n{3,}/g,`
+import{c as G,u as Ye,a as ja,r as K,j as f,L as ee,b as Sa,d as Ea,h as Ta,e as Ra,f as Aa}from"./index-Be2pzFB3.js";const qe=/<!--\s*preguntas:([\s\S]*?)-->/gi;function _e(n){return String(n||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"")}function Pe(n){const e=[];for(const a of n.matchAll(qe))for(const o of a[1].split(";")){const r=o.trim();r&&e.push(r)}return e}const Ie=n=>n.replace(qe,"").replace(/\n{3,}/g,`
 
 `).trim();function Ke(n){return String(n||"").replace(qe," ").replace(/!\[[^\]]*\]\([^)]*\)/g," ").replace(/\[([^\]]+)\]\([^)]*\)/g,"$1").replace(/\*\*([^*]+)\*\*/g,"$1").replace(/`([^`]+)`/g,"$1").replace(/[>#|]/g," ").replace(/^\s*[-+]\s+/gm," ").replace(/^\s*\d+\.\s+/gm," ").replace(/\s+/g," ").trim()}function La(n,e){const a=String(e||"").replace(/\r\n/g,`
 `).split(`
@@ -175,7 +175,7 @@ A quien tiene sueldo mensual no se le anotan montos, solo los días que vino:
 
 ![Una persona con sueldo mensual](help/grilla-del-ciclo/09-mensual.webp)
 
-Sus días no entran a la nómina. Si ya tenía días con monto, TeRRa pregunta si pasarlos a asistencia en $0; los que ya están en una nómina no se tocan.
+Sus días entran a la nómina en $0: quedan pagados con ella y, si tiene un bono pendiente, lo cobra ahí. Si ya tenía días con monto, TeRRa pregunta si pasarlos a asistencia en $0; los que ya están en una nómina no se tocan.
 
 ## Ver la grilla por grupo
 <!-- preguntas: ver por grupo; ver por líder; ocultar a los que no trabajaron; filtrar la grilla; ver solo los que tienen producción -->
@@ -606,7 +606,7 @@ Publicar una nómina, o cambiar cuál se ve, lo hace un administrador. Si se cor
 <!-- preguntas: no aparece un trabajador en la nómina; falta alguien en la nómina; no puedo eliminar la nómina; no aparece el ciclo en nómina; datos faltantes en la nómina -->
 
 - **No aparece un ciclo en Generar**: está cerrado o no tiene nada pendiente (**Sin pendientes**).
-- **No aparece una persona en la vista previa**: sus días ya están en otra nómina, todavía no tiene RUT (es temporal) o tiene sueldo mensual, que no se paga por día.
+- **No aparece una persona en la vista previa**: sus días ya están en otra nómina o todavía no tiene RUT (es temporal).
 - **⚠ Datos faltantes**: a la persona le falta la cuenta o el banco. Complétalo en su ficha, en **Trabajadores**, y vuelve a armar la nómina, o pásala a efectivo.
 - **No se puede eliminar ni editar la nómina**: tiene las transferencias selladas o está pagada. Revierte eso primero desde **⋯**.
 `,an=`# Corregir una nómina
