@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import {
   advancesService,
+  removeAdvance,
   ADVANCE_TYPES,
   normalizeAdvanceType,
   advanceTypeMeta,
@@ -22,6 +23,7 @@ import ScreenLoader from "../components/ScreenLoader";
 import { fmtCurrency } from "../utils/format";
 import AdvanceFormModal from "./advances/AdvanceFormModal";
 import { attempt } from "../utils/attempt";
+import { errorText } from "../utils/errorText";
 
 const STATUS_LABEL = {
   pending: "Pendiente",
@@ -134,19 +136,13 @@ export default function Advances() {
     await load();
   };
 
+  // `removeAdvance` vuelve a leer el anticipo: la lista puede ser de antes de
+  // que una nómina lo descontara.
   const onDelete = async () => {
     if (!confirmDelete) return;
-    const deleteLocked =
-      confirmDelete.status === "applied" ||
-      confirmDelete.status === "partial" ||
-      (Number(confirmDelete.amountPaid) || 0) > 0;
-    if (deleteLocked) {
-      toast.warning("No se puede eliminar un anticipo/bono con pagos aplicados. Para perdonar el saldo, usa Editar y baja el monto a lo ya pagado.");
-      setConfirmDelete(null);
-      return;
-    }
-    await advancesService.remove(confirmDelete.id);
+    const { error: err } = await attempt(() => removeAdvance(confirmDelete));
     setConfirmDelete(null);
+    if (err) toast.warning(errorText(err));
     await load();
   };
 

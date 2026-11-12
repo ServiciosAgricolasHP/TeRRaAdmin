@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   advancesService,
+  updateAdvance,
   ADVANCE_TYPES,
   normalizeAdvanceType,
   advanceTypeMeta,
@@ -20,6 +21,7 @@ import { toTitleName } from "../../utils/textCase";
 import { fmtCurrency } from "../../utils/format";
 import { localIsoDate } from "../../utils/dates";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 import { useValuesChanged } from "../../hooks/useValuesChanged";
 
 const todayStr = () => localIsoDate();
@@ -107,13 +109,15 @@ export default function AdvanceFormModal({ open, item, items = [], onClose, onSa
         // pagos, la cuota se recalcula para que calce con el nuevo total.
         data.installments = { ...item.installments, amount: computeCuotaAmount(newAmount, item.installments.count) };
       }
-      if (isEdit) await advancesService.update(item.id, data);
+      // La edición se revisa contra el anticipo actual (`updateAdvance`): el
+      // estado de arriba sale de lo que mostraba la lista.
+      if (isEdit) await updateAdvance(item, data);
       else await advancesService.create(data);
       setDupConfirm(null);
       onSaved();
     });
     setBusy(false);
-    if (err) throw err;
+    if (err) toast.error(`No se pudo guardar: ${errorText(err)}`);
   };
 
   const submit = async () => {

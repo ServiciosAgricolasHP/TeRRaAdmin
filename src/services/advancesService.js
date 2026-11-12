@@ -55,6 +55,39 @@ export function advanceTypeMeta(type) {
 
 export const advancesService = createService("advance", "advances");
 
+// El anticipo como está ahora, si sigue como lo mostraba la pantalla
+// (`shown`): la lista de Anticipos puede ser de antes de que una nómina lo
+// descontara o lo soltara. Si cambió, avisa en vez de pisar lo que hizo la
+// nómina.
+async function currentAdvance(shown) {
+  const fresh = await advancesService.getById(shown.id);
+  if (!fresh) throw new Error("Ese anticipo o bono ya no existe: recarga la lista.");
+  const paidNow = Number(fresh.amountPaid) || 0;
+  const paidShown = Number(shown.amountPaid) || 0;
+  if (paidNow !== paidShown || (fresh.status || "pending") !== (shown.status || "pending")) {
+    throw new Error("Una nómina lo descontó o lo soltó después de que se cargó la lista: recárgala y vuelve a intentarlo.");
+  }
+  return fresh;
+}
+
+// Elimina un anticipo o bono sin nada descontado, revisado contra el
+// documento actual (`currentAdvance`).
+export async function removeAdvance(shown) {
+  const fresh = await currentAdvance(shown);
+  if ((Number(fresh.amountPaid) || 0) > 0 || ["applied", "partial"].includes(fresh.status)) {
+    throw new Error("No se puede eliminar un anticipo o bono con pagos aplicados. Para perdonar el saldo, usa Editar y baja el monto a lo ya pagado.");
+  }
+  return advancesService.remove(shown.id);
+}
+
+// Guarda la edición de un anticipo o bono, revisada contra el documento
+// actual (`currentAdvance`): el estado que calcula el formulario sale de lo
+// que mostraba la pantalla.
+export async function updateAdvance(shown, data) {
+  await currentAdvance(shown);
+  return advancesService.update(shown.id, data);
+}
+
 // Clave para agrupar los anticipos de una misma persona. Prefiere `workerId`:
 // los anticipos de un trabajador que cambió de rut pueden tener distinto
 // `workerRut`.
