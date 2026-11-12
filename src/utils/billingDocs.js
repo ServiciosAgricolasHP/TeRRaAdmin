@@ -214,7 +214,29 @@ export function typeOptionsOf({ docs, kindTab, selectedCompanyId }) {
 
 // Totales con signo: las NC restan en lugar de sumar. Además cuenta las NC
 // por separado para su tarjeta propia, y desglosa los montos por estado de
-// pago (unpaid/net_only/factored) sumando solo facturas, no NC.
+// pago (unpaid/net_only/factored) sumando solo facturas, no NC. Lo no pagado
+// es el saldo de cada factura: su total menos lo abonado.
+const paidOf = (d) =>
+  d?.amountPaid != null
+    ? Number(d.amountPaid) || 0
+    : (Array.isArray(d?.payments) ? d.payments : []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+
+// El estado de pago que corresponde después de cambiar los abonos de una
+// factura, o null si no cambia. Los abonos que cubren el total la dejan pagada
+// (desde "No pagado" o "Solo neto"); quitar un abono de una factura que estaba
+// pagada por sus abonos la devuelve a "No pagado". Un "Pagado" marcado a mano,
+// sin abonos que lo cubrieran, se respeta.
+export function statusAfterPayments(d, payments) {
+  const total = Number(d?.total) || 0;
+  if (total <= 0) return null;
+  const current = d?.paymentStatus || "unpaid";
+  const before = paidOf(d);
+  const after = (payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  if (after >= total && (current === "unpaid" || current === "net_only")) return "paid";
+  if (after < total && current === "paid" && before >= total) return "unpaid";
+  return null;
+}
+
 export function docTotals(filtered) {
   const t = {
     neto: 0, iva: 0, total: 0, count: 0,
@@ -233,7 +255,7 @@ export function docTotals(filtered) {
     }
     const st = d.paymentStatus || "unpaid";
     if (sign > 0) {
-      if (st === "unpaid") t.unpaidTotal += Number(d.total) || 0;
+      if (st === "unpaid") t.unpaidTotal += Math.max(0, (Number(d.total) || 0) - paidOf(d));
       if (st === "net_only") {
         t.netOnlyTotal += Number(d.total) || 0;
         t.netOnlyIva += Number(d.iva) || 0;

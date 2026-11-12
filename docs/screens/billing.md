@@ -105,6 +105,8 @@ El select nativo lleva colores explícitos `var(--color-surface)` / `var(--color
 - Form inline para agregar: fecha (default hoy), tipo, monto, notas. Al cambiar tipo, el monto se autocompleta: `total` = saldo pendiente, `neto` = factura.neto, `iva` = factura.iva, `abono` = vacío.
 - **Validación estricta**: `amountPaid + nuevo ≤ total` — si excede, alerta con desglose y bloquea. Monto > 0, fecha obligatoria. El botón "+ Registrar pago" se deshabilita cuando saldo ≤ 0.
 - Persistencia: `saveDocPayments(dteDoc, payments)` escribe `payments` + `amountPaid` denormalizado.
+- **El estado de pago sigue a los abonos** (`statusAfterPayments`, `utils/billingDocs.js`, con tests): los abonos que cubren el total dejan la factura en "Pagado" (desde "No pagado" o "Solo neto"), y quitar un abono de una factura que estaba pagada por sus abonos la devuelve a "No pagado". Un "Pagado" marcado a mano sin abonos que lo cubran, una factorizada y una anulada no cambian.
+- **"No pagado del período" suma el saldo** de cada factura no pagada, su total menos lo abonado (`docTotals`).
 - `paymentStatus` es independiente de los pagos — es la etiqueta de alto nivel; los pagos son el detalle/auditoría temporal.
 
 ## Retenciones (tab + exports)
