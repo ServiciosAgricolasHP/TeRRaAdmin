@@ -2,8 +2,8 @@ import { formatRutForDisplay } from "../../utils/rutUtils";
 import { bankName } from "../../utils/banks";
 import { fmtCurrency } from "../../utils/format";
 import { accountTypeShort } from "./helpers";
-import { WorkerPaidDetailTables } from "./WorkerPaidDetailTables";
-import { WorkerPaySummaryCards } from "./WorkerPaySummaryCards";
+import { WorkerPaidDetailTables } from "../../components/WorkerPaidDetailTables";
+import { WorkerPaySummaryCards } from "../../components/WorkerPaySummaryCards";
 
 // El RUT tal como viene, cuando no se pasa `rutOf`.
 const sameRut = (r) => r;

@@ -1,6 +1,6 @@
-import { fmtCurrency } from "../../../utils/format";
-import { formatRutForDisplay } from "../../../utils/rutUtils";
-import { PAY_STATE_PILL } from "../payState";
+import { fmtCurrency } from "../../utils/format";
+import { formatRutForDisplay } from "../../utils/rutUtils";
+import { PAY_STATE_PILL } from "../../utils/payState";
 
 const NUM = { textAlign: "right", whiteSpace: "nowrap" };
 const BOLD = { fontWeight: 700 };

@@ -1,7 +1,7 @@
-import Modal from "../../components/Modal";
+import Modal from "./Modal";
 import { WorkerPaidDetailTables } from "./WorkerPaidDetailTables";
 import { WorkerPaySummaryCards } from "./WorkerPaySummaryCards";
-import { usePayrollSnapshot } from "./payrollDetailModal/usePayrollSnapshot";
+import { usePayrollSnapshot } from "../hooks/usePayrollSnapshot";
 
 // Lo que un trabajador cobró en una nómina: el mismo contenido que la fila
 // expandible de PayrollDetailModal (WorkerPaidDetailTables +

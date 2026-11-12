@@ -3,7 +3,7 @@ import { formatRutForDisplay } from "../../utils/rutUtils";
 import { useCatalogs } from "../../contexts/CatalogsContext";
 import WorkerSummaryModal from "../../components/WorkerSummaryModal";
 import { fmtCurrency } from "../../utils/format";
-import { WorkerPayrollDetailModal } from "./WorkerPayrollDetailModal";
+import { WorkerPayrollDetailModal } from "../../components/WorkerPayrollDetailModal";
 
 export function WorkerDetail({ worker, onBack, onExport, exporting }) {
   const { catalogs } = useCatalogs();

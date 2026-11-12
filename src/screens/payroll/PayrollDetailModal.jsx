@@ -29,7 +29,8 @@ import { fmtCurrency } from "../../utils/format";
 import { EditCyclesModal } from "./EditCyclesModal";
 import { AddWorkerDaysModal } from "./AddWorkerDaysModal";
 import { CashEstimationModal } from "./CashEstimationModal";
-import { PAY_STATE_PILL, payStateOf, paymentDates } from "./payState";
+import { paymentDates } from "./payState";
+import { PAY_STATE_PILL, payStateOf } from "../../utils/payState";
 import { PortalBadge } from "./PayStatePill";
 import {
   computeBonusAdvanceSummary,
@@ -41,7 +42,7 @@ import { WorkerDetailRow } from "./WorkerDetailRow";
 import { useDetailFilters } from "./payrollDetailModal/useDetailFilters";
 import { useCashPaid } from "./payrollDetailModal/useCashPaid";
 import { useCycleTitles } from "./payrollDetailModal/useCycleTitles";
-import { usePayrollSnapshot } from "./payrollDetailModal/usePayrollSnapshot";
+import { usePayrollSnapshot } from "../../hooks/usePayrollSnapshot";
 import { useContentEdit } from "./payrollDetailModal/useContentEdit";
 import { usePayrollRecalc } from "./payrollDetailModal/usePayrollRecalc";
 import { usePayrollPrints } from "./payrollDetailModal/usePayrollPrints";
@@ -51,7 +52,7 @@ import { CycleTitlesEditor } from "./payrollDetailModal/CycleTitlesEditor";
 import { PayrollTotalsCards } from "./payrollDetailModal/PayrollTotalsCards";
 import { SummaryTable } from "./payrollDetailModal/SummaryTable";
 import { PayrollCyclesSection } from "./payrollDetailModal/PayrollCyclesSection";
-import { CyclePaymentsModal } from "./payrollDetailModal/CyclePaymentsModal";
+import { CyclePaymentsModal } from "../../components/CyclePaymentsModal";
 import { useReadSection } from "../../hooks/useReadSection";
 
 // Sin filas de ajuste: el resumen ya trae los anticipos y bonos en cada fila.

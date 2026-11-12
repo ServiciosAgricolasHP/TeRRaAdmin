@@ -1,11 +1,11 @@
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
-import { listCycleWorkdays } from "../../../services/workdayCycles";
-import { attempt } from "../../../utils/attempt";
-import { cyclePaymentsOf } from "../../../utils/cyclePayments";
-import { errorText } from "../../../utils/errorText";
-import { millisOf } from "../../../utils/syncedList";
-import { workerIdResolver } from "../../../utils/workerRut";
-import { payStateOf } from "../payState";
+import { listCycleWorkdays } from "../../services/workdayCycles";
+import { attempt } from "../../utils/attempt";
+import { cyclePaymentsOf } from "../../utils/cyclePayments";
+import { errorText } from "../../utils/errorText";
+import { millisOf } from "../../utils/syncedList";
+import { workerIdResolver } from "../../utils/workerRut";
+import { payStateOf } from "../../utils/payState";
 
 const NO_LABORS = [];
 

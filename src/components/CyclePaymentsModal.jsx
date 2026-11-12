@@ -1,17 +1,17 @@
 import { useRef, useState } from "react";
-import Modal from "../../../components/Modal";
-import WorkerSummaryModal from "../../../components/WorkerSummaryModal";
-import { useCatalogs } from "../../../contexts/CatalogsContext";
-import { useCaptureActions } from "../../../hooks/useCaptureActions";
-import { useIsMobile } from "../../../hooks/useIsMobile";
-import { cyclePaymentGroups } from "../../../utils/cyclePayments";
-import { fmtCurrency } from "../../../utils/format";
-import { PRINT_GRID_CSS } from "../../../utils/printWindow";
-import { workerSearchInput } from "../../../utils/workerSearch";
-import { WorkerPayrollDetailModal } from "../WorkerPayrollDetailModal";
-import { CyclePaymentsTable } from "./CyclePaymentsTable";
-import { useCyclePayments } from "./useCyclePayments";
-import { writeCyclePaymentsXlsx } from "./writeCyclePaymentsXlsx";
+import Modal from "./Modal";
+import WorkerSummaryModal from "./WorkerSummaryModal";
+import { useCatalogs } from "../contexts/CatalogsContext";
+import { useCaptureActions } from "../hooks/useCaptureActions";
+import { useIsMobile } from "../hooks/useIsMobile";
+import { cyclePaymentGroups } from "../utils/cyclePayments";
+import { fmtCurrency } from "../utils/format";
+import { PRINT_GRID_CSS } from "../utils/printWindow";
+import { workerSearchInput } from "../utils/workerSearch";
+import { WorkerPayrollDetailModal } from "./WorkerPayrollDetailModal";
+import { CyclePaymentsTable } from "./cyclePaymentsModal/CyclePaymentsTable";
+import { useCyclePayments } from "./cyclePaymentsModal/useCyclePayments";
+import { writeCyclePaymentsXlsx } from "./cyclePaymentsModal/writeCyclePaymentsXlsx";
 
 const VIEWS = [
   { v: "payroll", l: "🧾 Por nómina" },

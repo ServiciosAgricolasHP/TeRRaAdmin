@@ -7,7 +7,7 @@ import Pager from "../../components/Pager";
 import { fmtCurrency } from "../../utils/format";
 import { fmtDate } from "./helpers";
 import { millisOf } from "../../utils/syncedList";
-import { payStateOf } from "./payState";
+import { payStateOf } from "../../utils/payState";
 import { PortalBadge, PayStatePill, PaymentDatesLine } from "./PayStatePill";
 
 export function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRevertBank, onAskDelete, onChangeClassification, onOpen, onRename, publishedPayrollId = null }) {

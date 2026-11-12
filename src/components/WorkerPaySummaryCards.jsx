@@ -1,4 +1,4 @@
-import { fmtCurrency } from "../../utils/format";
+import { fmtCurrency } from "../utils/format";
 
 // Tarjetas bruto/anticipos/bonos/neto de un item de nómina — usado tanto en
 // la fila expandible de PayrollDetailModal como en el modal enfocado que se

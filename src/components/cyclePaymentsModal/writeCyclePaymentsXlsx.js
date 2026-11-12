@@ -1,8 +1,8 @@
 // Excel de los pagos de un ciclo, con los mismos grupos, filas, columnas y
 // totales que la tabla en pantalla (`cyclePaymentGroups`).
-import { sheetName } from "../../../utils/sheetNames";
-import { formatRutForDisplay } from "../../../utils/rutUtils";
-import { PAY_STATE_PILL } from "../payState";
+import { sheetName } from "../../utils/sheetNames";
+import { formatRutForDisplay } from "../../utils/rutUtils";
+import { PAY_STATE_PILL } from "../../utils/payState";
 
 const stateLabel = (payroll) => (PAY_STATE_PILL[payroll.state] || PAY_STATE_PILL.pending).label;
 
