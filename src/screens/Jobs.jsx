@@ -23,6 +23,8 @@ import { CycleFormModal } from "./jobs/CycleFormModal";
 import { FirstCycleOfferModal } from "./jobs/FirstCycleOfferModal";
 import { CloseCycleModal } from "./jobs/CloseCycleModal";
 import ScreenLoader from "../components/ScreenLoader";
+import { useJobStates } from "./jobs/useJobStates";
+import { JOB_STATES } from "../utils/jobStatus";
 import { useValuesChanged } from "../hooks/useValuesChanged";
 
 const emptyJob = { name: "", location: "", notes: "" };
@@ -91,6 +93,14 @@ export default function Jobs() {
     toggleGroupCollapsed,
     updateGroup,
   } = useJobLayout({ jobs, persistOrder, toast, user });
+
+  // "Por estado" agrupa las tarjetas en activas, pausadas y cerradas, sin
+  // arrastrar ni organizar; "Mi orden" son los grupos de cada quien.
+  const { setViewMode, stateJobs, viewMode } = useJobStates({ jobs, refreshKey: cyclesByJob });
+  const byState = !!stateJobs;
+  const viewGroups = byState ? JOB_STATES : layout.groups;
+  const viewJobsByGroup = byState ? stateJobs : jobsByGroup;
+  const organizing = editLayout && !byState;
 
   const {
     collapsedSubjobs,
@@ -184,11 +194,14 @@ export default function Jobs() {
   const selected = jobs.find((f) => f.id === selectedId);
   const selectedSubjobs = selectedId ? subjobsByJob[selectedId] : null;
   const selectedCycles = selectedId ? cyclesByJob[selectedId] : null;
-  const selectedGroupId = selectedId
+  const layoutGroupId = selectedId
     ? (layout.faenaGroup[selectedId] && layout.groups.some((g) => g.id === layout.faenaGroup[selectedId])
         ? layout.faenaGroup[selectedId]
         : UNGROUPED_ID)
     : null;
+  const selectedGroupId = byState && selectedId
+    ? JOB_STATES.find((s) => stateJobs[s.id].some((f) => f.id === selectedId))?.id || null
+    : layoutGroupId;
 
   const renderSelectedDetail = () =>
     selected && (
@@ -232,21 +245,45 @@ export default function Jobs() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Faenas</h1>
           <p className="text-sm text-[var(--color-muted)]">
-            Arrastra las tarjetas para reordenarlas o moverlas entre grupos.
+            {viewMode === "state"
+              ? "Agrupadas según sus ciclos: activas, pausadas y cerradas."
+              : "Arrastra las tarjetas para reordenarlas o moverlas entre grupos."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => setEditLayout((v) => !v)}
-            className={`rounded-md border px-3 py-2 text-sm transition-colors ${
-              editLayout
-                ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-                : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
-            }`}
-          >
-            {editLayout ? "✓ Listo" : "⚙ Organizar"}
-          </button>
-          {editLayout && (
+          <div className="inline-flex overflow-hidden rounded-md border border-[var(--color-border)] text-sm" role="group" aria-label="Orden de las faenas">
+            {[
+              { v: "mine", l: "Mi orden", t: "Tus grupos, colores y orden" },
+              { v: "state", l: "Por estado", t: "Activas, pausadas y cerradas, según sus ciclos" },
+            ].map((o, i) => (
+              <button
+                key={o.v}
+                type="button"
+                onClick={() => setViewMode(o.v)}
+                title={o.t}
+                className={`px-3 py-2 ${i > 0 ? "border-l border-[var(--color-border)]" : ""} ${
+                  viewMode === o.v
+                    ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]"
+                    : "bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
+                }`}
+              >
+                {o.l}
+              </button>
+            ))}
+          </div>
+          {viewMode !== "state" && (
+            <button
+              onClick={() => setEditLayout((v) => !v)}
+              className={`rounded-md border px-3 py-2 text-sm transition-colors ${
+                editLayout
+                  ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                  : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
+              }`}
+            >
+              {editLayout ? "✓ Listo" : "⚙ Organizar"}
+            </button>
+          )}
+          {organizing && (
             <button
               onClick={addGroup}
               className="rounded-md border border-dashed border-[var(--color-accent)] px-3 py-2 text-sm text-[var(--color-accent)] hover:bg-[var(--color-accent-soft)]"
@@ -271,16 +308,19 @@ export default function Jobs() {
         </div>
       ) : (
         <div className="space-y-6">
-          {layout.groups.map((g) => {
-            const groupJobs = jobsByGroup[g.id] || [];
-            // La sección "sin grupo" vacía solo se muestra al organizar.
+          {viewGroups.map((g) => {
+            const groupJobs = viewJobsByGroup[g.id] || [];
+            // La sección "sin grupo" vacía solo se muestra al organizar, y un
+            // estado sin faenas no se muestra.
             if (g.id === UNGROUPED_ID && groupJobs.length === 0 && !editLayout) return null;
+            if (byState && groupJobs.length === 0) return null;
             const isDropTarget = dropOverGroupId === g.id;
             return (
               <section
                 key={g.id}
-                onDragOver={onGroupDragOver(g.id)}
-                onDrop={onGroupDrop(g.id)}
+                onDragOver={byState ? undefined : onGroupDragOver(g.id)}
+                onDrop={byState ? undefined : onGroupDrop(g.id)}
+                title={byState ? g.hint : undefined}
                 onDragLeave={() => setDropOverGroupId(null)}
                 className={`rounded-lg border-2 ${
                   isDropTarget ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)]/30" : "border-transparent"
@@ -289,15 +329,15 @@ export default function Jobs() {
                 <GroupHeader
                   group={g}
                   count={groupJobs.length}
-                  editable={editLayout}
-                  isUngrouped={g.id === UNGROUPED_ID}
+                  editable={organizing}
+                  isUngrouped={byState || g.id === UNGROUPED_ID}
                   collapsed={collapsedGroups.has(g.id)}
                   onToggleCollapsed={() => toggleGroupCollapsed(g.id)}
                   onUpdate={(patch) => updateGroup(g.id, patch)}
                   onRemove={() => removeGroup(g.id)}
                 />
                 {collapsedGroups.has(g.id) ? null : groupJobs.length === 0 ? (
-                  <div className={`rounded-lg border border-dashed border-[var(--color-border)] p-6 text-center text-xs text-[var(--color-muted)] ${editLayout ? "" : "hidden"}`}>
+                  <div className={`rounded-lg border border-dashed border-[var(--color-border)] p-6 text-center text-xs text-[var(--color-muted)] ${organizing ? "" : "hidden"}`}>
                     Arrastra una tarjeta aquí.
                   </div>
                 ) : (
@@ -309,7 +349,7 @@ export default function Jobs() {
                       const cardColor = colorOf(f);
                       return (
                         <Fragment key={f.id}><div
-                          draggable
+                          draggable={!byState}
                           onDragStart={onDragStart(f.id)}
                           onDragOver={onDragOver(f.id)}
                           onDragLeave={onDragLeave}
@@ -338,7 +378,7 @@ export default function Jobs() {
                           />
                           <div className="mb-2 flex items-start justify-between gap-2">
                             <div className="flex items-start gap-2 min-w-0">
-                              <span className="mt-1 select-none text-[10px] leading-none text-[var(--color-muted)] opacity-30 group-hover:opacity-90 transition-opacity" title="Arrastra para reordenar">⠿</span>
+                              {!byState && <span className="mt-1 select-none text-[10px] leading-none text-[var(--color-muted)] opacity-30 group-hover:opacity-90 transition-opacity" title="Arrastra para reordenar">⠿</span>}
                               <div className="min-w-0">
                                 <div className="flex items-center gap-2">
                                   <span
@@ -408,7 +448,7 @@ export default function Jobs() {
               </section>
             );
           })}
-          {!isMobile && selected && !layout.groups.some((g) => g.id === selectedGroupId) && renderSelectedDetail()}
+          {!isMobile && selected && !viewGroups.some((g) => g.id === selectedGroupId) && renderSelectedDetail()}
         </div>
       )}
 

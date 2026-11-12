@@ -394,6 +394,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 |---|---|---|
 | Faena / Subfaena | `job` / `subjob` | `faenas` / `subfaenas` |
 | Ciclo | `cycle` | `cycles` |
+| Estado de una faena (activa, pausada o cerrada) | `jobState` (`active`, `paused`, `closed`) | se calcula desde `cycles`, no se guarda |
 | Labor | `labor` | dentro de `cycles.labors` |
 | Jornada | `workday` | `workdays` |
 | Piso (bono del día) | `floor` | dentro de `cycles.dayPrices` y `workdays` (guardado como `piso`, `pisoOnly`) |
