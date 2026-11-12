@@ -8,10 +8,11 @@ import { attempt } from "../../../utils/attempt";
 
 // La tabla del resumen del detalle: por subfaena o por labor, con los ciclos
 // de una subfaena juntos o separados (`cyclesApart`, que vive en el modal
-// porque también lo usa el detalle de pago impreso), con o sin el efectivo
+// porque también lo usa el detalle de pago impreso, igual que `showGross`:
+// el bruto con los anticipos y bonos aparte), con o sin el efectivo
 // pendiente de otras nóminas, sus totales y sus acciones de imprimir, copiar y
 // descargar.
-export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycleNameOf, cyclesApart, cyclesPeriod, getPayrollData, otherPendingCash, payroll, setCyclesApart, subfaenaSummary, toast }) {
+export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycleNameOf, cyclesApart, cyclesPeriod, getPayrollData, otherPendingCash, payroll, setCyclesApart, setShowGross, showGross, subfaenaSummary, toast }) {
   const adjustedTotals = (base) => ({
     bank: base.bank + (bonusAdvanceSummary.bonus.bank || 0) - (bonusAdvanceSummary.advance.bank || 0),
     cash: base.cash + (bonusAdvanceSummary.bonus.cash || 0) - (bonusAdvanceSummary.advance.cash || 0),
@@ -30,7 +31,7 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
   const [laborWorkdays, setLaborWorkdays] = useState({ payroll: null, data: null });
   const workdaysByGroup = laborWorkdays.payroll === payroll ? laborWorkdays.data : null;
   const laborSummaryData = summaryShowLabor && workdaysByGroup
-    ? computeLaborSummary(payroll, allGroups, workdaysByGroup, { byCycle: cyclesApart, cycleNameOf })
+    ? computeLaborSummary(payroll, allGroups, workdaysByGroup, { byCycle: cyclesApart, net: !showGross, cycleNameOf })
     : null;
   const [laborSummaryLoading, setLaborSummaryLoading] = useState(false);
   // No mira `laborSummaryLoading`: si la nómina cambia a mitad de una carga,
@@ -100,7 +101,7 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
   };
 
   const labelColumns = summaryLabelColumnsOf({ showLabor: summaryShowLabor, byCycle: cyclesApart });
-  const summaryTitle = summaryTitleOf({ showLabor: summaryShowLabor, byCycle: cyclesApart });
+  const summaryTitle = summaryTitleOf({ showLabor: summaryShowLabor, byCycle: cyclesApart, gross: showGross });
   const summaryDisplayRows = useMemo(
     () => summaryDisplayRowsOf(activeSummary, { showLabor: summaryShowLabor, byCycle: cyclesApart, periodOf: cyclesPeriod }),
     [activeSummary, summaryShowLabor, cyclesApart, cyclesPeriod],
@@ -149,6 +150,8 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
     summaryBusy,
     summaryCaptureRef,
     setCyclesApart,
+    setShowGross,
+    showGross,
     setSummaryPending,
     setSummaryShowLabor,
     summaryDisplayRows,

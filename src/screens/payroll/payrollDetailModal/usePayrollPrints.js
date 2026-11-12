@@ -4,7 +4,7 @@ import { attempt } from "../../../utils/attempt";
 
 // Las impresiones del detalle: comprobantes de efectivo, detalle de pago y el
 // detalle de un solo grupo, con su estado de carga.
-export function usePayrollPrints({ allGroups, cashGroups, catalogs, cyclesApart, cycleTitleOverrides, detailSummaries, getPayrollData, payroll, rutOf, subfaenaSummary, toast }) {
+export function usePayrollPrints({ allGroups, cashGroups, catalogs, cyclesApart, cycleTitleOverrides, detailSummaries, getPayrollData, payroll, rutOf, showGross, subfaenaSummary, toast }) {
   const [printingGroupLeader, setPrintingGroupLeader] = useState(null);
 
   const [printing, setPrinting] = useState(false);
@@ -19,7 +19,7 @@ export function usePayrollPrints({ allGroups, cashGroups, catalogs, cyclesApart,
 
   const handlePrintDetail = async () => {
     setPrintingDetail(true);
-    const { error: err } = await attempt(async () => printPaymentDetails(payroll, allGroups, cycleTitleOverrides, detailSummaries, catalogs, subfaenaSummary, await getPayrollData(), rutOf, { cyclesApart }));
+    const { error: err } = await attempt(async () => printPaymentDetails(payroll, allGroups, cycleTitleOverrides, detailSummaries, catalogs, subfaenaSummary, await getPayrollData(), rutOf, { cyclesApart, net: !showGross }));
     if (err) toast.error(err?.message || "Error al imprimir");
     setPrintingDetail(false);
   };
@@ -30,7 +30,7 @@ export function usePayrollPrints({ allGroups, cashGroups, catalogs, cyclesApart,
   const handlePrintGroupDetail = async (group, key) => {
     const loadingKey = key || group.leader;
     setPrintingGroupLeader(loadingKey);
-    const { error: err } = await attempt(async () => printPaymentDetails(payroll, [group], cycleTitleOverrides, [], catalogs, null, await getPayrollData(), rutOf, { cyclesApart }));
+    const { error: err } = await attempt(async () => printPaymentDetails(payroll, [group], cycleTitleOverrides, [], catalogs, null, await getPayrollData(), rutOf, { cyclesApart, net: !showGross }));
     if (err) toast.error(err?.message || "Error al imprimir grupo");
     setPrintingGroupLeader(null);
   };

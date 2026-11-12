@@ -12,6 +12,8 @@ import {
   summaryLabelColumnsOf,
   summaryCycleName,
   summaryTitleOf,
+  netPartsOf,
+  netByCycleOf,
   removalSummaryOf,
 } from "./payrollDetail";
 import { groupCashByLeader } from "./payroll";
@@ -94,6 +96,76 @@ describe("detailSummariesOf", () => {
   it("sin grupos de un lado, esa tabla no va", () => {
     expect(detailSummariesOf(groupCashByLeader([BETO]), undefined).map((t) => t.title)).toEqual(["Otros grupos"]);
     expect(detailSummariesOf([], cycleDetails)).toEqual([]);
+  });
+});
+
+describe("netPartsOf", () => {
+  it("descuenta el anticipo desde la parte más grande y sigue con la siguiente cuando llega a cero", () => {
+    expect(netPartsOf([20000, 80000], { advance: 30000 })).toEqual([20000, 50000]);
+    expect(netPartsOf([20000, 80000], { advance: 90000 })).toEqual([10000, 0]);
+    expect(netPartsOf([20000, 80000], { advance: 100000 })).toEqual([0, 0]);
+  });
+
+  it("el bono entra entero a la parte más grande, antes del anticipo", () => {
+    expect(netPartsOf([20000, 80000], { bonus: 5000 })).toEqual([20000, 85000]);
+    expect(netPartsOf([20000, 80000], { bonus: 5000, advance: 85000 })).toEqual([20000, 0]);
+    // Todas en $0: el bono va a la parte preferida.
+    expect(netPartsOf([0, 0], { bonus: 20000, preferred: 1 })).toEqual([0, 20000]);
+    expect(netPartsOf([], { bonus: 20000 })).toEqual([]);
+  });
+});
+
+describe("netByCycleOf", () => {
+  it("da lo que se paga por ciclo, y quien suma $0 lleva su bono al ciclo de sus jornadas", () => {
+    expect(netByCycleOf({ byCycle: { C1: 20000, C2: 80000 }, advance: 30000, bonus: 0 })).toEqual({ C1: 20000, C2: 50000 });
+    expect(netByCycleOf({ byCycle: { C1: 0, C2: 0 }, bonus: 20000, workdayIds: ["C2__L1__1-9__2026-10-01"] })).toEqual({ C1: 0, C2: 20000 });
+  });
+});
+
+describe("subfaenaSummaryOf: lo que se paga", () => {
+  const cycleDetails = [
+    { id: "C1", label: "F/S1/Ciclo 1", faenaName: "F", subfaenaId: "S1", subfaenaName: "S1" },
+    { id: "C2", label: "F/S2/Ciclo 1", faenaName: "F", subfaenaId: "S2", subfaenaName: "S2" },
+  ];
+  const ana = { rut: "1-9", byCycle: { C1: 20000, C2: 80000 }, advance: 30000, bonus: 0 };
+  const beto = { rut: "2-7", byCycle: { C1: 15000, C2: 0 }, advance: 15000, bonus: 0 };
+
+  it("con `net` cada fila trae los anticipos descontados y cuadra con el total a pagar", () => {
+    const { rows, totals } = subfaenaSummaryOf(cycleDetails, [ana], [beto], { net: true });
+    expect(rows.map((r) => [r.subfaenaName, r.bank, r.cash, r.total])).toEqual([
+      ["S1", 20000, 0, 20000],
+      ["S2", 50000, 0, 50000],
+    ]);
+    expect(totals).toEqual({ bank: 70000, cash: 0, total: 70000 });
+    // Sin `net`, el bruto de siempre.
+    expect(subfaenaSummaryOf(cycleDetails, [ana], [beto]).totals.total).toBe(115000);
+  });
+
+  it("la fila que un anticipo dejó en $0 sigue en la tabla", () => {
+    const { rows } = subfaenaSummaryOf(cycleDetails, [], [beto], { net: true });
+    expect(rows.map((r) => [r.subfaenaName, r.total])).toEqual([["S1", 0]]);
+  });
+});
+
+describe("computeLaborSummary: lo que se paga", () => {
+  it("con `net` descuenta el anticipo de cada persona entre sus labores, desde la más grande", () => {
+    const cycleDetails = [{ id: "C1", label: "F/S1/Ciclo 1", faenaName: "F", subfaenaId: "S1", subfaenaName: "S1" }];
+    const allGroups = [{ leader: "G", items: [
+      { rut: "A", bankCode: "012", advance: 90000, bonus: 5000 },
+      { rut: "B", bankCode: "EFE", advance: 0, bonus: 0 },
+    ] }];
+    const workdaysByGroup = { G: { C1: [
+      { laborName: "Poda", rows: [{ rut: "A", totalAmount: 80000 }, { rut: "B", totalAmount: 30000 }] },
+      { laborName: "Amarre", rows: [{ rut: "A", totalAmount: 20000 }] },
+    ] } };
+    const net = computeLaborSummary({ cycleDetails }, allGroups, workdaysByGroup, { net: true });
+    // A: Poda 80.000 + bono 5.000 − 85.000 = 0; Amarre 20.000 − 5.000 = 15.000.
+    expect(net.rows.map((r) => [r.laborName, r.bank, r.cash, r.total])).toEqual([
+      ["Amarre", 15000, 0, 15000],
+      ["Poda", 0, 30000, 30000],
+    ]);
+    expect(net.totals.total).toBe(45000);
+    expect(computeLaborSummary({ cycleDetails }, allGroups, workdaysByGroup).totals.total).toBe(130000);
   });
 });
 
@@ -182,6 +254,7 @@ describe("ciclos juntos o separados en el resumen", () => {
       [["", "Sector Uno", "—"], { subfaena: "2 ciclos" }, "Junta Ciclo 1, Repaso"],
     ]);
     expect(summaryTitleOf({ showLabor: false, byCycle: true })).toBe("por ciclo");
+    expect(summaryTitleOf({ showLabor: true, gross: true })).toBe("por labor (bruto)");
     expect(summaryLabelColumnsOf({ showLabor: false, byCycle: true }).map((c) => c.label)).toEqual(["Faena", "Subfaena", "Ciclo", "Período"]);
     const apart = summaryDisplayRowsOf(subfaenaSummaryOf(cycleDetails, bank, cash, { byCycle: true, cycleNameOf }), { showLabor: false, byCycle: true, periodOf });
     expect(apart.map((e) => e.labels || "subtotal")).toEqual([
