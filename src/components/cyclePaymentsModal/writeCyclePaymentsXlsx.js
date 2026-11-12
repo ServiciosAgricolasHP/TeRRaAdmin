@@ -2,9 +2,10 @@
 // totales que la tabla en pantalla (`cyclePaymentGroups`).
 import { sheetName } from "../../utils/sheetNames";
 import { formatRutForDisplay } from "../../utils/rutUtils";
+import { UNPAID_STATE } from "../../utils/cyclePayments";
 import { PAY_STATE_PILL } from "../../utils/payState";
 
-const stateLabel = (payroll) => (PAY_STATE_PILL[payroll.state] || PAY_STATE_PILL.pending).label;
+const stateLabel = (payroll) => (payroll.state === UNPAID_STATE ? "⚠ Falta pagar" : (PAY_STATE_PILL[payroll.state] || PAY_STATE_PILL.pending).label);
 
 export async function writeCyclePaymentsXlsx({ cycleLabel, report, subtitle }) {
   const ExcelJS = (await import("exceljs")).default;

@@ -1,5 +1,6 @@
 import { fmtCurrency } from "../../utils/format";
 import { formatRutForDisplay } from "../../utils/rutUtils";
+import { UNPAID_STATE } from "../../utils/cyclePayments";
 import { PAY_STATE_PILL } from "../../utils/payState";
 
 const NUM = { textAlign: "right", whiteSpace: "nowrap" };
@@ -9,6 +10,7 @@ const netTitle = (r) => `Bruto ${fmtCurrency(r.gross)} − anticipos ${fmtCurren
 
 // El líquido de la persona en la nómina, que abre su detalle de pago.
 function NetButton({ row, onShowPay }) {
+  if (row.payroll.state === UNPAID_STATE) return "—";
   if (row.net == null) return <span title="La nómina ya no trae a esta persona">—</span>;
   return (
     <button
@@ -24,6 +26,9 @@ function NetButton({ row, onShowPay }) {
 
 // El estado de una nómina y, si es la del detalle abierto, su marca.
 function PayrollTag({ payroll }) {
+  if (payroll.state === UNPAID_STATE) {
+    return <span className="ml-1.5 inline-block whitespace-nowrap rounded-full bg-[var(--color-danger-soft)] px-1.5 py-0.5 text-[10px] font-normal text-[var(--color-danger)]">⚠ Falta pagar</span>;
+  }
   const pill = PAY_STATE_PILL[payroll.state] || PAY_STATE_PILL.pending;
   return (
     <>

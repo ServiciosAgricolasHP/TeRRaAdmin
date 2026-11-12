@@ -56,6 +56,7 @@ import { CyclePaymentsModal } from "../../components/CyclePaymentsModal";
 import { useReadSection } from "../../hooks/useReadSection";
 
 // Sin filas de ajuste: el resumen ya trae los anticipos y bonos en cada fila.
+const NO_LABORS = [];
 const NO_ADJUSTMENTS = { bonus: { bank: 0, cash: 0, total: 0 }, advance: { bank: 0, cash: 0, total: 0 } };
 
 export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, subfaenas, workers, allPayrolls = [], onClose, onRedownload, onDownloadBankFile, onDownloadSnapshot, bankFormatLabel = null, onPublishPortal = null, publishedPayrollId = null, onChanged }) {
@@ -780,7 +781,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
         <CyclePaymentsModal
           onClose={() => setPaymentsCycle(null)}
           cycle={paymentsCycle}
-          cycles={cycles}
+          labors={cycles.find((c) => c.id === paymentsCycle.id)?.labors || NO_LABORS}
           payroll={payroll}
           allPayrolls={allPayrolls}
           workers={workers}
