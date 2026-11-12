@@ -502,13 +502,15 @@ export const paymentsService = {
     await recalcFortnightTotal(before.payrollId);
   },
 
-  // Elimina un resumen pendiente; sus vueltas quedan sueltas y siguen
-  // pendientes. Las vueltas referenciadas que ya no existen se omiten, para que
-  // el batch no aborte entero con "No document to update".
+  // Elimina un resumen pendiente que no está en una quincena (uno que está se
+  // saca primero de ella); sus vueltas quedan sueltas y siguen pendientes. Las
+  // vueltas referenciadas que ya no existen se omiten, para que el batch no
+  // aborte entero con "No document to update".
   async deleteSummary(paymentId) {
     const before = await this.getById(paymentId);
     if (!before) return;
     if (before.status !== "pending") throw new Error("Solo se pueden eliminar resúmenes pendientes");
+    if (before.payrollId) throw new Error("El resumen está en una quincena: sácalo de ella con ✕ antes de eliminarlo.");
     const tripIds = before.tripIds || [];
     const existingTripIds = await filterExistingTripIds(tripIds);
     const batch = writeBatch(db);
@@ -518,8 +520,6 @@ export const paymentsService = {
     batch.delete(doc(db, PAYMENTS, paymentId));
     await batch.commit();
     removeListItem(PAYMENTS, paymentId);
-    // Sale de su quincena, que se elimina si queda vacía.
-    await recalcFortnightTotal(before.payrollId, { pruneMissingPayments: true, dropIfEmpty: true });
     await logAction({ action: "delete", entity: "transportPayment", entityId: paymentId, before, meta: carrierMeta(before.carrierId) });
   },
 
