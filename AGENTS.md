@@ -405,6 +405,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Líder de grupo | `groupLeader` | `groupLeader` |
 | Nómina | `payroll` | `payrolls` |
 | Formato del archivo del banco | `bankFormat` | dentro de `payrollConfig` |
+| Pagos del ciclo (lo que le pagó cada nómina a cada persona) | `cyclePayments` | se calcula desde `workdays` y `payrolls`, no se guarda |
 | Cobrar / Pagar (modos del resumen del ciclo) | `charge` / `pay` | `cycleSummaries` (guardado como `cobrar`) |
 | Bono de manejo (conducir) | `drivingBonus` | dentro de `cycles.labors` (guardado como `bonusManejo`) |
 | Anticipo / Bono | `advance` / `bonus` | `advances` (`type: "anticipo"` o `"bono"`) |
