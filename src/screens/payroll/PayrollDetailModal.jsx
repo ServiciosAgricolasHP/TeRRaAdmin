@@ -51,6 +51,7 @@ import { CycleTitlesEditor } from "./payrollDetailModal/CycleTitlesEditor";
 import { PayrollTotalsCards } from "./payrollDetailModal/PayrollTotalsCards";
 import { SummaryTable } from "./payrollDetailModal/SummaryTable";
 import { PayrollCyclesSection } from "./payrollDetailModal/PayrollCyclesSection";
+import { CyclePaymentsModal } from "./payrollDetailModal/CyclePaymentsModal";
 import { useReadSection } from "../../hooks/useReadSection";
 
 export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, subfaenas, workers, allPayrolls = [], onClose, onRedownload, onDownloadBankFile, onDownloadSnapshot, bankFormatLabel = null, onPublishPortal = null, publishedPayrollId = null, onChanged }) {
@@ -209,6 +210,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
 
   const [showTitleEditor, setShowTitleEditor] = useState(false);
   const [showCashEstimation, setShowCashEstimation] = useState(false);
+  const [paymentsCycle, setPaymentsCycle] = useState(null);
 
 
   // Lo que paga la nómina por ciclo y por labor. El monto de cada labor sale
@@ -466,6 +468,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
 
           {cycleDetails.length > 0 && (
             <PayrollCyclesSection
+              onShowPayments={setPaymentsCycle}
               cycleBreakdown={cycleBreakdown}
               cycleDetails={cycleDetails}
               editMode={editMode}
@@ -761,6 +764,16 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
           cycleBreakdown={cycleBreakdown}
           onConfirm={startCycleEdit}
           busy={recalcBusy}
+        />
+      )}
+      {paymentsCycle && (
+        <CyclePaymentsModal
+          onClose={() => setPaymentsCycle(null)}
+          cycle={paymentsCycle}
+          cycles={cycles}
+          payroll={payroll}
+          allPayrolls={allPayrolls}
+          workers={workers}
         />
       )}
       {addWorkerOpen && (

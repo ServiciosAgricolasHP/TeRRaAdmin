@@ -4,7 +4,9 @@ import { fmtDayShortEs } from "../helpers";
 
 // Los ciclos de la nómina, con sus labores y lo que paga cada una. Se cambian
 // con "✎ Editar ciclos" (`EditCyclesModal`).
-export function PayrollCyclesSection({ cycleBreakdown, cycleDetails, editMode, isCollapsed, toggleSection }) {
+// "💸 Pagos del ciclo" abre lo que le pagó cada nómina a cada persona en ese
+// ciclo (`onShowPayments`).
+export function PayrollCyclesSection({ cycleBreakdown, cycleDetails, editMode, isCollapsed, onShowPayments, toggleSection }) {
   return (
     <section>
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -54,6 +56,14 @@ export function PayrollCyclesSection({ cycleBreakdown, cycleDetails, editMode, i
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">
                     <span className="font-semibold tabular-nums">{fmtCurrency(c.amount)}</span>
+                    <button
+                      type="button"
+                      onClick={() => onShowPayments(c)}
+                      title="A quién se le pagó este ciclo, por labor, en todas sus nóminas"
+                      className="min-h-9 whitespace-nowrap rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-3 text-sm font-medium text-[var(--color-accent)] hover:bg-[var(--color-accent)] hover:text-[var(--color-accent-fg)]"
+                    >
+                      💸 Pagos del ciclo
+                    </button>
                     <Link
                       to={`/cycles/${c.id}`}
                       title="Abrir el ciclo (Ctrl+clic: en otra pestaña)"
