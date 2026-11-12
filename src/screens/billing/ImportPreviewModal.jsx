@@ -1,20 +1,37 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { dteTypeLabel } from "../../utils/siiCsvParser";
 import { formatRutForDisplay } from "../../utils/rutUtils";
 import Modal from "../../components/Modal";
 import { fmtNumber, fmtCurrency } from "../../utils/format";
 import { FileRow } from "./FileRow";
 import { SummaryCard } from "./SummaryCard";
+import { importOrphans, manualDataOf } from "../../services/dteImportService";
 
 // Modal con el preview de los archivos parseados. Muestra:
 //   - banner de la empresa elegida
 //   - stats agregados (sumando todos los archivos no excluidos)
 //   - lista de archivos con aviso de RUT distinto + checkbox para excluir
+//   - los documentos que se eliminan (estaban en esos períodos y no vienen en
+//     los archivos), con lo que se les cargó a mano; si alguno tiene algo,
+//     confirmar pide marcar antes que se entiende
 //   - conteo por tipo de DTE
 //   - muestra de las primeras filas del primer archivo incluido
-export function ImportPreviewModal({ preview, existingIds, company, busy, onToggleFile, onConfirm, onCancel }) {
+// `docs` es la copia de Facturación, de donde salen los que ya existen y los
+// que se eliminan.
+export function ImportPreviewModal({ preview, docs, company, busy, onToggleFile, onConfirm, onCancel }) {
   const { files } = preview;
   const included = files.filter((f) => !f.excluded && !f.parseFailed);
+  const existingIds = useMemo(() => new Set(docs.map((d) => d.id)), [docs]);
+  const orphans = useMemo(
+    () =>
+      importOrphans(docs, company?.id, included.flatMap((f) => f.records))
+        .map((d) => ({ doc: d, manual: manualDataOf(d) }))
+        .sort((a, b) => b.manual.length - a.manual.length || String(a.doc.fechaEmision).localeCompare(String(b.doc.fechaEmision))),
+    [docs, company?.id, included],
+  );
+  const withManualData = orphans.filter((o) => o.manual.length > 0).length;
+  const [acceptedLoss, setAcceptedLoss] = useState(false);
+  const blockedByLoss = withManualData > 0 && !acceptedLoss;
 
   const agg = useMemo(() => {
     const a = { count: 0, total: 0, newCount: 0, dupCount: 0, byTipo: {}, periods: new Set(), kinds: new Set() };
@@ -52,7 +69,7 @@ export function ImportPreviewModal({ preview, existingIds, company, busy, onTogg
           </button>
           <button
             onClick={onConfirm}
-            disabled={busy || agg.count === 0}
+            disabled={busy || agg.count === 0 || blockedByLoss}
             className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
           >
             {busy ? "Importando..." : `Confirmar (${agg.count} documento${agg.count === 1 ? "" : "s"} de ${included.length} archivo${included.length === 1 ? "" : "s"})`}
@@ -71,12 +88,61 @@ export function ImportPreviewModal({ preview, existingIds, company, busy, onTogg
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         <SummaryCard label="Documentos" value={fmtNumber(agg.count)} />
         <SummaryCard label="Total" value={fmtCurrency(agg.total)} highlight />
         <SummaryCard label="Nuevos" value={fmtNumber(agg.newCount)} />
         <SummaryCard label="Sobreescriben" value={fmtNumber(agg.dupCount)} />
+        <SummaryCard label="Se eliminan" value={fmtNumber(orphans.length)} warning={orphans.length > 0} />
       </div>
+
+      {orphans.length > 0 && (
+        <div className="mt-3 rounded-md border border-[var(--color-warning)] bg-[var(--color-warning-soft)] p-2 text-xs">
+          <div className="font-semibold">
+            Se eliminan {orphans.length} documento{orphans.length === 1 ? "" : "s"} de estos períodos que no vienen en los archivos.
+          </div>
+          <div className="mt-0.5 text-[var(--color-muted)]">
+            Importar reemplaza el período entero: lo que el SII ya no informa se borra, con lo que se le haya cargado a mano.
+          </div>
+          <div className="mt-2 max-h-48 overflow-auto rounded border border-[var(--color-border)] bg-[var(--color-surface)]">
+            <table className="w-full text-xs">
+              <thead className="bg-[var(--color-surface-2)] text-left text-[var(--color-muted)]">
+                <tr>
+                  <th className="px-2 py-1">Fecha</th>
+                  <th className="px-2 py-1">Tipo</th>
+                  <th className="px-2 py-1 text-right">Folio</th>
+                  <th className="px-2 py-1">Contraparte</th>
+                  <th className="px-2 py-1 text-right">Total</th>
+                  <th className="px-2 py-1">Cargado a mano</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orphans.map(({ doc: d, manual }) => {
+                  const razon = d.kind === "venta" ? d.razonSocialReceptor : d.razonSocialEmisor;
+                  return (
+                    <tr key={d.id} className="border-t border-[var(--color-border)]">
+                      <td className="whitespace-nowrap px-2 py-1 font-mono">{d.fechaEmision}</td>
+                      <td className="whitespace-nowrap px-2 py-1">{d.tipo} · {d.tipoLabel || dteTypeLabel(d.tipo)}</td>
+                      <td className="px-2 py-1 text-right font-mono tabular-nums">{d.folio}</td>
+                      <td className="max-w-[200px] truncate px-2 py-1" title={razon || ""}>{razon || "—"}</td>
+                      <td className="whitespace-nowrap px-2 py-1 text-right tabular-nums">{fmtCurrency(d.total)}</td>
+                      <td className={`px-2 py-1 ${manual.length ? "font-medium text-[var(--color-danger)]" : "text-[var(--color-muted)]"}`}>
+                        {manual.length ? manual.join(", ") : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {withManualData > 0 && (
+            <label className="mt-2 flex min-h-[32px] cursor-pointer items-center gap-2 font-medium">
+              <input type="checkbox" checked={acceptedLoss} onChange={(e) => setAcceptedLoss(e.target.checked)} className="h-4 w-4" />
+              Entiendo que se pierde lo cargado a mano en {withManualData} documento{withManualData === 1 ? "" : "s"}.
+            </label>
+          )}
+        </div>
+      )}
 
       <div className="mt-3 space-y-1.5">
         <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">

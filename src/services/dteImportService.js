@@ -31,6 +31,29 @@ export function findOrphans(existing = [], records = []) {
   return existing.filter((e) => !nuevos.has(e.id));
 }
 
+// Los documentos que el import va a borrar, calculados sobre una copia ya
+// cargada (`docs`, la de Facturación) para mostrarlos antes de confirmar: los de
+// la empresa en los mismos (kind, periodo) del CSV que no vienen en él. Al
+// confirmar, `importDteRecords` los vuelve a calcular contra el servidor.
+export function importOrphans(docs = [], companyId, records = []) {
+  const scopes = new Set(groupRecordsByScope(records).map((s) => `${s.kind}__${s.periodo || NO_PERIOD}`));
+  const ids = new Set(records.map((r) => r.id));
+  return docs.filter(
+    (d) => d.companyId === companyId && scopes.has(`${d.kind}__${d.periodo || NO_PERIOD}`) && !ids.has(d.id),
+  );
+}
+
+// Lo que se le cargó a mano a un documento y se pierde si se borra: el estado
+// de pago, los abonos, las notas y el centro de costo.
+export function manualDataOf(d) {
+  const out = [];
+  if (d?.paymentStatus && d.paymentStatus !== "unpaid") out.push("estado de pago");
+  if (Array.isArray(d?.payments) && d.payments.length > 0) out.push("abonos");
+  if (String(d?.notes || "").trim()) out.push("notas");
+  if (d?.costCenterId) out.push("centro de costo");
+  return out;
+}
+
 // Escribe un ámbito completo: borra huérfanos y hace upsert del resto.
 async function writeScope({ records, existingIds, orphans, uid }) {
   const writes = [

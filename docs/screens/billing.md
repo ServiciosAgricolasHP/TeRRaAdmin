@@ -63,7 +63,8 @@ Exporta: `parseSiiRcvCsv(buffer, { companyRut })`, `dteTypeLabel(tipo)`, `normal
 
 - **Doc id determinístico por `companyId`**: reimportar el mismo período es **idempotente** (setDoc + merge sobreescribe sin duplicar). El preview cuenta cuántos sobreescriben antes de confirmar.
 - **Replace por período**: confirmar el import agrupa por `(companyId, kind, periodo)` y para cada scope (a) lee los existentes, (b) calcula **huérfanos** (existían antes, no vienen en el nuevo CSV) y los **elimina**, (c) escribe los nuevos/actualizados. Preserva `paymentStatus` existente al reimportar — solo setea `"unpaid"` para docs nuevos. Bulk write: `writeBatch(db)` con chunks de 450 (límite Firestore 500).
-  - **La persistencia vive en `services/dteImportService.js` (`importDteRecords`), no en la pantalla**, así se prueba sin React. `tests/e2e/facturacion-import.test.js` fija las tres propiedades que importan: reimportar es idempotente, el estado de pago y las notas cargadas a mano sobreviven, y el borrado de huérfanos **no** cruza de período, de `kind` ni de empresa. El borrado no pide confirmación: el test fija ese comportamiento, no lo aprueba.
+  - **La vista previa muestra lo que se va a eliminar** antes de confirmar (`ImportPreviewModal`): los huérfanos que da `importOrphans` sobre la copia de Facturación, sin lecturas, con lo que se les cargó a mano (`manualDataOf`: estado de pago, abonos, notas y centro de costo). Si alguno tiene algo, Confirmar queda apagado hasta marcar que se entiende que se pierde. Al confirmar, `importDteRecords` los vuelve a calcular contra el servidor.
+  - **La persistencia vive en `services/dteImportService.js` (`importDteRecords`), no en la pantalla**, así se prueba sin React. `tests/e2e/facturacion-import.test.js` fija las tres propiedades que importan: reimportar es idempotente, el estado de pago y las notas cargadas a mano sobreviven, y el borrado de huérfanos **no** cruza de período, de `kind` ni de empresa.
 
 ## UI
 
