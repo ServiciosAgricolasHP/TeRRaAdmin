@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import { cellText, laborColumns } from "../../../utils/summaryTables";
-import { cellH, cell, chargeDateInputStyle, inputVal, chargeInputStyle } from "./tableStyles";
+import { cellH, cell, chargeDateInputStyle, inputVal, chargeInputStyle, NOT_CHARGED_ROW, NOT_CHARGED_TITLE } from "./tableStyles";
 
 // Lo que se usa cuando no se pasa la prop: siempre el mismo objeto.
 const NO_HIDDEN_COLUMNS = new Set();
@@ -126,9 +126,12 @@ export function LaborTable({
             const rowKey = r._key || r.rowKey || r.date || `r${i}`;
             const badge = dateColumn.badge(r);
             return (
-              <tr key={rowKey}>
+              <tr key={rowKey} style={r.notCharged ? NOT_CHARGED_ROW : undefined} title={r.notCharged ? NOT_CHARGED_TITLE : undefined}>
                 <td style={cell}>
                   {r._laborName || displayName}
+                  {r.notCharged && (
+                    <span style={{ color: "#888", marginLeft: 4, fontSize: 10 }}>(no se cobra)</span>
+                  )}
                   {r.isExtra && editable && (
                     <span style={{ color: "#888", marginLeft: 4, fontSize: 10 }}>
                       {r.sourceCycleLabel

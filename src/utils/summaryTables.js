@@ -50,8 +50,11 @@ export function cellText(col, v) {
 // Secciones del resumen, en el orden en que se dibujan. En cobrar, las
 // labores juntadas (`mergeInto`) van dentro de la tabla de su destino y las
 // no incluidas no aparecen. En pagar, una labor sin filas no aparece.
-export function summarySections({ mode, labors, carriers, titles, carrierById, dayPrices = {} }) {
+// `editMode` (cobrar en edición) deja los días que no se cobran, para
+// mostrarlos en gris; fuera de edición no salen.
+export function summarySections({ mode, labors, carriers, titles, carrierById, dayPrices = {}, editMode = false }) {
   const isCharge = mode === "charge";
+  const shown = (rows) => (isCharge && !editMode ? rows.filter((r) => !r.notCharged) : rows);
   const sections = [];
   const groups = isCharge ? buildChargeSections(labors) : labors.map((ld) => ({ lead: ld, members: [ld] }));
   for (const { lead: ld, members } of groups) {
@@ -80,7 +83,7 @@ export function summarySections({ mode, labors, carriers, titles, carrierById, d
       }
     }
     // En cobrar, chargedRows (con overrides y filas extra) y chargedTotals.
-    const rows = merged ? mergedRows(members, nameOf) : isCharge ? (ld.chargedRows || ld.rows) : ld.rows;
+    const rows = shown(merged ? mergedRows(members, nameOf) : isCharge ? (ld.chargedRows || ld.rows) : ld.rows);
     const totals = merged ? mergedTotals(members) : isCharge ? (ld.chargedTotals || ld.totals) : ld.totals;
     if (rows.length === 0 && !isCharge) continue;
     // tratoHE en cobrar: si cada labor de la tabla cobra sus horas extras.
@@ -103,7 +106,7 @@ export function summarySections({ mode, labors, carriers, titles, carrierById, d
   }
   for (const tg of carriers) {
     if (isCharge && tg.include === false) continue;
-    const rows = isCharge ? (tg.chargedRows || tg.rows) : tg.rows;
+    const rows = shown(isCharge ? (tg.chargedRows || tg.rows) : tg.rows);
     if (rows.length === 0 && !isCharge) continue;
     const c = carrierById.get(tg.carrierId);
     const fallbackName = c?.alias || c?.name || "(transportista eliminado)";

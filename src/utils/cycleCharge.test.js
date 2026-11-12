@@ -62,6 +62,28 @@ describe("chargeLaborsOf: tarifa de cobro", () => {
     expect(cl.chargedTotals.workerDays).toBe(2 + 4);
   });
 
+  it("un día ajustado a $0 no se cobra ni suma a los totales", () => {
+    const cl = chargeOf(MAIN, mainDays, { L1: { rowOverrides: { [D1]: { qty: 0 } } } });
+    expect(cl.chargedRows.map((r) => [r.date, r.chargedAmount, r.notCharged])).toEqual([
+      [D1, 0, true],
+      [D2, 25000, false],
+    ]);
+    expect(cl.chargedTotals).toMatchObject({ amount: 25000, qty: 1, workerDays: 1 });
+    // Sin ajuste, un día no queda fuera aunque sume $0.
+    const free = chargeOf(MAIN, mainDays, { L1: { chargeRate: 0 } });
+    expect(free.chargedRows.map((r) => r.notCharged)).toEqual([false, false]);
+  });
+
+  it("en tratoHE, las jornadas en 0 dejan el día mientras cobre horas extras", () => {
+    const LH = { id: "LH", name: "Jornadas HE", type: "tratoHE", overtimeRate: 5000 };
+    const days = [["0_0", wd(ANA, D1, { qty: 30000, overtimeHours: 2, amount: 40000 })]];
+    const withHours = chargeOf(LH, days, { LH: { rowOverrides: { [D1]: { workdayCount: 0 } } } });
+    expect([withHours.chargedRows[0].chargedAmount, withHours.chargedRows[0].notCharged]).toEqual([2 * 5000, false]);
+    const none = chargeOf(LH, days, { LH: { rowOverrides: { [D1]: { workdayCount: 0, overtimeHours: 0 } } } });
+    expect([none.chargedRows[0].chargedAmount, none.chargedRows[0].notCharged]).toEqual([0, true]);
+    expect(none.chargedTotals).toMatchObject({ amount: 0, workdayCount: 0, overtimeHours: 0 });
+  });
+
   it("las filas manuales usan la tarifa de la labor y las sin fecha van al final", () => {
     const cl = chargeOf(MAIN, mainDays, {
       L1: {
@@ -221,6 +243,12 @@ describe("chargeCarriersOf", () => {
     expect(cc.chargedTotalAmount).toBe(95000);
     expect(cc.chargedTotalCount).toBe(5);
     expect(cc.include).toBe(true);
+  });
+
+  it("un día con las vueltas en 0 no se cobra ni suma a los totales", () => {
+    const [cc] = chargeCarriersOf(transportByCarrier(trips), { K1: { rowOverrides: { [D1]: { count: 0 } } } });
+    expect(cc.chargedRows.map((r) => [r.date, r.notCharged])).toEqual([[D1, true], [D2, false]]);
+    expect([cc.chargedTotalAmount, cc.chargedTotalCount]).toEqual([20000, 1]);
   });
 
   it("un transportista excluido conserva sus filas", () => {

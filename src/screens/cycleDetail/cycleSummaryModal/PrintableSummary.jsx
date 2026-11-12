@@ -61,7 +61,7 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
       {/* Tablas día a día por labor y por transportista. En cobrar, las
           labores fusionadas (`mergeInto`) van dentro de la tabla de su destino
           (utils/summaryTables.js). */}
-      {summarySections({ mode, labors, carriers, titles, carrierById, dayPrices }).map((section) =>
+      {summarySections({ mode, labors, carriers, titles, carrierById, dayPrices, editMode }).map((section) =>
         section.kind === "labor" ? (
           <LaborTable
             key={section.key}
