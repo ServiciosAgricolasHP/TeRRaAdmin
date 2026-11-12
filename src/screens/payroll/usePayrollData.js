@@ -84,6 +84,14 @@ export function usePayrollData({ toast }) {
     }
     setRefreshing(false);
   };
+  // Las nóminas con lo último que se escribió en este equipo, como quién cobró
+  // el efectivo: esas escrituras corrigen la copia de la lista en su lugar,
+  // así que casi nunca cuesta lecturas. Devuelve la lista, o null si falla.
+  const syncPayrollList = async () => {
+    const { value } = await attempt(() => listPayrolls());
+    if (value) setPayrolls(value);
+    return value || null;
+  };
   return {
     cycles,
     cycleStats,
@@ -94,6 +102,7 @@ export function usePayrollData({ toast }) {
     refresh,
     refreshing,
     subjobs,
+    syncPayrollList,
     workers,
   };
 }

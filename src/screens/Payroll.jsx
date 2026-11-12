@@ -61,6 +61,7 @@ export default function Payroll() {
     refresh,
     refreshing,
     subjobs,
+    syncPayrollList,
     workers,
   } = usePayrollData({ toast });
   // Rut vigente para mostrar, ver utils/workerRut.js.
@@ -116,6 +117,17 @@ export default function Payroll() {
   const [progress, setProgress] = useState(null);
 
   const [detailPayroll, setDetailPayroll] = useState(null);
+  // El detalle se abre con la nómina como está en la copia de la lista, que
+  // trae lo que se marcó en un detalle anterior (quién cobró el efectivo, los
+  // encabezados): el detalle arma su estado con lo que recibe al abrirse.
+  const openDetail = async (p) => {
+    const list = await syncPayrollList();
+    setDetailPayroll(list?.find((x) => x.id === p.id) || p);
+  };
+  const closeDetail = () => {
+    setDetailPayroll(null);
+    syncPayrollList();
+  };
   // Nómina que se está renombrando, o null. El nombre es solo una etiqueta y se
   // cambia en cualquier estado; renombrar actualiza el doc y el snapshot
   // embebido, así la re-descarga del JSON trae el nombre nuevo.
@@ -283,7 +295,7 @@ export default function Payroll() {
           onDownloadBankFile={onDownloadBankFile}
           onDownloadSnapshot={onDownloadSnapshot}
           onChangeClassification={onChangeClassification}
-          onOpen={setDetailPayroll}
+          onOpen={openDetail}
           onRename={setRenaming}
           publishedPayrollId={portal?.payrollId || null}
         />
@@ -385,7 +397,7 @@ export default function Payroll() {
           faenas={jobs}
           subfaenas={subjobs}
           workers={workers}
-          onClose={() => setDetailPayroll(null)}
+          onClose={closeDetail}
           onRedownload={onRedownload}
           onDownloadBankFile={onDownloadBankFile}
           onDownloadSnapshot={onDownloadSnapshot}
