@@ -48,6 +48,20 @@ describe("summarySections", () => {
     expect(sections[0].rows.map((r) => r._laborName)).toEqual(["Principal", "Extras"]);
     expect(sections[0].totals.amount).toBe(30000 * 2 + 20000);
   });
+
+  it("en cobrar, un día ajustado a $0 sale solo en edición", () => {
+    const charge = chargeLaborsOf(laborsData, [], { LX: { rowOverrides: { [D2]: { qty: 0 } } } }, {});
+    const carriers = chargeCarriersOf(transport, { K1: { rowOverrides: { [D1]: { count: 0 } } } });
+    const args = { mode: "charge", labors: charge, carriers, titles, carrierById };
+    const locked = summarySections(args);
+    expect(locked.find((s) => s.key === "LX").rows).toEqual([]);
+    expect(locked.find((s) => s.key === "K1").rows).toEqual([]);
+    const editing = summarySections({ ...args, editMode: true });
+    expect(editing.find((s) => s.key === "LX").rows.map((r) => [r.date, r.notCharged])).toEqual([[D2, true]]);
+    expect(editing.find((s) => s.key === "K1").rows).toHaveLength(1);
+    // En pagar no cambia nada.
+    expect(summarySections({ ...args, mode: "pay", labors: laborsData, carriers: transport }).find((s) => s.key === "LX").rows).toHaveLength(1);
+  });
 });
 
 describe("laborColumns", () => {

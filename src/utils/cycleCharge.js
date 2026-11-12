@@ -53,6 +53,14 @@ export function importedLaborsDataOf(importedLabors, catalogs) {
 // queda igual a la que se pagó. Ajustar las jornadas o el valor
 // (`workdayCount`, `workdayRate`) la recalcula; un ajuste anterior de la base
 // en pesos (`qty`) se respeta mientras no se toquen esos dos.
+// Un día que se ajustó para cobrar $0 (las jornadas, la cantidad o el valor en
+// 0) no se cobra: no suma a los totales y no sale en el resumen bloqueado, en
+// lo que se copia o imprime ni en el Excel. En edición se ve en gris, para
+// volver a cobrarlo. Las filas manuales no cuentan.
+function isNotCharged(hasOverride, charged) {
+  return hasOverride && charged === 0;
+}
+
 export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, catalogs) {
   return [...laborsData, ...importedLaborsData].map((ld) => {
     const cfg = laborCharges[ld.labor.id] || {};
@@ -173,6 +181,7 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
       const hasOverride = Object.keys(ov).length > 0;
       return {
         ...r,
+        notCharged: isNotCharged(hasOverride, amount + transport),
         workedOvertimeHours: Number(r.overtimeHours) || 0,
         chargedQty: qty,
         chargedWorkdayCount: workdayCount,
@@ -245,6 +254,7 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
       chargedTotalTransport = 0, chargedTotalWorkerCount = 0, chargedCountedQty = 0,
       chargedHeTotal = 0, chargedTotalWorkdays = 0;
     for (const r of chargedRows) {
+      if (r.notCharged) continue;
       chargedTotalAmount += r.chargedAmount;
       chargedTotalWorkdays += Number(r.chargedWorkdayCount) || 0;
       chargedTotalQty += r.chargedQty;
@@ -309,6 +319,7 @@ export function chargeCarriersOf(transportData, carrierCharges) {
       const hasOverride = Object.keys(ov).length > 0;
       return {
         ...r,
+        notCharged: isNotCharged(hasOverride, amount),
         chargedCount: count,
         chargedRate: rowRate,
         chargedAmount: amount,
@@ -343,6 +354,7 @@ export function chargeCarriersOf(transportData, carrierCharges) {
     });
     let chargedTotalAmount = 0, chargedTotalCount = 0;
     for (const r of chargedRows) {
+      if (r.notCharged) continue;
       chargedTotalAmount += r.chargedAmount;
       chargedTotalCount += r.chargedCount;
     }
