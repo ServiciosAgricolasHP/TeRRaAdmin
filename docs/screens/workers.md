@@ -21,6 +21,7 @@
 - Bank details = `[paymentRut, accountNumber, accountType, bankCode]` (orden importante).
 - **Si el RUT de pago es de otra persona, la ficha guarda su nombre** en `paymentName` (el titular de la cuenta, o quien cobra en efectivo): es obligatorio en ese caso y opcional si es el mismo RUT del trabajador (`paysToOtherPerson`, `utils/banks.js`). Lo piden la ficha y el alta desde la grilla del ciclo. 🆔 Asignar Cuenta RUT lo borra, porque la cuenta pasa a ser del trabajador. La lista de Trabajadores lo muestra en la columna Titular, y en el teléfono como "Cuenta de"; si falta, avisa "⚠ Falta el titular", y el filtro ⚠ Sin titular junta a todos los que faltan. Las fichas anteriores al campo no se tocan solas: se completan al guardarlas. La nómina guarda el titular con los datos de cuenta y el archivo del banco lo lleva (ver "Reglas de PagoFácil Banco de Chile" en `docs/screens/payroll.md`).
 - `services/workersService.js` expone `findWorkerByRut`, `createWorker`, `deleteWorkerSafe`, `detectQueryKind`, `listWorkers` y `syncWorkers`.
+- **Eliminar una ficha no deja nada apuntando a ella** (`deleteWorkerSafe`, con el cálculo en `deleteBlockers`, `utils/workerMerge.js`): no se elimina si tiene jornadas o anticipos y bonos (con su RUT vigente o uno anterior), QR, contratos u honorarios, o un lugar en las labores de un ciclo abierto. El aviso dice qué tiene; un duplicado con jornadas se une a la ficha que queda (🔀). Cuesta la consulta de jornadas y la de anticipos; los contratos y los ciclos salen de sus listas sincronizadas.
 
 ## Unir fichas
 

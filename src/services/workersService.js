@@ -1,5 +1,9 @@
 import { workersService, workdaysService } from "./index";
+import { advancesService } from "./advancesService";
+import { listEmployments } from "./employmentsService";
+import { listCycles } from "./jobLists";
 import { createSyncedList } from "./syncedList";
+import { deleteBlockers } from "../utils/workerMerge";
 import { normalizeRut, validateRut } from "../utils/rutUtils";
 import { toProperName } from "../utils/nameUtils";
 
@@ -81,18 +85,23 @@ export function workerKeys(worker) {
   return [...new Set(claves)].slice(0, 10); // tope de claves para la consulta `in`
 }
 
-// No deja borrar a quien tiene producción cargada, con su rut actual o con
-// uno anterior.
+// No deja borrar a quien dejaría algo apuntando a una ficha que ya no está
+// (`deleteBlockers`): jornadas o anticipos con su rut actual o uno anterior,
+// QR, contratos, o un lugar en las labores de un ciclo abierto. Los
+// contratos y los ciclos salen de sus listas sincronizadas.
 export async function deleteWorkerSafe(worker) {
   const claves = workerKeys(worker);
   if (claves.length === 0) throw new Error("Trabajador inválido");
-  const id = typeof worker === "string" ? worker : worker.id;
-  const conDias = await workdaysService.list({
-    wheres: [["workerRut", "in", claves]],
-    take: 1,
-  });
-  if (conDias.length) throw new Error("No se puede eliminar: el trabajador tiene días asociados");
-  return workersService.remove(id);
+  const w = typeof worker === "string" ? { id: worker } : worker;
+  const [conDias, advances, employments, cycles] = await Promise.all([
+    workdaysService.list({ wheres: [["workerRut", "in", claves]], take: 1 }),
+    advancesService.list({ wheres: [["workerRut", "in", claves]] }),
+    listEmployments(),
+    listCycles(),
+  ]);
+  const blockers = deleteBlockers({ worker: w, hasWorkdays: conDias.length > 0, advances, employments, cycles });
+  if (blockers.length) throw new Error(`No se puede eliminar. ${blockers.join(" ")}`);
+  return workersService.remove(w.id);
 }
 
 export { workersService };

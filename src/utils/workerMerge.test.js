@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { activeWorkers, mergeBlockers, mergedTargetResolver, planWorkerMerge, retargetDocId } from "./workerMerge";
+import { activeWorkers, deleteBlockers, mergeBlockers, mergedTargetResolver, planWorkerMerge, retargetDocId } from "./workerMerge";
 
 // Datos inventados: el clon lo creó la importación con el RUT provisorio de
 // otra empresa; la ficha que queda es la de siempre.
@@ -133,5 +133,32 @@ describe("mergedTargetResolver", () => {
   it("una ficha activa o desconocida queda igual", () => {
     const targetOf = mergedTargetResolver(workers);
     expect(["K", "11111111-1", "Z"].map(targetOf)).toEqual(["K", "11111111-1", "Z"]);
+  });
+});
+
+describe("deleteBlockers", () => {
+  const worker = { id: "11111111-1", rut: "22222222-2", rutHistory: ["11111111-1"], idQr: [] };
+
+  it("sin nada asociado se puede eliminar", () => {
+    expect(deleteBlockers({ worker })).toEqual([]);
+  });
+
+  it("avisa lo que quedaría apuntando a la ficha", () => {
+    const msgs = deleteBlockers({
+      worker: { ...worker, idQr: ["Q1"] },
+      hasWorkdays: true,
+      advances: [{ id: "a1" }],
+      employments: [{ workerId: "11111111-1" }, { workerId: "otro" }],
+      cycles: [
+        { id: "c1", label: "Abierto", status: "open", labors: [{ workers: [{ rut: "22222222-2" }] }] },
+        { id: "c2", label: "Cerrado", status: "closed", labors: [{ workers: [{ id: "11111111-1" }] }] },
+      ],
+    });
+    expect(msgs).toHaveLength(5);
+    expect(msgs[0]).toMatch(/jornadas/);
+    expect(msgs[1]).toMatch(/1 código QR/);
+    expect(msgs[2]).toMatch(/1 anticipo/);
+    expect(msgs[3]).toMatch(/1 contrato/);
+    expect(msgs[4]).toMatch(/un ciclo abierto \(Abierto\)/);
   });
 });
