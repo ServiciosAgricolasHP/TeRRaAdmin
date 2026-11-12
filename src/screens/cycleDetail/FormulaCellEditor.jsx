@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect, useEffectEvent } from "react";
-import { parseAmount } from "../../utils/formula";
+import { readAmount } from "../../utils/formula";
 
 // Editor de las celdas numéricas de la grilla. Si la celda ya tiene un valor,
 // arranca con `=<valor>` para que baste agregar `+50` (o `-10`, `*2`, `/3`)
-// y lo evalúe parseAmount(). Si la edición se abrió tipeando un carácter
+// y lo evalúe readAmount(). Si la edición se abrió tipeando un carácter
 // (dígito u operador), arranca con ese carácter, como hace AG-Grid.
 //
 // En AG-Grid v33+ el valor editado se informa con `onValueChange`: el
@@ -18,10 +18,14 @@ export function FormulaCellEditor({ initialValue, onValueChange, eventKey }) {
       : String(initialValue == null ? "" : initialValue);
   const [text, setText] = useState(initial);
   const inputRef = useRef(null);
+  // Lo que se escribe y no se puede interpretar ("25 mil", "=100+") deja el
+  // valor que tenía la celda, en vez de un 0 que borra la jornada.
+  const previous = Number(initialValue) || 0;
+  const valueOf = (v) => readAmount(v) ?? previous;
 
   // Informa al proxy el valor inicial ya evaluado, así Enter sin editar
   // confirma ese mismo número.
-  const reportInitial = useEffectEvent(() => onValueChange?.(parseAmount(initial)));
+  const reportInitial = useEffectEvent(() => onValueChange?.(valueOf(initial)));
   useEffect(() => {
     reportInitial();
   }, []);
@@ -38,8 +42,9 @@ export function FormulaCellEditor({ initialValue, onValueChange, eventKey }) {
     const v = e.target.value;
     setText(v);
     // Informa al proxy el número ya evaluado en cada tecla. Una expresión a
-    // medio escribir (ej. "=100+") vale 0 hasta completarla.
-    onValueChange?.(parseAmount(v));
+    // medio escribir (ej. "=100+") vale lo que tenía la celda hasta
+    // completarla; borrar todo deja 0.
+    onValueChange?.(valueOf(v));
   };
 
   return (
