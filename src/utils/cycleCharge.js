@@ -187,7 +187,10 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
       const workerCount = ov.workerCount != null && ov.workerCount !== ""
         ? Number(ov.workerCount)
         : Number(r.workerCount) || 0;
-      const hasOverride = Object.keys(ov).length > 0;
+      // El detalle del día reemplaza al nombre de la labor; por sí solo no
+      // ajusta el cobro de la fila.
+      const chargedDetail = filled(ov.detail) ? String(ov.detail) : null;
+      const hasOverride = Object.keys(ov).some((k) => k !== "detail");
       return {
         ...r,
         notCharged: isNotCharged(hasOverride, amount + transport),
@@ -201,6 +204,7 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
         chargedAmount: amount,
         chargedTransport: transport,
         chargedWorkerCount: workerCount,
+        chargedDetail,
         rowKey: newKey,
         isExtra: false,
         hasOverride,
@@ -246,6 +250,7 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
         chargedAmount: amount,
         chargedTransport: Number(ex.transport) || 0,
         chargedWorkerCount: ex.workerCount != null && ex.workerCount !== "" ? Number(ex.workerCount) : 0,
+        chargedDetail: filled(ex.detail) ? String(ex.detail) : null,
         rowKey: `extra:${ex.id}`,
         isExtra: true,
         extraId: ex.id,
