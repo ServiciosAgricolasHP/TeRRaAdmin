@@ -28,6 +28,8 @@ import {
   kindMeta,
   directionOf,
   remainingOf,
+  totalsByDirection,
+  directionAmountLabel,
   upcomingMonthEnd,
   COMMITMENT_KINDS,
   paidLabel,
@@ -78,14 +80,20 @@ const CARD_TONE = {
   warning: { border: "border-[var(--color-warning)]", text: "text-[var(--color-warning)]" },
 };
 
-function SummaryCard({ label, amount, count, tone }) {
+// Una tarjeta del resumen. Con `split` ({ out, in } de `summarize`), lo que se
+// paga y lo que se cobra van por separado, sin sumarse.
+function SummaryCard({ label, amount, count, tone, split }) {
   const border = CARD_TONE[tone]?.border || "border-[var(--color-border)]";
   const text = CARD_TONE[tone]?.text || "";
+  const n = split ? split.out.count + split.in.count : count;
+  const value = split
+    ? directionAmountLabel({ payable: split.out.amount, receivable: split.in.amount })
+    : fmtCurrency(amount);
   return (
     <div className={`rounded-md border bg-[var(--color-surface)] px-3 py-2 ${border}`}>
       <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">{label}</div>
-      <div className={`text-base font-semibold tabular-nums ${text}`}>{fmtCurrency(amount)}</div>
-      <div className="text-[11px] text-[var(--color-muted)]">{count} {count === 1 ? "documento" : "documentos"}</div>
+      <div className={`font-semibold tabular-nums ${split && split.in.amount && split.out.amount ? "text-sm" : "text-base"} ${text}`}>{value}</div>
+      <div className="text-[11px] text-[var(--color-muted)]">{n} {n === 1 ? "documento" : "documentos"}</div>
     </div>
   );
 }
@@ -143,6 +151,9 @@ export default function Commitments() {
   };
 
   const summary = useMemo(() => summarize(items, today), [items, today]);
+  // Las dos mitades de una tarjeta que junta lo que se paga y lo que se cobra.
+  const bothWays = (key) => ({ out: summary.out[key], in: summary.in[key] });
+  const countOf = (key) => summary.out[key].count + summary.in[key].count;
   const counterparties = useMemo(() => counterpartyOptions(items), [items]);
 
   // "Más adelante" llega hasta `laterUntil`; lo de después se resume en una
@@ -180,8 +191,10 @@ export default function Commitments() {
       .sort((a, b) => (a.dueDate < b.dueDate ? 1 : a.dueDate > b.dueDate ? -1 : 0));
   }, [items, kindFilter, statusFilter, companyFilter, from, to, search, today]);
 
-  const filteredTotal = useMemo(
-    () => filtered.filter((c) => c.status !== "cancelled").reduce((s, c) => s + (Number(c.amount) || 0), 0),
+  // El monto de lo filtrado, sin anulados: lo que se paga y lo que se cobra
+  // por separado.
+  const filteredTotals = useMemo(
+    () => totalsByDirection(filtered.filter((c) => c.status !== "cancelled"), (c) => Number(c.amount) || 0),
     [filtered],
   );
 
@@ -273,7 +286,7 @@ export default function Commitments() {
   };
 
   const exportXlsx = async () => {
-    const { error: err } = await attempt(() => writeCommitmentsXlsx({ items: filtered, total: filteredTotal, today, companyName }));
+    const { error: err } = await attempt(() => writeCommitmentsXlsx({ items: filtered, totals: filteredTotals, today, companyName }));
     if (err) toast.error(`No se pudo generar el Excel. ${errorText(err, "Revisa la consola del navegador para ver el detalle.")}`);
   };
 
@@ -323,16 +336,12 @@ export default function Commitments() {
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2">
         <SummaryCard label="Por pagar" amount={summary.out.pending.amount} count={summary.out.pending.count} />
-        <SummaryCard label="Vencido sin marcar" amount={summary.out.overdue.amount + summary.in.overdue.amount} count={summary.out.overdue.count + summary.in.overdue.count} tone={summary.out.overdue.count + summary.in.overdue.count ? "danger" : ""} />
-        {summary.out.protested.count + summary.in.protested.count > 0 && (
-          <SummaryCard label="Protestado" amount={summary.out.protested.amount + summary.in.protested.amount} count={summary.out.protested.count + summary.in.protested.count} tone="danger" />
-        )}
-        {summary.out.postponed.count + summary.in.postponed.count > 0 && (
-          <SummaryCard label="Aplazado (sin fecha)" amount={summary.out.postponed.amount + summary.in.postponed.amount} count={summary.out.postponed.count + summary.in.postponed.count} tone="warning" />
-        )}
+        <SummaryCard label="Vencido sin marcar" split={bothWays("overdue")} tone={countOf("overdue") ? "danger" : ""} />
+        {countOf("protested") > 0 && <SummaryCard label="Protestado" split={bothWays("protested")} tone="danger" />}
+        {countOf("postponed") > 0 && <SummaryCard label="Aplazado (sin fecha)" split={bothWays("postponed")} tone="warning" />}
         <SummaryCard label="Vence en 7 días" amount={summary.out.next7.amount} count={summary.out.next7.count} tone={summary.out.next7.count ? "warning" : ""} />
         <SummaryCard label="Por cobrar" amount={summary.in.pending.amount} count={summary.in.pending.count} />
-        <SummaryCard label="Pagado este mes" amount={summary.paidThisMonth.amount} count={summary.paidThisMonth.count} />
+        <SummaryCard label="Pagado o cobrado este mes" split={bothWays("paidThisMonth")} />
         <SummaryCard label="Anulado" amount={summary.cancelled.amount} count={summary.cancelled.count} />
       </div>
 
@@ -404,13 +413,13 @@ export default function Commitments() {
                     )
                   </span>
                 )}{" "}
-                · {fmtCurrency(g.items.reduce((s, c) => s + remainingOf(c), 0))}
+                · {directionAmountLabel(totalsByDirection(g.items))}
               </h2>
               {g.items.length > 0 && <CommitmentList items={g.items} {...rowProps} />}
               {g.key === "later" && upcoming.beyond.length > 0 && (
                 <p className="mt-2 text-xs text-[var(--color-muted)]">
                   Después del {fmtDate(laterUntil)}: {upcoming.beyond.length} vencimiento{upcoming.beyond.length === 1 ? "" : "s"} por{" "}
-                  {fmtCurrency(upcoming.beyond.reduce((s, c) => s + remainingOf(c), 0))}. Cambia la fecha para verlos.
+                  {directionAmountLabel(totalsByDirection(upcoming.beyond))}. Cambia la fecha para verlos.
                 </p>
               )}
             </section>
@@ -450,7 +459,7 @@ export default function Commitments() {
             </div>
           </div>
           <div className="text-sm text-[var(--color-muted)]">
-            {filtered.length} documento(s) · {fmtCurrency(filteredTotal)} sin contar anulados
+            {filtered.length} documento(s) · {directionAmountLabel(filteredTotals)} sin contar anulados
           </div>
           {filtered.length === 0 ? (
             <div className="rounded-md border border-dashed border-[var(--color-border)] py-8 text-center text-sm text-[var(--color-muted)]">

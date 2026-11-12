@@ -3,6 +3,7 @@
 // enteros, nunca con `Date` local: una zona horaria correría el vencimiento
 // al día de al lado.
 import { BANKS } from "./banks";
+import { fmtCurrency } from "./format";
 import { toTitleName, unshout } from "./textCase";
 import { nameSimilarity } from "./similarity";
 
@@ -173,15 +174,19 @@ export function groupUpcoming(items, today, { until = "" } = {}) {
 }
 
 // Resumen por sentido de la plata: lo que se paga (`out`) y lo que se cobra
-// (`in`, cheques recibidos) no se suman entre sí.
+// (`in`, cheques recibidos) no se suman entre sí. `paidThisMonth` es lo pagado
+// (en `out`) o cobrado (en `in`) en el mes de `today`.
 export function summarize(commitments, today) {
   const blank = () => ({ amount: 0, count: 0 });
-  const acc = {
-    out: { pending: blank(), overdue: blank(), next7: blank(), postponed: blank(), protested: blank() },
-    in: { pending: blank(), overdue: blank(), next7: blank(), postponed: blank(), protested: blank() },
+  const direction = () => ({
+    pending: blank(),
+    overdue: blank(),
+    next7: blank(),
+    postponed: blank(),
+    protested: blank(),
     paidThisMonth: blank(),
-    cancelled: blank(),
-  };
+  });
+  const acc = { out: direction(), in: direction(), cancelled: blank() };
   const month = String(today).slice(0, 7);
   const add = (slot, amount) => {
     slot.amount += Number(amount) || 0;
@@ -197,12 +202,33 @@ export function summarize(commitments, today) {
     } else if (status === "postponed" || status === "protested") {
       add(dir[status], remainingOf(c));
     } else if (status === "paid") {
-      if (String(c.paidAt || "").slice(0, 7) === month) add(acc.paidThisMonth, paidTotalOf(c));
+      if (String(c.paidAt || "").slice(0, 7) === month) add(dir.paidThisMonth, paidTotalOf(c));
     } else if (status === "cancelled") {
       add(acc.cancelled, c.amount);
     }
   }
   return acc;
+}
+
+// Lo que se paga y lo que se cobra de una lista, por separado: `valueOf` da el
+// monto de cada uno (lo que falta, por defecto).
+export function totalsByDirection(items, valueOf = remainingOf) {
+  let payable = 0;
+  let receivable = 0;
+  for (const c of items || []) {
+    if (directionOf(c.kind) === "in") receivable += Number(valueOf(c)) || 0;
+    else payable += Number(valueOf(c)) || 0;
+  }
+  return { payable, receivable };
+}
+
+// El monto de `totalsByDirection` en una línea: con lo que se paga y lo que se
+// cobra, los dos rotulados; con uno solo, lo que se cobra lleva su rótulo y lo
+// que se paga va sin él.
+export function directionAmountLabel({ payable, receivable }) {
+  if (!receivable) return fmtCurrency(payable);
+  if (!payable) return `+${fmtCurrency(receivable)} por cobrar`;
+  return `${fmtCurrency(payable)} por pagar · +${fmtCurrency(receivable)} por cobrar`;
 }
 
 // ── Contrapartes ────────────────────────────────────────────────────────────

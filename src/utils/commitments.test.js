@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
+import { fmtCurrency as fmt } from "./format";
 import {
+  totalsByDirection,
+  directionAmountLabel,
   daysUntil,
   displayStatus,
   urgencyLabel,
@@ -163,8 +166,21 @@ describe("resumen", () => {
     expect(r.out.overdue).toEqual({ amount: 50, count: 1 });
     expect(r.out.next7).toEqual({ amount: 100, count: 1 });
     expect(r.in.pending).toEqual({ amount: 70, count: 1 });
-    expect(r.paidThisMonth).toEqual({ amount: 30, count: 1 });
+    expect(r.out.paidThisMonth).toEqual({ amount: 30, count: 1 });
+    expect(r.in.paidThisMonth).toEqual({ amount: 0, count: 0 });
     expect(r.cancelled).toEqual({ amount: 40, count: 1 });
+  });
+
+  it("lo cobrado en el mes va aparte de lo pagado", () => {
+    const r = summarize(
+      [
+        { kind: "chequeIssued", status: "paid", dueDate: "2026-10-01", paidAt: "2026-10-02", amount: 30 },
+        { kind: "chequeReceived", status: "paid", dueDate: "2026-10-03", paidAt: "2026-10-04", amount: 500 },
+      ],
+      "2026-10-16",
+    );
+    expect(r.out.paidThisMonth).toEqual({ amount: 30, count: 1 });
+    expect(r.in.paidThisMonth).toEqual({ amount: 500, count: 1 });
   });
 
   it("aplazado y protestado van aparte, y lo pagado suma su interés", () => {
@@ -182,7 +198,26 @@ describe("resumen", () => {
     expect(r.out.protested).toEqual({ amount: 300, count: 1 });
     expect(r.in.protested).toEqual({ amount: 70, count: 1 });
     expect(r.out.overdue).toEqual({ amount: 0, count: 0 });
-    expect(r.paidThisMonth).toEqual({ amount: 103, count: 1 });
+    expect(r.out.paidThisMonth).toEqual({ amount: 103, count: 1 });
+  });
+});
+
+describe("totalsByDirection y directionAmountLabel", () => {
+  const items = [
+    { kind: "chequeIssued", status: "pending", dueDate: "2026-10-18", amount: 100000 },
+    { kind: "payment", status: "pending", dueDate: "2026-10-18", amount: 50000 },
+    { kind: "chequeReceived", status: "pending", dueDate: "2026-10-20", amount: 70000 },
+  ];
+
+  it("separa lo que se paga de lo que se cobra", () => {
+    expect(totalsByDirection(items)).toEqual({ payable: 150000, receivable: 70000 });
+    expect(totalsByDirection(items, (c) => c.amount * 2)).toEqual({ payable: 300000, receivable: 140000 });
+  });
+
+  it("rotula lo que se cobra, y los dos cuando hay de ambos", () => {
+    expect(directionAmountLabel({ payable: 150000, receivable: 0 })).toBe(fmt(150000));
+    expect(directionAmountLabel({ payable: 0, receivable: 70000 })).toBe(`+${fmt(70000)} por cobrar`);
+    expect(directionAmountLabel({ payable: 150000, receivable: 70000 })).toBe(`${fmt(150000)} por pagar · +${fmt(70000)} por cobrar`);
   });
 });
 
