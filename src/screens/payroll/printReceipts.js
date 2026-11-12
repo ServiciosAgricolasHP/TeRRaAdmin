@@ -31,6 +31,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
   // Los ciclos de una subfaena, juntos o separados en los resúmenes, como en
   // la tabla del resumen en pantalla.
   const cyclesApart = !!options.cyclesApart;
+  const gross = !!options.gross;
   const bonusAdvanceSummary = options.bonusAdvanceSummary || null;
   // Filas de ajuste (Bonos / Anticipos), comunes a "Resumen por subfaena" y
   // "Resumen por labor"; el total cuadrado sale de `adjustedTotals`.
@@ -496,7 +497,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
         return `<section class="receipt summary-page">
           <div class="hd">
             <div>
-              <h1>Resumen ${summaryTitleOf({ showLabor: false, byCycle: cyclesApart })}</h1>
+              <h1>Resumen ${summaryTitleOf({ showLabor: false, byCycle: cyclesApart, gross })}</h1>
               <div class="sub">${payroll.name} · ${cyclesLine}</div>
             </div>
             <div class="meta"><div><b>Fecha:</b> ${today}</div></div>
@@ -534,7 +535,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
         return `<section class="receipt summary-page">
           <div class="hd">
             <div>
-              <h1>Resumen ${summaryTitleOf({ showLabor: true, byCycle: cyclesApart })}</h1>
+              <h1>Resumen ${summaryTitleOf({ showLabor: true, byCycle: cyclesApart, gross })}</h1>
               <div class="sub">${payroll.name} · ${cyclesLine}</div>
             </div>
             <div class="meta"><div><b>Fecha:</b> ${today}</div></div>
@@ -678,8 +679,9 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
 }
 
 // `cyclesApart` separa los ciclos de una subfaena en los resúmenes, como la
-// tabla del resumen en pantalla; `subfaenaSummary` ya viene armado así.
-export async function printPaymentDetails(payroll, allGroups, titleOverrides = {}, summaries = [], catalogs = {}, subfaenaSummary = null, payrollData = null, rutOf = undefined, { cyclesApart = false } = {}) {
+// tabla del resumen en pantalla; `subfaenaSummary` ya viene armado así. Con
+// `net`, las filas traen lo que se paga y no hay filas de bonos y anticipos.
+export async function printPaymentDetails(payroll, allGroups, titleOverrides = {}, summaries = [], catalogs = {}, subfaenaSummary = null, payrollData = null, rutOf = undefined, { cyclesApart = false, net = false } = {}) {
   if (allGroups.length === 0) return;
   const allItems = allGroups.flatMap((g) => g.items);
   // `payrollData` viene memorizado desde el modal; si no llega, se lee acá.
@@ -688,9 +690,10 @@ export async function printPaymentDetails(payroll, allGroups, titleOverrides = {
   const workdaysByGroup = buildWorkdaysByGroup(allGroups, data, catalogs);
   const laborSummary = computeLaborSummary(payroll, allGroups, workdaysByGroup, {
     byCycle: cyclesApart,
+    net,
     cycleNameOf: (cd) => summaryCycleName(cd, titleOverrides),
   });
-  const bonusAdvanceSummary = computeBonusAdvanceSummary(allItems);
+  const bonusAdvanceSummary = net ? null : computeBonusAdvanceSummary(allItems);
 
   const html = buildCashReceiptHtml(payroll, allGroups, {
     titleOverrides,
@@ -704,6 +707,7 @@ export async function printPaymentDetails(payroll, allGroups, titleOverrides = {
     bonusAdvanceSummary,
     rutOf,
     cyclesApart,
+    gross: !net,
   });
   openPrintWindow(html);
 }

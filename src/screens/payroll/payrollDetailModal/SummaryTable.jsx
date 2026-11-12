@@ -1,52 +1,27 @@
 import { fmtCurrency } from "../../../utils/format";
 import { fmtDayShortEs } from "../helpers";
+import { SummaryViewMenu } from "./SummaryViewMenu";
 
-// La tabla del resumen, por subfaena o por labor y con los ciclos de una
-// subfaena juntos o separados, con el selector de efectivo pendiente de otras
-// nóminas y sus acciones de copiar, descargar e imprimir.
+// La tabla del resumen, con lo que se paga en cada fila (o el bruto, con los
+// anticipos y bonos al pie), por subfaena o por labor y con los ciclos de una
+// subfaena juntos o separados (el menú "👁 Vista"), con el selector de
+// efectivo pendiente de otras nóminas y sus acciones de copiar, descargar e
+// imprimir.
 export function SummaryTable({ bonusAdvanceSummary, payroll, table }) {
-  const { activeSummary, cyclesApart, deferredCash, grandTotals, handleCopySummaryImage, handleDownloadSummaryXlsx, handlePrintSummary, hasSeveralCycles, labelColumns, laborSummaryLoading, pendingMode, pendingSummaryRows, summaryBusy, summaryCaptureRef, setCyclesApart, setSummaryPending, setSummaryShowLabor, summaryDisplayRows, summaryPending, summaryShowLabor, summaryTitle } = table;
+  const { activeSummary, cyclesApart, deferredCash, grandTotals, handleCopySummaryImage, handleDownloadSummaryXlsx, handlePrintSummary, hasSeveralCycles, labelColumns, laborSummaryLoading, pendingMode, pendingSummaryRows, summaryBusy, summaryCaptureRef, setCyclesApart, setShowGross, setSummaryPending, setSummaryShowLabor, showGross, summaryDisplayRows, summaryPending, summaryShowLabor, summaryTitle } = table;
   const labelSpan = labelColumns.length;
   return (
     <div className="mt-4">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <div className="inline-flex overflow-hidden rounded-md border border-[var(--color-border)] text-xs">
-          <button
-            type="button"
-            onClick={() => setSummaryShowLabor(false)}
-            className={`px-2.5 py-1.5 ${!summaryShowLabor ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
-          >
-            Sin labores
-          </button>
-          <button
-            type="button"
-            onClick={() => setSummaryShowLabor(true)}
-            className={`border-l border-[var(--color-border)] px-2.5 py-1.5 ${summaryShowLabor ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
-          >
-            Con labores
-          </button>
-        </div>
-        {hasSeveralCycles && (
-          <div
-            className="inline-flex overflow-hidden rounded-md border border-[var(--color-border)] text-xs"
-            title="Hay subfaenas con más de un ciclo en esta nómina: juntos van en una fila por subfaena, separados en una fila por ciclo."
-          >
-            <button
-              type="button"
-              onClick={() => setCyclesApart(false)}
-              className={`px-2.5 py-1.5 ${!cyclesApart ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
-            >
-              Ciclos juntos
-            </button>
-            <button
-              type="button"
-              onClick={() => setCyclesApart(true)}
-              className={`border-l border-[var(--color-border)] px-2.5 py-1.5 ${cyclesApart ? "bg-[var(--color-accent)] text-[var(--color-accent-fg)]" : "bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"}`}
-            >
-              Ciclos separados
-            </button>
-          </div>
-        )}
+        <SummaryViewMenu
+          options={[
+            { key: "labor", label: "Separar por labor", hint: "Una fila por labor de cada subfaena.", checked: summaryShowLabor, onChange: setSummaryShowLabor },
+            ...(hasSeveralCycles || cyclesApart
+              ? [{ key: "cycles", label: "Separar por ciclo", hint: "Una fila por ciclo, en vez de juntar los de una subfaena.", checked: cyclesApart, onChange: setCyclesApart }]
+              : []),
+            { key: "gross", label: "Ver bruto, con anticipos y bonos aparte", hint: "Cada fila con lo ganado; los anticipos y bonos van al pie.", checked: showGross, onChange: setShowGross },
+          ]}
+        />
         {pendingSummaryRows.length > 0 && (
           <div
             className="inline-flex overflow-hidden rounded-md border border-[var(--color-warning)] text-xs"

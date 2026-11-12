@@ -54,6 +54,9 @@ import { PayrollCyclesSection } from "./payrollDetailModal/PayrollCyclesSection"
 import { CyclePaymentsModal } from "./payrollDetailModal/CyclePaymentsModal";
 import { useReadSection } from "../../hooks/useReadSection";
 
+// Sin filas de ajuste: el resumen ya trae los anticipos y bonos en cada fila.
+const NO_ADJUSTMENTS = { bonus: { bank: 0, cash: 0, total: 0 }, advance: { bank: 0, cash: 0, total: 0 } };
+
 export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, subfaenas, workers, allPayrolls = [], onClose, onRedownload, onDownloadBankFile, onDownloadSnapshot, bankFormatLabel = null, onPublishPortal = null, publishedPayrollId = null, onChanged }) {
   useReadSection("Detalle de nómina");
   const { catalogs } = useCatalogs();
@@ -175,9 +178,12 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
   // muestra (y lo imprime y descarga) con una fila por ciclo.
   const [cyclesApart, setCyclesApart] = useState(false);
   const cycleNameOf = (cd) => summaryCycleName(cd, cycleTitleOverrides);
-  const subfaenaSummary = subfaenaSummaryOf(cycleDetails, bank, cash, { byCycle: cyclesApart, cycleNameOf });
+  // Cada fila del resumen trae lo que se paga, con los anticipos y bonos de
+  // cada persona ya descontados; "Ver bruto" los deja aparte, al pie.
+  const [showGross, setShowGross] = useState(false);
+  const subfaenaSummary = subfaenaSummaryOf(cycleDetails, bank, cash, { byCycle: cyclesApart, net: !showGross, cycleNameOf });
 
-  const bonusAdvanceSummary = computeBonusAdvanceSummary(items);
+  const bonusAdvanceSummary = showGross ? computeBonusAdvanceSummary(items) : NO_ADJUSTMENTS;
   const cyclesPeriod = (cycleIdsIn) => cyclesPeriodOf(cycleDetails, cycleIdsIn);
 
   // Ciclos y jornadas de la nómina, una vez por modal. Se guarda la promesa y
@@ -204,6 +210,8 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
     otherPendingCash,
     payroll,
     setCyclesApart,
+    setShowGross,
+    showGross,
     subfaenaSummary,
     toast,
   });
@@ -265,6 +273,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
     getPayrollData,
     payroll,
     rutOf,
+    showGross,
     subfaenaSummary,
     toast,
   });
