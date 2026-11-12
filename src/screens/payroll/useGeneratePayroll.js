@@ -7,6 +7,7 @@ import { snapshotCycleOf, snapshotWorkdayOf, snapshotAdvanceOf, saveSnapshot } f
 import { payrollsService, tagWorkdaysWithPayroll } from "../../services/payrollsService";
 import { applyAdvancesToPayroll } from "../../services/advancesService";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Guardar la nómina de la vista previa: confirma las cuotas y las cuentas con
 // problemas, crea la nómina con su JSON, etiqueta las jornadas y aplica los
@@ -93,6 +94,9 @@ export function useGeneratePayroll({
     }
     setBusy(true);
     setProgress({ step: "Armando datos de la nómina...", detail: "", percent: 2 });
+    // La nómina ya creada, si se alcanzó a crear: una falla después de eso no
+    // deja volver a apretar Guardar, que crearía otra.
+    let createdId = null;
     const { error: err } = await attempt(async () => {
       // Los ciclos de la nómina y qué labores abarca cada uno, para que
       // Recalcular no traiga después lo que quedó afuera: los elegidos con
@@ -171,6 +175,7 @@ export function useGeneratePayroll({
         advanceTotal: totals.advanceTotal,
         hasSnapshot: true,
       });
+      createdId = created.id;
 
       // Snapshot completo para guardar en `payrollSnapshots` (1:1 con payroll).
       // El JSON se baja desde el menú de descargas del detalle.
@@ -235,8 +240,25 @@ export function useGeneratePayroll({
     });
     setBusy(false);
     // Pequeño delay para que el "Listo ✓" sea visible un instante.
-    setTimeout(() => setProgress(null), 400);
-    if (err) throw err;
+    setTimeout(() => setProgress(null), err ? 0 : 400);
+    if (!err) return;
+    console.error("[nómina] no se pudo generar:", err);
+    if (!createdId) {
+      // No se escribió nada: la vista previa sigue y se puede volver a intentar.
+      toast.error(`No se pudo guardar la nómina: ${errorText(err)}`);
+      return;
+    }
+    // La nómina quedó creada, pero sin terminar de etiquetar las jornadas o
+    // aplicar los anticipos. Eliminarla devuelve todo atrás; la vista previa se
+    // cierra para que no se cree una segunda.
+    resetSelection();
+    resetPreview();
+    setTab("history");
+    await attempt(() => load());
+    toast.error(
+      `La nómina se creó, pero no se terminó de guardar (${errorText(err)}). Elimínala desde el historial y vuelve a generarla.`,
+      { title: "Nómina a medias", duration: 0 },
+    );
   };
   return {
     confirmState,
