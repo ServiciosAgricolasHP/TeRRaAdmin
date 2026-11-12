@@ -52,6 +52,7 @@ import { CycleTitlesEditor } from "./payrollDetailModal/CycleTitlesEditor";
 import { PayrollTotalsCards } from "./payrollDetailModal/PayrollTotalsCards";
 import { SummaryTable } from "./payrollDetailModal/SummaryTable";
 import { PayrollCyclesSection } from "./payrollDetailModal/PayrollCyclesSection";
+import { PayrollHistoryModal } from "./payrollDetailModal/PayrollHistoryModal";
 import { CyclePaymentsModal } from "../../components/CyclePaymentsModal";
 import { useReadSection } from "../../hooks/useReadSection";
 
@@ -220,6 +221,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
 
   const [showTitleEditor, setShowTitleEditor] = useState(false);
   const [showCashEstimation, setShowCashEstimation] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [paymentsCycle, setPaymentsCycle] = useState(null);
 
 
@@ -348,6 +350,14 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
               )}
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setHistoryOpen(true)}
+                title="Cada cambio de la nómina: quién, cuándo y a quién le cambió algo"
+                className="min-h-8 whitespace-nowrap rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)]"
+              >
+                🕘<span className="hidden sm:inline"> Historial</span>
+              </button>
               {onPublishPortal && (
                 <button
                   type="button"
@@ -769,6 +779,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
         }
         onClose={() => setWorkerSummaryFor(null)}
       />
+      {historyOpen && <PayrollHistoryModal payroll={payroll} onClose={() => setHistoryOpen(false)} />}
       {showCashEstimation && (
         <CashEstimationModal
           cashItems={cashPaidMode ? cash.filter((it) => !cashPaidSet.has(it.rut)) : cash}

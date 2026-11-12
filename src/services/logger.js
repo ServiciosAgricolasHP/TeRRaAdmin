@@ -1,6 +1,8 @@
 import { collection, deleteField, FieldValue, serverTimestamp } from "firebase/firestore";
 import { addDoc } from "./readMeter";
 import { db, auth } from "../firebase";
+import { fitLog, summarizeChanges } from "../utils/logSummaries";
+import { signerName } from "./signer";
 
 const LOGS = "logs";
 
@@ -23,21 +25,26 @@ function diff(before, after) {
   return Object.keys(changes).length ? changes : null;
 }
 
+// Un registro por escritura. En una edición guarda solo lo que cambió, con las
+// listas grandes de la nómina y su JSON resumidas (`summarizeChanges`), y
+// quien firma (`userName`, su alias o su correo). Si igual no cabe en el
+// límite de Firestore, queda sin el detalle (`fitLog`).
 export async function logAction({ action, entity, entityId, before = null, after = null, meta = null }) {
   try {
     const user = auth.currentUser;
-    await addDoc(collection(db, LOGS), {
+    const log = fitLog({
       uid: user?.uid || null,
       email: user?.email || null,
+      userName: signerName(),
       action,
       entity,
       entityId: entityId || null,
-      changes: action === "update" ? diff(before, after) : null,
+      changes: action === "update" ? summarizeChanges(entity, diff(before, after)) : null,
       before: action === "delete" ? before : null,
       after: action === "create" ? after : null,
       meta,
-      timestamp: serverTimestamp(),
     });
+    await addDoc(collection(db, LOGS), { ...log, timestamp: serverTimestamp() });
   } catch (err) {
     console.error("logAction failed", err);
   }

@@ -735,11 +735,13 @@ Auditoría — una fila por mutación.
 |---|---|---|
 | `id` (docId) | string | autoId |
 | `uid`, `email` | string? | quién |
+| `userName` | string? | quién, con el nombre con que firma: su alias o, sin alias, su correo (`signerName`). Los registros anteriores no lo traen |
 | `action` | `"create"` \| `"update"` \| `"delete"` \| `"import"` \| `"bulkStart"` \| `"bulkEnd"` \| `"settlement"` \| `"setPrincipal"` \| `"harvestImport"` \| `"laborClear"` \| `"workerMerge"` \| `"cascadeDelete"` \| `"workdaysMove"` \| `"floorApplyAll"` \| `"floorRemove"` \| `"harvestSync"` \| `"paymentStatusBatch"` | `"import"` solo lo escribe la importación de la agenda telefónica; `"harvestImport"` y `"laborClear"`, importar la cosecha y limpiar una labor en la grilla del ciclo (`entity: "cycle"`); `"workerMerge"`, unir una ficha duplicada a otra (`entity: "worker"`, el id de la que queda); `"cascadeDelete"`, `"workdaysMove"`, `"floorApplyAll"`, `"floorRemove"` y `"harvestSync"`, las jornadas que esas acciones escriben o borran en lote, en un solo registro (`services/workdayBatches.js`; ver su `meta` abajo); `"paymentStatusBatch"`, marcar de una vez el estado de pago de varias facturas en Pendientes de Facturación (`entity: "dteDocument"`, sin `entityId`); los otros cuatro, las acciones masivas de contratos (`entity: "employment"`) |
 | `entity`, `entityId` | string | qué |
 | `before` | objeto? | solo en `delete` (snapshot completo). Borrar un documento que no existe no deja log |
 | `after` | objeto? | solo en `create` (snapshot completo) |
-| `changes` | `{ [campo]: { from, to } }`? | solo en `update` — **es el diff, no el doc entero** |
+| `changes` | `{ [campo]: { from, to } }`? | solo en `update` — **es el diff, no el doc entero**. En `payroll` y `payrollSnapshot` las listas grandes van resumidas, no enteras (`summarizeChanges`, `utils/logSummaries.js`): las personas (`items` de la nómina, `workers` del JSON) como `{ summary: "items", count: { from, to }, added, removed, changed }`, con cada persona como `{ key, rut, name, gross, advance, bonus, amount, days }` y las cambiadas con sus cifras en `from` y `to`; las listas de ids o de elementos con `id` (`workdayIds`, `advanceIds`, y `workdays`, `advances` y `cycles` del JSON) como `{ summary: "list", from, to, added, removed }`, las cantidades. Los registros anteriores traen la lista entera, antes y después |
+| `truncated`, `changedFields` | bool?, string[]? | un registro que no cabía en el límite de Firestore (más de 900 KB, `fitLog`) queda sin `changes`, `before` ni `after`, con `truncated: true` y los nombres de los campos que cambiaron |
 | `meta` | objeto? | referencias cruzadas denormalizadas + contexto extra (ver abajo) |
 | `timestamp` | ts | |
 
