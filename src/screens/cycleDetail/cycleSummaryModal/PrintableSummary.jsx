@@ -39,7 +39,7 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
     editLaborRow,
     addLaborRow,
     removeLaborRow,
-    toggleLaborOvertime,
+    updateLaborOvertime,
     editCarrierRow,
     addCarrierRow,
     removeCarrierRow,
@@ -73,7 +73,7 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
             onEditRow={editLaborRow}
             onAddRow={addLaborRow}
             onRemoveRow={removeLaborRow}
-            onToggleOvertime={toggleLaborOvertime}
+            onOvertimeChange={updateLaborOvertime}
           />
         ) : (
           <TransportTable

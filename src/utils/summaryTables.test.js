@@ -133,11 +133,33 @@ describe("laborColumns", () => {
 
     it("sin cobrar horas extras no hay columna ni monto de horas, y los ajustes quedan guardados", () => {
       const section = heSection({ chargeOvertime: false, rowOverrides: { [D1]: { overtimeHours: 4 } } });
-      expect(section.overtimeToggles).toEqual([{ laborId: "LH", name: "Jornadas HE", on: false }]);
+      expect(section.overtimeToggles).toEqual([{ laborId: "LH", name: "Jornadas HE", on: false, rate: null }]);
       expect(laborColumns(section, { mode: "charge", catalogs: {} }).map((c) => c.key)).not.toContain("he");
       expect(section.rows.map((r) => r.chargedAmount)).toEqual([60000, 30000]);
       expect(section.totals.heTotal).toBe(0);
       expect(heSection({ rowOverrides: { [D1]: { overtimeHours: 4 } } }).rows[0].chargedAmount).toBe(60000 + 4 * 5000);
+    });
+  });
+
+  describe("horas extras en una labor al día", () => {
+    const mainSection = (cfg) => summarySections({ mode: "charge", labors: chargeLaborsOf(laborsData, [], { LM: cfg }, {}), carriers: [], titles, carrierById })[0];
+
+    it("apagado, lleva el interruptor y ninguna columna de horas", () => {
+      const section = mainSection({});
+      expect(section.overtimeToggles).toEqual([{ laborId: "LM", name: "Principal", on: false, rate: 0 }]);
+      expect(laborColumns(section, { mode: "charge", catalogs: {} }).map((c) => c.key)).not.toContain("he");
+    });
+
+    it("encendido, suma la columna de horas con el valor de la labor y solo las horas se editan por día", () => {
+      const section = mainSection({ chargeOvertime: true, overtimeRate: 4000, rowOverrides: { [D1]: { overtimeHours: 3 } } });
+      expect(section.overtimeToggles).toEqual([{ laborId: "LM", name: "Principal", on: true, rate: 4000 }]);
+      const cols = laborColumns(section, { mode: "charge", hiddenColumns: new Set(["personas"]), catalogs: {} });
+      expect(cols.map((c) => c.label)).toEqual([
+        "Detalle de jornada", "Fecha", "Jornadas", "Valor", "Horas extras ($4.000 c/u)", "Valor total", "Transporte", "Total",
+      ]);
+      expect(texts(cols, section.rows)).toEqual([["Principal", "01-oct", "2", "$30.000", "$12.000 (x 3 HE)", "$72.000", "$ -", "$72.000"]]);
+      expect(totalTexts(cols, section.totals)).toEqual(["2", "", "$12.000 (x 3 HE)", "$72.000", "", "$72.000"]);
+      expect(cols.find((c) => c.key === "he").edits(section.rows[0]).map((e) => e.field)).toEqual(["overtimeHours"]);
     });
   });
 

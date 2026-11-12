@@ -400,7 +400,7 @@ export default function CycleSummaryModal({
           editLaborRow={editChargeLaborRow}
           addLaborRow={addChargeLaborExtraRow}
           removeLaborRow={removeChargeLaborExtraRow}
-          toggleLaborOvertime={(laborId, on) => updateChargeLabor(laborId, { chargeOvertime: on })}
+          updateLaborOvertime={updateChargeLabor}
           editCarrierRow={editChargeCarrierRow}
           addCarrierRow={addChargeCarrierExtraRow}
           removeCarrierRow={removeChargeCarrierExtraRow}
