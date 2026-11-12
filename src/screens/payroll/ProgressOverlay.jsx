@@ -3,6 +3,7 @@ import { BUSY_LOADER_FILE, UNDO_LOADER_FILE } from "../../utils/screenLoaders";
 // Overlay de progreso, visible solo cuando hay `info`: el gato de la rueda (con
 // `info.undo`, el que persigue su cola), el paso actual, un detalle opcional (ej. "340 / 500") y una barra. No
 // es cancelable porque la mayoría de los pasos corren en paralelo. Con
+// `info.indeterminate` (una lectura sin pasos) la barra late sin porcentaje. Con
 // movimiento reducido en el sistema, sin el gato.
 export function ProgressOverlay({ info }) {
   if (!info) return null;
@@ -23,13 +24,19 @@ export function ProgressOverlay({ info }) {
         {info.detail && (
           <div className="mb-2 text-center text-xs text-[var(--color-muted)]">{info.detail}</div>
         )}
-        <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--color-surface-2)]">
-          <div
-            className="h-full bg-[var(--color-accent)] transition-all duration-200"
-            style={{ width: `${pct}%` }}
-          />
-        </div>
-        <div className="mt-1 text-right text-xs text-[var(--color-muted)]">{pct}%</div>
+        {info.indeterminate ? (
+          <div className="h-2 w-full animate-pulse overflow-hidden rounded-full bg-[var(--color-accent-soft)]" />
+        ) : (
+          <>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--color-surface-2)]">
+              <div
+                className="h-full bg-[var(--color-accent)] transition-all duration-200"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <div className="mt-1 text-right text-xs text-[var(--color-muted)]">{pct}%</div>
+          </>
+        )}
       </div>
     </div>
   );
