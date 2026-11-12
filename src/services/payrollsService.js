@@ -10,6 +10,7 @@ import { bankFormatOf } from "../utils/bankFormats";
 import {
   restoreAdvancesFromPayroll,
   applyAdvancesToPayroll,
+  setPayrollAdvanceAmounts,
 } from "./advancesService";
 import { mergeCycleDetails, inChosenCycles, stillFreeWorkdays, withPaidPeriods } from "../utils/payrollItem";
 import { pruneSnapshot } from "./payrollSnapshots";
@@ -358,24 +359,24 @@ export async function addCyclesToPayroll(payrollId, { items, cycleDetailsToAdd =
 }
 
 // Agrega jornadas a una nómina pendiente con los items ya armados por
-// `planAddWorkdays`: escribe la nómina, etiqueta las jornadas y aplica los
-// anticipos y bonos nuevos. Mismo orden que "Generar": primero el documento,
-// para que una falla a mitad de camino no deje jornadas etiquetadas a una
-// nómina que no las cuenta. El guard de `assertEditable` corre antes de
-// tocar nada. `onProgress(paso, hechas, total)` avisa el paso en curso:
-// "payroll", "tag" (las jornadas, cuántas van) y "advances".
+// `planAddWorkdays`: escribe la nómina, etiqueta las jornadas, sube los
+// anticipos que crecen (`advanceTargets`) y aplica los anticipos y bonos
+// nuevos. Mismo orden que "Generar": primero el documento, para que una falla
+// a mitad de camino no deje jornadas etiquetadas a una nómina que no las
+// cuenta. El guard de `assertEditable` corre antes de tocar nada.
+// `onProgress(paso, hechas, total)` avisa el paso en curso: "payroll", "tag"
+// (las jornadas, cuántas van) y "advances".
 export async function addWorkdaysToPayroll(
   payrollId,
-  { items, cycleDetailsToAdd = [], workdayIds = [], workdays = [], advanceApplications = [] },
+  { items, cycleDetailsToAdd = [], workdayIds = [], workdays = [], advanceApplications = [], advanceTargets = [] },
   onProgress,
 ) {
   onProgress?.("payroll");
   const aggregates = await addCyclesToPayroll(payrollId, { items, cycleDetailsToAdd, workdays });
   await tagWorkdaysWithPayroll(workdayIds, payrollId, (done, total) => onProgress?.("tag", done, total));
-  if (advanceApplications.length) {
-    onProgress?.("advances");
-    await applyAdvancesToPayroll(advanceApplications, payrollId);
-  }
+  if (advanceTargets.length || advanceApplications.length) onProgress?.("advances");
+  if (advanceTargets.length) await setPayrollAdvanceAmounts(payrollId, advanceTargets);
+  if (advanceApplications.length) await applyAdvancesToPayroll(advanceApplications, payrollId);
   return aggregates;
 }
 

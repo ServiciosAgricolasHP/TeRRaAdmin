@@ -188,6 +188,56 @@ describe("agregar a una nómina pendiente", () => {
     expect(await get("advances", "adv-beto")).toMatchObject({ amountPaid: 20000, status: "applied" });
   });
 
+  it("a quien el bruto le limitaba el anticipo, agregarle días se lo hace crecer", async () => {
+    await ciclo(CICLO_A, [COSECHA]);
+    await seedWorker(ANA);
+    const dia1 = await seedWorkday({ cycleId: CICLO_A, laborId: COSECHA, rut: ANA.id, date: "2026-03-02", amount: 50000 });
+    await seedAdvance("adv-ana", { rut: ANA.id, amount: 80000 });
+    // La nómina descontó 50.000 del anticipo de 80.000: neto 0.
+    const id = await nominaCon({
+      items: [
+        {
+          ...itemAna(dia1, 50000),
+          advance: 50000,
+          anticiposTotal: 50000,
+          amount: 0,
+          anticipoApplications: [{ advanceId: "adv-ana", amount: 50000 }],
+          advanceApplications: [{ advanceId: "adv-ana", amount: 50000 }],
+          advanceIds: ["adv-ana"],
+        },
+      ],
+      cycleDetails: [{ id: CICLO_A, label: "A" }],
+    });
+    await set("advances", "adv-ana", {
+      ...(await get("advances", "adv-ana")),
+      status: "partial",
+      amountPaid: 50000,
+      payments: [{ payrollId: id, amount: 50000, paidAt: "2026-03-05T12:00:00.000Z" }],
+    });
+
+    const dia2 = await seedWorkday({ cycleId: CICLO_A, laborId: COSECHA, rut: ANA.id, date: "2026-03-03", amount: 70000 });
+    const antes = await get("payrolls", id);
+    const plan = planAddWorkdays({
+      payrollId: id,
+      items: antes.items,
+      workdays: [await get("workdays", dia2)].map((wd) => ({ ...wd, id: dia2 })),
+      laborTypeById: tipos,
+      pendingAdvances: await listPendingForWorkers([ANA.id]),
+      profileFor: () => perfil(ANA),
+    });
+    await addWorkdaysToPayroll(id, {
+      items: plan.items,
+      workdayIds: plan.workdayIds,
+      advanceApplications: plan.newAdvanceApplications,
+      advanceTargets: plan.advanceTargets,
+    });
+
+    expect((await get("payrolls", id)).items[0]).toMatchObject({ grossAmount: 120000, advance: 80000, amount: 40000 });
+    const adv = await get("advances", "adv-ana");
+    expect(adv).toMatchObject({ status: "applied", amountPaid: 80000 });
+    expect(adv.payments).toEqual([{ payrollId: id, amount: 80000, paidAt: "2026-03-05T12:00:00.000Z" }]);
+  });
+
   it("los días puntuales de una persona: entra solo lo elegido, y Recalcular no trae el resto de ese ciclo", async () => {
     await ciclo(CICLO_A, [COSECHA]);
     await ciclo(CICLO_B, [LABOR_B]);

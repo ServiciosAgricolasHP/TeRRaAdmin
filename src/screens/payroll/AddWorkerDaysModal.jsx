@@ -181,6 +181,7 @@ export function AddWorkerDaysModal({
       advances: data.advances,
     });
     const plan = planAddWorkdays({
+      payrollId,
       items,
       workdays: persona.workdays,
       laborTypeById,
@@ -188,7 +189,7 @@ export function AddWorkerDaysModal({
       profileFor: () => profileFor(worker),
     });
     return plan.added.find((x) => x.key === persona.key) || null;
-  }, [generando, worker, data, secciones, selected, items, laborTypeById, profileFor]);
+  }, [generando, worker, data, secciones, selected, items, laborTypeById, profileFor, payrollId]);
   const puedeConfirmar = generando ? elegidas.length > 0 : !!preview;
 
   const toggle = (key) => setSelected((prev) => {
