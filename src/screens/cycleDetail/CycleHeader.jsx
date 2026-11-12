@@ -1,8 +1,10 @@
 import { Link } from "react-router-dom";
 import { useCycleDetail } from "./CycleDetailContext";
+import { CycleSwitcher } from "./CycleSwitcher";
 
-// Migas del ciclo (faena, subfaena y ciclo) y, con la barra plegada, una
-// línea con la navegación entre ciclos y la labor activa.
+// Migas del ciclo (faena, subfaena y ciclo, que abre el selector de ciclos
+// activos de la faena) y, con la barra plegada, una línea con la navegación
+// entre ciclos y la labor activa.
 export function CycleHeader() {
   const {
     activeLabor,
@@ -44,7 +46,7 @@ export function CycleHeader() {
           </>
         )}
         <span>/</span>
-        <span className="text-[var(--color-text)]">{cycle.label}</span>
+        <CycleSwitcher cycle={cycle} />
       </div>
 
       {toolbarCollapsed && (
