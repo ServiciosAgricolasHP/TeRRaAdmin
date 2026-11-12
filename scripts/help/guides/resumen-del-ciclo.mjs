@@ -45,6 +45,7 @@ export async function run({ page, base, login, shot }) {
   const table = addRow.locator("xpath=ancestor::table[1]");
   const extra = table.locator("tr", { has: page.locator("input[type=date]") }).last();
   await extra.locator("input[type=date]").fill("2026-10-10");
+  await extra.locator("input[type=text]").fill("Riego nocturno");
   await extra.locator("input[type=number]").first().fill("6");
   await page.waitForTimeout(800);
   await shot(page, "04-ajustar", table, { pad: 8, marks: [addRow] });

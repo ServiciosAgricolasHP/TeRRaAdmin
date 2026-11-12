@@ -209,9 +209,9 @@ export function useSummarySettings({ cycle, cycleId, faena, open, subfaena, toas
 
   // Overrides por fila (cobrar). Cada labor guarda un mapa { rowKey -> patch }
   // con el rowKey de la fila del día: la fecha, o fecha y tier/etapa en trato
-  // y tratoEtapas. El patch puede traer qty, overtimeHours, rate, amount,
-  // transport o workerCount, todos opcionales; los que faltan toman el valor
-  // base. Las filas extra se editan en `extraRows`.
+  // y tratoEtapas. El patch puede traer detail, qty, overtimeHours, rate,
+  // amount, transport o workerCount, todos opcionales; los que faltan toman el
+  // valor base. Las filas extra se editan en `extraRows`.
   const updateChargeLaborRow = (laborId, rowKey, patch) => {
     setCharge((prev) => {
       const labor = prev.labors[laborId] || {};

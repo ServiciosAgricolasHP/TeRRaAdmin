@@ -214,8 +214,16 @@ export function laborColumns(section, { mode, hiddenColumns = new Set(), catalog
   const rowTransport = (r) => (isCharge ? Number(r.chargedTransport) || 0 : 0);
   const editIf = (field, raw, extra = {}) => (isCharge ? { field, raw, ...extra } : null);
 
+  const detailOf = (r) => r.chargedDetail || r._laborName || displayName;
   const cols = [
-    { key: "detail", label: "Detalle de jornada", kind: "text", value: (r) => r._laborName || displayName },
+    {
+      key: "detail", label: "Detalle de jornada", kind: "text",
+      value: detailOf,
+      edit: (r) => editIf("detail", detailOf(r), {
+        text: true,
+        title: "Detalle de este día. Si lo dejas vacío, se usa el de la labor.",
+      }),
+    },
     { key: "date", label: "Fecha", kind: "text", value: (r) => dateLabel(r.date), badge: badgeOf },
   ];
   const chargesOvertime = (section.overtimeToggles || []).some((t) => t.on) || (isHE && !section.overtimeToggles);

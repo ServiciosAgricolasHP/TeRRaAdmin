@@ -72,13 +72,14 @@ export function LaborTable({
   const columns = laborColumns(section, { mode, hiddenColumns, catalogs });
   const dataColumns = columns.filter((c) => c.key !== "detail" && c.key !== "date");
   const dateColumn = columns.find((c) => c.key === "date");
+  const detailColumn = columns.find((c) => c.key === "detail");
 
   // En una tabla fusionada cada fila trae su labor de origen (`_laborId`):
   // las ediciones vuelven a esa labor.
   const laborOf = (r) => r._laborId || laborId;
-  const handleField = (r, field, raw) => {
+  const handleField = (r, field, raw, text = false) => {
     if (!onEditRow) return;
-    const value = raw === "" ? "" : Number(raw);
+    const value = text || raw === "" ? raw : Number(raw);
     onEditRow(laborOf(r), r, { [field]: value });
   };
   const handleDateChange = (r, raw) => {
@@ -123,6 +124,17 @@ export function LaborTable({
     }
     const edit = editable && col.edit ? col.edit(r) : null;
     if (edit) {
+      if (edit.text) {
+        return (
+          <input
+            type="text"
+            value={edit.raw ?? ""}
+            onChange={(e) => handleField(r, edit.field, e.target.value, true)}
+            style={{ ...chargeInputStyle, width: 150, textAlign: "left" }}
+            title={edit.title}
+          />
+        );
+      }
       return (
         <input
           type="number"
@@ -167,8 +179,8 @@ export function LaborTable({
             const badge = dateColumn.badge(r);
             return (
               <tr key={rowKey} style={r.notCharged ? NOT_CHARGED_ROW : undefined} title={r.notCharged ? NOT_CHARGED_TITLE : undefined}>
-                <td style={cell}>
-                  {r._laborName || displayName}
+                <td style={{ ...cell, padding: editable ? 3 : "5px 8px" }}>
+                  {renderCell(detailColumn, r)}
                   {r.notCharged && (
                     <span style={{ color: "#888", marginLeft: 4, fontSize: 10 }}>(no se cobra)</span>
                   )}

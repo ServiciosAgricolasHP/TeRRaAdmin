@@ -173,6 +173,23 @@ describe("laborColumns", () => {
     expect(cellText(cols[4], cols[4].value(section.rows[0]))).toBe("$10.000");
   });
 
+  it("en cobrar el detalle de cada día se edita y cae al nombre de la labor", () => {
+    const charge = chargeLaborsOf(laborsData, [], { LX: { rowOverrides: { [D2]: { detail: "Flete incluido" } } } }, {});
+    const sections = summarySections({ mode: "charge", labors: charge, carriers: [], titles, carrierById });
+    const detailColumnOf = (key) => {
+      const section = sections.find((s) => s.key === key);
+      return { section, col: laborColumns(section, { mode: "charge", catalogs: {} }).find((c) => c.key === "detail") };
+    };
+    const lm = detailColumnOf("LM");
+    expect(cellText(lm.col, lm.col.value(lm.section.rows[0]))).toBe("Principal");
+    const lx = detailColumnOf("LX");
+    expect(cellText(lx.col, lx.col.value(lx.section.rows[0]))).toBe("Flete incluido");
+    expect(lx.col.edit(lx.section.rows[0])).toMatchObject({ field: "detail", raw: "Flete incluido", text: true });
+    const [paySection] = summarySections({ mode: "pay", labors: laborsData, carriers: [], titles, carrierById });
+    const payDetail = laborColumns(paySection, { mode: "pay", catalogs: {} }).find((c) => c.key === "detail");
+    expect(payDetail.edit(paySection.rows[0])).toBe(null);
+  });
+
   it("respeta las columnas ocultas y solo deja editar en cobrar", () => {
     const charge = chargeLaborsOf(laborsData, [], {}, {});
     const [section] = summarySections({ mode: "charge", labors: charge, carriers: [], titles, carrierById });

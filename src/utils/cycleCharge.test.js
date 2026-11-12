@@ -62,6 +62,20 @@ describe("chargeLaborsOf: tarifa de cobro", () => {
     expect(cl.chargedTotals.workerDays).toBe(2 + 4);
   });
 
+  it("el detalle de un día se guarda por fila y por sí solo no ajusta el cobro", () => {
+    const cl = chargeOf(MAIN, mainDays, {
+      L1: {
+        rowOverrides: { [D1]: { detail: "Día de lluvia" } },
+        extraRows: [{ id: "x1", date: D3, qty: 1, rate: "", amount: "", detail: "Ajuste de prueba" }],
+      },
+    });
+    const [r1, r2, extra] = cl.chargedRows;
+    expect([r1.chargedDetail, r1.hasOverride, r1.notCharged]).toEqual(["Día de lluvia", false, false]);
+    expect([r2.chargedDetail, r2.hasOverride]).toEqual([null, false]);
+    expect(extra.chargedDetail).toBe("Ajuste de prueba");
+    expect(cl.chargedTotals.amount).toBe(50000 + 25000 + 25000);
+  });
+
   it("un día ajustado a $0 no se cobra ni suma a los totales", () => {
     const cl = chargeOf(MAIN, mainDays, { L1: { rowOverrides: { [D1]: { qty: 0 } } } });
     expect(cl.chargedRows.map((r) => [r.date, r.chargedAmount, r.notCharged])).toEqual([

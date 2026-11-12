@@ -34,12 +34,13 @@ En la grilla del ciclo, toca **📊 Resumen ciclo**. Arriba se elige **Para paga
 Lo que se cambia en el cobro se guarda para todo el equipo: quien abra el resumen después lo ve igual, y **Última edición** dice quién lo cambió y cuándo. No cambia lo que se paga.
 
 ## Ajustar un día o agregar uno
-<!-- preguntas: corregir la cantidad a cobrar; agregar un día al cobro; ajuste manual; cobrar un día que no está; cambiar el valor de un día -->
+<!-- preguntas: corregir la cantidad a cobrar; agregar un día al cobro; ajuste manual; cobrar un día que no está; cambiar el valor de un día; cambiar el detalle de un día -->
 
-Con **✏️ Editando**, cada fila del cobro se puede cambiar: la cantidad, el valor o el total. Vaciar un campo vuelve al valor de la grilla.
+Con **✏️ Editando**, cada fila del cobro se puede cambiar: el **detalle de la jornada** (el nombre que sale en esa fila), la cantidad, el valor o el total. Vaciar un campo vuelve al valor de la grilla.
 
 ![Un día ajustado, en edición](help/resumen-del-ciclo/04-ajustar.webp)
 
+- **Detalle de jornada** cambia el nombre de esa fila; vacío vuelve al nombre de la labor.
 - **+ Agregar día / ajuste manual** suma una fila, marcada **(ajuste)**, que se quita con **✕**.
 - En una jornada con horas extras, **Cobrar horas extras** decide si las horas se cobran o solo las jornadas.
 - Mientras se edita, el resumen lleva la marca **EDITANDO — NO ENVIAR**.
