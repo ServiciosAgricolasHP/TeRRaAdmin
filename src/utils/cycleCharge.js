@@ -57,6 +57,9 @@ export function importedLaborsDataOf(importedLabors, catalogs) {
 // 0) no se cobra: no suma a los totales y no sale en el resumen bloqueado, en
 // lo que se copia o imprime ni en el Excel. En edición se ve en gris, para
 // volver a cobrarlo. Las filas manuales no cuentan.
+// Las labores al día: se cobran por jornada y no anotan horas extras.
+const DAY_LABOR_TYPES = ["main", "supervision", "extra"];
+
 function isNotCharged(hasOverride, charged) {
   return hasOverride && charged === 0;
 }
@@ -66,7 +69,12 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
     const cfg = laborCharges[ld.labor.id] || {};
     const include = cfg.include !== false;
     const isHE = ld.labor.type === "tratoHE";
-    const chargeOvertime = !isHE || cfg.chargeOvertime !== false;
+    // Una labor al día no anota horas extras, pero se le pueden cobrar: se
+    // enciende en la labor, con el valor de la hora, y las horas de cada día
+    // se escriben a mano. En tratoHE se cobran salvo que se apague.
+    const isDay = DAY_LABOR_TYPES.includes(ld.labor.type);
+    const chargeOvertime = isHE ? cfg.chargeOvertime !== false : isDay && cfg.chargeOvertime === true;
+    const dayOvertimeRate = isDay && chargeOvertime ? Number(cfg.overtimeRate) || 0 : 0;
     const filled = (v) => v != null && v !== "";
     // Jornadas de una fila del día: las que tienen base; una labor importada
     // antes de contarlas trae solo las personas.
@@ -113,9 +121,10 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
     // chargedAmount…), que leen los inputs, los totales y el XLSX.
     const rowOverrides = cfg.rowOverrides || {};
     const extraRows = cfg.extraRows || [];
-    // tratoHE: total = base $ + HE × tarifa HE. Otros: total = qty × rate.
+    // tratoHE: total = base $ + HE × tarifa HE. Otros: total = qty × rate,
+    // más las horas extras que se le cobren a una labor al día.
     const computeAmount = (qty, hours, rowRate) =>
-      isHE ? Number(qty) + Number(hours) * Number(rowRate) : Number(qty) * Number(rowRate);
+      isHE ? Number(qty) + Number(hours) * Number(rowRate) : Number(qty) * Number(rowRate) + Number(hours) * dayOvertimeRate;
 
     // En trato las filas extra no traen unidad: heredan la más frecuente de
     // las filas del día, para que la métrica diga "212 saco" y no "212".
@@ -138,7 +147,7 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
       let qty = filled(ov.qty) ? Number(ov.qty) : Number(r.qty) || 0;
       const overtimeHours = !chargeOvertime ? 0 : filled(ov.overtimeHours)
         ? Number(ov.overtimeHours)
-        : Number(r.overtimeHours) || 0;
+        : isHE ? Number(r.overtimeHours) || 0 : 0;
       let workdayCount = null;
       let workdayRate = null;
       if (isHE) {
@@ -187,6 +196,7 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
         chargedWorkdayCount: workdayCount,
         chargedWorkdayRate: workdayRate,
         chargedOvertimeHours: overtimeHours,
+        chargedOvertimeRate: isHE ? rowRate : dayOvertimeRate,
         chargedRate: rowRate,
         chargedAmount: amount,
         chargedTransport: transport,
@@ -231,6 +241,7 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
         chargedWorkdayCount: workdayCount,
         chargedWorkdayRate: workdayRate,
         chargedOvertimeHours: overtimeHours,
+        chargedOvertimeRate: isHE ? rowRate : dayOvertimeRate,
         chargedRate: rowRate,
         chargedAmount: amount,
         chargedTransport: Number(ex.transport) || 0,
@@ -261,7 +272,7 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
       // Unidades (tratoEtapas): solo etapas que cuentan; el resto suma normal.
       if (r.stageCounts === undefined || r.stageCounts) chargedCountedQty += r.chargedQty;
       chargedTotalOvertimeHours += r.chargedOvertimeHours;
-      chargedHeTotal += (Number(r.chargedOvertimeHours) || 0) * (Number(r.chargedRate) || 0);
+      chargedHeTotal += (Number(r.chargedOvertimeHours) || 0) * (Number(r.chargedOvertimeRate) || 0);
       chargedTotalTransport += r.chargedTransport || 0;
       chargedTotalWorkerCount += r.chargedWorkerCount || 0;
     }
@@ -281,7 +292,7 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
       // tratoHE: las horas que se trabajaron y lo que suman las que se cobran
       // (horas a cobrar × tarifa de cada fila).
       workedOvertimeHours: ld.totals.overtimeHours || 0,
-      heTotal: isHE ? chargedHeTotal : ld.totals.heTotal || 0,
+      heTotal: isHE || isDay ? chargedHeTotal : ld.totals.heTotal || 0,
       bonosTotal: ld.totals.bonosTotal || 0,
       workdayCount: chargedTotalWorkdays,
     };
@@ -296,6 +307,8 @@ export function chargeLaborsOf(laborsData, importedLaborsData, laborCharges, cat
       chargedRows,
       chargedTotals,
       chargeOvertime,
+      canChargeOvertime: isHE || isDay,
+      dayOvertimeRate: isDay ? Number(cfg.overtimeRate) || 0 : null,
       mergeInto: cfg.mergeInto || null,
     };
   });

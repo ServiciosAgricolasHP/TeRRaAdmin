@@ -5,11 +5,54 @@ import { cellH, cell, chargeDateInputStyle, inputVal, chargeInputStyle, NOT_CHAR
 // Lo que se usa cuando no se pasa la prop: siempre el mismo objeto.
 const NO_HIDDEN_COLUMNS = new Set();
 
+// El interruptor "Cobrar horas extras" de una labor. En una labor al día
+// (`rate` no es null), encendido pide el valor de la hora.
+function OvertimeSwitch({ toggle, showName, onChange }) {
+  const { laborId, name, on, rate } = toggle;
+  const needsRate = on && rate != null;
+  return (
+    <div
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 8, minHeight: 32, padding: "3px 10px 3px 4px",
+        border: `1px solid ${on ? "#16a34a" : "#bbb"}`, borderRadius: 999, background: on ? "#f0fdf4" : "#f5f5f5", fontSize: 12,
+      }}
+    >
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        onClick={() => onChange(laborId, { chargeOvertime: !on })}
+        title={on ? "Dejar de cobrar horas extras en esta labor" : "Cobrar horas extras en esta labor"}
+        style={{ display: "inline-flex", alignItems: "center", gap: 8, minHeight: 26, background: "transparent", border: "none", padding: 0, cursor: "pointer", fontSize: 12, fontWeight: 600, color: "#222" }}
+      >
+        <span style={{ position: "relative", width: 38, height: 22, borderRadius: 999, background: on ? "#16a34a" : "#9ca3af", transition: "background 0.15s", flexShrink: 0 }}>
+          <span style={{ position: "absolute", top: 2, left: on ? 18 : 2, width: 18, height: 18, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 2px rgba(0,0,0,0.3)", transition: "left 0.15s" }} />
+        </span>
+        Cobrar horas extras{showName ? ` · ${name}` : ""}
+      </button>
+      {needsRate && (
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#444" }}>
+          Valor hora $
+          <input
+            type="number"
+            value={inputVal(rate)}
+            onChange={(e) => onChange(laborId, { overtimeRate: e.target.value === "" ? "" : Number(e.target.value) })}
+            placeholder="0"
+            title="Lo que se cobra por cada hora extra de esta labor. Las horas de cada día se escriben en la tabla."
+            style={{ ...chargeInputStyle, width: 84, borderColor: rate > 0 ? undefined : "#dc2626" }}
+          />
+        </label>
+      )}
+    </div>
+  );
+}
+
 // La tabla día a día de una labor (o de una tabla juntada) del resumen del
 // ciclo. Las columnas y sus valores salen de `laborColumns`, las mismas que
 // escribe el Excel; acá se dibujan, con los inputs del modo cobrar en edición.
-// En cobrar, una tabla de horas extras lleva en edición el interruptor
-// "Cobrar horas extras" de cada labor (`onToggleOvertime`).
+// En cobrar y en edición, una labor de horas extras o al día lleva el
+// interruptor "Cobrar horas extras" (`onOvertimeChange`); la labor al día,
+// además, el valor de la hora.
 export function LaborTable({
   section,
   mode,
@@ -19,7 +62,7 @@ export function LaborTable({
   onEditRow,
   onAddRow,
   onRemoveRow,
-  onToggleOvertime,
+  onOvertimeChange,
 }) {
   const { laborId, laborType, displayName, rows, totals, redDates, overtimeToggles } = section;
   const isCharge = mode === "charge";
@@ -98,13 +141,10 @@ export function LaborTable({
 
   return (
     <div style={{ marginBottom: 14 }}>
-      {editable && overtimeToggles && onToggleOvertime && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 4, fontSize: 12 }}>
+      {editable && overtimeToggles && onOvertimeChange && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 6 }}>
           {overtimeToggles.map((t) => (
-            <label key={t.laborId} style={{ display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer" }}>
-              <input type="checkbox" checked={t.on} onChange={() => onToggleOvertime(t.laborId, !t.on)} />
-              Cobrar horas extras{overtimeToggles.length > 1 ? ` · ${t.name}` : ""}
-            </label>
+            <OvertimeSwitch key={t.laborId} toggle={t} showName={overtimeToggles.length > 1} onChange={onOvertimeChange} />
           ))}
         </div>
       )}

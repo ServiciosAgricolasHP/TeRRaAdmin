@@ -84,6 +84,26 @@ describe("chargeLaborsOf: tarifa de cobro", () => {
     expect(none.chargedTotals).toMatchObject({ amount: 0, workdayCount: 0, overtimeHours: 0 });
   });
 
+  it("una labor al día cobra horas extras solo si se enciende, al valor de la labor y con las horas escritas por día", () => {
+    const cfg = { rowOverrides: { [D1]: { overtimeHours: 3 } }, extraRows: [{ id: "x1", date: D3, qty: 1, overtimeHours: 2, rate: "", amount: "" }] };
+    const off = chargeOf(MAIN, mainDays, { L1: { ...cfg, overtimeRate: 4000 } });
+    expect(off.chargeOvertime).toBe(false);
+    expect(off.chargedRows.map((r) => [r.chargedOvertimeHours, r.chargedAmount])).toEqual([[0, 50000], [0, 25000], [0, 25000]]);
+    const on = chargeOf(MAIN, mainDays, { L1: { ...cfg, chargeOvertime: true, overtimeRate: 4000 } });
+    expect([on.chargeOvertime, on.canChargeOvertime, on.dayOvertimeRate]).toEqual([true, true, 4000]);
+    expect(on.chargedRows.map((r) => [r.chargedOvertimeHours, r.chargedOvertimeRate, r.chargedAmount])).toEqual([
+      [3, 4000, 50000 + 12000],
+      [0, 4000, 25000],
+      [2, 4000, 25000 + 8000],
+    ]);
+    expect(on.chargedTotals).toMatchObject({ overtimeHours: 5, heTotal: 20000, amount: 120000 });
+    // Sin valor de la hora, las horas no suman.
+    const noRate = chargeOf(MAIN, mainDays, { L1: { ...cfg, chargeOvertime: true } });
+    expect(noRate.chargedTotals).toMatchObject({ overtimeHours: 5, heTotal: 0, amount: 100000 });
+    // Una cosecha no cobra horas extras.
+    expect(chargeOf({ id: "LC", name: "Cosecha", type: "cosecha" }, [], { LC: { chargeOvertime: true } }).canChargeOvertime).toBe(false);
+  });
+
   it("las filas manuales usan la tarifa de la labor y las sin fecha van al final", () => {
     const cl = chargeOf(MAIN, mainDays, {
       L1: {
