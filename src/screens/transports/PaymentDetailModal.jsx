@@ -217,8 +217,8 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
           {/* Un resumen suelto se paga y se revierte acá; uno que está en una
               quincena, desde la quincena. Pagar lleva los abonos que se ven,
               aunque el padre todavía no haya releído el resumen. Abierto desde una quincena, `onPay`,
-              `onRevert` y `onDelete` llegan null: para eliminar el resumen
-              primero hay que sacarlo de la quincena. */}
+              `onRevert` y `onDelete` llegan null; uno que está en una quincena
+              no se elimina: primero hay que sacarlo de ella. */}
           {!isPaid && onPay && !payment.payrollId && (
             <button
               onClick={() => onPay({ ...payment, abonos })}
@@ -235,7 +235,7 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
               ↶ Revertir pago
             </button>
           )}
-          {!isPaid && onDelete && (
+          {!isPaid && onDelete && !payment.payrollId && (
             <button
               onClick={onDelete}
               className="rounded-md border border-[var(--color-danger)] px-3 py-1.5 text-sm text-[var(--color-danger)]"

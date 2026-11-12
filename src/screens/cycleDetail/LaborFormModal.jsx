@@ -31,12 +31,20 @@ export function LaborFormModal() {
             value={laborForm.data.name}
             onChange={(v) => setLaborForm((s) => ({ ...s, data: { ...s.data, name: v } }))}
           />
-          <Select
-            label="Tipo" required
-            value={laborForm.data.type}
-            onChange={(v) => setLaborForm((s) => ({ ...s, data: { ...s.data, type: v } }))}
-            options={LABOR_TYPES}
-          />
+          <div>
+            <Select
+              label="Tipo" required
+              value={laborForm.data.type}
+              onChange={(v) => setLaborForm((s) => ({ ...s, data: { ...s.data, type: v } }))}
+              options={LABOR_TYPES}
+              disabled={!!laborForm.typeLocked}
+            />
+            {laborForm.typeLocked && (
+              <p className="mt-1 text-xs text-[var(--color-muted)]">
+                La labor ya tiene jornadas, así que su tipo no cambia. Para otro tipo, límpiala o crea una labor nueva.
+              </p>
+            )}
+          </div>
           <div>
             <Select
               label="Grupo de labor (opcional)"

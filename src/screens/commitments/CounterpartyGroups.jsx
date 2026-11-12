@@ -1,15 +1,6 @@
-import { remainingOf } from "../../utils/commitments";
-import { fmtCurrency } from "../../utils/format";
+import { directionAmountLabel, totalsByDirection } from "../../utils/commitments";
 import { CommitmentList } from "./CommitmentList";
 import { fmtDate } from "./helpers";
-
-// Lo que se paga y lo que se cobra de una contraparte; si tiene solo una de
-// las dos, sin rótulo.
-function groupAmount({ payable, receivable }) {
-  if (!receivable) return fmtCurrency(payable);
-  if (!payable) return `+${fmtCurrency(receivable)} por cobrar`;
-  return `${fmtCurrency(payable)} por pagar · +${fmtCurrency(receivable)} por cobrar`;
-}
 
 // "Próximos" por contraparte (`groupByCounterparty`): una sección por
 // contraparte, con sus vencimientos del más antiguo al más nuevo. La fecha de
@@ -34,7 +25,7 @@ export function CounterpartyGroups({ groups, until, onUntilChange, rowProps }) {
             {g.name || "Sin contraparte"}
             {g.items.length > 0 && (
               <span className="font-normal text-[var(--color-muted)]">
-                {" "}· {count(g.items.length)} · {groupAmount(g)}
+                {" "}· {count(g.items.length)} · {directionAmountLabel(g)}
               </span>
             )}
           </h2>
@@ -42,7 +33,7 @@ export function CounterpartyGroups({ groups, until, onUntilChange, rowProps }) {
           {g.beyond.length > 0 && (
             <p className="mt-2 text-xs text-[var(--color-muted)]">
               Después del {fmtDate(until)}: {count(g.beyond.length)} por{" "}
-              {fmtCurrency(g.beyond.reduce((s, c) => s + remainingOf(c), 0))}. Cambia la fecha para verlos.
+              {directionAmountLabel(totalsByDirection(g.beyond))}. Cambia la fecha para verlos.
             </p>
           )}
         </section>

@@ -4,6 +4,7 @@ import {
   cancellingNcsByDoc,
   counterpartyOptions,
   docTotals,
+  statusAfterPayments,
   filterDocs,
   findCancellingNcs,
   pendingFor,
@@ -177,6 +178,32 @@ describe("docTotals", () => {
       neto: 332, iva: 63, total: 395, count: 4, ncTotal: 12, ncCount: 1,
       unpaidTotal: 119, netOnlyTotal: 238, netOnlyIva: 38, factoredTotal: 50,
     });
+  });
+
+  it("lo no pagado es el saldo: descuenta lo abonado", () => {
+    const t = docTotals([sale("a", { total: 119, amountPaid: 50 }), sale("b", { total: 100, amountPaid: undefined, payments: [{ amount: 30 }] })]);
+    expect(t.unpaidTotal).toBe(69 + 70);
+  });
+});
+
+describe("statusAfterPayments", () => {
+  const factura = (extra) => ({ total: 100, paymentStatus: "unpaid", payments: [], amountPaid: 0, ...extra });
+
+  it("los abonos que cubren el total la dejan pagada", () => {
+    expect(statusAfterPayments(factura(), [{ amount: 60 }, { amount: 40 }])).toBe("paid");
+    expect(statusAfterPayments(factura({ paymentStatus: "net_only" }), [{ amount: 100 }])).toBe("paid");
+    expect(statusAfterPayments(factura(), [{ amount: 60 }])).toBeNull();
+  });
+
+  it("quitar un abono de una factura pagada por sus abonos la devuelve a no pagada", () => {
+    const pagada = factura({ paymentStatus: "paid", amountPaid: 100, payments: [{ amount: 60 }, { amount: 40 }] });
+    expect(statusAfterPayments(pagada, [{ amount: 60 }])).toBe("unpaid");
+  });
+
+  it("respeta un pagado a mano, y no toca la factorizada ni la anulada", () => {
+    expect(statusAfterPayments(factura({ paymentStatus: "paid" }), [{ amount: 10 }])).toBeNull();
+    expect(statusAfterPayments(factura({ paymentStatus: "factored" }), [{ amount: 100 }])).toBeNull();
+    expect(statusAfterPayments(factura({ paymentStatus: "cancelled" }), [{ amount: 100 }])).toBeNull();
   });
 });
 

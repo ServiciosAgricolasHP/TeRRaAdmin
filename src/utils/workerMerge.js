@@ -86,6 +86,29 @@ export function mergeBlockers({ clone, kept, advances, employments, workdays, cy
   return out;
 }
 
+// Lo que impide eliminar una ficha: lo que quedaría apuntando a una persona
+// que ya no está. Sus jornadas (`hasWorkdays`), sus QR, los anticipos y bonos,
+// los contratos u honorarios y las labores de los ciclos abiertos donde
+// figura. Devuelve los avisos, en texto; si tiene algo, lo que corresponde es
+// unirla a la ficha que queda (🔀).
+export function deleteBlockers({ worker, hasWorkdays = false, advances = [], employments = [], cycles = [] }) {
+  const keys = keysOf(worker);
+  const out = [];
+  if (hasWorkdays) out.push("Tiene jornadas: si es un duplicado, únelo a la ficha que queda (🔀).");
+  const qr = worker?.idQr?.length || 0;
+  if (qr) out.push(`Tiene ${qr} código${qr === 1 ? "" : "s"} QR: libéra${qr === 1 ? "lo" : "los"} en Cosecha QR.`);
+  const adv = advances.length;
+  if (adv) out.push(`Tiene ${adv} anticipo${adv === 1 ? "" : "s"} o bono${adv === 1 ? "" : "s"}.`);
+  const jobs = employments.filter((e) => e.workerId === worker?.id).length;
+  if (jobs) out.push(`Tiene ${jobs} contrato${jobs === 1 ? "" : "s"} u honorarios.`);
+  const inRoster = cycles
+    .filter((c) => c.status !== "closed")
+    .filter((c) => (c.labors || []).some((l) => (l.workers || []).some((lw) => lw.id === worker?.id || keys.includes(lw.rut))))
+    .map((c) => c.label || c.id);
+  if (inRoster.length) out.push(`Figura en las labores de ${inRoster.length === 1 ? "un ciclo abierto" : `${inRoster.length} ciclos abiertos`} (${inRoster.join(", ")}): sácalo de ahí.`);
+  return out;
+}
+
 // El plan de la unión. `workdays`: las jornadas del clon, con su `id`.
 // `existing`: las jornadas de la ficha que queda que ya ocupan un id de
 // destino (`{ [id]: jornada }`). `cycles`: los ciclos de esas jornadas y los

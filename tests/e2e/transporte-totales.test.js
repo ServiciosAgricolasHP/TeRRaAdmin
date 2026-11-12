@@ -200,7 +200,7 @@ describe("resúmenes y quincenas que se quedan vacíos", () => {
     await expect(paymentsService.updateAbono(resumen.id, original.id, { amount: 0 })).rejects.toThrow(/mayor a 0/);
   });
 
-  it("eliminar un resumen lo saca de su quincena", async () => {
+  it("un resumen que está en una quincena no se elimina: primero se saca de ella", async () => {
     await seedCarrier();
     const otra = await nuevaVuelta({ qty: 1, rate: 25000, date: "2026-03-03" });
     const otroResumen = await paymentsService.createSummary({
@@ -210,21 +210,19 @@ describe("resúmenes y quincenas que se quedan vacíos", () => {
       tripIds: [otra.id],
       total: 25000,
     });
-    const { resumen, fortnight } = await tripInFortnight({ otrosResumenes: [otroResumen.id] });
+    const { v, resumen, fortnight } = await tripInFortnight({ otrosResumenes: [otroResumen.id] });
 
+    await expect(paymentsService.deleteSummary(resumen.id)).rejects.toThrow(/quincena/);
+    expect(await get("transportPayments", resumen.id)).not.toBe(null);
+    expect((await get("transportPayrolls", fortnight.id)).paymentIds).toContain(resumen.id);
+
+    await fortnightsService.removePayments(fortnight.id, [resumen.id]);
     await paymentsService.deleteSummary(resumen.id);
 
+    expect(await get("transportPayments", resumen.id)).toBe(null);
     const q = await get("transportPayrolls", fortnight.id);
     expect(q.paymentIds).toEqual([otroResumen.id]);
     expect(q.total).toBe(25000);
-  });
-
-  it("eliminar el único resumen de una quincena elimina la quincena", async () => {
-    const { v, resumen, fortnight } = await tripInFortnight();
-
-    await paymentsService.deleteSummary(resumen.id);
-
-    expect(await get("transportPayrolls", fortnight.id)).toBe(null);
     // La vuelta sigue existiendo, suelta.
     expect((await get("transports", v.id))?.paymentId ?? null).toBe(null);
   });

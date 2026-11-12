@@ -2,9 +2,10 @@ import { kindMeta, statusLabel, partialPaidOf, extraOf, paidTotalOf } from "../.
 import { bankName } from "../../utils/banks";
 import { fmtDate } from "./helpers";
 
-// La lista de Cheques y pagos tal como está filtrada, con el total al pie.
+// La lista de Cheques y pagos tal como está filtrada, con el total por pagar
+// y el total por cobrar al pie (`totals`, de `totalsByDirection`).
 // `companyName(c)` da el nombre de la empresa de cada documento.
-export async function writeCommitmentsXlsx({ items, total, today, companyName }) {
+export async function writeCommitmentsXlsx({ items, totals, today, companyName }) {
   const ExcelJS = (await import("exceljs")).default;
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Cheques y pagos");
@@ -41,11 +42,17 @@ export async function writeCommitmentsXlsx({ items, total, today, companyName })
       row.getCell(col).numFmt = '"$"#,##0';
     });
   });
-  const totalRow = ws.getRow(items.length + 3);
-  totalRow.getCell(8).value = "Total (sin anulados)";
-  totalRow.getCell(9).value = total;
-  totalRow.getCell(9).numFmt = '"$"#,##0';
-  totalRow.font = { bold: true };
+  // Lo que se paga y lo que se cobra van en filas aparte: no se suman.
+  [
+    ["Total por pagar (sin anulados)", totals.payable],
+    ["Total por cobrar (sin anulados)", totals.receivable],
+  ].forEach(([label, amount], i) => {
+    const row = ws.getRow(items.length + 3 + i);
+    row.getCell(8).value = label;
+    row.getCell(9).value = amount;
+    row.getCell(9).numFmt = '"$"#,##0';
+    row.font = { bold: true };
+  });
   [12, 18, 12, 22, 12, 28, 26, 14, 14, 14, 14, 12, 18, 40].forEach((w, i) => {
     ws.getColumn(i + 2).width = w;
   });

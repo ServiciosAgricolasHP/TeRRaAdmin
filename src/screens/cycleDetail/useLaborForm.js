@@ -38,9 +38,14 @@ export function useLaborForm({ activeLabor, catalogs, computeOvertimeDayAmount, 
       },
     });
 
+  // Una labor con jornadas no cambia de tipo: cada tipo guarda y calcula sus
+  // jornadas distinto, y las que ya tiene quedarían leídas como de otro.
+  const hasWorkdays = (laborId) => Object.keys(workdaysByLabor[laborId] || {}).length > 0;
+
   const openEditLabor = () =>
     openLaborForm({
       mode: "edit",
+      typeLocked: hasWorkdays(activeLabor.id),
       data: {
         id: activeLabor.id,
         name: activeLabor.name,
@@ -63,6 +68,13 @@ export function useLaborForm({ activeLabor, catalogs, computeOvertimeDayAmount, 
   const submitLabor = async (e) => {
     e.preventDefault();
     if (!laborForm.data.name.trim()) return;
+    if (laborForm.mode === "edit") {
+      const current = cycle.labors.find((l) => l.id === laborForm.data.id);
+      if (current && current.type !== laborForm.data.type && hasWorkdays(current.id)) {
+        toast.warning("Esta labor ya tiene jornadas: su tipo no se puede cambiar. Límpiala o crea una labor nueva con el otro tipo.");
+        return;
+      }
+    }
     // "__new__": se crea la agrupación nueva en laborGroups antes de armar la
     // labor.
     let laborGroupId = laborForm.data.laborGroupId || null;

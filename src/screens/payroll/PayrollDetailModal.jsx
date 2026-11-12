@@ -280,6 +280,8 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
     toast,
   });
 
+  const pressedBackdrop = useRef(false);
+
   // Lo que se imprime y lo que se descarga de la nómina, en dos menús al pie.
   const printItems = [
     ...(allGroups.length > 0
@@ -297,7 +299,19 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-2 py-3 sm:px-4 sm:py-6" onClick={onClose}>
+    // El fondo cierra solo con un clic que empezó y terminó en él: los modales
+    // hijos y el avance se dibujan dentro de este árbol, y sus clics suben
+    // hasta acá.
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-2 py-3 sm:px-4 sm:py-6"
+      onMouseDown={(e) => {
+        pressedBackdrop.current = e.target === e.currentTarget;
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && pressedBackdrop.current) onClose();
+        pressedBackdrop.current = false;
+      }}
+    >
       <div
         className="flex max-h-[94vh] w-full max-w-4xl flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl sm:max-h-[90vh] lg:max-w-6xl"
         onClick={(e) => e.stopPropagation()}

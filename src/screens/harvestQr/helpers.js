@@ -26,15 +26,17 @@ const addDaysKey = (key, n) => {
   return new Date(y, m - 1, d + n).toLocaleDateString("sv-SE");
 };
 
-// Rango de la próxima sincronización: desde el día siguiente al último
-// sincronizado, por hasta 14 días, sin pasar de hoy. Sin sincronizaciones
-// previas, los últimos 14 días.
+// Rango de la próxima sincronización: desde el último día sincronizado,
+// incluido, por hasta 14 días, sin pasar de hoy. Ese día entra otra vez porque
+// pudo sincronizarse a media jornada; sincronizar escribe la suma del día
+// entero, así que repetirlo no duplica nada. Sin sincronizaciones previas, los
+// últimos 14 días.
 export const nextSyncRange = (lastSync) => {
   const days = lastSync?.days || [];
   const today = todayKey();
   if (days.length === 0) return { from: daysAgoKey(14), to: today };
   const lastDay = [...days].sort().at(-1);
-  const from = [addDaysKey(lastDay, 1), today].sort()[0];
+  const from = [lastDay, today].sort()[0];
   const to = [addDaysKey(from, 14), today].sort()[0];
   return { from, to };
 };

@@ -26,12 +26,17 @@ const porFechaAsc = (a, b) => {
   return da < db ? -1 : da > db ? 1 : 0;
 };
 
+// `topUps` son los anticipos que la nómina ya descuenta y pueden crecer
+// (`advanceTopUps`): `{ advanceId, date, room }`. Entran a la misma pasada que
+// los anticipos nuevos, del más viejo al más nuevo, y lo que crece cada uno
+// sale en `topUpApplications`, aparte de `anticipoApplications`.
 export function allocateAdvances({
   gross,
   anticipos = [],
   bonos = [],
   alreadyAdvanced = 0,
   alreadyBonused = 0,
+  topUps = [],
 }) {
   const brutoInt = Math.round(Number(gross) || 0);
   const yaDescontado = Number(alreadyAdvanced) || 0;
@@ -48,9 +53,22 @@ export function allocateAdvances({
 
   // Anticipos: del más viejo al más nuevo, topeados por lo que queda de base.
   let base = Math.max(0, brutoInt + yaAcreditado + bonosTotal - yaDescontado);
+  // A igual fecha, primero lo que la nómina ya descuenta.
+  const cola = [
+    ...topUps.map((t) => ({ date: t.date, topUp: t })),
+    ...anticipos.map((a) => ({ date: a.date, anticipo: a })),
+  ].sort(porFechaAsc);
   const anticipoApplications = [];
-  for (const anticipo of [...anticipos].sort(porFechaAsc)) {
+  const topUpApplications = [];
+  for (const { topUp, anticipo } of cola) {
     if (base <= 0) break;
+    if (topUp) {
+      const crece = Math.min(base, Math.round(Number(topUp.room) || 0));
+      if (crece <= 0) continue;
+      topUpApplications.push({ advanceId: topUp.advanceId, amount: crece });
+      base -= crece;
+      continue;
+    }
     const cuota = Math.round(advanceDueNow(anticipo));
     if (cuota <= 0) continue;
     const aplicar = Math.min(base, cuota);
@@ -65,7 +83,7 @@ export function allocateAdvances({
     });
     base -= aplicar;
   }
-  const anticiposTotal = anticipoApplications.reduce((s, x) => s + x.amount, 0);
+  const anticiposTotal = [...anticipoApplications, ...topUpApplications].reduce((s, x) => s + x.amount, 0);
 
   const advanceTotal = yaDescontado + anticiposTotal;
   const bonusTotal = yaAcreditado + bonosTotal;
@@ -73,7 +91,8 @@ export function allocateAdvances({
   return {
     anticipoApplications,
     bonoApplications,
-    // Lo aplicado EN ESTA PASADA.
+    topUpApplications,
+    // Lo aplicado EN ESTA PASADA, con lo que crecieron los `topUps`.
     anticiposTotal,
     bonosTotal,
     // Acumulado, contando lo que ya venía aplicado.
@@ -90,6 +109,78 @@ export function advanceNote({ anticipoApplications = [], bonoApplications = [] }
   if (anticipoApplications.length) partes.push(`Anticipos ${anticipoApplications.length}`);
   if (bonoApplications.length) partes.push(`Bonos ${bonoApplications.length}`);
   return partes.join(" · ");
+}
+
+const sumFromPayroll = (adv, payrollId) =>
+  (Array.isArray(adv?.payments) ? adv.payments : [])
+    .filter((p) => p.payrollId === payrollId)
+    .reduce((s, p) => s + (Number(p.amount) || 0), 0);
+
+// Cuánto puede crecer cada anticipo que la nómina ya le descuenta a `item`,
+// para `allocateAdvances({ topUps })`. Solo crece en quien quedó con neto $0:
+// ahí el descuento lo limitó el bruto, y si la base crece (más producción o un
+// bono nuevo) el descuento crece con ella, como si la nómina se armara hoy. Con
+// neto mayor que $0, un descuento bajo la cuota o el saldo se bajó a mano en la
+// vista previa, y se respeta.
+//
+// Cada anticipo crece hasta lo que le tocaría a esta nómina si se armara
+// ahora: su cuota si tiene plan, su saldo si no, contando como libre lo que
+// esta nómina ya le descuenta. `applied` es lo que le descuenta ahora (después
+// del re-encaje, si lo hubo); `anticipos`, los documentos pendientes de la
+// persona, con su `payments[]`.
+export function advanceTopUps({ item, applied = [], anticipos = [], payrollId }) {
+  if (Math.round(Number(item?.amount) || 0) > 0) return [];
+  const docById = new Map(anticipos.map((a) => [a.id, a]));
+  const out = [];
+  for (const app of applied) {
+    const adv = docById.get(app.advanceId);
+    if (!adv) continue;
+    const paidElsewhere = (Number(adv.amountPaid) || 0) - sumFromPayroll(adv, payrollId);
+    const due = Math.round(advanceDueNow({ ...adv, amountPaid: paidElsewhere }));
+    const room = due - Math.round(Number(app.amount) || 0);
+    if (room > 0) out.push({ advanceId: app.advanceId, date: adv.date || "", room });
+  }
+  return out;
+}
+
+// La fila después de un reparto incremental (`allocateAdvances` con
+// `alreadyAdvanced` y `alreadyBonused` de la fila): los anticipos y bonos
+// nuevos se suman al final, y lo que crecieron los que ya descontaba
+// (`topUpApplications`) se suma en su misma entrada.
+export function withAddedAdvances(item, reparto) {
+  const clean = (x) => ({ advanceId: x.advanceId, amount: Math.round(Number(x.amount) || 0) });
+  const growth = new Map((reparto.topUpApplications || []).map((x) => [x.advanceId, x.amount]));
+  const grown = (apps) =>
+    (apps || []).map((x) =>
+      growth.has(x.advanceId) ? { ...x, amount: (Number(x.amount) || 0) + growth.get(x.advanceId) } : x,
+    );
+  const newAnticipos = reparto.anticipoApplications.map(clean);
+  const newBonos = reparto.bonoApplications.map(clean);
+  const applied = [...newAnticipos, ...newBonos];
+  const anticipoApplications = [...grown(item.anticipoApplications), ...newAnticipos];
+  const bonoApplications = [...(item.bonoApplications || []), ...newBonos];
+  return {
+    ...item,
+    advance: reparto.advanceTotal,
+    bonus: reparto.bonusTotal,
+    anticiposTotal: reparto.advanceTotal,
+    bonosTotal: reparto.bonusTotal,
+    anticipoApplications,
+    bonoApplications,
+    advanceApplications: [...grown(item.advanceApplications), ...applied],
+    advanceIds: [...(item.advanceIds || []), ...applied.map((x) => x.advanceId)],
+    advanceNote: advanceNote({ anticipoApplications, bonoApplications }),
+    amount: reparto.amount,
+  };
+}
+
+// El monto final que la nómina le descuenta a cada anticipo que creció, para
+// `setPayrollAdvanceAmounts`: lo que ya le descontaba `item` más lo que creció.
+export function topUpTargets(item, topUpApplications = []) {
+  return topUpApplications.map((x) => {
+    const current = (item.anticipoApplications || []).find((a) => a.advanceId === x.advanceId);
+    return { advanceId: x.advanceId, amount: Math.round(Number(current?.amount) || 0) + x.amount };
+  });
 }
 
 // ───────────────────────── Achicar una nómina ya armada ─────────────────────────
@@ -543,18 +634,19 @@ export function mergeCycleDetails(existing = [], toAdd = []) {
 //   - Quien ya está suma el bruto, las jornadas (también las de $0) y su
 //     `byCycle` SUMADO, no pisado: el ciclo puede estar ya en la nómina con
 //     otras labores u otros días. Además se le aplican los anticipos y bonos
-//     pendientes que esta nómina todavía no le tocaba, con el mismo reparto
-//     incremental que usa Recalcular.
+//     pendientes que esta nómina todavía no le tocaba, y crecen los anticipos
+//     que ya le descuenta si el bruto los había limitado (`advanceTopUps`), con
+//     el mismo reparto incremental que usa Recalcular.
 //   - Quien no está entra con el reparto completo, igual que al generar,
 //     también si lo elegido suma $0 (los días de asistencia de un sueldo
 //     mensual): esos días quedan pagados con la nómina y cobra sus bonos.
 //
-// Lo que esta nómina ya descuenta de un anticipo no crece acá: re-encajar
-// hacia arriba obligaría a revisar cuotas, y Recalcular sigue la misma regla.
-//
-// `profileFor(agg)` devuelve los datos de cuenta y de grupo de la ficha del
-// trabajador, o `null` si no está en el catálogo.
+// `advanceTargets` trae el monto final de los anticipos que crecen
+// (`topUpTargets`); `newAdvanceApplications`, los que se aplican por primera
+// vez. `profileFor(agg)` devuelve los datos de cuenta y de grupo de la ficha
+// del trabajador, o `null` si no está en el catálogo.
 export function planAddWorkdays({
+  payrollId,
   items = [],
   workdays = [],
   laborTypeById = new Map(),
@@ -591,6 +683,7 @@ export function planAddWorkdays({
   const posicion = new Map(out.map((it, i) => [it.workerId || it.rut, i]));
   const workdayIds = [];
   const newAdvanceApplications = [];
+  const advanceTargets = [];
   const added = [];
 
   for (const [key, a] of porClave) {
@@ -613,30 +706,23 @@ export function planAddWorkdays({
         bonos: nuevos(pendientes.bonos),
         alreadyAdvanced: Number(it.advance) || 0,
         alreadyBonused: Number(it.bonus) || 0,
+        topUps: advanceTopUps({
+          item: it,
+          applied: it.anticipoApplications || [],
+          anticipos: pendientes.anticipos,
+          payrollId,
+        }),
       });
-      const ant = reparto.anticipoApplications.map(limpio);
-      const bon = reparto.bonoApplications.map(limpio);
-      const ahora = [...ant, ...bon];
-      const anticipoApplications = [...(it.anticipoApplications || []), ...ant];
-      const bonoApplications = [...(it.bonoApplications || []), ...bon];
+      const ahora = [...reparto.anticipoApplications, ...reparto.bonoApplications].map(limpio);
       out[i] = {
-        ...it,
+        ...withAddedAdvances(it, reparto),
         grossAmount: gross,
         byCycle,
         workdayIds: [...new Set([...(it.workdayIds || []), ...a.workdayIds])],
-        advance: reparto.advanceTotal,
-        bonus: reparto.bonusTotal,
-        anticiposTotal: reparto.advanceTotal,
-        bonosTotal: reparto.bonusTotal,
-        anticipoApplications,
-        bonoApplications,
-        advanceApplications: [...(it.advanceApplications || []), ...ahora],
-        advanceIds: [...(it.advanceIds || []), ...ahora.map((x) => x.advanceId)],
-        advanceNote: advanceNote({ anticipoApplications, bonoApplications }),
-        amount: reparto.amount,
       };
       workdayIds.push(...a.workdayIds);
       newAdvanceApplications.push(...ahora);
+      advanceTargets.push(...topUpTargets(it, reparto.topUpApplications));
       added.push({
         key,
         rut: it.rut,
@@ -705,7 +791,7 @@ export function planAddWorkdays({
     });
   }
 
-  return { items: out, workdayIds, newAdvanceApplications, added };
+  return { items: out, workdayIds, newAdvanceApplications, advanceTargets, added };
 }
 
 // Los días y anticipos de UNA persona, listos para `planAddWorkdays`, bajo la

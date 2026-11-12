@@ -8,6 +8,7 @@ import { CarrierSummaryModal } from "./CarrierSummaryModal";
 import { UnpricedTripsModal } from "./UnpricedTripsModal";
 import { unpricedTripsByCarrier } from "../../utils/unpricedTrips";
 import { attempt } from "../../utils/attempt";
+import { paymentSplit } from "./fortnights";
 
 // ============================================================
 // PESTAÑA TRANSPORTISTAS
@@ -64,10 +65,12 @@ export function CarriersTab({ onViewTrips }) {
       }
       return map.get(cid);
     };
+    // Lo que falta de cada resumen: su total menos lo abonado, igual que el
+    // balance de quincenas.
     for (const p of pendingPayments) {
       const e = ensure(p.carrierId);
       e.pendingPaymentCount += 1;
-      e.pendingPaymentTotal += Number(p.total) || 0;
+      e.pendingPaymentTotal += paymentSplit(p).pending;
     }
     for (const t of pendingTrips) {
       const e = ensure(t.carrierId);

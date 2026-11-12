@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseAmount } from "./formula";
+import { parseAmount, readAmount, cellAmountParser } from "./formula";
 
 // Interpreta los montos que se escriben en la grilla del ciclo.
 describe("parseAmount", () => {
@@ -57,5 +57,27 @@ describe("parseAmount", () => {
 
   it("saca los espacios internos", () => {
     expect(parseAmount("1 500")).toBe(1500);
+  });
+
+  it("acepta el signo $", () => {
+    expect(parseAmount("$25.000")).toBe(25000);
+    expect(parseAmount("$ 25.000")).toBe(25000);
+    expect(parseAmount("$25000")).toBe(25000);
+  });
+});
+
+describe("readAmount y cellAmountParser", () => {
+  it("lo que no se puede interpretar da null, y vacío da 0", () => {
+    for (const v of ["abc", "25 mil", "12a", "=1500*", "=alert(1)", "-", NaN]) {
+      expect(readAmount(v)).toBeNull();
+    }
+    expect(readAmount("")).toBe(0);
+    expect(readAmount(null)).toBe(0);
+  });
+
+  it("una celda con algo mal escrito conserva su valor; vaciarla da 0", () => {
+    expect(cellAmountParser({ newValue: "25 mil", oldValue: 30000 })).toBe(30000);
+    expect(cellAmountParser({ newValue: "$25.000", oldValue: 30000 })).toBe(25000);
+    expect(cellAmountParser({ newValue: "", oldValue: 30000 })).toBe(0);
   });
 });

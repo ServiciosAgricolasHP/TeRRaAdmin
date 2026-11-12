@@ -117,6 +117,7 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
       const liveCycles = await withFreshCycles(cycles, freeWorkdays);
       const laborTypeById = new Map(liveCycles.flatMap((c) => (c.labors || []).map((l) => [l.id, l.type])));
       const plan = planAddWorkdays({
+        payrollId: payroll.id,
         items,
         workdays: person.workdays,
         laborTypeById,
@@ -142,6 +143,7 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
         workdayIds: plan.workdayIds,
         workdays: addedWorkdays,
         advanceApplications: plan.newAdvanceApplications,
+        advanceTargets: plan.advanceTargets,
       }, step);
       step("snapshot");
       const advanceById = new Map(person.advances.map((a) => [a.id, a]));

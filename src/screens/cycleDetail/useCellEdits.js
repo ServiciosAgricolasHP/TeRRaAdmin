@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { parseAmount } from "../../utils/formula";
+import { parseAmount, readAmount } from "../../utils/formula";
 import { workdayDocId, workdayMapKey, getDaySingle, parseComboKey } from "../../utils/cosechaCombos";
 import { SINGLE_COMBO } from "./rows";
 import { workdayHasData } from "../../utils/tratoHE";
@@ -289,11 +289,13 @@ export function useCellEdits({ activeLabor, computeOvertimeDayAmount, cycle, day
 
   // Escribe un valor en una celda como si se hubiera editado a mano. Una fila
   // de sueldo mensual solo marca asistencia y un encabezado de grupo no es una
-  // persona: no reciben montos. Devuelve si había algo que cambiar.
+  // persona: no reciben montos. Un valor que no es un monto (texto pegado) deja
+  // la celda como estaba. Devuelve si había algo que cambiar.
   const writeCell = async (node, field, value) => {
     if (!node?.data || node.data._monthly || node.data._isHeader) return false;
     const oldValue = node.data[field];
-    if (parseAmount(value) === (Number(oldValue) || 0)) return false;
+    const amount = readAmount(value);
+    if (amount === null || amount === (Number(oldValue) || 0)) return false;
     await onCellValueChanged({ colDef: { field }, data: node.data, newValue: value, oldValue, node });
     return true;
   };

@@ -321,6 +321,58 @@ describe("quien suma $0 también entra a la nómina", () => {
   });
 });
 
+describe("si el bruto sube, el anticipo que el bruto limitaba crece", () => {
+  it("bruto 50.000 contra un anticipo de 80.000, que después sube a 120.000: se descuentan los 80.000", async () => {
+    await seedCycle({ id: CICLO_A });
+    await seedWorker(ANA);
+    await seedWorkday({ cycleId: CICLO_A, rut: ANA.id, date: "2026-03-02", amount: 50000 });
+    await seedAdvance("adv-ana", { rut: ANA.id, amount: 80000 });
+
+    const id = await armarNomina([CICLO_A]);
+    expect(itemDe(await get("payrolls", id), ANA.id)).toMatchObject({ advance: 50000, amount: 0 });
+    expect(await get("advances", "adv-ana")).toMatchObject({ status: "partial", amountPaid: 50000 });
+
+    // Se anota un día más en el ciclo y se recalcula.
+    await seedWorkday({ cycleId: CICLO_A, rut: ANA.id, date: "2026-03-03", amount: 70000 });
+    const plan = await sacar(id, new Map());
+
+    expect(plan.amountChanges).toMatchObject([{ oldGross: 50000, newGross: 120000, oldNet: 0, newNet: 40000 }]);
+    expect(plan.advanceChanges).toMatchObject([{ addedAnticipoTotal: 30000, grownAnticipoTotal: 30000, oldNet: 0, newNet: 40000 }]);
+
+    const nomina = await get("payrolls", id);
+    expect(itemDe(nomina, ANA.id)).toMatchObject({
+      grossAmount: 120000,
+      advance: 80000,
+      amount: 40000,
+      advanceIds: ["adv-ana"],
+      anticipoApplications: [{ advanceId: "adv-ana", amount: 80000 }],
+    });
+    expect(nomina.total).toBe(40000);
+    expect(nomina.advanceTotal).toBe(80000);
+
+    // El anticipo queda saldado, con una sola entrada de esta nómina.
+    const adv = await get("advances", "adv-ana");
+    expect(adv).toMatchObject({ status: "applied", amountPaid: 80000 });
+    expect(adv.payments).toHaveLength(1);
+    expect(adv.payments[0]).toMatchObject({ payrollId: id, amount: 80000 });
+  });
+
+  it("un bono creado después cierra la deuda en vez de pagarse aparte", async () => {
+    await seedCycle({ id: CICLO_A });
+    await seedWorker(ANA);
+    await seedWorkday({ cycleId: CICLO_A, rut: ANA.id, date: "2026-03-02", amount: 50000 });
+    await seedAdvance("adv-ana", { rut: ANA.id, amount: 80000 });
+    const id = await armarNomina([CICLO_A]);
+
+    await seedAdvance("bono-ana", { rut: ANA.id, amount: 20000, type: "bono", date: "2026-03-05" });
+    await sacar(id, new Map());
+
+    expect(itemDe(await get("payrolls", id), ANA.id)).toMatchObject({ grossAmount: 50000, bonus: 20000, advance: 70000, amount: 0 });
+    expect(await get("advances", "adv-ana")).toMatchObject({ status: "partial", amountPaid: 70000 });
+    expect(await get("advances", "bono-ana")).toMatchObject({ status: "applied", amountPaid: 20000 });
+  });
+});
+
 describe("los ciclos de la nómina siguen a lo que paga y a sus nombres vigentes", () => {
   const LIVE = {
     label: `Faena Uno/Sub Uno/${CICLO_A}`,

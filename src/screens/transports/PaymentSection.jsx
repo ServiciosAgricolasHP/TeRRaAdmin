@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { fmtCurrency } from "../../utils/format";
 import { UnifiedSummaryModal } from "./UnifiedSummaryModal";
+import { paymentSplit } from "./fortnights";
 
 export function PaymentSection({ title, payments, carrierById, fortnightById, faenaById, subfaenaById, cycleById, onView, empty, dim = false, carriers = [], onChanged }) {
   // Resúmenes agrupados por transportista. Cada grupo se puede colapsar y
@@ -17,11 +18,14 @@ export function PaymentSection({ title, payments, carrierById, fortnightById, fa
           name: c?.name || "",
           items: [],
           total: 0,
+          pending: 0,
         });
       }
+      // El total de los resúmenes y, aparte, lo que falta: sin lo abonado.
       const g = map.get(cid);
       g.items.push(p);
       g.total += Number(p.total) || 0;
+      g.pending += paymentSplit(p).pending;
     }
     return [...map.values()].sort((a, b) => a.alias.localeCompare(b.alias, "es"));
   }, [payments, carrierById]);
@@ -99,8 +103,11 @@ export function PaymentSection({ title, payments, carrierById, fortnightById, fa
                       🔗 Vista unificada
                     </button>
                   )}
-                  <span className="ml-auto font-semibold tabular-nums">
+                  <span className="ml-auto text-right font-semibold tabular-nums">
                     {fmtCurrency(g.total)}
+                    {g.pending < g.total && g.pending > 0 && (
+                      <span className="block text-[10px] font-normal text-[var(--color-muted)]">falta {fmtCurrency(g.pending)}</span>
+                    )}
                   </span>
                 </div>
                 {!collapsed && (

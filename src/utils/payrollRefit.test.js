@@ -230,9 +230,9 @@ describe("planRecalcExisting — recalcular cuando la producción bajó", () => 
     expect(plan.advanceTargets).toEqual([{ advanceId: "adv", amount: 50000 }]);
   });
 
-  it("si la producción sube, lo ya aplicado no crece solo", () => {
-    // Crecer pediría volver a mirar el saldo y la cuota del anticipo; lo que
-    // haya pendiente lo aplica el resto del recálculo como anticipo nuevo.
+  it("si la producción sube, el re-encaje no agranda lo ya aplicado", () => {
+    // Crecer mira el saldo y la cuota del anticipo, y lo hace el resto del
+    // recálculo (`advanceTopUps`).
     const it = item({
       gross: 100000,
       byCycle: { A: 100000 },

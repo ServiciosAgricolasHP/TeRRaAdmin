@@ -214,6 +214,32 @@ describe("allocateAdvances — el caso incremental (anticipos nuevos sobre algui
       allocateAdvances({ ...args, alreadyAdvanced: 0, alreadyBonused: 0 }),
     );
   });
+
+  it("lo que crece un anticipo ya descontado entra en la misma pasada, del más viejo al más nuevo", () => {
+    // Bruto 150.000 con 50.000 ya descontados del anticipo de enero, al que le
+    // caben 30.000 más; uno de marzo, nuevo, de 100.000.
+    const r = allocateAdvances({
+      gross: 150000,
+      alreadyAdvanced: 50000,
+      topUps: [{ advanceId: "enero", date: "2026-01-10", room: 30000 }],
+      anticipos: [anticipo("marzo", 100000, { date: "2026-03-01" })],
+    });
+    expect(r.topUpApplications).toEqual([{ advanceId: "enero", amount: 30000 }]);
+    expect(r.anticipoApplications).toEqual([{ advanceId: "marzo", amount: 70000, maxAmount: 100000 }]);
+    expect(r).toMatchObject({ anticiposTotal: 100000, advanceTotal: 150000, amount: 0 });
+  });
+
+  it("si la base no alcanza, se cubre primero el más viejo, sea nuevo o ya descontado", () => {
+    const r = allocateAdvances({
+      gross: 100000,
+      alreadyAdvanced: 80000,
+      topUps: [{ advanceId: "marzo", date: "2026-03-01", room: 50000 }],
+      anticipos: [anticipo("enero", 40000, { date: "2026-01-01" })],
+    });
+    expect(r.anticipoApplications).toEqual([{ advanceId: "enero", amount: 20000, maxAmount: 40000 }]);
+    expect(r.topUpApplications).toEqual([]);
+    expect(r.amount).toBe(0);
+  });
 });
 
 describe("invariantes", () => {

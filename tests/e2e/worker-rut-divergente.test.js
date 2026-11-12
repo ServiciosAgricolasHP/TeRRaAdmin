@@ -81,7 +81,7 @@ describe("deleteWorkerSafe", () => {
     await seedWorkday({ rut: VIEJO, date: "2026-03-02", amount: 1000 });
 
     const w = await get("worker", VIEJO);
-    await expect(deleteWorkerSafe(w)).rejects.toThrow(/días asociados/i);
+    await expect(deleteWorkerSafe(w)).rejects.toThrow(/tiene jornadas/i);
     expect(await get("worker", VIEJO)).not.toBe(null);
   });
 
@@ -90,7 +90,7 @@ describe("deleteWorkerSafe", () => {
     await set("worker", VIEJO, { rut: NUEVO, name: "Boris" });
     await seedWorkday({ rut: NUEVO, date: "2026-03-03", amount: 1000 });
 
-    await expect(deleteWorkerSafe(await get("worker", VIEJO))).rejects.toThrow(/días asociados/i);
+    await expect(deleteWorkerSafe(await get("worker", VIEJO))).rejects.toThrow(/tiene jornadas/i);
   });
 
   it("sí deja borrar a alguien sin producción", async () => {
@@ -111,7 +111,7 @@ describe("deleteWorkerSafe", () => {
     await seedWorkday({ rut: "12345678-5", date: "2026-03-02", amount: 1000 });
 
     await expect(deleteWorkerSafe(await get("worker", "11111111-1"))).rejects.toThrow(
-      /días asociados/i,
+      /tiene jornadas/i,
     );
   });
 });

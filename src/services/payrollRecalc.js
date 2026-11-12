@@ -29,6 +29,9 @@ import { withFreshCycles } from "./jobLists";
 import { aggregateWorkerAmounts, normalizeLeader } from "../utils/payroll";
 import {
   allocateAdvances,
+  advanceTopUps,
+  withAddedAdvances,
+  topUpTargets,
   advanceNote,
   recalcNeedsRefit,
   planRecalcExisting,
@@ -186,9 +189,10 @@ export async function planPayrollRecalc(
     patches,
     leaving: leavingWorkers,
     leavingKeys,
-    advanceTargets,
+    advanceTargets: refitTargets,
     amountChanges,
   } = planRecalcExisting({ items, freshByKey, appliedByAdvance });
+  const grownTargets = [];
 
   for (const it of items) {
     const key = it.workerId || it.rut;
@@ -197,48 +201,44 @@ export async function planPayrollRecalc(
     const newGross = Math.round(fresh?.total || 0);
     let patch = patches.get(key) || null;
 
-    // Anticipos y bonos nuevos de alguien que YA está en la nómina, sobre lo
-    // que quedó después del re-encaje. La base arranca de lo que ya se le
-    // descontó y acreditó (caso incremental de `allocateAdvances`).
+    // Anticipos y bonos de alguien que YA está en la nómina, sobre lo que
+    // quedó después del re-encaje: los nuevos, y lo que crecen los que ya le
+    // descuenta si el bruto los había limitado (`advanceTopUps`). La base
+    // arranca de lo que ya se le descontó y acreditó (caso incremental de
+    // `allocateAdvances`).
     const advForWorker = advancesByKey.get(key) || { anticipos: [], bonos: [] };
     const existingAdvIds = new Set(it.advanceIds || []);
     const newAnticipos = advForWorker.anticipos.filter((a) => !existingAdvIds.has(a.id) && advanceRemaining(a) > 0);
     const newBonos = advForWorker.bonos.filter((a) => !existingAdvIds.has(a.id) && advanceRemaining(a) > 0);
-    if (newAnticipos.length || newBonos.length) {
-      const currentAdvance = Number((patch || it).advance) || 0;
-      const currentBonus = Number((patch || it).bonus) || 0;
+    const base = patch || it;
+    const topUps = advanceTopUps({
+      item: it,
+      applied: base.anticipoApplications || [],
+      anticipos: advForWorker.anticipos,
+      payrollId: payroll.id,
+    });
+    if (newAnticipos.length || newBonos.length || topUps.length) {
       const reparto = allocateAdvances({
         gross: newGross,
         anticipos: newAnticipos,
         bonos: newBonos,
-        alreadyAdvanced: currentAdvance,
-        alreadyBonused: currentBonus,
+        alreadyAdvanced: Number(base.advance) || 0,
+        alreadyBonused: Number(base.bonus) || 0,
+        topUps,
       });
-      const addedAnticipoTotal = reparto.anticiposTotal;
-      const addedBonoTotal = reparto.bonosTotal;
-      if (addedAnticipoTotal > 0 || addedBonoTotal > 0) {
-        const base = patch || it;
-        const appliedNow = [...reparto.anticipoApplications, ...reparto.bonoApplications];
-        patch = {
-          ...base,
-          advance: currentAdvance + addedAnticipoTotal,
-          bonus: currentBonus + addedBonoTotal,
-          amount: reparto.amount,
-          advanceIds: [...(base.advanceIds || []), ...appliedNow.map((x) => x.advanceId)],
-          advanceApplications: [...(base.advanceApplications || []), ...appliedNow],
-          anticipoApplications: [...(base.anticipoApplications || []), ...reparto.anticipoApplications],
-          bonoApplications: [...(base.bonoApplications || []), ...reparto.bonoApplications],
-          anticiposTotal: (Number(base.anticiposTotal ?? currentAdvance) || 0) + addedAnticipoTotal,
-          bonosTotal: (Number(base.bonosTotal ?? currentBonus) || 0) + addedBonoTotal,
-        };
-        newAdvanceApplications.push(...appliedNow);
+      if (reparto.anticiposTotal > 0 || reparto.bonosTotal > 0) {
+        patch = withAddedAdvances(base, reparto);
+        newAdvanceApplications.push(...reparto.anticipoApplications, ...reparto.bonoApplications);
+        grownTargets.push(...topUpTargets(base, reparto.topUpApplications));
+        const grownTotal = reparto.topUpApplications.reduce((s, x) => s + x.amount, 0);
         advanceChanges.push({
           key,
           rut: it.rut,
           name: it.name,
-          addedAnticipoTotal,
-          addedBonoTotal,
-          oldNet: Math.round(Number(base.amount) || 0),
+          addedAnticipoTotal: reparto.anticiposTotal,
+          grownAnticipoTotal: grownTotal,
+          addedBonoTotal: reparto.bonosTotal,
+          oldNet: Math.round(Number(it.amount) || 0),
           newNet: reparto.amount,
         });
       }
@@ -257,6 +257,17 @@ export async function planPayrollRecalc(
     }
 
     if (patch) updatedByKey.set(key, patch);
+  }
+
+  // El monto final de cada anticipo: el del re-encaje, o el que creció.
+  const targetById = new Map(refitTargets.map((t) => [t.advanceId, t]));
+  for (const t of grownTargets) targetById.set(t.advanceId, t);
+  const advanceTargets = [...targetById.values()];
+  // El neto de "Montos actualizados" es el final, con lo que crecieron o se
+  // aplicaron los anticipos y bonos.
+  for (const change of amountChanges) {
+    const finalItem = updatedByKey.get(change.key);
+    if (finalItem) change.newNet = Math.round(Number(finalItem.amount) || 0);
   }
 
   const newWorkerItems = [];

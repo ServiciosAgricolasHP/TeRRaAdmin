@@ -7,7 +7,7 @@
 
 ## Las guías y sus pantallas
 
-Un cambio de interfaz en una de estas pantallas actualiza su guía y regenera sus capturas (`HELP_GUIDES=<guía> npm run help:shots`) en el mismo commit.
+Cuando un cambio de interfaz en una de estas pantallas está aprobado, en su funcionamiento y en su interfaz, se actualiza su guía y se regeneran sus capturas (`HELP_GUIDES=<guía> npm run help:shots`), en un commit propio.
 
 | Guía | Pantalla | Datos que siembra el guion además de la semilla |
 |---|---|---|

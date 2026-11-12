@@ -596,7 +596,7 @@ export default function Billing() {
       {importPreview && (
         <ImportPreviewModal
           preview={importPreview}
-          existingIds={new Set(docs.map((d) => d.id))}
+          docs={docs}
           company={companiesById.get(importCompanyId)}
           busy={importing}
           onToggleFile={toggleFileExclusion}

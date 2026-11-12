@@ -4,6 +4,7 @@ import { serverTimestamp } from "firebase/firestore";
 import { auth } from "../../firebase";
 import { unshout } from "../../utils/textCase";
 import { errorText } from "../../utils/errorText";
+import { statusAfterPayments } from "../../utils/billingDocs";
 
 // Escrituras sobre un documento: estado de pago, notas, centro de costo y
 // pagos. Cada una actualiza la lista y el detalle abierto en su lugar, sin
@@ -59,13 +60,21 @@ export function useDocUpdates({ setDetailDoc, setDocs, toast }) {
 
   // Guarda el array completo de pagos junto con `amountPaid` denormalizado
   // (su suma), que el orden por saldo y los pendientes leen sin recorrer el
-  // array.
+  // array. Si los abonos cubren el total, o dejan de cubrirlo, el estado de
+  // pago cambia con ellos (`statusAfterPayments`).
   const saveDocPayments = async (dteDoc, payments) => {
     const amountPaid = payments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+    const nextStatus = statusAfterPayments(dteDoc, payments);
+    const statusPatch = nextStatus ? { paymentStatus: nextStatus } : {};
     try {
-      await dteDocumentsService.update(dteDoc.id, { payments, amountPaid });
-      setDocs((prev) => prev.map((d) => (d.id === dteDoc.id ? { ...d, payments, amountPaid } : d)));
-      setDetailDoc((cur) => (cur?.id === dteDoc.id ? { ...cur, payments, amountPaid } : cur));
+      await dteDocumentsService.update(dteDoc.id, {
+        payments,
+        amountPaid,
+        ...statusPatch,
+        ...(nextStatus ? { paymentStatusSetAt: serverTimestamp(), paymentStatusSetBy: auth.currentUser?.uid || null } : {}),
+      });
+      setDocs((prev) => prev.map((d) => (d.id === dteDoc.id ? { ...d, payments, amountPaid, ...statusPatch } : d)));
+      setDetailDoc((cur) => (cur?.id === dteDoc.id ? { ...cur, payments, amountPaid, ...statusPatch } : cur));
     } catch (err) {
       toast.error(`Error al guardar pagos: ${errorText(err)}`);
     }

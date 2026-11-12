@@ -182,23 +182,30 @@ export function RecalcModal({ preview, busy, onClose, onConfirm }) {
         {advanceChanges.length > 0 && (
           <div>
             <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
-              Anticipos/bonos nuevos aplicados ({advanceChanges.length})
+              Anticipos y bonos que se aplican ({advanceChanges.length})
             </h4>
             <div className="overflow-x-auto rounded-md border border-[var(--color-border)]">
               <table className="w-full text-xs">
                 <thead className="bg-[var(--color-surface-2)] text-left">
                   <tr>
                     <th className="px-2 py-1.5">Trabajador</th>
-                    <th className="px-2 py-1.5 text-right">Anticipo nuevo</th>
-                    <th className="px-2 py-1.5 text-right">Bono nuevo</th>
+                    <th className="px-2 py-1.5 text-right">Anticipo</th>
+                    <th className="px-2 py-1.5 text-right">Bono</th>
                     <th className="px-2 py-1.5 text-right">Neto antes</th>
                     <th className="px-2 py-1.5 text-right">Neto ahora</th>
                   </tr>
                 </thead>
                 <tbody>
                   {advanceChanges.map((c) => (
-                    <tr key={c.key} className="border-t border-[var(--color-border)]">
-                      <td className="px-2 py-1.5">{c.name}</td>
+                    <tr key={c.key} className="border-t border-[var(--color-border)] align-top">
+                      <td className="px-2 py-1.5">
+                        {c.name}
+                        {c.grownAnticipoTotal > 0 && (
+                          <div className="mt-0.5 text-[10px] text-[var(--color-muted)]">
+                            ↑ {fmtCurrency(c.grownAnticipoTotal)} más de un anticipo que esta nómina ya descontaba en parte.
+                          </div>
+                        )}
+                      </td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{c.addedAnticipoTotal > 0 ? `− ${fmtCurrency(c.addedAnticipoTotal)}` : "—"}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{c.addedBonoTotal > 0 ? `+ ${fmtCurrency(c.addedBonoTotal)}` : "—"}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{fmtCurrency(c.oldNet)}</td>

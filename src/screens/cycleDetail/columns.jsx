@@ -1,7 +1,7 @@
 import { fmtCurrency } from "../../utils/format";
 import { DayHeader } from "./DayHeader";
 import { comboLabel, containerLabel, getDaySingle, floorField } from "../../utils/cosechaCombos";
-import { parseAmount } from "../../utils/formula";
+import { cellAmountParser } from "../../utils/formula";
 import { FormulaCellEditor } from "./FormulaCellEditor";
 import { DEFAULT_BONUS_MANEJO, DEFAULT_BONUS_SUPERVISION, DEFAULT_OVERTIME_RATE, isRedDay } from "../../utils/tratoHE";
 import {
@@ -127,7 +127,7 @@ export function buildColumnDefs(ctx) {
     editable: !readOnly,
     width: isMobile ? 78 : 120,
     type: "numericColumn",
-    valueParser: (p) => parseAmount(p.newValue),
+    valueParser: cellAmountParser,
     cellEditor: FormulaCellEditor,
     cellRenderer: QtyCell,
     cellRendererParams: { amtField: `${d}__${key}__amt` },
@@ -260,7 +260,7 @@ export function buildColumnDefs(ctx) {
             editable: (p) => !readOnly && !p.data?._monthly && Number(p.data?.[`${d}__qty`] || 0) > 0,
             width: isMobile ? 85 : 130,
             type: "numericColumn",
-            valueParser: (p) => parseAmount(p.newValue),
+            valueParser: cellAmountParser,
             cellEditor: FormulaCellEditor,
             valueFormatter: (p) => (p.value ? fmtCurrency(p.value) : ""),
             headerTooltip: `Base del día (monto). Sugerido: ${fmtCurrency(suggested)}. Abajo: bonos (M/S/+) y total del día — click para editar.`,
@@ -274,7 +274,7 @@ export function buildColumnDefs(ctx) {
             editable: (p) => !readOnly && !p.data?._monthly,
             width: 60,
             type: "numericColumn",
-            valueParser: (p) => parseAmount(p.newValue),
+            valueParser: cellAmountParser,
             cellEditor: FormulaCellEditor,
             valueFormatter: (p) => (p.value ? `${p.value}h` : ""),
             headerTooltip: "Horas extras",
@@ -297,7 +297,7 @@ export function buildColumnDefs(ctx) {
       editable: (p) => !readOnly && !p.data?._monthly && Number(p.data?.[d] || 0) > 0,
       width: isMobile ? 70 : 110,
       type: "numericColumn",
-      valueParser: (p) => parseAmount(p.newValue),
+      valueParser: cellAmountParser,
       cellEditor: FormulaCellEditor,
       valueFormatter: (p) => fmtCurrency(p.value),
       headerTooltip: `${d} · Sugerido: ${fmtCurrency(suggested)}. Click en celda vacía para usarlo, doble click para editar.`,

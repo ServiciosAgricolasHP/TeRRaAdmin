@@ -436,17 +436,81 @@ describe("planAddWorkdays", () => {
     ]);
   });
 
-  it("un anticipo que esta nómina ya descuenta en parte no crece", () => {
+  it("un anticipo que el bruto había limitado crece con el bruto nuevo", () => {
+    // Bruto 100.000 contra un anticipo de 300.000: se descontaron 100.000 y
+    // el neto quedó en 0. Con 50.000 más, se descuentan 150.000.
     const items = [item({ gross: 100000, workdayIds: ["a1"], anticipos: [{ advanceId: "ant", amount: 100000 }] })];
     const plan = planAddWorkdays({
+      payrollId: "P1",
       items,
       workdays: [wd("a2", { amount: 50000 })],
       laborTypeById: tipos,
-      pendingAdvances: [anticipo("ant", "ANA", 300000, { amountPaid: 100000, status: "partial" })],
+      pendingAdvances: [
+        anticipo("ant", "ANA", 300000, { amountPaid: 100000, status: "partial", payments: [{ payrollId: "P1", amount: 100000 }] }),
+      ],
     });
     expect(plan.newAdvanceApplications).toEqual([]);
-    expect(plan.items[0].advance).toBe(100000);
-    expect(plan.items[0].amount).toBe(50000);
+    expect(plan.advanceTargets).toEqual([{ advanceId: "ant", amount: 150000 }]);
+    expect(plan.items[0]).toMatchObject({ advance: 150000, amount: 0, advanceIds: ["ant"] });
+    expect(plan.items[0].anticipoApplications).toEqual([{ advanceId: "ant", amount: 150000 }]);
+    expect(plan.added).toMatchObject([{ anticipos: 50000, newNet: 0 }]);
+  });
+
+  it("un anticipo con cuota crece solo hasta la cuota", () => {
+    const items = [item({ gross: 100000, workdayIds: ["a1"], anticipos: [{ advanceId: "ant", amount: 100000 }] })];
+    const plan = planAddWorkdays({
+      payrollId: "P1",
+      items,
+      workdays: [wd("a2", { amount: 50000 })],
+      laborTypeById: tipos,
+      pendingAdvances: [
+        anticipo("ant", "ANA", 360000, {
+          amountPaid: 100000,
+          status: "partial",
+          installments: { count: 3, amount: 120000, cadence: "porPago" },
+          payments: [{ payrollId: "P1", amount: 100000 }],
+        }),
+      ],
+    });
+    expect(plan.advanceTargets).toEqual([{ advanceId: "ant", amount: 120000 }]);
+    expect(plan.items[0]).toMatchObject({ advance: 120000, amount: 30000 });
+  });
+
+  it("un anticipo que se bajó a mano en la vista previa no crece", () => {
+    // Neto 40.000: el descuento de 60.000 se eligió, no lo limitó el bruto.
+    const items = [item({ gross: 100000, workdayIds: ["a1"], anticipos: [{ advanceId: "ant", amount: 60000 }] })];
+    const plan = planAddWorkdays({
+      payrollId: "P1",
+      items,
+      workdays: [wd("a2", { amount: 50000 })],
+      laborTypeById: tipos,
+      pendingAdvances: [
+        anticipo("ant", "ANA", 300000, { amountPaid: 60000, status: "partial", payments: [{ payrollId: "P1", amount: 60000 }] }),
+      ],
+    });
+    expect(plan.advanceTargets).toEqual([]);
+    expect(plan.items[0]).toMatchObject({ advance: 60000, amount: 90000 });
+  });
+
+  it("lo que otra nómina descontó del anticipo no cuenta como libre", () => {
+    // Del anticipo de 200.000, otra nómina descontó 120.000 y esta 50.000:
+    // quedan 30.000, y es lo que puede crecer.
+    const items = [item({ gross: 50000, workdayIds: ["a1"], anticipos: [{ advanceId: "ant", amount: 50000 }] })];
+    const plan = planAddWorkdays({
+      payrollId: "P1",
+      items,
+      workdays: [wd("a2", { amount: 100000 })],
+      laborTypeById: tipos,
+      pendingAdvances: [
+        anticipo("ant", "ANA", 200000, {
+          amountPaid: 170000,
+          status: "partial",
+          payments: [{ payrollId: "P0", amount: 120000 }, { payrollId: "P1", amount: 50000 }],
+        }),
+      ],
+    });
+    expect(plan.advanceTargets).toEqual([{ advanceId: "ant", amount: 80000 }]);
+    expect(plan.items[0]).toMatchObject({ advance: 80000, amount: 70000 });
   });
 
   it("quien no está entra con el reparto completo: bonos primero, anticipos topeados", () => {
