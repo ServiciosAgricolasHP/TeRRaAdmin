@@ -10,7 +10,7 @@ import { inChosenCycles, workerDayRows, asPayrollWorker, planAddWorkdays } from 
 import Modal from "../../components/Modal";
 import { matchesSearchQuery } from "../../utils/textSearch";
 import { fmtCurrency } from "../../utils/format";
-import { formatWorkerDetailProd, workerDetailDateLabel } from "./workerDetailLabels";
+import { formatWorkerDetailProd, workerDetailDateLabel } from "../../utils/workerDetailLabels";
 import { attempt } from "../../utils/attempt";
 import { activeWorkers } from "../../utils/workerMerge";
 

@@ -64,6 +64,42 @@ describe("cyclePaymentsOf", () => {
   });
 });
 
+describe("lo que no está en ninguna nómina", () => {
+  const unpaidWorkdays = [
+    ...workdays,
+    { workerId: "T-1", workerRut: "T-1", laborId: "poda", date: "2026-10-07", amount: 9000 },
+    // Sin monto y sin ser de asistencia: no cuenta.
+    wd(ANA, "riego", "2026-10-08", 0, null),
+    { ...wd(ANA, "riego", "2026-10-09", 0, null), attendanceOnly: true },
+  ];
+  const withUnpaid = () => dataOf({
+    workdays: unpaidWorkdays,
+    includeUnpaid: true,
+    labors: [{ ...labors[0], workers: [{ id: "T-1", rut: "T-1", name: "Temporal Uno" }] }, labors[1], labors[2]],
+  });
+
+  it("con `includeUnpaid` va como una nómina más, al final, sin totales de nómina", () => {
+    const data = withUnpaid();
+    expect(data.payrolls.map((p) => [p.id, p.name, p.state])).toEqual([
+      ["N1", "Nómina 27 oct", "paid"], ["N2", "Nómina 10 nov", "pending"], ["", "Sin nómina", "none"],
+    ]);
+    const unpaid = data.rows.filter((r) => r.payrollId === "").map((r) => [r.name, r.byLabor, r.net]);
+    expect(unpaid).toEqual([
+      ["Beto Soto", { amarre: 15000 }, null],
+      ["Temporal Uno", { poda: 9000 }, null],
+      ["Ana Rojas", { riego: 0 }, null],
+    ]);
+  });
+
+  it("se filtra aparte de las nóminas sin pagar, y no cuenta como nómina", () => {
+    const none = cyclePaymentGroups(withUnpaid(), { state: "none" });
+    expect(none.groups.map((g) => g.name)).toEqual(["Sin nómina"]);
+    expect([none.payrolls, none.unpaidAmount, none.totals.cycleAmount]).toEqual([0, 24000, 24000]);
+    expect(cyclePaymentGroups(withUnpaid(), { state: "unpaid" }).groups.map((g) => g.name)).toEqual(["Nómina 10 nov"]);
+    expect(cyclePaymentGroups(withUnpaid()).payrolls).toBe(2);
+  });
+});
+
 describe("cyclePaymentGroups", () => {
   it("por persona agrupa las nóminas de cada una, de la más vieja a la más nueva", () => {
     const out = cyclePaymentGroups(dataOf(), { view: "person" });

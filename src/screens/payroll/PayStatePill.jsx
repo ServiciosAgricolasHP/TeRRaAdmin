@@ -1,6 +1,7 @@
 import { pendingCashOf } from "../../services/payrollsService";
 import { fmtCurrency } from "../../utils/format";
-import { paymentDates, PAY_STATE_PILL, payStateOf } from "./payState";
+import { paymentDates } from "./payState";
+import { PAY_STATE_PILL, payStateOf } from "../../utils/payState";
 
 // Las fechas de pago en una sola línea, para la tabla del historial.
 export function PaymentDatesLine({ p }) {

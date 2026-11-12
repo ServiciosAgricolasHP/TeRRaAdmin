@@ -25,6 +25,7 @@ import TransportsModal from "./cycleDetail/TransportsModal";
 import CycleWorkerList from "./cycleDetail/CycleWorkerList";
 import CycleWorkerEditModal from "./cycleDetail/CycleWorkerEditModal";
 import CycleSummaryModal from "./cycleDetail/CycleSummaryModal";
+import { CyclePaymentsModal } from "../components/CyclePaymentsModal";
 import { qrLockedLaborsOf } from "../utils/harvestSync";
 import { currentRutResolver } from "../utils/workerRut";
 import {
@@ -105,6 +106,7 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 // Valores vacíos estables: un `[]` o `{}` nuevo en cada render haría que los
 // `useMemo` que dependen de ellos se recalcularan siempre.
 const NO_DAYS = [];
+const NO_CYCLE_WORKDAYS = [];
 const NO_WORKERS = [];
 const NO_WORKDAYS = {};
 
@@ -169,6 +171,12 @@ export default function CycleDetail() {
   const [pieceworkView, setPieceworkView] = useState("detalle"); // "detalle" | "resumen"
   const [transportsOpen, setTransportsOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  // "💸 Pagos": cómo se pagó el ciclo, con las jornadas que la grilla ya tiene.
+  const [paymentsOpen, setPaymentsOpen] = useState(false);
+  const cycleWorkdays = useMemo(
+    () => (paymentsOpen ? Object.values(workdaysByLabor).flatMap((byKey) => Object.values(byKey)) : NO_CYCLE_WORKDAYS),
+    [paymentsOpen, workdaysByLabor],
+  );
   const [groupView, setGroupView] = useState(() => {
     const saved = readStored("cycleDetail.groupView");
     return saved === "group" || saved === "employment" ? saved : "all";
@@ -960,6 +968,7 @@ export default function CycleDetail() {
     setRemoveLabor,
     setRemoveWorker,
     setSelectedDays,
+    setPaymentsOpen,
     setSummaryOpen,
     setToolbarCollapsed,
     setTransportsOpen,
@@ -1206,6 +1215,16 @@ export default function CycleDetail() {
           days={days}
           readOnly={readOnly}
         />
+
+        {paymentsOpen && (
+          <CyclePaymentsModal
+            cycle={cycle}
+            labors={cycle.labors}
+            workdays={cycleWorkdays}
+            includeUnpaid
+            onClose={() => setPaymentsOpen(false)}
+          />
+        )}
 
         <CycleSummaryModal
           open={summaryOpen}

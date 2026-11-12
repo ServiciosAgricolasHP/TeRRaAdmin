@@ -1,6 +1,6 @@
 import { useState, useEffect, useEffectEvent } from "react";
-import { payrollSnapshotsService } from "../../../services";
-import { completeSnapshotLabors } from "../../../services/payrollSnapshots";
+import { payrollSnapshotsService } from "../services";
+import { completeSnapshotLabors } from "../services/payrollSnapshots";
 
 // El snapshot JSON de una nómina, leído al abrirla, para el detalle por
 // trabajador (días pagados por ciclo, como en Trabajadores). Sin snapshot, el

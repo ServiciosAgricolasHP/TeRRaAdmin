@@ -1,5 +1,5 @@
 // Etiquetas y estilos del detalle de pago de una persona.
-import { tratoTypeLabel, tratoUnitLabel, cosechaUnit } from "../../utils/cosechaCombos";
+import { tratoTypeLabel, tratoUnitLabel, cosechaUnit } from "./cosechaCombos";
 
 export const WORKER_DETAIL_CELL_H = { border: "1px solid #555", padding: "5px 7px", fontSize: 11, fontWeight: 700, textAlign: "left", color: "#000" };
 

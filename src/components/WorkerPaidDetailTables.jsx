@@ -1,9 +1,9 @@
 import { useState, useRef } from "react";
-import { advanceTypeMeta } from "../../services/advancesService";
-import { formatRutForDisplay } from "../../utils/rutUtils";
-import { useCaptureActions } from "../../hooks/useCaptureActions";
-import { fmtCurrency } from "../../utils/format";
-import { paidByCycleEntriesOf, paidCycleSectionsOf, paidChronoRowsOf } from "../../utils/workerPaidDetail";
+import { advanceTypeMeta } from "../services/advancesService";
+import { formatRutForDisplay } from "../utils/rutUtils";
+import { useCaptureActions } from "../hooks/useCaptureActions";
+import { fmtCurrency } from "../utils/format";
+import { paidByCycleEntriesOf, paidCycleSectionsOf, paidChronoRowsOf } from "../utils/workerPaidDetail";
 import {
   workerDetailDateLabel,
   laborDisplayLabel,
@@ -11,7 +11,7 @@ import {
   WORKER_DETAIL_CELL_H,
   WORKER_DETAIL_CELL,
   laborSubtypeLabel,
-} from "./workerDetailLabels";
+} from "../utils/workerDetailLabels";
 
 // Detalle pagado en la nómina, con el formato del módulo Trabajadores. Vista
 // "Por ciclo": una tabla por ciclo (faena · subfaena · ciclo de encabezado,

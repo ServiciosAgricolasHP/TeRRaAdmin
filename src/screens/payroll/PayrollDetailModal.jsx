@@ -29,7 +29,8 @@ import { fmtCurrency } from "../../utils/format";
 import { EditCyclesModal } from "./EditCyclesModal";
 import { AddWorkerDaysModal } from "./AddWorkerDaysModal";
 import { CashEstimationModal } from "./CashEstimationModal";
-import { PAY_STATE_PILL, payStateOf, paymentDates } from "./payState";
+import { paymentDates } from "./payState";
+import { PAY_STATE_PILL, payStateOf } from "../../utils/payState";
 import { PortalBadge } from "./PayStatePill";
 import {
   computeBonusAdvanceSummary,
@@ -41,7 +42,7 @@ import { WorkerDetailRow } from "./WorkerDetailRow";
 import { useDetailFilters } from "./payrollDetailModal/useDetailFilters";
 import { useCashPaid } from "./payrollDetailModal/useCashPaid";
 import { useCycleTitles } from "./payrollDetailModal/useCycleTitles";
-import { usePayrollSnapshot } from "./payrollDetailModal/usePayrollSnapshot";
+import { usePayrollSnapshot } from "../../hooks/usePayrollSnapshot";
 import { useContentEdit } from "./payrollDetailModal/useContentEdit";
 import { usePayrollRecalc } from "./payrollDetailModal/usePayrollRecalc";
 import { usePayrollPrints } from "./payrollDetailModal/usePayrollPrints";
@@ -51,10 +52,11 @@ import { CycleTitlesEditor } from "./payrollDetailModal/CycleTitlesEditor";
 import { PayrollTotalsCards } from "./payrollDetailModal/PayrollTotalsCards";
 import { SummaryTable } from "./payrollDetailModal/SummaryTable";
 import { PayrollCyclesSection } from "./payrollDetailModal/PayrollCyclesSection";
-import { CyclePaymentsModal } from "./payrollDetailModal/CyclePaymentsModal";
+import { CyclePaymentsModal } from "../../components/CyclePaymentsModal";
 import { useReadSection } from "../../hooks/useReadSection";
 
 // Sin filas de ajuste: el resumen ya trae los anticipos y bonos en cada fila.
+const NO_LABORS = [];
 const NO_ADJUSTMENTS = { bonus: { bank: 0, cash: 0, total: 0 }, advance: { bank: 0, cash: 0, total: 0 } };
 
 export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, subfaenas, workers, allPayrolls = [], onClose, onRedownload, onDownloadBankFile, onDownloadSnapshot, bankFormatLabel = null, onPublishPortal = null, publishedPayrollId = null, onChanged }) {
@@ -779,7 +781,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
         <CyclePaymentsModal
           onClose={() => setPaymentsCycle(null)}
           cycle={paymentsCycle}
-          cycles={cycles}
+          labors={cycles.find((c) => c.id === paymentsCycle.id)?.labors || NO_LABORS}
           payroll={payroll}
           allPayrolls={allPayrolls}
           workers={workers}

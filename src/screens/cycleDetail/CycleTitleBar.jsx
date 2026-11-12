@@ -2,7 +2,7 @@ import { useCycleDetail } from "./CycleDetailContext";
 
 // Encabezado del ciclo: plegar la barra, ciclo anterior y siguiente de la
 // subfaena, labores y días, y las acciones del ciclo (catálogos, transportes,
-// resumen, cerrar o reabrir).
+// resumen, pagos, cerrar o reabrir).
 export function CycleTitleBar() {
   const {
     closed,
@@ -14,6 +14,7 @@ export function CycleTitleBar() {
     prevCycle,
     setCatalogsOpen,
     setCloseFlow,
+    setPaymentsOpen,
     setSummaryOpen,
     setToolbarCollapsed,
     setTransportsOpen,
@@ -64,6 +65,13 @@ export function CycleTitleBar() {
         </button>
         <button onClick={() => setSummaryOpen(true)} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]">
           📊 Resumen ciclo
+        </button>
+        <button
+          onClick={() => setPaymentsOpen(true)}
+          title="Cómo se pagó este ciclo: a quién, en qué labor y en qué nómina, y lo que falta pagar"
+          className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]"
+        >
+          💸 Pagos
         </button>
         {!closed && (
           <button onClick={() => setCloseFlow(true)} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)]">

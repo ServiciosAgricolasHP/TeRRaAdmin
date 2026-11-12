@@ -6,6 +6,12 @@ import { workerMatchesQuery } from "./workerSearch";
 
 const NO_PAYROLL = { name: "Nómina eliminada", state: "pending", createdMs: 0, items: [] };
 
+// Lo que no está en ninguna nómina va como una nómina más, al final, con este
+// estado.
+export const UNPAID_ID = "";
+export const UNPAID_STATE = "none";
+const UNPAID = { name: "Sin nómina", state: UNPAID_STATE, createdMs: Infinity, items: [] };
+
 // Una fila por persona y nómina, con lo que esa nómina le paga de cada labor
 // del ciclo (`byLabor`, solo las labores donde tiene jornadas), la suma
 // (`cycleAmount`) y lo que la persona recibe en la nómina entera (`gross`,
@@ -13,27 +19,32 @@ const NO_PAYROLL = { name: "Nómina eliminada", state: "pending", createdMs: 0, 
 // con que figura en ella (`itemKey`).
 //
 // `workdays` son las jornadas del ciclo; las que no están en una nómina no
-// cuentan. `payrolls` trae de cada nómina `{ id, name, state, createdMs,
-// items }`. `workerIdOf` resuelve la ficha de una jornada o de un item, y
-// `workerOf`, la ficha por su id.
-export function cyclePaymentsOf({ workdays = [], labors = [], payrolls = [], workerIdOf, workerOf = () => null, currentPayrollId = null }) {
+// cuentan, salvo con `includeUnpaid`: ahí van juntas en "Sin nómina" las que
+// tienen monto o son de asistencia. `payrolls` trae de cada nómina `{ id,
+// name, state, createdMs, items }`. `workerIdOf` resuelve la ficha de una
+// jornada o de un item, y `workerOf`, la ficha por su id; quien no tiene
+// ficha toma su nombre de los trabajadores de las labores.
+export function cyclePaymentsOf({ workdays = [], labors = [], payrolls = [], workerIdOf, workerOf = () => null, currentPayrollId = null, includeUnpaid = false }) {
   const laborTypeById = new Map(labors.map((l) => [l.id, l.type]));
-  const payrollById = new Map(payrolls.map((p) => [p.id, p]));
+  const laborNames = new Map(labors.flatMap((l) => (l.workers || []).flatMap((w) => [[w.id, w.name], [w.rut, w.name]])));
+  const payrollById = new Map([...payrolls.map((p) => [p.id, p]), [UNPAID_ID, UNPAID]]);
   const rowsByKey = new Map();
   const usedLabors = new Set();
   for (const wd of workdays) {
-    if (!wd.payrollId) continue;
+    const amount = workdayPayAmount(wd, laborTypeById.get(wd.laborId));
+    if (!wd.payrollId && !(includeUnpaid && (amount > 0 || wd.attendanceOnly))) continue;
+    const payrollId = wd.payrollId || UNPAID_ID;
     const personKey = workerIdOf(wd);
     if (!personKey) continue;
-    const key = `${personKey}|${wd.payrollId}`;
+    const key = `${personKey}|${payrollId}`;
     let row = rowsByKey.get(key);
     if (!row) {
       const worker = workerOf(personKey);
       row = {
         key,
         personKey,
-        payrollId: wd.payrollId,
-        name: worker?.name || wd.workerName || personKey,
+        payrollId,
+        name: worker?.name || laborNames.get(personKey) || laborNames.get(wd.workerRut) || wd.workerName || personKey,
         rut: worker?.rut || wd.workerRut || personKey,
         byLabor: {},
         cycleAmount: 0,
@@ -41,7 +52,6 @@ export function cyclePaymentsOf({ workdays = [], labors = [], payrolls = [], wor
       };
       rowsByKey.set(key, row);
     }
-    const amount = workdayPayAmount(wd, laborTypeById.get(wd.laborId));
     row.byLabor[wd.laborId] = (row.byLabor[wd.laborId] || 0) + amount;
     row.cycleAmount += amount;
     row.days += 1;
@@ -104,16 +114,17 @@ function totalsOf(rows) {
 // Los pagos como se muestran: agrupados por persona (`view: "person"`, una
 // fila por nómina) o por nómina (`view: "payroll"`, una fila por persona),
 // con el subtotal de cada grupo y el total. `state` deja solo las nóminas
-// pagadas (`paid`) o las que no lo están (`unpaid`), y `search` busca por
+// pagadas (`paid`), las que no lo están (`unpaid`) o lo que no está en ninguna
+// (`none`), y `search` busca por
 // nombre o RUT. `labors` son las labores con algo en lo que quedó.
 export function cyclePaymentGroups(data, { view = "payroll", state = "all", search = "" } = {}) {
   const payrollById = new Map(data.payrolls.map((p, i) => [p.id, { ...p, order: i }]));
   const query = search.trim();
   const rows = data.rows
     .filter((r) => {
-      const paid = payrollById.get(r.payrollId)?.state === "paid";
-      if (state === "paid" && !paid) return false;
-      if (state === "unpaid" && paid) return false;
+      const payrollState = payrollById.get(r.payrollId)?.state;
+      const group = payrollState === "paid" ? "paid" : payrollState === UNPAID_STATE ? "none" : "unpaid";
+      if (state !== "all" && state !== group) return false;
       return !query || workerMatchesQuery({ id: r.personKey, name: r.name, rut: r.rut }, query);
     })
     .map((r) => ({ ...r, payroll: payrollById.get(r.payrollId) }));
@@ -141,6 +152,7 @@ export function cyclePaymentGroups(data, { view = "payroll", state = "all", sear
     groups,
     totals,
     people: new Set(rows.map((r) => r.personKey)).size,
-    payrolls: new Set(rows.map((r) => r.payrollId)).size,
+    payrolls: new Set(rows.filter((r) => r.payrollId !== UNPAID_ID).map((r) => r.payrollId)).size,
+    unpaidAmount: rows.filter((r) => r.payrollId === UNPAID_ID).reduce((s, r) => s + r.cycleAmount, 0),
   };
 }
