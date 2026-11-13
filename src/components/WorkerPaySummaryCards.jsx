@@ -2,13 +2,16 @@ import { fmtCurrency } from "../utils/format";
 
 // Tarjetas bruto/anticipos/bonos/neto de un item de nómina — usado tanto en
 // la fila expandible de PayrollDetailModal como en el modal enfocado que se
-// abre desde el historial del trabajador (mismo contenido, dos entradas).
+// abre desde el historial del trabajador (mismo contenido, dos entradas). Con
+// anticipos que la nómina le entrega, suma la tarjeta "Entregado".
 export function WorkerPaySummaryCards({ item }) {
+  const payouts = item.payoutApplications || [];
+  const payoutTotal = Number(item.payoutTotal) || 0;
   return (
-    <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+    <div className={`grid grid-cols-2 gap-1.5 ${payoutTotal > 0 ? "sm:grid-cols-5" : "sm:grid-cols-4"}`}>
       <div className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5">
         <div className="text-[9px] uppercase text-[var(--color-muted)]">Bruto</div>
-        <div className="font-bold tabular-nums">{fmtCurrency(item.grossAmount || item.amount || 0)}</div>
+        <div className="font-bold tabular-nums">{fmtCurrency(item.grossAmount ?? item.amount ?? 0)}</div>
       </div>
       <div className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5">
         <div className="text-[9px] uppercase text-[var(--color-muted)]">Anticipos</div>
@@ -32,6 +35,15 @@ export function WorkerPaySummaryCards({ item }) {
           </div>
         )}
       </div>
+      {payoutTotal > 0 && (
+        <div className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-1.5">
+          <div className="text-[9px] uppercase text-[var(--color-muted)]">Anticipo entregado</div>
+          <div className="font-bold tabular-nums text-[var(--color-accent)]">+{fmtCurrency(payoutTotal)}</div>
+          <div className="mt-0.5 text-[9px] text-[var(--color-muted)]">
+            {payouts.length} anticipo{payouts.length === 1 ? "" : "s"} · se descuenta en otra nómina
+          </div>
+        </div>
+      )}
       <div className="rounded border border-[var(--color-accent)] bg-[var(--color-accent-soft)] p-1.5">
         <div className="text-[9px] uppercase text-[var(--color-muted)]">Neto</div>
         <div className="font-bold tabular-nums text-[var(--color-accent)]">{fmtCurrency(item.amount || 0)}</div>

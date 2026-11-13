@@ -25,6 +25,9 @@ export function printSummaryTable(payroll, {
     if (bonusAdvanceSummary?.advance.total > 0) {
       rows.push(`<tr class="adj-row"><td colspan="${labelColspan}" style="text-align:right">Anticipos</td><td style="text-align:right">− ${fmtCurrency(bonusAdvanceSummary.advance.bank)}</td><td style="text-align:right">− ${fmtCurrency(bonusAdvanceSummary.advance.cash)}</td><td style="text-align:right">− ${fmtCurrency(bonusAdvanceSummary.advance.total)}</td></tr>`);
     }
+    if (bonusAdvanceSummary?.payout?.total > 0) {
+      rows.push(`<tr class="adj-row"><td colspan="${labelColspan}" style="text-align:right">Anticipos entregados</td><td style="text-align:right">${fmtCurrency(bonusAdvanceSummary.payout.bank)}</td><td style="text-align:right">${fmtCurrency(bonusAdvanceSummary.payout.cash)}</td><td style="text-align:right">${fmtCurrency(bonusAdvanceSummary.payout.total)}</td></tr>`);
+    }
     return rows.join("");
   };
   // Filas del efectivo adeudado de nóminas anteriores. `nameColspan` = cuántas

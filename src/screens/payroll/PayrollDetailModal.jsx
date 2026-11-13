@@ -33,7 +33,7 @@ import { paymentDates } from "./payState";
 import { PAY_STATE_PILL, payStateOf } from "../../utils/payState";
 import { PortalBadge } from "./PayStatePill";
 import {
-  computeBonusAdvanceSummary,
+  summaryAdjustmentsOf,
   fetchPayrollWorkdays,
 } from "./printCommon";
 import { ProgressOverlay } from "./ProgressOverlay";
@@ -46,6 +46,8 @@ import { usePayrollSnapshot } from "../../hooks/usePayrollSnapshot";
 import { useContentEdit } from "./payrollDetailModal/useContentEdit";
 import { useBonusChange } from "./payrollDetailModal/useBonusChange";
 import { BonusChangeModal } from "./payrollDetailModal/BonusChangeModal";
+import { useAdvancePayouts } from "./payrollDetailModal/useAdvancePayouts";
+import { AdvancePayoutModal } from "./payrollDetailModal/AdvancePayoutModal";
 import { usePayrollRecalc } from "./payrollDetailModal/usePayrollRecalc";
 import { usePayrollPrints } from "./payrollDetailModal/usePayrollPrints";
 import { useSummaryTable } from "./payrollDetailModal/useSummaryTable";
@@ -58,9 +60,7 @@ import { PayrollHistoryModal } from "./payrollDetailModal/PayrollHistoryModal";
 import { CyclePaymentsModal } from "../../components/CyclePaymentsModal";
 import { useReadSection } from "../../hooks/useReadSection";
 
-// Sin filas de ajuste: el resumen ya trae los anticipos y bonos en cada fila.
 const NO_LABORS = [];
-const NO_ADJUSTMENTS = { bonus: { bank: 0, cash: 0, total: 0 }, advance: { bank: 0, cash: 0, total: 0 } };
 
 export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, subfaenas, workers, allPayrolls = [], onClose, onRedownload, onDownloadBankFile, onDownloadSnapshot, bankFormatLabel = null, onPublishPortal = null, publishedPayrollId = null, onChanged }) {
   useReadSection("Detalle de nómina");
@@ -188,6 +188,17 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
   } = useBonusChange({ payroll, onChanged: contentChanged, toast });
   const bonusChangeFor = (it) => (canChangeBonus(it) ? openBonusChange : null);
 
+  const {
+    confirmRemovePayout,
+    deliver: deliverPayouts,
+    payoutBusy,
+    payoutOpen,
+    payoutProgress,
+    payoutsToRemove,
+    setPayoutOpen,
+    setPayoutsToRemove,
+  } = useAdvancePayouts({ payroll, onChanged: contentChanged, toast });
+
   const { cycleTitleOverrides, displayCycleLabel, setCycleTitle } = useCycleTitles({ payroll });
 
   // El resumen junta los ciclos de una misma subfaena; "Ciclos separados" lo
@@ -197,9 +208,14 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
   // Cada fila del resumen trae lo que se paga, con los anticipos y bonos de
   // cada persona ya descontados; "Ver bruto" los deja aparte, al pie.
   const [showGross, setShowGross] = useState(false);
-  const subfaenaSummary = subfaenaSummaryOf(cycleDetails, bank, cash, { byCycle: cyclesApart, net: !showGross, cycleNameOf });
+  const subfaenaSummary = subfaenaSummaryOf(cycleDetails, bank, cash, {
+    byCycle: cyclesApart,
+    net: !showGross,
+    cycleNameOf,
+    payoutCycleDetails: payroll.payoutCycleDetails,
+  });
 
-  const bonusAdvanceSummary = showGross ? computeBonusAdvanceSummary(items) : NO_ADJUSTMENTS;
+  const bonusAdvanceSummary = summaryAdjustmentsOf(items, { gross: showGross });
   const cyclesPeriod = (cycleIdsIn) => cyclesPeriodOf(cycleDetails, cycleIdsIn);
 
   // Ciclos y jornadas de la nómina, una vez por modal. Se guarda la promesa y
@@ -441,6 +457,19 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
                   >
                     + Agregar persona
                   </button>
+                  <button
+                    type="button"
+                    disabled={editBusy || payoutBusy || !!payroll.bankPaidAt}
+                    onClick={() => setPayoutOpen(true)}
+                    className="min-h-8 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-xs text-[var(--color-accent)] hover:opacity-80 disabled:opacity-50"
+                    title={
+                      payroll.bankPaidAt
+                        ? "Las transferencias de esta nómina ya se pagaron"
+                        : "Pagar en esta nómina anticipos que ya existen, de quienes trabajaron en un ciclo. Los descuenta otra nómina"
+                    }
+                  >
+                    💸 Entregar anticipos
+                  </button>
                 </>
               )}
               {isPending && (
@@ -503,6 +532,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
                   setShowCashEstimation={setShowCashEstimation}
                   onChangeBonus={openBonusChange}
                   canChangeBonus={canChangeBonus}
+                  onRemovePayouts={isPending && !payroll.bankPaidAt ? setPayoutsToRemove : null}
                 />
 
                 {subfaenaSummary.rows.length > 0 && (
@@ -860,7 +890,31 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
           onConfirm={applyBonusChange}
         />
       )}
-      <ProgressOverlay info={recalcProgress || editProgress || bonusProgress} />
+      {payoutOpen && (
+        <AdvancePayoutModal
+          items={items}
+          cycles={cycles}
+          faenas={faenas}
+          workers={workers}
+          busy={payoutBusy}
+          onClose={() => setPayoutOpen(false)}
+          onConfirm={deliverPayouts}
+        />
+      )}
+      <ConfirmDialog
+        open={!!payoutsToRemove}
+        title="Quitar anticipos entregados"
+        message={
+          payoutsToRemove
+            ? `La nómina deja de pagar ${payoutsToRemove.length === 1 ? `el anticipo de ${payoutsToRemove[0].name}` : `${payoutsToRemove.length} anticipos`} (${fmtCurrency(payoutsToRemove.reduce((s, r) => s + r.amount, 0))}), que ${payoutsToRemove.length === 1 ? "vuelve" : "vuelven"} a quedar sin entregar. Quien estaba en la nómina solo por su anticipo sale.`
+            : ""
+        }
+        confirmLabel="Quitar"
+        danger
+        onCancel={() => setPayoutsToRemove(null)}
+        onConfirm={confirmRemovePayout}
+      />
+      <ProgressOverlay info={recalcProgress || editProgress || bonusProgress || payoutProgress} />
       <ConfirmDialog
         open={!!confirmRemove}
         title="Sacar trabajador de la nómina"

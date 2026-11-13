@@ -117,6 +117,7 @@ export async function writePayrollSummaryXlsx({ bonusAdvanceSummary, deferredCas
         total: -bonusAdvanceSummary.advance.total,
       });
     }
+    if (bonusAdvanceSummary.payout?.total > 0) writeAdjRow("Anticipos entregados", bonusAdvanceSummary.payout);
     if (deferredCash > 0) {
       writeAdjRow("Efectivo que queda pendiente", { bank: 0, cash: -deferredCash, total: -deferredCash });
     }

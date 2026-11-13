@@ -8,7 +8,8 @@ import {
   renderProductionTotal,
   fetchPayrollWorkdays,
   buildWorkdaysByGroup,
-  computeBonusAdvanceSummary,
+  adjustedSummaryTotals,
+  summaryAdjustmentsOf,
   cyclesNoteHtml,
 } from "./printCommon";
 import { fmtCurrency } from "../../utils/format";
@@ -33,7 +34,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
   const cyclesApart = !!options.cyclesApart;
   const gross = !!options.gross;
   const bonusAdvanceSummary = options.bonusAdvanceSummary || null;
-  // Filas de ajuste (Bonos / Anticipos), comunes a "Resumen por subfaena" y
+  // Filas de ajuste (Bonos / Anticipos / Anticipos entregados), comunes a "Resumen por subfaena" y
   // "Resumen por labor"; el total cuadrado sale de `adjustedTotals`.
   // `labelColspan` = columnas de etiqueta antes de las 3 de plata (bank/cash/total).
   const buildAdjustmentRowsHtml = (labelColspan) => {
@@ -56,13 +57,18 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
           <td style="text-align:right">− ${fmtCurrency(bonusAdvanceSummary.advance.total)}</td>
         </tr>`);
     }
+    if (bonusAdvanceSummary?.payout?.total > 0) {
+      rows.push(`
+        <tr class="adj-row">
+          <td colspan="${labelColspan}" style="text-align:right">Anticipos entregados</td>
+          <td style="text-align:right">${fmtCurrency(bonusAdvanceSummary.payout.bank)}</td>
+          <td style="text-align:right">${fmtCurrency(bonusAdvanceSummary.payout.cash)}</td>
+          <td style="text-align:right">${fmtCurrency(bonusAdvanceSummary.payout.total)}</td>
+        </tr>`);
+    }
     return rows.join("");
   };
-  const adjustedTotals = (base) => ({
-    bank: base.bank + (bonusAdvanceSummary?.bonus.bank || 0) - (bonusAdvanceSummary?.advance.bank || 0),
-    cash: base.cash + (bonusAdvanceSummary?.bonus.cash || 0) - (bonusAdvanceSummary?.advance.cash || 0),
-    total: base.total + (bonusAdvanceSummary?.bonus.total || 0) - (bonusAdvanceSummary?.advance.total || 0),
-  });
+  const adjustedTotals = (base) => adjustedSummaryTotals(base, bonusAdvanceSummary);
   const overviewTitle = isDetail ? "Detalle de pago" : "Comprobante de pago en efectivo";
   const docTitle = isDetail ? `${payroll.name} — Detalle pago` : `${payroll.name} — Efectivo`;
   const cycleLabel = (cycleId) => titleOverrides[cycleId] || cyclesById[cycleId]?.label || cycleDetails.find((c) => c.id === cycleId)?.label || cycleId;
@@ -106,10 +112,19 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
         ? cycleCols.map((c) => `<th style="text-align:right">${cycleLabel(c.id)}</th>`).join("")
         : "";
 
-      // Las columnas Anticipo y Bono aparecen solo si alguien del grupo tiene
-      // un descuento o un bono.
+      // Las columnas Anticipo, Bono y Ant. entregado aparecen solo si alguien
+      // del grupo tiene un descuento, un bono o un anticipo que la nómina le
+      // entrega.
       const groupHasAdvance = g.items.some((it) => (Number(it.advance) || 0) > 0);
       const groupHasBonus = g.items.some((it) => (Number(it.bonus) || 0) > 0);
+      const groupHasPayout = g.items.some((it) => (Number(it.payoutTotal) || 0) > 0);
+      const payoutHeader = groupHasPayout
+        ? `<th style="width:110px;text-align:right">Ant. entregado</th>`
+        : "";
+      const payoutCellOf = (it) =>
+        groupHasPayout
+          ? `<td style="text-align:right">${Number(it.payoutTotal) > 0 ? `+ ${fmtCurrency(it.payoutTotal)}` : "—"}</td>`
+          : "";
       const advanceHeader = groupHasAdvance
         ? `<th style="width:110px;text-align:right">Anticipo</th>`
         : "";
@@ -185,6 +200,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
               ${cellsByCycle}
               ${advanceCell}
               ${bonusCell}
+              ${payoutCellOf(it)}
               <td style="text-align:right"><b>${fmtCurrency(it.amount)}</b></td>
               <td></td>
             </tr>`;
@@ -214,6 +230,12 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
               return sum > 0 ? `+ ${fmtCurrency(sum)}` : "—";
             })()
           }</b></td>`
+        : "";
+
+      const payoutSubtotalCell = groupHasPayout
+        ? `<td style="text-align:right;background:${leaderFill}"><b>+ ${fmtCurrency(
+            g.items.reduce((s, it) => s + (Number(it.payoutTotal) || 0), 0),
+          )}</b></td>`
         : "";
 
       const totalColSpan = 3; // # + Nombre + RUT
@@ -350,6 +372,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
                   ${cellsByCycle}
                   ${advanceCell}
                   ${bonusCell}
+                  ${payoutCellOf(it)}
                   <td style="text-align:right"><b>${fmtCurrency(it.amount)}</b></td>
                 </tr>`;
             })
@@ -381,6 +404,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
             ${cycleHeaders}
             ${advanceHeader}
             ${bonusHeader}
+            ${payoutHeader}
             <th style="width:120px;text-align:right">TOTAL</th>
             ${isDetail ? "" : '<th style="width:200px">Firma</th>'}
           </tr>
@@ -394,6 +418,7 @@ function buildCashReceiptHtml(payroll, cashGroups, options = {}) {
             ${subtotalCells}
             ${advanceSubtotalCell}
             ${bonusSubtotalCell}
+            ${payoutSubtotalCell}
             <td style="text-align:right"><b>${fmtCurrency(g.total)}</b></td>
             ${isDetail ? "" : "<td></td>"}
           </tr>
@@ -693,7 +718,7 @@ export async function printPaymentDetails(payroll, allGroups, titleOverrides = {
     net,
     cycleNameOf: (cd) => summaryCycleName(cd, titleOverrides),
   });
-  const bonusAdvanceSummary = net ? null : computeBonusAdvanceSummary(allItems);
+  const bonusAdvanceSummary = summaryAdjustmentsOf(allItems, { gross: !net });
 
   const html = buildCashReceiptHtml(payroll, allGroups, {
     titleOverrides,

@@ -112,7 +112,7 @@ export function WorkersHistory({ faenas, workers }) {
         const w = map.get(key);
         if (!merged && it.name && (!w.name || w.name === it.rut)) w.name = it.name;
         const amount = Number(it.amount) || 0;
-        const gross = Number(it.grossAmount) || amount;
+        const gross = Number(it.grossAmount ?? amount) || 0;
         const advance = Number(it.advance) || Number(it.anticiposTotal) || 0;
         const bonus = Number(it.bonus) || Number(it.bonosTotal) || 0;
         // Faenas que cubre este pago según byCycle + cycleDetails.

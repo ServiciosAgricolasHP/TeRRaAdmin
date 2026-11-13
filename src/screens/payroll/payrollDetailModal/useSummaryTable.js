@@ -1,5 +1,5 @@
 import { useState, useEffect, useEffectEvent, useMemo, useRef } from "react";
-import { buildWorkdaysByGroup } from "../printCommon";
+import { adjustedSummaryTotals, buildWorkdaysByGroup } from "../printCommon";
 import { computeLaborSummary, summaryDisplayRowsOf, summaryLabelColumnsOf, summaryTitleOf } from "../../../utils/payrollDetail";
 import { printSummaryTable } from "../printSummaryTable";
 import { useCaptureActions } from "../../../hooks/useCaptureActions";
@@ -11,13 +11,10 @@ import { attempt } from "../../../utils/attempt";
 // porque también lo usa el detalle de pago impreso, igual que `showGross`:
 // el bruto con los anticipos y bonos aparte), con o sin el efectivo
 // pendiente de otras nóminas, sus totales y sus acciones de imprimir, copiar y
-// descargar.
+// descargar. Los anticipos que la nómina entrega van siempre en su fila al
+// pie.
 export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycleNameOf, cyclesApart, cyclesPeriod, getPayrollData, otherPendingCash, payroll, setCyclesApart, setShowGross, showGross, subfaenaSummary, toast }) {
-  const adjustedTotals = (base) => ({
-    bank: base.bank + (bonusAdvanceSummary.bonus.bank || 0) - (bonusAdvanceSummary.advance.bank || 0),
-    cash: base.cash + (bonusAdvanceSummary.bonus.cash || 0) - (bonusAdvanceSummary.advance.cash || 0),
-    total: base.total + (bonusAdvanceSummary.bonus.total || 0) - (bonusAdvanceSummary.advance.total || 0),
-  });
+  const adjustedTotals = (base) => adjustedSummaryTotals(base, bonusAdvanceSummary);
 
   // Resumen en pantalla: las mismas tablas de "Detalle de pago" (por subfaena
   // o por labor), con sus propias acciones de imprimir, copiar y descargar. La
