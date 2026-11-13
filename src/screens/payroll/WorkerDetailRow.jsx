@@ -10,11 +10,12 @@ const sameRut = (r) => r;
 
 // Fila expandible de banco o efectivo. Al expandirla muestra el detalle de la
 // persona en la nómina: tablas por ciclo y tarjetas de bruto, anticipos, bonos
-// y neto. "📅 Ver historial completo" abre el WorkerSummaryModal.
+// y neto. "📅 Ver historial completo" abre el WorkerSummaryModal. Con
+// `onChangeBonus(item, bonusId)`, cada bono lleva "✎ Editar bono".
 export function WorkerDetailRow({
   rutOf = sameRut, item, expanded, onToggle, onShowSummary, cycleDetails, displayCycleLabel,
   editMode, editBusy, onRemoveWorker, cols, snapshot, snapshotLoading, catalogs, isMobile,
-  cashPaidMode = false, cashPaid = false, onToggleCashPaid,
+  cashPaidMode = false, cashPaid = false, onToggleCashPaid, onChangeBonus = null,
 }) {
   const isBank = cols === "bank";
   // Columnas base: 7 en banco, 4 en efectivo. Cada modo opcional suma una.
@@ -60,6 +61,21 @@ export function WorkerDetailRow({
       />
 
       <WorkerPaySummaryCards item={item} />
+      {onChangeBonus && (item.bonoApplications || []).length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {item.bonoApplications.map((b) => (
+            <button
+              key={b.advanceId}
+              type="button"
+              onClick={() => onChangeBonus(item, b.advanceId)}
+              title="Editar el monto o la nota de este bono en la nómina"
+              className="min-h-8 rounded-md border border-[var(--color-border)] px-2 text-xs hover:bg-[var(--color-accent-soft)]"
+            >
+              ✎ Editar bono de {fmtCurrency(b.amount)}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 

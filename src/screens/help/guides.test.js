@@ -84,6 +84,8 @@ describe("preguntas típicas", () => {
     ["qué significa parcial", "anticipos-y-bonos#despues-de-la-nomina"],
     ["el anticipo es más grande que lo que gana", "anticipos-y-bonos#como-los-aplica-la-nomina"],
     ["pagar un bono a un trabajador", "anticipos-y-bonos#anotar-un-bono"],
+    ["cambiar el monto de un bono en la nómina", "anticipos-y-bonos#editar-un-bono-que-ya-aplico-la-nomina"],
+    ["me equivoqué en el bono y ya está en la nómina", "anticipos-y-bonos#editar-un-bono-que-ya-aplico-la-nomina"],
     ["cuánto le cobro al cliente", "resumen-del-ciclo#para-cobrar-las-tarifas"],
     ["agregar un día al cobro", "resumen-del-ciclo#ajustar-un-dia-o-agregar-uno"],
     ["cobrar con iva", "resumen-del-ciclo#iva-descuento-y-columnas"],

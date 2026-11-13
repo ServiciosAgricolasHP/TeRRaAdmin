@@ -65,15 +65,35 @@ Al armar una nómina, TeRRa busca los anticipos y bonos pendientes de cada perso
 
 - Si la nómina se elimina, o se saca a la persona, el anticipo vuelve a quedar pendiente como estaba. Ver la guía [Corregir una nómina](/ayuda/corregir-nomina#que-pasa-con-los-anticipos-y-bonos).
 
+## Editar un bono que ya aplicó la nómina
+<!-- preguntas: cambiar el monto de un bono en la nómina; me equivoqué en el bono y ya está en la nómina; corregir un bono aplicado; editar la nota del bono; el bono era otro monto -->
+
+Un bono que ya está en una nómina pendiente se edita desde la nómina, sin sacar a la persona:
+
+1. En el detalle de la nómina, toca **📋 Ver anticipos y bonos** y, en el bono, **✎ Editar**. También está en el detalle de pago de la persona, al abrir su fila: **✎ Editar bono**.
+2. Escribe el monto o la nota nuevos. Abajo se ve cómo quedan el bono, los anticipos y el líquido, antes y después.
+3. Toca **Guardar**. Mientras guarda, una barra muestra en qué va.
+
+![Editar un bono de la nómina](help/anticipos-y-bonos/07-editar-bono.webp)
+
+El bono queda como si hubiera sido así desde el principio, y la nómina le paga el monto nuevo:
+
+- **Si el bono sube**, sube lo que cobra la persona, y nada más.
+- **Si el bono baja**, baja lo que cobra. Si tenía un anticipo que ya no cabe entero, se descuenta lo que alcanza y el resto vuelve al anticipo, que queda **Parcial** para la próxima nómina.
+- **Si solo cambia la nota**, la nómina queda igual.
+
+Con las transferencias de la nómina ya marcadas, solo se edita el bono de quien cobra en efectivo. Si ya cobró, TeRRa avisa que la diferencia se arregla en la mano.
+
 ## Corregir o eliminar un anticipo
 <!-- preguntas: cómo corrijo un anticipo; eliminar un anticipo; perdonar el saldo de un anticipo; me equivoqué de monto en el anticipo -->
 
 - **Pendiente**: se edita y se elimina con **Editar** y **Eliminar**.
 - **Parcial**: no se elimina, porque ya tiene pagos. Con **Editar** se puede bajar el monto hasta lo ya pagado, para dar por cerrado el resto.
-- **Aplicado**: ya no se edita ni se elimina.
+- **Aplicado**: ya no se edita ni se elimina aquí. Un bono aplicado se edita desde su nómina: ver [Editar un bono que ya aplicó la nómina](/ayuda/anticipos-y-bonos#editar-un-bono-que-ya-aplico-la-nomina).
 
 ## Si algo no funciona
 <!-- preguntas: la nómina no descontó el anticipo; no aparece el anticipo en la nómina; no puedo eliminar un anticipo -->
 
 - **La nómina no lo descontó**: la persona no cobró nada en esa nómina, o la cuota se desmarcó al guardarla. Sigue pendiente para la próxima.
 - **No se puede eliminar**: tiene pagos aplicados (está parcial). Usa **Editar** para cerrar el saldo.
+- **Un bono de la nómina no tiene ✎ Editar**: la nómina está pagada, o ya se marcaron las transferencias y la persona cobra por banco.
