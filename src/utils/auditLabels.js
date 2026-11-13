@@ -12,6 +12,7 @@
 // Una entidad borrada y sin snapshot no tiene nombre: quien llama muestra el id.
 
 import {
+  usersService,
   workersService,
   cyclesService,
   subjobsService,
@@ -24,6 +25,7 @@ import { payrollsService } from "../services/payrollsService";
 import { advancesService, normalizeAdvanceType } from "../services/advancesService";
 import { carriersService } from "../services/carriersService";
 import { tripsService, paymentsService, fortnightsService } from "../services/transportsService";
+import { fmtCurrency } from "./format";
 
 // Fecha corta para los labels de vueltas/resúmenes ("2026-08-12" → "12-ago").
 const MONTHS_ABBR = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
@@ -41,7 +43,25 @@ export const ENTITY_META = {
   cycle: { labelEs: "Ciclo", service: cyclesService, searchFields: ["label"], labelOf: (d) => d?.label, searchable: true },
   faena: { labelEs: "Faena", service: jobsService, searchFields: ["name"], labelOf: (d) => d?.name, searchable: true },
   subfaena: { labelEs: "Subfaena", service: subjobsService, searchFields: ["name"], labelOf: (d) => d?.name, searchable: true },
-  payroll: { labelEs: "Nómina", service: payrollsService, searchFields: ["name"], labelOf: (d) => d?.name, searchable: true },
+  // `listDetailOf`: lo que acompaña al nombre en la lista del buscador.
+  payroll: {
+    labelEs: "Nómina",
+    service: payrollsService,
+    searchFields: ["name"],
+    labelOf: (d) => d?.name,
+    listDetailOf: (d) => `${d.status === "paid" ? "pagada" : "pendiente"} · ${fmtCurrency(d.total || 0)}`,
+    searchable: true,
+  },
+  // Un usuario de la app: su historial es lo que hizo (los logs con su `uid`)
+  // más los cambios a su perfil.
+  user: {
+    labelEs: "Usuario",
+    service: usersService,
+    searchFields: ["alias", "email"],
+    labelOf: (d) => d?.alias || d?.email,
+    listDetailOf: (d) => [d.alias ? d.email : "", d.role === "admin" ? "admin" : "", d.disabled ? "suspendido" : ""].filter(Boolean).join(" · "),
+    searchable: true,
+  },
   carrier: { labelEs: "Transportista", service: carriersService, searchFields: ["alias", "name"], labelOf: (d) => d?.alias || d?.name, searchable: true },
   company: { labelEs: "Empresa", service: companiesService, searchFields: ["alias", "razonSocial", "rut"], labelOf: (d) => d?.alias || d?.razonSocial, searchable: true },
   costCenter: { labelEs: "Centro de costo", service: costCentersService, searchFields: ["label"], labelOf: (d) => (d?.emoji ? `${d.emoji} ${d.label}` : d?.label), searchable: true },

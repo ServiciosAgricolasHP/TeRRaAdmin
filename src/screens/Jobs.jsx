@@ -5,10 +5,11 @@ import { UNGROUPED_ID } from "../services/userPrefsService";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import ConfirmDialog from "../components/ConfirmDialog";
-import { useIsMobile } from "../hooks/useIsMobile";
-import { ColorPickerButton } from "./jobs/ColorPickerButton";
+import { JobCardBody } from "./jobs/JobCardBody";
 import { GroupHeader } from "./jobs/GroupHeader";
 import { SelectedDetail } from "./jobs/SelectedDetail";
+import { useJobPanel } from "./jobs/useJobPanel";
+import { rowEndIndex } from "../utils/gridRows";
 import { withInitial } from "./jobs/helpers";
 import { useJobsData } from "./jobs/useJobsData";
 import { useJobLayout } from "./jobs/useJobLayout";
@@ -24,7 +25,8 @@ import { FirstCycleOfferModal } from "./jobs/FirstCycleOfferModal";
 import { CloseCycleModal } from "./jobs/CloseCycleModal";
 import ScreenLoader from "../components/ScreenLoader";
 import { useJobStates } from "./jobs/useJobStates";
-import { JOB_STATES } from "../utils/jobStatus";
+import { JOB_STATE_GROUPS, JOB_STATE_SORTS, sinceLabel } from "../utils/jobStatus";
+import { localIsoDate } from "../utils/dates";
 import { useValuesChanged } from "../hooks/useValuesChanged";
 
 const emptyJob = { name: "", location: "", notes: "" };
@@ -33,7 +35,6 @@ const emptySubjob = { name: "", notes: "" };
 
 export default function Jobs() {
   const toast = useToast();
-  const isMobile = useIsMobile();
   const { user, isAdmin } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -94,11 +95,17 @@ export default function Jobs() {
     updateGroup,
   } = useJobLayout({ jobs, persistOrder, toast, user });
 
-  // "Por estado" agrupa las tarjetas en activas, pausadas y cerradas, sin
-  // arrastrar ni organizar; "Mi orden" son los grupos de cada quien.
-  const { setViewMode, stateJobs, viewMode } = useJobStates({ jobs, refreshKey: cyclesByJob });
+  // "Por estado" agrupa las tarjetas en activas, pausadas y cerradas, cada una
+  // en dos tramos y ordenada por fecha, sin arrastrar ni organizar; "Mi orden"
+  // son los grupos de cada quien.
+  const { setStateSort, setViewMode, stateDates, stateJobs, stateSort, viewMode } = useJobStates({ jobs, refreshKey: cyclesByJob });
   const byState = !!stateJobs;
-  const viewGroups = byState ? JOB_STATES : layout.groups;
+  const today = localIsoDate();
+  const sortMeta = JOB_STATE_SORTS.find((s) => s.id === stateSort);
+  const viewGroups = byState ? JOB_STATE_GROUPS : layout.groups;
+  // El archivo de las cerradas parte plegado: en él, estar en la lista de
+  // plegados significa estar abierto.
+  const isGroupCollapsed = (g) => (g.collapsedByDefault ? !collapsedGroups.has(g.id) : collapsedGroups.has(g.id));
   const viewJobsByGroup = byState ? stateJobs : jobsByGroup;
   const organizing = editLayout && !byState;
 
@@ -117,15 +124,23 @@ export default function Jobs() {
     user,
   });
 
-  // Al abrir el detalle de una faena, desplaza la vista hasta el panel. Espera
-  // un frame para que React lo dibuje antes de medir.
+  // El detalle de la faena elegida se abre bajo la fila de su tarjeta, unido
+  // a ella, y se pliega con su contenido (`useJobPanel`).
+  const { closing: panelClosing, columns, panelId } = useJobPanel(selectedId);
+
+  // Al abrir una faena, la vista se desplaza solo si el panel quedó fuera de
+  // ella, lo justo para que la tarjeta quede arriba. Espera un frame para que
+  // React lo dibuje antes de medir.
   const selectedDetailRef = useRef(null);
   useEffect(() => {
-    if (!selectedId) return;
+    if (!selectedId) return undefined;
     const id = window.requestAnimationFrame(() => {
-      const el = selectedDetailRef.current;
-      if (!el) return;
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      const panel = selectedDetailRef.current;
+      const card = document.querySelector(`[data-job-card="${selectedId}"]`);
+      if (!panel || !card) return;
+      const panelTop = panel.getBoundingClientRect().top;
+      const cardTop = card.getBoundingClientRect().top;
+      if (panelTop > window.innerHeight - 160 || cardTop < 0) card.scrollIntoView({ behavior: "smooth", block: "start" });
     });
     return () => window.cancelAnimationFrame(id);
   }, [selectedId]);
@@ -191,22 +206,42 @@ export default function Jobs() {
     toast,
   });
 
-  const selected = jobs.find((f) => f.id === selectedId);
-  const selectedSubjobs = selectedId ? subjobsByJob[selectedId] : null;
-  const selectedCycles = selectedId ? cyclesByJob[selectedId] : null;
-  const layoutGroupId = selectedId
-    ? (layout.faenaGroup[selectedId] && layout.groups.some((g) => g.id === layout.faenaGroup[selectedId])
-        ? layout.faenaGroup[selectedId]
-        : UNGROUPED_ID)
-    : null;
-  const selectedGroupId = byState && selectedId
-    ? JOB_STATES.find((s) => stateJobs[s.id].some((f) => f.id === selectedId))?.id || null
-    : layoutGroupId;
+  // El panel muestra `panelId`: la faena elegida o, mientras se pliega, la
+  // anterior.
+  const selected = jobs.find((f) => f.id === panelId);
+  const selectedSubjobs = panelId ? subjobsByJob[panelId] : null;
+  const selectedCycles = panelId ? cyclesByJob[panelId] : null;
+  // Si la tarjeta del panel no está a la vista (su grupo está plegado), el
+  // detalle va suelto al final.
+  const panelPlaced = !!panelId && viewGroups.some((g) => !isGroupCollapsed(g) && (viewJobsByGroup[g.id] || []).some((f) => f.id === panelId));
+
+  // Lo que muestra la tarjeta de una faena, en la grilla y en el encabezado de
+  // su detalle.
+  const cardBodyProps = (f) => {
+    const date = byState ? stateDates[f.id] : "";
+    return {
+      job: f,
+      cardColor: colorOf(f),
+      colorValue: layout.faenaColor[f.id] ?? null,
+      onColorChange: (c) => setJobCardColor(f.id, c),
+      subjobCount: subjobsByJob[f.id]?.length,
+      cyclesCount: cyclesByJob[f.id]?.length,
+      dragHint: !byState,
+      since: date
+        ? { icon: stateSort === "edited" ? "✎" : "🕒", label: sinceLabel(date, today), title: `${sortMeta?.label}: ${date.split("-").reverse().join("-")}` }
+        : null,
+      onEdit: () => setJobForm(withInitial({ mode: "edit", data: { ...f } })),
+      onDelete: () => setConfirm({ kind: "job", item: f, message: `¿Eliminar la faena "${f.name}"?` }),
+    };
+  };
 
   const renderSelectedDetail = () =>
     selected && (
       <div ref={selectedDetailRef}>
       <SelectedDetail
+        key={selected.id}
+        header={<JobCardBody {...cardBodyProps(selected)} dragHint={false} asTitle />}
+        onClose={() => setSelectedId(null)}
         selected={selected}
         cardColor={colorOf(selected)}
         subjobs={selectedSubjobs}
@@ -246,7 +281,7 @@ export default function Jobs() {
           <h1 className="text-2xl font-semibold tracking-tight">Faenas</h1>
           <p className="text-sm text-[var(--color-muted)]">
             {viewMode === "state"
-              ? "Agrupadas según sus ciclos: activas, pausadas y cerradas."
+              ? "Agrupadas según sus ciclos: activas, pausadas y cerradas, de la más reciente a la más antigua."
               : "Arrastra las tarjetas para reordenarlas o moverlas entre grupos."}
           </p>
         </div>
@@ -271,6 +306,19 @@ export default function Jobs() {
               </button>
             ))}
           </div>
+          {viewMode === "state" && (
+            <select
+              value={stateSort}
+              onChange={(e) => setStateSort(e.target.value)}
+              title={sortMeta?.hint}
+              aria-label="Ordenar las faenas por"
+              className="min-h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-2 text-sm"
+            >
+              {JOB_STATE_SORTS.map((s) => (
+                <option key={s.id} value={s.id}>{s.label}</option>
+              ))}
+            </select>
+          )}
           {viewMode !== "state" && (
             <button
               onClick={() => setEditLayout((v) => !v)}
@@ -331,24 +379,28 @@ export default function Jobs() {
                   count={groupJobs.length}
                   editable={organizing}
                   isUngrouped={byState || g.id === UNGROUPED_ID}
-                  collapsed={collapsedGroups.has(g.id)}
+                  collapsed={isGroupCollapsed(g)}
                   onToggleCollapsed={() => toggleGroupCollapsed(g.id)}
                   onUpdate={(patch) => updateGroup(g.id, patch)}
                   onRemove={() => removeGroup(g.id)}
                 />
-                {collapsedGroups.has(g.id) ? null : groupJobs.length === 0 ? (
+                {isGroupCollapsed(g) ? null : groupJobs.length === 0 ? (
                   <div className={`rounded-lg border border-dashed border-[var(--color-border)] p-6 text-center text-xs text-[var(--color-muted)] ${organizing ? "" : "hidden"}`}>
                     Arrastra una tarjeta aquí.
                   </div>
                 ) : (
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    {groupJobs.map((f) => {
-                      const subjobCount = subjobsByJob[f.id]?.length;
-                      const cyclesCount = cyclesByJob[f.id]?.length;
+                    {groupJobs.map((f, idx) => {
                       const isSelected = selectedId === f.id;
                       const cardColor = colorOf(f);
+                      // El panel va después de la última tarjeta de la fila de
+                      // la faena abierta.
+                      const panelIdx = groupJobs.findIndex((j) => j.id === panelId);
+                      const panelHere = panelIdx >= 0 && rowEndIndex(panelIdx, groupJobs.length, columns) === idx;
+                      const dimmed = !!selectedId && !isSelected;
                       return (
                         <Fragment key={f.id}><div
+                          data-job-card={f.id}
                           draggable={!byState}
                           onDragStart={onDragStart(f.id)}
                           onDragOver={onDragOver(f.id)}
@@ -358,85 +410,41 @@ export default function Jobs() {
                           onClick={() => setSelectedId(isSelected ? null : f.id)}
                           data-dragging={dragId === f.id}
                           data-drop-over={dropOverId === f.id}
-                          style={{
+                          style={isSelected ? undefined : {
                             backgroundColor: "var(--color-surface)",
                             backgroundImage: cardColor ? `linear-gradient(135deg, ${cardColor}1A, transparent 60%)` : undefined,
                             "--card-hover-shadow": cardColor ? `0 4px 14px ${cardColor}33` : "0 4px 14px rgb(0 0 0 / 0.08)",
                           }}
                           onMouseEnter={(e) => { e.currentTarget.style.boxShadow = e.currentTarget.style.getPropertyValue("--card-hover-shadow"); }}
                           onMouseLeave={(e) => { e.currentTarget.style.boxShadow = ""; }}
-                          className={`dnd-card group relative cursor-pointer rounded-lg border pt-5 px-4 pb-4 shadow-sm transition-all hover:border-[var(--color-border-strong)] ${
+                          className={`dnd-card group relative scroll-mt-4 cursor-pointer rounded-lg border pt-5 px-4 pb-4 transition-all duration-200 ${
                             isSelected
-                              ? "border-[var(--color-accent)] ring-2 ring-[var(--color-accent)] ring-offset-2 ring-offset-[var(--color-surface)]"
-                              : "border-[var(--color-border)]"
+                              ? "border-dashed border-[var(--color-accent)]"
+                              : `border-[var(--color-border)] shadow-sm hover:border-[var(--color-border-strong)] ${dimmed ? "opacity-60 hover:opacity-100" : ""}`
                           }`}
                         >
-                          <span
-                            aria-hidden
-                            className="pointer-events-none absolute inset-x-0 top-0 h-1.5 rounded-t-lg"
-                            style={{ backgroundColor: cardColor || "var(--color-border)" }}
-                          />
-                          <div className="mb-2 flex items-start justify-between gap-2">
-                            <div className="flex items-start gap-2 min-w-0">
-                              {!byState && <span className="mt-1 select-none text-[10px] leading-none text-[var(--color-muted)] opacity-30 group-hover:opacity-90 transition-opacity" title="Arrastra para reordenar">⠿</span>}
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <span
-                                    aria-hidden
-                                    className="inline-block h-2 w-2 shrink-0 rounded-full"
-                                    style={{ backgroundColor: cyclesCount > 0 ? "#16a34a" : "var(--color-muted)" }}
-                                    title={cyclesCount > 0 ? "Activa" : "Sin ciclos"}
-                                  />
-                                  <span className="truncate text-[15px] font-semibold leading-tight text-[var(--color-text)]">{f.name}</span>
-                                </div>
-                                {f.location && <div className="mt-0.5 truncate text-[11px] text-[var(--color-muted)]">{f.location}</div>}
-                              </div>
-                            </div>
-                            <div onClick={(e) => e.stopPropagation()} className="shrink-0">
-                              <ColorPickerButton
-                                value={layout.faenaColor[f.id] ?? null}
-                                onChange={(c) => setJobCardColor(f.id, c)}
-                              />
-                            </div>
+                          {/* Abierta, la tarjeta pasa a ser el encabezado de su
+                              detalle: aquí queda su hueco, del mismo alto. */}
+                          <div className={isSelected ? "invisible" : undefined}>
+                            <JobCardBody {...cardBodyProps(f)} />
                           </div>
-                          {f.notes && <p className="mb-3 line-clamp-2 text-[11px] leading-snug text-[var(--color-muted)]">{f.notes}</p>}
-                          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border)] pt-3 text-xs">
-                            <div className="flex flex-wrap gap-1.5">
-                              <span className="rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-muted)]">
-                                {subjobCount != null ? `${subjobCount} sub` : "—"}
-                              </span>
-                              <span
-                                className="rounded-full px-2 py-0.5 text-[10px] font-medium"
-                                style={
-                                  cardColor && cyclesCount > 0
-                                    ? { backgroundColor: `${cardColor}22`, color: cardColor }
-                                    : cyclesCount > 0
-                                      ? { backgroundColor: "var(--color-accent-soft)", color: "var(--color-accent)" }
-                                      : { backgroundColor: "var(--color-surface-2)", color: "var(--color-muted)" }
-                                }
-                              >
-                                {cyclesCount != null ? `${cyclesCount} ciclos` : "—"}
-                              </span>
-                            </div>
-                            <div className="ml-auto flex shrink-0 gap-1 opacity-70 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                onClick={() => setJobForm(withInitial({ mode: "edit", data: { ...f } }))}
-                                className="rounded-md px-2 py-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
-                              >
-                                Editar
-                              </button>
-                              <button
-                                onClick={() => setConfirm({ kind: "job", item: f, message: `¿Eliminar la faena "${f.name}"?` })}
-                                className="rounded-md px-2 py-1 text-[var(--color-muted)] hover:bg-[var(--color-danger-soft)] hover:text-[var(--color-danger)]"
-                              >
-                                Eliminar
-                              </button>
-                            </div>
-                          </div>
+                          {isSelected && (
+                            <span className="absolute inset-0 flex items-center justify-center text-sm font-medium text-[var(--color-accent)]">
+                              ▾ abierta
+                            </span>
+                          )}
                         </div>
-                        {isMobile && isSelected && (
-                          <div className="col-span-full">
-                            {renderSelectedDetail()}
+                        {panelHere && (
+                          <div
+                            className={`col-span-full grid transition-[grid-template-rows,opacity] duration-200 ease-out starting:grid-rows-[0fr] starting:opacity-0 ${
+                              panelClosing ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100"
+                            }`}
+                          >
+                            {/* El margen deja lugar a la sombra del panel, que el
+                                recorte del despliegue cortaría. */}
+                            <div className="-mx-3 -mb-6 min-h-0 overflow-hidden px-3 pb-6">
+                              {renderSelectedDetail()}
+                            </div>
                           </div>
                         )}
                         </Fragment>
@@ -444,11 +452,10 @@ export default function Jobs() {
                     })}
                   </div>
                 )}
-                {!isMobile && !collapsedGroups.has(g.id) && selectedGroupId === g.id && renderSelectedDetail()}
               </section>
             );
           })}
-          {!isMobile && selected && !viewGroups.some((g) => g.id === selectedGroupId) && renderSelectedDetail()}
+          {selected && !panelPlaced && <div className="mt-6">{renderSelectedDetail()}</div>}
         </div>
       )}
 

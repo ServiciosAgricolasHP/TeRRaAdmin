@@ -1,6 +1,6 @@
 // Recuentos con `getCountFromServer`, que cuesta ~1 lectura por cada 1.000
 // documentos contados. Los usan la Consola admin y el Dashboard.
-import { collection, query, where } from "firebase/firestore";
+import { collection, orderBy, query, where } from "firebase/firestore";
 import { getCountFromServer } from "./readMeter";
 import { db } from "../firebase";
 import { readStoredJson, writeStoredJson } from "../utils/browserStorage";
@@ -18,6 +18,28 @@ export async function countCollection(collName) {
 
 export async function countLogsByEntity(entity) {
   const q = query(collection(db, "logs"), where("entity", "==", entity));
+  const snap = await getCountFromServer(q);
+  return snap.data().count;
+}
+
+// Los registros de auditoría de un documento (entity + entityId).
+export async function countRecordLogs(entity, entityId) {
+  const q = query(collection(db, "logs"), where("entity", "==", entity), where("entityId", "==", entityId));
+  const snap = await getCountFromServer(q);
+  return snap.data().count;
+}
+
+// Las acciones de una persona (los logs con su `uid`) entre `since` y `until`
+// (sin incluir): una lectura por cada 1.000. Usa el mismo índice que traerlas
+// (`uid + timestamp` descendente).
+export async function countUserLogs(uid, { since, until }) {
+  const q = query(
+    collection(db, "logs"),
+    where("uid", "==", uid),
+    where("timestamp", ">=", since),
+    where("timestamp", "<", until),
+    orderBy("timestamp", "desc"),
+  );
   const snap = await getCountFromServer(q);
   return snap.data().count;
 }

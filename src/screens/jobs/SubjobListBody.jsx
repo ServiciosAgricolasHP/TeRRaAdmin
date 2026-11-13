@@ -1,4 +1,5 @@
 import { useState } from "react";
+import RowMenu from "../../components/RowMenu";
 import { CycleRow } from "./CycleRow";
 
 // Lista de subfaenas: las visibles primero y las ocultas (`hidden`) en un
@@ -34,9 +35,24 @@ export function SubjobListBody({
     const isCollapsed = !!collapsedSubjobs?.has(s.id);
     const closedHiddenByDefault = openCycles.length > 0;
     const showClosed = !closedHiddenByDefault || !!showClosedInSubjob?.has(s.id);
+    // + Ciclo a la vista; lo demás, en el menú ⋯. Ocultar aparece solo si la
+    // subfaena tiene ciclos y están todos cerrados; Mostrar, si ya está oculta.
+    const canToggleHidden = !!onToggleHideSubjob && (s.hidden || (openCycles.length === 0 && subjobCycles.length > 0));
+    const menuItems = [
+      { icon: "✏", label: "Editar subfaena", onClick: () => onEditSubjob(s) },
+      ...(canToggleHidden
+        ? [
+            s.hidden
+              ? { icon: "👁", label: "Mostrar", hint: "Vuelve arriba, expandida", onClick: () => onToggleHideSubjob(s) }
+              : { icon: "🙈", label: "Ocultar", hint: "Se mueve al grupo Ocultas, al final", onClick: () => onToggleHideSubjob(s) },
+          ]
+        : []),
+      { divider: true },
+      { icon: "🗑", label: "Eliminar subfaena", danger: true, onClick: () => onDeleteSubjob(s) },
+    ];
     return (
       <div key={s.id} className="rounded-md border border-[var(--color-border)]">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
+        <div className="flex items-center justify-between gap-2 border-b border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2">
           <button
             onClick={() => onToggleSubjobCollapse(s.id)}
             aria-label={isCollapsed ? "Expandir" : "Colapsar"}
@@ -71,38 +87,14 @@ export function SubjobListBody({
               <div className="truncate text-xs text-[var(--color-muted)]">{s.notes}</div>
             )}
           </div>
-          <div className="flex w-full shrink-0 flex-wrap gap-1.5 md:w-auto md:ml-auto">
-            {/* Ocultar aparece solo si la subfaena tiene ciclos y están todos
-                cerrados; Mostrar, si ya está oculta. */}
-            {onToggleHideSubjob && (s.hidden || (openCycles.length === 0 && subjobCycles.length > 0)) && (
-              <button
-                onClick={() => onToggleHideSubjob(s)}
-                title={s.hidden
-                  ? "Desmarcar como oculta (volverá a aparecer expandida arriba)"
-                  : "Marcar como oculta (se mueve al grupo Ocultas al final)"}
-                className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
-              >
-                {s.hidden ? "Mostrar" : "Ocultar"}
-              </button>
-            )}
+          <div className="flex shrink-0 items-center gap-1.5">
             <button
               onClick={() => onCreateCycle(s.id)}
               className="min-h-[32px] rounded-md bg-[var(--color-accent)] px-2.5 py-1 text-xs font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]"
             >
               + Ciclo
             </button>
-            <button
-              onClick={() => onEditSubjob(s)}
-              className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
-            >
-              Editar
-            </button>
-            <button
-              onClick={() => onDeleteSubjob(s)}
-              className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
-            >
-              Eliminar
-            </button>
+            <RowMenu items={menuItems} triggerLabel="Más acciones de la subfaena" />
           </div>
         </div>
         {!isCollapsed && (

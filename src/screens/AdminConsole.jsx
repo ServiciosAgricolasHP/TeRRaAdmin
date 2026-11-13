@@ -5,6 +5,7 @@ import { CollectionCountsSection } from "./adminConsole/CollectionCountsSection"
 import { LogsBreakdownSection } from "./adminConsole/LogsBreakdownSection";
 import { MigrateAdvanceRutsSection } from "./adminConsole/MigrateAdvanceRutsSection";
 import { NormalizeWorkerNamesSection } from "./adminConsole/NormalizeWorkerNamesSection";
+import { PayrollSizesSection } from "./adminConsole/PayrollSizesSection";
 import { PingSection } from "./adminConsole/PingSection";
 import { ReadMeterSection } from "./adminConsole/ReadMeterSection";
 import { ReadReportSection } from "./adminConsole/ReadReportSection";
@@ -53,6 +54,7 @@ export default function AdminConsole() {
         <ReadReportSection />
         <CollectionCountsSection />
         <LogsBreakdownSection />
+        <PayrollSizesSection />
         <WorkdaysByMonthSection />
         <WorkdaysByRangeSection />
         <WorkdaysByCycleSection />

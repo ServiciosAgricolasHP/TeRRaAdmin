@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import RowMenu from "../../components/RowMenu";
 import ProductionSummaryModal from "./ProductionSummaryModal";
 
+// Un ciclo en el detalle de la faena: Abrir y Cerrar (o Reabrir) a la vista;
+// el resumen de producción, renombrar y eliminar, en el menú ⋯.
 export function CycleRow({ cycle, subjobName, onEdit, onOpenCloseFlow, onReopen, onDelete }) {
   // Cada CycleRow maneja su propio modal de resumen; el resumen de la faena
   // entera vive en SelectedDetail.
@@ -12,10 +15,18 @@ export function CycleRow({ cycle, subjobName, onEdit, onOpenCloseFlow, onReopen,
   const hasProdLabor = (cycle.labors || []).some(
     (l) => l.type === "cosecha" || l.type === "trato" || l.type === "tratoEtapas" || l.type === "main",
   );
+  const menuItems = [
+    ...(hasProdLabor
+      ? [{ icon: "📊", label: "Resumen de producción", hint: "Día por día, con precios, unidades y rendimiento", onClick: () => setResumenOpen(true) }]
+      : []),
+    ...(onEdit ? [{ icon: "✏", label: "Renombrar o editar", onClick: () => onEdit(cycle) }] : []),
+    { divider: true },
+    { icon: "🗑", label: "Eliminar ciclo", danger: true, onClick: () => onDelete(cycle) },
+  ];
   return (
-    <li className="flex flex-col gap-2 px-3 py-2.5 md:flex-row md:flex-wrap md:items-center md:justify-between md:py-2">
+    <li className="flex items-center gap-2 px-3 py-2">
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
+        <div className="flex flex-wrap items-center gap-2 text-sm font-medium [overflow-wrap:anywhere]">
           {cycle.label}
           <span
             className={`rounded px-1.5 py-0.5 text-[10px] ${
@@ -34,31 +45,13 @@ export function CycleRow({ cycle, subjobName, onEdit, onOpenCloseFlow, onReopen,
           {` · ${(cycle.labors || []).length} labores`}
         </div>
       </div>
-      <div className="flex flex-wrap gap-1.5 md:ml-auto md:shrink-0">
-        {hasProdLabor && (
-          <button
-            onClick={() => setResumenOpen(true)}
-            title="Ver producción día por día con precios, unidades y rendimiento"
-            className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
-          >
-            📊 Resumen
-          </button>
-        )}
+      <div className="flex shrink-0 items-center gap-1.5">
         <Link
           to={`/cycles/${cycle.id}`}
           className="flex min-h-[32px] items-center rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
         >
           Abrir
         </Link>
-        {onEdit && (
-          <button
-            onClick={() => onEdit(cycle)}
-            title="Renombrar / editar"
-            className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
-          >
-            ✏ Renombrar
-          </button>
-        )}
         {cycle.status !== "closed" ? (
           <button
             onClick={() => onOpenCloseFlow(cycle)}
@@ -77,12 +70,7 @@ export function CycleRow({ cycle, subjobName, onEdit, onOpenCloseFlow, onReopen,
             </button>
           )
         )}
-        <button
-          onClick={() => onDelete(cycle)}
-          className="min-h-[32px] rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)]"
-        >
-          Eliminar
-        </button>
+        <RowMenu items={menuItems} triggerLabel="Más acciones del ciclo" />
       </div>
       {resumenOpen && (
         <ProductionSummaryModal

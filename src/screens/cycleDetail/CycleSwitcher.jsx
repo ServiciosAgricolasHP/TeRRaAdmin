@@ -4,8 +4,10 @@ import { listCycles, listSubjobs } from "../../services/jobLists";
 import { attempt } from "../../utils/attempt";
 import { switchableCycles } from "../../utils/cycleSwitch";
 
-// El nombre del ciclo en la ruta de la grilla, como botón: abre la lista de
-// los ciclos activos de la misma faena, por subfaena, para saltar a otro. Las
+// El nombre del ciclo en la ruta de la grilla, como botón con el fondo del
+// accent (se ve que se toca) y un marco del accent al pasar el mouse o con la
+// lista abierta: abre la lista de los ciclos activos de la misma faena, por
+// subfaena, para saltar a otro. Las
 // listas salen de las copias que comparten las pantallas, al abrir.
 export function CycleSwitcher({ cycle }) {
   const navigate = useNavigate();
@@ -40,10 +42,10 @@ export function CycleSwitcher({ cycle }) {
         onClick={toggle}
         aria-expanded={open}
         title="Cambiar a otro ciclo activo de esta faena"
-        className="inline-flex min-h-8 max-w-full items-center gap-1 rounded-md px-1.5 text-left text-[var(--color-text)] hover:bg-[var(--color-accent-soft)]"
+        className={`inline-flex min-h-8 max-w-full items-center gap-1 rounded-md border bg-[var(--color-accent-soft)] px-1.5 text-left font-medium text-[var(--color-accent)] hover:border-[var(--color-accent)] hover:shadow-sm ${open ? "border-[var(--color-accent)]" : "border-transparent"}`}
       >
         <span className="truncate">{cycle.label}</span>
-        <span className="shrink-0 text-xs text-[var(--color-muted)]">▾</span>
+        <span className="shrink-0 text-xs">▾</span>
       </button>
       {open && (
         <>
