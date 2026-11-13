@@ -44,6 +44,8 @@ import { useCashPaid } from "./payrollDetailModal/useCashPaid";
 import { useCycleTitles } from "./payrollDetailModal/useCycleTitles";
 import { usePayrollSnapshot } from "../../hooks/usePayrollSnapshot";
 import { useContentEdit } from "./payrollDetailModal/useContentEdit";
+import { useBonusChange } from "./payrollDetailModal/useBonusChange";
+import { BonusChangeModal } from "./payrollDetailModal/BonusChangeModal";
 import { usePayrollRecalc } from "./payrollDetailModal/usePayrollRecalc";
 import { usePayrollPrints } from "./payrollDetailModal/usePayrollPrints";
 import { useSummaryTable } from "./payrollDetailModal/useSummaryTable";
@@ -174,6 +176,17 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
     setConfirmRemove,
     setEditMode,
   } = edit;
+
+  const {
+    applyBonusChange,
+    bonusBusy,
+    bonusProgress,
+    bonusTarget,
+    canChangeBonus,
+    closeBonusChange,
+    openBonusChange,
+  } = useBonusChange({ payroll, onChanged: contentChanged, toast });
+  const bonusChangeFor = (it) => (canChangeBonus(it) ? openBonusChange : null);
 
   const { cycleTitleOverrides, displayCycleLabel, setCycleTitle } = useCycleTitles({ payroll });
 
@@ -488,6 +501,8 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
                   owedCash={owedCash}
                   payroll={payroll}
                   setShowCashEstimation={setShowCashEstimation}
+                  onChangeBonus={openBonusChange}
+                  canChangeBonus={canChangeBonus}
                 />
 
                 {subfaenaSummary.rows.length > 0 && (
@@ -564,6 +579,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
                                 editMode={editMode}
                                 editBusy={editBusy}
                                 onRemoveWorker={handleRemoveWorker}
+                                onChangeBonus={bonusChangeFor(it)}
                                 cols="bank"
                                 snapshot={snapshot}
                                 snapshotLoading={snapshotLoading}
@@ -601,6 +617,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
                                   editMode={editMode}
                                   editBusy={editBusy}
                                   onRemoveWorker={handleRemoveWorker}
+                                  onChangeBonus={bonusChangeFor(it)}
                                   cols="bank"
                                   snapshot={snapshot}
                                   snapshotLoading={snapshotLoading}
@@ -690,6 +707,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
                                 editMode={editMode}
                                 editBusy={editBusy}
                                 onRemoveWorker={handleRemoveWorker}
+                                onChangeBonus={bonusChangeFor(it)}
                                 cols="cash"
                                 cashPaidMode={cashPaidMode}
                                 cashPaid={cashPaidSet.has(it.rut)}
@@ -717,6 +735,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
                                   editMode={editMode}
                                   editBusy={editBusy}
                                   onRemoveWorker={handleRemoveWorker}
+                                  onChangeBonus={bonusChangeFor(it)}
                                   cols="cash"
                                   cashPaidMode={cashPaidMode}
                                   cashPaid={cashPaidSet.has(it.rut)}
@@ -831,7 +850,17 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
         onClose={() => setRecalcPreview(null)}
         onConfirm={applyRecalc}
       />
-      <ProgressOverlay info={recalcProgress || editProgress} />
+      {bonusTarget && (
+        <BonusChangeModal
+          target={bonusTarget}
+          payrollId={payroll.id}
+          cashPaid={cashPaidMode && cashPaidSet.has(bonusTarget.item.rut)}
+          busy={bonusBusy}
+          onClose={closeBonusChange}
+          onConfirm={applyBonusChange}
+        />
+      )}
+      <ProgressOverlay info={recalcProgress || editProgress || bonusProgress} />
       <ConfirmDialog
         open={!!confirmRemove}
         title="Sacar trabajador de la nómina"

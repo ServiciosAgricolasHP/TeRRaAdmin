@@ -6,6 +6,7 @@ import {
   normalizeAdvanceType,
   advanceTypeMeta,
   advanceSign,
+  isBono,
   advanceRemaining,
   advanceWorkerKey,
   hasInstallmentPlan,
@@ -41,6 +42,13 @@ const STATUS_CLASS = {
 
 // El filtro "pending" incluye los parciales, que siguen debiendo saldo (mismo
 // criterio que listPendingForWorkers()); el badge "Parcial" los distingue.
+// Por qué no se edita un anticipo o bono totalmente aplicado. Un bono aplicado
+// se edita desde el detalle de su nómina, que pone al día lo que paga.
+const lockedEditTitle = (a) =>
+  isBono(a)
+    ? `No editable aquí: un bono aplicado se edita (monto y nota) desde el detalle de su nómina, en "📋 Ver anticipos y bonos" o en la fila de la persona.`
+    : "No editable: totalmente aplicado";
+
 const STATUS_BUCKET = { pending: ["pending", "partial"], applied: ["applied"], cancelled: ["cancelled"] };
 const matchesStatusFilter = (status, filter) =>
   filter === "all" || (STATUS_BUCKET[filter] || [filter]).includes(status);
@@ -305,7 +313,7 @@ export default function Advances() {
                     <button
                       onClick={() => setEditing({ ...a, mode: "edit" })}
                       disabled={editLocked}
-                      title={editLocked ? "No editable: totalmente aplicado" : (status === "partial" ? "Editar (parcial — puedes bajar el monto para cerrar)" : "Editar")}
+                      title={editLocked ? lockedEditTitle(a) : (status === "partial" ? "Editar (parcial — puedes bajar el monto para cerrar)" : "Editar")}
                       className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-40"
                     >
                       Editar
@@ -394,7 +402,7 @@ export default function Advances() {
                             <button
                               onClick={() => setEditing({ ...a, mode: "edit" })}
                               disabled={editLocked}
-                              title={editLocked ? "No editable: totalmente aplicado" : (st === "partial" ? "Editar (parcial — puedes bajar el monto para cerrar)" : "Editar")}
+                              title={editLocked ? lockedEditTitle(a) : (st === "partial" ? "Editar (parcial — puedes bajar el monto para cerrar)" : "Editar")}
                               className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-40"
                             >
                               Editar

@@ -5,8 +5,26 @@ import { advancesAndBonusesOf } from "../../../utils/payrollDetail";
 // Los anticipos y bonos que aplicó la nómina, por persona, con la fecha y la
 // nota de cada uno. Arriba, cómo se llega del bruto al total a pagar.
 // `advances` son los del snapshot; mientras carga, las filas van sin fecha ni
-// nota.
-export function AdvancesAndBonusesModal({ open, onClose, items, advances, grossTotal, total }) {
+// nota. Con `onChangeBonus(item, bonusId)`, cada bono que se puede cambiar
+// (`canChangeBonus(item)`) lleva "✎ Editar".
+export function AdvancesAndBonusesModal({ open, onClose, items, advances, grossTotal, total, onChangeBonus = null, canChangeBonus }) {
+  const itemOf = (rut) => items.find((it) => it.rut === rut);
+  const bonusAction = onChangeBonus
+    ? (r) => {
+        const item = itemOf(r.rut);
+        if (!item || !canChangeBonus(item)) return null;
+        return (
+          <button
+            type="button"
+            onClick={() => onChangeBonus(item, r.advanceId)}
+            title="Editar el monto o la nota de este bono en la nómina"
+            className="min-h-8 whitespace-nowrap rounded-md border border-[var(--color-border)] px-2 text-xs hover:bg-[var(--color-accent-soft)]"
+          >
+            ✎ Editar
+          </button>
+        );
+      }
+    : null;
   const { advances: advanceRows, bonuses, advanceTotal, bonusTotal } = advancesAndBonusesOf(items, advances);
   return (
     <Modal
@@ -31,7 +49,7 @@ export function AdvancesAndBonusesModal({ open, onClose, items, advances, grossT
       </div>
       <div className="space-y-4">
         <AdjustmentList title="↩ Anticipos" rows={advanceRows} total={`− ${fmtCurrency(advanceTotal)}`} tone="text-[var(--color-warning)]" />
-        <AdjustmentList title="🎁 Bonos" rows={bonuses} total={`+ ${fmtCurrency(bonusTotal)}`} tone="text-[var(--color-success)]" />
+        <AdjustmentList title="🎁 Bonos" rows={bonuses} total={`+ ${fmtCurrency(bonusTotal)}`} tone="text-[var(--color-success)]" action={bonusAction} />
       </div>
     </Modal>
   );
@@ -46,7 +64,7 @@ function Figure({ label, value, tone = "" }) {
   );
 }
 
-function AdjustmentList({ title, rows, total, tone }) {
+function AdjustmentList({ title, rows, total, tone, action = null }) {
   if (rows.length === 0) return null;
   return (
     <section>
@@ -64,6 +82,7 @@ function AdjustmentList({ title, rows, total, tone }) {
               <th className="w-24 px-2 py-1.5 text-left sm:w-28">Fecha</th>
               <th className="hidden px-2 py-1.5 text-left sm:table-cell">Nota</th>
               <th className="w-24 px-2 py-1.5 text-right sm:w-28">Monto</th>
+              {action && <th className="w-24 px-2 py-1.5" />}
             </tr>
           </thead>
           <tbody>
@@ -76,6 +95,7 @@ function AdjustmentList({ title, rows, total, tone }) {
                 <td className="whitespace-nowrap px-2 py-1.5 text-xs text-[var(--color-muted)]">{r.date || "—"}</td>
                 <td className="hidden truncate px-2 py-1.5 text-xs text-[var(--color-muted)] sm:table-cell" title={r.note}>{r.note || "—"}</td>
                 <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">{fmtCurrency(r.amount)}</td>
+                {action && <td className="px-2 py-1 text-right">{action(r)}</td>}
               </tr>
             ))}
           </tbody>
