@@ -81,7 +81,7 @@ export function BonusChangeModal({ target, payrollId, cashPaid, busy, onClose, o
               monto nuevo, como si hubiera sido así desde el principio.
             </p>
             <label className="block">
-              <span className="mb-1 block text-xs font-medium text-[var(--color-muted)]">Monto nuevo del bono</span>
+              <span className="mb-1 block text-xs font-medium text-[var(--color-muted)]">Monto del bono</span>
               <input
                 autoFocus
                 inputMode="numeric"

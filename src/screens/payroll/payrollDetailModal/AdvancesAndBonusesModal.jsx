@@ -48,8 +48,8 @@ export function AdvancesAndBonusesModal({ open, onClose, items, advances, grossT
         <Figure label="Total a pagar" value={fmtCurrency(total)} tone="text-[var(--color-accent)]" />
       </div>
       <div className="space-y-4">
-        <AdjustmentList title="↩ Anticipos" rows={advanceRows} total={`− ${fmtCurrency(advanceTotal)}`} tone="text-[var(--color-warning)]" />
-        <AdjustmentList title="🎁 Bonos" rows={bonuses} total={`+ ${fmtCurrency(bonusTotal)}`} tone="text-[var(--color-success)]" action={bonusAction} />
+        <AdjustmentList title="↩ Anticipos" rows={advanceRows} total={`− ${fmtCurrency(advanceTotal)}`} tone="text-[var(--color-warning)]" actionColumn={!!bonusAction} />
+        <AdjustmentList title="🎁 Bonos" rows={bonuses} total={`+ ${fmtCurrency(bonusTotal)}`} tone="text-[var(--color-success)]" action={bonusAction} actionColumn={!!bonusAction} />
       </div>
     </Modal>
   );
@@ -64,7 +64,9 @@ function Figure({ label, value, tone = "" }) {
   );
 }
 
-function AdjustmentList({ title, rows, total, tone, action = null }) {
+// `actionColumn` deja la columna de la acción también en la lista que no la
+// usa, así las dos tablas quedan alineadas.
+function AdjustmentList({ title, rows, total, tone, action = null, actionColumn = false }) {
   if (rows.length === 0) return null;
   return (
     <section>
@@ -82,7 +84,7 @@ function AdjustmentList({ title, rows, total, tone, action = null }) {
               <th className="w-24 px-2 py-1.5 text-left sm:w-28">Fecha</th>
               <th className="hidden px-2 py-1.5 text-left sm:table-cell">Nota</th>
               <th className="w-24 px-2 py-1.5 text-right sm:w-28">Monto</th>
-              {action && <th className="w-24 px-2 py-1.5" />}
+              {actionColumn && <th className="w-24 px-2 py-1.5" />}
             </tr>
           </thead>
           <tbody>
@@ -95,7 +97,7 @@ function AdjustmentList({ title, rows, total, tone, action = null }) {
                 <td className="whitespace-nowrap px-2 py-1.5 text-xs text-[var(--color-muted)]">{r.date || "—"}</td>
                 <td className="hidden truncate px-2 py-1.5 text-xs text-[var(--color-muted)] sm:table-cell" title={r.note}>{r.note || "—"}</td>
                 <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">{fmtCurrency(r.amount)}</td>
-                {action && <td className="px-2 py-1 text-right">{action(r)}</td>}
+                {actionColumn && <td className="px-2 py-1 text-right">{action ? action(r) : null}</td>}
               </tr>
             ))}
           </tbody>
