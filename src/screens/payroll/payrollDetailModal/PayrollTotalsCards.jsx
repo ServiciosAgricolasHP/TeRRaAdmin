@@ -5,8 +5,9 @@ import { AdvancesAndBonusesModal } from "./AdvancesAndBonusesModal";
 // Tarjetas de totales del resumen: transferencias, efectivo (con lo que falta
 // entregar y el estimador), anticipos, bonos y el total a pagar. Con anticipos
 // o bonos, la primera de esas tarjetas lleva el bruto y abre su detalle.
-// `advances` son los del snapshot de la nómina.
-export function PayrollTotalsCards({ advances, bank, cash, cashGroups, cashPaidMode, items, owedCash, payroll, setShowCashEstimation }) {
+// `advances` son los del snapshot de la nómina; `onChangeBonus` y
+// `canChangeBonus` pasan al detalle de anticipos y bonos.
+export function PayrollTotalsCards({ advances, bank, cash, cashGroups, cashPaidMode, items, owedCash, payroll, setShowCashEstimation, onChangeBonus = null, canChangeBonus }) {
   const [showAdjustments, setShowAdjustments] = useState(false);
   // Totales para el encabezado del resumen.
   const bankTotal = bank.reduce((s, x) => s + (Number(x.amount) || 0), 0);
@@ -88,6 +89,8 @@ export function PayrollTotalsCards({ advances, bank, cash, cashGroups, cashPaidM
         advances={advances}
         grossTotal={grossTotal}
         total={payroll.total || 0}
+        onChangeBonus={onChangeBonus}
+        canChangeBonus={canChangeBonus}
       />
     </>
   );

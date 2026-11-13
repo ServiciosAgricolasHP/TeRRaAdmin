@@ -67,6 +67,7 @@ Tócala y confirma con **Sacar**. Mientras la saca, una barra muestra en qué va
 - Al agregarle días a alguien, se le descuentan los anticipos pendientes que esta nómina todavía no le tocaba. Lo que ya descuenta de un anticipo no crece.
 - Quien entra a la nómina con un ciclo o una labor trae sus anticipos y bonos pendientes, como al generarla.
 - Quien sale de la nómina recupera todos sus anticipos y bonos de esta nómina.
+- Un bono que ya aplicó la nómina se edita (monto y nota) sin sacar a la persona: ver [Editar un bono que ya aplicó la nómina](/ayuda/anticipos-y-bonos#editar-un-bono-que-ya-aplico-la-nomina).
 
 ## Cambiar los nombres de los ciclos en el resumen
 <!-- preguntas: cambiar el nombre del ciclo en la nómina; encabezados del resumen; renombrar el ciclo solo en la nómina -->

@@ -1,7 +1,8 @@
 // Capturas de la guía "Anticipos y bonos"
 // (src/screens/help/guides/anticipos-y-bonos.md): la lista con un anticipo en
 // cuotas, uno sin cuotas y un bono, el formulario, cómo los descuenta la
-// nómina y su lista en el detalle de la nómina.
+// nómina, su lista en el detalle de la nómina y cómo se edita un bono ya
+// aplicado.
 import { seedAdvances, seedCashWorkers } from "../seed.mjs";
 
 // El modal abierto con ese título.
@@ -75,4 +76,17 @@ export async function run({ page, base, login, shot }) {
   const list = modal(page, /Anticipos y bonos de la nómina/);
   await list.getByText("Carla Rojas Fuentes").waitFor({ timeout: 60000 });
   await shot(page, "06-en-la-nomina", list, { pad: 0 });
+
+  // Editar el bono desde la nómina: sube y cambia su nota.
+  await list.getByRole("button", { name: "✎ Editar" }).first().click();
+  const bonusModal = modal(page, "🎁 Editar el bono");
+  const amount = bonusModal.getByRole("textbox").first();
+  await amount.waitFor({ timeout: 60000 });
+  await amount.fill("20000");
+  await bonusModal.getByPlaceholder("Para qué es el bono").fill("Bono de asistencia y puntualidad");
+  await page.waitForTimeout(500);
+  await shot(page, "07-editar-bono", bonusModal, { pad: 0 });
+  await bonusModal.getByRole("button", { name: "Cancelar", exact: true }).click();
+  const discardBonus = page.getByRole("button", { name: "Descartar cambios", exact: true });
+  if (await discardBonus.isVisible().catch(() => false)) await discardBonus.click();
 }

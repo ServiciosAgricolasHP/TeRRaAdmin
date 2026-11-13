@@ -157,6 +157,26 @@ export async function pruneSnapshot(payrollId, { items, aggregates, cycleIds = n
   }
 }
 
+// Deja el snapshot al día con una nómina a la que solo le cambiaron montos
+// (el bono de una persona): los trabajadores, la cabecera de totales y los
+// anticipos y bonos de `advances`, ya con la forma del snapshot, que
+// reemplazan a los del mismo id. Nunca tira.
+export async function syncSnapshotAmounts(payrollId, { items, aggregates, advances = [] }) {
+  try {
+    const snap = await payrollSnapshotsService.getById(payrollId);
+    if (!snap) return false;
+    const byId = new Map(advances.map((a) => [a.id, a]));
+    const patch = { workers: items };
+    if (Array.isArray(snap.advances)) patch.advances = snap.advances.map((a) => byId.get(a.id) || a);
+    if (snap.payroll && aggregates) patch.payroll = headerTotals(snap.payroll, aggregates, items);
+    await payrollSnapshotsService.update(payrollId, patch);
+    return true;
+  } catch (err) {
+    console.warn("No se pudo poner al día el snapshot:", err);
+    return false;
+  }
+}
+
 // Deja el snapshot igual a una nómina recalculada (`applyPayrollRecalc`): los
 // trabajadores y sus jornadas, ya con la forma del snapshot, los anticipos que
 // la nómina sigue tocando más los que se le aplicaron ahora, y la cabecera al
