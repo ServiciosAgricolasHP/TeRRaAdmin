@@ -56,8 +56,10 @@ const CYCLE_SCOPE = [
   { entity: "qrPrefix", field: "meta.cycleId" },
 ];
 
-// Firestore acepta hasta 30 valores en un `in`.
-const IN_LIMIT = 30;
+// Cuántos valores van en un `in`. Firestore cuenta cada valor junto con los
+// demás filtros de la consulta (la entidad y los dos del rango: 4 por valor) y
+// acepta 100 en total.
+const IN_LIMIT = 20;
 const chunksOf = (list) => {
   const out = [];
   for (let i = 0; i < list.length; i += IN_LIMIT) out.push(list.slice(i, i + IN_LIMIT));

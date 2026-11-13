@@ -40,7 +40,7 @@ describe("el historial de un ciclo por rango", () => {
 });
 
 describe("el historial de una faena", () => {
-  it("suma sus subfaenas y lo de todos sus ciclos, también con más de 30 ciclos", async () => {
+  it("suma sus subfaenas y lo de todos sus ciclos, también con más ciclos de los que caben en una consulta", async () => {
     await seedLogs();
     await set("logs", "l-faena", { action: "update", entity: "faena", entityId: FAENA, timestamp: at(today) });
     await set("logs", "l-subfaena", { action: "update", entity: "subfaena", entityId: SUBFAENA, timestamp: at(today) });
