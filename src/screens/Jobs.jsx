@@ -24,7 +24,8 @@ import { FirstCycleOfferModal } from "./jobs/FirstCycleOfferModal";
 import { CloseCycleModal } from "./jobs/CloseCycleModal";
 import ScreenLoader from "../components/ScreenLoader";
 import { useJobStates } from "./jobs/useJobStates";
-import { JOB_STATES } from "../utils/jobStatus";
+import { JOB_STATE_GROUPS, JOB_STATE_SORTS, sinceLabel } from "../utils/jobStatus";
+import { localIsoDate } from "../utils/dates";
 import { useValuesChanged } from "../hooks/useValuesChanged";
 
 const emptyJob = { name: "", location: "", notes: "" };
@@ -94,11 +95,17 @@ export default function Jobs() {
     updateGroup,
   } = useJobLayout({ jobs, persistOrder, toast, user });
 
-  // "Por estado" agrupa las tarjetas en activas, pausadas y cerradas, sin
-  // arrastrar ni organizar; "Mi orden" son los grupos de cada quien.
-  const { setViewMode, stateJobs, viewMode } = useJobStates({ jobs, refreshKey: cyclesByJob });
+  // "Por estado" agrupa las tarjetas en activas, pausadas y cerradas, cada una
+  // en dos tramos y ordenada por fecha, sin arrastrar ni organizar; "Mi orden"
+  // son los grupos de cada quien.
+  const { setStateSort, setViewMode, stateDates, stateJobs, stateSort, viewMode } = useJobStates({ jobs, refreshKey: cyclesByJob });
   const byState = !!stateJobs;
-  const viewGroups = byState ? JOB_STATES : layout.groups;
+  const today = localIsoDate();
+  const sortMeta = JOB_STATE_SORTS.find((s) => s.id === stateSort);
+  const viewGroups = byState ? JOB_STATE_GROUPS : layout.groups;
+  // El archivo de las cerradas parte plegado: en él, estar en la lista de
+  // plegados significa estar abierto.
+  const isGroupCollapsed = (g) => (g.collapsedByDefault ? !collapsedGroups.has(g.id) : collapsedGroups.has(g.id));
   const viewJobsByGroup = byState ? stateJobs : jobsByGroup;
   const organizing = editLayout && !byState;
 
@@ -200,7 +207,7 @@ export default function Jobs() {
         : UNGROUPED_ID)
     : null;
   const selectedGroupId = byState && selectedId
-    ? JOB_STATES.find((s) => stateJobs[s.id].some((f) => f.id === selectedId))?.id || null
+    ? JOB_STATE_GROUPS.find((s) => stateJobs[s.id].some((f) => f.id === selectedId))?.id || null
     : layoutGroupId;
 
   const renderSelectedDetail = () =>
@@ -246,7 +253,7 @@ export default function Jobs() {
           <h1 className="text-2xl font-semibold tracking-tight">Faenas</h1>
           <p className="text-sm text-[var(--color-muted)]">
             {viewMode === "state"
-              ? "Agrupadas según sus ciclos: activas, pausadas y cerradas."
+              ? "Agrupadas según sus ciclos: activas, pausadas y cerradas, de la más reciente a la más antigua."
               : "Arrastra las tarjetas para reordenarlas o moverlas entre grupos."}
           </p>
         </div>
@@ -271,6 +278,19 @@ export default function Jobs() {
               </button>
             ))}
           </div>
+          {viewMode === "state" && (
+            <select
+              value={stateSort}
+              onChange={(e) => setStateSort(e.target.value)}
+              title={sortMeta?.hint}
+              aria-label="Ordenar las faenas por"
+              className="min-h-9 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-2 text-sm"
+            >
+              {JOB_STATE_SORTS.map((s) => (
+                <option key={s.id} value={s.id}>{s.label}</option>
+              ))}
+            </select>
+          )}
           {viewMode !== "state" && (
             <button
               onClick={() => setEditLayout((v) => !v)}
@@ -331,12 +351,12 @@ export default function Jobs() {
                   count={groupJobs.length}
                   editable={organizing}
                   isUngrouped={byState || g.id === UNGROUPED_ID}
-                  collapsed={collapsedGroups.has(g.id)}
+                  collapsed={isGroupCollapsed(g)}
                   onToggleCollapsed={() => toggleGroupCollapsed(g.id)}
                   onUpdate={(patch) => updateGroup(g.id, patch)}
                   onRemove={() => removeGroup(g.id)}
                 />
-                {collapsedGroups.has(g.id) ? null : groupJobs.length === 0 ? (
+                {isGroupCollapsed(g) ? null : groupJobs.length === 0 ? (
                   <div className={`rounded-lg border border-dashed border-[var(--color-border)] p-6 text-center text-xs text-[var(--color-muted)] ${organizing ? "" : "hidden"}`}>
                     Arrastra una tarjeta aquí.
                   </div>
@@ -390,6 +410,11 @@ export default function Jobs() {
                                   <span className="truncate text-[15px] font-semibold leading-tight text-[var(--color-text)]">{f.name}</span>
                                 </div>
                                 {f.location && <div className="mt-0.5 truncate text-[11px] text-[var(--color-muted)]">{f.location}</div>}
+                                {byState && stateDates[f.id] && (
+                                  <div className="mt-0.5 text-[11px] text-[var(--color-muted)]" title={`${sortMeta?.label}: ${stateDates[f.id].split("-").reverse().join("-")}`}>
+                                    {stateSort === "edited" ? "✎" : "🕒"} {sinceLabel(stateDates[f.id], today)}
+                                  </div>
+                                )}
                               </div>
                             </div>
                             <div onClick={(e) => e.stopPropagation()} className="shrink-0">
@@ -444,7 +469,7 @@ export default function Jobs() {
                     })}
                   </div>
                 )}
-                {!isMobile && !collapsedGroups.has(g.id) && selectedGroupId === g.id && renderSelectedDetail()}
+                {!isMobile && !isGroupCollapsed(g) && selectedGroupId === g.id && renderSelectedDetail()}
               </section>
             );
           })}
