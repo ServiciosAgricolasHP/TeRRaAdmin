@@ -4,6 +4,7 @@ import {
   indexLinkOf,
   isOpenRecord,
   customRangeError,
+  filterRecordLogs,
   rangeBounds,
   recordScope,
   recordSummary,
@@ -70,6 +71,10 @@ describe("isOpenRecord", () => {
     expect(isOpenRecord("worker", { id: "w1", mergedInto: "w2" })).toBe(false);
     expect(isOpenRecord("worker", { id: "w2" })).toBe(true);
     expect(isOpenRecord("company", { id: "e1" })).toBe(true);
+    expect(isOpenRecord("payroll", { id: "p1", status: "pending" })).toBe(true);
+    expect(isOpenRecord("payroll", { id: "p2", status: "paid" })).toBe(false);
+    expect(isOpenRecord("user", { id: "u1" })).toBe(true);
+    expect(isOpenRecord("user", { id: "u2", disabled: true })).toBe(false);
   });
 });
 
@@ -143,5 +148,19 @@ describe("recordSummary y groupLogsByDayAndAuthor", () => {
       ["2026-11-12", "bruno", ["c"]],
       ["2026-11-11", "María", ["d"]],
     ]);
+  });
+});
+
+describe("filterRecordLogs", () => {
+  const logs = [
+    { id: "a", entity: "workday", action: "update" },
+    { id: "b", entity: "workday", action: "create" },
+    { id: "c", entity: "cycle", action: "update" },
+  ];
+
+  it("deja los del tipo y, si se elige, la acción", () => {
+    expect(filterRecordLogs(logs).map((l) => l.id)).toEqual(["a", "b", "c"]);
+    expect(filterRecordLogs(logs, { entity: "workday" }).map((l) => l.id)).toEqual(["a", "b"]);
+    expect(filterRecordLogs(logs, { entity: "workday", action: "create" }).map((l) => l.id)).toEqual(["b"]);
   });
 });

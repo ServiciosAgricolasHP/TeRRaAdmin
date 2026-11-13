@@ -9,6 +9,7 @@ import {
 } from "../../utils/auditLabels";
 import { fmtDateTime, toDate } from "../../utils/auditLogs";
 import { groupLogsByDayAndAuthor, workdayLabel } from "../../utils/auditRecord";
+import { payrollHistoryEntry } from "../../utils/payrollHistory";
 import FieldBlock from "./FieldBlock";
 import { useWorkdayNames } from "./useWorkdayNames";
 
@@ -93,6 +94,8 @@ export default function LogsTable({ logs, knownLabels, omit, grouped = false }) 
   const renderRow = (l, idx) => {
     const isOpen = openIdx === idx;
     const hasDetails = l.changes || l.before || l.after || l.meta;
+    // Un registro de nómina se lee como en su 🕘 Historial: qué hizo y a quién.
+    const payrollEntry = l.entity === "payroll" ? payrollHistoryEntry(l) : null;
     return (
       <Fragment key={l.id || idx}>
         <tr
@@ -105,6 +108,7 @@ export default function LogsTable({ logs, knownLabels, omit, grouped = false }) 
           <td className="px-2 py-1"><ActionPill action={l.action} /></td>
           <td className="px-2 py-1">
             <EntityLabel entity={l.entity} entityId={l.entityId} label={labelOf(l)} />
+            {payrollEntry && <div className="text-[10px] text-[var(--color-muted)]">{payrollEntry.title}</div>}
           </td>
           <td className="px-2 py-1 text-[var(--color-muted)]">{l.userName || l.email || l.uid || "—"}</td>
           <td className="px-2 py-1 text-right text-[var(--color-muted)]">
@@ -114,6 +118,13 @@ export default function LogsTable({ logs, knownLabels, omit, grouped = false }) 
         {isOpen && hasDetails && (
           <tr className="border-t border-[var(--color-border)]">
             <td colSpan={5} className="bg-[var(--color-surface-2)] px-3 py-2">
+              {payrollEntry?.lines.length > 0 && (
+                <ul className="mb-2 space-y-0.5 tabular-nums">
+                  {payrollEntry.lines.map((line, i) => (
+                    <li key={i} className="[overflow-wrap:anywhere]">{line.text}</li>
+                  ))}
+                </ul>
+              )}
               <div className="grid gap-2 md:grid-cols-2">
                 {l.changes && <FieldBlock title="Cambios" data={l.changes} kind="changes" />}
                 {l.before && <FieldBlock title="Antes" data={l.before} kind="snapshot" />}

@@ -53,8 +53,9 @@ export function indexLinkOf(err) {
 }
 
 // Si un registro sigue abierto: el ciclo sin cerrar, la faena o subfaena con
-// algún ciclo abierto, el transportista activo y el trabajador que no se unió
-// a otra ficha. Los demás tipos cuentan siempre como abiertos.
+// algún ciclo abierto, el transportista activo, el trabajador que no se unió
+// a otra ficha, la nómina sin pagar y el usuario sin suspender. Los demás
+// tipos cuentan siempre como abiertos.
 export function isOpenRecord(entityType, doc, cycles = []) {
   if (!doc) return false;
   switch (entityType) {
@@ -68,13 +69,21 @@ export function isOpenRecord(entityType, doc, cycles = []) {
       return cycles.some((c) => c.faenaId === doc.id && c.status !== "closed");
     case "subfaena":
       return cycles.some((c) => c.subfaenaId === doc.id && c.status !== "closed");
+    case "payroll":
+      return doc.status !== "paid";
+    case "user":
+      return !doc.disabled;
     default:
       return true;
   }
 }
 
 // Los tipos que separan lo abierto de lo cerrado.
-export const hasOpenFilter = (entityType) => ["worker", "cycle", "carrier", "faena", "subfaena"].includes(entityType);
+export const hasOpenFilter = (entityType) => ["worker", "cycle", "carrier", "faena", "subfaena", "payroll", "user"].includes(entityType);
+
+// Desde cuántas acciones de una persona en el rango se pregunta antes de
+// cargarlas: cada una es una lectura.
+export const USER_ACTIONS_LIMIT = 1000;
 
 const MONTHS_ABBR = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
 const shortDate = (iso) => {
@@ -195,4 +204,11 @@ export function groupLogsByDayAndAuthor(logs = []) {
     else groups.push({ key: `${day}|${who}|${index}`, day, who, items: [{ log, index }] });
   });
   return groups;
+}
+
+// Los logs que calzan con el filtro del historial: un tipo de registro
+// (`entity`) y, dentro de él, una acción (`action`). Sin filtro, todos.
+export function filterRecordLogs(logs = [], { entity = null, action = null } = {}) {
+  if (!entity) return logs;
+  return logs.filter((l) => l.entity === entity && (!action || l.action === action));
 }

@@ -1,18 +1,29 @@
 import { useMemo, useRef, useState } from "react";
 import { fetchRecordLogs } from "../../services/auditService";
+import { countUserLogs } from "../../services/countsService";
 import { listWorkers } from "../../services/workersService";
 import { listCycles, listJobs, listSubjobs } from "../../services/jobLists";
+import { listPayrolls } from "../../services/payrollsList";
 import { ENTITY_META, searchableEntityTypes } from "../../utils/auditLabels";
-import { customRangeError, hasOpenFilter, isOpenRecord, rangeBounds, recordScope } from "../../utils/auditRecord";
+import {
+  USER_ACTIONS_LIMIT,
+  customRangeError,
+  hasOpenFilter,
+  isOpenRecord,
+  rangeBounds,
+  recordScope,
+} from "../../utils/auditRecord";
 import { localIsoDate } from "../../utils/dates";
 import { attempt } from "../../utils/attempt";
 import { errorText } from "../../utils/errorText";
 import { useValuesChanged } from "../../hooks/useValuesChanged";
 
 // El catálogo de un tipo de registro. Los trabajadores, las faenas, las
-// subfaenas y los ciclos salen de la copia que comparten las pantallas; los
-// demás, de su servicio, con caché de 10 min.
-const SYNCED_LISTS = { worker: listWorkers, faena: listJobs, subfaena: listSubjobs, cycle: listCycles };
+// subfaenas, los ciclos y las nóminas salen de la copia que comparten las
+// pantallas; los demás, de su servicio, con caché de 10 min.
+const SYNCED_LISTS = { worker: listWorkers, faena: listJobs, subfaena: listSubjobs, cycle: listCycles, payroll: listPayrolls };
+
+const NO_FILTER = { entity: null, action: null };
 
 // Las faenas y subfaenas necesitan sus ciclos, para saber si siguen abiertas y
 // para traer lo que pasó en ellos; una faena, también sus subfaenas.
@@ -41,7 +52,10 @@ function scopeLabels(scope, loaded) {
 // pide la lista del tipo (`loadRecords`). La lista muestra solo lo abierto,
 // salvo con `showClosed`. Elegir un registro trae su historial del rango
 // elegido (hoy, por defecto), y cambiar el rango lo vuelve a traer. El
-// personalizado (hasta `MAX_CUSTOM_DAYS` días) se trae al apretar Ver.
+// personalizado (hasta `MAX_CUSTOM_DAYS` días) se trae al apretar Ver. Lo que
+// hizo un usuario se cuenta antes: con más de `USER_ACTIONS_LIMIT` acciones
+// espera a que se confirme (`pendingCount`, `confirmLoad`). `logFilter` deja
+// un tipo de registro y una acción del historial cargado.
 export function useRecordSearch() {
   const types = useMemo(() => searchableEntityTypes(), []);
   const [entityType, setEntityType] = useState("");
@@ -65,6 +79,10 @@ export function useRecordSearch() {
   const [history, setHistory] = useState(null);
   const [historyError, setHistoryError] = useState("");
   const [loadingLogs, setLoadingLogs] = useState(false);
+  // Cuántas acciones hay en el rango, si son demasiadas para cargarlas sin
+  // preguntar.
+  const [pendingCount, setPendingCount] = useState(null);
+  const [logFilter, setLogFilter] = useState(NO_FILTER);
   // La última consulta pedida: una respuesta vieja no pisa a la nueva.
   const requestRef = useRef(0);
 
@@ -79,6 +97,8 @@ export function useRecordSearch() {
     setHistoryError("");
     setQuery("");
     setRecordsError("");
+    setPendingCount(null);
+    setLogFilter(NO_FILTER);
   }
 
   const loadRecords = async () => {
@@ -108,9 +128,12 @@ export function useRecordSearch() {
   }, [openRows, query, meta]);
 
   // Trae el historial del rango; un personalizado que no sirve no lee nada.
-  const loadHistory = async (type, record, rangeId, customRange) => {
+  // Lo de un usuario se cuenta primero, salvo que ya se haya confirmado.
+  const loadHistory = async (type, record, rangeId, customRange, confirmed = false) => {
     const bounds = rangeBounds(rangeId, new Date(), customRange);
     requestRef.current += 1;
+    setPendingCount(null);
+    setLogFilter(NO_FILTER);
     if (!bounds) {
       setHistory(null);
       setLoadingLogs(false);
@@ -119,6 +142,17 @@ export function useRecordSearch() {
     const request = requestRef.current;
     setLoadingLogs(true);
     setHistoryError("");
+    if (type === "user" && !confirmed) {
+      // Si contar falla (le falta su índice), se sigue: traerlas dice qué falta.
+      const { value: count } = await attempt(() => countUserLogs(record.id, bounds));
+      if (request !== requestRef.current) return;
+      if (count > USER_ACTIONS_LIMIT) {
+        setHistory(null);
+        setPendingCount(count);
+        setLoadingLogs(false);
+        return;
+      }
+    }
     const { value, error: err } = await attempt(() =>
       fetchRecordLogs(type, record.id, { ...bounds, scope: record.scope }),
     );
@@ -148,12 +182,18 @@ export function useRecordSearch() {
     if (selected) loadHistory(entityType, selected, "custom", custom);
   };
 
+  const confirmLoad = () => {
+    if (selected) loadHistory(entityType, selected, range, custom, true);
+  };
+
   const clearSelection = () => {
     requestRef.current += 1;
     setSelected(null);
     setHistory(null);
     setHistoryError("");
     setLoadingLogs(false);
+    setPendingCount(null);
+    setLogFilter(NO_FILTER);
   };
 
   return {
@@ -164,6 +204,7 @@ export function useRecordSearch() {
     customError,
     clearSelection,
     closedCount,
+    confirmLoad,
     entityType,
     history,
     historyError,
@@ -171,8 +212,10 @@ export function useRecordSearch() {
     loadingLogs,
     loadingRecords,
     loadRecords,
+    logFilter,
     matches,
     meta,
+    pendingCount,
     pickRecord,
     query,
     range,
@@ -180,6 +223,7 @@ export function useRecordSearch() {
     selected,
     setEntityType,
     setCustom,
+    setLogFilter,
     setQuery,
     setShowClosed,
     showClosed,

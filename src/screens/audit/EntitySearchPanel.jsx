@@ -5,8 +5,10 @@ import LogsTable from "./LogsTable";
 import RecordSummary from "./RecordSummary";
 import { useRecordSearch } from "./useRecordSearch";
 import { attempt } from "../../utils/attempt";
-import { labelKey } from "../../utils/auditLabels";
-import { MAX_CUSTOM_DAYS, RECORD_RANGES } from "../../utils/auditRecord";
+import { entityLabelEs, labelKey } from "../../utils/auditLabels";
+import { MAX_CUSTOM_DAYS, RECORD_RANGES, filterRecordLogs } from "../../utils/auditRecord";
+import { fmtNumber } from "../../utils/format";
+import { ActionPill } from "./LogsTable";
 
 // Lo que ya dice el registro elegido y no se repite en el nombre de sus jornadas.
 const omitOf = (entityType, id) =>
@@ -20,6 +22,7 @@ const dayText = (iso) => String(iso || "").split("-").reverse().join("-");
 // cerrados"), se busca el registro por nombre o rut y se trae su historial
 // del rango elegido: hoy, 7 días, 30 días o uno personalizado de hasta
 // `MAX_CUSTOM_DAYS` días (`fetchRecordLogs`). Nada se lee hasta pedir la lista.
+// El resumen de arriba filtra la tabla por tipo de registro y acción.
 export default function EntitySearchPanel() {
   const [advancesFor, setAdvancesFor] = useState(null);
   const [advanceItems, setAdvanceItems] = useState([]);
@@ -30,6 +33,7 @@ export default function EntitySearchPanel() {
     changeRange,
     clearSelection,
     closedCount,
+    confirmLoad,
     custom,
     customError,
     entityType,
@@ -39,8 +43,10 @@ export default function EntitySearchPanel() {
     loadingLogs,
     loadingRecords,
     loadRecords,
+    logFilter,
     matches,
     meta,
+    pendingCount,
     pickRecord,
     query,
     range,
@@ -48,12 +54,14 @@ export default function EntitySearchPanel() {
     selected,
     setCustom,
     setEntityType,
+    setLogFilter,
     setQuery,
     setShowClosed,
     showClosed,
     types,
   } = useRecordSearch();
   const recordLogs = history?.logs || null;
+  const shownLogs = recordLogs ? filterRecordLogs(recordLogs, logFilter) : null;
   // El nombre del registro elegido, y el de los ciclos y subfaenas que abarca,
   // ya se saben: sus filas no los buscan.
   const selectedKey = selected ? labelKey(entityType, selected.id) : null;
@@ -62,9 +70,10 @@ export default function EntitySearchPanel() {
   return (
     <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
       <p className="text-xs text-[var(--color-muted)]">
-        El historial de un registro (trabajador, ciclo, faena, transportista…), de hoy o del rango que elijas. Al buscar
+        El historial de un registro (trabajador, ciclo, faena, nómina, usuario…), de hoy o del rango que elijas. Al buscar
         un trabajador se suman sus jornadas y anticipos; un ciclo, sus jornadas y las sincronizaciones de Pesajes QR; una
-        faena o subfaena, lo mismo de todos sus ciclos; un transportista, sus vueltas y sus resúmenes de pago.
+        faena o subfaena, lo mismo de todos sus ciclos; un transportista, sus vueltas y sus resúmenes de pago; una nómina,
+        su JSON; y un usuario, todo lo que hizo en la app.
       </p>
 
       <div className="mt-3 space-y-3">
@@ -126,6 +135,9 @@ export default function EntitySearchPanel() {
                   className="block w-full border-t border-[var(--color-border)] px-3 py-1.5 text-left text-sm first:border-t-0 hover:bg-[var(--color-surface-2)]"
                 >
                   {meta.labelOf ? meta.labelOf(d) : d.name || d.id}
+                  {meta.listDetailOf && (
+                    <span className="ml-2 text-xs text-[var(--color-muted)]">{meta.listDetailOf(d)}</span>
+                  )}
                 </button>
               ))
             )}
@@ -258,6 +270,21 @@ export default function EntitySearchPanel() {
               </div>
             )}
             {historyError ? <p className="text-xs text-[var(--color-danger)]">No se pudo leer el historial. {historyError}</p> : null}
+            {pendingCount != null && (
+              <div className="flex flex-wrap items-center gap-2 rounded-md border border-[var(--color-warning)] px-3 py-2 text-xs">
+                <span>
+                  Son {fmtNumber(pendingCount)} acciones en este rango: cargarlas cuesta una lectura cada una. Elige un rango
+                  más corto o
+                </span>
+                <button
+                  type="button"
+                  onClick={confirmLoad}
+                  className="min-h-8 rounded-md bg-[var(--color-accent)] px-3 py-1 text-xs font-medium text-[var(--color-accent-fg)] hover:bg-[var(--color-accent-hover)]"
+                >
+                  ▶ Cargar las {fmtNumber(pendingCount)}
+                </button>
+              </div>
+            )}
             {loadingLogs ? (
               <div className="py-6 text-center text-sm text-[var(--color-muted)]">Cargando historial…</div>
             ) : recordLogs && recordLogs.length === 0 ? (
@@ -268,9 +295,25 @@ export default function EntitySearchPanel() {
               </div>
             ) : recordLogs ? (
               <>
-                <RecordSummary logs={recordLogs} />
+                <RecordSummary logs={recordLogs} filter={logFilter} onFilter={setLogFilter} />
+                {logFilter.entity && (
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
+                    <span>
+                      Mostrando {fmtNumber(shownLogs.length)} de {fmtNumber(recordLogs.length)}:{" "}
+                      <b className="text-[var(--color-text)]">{entityLabelEs(logFilter.entity)}</b>
+                    </span>
+                    {logFilter.action && <ActionPill action={logFilter.action} />}
+                    <button
+                      type="button"
+                      onClick={() => setLogFilter({ entity: null, action: null })}
+                      className="min-h-8 rounded-md px-2 underline hover:text-[var(--color-text)]"
+                    >
+                      ✕ Quitar filtro
+                    </button>
+                  </div>
+                )}
                 <div className="overflow-x-auto rounded-md border border-[var(--color-border)]" style={{ WebkitOverflowScrolling: "touch" }}>
-                  <LogsTable logs={recordLogs} knownLabels={knownLabels} omit={omitOf(entityType, selected.id)} grouped />
+                  <LogsTable logs={shownLogs} knownLabels={knownLabels} omit={omitOf(entityType, selected.id)} grouped />
                 </div>
               </>
             ) : null}

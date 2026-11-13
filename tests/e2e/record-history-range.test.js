@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { Timestamp } from "firebase/firestore";
 import { fetchRecordLogs } from "../../src/services/auditService";
+import { countUserLogs } from "../../src/services/countsService";
 import { rangeBounds } from "../../src/utils/auditRecord";
 import { CICLO, FAENA, SUBFAENA, set } from "./helpers/seed";
 
@@ -55,5 +56,40 @@ describe("el historial de una faena", () => {
     expect(logs.map((l) => l.id).sort()).toEqual(
       ["l-cycle-35", "l-cycle-today", "l-faena", "l-other-cycle", "l-subfaena", "l-workday-today"].sort(),
     );
+  });
+});
+
+describe("el historial de una nómina", () => {
+  it("suma los registros de su JSON", async () => {
+    await set("logs", "l-payroll", { action: "update", entity: "payroll", entityId: "nomina-1", timestamp: at(today) });
+    await set("logs", "l-snapshot", { action: "update", entity: "payrollSnapshot", entityId: "nomina-1", timestamp: at(today) });
+    await set("logs", "l-other-payroll", { action: "update", entity: "payroll", entityId: "nomina-2", timestamp: at(today) });
+    const { logs } = await fetchRecordLogs("payroll", "nomina-1", rangeBounds("today"));
+    expect(logs.map((l) => l.id).sort()).toEqual(["l-payroll", "l-snapshot"]);
+  });
+});
+
+describe("el historial de un usuario", () => {
+  async function seedUserLogs() {
+    await set("logs", "u-workday", { action: "update", entity: "workday", entityId: "w1", uid: "u1", timestamp: at(today) });
+    await set("logs", "u-cycle", { action: "update", entity: "cycle", entityId: CICLO, uid: "u1", timestamp: at(today) });
+    await set("logs", "u-old", { action: "update", entity: "cycle", entityId: CICLO, uid: "u1", timestamp: at(tenDaysAgo) });
+    // Un admin le cambió el rol, y él editó su propio perfil.
+    await set("logs", "u-role", { action: "update", entity: "user", entityId: "u1", uid: "admin", timestamp: at(today) });
+    await set("logs", "u-own-profile", { action: "update", entity: "user", entityId: "u1", uid: "u1", timestamp: at(today) });
+    await set("logs", "u-other", { action: "update", entity: "cycle", entityId: CICLO, uid: "u2", timestamp: at(today) });
+  }
+
+  it("trae lo que hizo y los cambios a su perfil, cada uno una vez", async () => {
+    await seedUserLogs();
+    const { logs, missingIndexes } = await fetchRecordLogs("user", "u1", rangeBounds("today"));
+    expect(missingIndexes).toEqual([]);
+    expect(logs.map((l) => l.id).sort()).toEqual(["u-cycle", "u-own-profile", "u-role", "u-workday"]);
+  });
+
+  it("cuenta sus acciones del rango antes de traerlas", async () => {
+    await seedUserLogs();
+    expect(await countUserLogs("u1", rangeBounds("today"))).toBe(3);
+    expect(await countUserLogs("u1", rangeBounds("30d"))).toBe(4);
   });
 });

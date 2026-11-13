@@ -28,6 +28,8 @@ export async function fetchLogsInRange(from, to) {
 // sincronizaciones de Pesajes QR hacia él. Un log sin ese campo en `meta` no
 // aparece acá; los de la ficha del registro, siempre. Las acciones en lote de
 // un ciclo (importar cosecha, limpiar labor, pisos) se registran en el ciclo.
+// Una nómina suma su JSON (mismo id). Un usuario suma todo lo que hizo: los
+// logs con su `uid`, de cualquier entidad (`entity: null`).
 const SATELLITE_ENTITIES = {
   worker: [
     { entity: "workday", field: "meta.workerRut" },
@@ -41,6 +43,8 @@ const SATELLITE_ENTITIES = {
     { entity: "workday", field: "meta.cycleId" },
     { entity: "qrPrefix", field: "meta.cycleId" },
   ],
+  payroll: [{ entity: "payrollSnapshot", field: "entityId" }],
+  user: [{ entity: null, field: "uid" }],
 };
 
 // Lo que pasa dentro de los ciclos de una faena o subfaena: los cambios de cada
@@ -60,18 +64,21 @@ const chunksOf = (list) => {
   return out;
 };
 
-// Una consulta del historial, por un valor (`==`) o por varios (`in`). Con
-// `since` y `until`, solo los logs de ese rango (`until` sin incluir): pide un
-// índice compuesto (entity + el campo + timestamp), y si falta, Firestore lo
-// dice con el enlace para crearlo.
+// Una consulta del historial, por un valor (`==`) o por varios (`in`), de
+// una entidad o, sin ella, de todas. Con `since` y `until`, solo los logs de
+// ese rango (`until` sin incluir): pide un índice compuesto (entity + el campo
+// + timestamp), y si falta, Firestore lo dice con el enlace para crearlo. Lo
+// de una persona (`uid`) va del más nuevo al más viejo: así usa el índice
+// `uid + timestamp` descendente que ya pide Usuarios.
 const historyQuery = (entity, field, values, { since, until }) =>
   logsService.list({
     wheres: [
-      ["entity", "==", entity],
+      ...(entity ? [["entity", "==", entity]] : []),
       values.length === 1 ? [field, "==", values[0]] : [field, "in", values],
       ...(since ? [["timestamp", ">=", since]] : []),
       ...(until ? [["timestamp", "<", until]] : []),
     ],
+    ...(field === "uid" && since ? { order: ["timestamp", "desc"] } : {}),
   });
 
 // Las consultas del historial de un registro: su ficha primero, después sus
@@ -103,7 +110,10 @@ export async function fetchRecordLogs(entityType, recordId, { since = null, unti
       return [];
     }),
   );
-  const logs = results.flat();
+  // Un log puede salir en dos consultas (el usuario que editó su propio
+  // perfil): va una vez.
+  const seen = new Set();
+  const logs = results.flat().filter((l) => (seen.has(l.id) ? false : seen.add(l.id)));
   logs.sort((a, b) => toDate(b.timestamp) - toDate(a.timestamp));
   return { logs, missingIndexes };
 }
