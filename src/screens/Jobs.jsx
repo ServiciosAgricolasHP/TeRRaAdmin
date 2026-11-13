@@ -5,10 +5,11 @@ import { UNGROUPED_ID } from "../services/userPrefsService";
 import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import ConfirmDialog from "../components/ConfirmDialog";
-import { useIsMobile } from "../hooks/useIsMobile";
 import { JobCardBody } from "./jobs/JobCardBody";
 import { GroupHeader } from "./jobs/GroupHeader";
 import { SelectedDetail } from "./jobs/SelectedDetail";
+import { useJobPanel } from "./jobs/useJobPanel";
+import { rowEndIndex } from "../utils/gridRows";
 import { withInitial } from "./jobs/helpers";
 import { useJobsData } from "./jobs/useJobsData";
 import { useJobLayout } from "./jobs/useJobLayout";
@@ -34,7 +35,6 @@ const emptySubjob = { name: "", notes: "" };
 
 export default function Jobs() {
   const toast = useToast();
-  const isMobile = useIsMobile();
   const { user, isAdmin } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -124,15 +124,23 @@ export default function Jobs() {
     user,
   });
 
-  // Al abrir el detalle de una faena, desplaza la vista hasta el panel. Espera
-  // un frame para que React lo dibuje antes de medir.
+  // El detalle de la faena elegida se abre bajo la fila de su tarjeta, unido
+  // a ella, y se pliega con su contenido (`useJobPanel`).
+  const { closing: panelClosing, columns, panelId } = useJobPanel(selectedId);
+
+  // Al abrir una faena, la vista se desplaza solo si el panel quedó fuera de
+  // ella, lo justo para que la tarjeta quede arriba. Espera un frame para que
+  // React lo dibuje antes de medir.
   const selectedDetailRef = useRef(null);
   useEffect(() => {
-    if (!selectedId) return;
+    if (!selectedId) return undefined;
     const id = window.requestAnimationFrame(() => {
-      const el = selectedDetailRef.current;
-      if (!el) return;
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      const panel = selectedDetailRef.current;
+      const card = document.querySelector(`[data-job-card="${selectedId}"]`);
+      if (!panel || !card) return;
+      const panelTop = panel.getBoundingClientRect().top;
+      const cardTop = card.getBoundingClientRect().top;
+      if (panelTop > window.innerHeight - 160 || cardTop < 0) card.scrollIntoView({ behavior: "smooth", block: "start" });
     });
     return () => window.cancelAnimationFrame(id);
   }, [selectedId]);
@@ -198,19 +206,17 @@ export default function Jobs() {
     toast,
   });
 
-  const selected = jobs.find((f) => f.id === selectedId);
-  const selectedSubjobs = selectedId ? subjobsByJob[selectedId] : null;
-  const selectedCycles = selectedId ? cyclesByJob[selectedId] : null;
-  const layoutGroupId = selectedId
-    ? (layout.faenaGroup[selectedId] && layout.groups.some((g) => g.id === layout.faenaGroup[selectedId])
-        ? layout.faenaGroup[selectedId]
-        : UNGROUPED_ID)
-    : null;
-  const selectedGroupId = byState && selectedId
-    ? JOB_STATE_GROUPS.find((s) => stateJobs[s.id].some((f) => f.id === selectedId))?.id || null
-    : layoutGroupId;
+  // El panel muestra `panelId`: la faena elegida o, mientras se pliega, la
+  // anterior.
+  const selected = jobs.find((f) => f.id === panelId);
+  const selectedSubjobs = panelId ? subjobsByJob[panelId] : null;
+  const selectedCycles = panelId ? cyclesByJob[panelId] : null;
+  // Si la tarjeta del panel no está a la vista (su grupo está plegado), el
+  // detalle va suelto al final.
+  const panelPlaced = !!panelId && viewGroups.some((g) => !isGroupCollapsed(g) && (viewJobsByGroup[g.id] || []).some((f) => f.id === panelId));
 
-  // Lo que muestra la tarjeta de una faena.
+  // Lo que muestra la tarjeta de una faena, en la grilla y en el encabezado de
+  // su detalle.
   const cardBodyProps = (f) => {
     const date = byState ? stateDates[f.id] : "";
     return {
@@ -233,6 +239,9 @@ export default function Jobs() {
     selected && (
       <div ref={selectedDetailRef}>
       <SelectedDetail
+        key={selected.id}
+        header={<JobCardBody {...cardBodyProps(selected)} dragHint={false} asTitle />}
+        onClose={() => setSelectedId(null)}
         selected={selected}
         cardColor={colorOf(selected)}
         subjobs={selectedSubjobs}
@@ -381,11 +390,17 @@ export default function Jobs() {
                   </div>
                 ) : (
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    {groupJobs.map((f) => {
+                    {groupJobs.map((f, idx) => {
                       const isSelected = selectedId === f.id;
                       const cardColor = colorOf(f);
+                      // El panel va después de la última tarjeta de la fila de
+                      // la faena abierta.
+                      const panelIdx = groupJobs.findIndex((j) => j.id === panelId);
+                      const panelHere = panelIdx >= 0 && rowEndIndex(panelIdx, groupJobs.length, columns) === idx;
+                      const dimmed = !!selectedId && !isSelected;
                       return (
                         <Fragment key={f.id}><div
+                          data-job-card={f.id}
                           draggable={!byState}
                           onDragStart={onDragStart(f.id)}
                           onDragOver={onDragOver(f.id)}
@@ -395,24 +410,41 @@ export default function Jobs() {
                           onClick={() => setSelectedId(isSelected ? null : f.id)}
                           data-dragging={dragId === f.id}
                           data-drop-over={dropOverId === f.id}
-                          style={{
+                          style={isSelected ? undefined : {
                             backgroundColor: "var(--color-surface)",
                             backgroundImage: cardColor ? `linear-gradient(135deg, ${cardColor}1A, transparent 60%)` : undefined,
                             "--card-hover-shadow": cardColor ? `0 4px 14px ${cardColor}33` : "0 4px 14px rgb(0 0 0 / 0.08)",
                           }}
                           onMouseEnter={(e) => { e.currentTarget.style.boxShadow = e.currentTarget.style.getPropertyValue("--card-hover-shadow"); }}
                           onMouseLeave={(e) => { e.currentTarget.style.boxShadow = ""; }}
-                          className={`dnd-card group relative cursor-pointer rounded-lg border pt-5 px-4 pb-4 shadow-sm transition-all hover:border-[var(--color-border-strong)] ${
+                          className={`dnd-card group relative scroll-mt-4 cursor-pointer rounded-lg border pt-5 px-4 pb-4 transition-all duration-200 ${
                             isSelected
-                              ? "border-[var(--color-accent)] ring-2 ring-[var(--color-accent)] ring-offset-2 ring-offset-[var(--color-surface)]"
-                              : "border-[var(--color-border)]"
+                              ? "border-dashed border-[var(--color-accent)]"
+                              : `border-[var(--color-border)] shadow-sm hover:border-[var(--color-border-strong)] ${dimmed ? "opacity-60 hover:opacity-100" : ""}`
                           }`}
                         >
-                          <JobCardBody {...cardBodyProps(f)} />
+                          {/* Abierta, la tarjeta pasa a ser el encabezado de su
+                              detalle: aquí queda su hueco, del mismo alto. */}
+                          <div className={isSelected ? "invisible" : undefined}>
+                            <JobCardBody {...cardBodyProps(f)} />
+                          </div>
+                          {isSelected && (
+                            <span className="absolute inset-0 flex items-center justify-center text-sm font-medium text-[var(--color-accent)]">
+                              ▾ abierta
+                            </span>
+                          )}
                         </div>
-                        {isMobile && isSelected && (
-                          <div className="col-span-full">
-                            {renderSelectedDetail()}
+                        {panelHere && (
+                          <div
+                            className={`col-span-full grid transition-[grid-template-rows,opacity] duration-200 ease-out starting:grid-rows-[0fr] starting:opacity-0 ${
+                              panelClosing ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100"
+                            }`}
+                          >
+                            {/* El margen deja lugar a la sombra del panel, que el
+                                recorte del despliegue cortaría. */}
+                            <div className="-mx-3 -mb-6 min-h-0 overflow-hidden px-3 pb-6">
+                              {renderSelectedDetail()}
+                            </div>
                           </div>
                         )}
                         </Fragment>
@@ -420,11 +452,10 @@ export default function Jobs() {
                     })}
                   </div>
                 )}
-                {!isMobile && !isGroupCollapsed(g) && selectedGroupId === g.id && renderSelectedDetail()}
               </section>
             );
           })}
-          {!isMobile && selected && !viewGroups.some((g) => g.id === selectedGroupId) && renderSelectedDetail()}
+          {selected && !panelPlaced && <div className="mt-6">{renderSelectedDetail()}</div>}
         </div>
       )}
 

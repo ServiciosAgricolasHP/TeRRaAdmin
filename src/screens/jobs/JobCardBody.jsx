@@ -3,9 +3,11 @@ import { ColorPickerButton } from "./ColorPickerButton";
 // El contenido de la tarjeta de una faena: la franja de su color, el nombre,
 // la ubicación, hace cuánto (`since`: { icon, label, title }, en la vista por
 // estado), sus notas, cuántas subfaenas y ciclos tiene, y el color, Editar y
-// Eliminar. Va dentro de un contenedor `relative` y `group`.
-// `dragHint` muestra el ⠿ de arrastrar.
-export function JobCardBody({ job, cardColor, colorValue, onColorChange, subjobCount, cyclesCount, dragHint, since, onEdit, onDelete }) {
+// Eliminar. Lo usan la tarjeta de la grilla y, con la faena abierta, el
+// encabezado de su detalle. Va dentro de un contenedor `relative` y `group`.
+// `dragHint` muestra el ⠿ de arrastrar; `asTitle`, el nombre como título del
+// detalle, más grande y en el color del tema.
+export function JobCardBody({ job, cardColor, colorValue, onColorChange, subjobCount, cyclesCount, dragHint, since, onEdit, onDelete, asTitle = false }) {
   return (
     <>
       <span
@@ -24,7 +26,11 @@ export function JobCardBody({ job, cardColor, colorValue, onColorChange, subjobC
                 style={{ backgroundColor: cyclesCount > 0 ? "#16a34a" : "var(--color-muted)" }}
                 title={cyclesCount > 0 ? "Activa" : "Sin ciclos"}
               />
-              <span className="truncate text-[15px] font-semibold leading-tight text-[var(--color-text)]">{job.name}</span>
+              {asTitle ? (
+                <h2 className="text-2xl font-bold leading-tight text-[var(--color-accent)] [overflow-wrap:anywhere]">{job.name}</h2>
+              ) : (
+                <span className="truncate text-[15px] font-semibold leading-tight text-[var(--color-text)]">{job.name}</span>
+              )}
             </div>
             {job.location && <div className="mt-0.5 truncate text-[11px] text-[var(--color-muted)]">{job.location}</div>}
             {since && (

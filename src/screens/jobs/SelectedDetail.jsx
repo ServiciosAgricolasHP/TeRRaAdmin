@@ -2,7 +2,12 @@ import { useState } from "react";
 import ProductionSummaryModal from "./ProductionSummaryModal";
 import { SubjobListBody } from "./SubjobListBody";
 
+// El detalle de una faena. Arriba va su tarjeta (`header`, `JobCardBody`),
+// que con la faena abierta deja la grilla y pasa a ser su encabezado; debajo,
+// las acciones de la faena y sus subfaenas con sus ciclos. `onClose` la cierra.
 export function SelectedDetail({
+  header,
+  onClose,
   selected,
   cardColor,
   subjobs,
@@ -53,7 +58,7 @@ export function SelectedDetail({
 
   return (
     <div
-      className="relative mt-6 rounded-lg border border-[var(--color-border)] pt-6 shadow-sm"
+      className="relative rounded-lg border border-[var(--color-accent)] shadow-md transition-opacity duration-200 starting:opacity-0"
       style={{
         backgroundColor: "var(--color-surface)",
         backgroundImage: cardColor
@@ -64,48 +69,31 @@ export function SelectedDetail({
           : undefined,
       }}
     >
-      <span
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-1.5 rounded-t-lg"
-        style={{ backgroundColor: cardColor || "var(--color-border)" }}
-      />
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-border)] px-5 py-3">
-        <div className="flex items-center gap-3">
-          {cardColor && (
-            <span
-              aria-hidden
-              className="h-8 w-1 rounded-full"
-              style={{ backgroundColor: cardColor }}
-            />
-          )}
-          <div>
-            <div className="text-xs uppercase tracking-wider text-[var(--color-muted)]">Detalle</div>
-            <div
-              className="text-2xl font-bold leading-tight"
-              style={{ color: cardColor || "var(--color-accent)" }}
-            >
-              {selected.name}
-            </div>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {cyclesForResumen.length > 0 && (
-            <button
-              onClick={() => setResumenOpen(true)}
-              title="Resumen de producción de todos los ciclos de esta faena (filtros adentro)"
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--color-accent-soft)]"
-            >
-              📊 Resumen producción
-            </button>
-          )}
+      <div className="group relative px-4 pt-5 pb-4">{header}</div>
+      <div className="flex flex-wrap items-center justify-end gap-2 border-y border-[var(--color-border)] bg-[var(--color-surface-2)] px-4 py-2">
+        {cyclesForResumen.length > 0 && (
           <button
-            onClick={onCreateSubjob}
-            className="rounded-md px-3 py-1.5 text-xs font-medium text-[var(--color-accent-fg)] transition-colors hover:opacity-90"
-            style={{ backgroundColor: cardColor || "var(--color-accent)" }}
+            onClick={() => setResumenOpen(true)}
+            title="Resumen de producción de todos los ciclos de esta faena (filtros adentro)"
+            className="min-h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--color-accent-soft)]"
           >
-            + Subfaena
+            📊 Resumen producción
           </button>
-        </div>
+        )}
+        <button
+          onClick={onCreateSubjob}
+          className="min-h-8 rounded-md px-3 py-1.5 text-xs font-medium text-[var(--color-accent-fg)] transition-colors hover:opacity-90"
+          style={{ backgroundColor: cardColor || "var(--color-accent)" }}
+        >
+          + Subfaena
+        </button>
+        <button
+          onClick={onClose}
+          title="Cerrar el detalle de la faena"
+          className="min-h-8 rounded-md px-2 py-1.5 text-xs text-[var(--color-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
+        >
+          ✕ Cerrar
+        </button>
       </div>
 
       {resumenOpen && (
