@@ -23,6 +23,7 @@ import { localIsoDate } from "../utils/dates";
 import ScreenLoader from "../components/ScreenLoader";
 import { fmtCurrency } from "../utils/format";
 import AdvanceFormModal from "./advances/AdvanceFormModal";
+import { PayoutBadge } from "./advances/PayoutBadge";
 import { attempt } from "../utils/attempt";
 import { errorText } from "../utils/errorText";
 
@@ -48,6 +49,12 @@ const lockedEditTitle = (a) =>
   isBono(a)
     ? `No editable aquí: un bono aplicado se edita (monto y nota) desde el detalle de su nómina, en "📋 Ver anticipos y bonos" o en la fila de la persona.`
     : "No editable: totalmente aplicado";
+
+// Por qué no se elimina: una nómina lo entrega, o tiene pagos aplicados.
+const deleteLockedTitle = (a) =>
+  a.payoutPayrollId && !(Number(a.amountPaid) > 0)
+    ? `Una nómina entrega este anticipo: quítalo desde su detalle, en "📋 Ver anticipos y bonos"`
+    : "Tiene pagos aplicados — usa Editar para cerrar el saldo";
 
 const STATUS_BUCKET = { pending: ["pending", "partial"], applied: ["applied"], cancelled: ["cancelled"] };
 const matchesStatusFilter = (status, filter) =>
@@ -257,7 +264,7 @@ export default function Advances() {
               const editLocked = status === "applied";
               // Eliminar se bloquea si hay algo aplicado; un parcial se cierra
               // editándolo o revirtiendo la nómina.
-              const deleteLocked = status === "applied" || status === "partial" || (Number(a.amountPaid) || 0) > 0;
+              const deleteLocked = status === "applied" || status === "partial" || (Number(a.amountPaid) || 0) > 0 || !!a.payoutPayrollId;
               const meta = advanceTypeMeta(a.type);
               const sign = advanceSign(a);
               const amountColor = sign > 0 ? "text-[var(--color-success)]" : "text-[var(--color-warning)]";
@@ -296,6 +303,7 @@ export default function Advances() {
                       >
                         {STATUS_LABEL[status]}
                       </span>
+                      {a.payoutPayrollId && <PayoutBadge advance={a} />}
                     </div>
                   </div>
                   {a.note && (
@@ -321,7 +329,7 @@ export default function Advances() {
                     <button
                       onClick={() => setConfirmDelete(a)}
                       disabled={deleteLocked}
-                      title={deleteLocked ? "Tiene pagos aplicados — usa Editar para cerrar el saldo" : "Eliminar"}
+                      title={deleteLocked ? deleteLockedTitle(a) : "Eliminar"}
                       className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:opacity-40"
                     >
                       Eliminar
@@ -390,13 +398,14 @@ export default function Advances() {
                     <span className={`rounded-full px-2 py-0.5 text-xs ${STATUS_CLASS[a.status || "pending"]}`}>
                       {STATUS_LABEL[a.status || "pending"]}
                     </span>
+                    {a.payoutPayrollId && <PayoutBadge advance={a} />}
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex justify-end gap-1">
                       {(() => {
                         const st = a.status || "pending";
                         const editLocked = st === "applied";
-                        const deleteLocked = st === "applied" || st === "partial" || (Number(a.amountPaid) || 0) > 0;
+                        const deleteLocked = st === "applied" || st === "partial" || (Number(a.amountPaid) || 0) > 0 || !!a.payoutPayrollId;
                         return (
                           <>
                             <button
@@ -410,7 +419,7 @@ export default function Advances() {
                             <button
                               onClick={() => setConfirmDelete(a)}
                               disabled={deleteLocked}
-                              title={deleteLocked ? "Tiene pagos aplicados — usa Editar para cerrar el saldo" : "Eliminar"}
+                              title={deleteLocked ? deleteLockedTitle(a) : "Eliminar"}
                               className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:opacity-40"
                             >
                               Eliminar

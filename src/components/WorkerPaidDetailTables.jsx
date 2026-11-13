@@ -96,7 +96,7 @@ export function WorkerPaidDetailTables({ displayRut, item, snapshot, snapshotLoa
   const chronoRows = paidChronoRowsOf(cycleSections, anticipoRows, bonoRows);
 
   // Resumen para incluir en la imagen — item ya trae los totales calculados.
-  const bruto = Number(item.grossAmount || item.amount || 0);
+  const bruto = Number(item.grossAmount ?? item.amount) || 0;
   const anticiposTotal = Number(item.advance) || 0;
   const bonosTotal = Number(item.bonus) || 0;
   const neto = Number(item.amount) || 0;

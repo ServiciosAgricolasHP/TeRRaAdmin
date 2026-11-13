@@ -9,6 +9,7 @@ import {
   computeCuotaAmount,
   cadenceMeta,
   INSTALLMENT_CADENCES,
+  isPaidOutPending,
 } from "../../services/advancesService";
 import { logsService } from "../../services";
 import { formatRutForDisplay } from "../../utils/rutUtils";
@@ -56,6 +57,10 @@ export default function AdvanceFormModal({ open, item, items = [], onClose, onSa
   // "applied") y perdona el saldo.
   const amountPaid = Number(item?.amountPaid) || 0;
   const isPartial = isEdit && (item?.status === "partial" || amountPaid > 0);
+  // Un anticipo que una nómina entrega y ninguna descuenta todavía: se le
+  // cambian solo la fecha y la nota.
+  const isPaidOut = isEdit && isPaidOutPending(item);
+  const lockIdentity = isPartial || isPaidOut;
   const [form, setForm] = useState({
     type: "anticipo",
     workerRut: "",
@@ -201,6 +206,15 @@ export default function AdvanceFormModal({ open, item, items = [], onClose, onSa
       }
     >
       <div className="space-y-3">
+        {isPaidOut && (
+          <div className="rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-3 py-2 text-xs text-[var(--color-accent)]">
+            <div className="font-semibold">💸 Una nómina entrega este anticipo</div>
+            <div className="mt-0.5 opacity-90">
+              Puedes cambiar la fecha y la nota. Para cambiar el monto, quítalo primero de la nómina, en &quot;📋 Ver
+              anticipos y bonos&quot; de su detalle.
+            </div>
+          </div>
+        )}
         {isPartial && (
           <div className="rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-3 py-2 text-xs text-[var(--color-accent)]">
             <div className="font-semibold">Anticipo parcialmente aplicado</div>
@@ -218,13 +232,13 @@ export default function AdvanceFormModal({ open, item, items = [], onClose, onSa
 
         <div>
           <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">Tipo</label>
-          <div className={`flex gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1 text-sm ${isPartial ? "opacity-60" : ""}`}>
+          <div className={`flex gap-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-1 text-sm ${lockIdentity ? "opacity-60" : ""}`}>
             {ADVANCE_TYPES.map((t) => (
               <button
                 key={t.value}
                 type="button"
-                disabled={isPartial}
-                onClick={() => !isPartial && setForm((f) => ({
+                disabled={lockIdentity}
+                onClick={() => !lockIdentity && setForm((f) => ({
                   ...f,
                   type: t.value,
                   useInstallments: t.value === "anticipo" && f.useInstallments,
@@ -247,7 +261,7 @@ export default function AdvanceFormModal({ open, item, items = [], onClose, onSa
                 <span className="font-medium">{form.workerName}</span>
                 <span className="ml-2 font-mono text-xs text-[var(--color-muted)]">{formatRutForDisplay(form.workerRut)}</span>
               </span>
-              {!isPartial && (
+              {!lockIdentity && (
                 <button
                   onClick={() => setPickerOpen(true)}
                   className="text-xs text-[var(--color-accent)]"
@@ -275,7 +289,8 @@ export default function AdvanceFormModal({ open, item, items = [], onClose, onSa
               value={form.amount || ""}
               placeholder="0"
               onChange={(e) => setForm((f) => ({ ...f, amount: Number(e.target.value) || 0 }))}
-              className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
+              disabled={isPaidOut}
+              className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)] disabled:opacity-60"
             />
           </div>
           <div>

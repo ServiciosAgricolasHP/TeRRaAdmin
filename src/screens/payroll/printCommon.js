@@ -430,21 +430,39 @@ export function cyclesNoteHtml(note, title = "") {
   return ` <span title="${title}" style="display:inline-block;margin-left:6px;padding:0 6px;border:1px solid #E0B000;border-radius:9px;background:#FFF2CC;color:#7A5A00;font-size:10px;font-weight:600;white-space:nowrap">${note}</span>`;
 }
 
-// Bonos y anticipos por medio de pago. Son un ajuste por trabajador, no por
-// subfaena ni labor, así que van como filas de ajuste al pie de
-// subfaenaSummary/laborSummary para que el TOTAL cuadre con lo que hay que
-// pagar.
+// Bonos, anticipos descontados y anticipos entregados (`payout`) por medio de
+// pago. Son un ajuste por trabajador, no por subfaena ni labor, así que van
+// como filas de ajuste al pie de subfaenaSummary/laborSummary para que el
+// TOTAL cuadre con lo que hay que pagar.
 export function computeBonusAdvanceSummary(items) {
-  let bankBonus = 0, cashBonus = 0, bankAdvance = 0, cashAdvance = 0;
+  let bankBonus = 0, cashBonus = 0, bankAdvance = 0, cashAdvance = 0, bankPayout = 0, cashPayout = 0;
   for (const it of items) {
     const isCash = isCashBank(it.bankCode);
     const bonus = Number(it.bonus) || 0;
     const advance = Number(it.advance) || 0;
-    if (isCash) { cashBonus += bonus; cashAdvance += advance; }
-    else { bankBonus += bonus; bankAdvance += advance; }
+    const payout = Number(it.payoutTotal) || 0;
+    if (isCash) { cashBonus += bonus; cashAdvance += advance; cashPayout += payout; }
+    else { bankBonus += bonus; bankAdvance += advance; bankPayout += payout; }
   }
   return {
     bonus: { bank: bankBonus, cash: cashBonus, total: bankBonus + cashBonus },
     advance: { bank: bankAdvance, cash: cashAdvance, total: bankAdvance + cashAdvance },
+    payout: { bank: bankPayout, cash: cashPayout, total: bankPayout + cashPayout },
   };
+}
+
+const NO_AMOUNTS = { bank: 0, cash: 0, total: 0 };
+
+// Las filas de ajuste del resumen. Con el bruto (`gross`), bonos, anticipos y
+// anticipos entregados; con lo que se paga, ninguna: los bonos y anticipos ya
+// van en cada fila, y lo entregado, en la fila del ciclo al que se asoció.
+export function summaryAdjustmentsOf(items, { gross = false } = {}) {
+  return gross ? computeBonusAdvanceSummary(items) : { bonus: NO_AMOUNTS, advance: NO_AMOUNTS, payout: NO_AMOUNTS };
+}
+
+// Los totales de un resumen con sus filas de ajuste.
+export function adjustedSummaryTotals(base, adjustments) {
+  const sum = (k) =>
+    base[k] + (adjustments?.bonus?.[k] || 0) - (adjustments?.advance?.[k] || 0) + (adjustments?.payout?.[k] || 0);
+  return { bank: sum("bank"), cash: sum("cash"), total: sum("total") };
 }

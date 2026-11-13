@@ -1,20 +1,24 @@
 import { useState } from "react";
 import { fmtCurrency } from "../../../utils/format";
 import { AdvancesAndBonusesModal } from "./AdvancesAndBonusesModal";
+import { payoutTotalOf } from "../../../utils/advancePayouts";
 
 // Tarjetas de totales del resumen: transferencias, efectivo (con lo que falta
-// entregar y el estimador), anticipos, bonos y el total a pagar. Con anticipos
-// o bonos, la primera de esas tarjetas lleva el bruto y abre su detalle.
-// `advances` son los del snapshot de la nómina; `onChangeBonus` y
-// `canChangeBonus` pasan al detalle de anticipos y bonos.
-export function PayrollTotalsCards({ advances, bank, cash, cashGroups, cashPaidMode, items, owedCash, payroll, setShowCashEstimation, onChangeBonus = null, canChangeBonus }) {
+// entregar y el estimador), anticipos, bonos, anticipos entregados y el total
+// a pagar. Con alguno de esos, la primera de sus tarjetas lleva el bruto y
+// abre su detalle. `advances` son los del snapshot de la nómina;
+// `onChangeBonus`, `canChangeBonus` y `onRemovePayouts` pasan al detalle de
+// anticipos y bonos.
+export function PayrollTotalsCards({ advances, bank, cash, cashGroups, cashPaidMode, items, owedCash, payroll, setShowCashEstimation, onChangeBonus = null, canChangeBonus, onRemovePayouts = null }) {
   const [showAdjustments, setShowAdjustments] = useState(false);
   // Totales para el encabezado del resumen.
   const bankTotal = bank.reduce((s, x) => s + (Number(x.amount) || 0), 0);
   const cashTotal = cash.reduce((s, x) => s + (Number(x.amount) || 0), 0);
-  const grossTotal = items.reduce((s, x) => s + (Number(x.grossAmount) || Number(x.amount) || 0), 0);
+  const grossTotal = items.reduce((s, x) => s + (Number(x.grossAmount ?? x.amount) || 0), 0);
   const advanceTotal = items.reduce((s, x) => s + (Number(x.advance) || 0), 0);
   const bonusTotal = items.reduce((s, x) => s + (Number(x.bonus) || 0), 0);
+  const payoutTotal = payoutTotalOf(items);
+  const cards = 3 + (advanceTotal > 0 ? 1 : 0) + (bonusTotal > 0 ? 1 : 0) + (payoutTotal > 0 ? 1 : 0);
   const grossAndDetail = (
     <>
       <div className="mt-0.5 whitespace-nowrap text-sm">
@@ -24,7 +28,7 @@ export function PayrollTotalsCards({ advances, bank, cash, cashGroups, cashPaidM
       <button
         type="button"
         onClick={() => setShowAdjustments(true)}
-        title="Ver cada anticipo y bono que aplicó esta nómina"
+        title="Ver cada anticipo y bono que aplicó esta nómina, y los anticipos que entrega"
         className="mt-1.5 flex min-h-8 w-full max-w-[220px] items-center justify-center gap-1.5 whitespace-nowrap rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-3 py-1 text-xs font-medium text-[var(--color-accent)] hover:bg-[var(--color-accent)] hover:text-[var(--color-accent-fg)]"
       >
         📋 Ver anticipos y bonos
@@ -33,7 +37,7 @@ export function PayrollTotalsCards({ advances, bank, cash, cashGroups, cashPaidM
   );
   return (
     <>
-      <div className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+      <div className={`mt-3 grid grid-cols-2 gap-3 text-sm ${cards > 5 ? "sm:grid-cols-3 lg:grid-cols-6" : cards === 5 ? "sm:grid-cols-5" : "sm:grid-cols-4"}`}>
         <div>
           <div className="text-xs text-[var(--color-muted)]">🏦 Transferencias</div>
           <div className="text-lg font-semibold">{fmtCurrency(bankTotal)}</div>
@@ -76,6 +80,13 @@ export function PayrollTotalsCards({ advances, bank, cash, cashGroups, cashPaidM
             {advanceTotal === 0 && grossAndDetail}
           </div>
         )}
+        {payoutTotal > 0 && (
+          <div>
+            <div className="text-xs text-[var(--color-muted)]">💸 Anticipos entregados</div>
+            <div className="text-lg font-semibold text-[var(--color-accent)]">+ {fmtCurrency(payoutTotal)}</div>
+            {advanceTotal === 0 && bonusTotal === 0 && grossAndDetail}
+          </div>
+        )}
         <div>
           <div className="text-xs text-[var(--color-muted)]">Total a pagar</div>
           <div className="text-lg font-semibold text-[var(--color-accent)]">{fmtCurrency(payroll.total || 0)}</div>
@@ -91,6 +102,7 @@ export function PayrollTotalsCards({ advances, bank, cash, cashGroups, cashPaidM
         total={payroll.total || 0}
         onChangeBonus={onChangeBonus}
         canChangeBonus={canChangeBonus}
+        onRemovePayouts={onRemovePayouts}
       />
     </>
   );

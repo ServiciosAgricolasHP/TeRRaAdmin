@@ -15,8 +15,8 @@ describe("payrollItemsChange", () => {
     expect(change.removed.map((p) => [p.key, p.gross])).toEqual([["12345678-5", 50000]]);
     expect(change.changed).toEqual([{
       key: "W1", rut: "11111111-1", name: "Ana Rojas",
-      from: { gross: 100000, advance: 0, bonus: 0, amount: 100000, days: 2 },
-      to: { gross: 100000, advance: 20000, bonus: 0, amount: 80000, days: 2 },
+      from: { gross: 100000, advance: 0, bonus: 0, payout: 0, amount: 100000, days: 2 },
+      to: { gross: 100000, advance: 20000, bonus: 0, payout: 0, amount: 80000, days: 2 },
     }]);
   });
 

@@ -180,6 +180,14 @@ export function SummaryTable({ bonusAdvanceSummary, payroll, table }) {
                     <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>− {fmtCurrency(bonusAdvanceSummary.advance.total)}</td>
                   </tr>
                 )}
+                {bonusAdvanceSummary.payout?.total > 0 && (
+                  <tr style={{ background: "#EAF3FA" }}>
+                    <td colSpan={labelSpan} className="px-2 py-1 text-right" style={{ border: "1px solid #999" }}>Anticipos entregados</td>
+                    <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(bonusAdvanceSummary.payout.bank)}</td>
+                    <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(bonusAdvanceSummary.payout.cash)}</td>
+                    <td className="px-2 py-1 text-right tabular-nums" style={{ border: "1px solid #999" }}>{fmtCurrency(bonusAdvanceSummary.payout.total)}</td>
+                  </tr>
+                )}
                 {deferredCash > 0 && (
                   <tr style={{ background: "#EAF3FA" }}>
                     <td colSpan={labelSpan} className="px-2 py-1 text-right" style={{ border: "1px solid #999" }}>

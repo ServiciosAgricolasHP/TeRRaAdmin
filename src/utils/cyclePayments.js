@@ -71,7 +71,8 @@ export function cyclePaymentsOf({ workdays = [], labors = [], payrolls = [], wor
   const rows = [...rowsByKey.values()].map((row) => {
     usedPayrolls.add(row.payrollId);
     const item = itemOf(row.payrollId, row.personKey);
-    const net = item ? Math.round(Number(item.amount) || 0) : null;
+    // Lo que la nómina le entrega en anticipos no es pago de sus jornadas.
+    const net = item ? Math.round(Number(item.amount) || 0) - Math.max(0, Math.round(Number(item.payoutTotal) || 0)) : null;
     return {
       ...row,
       itemKey: item ? item.workerId || item.rut : null,

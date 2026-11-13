@@ -6,7 +6,7 @@
 // - Si baja, baja el líquido en la diferencia. Si un anticipo ya no cabe en
 //   bruto + bonos, se descuenta lo que cabe y el resto vuelve al anticipo
 //   (`refitAppliedAdvances`), que queda parcial.
-import { appliedFromItem, itemAdvanceFields, refitAppliedAdvances } from "./payrollItem";
+import { appliedFromItem, itemAdvanceFields, payoutOf, refitAppliedAdvances } from "./payrollItem";
 import { isCashBank } from "./banks";
 
 // Por qué no se puede cambiar el bono de `item`, o "" si se puede. Con la
@@ -63,7 +63,7 @@ export function planBonusChange({ item, appliedByAdvance = new Map(), bonusId, n
   if (!current) return null;
   const bonusAfter = Math.round(Number(newAmount) || 0) - Math.round(Number(paidElsewhere) || 0);
   const next = applied.map((a) => (a.advanceId === bonusId ? { ...a, amount: bonusAfter } : a));
-  const refit = refitAppliedAdvances({ gross: grossOf(item), applied: next });
+  const refit = refitAppliedAdvances({ gross: grossOf(item), applied: next, payout: payoutOf(item) });
 
   const before = new Map(applied.map((a) => [a.advanceId, a.amount]));
   const advanceChanges = refit.targets

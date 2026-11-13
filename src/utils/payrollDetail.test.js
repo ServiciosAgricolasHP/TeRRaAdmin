@@ -449,3 +449,39 @@ describe("lastEditLabel", () => {
     expect(lastEditLabel(null, now)).toBeNull();
   });
 });
+
+describe("los anticipos entregados en el resumen", () => {
+  const cycleDetails = [{ id: "C1", label: "F/S1/Ciclo 1", faenaName: "F", subfaenaId: "S1", subfaenaName: "S1" }];
+  const payoutCycleDetails = [{ id: "C9", label: "G/S9/Ciclo 3", faenaName: "G", subfaenaId: "S9", subfaenaName: "S9" }];
+  const ana = { rut: "1-9", bankCode: "012", byCycle: { C1: 100000 }, advance: 0, bonus: 0, payoutTotal: 40000, payoutApplications: [{ advanceId: "a1", amount: 40000, cycleId: "C9" }] };
+  const beto = { rut: "2-7", bankCode: "EFE", byCycle: {}, advance: 0, bonus: 0, payoutTotal: 60000, payoutApplications: [{ advanceId: "a2", amount: 60000, cycleId: "C1" }] };
+
+  it("en lo que se paga van en la fila del ciclo al que se asociaron, esté o no en la nómina", () => {
+    const { rows, totals } = subfaenaSummaryOf(cycleDetails, [ana], [beto], { net: true, payoutCycleDetails });
+    expect(rows.map((r) => [r.faenaName, r.subfaenaName, r.bank, r.cash])).toEqual([
+      ["F", "S1", 100000, 60000],
+      ["G", "S9", 40000, 0],
+    ]);
+    expect(totals.total).toBe(200000);
+  });
+
+  it("en el bruto no van en las filas", () => {
+    const { rows, totals } = subfaenaSummaryOf(cycleDetails, [ana], [beto], { payoutCycleDetails });
+    expect(rows.map((r) => r.subfaenaName)).toEqual(["S1"]);
+    expect(totals.total).toBe(100000);
+  });
+
+  it("por labor van como una labor propia del ciclo asociado", () => {
+    const payroll = { cycleDetails, payoutCycleDetails };
+    const groups = [{ leader: "G1", items: [ana, beto] }];
+    const workdaysByGroup = { G1: { C1: [{ laborName: "Cosecha", rows: [{ rut: "1-9", totalAmount: 100000 }] }] } };
+    const { rows, totals } = computeLaborSummary(payroll, groups, workdaysByGroup, { net: true });
+    expect(rows.map((r) => [r.subfaenaName, r.laborName, r.bank, r.cash])).toEqual([
+      ["S1", "Anticipo entregado", 0, 60000],
+      ["S1", "Cosecha", 100000, 0],
+      ["S9", "Anticipo entregado", 40000, 0],
+    ]);
+    expect(totals.total).toBe(200000);
+    expect(computeLaborSummary(payroll, groups, workdaysByGroup).totals.total).toBe(100000);
+  });
+});

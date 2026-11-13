@@ -72,3 +72,28 @@ describe("filterPayrollHistory", () => {
     expect(filterPayrollHistory(entries, { query: "12345678" }).map((e) => e.id)).toEqual(["l3"]);
   });
 });
+
+describe("las entregas de anticipos en el historial", () => {
+  const delivered = { ...ana, amount: 140000, payoutTotal: 40000 };
+  const dana = { workerId: "W4", rut: "22222222-2", name: "Dana Ríos", grossAmount: 0, amount: 60000, payoutTotal: 60000, workdayIds: [] };
+  const log = (id, from, to) => ({
+    id, action: "update", timestamp: ts("2026-11-13T10:00:00Z"), userName: "María",
+    changes: summarizeChanges("payroll", { items: { from, to } }),
+  });
+
+  it("nombra la entrega y el anticipo de cada persona", () => {
+    const [entry] = payrollHistoryOf([log("p1", [ana, beto], [delivered, beto, dana])], []);
+    expect(entry.title).toBe("Entregó anticipos");
+    expect(entry.lines.map((l) => l.text)).toEqual([
+      "+ entra Dana Ríos · 0 días · $60.000",
+      "Ana Rojas: $100.000 → $140.000 (anticipo entregado $0 → $40.000)",
+    ]);
+  });
+
+  it("nombra cuando se quitan, y sigue diciendo Recalculó si cambió algo más", () => {
+    const [removal] = payrollHistoryOf([log("p2", [delivered, beto, dana], [ana, beto])], []);
+    expect(removal.title).toBe("Quitó anticipos entregados");
+    const [mixed] = payrollHistoryOf([log("p3", [ana, beto], [{ ...delivered, grossAmount: 90000, amount: 130000 }, beto])], []);
+    expect(mixed.title).toBe("Recalculó");
+  });
+});

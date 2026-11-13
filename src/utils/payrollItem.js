@@ -17,6 +17,10 @@
 // Así el bono ayuda a cerrar la deuda en vez de pagarse aparte mientras el
 // anticipo sigue abierto: bruto 376.000 + bono 24.000 contra un anticipo de
 // 400.000 deja el anticipo saldado y el neto en 0.
+//
+// Los anticipos que la nómina ENTREGA (`payoutTotal` del item, ver
+// utils/advancePayouts.js) se suman al neto después del reparto: no engrosan
+// la base ni los alcanza ningún descuento.
 import { advanceRemaining, advanceDueNow, advanceSign } from "../services/advancesService";
 import { aggregateWorkerAmounts, workdayPayAmount } from "./payroll";
 
@@ -26,10 +30,14 @@ const porFechaAsc = (a, b) => {
   return da < db ? -1 : da > db ? 1 : 0;
 };
 
+// Lo que la nómina le entrega a una persona en anticipos.
+export const payoutOf = (item) => Math.max(0, Math.round(Number(item?.payoutTotal) || 0));
+
 // `topUps` son los anticipos que la nómina ya descuenta y pueden crecer
 // (`advanceTopUps`): `{ advanceId, date, room }`. Entran a la misma pasada que
 // los anticipos nuevos, del más viejo al más nuevo, y lo que crece cada uno
-// sale en `topUpApplications`, aparte de `anticipoApplications`.
+// sale en `topUpApplications`, aparte de `anticipoApplications`. `payout` es
+// lo que la nómina le entrega en anticipos: va entero al neto.
 export function allocateAdvances({
   gross,
   anticipos = [],
@@ -37,6 +45,7 @@ export function allocateAdvances({
   alreadyAdvanced = 0,
   alreadyBonused = 0,
   topUps = [],
+  payout = 0,
 }) {
   const brutoInt = Math.round(Number(gross) || 0);
   const yaDescontado = Number(alreadyAdvanced) || 0;
@@ -99,7 +108,7 @@ export function allocateAdvances({
     advanceTotal,
     bonusTotal,
     // Neto. Nunca negativo: un anticipo no puede dejar debiendo al trabajador.
-    amount: Math.max(0, brutoInt - advanceTotal + bonusTotal),
+    amount: Math.max(0, brutoInt - advanceTotal + bonusTotal) + Math.max(0, Math.round(Number(payout) || 0)),
   };
 }
 
@@ -127,9 +136,10 @@ const sumFromPayroll = (adv, payrollId) =>
 // ahora: su cuota si tiene plan, su saldo si no, contando como libre lo que
 // esta nómina ya le descuenta. `applied` es lo que le descuenta ahora (después
 // del re-encaje, si lo hubo); `anticipos`, los documentos pendientes de la
-// persona, con su `payments[]`.
+// persona, con su `payments[]`. El neto se mira sin lo que la nómina le
+// entrega en anticipos.
 export function advanceTopUps({ item, applied = [], anticipos = [], payrollId }) {
-  if (Math.round(Number(item?.amount) || 0) > 0) return [];
+  if (Math.round(Number(item?.amount) || 0) - payoutOf(item) > 0) return [];
   const docById = new Map(anticipos.map((a) => [a.id, a]));
   const out = [];
   for (const app of applied) {
@@ -231,8 +241,9 @@ export function appliedFromItem(item, appliedByAdvance = new Map()) {
 // base; los anticipos se llenan del más viejo al más nuevo, así que el que se
 // achica primero es el más nuevo. Lo que no cabe vuelve al anticipo
 // (`devuelto`) — queda pendiente para la próxima nómina, con su fecha y su plan
-// de cuotas originales, sin crear ningún registro nuevo.
-export function refitAppliedAdvances({ gross, applied = [] }) {
+// de cuotas originales, sin crear ningún registro nuevo. `payout`, lo que la
+// nómina entrega en anticipos, va entero al neto.
+export function refitAppliedAdvances({ gross, applied = [], payout = 0 }) {
   const bruto = Math.max(0, Math.round(Number(gross) || 0));
   const norm = applied.map((a, i) => ({
     ...a,
@@ -276,7 +287,7 @@ export function refitAppliedAdvances({ gross, applied = [] }) {
     devuelto: ajustados.reduce((s, a) => s + (a.amount - a.queda), 0),
     // Nunca negativo, y sin ningún `Math.max` que lo esconda: los anticipos
     // se toparon contra bruto + bonos.
-    amount: bruto - anticiposTotal + bonosTotal,
+    amount: bruto - anticiposTotal + bonosTotal + Math.max(0, Math.round(Number(payout) || 0)),
   };
 }
 
@@ -315,7 +326,7 @@ export function isOverApplied(it) {
 export function recalcNeedsRefit(it, fresh) {
   const newGross = Math.round(Number(fresh?.total) || 0);
   return (
-    !fresh ||
+    (!fresh && payoutOf(it) === 0) ||
     newGross !== brutoDe(it) ||
     idsDe(fresh?.workdayIds) !== idsDe(it?.workdayIds) ||
     isOverApplied(it)
@@ -323,7 +334,8 @@ export function recalcNeedsRefit(it, fresh) {
 }
 
 // El lado "achicar" del recálculo: quien se quedó sin jornadas en la nómina
-// sale entero y suelta todo (también sus bonos); quien sigue, aunque sume $0
+// sale entero y suelta todo (también sus bonos), salvo que la nómina le
+// entregue un anticipo: ese se queda, con bruto $0; quien sigue, aunque sume $0
 // (un sueldo mensual con sus días de asistencia), re-encaja lo ya aplicado en
 // su bruto nuevo, y lo que no cabe vuelve al mismo anticipo. Los bonos quedan
 // enteros, así que quien suma $0 sigue cobrando los suyos. Lo que el
@@ -344,7 +356,7 @@ export function planRecalcExisting({ items = [], freshByKey = new Map(), applied
     const aplicado = appliedFromItem(it, appliedByAdvance);
     const oldNet = Math.round(Number(it.amount) || 0);
 
-    if (!fresh) {
+    if (!fresh && payoutOf(it) === 0) {
       for (const a of aplicado) {
         if (!a.missing) advanceTargets.push({ advanceId: a.advanceId, amount: 0 });
       }
@@ -361,7 +373,7 @@ export function planRecalcExisting({ items = [], freshByKey = new Map(), applied
 
     const byCycle = {};
     for (const [cid, amt] of Object.entries(fresh?.byCycle || {})) byCycle[cid] = Math.round(amt);
-    const refit = refitAppliedAdvances({ gross: newGross, applied: aplicado });
+    const refit = refitAppliedAdvances({ gross: newGross, applied: aplicado, payout: payoutOf(it) });
     for (const t of refit.targets) {
       if (!t.missing) advanceTargets.push({ advanceId: t.advanceId, amount: t.amount });
     }
@@ -669,8 +681,10 @@ export function planAddWorkdays({
     e.workdayIds.push(...a.workdayIds);
   }
 
+  // Un anticipo que esta nómina entrega no se descuenta en ella.
   const pendientesPorClave = new Map();
   for (const adv of pendingAdvances || []) {
+    if (payrollId && adv.payoutPayrollId === payrollId) continue;
     const key = adv.workerId || adv.workerRut;
     const e = pendientesPorClave.get(key) || { anticipos: [], bonos: [] };
     if (advanceSign(adv) > 0) e.bonos.push(adv);
@@ -706,6 +720,7 @@ export function planAddWorkdays({
         bonos: nuevos(pendientes.bonos),
         alreadyAdvanced: Number(it.advance) || 0,
         alreadyBonused: Number(it.bonus) || 0,
+        payout: payoutOf(it),
         topUps: advanceTopUps({
           item: it,
           applied: it.anticipoApplications || [],

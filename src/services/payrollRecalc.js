@@ -33,6 +33,7 @@ import {
   withAddedAdvances,
   topUpTargets,
   advanceNote,
+  payoutOf,
   recalcNeedsRefit,
   planRecalcExisting,
   payrollLaborScope,
@@ -165,6 +166,8 @@ export async function planPayrollRecalc(
   const pendingAdvances = allIds.length ? await listPendingForWorkers(allIds) : [];
   const advancesByKey = new Map();
   for (const adv of pendingAdvances) {
+    // Un anticipo que esta nómina entrega no se descuenta en ella.
+    if (adv.payoutPayrollId === payroll.id) continue;
     const key = adv.workerId || adv.workerRut;
     const e = advancesByKey.get(key) || { anticipos: [], bonos: [] };
     if (advanceSign(adv) > 0) e.bonos.push(adv);
@@ -224,6 +227,7 @@ export async function planPayrollRecalc(
         bonos: newBonos,
         alreadyAdvanced: Number(base.advance) || 0,
         alreadyBonused: Number(base.bonus) || 0,
+        payout: payoutOf(base),
         topUps,
       });
       if (reparto.anticiposTotal > 0 || reparto.bonosTotal > 0) {
