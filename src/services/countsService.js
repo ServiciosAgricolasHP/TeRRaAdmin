@@ -22,6 +22,13 @@ export async function countLogsByEntity(entity) {
   return snap.data().count;
 }
 
+// Los registros de auditoría de un documento (entity + entityId).
+export async function countRecordLogs(entity, entityId) {
+  const q = query(collection(db, "logs"), where("entity", "==", entity), where("entityId", "==", entityId));
+  const snap = await getCountFromServer(q);
+  return snap.data().count;
+}
+
 export async function countLogsOlderThan(months) {
   const cutoff = new Date();
   cutoff.setMonth(cutoff.getMonth() - months);
