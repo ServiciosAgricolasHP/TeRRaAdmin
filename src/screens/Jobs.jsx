@@ -6,7 +6,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../contexts/ToastContext";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { useIsMobile } from "../hooks/useIsMobile";
-import { ColorPickerButton } from "./jobs/ColorPickerButton";
+import { JobCardBody } from "./jobs/JobCardBody";
 import { GroupHeader } from "./jobs/GroupHeader";
 import { SelectedDetail } from "./jobs/SelectedDetail";
 import { withInitial } from "./jobs/helpers";
@@ -210,6 +210,25 @@ export default function Jobs() {
     ? JOB_STATE_GROUPS.find((s) => stateJobs[s.id].some((f) => f.id === selectedId))?.id || null
     : layoutGroupId;
 
+  // Lo que muestra la tarjeta de una faena.
+  const cardBodyProps = (f) => {
+    const date = byState ? stateDates[f.id] : "";
+    return {
+      job: f,
+      cardColor: colorOf(f),
+      colorValue: layout.faenaColor[f.id] ?? null,
+      onColorChange: (c) => setJobCardColor(f.id, c),
+      subjobCount: subjobsByJob[f.id]?.length,
+      cyclesCount: cyclesByJob[f.id]?.length,
+      dragHint: !byState,
+      since: date
+        ? { icon: stateSort === "edited" ? "✎" : "🕒", label: sinceLabel(date, today), title: `${sortMeta?.label}: ${date.split("-").reverse().join("-")}` }
+        : null,
+      onEdit: () => setJobForm(withInitial({ mode: "edit", data: { ...f } })),
+      onDelete: () => setConfirm({ kind: "job", item: f, message: `¿Eliminar la faena "${f.name}"?` }),
+    };
+  };
+
   const renderSelectedDetail = () =>
     selected && (
       <div ref={selectedDetailRef}>
@@ -363,8 +382,6 @@ export default function Jobs() {
                 ) : (
                   <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     {groupJobs.map((f) => {
-                      const subjobCount = subjobsByJob[f.id]?.length;
-                      const cyclesCount = cyclesByJob[f.id]?.length;
                       const isSelected = selectedId === f.id;
                       const cardColor = colorOf(f);
                       return (
@@ -391,73 +408,7 @@ export default function Jobs() {
                               : "border-[var(--color-border)]"
                           }`}
                         >
-                          <span
-                            aria-hidden
-                            className="pointer-events-none absolute inset-x-0 top-0 h-1.5 rounded-t-lg"
-                            style={{ backgroundColor: cardColor || "var(--color-border)" }}
-                          />
-                          <div className="mb-2 flex items-start justify-between gap-2">
-                            <div className="flex items-start gap-2 min-w-0">
-                              {!byState && <span className="mt-1 select-none text-[10px] leading-none text-[var(--color-muted)] opacity-30 group-hover:opacity-90 transition-opacity" title="Arrastra para reordenar">⠿</span>}
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <span
-                                    aria-hidden
-                                    className="inline-block h-2 w-2 shrink-0 rounded-full"
-                                    style={{ backgroundColor: cyclesCount > 0 ? "#16a34a" : "var(--color-muted)" }}
-                                    title={cyclesCount > 0 ? "Activa" : "Sin ciclos"}
-                                  />
-                                  <span className="truncate text-[15px] font-semibold leading-tight text-[var(--color-text)]">{f.name}</span>
-                                </div>
-                                {f.location && <div className="mt-0.5 truncate text-[11px] text-[var(--color-muted)]">{f.location}</div>}
-                                {byState && stateDates[f.id] && (
-                                  <div className="mt-0.5 text-[11px] text-[var(--color-muted)]" title={`${sortMeta?.label}: ${stateDates[f.id].split("-").reverse().join("-")}`}>
-                                    {stateSort === "edited" ? "✎" : "🕒"} {sinceLabel(stateDates[f.id], today)}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            <div onClick={(e) => e.stopPropagation()} className="shrink-0">
-                              <ColorPickerButton
-                                value={layout.faenaColor[f.id] ?? null}
-                                onChange={(c) => setJobCardColor(f.id, c)}
-                              />
-                            </div>
-                          </div>
-                          {f.notes && <p className="mb-3 line-clamp-2 text-[11px] leading-snug text-[var(--color-muted)]">{f.notes}</p>}
-                          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border)] pt-3 text-xs">
-                            <div className="flex flex-wrap gap-1.5">
-                              <span className="rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-muted)]">
-                                {subjobCount != null ? `${subjobCount} sub` : "—"}
-                              </span>
-                              <span
-                                className="rounded-full px-2 py-0.5 text-[10px] font-medium"
-                                style={
-                                  cardColor && cyclesCount > 0
-                                    ? { backgroundColor: `${cardColor}22`, color: cardColor }
-                                    : cyclesCount > 0
-                                      ? { backgroundColor: "var(--color-accent-soft)", color: "var(--color-accent)" }
-                                      : { backgroundColor: "var(--color-surface-2)", color: "var(--color-muted)" }
-                                }
-                              >
-                                {cyclesCount != null ? `${cyclesCount} ciclos` : "—"}
-                              </span>
-                            </div>
-                            <div className="ml-auto flex shrink-0 gap-1 opacity-70 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
-                              <button
-                                onClick={() => setJobForm(withInitial({ mode: "edit", data: { ...f } }))}
-                                className="rounded-md px-2 py-1 text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
-                              >
-                                Editar
-                              </button>
-                              <button
-                                onClick={() => setConfirm({ kind: "job", item: f, message: `¿Eliminar la faena "${f.name}"?` })}
-                                className="rounded-md px-2 py-1 text-[var(--color-muted)] hover:bg-[var(--color-danger-soft)] hover:text-[var(--color-danger)]"
-                              >
-                                Eliminar
-                              </button>
-                            </div>
-                          </div>
+                          <JobCardBody {...cardBodyProps(f)} />
                         </div>
                         {isMobile && isSelected && (
                           <div className="col-span-full">
