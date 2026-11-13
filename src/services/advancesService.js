@@ -12,6 +12,8 @@
 //   appliedPayrollId: string | null  (última nómina que lo tocó)
 //   appliedAt, appliedBy
 //   installments: { count, amount, cadence } | null  (solo anticipos; ver abajo)
+//   payoutPayrollId, payoutCycleId, payoutAt: la nómina que entrega el
+//     anticipo, el ciclo al que se asocia y cuándo (ver utils/advancePayouts.js)
 //
 // "pending"  → nada aplicado (amountPaid == 0).
 // "partial"  → amountPaid > 0 pero < amount; se sigue aplicando contra el saldo.
@@ -70,10 +72,16 @@ async function currentAdvance(shown) {
   return fresh;
 }
 
-// Elimina un anticipo o bono sin nada descontado, revisado contra el
-// documento actual (`currentAdvance`).
+// Un anticipo que una nómina entrega, mientras ninguna lo descuenta, se
+// cambia desde esa nómina.
+const PAID_OUT = "Una nómina entrega este anticipo: quítalo de la nómina (📋 Ver anticipos y bonos) antes de cambiarlo.";
+export const isPaidOutPending = (adv) => !!adv?.payoutPayrollId && (Number(adv.amountPaid) || 0) === 0;
+
+// Elimina un anticipo o bono sin nada descontado ni entregado, revisado
+// contra el documento actual (`currentAdvance`).
 export async function removeAdvance(shown) {
   const fresh = await currentAdvance(shown);
+  if (isPaidOutPending(fresh)) throw new Error(PAID_OUT);
   if ((Number(fresh.amountPaid) || 0) > 0 || ["applied", "partial"].includes(fresh.status)) {
     throw new Error("No se puede eliminar un anticipo o bono con pagos aplicados. Para perdonar el saldo, usa Editar y baja el monto a lo ya pagado.");
   }
@@ -82,9 +90,17 @@ export async function removeAdvance(shown) {
 
 // Guarda la edición de un anticipo o bono, revisada contra el documento
 // actual (`currentAdvance`): el estado que calcula el formulario sale de lo
-// que mostraba la pantalla.
+// que mostraba la pantalla. De un anticipo que una nómina entrega se guarda
+// solo la nota: el monto, la persona y el tipo son los que la nómina paga.
 export async function updateAdvance(shown, data) {
-  await currentAdvance(shown);
+  const fresh = await currentAdvance(shown);
+  if (isPaidOutPending(fresh)) {
+    const locked =
+      ("amount" in data && Math.round(Number(data.amount) || 0) !== Math.round(Number(fresh.amount) || 0)) ||
+      ("type" in data && normalizeAdvanceType(data.type) !== normalizeAdvanceType(fresh.type)) ||
+      ("workerRut" in data && data.workerRut !== fresh.workerRut);
+    if (locked) throw new Error(PAID_OUT);
+  }
   return advancesService.update(shown.id, data);
 }
 
@@ -448,4 +464,57 @@ export async function setPayrollAdvanceAmounts(payrollId, targets) {
     });
   }
   return { cambios };
+}
+
+// Marca los anticipos `advanceIds` como entregados por una nómina, asociados
+// a un ciclo. El anticipo sigue pendiente: lo descuenta otra nómina.
+export async function markAdvancePayouts(advanceIds, { payrollId, cycleId = "" }) {
+  const ids = [...new Set((advanceIds || []).filter(Boolean))];
+  if (!ids.length) return;
+  const payoutAt = new Date().toISOString();
+  for (let i = 0; i < ids.length; i += 450) {
+    const batch = writeBatch(db);
+    for (const id of ids.slice(i, i + 450)) {
+      batch.update(doc(db, "advances", id), { payoutPayrollId: payrollId, payoutCycleId: cycleId, payoutAt });
+    }
+    await batch.commit();
+  }
+  advancesService.invalidate();
+  await logAction({
+    action: "update",
+    entity: "payroll",
+    entityId: payrollId,
+    changes: null,
+    meta: { op: "deliverAdvances", count: ids.length, advanceIds: ids, cycleId },
+  });
+}
+
+// Quita la marca de entregado de los anticipos `advanceIds` que entrega la
+// nómina `payrollId`; los que entrega otra nómina quedan como están.
+export async function clearAdvancePayouts(advanceIds, payrollId) {
+  const ids = [...new Set((advanceIds || []).filter(Boolean))];
+  if (!ids.length) return;
+  const docs = await Promise.all(
+    ids.map(async (id) => {
+      const snap = await getDoc(doc(db, "advances", id));
+      return { id, data: snap.exists() ? snap.data() : null };
+    }),
+  );
+  const own = docs.filter(({ data }) => data && data.payoutPayrollId === payrollId).map(({ id }) => id);
+  if (!own.length) return;
+  for (let i = 0; i < own.length; i += 450) {
+    const batch = writeBatch(db);
+    for (const id of own.slice(i, i + 450)) {
+      batch.update(doc(db, "advances", id), { payoutPayrollId: null, payoutCycleId: null, payoutAt: null });
+    }
+    await batch.commit();
+  }
+  advancesService.invalidate();
+  await logAction({
+    action: "update",
+    entity: "payroll",
+    entityId: payrollId,
+    changes: null,
+    meta: { op: "clearAdvancePayouts", count: own.length, advanceIds: own },
+  });
 }

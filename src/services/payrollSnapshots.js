@@ -125,6 +125,7 @@ function headerTotals(header, aggregates, items) {
     cashCount: aggregates.cashCount,
     advanceTotal: aggregates.advanceTotal,
     bonusTotal: (items || []).reduce((s, it) => s + (Number(it.bonus) || 0), 0),
+    payoutTotal: aggregates.payoutTotal || 0,
   };
 }
 

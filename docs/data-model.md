@@ -143,6 +143,8 @@ Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
 | `workdayIds` | ref→`workdays`[] | |
 | `advanceIds` | ref→`advances`[] | |
 | `advanceTotal` | number | |
+| `payoutCycleDetails` | `{ id, label, faenaId, faenaName, subfaenaId, subfaenaName }[]`? | los ciclos a los que se asocian las entregas de anticipos (`items[].payoutApplications[].cycleId`), con sus nombres al entregar. Pueden no estar en `cycleIds`. El resumen los usa para la fila de cada uno |
+| `payoutTotal` | number? | lo que la nómina entrega en anticipos (Σ `items[].payoutTotal`). Lo escriben las ediciones de la nómina (`recalcPayrollAggregates`) |
 | `createdAt`, `createdBy` | ts, string? | |
 | `updatedAt`, `updatedBy` | ts, string? | toda escritura de `payrollsService` los pone. La copia que comparten Nómina y el Dashboard se pone al día con él (`listPayrolls`) |
 | `updatedByName` | string? | quién hizo la última escritura: su alias o, sin alias, su correo (`signerName`, `services/signer.js`). Toda escritura de `payrollsService` lo pone, y el detalle lo muestra con `updatedAt`. Las nóminas escritas antes no lo tienen |
@@ -153,6 +155,7 @@ Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
 - `paymentRut`, `paymentName`, `accountNumber`, `bankCode`, `accountType`, `email`, `groupLeader`: los datos de cuenta y de grupo de la ficha al generar, al agregar a la persona o al recalcular. `paymentName` es el titular de la cuenta (`worker.paymentName`; vacío si la ficha no lo tiene) y el archivo del banco lo usa cuando la cuenta es de otra persona; las nóminas anteriores al campo no lo traen hasta que se recalculan
 - `byCycle: { [cycleId]: {...} }`
 - `workdayIds: string[]`, `advanceIds: string[]`
+- `payoutApplications: [{ advanceId, amount, cycleId, date, note }]` y `payoutTotal`: los anticipos que la nómina le entrega a la persona (se los paga) y su suma, que va al líquido: `amount = grossAmount − advance + bonus + payoutTotal`. `cycleId` es el ciclo al que se asocia la entrega, que puede no estar en la nómina; `date` y `note`, copia de los del anticipo al entregarlo. No están en `advanceIds`: la nómina no los descuenta. Quien entra solo por una entrega tiene `grossAmount: 0`, `byCycle: {}` y `workdayIds: []`
 
 ### `payrollConfig`
 Configuración compartida de la nómina. **Un único doc `payrollConfig/main`**; sin él valen los valores por defecto. Lo cambia un admin desde Nómina → ⚙ Configuración (las reglas no distinguen el rol, igual que `commitmentConfig`).
@@ -169,7 +172,7 @@ Snapshot JSON de cada nómina, separado del documento de `payrolls` para no engo
 | `payrollId` | ref→`payrolls` | |
 | `version` | number | `1` |
 | `generatedAt` | string (ISO) | |
-| `payroll` | object | la cabecera: `name`, `format`, `classification`, `status` y los totales (`total`, `bankTotal`, `cashTotal`, `workerCount`, `bankCount`, `cashCount`, `advanceTotal`, `bonusTotal`) |
+| `payroll` | object | la cabecera: `name`, `format`, `classification`, `status` y los totales (`total`, `bankTotal`, `cashTotal`, `workerCount`, `bankCount`, `cashCount`, `advanceTotal`, `bonusTotal`, `payoutTotal`) |
 | `cycles` | array | cada ciclo de la nómina: su `id`, etiqueta, faena, subfaena y período (como `cycleDetails`, sin `laborIds`), más `labors` (id, nombre, tipo y su configuración de precios) y `dayPrices`. Al generar, las labores son las del ciclo; Recalcular y agregar a una persona las ponen al día y suman las que falten. Una labor que el ciclo ya no tiene queda |
 | `workers` | `PayrollItem[]` | mismo shape que `payrolls.items` |
 | `workdays` | array | las jornadas que paga, con su labor, fecha, cantidad y monto |
@@ -229,6 +232,9 @@ Anticipos (descuento) y bonos (suma) sobre la próxima nómina. El signo lo da `
 | `installments` | `{ count, amount, cadence }` \| null | plan de cuotas, **solo para `anticipo`**. Se fija al crear y no se edita después (para cambiarlo hay que borrar y recrear). `amount = Math.ceil(total/count)` — ceil a propósito: `count` cuotas siempre cubren el total y la última queda más chica sola, sin llevar la cuenta de en qué cuota va. `cadence` (`porPago` \| `quincenal` \| `mensual`) es una **etiqueta informativa, no un gate por fecha**: no hay cron en la app, el admin confirma a mano qué cuotas entran al generar cada nómina |
 | `appliedPayrollId` | ref→`payrolls` \| null | última nómina que lo tocó (legacy — el detalle real vive en `payments[]`) |
 | `appliedAt`, `appliedBy` | ts?, string? | |
+| `payoutPayrollId` | ref→`payrolls` \| null | la nómina que **entrega** el anticipo (se lo paga a la persona). El anticipo sigue `pending` hasta que otra nómina lo descuente; quitar la entrega, sacar a la persona o eliminar esa nómina lo deja en `null` |
+| `payoutCycleId` | ref→`cycles` \| null | el ciclo al que se asocia la entrega |
+| `payoutAt` | string (ISO) \| null | cuándo se marcó la entrega |
 
 > **Ojo con los filtros**: `pending` y `partial` van juntos en el bucket "Pendientes" (`Advances.jsx` → `STATUS_BUCKET`, y `listPendingForWorkers()`). Un parcial que quede fuera de ese bucket desaparece de la vista sin que su saldo deje de existir.
 

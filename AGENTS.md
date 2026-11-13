@@ -410,6 +410,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Cobrar / Pagar (modos del resumen del ciclo) | `charge` / `pay` | `cycleSummaries` (guardado como `cobrar`) |
 | Bono de manejo (conducir) | `drivingBonus` | dentro de `cycles.labors` (guardado como `bonusManejo`) |
 | Anticipo / Bono | `advance` / `bonus` | `advances` (`type: "anticipo"` o `"bono"`) |
+| Entrega de un anticipo (la nómina se lo paga a la persona) | `advancePayout` (`payout` dentro de Nómina) | dentro de `payrolls.items` (`payoutApplications`) y de `advances` (`payoutPayrollId`) |
 | Transportista | `carrier` | `carriers` |
 | Vuelta | `trip` | `transports` |
 | Resumen de transporte | `transportPayment` (`payment` dentro de Transportes) | `transportPayments` |

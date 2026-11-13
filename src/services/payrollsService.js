@@ -8,12 +8,14 @@ import { listCycleWorkdays } from "./workdayCycles";
 import { isCashBank } from "../utils/banks";
 import { bankFormatOf } from "../utils/bankFormats";
 import {
+  clearAdvancePayouts,
   restoreAdvancesFromPayroll,
   applyAdvancesToPayroll,
   setPayrollAdvanceAmounts,
 } from "./advancesService";
 import { mergeCycleDetails, inChosenCycles, stillFreeWorkdays, withPaidPeriods } from "../utils/payrollItem";
 import { pruneSnapshot } from "./payrollSnapshots";
+import { payoutTotalOf } from "../utils/advancePayouts";
 
 export const PAYROLL_STATUSES = [
   { value: "pending", label: "Pendiente" },
@@ -295,6 +297,7 @@ export function recalcPayrollAggregates(items) {
     bankTotal: bank.reduce((s, x) => s + (Number(x.amount) || 0), 0),
     cashTotal: cash.reduce((s, x) => s + (Number(x.amount) || 0), 0),
     advanceTotal: items.reduce((s, x) => s + (Number(x.advance) || 0), 0),
+    payoutTotal: payoutTotalOf(items),
     workerCount: items.length,
     bankCount: bank.length,
     cashCount: cash.length,
@@ -314,10 +317,11 @@ export async function removeWorkerFromPayroll(payrollId, workerRut, onProgress) 
   if (!item) throw new Error(`Trabajador ${workerRut} no está en esta nómina`);
 
   await untagWorkdaysFromPayroll(item.workdayIds || [], (done, total) => onProgress?.("untag", done, total));
-  if ((item.advanceIds || []).length) {
-    onProgress?.("advances");
-    await restoreAdvancesFromPayroll(item.advanceIds, payrollId);
-  }
+  const payoutIds = (item.payoutApplications || []).map((p) => p.advanceId);
+  if ((item.advanceIds || []).length || payoutIds.length) onProgress?.("advances");
+  if ((item.advanceIds || []).length) await restoreAdvancesFromPayroll(item.advanceIds, payrollId);
+  // Lo que la nómina le entregaba vuelve a quedar sin entregar.
+  if (payoutIds.length) await clearAdvancePayouts(payoutIds, payrollId);
 
   const newItems = items.filter((it) => it.rut !== workerRut);
   const aggregates = recalcPayrollAggregates(newItems);

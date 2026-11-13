@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { untagWorkdaysFromPayroll, payrollsService } from "../../services/payrollsService";
-import { restoreAdvancesFromPayroll } from "../../services/advancesService";
+import { clearAdvancePayouts, restoreAdvancesFromPayroll } from "../../services/advancesService";
 import { deleteSnapshot } from "../../services/payrollSnapshots";
 
 // Eliminar una nómina pendiente: suelta sus jornadas, devuelve sus anticipos y
@@ -29,6 +29,7 @@ export function usePayrollDeletion({ load, setProgress, toast }) {
     const id = confirmDelete.id;
     const workdayIds = confirmDelete.workdayIds || [];
     const advanceIds = confirmDelete.advanceIds || [];
+    const payoutIds = (confirmDelete.items || []).flatMap((it) => (it.payoutApplications || []).map((p) => p.advanceId));
     setConfirmDelete(null);
     showProgress({ step: "Iniciando eliminación...", detail: "", percent: 2 });
     try {
@@ -45,7 +46,7 @@ export function usePayrollDeletion({ load, setProgress, toast }) {
           (snapDone ? W_SNAP : 0);
         const detailParts = [];
         if (workdayIds.length > 0) detailParts.push(`Jornadas ${untagDone}/${untagTotal}`);
-        if (advanceIds.length > 0) detailParts.push(`Anticipos ${advancesDone ? "✓" : "…"}`);
+        if (advanceIds.length > 0 || payoutIds.length > 0) detailParts.push(`Anticipos ${advancesDone ? "✓" : "…"}`);
         detailParts.push(`JSON ${snapDone ? "✓" : "…"}`);
         showProgress({
           step: "Liberando jornadas y anticipos...",
@@ -62,6 +63,8 @@ export function usePayrollDeletion({ load, setProgress, toast }) {
       });
       const pAdv = (async () => {
         await restoreAdvancesFromPayroll(advanceIds, id);
+        // Lo que la nómina entregaba vuelve a quedar sin entregar.
+        await clearAdvancePayouts(payoutIds, id);
         advancesDone = true;
         recompute();
       })();
