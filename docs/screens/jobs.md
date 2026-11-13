@@ -28,7 +28,7 @@
 - Los trabajadores que se pasen van **solo en la primera labor**; la de supervisión arranca vacía.
 - El bloque del tipo de labor **no se muestra con la importación activa**: ahí las labores salen del ciclo origen y elegir un tipo no tendría efecto.
 - **Un solo botón de alta de subfaena por estado**: el del encabezado de la faena (y el del estado vacío, que viene con la explicación).
-- `CycleRow` permite **✏ Renombrar**, abrir, cerrar y eliminar.
+- `CycleRow` muestra **Abrir** y **Cerrar** (o **↻ Reabrir**, si está cerrado); el resumen de producción, **✏ Renombrar o editar** y **Eliminar** van en su menú ⋯ (`RowMenu`). El encabezado de cada subfaena muestra **+ Ciclo**, y Editar, Ocultar o Mostrar y Eliminar van en su menú ⋯.
 
 ## Ciclo cerrado = congelado
 
