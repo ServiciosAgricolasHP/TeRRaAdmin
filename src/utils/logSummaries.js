@@ -14,13 +14,14 @@ const round = (v) => Math.round(Number(v) || 0);
 // La clave de una persona en la nómina.
 export const itemKeyOf = (it) => it?.workerId || it?.rut || "";
 
-// Lo que cuenta de una persona en la nómina: bruto, anticipo, bono, líquido y
-// días.
+// Lo que cuenta de una persona en la nómina: bruto, anticipo, bono, anticipo
+// entregado, líquido y días.
 export function itemFigures(it) {
   return {
     gross: round(it?.grossAmount ?? it?.amount),
     advance: round(it?.advance),
     bonus: round(it?.bonus),
+    payout: round(it?.payoutTotal),
     amount: round(it?.amount),
     days: (it?.workdayIds || []).length,
   };

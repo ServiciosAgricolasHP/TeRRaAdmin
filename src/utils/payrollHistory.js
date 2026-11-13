@@ -10,7 +10,7 @@ import { workerMatchesQuery } from "./workerSearch";
 // Campos que se mueven solos con otros y no dicen nada por su cuenta.
 const IGNORED = new Set([
   "updatedAt", "updatedBy", "updatedByName", "bankTotal", "cashTotal", "workerCount", "bankCount", "cashCount",
-  "advanceTotal", "advanceIds", "paidAt", "bankPaidBy", "cycleDetails", "cycleLabels", "total", "workdayIds",
+  "advanceTotal", "advanceIds", "payoutTotal", "payoutCycleDetails", "paidAt", "bankPaidBy", "cycleDetails", "cycleLabels", "total", "workdayIds",
 ]);
 
 // Quien hizo el cambio: su nombre en el registro o, en los anteriores, el
@@ -25,6 +25,7 @@ const FIGURE_LABELS = [
   ["gross", "bruto"],
   ["advance", "anticipo"],
   ["bonus", "bono"],
+  ["payout", "anticipo entregado"],
   ["days", "días"],
 ];
 
@@ -44,6 +45,19 @@ function personLines(change) {
     lines.push({ person: p.key, rut: p.rut, text: `${p.name || p.rut}: ${net}${details.length ? ` (${details.join(", ")})` : ""}` });
   }
   return lines;
+}
+
+// Si lo único que cambió en las personas son los anticipos que la nómina
+// entrega: `"delivered"` si alguno sube o entra, `"removed"` si solo bajan o
+// salen, null si cambió algo más.
+function payoutOnlyChange(change) {
+  const payout = (figures) => Number(figures.payout) || 0;
+  const onlyPayout = (p) => p.days === 0 && p.gross === 0 && payout(p) > 0;
+  const sameRest = (p) => ["gross", "advance", "bonus", "days"].every((k) => p.from[k] === p.to[k]) && payout(p.from) !== payout(p.to);
+  if (!change.added.every(onlyPayout) || !change.removed.every(onlyPayout) || !change.changed.every(sameRest)) return null;
+  if (change.added.length + change.removed.length + change.changed.length === 0) return null;
+  const grew = change.added.length > 0 || change.changed.some((p) => payout(p.to) > payout(p.from));
+  return grew ? "delivered" : "removed";
 }
 
 const cycleLabelsOf = (details) => new Map((details || []).map((d) => [d.id, d.label || d.id]));
@@ -106,7 +120,9 @@ export function payrollHistoryEntry(log, names = new Map()) {
   let people = [];
   if (has("items")) {
     const change = itemsChangeOf(changes.items);
-    if (!has("cycleIds")) {
+    const payouts = has("cycleIds") ? null : payoutOnlyChange(change);
+    if (payouts) titles.push(payouts === "delivered" ? "Entregó anticipos" : "Quitó anticipos entregados");
+    else if (!has("cycleIds")) {
       if (change.added.length && !change.removed.length && !change.changed.length) titles.push("Agregó personas");
       else if (change.removed.length && !change.added.length && !change.changed.length) titles.push("Sacó personas");
       else titles.push("Recalculó");

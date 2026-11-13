@@ -136,6 +136,20 @@ export function netByCycleOf(item) {
   return Object.fromEntries(cycleIds.map((id, i) => [id, net[i]]));
 }
 
+// Lo que la nómina le entrega a una persona en anticipos asociados a un ciclo.
+const payoutInCycle = (item, cycleId) =>
+  (item.payoutApplications || []).reduce((s, p) => s + (p.cycleId === cycleId ? Number(p.amount) || 0 : 0), 0);
+
+// Los ciclos de la nómina más los de sus entregas de anticipos que no están
+// en ella.
+function withPayoutCycles(cycleDetails, payoutCycleDetails) {
+  const known = new Set(cycleDetails.map((cd) => cd.id));
+  return [...cycleDetails, ...(payoutCycleDetails || []).filter((cd) => !known.has(cd.id))];
+}
+
+// La labor con la que figuran los anticipos entregados en el resumen por labor.
+export const PAYOUT_LABOR_NAME = "Anticipo entregado";
+
 // Resumen por subfaena (primera hoja del "Detalle de pago" imprimible):
 // subfaenas con monto > 0, ordenadas por faena y subfaena, con
 // transferencia y efectivo por fila. Sin subfaena guardada, la fila usa el
@@ -144,15 +158,17 @@ export function netByCycleOf(item) {
 // ciclo (`cycleName`), en el orden de `byCycleOrder` dentro de su subfaena, y
 // `cycleCount` es el de su subfaena. `cycleNameOf(cycleDetail)` da el nombre.
 // Con `net`, cada fila trae lo que se paga, con los bonos y anticipos de cada
-// persona ya descontados (`netByCycleOf`), y sigue la fila que quedó en $0.
-export function subfaenaSummaryOf(cycleDetails, bank, cash, { byCycle = false, net = false, cycleNameOf = (cd) => cd.label || cd.id } = {}) {
+// persona ya descontados (`netByCycleOf`), y sigue la fila que quedó en $0;
+// los anticipos que la nómina entrega van en la fila del ciclo al que se
+// asociaron, que puede no ser de la nómina (`payoutCycleDetails`).
+export function subfaenaSummaryOf(cycleDetails, bank, cash, { byCycle = false, net = false, cycleNameOf = (cd) => cd.label || cd.id, payoutCycleDetails = [] } = {}) {
   const grossFor = (arr, cycleId) => arr.reduce((s, it) => s + (Number(it.byCycle?.[cycleId]) || 0), 0);
   const netOf = new Map(net ? [...bank, ...cash].map((it) => [it, netByCycleOf(it)]) : []);
   const sumFor = net
-    ? (arr, cycleId) => arr.reduce((s, it) => s + (Number(netOf.get(it)?.[cycleId]) || 0), 0)
+    ? (arr, cycleId) => arr.reduce((s, it) => s + (Number(netOf.get(it)?.[cycleId]) || 0) + payoutInCycle(it, cycleId), 0)
     : grossFor;
   const bySubfaena = new Map();
-  for (const cd of cycleDetails) {
+  for (const cd of net ? withPayoutCycles(cycleDetails, payoutCycleDetails) : cycleDetails) {
     const sId = cd.subfaenaId || `__${cd.id}__`;
     if (!bySubfaena.has(sId)) {
       bySubfaena.set(sId, {
@@ -205,11 +221,13 @@ export function subfaenaSummaryOf(cycleDetails, bank, cash, { byCycle = false, n
 // fila dice cuántos ciclos junta (`cycleCount`) y cuáles (`cycleNames`); con
 // `byCycle` va una fila por ciclo y labor, como en subfaenaSummaryOf. Con
 // `net`, cada fila trae lo que se paga: los bonos y anticipos de cada persona
-// se descuentan entre sus ciclos y labores (`netPartsOf`).
+// se descuentan entre sus ciclos y labores (`netPartsOf`), y los anticipos que
+// la nómina entrega van en el ciclo al que se asociaron, como la labor
+// `PAYOUT_LABOR_NAME`.
 export function computeLaborSummary(payroll, allGroups, workdaysByGroup, { byCycle = false, net = false, cycleNameOf = (cd) => cd.label || cd.id } = {}) {
   const allItems = allGroups.flatMap((g) => g.items);
   const cashByRut = new Map(allItems.map((it) => [it.rut, isCashBank(it.bankCode)]));
-  const cycleDetails = payroll.cycleDetails || [];
+  const cycleDetails = net ? withPayoutCycles(payroll.cycleDetails || [], payroll.payoutCycleDetails) : payroll.cycleDetails || [];
   const nameOf = (cid) => {
     const cd = cycleDetails.find((c) => c.id === cid);
     return cd ? cycleNameOf(cd) : cid;
@@ -247,6 +265,11 @@ export function computeLaborSummary(payroll, allGroups, workdaysByGroup, { byCyc
       if (!item) continue;
       const amounts = netPartsOf(own.map((x) => x.gross), { advance: item.advance, bonus: item.bonus });
       own.forEach((part, i) => { part.amount = amounts[i]; });
+    }
+    for (const item of allItems) {
+      for (const p of item.payoutApplications || []) {
+        parts.push({ cid: p.cycleId, laborName: PAYOUT_LABOR_NAME, rut: item.rut, gross: 0, amount: Number(p.amount) || 0 });
+      }
     }
   }
   const acc = new Map(); // clave: subfaena||labor, o ciclo||labor
