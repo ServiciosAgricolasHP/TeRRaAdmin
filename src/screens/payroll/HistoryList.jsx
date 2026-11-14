@@ -10,7 +10,9 @@ import { millisOf } from "../../utils/syncedList";
 import { payStateOf } from "../../utils/payState";
 import { PortalBadge, PayStatePill, PaymentDatesLine } from "./PayStatePill";
 
-export function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRevertBank, onAskDelete, onChangeClassification, onOpen, onRename, publishedPayrollId = null }) {
+const NO_IDS = new Set();
+
+export function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPaid, onRevertBank, onAskDelete, onChangeClassification, onOpen, onRename, publishedPayrollIds = NO_IDS }) {
   const isMobile = useIsMobile();
   const [statusFilter, setStatusFilter] = useState("all"); // all | pending | paid | cashPending
   const [monthFilter, setMonthFilter] = useState("all"); // all | YYYY-MM
@@ -236,7 +238,7 @@ export function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPai
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="font-semibold text-[var(--color-accent)] [overflow-wrap:anywhere]">{p.name}</span>
-                      {p.id === publishedPayrollId && <PortalBadge />}
+                      {publishedPayrollIds.has(p.id) && <PortalBadge />}
                     </div>
                     <div className="mt-0.5 text-xs text-[var(--color-muted)]">
                       {fmtDate(p.createdAt)} · {p.workerCount || (p.items?.length ?? 0)} trab.
@@ -320,7 +322,7 @@ export function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPai
                     >
                       {p.name}
                     </button>
-                    {p.id === publishedPayrollId && <PortalBadge />}
+                    {publishedPayrollIds.has(p.id) && <PortalBadge />}
                   </div>
                   <div className="text-xs text-[var(--color-muted)]">{fmtDate(p.createdAt)}</div>
                 </td>

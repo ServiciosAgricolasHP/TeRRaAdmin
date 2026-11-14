@@ -4,8 +4,10 @@ import { clearAdvancePayouts, restoreAdvancesFromPayroll } from "../../services/
 import { deleteSnapshot } from "../../services/payrollSnapshots";
 
 // Eliminar una nómina pendiente: suelta sus jornadas, devuelve sus anticipos y
-// bonos y borra su JSON antes de borrar el documento.
-export function usePayrollDeletion({ load, setProgress, toast }) {
+// bonos y borra su JSON antes de borrar el documento. Una nómina publicada en
+// el portal de trabajadores (`isPublished(id)`) no se elimina: primero se
+// retira del portal.
+export function usePayrollDeletion({ load, setProgress, toast, isPublished }) {
   // Eliminar deshace una nómina: lleva la animación de deshacer.
   const showProgress = (info) => setProgress(info && { ...info, undo: true });
   const [confirmDelete, setConfirmDelete] = useState(null);
@@ -24,6 +26,11 @@ export function usePayrollDeletion({ load, setProgress, toast }) {
     if (confirmDelete.bankPaidAt) {
       setConfirmDelete(null);
       toast.error("Las transferencias de esta nómina ya se pagaron. Reviértelas antes de eliminarla.");
+      return;
+    }
+    if (isPublished?.(confirmDelete.id)) {
+      setConfirmDelete(null);
+      toast.error("Esta nómina está publicada en el portal de trabajadores. Un admin la retira desde su detalle (🚫 Retirar del portal) y después se puede eliminar.");
       return;
     }
     const id = confirmDelete.id;

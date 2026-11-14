@@ -61,8 +61,9 @@ import { CyclePaymentsModal } from "../../components/CyclePaymentsModal";
 import { useReadSection } from "../../hooks/useReadSection";
 
 const NO_LABORS = [];
+const NO_IDS = new Set();
 
-export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, subfaenas, workers, allPayrolls = [], onClose, onRedownload, onDownloadBankFile, onDownloadSnapshot, bankFormatLabel = null, onPublishPortal = null, publishedPayrollId = null, onChanged }) {
+export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, subfaenas, workers, allPayrolls = [], onClose, onRedownload, onDownloadBankFile, onDownloadSnapshot, bankFormatLabel = null, onPublishPortal = null, onUnpublishPortal = null, publishedPayrollIds = NO_IDS, onChanged }) {
   useReadSection("Detalle de nómina");
   const { catalogs } = useCatalogs();
   const toast = useToast();
@@ -143,6 +144,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
 
   const cycleDetails = payroll.cycleDetails || [];
   const lastEdit = lastEditLabel(payroll);
+  const isPublished = publishedPayrollIds.has(payroll.id);
 
   const { snapshot, snapshotLoading, reload: reloadSnapshot } = usePayrollSnapshot({ payroll });
   // Después de editar la nómina, el detalle se arma con la nómina y el JSON
@@ -355,7 +357,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
                 <span className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${PAY_STATE_PILL[payStateOf(payroll)].cls}`}>
                   {PAY_STATE_PILL[payStateOf(payroll)].label}
                 </span>
-                {payroll.id === publishedPayrollId && <PortalBadge />}
+                {isPublished && <PortalBadge />}
                 {payroll.classification === "diferencia" && (
                   <span className="shrink-0 rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-[10px] text-[var(--color-muted)]">
                     Diferencia
@@ -394,7 +396,17 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
                   title="Publicar esta nómina en el portal de trabajadores: cada uno ve su detalle buscando su RUT"
                   className="min-h-8 whitespace-nowrap rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)] hover:text-[var(--color-accent)]"
                 >
-                  🌐<span className="hidden sm:inline"> {payroll.id === publishedPayrollId ? "Actualizar en portal" : "Publicar en portal"}</span>
+                  🌐<span className="hidden sm:inline"> {isPublished ? "Actualizar en portal" : "Publicar en portal"}</span>
+                </button>
+              )}
+              {onUnpublishPortal && isPublished && (
+                <button
+                  type="button"
+                  onClick={() => onUnpublishPortal(payroll)}
+                  title="Retirar esta nómina del portal de trabajadores: dejan de verla, y las demás publicadas siguen"
+                  className="min-h-8 whitespace-nowrap rounded-md border border-[var(--color-border)] px-2.5 py-1 text-xs hover:bg-[var(--color-danger-soft)] hover:text-[var(--color-danger)]"
+                >
+                  🚫<span className="hidden sm:inline"> Retirar del portal</span>
                 </button>
               )}
               <button
