@@ -5,16 +5,20 @@ en la colección `functionJobs` y un trigger de Firestore lo levanta, lo ejecuta
 escribe el resultado en el mismo documento. La UI mira ese documento con un
 listener.
 
-Hay seis tipos de job:
+Hay siete tipos de job:
 
 - `ping` verifica el plomo de punta a punta (Consola admin → Ping al backend).
 - `createUser` crea una cuenta en Authentication y su perfil en `users/{uid}`
   (Usuarios → + Nueva cuenta).
 - `sendCommitmentDigest` envía ahora el correo de avisos de Cheques y pagos,
   marcado como prueba (Cheques y pagos → ⚙ Avisos → 📧 Enviar prueba).
-- `publishPortal` publica una nómina en el portal de trabajadores: una ficha
-  por RUT en `portalPayslips` y la cabecera en `portalMeta/current`
-  (`portal.js`; Nómina → detalle → 🌐 Publicar en portal).
+- `publishPortal` publica una nómina en el portal de trabajadores, o la
+  actualiza si ya estaba: una ficha por RUT y por nómina en
+  `portalPayslips/{rut}/payslips/{payrollId}`, sus RUT en `portalIndex` y la
+  lista de publicadas en `portalMeta/current` (`portal.js`; Nómina → detalle →
+  🌐 Publicar en portal).
+- `unpublishPortal` retira una nómina del portal, con sus fichas; las demás
+  publicadas siguen (Nómina → detalle → 🚫 Retirar del portal).
 - `backup` genera ahora un respaldo en JSON de la base, sin la auditoría
   (`backup.js`; Consola admin → 💾 Respaldos en JSON).
 - `backupDownloadUrl` devuelve un enlace para bajar un respaldo, que vence en

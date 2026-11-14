@@ -23,7 +23,7 @@ import { PayrollHeader } from "./payroll/PayrollHeader";
 import { PayrollSettingsModal } from "./payroll/PayrollSettingsModal";
 import { PreviewTable } from "./payroll/PreviewTable";
 import { ProgressOverlay } from "./payroll/ProgressOverlay";
-import { PublishPortalDialog } from "./payroll/PublishPortalDialog";
+import { PublishPortalDialog, UnpublishPortalDialog } from "./payroll/PublishPortalDialog";
 import { RenamePayrollModal } from "./payroll/RenamePayrollModal";
 import { WorkersHistory } from "./payroll/WorkersHistory";
 import { usePayrollConfig } from "./payroll/usePayrollConfig";
@@ -134,11 +134,15 @@ export default function Payroll() {
   const [renaming, setRenaming] = useState(null);
 
   const {
-    portal,
+    published,
+    publishedIds,
     publishBusy,
     publishing,
     runPublish,
+    runUnpublish,
     setPublishing,
+    setUnpublishing,
+    unpublishing,
   } = usePortalPublish({ toast, user });
 
   // Nóminas con las transferencias pagadas y el efectivo todavía adeudado.
@@ -222,7 +226,12 @@ export default function Payroll() {
     payConfirm,
     setPayConfirm,
   } = usePayConfirm({ load, setCloseCycles, setProgress, toast });
-  const { confirmDelete, onDelete, setConfirmDelete } = usePayrollDeletion({ load, setProgress, toast });
+  const { confirmDelete, onDelete, setConfirmDelete } = usePayrollDeletion({
+    load,
+    setProgress,
+    toast,
+    isPublished: (id) => publishedIds.has(id),
+  });
   const { onDownloadBankFile, onDownloadSnapshot, onRedownload } = usePayrollDownloads({ currentBankFormat, cycles, rutOf, toast });
 
   return (
@@ -297,7 +306,7 @@ export default function Payroll() {
           onChangeClassification={onChangeClassification}
           onOpen={openDetail}
           onRename={setRenaming}
-          publishedPayrollId={portal?.payrollId || null}
+          publishedPayrollIds={publishedIds}
         />
       ) : (
         <WorkersHistory
@@ -403,7 +412,8 @@ export default function Payroll() {
           onDownloadSnapshot={onDownloadSnapshot}
           bankFormatLabel={bankFormat.label}
           onPublishPortal={isAdmin ? setPublishing : null}
-          publishedPayrollId={portal?.payrollId || null}
+          onUnpublishPortal={isAdmin ? setUnpublishing : null}
+          publishedPayrollIds={publishedIds}
           onChanged={async () => {
             // Relee la nómina para refrescar el modal y después recarga la lista.
             try {
@@ -420,10 +430,17 @@ export default function Payroll() {
 
       <PublishPortalDialog
         publishing={publishing}
-        portal={portal}
+        published={published}
         busy={publishBusy}
         onConfirm={runPublish}
         onCancel={() => setPublishing(null)}
+      />
+      <UnpublishPortalDialog
+        unpublishing={unpublishing}
+        published={published}
+        busy={publishBusy}
+        onConfirm={runUnpublish}
+        onCancel={() => setUnpublishing(null)}
       />
 
       {settingsOpen && (

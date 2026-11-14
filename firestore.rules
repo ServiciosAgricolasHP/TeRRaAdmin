@@ -49,7 +49,7 @@ service cloud.firestore {
     // trabajadores tienen reglas propias.
     match /{coll}/{docId} {
       allow read, write: if hasProfile()
-        && !(coll in ['users', 'functionJobs', 'logs', 'commitmentNotifications', 'portalPayslips', 'portalMeta']);
+        && !(coll in ['users', 'functionJobs', 'logs', 'commitmentNotifications', 'portalPayslips', 'portalMeta', 'portalIndex']);
     }
 
     // ── Perfiles ───────────────────────────────────────────────────────────
@@ -103,17 +103,30 @@ service cloud.firestore {
     }
 
     // ── Portal de trabajadores ─────────────────────────────────────────────
-    // La ficha de cada trabajador de la nómina publicada (id = RUT) y la
-    // cabecera de esa nómina. Se leen sin sesión y de a un documento; listar
-    // (y contar) queda para un admin. Las escribe solo la función
-    // `publishPortal`.
+    // Las fichas de cada trabajador, una por nómina publicada
+    // (`portalPayslips/{rut}/payslips/{payrollId}`), y la lista de las
+    // publicadas (`portalMeta/current`). Sin sesión se leen las fichas de un
+    // RUT, de a uno: nadie recorre las de todos, y listarlas entre RUT (y
+    // contarlas) queda para un admin. Las fichas sueltas `portalPayslips/{rut}`
+    // son de la lista con una sola nómina, y se leen igual. `portalIndex` (los
+    // RUT de cada nómina publicada) lo lee solo un admin. Las escriben solo
+    // las funciones `publishPortal` y `unpublishPortal`.
     match /portalPayslips/{rut} {
       allow get: if true;
+      allow list: if isAdmin();
+    }
+    match /portalPayslips/{rut}/payslips/{payrollId} {
+      allow read: if true;
+    }
+    match /{path=**}/payslips/{payrollId} {
       allow list: if isAdmin();
     }
     match /portalMeta/{docId} {
       allow get: if true;
       allow list: if isAdmin();
+    }
+    match /portalIndex/{payrollId} {
+      allow read: if isAdmin();
     }
 
     // ── Sin sesión: escáner (scan_IS) y apps de cosechas y reportes ────────

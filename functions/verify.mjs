@@ -29,10 +29,13 @@
 //      vencimientos (aunque haya próximos o aplazados), que extienda los pagos
 //      recurrentes, y que el correo de prueba salga desde la cola solo para un
 //      admin. El correo no sale: se reemplaza el transporte.
-//   6. Que `publishPortal` deje una ficha por trabajador con solo lo suyo (la
-//      cuenta en 4 dígitos, sin correo ni RUT de pago), la cabecera con el
-//      nombre y el estado vivos de la nómina, borre las fichas de quienes ya
-//      no están y lo pida solo un admin.
+//   6. Que `publishPortal` deje una ficha por trabajador y por nómina con solo
+//      lo suyo (la cuenta en 4 dígitos, sin correo ni RUT de pago) y el nombre
+//      y el estado vivos de la nómina; que sume la nómina a la lista de
+//      publicadas sin tocar las otras, pase a la lista lo publicado con una
+//      sola nómina y, al volver a publicar, borre las fichas de quienes ya no
+//      están; que `unpublishPortal` retire una sola nómina con sus fichas, y
+//      que los dos los pida solo un admin.
 //   7. Que el respaldo deje en Cloud Storage un JSON con todas las colecciones
 //      menos `logs`, más las subcolecciones, con los tipos de Firestore
 //      marcados; su ficha en `backups` y el avance en el job; que guarde solo
@@ -326,8 +329,14 @@ console.log("avisos de Cheques y pagos");
 console.log("");
 console.log("portal de trabajadores");
 {
-  await db.collection("payrolls").doc("pay-42").set({ name: "Semana 42 Corregida", status: "paid" });
-  await db.collection("payrollSnapshots").doc("pay-42").set({
+  const slip = (rut, payrollId) => db.collection("portalPayslips").doc(rut).collection("payslips").doc(payrollId);
+  const readMeta = async () => (await db.collection("portalMeta").doc("current").get()).data();
+  const publish = async (payrollId, requestedBy = "verify-admin") =>
+    waitForResolution(await enqueue({ type: "publishPortal", requestedBy, params: { payrollId } }));
+  const unpublish = async (payrollId, requestedBy = "verify-admin") =>
+    waitForResolution(await enqueue({ type: "unpublishPortal", requestedBy, params: { payrollId } }));
+
+  const pay42 = {
     version: 1,
     payrollId: "pay-42",
     generatedAt: "2026-10-15T13:45:04.512Z",
@@ -353,16 +362,41 @@ console.log("portal de trabajadores");
       { id: "w3", cycleId: "c2", laborId: "l2", workerRut: "3333333-3", date: "2026-10-12", amount: 100, qty: 10 },
     ],
     advances: [{ id: "a1", workerRut: "11111111-1", type: "anticipo", amount: 50, date: "2026-10-01", note: "Adelanto" }],
+  };
+  await db.collection("payrolls").doc("pay-42").set({ name: "Semana 42 Corregida", status: "paid" });
+  await db.collection("payrollSnapshots").doc("pay-42").set(pay42);
+  await db.collection("payrolls").doc("pay-43").set({ name: "Semana 43", status: "pending" });
+  await db.collection("payrollSnapshots").doc("pay-43").set({
+    ...pay42,
+    payrollId: "pay-43",
+    generatedAt: "2026-10-22T13:00:00.000Z",
+    payroll: { name: "Semana 43", status: "pending" },
+    workers: [{ ...pay42.workers[0], amount: 80, workdayIds: [], advanceIds: [], anticipoApplications: [] }],
+    workdays: [],
+    advances: [],
   });
-  await db.collection("portalPayslips").doc("99999999-9").set({ payrollId: "old" });
 
-  const done = await waitForResolution(await enqueue({ type: "publishPortal", requestedBy: "verify-admin", params: { payrollId: "pay-42" } }));
-  check("publica desde la cola", done?.status === "done" && done?.result?.published === 2, done);
-  check("borra las fichas de quienes ya no están", done?.result?.removed === 1 && !(await db.collection("portalPayslips").doc("99999999-9").get()).exists, done?.result);
+  // Lo publicado con la forma de una sola nómina: la cabecera con su
+  // `payrollId` y las fichas sueltas por RUT, más una que quedó de otra.
+  await db.collection("portalMeta").doc("current").set({
+    version: 1,
+    payrollId: "pay-old",
+    generatedAt: "2026-10-01T12:00:00.000Z",
+    payroll: { name: "Semana 40", status: "paid" },
+    workerCount: 1,
+    publishedAt: "2026-10-02T12:00:00.000Z",
+  });
+  await db.collection("portalPayslips").doc("99999999-9").set({ payrollId: "pay-old", workers: [{ rut: "99999999-9", name: "Vera" }] });
+  await db.collection("portalPayslips").doc("88888888-8").set({ payrollId: "older" });
 
-  const ana = (await db.collection("portalPayslips").doc("11111111-1").get()).data();
+  const done = await publish("pay-42");
+  check("publica desde la cola", done?.status === "done" && done?.result?.published === 2 && done?.result?.updated === false, done);
+  const looseLeft = (await db.collection("portalPayslips").get()).docs.length;
+  check("pasa lo publicado con una sola nómina a la lista y borra las fichas sueltas", looseLeft === 0 && (await slip("99999999-9", "pay-old").get()).exists, looseLeft);
+
+  const ana = (await slip("11111111-1", "pay-42").get()).data();
   const worker = ana?.workers?.[0] || {};
-  check("una ficha por trabajador, con la forma del JSON", ana?.workers?.length === 1 && ana?.payrollId === "pay-42", ana);
+  check("una ficha por trabajador y nómina, con la forma del JSON", ana?.workers?.length === 1 && ana?.payrollId === "pay-42", ana);
   check("la cuenta va en 4 dígitos, sin correo ni RUT de pago", worker.accountNumber === "6789" && !("email" in worker) && !("paymentRut" in worker), worker);
   check(
     "solo sus jornadas, también las guardadas con otro formato de RUT",
@@ -372,17 +406,57 @@ console.log("portal de trabajadores");
   check("solo sus ciclos, sin los precios del día", ana?.cycles?.map((c) => c.id).join(",") === "c1" && !("dayPrices" in ana.cycles[0]), ana?.cycles);
   check("solo sus anticipos", ana?.advances?.map((a) => a.id).join(",") === "a1", ana?.advances);
   check("nombre y estado vivos de la nómina", ana?.payroll?.name === "Semana 42 Corregida" && ana?.payroll?.status === "paid", ana?.payroll);
-  check("el RUT con puntos queda como id normalizado", (await db.collection("portalPayslips").doc("3333333-3").get()).exists);
+  check("el RUT con puntos queda como id normalizado", (await slip("3333333-3", "pay-42").get()).exists);
 
-  const meta = (await db.collection("portalMeta").doc("current").get()).data();
-  check("deja la cabecera de la nómina publicada", meta?.payrollId === "pay-42" && meta?.workerCount === 2 && !!meta?.publishedAt, meta);
+  let meta = await readMeta();
+  check(
+    "la lista de publicadas suma la nueva, de la más nueva a la más vieja",
+    meta?.version === 2 && meta?.payrolls?.map((p) => p.payrollId).join(",") === "pay-42,pay-old" && meta.payrolls[0].workerCount === 2 && !!meta.payrolls[0].publishedAt,
+    meta,
+  );
+
+  const second = await publish("pay-43");
+  meta = await readMeta();
+  check(
+    "otra nómina se suma sin tocar las publicadas",
+    second?.status === "done" && meta?.payrolls?.map((p) => p.payrollId).join(",") === "pay-43,pay-42,pay-old" && (await slip("11111111-1", "pay-42").get()).exists,
+    meta,
+  );
+  const anaSlips = await db.collection("portalPayslips").doc("11111111-1").collection("payslips").get();
+  check("cada persona tiene una ficha por nómina publicada", anaSlips.docs.map((d) => d.id).sort().join(",") === "pay-42,pay-43", anaSlips.docs.map((d) => d.id));
+
+  await db.collection("payrollSnapshots").doc("pay-42").set({ ...pay42, workers: [pay42.workers[0]] });
+  const again = await publish("pay-42");
+  check(
+    "volver a publicar actualiza y borra solo las fichas de esa nómina que sobran",
+    again?.result?.updated === true && again?.result?.removed === 1 && !(await slip("3333333-3", "pay-42").get()).exists && (await slip("11111111-1", "pay-43").get()).exists,
+    again?.result,
+  );
+
+  const gone = await unpublish("pay-old");
+  meta = await readMeta();
+  check(
+    "retirar una nómina borra sus fichas y la saca de la lista",
+    gone?.status === "done" && gone?.result?.removed === 1 && !(await slip("99999999-9", "pay-old").get()).exists && meta?.payrolls?.map((p) => p.payrollId).join(",") === "pay-43,pay-42",
+    gone,
+  );
+  check("y su índice", !(await db.collection("portalIndex").doc("pay-old").get()).exists);
+  const twice = await unpublish("pay-old");
+  check("retirar una que no está publicada falla", twice?.errorCode === "not-published", twice);
+
   const logs = await db.collection("logs").where("entity", "==", "portalMeta").get();
-  check("queda en la auditoría", logs.docs.some((d) => d.data().meta?.payrollId === "pay-42"));
+  check(
+    "queda en la auditoría",
+    logs.docs.some((d) => d.data().meta?.op === "publishPortal" && d.data().meta?.payrollId === "pay-42") &&
+      logs.docs.some((d) => d.data().meta?.op === "unpublishPortal" && d.data().meta?.payrollId === "pay-old"),
+  );
 
-  const denied = await waitForResolution(await enqueue({ type: "publishPortal", requestedBy: "verify-user", params: { payrollId: "pay-42" } }));
+  const denied = await publish("pay-42", "verify-user");
   check("solo un admin publica", denied?.errorCode === "not-admin", denied);
-  const missing = await waitForResolution(await enqueue({ type: "publishPortal", requestedBy: "verify-admin", params: { payrollId: "no-existe" } }));
-  check("una nómina que no existe falla sin tocar lo publicado", missing?.errorCode === "not-found" && (await db.collection("portalMeta").doc("current").get()).data()?.payrollId === "pay-42", missing);
+  const deniedOut = await unpublish("pay-42", "verify-user");
+  check("solo un admin retira", deniedOut?.errorCode === "not-admin" && (await slip("11111111-1", "pay-42").get()).exists, deniedOut);
+  const missing = await publish("no-existe");
+  check("una nómina que no existe falla sin tocar lo publicado", missing?.errorCode === "not-found" && (await readMeta())?.payrolls?.length === 2, missing);
 }
 
 console.log("");

@@ -55,12 +55,16 @@ Una edición guarda solo lo que cambió, con el antes y el después. Si una fila
 ![La consola](help/administracion/03-consola.webp)
 
 ## Publicar una nómina en el portal
-<!-- preguntas: publicar la nómina en el portal; actualizar el portal de trabajadores; cambiar la nómina del portal -->
+<!-- preguntas: publicar la nómina en el portal; actualizar el portal de trabajadores; cambiar la nómina del portal; sacar una nómina del portal; varias nóminas en el portal; no puedo eliminar una nómina publicada -->
 
 1. Abre la nómina en **Nómina** y toca **🌐 Publicar en portal**, en su encabezado.
-2. Confirma: reemplaza a la que estaba publicada.
+2. Confirma: se suma a las que ya están publicadas.
 
-El historial marca con **🌐 Portal** la publicada, para todos. Si la corriges después, el botón dice **🌐 Actualizar en portal**: vuelve a publicarla para que el portal muestre lo corregido.
+El portal muestra a cada persona la nómina más reciente donde aparece y, si aparece en más de una, le avisa cuántos pagos tiene (cada uno es un depósito distinto) para que revise cada detalle.
+
+El historial marca con **🌐 Portal** cada nómina publicada, para todos. Si la corriges después, el botón dice **🌐 Actualizar en portal**: vuelve a publicarla para que el portal muestre lo corregido.
+
+Para sacarla, **🚫 Retirar del portal**, en el mismo encabezado: el portal deja de mostrarla y las demás siguen. Una nómina publicada no se puede eliminar: primero se retira del portal.
 
 ## Ajustes de admin en otras pantallas
 <!-- preguntas: formato del archivo del banco; destinatarios de los avisos; correo de avisos de cheques; importar la planilla de cheques; proyección de ingresos; importar trabajadores -->

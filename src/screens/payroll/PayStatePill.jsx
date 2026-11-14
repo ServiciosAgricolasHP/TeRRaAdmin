@@ -39,11 +39,11 @@ export function PayStatePill({ p, showDates = true }) {
   );
 }
 
-// Marca la nómina que está publicada en el portal de trabajadores.
+// Marca una nómina publicada en el portal de trabajadores.
 export function PortalBadge() {
   return (
     <span
-      title="Es la nómina publicada en el portal de trabajadores"
+      title="Está publicada en el portal de trabajadores"
       className="shrink-0 rounded-full bg-[var(--color-accent-soft)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-accent)]"
     >
       🌐 Portal

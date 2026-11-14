@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { countCollection } from "../../services/countsService";
+import { countCollection, countCollectionGroup } from "../../services/countsService";
 import { fmtNumber } from "../../utils/format";
 import { MAIN_COLLECTIONS, COLLECTION_GROUPS } from "./collections";
 import { ConsoleCard } from "./ConsoleCard";
@@ -12,10 +12,11 @@ export function CollectionCountsSection() {
   const [results, setResults] = useState({}); // id → { count?, error?, busy? }
   const [runningAll, setRunningAll] = useState(false);
 
-  const runOne = async (id) => {
+  // `countGroup`: la colección se cuenta como grupo de subcolecciones.
+  const runOne = async ({ id, countGroup }) => {
     setResults((r) => ({ ...r, [id]: { busy: true } }));
     const { error: err } = await attempt(async () => {
-      const count = await countCollection(id);
+      const count = countGroup ? await countCollectionGroup(countGroup) : await countCollection(id);
       setResults((r) => ({ ...r, [id]: { count } }));
     });
     if (err) setResults((r) => ({ ...r, [id]: { error: err.message || String(err) } }));
@@ -25,7 +26,7 @@ export function CollectionCountsSection() {
     setRunningAll(true);
     const { error: err } = await attempt(async () => {
       for (const c of MAIN_COLLECTIONS) {
-        await runOne(c.id);
+        await runOne(c);
       }
     });
     setRunningAll(false);
@@ -128,7 +129,7 @@ export function CollectionCountsSection() {
                   <td className="px-3 py-2 text-right">
                     <button
                       type="button"
-                      onClick={() => runOne(c.id)}
+                      onClick={() => runOne(c)}
                       disabled={r.busy}
                       className="rounded border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-0.5 text-[11px] hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
                     >

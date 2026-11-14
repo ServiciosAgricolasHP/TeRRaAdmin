@@ -1,6 +1,6 @@
 // Recuentos con `getCountFromServer`, que cuesta ~1 lectura por cada 1.000
 // documentos contados. Los usan la Consola admin y el Dashboard.
-import { collection, orderBy, query, where } from "firebase/firestore";
+import { collection, collectionGroup, orderBy, query, where } from "firebase/firestore";
 import { getCountFromServer } from "./readMeter";
 import { db } from "../firebase";
 import { readStoredJson, writeStoredJson } from "../utils/browserStorage";
@@ -13,6 +13,12 @@ const COUNT_BATCH = 1000;
 
 export async function countCollection(collName) {
   const snap = await getCountFromServer(collection(db, collName));
+  return snap.data().count;
+}
+
+// Los documentos de todas las subcolecciones llamadas `name`.
+export async function countCollectionGroup(name) {
+  const snap = await getCountFromServer(collectionGroup(db, name));
   return snap.data().count;
 }
 
