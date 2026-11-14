@@ -12,6 +12,7 @@ import {
   Timestamp,
   addDoc,
   collection,
+  collectionGroup,
   deleteDoc,
   deleteField,
   doc,
@@ -297,33 +298,53 @@ describe("avisos de Cheques y pagos (commitmentNotifications)", () => {
   });
 });
 
-describe("portal de trabajadores (portalPayslips, portalMeta)", () => {
+describe("portal de trabajadores (portalPayslips, portalMeta, portalIndex)", () => {
   beforeEach(async () => {
     await env.withSecurityRulesDisabled(async (ctx) => {
       const db = ctx.firestore();
       await setDoc(doc(db, "portalPayslips/11111111-1"), { payrollId: "p1", workers: [{ rut: "11111111-1" }] });
-      await setDoc(doc(db, "portalMeta/current"), { payrollId: "p1" });
+      await setDoc(doc(db, "portalPayslips/11111111-1/payslips/p1"), { payrollId: "p1", workers: [{ rut: "11111111-1" }] });
+      await setDoc(doc(db, "portalPayslips/11111111-1/payslips/p2"), { payrollId: "p2", workers: [{ rut: "11111111-1" }] });
+      await setDoc(doc(db, "portalPayslips/22222222-2/payslips/p1"), { payrollId: "p1", workers: [{ rut: "22222222-2" }] });
+      await setDoc(doc(db, "portalMeta/current"), { version: 2, payrolls: [{ payrollId: "p2" }, { payrollId: "p1" }] });
+      await setDoc(doc(db, "portalIndex/p1"), { payrollId: "p1", ruts: ["11111111-1", "22222222-2"] });
     });
   });
 
-  it("sin sesión se lee una ficha por RUT y la cabecera", async () => {
+  it("sin sesión se leen las fichas de un RUT y la lista de publicadas", async () => {
     await assertSucceeds(getDoc(doc(anon(), "portalPayslips/11111111-1")));
     await assertSucceeds(getDoc(doc(anon(), "portalPayslips/22222222-2")));
+    await assertSucceeds(getDoc(doc(anon(), "portalPayslips/11111111-1/payslips/p1")));
+    await assertSucceeds(getDocs(collection(anon(), "portalPayslips/11111111-1/payslips")));
+    await assertSucceeds(getDocs(collection(anon(), "portalPayslips/33333333-3/payslips")));
     await assertSucceeds(getDoc(doc(anon(), "portalMeta/current")));
   });
 
-  it("solo un admin lista las fichas", async () => {
+  it("solo un admin lista las fichas de todos los RUT", async () => {
     await assertFails(getDocs(collection(anon(), "portalPayslips")));
     await assertFails(getDocs(collection(as("sup1"), "portalPayslips")));
     await assertFails(getDocs(query(collection(anon(), "portalPayslips"), where("payrollId", "==", "p1"))));
+    await assertFails(getDocs(collectionGroup(anon(), "payslips")));
+    await assertFails(getDocs(query(collectionGroup(as("sup1"), "payslips"), where("payrollId", "==", "p1"))));
     await assertSucceeds(getDocs(collection(as("admin1"), "portalPayslips")));
+    await assertSucceeds(getDocs(collectionGroup(as("admin1"), "payslips")));
+  });
+
+  it("los RUT de cada nómina publicada los lee solo un admin", async () => {
+    await assertFails(getDoc(doc(anon(), "portalIndex/p1")));
+    await assertFails(getDoc(doc(as("sup1"), "portalIndex/p1")));
+    await assertFails(getDocs(collection(as("sup1"), "portalIndex")));
+    await assertSucceeds(getDoc(doc(as("admin1"), "portalIndex/p1")));
   });
 
   it("nadie las escribe desde la app: las publica la función", async () => {
     await assertFails(setDoc(doc(as("admin1"), "portalPayslips/11111111-1"), { payrollId: "p2" }));
+    await assertFails(setDoc(doc(as("admin1"), "portalPayslips/11111111-1/payslips/p3"), { payrollId: "p3" }));
+    await assertFails(deleteDoc(doc(as("admin1"), "portalPayslips/11111111-1/payslips/p1")));
     await assertFails(setDoc(doc(as("sup1"), "portalMeta/current"), { payrollId: "p2" }));
+    await assertFails(setDoc(doc(as("admin1"), "portalIndex/p1"), { ruts: [] }));
     await assertFails(deleteDoc(doc(as("admin1"), "portalPayslips/11111111-1")));
-    await assertFails(setDoc(doc(anon(), "portalPayslips/33333333-3"), { payrollId: "p2" }));
+    await assertFails(setDoc(doc(anon(), "portalPayslips/33333333-3/payslips/p1"), { payrollId: "p1" }));
   });
 });
 

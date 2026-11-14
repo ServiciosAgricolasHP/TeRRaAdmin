@@ -181,11 +181,14 @@ Snapshot JSON de cada nómina, separado del documento de `payrolls` para no engo
 > Se baja como `.json` desde el detalle de la nómina (📥 Descargar → JSON).
 
 ### `portalPayslips`
-Ficha de un trabajador en la nómina publicada en el portal de trabajadores. La escribe solo el job `publishPortal` (`functions/portal.js`); se lee sin sesión y de a un documento (`firestore.rules`).
+Fichas de los trabajadores en el portal de trabajadores: **una por persona y por nómina publicada**, en `portalPayslips/{rut}/payslips/{payrollId}`. El documento `portalPayslips/{rut}` no existe: es solo el camino. Las escriben y borran solo los jobs `publishPortal` y `unpublishPortal` (`functions/portal.js`); sin sesión se leen las fichas de un RUT, y listarlas entre RUT queda para un admin (`firestore.rules`). La Consola las cuenta como grupo (`payslips`).
+
+Con la forma de una sola nómina publicada (`portalMeta/current` sin `payrolls`), la ficha va suelta en `portalPayslips/{rut}`, con los mismos campos. El primer `publishPortal` o `unpublishPortal` las pasa a la subcolección y las borra.
 | Campo | Tipo | Notas |
 |---|---|---|
-| `id` (docId) | string | RUT normalizado: sin puntos, en mayúsculas, con guion (`12345678-9`) |
-| `payrollId` | ref→`payrolls` | la nómina de la ficha. Si no es el de `portalMeta/current`, el portal la trata como no encontrada |
+| `{rut}` | string | RUT normalizado: sin puntos, en mayúsculas, con guion (`12345678-9`) |
+| `id` (docId) | string | el id de la nómina, igual que `payrollId` |
+| `payrollId` | ref→`payrolls` | la nómina de la ficha. Si no está en la lista de `portalMeta/current`, el portal no la muestra |
 | `version`, `generatedAt` | | del snapshot |
 | `payroll` | `{ name, status }` | vivos de `payrolls` al publicar |
 | `workers` | `[PayrollItem]` | **un solo** trabajador, solo con `rut`, `name`, `groupLeader`, `bankCode`, `accountType`, `accountNumber` (**últimos 4 dígitos**), `grossAmount`, `advance`, `bonus`, `amount`, `byCycle`, `anticipoApplications` y `bonoApplications` |
@@ -195,15 +198,23 @@ Ficha de un trabajador en la nómina publicada en el portal de trabajadores. La 
 | `publishedAt` | string (ISO) | |
 
 ### `portalMeta`
-Un solo documento, `current`: la cabecera de la nómina publicada en el portal. Lo escribe el job `publishPortal`.
+Un solo documento, `current`: la lista de las nóminas publicadas en el portal. Lo escriben los jobs `publishPortal` y `unpublishPortal`; se lee sin sesión.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `version` | number | `2` |
+| `payrolls` | `[{ payrollId, name, status, generatedAt, workerCount, publishedAt }]` | las publicadas, de la más nueva a la más vieja por `generatedAt` (y, si falta, `publishedAt`). `name` y `status` son los de la nómina al publicarla; `generatedAt`, el del snapshot; `workerCount`, sus fichas |
+| `updatedAt` | string (ISO) | la última vez que se publicó o retiró una |
+| `updatedBy` | string | uid del admin |
+
+Con la forma de una sola nómina, el documento trae en cambio `payrollId`, `version: 1`, `generatedAt`, `payroll: { name, status }`, `workerCount`, `publishedAt` y `publishedBy`. La app lo lee igual (`publishedPayrollsOf`, `utils/portalPublished.js`), y el primer job lo pasa a la lista.
+
+### `portalIndex`
+Los RUT publicados de cada nómina, para retirarla o volver a publicarla sin recorrer el portal entero. Uno por nómina publicada (id = `payrollId`). Lo escriben y borran los jobs del portal; lo lee solo un admin.
 | Campo | Tipo | Notas |
 |---|---|---|
 | `payrollId` | ref→`payrolls` | |
-| `version`, `generatedAt` | | del snapshot |
-| `payroll` | `{ name, status }` | |
-| `workerCount` | number | fichas publicadas |
-| `publishedAt` | string (ISO) | |
-| `publishedBy` | string | uid del admin que publicó |
+| `ruts` | string[] | los `{rut}` de sus fichas en `portalPayslips` |
+| `publishedAt` | string (ISO) \| null | |
 
 ### `interestLinks`
 Atajos a herramientas externas mostrados en `/links`. CRUD con reordenamiento drag-and-drop.
@@ -671,8 +682,8 @@ Cola de trabajos del backend. La app crea el job y el trigger `runFunctionJob` (
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | string | autoId |
-| `type` | string | handler que se ejecuta (`ping`, `createUser`, `sendCommitmentDigest`, `publishPortal`, `backup`, `backupDownloadUrl`) |
-| `params` | object? | datos del job. `createUser`: `{ email, role, alias?, useExisting? }`; `publishPortal`: `{ payrollId }`; `backupDownloadUrl`: `{ backupId }` |
+| `type` | string | handler que se ejecuta (`ping`, `createUser`, `sendCommitmentDigest`, `publishPortal`, `unpublishPortal`, `backup`, `backupDownloadUrl`) |
+| `params` | object? | datos del job. `createUser`: `{ email, role, alias?, useExisting? }`; `publishPortal` y `unpublishPortal`: `{ payrollId }`; `backupDownloadUrl`: `{ backupId }` |
 | `status` | `"pending"` \| `"running"` \| `"done"` \| `"error"` | nace `pending`; la función lo pasa a `running` en una transacción antes de ejecutarlo |
 | `requestedBy` | string | uid de quien lo pidió; las reglas exigen que sea el de la sesión |
 | `requestedByEmail` | string? | |
@@ -760,7 +771,7 @@ Auditoría — una fila por mutación.
 | `auto: "emptySummary"`, `auto: "emptyPayroll"` | `recalcPaymentTotal` / `recalcFortnightTotal` | borrado automático de un resumen que se quedó sin vueltas, o de una quincena que se quedó sin resúmenes |
 | `auto: "extendRecurring"`, `dates` | `commitmentsDaily` (`functions/commitments.js`) | vencimientos que la función diaria le generó a un pago recurrente (`entity: "commitmentSeries"`, sin `uid`) |
 | `addedAbono`, `editedAbonoId`, `removedAbonoId` | `paymentsService` | detalle del abono tocado |
-| `jobId`, `payrollId`, `workerCount`, `removed` | `publishPortal` (`functions/portal.js`) | qué nómina se publicó en el portal, cuántas fichas quedaron y cuántas se borraron (`entity: "portalMeta"`) |
+| `jobId`, `op`, `payrollId`, `workerCount`, `removed` | `publishPortal` y `unpublishPortal` (`functions/portal.js`) | qué nómina se publicó (`op: "publishPortal"`), se actualizó (`"updatePortal"`) o se retiró (`"unpublishPortal"`) del portal, cuántas fichas quedaron y cuántas se borraron (`entity: "portalMeta"`; `changes.publishedPayrollIds`, las publicadas antes y después) |
 | `created`, `updated`, `unchanged`, `sources`, `files` | `importPhoneContacts` (`services/phoneContactsService.js`) | una importación de la agenda telefónica (`action: "import"`, `entity: "phoneContact"`) |
 | `laborId`, `file`, `written`, `deleted`, `blocked`, `floors`, `created`, `aliases`, `daysAdded`, `workersAdded`, `floorDays` | `importHarvest` (`services/harvestImportService.js`) | una importación de cosecha (`action: "harvestImport"`): `created`, los RUT de las fichas nuevas; `aliases`, `[{ workerId, added }]` con los pares RUT y nombre que se guardaron en cada ficha |
 | `laborId`, `laborName`, `deleted`, `kept`, `workersRemoved`, `daysRemoved`, `tripDays`, `pendingTrips` | `clearLabor` (`services/laborClearService.js`) | limpiar una labor (`action: "laborClear"`): cuántas jornadas borró y cuántas quedaron por estar en una nómina, cuántas personas sacó, qué días quitó, cuáles quedaron por tener vueltas y cuántas vueltas sin pagar había esos días |

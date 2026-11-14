@@ -27,7 +27,7 @@ import { getAuth } from "firebase-admin/auth";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
 import { runCommitmentDigest, TIME_ZONE } from "./commitments.js";
-import { publishPortal } from "./portal.js";
+import { publishPortal, unpublishPortal } from "./portal.js";
 import { backupDownloadLink, runBackup } from "./backup.js";
 
 // La base NO se llama `(default)`: es `hpdatabase`. Un trigger que no la
@@ -164,12 +164,27 @@ const handlers = {
   },
 
   // Publica una nómina en el portal de trabajadores: una ficha por RUT, que el
-  // portal lee sin sesión (`./portal.js`). Reemplaza la que estaba publicada.
+  // portal lee sin sesión (`./portal.js`). Se suma a las publicadas, o se
+  // actualiza si ya estaba.
   async publishPortal(functionJob, { functionJobId }) {
     await assertAdmin(functionJob.requestedBy, "Solo un admin puede publicar en el portal.");
     const payrollId = String(functionJob.params?.payrollId || "");
     if (!payrollId) throw functionJobError("invalid-params", "Falta la nómina a publicar.");
     return publishPortal(db, {
+      payrollId,
+      requestedBy: functionJob.requestedBy,
+      requestedByEmail: functionJob.requestedByEmail || null,
+      functionJobId,
+    });
+  },
+
+  // Retira una nómina del portal de trabajadores, con sus fichas; las demás
+  // publicadas siguen (`./portal.js`).
+  async unpublishPortal(functionJob, { functionJobId }) {
+    await assertAdmin(functionJob.requestedBy, "Solo un admin puede retirar una nómina del portal.");
+    const payrollId = String(functionJob.params?.payrollId || "");
+    if (!payrollId) throw functionJobError("invalid-params", "Falta la nómina a retirar.");
+    return unpublishPortal(db, {
       payrollId,
       requestedBy: functionJob.requestedBy,
       requestedByEmail: functionJob.requestedByEmail || null,
