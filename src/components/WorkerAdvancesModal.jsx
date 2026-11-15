@@ -5,6 +5,7 @@ import { useIsMobile } from "../hooks/useIsMobile";
 import { advanceSign, advanceRemaining, advanceTypeMeta, advanceMatchesWorker } from "../services/advancesService";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import { fmtCurrency } from "../utils/format";
+import { sortAdvances } from "../utils/advanceSort";
 
 const toDate = (ts) => (ts?.toDate ? ts.toDate() : ts ? new Date(ts) : null);
 
@@ -50,9 +51,7 @@ function AdvanceTotalsTile({ title, data, tone }) {
 export default function WorkerAdvancesModal({ workerKeys, name, rut, items, onClose }) {
   const mine = useMemo(() => {
     const keys = new Set((workerKeys || []).filter(Boolean));
-    return items
-      .filter((a) => advanceMatchesWorker(a, keys))
-      .sort((x, y) => String(y.date || "").localeCompare(String(x.date || "")));
+    return sortAdvances(items.filter((a) => advanceMatchesWorker(a, keys)), "date");
   }, [items, workerKeys]);
 
   const isMobile = useIsMobile();
