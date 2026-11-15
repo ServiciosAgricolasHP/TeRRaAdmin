@@ -5,6 +5,7 @@ import { clearLabor } from "../../services/laborClearService";
 import { attempt } from "../../utils/attempt";
 import { planLaborClear, workdaysOfGrid } from "../../utils/laborClear";
 import { normalizeCycle } from "./rows";
+import { errorText } from "../../utils/errorText";
 
 // Lo que se ve en la barra de avance en cada etapa de `clearLabor`.
 const STAGE_LABELS = {
@@ -38,7 +39,7 @@ export function useLaborClear({ onDone }) {
     setBusy(false);
     setProgress(null);
     if (error) {
-      toast.error("No se pudo limpiar la labor: " + (error.message || error));
+      toast.error("No se pudo limpiar la labor: " + errorText(error));
       return;
     }
     // En la labor quedan solo las jornadas que están en una nómina.

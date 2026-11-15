@@ -7,6 +7,7 @@ import { usePrincipals } from "../../hooks/usePrincipals";
 import { employmentsService, listWorkerEmployments } from "../../services/employmentsService";
 import { localIsoDate } from "../../utils/dates";
 import { EMPLOYMENT_TYPES, END_REASONS, SETTLEMENT_STATUSES, isActiveOn } from "../../utils/employment";
+import { errorText } from "../../utils/errorText";
 
 const fmt = (iso) => (iso ? iso.split("-").reverse().join("-") : "");
 
@@ -34,7 +35,7 @@ export default function EmploymentHistory({ worker }) {
     let cancelled = false;
     listWorkerEmployments(worker.id, { fresh: version === 0 })
       .then((l) => !cancelled && setList(l))
-      .catch((e) => !cancelled && setError(e.message || "No se pudo leer el historial."));
+      .catch((e) => !cancelled && setError(errorText(e, "No se pudo leer el historial.")));
     return () => {
       cancelled = true;
     };
@@ -135,7 +136,7 @@ export default function EmploymentHistory({ worker }) {
             setRemoving(null);
             load();
           } catch (e) {
-            setError(e.message || "No se pudo eliminar.");
+            setError(errorText(e, "No se pudo eliminar."));
           }
           setBusy(false);
         }}

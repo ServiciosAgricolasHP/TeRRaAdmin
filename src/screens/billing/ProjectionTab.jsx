@@ -6,6 +6,7 @@ import { MONTH_NAMES_ES, currentPeriod } from "./docs";
 import { SummaryCard } from "./SummaryCard";
 import { fmtCurrency } from "../../utils/format";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Pestaña "Proyección" (solo admin): la temporada que viene, mes a mes, desde
 // las ventas de los 12 meses anteriores por un porcentaje, con los meses ya
@@ -40,7 +41,7 @@ export function ProjectionTab({ docs, projectionPercent, projectionStart, select
   const handleProjectionXlsx = async () => {
     setProjectionBusy("xlsx");
     const { error: err } = await attempt(() => writeProjectionXlsx({ projection, projectionByClient, projectionFileBase, selectedCompany }));
-    if (err) toast.error("Error al generar XLSX: " + (err.message || err));
+    if (err) toast.error("Error al generar XLSX: " + errorText(err));
     setProjectionBusy("");
   };
 

@@ -30,6 +30,7 @@ import { EMPLOYMENT_FILTERS, NO_PRINCIPAL, activeByWorker, matchesEmploymentFilt
 import { attempt } from "../../utils/attempt";
 import { activeWorkers } from "../../utils/workerMerge";
 import WorkerMergeModal from "./WorkerMergeModal";
+import { errorText } from "../../utils/errorText";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -89,7 +90,7 @@ export default function WorkersTab() {
     const { value: list, error: err } = await attempt(() => listWorkers());
     setCacheLoading(false);
     if (err) {
-      toast.error("No se pudo cargar la lista de trabajadores: " + (err.message || err));
+      toast.error("No se pudo cargar la lista de trabajadores: " + errorText(err));
       return [];
     }
     const active = activeWorkers(list);
@@ -207,7 +208,7 @@ export default function WorkersTab() {
       await refreshCache();
     });
     if (err) {
-      toast.error(err.message || "Error al eliminar");
+      toast.error(errorText(err, "Error al eliminar"));
       setConfirm(null);
     }
   };

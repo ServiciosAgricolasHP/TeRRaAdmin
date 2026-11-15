@@ -7,6 +7,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import { useToast } from "../contexts/ToastContext";
 import ScreenLoader from "../components/ScreenLoader";
 import { attempt } from "../utils/attempt";
+import { errorText } from "../utils/errorText";
 
 const SEED = { text: "De PDF a Word", url: "https://www.ilovepdf.com/es/pdf_a_word" };
 
@@ -44,7 +45,7 @@ export default function InterestLinks() {
       });
       setLinks(list);
     });
-    if (err) toast.error("No se pudieron cargar los links: " + (err.message || err));
+    if (err) toast.error("No se pudieron cargar los links: " + errorText(err));
     setLoading(false);
   };
   const loadOnMount = useEffectEvent(() => load());

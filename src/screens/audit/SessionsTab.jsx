@@ -6,6 +6,7 @@ import { fmtNumber } from "../../utils/format";
 import { sessionize } from "../../utils/auditLogs";
 import SessionCard from "./SessionCard";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Auditoría por sesiones de inactividad: lee los logs del rango elegido, los
 // agrupa por usuario y corta una sesión cada vez que la pausa entre dos
@@ -51,7 +52,7 @@ export default function SessionsTab() {
       setExpanded(new Set());
       setExpandAll(false);
     });
-    if (err) setError(err.message || String(err));
+    if (err) setError(errorText(err));
     setLoading(false);
   };
 

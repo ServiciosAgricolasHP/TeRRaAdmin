@@ -3,6 +3,7 @@ import Modal, { ModalCloseButton } from "../../components/Modal";
 import { setPrincipal } from "../../services/employmentsService";
 import { attempt } from "../../utils/attempt";
 import { NO_PRINCIPAL } from "../../utils/employment";
+import { errorText } from "../../utils/errorText";
 
 const inputCls =
   "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]";
@@ -25,7 +26,7 @@ export default function SetPrincipalModal({ items, principals, onClose, onDone }
     const principalId = choice === NO_PRINCIPAL ? "" : choice;
     const { error: err } = await attempt(() => setPrincipal(items.map((e) => e.id), principalId));
     if (err) {
-      setError(err.message || "No se pudo guardar.");
+      setError(errorText(err, "No se pudo guardar."));
       setBusy(false);
       return;
     }

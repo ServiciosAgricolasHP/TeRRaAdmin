@@ -15,6 +15,7 @@ import { payPaymentMessage } from "./fortnights";
 import ScreenLoader from "../../components/ScreenLoader";
 import { attempt } from "../../utils/attempt";
 import { readStored, writeStored } from "../../utils/browserStorage";
+import { errorText } from "../../utils/errorText";
 
 // ============================================================
 // PESTAÑA RESÚMENES
@@ -398,7 +399,7 @@ export function PaymentsTab() {
             await reload();
             setBalanceVersion((v) => v + 1);
           });
-          if (err) toast.error(err.message || "Error");
+          if (err) toast.error(errorText(err));
         }}
       />
     </div>

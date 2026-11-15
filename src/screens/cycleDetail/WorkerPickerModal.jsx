@@ -22,6 +22,7 @@ import { greeting, GREETING_SLOTS } from "../../utils/greetings";
 import { attempt } from "../../utils/attempt";
 import { useValuesChanged } from "../../hooks/useValuesChanged";
 import { activeWorkers } from "../../utils/workerMerge";
+import { errorText } from "../../utils/errorText";
 
 const MIN_SEARCH = 3;
 const LEADER_LOCAL = "CHILENOS";
@@ -223,7 +224,7 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
       await workersService.update(created.id, { bankDetails, paymentName, groupLeader, idQr: [] });
       onPick({ id: created.id, rut: created.id, name: created.name });
     });
-    if (err) setError(err.message || "Error");
+    if (err) setError(errorText(err));
     setBusy(false);
   };
 

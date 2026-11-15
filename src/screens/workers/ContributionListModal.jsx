@@ -8,6 +8,7 @@ import { listCompanyLabel } from "../../utils/employment";
 import { fmtCurrency } from "../../utils/format";
 import ContributionItemsTable, { PayTotals } from "./ContributionItemsTable";
 import { writeContributionListXlsx } from "./writeContributionListXlsx";
+import { errorText } from "../../utils/errorText";
 
 const fmt = (iso) => (iso ? iso.split("-").reverse().join("-") : "");
 
@@ -27,7 +28,7 @@ export default function ContributionListModal({ list, onClose, onChanged }) {
     try {
       await fn();
     } catch (e) {
-      setError(e.message || String(e));
+      setError(errorText(e));
     }
     setBusy("");
   };

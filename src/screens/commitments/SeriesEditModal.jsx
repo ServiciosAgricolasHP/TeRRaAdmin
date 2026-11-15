@@ -8,6 +8,7 @@ import { fmtDate } from "./helpers";
 import { StatusChip } from "./StatusChip";
 import { btnCls, primaryCls } from "./styles";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Ajuste de una serie (crédito, deuda personal en cuotas o pago recurrente):
 // fecha y monto de cada vencimiento abierto, a mano o con herramientas que se
@@ -66,7 +67,7 @@ export function SeriesEditModal({ item, items, today, onCancel, onSaved }) {
       const n = await saveSeriesEdit(series, seriesItems, changes, seriesPatch);
       await onSaved(n);
     });
-    if (err) toast.error(err.message || String(err));
+    if (err) toast.error(errorText(err));
     setBusy(false);
   };
 

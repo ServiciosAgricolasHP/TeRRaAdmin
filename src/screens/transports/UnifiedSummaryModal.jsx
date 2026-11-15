@@ -10,6 +10,7 @@ import { fmtCurrency } from "../../utils/format";
 import { PrintableSummary } from "./PrintableSummary";
 import { attempt } from "../../utils/attempt";
 import { useValuesChanged } from "../../hooks/useValuesChanged";
+import { errorText } from "../../utils/errorText";
 
 // Junta las vueltas de todos los resúmenes de un transportista (p. ej. las dos
 // quincenas de un mes) en una sola tabla para verlas, imprimirlas o copiarlas.
@@ -80,7 +81,7 @@ export function UnifiedSummaryModal({ open, onClose, group, faenaById, subfaenaB
         .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
       setTrips(filtered);
     });
-    if (err) toast.error("No se pudieron recargar las vueltas: " + (err.message || err));
+    if (err) toast.error("No se pudieron recargar las vueltas: " + errorText(err));
   };
 
   const handleSaveTrip = async (form) => {
@@ -102,7 +103,7 @@ export function UnifiedSummaryModal({ open, onClose, group, faenaById, subfaenaB
       if (onChanged) await onChanged();
       toast.success("Vuelta actualizada");
     });
-    if (err) toast.error("Error al guardar: " + (err.message || err));
+    if (err) toast.error("Error al guardar: " + errorText(err));
   };
 
   const handleRemoveTripFromPayment = async () => {
@@ -129,7 +130,7 @@ export function UnifiedSummaryModal({ open, onClose, group, faenaById, subfaenaB
       if (onChanged) await onChanged();
       toast.success("Vuelta quitada del resumen");
     });
-    if (err) toast.error("Error al quitar: " + (err.message || err));
+    if (err) toast.error("Error al quitar: " + errorText(err));
   };
 
   if (!group) return null;

@@ -14,6 +14,7 @@ import ScreenLoader from "../../components/ScreenLoader";
 import { attempt } from "../../utils/attempt";
 import { useValuesChanged } from "../../hooks/useValuesChanged";
 import { groupDayByWorker, resolveQrSearch, weightsView } from "../../utils/harvestWeightsView";
+import { errorText } from "../../utils/errorText";
 
 // TTL del explorador de pesajes. Los pesajes cambian todo el rato mientras se
 // cosecha y ningún TTL deja la pantalla fresca: la antigüedad se muestra y el
@@ -146,7 +147,7 @@ export function WeightsExplorer({ prefixes, jobById }) {
       setBusy(false);
       if (err) {
         if (filterByPrefix && err?.code === "failed-precondition") setMissingIndex(true);
-        else toast.error("No se pudieron leer los pesajes: " + (err.message || err));
+        else toast.error("No se pudieron leer los pesajes: " + errorText(err));
         return;
       }
       setWeights(value.data);

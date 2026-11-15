@@ -7,6 +7,7 @@ import { buildDailyRows } from "../../../utils/cycleSummary";
 import { isRedDay } from "../../../utils/tratoHE";
 import { saveJSON, chargeStorageKey } from "./summaryStorage";
 import { attempt } from "../../../utils/attempt";
+import { errorText } from "../../../utils/errorText";
 
 // Importar labores de ciclos anteriores de la misma subfaena al modo cobrar,
 // en dos pasos (los ciclos y después sus labores), y quitar una importada.
@@ -64,7 +65,7 @@ export function useImportCycles({ charge, cycle, setBusy, setCharge, toast }) {
       setAvailableCycles(filtered);
     });
     if (err) {
-      toast.error("Error cargando ciclos: " + (err.message || err));
+      toast.error("Error cargando ciclos: " + errorText(err));
       setAvailableCycles([]);
     }
   };
@@ -137,7 +138,7 @@ export function useImportCycles({ charge, cycle, setBusy, setCharge, toast }) {
       setImportOpen(false);
       setImportPlan({ candidates });
     });
-    if (err) toast.error("Error importando: " + (err.message || err));
+    if (err) toast.error("Error importando: " + errorText(err));
     setBusy("");
   };
 

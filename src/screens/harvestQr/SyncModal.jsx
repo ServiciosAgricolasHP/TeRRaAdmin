@@ -6,6 +6,7 @@ import Modal from "../../components/Modal";
 import { nextSyncRange, lastSyncLabel } from "./helpers";
 import { ProgressBar } from "../../components/ProgressBar";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 const STAGE_LABELS = {
   cycle: "Leyendo el ciclo…",
@@ -33,7 +34,7 @@ export function SyncModal({ prefix, cycle, onClose, onSynced }) {
     const { value, error: err } = await attempt(() =>
       syncPrefixRange({ prefix, dateFrom, dateTo, onProgress: (p) => setProgress({ ...p, label: STAGE_LABELS[p.stage] }) }),
     );
-    if (err) toast.error("No se pudo sincronizar: " + err.message);
+    if (err) toast.error("No se pudo sincronizar: " + errorText(err));
     if (value) {
       setResult(value);
       toast.success(`Sincronizado: ${value.written} jornada(s) actualizadas desde ${value.weightsRead} pesaje(s)`);

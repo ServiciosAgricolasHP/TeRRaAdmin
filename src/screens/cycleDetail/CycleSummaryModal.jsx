@@ -28,6 +28,7 @@ import { useSummaryFlush } from "./cycleSummaryModal/useSummaryFlush";
 import { useImportCycles } from "./cycleSummaryModal/useImportCycles";
 import { useSummaryCapture } from "./cycleSummaryModal/useSummaryCapture";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // ============================================================
 // Componente principal
@@ -200,7 +201,7 @@ export default function CycleSummaryModal({
         transportData,
       });
     });
-    if (err) toast.error("Error al exportar: " + (err.message || err));
+    if (err) toast.error("Error al exportar: " + errorText(err));
     setBusy("");
   };
 

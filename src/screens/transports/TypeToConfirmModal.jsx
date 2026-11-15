@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useValuesChanged } from "../../hooks/useValuesChanged";
 import Modal from "../../components/Modal";
 import { useToast } from "../../contexts/ToastContext";
+import { errorText } from "../../utils/errorText";
 
 // Confirmación reforzada: el botón se habilita al escribir la palabra `word`,
 // sin distinguir mayúsculas.
@@ -29,7 +30,7 @@ export function TypeToConfirmModal({ word, title, message, confirmLabel, danger 
             onClick={async () => {
               if (!ok || busy) return;
               setBusy(true);
-              try { await onConfirm(); } catch (err) { toast.error(err?.message || "Error"); setBusy(false); }
+              try { await onConfirm(); } catch (err) { toast.error(errorText(err)); setBusy(false); }
             }}
             disabled={!ok || busy}
             className={`rounded-md px-3 py-1.5 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50 ${

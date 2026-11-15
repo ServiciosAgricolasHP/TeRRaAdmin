@@ -1,6 +1,7 @@
 import { collection, serverTimestamp } from "firebase/firestore";
 import { addDoc, onSnapshot } from "./readMeter";
 import { db } from "../firebase";
+import { errorText } from "../utils/errorText";
 
 // Cola de jobs del backend (`functionJobs`, ver functions/index.js): la app crea
 // el job y el trigger de Cloud Functions lo ejecuta y escribe el resultado en
@@ -45,7 +46,7 @@ export function waitForFunctionJob(ref, { timeoutMs = 45_000, onProgress } = {})
         }
         finish({ status: d.status, result: d.result, error: d.error, errorCode: d.errorCode });
       },
-      (err) => finish({ status: "error", error: err?.message || String(err) }),
+      (err) => finish({ status: "error", error: errorText(err) }),
     );
     if (finished) unsub();
   });

@@ -12,6 +12,7 @@ import {
 } from "../../utils/cosechaCombos";
 import { attempt } from "../../utils/attempt";
 import { addFloorBonuses, removeFloorBonuses } from "../../services/workdayBatches";
+import { errorText } from "../../utils/errorText";
 
 // Piso del día (bono para trato y cosecha): el monto de cada día, el bono de
 // cada persona, asignarlo a todos los que tienen producción y quitarlo con sus
@@ -102,7 +103,7 @@ export function useFloorBonus({ activeLabor, cycle, cycleWrite, dayPrices, guard
           : "Piso del día quitado.",
       );
     });
-    if (err) toast.error("No se pudo quitar el piso: " + (err.message || err));
+    if (err) toast.error("No se pudo quitar el piso: " + errorText(err));
     setFloorRemoveBusy(false);
     setFloorProgress(null);
   };
@@ -163,7 +164,7 @@ export function useFloorBonus({ activeLabor, cycle, cycleWrite, dayPrices, guard
       setFloorBulk(null);
       toast.success(`Piso asignado a ${ruts.length} trabajador${ruts.length === 1 ? "" : "es"}.`);
     });
-    if (err) toast.error("No se pudo asignar el piso: " + (err.message || err));
+    if (err) toast.error("No se pudo asignar el piso: " + errorText(err));
     setFloorBulkBusy(false);
     setFloorProgress(null);
   };

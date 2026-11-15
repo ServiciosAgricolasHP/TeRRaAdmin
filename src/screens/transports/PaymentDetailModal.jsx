@@ -11,6 +11,7 @@ import { PrintableSummary } from "./PrintableSummary";
 import { PaymentAbonos } from "./PaymentAbonos";
 import { attempt } from "../../utils/attempt";
 import { useValuesChanged } from "../../hooks/useValuesChanged";
+import { errorText } from "../../utils/errorText";
 
 export function PaymentDetailModal({ open, onClose, payment, carrier, carriers = [], faenaById, subfaenaById, cycleById, onPay, onRevert, onDelete, onChanged }) {
   const toast = useToast();
@@ -48,7 +49,7 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
           .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
         setTrips(filtered);
       });
-      if (err) toast.error("No se pudieron cargar las vueltas del resumen: " + (err.message || err));
+      if (err) toast.error("No se pudieron cargar las vueltas del resumen: " + errorText(err));
       setLoading(false);
     })();
   }, [open, payment, toast]);
@@ -82,7 +83,7 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
         .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
       setTrips(filtered);
     });
-    if (err) toast.error("No se pudieron recargar las vueltas: " + (err.message || err));
+    if (err) toast.error("No se pudieron recargar las vueltas: " + errorText(err));
   };
 
   const handleSaveTrip = async (form) => {
@@ -104,7 +105,7 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
       if (onChanged) await onChanged();
       toast.success("Vuelta actualizada");
     });
-    if (err) toast.error("Error al guardar: " + (err.message || err));
+    if (err) toast.error("Error al guardar: " + errorText(err));
   };
 
   const handleRemoveTripFromPayment = async () => {
@@ -118,7 +119,7 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
       if (onChanged) await onChanged();
       toast.success("Vuelta quitada del resumen");
     });
-    if (err) toast.error("Error al quitar: " + (err.message || err));
+    if (err) toast.error("Error al quitar: " + errorText(err));
   };
 
   // Carga las vueltas pendientes del mismo transportista que no tienen
@@ -134,7 +135,7 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
         .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
       setAvailableTrips(unlinked);
     });
-    if (err) toast.error("Error al buscar vueltas sueltas: " + (err.message || err));
+    if (err) toast.error("Error al buscar vueltas sueltas: " + errorText(err));
     setLoadingAvailable(false);
   };
 
@@ -158,7 +159,7 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
       if (onChanged) await onChanged();
       toast.success("Vueltas agregadas al resumen");
     });
-    if (err) toast.error("Error al agregar: " + (err.message || err));
+    if (err) toast.error("Error al agregar: " + errorText(err));
     setAddBusy(false);
   };
 

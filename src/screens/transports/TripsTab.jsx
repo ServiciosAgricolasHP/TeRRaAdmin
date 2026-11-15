@@ -12,6 +12,7 @@ import { isoDateNDaysAgo, DEFAULT_HISTORY_DAYS } from "./historyRange";
 import ScreenLoader from "../../components/ScreenLoader";
 import { attempt } from "../../utils/attempt";
 import { cycleShort, filterTrips, groupTripsByCarrier, sortTripsBy } from "../../utils/tripsList";
+import { errorText } from "../../utils/errorText";
 
 // ============================================================
 // PESTAÑA VUELTAS
@@ -56,7 +57,7 @@ export function TripsTab({ initialCarrierId = null }) {
       setFaenas(fa);
       setSubfaenas(sub);
     });
-    if (err) toast.error("No se pudieron cargar las vueltas: " + (err.message || err));
+    if (err) toast.error("No se pudieron cargar las vueltas: " + errorText(err));
     setLoading(false);
   };
 
@@ -140,7 +141,7 @@ export function TripsTab({ initialCarrierId = null }) {
       await reload();
       toast.success("Vuelta actualizada");
     });
-    if (err) toast.error("Error al guardar: " + (err.message || err));
+    if (err) toast.error("Error al guardar: " + errorText(err));
   };
 
   const handleDeleteTrip = async () => {
@@ -151,7 +152,7 @@ export function TripsTab({ initialCarrierId = null }) {
       await reload();
       toast.success("Vuelta eliminada");
     });
-    if (err) toast.error(err.message || "Error al eliminar");
+    if (err) toast.error(errorText(err, "Error al eliminar"));
   };
 
   // Vueltas agrupadas por transportista, con alias, total y desglose

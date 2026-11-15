@@ -7,6 +7,7 @@ import { useCarriers } from "../../contexts/CarriersContext";
 import { CARRIER_TYPES } from "../../services/carriersService";
 import { attempt } from "../../utils/attempt";
 import { useValuesChanged } from "../../hooks/useValuesChanged";
+import { errorText } from "../../utils/errorText";
 
 // Alta rápida de un transportista desde el modal de la vuelta: alias, nombre,
 // tipo, tarifa y un vehículo. El resto se edita en Transportes.
@@ -52,7 +53,7 @@ export default function QuickCreateCarrierModal({ open, onClose, onCreated }) {
       });
       onCreated?.(created);
     });
-    if (err) setError(err.message || "Error al crear");
+    if (err) setError(errorText(err, "Error al crear"));
     setBusy(false);
   };
 

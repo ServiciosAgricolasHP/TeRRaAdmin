@@ -6,6 +6,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useToast } from "../../contexts/ToastContext";
 import { ROLE_OPTIONS, parseNewAccount } from "../../utils/userAccounts";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Crea la cuenta con el job `createUser` y, si se pidió, envía el correo para
 // elegir contraseña. Un correo que ya tiene cuenta pasa por una confirmación.
@@ -40,7 +41,7 @@ export function NewAccountModal({ onClose, onCreated }) {
       setError(
         err?.code === "permission-denied"
           ? "Las reglas de Firestore no dejan crear el job: solo un admin puede crear cuentas."
-          : err?.message || String(err),
+          : errorText(err),
       );
     } else if (outcome.status === "done") {
       let resetSent = false;

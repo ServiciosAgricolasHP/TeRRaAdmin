@@ -3,6 +3,7 @@ import { useToast } from "../../contexts/ToastContext";
 import { analyzeWorkerMerge, mergeWorkers } from "../../services/workerMergeService";
 import { attempt } from "../../utils/attempt";
 import { planWorkerMerge } from "../../utils/workerMerge";
+import { errorText } from "../../utils/errorText";
 
 // La palabra que se escribe para confirmar.
 export const MERGE_WORD = "unir";
@@ -44,7 +45,7 @@ export function useWorkerMerge({ clone, onDone }) {
     const { value, error } = await attempt(() => analyzeWorkerMerge(clone, w));
     setAnalyzing(false);
     if (error) {
-      setAnalyzeError(error.message || String(error));
+      setAnalyzeError(errorText(error));
       return;
     }
     setAnalysis(value);
@@ -71,7 +72,7 @@ export function useWorkerMerge({ clone, onDone }) {
     setBusy(false);
     setProgress(null);
     if (error) {
-      toast.error("No se pudo unir: " + (error.message || error));
+      toast.error("No se pudo unir: " + errorText(error));
       return;
     }
     const moved = plan.moves.length + plan.conflicts.length;

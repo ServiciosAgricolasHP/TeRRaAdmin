@@ -3,6 +3,7 @@ import { cyclesService, subjobsService, workdaysService, jobsService } from "../
 import { payrollsService } from "../../services/payrollsService";
 import { deleteCascade } from "../../services/workdayBatches";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 const STAGE_LABELS = { workdays: "Borrando las jornadas…", cycles: "Borrando los ciclos…" };
 
@@ -165,7 +166,7 @@ export function useJobDeletion({ isAdmin, loadCycles, loadJobs, loadSubjobs, ord
       const { error: err } = await attempt(deleteCycle);
       if (err) {
         console.error("Error eliminando ciclo:", err);
-        toast.error(`Error al eliminar ciclo: ${err?.message || err}`);
+        toast.error(`Error al eliminar ciclo: ${errorText(err)}`);
       }
     }
     setConfirm(null);
@@ -177,7 +178,7 @@ export function useJobDeletion({ isAdmin, loadCycles, loadJobs, loadSubjobs, ord
     const { error: err } = await attempt(deleteConfirmed);
     if (err) {
       console.error("Error en eliminación:", err);
-      toast.error(`${err?.message || err}\nRevisa la consola para ver el detalle.`, { title: "Error al eliminar" });
+      toast.error(`${errorText(err)}\nRevisa la consola para ver el detalle.`, { title: "Error al eliminar" });
       setConfirm(null);
     }
     setConfirm((c) => (c ? { ...c, busy: false } : null));

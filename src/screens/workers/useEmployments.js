@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { listEmployments } from "../../services/employmentsService";
 import { localIsoDate } from "../../utils/dates";
 import { openFrom, settlementsSince } from "../../utils/employment";
+import { errorText } from "../../utils/errorText";
 
 // Lo que muestra la pestaña Contratos: los períodos vigentes desde hoy
 // (también los que empiezan más adelante) y los finiquitos pendientes,
@@ -28,7 +29,7 @@ export function useEmployments() {
         setSettlements(settlementsSince(all, localIsoDate(since)));
         setError("");
       })
-      .catch((e) => !cancelled && setError(e.message || "No se pudieron leer los contratos."))
+      .catch((e) => !cancelled && setError(errorText(e, "No se pudieron leer los contratos.")))
       .finally(() => {
         if (cancelled) return;
         setLoading(false);

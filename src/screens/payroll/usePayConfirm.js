@@ -2,6 +2,7 @@ import { useState } from "react";
 import { markPaid as markPayrollPaid, markPending as markPayrollPending, markBankPaid, revertBankPaid } from "../../services/payrollsService";
 import { settledOpenCycles } from "../../utils/cycleClosing";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Marcar una nómina pagada o pendiente, o solo sus transferencias, después de
 // confirmarlo escribiendo una palabra. Al pagarla entera ofrece cerrar los
@@ -59,7 +60,7 @@ export function usePayConfirm({ load, setCloseCycles, setProgress, toast }) {
     if (err) {
       // El servicio lanza mensajes redactados para el usuario (ej. "La nómina
       // ya está pagada entera."): se muestran en un toast.
-      toast.error(err.message || "No se pudo completar la operación.");
+      toast.error(errorText(err, "No se pudo completar la operación."));
     }
     setProgress(null);
   };

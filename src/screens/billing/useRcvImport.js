@@ -3,6 +3,7 @@ import { normalizeRut, parseSiiRcvCsv, extractRutFromFilename, buildDteDocId } f
 import { importDteRecords } from "../../services/dteImportService";
 import { auth } from "../../firebase";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Importar el RCV del SII: elegir la empresa y los archivos, leer cada uno
 // (ventas o compras según su encabezado, con aviso si el RUT del nombre no es
@@ -74,7 +75,7 @@ export function useRcvImport({ companies, companiesById, loadAll, selectedCompan
           name: file.name,
           kind: null,
           records: [],
-          errors: [{ line: 0, message: err.message || String(err) }],
+          errors: [{ line: 0, message: errorText(err) }],
           stats: { count: 0, byTipo: {}, totalAmount: 0 },
           detectedRut: extractRutFromFilename(file.name),
           rutMismatch: false,
@@ -131,7 +132,7 @@ export function useRcvImport({ companies, companiesById, loadAll, selectedCompan
       setImportCompanyId("");
       await loadAll();
     });
-    if (err) toast.error("Error al guardar: " + (err.message || String(err)));
+    if (err) toast.error("Error al guardar: " + errorText(err));
     setImporting(false);
   };
   return {

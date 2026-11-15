@@ -3,6 +3,7 @@ import { workdayDocId, workdayMapKey } from "../../utils/cosechaCombos";
 import { SINGLE_COMBO } from "./rows";
 import { workdaysService } from "../../services";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Trabajadores de la labor activa: agregar a alguien, sueldo mensual con su
 // asistencia, quitar a una persona y pasar un temporal a su RUT real.
@@ -27,7 +28,7 @@ export function useLaborWorkers({ activeLabor, cycle, cycleWrite, id, isOvertime
       setCycle((c) => ({ ...c, labors: nextLabors }));
       return true;
     } catch (err) {
-      toast.error("No se pudo guardar el cambio: " + (err.message || err));
+      toast.error("No se pudo guardar el cambio: " + errorText(err));
       return false;
     }
   };
@@ -117,7 +118,7 @@ export function useLaborWorkers({ activeLabor, cycle, cycleWrite, id, isOvertime
       await setMonthlyFlag(req.rut, true);
       setMonthlyConfirm(null);
     });
-    if (err) toast.error("No se pudo marcar como mensual: " + (err.message || err));
+    if (err) toast.error("No se pudo marcar como mensual: " + errorText(err));
     setMonthlyBusy(false);
   };
 
@@ -265,7 +266,7 @@ export function useLaborWorkers({ activeLabor, cycle, cycleWrite, id, isOvertime
     });
     if (err) {
       console.error(err);
-      toast.error("No se pudo asignar el RUT: " + (err.message || err));
+      toast.error("No se pudo asignar el RUT: " + errorText(err));
     }
     setAssignBusy(false);
   };

@@ -12,6 +12,7 @@ import ContactCardImage from "./ContactCardImage";
 import ContactCardModal from "./ContactCardModal";
 import ScreenLoader from "../../components/ScreenLoader";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Pestaña "Información y cuentas" de Agenda y Cuentas: libreta compartida de
 // fichas (persona o empresa) con datos de contacto + varias cuentas bancarias.
@@ -150,7 +151,7 @@ export default function ContactCardsTab() {
       setConfirmDelete(null);
       toast.success("Ficha eliminada");
     });
-    if (err) toast.error("No se pudo eliminar: " + (err.message || err));
+    if (err) toast.error("No se pudo eliminar: " + errorText(err));
     setDeleteBusy(false);
   };
 

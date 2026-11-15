@@ -7,6 +7,7 @@ import { listEmploymentsOfWorkers, startEmployments } from "../../services/emplo
 import { localIsoDate } from "../../utils/dates";
 import { formatRutForDisplay } from "../../utils/rutUtils";
 import { EMPLOYMENT_TYPES, activeByWorker, planStartEmployments } from "../../utils/employment";
+import { errorText } from "../../utils/errorText";
 
 const inputCls =
   "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]";
@@ -74,7 +75,7 @@ export default function StartEmploymentsModal({ employers, principals, activeEmp
       if (next.skipped.length) setPlan(next);
       else await write(next);
     } catch (e) {
-      setError(e.message || "No se pudo contratar.");
+      setError(errorText(e, "No se pudo contratar."));
     }
     setBusy(false);
   };
@@ -89,7 +90,7 @@ export default function StartEmploymentsModal({ employers, principals, activeEmp
     try {
       await write(plan);
     } catch (e) {
-      setError(e.message || "No se pudo contratar.");
+      setError(errorText(e, "No se pudo contratar."));
       setBusy(false);
     }
   };

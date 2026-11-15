@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Modal from "../../components/Modal";
 import { normalizeRut, validateRut, formatRutForDisplay } from "../../utils/rutUtils";
+import { errorText } from "../../utils/errorText";
 
 const inputCls =
   "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]";
@@ -28,7 +29,7 @@ export default function CompanyListModal({ title, noun, placeholder, items, serv
       setError("");
       await onChanged();
     } catch (e) {
-      setError(e.message || "No se pudo guardar.");
+      setError(errorText(e, "No se pudo guardar."));
     }
     setBusy(false);
   };
@@ -40,7 +41,7 @@ export default function CompanyListModal({ title, noun, placeholder, items, serv
       await service.update(x.id, { enabled });
       await onChanged();
     } catch (e) {
-      setError(e.message || "No se pudo guardar.");
+      setError(errorText(e, "No se pudo guardar."));
     }
     setBusy(false);
   };

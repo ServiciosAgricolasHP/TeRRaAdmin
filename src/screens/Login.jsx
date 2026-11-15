@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { errorText } from "../utils/errorText";
 
 export default function Login() {
   const { login, user } = useAuth();
@@ -23,7 +24,7 @@ export default function Login() {
     try {
       await login(email, password);
     } catch (err) {
-      setError(err?.code || err?.message || "Error de autenticación");
+      setError(errorText(err, "No se pudo iniciar sesión."));
       setBusy(false);
     }
   };

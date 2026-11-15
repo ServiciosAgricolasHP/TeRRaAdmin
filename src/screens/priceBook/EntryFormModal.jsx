@@ -8,6 +8,7 @@ import TextField from "../../components/TextField";
 import { toTitleName, unshout } from "../../utils/textCase";
 import { DATALIST_ID } from "./helpers";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 const emptyPriceLine = () => ({
   unit: "", label: "", payPrice: "", chargePrice: "",
@@ -119,7 +120,7 @@ export default function EntryFormModal({ initial, faenas, hiddenFaenaIds, units,
       toast.success(isEdit ? "Entrada actualizada" : "Entrada agregada");
       onSaved();
     });
-    if (err) toast.error("No se pudo guardar: " + err.message);
+    if (err) toast.error("No se pudo guardar: " + errorText(err));
     setBusy(false);
   };
 

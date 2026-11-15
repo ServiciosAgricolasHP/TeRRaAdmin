@@ -9,6 +9,7 @@ import { TONE_CLS, fmtDate } from "./helpers";
 import { btnCls, primaryCls } from "./styles";
 import { attempt } from "../../utils/attempt";
 import { readChequesFile } from "./readChequesFile";
+import { errorText } from "../../utils/errorText";
 
 // Import de la planilla "Control de Cheques". Muestra lo que se va a crear y
 // salta las filas que ya existen (mismo banco y N° de cheque).
@@ -22,7 +23,7 @@ export function ImportModal({ companies, existingIds, onCancel, onImported }) {
     if (!file) return;
     setFileName(file.name);
     const { value, error: err } = await attempt(() => readChequesFile(file, companies));
-    if (err) toast.error("No se pudo leer el archivo: " + (err.message || err));
+    if (err) toast.error("No se pudo leer el archivo: " + errorText(err));
     else setRows(value);
   };
 
@@ -42,7 +43,7 @@ export function ImportModal({ companies, existingIds, onCancel, onImported }) {
       const n = await importRows(newRows, existingIds);
       await onImported(n);
     });
-    if (err) toast.error("Error al importar: " + (err.message || err));
+    if (err) toast.error("Error al importar: " + errorText(err));
     setBusy(false);
   };
 

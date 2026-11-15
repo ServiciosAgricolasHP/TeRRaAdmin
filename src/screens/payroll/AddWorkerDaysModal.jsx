@@ -13,6 +13,7 @@ import { fmtCurrency } from "../../utils/format";
 import { formatWorkerDetailProd, workerDetailDateLabel } from "../../utils/workerDetailLabels";
 import { attempt } from "../../utils/attempt";
 import { activeWorkers } from "../../utils/workerMerge";
+import { errorText } from "../../utils/errorText";
 
 // Dígitos (y la K) de un RUT, para buscar sin puntos ni guion.
 function rutDigits(s) {
@@ -97,7 +98,7 @@ export function AddWorkerDaysModal({
       ]);
       if (pedido.current === id) setData({ workdays, advances });
     });
-    if (err && pedido.current === id) setError(err?.message || String(err));
+    if (err && pedido.current === id) setError(errorText(err));
     if (pedido.current === id) setLoading(false);
   };
   const elegir = (w) => {

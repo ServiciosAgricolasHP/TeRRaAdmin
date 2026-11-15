@@ -3,6 +3,7 @@ import { countCollection, countLogsByEntity, countLogsOlderThan } from "../../se
 import { fmtNumber } from "../../utils/format";
 import { ConsoleCard } from "./ConsoleCard";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Las entidades que escriben en `logs`. Sale de los `createService(entity, ...)`
 // de services/index.js más las literales de transportsService/catalogsService.
@@ -74,7 +75,7 @@ export function LogsBreakdownSection() {
       for (const m of [6, 12, 24]) out[m] = await countLogsOlderThan(m);
       setAgeCounts(out);
     });
-    if (err) setAgeCounts({ error: err.message || String(err) });
+    if (err) setAgeCounts({ error: errorText(err) });
     setAgeBusy(false);
   };
 

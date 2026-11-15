@@ -7,6 +7,7 @@ import { enqueueFunctionJob, waitForFunctionJob } from "../../services/functionJ
 import { hasChanges } from "../../utils/formChanges";
 import { btnCls, primaryCls, labelCls, inputCls } from "./styles";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 const OFFSET_CHOICES = [7, 5, 3, 2, 1, 0];
 
@@ -59,7 +60,7 @@ export function ConfigModal({ onClose }) {
       toast.success("Avisos guardados");
       onClose();
     });
-    if (err) toast.error(err.message || String(err));
+    if (err) toast.error(errorText(err));
     setBusy(false);
   };
 
@@ -77,7 +78,7 @@ export function ConfigModal({ onClose }) {
         toast.error("No se pudo enviar: " + (outcome.error || outcome.status));
       }
     });
-    if (err) toast.error(err.message || String(err));
+    if (err) toast.error(errorText(err));
     setTesting(false);
   };
 

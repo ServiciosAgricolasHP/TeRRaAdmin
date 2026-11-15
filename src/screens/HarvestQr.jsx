@@ -12,6 +12,7 @@ import { SyncModal } from "./harvestQr/SyncModal";
 import { WeightsExplorer } from "./harvestQr/WeightsExplorer";
 import ScreenLoader from "../components/ScreenLoader";
 import { attempt } from "../utils/attempt";
+import { errorText } from "../utils/errorText";
 
 // Puente entre los prefijos QR físicos (impresos de antemano, app scan_IS) y
 // el (faena, ciclo, labor) vigente al que se sincronizan sus pesajes.
@@ -85,7 +86,7 @@ export default function HarvestQr() {
       cycles.forEach((c) => { if (c) map.set(c.id, c); });
       setCyclesById(map);
     });
-    if (err) toast.error("No se pudo cargar la configuración de prefijos QR: " + err.message);
+    if (err) toast.error("No se pudo cargar la configuración de prefijos QR: " + errorText(err));
     setLoading(false);
   };
 
@@ -105,7 +106,7 @@ export default function HarvestQr() {
       toast.success(`Prefijo ${confirmDelete.id} eliminado`);
       await reload();
     });
-    if (err) toast.error("No se pudo eliminar: " + (err.message || err));
+    if (err) toast.error("No se pudo eliminar: " + errorText(err));
     setDeleteBusy(false);
   };
 

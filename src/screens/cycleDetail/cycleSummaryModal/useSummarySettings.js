@@ -4,6 +4,7 @@ import { tripsService } from "../../../services/transportsService";
 import { loadJSON, chargeStorageKey, titlesStorageKey, saveJSON } from "./summaryStorage";
 import { DEFAULT_HIDDEN_COLUMNS, toggledColumns } from "../../../utils/summaryTables";
 import { attempt } from "../../../utils/attempt";
+import { errorText } from "../../../utils/errorText";
 
 // Lo que el resumen guarda, compartido entre usuarios: las tarifas y ajustes
 // del cobro y los títulos, en Firestore con un espejo en localStorage. Carga
@@ -81,7 +82,7 @@ export function useSummarySettings({ cycle, cycleId, faena, open, subfaena, toas
       });
       if (err && !isCancelled()) {
         console.error("[resumen] carga:", err);
-        toast.error("No se pudo cargar el resumen: " + (err.message || err));
+        toast.error("No se pudo cargar el resumen: " + errorText(err));
       }
       if (!isCancelled()) {
         setLoading(false);

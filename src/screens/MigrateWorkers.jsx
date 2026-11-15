@@ -5,6 +5,7 @@ import { parseCsv, buildWorkerPatch } from "../utils/importWorkers";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { attempt } from "../utils/attempt";
+import { errorText } from "../utils/errorText";
 
 // Una fila del CSV: crea al trabajador, lo actualiza o la salta. Devuelve qué
 // pasó y, si la fila no sirve, el motivo.
@@ -62,7 +63,7 @@ export default function MigrateWorkers() {
     for (let i = 0; i < parsed.rows.length; i++) {
       const row = parsed.rows[i];
       const { value, error: err } = await attempt(() => importWorkerRow(row));
-      const rowError = err ? err.message || String(err) : value.error;
+      const rowError = err ? errorText(err) : value.error;
       if (rowError) results.errors.push({ row: i + 2, rut: row.rut, error: rowError });
       results[err ? "skipped" : value.outcome]++;
       setProgress({ done: i + 1, total: parsed.rows.length });

@@ -5,6 +5,7 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import { fmtNumber } from "../../utils/format";
 import { ConsoleCard } from "./ConsoleCard";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Completa `rut: doc.id` en los trabajadores que no tienen el campo. Solo toca
 // esos, así que se puede volver a correr.
@@ -27,7 +28,7 @@ export function BackfillWorkerRutFieldSection() {
       rows.sort((a, b) => a.id.localeCompare(b.id));
       setCandidates(rows);
     });
-    if (err) toast.error("Error al leer trabajadores: " + (err.message || String(err)));
+    if (err) toast.error("Error al leer trabajadores: " + errorText(err));
     setLoading(false);
   };
 
@@ -44,7 +45,7 @@ export function BackfillWorkerRutFieldSection() {
     for (let i = 0; i < candidates.length; i++) {
       const c = candidates[i];
       const { error: err } = await attempt(() => workersService.update(c.id, { rut: c.id }));
-      if (err) errors.push({ id: c.id, error: err.message || String(err) });
+      if (err) errors.push({ id: c.id, error: errorText(err) });
       else updated++;
       setProgress({ done: i + 1, total: candidates.length });
     }

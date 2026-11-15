@@ -3,6 +3,7 @@ import Modal, { ModalCloseButton } from "../../components/Modal";
 import { getEmploymentConfig, saveEmploymentConfig } from "../../services/feeListsService";
 import { feeAmounts } from "../../utils/employment";
 import { fmtCurrency } from "../../utils/format";
+import { errorText } from "../../utils/errorText";
 
 const inputCls =
   "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]";
@@ -22,7 +23,7 @@ export default function FeeConfigModal({ onClose }) {
         setDailyNet(String(c.feeDailyNet));
         setRatePct(String(Math.round(c.feeWithholdingRate * 10000) / 100));
       })
-      .catch((e) => setError(e.message || String(e)));
+      .catch((e) => setError(errorText(e)));
   }, []);
 
   const net = Number(dailyNet) || 0;
@@ -36,7 +37,7 @@ export default function FeeConfigModal({ onClose }) {
       await saveEmploymentConfig({ feeDailyNet: net, feeWithholdingRate: rate });
       onClose();
     } catch (e) {
-      setError(e.message || "No se pudo guardar.");
+      setError(errorText(e, "No se pudo guardar."));
       setBusy(false);
     }
   };

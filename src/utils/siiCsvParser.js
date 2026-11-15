@@ -10,6 +10,8 @@
 // el id lo arma `buildDteDocId` y es determinístico, así que importar dos veces
 // el mismo período es idempotente.
 
+import { errorText } from "./errorText";
+
 // Tipos de DTE del SII: los más comunes para una operación agrícola y de
 // servicios, no todos.
 export const DTE_TYPES = {
@@ -435,7 +437,7 @@ export function parseSiiRcvCsv(buffer, { companyRut } = {}) {
       stats.totalAmount += total;
       stats.count++;
     } catch (err) {
-      errors.push({ line: i + 1, raw: lines[i], message: err.message || String(err) });
+      errors.push({ line: i + 1, raw: lines[i], message: errorText(err, "No se pudo leer la línea.") });
     }
   }
 

@@ -5,6 +5,7 @@ import { unshout } from "../../utils/textCase";
 import { cyclesService } from "../../services";
 import { moveWorkdaysToCycle } from "../../services/workdayBatches";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 const MOVE_LABELS = { read: "Leyendo las jornadas…", move: "Moviendo las jornadas…" };
 
@@ -122,7 +123,7 @@ export function useCycleForm({ cyclesByJob, jobs, loadCycles, setBusy, subjobsBy
       setCycleForm(null);
       await loadCycles(jobId);
     });
-    if (err) toast.error("Error al guardar el ciclo: " + (err.message || err));
+    if (err) toast.error("Error al guardar el ciclo: " + errorText(err));
     setBusy(false);
   };
 

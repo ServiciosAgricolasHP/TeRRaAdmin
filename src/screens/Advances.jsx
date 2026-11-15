@@ -3,6 +3,7 @@ import {
   advancesService,
   removeAdvance,
   ADVANCE_TYPES,
+  ADVANCE_STATUS_LABEL,
   normalizeAdvanceType,
   advanceTypeMeta,
   advanceSign,
@@ -30,13 +31,6 @@ import { ADVANCE_SORTS, DEFAULT_ADVANCE_SORT, isAdvanceSort, sortAdvances } from
 import { readStored, writeStored } from "../utils/browserStorage";
 
 const SORT_KEY = "advances_sort";
-
-const STATUS_LABEL = {
-  pending: "Pendiente",
-  partial: "Parcial",
-  applied: "Aplicado",
-  cancelled: "Cancelado",
-};
 
 const STATUS_CLASS = {
   pending: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
@@ -111,7 +105,7 @@ export default function Advances() {
     });
     if (err) {
       console.error("Advances load failed:", err);
-      toast.error("No se pudieron cargar los anticipos: " + (err.message || err));
+      toast.error("No se pudieron cargar los anticipos: " + errorText(err));
       setItems([]);
     }
     setLoading(false);
@@ -328,7 +322,7 @@ export default function Advances() {
                       <span
                         className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs ${STATUS_CLASS[status]}`}
                       >
-                        {STATUS_LABEL[status]}
+                        {ADVANCE_STATUS_LABEL[status]}
                       </span>
                       {a.payoutPayrollId && <PayoutBadge advance={a} />}
                     </div>
@@ -423,7 +417,7 @@ export default function Advances() {
                   <td className="px-3 py-2 text-xs text-[var(--color-muted)]">{a.note || "—"}</td>
                   <td className="px-3 py-2">
                     <span className={`rounded-full px-2 py-0.5 text-xs ${STATUS_CLASS[a.status || "pending"]}`}>
-                      {STATUS_LABEL[a.status || "pending"]}
+                      {ADVANCE_STATUS_LABEL[a.status || "pending"]}
                     </span>
                     {a.payoutPayrollId && <PayoutBadge advance={a} />}
                   </td>

@@ -6,6 +6,7 @@ import TextField from "../../components/TextField";
 import Select from "../../components/Select";
 import { validateVehicleAlias, CARRIER_TYPES } from "../../services/carriersService";
 import { useToast } from "../../contexts/ToastContext";
+import { errorText } from "../../utils/errorText";
 
 export function CarrierEditModal({ open, onClose, carrier, onSave }) {
   const toast = useToast();
@@ -49,7 +50,7 @@ export function CarrierEditModal({ open, onClose, carrier, onSave }) {
     try {
       await onSave({ alias, name, type, defaultRate, vehicles, notes });
     } catch (err) {
-      setError(err.message || "Error al guardar");
+      setError(errorText(err, "Error al guardar"));
     }
   };
 

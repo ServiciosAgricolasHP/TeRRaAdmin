@@ -4,6 +4,7 @@ import { priceBookConfigService } from "../../services";
 import Modal, { ModalCloseButton } from "../../components/Modal";
 import { hasChanges } from "../../utils/formChanges";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 export default function HiddenFaenasModal({ faenas, hiddenFaenaIds, onClose, onSaved }) {
   const toast = useToast();
@@ -25,7 +26,7 @@ export default function HiddenFaenasModal({ faenas, hiddenFaenaIds, onClose, onS
       toast.success("Preferencias guardadas");
       onSaved();
     });
-    if (err) toast.error("No se pudo guardar: " + err.message);
+    if (err) toast.error("No se pudo guardar: " + errorText(err));
     setBusy(false);
   };
 

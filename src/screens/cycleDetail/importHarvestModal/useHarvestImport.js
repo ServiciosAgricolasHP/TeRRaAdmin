@@ -19,6 +19,7 @@ import {
   suggestComboMap,
 } from "../../../utils/harvestImport";
 import { normalizeCycle } from "../rows";
+import { errorText } from "../../../utils/errorText";
 
 // Lo elegido para cada combo del archivo, para la próxima importación en este
 // navegador.
@@ -136,7 +137,7 @@ export function useHarvestImport({ onDone }) {
     setBusy(false);
     setProgress(null);
     if (error) {
-      toast.error("No se pudo importar: " + (error.message || error));
+      toast.error("No se pudo importar: " + errorText(error));
       return;
     }
     writeStoredJson(COMBO_MAP_KEY, { ...(readStoredJson(COMBO_MAP_KEY, {}) || {}), ...comboMap });

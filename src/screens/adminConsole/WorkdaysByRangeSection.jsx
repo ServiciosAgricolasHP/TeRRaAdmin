@@ -4,6 +4,7 @@ import { countWorkdaysInRange } from "../../services/countsService";
 import { fmtNumber } from "../../utils/format";
 import { ConsoleCard } from "./ConsoleCard";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // ============================================================
 // Sección: workdays en un rango de fechas
@@ -29,7 +30,7 @@ export function WorkdaysByRangeSection() {
       setCount(c);
     });
     if (err) {
-      setError(err.message || String(err));
+      setError(errorText(err));
       setCount(null);
     }
     setBusy(false);

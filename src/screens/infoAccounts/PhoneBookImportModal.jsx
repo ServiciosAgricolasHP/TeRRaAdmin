@@ -4,6 +4,7 @@ import { useToast } from "../../contexts/ToastContext";
 import { importPhoneContacts } from "../../services/phoneContactsService";
 import { displayName, formatPhone, planPhoneBookImport } from "../../utils/phoneBook";
 import { readPhoneBookFile } from "./readPhoneBookFile";
+import { errorText } from "../../utils/errorText";
 
 const SOURCE_LABELS = { sheet: "Planilla de la agenda", google: "Contactos de Google", outlook: "Contactos de Outlook", vcard: "Archivo vCard" };
 
@@ -26,7 +27,7 @@ export default function PhoneBookImportModal({ contacts, onCancel, onImported })
         const { source, rows, detail } = await readPhoneBookFile(f);
         return { name: f.name, source, rows, detail, error: "" };
       } catch (err) {
-        return { name: f.name, source: null, rows: [], detail: "", error: err.message || String(err) };
+        return { name: f.name, source: null, rows: [], detail: "", error: errorText(err) };
       }
     }));
     setFiles(read);
@@ -45,7 +46,7 @@ export default function PhoneBookImportModal({ contacts, onCancel, onImported })
       const res = await importPhoneContacts(plan, { files: files.filter((f) => !f.error).map((f) => f.name) });
       onImported(res);
     } catch (err) {
-      toast.error("Error al importar: " + (err.message || err));
+      toast.error("Error al importar: " + errorText(err));
       setBusy(false);
     }
   };

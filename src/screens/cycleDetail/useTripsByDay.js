@@ -3,6 +3,7 @@ import { useValuesChanged } from "../../hooks/useValuesChanged";
 import { useToast } from "../../contexts/ToastContext";
 import { tripsService } from "../../services/transportsService";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Las vueltas del ciclo mientras el modal de transportes está abierto: las
 // lee al abrir, las agrupa por día con su total, y guarda o elimina la vuelta
@@ -86,7 +87,7 @@ export function useTripsByDay({ open, cycle, faena, subfaena, days }) {
       setConfirmDel(null);
       await reload();
     });
-    if (err) toast.error(err.message || "Error al eliminar");
+    if (err) toast.error(errorText(err, "Error al eliminar"));
   };
 
   return {

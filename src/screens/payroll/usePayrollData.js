@@ -6,6 +6,7 @@ import { listWorkers } from "../../services/workersService";
 import { listCycles, listJobs, listSubjobs } from "../../services/jobLists";
 import { newestFirst } from "../../utils/syncedList";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Lo que usa la pantalla Nómina: faenas, subfaenas, ciclos, trabajadores, las
 // nóminas y lo pendiente de cada ciclo activo. `load` lo relee (con las copias
@@ -58,7 +59,7 @@ export function usePayrollData({ toast }) {
       setCycleStats(stats);
       return { cycles: c, stats, payrolls: p };
     });
-    if (err) toast.error("No se pudo cargar la nómina: " + (err.message || err));
+    if (err) toast.error("No se pudo cargar la nómina: " + errorText(err));
     setLoading(false);
     return value;
   };

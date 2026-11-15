@@ -66,7 +66,7 @@ export function WorkersHistory({ faenas, workers }) {
         const list = await listPayrolls();
         if (!cancelled) setAllPayrolls(list);
       });
-      if (err) toast.error("No se pudieron cargar las nóminas: " + (err?.message || err));
+      if (err) toast.error("No se pudieron cargar las nóminas: " + errorText(err));
       if (!cancelled) setLoading(false);
     })();
     return () => { cancelled = true; };

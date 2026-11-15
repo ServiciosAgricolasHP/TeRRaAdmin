@@ -11,6 +11,7 @@ import { readsLabel, TAP } from "./helpers";
 import { TypeToConfirm } from "../../components/TypeToConfirm";
 import ScreenLoader from "../../components/ScreenLoader";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Gestión de los QR físicos asignados a trabajadores.
 //
@@ -40,7 +41,7 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
       setWorkers(data);
       setReads(readCount);
     });
-    if (err) toast.error("No se pudieron cargar los trabajadores: " + (err.message || err));
+    if (err) toast.error("No se pudieron cargar los trabajadores: " + errorText(err));
     setLoading(false);
   };
 
@@ -122,7 +123,7 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
       // para que una segunda corrida compare contra los padrones nuevos.
       onPrefixesChanged?.();
     });
-    if (err) toast.error("No se pudieron reconstruir los padrones: " + (err.message || err));
+    if (err) toast.error("No se pudieron reconstruir los padrones: " + errorText(err));
     setBusy(false);
   };
 
@@ -215,7 +216,7 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
       }
       toast.success(`${done} pesaje(s) quedaron con ${backfill.code}`);
     });
-    if (err) toast.error("Se interrumpió a mitad de camino: " + (err.message || err));
+    if (err) toast.error("Se interrumpió a mitad de camino: " + errorText(err));
     setBusy(false);
     setProgress(null);
     setBackfill(null);
@@ -228,7 +229,7 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
       toast.success(`${code} liberado`);
       await load();
     });
-    if (err) toast.error("No se pudo quitar: " + (err.message || err));
+    if (err) toast.error("No se pudo quitar: " + errorText(err));
     setBusy(false);
   };
 
@@ -253,7 +254,7 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
     });
     setBusy(false);
     if (err) {
-      toast.error("No se pudo asignar: " + (err.message || err));
+      toast.error("No se pudo asignar: " + errorText(err));
       return false;
     }
     return true;
@@ -280,7 +281,7 @@ export function QrManager({ prefixes, onPrefixesChanged }) {
       setClearing(null);
       await load();
     });
-    if (err) toast.error("No se pudo completar la limpieza: " + (err.message || err));
+    if (err) toast.error("No se pudo completar la limpieza: " + errorText(err));
     setBusy(false);
     setProgress(null);
   };

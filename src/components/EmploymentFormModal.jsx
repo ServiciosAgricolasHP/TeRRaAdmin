@@ -4,6 +4,7 @@ import { employmentsService } from "../services/employmentsService";
 import { hasChanges } from "../utils/formChanges";
 import { localIsoDate } from "../utils/dates";
 import { EMPLOYMENT_TYPES, END_REASONS, SETTLEMENT_STATUSES, employmentError } from "../utils/employment";
+import { errorText } from "../utils/errorText";
 
 const inputCls =
   "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]";
@@ -69,7 +70,7 @@ export default function EmploymentFormModal({ worker, employment, history, emplo
       await write();
       onSaved();
     } catch (e) {
-      setError(e.message || "No se pudo guardar.");
+      setError(errorText(e, "No se pudo guardar."));
       setBusy(false);
     }
   };

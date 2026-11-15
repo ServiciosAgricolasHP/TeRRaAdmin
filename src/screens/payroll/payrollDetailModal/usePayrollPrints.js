@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { printCashReceipts, printPaymentDetails } from "../printReceipts";
 import { attempt } from "../../../utils/attempt";
+import { errorText } from "../../../utils/errorText";
 
 // Las impresiones del detalle: comprobantes de efectivo, detalle de pago y el
 // detalle de un solo grupo, con su estado de carga.
@@ -13,14 +14,14 @@ export function usePayrollPrints({ allGroups, cashGroups, catalogs, cyclesApart,
   const handlePrint = async () => {
     setPrinting(true);
     const { error: err } = await attempt(async () => printCashReceipts(payroll, cashGroups, cycleTitleOverrides, catalogs, await getPayrollData(), rutOf));
-    if (err) toast.error(err?.message || "Error al imprimir");
+    if (err) toast.error(errorText(err, "Error al imprimir"));
     setPrinting(false);
   };
 
   const handlePrintDetail = async () => {
     setPrintingDetail(true);
     const { error: err } = await attempt(async () => printPaymentDetails(payroll, allGroups, cycleTitleOverrides, detailSummaries, catalogs, subfaenaSummary, await getPayrollData(), rutOf, { cyclesApart, net: !showGross }));
-    if (err) toast.error(err?.message || "Error al imprimir");
+    if (err) toast.error(errorText(err, "Error al imprimir"));
     setPrintingDetail(false);
   };
 
@@ -31,7 +32,7 @@ export function usePayrollPrints({ allGroups, cashGroups, catalogs, cyclesApart,
     const loadingKey = key || group.leader;
     setPrintingGroupLeader(loadingKey);
     const { error: err } = await attempt(async () => printPaymentDetails(payroll, [group], cycleTitleOverrides, [], catalogs, null, await getPayrollData(), rutOf, { cyclesApart, net: !showGross }));
-    if (err) toast.error(err?.message || "Error al imprimir grupo");
+    if (err) toast.error(errorText(err, "Error al imprimir grupo"));
     setPrintingGroupLeader(null);
   };
   return {

@@ -1,6 +1,7 @@
 import { useEffect, useEffectEvent, useState } from "react";
 import { readLogConfigService } from "../../services";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // El interruptor del registro de lecturas (`readLogConfig/main`): se lee al
 // abrir la tarjeta, una lectura.
@@ -12,7 +13,7 @@ export function useReadMeterConfig() {
 
   const loadOnMount = useEffectEvent(async () => {
     const { value, error: err } = await attempt(() => readLogConfigService.getById("main"));
-    if (err) setError(err.message || String(err));
+    if (err) setError(errorText(err));
     else setConfig(value || null);
   });
   useEffect(() => {
@@ -23,7 +24,7 @@ export function useReadMeterConfig() {
     setSaving(true);
     setError("");
     const { error: err } = await attempt(() => readLogConfigService.upsert("main", next, { before: config ?? null }));
-    if (err) setError(err.message || String(err));
+    if (err) setError(errorText(err));
     else setConfig({ ...(config || {}), ...next });
     setSaving(false);
   };

@@ -8,6 +8,7 @@ import { monthTitle } from "../../utils/contributionLists";
 import { listCompanyLabel } from "../../utils/employment";
 import ContributionListModal from "./ContributionListModal";
 import GenerateContributionListModal from "./GenerateContributionListModal";
+import { errorText } from "../../utils/errorText";
 
 const fmt = (iso) => (iso ? iso.split("-").reverse().join("-") : "");
 
@@ -29,7 +30,7 @@ export default function ContributionListsTab() {
     contributionListsService
       .list(CONTRIBUTION_LISTS)
       .then((l) => !cancelled && setLists(l))
-      .catch((e) => !cancelled && setError(e.message || "No se pudieron leer las listas."));
+      .catch((e) => !cancelled && setError(errorText(e, "No se pudieron leer las listas.")));
     return () => {
       cancelled = true;
     };
