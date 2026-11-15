@@ -26,6 +26,10 @@ import AdvanceFormModal from "./advances/AdvanceFormModal";
 import { PayoutBadge } from "./advances/PayoutBadge";
 import { attempt } from "../utils/attempt";
 import { errorText } from "../utils/errorText";
+import { ADVANCE_SORTS, DEFAULT_ADVANCE_SORT, isAdvanceSort, sortAdvances } from "../utils/advanceSort";
+import { readStored, writeStored } from "../utils/browserStorage";
+
+const SORT_KEY = "advances_sort";
 
 const STATUS_LABEL = {
   pending: "Pendiente",
@@ -80,11 +84,20 @@ export default function Advances() {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [appliedSince, setAppliedSince] = useState(() => isoDateNDaysAgo(APPLIED_DEFAULT_DAYS));
   const [workerView, setWorkerView] = useState(null);
+  const [sort, setSort] = useState(() => {
+    const saved = readStored(SORT_KEY);
+    return isAdvanceSort(saved) ? saved : DEFAULT_ADVANCE_SORT;
+  });
 
-  // Una sola consulta ordenada por fecha; el estado y el rango de fechas se
-  // filtran en cliente (`filtered`). La colección es chica: una lectura
-  // cacheada cada 5 min evita índices compuestos y los documentos a los que
-  // les faltan campos.
+  const changeSort = (value) => {
+    setSort(value);
+    writeStored(SORT_KEY, value);
+  };
+
+  // Una sola consulta; el estado, el rango de fechas y el orden se resuelven
+  // en cliente (`filtered`). La colección es chica: una lectura cacheada cada
+  // 5 min evita índices compuestos y los documentos a los que les faltan
+  // campos.
   const load = async () => {
     setLoading(true);
     const { error: err } = await attempt(async () => {
@@ -112,7 +125,7 @@ export default function Advances() {
   const filtered = useMemo(() => {
     const q = search.trim();
     const showApplied = statusFilter === "applied" || statusFilter === "all";
-    return items.filter((a) => {
+    const visible = items.filter((a) => {
       const normType = normalizeAdvanceType(a.type);
       if (typeFilter !== "all" && normType !== typeFilter) return false;
       const status = a.status || "pending";
@@ -125,7 +138,8 @@ export default function Advances() {
       }
       return true;
     });
-  }, [items, typeFilter, statusFilter, search, appliedSince]);
+    return sortAdvances(visible, sort);
+  }, [items, typeFilter, statusFilter, search, appliedSince, sort]);
 
   // Totales pendientes y aplicados por signo: los bonos suman y los anticipos descuentan.
   const totals = useMemo(() => {
@@ -224,6 +238,19 @@ export default function Advances() {
           <option value="all">Todos</option>
           <option value="cancelled">Cancelados</option>
         </select>
+        <label className="flex items-center gap-1 text-xs">
+          <span className="text-[var(--color-muted)]">Ordenar por:</span>
+          <select
+            value={sort}
+            onChange={(e) => changeSort(e.target.value)}
+            title="Fecha: por la fecha del anticipo o bono, y los del mismo día por última modificación. Última modificación: lo último que se creó o se editó, primero."
+            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
+          >
+            {ADVANCE_SORTS.map((s) => (
+              <option key={s.value} value={s.value}>{s.label}</option>
+            ))}
+          </select>
+        </label>
         {(statusFilter === "applied" || statusFilter === "all") && (
           <label className="flex items-center gap-1 text-xs">
             <span className="text-[var(--color-muted)]">Aplicados desde:</span>
