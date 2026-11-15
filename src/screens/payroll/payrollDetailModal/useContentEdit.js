@@ -10,6 +10,7 @@ import { withFreshCycles } from "../../../services/jobLists";
 import { workerKeys } from "../../../services/workersService";
 import { attempt } from "../../../utils/attempt";
 import { progressOf } from "./progressSteps";
+import { errorText } from "../../../utils/errorText";
 
 // Lo que pasó con la plata al agregar algo a una nómina, para el aviso.
 function additionSummary(lead, added = []) {
@@ -74,7 +75,7 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
       await onChanged?.();
       show({ step: "Listo ✓", detail: "", percent: 100 });
     });
-    if (err) toast.error(`Error al sacar el trabajador: ${err?.message || err}`);
+    if (err) toast.error(`Error al sacar el trabajador: ${errorText(err)}`);
     setTimeout(() => setEditProgress(null), err ? 0 : 400);
     setEditBusy(false);
   };
@@ -170,7 +171,7 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
           (takenCount > 0 ? ` ${takenCount} jornada(s) ya no estaban disponibles y quedaron afuera.` : ""),
       );
     });
-    if (err) toast.error(`Error al agregar a la persona: ${err?.message || err}`);
+    if (err) toast.error(`Error al agregar a la persona: ${errorText(err)}`);
     setTimeout(() => setEditProgress(null), err ? 0 : 400);
     setEditBusy(false);
   };

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { listEmploymentsFrom } from "../services/employmentsService";
+import { errorText } from "../utils/errorText";
 
 // Los contratos y honorarios que pueden estar vigentes desde `date`, de la
 // lista sincronizada de períodos.
@@ -12,7 +13,7 @@ export function useEmploymentsFrom(date, enabled = true) {
     let cancelled = false;
     listEmploymentsFrom(key)
       .then((employments) => !cancelled && setState({ key, employments, error: "" }))
-      .catch((e) => !cancelled && setState({ key, employments: [], error: e.message || String(e) }));
+      .catch((e) => !cancelled && setState({ key, employments: [], error: errorText(e) }));
     return () => {
       cancelled = true;
     };

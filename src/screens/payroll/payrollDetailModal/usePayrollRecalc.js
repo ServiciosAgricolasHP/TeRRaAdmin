@@ -3,6 +3,7 @@ import { planPayrollRecalc, applyPayrollRecalc } from "../../../services/payroll
 import { refreshSnapshotLabors } from "../../../services/payrollSnapshots";
 import { attempt } from "../../../utils/attempt";
 import { progressOf } from "./progressSteps";
+import { errorText } from "../../../utils/errorText";
 
 const NO_CHANGES = new Map();
 const NO_LINES = [];
@@ -64,7 +65,7 @@ export function usePayrollRecalc({ cycles, faenas, onChanged, payroll, subfaenas
         additionLines: change?.additionLines || NO_LINES,
       });
     });
-    if (err) toast.error(`Error al recalcular: ${err?.message || err}`);
+    if (err) toast.error(`Error al recalcular: ${errorText(err)}`);
     setRecalcProgress(null);
     setRecalcBusy(false);
   };
@@ -86,7 +87,7 @@ export function usePayrollRecalc({ cycles, faenas, onChanged, payroll, subfaenas
       setCyclesEditOpen(false);
       toast.success(cyclesChanged ? "Listo: los ciclos quedaron como los elegiste y la nómina quedó recalculada." : "Nómina recalculada.");
     });
-    if (err) toast.error(`Error al aplicar el recálculo: ${err?.message || err}`);
+    if (err) toast.error(`Error al aplicar el recálculo: ${errorText(err)}`);
     setTimeout(() => setRecalcProgress(null), err ? 0 : 400);
     setRecalcBusy(false);
   };

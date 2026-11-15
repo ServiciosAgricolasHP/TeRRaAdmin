@@ -6,6 +6,7 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import { fmtNumber } from "../../utils/format";
 import { ConsoleCard } from "./ConsoleCard";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // ============================================================
 // Sección: normalizar nombres de trabajadores a Proper Case
@@ -47,7 +48,7 @@ export function NormalizeWorkerNamesSection() {
       changes.sort((a, b) => a.newName.localeCompare(b.newName));
       setDiffs(changes);
     });
-    if (err) toast.error("Error al leer trabajadores: " + (err.message || String(err)));
+    if (err) toast.error("Error al leer trabajadores: " + errorText(err));
     setLoading(false);
   };
 
@@ -64,7 +65,7 @@ export function NormalizeWorkerNamesSection() {
     for (let i = 0; i < diffs.length; i++) {
       const d = diffs[i];
       const { error: err } = await attempt(() => workersService.update(d.id, { name: d.newName }));
-      if (err) errors.push({ id: d.id, oldName: d.oldName, error: err.message || String(err) });
+      if (err) errors.push({ id: d.id, oldName: d.oldName, error: errorText(err) });
       else updated++;
       setProgress({ done: i + 1, total: diffs.length });
     }

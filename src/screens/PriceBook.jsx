@@ -51,7 +51,7 @@ export default function PriceBook() {
       setHiddenFaenaIds(new Set(cfg?.hiddenFaenaIds || []));
       setUnits(cfg?.units?.length ? cfg.units : DEFAULT_UNITS);
     });
-    if (err) toast.error("No se pudo cargar el libro de precios: " + err.message);
+    if (err) toast.error("No se pudo cargar el libro de precios: " + errorText(err));
     setLoading(false);
   };
 
@@ -111,7 +111,7 @@ export default function PriceBook() {
       toast.success("Entrada eliminada");
       await reload();
     });
-    if (err) toast.error("No se pudo eliminar: " + (err.message || err));
+    if (err) toast.error("No se pudo eliminar: " + errorText(err));
     setDeleteBusy(false);
   };
 

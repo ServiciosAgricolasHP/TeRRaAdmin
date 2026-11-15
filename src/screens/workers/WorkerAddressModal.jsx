@@ -3,6 +3,7 @@ import Modal, { ModalCloseButton } from "../../components/Modal";
 import { workersService } from "../../services/workersService";
 import { attempt } from "../../utils/attempt";
 import { hasChanges } from "../../utils/formChanges";
+import { errorText } from "../../utils/errorText";
 
 const inputCls =
   "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]";
@@ -24,7 +25,7 @@ export default function WorkerAddressModal({ item, onClose, onSaved }) {
     setError("");
     const { error: err } = await attempt(() => workersService.update(item.workerId, patch));
     if (err) {
-      setError(err.message || "No se pudo guardar.");
+      setError(errorText(err, "No se pudo guardar."));
       setBusy(false);
       return;
     }

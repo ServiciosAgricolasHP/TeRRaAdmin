@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { subjobsService } from "../../services";
 import { attempt } from "../../utils/attempt";
 import { readStoredJson, writeStoredJson } from "../../utils/browserStorage";
+import { errorText } from "../../utils/errorText";
 
 // Los ids guardados en el dispositivo; vacío si no hay o no es una lista.
 function storedSet(key) {
@@ -71,7 +72,7 @@ export function useSubjobDisplay({ loadSubjobs, selectedId, subjobsByJob, toast,
       }
       if (subjob.faenaId) await loadSubjobs(subjob.faenaId);
     });
-    if (err) toast.error("Error al ocultar/mostrar subfaena: " + (err.message || err));
+    if (err) toast.error("Error al ocultar/mostrar subfaena: " + errorText(err));
   };
   return {
     collapsedSubjobs,

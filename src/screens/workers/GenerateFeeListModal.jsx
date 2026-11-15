@@ -10,6 +10,7 @@ import { buildFeeListItems, feeItem, feeItemKey, feeListTotals, itemsByFaena, mi
 import { fmtCurrency } from "../../utils/format";
 import FaenaPicker from "./FaenaPicker";
 import FeeItemsTable from "./FeeItemsTable";
+import { errorText } from "../../utils/errorText";
 
 const inputCls =
   "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]";
@@ -67,7 +68,7 @@ export default function GenerateFeeListModal({ employers, principals, onClose, o
       setFaenas(data.faenas);
       setReads(data.reads);
     } catch (e) {
-      setError(e.message || "No se pudieron leer las jornadas.");
+      setError(errorText(e, "No se pudieron leer las jornadas."));
     }
     setBusy("");
   };
@@ -123,7 +124,7 @@ export default function GenerateFeeListModal({ employers, principals, onClose, o
       const saved = await feeListsService.create(data);
       onSaved(saved);
     } catch (e) {
-      setError(e.message || "No se pudo guardar la lista.");
+      setError(errorText(e, "No se pudo guardar la lista."));
       setBusy("");
     }
   };

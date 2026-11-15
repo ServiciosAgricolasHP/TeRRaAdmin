@@ -9,6 +9,7 @@ import { fmtMonthKey } from "../../utils/format";
 import { localIsoDate } from "../../utils/dates";
 import { commitmentsWeekOf, lastMonthKeys, paymentsCreatedSince } from "../../utils/dashboard";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Lo que lee el Dashboard al abrirse: faenas, ciclos, nóminas, quincenas y
 // resúmenes de transporte, el conteo de jornadas por mes y los Cheques y pagos
@@ -95,7 +96,7 @@ export function useDashboardData() {
       });
       if (err && !cancelled) {
         console.error("[dashboard] carga:", err);
-        toast.error("No se pudo cargar el dashboard: " + (err.message || err));
+        toast.error("No se pudo cargar el dashboard: " + errorText(err));
       }
       if (!cancelled) setLoading(false);
     })();

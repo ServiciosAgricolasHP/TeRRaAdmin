@@ -2,6 +2,7 @@ import { useState } from "react";
 import { untagWorkdaysFromPayroll, payrollsService } from "../../services/payrollsService";
 import { clearAdvancePayouts, restoreAdvancesFromPayroll } from "../../services/advancesService";
 import { deleteSnapshot } from "../../services/payrollSnapshots";
+import { errorText } from "../../utils/errorText";
 
 // Eliminar una nómina pendiente: suelta sus jornadas, devuelve sus anticipos y
 // bonos y borra su JSON antes de borrar el documento. Una nómina publicada en
@@ -87,7 +88,7 @@ export function usePayrollDeletion({ load, setProgress, toast, isPublished }) {
       await payrollsService.remove(id);
     } catch (err) {
       console.error("Error al eliminar nómina:", err);
-      toast.error(`Error al eliminar la nómina: ${err?.message || err}`);
+      toast.error(`Error al eliminar la nómina: ${errorText(err)}`);
       showProgress(null);
       return;
     }

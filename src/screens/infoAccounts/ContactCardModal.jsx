@@ -5,6 +5,7 @@ import { useToast } from "../../contexts/ToastContext";
 import { BANKS, ACCOUNT_TYPES } from "../../utils/banks";
 import { TYPE_META, emptyCard, emptyAccount, rutIncluded } from "../../utils/contactCards";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // ============================================================
 // Modal de creación / edición
@@ -38,7 +39,7 @@ export default function ContactCardModal({ initial, onCancel, onSave }) {
     }
     setBusy(true);
     const { error: err } = await attempt(() => onSave(form));
-    if (err) toast.error("Error al guardar: " + (err.message || err));
+    if (err) toast.error("Error al guardar: " + errorText(err));
     setBusy(false);
   };
 

@@ -13,6 +13,7 @@ import { compareFortnightPeriod, payPaymentMessage, paymentSplit } from "./fortn
 import { TypeToConfirmModal } from "./TypeToConfirmModal";
 import ScreenLoader from "../../components/ScreenLoader";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // ============================================================
 // PESTAÑA QUINCENAS
@@ -234,7 +235,7 @@ export function FortnightsTab() {
               setCreating(false);
               await load();
             });
-            if (err) toast.error(err?.message || "Error");
+            if (err) toast.error(errorText(err));
           }}
         />
       )}
@@ -252,8 +253,8 @@ export function FortnightsTab() {
           onClose={() => setDetailId(null)}
           onEditMeta={() => setEditingId(detail.id)}
           onDeleteFortnight={() => setConfirmDelete(detail)}
-          onAddSummaries={async (ids) => { const { error: err } = await attempt(async () => { await fortnightsService.addPayments(detail.id, ids); await load(); }); if (err) toast.error(err?.message || "Error"); }}
-          onRemoveSummary={async (pid) => { const { error: err } = await attempt(async () => { await fortnightsService.removePayments(detail.id, [pid]); await load(); }); if (err) toast.error(err?.message || "Error"); }}
+          onAddSummaries={async (ids) => { const { error: err } = await attempt(async () => { await fortnightsService.addPayments(detail.id, ids); await load(); }); if (err) toast.error(errorText(err)); }}
+          onRemoveSummary={async (pid) => { const { error: err } = await attempt(async () => { await fortnightsService.removePayments(detail.id, [pid]); await load(); }); if (err) toast.error(errorText(err)); }}
           onMarkFortnightPaid={() => askMarkFortnightPaid(detail)}
           onRevertFortnight={() => askRevertFortnight(detail)}
           onMarkItemPaid={askMarkItemPaid}
@@ -268,7 +269,7 @@ export function FortnightsTab() {
           onClose={() => setEditingId(null)}
           onSave={async (patch) => {
             const { error: err } = await attempt(async () => { await fortnightsService.update(editingId, patch); setEditingId(null); await load(); });
-            if (err) toast.error(err?.message || "Error");
+            if (err) toast.error(errorText(err));
           }}
         />
       )}
@@ -282,7 +283,7 @@ export function FortnightsTab() {
         onCancel={() => setConfirmDelete(null)}
         onConfirm={async () => {
           const { error: err } = await attempt(async () => { await fortnightsService.delete(confirmDelete.id); setDetailId(null); setConfirmDelete(null); await load(); });
-          if (err) toast.error(err?.message || "Error");
+          if (err) toast.error(errorText(err));
         }}
       />
 

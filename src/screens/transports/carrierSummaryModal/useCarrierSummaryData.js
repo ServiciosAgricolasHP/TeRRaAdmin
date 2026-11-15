@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useToast } from "../../../contexts/ToastContext";
 import { loadCarrierSummaryData } from "../../../services/carrierSummaryService";
+import { errorText } from "../../../utils/errorText";
 
 // Los datos del resumen de un transportista, leídos de nuevo cuando cambia lo
 // que entra (con o sin lo pagado, y el rango).
@@ -14,7 +15,7 @@ export function useCarrierSummaryData(carrierId, { includePaid, from, to }) {
     (async () => {
       setLoading(true);
       const loaded = await loadCarrierSummaryData(carrierId, { includePaid, from, to }).catch((err) => {
-        if (!cancelled) toast.error("No se pudo cargar el resumen del transportista: " + (err.message || err));
+        if (!cancelled) toast.error("No se pudo cargar el resumen del transportista: " + errorText(err));
         return null;
       });
       if (cancelled) return;

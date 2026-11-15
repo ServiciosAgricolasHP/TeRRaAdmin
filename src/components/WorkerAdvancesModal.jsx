@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import Modal from "./Modal";
 import { logsService } from "../services";
 import { useIsMobile } from "../hooks/useIsMobile";
-import { advanceSign, advanceRemaining, advanceTypeMeta, advanceMatchesWorker } from "../services/advancesService";
+import { ADVANCE_STATUS_LABEL, advanceSign, advanceRemaining, advanceTypeMeta, advanceMatchesWorker } from "../services/advancesService";
 import { formatRutForDisplay } from "../utils/rutUtils";
 import { fmtCurrency } from "../utils/format";
 import { sortAdvances } from "../utils/advanceSort";
@@ -17,13 +17,6 @@ const whoLabel = (entry) => (entry?.by ? String(entry.by).split("@")[0] : "—")
 
 const shortWhen = (d) =>
   d instanceof Date && !isNaN(d) ? d.toLocaleDateString("es-CL", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "";
-
-const STATUS_LABEL = {
-  pending: "Pendiente",
-  partial: "Parcial",
-  applied: "Aplicado",
-  cancelled: "Cancelado",
-};
 
 const STATUS_CLASS = {
   pending: "bg-[var(--color-warning-soft)] text-[var(--color-warning)]",
@@ -153,7 +146,7 @@ export default function WorkerAdvancesModal({ workerKeys, name, rut, items, onCl
                         {sign > 0 ? "+" : "−"} {fmtCurrency(a.amount)}
                       </div>
                       <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs ${STATUS_CLASS[status]}`}>
-                        {STATUS_LABEL[status]}
+                        {ADVANCE_STATUS_LABEL[status]}
                       </span>
                     </div>
                   </div>
@@ -228,7 +221,7 @@ export default function WorkerAdvancesModal({ workerKeys, name, rut, items, onCl
                       </td>
                       <td className="whitespace-nowrap px-3 py-2">
                         <span className={`inline-block rounded-full px-2 py-0.5 text-xs ${STATUS_CLASS[status]}`}>
-                          {STATUS_LABEL[status]}
+                          {ADVANCE_STATUS_LABEL[status]}
                         </span>
                       </td>
                     </tr>

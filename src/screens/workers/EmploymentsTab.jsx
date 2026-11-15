@@ -14,6 +14,7 @@ import CompanyListModal from "./CompanyListModal";
 import SetPrincipalModal from "./SetPrincipalModal";
 import StartEmploymentsModal from "./StartEmploymentsModal";
 import { useEmployments } from "./useEmployments";
+import { errorText } from "../../utils/errorText";
 
 const fmt = (iso) => (iso ? iso.split("-").reverse().join("-") : "");
 
@@ -90,7 +91,7 @@ export default function EmploymentsTab() {
       await setSettlementStatus(ids, status, today);
       afterAction(msg);
     } catch (e) {
-      toast.error(e.message || String(e));
+      toast.error(errorText(e));
     }
     setBusy(false);
   };

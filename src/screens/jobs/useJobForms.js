@@ -2,6 +2,7 @@ import { useState } from "react";
 import { toTitleName, unshout } from "../../utils/textCase";
 import { jobsService, subjobsService } from "../../services";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Alta y edición de faenas y subfaenas. Crear una subfaena ofrece abrir su
 // primer ciclo.
@@ -31,7 +32,7 @@ export function useJobForms({ loadJobs, loadSubjobs, order, persistOrder, setBus
       await loadJobs();
       toast.success(jobForm.mode === "create" ? "Faena creada" : "Faena actualizada");
     });
-    if (err) toast.error("Error al guardar la faena: " + (err.message || err));
+    if (err) toast.error("Error al guardar la faena: " + errorText(err));
     setBusy(false);
   };
 
@@ -51,7 +52,7 @@ export function useJobForms({ loadJobs, loadSubjobs, order, persistOrder, setBus
       // ciclos no hay dónde anotar jornadas.
       if (createdSubjob?.id) setSubjobOfferCycle({ jobId, subjobId: createdSubjob.id, name: fields.name });
     });
-    if (err) toast.error("Error al guardar la subfaena: " + (err.message || err));
+    if (err) toast.error("Error al guardar la subfaena: " + errorText(err));
     setBusy(false);
   };
   return {

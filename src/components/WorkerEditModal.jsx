@@ -25,6 +25,7 @@ import {
 import { attempt } from "../utils/attempt";
 import { useValuesChanged } from "../hooks/useValuesChanged";
 import { useReadSection } from "../hooks/useReadSection";
+import { errorText } from "../utils/errorText";
 
 export default function WorkerEditModal({ open, mode, worker, allWorkers = [], onClose, onSaved }) {
   useReadSection("Ficha del trabajador", open);
@@ -265,7 +266,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
       }
       onSaved?.();
     });
-    if (err) setError(err.message || "Error al guardar");
+    if (err) setError(errorText(err, "Error al guardar"));
     setBusy(false);
   };
 

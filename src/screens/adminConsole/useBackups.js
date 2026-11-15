@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { listBackups, requestBackup, requestBackupLink } from "../../services/backupsService";
+import { errorText } from "../../utils/errorText";
 
 // Crear el job puede fallar antes de llegar al backend.
 function enqueueFailure(err) {
   return err?.code === "permission-denied"
     ? "Las reglas de Firestore no dejan crear la tarea: solo un admin puede pedirla."
-    : err?.message || String(err);
+    : errorText(err);
 }
 
 // El motivo de un job que no terminó bien.
@@ -60,7 +61,7 @@ export function useBackups() {
         if (!cancelled) setBackups(list);
       },
       (err) => {
-        if (!cancelled) setLoadError(err?.message || String(err));
+        if (!cancelled) setLoadError(errorText(err));
       },
     );
     return () => {

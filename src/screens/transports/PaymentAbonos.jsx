@@ -6,6 +6,7 @@ import { localIsoDate } from "../../utils/dates";
 import { fmtCurrency } from "../../utils/format";
 import { payoffOf } from "../../utils/transportPayoff";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Los abonos de un resumen de transporte: lo abonado y el saldo, y agregar,
 // editar o quitar uno. `abonos` es la copia local del modal, que también usa
@@ -53,7 +54,7 @@ export function PaymentAbonos({ payment, abonos, setAbonos, isPaid, onChanged })
       setNewAbono({ amount: "", date: "", notes: "" });
       if (onChanged) await onChanged();
     });
-    if (err) toast.error("Error al cargar abono: " + (err.message || err));
+    if (err) toast.error("Error al cargar abono: " + errorText(err));
     setAbonoBusy(false);
   };
 
@@ -86,7 +87,7 @@ export function PaymentAbonos({ payment, abonos, setAbonos, isPaid, onChanged })
       setEditingAbono(null);
       if (onChanged) await onChanged();
     });
-    if (err) toast.error("Error al editar el abono: " + (err.message || err));
+    if (err) toast.error("Error al editar el abono: " + errorText(err));
     setAbonoBusy(false);
   };
 
@@ -98,7 +99,7 @@ export function PaymentAbonos({ payment, abonos, setAbonos, isPaid, onChanged })
       setAbonos(updated.abonos || []);
       if (onChanged) await onChanged();
     });
-    if (err) toast.error("Error al eliminar abono: " + (err.message || err));
+    if (err) toast.error("Error al eliminar abono: " + errorText(err));
     setAbonoBusy(false);
   };
 

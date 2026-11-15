@@ -17,6 +17,7 @@ import { CommonFields } from "./CommonFields";
 import { fmtDate } from "./helpers";
 import { btnCls, primaryCls, labelCls, inputCls } from "./styles";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 const CHEQUE_BANKS = BANKS.filter((b) => b.code !== "EFE");
 
@@ -78,7 +79,7 @@ export function CommitmentModal({ initial, today, companies, counterparties, onC
   const submit = async () => {
     setBusy(true);
     const { error: err } = await attempt(() => onSave(form, series));
-    if (err) toast.error(err.message || String(err));
+    if (err) toast.error(errorText(err));
     setBusy(false);
   };
 

@@ -9,6 +9,7 @@ import { listCompanyLabel } from "../../utils/employment";
 import { fmtCurrency } from "../../utils/format";
 import FeeItemsTable from "./FeeItemsTable";
 import { writeFeeListXlsx } from "./writeFeeListXlsx";
+import { errorText } from "../../utils/errorText";
 
 const fmt = (iso) => (iso ? iso.split("-").reverse().join("-") : "");
 const pct = (rate) => `${(Number(rate) * 100).toLocaleString("es-CL", { maximumFractionDigits: 2 })}%`;
@@ -43,7 +44,7 @@ export default function FeeListModal({ list, onClose, onChanged }) {
       await feeListsService.update(list.id, { items, totals: feeListTotals(items) });
       onChanged();
     } catch (e) {
-      setError(e.message || "No se pudo guardar.");
+      setError(errorText(e, "No se pudo guardar."));
       setBusy("");
     }
   };
@@ -53,7 +54,7 @@ export default function FeeListModal({ list, onClose, onChanged }) {
     try {
       await writeFeeListXlsx({ ...list, items });
     } catch (e) {
-      setError(e.message || "No se pudo generar el Excel.");
+      setError(errorText(e, "No se pudo generar el Excel."));
     }
     setBusy("");
   };
@@ -64,7 +65,7 @@ export default function FeeListModal({ list, onClose, onChanged }) {
       await feeListsService.remove(list.id);
       onChanged();
     } catch (e) {
-      setError(e.message || "No se pudo eliminar.");
+      setError(errorText(e, "No se pudo eliminar."));
       setBusy("");
     }
   };

@@ -35,6 +35,14 @@ export const ADVANCE_TYPES = [
   { value: "bono",     label: "Bono",     icon: "🎁", sign: +1 },
 ];
 
+// El estado de un anticipo o bono, como se muestra en pantalla.
+export const ADVANCE_STATUS_LABEL = {
+  pending: "Pendiente",
+  partial: "Parcial",
+  applied: "Aplicado",
+  cancelled: "Cancelado",
+};
+
 const LEGACY_TYPE_MAP = { adelanto: "anticipo" };
 
 export function normalizeAdvanceType(type) {

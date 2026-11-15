@@ -14,6 +14,18 @@ const FIREBASE = {
   unauthenticated: "La sesión expiró. Vuelve a iniciar sesión.",
   "failed-precondition": "La base de datos no pudo hacer la consulta. Vuelve a intentar en un rato.",
   "network-request-failed": "No hay conexión. Revisa internet y vuelve a intentar.",
+  // Authentication.
+  "invalid-credential": "El correo o la contraseña no son correctos.",
+  "wrong-password": "El correo o la contraseña no son correctos.",
+  "user-not-found": "El correo o la contraseña no son correctos.",
+  "invalid-email": "El correo no es válido.",
+  "missing-password": "Falta la contraseña.",
+  "user-disabled": "La cuenta está suspendida.",
+  "too-many-requests": "Demasiados intentos. Espera unos minutos y vuelve a intentar.",
+  "email-already-in-use": "Ya existe una cuenta con ese correo.",
+  "email-already-exists": "Ya existe una cuenta con ese correo.",
+  "weak-password": "La contraseña es muy corta: usa al menos 6 caracteres.",
+  "requires-recent-login": "Por seguridad, vuelve a iniciar sesión y repite el cambio.",
 };
 
 const BROWSER = {
@@ -24,8 +36,8 @@ const BROWSER = {
 
 // Palabras que delatan un mensaje en inglés, aunque traiga un nombre con
 // tildes, y otras que el inglés no usa.
-const ENGLISH = /\b(the|is|are|was|cannot|not|failed|unable|invalid|must|of|to|undefined|null)\b/i;
-const SPANISH = /[¿¡]|\b(el|la|los|las|del|que|una|para|sin|hay|puede|ya|se|no)\b|está/i;
+const ENGLISH = /\b(the|is|are|was|cannot|not|failed|unable|invalid|must|of|to|undefined|null|missing|expected|unexpected|required|with|for|from|has|have|been|does|request|network|timeout)\b/i;
+const SPANISH = /[¿¡áéíóúñ]|\b(el|la|los|las|del|que|una|para|sin|hay|puede|ya|se|no|al|un|de|en|con|por|su|lo)\b/i;
 
 export function errorText(err, fallback = "Ocurrió un error inesperado.") {
   const code = String(err?.code ?? "").replace(/^[a-z]+\//, "");

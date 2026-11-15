@@ -12,6 +12,7 @@ import {
   phoneContactFields,
 } from "../../utils/phoneBook";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 const PHONE_LABELS = ["Móvil", "Directo", "Alternativo", "Trabajo", "Casa", "Principal"];
 
@@ -68,7 +69,7 @@ export default function PhoneContactModal({ initial, contacts, onCancel, onSave 
     setBusy(true);
     const { error: err } = await attempt(() => onSave({ ...form, contactType: form.contactType || null }));
     if (err) {
-      toast.error("Error al guardar: " + (err.message || err));
+      toast.error("Error al guardar: " + errorText(err));
       setBusy(false);
     }
   };

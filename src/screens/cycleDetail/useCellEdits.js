@@ -7,6 +7,7 @@ import { getStageDayPrice, computeStageDayAmount } from "../../utils/tratoEtapas
 import { clipboardColumn, copiedValue, pastedAmount, pasteWrites } from "../../utils/gridClipboard";
 import { formatRutForDisplay } from "../../utils/rutUtils";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Edición de las celdas de la grilla: guardar el monto o la cantidad de cada
 // tipo de labor, y los atajos como en Excel: copiar (Ctrl+C), pegar (Ctrl+V),
@@ -63,7 +64,7 @@ export function useCellEdits({ activeLabor, computeOvertimeDayAmount, cycle, day
       }
       return { amount };
     } catch (err) {
-      toast.error("No se pudo guardar el cambio: " + (err.message || err));
+      toast.error("No se pudo guardar el cambio: " + errorText(err));
       return { amount: wdMap[mapKey]?.amount || 0 };
     }
   };
@@ -106,7 +107,7 @@ export function useCellEdits({ activeLabor, computeOvertimeDayAmount, cycle, day
       });
       return { amount };
     } catch (err) {
-      toast.error("No se pudo guardar el cambio: " + (err.message || err));
+      toast.error("No se pudo guardar el cambio: " + errorText(err));
       return { amount: existing?.amount || 0, ok: false };
     }
   };
@@ -147,7 +148,7 @@ export function useCellEdits({ activeLabor, computeOvertimeDayAmount, cycle, day
       }
       return { qty, amount };
     } catch (err) {
-      toast.error("No se pudo guardar el cambio: " + (err.message || err));
+      toast.error("No se pudo guardar el cambio: " + errorText(err));
       return { qty: wdMap[mapKey]?.qty || 0, amount: wdMap[mapKey]?.amount || 0 };
     }
   };
@@ -198,7 +199,7 @@ export function useCellEdits({ activeLabor, computeOvertimeDayAmount, cycle, day
       }
       return { qty, amount };
     } catch (err) {
-      toast.error("No se pudo guardar el cambio: " + (err.message || err));
+      toast.error("No se pudo guardar el cambio: " + errorText(err));
       return { qty: wdMap[mapKey]?.qty || 0, amount: wdMap[mapKey]?.amount || 0 };
     }
   };
@@ -241,7 +242,7 @@ export function useCellEdits({ activeLabor, computeOvertimeDayAmount, cycle, day
       }
       return { qty, amount };
     } catch (err) {
-      toast.error("No se pudo guardar el cambio: " + (err.message || err));
+      toast.error("No se pudo guardar el cambio: " + errorText(err));
       return { qty: wdMap[mapKey]?.qty || 0, amount: wdMap[mapKey]?.amount || 0 };
     }
   };

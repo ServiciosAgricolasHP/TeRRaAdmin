@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { listPhoneContacts, phoneContactsService } from "../../services/phoneContactsService";
 import { cleanIncoming, phoneContactFields, fixNameCase } from "../../utils/phoneBook";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // La agenda telefónica cargada, con sus altas, ediciones y borrados. Las
 // escrituras actualizan la lista en pantalla y la copia del navegador sin
@@ -15,7 +16,7 @@ export function usePhoneBook() {
     let cancelled = false;
     listPhoneContacts()
       .then((list) => { if (!cancelled) setContacts(list); })
-      .catch((err) => { if (!cancelled) setLoadError(err.message || String(err)); })
+      .catch((err) => { if (!cancelled) setLoadError(errorText(err)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
@@ -25,7 +26,7 @@ export function usePhoneBook() {
     phoneContactsService.invalidate();
     setLoading(true);
     const { value, error: err } = await attempt(() => listPhoneContacts());
-    if (err) setLoadError(err.message || String(err));
+    if (err) setLoadError(errorText(err));
     else {
       setContacts(value);
       setLoadError("");

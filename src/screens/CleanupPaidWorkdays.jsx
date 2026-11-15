@@ -12,6 +12,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import ScreenLoader from "../components/ScreenLoader";
 import { fmtCurrency } from "../utils/format";
 import { attempt } from "../utils/attempt";
+import { errorText } from "../utils/errorText";
 
 const fmtTimestamp = (ts) => {
   if (!ts) return "—";
@@ -64,7 +65,7 @@ export default function CleanupPaidWorkdays() {
       }
       setWorkersByRut(map);
     });
-    if (err) setMessage(`Error: ${err.message || err}`);
+    if (err) setMessage(`Error: ${errorText(err)}`);
     setLoading(false);
   };
 
@@ -143,7 +144,7 @@ export default function CleanupPaidWorkdays() {
       setMessage(`✓ Liberadas ${ids.length} jornada(s).`);
       await load();
     });
-    if (err) setMessage(`Error al liberar: ${err.message || err}`);
+    if (err) setMessage(`Error al liberar: ${errorText(err)}`);
     setBusy(false);
   };
 

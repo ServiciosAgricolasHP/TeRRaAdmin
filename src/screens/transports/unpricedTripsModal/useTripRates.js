@@ -3,6 +3,7 @@ import { listJobs, listSubjobs } from "../../../services/jobLists";
 import { tripsService } from "../../../services/transportsService";
 import { useToast } from "../../../contexts/ToastContext";
 import { hasChanges } from "../../../utils/formChanges";
+import { errorText } from "../../../utils/errorText";
 
 // Las tarifas que se escriben en el modal de vueltas sin precio y su guardado.
 // Guarda de a una vuelta (`tripsService.update`), que recalcula el monto y el
@@ -43,7 +44,7 @@ export function useTripRates({ onSaved }) {
     for (const [tripId, value] of toSave) {
       await tripsService.update(tripId, { rate: Number(value) }).then(
         () => { saved += 1; },
-        (err) => failed.push(err.message || String(err)),
+        (err) => failed.push(errorText(err)),
       );
       setProgress({ done: saved + failed.length, total: toSave.length });
     }

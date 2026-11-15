@@ -5,6 +5,7 @@ import { printSummaryTable } from "../printSummaryTable";
 import { useCaptureActions } from "../../../hooks/useCaptureActions";
 import { writePayrollSummaryXlsx } from "./writePayrollSummaryXlsx";
 import { attempt } from "../../../utils/attempt";
+import { errorText } from "../../../utils/errorText";
 
 // La tabla del resumen del detalle: por subfaena o por labor, con los ciclos
 // de una subfaena juntos o separados (`cyclesApart`, que vive en el modal
@@ -43,7 +44,7 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
         if (isCancelled()) return;
         setLaborWorkdays({ payroll, data: buildWorkdaysByGroup(allGroups, data, catalogs) });
       });
-      if (err && !isCancelled()) toast.error("No se pudo cargar el resumen por labor: " + (err?.message || err));
+      if (err && !isCancelled()) toast.error("No se pudo cargar el resumen por labor: " + errorText(err));
       if (!isCancelled()) setLaborSummaryLoading(false);
     })();
   });

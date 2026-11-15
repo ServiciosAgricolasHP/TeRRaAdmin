@@ -6,6 +6,7 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import { useToast } from "../../contexts/ToastContext";
 import { todayIso } from "./docs";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Crear/editar/eliminar un gasto informal (sin factura/boleta formal) de un
 // centro de costo. Vive solo en `informalExpenses`: nunca toca `dteDocuments`
@@ -38,7 +39,7 @@ export function InformalExpenseFormModal({ expense, costCenterId, companiesList,
       await onSaved();
       onClose();
     });
-    if (err) toast.error("Error al guardar: " + (err.message || err));
+    if (err) toast.error("Error al guardar: " + errorText(err));
     setBusy(false);
   };
 
@@ -50,7 +51,7 @@ export function InformalExpenseFormModal({ expense, costCenterId, companiesList,
       await onDeleted();
       onClose();
     });
-    if (err) toast.error("Error al eliminar: " + (err.message || err));
+    if (err) toast.error("Error al eliminar: " + errorText(err));
     setBusy(false);
     setConfirmDeleteOpen(false);
   };

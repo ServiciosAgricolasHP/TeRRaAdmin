@@ -10,6 +10,7 @@ import { fmtCurrency } from "../../utils/format";
 import FeeConfigModal from "./FeeConfigModal";
 import FeeListModal from "./FeeListModal";
 import GenerateFeeListModal from "./GenerateFeeListModal";
+import { errorText } from "../../utils/errorText";
 
 const fmt = (iso) => (iso ? iso.split("-").reverse().join("-") : "");
 
@@ -33,7 +34,7 @@ export default function FeeListsTab() {
     feeListsService
       .list(FEE_LISTS)
       .then((l) => !cancelled && setLists(l))
-      .catch((e) => !cancelled && setError(e.message || "No se pudieron leer las listas."));
+      .catch((e) => !cancelled && setError(errorText(e, "No se pudieron leer las listas.")));
     return () => {
       cancelled = true;
     };

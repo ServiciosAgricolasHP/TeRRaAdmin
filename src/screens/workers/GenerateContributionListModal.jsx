@@ -17,6 +17,7 @@ import {
 } from "../../utils/contributionLists";
 import ContributionItemsTable, { PayTotals } from "./ContributionItemsTable";
 import FaenaPicker from "./FaenaPicker";
+import { errorText } from "../../utils/errorText";
 
 const inputCls =
   "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]";
@@ -73,7 +74,7 @@ export default function GenerateContributionListModal({ employers, principals, o
       setFaenas(data.faenas);
       setReads(data.reads);
     } catch (e) {
-      setError(e.message || "No se pudieron leer las jornadas.");
+      setError(errorText(e, "No se pudieron leer las jornadas."));
     }
     setBusy("");
   };
@@ -132,7 +133,7 @@ export default function GenerateContributionListModal({ employers, principals, o
     try {
       onSaved(await contributionListsService.create(data));
     } catch (e) {
-      setError(e.message || "No se pudo guardar la lista.");
+      setError(errorText(e, "No se pudo guardar la lista."));
       setBusy("");
     }
   };

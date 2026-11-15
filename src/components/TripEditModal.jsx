@@ -10,6 +10,7 @@ import QuickCreateCarrierModal from "./tripEditModal/QuickCreateCarrierModal";
 import { loadRecents, pushRecent } from "./tripEditModal/recentCarriers";
 import { attempt } from "../utils/attempt";
 import { useValuesChanged } from "../hooks/useValuesChanged";
+import { errorText } from "../utils/errorText";
 
 // Alta y edición de una vuelta: transportista, vehículo, fecha, tipo, labor,
 // lugar, destino, personas, vueltas y tarifa. La usan la grilla del ciclo y
@@ -110,7 +111,7 @@ export function TripEditModal({ open, onClose, trip, carriers, days, defaultDate
       });
       pushRecent(cycleId, carrierId);
     });
-    if (err) setError(err.message || "Error al guardar");
+    if (err) setError(errorText(err, "Error al guardar"));
     setSaving(false);
   };
 

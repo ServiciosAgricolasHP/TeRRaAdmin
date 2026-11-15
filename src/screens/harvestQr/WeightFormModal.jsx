@@ -12,6 +12,7 @@ import { assignQrCode } from "../../services/qrCodesService";
 import { prefixOfCode, suggestFreeCodes, ownerOfCode } from "../../utils/qrCodes";
 import { todayKey, TAP } from "./helpers";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Alta y edición manual de pesajes. `harvestWeights` la escribe la app de
 // scan; esto es la vía de excepción para corregir una lectura mala o cargar
@@ -121,7 +122,7 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
       );
       onWorkersChanged?.();
     });
-    if (err) toast.error("No se pudo asignar: " + (err.message || err));
+    if (err) toast.error("No se pudo asignar: " + errorText(err));
     setBusy(false);
   };
 
@@ -215,7 +216,7 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
 
       onSaved(dateKey);
     });
-    if (err) toast.error("No se pudo guardar: " + (err.message || err));
+    if (err) toast.error("No se pudo guardar: " + errorText(err));
     setBusy(false);
   };
 

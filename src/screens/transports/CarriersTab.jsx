@@ -9,6 +9,7 @@ import { UnpricedTripsModal } from "./UnpricedTripsModal";
 import { unpricedTripsByCarrier } from "../../utils/unpricedTrips";
 import { attempt } from "../../utils/attempt";
 import { paymentSplit } from "./fortnights";
+import { errorText } from "../../utils/errorText";
 
 // ============================================================
 // PESTAÑA TRANSPORTISTAS
@@ -47,7 +48,7 @@ export function CarriersTab({ onViewTrips }) {
         setPendingPayments(payments.filter((p) => p.status === "pending"));
         setAllPendingTrips(trips);
       });
-      if (err && !cancelled) toast.error("No se pudieron cargar las métricas de transportistas: " + (err.message || err));
+      if (err && !cancelled) toast.error("No se pudieron cargar las métricas de transportistas: " + errorText(err));
       if (!cancelled) setMetricsLoading(false);
     })();
     return () => { cancelled = true; };

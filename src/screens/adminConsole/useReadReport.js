@@ -2,6 +2,7 @@ import { useState } from "react";
 import { readLogsService, usersService } from "../../services";
 import { countedList } from "../../services/cache";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 const USERS_LIST = { cache: true, ttl: 10 * 60 * 1000 };
 
@@ -24,7 +25,7 @@ export function useReadReport() {
       ]),
     );
     if (err) {
-      setError(err.message || String(err));
+      setError(errorText(err));
     } else {
       const [logs, users] = value;
       setData({ logs, profiles: users.data, from, to, reads: Math.max(1, logs.length) + users.reads });

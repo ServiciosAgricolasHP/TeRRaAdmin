@@ -9,6 +9,7 @@ import { listPendingForWorkers } from "../../services/advancesService";
 import { previewItemsOf, withPreviewEdit } from "../../utils/payrollPreview";
 import { isCashBank } from "../../utils/banks";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // La vista previa de una nómina nueva: se arma con lo elegido, se edita fila
 // por fila o en bloque, y da los totales de lo incluido.
@@ -86,7 +87,7 @@ export function usePayrollPreview({ chosenCycles, cycles, jobs, people, subjobs,
         toast.warning(`Otra nómina tomó ${taken} jornada(s) de las personas sueltas mientras tanto; quedaron afuera.`);
       }
     });
-    if (err) toast.error(`No se pudo armar la vista previa: ${err?.message || err}`);
+    if (err) toast.error(`No se pudo armar la vista previa: ${errorText(err)}`);
     setBusy(false);
   };
 

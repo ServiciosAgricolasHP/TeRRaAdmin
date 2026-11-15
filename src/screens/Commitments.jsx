@@ -136,7 +136,7 @@ export default function Commitments() {
       setItems(list);
       setCompanies(comps);
     });
-    if (err) toast.error("No se pudieron cargar los vencimientos: " + (err.message || err));
+    if (err) toast.error("No se pudieron cargar los vencimientos: " + errorText(err));
     setLoading(false);
   };
 
@@ -206,7 +206,7 @@ export default function Commitments() {
       setConfirm(null);
       await load();
     });
-    if (err) toast.error(err.message || String(err));
+    if (err) toast.error(errorText(err));
     setConfirmBusy(false);
   };
 
@@ -513,7 +513,7 @@ export default function Commitments() {
               toast.success(mode === "pay" ? paidLabel(item.kind) : `Reprogramado para el ${fmtDate(date)}`);
               await load();
             });
-            if (err) toast.error(err.message || String(err));
+            if (err) toast.error(errorText(err));
           }}
         />
       )}

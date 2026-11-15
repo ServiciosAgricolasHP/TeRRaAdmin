@@ -3,9 +3,10 @@ import { doc, serverTimestamp } from "firebase/firestore";
 import { writeBatch } from "../../services/readMeter";
 import { db } from "../../firebase";
 import { workersService } from "../../services";
-import { advancesService } from "../../services/advancesService";
+import { ADVANCE_STATUS_LABEL, advancesService } from "../../services/advancesService";
 import { ConsoleCard } from "./ConsoleCard";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // ============================================================
 // Migración única: anticipos al rut vigente
@@ -69,7 +70,7 @@ export function MigrateAdvanceRutsSection() {
         divergent: workers.filter((w) => w.rut && w.rut !== w.id).length,
       });
     });
-    if (err) setMsg(`Error: ${err.message || err}`);
+    if (err) setMsg(`Error: ${errorText(err)}`);
     setLoading(false);
   };
 
@@ -89,7 +90,7 @@ export function MigrateAdvanceRutsSection() {
       setMsg(`✓ Migrados ${toChange.length} anticipo(s).`);
       await preview();
     });
-    if (err) setMsg(`Error al migrar: ${err.message || err}`);
+    if (err) setMsg(`Error al migrar: ${errorText(err)}`);
     setRunning(false);
   };
 
@@ -151,7 +152,7 @@ export function MigrateAdvanceRutsSection() {
                   <td className="px-3 py-2">{c.name || "—"}</td>
                   <td className="px-3 py-2 font-mono text-xs">{c.from}</td>
                   <td className="px-3 py-2 font-mono text-xs font-semibold">{c.to}</td>
-                  <td className="px-3 py-2">{c.status}</td>
+                  <td className="px-3 py-2">{ADVANCE_STATUS_LABEL[c.status] || c.status}</td>
                 </tr>
               ))}
             </tbody>
@@ -166,7 +167,7 @@ export function MigrateAdvanceRutsSection() {
           </p>
           <ul className="mt-1 space-y-0.5 font-mono text-xs text-[var(--color-muted)]">
             {orphans.map((h) => (
-              <li key={h.id}>{h.rut} · {h.name || "sin nombre"} · {h.status}</li>
+              <li key={h.id}>{h.rut} · {h.name || "sin nombre"} · {ADVANCE_STATUS_LABEL[h.status] || h.status}</li>
             ))}
           </ul>
         </div>

@@ -84,7 +84,7 @@ export function ImportPreviewModal({ preview, docs, company, busy, onToggleFile,
         <div className="mt-0.5 text-[var(--color-muted)]">
           Período(s): <span className="font-mono">{[...agg.periods].sort().join(", ") || "—"}</span>
           {" · "}
-          Kind(s): <span className="font-mono">{[...agg.kinds].join(", ") || "—"}</span>
+          Tipo(s): <span className="font-mono">{[...agg.kinds].join(", ") || "—"}</span>
         </div>
       </div>
 

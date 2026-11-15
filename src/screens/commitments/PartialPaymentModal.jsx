@@ -8,6 +8,7 @@ import { fmtCurrency } from "../../utils/format";
 import { fmtDate } from "./helpers";
 import { btnCls, primaryCls, labelCls, inputCls } from "./styles";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Orden de una serie: por fecha y, a igual fecha, por número de cuota.
 const bySeriesOrder = (a, b) =>
@@ -66,7 +67,7 @@ export function PartialPaymentModal({ item, items, today, onClose, onSaved }) {
       setNotes("");
       await onSaved(`Abono de ${fmtCurrency(value)} registrado`);
     });
-    if (err) toast.error(err.message || String(err));
+    if (err) toast.error(errorText(err));
     setBusy(false);
   };
 
@@ -77,7 +78,7 @@ export function PartialPaymentModal({ item, items, today, onClose, onSaved }) {
       setRemoving(null);
       await onSaved("Abono quitado");
     });
-    if (err) toast.error(err.message || String(err));
+    if (err) toast.error(errorText(err));
     setBusy(false);
   };
 

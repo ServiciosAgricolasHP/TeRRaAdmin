@@ -5,6 +5,7 @@ import { db } from "../../firebase";
 import { useAuth } from "../../contexts/AuthContext";
 import { ConsoleCard } from "./ConsoleCard";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // ============================================================
 // Sección Debug: ping al backend
@@ -63,7 +64,7 @@ export function PingSection() {
         message:
           err?.code === "permission-denied"
             ? "Las reglas de Firestore no dejan crear la tarea: solo un admin puede encolarla. Si lo eres, revisa que firestore.rules esté publicado en la consola."
-            : err?.message || String(err),
+            : errorText(err),
       });
       return;
     }
@@ -92,7 +93,7 @@ export function PingSection() {
             : { ok: false, message: d.error || "La tarea terminó en error." },
         );
       },
-      (err) => finish({ ok: false, message: err?.message || String(err) }),
+      (err) => finish({ ok: false, message: errorText(err) }),
     );
   };
 

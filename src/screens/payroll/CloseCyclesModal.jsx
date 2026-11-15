@@ -5,6 +5,7 @@ import { useToast } from "../../contexts/ToastContext";
 import { closedCyclePatch } from "../../utils/cycleClosing";
 import { fmtCurrency, fmtShortDate } from "../../utils/format";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // Cierra de una vez ciclos que ya se pagaron por completo (`settledOpenCycles`).
 // Todos vienen marcados. Cerrar es el mismo cambio que el botón del ciclo
@@ -42,7 +43,7 @@ export default function CloseCyclesModal({ candidates, waitingCount = 0, intro, 
       }
       toast.success(`${closed} ciclo${closed === 1 ? "" : "s"} cerrado${closed === 1 ? "" : "s"}`);
     });
-    if (err) toast.error(`Se cerraron ${closed}; el resto falló: ${err.message || err}`);
+    if (err) toast.error(`Se cerraron ${closed}; el resto falló: ${errorText(err)}`);
     setBusy(false);
     await onDone();
   };

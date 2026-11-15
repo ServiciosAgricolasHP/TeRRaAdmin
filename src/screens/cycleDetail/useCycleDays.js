@@ -2,6 +2,7 @@ import { useState } from "react";
 import { workdaysService } from "../../services";
 import { tripsService } from "../../services/transportsService";
 import { greeting, GREETING_SLOTS } from "../../utils/greetings";
+import { errorText } from "../../utils/errorText";
 
 // Días del ciclo: agregarlos desde el calendario y quitar uno que no tenga
 // jornadas ni vueltas de transporte.
@@ -24,7 +25,7 @@ export function useCycleDays({ cycleWrite, days, id, setCycle, showToast, toast,
       setCycle((c) => ({ ...c, days: nextDays }));
       return true;
     } catch (err) {
-      toast.error("No se pudo guardar el cambio de días: " + (err.message || err));
+      toast.error("No se pudo guardar el cambio de días: " + errorText(err));
       return false;
     }
   };

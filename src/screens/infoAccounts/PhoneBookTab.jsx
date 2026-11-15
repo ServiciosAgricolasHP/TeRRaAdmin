@@ -95,7 +95,7 @@ export default function PhoneBookTab() {
       setConfirmDelete(null);
       toast.success("Contacto eliminado");
     });
-    if (err) toast.error("No se pudo eliminar: " + (err.message || err));
+    if (err) toast.error("No se pudo eliminar: " + errorText(err));
     setDeleteBusy(false);
   };
 
@@ -111,7 +111,7 @@ export default function PhoneBookTab() {
       if (how === "copied") toast.success("Contacto copiado");
       if (how === "fileBlocked") toast.warning("Este teléfono no deja compartir la tarjeta de contacto. Se copió el texto; vuelve a tocar 📤 para compartirlo.");
     });
-    if (err) toast.error("No se pudo compartir: " + (err.message || err));
+    if (err) toast.error("No se pudo compartir: " + errorText(err));
   };
 
   const onDownload = (contact) => {

@@ -6,6 +6,7 @@ import { hasChanges } from "../../utils/formChanges";
 import Select from "../../components/Select";
 import { attempt } from "../../utils/attempt";
 import { useValuesChanged } from "../../hooks/useValuesChanged";
+import { errorText } from "../../utils/errorText";
 
 export function PrefixFormModal({ mode, initial, jobs, onClose, onSaved }) {
   const toast = useToast();
@@ -32,7 +33,7 @@ export function PrefixFormModal({ mode, initial, jobs, onClose, onSaved }) {
       // compuesto; si falta, se avisa con un toast y el select queda vacío.
       .catch((err) => {
         setCycles([]);
-        toast.error("No se pudieron cargar los ciclos de la faena: " + (err.message || err));
+        toast.error("No se pudieron cargar los ciclos de la faena: " + errorText(err));
       });
   }, [jobId, toast]);
 
@@ -59,7 +60,7 @@ export function PrefixFormModal({ mode, initial, jobs, onClose, onSaved }) {
       toast.success(mode === "create" ? "Prefijo creado" : "Prefijo actualizado");
       onSaved();
     });
-    if (err) toast.error("No se pudo guardar: " + err.message);
+    if (err) toast.error("No se pudo guardar: " + errorText(err));
     setBusy(false);
   };
 

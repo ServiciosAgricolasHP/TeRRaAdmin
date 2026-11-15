@@ -4,6 +4,7 @@ import { fmtNumber } from "../../utils/format";
 import { MAIN_COLLECTIONS, COLLECTION_GROUPS } from "./collections";
 import { ConsoleCard } from "./ConsoleCard";
 import { attempt } from "../../utils/attempt";
+import { errorText } from "../../utils/errorText";
 
 // ============================================================
 // Sección: conteo de todas las colecciones
@@ -19,7 +20,7 @@ export function CollectionCountsSection() {
       const count = countGroup ? await countCollectionGroup(countGroup) : await countCollection(id);
       setResults((r) => ({ ...r, [id]: { count } }));
     });
-    if (err) setResults((r) => ({ ...r, [id]: { error: err.message || String(err) } }));
+    if (err) setResults((r) => ({ ...r, [id]: { error: errorText(err) } }));
   };
 
   const runAll = async () => {

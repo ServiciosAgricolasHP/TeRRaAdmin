@@ -16,6 +16,7 @@ import { MonthGrid } from "./calendar/MonthGrid";
 import { listWorkers } from "../services/workersService";
 import { attempt } from "../utils/attempt";
 import { readStoredJson, writeStoredJson } from "../utils/browserStorage";
+import { errorText } from "../utils/errorText";
 
 // ============================================================================
 // CALENDARIO DE PRODUCCIÓN
@@ -123,7 +124,7 @@ export default function Calendar() {
     ).then(({ value, error: err }) => {
       if (cancelled) return;
       if (err) {
-        setError(err.message || String(err));
+        setError(errorText(err));
         return;
       }
       const [c, f, s] = value;
@@ -166,7 +167,7 @@ export default function Calendar() {
       setReadCount(monthWorkdays.reads);
       setTrips(allTrips.filter((t) => typeof t.date === "string" && t.date >= start && t.date <= end));
     });
-    if (err) setError(err.message || String(err));
+    if (err) setError(errorText(err));
     setLoading(false);
   };
 
