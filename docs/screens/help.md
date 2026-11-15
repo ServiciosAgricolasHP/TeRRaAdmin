@@ -12,6 +12,7 @@ Cuando un cambio de interfaz en una de estas pantallas está aprobado, en su fun
 | Guía | Pantalla | Datos que siembra el guion además de la semilla |
 |---|---|---|
 | `primeros-pasos` | el inicio de sesión, el menú, el encabezado y la ayuda | |
+| `glosario` | ninguna: define las palabras de la app (la columna "En pantalla" del Glosario de AGENTS.md), sin capturas. Un término nuevo en pantalla suma su definición | |
 | `faenas-y-ciclos` | Faenas (`/faenas`) | |
 | `grilla-del-ciclo` | la grilla del ciclo (`/cycles/:id`) | |
 | `precios-del-dia` | los precios y el piso de cada tipo de labor, en la grilla del ciclo | `seedLaborTypes` |
@@ -45,6 +46,7 @@ Cuando un cambio de interfaz en una de estas pantallas está aprobado, en su fun
 
 - `termKeys` (`utils/helpSearch.js`) lleva cada palabra, de las guías y de la pregunta, a sus formas de búsqueda: sin mayúsculas ni tildes, sin palabras vacías (cómo, a, una, de…), con dos raíces (la corta saca la terminación verbal o de plural, la larga solo la vocal o la s final: agrego, agregar, agregué y agregado calzan, y también olvidó con olvidé) y con los sinónimos del negocio llevados a una sola forma (`SYNONYM_GROUPS`: persona = trabajador = alguien; agregar = sumar = añadir; sacar = quitar = borrar; vuelta = viaje = flete…). Un grupo nuevo entra cuando una pregunta real no encuentra su sección por usar otra palabra.
 - MiniSearch indexa título, preguntas, texto y título de la guía, con más peso en las preguntas (4) y el título (3). Tolera un error de tipeo en palabras de 4 letras o más (dos desde 7) y busca por prefijo, así sugiere mientras se escribe.
+- Una pregunta por el significado de una palabra ("qué es…", "qué significa…", "diferencia entre…", `isDefinitionQuestion`) triplica el puntaje de las secciones del glosario (`GLOSSARY_GUIDE_ID`), así "qué es una faena" abre la definición y "cómo creo una faena", los pasos.
 - Se muestran hasta 5 secciones; lo que queda por debajo del 30% del puntaje de la primera no sale. Las de una guía `adminOnly` solo salen para un admin.
 - Cada sugerencia muestra su guía, su título y la frase de la sección con más palabras de la pregunta, con esas palabras marcadas (`snippetOf`, dibujado sin HTML). Al tocarla se abre la guía en esa sección (`#sección`), que se marca unos segundos.
 - **Avisar que falta**: con una pregunta de 3 letras o más se ofrece siempre, haya o no resultados. Guarda la pregunta, la guía abierta y la pantalla de donde se vino, una vez por pregunta.
