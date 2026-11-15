@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseGuide } from "./helpGuides";
-import { buildHelpIndex, searchHelp, snippetOf, stem, termKeys } from "./helpSearch";
+import { buildHelpIndex, isDefinitionQuestion, searchHelp, snippetOf, stem, termKeys } from "./helpSearch";
 
 describe("stem", () => {
   it("lleva las formas de un verbo a la misma raíz", () => {
@@ -109,5 +109,48 @@ describe("snippetOf", () => {
     const out = snippetOf(text, "final", 30).map((p) => p.text).join("");
     expect(out.endsWith("…")).toBe(true);
     expect(out.length).toBeLessThanOrEqual(31);
+  });
+});
+
+describe("isDefinitionQuestion", () => {
+  it("reconoce una pregunta por el significado de una palabra", () => {
+    expect(isDefinitionQuestion("Qué es una faena?")).toBe(true);
+    expect(isDefinitionQuestion("que significa parcial")).toBe(true);
+    expect(isDefinitionQuestion("Qué son las imposiciones")).toBe(true);
+    expect(isDefinitionQuestion("diferencia entre anticipo y bono")).toBe(true);
+  });
+
+  it("no toma una pregunta por cómo hacer algo", () => {
+    expect(isDefinitionQuestion("cómo creo una faena")).toBe(false);
+    expect(isDefinitionQuestion("que esperar de la nómina")).toBe(false);
+    expect(isDefinitionQuestion("")).toBe(false);
+  });
+});
+
+describe("searchHelp y el glosario", () => {
+  const guides = [
+    parseGuide("glosario", [
+      "# Glosario",
+      "",
+      "## Faena y ciclo",
+      "<!-- preguntas: qué es una faena -->",
+      "La faena es el fundo.",
+    ].join("\n")),
+    parseGuide("faenas", [
+      "# Faenas",
+      "",
+      "## Crear una faena",
+      "<!-- preguntas: cómo creo una faena; nueva faena -->",
+      "Toca Nueva faena. La faena queda en la lista de faenas.",
+    ].join("\n")),
+  ];
+  const index = buildHelpIndex(guides);
+
+  it("una pregunta por el significado encuentra primero el glosario", () => {
+    expect(searchHelp(index, "qué es una faena")[0].id).toBe("glosario#faena-y-ciclo");
+  });
+
+  it("una pregunta por cómo hacer algo no lo prefiere", () => {
+    expect(searchHelp(index, "cómo creo una faena nueva")[0].id).toBe("faenas#crear-una-faena");
   });
 });

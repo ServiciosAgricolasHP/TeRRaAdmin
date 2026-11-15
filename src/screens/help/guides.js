@@ -1,4 +1,5 @@
 import firstSteps from "./guides/primeros-pasos.md?raw";
+import glossary from "./guides/glosario.md?raw";
 import cycleGrid from "./guides/grilla-del-ciclo.md?raw";
 import jobsAndCycles from "./guides/faenas-y-ciclos.md?raw";
 import dayPrices from "./guides/precios-del-dia.md?raw";
@@ -22,6 +23,7 @@ import admin from "./guides/administracion.md?raw";
 // `npm run help:shots`. Una guía con `adminOnly` solo la ve un admin.
 export const GUIDES = [
   { id: "primeros-pasos", icon: "👋", source: firstSteps },
+  { id: "glosario", icon: "📖", source: glossary },
   { id: "faenas-y-ciclos", icon: "🌾", source: jobsAndCycles },
   { id: "grilla-del-ciclo", icon: "🗓", source: cycleGrid },
   { id: "precios-del-dia", icon: "💲", source: dayPrices },

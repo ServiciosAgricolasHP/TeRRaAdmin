@@ -99,11 +99,25 @@ export function buildHelpIndex(guides) {
   return index;
 }
 
+// La guía que define las palabras de la app.
+export const GLOSSARY_GUIDE_ID = "glosario";
+const GLOSSARY_BOOST = 3;
+
+// Una pregunta por el significado de una palabra: "qué es una faena",
+// "qué significa parcial", "diferencia entre anticipo y bono".
+export function isDefinitionQuestion(query) {
+  const q = `${String(query || "").split(/\s+/).map(normalizeWord).join(" ").trim()} `;
+  return /^(que (es|son|significa|significan|quiere decir)|diferencia entre|significado de) /.test(q);
+}
+
 // Las mejores secciones para la pregunta. Lo que queda muy por debajo de la
 // primera no se muestra: con OR, una sola palabra en común alcanza para salir.
+// Una pregunta por el significado de una palabra prefiere el glosario.
 export function searchHelp(index, query, { limit = 5, isAdmin = false } = {}) {
   if (!String(query || "").trim()) return [];
+  const asksDefinition = isDefinitionQuestion(query);
   const results = index.search(query, {
+    boostDocument: (id, term, stored) => (asksDefinition && stored?.guideId === GLOSSARY_GUIDE_ID ? GLOSSARY_BOOST : 1),
     boost: { questions: 4, title: 3, guideTitle: 1.5, text: 1 },
     // Tolera errores de tipeo ("nomna", "agrgar") en las palabras de 4 letras o más.
     fuzzy: (term) => (term.length >= 7 ? 2 : term.length >= 4 ? 1 : 0),

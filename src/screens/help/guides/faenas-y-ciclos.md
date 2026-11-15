@@ -1,6 +1,6 @@
 # Faenas, subfaenas y ciclos
 
-Todo lo que se anota en TeRRa cuelga de una **faena** (el fundo o el cliente). Cada faena se divide en **subfaenas** (un cuartel, un sector), y cada subfaena tiene sus **ciclos**: el período de trabajo donde se anotan las jornadas, en su grilla. Esta guía crea una faena con su primer ciclo, y explica cómo se cierra y se reabre un ciclo.
+Todo lo que se anota en TeRRa cuelga de una **faena**: la empresa a la que se le presta el servicio. Cada faena tiene una o más **subfaenas** (un lugar o un área de trabajo de esa empresa, que se puede facturar por separado; si el trabajo es uno solo, una subfaena con el mismo nombre), y cada subfaena tiene sus **ciclos**: el período de trabajo donde se anotan las jornadas, en su grilla. Esta guía crea una faena con su primer ciclo, y explica cómo se cierra y se reabre un ciclo.
 <!-- preguntas: qué es una faena; qué es un ciclo; qué es una subfaena; cómo se organiza el trabajo -->
 
 ## Crear una faena
