@@ -12,6 +12,16 @@ Un **anticipo** es plata que se le pasa a alguien por adelantado y que se le des
 - Un anticipo en cuotas muestra cuántas lleva (por ejemplo, **0/2 · Por pago**).
 - El nombre de la persona abre todos sus anticipos y bonos.
 
+## Ordenar la lista
+<!-- preguntas: cómo ordeno los anticipos; ver los últimos anticipos que anoté; los anticipos del mismo día salen mezclados; ordenar por fecha; ordenar por última modificación -->
+
+Con **Ordenar por**, al lado del estado, se elige el orden de la lista:
+
+- **Fecha**: por la fecha del anticipo o bono, la más nueva primero. Los del mismo día salen según su última modificación: arriba, el último que se anotó o se editó.
+- **Última modificación**: lo último que se anotó o se editó va primero, sea cual sea su fecha. Sirve para revisar lo que se acaba de anotar.
+
+TeRRa recuerda el orden elegido en ese navegador. Que una nómina descuente un anticipo no lo mueve de lugar.
+
 ## Anotar un anticipo
 <!-- preguntas: cómo anoto un anticipo; dar un adelanto; prestar plata a un trabajador; registrar un anticipo -->
 

@@ -80,6 +80,8 @@ describe("preguntas típicas", () => {
     ["agregar otro ciclo a la nómina", "corregir-nomina#agregar-o-sacar-ciclos-y-labores"],
     ["cambiar los ciclos de la nómina", "corregir-nomina#agregar-o-sacar-ciclos-y-labores"],
     ["cómo anoto un anticipo", "anticipos-y-bonos#anotar-un-anticipo"],
+    ["cómo ordeno los anticipos", "anticipos-y-bonos#ordenar-la-lista"],
+    ["los anticipos del mismo día salen mezclados", "anticipos-y-bonos#ordenar-la-lista"],
     ["descontar el anticipo en cuotas", "anticipos-y-bonos#descontar-un-anticipo-en-cuotas"],
     ["qué significa parcial", "anticipos-y-bonos#despues-de-la-nomina"],
     ["el anticipo es más grande que lo que gana", "anticipos-y-bonos#como-los-aplica-la-nomina"],
