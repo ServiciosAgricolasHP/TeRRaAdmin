@@ -246,6 +246,7 @@ Anticipos (descuento) y bonos (suma) sobre la próxima nómina. El signo lo da `
 | `payoutPayrollId` | ref→`payrolls` \| null | la nómina que **entrega** el anticipo (se lo paga a la persona). El anticipo sigue `pending` hasta que otra nómina lo descuente; quitar la entrega, sacar a la persona o eliminar esa nómina lo deja en `null` |
 | `payoutCycleId` | ref→`cycles` \| null | el ciclo al que se asocia la entrega |
 | `payoutAt` | string (ISO) \| null | cuándo se marcó la entrega |
+| `createdAt/By`, `updatedAt/By` | ts, string | toda escritura de TeRRa pone `updatedAt`: el servicio y, a mano, las escrituras en lote de una nómina (descontar, soltar, fijar lo descontado, entregar y quitar la entrega). La copia que comparten Anticipos y Nómina se pone al día con él (`listAdvances`) |
 
 > **Ojo con los filtros**: `pending` y `partial` van juntos en el bucket "Pendientes" (`Advances.jsx` → `STATUS_BUCKET`, y `listPendingForWorkers()`). Un parcial que quede fuera de ese bucket desaparece de la vista sin que su saldo deje de existir.
 

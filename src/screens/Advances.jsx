@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useMemo, useState } from "react";
 import {
-  advancesService,
+  listAdvances,
   removeAdvance,
   ADVANCE_TYPES,
   ADVANCE_STATUS_LABEL,
@@ -88,20 +88,13 @@ export default function Advances() {
     writeStored(SORT_KEY, value);
   };
 
-  // Una sola consulta; el estado, el rango de fechas y el orden se resuelven
-  // en cliente (`filtered`). La colección es chica: una lectura cacheada cada
-  // 5 min evita índices compuestos y los documentos a los que les faltan
-  // campos.
+  // La lista sincronizada, puesta al día al abrir la pantalla y después de
+  // cada cambio (`fresh`); el estado, el rango de fechas y el orden se
+  // resuelven en cliente (`filtered`).
   const load = async () => {
     setLoading(true);
     const { error: err } = await attempt(async () => {
-      const list = await advancesService.list({
-        order: ["date", "desc"],
-        cache: true,
-        persist: true,
-        ttl: 5 * 60 * 1000,
-      });
-      setItems(list);
+      setItems(await listAdvances({ fresh: true }));
     });
     if (err) {
       console.error("Advances load failed:", err);

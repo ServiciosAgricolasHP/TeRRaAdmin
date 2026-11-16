@@ -27,7 +27,8 @@
 import { doc, serverTimestamp } from "firebase/firestore";
 import { writeBatch, getDoc } from "./readMeter";
 import { db, auth } from "../firebase";
-import { createService } from "./firestoreBase";
+import { createAdditiveService } from "./firestoreBase";
+import { createSyncedList } from "./syncedList";
 import { logAction } from "./logger";
 
 export const ADVANCE_TYPES = [
@@ -63,7 +64,24 @@ export function advanceTypeMeta(type) {
   return ADVANCE_TYPES.find((x) => x.value === t) || ADVANCE_TYPES[0];
 }
 
-export const advancesService = createService("advance", "advances");
+export const advancesService = createAdditiveService("advance", "advances");
+
+// Todos los anticipos y bonos: una lista sincronizada (`createSyncedList`) que
+// comparten Anticipos y Nómina. Se lee entera una vez por semana en cada
+// navegador, o cuando el conteo no calza (se eliminó uno en otro equipo), y
+// entre medio se pone al día con lo que cambió. Va sin orden, así entra
+// también uno sin `date`. Las escrituras de este equipo la corrigen en su
+// lugar (`additive`), y las escrituras en lote ponen `updatedAt` a mano.
+const advancesList = createSyncedList(advancesService, {
+  syncKey: "advances.sync",
+  fullEveryDays: 7,
+  checkCount: true,
+});
+
+// `fresh` pone al día sin esperar el minuto: lo que se escribió en lote (una
+// nómina que descontó o soltó anticipos) llega en la siguiente.
+export const syncAdvances = (opts) => advancesList.sync(opts);
+export const listAdvances = (opts) => advancesList.list(opts);
 
 // El anticipo como está ahora, si sigue como lo mostraba la pantalla
 // (`shown`): la lista de Anticipos puede ser de antes de que una nómina lo
@@ -122,33 +140,16 @@ export const advanceWorkerKey = (a) => a?.workerId || a?.workerRut || "";
 export const advanceMatchesWorker = (a, keys) =>
   [a?.workerId, a?.workerRut].some((id) => id && keys.has(id));
 
+const OPEN_STATUSES = new Set(["pending", "partial"]);
+
 // Anticipos y bonos con saldo (`pending` o `partial`) de los ruts dados. Se
-// buscan solo por `workerRut`.
+// buscan solo por `workerRut`, en la lista puesta al día (`fresh`): la nómina
+// se arma con lo que hay ahora.
 export async function listPendingForWorkers(workerRuts) {
-  // El estado se filtra en el servidor, así no se leen los anticipos saldados.
-  // Firestore expande la consulta a forma normal disyuntiva y admite hasta 30
-  // términos: 10 ruts × 2 estados = 20.
-  const out = [];
-  const seen = new Set();
-  const uniq = [...new Set(workerRuts)].filter(Boolean);
-
-  for (let i = 0; i < uniq.length; i += 10) {
-    const chunk = uniq.slice(i, i + 10);
-    const list = await advancesService.list({
-      wheres: [
-        ["workerRut", "in", chunk],
-        ["status", "in", ["pending", "partial"]],
-      ],
-      cache: true,
-    });
-    for (const a of list) {
-      if (seen.has(a.id)) continue;
-      seen.add(a.id);
-      out.push(a);
-    }
-  }
-
-  return out;
+  const keys = new Set((workerRuts || []).filter(Boolean));
+  if (!keys.size) return [];
+  const all = await listAdvances({ fresh: true });
+  return all.filter((a) => keys.has(a.workerRut) && OPEN_STATUSES.has(a.status));
 }
 
 // Saldo que queda por descontar de un anticipo.
@@ -232,17 +233,6 @@ export function advanceDueNow(adv) {
   return Math.min(remaining, cuotaAmount);
 }
 
-export async function listAllPending() {
-  return advancesService.list({
-    wheres: [["status", "==", "pending"]],
-    order: ["date", "desc"],
-  });
-}
-
-export async function listAll() {
-  return advancesService.list({ order: ["date", "desc"] });
-}
-
 // Aplica descuentos parciales o totales de una nómina contra los anticipos.
 // `applications`: [{ advanceId, amount }], con `amount` = lo que esta nómina
 // pide descontar de ese anticipo. El estado pasa a "partial" o "applied" según
@@ -289,11 +279,11 @@ export async function applyAdvancesToPayroll(applications, payrollId) {
         appliedPayrollId: payrollId,
         appliedAt: serverTimestamp(),
         appliedBy: uid,
+        updatedAt: serverTimestamp(),
       });
     }
     await batch.commit();
   }
-  advancesService.invalidate();
   // Un log por operación ("esta nómina descontó estos anticipos"), no uno por
   // anticipo.
   await logAction({
@@ -340,11 +330,11 @@ export async function restoreAdvancesFromPayroll(advanceIds, payrollId) {
         // Limpia appliedPayrollId si queda pendiente o si apuntaba a esta nómina.
         appliedPayrollId: status === "pending" ? null : (data.appliedPayrollId === payrollId ? null : data.appliedPayrollId),
         appliedAt: status === "pending" ? null : data.appliedAt,
+        updatedAt: serverTimestamp(),
       });
     }
     await batch.commit();
   }
-  advancesService.invalidate();
   await logAction({
     action: "update",
     entity: "payroll",
@@ -454,6 +444,7 @@ export async function setPayrollAdvanceAmounts(payrollId, targets) {
         payments: nuevos,
         appliedPayrollId,
         appliedAt: status === "pending" ? null : data.appliedAt || serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
       escrituras += 1;
       cambios.push({ advanceId: t.advanceId, antes, despues });
@@ -462,7 +453,6 @@ export async function setPayrollAdvanceAmounts(payrollId, targets) {
   }
 
   if (cambios.length) {
-    advancesService.invalidate();
     await logAction({
       action: "update",
       entity: "payroll",
@@ -483,11 +473,10 @@ export async function markAdvancePayouts(advanceIds, { payrollId, cycleId = "" }
   for (let i = 0; i < ids.length; i += 450) {
     const batch = writeBatch(db);
     for (const id of ids.slice(i, i + 450)) {
-      batch.update(doc(db, "advances", id), { payoutPayrollId: payrollId, payoutCycleId: cycleId, payoutAt });
+      batch.update(doc(db, "advances", id), { payoutPayrollId: payrollId, payoutCycleId: cycleId, payoutAt, updatedAt: serverTimestamp() });
     }
     await batch.commit();
   }
-  advancesService.invalidate();
   await logAction({
     action: "update",
     entity: "payroll",
@@ -513,11 +502,10 @@ export async function clearAdvancePayouts(advanceIds, payrollId) {
   for (let i = 0; i < own.length; i += 450) {
     const batch = writeBatch(db);
     for (const id of own.slice(i, i + 450)) {
-      batch.update(doc(db, "advances", id), { payoutPayrollId: null, payoutCycleId: null, payoutAt: null });
+      batch.update(doc(db, "advances", id), { payoutPayrollId: null, payoutCycleId: null, payoutAt: null, updatedAt: serverTimestamp() });
     }
     await batch.commit();
   }
-  advancesService.invalidate();
   await logAction({
     action: "update",
     entity: "payroll",
