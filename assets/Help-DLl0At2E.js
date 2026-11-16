@@ -1,4 +1,4 @@
-import{c as G,u as Ye,a as ja,r as K,j as f,L as ee,b as Ea,d as Sa,h as Ta,e as Ra,f as Aa}from"./index-BnXoiE0F.js";const we=/<!--\s*preguntas:([\s\S]*?)-->/gi;function Pe(n){return String(n||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"")}function _e(n){const e=[];for(const a of n.matchAll(we))for(const o of a[1].split(";")){const r=o.trim();r&&e.push(r)}return e}const Ie=n=>n.replace(we,"").replace(/\n{3,}/g,`
+import{c as G,u as Ye,a as ja,r as K,j as f,L as ee,b as Ea,d as Sa,h as Ta,e as Ra,f as Aa}from"./index-CvIEv2Rr.js";const we=/<!--\s*preguntas:([\s\S]*?)-->/gi;function Pe(n){return String(n||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"")}function _e(n){const e=[];for(const a of n.matchAll(we))for(const o of a[1].split(";")){const r=o.trim();r&&e.push(r)}return e}const Ie=n=>n.replace(we,"").replace(/\n{3,}/g,`
 
 `).trim();function Ke(n){return String(n||"").replace(we," ").replace(/!\[[^\]]*\]\([^)]*\)/g," ").replace(/\[([^\]]+)\]\([^)]*\)/g,"$1").replace(/\*\*([^*]+)\*\*/g,"$1").replace(/`([^`]+)`/g,"$1").replace(/[>#|]/g," ").replace(/^\s*[-+]\s+/gm," ").replace(/^\s*\d+\.\s+/gm," ").replace(/\s+/g," ").trim()}function Ca(n,e){const a=String(e||"").replace(/\r\n/g,`
 `).split(`
@@ -144,7 +144,7 @@ Ver [Trabajadores](/ayuda/trabajadores).
 
 - **Nómina**: la lista de lo que se le paga a cada persona por las jornadas de uno o más ciclos. Separa lo que va por transferencia de lo que se paga en efectivo.
 - **Bruto**: lo que la persona produjo, antes de los anticipos y los bonos.
-- **A pagar** (el líquido): el bruto, más los bonos, menos los anticipos. Es lo que recibe la persona.
+- **A pagar** (el líquido): el bruto, más los bonos, menos los anticipos, más los anticipos entregados. Es lo que recibe la persona.
 - **Archivo del banco**: el archivo que se sube al banco para hacer las transferencias de la nómina.
 - **Comprobante**: la hoja con el detalle de lo que cobra una persona, para imprimir y firmar.
 - **Portal de trabajadores**: la página donde cada persona ve su pago con su RUT.
@@ -152,10 +152,11 @@ Ver [Trabajadores](/ayuda/trabajadores).
 Ver [Nómina](/ayuda/nomina) y [Corregir una nómina](/ayuda/corregir-nomina).
 
 ## Anticipo, bono y cuota
-<!-- preguntas: qué significa anticipo; qué significa bono; diferencia entre anticipo y bono; qué es una cuota; qué significa pendiente aplicado o parcial -->
+<!-- preguntas: qué significa anticipo; qué significa bono; diferencia entre anticipo y bono; qué es un anticipo entregado; diferencia entre bono y anticipo entregado; qué es una cuota; qué significa pendiente aplicado o parcial -->
 
 - **Anticipo**: plata que se le pasa a alguien por adelantado. La nómina siguiente se la descuenta.
-- **Bono**: plata que se le suma a alguien. La nómina siguiente se la paga.
+- **Bono**: plata que se le suma a alguien. La nómina siguiente se la paga. No va asociado a ningún ciclo.
+- **Anticipo entregado**: un anticipo que una nómina le paga a la persona, en vez de pasárselo a mano. No es un bono: la persona lo debe igual, y otra nómina se lo descuenta después. Al entregarlo se asocia a un ciclo, y aparece en los pagos de ese ciclo.
 - **Cuota**: la parte de un anticipo que se descuenta en cada nómina, cuando se acordó descontarlo de a poco.
 - **Pendiente**, **Parcial** y **Aplicado**: el estado de un anticipo o un bono. Pendiente es que ninguna nómina lo ha tocado; parcial, que se descontó una parte; aplicado, que ya se descontó o se pagó entero.
 
