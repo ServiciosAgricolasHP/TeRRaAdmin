@@ -12,50 +12,72 @@ export const UNPAID_ID = "";
 export const UNPAID_STATE = "none";
 const UNPAID = { name: "Sin nómina", state: UNPAID_STATE, createdMs: Infinity, items: [] };
 
+// Los anticipos que una nómina entrega asociados al ciclo van como una columna
+// más, después de las labores.
+export const PAYOUT_COLUMN_ID = "__payout";
+const PAYOUT_COLUMN = { id: PAYOUT_COLUMN_ID, name: "💸 Anticipo entregado" };
+
 // Una fila por persona y nómina, con lo que esa nómina le paga de cada labor
-// del ciclo (`byLabor`, solo las labores donde tiene jornadas), la suma
-// (`cycleAmount`) y lo que la persona recibe en la nómina entera (`gross`,
-// `advance`, `bonus` y `net`; `null` si la nómina ya no la trae) y la clave
-// con que figura en ella (`itemKey`).
+// del ciclo (`byLabor`, solo las labores donde tiene jornadas) y de los
+// anticipos que le entrega asociados al ciclo (`byLabor[PAYOUT_COLUMN_ID]`),
+// la suma (`cycleAmount`) y lo que la persona recibe en la nómina entera
+// (`gross`, `advance`, `bonus`, `payout` y `net`; `null` si la nómina ya no la
+// trae) y la clave con que figura en ella (`itemKey`). Quien solo recibió un
+// anticipo asociado al ciclo tiene su fila, sin días.
 //
-// `workdays` son las jornadas del ciclo; las que no están en una nómina no
-// cuentan, salvo con `includeUnpaid`: ahí van juntas en "Sin nómina" las que
-// tienen monto o son de asistencia. `payrolls` trae de cada nómina `{ id,
-// name, state, createdMs, items }`. `workerIdOf` resuelve la ficha de una
-// jornada o de un item, y `workerOf`, la ficha por su id; quien no tiene
-// ficha toma su nombre de los trabajadores de las labores.
-export function cyclePaymentsOf({ workdays = [], labors = [], payrolls = [], workerIdOf, workerOf = () => null, currentPayrollId = null, includeUnpaid = false }) {
+// `workdays` son las jornadas del ciclo `cycleId`; las que no están en una
+// nómina no cuentan, salvo con `includeUnpaid`: ahí van juntas en "Sin
+// nómina" las que tienen monto o son de asistencia. `payrolls` trae de cada
+// nómina `{ id, name, state, createdMs, items }`. `workerIdOf` resuelve la
+// ficha de una jornada o de un item, y `workerOf`, la ficha por su id; quien
+// no tiene ficha toma su nombre de los trabajadores de las labores o del item.
+export function cyclePaymentsOf({ workdays = [], labors = [], payrolls = [], cycleId = null, workerIdOf, workerOf = () => null, currentPayrollId = null, includeUnpaid = false }) {
   const laborTypeById = new Map(labors.map((l) => [l.id, l.type]));
   const laborNames = new Map(labors.flatMap((l) => (l.workers || []).flatMap((w) => [[w.id, w.name], [w.rut, w.name]])));
   const payrollById = new Map([...payrolls.map((p) => [p.id, p]), [UNPAID_ID, UNPAID]]);
   const rowsByKey = new Map();
   const usedLabors = new Set();
-  for (const wd of workdays) {
-    const amount = workdayPayAmount(wd, laborTypeById.get(wd.laborId));
-    if (!wd.payrollId && !(includeUnpaid && (amount > 0 || wd.attendanceOnly))) continue;
-    const payrollId = wd.payrollId || UNPAID_ID;
-    const personKey = workerIdOf(wd);
-    if (!personKey) continue;
+  const rowFor = (personKey, payrollId, { rut, name }) => {
     const key = `${personKey}|${payrollId}`;
-    let row = rowsByKey.get(key);
-    if (!row) {
+    if (!rowsByKey.has(key)) {
       const worker = workerOf(personKey);
-      row = {
+      rowsByKey.set(key, {
         key,
         personKey,
         payrollId,
-        name: worker?.name || laborNames.get(personKey) || laborNames.get(wd.workerRut) || wd.workerName || personKey,
-        rut: worker?.rut || wd.workerRut || personKey,
+        name: worker?.name || laborNames.get(personKey) || laborNames.get(rut) || name || personKey,
+        rut: worker?.rut || rut || personKey,
         byLabor: {},
         cycleAmount: 0,
         days: 0,
-      };
-      rowsByKey.set(key, row);
+      });
     }
-    row.byLabor[wd.laborId] = (row.byLabor[wd.laborId] || 0) + amount;
+    return rowsByKey.get(key);
+  };
+  const addTo = (row, columnId, amount) => {
+    row.byLabor[columnId] = (row.byLabor[columnId] || 0) + amount;
     row.cycleAmount += amount;
+  };
+  for (const wd of workdays) {
+    const amount = workdayPayAmount(wd, laborTypeById.get(wd.laborId));
+    if (!wd.payrollId && !(includeUnpaid && (amount > 0 || wd.attendanceOnly))) continue;
+    const personKey = workerIdOf(wd);
+    if (!personKey) continue;
+    const row = rowFor(personKey, wd.payrollId || UNPAID_ID, { rut: wd.workerRut, name: wd.workerName });
+    addTo(row, wd.laborId, amount);
     row.days += 1;
     usedLabors.add(wd.laborId);
+  }
+  let hasPayouts = false;
+  for (const p of cycleId ? payrolls : []) {
+    for (const it of p.items || []) {
+      const amount = (it.payoutApplications || []).reduce((s, a) => s + (a.cycleId === cycleId ? Math.round(Number(a.amount) || 0) : 0), 0);
+      if (amount <= 0) continue;
+      const personKey = workerIdOf({ workerId: it.workerId, workerRut: it.rut });
+      if (!personKey) continue;
+      addTo(rowFor(personKey, p.id, { rut: it.rut, name: it.name }), PAYOUT_COLUMN_ID, amount);
+      hasPayouts = true;
+    }
   }
 
   // El item de cada persona en su nómina, buscado una vez por nómina.
@@ -71,15 +93,14 @@ export function cyclePaymentsOf({ workdays = [], labors = [], payrolls = [], wor
   const rows = [...rowsByKey.values()].map((row) => {
     usedPayrolls.add(row.payrollId);
     const item = itemOf(row.payrollId, row.personKey);
-    // Lo que la nómina le entrega en anticipos no es pago de sus jornadas.
-    const net = item ? Math.round(Number(item.amount) || 0) - Math.max(0, Math.round(Number(item.payoutTotal) || 0)) : null;
     return {
       ...row,
       itemKey: item ? item.workerId || item.rut : null,
-      net,
+      net: item ? Math.round(Number(item.amount) || 0) : null,
       gross: item ? Math.round(Number(item.grossAmount ?? item.amount) || 0) : null,
       advance: item ? Math.round(Number(item.advance) || 0) : null,
       bonus: item ? Math.round(Number(item.bonus) || 0) : null,
+      payout: item ? Math.max(0, Math.round(Number(item.payoutTotal) || 0)) : null,
     };
   });
 
@@ -87,7 +108,7 @@ export function cyclePaymentsOf({ workdays = [], labors = [], payrolls = [], wor
   const knownIds = new Set(knownLabors.map((l) => l.id));
   const lostLabors = [...usedLabors].filter((id) => !knownIds.has(id)).map((id) => ({ id, name: "(labor eliminada)" }));
   return {
-    labors: [...knownLabors, ...lostLabors],
+    labors: [...knownLabors, ...lostLabors, ...(hasPayouts ? [PAYOUT_COLUMN] : [])],
     // De la más vieja a la más nueva.
     payrolls: [...usedPayrolls]
       .map((id) => {

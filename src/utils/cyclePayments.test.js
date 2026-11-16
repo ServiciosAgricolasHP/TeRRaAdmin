@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cyclePaymentGroups, cyclePaymentsOf } from "./cyclePayments";
+import { cyclePaymentGroups, cyclePaymentsOf, PAYOUT_COLUMN_ID } from "./cyclePayments";
 import { workerIdResolver } from "./workerRut";
 
 const ANA = { id: "11111111-1", rut: "11111111-1", name: "Ana Rojas" };
@@ -61,6 +61,54 @@ describe("cyclePaymentsOf", () => {
     expect(data.labors).toEqual([{ id: "poda", name: "Poda" }, { id: "vieja", name: "(labor eliminada)" }]);
     expect(data.payrolls.find((p) => p.id === "NX")).toMatchObject({ name: "Nómina eliminada", state: "pending" });
     expect(data.rows.find((r) => r.payrollId === "N2")).toMatchObject({ net: null, gross: null });
+  });
+});
+
+describe("los anticipos entregados asociados al ciclo", () => {
+  const CARLA = { id: "13131313-1", rut: "13131313-1", name: "Carla Díaz" };
+  const payout = (cycleId, amount, advanceId = `A-${cycleId}-${amount}`) => ({ advanceId, amount, cycleId, date: "2026-11-01", note: "" });
+  const withPayouts = () => dataOf({
+    cycleId: "C1",
+    workerIdOf: workerIdResolver([...workers, CARLA]),
+    workerOf: (id) => [...workers, CARLA].find((w) => w.id === id),
+    payrolls: [
+      {
+        ...payrolls[0],
+        items: [
+          // Ana: jornadas del ciclo y un anticipo entregado en la misma nómina.
+          { ...payrolls[0].items[0], payoutApplications: [payout("C1", 50000), payout("C2", 7000)], payoutTotal: 57000, amount: 142000 },
+          // Carla: sin jornadas en el ciclo, solo el anticipo.
+          { workerId: CARLA.id, rut: CARLA.rut, name: CARLA.name, grossAmount: 0, amount: 30000, payoutApplications: [payout("C1", 30000)], payoutTotal: 30000 },
+        ],
+      },
+      payrolls[1],
+      // Otra nómina con un anticipo de otro ciclo: no aparece.
+      { id: "N3", name: "Nómina 24 nov", state: "pending", createdMs: 300, items: [{ workerId: BETO.id, rut: BETO.rut, amount: 9000, payoutApplications: [payout("C2", 9000)], payoutTotal: 9000 }] },
+    ],
+  });
+  const row = (data, person, payrollId) => data.rows.find((r) => r.personKey === person.id && r.payrollId === payrollId);
+
+  it("van en su columna, después de las labores, y suman en lo del ciclo", () => {
+    const data = withPayouts();
+    expect(data.labors.map((l) => l.id)).toEqual(["poda", "amarre", PAYOUT_COLUMN_ID]);
+    expect(row(data, ANA, "N2")).toMatchObject({
+      byLabor: { poda: 20000, amarre: 40000, [PAYOUT_COLUMN_ID]: 50000 }, cycleAmount: 110000, days: 2, payout: 57000, net: 142000,
+    });
+    expect(data.payrolls.map((p) => p.id)).toEqual(["N1", "N2"]);
+  });
+
+  it("quien solo recibió el anticipo tiene su fila, sin días", () => {
+    const data = withPayouts();
+    expect(row(data, CARLA, "N2")).toMatchObject({ name: "Carla Díaz", byLabor: { [PAYOUT_COLUMN_ID]: 30000 }, cycleAmount: 30000, days: 0, net: 30000 });
+    const out = cyclePaymentGroups(data, { view: "payroll" });
+    expect(out.groups.find((g) => g.key === "N2").totals).toMatchObject({ cycleAmount: 140000, byLabor: { [PAYOUT_COLUMN_ID]: 80000 } });
+    expect(out.totals.cycleAmount).toBe(85000 + 140000);
+    expect(out.people).toBe(3);
+  });
+
+  it("sin anticipos entregados, la columna no aparece", () => {
+    expect(dataOf({ cycleId: "C1" }).labors.map((l) => l.id)).toEqual(["poda", "amarre"]);
+    expect(cyclePaymentGroups(withPayouts(), { state: "paid" }).labors.map((l) => l.id)).toEqual(["poda"]);
   });
 });
 
