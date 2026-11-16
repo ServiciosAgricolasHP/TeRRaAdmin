@@ -137,7 +137,7 @@ export function CyclePaymentsModal({ allPayrolls = null, cycle, includeUnpaid = 
           </div>
           {empty ? (
             <p className="py-6 text-center text-sm text-[var(--color-muted)]">
-              {data.rows.length === 0 ? (includeUnpaid ? "Este ciclo no tiene jornadas con monto." : "Ninguna nómina tiene jornadas de este ciclo.") : "Nada calza con el filtro."}
+              {data.rows.length === 0 ? (includeUnpaid ? "Este ciclo no tiene jornadas con monto." : "Ninguna nómina tiene jornadas ni anticipos entregados de este ciclo.") : "Nada calza con el filtro."}
             </p>
           ) : (
             <CyclePaymentsTable report={report} isMobile={isMobile} onShowPay={(row) => setShown({ kind: "pay", row })} />

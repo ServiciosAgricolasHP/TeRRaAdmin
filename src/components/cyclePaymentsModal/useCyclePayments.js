@@ -54,6 +54,7 @@ export function useCyclePayments({ allPayrolls = null, cycleId, includeUnpaid = 
       workdays: workdays.filter((wd) => wd.cycleId === cycleId),
       labors,
       payrolls,
+      cycleId,
       workerIdOf: workerIdResolver(workers),
       workerOf: (id) => workersById.get(id) || null,
       currentPayrollId: payroll?.id || null,

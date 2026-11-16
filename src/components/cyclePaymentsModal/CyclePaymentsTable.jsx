@@ -6,7 +6,8 @@ import { PAY_STATE_PILL } from "../../utils/payState";
 const NUM = { textAlign: "right", whiteSpace: "nowrap" };
 const BOLD = { fontWeight: 700 };
 
-const netTitle = (r) => `Bruto ${fmtCurrency(r.gross)} − anticipos ${fmtCurrency(r.advance)} + bonos ${fmtCurrency(r.bonus)}. Clic: ver sus días en esta nómina.`;
+const netTitle = (r) =>
+  `Bruto ${fmtCurrency(r.gross)} − anticipos ${fmtCurrency(r.advance)} + bonos ${fmtCurrency(r.bonus)}${r.payout > 0 ? ` + entregado ${fmtCurrency(r.payout)}` : ""}. Clic: ver sus días en esta nómina.`;
 
 // El líquido de la persona en la nómina, que abre su detalle de pago.
 function NetButton({ row, onShowPay }) {
