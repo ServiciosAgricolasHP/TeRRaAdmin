@@ -2,12 +2,14 @@ import { doc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { cyclesService, subjobsService, workdaysService } from "./index";
 import { commitInChunks } from "./batchWrites";
+import { deleteWorkdayInBatch } from "./workdayDeletions";
 import { logAction } from "./logger";
 import { movedWorkday } from "../utils/cycleCreation";
 
-// Una jornada movida se escribe en su id nuevo y se borra del viejo en el
-// mismo lote: dos operaciones.
-const MOVES_PER_BATCH = 225;
+// Una jornada eliminada deja su marca en el mismo lote (dos operaciones), y una
+// movida además se escribe en su id nuevo (tres).
+const DELETES_PER_BATCH = 225;
+const MOVES_PER_BATCH = 150;
 
 // Escribe jornadas en lotes (`commitInChunks`): cada una cuesta su escritura,
 // sin la lectura y el registro de auditoría que pone `workdaysService` en
@@ -15,7 +17,8 @@ const MOVES_PER_BATCH = 225;
 // - `sets`: `{ id, data, isNew, merge }`. Toda escritura lleva `updatedAt`
 //   (las copias del Calendario se ponen al día con él); una nueva, además,
 //   `createdAt`.
-// - `deletes`: los ids que se borran.
+// - `deletes`: los ids que se borran, cada uno con su marca
+//   (`deleteWorkdayInBatch`, services/workdayDeletions.js).
 // - `moves`: `{ fromId, toId, data }`, la jornada escrita en su id nuevo y
 //   borrada del viejo en el mismo lote: nunca queda en los dos ni en ninguno.
 // `onProgress(done, total)` después de cada lote. Al terminar borra la caché
@@ -24,22 +27,26 @@ export async function writeWorkdays({ sets = [], deletes = [], moves = [], onPro
   const uid = auth.currentUser?.uid || null;
   const stamp = () => ({ updatedAt: serverTimestamp(), updatedBy: uid });
   const ref = (id) => doc(db, "workdays", id);
-  const writes = [
-    ...sets.map((s) => (batch) => {
+  const total = sets.length + deletes.length + moves.length;
+  await commitInChunks(
+    sets.map((s) => (batch) => {
       const data = { ...s.data, ...(s.isNew ? { createdAt: serverTimestamp(), createdBy: uid } : {}), ...stamp() };
       if (s.merge) batch.set(ref(s.id), data, { merge: true });
       else batch.set(ref(s.id), data);
     }),
-    ...deletes.map((id) => (batch) => batch.delete(ref(id))),
-  ];
-  const total = writes.length + moves.length;
-  await commitInChunks(writes, (done) => onProgress?.(done, total));
+    (done) => onProgress?.(done, total),
+  );
+  await commitInChunks(
+    deletes.map((id) => (batch) => deleteWorkdayInBatch(batch, id)),
+    (done) => onProgress?.(sets.length + done, total),
+    DELETES_PER_BATCH,
+  );
   await commitInChunks(
     moves.map((m) => (batch) => {
       batch.set(ref(m.toId), { ...m.data, ...stamp() });
-      batch.delete(ref(m.fromId));
+      deleteWorkdayInBatch(batch, m.fromId);
     }),
-    (done) => onProgress?.(writes.length + done, total),
+    (done) => onProgress?.(sets.length + deletes.length + done, total),
     MOVES_PER_BATCH,
   );
   workdaysService.invalidate();

@@ -19,6 +19,22 @@ export function applyCycleChanges(list, changed, cycleId) {
   return touched ? [...byId.values()] : list;
 }
 
+// Los ids de las jornadas eliminadas que hay que sacar de las copias
+// (`deleted`, las marcas de services/workdayDeletions.js), sin las que
+// volvieron a escribirse: una jornada que está en `changed` existe, aunque
+// tenga una marca de antes.
+export function deletedIdsOf(deleted, changed) {
+  const alive = new Set(changed.map((d) => d.id));
+  return new Set(deleted.map((d) => d.id).filter((id) => !alive.has(id)));
+}
+
+// La copia sin las jornadas eliminadas. Si no tenía ninguna, devuelve la
+// misma copia.
+export function removeDeleted(list, deletedIds) {
+  if (!deletedIds.size || !list.some((d) => deletedIds.has(d.id))) return list;
+  return list.filter((d) => !deletedIds.has(d.id));
+}
+
 // Las jornadas de una lectura repartidas por ciclo, con una entrada (quizás
 // vacía) para cada uno de `cycleIds`.
 export function groupByCycle(docs, cycleIds) {

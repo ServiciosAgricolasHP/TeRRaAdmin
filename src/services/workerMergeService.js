@@ -6,6 +6,7 @@ import { listCycles } from "./jobLists";
 import { listEmployments } from "./employmentsService";
 import { syncWorkers, workerKeys } from "./workersService";
 import { commitInChunks } from "./batchWrites";
+import { deleteWorkdayInBatch } from "./workdayDeletions";
 import { logAction } from "./logger";
 import { mergeBlockers, planWorkerMerge } from "../utils/workerMerge";
 
@@ -72,18 +73,19 @@ export async function mergeWorkers({ clone, kept, analysis, decisions, onProgres
   const writes = [
     ...plan.moves.map((m) => (batch) => {
       batch.set(ref(m.toId), { ...m.data, ...stamp() });
-      batch.delete(ref(m.fromId));
+      deleteWorkdayInBatch(batch, m.fromId);
     }),
     ...plan.conflicts.map((c) => (batch) => {
       const w = plan.writes.find((x) => x.toId === c.toId);
       if (w) batch.set(ref(w.toId), { ...w.data, ...stamp() });
-      batch.delete(ref(c.fromId));
+      deleteWorkdayInBatch(batch, c.fromId);
     }),
     (batch) => batch.update(doc(db, "worker", kept.id), { ...plan.keptPatch, ...stamp() }),
     (batch) => batch.update(doc(db, "worker", clone.id), { ...plan.clonePatch, mergedAt: serverTimestamp(), mergedBy: uid, ...stamp() }),
   ];
   onProgress({ stage: "write", done: 0, total: writes.length });
-  await commitInChunks(writes, (done) => onProgress({ stage: "write", done, total: writes.length }), 200);
+  // Hasta tres operaciones por jornada: la nueva, la eliminada y su marca.
+  await commitInChunks(writes, (done) => onProgress({ stage: "write", done, total: writes.length }), 150);
   workdaysService.invalidate();
 
   onProgress({ stage: "cycles" });

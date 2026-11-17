@@ -123,6 +123,15 @@ Una fila por (cycleId × laborId × workerRut × date). Es la tabla "transaccion
 | `createdAt`, `createdBy` | ts, string? | |
 | `updatedAt`, `updatedBy` | ts, string? | la última escritura de `workdaysService` (la grilla, un pesaje editado en Pesajes QR) o de una escritura en lote (Importar cosecha, Limpiar labor, Unir fichas y lo que pasa por `writeWorkdays`, en `services/workdayBatches.js`: la cascada, mover jornadas de ciclo, el piso a todos y sincronizar Pesajes QR), que lo escribe en cada jornada, o de la nómina al etiquetarla, soltarla o marcarla pagada (`batchUpdateWorkdays`, `services/payrollsService.js`). Las copias por mes del Calendario se ponen al día con él (`syncWorkdayMonth`) |
 
+### `workdayDeletions`
+La marca de una jornada eliminada, para que las copias de jornadas del navegador (Nómina por ciclo y el Calendario por mes) la saquen sin releer el ciclo o el mes (`services/workdayDeletions.js`). Toda eliminación de jornadas de TeRRa la deja: `workdaysService.remove` y los lotes (`deleteWorkdayInBatch`: la grilla, Limpiar labor, Importar cosecha, Unir fichas, mover jornadas a otro ciclo y la eliminación en cascada de Faenas).
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | el id de la jornada eliminada. Si se vuelve a eliminar, la marca se reescribe |
+| `deletedAt` | ts | `serverTimestamp()`. Las copias traen las marcas desde su marca de tiempo, como `updatedAt` en `workdays` |
+| `deletedBy` | string? | uid |
+| `expiresAt` | ts | 30 días después. Para una política TTL de Firestore sobre este campo: las copias se releen enteras una vez por semana, así que una marca más vieja ya no sirve |
+
 ### `payrolls`
 Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
 | Campo | Tipo | Notas |
@@ -332,6 +341,7 @@ Transportistas (propios o contratados).
 | `vehicles` | `[{alias, plate?, capacity?, notes?}]` | |
 | `notes` | string? | |
 | `active` | bool | soft delete |
+| `createdAt/By`, `updatedAt/By` | ts, string | toda escritura de TeRRa pone `updatedAt`, también desactivar y reactivar. La copia que comparten las pantallas se pone al día con él (`carriersService.listAll`) |
 
 ### `transports` (vueltas / viajes)
 | Campo | Tipo | Notas |
@@ -341,7 +351,6 @@ Transportistas (propios o contratados).
 | `vehicleAlias` | string | |
 | `cycleId` | ref→`cycles` | |
 | `faenaId`, `subfaenaId` | ref \| null | |
-| `createdAt/By`, `updatedAt/By` | ts, string | toda escritura de TeRRa pone `updatedAt`, también desactivar y reactivar. La copia que comparten las pantallas se pone al día con él (`carriersService.listAll`) |
 | ~~`laborId`~~ | — | **No llega a Firestore.** `TripEditModal` lo pide y lo manda en el payload, pero `normalizeTrip()` (transportsService.js) no lo copia al doc, así que nunca se escribe ni lo lee nadie. Hoy es una entrada de usuario que se descarta en silencio: o se saca del form, o se agrega a `normalizeTrip`. |
 | `date` | string (YYYY-MM-DD) | |
 | `kind` | `"regular"` \| `"approach"` | |

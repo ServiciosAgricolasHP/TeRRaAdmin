@@ -1,8 +1,7 @@
-import { doc } from "firebase/firestore";
-import { db } from "../firebase";
 import { cyclesService, workdaysService } from "./index";
 import { tripsService } from "./transportsService";
 import { commitInChunks } from "./batchWrites";
+import { deleteWorkdayInBatch } from "./workdayDeletions";
 import { logAction } from "./logger";
 import { planLaborClear } from "../utils/laborClear";
 
@@ -30,9 +29,10 @@ export async function clearLabor({ cycleId, laborId, onProgress = () => {} }) {
   ]);
   const plan = planLaborClear({ cycle, laborId, workdays, trips });
 
-  const deletes = plan.deletes.map((w) => (batch) => batch.delete(doc(db, "workdays", w.id)));
+  // Cada jornada se elimina con su marca: dos operaciones por lote.
+  const deletes = plan.deletes.map((w) => (batch) => deleteWorkdayInBatch(batch, w.id));
   onProgress({ stage: "delete", done: 0, total: deletes.length });
-  await commitInChunks(deletes, (done) => onProgress({ stage: "delete", done, total: deletes.length }));
+  await commitInChunks(deletes, (done) => onProgress({ stage: "delete", done, total: deletes.length }), 225);
   workdaysService.invalidate();
 
   onProgress({ stage: "cycle" });
