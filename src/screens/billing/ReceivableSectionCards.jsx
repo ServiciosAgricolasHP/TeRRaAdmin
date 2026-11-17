@@ -1,4 +1,4 @@
-import { formatRutForDisplay } from "../../utils/rutUtils";
+import { CopyRut } from "../../components/CopyRut";
 import { fmtCurrency } from "../../utils/format";
 import { BulkPaidButton } from "./BulkPaidButton";
 import { ReceivableCard } from "./ReceivableCard";
@@ -36,7 +36,7 @@ export function ReceivableSectionCards({ groups, isVat, ctx }) {
         <div key={g.key}>
           <div className="bg-[var(--color-accent-soft)] px-3 py-1.5 text-xs font-semibold">
             {g.razon || "—"}
-            {g.rut && <span className="ml-2 font-normal text-[var(--color-muted)]">· {formatRutForDisplay(g.rut)}</span>}
+            {g.rut && <span className="ml-2 font-normal text-[var(--color-muted)]">· <CopyRut rut={g.rut} className="min-h-8" /></span>}
             <span className="ml-2 font-normal text-[var(--color-muted)]">
               · {g.count === 0 ? "nada pendiente" : `${g.count} factura${g.count === 1 ? "" : "s"}`}
             </span>

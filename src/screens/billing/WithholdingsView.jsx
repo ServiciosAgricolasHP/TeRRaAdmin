@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { formatRutForDisplay } from "../../utils/rutUtils";
+import { CopyRut } from "../../components/CopyRut";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { fmtCurrency } from "../../utils/format";
 import { PaymentStatusSelect } from "./PaymentStatusSelect";
@@ -50,7 +50,7 @@ export function WithholdingsView({ groups, onSelectDoc, onSetStatus, onGroupExpo
                       <span className="truncate">{g.razon || "—"}</span>
                     </div>
                     <div className="pl-4 font-mono text-[10px] text-[var(--color-muted)]">
-                      {formatRutForDisplay(g.rut)} · {g.count} factura{g.count === 1 ? "" : "s"}
+                      <CopyRut rut={g.rut} className="min-h-8 font-mono" /> · {g.count} factura{g.count === 1 ? "" : "s"}
                     </div>
                   </div>
                   <div className="shrink-0 text-right">
@@ -160,7 +160,7 @@ export function WithholdingsView({ groups, onSelectDoc, onSetStatus, onGroupExpo
                 >
                   <td className="px-2 py-2 w-6 text-center text-[var(--color-muted)]">{isOpen ? "▾" : "▸"}</td>
                   <td className="px-2 py-2 font-medium truncate max-w-[300px]">{g.razon || "—"}</td>
-                  <td className="px-2 py-2 font-mono text-xs">{formatRutForDisplay(g.rut)}</td>
+                  <td className="px-2 py-2 font-mono text-xs"><CopyRut rut={g.rut} className="font-mono" /></td>
                   <td className="px-2 py-2 text-right tabular-nums">{g.count}</td>
                   <td className="px-2 py-2 text-right tabular-nums">{fmtCurrency(g.neto)}</td>
                   <td className="px-2 py-2 text-right font-semibold tabular-nums text-[var(--color-accent)]">{fmtCurrency(g.iva)}</td>

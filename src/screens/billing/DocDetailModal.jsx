@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { otroImpuestoLabel } from "../../utils/siiCsvParser";
-import { formatRutForDisplay } from "../../utils/rutUtils";
+import { CopyRut } from "../../components/CopyRut";
 import Modal, { ModalCloseButton } from "../../components/Modal";
 import { CREDIT_NOTE_TYPES } from "../../utils/cashFlowProjection";
 import { fmtCurrency } from "../../utils/format";
@@ -155,12 +155,12 @@ export function DocDetailModal({ dteDoc, candidateNcs = [], costCenters = [], on
           <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2">
             <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">Emisor</div>
             <div className="font-medium truncate">{dteDoc.razonSocialEmisor || "—"}</div>
-            <div className="font-mono text-xs text-[var(--color-muted)]">{formatRutForDisplay(dteDoc.rutEmisor) || "—"}</div>
+            <div className="text-xs text-[var(--color-muted)]">{dteDoc.rutEmisor ? <CopyRut rut={dteDoc.rutEmisor} icon className="min-h-8 font-mono" /> : "—"}</div>
           </div>
           <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] p-2">
             <div className="text-[10px] uppercase tracking-wide text-[var(--color-muted)]">Receptor</div>
             <div className="font-medium truncate">{dteDoc.razonSocialReceptor || "—"}</div>
-            <div className="font-mono text-xs text-[var(--color-muted)]">{formatRutForDisplay(dteDoc.rutReceptor) || "—"}</div>
+            <div className="text-xs text-[var(--color-muted)]">{dteDoc.rutReceptor ? <CopyRut rut={dteDoc.rutReceptor} icon className="min-h-8 font-mono" /> : "—"}</div>
           </div>
         </div>
 

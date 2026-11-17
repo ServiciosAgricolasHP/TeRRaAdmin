@@ -5,7 +5,8 @@ import "ag-grid-community/styles/ag-grid.css";
 import "ag-grid-community/styles/ag-theme-quartz.css";
 import { AG_GRID_LOCALE_ES } from "../../utils/agGridLocale";
 import { deleteWorkerSafe, detectQueryKind, listWorkers } from "../../services/workersService";
-import { formatRutForDisplay, normalizeRut } from "../../utils/rutUtils";
+import { formatRutForDisplay } from "../../utils/rutUtils";
+import { CopyRut } from "../../components/CopyRut";
 import {
   bankName,
   accountTypeLabel,
@@ -186,17 +187,6 @@ export default function WorkersTab() {
     setEdit({ mode: "edit", worker });
   };
 
-  // Copia el RUT sin puntos y con guion; en pantalla se muestra con puntos.
-  const copyRut = async (value, label = "RUT") => {
-    const rut = normalizeRut(value);
-    if (!rut) return;
-    const { error: err } = await attempt(async () => {
-      await navigator.clipboard.writeText(rut);
-      toast.success(`${label} ${rut} copiado`);
-    });
-    if (err) toast.error(`No se pudo copiar el ${label}`);
-  };
-
   const askDelete = (worker) => setConfirm({ worker });
   const askMerge = (worker) => setMerging(worker);
   const doDelete = async () => {
@@ -218,7 +208,7 @@ export default function WorkersTab() {
   // `actionsRef`, que se pone al día después de cada render.
   const actionsRef = useRef(null);
   useEffect(() => {
-    actionsRef.current = { copyRut, openEdit, askDelete, askMerge };
+    actionsRef.current = { openEdit, askDelete, askMerge };
   });
   const columnDefs = useMemo(
     () => [
@@ -230,16 +220,10 @@ export default function WorkersTab() {
         width: 140,
         valueFormatter: (p) => formatRutForDisplay(p.value),
         pinned: "left",
-        cellRenderer: (p) => (
-          <button
-            type="button"
-            onClick={() => actionsRef.current.copyRut(p.value)}
-            title="Copiar RUT"
-            className="w-full text-left hover:text-[var(--color-accent)] hover:underline"
-          >
-            {p.valueFormatted}
-          </button>
-        ),
+        // Un clic copia el RUT (`CopyRut`) y el doble clic abre la ficha,
+        // como en la grilla del ciclo.
+        onCellDoubleClicked: (p) => actionsRef.current.openEdit(p.data),
+        cellRenderer: (p) => <CopyRut rut={p.value} editHint />,
       },
       { headerName: "Nombre", field: "name", flex: 1, minWidth: 180, pinned: "left" },
       { headerName: "Líder", valueGetter: (p) => (p.data.groupLeader?.[0] || "").toUpperCase().trim() || "—", width: 160 },
@@ -275,19 +259,11 @@ export default function WorkersTab() {
       { headerName: "N° cuenta", valueGetter: (p) => p.data.bankDetails?.[1] || "—", width: 140 },
       {
         headerName: "RUT pago",
-        valueGetter: (p) => formatRutForDisplay(p.data.bankDetails?.[0] || ""),
+        valueGetter: (p) => p.data.bankDetails?.[0] || "",
+        valueFormatter: (p) => formatRutForDisplay(p.value),
         width: 130,
-        cellRenderer: (p) =>
-          p.value ? (
-            <button
-              type="button"
-              onClick={() => actionsRef.current.copyRut(p.value, "RUT de pago")}
-              title="Copiar RUT de pago"
-              className="w-full text-left hover:text-[var(--color-accent)] hover:underline"
-            >
-              {p.value}
-            </button>
-          ) : null,
+        onCellDoubleClicked: (p) => actionsRef.current.openEdit(p.data),
+        cellRenderer: (p) => (p.value ? <CopyRut rut={p.value} label="RUT de pago" editHint /> : null),
       },
       {
         // Solo cuando la cuenta es de otra persona; si falta el nombre, se marca.
@@ -514,15 +490,11 @@ export default function WorkersTab() {
                 >
                   <div>
                     <div className="text-base font-semibold leading-tight">{w.name}</div>
-                    <button
-                      type="button"
-                      onClick={() => copyRut(w.rut || w.id)}
-                      title="Copiar RUT"
-                      className="-mx-1 inline-flex min-h-[32px] items-center gap-1 rounded px-1 font-mono text-xs text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)] active:bg-[var(--color-accent-soft)]"
-                    >
-                      {formatRutForDisplay(w.rut || w.id)}
-                      <span aria-hidden="true">📋</span>
-                    </button>
+                    <CopyRut
+                      rut={w.rut || w.id}
+                      icon
+                      className="-mx-1 min-h-[32px] px-1 font-mono text-xs text-[var(--color-muted)] hover:bg-[var(--color-accent-soft)] active:bg-[var(--color-accent-soft)]"
+                    />
                   </div>
                   <div className="text-xs">
                     <span className={isCash ? "font-medium text-[var(--color-accent)]" : ""}>
@@ -547,7 +519,7 @@ export default function WorkersTab() {
                       ) : (
                         <span className="text-[var(--color-text)]">{w.paymentName}</span>
                       )}{" "}
-                      <span className="font-mono">{formatRutForDisplay(w.bankDetails[0])}</span>
+                      <CopyRut rut={w.bankDetails[0]} label="RUT de pago" className="min-h-8 font-mono" />
                     </div>
                   )}
                   <div className="text-xs text-[var(--color-muted)]">
