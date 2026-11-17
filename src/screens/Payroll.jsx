@@ -62,6 +62,7 @@ export default function Payroll() {
     payrolls,
     refresh,
     refreshing,
+    reloadWorkers,
     subjobs,
     syncPayrollList,
     workers,
@@ -131,6 +132,7 @@ export default function Payroll() {
     workers,
     payrolls,
     resetKey: previewSources,
+    onWorkersChanged: reloadWorkers,
   });
   // Overlay de progreso: `step` es el mensaje principal (ej. "Etiquetando
   // jornadas"), `detail` un complemento opcional (ej. "340 / 500") y `percent`

@@ -4,6 +4,7 @@ import { checkOf } from "../../utils/payrollChecks/payrollChecks";
 import { matchesSearchQuery } from "../../utils/textSearch";
 import { workerSearchInput } from "../../utils/workerSearch";
 import { CheckGroup } from "./payrollChecksModal/CheckGroup";
+import { GroupAssignList } from "./payrollChecksModal/GroupAssignList";
 import { SEVERITY_ICON, SEVERITY_LABEL, worstOpenSeverity } from "./checkSeverity";
 
 const RANK = { red: 0, orange: 1, info: 2 };
@@ -12,7 +13,19 @@ const RANK = { red: 0, orange: 1, info: 2 };
 // más leve, con las personas y lo encontrado. En Generar es la alarma
 // (`onShowInTable` filtra la tabla, `onReview` marca revisadas); en el
 // detalle, la explicación. `initialSearch` la abre ya filtrada a una persona.
-export function PayrollChecksModal({ alerts, summary, onClose, onReview = null, onShowInTable = null, initialSearch = "" }) {
+// Con `onAssignGroups`, la sección "Sin grupo" deja elegir el grupo de cada
+// persona (`leaderOptions`) y asignarlo.
+export function PayrollChecksModal({
+  alerts,
+  summary,
+  onClose,
+  onReview = null,
+  onShowInTable = null,
+  initialSearch = "",
+  leaderOptions = [],
+  onAssignGroups = null,
+  assigning = false,
+}) {
   const [search, setSearch] = useState(initialSearch);
   const [openIds, setOpenIds] = useState(() => new Set());
 
@@ -76,6 +89,11 @@ export function PayrollChecksModal({ alerts, summary, onClose, onReview = null, 
               onToggle={() => toggle(g.check.id)}
               onReview={onReview}
               onShowInTable={onShowInTable}
+              body={
+                onAssignGroups && g.check.id === "missingGroup" ? (
+                  <GroupAssignList alerts={g.alerts} leaderOptions={leaderOptions} onAssign={onAssignGroups} busy={assigning} />
+                ) : null
+              }
             />
           ))
         )}

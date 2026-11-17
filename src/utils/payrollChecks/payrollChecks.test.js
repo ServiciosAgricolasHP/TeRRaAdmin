@@ -27,6 +27,12 @@ describe("payrollChecksOf", () => {
     expect(alerts[0]).toMatchObject({ checkId: "zeroAmount", person: "1-9", rut: "1-9", name: "ANA PÉREZ" });
   });
 
+  it("la alerta de sin grupo trae el grupo sugerido", () => {
+    const alerts = payrollChecksOf({ items, workdays, cycles, workers, today: "2026-11-17" });
+    expect(alerts.find((a) => a.checkId === "missingGroup").suggestion).toEqual({ leader: "NORTE", reason: "el de sus compañeros de labor" });
+    expect(alerts.find((a) => a.checkId === "zeroAmount")).not.toHaveProperty("suggestion");
+  });
+
   it("cada revisión tiene título y explicación, y sus ids no se repiten", () => {
     expect(new Set(PAYROLL_CHECKS.map((c) => c.id)).size).toBe(PAYROLL_CHECKS.length);
     for (const c of PAYROLL_CHECKS) expect(c.title && c.explanation && typeof c.run === "function").toBeTruthy();

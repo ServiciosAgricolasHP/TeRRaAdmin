@@ -1,4 +1,8 @@
+import { doc, serverTimestamp } from "firebase/firestore";
+import { auth, db } from "../firebase";
 import { workersService, workdaysService } from "./index";
+import { commitInChunks } from "./batchWrites";
+import { logAction } from "./logger";
 import { advancesService } from "./advancesService";
 import { listEmployments } from "./employmentsService";
 import { listCycles } from "./jobLists";
@@ -102,6 +106,35 @@ export async function deleteWorkerSafe(worker) {
   const blockers = deleteBlockers({ worker: w, hasWorkdays: conDias.length > 0, advances, employments, cycles });
   if (blockers.length) throw new Error(`No se puede eliminar. ${blockers.join(" ")}`);
   return workersService.remove(w.id);
+}
+
+// Le pone el grupo a varias fichas de una vez (la revisión de la nómina): cada
+// una lo suma primero a su historial (`groupLeader`, `[0]` = el actual), como
+// al editarlo en la ficha, en lotes y con un solo registro de auditoría.
+// `assignments` es `[{ worker, leader }]`; la que ya tiene ese grupo no se
+// escribe. Devuelve cuántas fichas cambió.
+export async function assignGroupLeaders(assignments) {
+  const uid = auth.currentUser?.uid || null;
+  const changes = assignments
+    .filter(({ worker, leader }) => worker?.id && leader && (worker.groupLeader || [])[0] !== leader)
+    .map(({ worker, leader }) => ({ id: worker.id, before: (worker.groupLeader || [])[0] || "", groupLeader: [leader, ...(worker.groupLeader || [])] }));
+  if (!changes.length) return 0;
+  await commitInChunks(
+    changes.map((c) => (batch) => batch.update(doc(db, "worker", c.id), { groupLeader: c.groupLeader, updatedAt: serverTimestamp(), updatedBy: uid })),
+  );
+  await logAction({
+    action: "groupLeaderAssign",
+    entity: "worker",
+    meta: { count: changes.length, workers: changes.map((c) => ({ id: c.id, leader: c.groupLeader[0], before: c.before })) },
+  });
+  // La lista de trabajadores trae las fichas cambiadas. Si no se puede, las
+  // trae la próxima puesta al día: la escritura ya está hecha.
+  try {
+    await syncWorkers({ fresh: true });
+  } catch {
+    /* la lista se pone al día la próxima vez que se pida */
+  }
+  return changes.length;
 }
 
 export { workersService };

@@ -7,8 +7,9 @@ const btn =
 
 // Una revisión dentro del modal: su título, cuántas alertas tiene y, abierta,
 // la explicación y una fila por persona con lo encontrado. `onReview` en
-// `null` la deja solo para leer.
-export function CheckGroup({ check, alerts, open, onToggle, onReview, onShowInTable }) {
+// `null` la deja solo para leer. `body`, si viene, reemplaza la lista de
+// personas (asignar grupos).
+export function CheckGroup({ check, alerts, open, onToggle, onReview, onShowInTable, body = null }) {
   const worst = worstOpenSeverity(alerts) || alerts[0]?.severity;
   const reviewedCount = alerts.filter((a) => a.review).length;
   const allReviewed = reviewedCount === alerts.length;
@@ -47,6 +48,7 @@ export function CheckGroup({ check, alerts, open, onToggle, onReview, onShowInTa
               )}
             </div>
           )}
+          {body || (
           <ul className="divide-y divide-[var(--color-border)]">
             {alerts.map((a) => (
               <li key={a.key} className={`flex items-start gap-3 py-2 ${a.review ? "opacity-60" : ""}`}>
@@ -76,6 +78,7 @@ export function CheckGroup({ check, alerts, open, onToggle, onReview, onShowInTa
               </li>
             ))}
           </ul>
+          )}
         </div>
       )}
     </div>

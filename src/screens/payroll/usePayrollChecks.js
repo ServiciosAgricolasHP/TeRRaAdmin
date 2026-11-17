@@ -1,9 +1,13 @@
 import { useDeferredValue, useEffect, useEffectEvent, useMemo, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
+import { useToast } from "../../contexts/ToastContext";
 import { useValuesChanged } from "../../hooks/useValuesChanged";
 import { listGroupLeaders } from "../../services";
 import { listEmployments } from "../../services/employmentsService";
 import { signerName } from "../../services/signer";
+import { assignGroupLeaders } from "../../services/workersService";
+import { errorText } from "../../utils/errorText";
+import { normalizeLeader } from "../../utils/payroll";
 import { attempt } from "../../utils/attempt";
 import { localIsoDate } from "../../utils/dates";
 import { checkSummary, payrollChecksOf, withReviews } from "../../utils/payrollChecks/payrollChecks";
@@ -19,7 +23,8 @@ const NO_REVIEWS = [];
 // salen: cuentan solo las de esas filas. `reviewedChecks` son las revisadas
 // con que parte; marcar o desmarcar las cambia acá, y vuelven a ser esas
 // cuando cambian ellas o `resetKey` (una vista previa nueva). Con `enabled` en
-// `false` no lee nada.
+// `false` no lee nada. `onWorkersChanged` corre después de asignar grupos,
+// para que la pantalla traiga las fichas al día.
 export function usePayrollChecks({
   enabled = true,
   items,
@@ -32,8 +37,11 @@ export function usePayrollChecks({
   createdAt = null,
   reviewedChecks = NO_REVIEWS,
   resetKey = null,
+  onWorkersChanged = null,
 }) {
   const { user } = useAuth();
+  const toast = useToast();
+  const [assigning, setAssigning] = useState(false);
   const [leaders, setLeaders] = useState(null);
   const [employments, setEmployments] = useState(null);
   const [reviewed, setReviewedList] = useState(reviewedChecks);
@@ -92,5 +100,29 @@ export function usePayrollChecks({
     });
   };
 
-  return { alerts, summary, alertsByRut, reviewed, setReviewed };
+  // Los grupos habilitados, para elegir uno.
+  const leaderOptions = useMemo(
+    () => [...new Set((leaders || []).filter((d) => d.habilitado === true).map((d) => normalizeLeader(d.name || d.nombre || d.id)).filter(Boolean))].sort(),
+    [leaders],
+  );
+
+  // Les pone el grupo en su ficha a `assignments` (`[{ person, leader }]`).
+  // Devuelve si se guardó.
+  const assignGroups = async (assignments) => {
+    const byId = new Map(workers.map((w) => [w.id, w]));
+    const list = assignments.map((a) => ({ worker: byId.get(a.person), leader: a.leader })).filter((a) => a.worker);
+    if (!list.length) return false;
+    setAssigning(true);
+    const { value: count, error } = await attempt(() => assignGroupLeaders(list));
+    setAssigning(false);
+    if (error) {
+      toast.error(`No se pudo asignar el grupo: ${errorText(error)}`);
+      return false;
+    }
+    toast.success(count === 1 ? "Grupo asignado a 1 persona" : `Grupo asignado a ${count} personas`);
+    onWorkersChanged?.();
+    return true;
+  };
+
+  return { alerts, summary, alertsByRut, reviewed, setReviewed, leaderOptions, assignGroups, assigning };
 }

@@ -89,6 +89,12 @@ export function usePayrollData({ toast }) {
     }
     setRefreshing(false);
   };
+  // Las fichas como están en la copia del navegador, después de una escritura
+  // de este equipo (asignar grupos): no cuesta lecturas.
+  const reloadWorkers = async () => {
+    const { value } = await attempt(() => listWorkers());
+    if (value) setWorkers(value);
+  };
   // Las nóminas con lo último que se escribió en este equipo, como quién cobró
   // el efectivo: esas escrituras corrigen la copia de la lista en su lugar,
   // así que casi nunca cuesta lecturas. Devuelve la lista, o null si falla.
@@ -107,6 +113,7 @@ export function usePayrollData({ toast }) {
     payrolls,
     refresh,
     refreshing,
+    reloadWorkers,
     subjobs,
     syncPayrollList,
     workers,

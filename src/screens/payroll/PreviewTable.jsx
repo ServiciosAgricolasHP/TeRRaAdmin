@@ -80,6 +80,12 @@ export function PreviewTable({
     else onGenerate();
   };
 
+  // Asigna el grupo en las fichas y en las filas de la vista previa.
+  const assignGroups = async (assignments) => {
+    const saved = await checks.assignGroups(assignments);
+    if (saved) for (const a of assignments) updatePreview(a.rut, { groupLeader: a.leader });
+  };
+
   const showCheckInTable = (checkId) => {
     setFilter(`check:${checkId}`);
     setChecksModal(null);
@@ -402,6 +408,9 @@ export function PreviewTable({
           initialSearch={checksModal.search}
           onReview={checks.setReviewed}
           onShowInTable={showCheckInTable}
+          leaderOptions={checks.leaderOptions}
+          onAssignGroups={assignGroups}
+          assigning={checks.assigning}
           onClose={() => setChecksModal(null)}
         />
       )}

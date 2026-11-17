@@ -76,7 +76,7 @@ Una persona con dos fichas, típicamente porque la importación de cosecha la cr
 - Lista curada en la colección **`groupLeader`** (`groupLeadersService`) — `{ name, habilitado }`. La idea es no dejar que la lista crezca con valores ad-hoc.
 - Edición del trabajador (`WorkerEditModal`): el **dropdown** ofrece los líderes que ya tienen asignados los trabajadores (`groupLeader[0]` de la lista cargada), no la colección `groupLeader`, más la opción "+ Crear nuevo líder", que requiere acción explícita. La colección curada la usa la agrupación por líder de la grilla del ciclo (`loadEnabledLeaders`).
 - Al guardar: si el valor no está en la lista de líderes existentes y no se eligió "crear nuevo", error.
-- En Payroll preview el líder es **read-only** (estrictamente lo del worker).
+- En la vista previa de Nómina el líder es el de la ficha. A quien no tiene, la revisión de la nómina le asigna uno de los habilitados de la colección `groupLeader` (`assignGroupLeaders`, ver "Revisión de la nómina" en `payroll.md`), que queda en su ficha.
 
 ## Bancos
 

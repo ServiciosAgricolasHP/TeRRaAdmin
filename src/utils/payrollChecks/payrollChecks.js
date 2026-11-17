@@ -5,7 +5,7 @@
 // Cada alerta es de una persona y una revisión, con su clave estable
 // (`checkId|persona`), que es lo que se guarda al marcarla revisada.
 import { duplicateWorkdays, longStreaks, outlierQuantities, outOfCycleDates, sameDayLabors, zeroAmountWorkdays } from "./workdayChecks";
-import { missingGroup, missingWorker, similarNames, unknownGroup, withoutEmployment } from "./personChecks";
+import { missingGroup, missingWorker, similarNames, suggestGroupLeader, unknownGroup, withoutEmployment } from "./personChecks";
 import { accountChanged, cuentaRutMismatch, firstPayment, missingPayee, sharedAccount } from "./paymentChecks";
 import { pendingElsewhere, unusualAmount, zeroByAdvances } from "./amountChecks";
 import { SEVERITY, buildCheckContext, severityRank } from "./checkContext";
@@ -41,6 +41,7 @@ export const PAYROLL_CHECKS = [
   {
     id: "missingGroup",
     run: missingGroup,
+    suggest: suggestGroupLeader,
     title: "Sin grupo",
     explanation: "La persona no tiene grupo. En efectivo no tiene sobre: el efectivo se arma por grupo.",
   },
@@ -136,8 +137,9 @@ export const checkOf = (checkId) => checkById.get(checkId) || null;
 export const checkKey = (checkId, person) => `${checkId}|${person}`;
 
 // Las alertas de la nómina: `[{ key, checkId, person, rut, name, severity, lines }]`,
-// de la más grave a la más leve, por revisión y por nombre. `input` es el de
-// `buildCheckContext`.
+// de la más grave a la más leve, por revisión y por nombre. Las de "Sin
+// grupo" traen además el grupo sugerido (`suggestion`, ver
+// `suggestGroupLeader`). `input` es el de `buildCheckContext`.
 export function payrollChecksOf(input) {
   const ctx = buildCheckContext(input);
   const alerts = [];
@@ -153,6 +155,7 @@ export function payrollChecksOf(input) {
         name: row?.name || worker?.name || "",
         severity: found.severity,
         lines: found.lines,
+        ...(check.suggest ? { suggestion: check.suggest(ctx, found.person) } : {}),
       });
     }
   }
