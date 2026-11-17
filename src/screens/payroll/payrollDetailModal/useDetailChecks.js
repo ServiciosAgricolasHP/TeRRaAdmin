@@ -11,8 +11,9 @@ const NONE = [];
 // La revisión en el detalle de una nómina: la explicación de lo inusual, con
 // las jornadas del JSON. En una pendiente, marcar revisadas y asignar grupos
 // se guarda en la nómina (y el grupo, también en las fichas); una pagada solo
-// se lee. Lo pendiente en otros ciclos abiertos se revisa solo en una
-// pendiente: a una pagada ya no le cambia nada.
+// se lee. Lo pendiente en otros ciclos abiertos y los pesajes QR sin
+// sincronizar se revisan solo en una pendiente: a una pagada ya no le cambia
+// nada.
 export function useDetailChecks({ payroll, snapshot, snapshotLoading, cycles, workers, allPayrolls, openWorkdays, onChanged }) {
   const toast = useToast();
   const editable = payroll.status !== "paid";
@@ -30,6 +31,7 @@ export function useDetailChecks({ payroll, snapshot, snapshotLoading, cycles, wo
     createdAt: payroll.createdAt || null,
     reviewedChecks: payroll.reviewedChecks || NONE,
     resetKey: payroll.id,
+    qrSync: editable,
   });
 
   const review = async (keys, on) => {

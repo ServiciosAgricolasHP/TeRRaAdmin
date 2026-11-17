@@ -1,7 +1,9 @@
 // Revisiones de las jornadas que paga la nómina. Cada una devuelve
 // `[{ person, severity, lines }]`: una entrada por persona, con una línea por
 // cosa encontrada.
+import { localIsoDate } from "../dates";
 import { fmtCurrency, fmtNumber, fmtShortDate } from "../format";
+import { isPrefixSyncing } from "../harvestSync";
 import {
   DAY_LABOR_TYPES,
   PRODUCTION_LABOR_TYPES,
@@ -174,4 +176,29 @@ export function longStreaks(ctx) {
     }
   }
   return byPerson(found);
+}
+
+// Una labor de cosecha de la nómina que sincroniza un prefijo QR, y el
+// prefijo no se sincronizó después del último día que paga la nómina: puede
+// haber pesajes que no llegaron a las jornadas. Avisa por prefijo, no por
+// persona (`general`). Sin la lista de prefijos, no revisa.
+export function staleQrSync(ctx) {
+  if (!ctx.prefixes) return [];
+  const found = [];
+  for (const prefix of ctx.prefixes) {
+    const cycleId = prefix?.cycleId;
+    if (!isPrefixSyncing(prefix, cycleId)) continue;
+    const paid = ctx.facts.filter((f) => f.own && !f.piso && f.wd.cycleId === cycleId && f.wd.laborId === prefix.laborId);
+    if (!paid.length) continue;
+    const lastPaid = paid.reduce((max, f) => (f.wd.date > max ? f.wd.date : max), "");
+    const at = prefix.lastSync?.at ? new Date(prefix.lastSync.at) : null;
+    const syncDay = at && !Number.isNaN(at.getTime()) ? localIsoDate(at) : "";
+    if (syncDay && syncDay > lastPaid) continue;
+    const what = `la nómina paga ${laborText(paid[0])} hasta el ${fmtShortDate(lastPaid)}`;
+    const line = syncDay
+      ? `La última sincronización de ${prefix.id} fue el ${fmtShortDate(syncDay)} y ${what}: puede haber pesajes que no llegaron. Se sincroniza en Pesajes QR.`
+      : `${prefix.id} nunca se ha sincronizado y ${what}. Se sincroniza en Pesajes QR.`;
+    found.push({ general: prefix.id, label: `Prefijo QR ${prefix.id}`, severity: SEVERITY.orange, lines: [line] });
+  }
+  return found;
 }

@@ -38,6 +38,15 @@ describe("payrollChecksOf", () => {
     for (const c of PAYROLL_CHECKS) expect(c.title && c.explanation && typeof c.run === "function").toBeTruthy();
   });
 
+  it("una alerta de un prefijo QR no es de una persona", () => {
+    const qrCycles = [{ id: "c1", label: "Ciclo Uno", days: ["2026-11-03"], labors: [{ id: "poda", name: "Poda", type: "main" }, { id: "cos", name: "Cosecha", type: "cosecha" }] }];
+    const qrWorkdays = [{ id: "c1__cos__2-7__2026-11-03__1_1", cycleId: "c1", laborId: "cos", workerRut: "2-7", date: "2026-11-03", qty: 10, amount: 20000 }];
+    const alerts = payrollChecksOf({ items: [{ ...items[1], workdayIds: [] }], workdays: qrWorkdays, cycles: qrCycles, workers, prefixes: [{ id: "HP", cycleId: "c1", laborId: "cos" }] });
+    const qr = alerts.find((a) => a.checkId === "staleQrSync");
+    expect(qr).toMatchObject({ key: "staleQrSync|HP", person: null, rut: "", name: "Prefijo QR HP", general: true, severity: "orange" });
+    expect(alertsByPerson(alerts).has(null)).toBe(false);
+  });
+
   it("una nómina sin datos no tiene alertas", () => {
     expect(payrollChecksOf({})).toEqual([]);
   });

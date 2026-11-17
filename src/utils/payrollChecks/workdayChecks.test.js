@@ -6,6 +6,7 @@ import {
   outlierQuantities,
   outOfCycleDates,
   sameDayLabors,
+  staleQrSync,
   zeroAmountWorkdays,
 } from "./workdayChecks";
 
@@ -170,5 +171,39 @@ describe("longStreaks", () => {
   it("los días seguidos que no tocan la nómina no se marcan", () => {
     const other = days(1, 8).map((d) => wd("c2", "riego", "1-9", d));
     expect(longStreaks(ctxOf([wd("c2", "riego", "1-9", "2026-11-20")], other))).toEqual([]);
+  });
+});
+
+describe("staleQrSync", () => {
+  const prefix = (extra = {}) => ({ id: "HP", cycleId: "c1", laborId: "cos", ...extra });
+  const own = [wd("c1", "cos", "1-9", "2026-11-04", { ck: "1_1" }), wd("c1", "cos", "2-7", "2026-11-05", { ck: "1_1" })];
+
+  it("avisa por prefijo si se sincronizó el último día que paga la nómina o antes", () => {
+    const res = staleQrSync(ctxOf(own, [], { prefixes: [prefix({ lastSync: { at: "2026-11-05T15:00:00Z" } })] }));
+    expect(res).toEqual([
+      {
+        general: "HP",
+        label: "Prefijo QR HP",
+        severity: "orange",
+        lines: ["La última sincronización de HP fue el 05-nov y la nómina paga Cosecha · Ciclo Uno hasta el 05-nov: puede haber pesajes que no llegaron. Se sincroniza en Pesajes QR."],
+      },
+    ]);
+  });
+
+  it("un prefijo que nunca se sincronizó también avisa", () => {
+    const [res] = staleQrSync(ctxOf(own, [], { prefixes: [prefix()] }));
+    expect(res.lines[0]).toMatch(/^HP nunca se ha sincronizado/);
+  });
+
+  it("no avisa si se sincronizó después, si el prefijo está apagado o apunta a otra labor", () => {
+    expect(staleQrSync(ctxOf(own, [], { prefixes: [prefix({ lastSync: { at: "2026-11-06T15:00:00Z" } })] }))).toEqual([]);
+    expect(staleQrSync(ctxOf(own, [], { prefixes: [prefix({ active: false })] }))).toEqual([]);
+    expect(staleQrSync(ctxOf(own, [], { prefixes: [prefix({ laborId: "poda" })] }))).toEqual([]);
+  });
+
+  it("sin la lista de prefijos no revisa, y el piso no cuenta como un día pagado", () => {
+    expect(staleQrSync(ctxOf(own))).toEqual([]);
+    const floorOnly = [wd("c1", "cos", "1-9", "2026-11-09", { ck: "_piso" })];
+    expect(staleQrSync(ctxOf(floorOnly, [], { prefixes: [prefix({ lastSync: { at: "2026-11-06T15:00:00Z" } })] }))).toEqual([]);
   });
 });

@@ -4,7 +4,7 @@
 //
 // Cada alerta es de una persona y una revisión, con su clave estable
 // (`checkId|persona`), que es lo que se guarda al marcarla revisada.
-import { duplicateWorkdays, longStreaks, outlierQuantities, outOfCycleDates, sameDayLabors, zeroAmountWorkdays } from "./workdayChecks";
+import { duplicateWorkdays, longStreaks, outlierQuantities, outOfCycleDates, sameDayLabors, staleQrSync, zeroAmountWorkdays } from "./workdayChecks";
 import { missingGroup, missingWorker, similarNames, suggestGroupLeader, unknownGroup, withoutEmployment } from "./personChecks";
 import { accountChanged, cuentaRutMismatch, firstPayment, missingPayee, sharedAccount } from "./paymentChecks";
 import { pendingElsewhere, unusualAmount, zeroByAdvances } from "./amountChecks";
@@ -68,6 +68,12 @@ export const PAYROLL_CHECKS = [
     run: outOfCycleDates,
     title: "Fecha fuera del ciclo",
     explanation: "La jornada tiene una fecha que no está entre los días del ciclo, o que todavía no llega.",
+  },
+  {
+    id: "staleQrSync",
+    run: staleQrSync,
+    title: "Pesajes QR sin sincronizar",
+    explanation: "Una labor de cosecha de la nómina se llena con los pesajes QR, y su prefijo no se sincronizó después del último día que paga la nómina: puede haber pesajes que no llegaron a las jornadas.",
   },
   {
     id: "similarName",
@@ -139,12 +145,18 @@ export const checkKey = (checkId, person) => `${checkId}|${person}`;
 // Las alertas de la nómina: `[{ key, checkId, person, rut, name, severity, lines }]`,
 // de la más grave a la más leve, por revisión y por nombre. Las de "Sin
 // grupo" traen además el grupo sugerido (`suggestion`, ver
-// `suggestGroupLeader`). `input` es el de `buildCheckContext`.
+// `suggestGroupLeader`). Las que no son de una persona (un prefijo QR) van con
+// `general: true`, `person: null` y su nombre en `name`. `input` es el de
+// `buildCheckContext`.
 export function payrollChecksOf(input) {
   const ctx = buildCheckContext(input);
   const alerts = [];
   for (const check of PAYROLL_CHECKS) {
     for (const found of check.run(ctx)) {
+      if (found.general) {
+        alerts.push({ key: checkKey(check.id, found.general), checkId: check.id, person: null, rut: "", name: found.label, general: true, severity: found.severity, lines: found.lines });
+        continue;
+      }
       const row = ctx.rowByPerson.get(found.person);
       const worker = ctx.workerById.get(found.person);
       alerts.push({
@@ -207,6 +219,7 @@ export function checkSummary(alerts) {
 export function alertsByPerson(alerts) {
   const map = new Map();
   for (const a of alerts) {
+    if (a.general) continue;
     if (!map.has(a.person)) map.set(a.person, []);
     map.get(a.person).push(a);
   }

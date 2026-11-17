@@ -2,7 +2,7 @@ import { useDeferredValue, useEffect, useEffectEvent, useMemo, useState } from "
 import { useAuth } from "../../contexts/AuthContext";
 import { useToast } from "../../contexts/ToastContext";
 import { useValuesChanged } from "../../hooks/useValuesChanged";
-import { listGroupLeaders } from "../../services";
+import { listGroupLeaders, qrPrefixesService } from "../../services";
 import { listEmployments } from "../../services/employmentsService";
 import { signerName } from "../../services/signer";
 import { assignGroupLeaders } from "../../services/workersService";
@@ -16,8 +16,9 @@ const NO_REVIEWS = [];
 
 // La revisión de una nómina (ver `utils/payrollChecks/`): sus alertas, el
 // resumen por nivel y cuáles se marcaron revisadas. Lee la lista de líderes y
-// la de contratos (las dos guardadas en el navegador); mientras no llegan, o
-// si fallan, las revisiones que las usan no corren.
+// la de contratos (las dos guardadas en el navegador) y, con `qrSync`, los
+// prefijos QR, sin caché: su última sincronización tiene que estar al día.
+// Mientras no llegan, o si fallan, las revisiones que los usan no corren.
 //
 // `items` son las filas que paga la nómina y `workdays`, las jornadas de donde
 // salen: cuentan solo las de esas filas. `reviewedChecks` son las revisadas
@@ -38,19 +39,26 @@ export function usePayrollChecks({
   reviewedChecks = NO_REVIEWS,
   resetKey = null,
   onWorkersChanged = null,
+  qrSync = true,
 }) {
   const { user } = useAuth();
   const toast = useToast();
   const [assigning, setAssigning] = useState(false);
   const [leaders, setLeaders] = useState(null);
   const [employments, setEmployments] = useState(null);
+  const [prefixes, setPrefixes] = useState(null);
   const [reviewed, setReviewedList] = useState(reviewedChecks);
   if (useValuesChanged([reviewedChecks, resetKey])) setReviewedList(reviewedChecks);
 
   const loadLists = useEffectEvent(async () => {
-    const [l, e] = await Promise.all([attempt(() => listGroupLeaders()), attempt(() => listEmployments())]);
+    const [l, e, q] = await Promise.all([
+      attempt(() => listGroupLeaders()),
+      attempt(() => listEmployments()),
+      qrSync ? attempt(() => qrPrefixesService.list({ order: ["label", "asc"] })) : { value: null },
+    ]);
     if (l.value) setLeaders(l.value);
     if (e.value) setEmployments(e.value);
+    if (q.value) setPrefixes(q.value);
   });
   useEffect(() => {
     if (enabled) loadLists();
@@ -74,10 +82,11 @@ export function usePayrollChecks({
       createdAt,
       leaders,
       employments,
+      prefixes: qrSync ? prefixes : null,
       today: localIsoDate(),
     });
     return withReviews(found, reviewed);
-  }, [enabled, deferredItems, workdays, openWorkdays, cycles, workers, payrolls, payrollId, createdAt, leaders, employments, reviewed]);
+  }, [enabled, deferredItems, workdays, openWorkdays, cycles, workers, payrolls, payrollId, createdAt, leaders, employments, prefixes, qrSync, reviewed]);
 
   const summary = useMemo(() => checkSummary(alerts), [alerts]);
 
@@ -85,6 +94,7 @@ export function usePayrollChecks({
   const alertsByRut = useMemo(() => {
     const map = new Map();
     for (const a of alerts) {
+      if (a.general) continue;
       if (!map.has(a.rut)) map.set(a.rut, []);
       map.get(a.rut).push(a);
     }

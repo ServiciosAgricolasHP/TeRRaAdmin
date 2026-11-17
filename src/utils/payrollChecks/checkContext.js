@@ -49,8 +49,8 @@ function monthlyKeysOf(labor) {
 // `workdays`: las jornadas de esas filas. `openWorkdays`: las de los ciclos
 // abiertos, con o sin nómina; las que también están en `workdays` cuentan una
 // vez. `payrolls`: todas las nóminas; las anteriores son las creadas antes de
-// `createdAt` (en Generar, todas). `leaders` y `employments` en `null` saltan
-// las revisiones que los necesitan.
+// `createdAt` (en Generar, todas). `leaders`, `employments` y `prefixes` (los
+// prefijos QR) en `null` saltan las revisiones que los necesitan.
 export function buildCheckContext({
   items = [],
   workdays = [],
@@ -62,6 +62,7 @@ export function buildCheckContext({
   createdAt = null,
   leaders = null,
   employments = null,
+  prefixes = null,
   today = "",
 } = {}) {
   const workerById = new Map(workers.filter((w) => w?.id).map((w) => [w.id, w]));
@@ -166,6 +167,7 @@ export function buildCheckContext({
     payrollNameOf: (id) => payrollNameById.get(id) || "otra nómina",
     leaders,
     employments,
+    prefixes,
     today,
   };
 }
