@@ -341,6 +341,7 @@ Transportistas (propios o contratados).
 | `vehicleAlias` | string | |
 | `cycleId` | ref→`cycles` | |
 | `faenaId`, `subfaenaId` | ref \| null | |
+| `createdAt/By`, `updatedAt/By` | ts, string | toda escritura de TeRRa pone `updatedAt`, también desactivar y reactivar. La copia que comparten las pantallas se pone al día con él (`carriersService.listAll`) |
 | ~~`laborId`~~ | — | **No llega a Firestore.** `TripEditModal` lo pide y lo manda en el payload, pero `normalizeTrip()` (transportsService.js) no lo copia al doc, así que nunca se escribe ni lo lee nadie. Hoy es una entrada de usuario que se descarta en silencio: o se saca del form, o se agrega a `normalizeTrip`. |
 | `date` | string (YYYY-MM-DD) | |
 | `kind` | `"regular"` \| `"approach"` | |

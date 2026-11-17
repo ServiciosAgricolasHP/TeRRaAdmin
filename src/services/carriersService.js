@@ -2,8 +2,9 @@ import { doc, serverTimestamp } from "firebase/firestore";
 import { updateDoc } from "./readMeter";
 import { db, auth } from "../firebase";
 import { logAction } from "./logger";
-import { createService } from "./firestoreBase";
-import { cacheKey, getCache, invalidate, mergeListItem } from "./cache";
+import { createAdditiveService } from "./firestoreBase";
+import { createSyncedList } from "./syncedList";
+import { cacheKey, getCache, mergeListItem } from "./cache";
 import { toTitleName, unshout } from "../utils/textCase";
 
 const COLLECTION = "carriers";
@@ -16,28 +17,33 @@ export const CARRIER_TYPES = [
 export const carrierTypeLabel = (t) =>
   CARRIER_TYPES.find((x) => x.value === t)?.label || t;
 
-const base = createService("carrier", COLLECTION);
+const base = createAdditiveService("carrier", COLLECTION);
 
-// La lista completa se pide al abrir la app (`CarriersProvider`) y casi no
-// cambia: se guarda 30 min, también en `localStorage`. Lo que se escribe en
-// este navegador la corrige en su lugar, sin releerla; lo que cambie en otro
-// equipo llega cuando vence.
-export const CARRIERS_LIST = { cache: true, persist: true, ttl: 30 * 60 * 1000 };
+// La lista completa se pide al abrir la app (`CarriersProvider`): una lista
+// sincronizada (`createSyncedList`). Se lee entera una vez por semana en cada
+// navegador, o cuando el conteo no calza, y entre medio se pone al día con lo
+// que cambió. Lo que se escribe en este navegador la corrige en su lugar.
+// Sin orden: un `orderBy` deja afuera los que no tienen ese campo.
+const carriersList = createSyncedList(base, {
+  syncKey: "carriers.sync",
+  fullEveryDays: 7,
+  checkCount: true,
+});
 
-// Cambia campos de un transportista en la lista guardada, sin leerlo. Si la
-// lista ya no está guardada, la próxima carga la lee entera.
+// Cambia campos de un transportista en la copia, sin leerlo. Sin copia, la
+// siguiente puesta al día lo trae por su `updatedAt`.
 function patchCachedCarrier(id, patch) {
-  const list = getCache(cacheKey(COLLECTION, { wheres: [] }), { persist: true });
+  const list = getCache(cacheKey(COLLECTION, { wheres: [] }));
   const current = Array.isArray(list) ? list.find((c) => c.id === id) : null;
   if (current) mergeListItem(COLLECTION, { ...current, ...patch });
-  else invalidate(COLLECTION);
 }
 
 export const carriersService = {
   ...base,
 
-  async listAll({ includeInactive = false } = {}) {
-    const out = await base.list(CARRIERS_LIST);
+  // `fresh` pone al día sin esperar el minuto.
+  async listAll({ includeInactive = false, fresh = false } = {}) {
+    const out = await carriersList.list({ fresh });
     return includeInactive ? out : out.filter((c) => c.active !== false);
   },
 
