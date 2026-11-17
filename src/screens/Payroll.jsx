@@ -426,6 +426,7 @@ export default function Payroll() {
         <PayrollDetailModal
           payroll={detailPayroll}
           allPayrolls={payrolls}
+          openWorkdays={openWorkdays}
           cycles={cycles}
           cycleStats={cycleStats}
           faenas={jobs}

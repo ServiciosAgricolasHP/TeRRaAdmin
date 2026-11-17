@@ -14,7 +14,7 @@ import {
   setPayrollAdvanceAmounts,
 } from "./advancesService";
 import { mergeCycleDetails, inChosenCycles, stillFreeWorkdays, withPaidPeriods } from "../utils/payrollItem";
-import { pruneSnapshot } from "./payrollSnapshots";
+import { pruneSnapshot, syncSnapshotAmounts } from "./payrollSnapshots";
 import { payoutTotalOf } from "../utils/advancePayouts";
 
 export const PAYROLL_STATUSES = [
@@ -262,6 +262,28 @@ export async function revertBankPaid(payrollId, onProgress) {
 // final.
 export async function setCashPaidRuts(payrollId, ruts) {
   return payrollsService.update(payrollId, { cashPaidRuts: [...new Set(ruts || [])] });
+}
+
+// Las alertas de la revisión de la nómina marcadas revisadas
+// (`reviewedChecks`, ver "Revisión de la nómina" en docs/screens/payroll.md).
+// Solo con la nómina pendiente: una pagada queda como se pagó.
+export async function setReviewedChecks(payrollId, reviewedChecks) {
+  const p = await payrollsService.getById(payrollId);
+  if (!p) throw new Error("La nómina ya no existe.");
+  if (p.status === "paid") throw new Error("La nómina está pagada — revierte el pago antes de marcar alertas.");
+  return payrollsService.update(payrollId, { reviewedChecks });
+}
+
+// El grupo de varias personas de una nómina pendiente (`leaderByRut`: RUT del
+// item → grupo), en la nómina y en su JSON. Se puede con las transferencias
+// pagadas: el grupo no mueve plata, solo arma los sobres del efectivo.
+export async function setItemsGroupLeader(payrollId, leaderByRut) {
+  const p = await payrollsService.getById(payrollId);
+  if (!p) throw new Error("La nómina ya no existe.");
+  if (p.status === "paid") throw new Error("La nómina está pagada — revierte el pago antes de cambiar grupos.");
+  const items = (p.items || []).map((it) => (leaderByRut[it.rut] ? { ...it, groupLeader: leaderByRut[it.rut] } : it));
+  await payrollsService.update(payrollId, { items });
+  await syncSnapshotAmounts(payrollId, { items });
 }
 
 // Una nómina con las transferencias ya pagadas no se puede editar: sacar un

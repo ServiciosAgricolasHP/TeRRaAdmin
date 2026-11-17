@@ -15,9 +15,14 @@ describe("payrollItemsChange", () => {
     expect(change.removed.map((p) => [p.key, p.gross])).toEqual([["12345678-5", 50000]]);
     expect(change.changed).toEqual([{
       key: "W1", rut: "11111111-1", name: "Ana Rojas",
-      from: { gross: 100000, advance: 0, bonus: 0, payout: 0, amount: 100000, days: 2 },
-      to: { gross: 100000, advance: 20000, bonus: 0, payout: 0, amount: 80000, days: 2 },
+      from: { gross: 100000, advance: 0, bonus: 0, payout: 0, amount: 100000, days: 2, leader: "" },
+      to: { gross: 100000, advance: 20000, bonus: 0, payout: 0, amount: 80000, days: 2, leader: "" },
     }]);
+  });
+
+  it("cambiar solo el grupo también cuenta", () => {
+    const change = payrollItemsChange([ana], [{ ...ana, groupLeader: "NORTE" }]);
+    expect(change.changed.map((p) => [p.from.leader, p.to.leader, p.to.amount])).toEqual([["", "NORTE", 100000]]);
   });
 
   it("una persona igual no aparece", () => {

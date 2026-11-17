@@ -91,14 +91,18 @@ export function usePayrollChecks({
     return map;
   }, [alerts]);
 
-  // Marca o desmarca como revisadas las alertas de `keys`.
+  // Marca o desmarca como revisadas las alertas de `keys`. Devuelve la lista
+  // nueva, para guardarla.
   const setReviewed = (keys, on) => {
     const drop = new Set(keys);
-    setReviewedList((prev) => {
-      const rest = prev.map((e) => ({ ...e, keys: (e.keys || []).filter((k) => !drop.has(k)) })).filter((e) => e.keys.length);
-      return on ? [...rest, { keys: [...drop], by: user?.uid || "", byName: signerName() || "", at: new Date().toISOString() }] : rest;
-    });
+    const rest = reviewed.map((e) => ({ ...e, keys: (e.keys || []).filter((k) => !drop.has(k)) })).filter((e) => e.keys.length);
+    const next = on ? [...rest, { keys: [...drop], by: user?.uid || "", byName: signerName() || "", at: new Date().toISOString() }] : rest;
+    setReviewedList(next);
+    return next;
   };
+
+  // Vuelve a las revisadas con que partió (si no se pudo guardar un cambio).
+  const resetReviewed = () => setReviewedList(reviewedChecks);
 
   // Los grupos habilitados, para elegir uno.
   const leaderOptions = useMemo(
@@ -124,5 +128,5 @@ export function usePayrollChecks({
     return true;
   };
 
-  return { alerts, summary, alertsByRut, reviewed, setReviewed, leaderOptions, assignGroups, assigning };
+  return { alerts, summary, alertsByRut, reviewed, setReviewed, resetReviewed, leaderOptions, assignGroups, assigning };
 }

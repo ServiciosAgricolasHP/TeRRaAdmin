@@ -41,6 +41,7 @@ function personLines(change) {
     const details = FIGURE_LABELS
       .filter(([k]) => p.from[k] !== p.to[k])
       .map(([k, label]) => (k === "days" ? `${label} ${p.from[k]} → ${p.to[k]}` : `${label} ${fmtCurrency(p.from[k])} → ${fmtCurrency(p.to[k])}`));
+    if (p.from.leader !== undefined && p.from.leader !== p.to.leader) details.push(`grupo ${p.from.leader || "sin grupo"} → ${p.to.leader || "sin grupo"}`);
     const net = p.from.amount !== p.to.amount ? `${fmtCurrency(p.from.amount)} → ${fmtCurrency(p.to.amount)}` : "mismo líquido";
     lines.push({ person: p.key, rut: p.rut, text: `${p.name || p.rut}: ${net}${details.length ? ` (${details.join(", ")})` : ""}` });
   }
@@ -58,6 +59,12 @@ function payoutOnlyChange(change) {
   if (change.added.length + change.removed.length + change.changed.length === 0) return null;
   const grew = change.added.length > 0 || change.changed.some((p) => payout(p.to) > payout(p.from));
   return grew ? "delivered" : "removed";
+}
+
+// Si lo único que cambió en las personas es su grupo.
+function leaderOnlyChange(change) {
+  if (change.added.length || change.removed.length || !change.changed.length) return false;
+  return change.changed.every((p) => p.from.leader !== p.to.leader && FIGURE_LABELS.every(([k]) => p.from[k] === p.to[k]) && p.from.amount === p.to.amount);
 }
 
 const cycleLabelsOf = (details) => new Map((details || []).map((d) => [d.id, d.label || d.id]));
@@ -109,6 +116,7 @@ export function payrollHistoryEntry(log, names = new Map()) {
     titles.push(changes.classification.to === "diferencias" ? "Movió a Diferencias" : "Cambió la clasificación");
   }
   if (has("cycleLabelOverrides")) titles.push("Editó los encabezados");
+  if (has("reviewedChecks")) titles.push("Marcó alertas revisadas");
   if (has("cycleIds")) {
     titles.push("Editó los ciclos");
     const labels = new Map([...cycleLabelsOf(changes.cycleDetails?.from), ...cycleLabelsOf(changes.cycleDetails?.to)]);
@@ -122,6 +130,7 @@ export function payrollHistoryEntry(log, names = new Map()) {
     const change = itemsChangeOf(changes.items);
     const payouts = has("cycleIds") ? null : payoutOnlyChange(change);
     if (payouts) titles.push(payouts === "delivered" ? "Entregó anticipos" : "Quitó anticipos entregados");
+    else if (!has("cycleIds") && leaderOnlyChange(change)) titles.push("Asignó grupos");
     else if (!has("cycleIds")) {
       if (change.added.length && !change.removed.length && !change.changed.length) titles.push("Agregó personas");
       else if (change.removed.length && !change.added.length && !change.changed.length) titles.push("Sacó personas");
@@ -132,7 +141,7 @@ export function payrollHistoryEntry(log, names = new Map()) {
     people = own.map((l) => l.person);
   }
   if (has("total")) lines.push({ text: `Total: ${fmtCurrency(changes.total.from)} → ${fmtCurrency(changes.total.to)}` });
-  const others = Object.keys(changes).filter((k) => !IGNORED.has(k) && !["status", "bankPaidAt", "cashPaidRuts", "name", "classification", "cycleLabelOverrides", "cycleIds", "items"].includes(k));
+  const others = Object.keys(changes).filter((k) => !IGNORED.has(k) && !["status", "bankPaidAt", "cashPaidRuts", "name", "classification", "cycleLabelOverrides", "cycleIds", "items", "reviewedChecks"].includes(k));
   if (titles.length === 0) titles.push("Editó la nómina");
   if (others.length) lines.push({ text: `También cambió: ${others.join(", ")}` });
   return { ...base, title: titles.join(" · "), lines, people };

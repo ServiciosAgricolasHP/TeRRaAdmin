@@ -4,6 +4,9 @@ import { fmtCurrency } from "../../utils/format";
 import { accountTypeShort } from "./helpers";
 import { WorkerPaidDetailTables } from "../../components/WorkerPaidDetailTables";
 import { WorkerPaySummaryCards } from "../../components/WorkerPaySummaryCards";
+import { checkOf } from "../../utils/payrollChecks/payrollChecks";
+import { RowFlag } from "./CheckFlag";
+import { SEVERITY_ICON } from "./checkSeverity";
 
 // El RUT tal como viene, cuando no se pasa `rutOf`.
 const sameRut = (r) => r;
@@ -11,12 +14,20 @@ const sameRut = (r) => r;
 // Fila expandible de banco o efectivo. Al expandirla muestra el detalle de la
 // persona en la nómina: tablas por ciclo y tarjetas de bruto, anticipos, bonos
 // y neto. "📅 Ver historial completo" abre el WorkerSummaryModal. Con
-// `onChangeBonus(item, bonusId)`, cada bono lleva "✎ Editar bono".
+// `onChangeBonus(item, bonusId)`, cada bono lleva "✎ Editar bono". `alerts`
+// son las de la revisión de la nómina para esta persona: su ícono junto al
+// nombre y, al expandirla, lo encontrado; `onOpenChecks` abre la revisión
+// filtrada a ella.
 export function WorkerDetailRow({
   rutOf = sameRut, item, expanded, onToggle, onShowSummary, cycleDetails, displayCycleLabel,
   editMode, editBusy, onRemoveWorker, cols, snapshot, snapshotLoading, catalogs, isMobile,
   cashPaidMode = false, cashPaid = false, onToggleCashPaid, onChangeBonus = null,
+  alerts = null, onOpenChecks = null,
 }) {
+  const openChecks = (e) => {
+    e.stopPropagation();
+    onOpenChecks?.();
+  };
   const isBank = cols === "bank";
   // Columnas base: 7 en banco, 4 en efectivo. Cada modo opcional suma una.
   const colSpan = (isBank ? 7 : 4) + (editMode ? 1 : 0) + (cashPaidMode ? 1 : 0);
@@ -60,6 +71,22 @@ export function WorkerDetailRow({
         catalogs={catalogs}
       />
 
+      {alerts?.length > 0 && (
+        <div className="space-y-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-2 text-xs">
+          {alerts.map((a) => (
+            <div key={a.key} className={a.review ? "text-[var(--color-muted)]" : ""}>
+              <span aria-hidden="true">{a.review ? "✓" : SEVERITY_ICON[a.severity]}</span> <b>{checkOf(a.checkId)?.title}:</b> {a.lines.join("; ")}
+              {a.review && ` (revisada${a.review.byName ? ` por ${a.review.byName}` : ""})`}
+            </div>
+          ))}
+          {onOpenChecks && (
+            <button type="button" onClick={openChecks} className="min-h-8 text-[var(--color-accent)] hover:underline">
+              🔎 Ver la revisión
+            </button>
+          )}
+        </div>
+      )}
+
       <WorkerPaySummaryCards item={item} />
       {onChangeBonus && (item.bonoApplications || []).length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -88,7 +115,10 @@ export function WorkerDetailRow({
         >
           <span className="shrink-0 text-[var(--color-muted)]">{expanded ? "▾" : "▸"}</span>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium">{item.name}</div>
+            <div className="flex items-center text-sm font-medium">
+              <span className="truncate">{item.name}</span>
+              <RowFlag alerts={alerts} onClick={openChecks} />
+            </div>
             <div className="flex flex-wrap items-center gap-x-2 font-mono text-[11px] text-[var(--color-muted)]">
               <span>{formatRutForDisplay(rutOf(item.rut, item.workerId))}</span>
               {isBank && (
@@ -144,7 +174,10 @@ export function WorkerDetailRow({
           <>
             <td className="px-2 py-1 text-center text-[var(--color-muted)]">{expanded ? "▾" : "▸"}</td>
             <td className="px-2 py-1 font-mono text-xs">{formatRutForDisplay(rutOf(item.rut, item.workerId))}</td>
-            <td className="px-2 py-1">{item.name}</td>
+            <td className="px-2 py-1">
+              {item.name}
+              <RowFlag alerts={alerts} onClick={openChecks} />
+            </td>
             <td className="px-2 py-1 text-xs">{bankName(item.bankCode)}</td>
             <td className="px-2 py-1 font-mono text-xs">{item.accountNumber}</td>
             <td className="px-2 py-1 text-xs">{accountTypeShort(item.accountType)}</td>
@@ -154,7 +187,10 @@ export function WorkerDetailRow({
           <>
             <td className="px-2 py-1 text-center text-[var(--color-muted)]">{expanded ? "▾" : "▸"}</td>
             <td className="px-2 py-1 font-mono text-xs">{formatRutForDisplay(rutOf(item.rut, item.workerId))}</td>
-            <td className="px-2 py-1">{item.name}</td>
+            <td className="px-2 py-1">
+              {item.name}
+              <RowFlag alerts={alerts} onClick={openChecks} />
+            </td>
             <td className="px-2 py-1 text-right tabular-nums">{fmtCurrency(item.amount)}</td>
           </>
         )}
