@@ -1,5 +1,5 @@
 import { Fragment } from "react";
-import { formatRutForDisplay } from "../../utils/rutUtils";
+import { CopyRut } from "../../components/CopyRut";
 import { fmtCurrency } from "../../utils/format";
 import { BulkPaidButton } from "./BulkPaidButton";
 import { ReceivableRow } from "./ReceivableRow";
@@ -56,7 +56,7 @@ export function ReceivableSectionTable({ groups, isVat, ctx }) {
               <tr className="bg-[var(--color-accent-soft)]">
                 <td colSpan={cols} className="px-2 py-1.5 text-xs font-semibold">
                   {g.razon || "—"}
-                  {g.rut && <span className="ml-2 font-normal text-[var(--color-muted)]">· {formatRutForDisplay(g.rut)}</span>}
+                  {g.rut && <span className="ml-2 font-normal text-[var(--color-muted)]">· <CopyRut rut={g.rut} /></span>}
                   <span className="ml-2 font-normal text-[var(--color-muted)]">
                     · {g.count === 0 ? "nada pendiente" : `${g.count} factura${g.count === 1 ? "" : "s"}`}
                   </span>

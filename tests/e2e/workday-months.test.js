@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { deleteDoc, doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "../../src/firebase";
+import { workdaysService } from "../../src/services";
 import { syncWorkdayMonth } from "../../src/services/workdayMonths";
 
 // Las jornadas de un mes que guarda el Calendario: se leen enteras la primera
@@ -40,8 +41,8 @@ describe("las jornadas de un mes en el Calendario", () => {
     const oct = await syncWorkdayMonth("2026-10", { fresh: true });
     expect(oct.data.find((d) => d.id === "w2").qty).toBe(7);
     // Lo escrito desde cinco minutos antes de la marca (acá, las cuatro
-    // jornadas) y el conteo del mes.
-    expect(oct.reads).toBe(4 + 1);
+    // jornadas), las marcas de lo eliminado (ninguna) y el conteo del mes.
+    expect(oct.reads).toBe(4 + 1 + 1);
     const sep = await syncWorkdayMonth("2026-09", { fresh: true });
     expect(ids(sep.data)).toEqual(["w3", "w4"]);
   });
@@ -49,21 +50,34 @@ describe("las jornadas de un mes en el Calendario", () => {
   it("pasados unos minutos sin escrituras, no vuelve a traer lo último escrito", async () => {
     await seed();
     await syncWorkdayMonth("2026-10");
-    // Recién escritas, las tres jornadas caen en los minutos antes de la marca.
-    expect((await syncWorkdayMonth("2026-10", { fresh: true })).reads).toBe(3 + 1);
+    // Recién escritas, las tres jornadas caen en los minutos antes de la
+    // marca; más la consulta de las marcas de lo eliminado y el conteo.
+    expect((await syncWorkdayMonth("2026-10", { fresh: true })).reads).toBe(3 + 1 + 1);
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
       vi.setSystemTime(Date.now() + 5 * 60 * 1000 + 1000);
       // Esta las ve todas por última vez y asienta la marca.
-      expect((await syncWorkdayMonth("2026-10", { fresh: true })).reads).toBe(3 + 1);
-      // La consulta vacía y el conteo del mes.
-      expect((await syncWorkdayMonth("2026-10", { fresh: true })).reads).toBe(1 + 1);
+      expect((await syncWorkdayMonth("2026-10", { fresh: true })).reads).toBe(3 + 1 + 1);
+      // Las dos consultas vacías y el conteo del mes.
+      expect((await syncWorkdayMonth("2026-10", { fresh: true })).reads).toBe(1 + 1 + 1);
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("lo eliminado o escrito sin updatedAt entra porque el conteo no calza", async () => {
+  it("lo eliminado con su marca sale de la copia sin releer el mes", async () => {
+    await seed();
+    await syncWorkdayMonth("2026-10");
+    await workdaysService.remove("w1");
+
+    const oct = await syncWorkdayMonth("2026-10", { fresh: true });
+    expect(ids(oct.data)).toEqual(["w2"]);
+    // Lo escrito en los últimos minutos que sigue en pie (w2 y w3), la marca y
+    // el conteo del mes, que ya calza.
+    expect(oct.reads).toBe(2 + 1 + 1);
+  });
+
+  it("lo eliminado sin marca o escrito sin updatedAt entra porque el conteo no calza", async () => {
     await seed();
     await syncWorkdayMonth("2026-10");
     await deleteDoc(doc(db, "workdays", "w1"));

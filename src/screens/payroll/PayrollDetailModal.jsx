@@ -59,11 +59,15 @@ import { PayrollCyclesSection } from "./payrollDetailModal/PayrollCyclesSection"
 import { PayrollHistoryModal } from "./payrollDetailModal/PayrollHistoryModal";
 import { CyclePaymentsModal } from "../../components/CyclePaymentsModal";
 import { useReadSection } from "../../hooks/useReadSection";
+import { useDetailChecks } from "./payrollDetailModal/useDetailChecks";
+import { PayrollChecksModal } from "./PayrollChecksModal";
+import { ChecksButton } from "./CheckFlag";
 
 const NO_LABORS = [];
 const NO_IDS = new Set();
+const NO_WORKDAYS = [];
 
-export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, subfaenas, workers, allPayrolls = [], onClose, onRedownload, onDownloadBankFile, onDownloadSnapshot, bankFormatLabel = null, onPublishPortal = null, onUnpublishPortal = null, publishedPayrollIds = NO_IDS, onChanged }) {
+export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, subfaenas, workers, allPayrolls = [], openWorkdays = NO_WORKDAYS, onClose, onRedownload, onDownloadBankFile, onDownloadSnapshot, bankFormatLabel = null, onPublishPortal = null, onUnpublishPortal = null, publishedPayrollIds = NO_IDS, onChanged }) {
   useReadSection("Detalle de nómina");
   const { catalogs } = useCatalogs();
   const toast = useToast();
@@ -153,6 +157,12 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
     await onChanged?.();
     reloadSnapshot();
   };
+
+  // La revisión de la nómina: la explicación de lo inusual (ver "Revisión de la
+  // nómina" en docs/screens/payroll.md). `checksSearch` abre su modal, con la
+  // búsqueda con que parte.
+  const checks = useDetailChecks({ payroll, snapshot, snapshotLoading, cycles, workers, allPayrolls, openWorkdays, onChanged: contentChanged });
+  const [checksSearch, setChecksSearch] = useState(null);
 
   const edit = useContentEdit({
     cycleDetails,
@@ -381,6 +391,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
               )}
             </div>
             <div className="flex shrink-0 items-center gap-1.5">
+              {checks.alerts.length > 0 && <ChecksButton summary={checks.summary} onClick={() => setChecksSearch("")} />}
               <button
                 type="button"
                 onClick={() => setHistoryOpen(true)}
@@ -624,6 +635,8 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
                                 onChangeBonus={bonusChangeFor(it)}
                                 cols="bank"
                                 snapshot={snapshot}
+                                alerts={checks.alertsByRut.get(it.rut)}
+                                onOpenChecks={() => setChecksSearch(rutOf(it.rut, it.workerId))}
                                 snapshotLoading={snapshotLoading}
                                 catalogs={catalogs}
                                 isMobile
@@ -662,6 +675,8 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
                                   onChangeBonus={bonusChangeFor(it)}
                                   cols="bank"
                                   snapshot={snapshot}
+                                  alerts={checks.alertsByRut.get(it.rut)}
+                                  onOpenChecks={() => setChecksSearch(rutOf(it.rut, it.workerId))}
                                   snapshotLoading={snapshotLoading}
                                   catalogs={catalogs}
                                 />
@@ -755,6 +770,8 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
                                 cashPaid={cashPaidSet.has(it.rut)}
                                 onToggleCashPaid={toggleCashPaid}
                                 snapshot={snapshot}
+                                alerts={checks.alertsByRut.get(it.rut)}
+                                onOpenChecks={() => setChecksSearch(rutOf(it.rut, it.workerId))}
                                 snapshotLoading={snapshotLoading}
                                 catalogs={catalogs}
                                 isMobile
@@ -783,6 +800,8 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
                                   cashPaid={cashPaidSet.has(it.rut)}
                                   onToggleCashPaid={toggleCashPaid}
                                   snapshot={snapshot}
+                                  alerts={checks.alertsByRut.get(it.rut)}
+                                  onOpenChecks={() => setChecksSearch(rutOf(it.rut, it.workerId))}
                                   snapshotLoading={snapshotLoading}
                                   catalogs={catalogs}
                                 />
@@ -841,6 +860,18 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
         onClose={() => setWorkerSummaryFor(null)}
       />
       {historyOpen && <PayrollHistoryModal payroll={payroll} onClose={() => setHistoryOpen(false)} />}
+      {checksSearch !== null && (
+        <PayrollChecksModal
+          alerts={checks.alerts}
+          summary={checks.summary}
+          initialSearch={checksSearch}
+          onReview={checks.review}
+          leaderOptions={checks.leaderOptions}
+          onAssignGroups={checks.assign}
+          assigning={checks.assigning || checks.saving}
+          onClose={() => setChecksSearch(null)}
+        />
+      )}
       {showCashEstimation && (
         <CashEstimationModal
           cashItems={cashPaidMode ? cash.filter((it) => !cashPaidSet.has(it.rut)) : cash}

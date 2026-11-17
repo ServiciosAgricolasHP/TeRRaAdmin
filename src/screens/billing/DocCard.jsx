@@ -1,7 +1,7 @@
 import { CREDIT_NOTE_TYPES } from "../../utils/cashFlowProjection";
 import { dteTypeLabel } from "../../utils/siiCsvParser";
 import { OtherTaxChip } from "./OtherTaxChip";
-import { formatRutForDisplay } from "../../utils/rutUtils";
+import { CopyRut } from "../../components/CopyRut";
 import { fmtCurrency } from "../../utils/format";
 import { CostCenterSelect } from "./CostCenterSelect";
 import { CREDIT_NOTE_STATE } from "./docs";
@@ -34,7 +34,9 @@ export function DocCard({ d, cancellingByDocId, costCenters, kindTab, saveDocCos
             <span className="font-mono">· Folio {d.folio}</span>
           </div>
           <div className="mt-0.5 truncate text-sm font-medium">{counterpartyName || "—"}</div>
-          <div className="font-mono text-[10px] text-[var(--color-muted)]">{formatRutForDisplay(rut)}</div>
+          <div className="text-[10px] text-[var(--color-muted)]">
+            <CopyRut rut={rut} icon className="-mx-1 min-h-8 px-1 font-mono active:bg-[var(--color-accent-soft)]" />
+          </div>
         </div>
         <div className="shrink-0 text-right">
           <div className={`text-sm font-semibold tabular-nums ${isNC ? "text-[var(--color-danger)]" : ""}`}>

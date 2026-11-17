@@ -1,7 +1,7 @@
 import { CREDIT_NOTE_TYPES } from "../../utils/cashFlowProjection";
 import { dteTypeLabel } from "../../utils/siiCsvParser";
 import { OtherTaxChip } from "./OtherTaxChip";
-import { formatRutForDisplay } from "../../utils/rutUtils";
+import { CopyRut } from "../../components/CopyRut";
 import { fmtCurrency } from "../../utils/format";
 import { CostCenterSelect } from "./CostCenterSelect";
 import { CREDIT_NOTE_STATE } from "./docs";
@@ -27,7 +27,9 @@ export function DocTableRow({ d, cancellingByDocId, costCenters, kindTab, saveDo
       </td>
       <td className="px-2 py-1.5 text-right font-mono tabular-nums">{d.folio}</td>
       <td className="px-2 py-1.5 truncate max-w-[260px]">{counterpartyName || "—"}</td>
-      <td className="px-2 py-1.5 font-mono text-xs">{formatRutForDisplay(rut)}</td>
+      <td className="px-2 py-1.5 font-mono text-xs">
+        <CopyRut rut={rut} onDoubleClick={() => setDetailDoc(d)} className="font-mono" />
+      </td>
       <td className={`px-2 py-1.5 text-right tabular-nums ${isNC ? "text-[var(--color-danger)]" : ""}`}>
         {isNC ? "−" : ""}{fmtCurrency(d.neto)}
       </td>

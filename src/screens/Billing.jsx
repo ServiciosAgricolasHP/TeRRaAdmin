@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { dteTypeLabel } from "../utils/siiCsvParser";
-import { formatRutForDisplay } from "../utils/rutUtils";
+import { CopyRut } from "../components/CopyRut";
 import { useToast } from "../contexts/ToastContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useIsMobile } from "../hooks/useIsMobile";
@@ -474,7 +474,7 @@ export default function Billing() {
                   >
                     {g.isFuel ? "⛽ COMBUSTIBLES" : (g.razon || "—")}
                     {!g.isFuel && g.rut && (
-                      <span className="ml-2 font-normal text-[var(--color-muted)]">· {formatRutForDisplay(g.rut)}</span>
+                      <span className="ml-2 font-normal text-[var(--color-muted)]">· <CopyRut rut={g.rut} className="min-h-8" /></span>
                     )}
                     <span className="ml-2 font-normal text-[var(--color-muted)]">· {g.docs.length} documento{g.docs.length === 1 ? "" : "s"}</span>
                   </div>
@@ -553,7 +553,7 @@ export default function Billing() {
                       <td colSpan={totalCols} className="px-2 py-1.5 text-xs font-semibold">
                         {g.isFuel ? "⛽ COMBUSTIBLES" : (g.razon || "—")}
                         {!g.isFuel && g.rut && (
-                          <span className="ml-2 font-normal text-[var(--color-muted)]">· {formatRutForDisplay(g.rut)}</span>
+                          <span className="ml-2 font-normal text-[var(--color-muted)]">· <CopyRut rut={g.rut} /></span>
                         )}
                         <span className="ml-2 font-normal text-[var(--color-muted)]">· {g.docs.length} documento{g.docs.length === 1 ? "" : "s"}</span>
                       </td>

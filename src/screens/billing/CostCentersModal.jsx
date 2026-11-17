@@ -2,7 +2,7 @@ import { useRef, useState, useMemo } from "react";
 import { useCaptureActions } from "../../hooks/useCaptureActions";
 import { PRINT_SHEET_CSS } from "../../utils/printWindow";
 import { dteTypeLabel } from "../../utils/siiCsvParser";
-import { formatRutForDisplay } from "../../utils/rutUtils";
+import { CopyRut } from "../../components/CopyRut";
 import Modal from "../../components/Modal";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { useToast } from "../../contexts/ToastContext";
@@ -360,7 +360,7 @@ export function CostCentersModal({ costCenters, docs, informalExpenses, companie
                             </td>
                             <td className="px-2 py-1.5 text-right font-mono tabular-nums">{d.folio}</td>
                             <td className="px-2 py-1.5 truncate max-w-[220px]">{counterpartyName || "—"}</td>
-                            <td className="px-2 py-1.5 font-mono text-xs">{formatRutForDisplay(rut)}</td>
+                            <td className="px-2 py-1.5 font-mono text-xs"><CopyRut rut={rut} className="font-mono" /></td>
                             <td className={`px-2 py-1.5 text-right tabular-nums ${isNC ? "text-[var(--color-danger)]" : ""}`}>{isNC ? "−" : ""}{fmtCurrency(d.neto)}</td>
                             <td className={`px-2 py-1.5 text-right tabular-nums ${isNC ? "text-[var(--color-danger)]" : ""}`}>{isNC ? "−" : ""}{fmtCurrency(d.iva)}</td>
                             <td className={`px-2 py-1.5 text-right font-semibold tabular-nums ${isNC ? "text-[var(--color-danger)]" : ""}`}>{isNC ? "−" : ""}{fmtCurrency(d.total)}</td>

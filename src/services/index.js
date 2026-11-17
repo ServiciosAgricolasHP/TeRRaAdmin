@@ -1,4 +1,5 @@
 import { createService, createAdditiveService } from "./firestoreBase";
+import { markWorkdayDeleted } from "./workdayDeletions";
 
 // Faenas, subfaenas y ciclos: ver `listJobs`, `listSubjobs` y `listCycles` en
 // jobLists.js.
@@ -9,7 +10,16 @@ export const cyclesService = createAdditiveService("cycle", "cycles");
 // Trabajadores: ver `listWorkers` en workersService.js.
 export const workersService = createAdditiveService("worker", "worker");
 
-export const workdaysService = createService("workday", "workdays");
+// Eliminar una jornada deja su marca (services/workdayDeletions.js), para que
+// las copias de Nómina y del Calendario la saquen sin releer.
+const workdaysBase = createService("workday", "workdays");
+export const workdaysService = {
+  ...workdaysBase,
+  async remove(id, opts) {
+    await workdaysBase.remove(id, opts);
+    await markWorkdayDeleted(id);
+  },
+};
 
 // Interruptor del registro de lecturas (`readLogConfig/main`, ver readMeter.js).
 export const readLogConfigService = createService("readLogConfig", "readLogConfig");
@@ -32,6 +42,10 @@ export function listWorkdaysByCycle(cycleId) {
 }
 
 export const groupLeadersService = createService("groupLeader", "groupLeader");
+// La lista de líderes, guardada en el navegador por un día. La comparten la
+// grilla del ciclo y la revisión de la nómina: con las mismas opciones, usan
+// la misma copia.
+export const listGroupLeaders = () => groupLeadersService.list({ cache: true, persist: true, ttl: 24 * 60 * 60 * 1000 });
 export const payrollSnapshotsService = createService("payrollSnapshot", "payrollSnapshots");
 export const interestLinksService = createService("interestLink", "interestLinks");
 

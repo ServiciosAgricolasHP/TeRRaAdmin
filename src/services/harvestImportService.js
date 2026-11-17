@@ -3,6 +3,7 @@ import { db, auth } from "../firebase";
 import { cyclesService, workdaysService, workersService } from "./index";
 import { syncWorkers } from "./workersService";
 import { commitInChunks } from "./batchWrites";
+import { deleteWorkdayInBatch } from "./workdayDeletions";
 import { logAction } from "./logger";
 import { normalizeDayPricesEntry } from "../utils/cosechaCombos";
 import { toProperName } from "../utils/nameUtils";
@@ -59,10 +60,11 @@ export async function importHarvest({ cycleId, laborId, plan, fileName, onProgre
       batch.set(doc(db, "workdays", w.docId), { ...w.data, ...created, ...stamp() }, { merge: true });
       written.push({ mapKey: w.mapKey, wd: { id: w.docId, ...w.data } });
     }),
-    ...plan.deletes.map((d) => (batch) => batch.delete(doc(db, "workdays", d.docId))),
+    ...plan.deletes.map((d) => (batch) => deleteWorkdayInBatch(batch, d.docId)),
   ];
   onProgress({ stage: "write", done: 0, total: writes.length });
-  await commitInChunks(writes, (done) => onProgress({ stage: "write", done, total: writes.length }));
+  // Una jornada eliminada deja su marca en el mismo lote: dos operaciones.
+  await commitInChunks(writes, (done) => onProgress({ stage: "write", done, total: writes.length }), 225);
   workdaysService.invalidate();
 
   // El ciclo, sobre lo que hay ahora en la base.

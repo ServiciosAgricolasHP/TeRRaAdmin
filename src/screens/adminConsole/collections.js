@@ -3,6 +3,7 @@
 export const MAIN_COLLECTIONS = [
   // Producción
   { id: "workdays", group: "Producción", label: "Workdays", note: "jornadas registradas (la tabla más grande)" },
+  { id: "workdayDeletions", group: "Producción", label: "Jornadas eliminadas", note: "una marca por jornada eliminada; vencen a los 30 días" },
   { id: "cycles", group: "Producción", label: "Ciclos", note: "abiertos y cerrados" },
   { id: "faenas", group: "Producción", label: "Faenas", note: "" },
   { id: "subfaenas", group: "Producción", label: "Subfaenas", note: "" },

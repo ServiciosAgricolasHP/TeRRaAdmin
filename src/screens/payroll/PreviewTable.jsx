@@ -7,6 +7,11 @@ import { matchesSearchQuery } from "../../utils/textSearch";
 import { fmtCurrency } from "../../utils/format";
 import { previewEditCaps } from "../../utils/payrollPreview";
 import { accountTypeShort } from "./helpers";
+import { checkOf } from "../../utils/payrollChecks/payrollChecks";
+import { PayrollChecksModal } from "./PayrollChecksModal";
+import ConfirmDialog from "../../components/ConfirmDialog";
+import { rowFlag } from "./checkSeverity";
+import { ChecksButton, RowFlag } from "./CheckFlag";
 
 export function PreviewTable({
   rutOf,
@@ -22,12 +27,17 @@ export function PreviewTable({
   totalSelected,
   countSelected,
   cycleOptions = [],
+  checks,
   onBack,
   onGenerate,
   busy,
 }) {
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all"); // all | bank | cash | missing | suspicious | leader:<name>
+  const [filter, setFilter] = useState("all"); // all | bank | cash | missing | suspicious | leader:<name> | checks | check:<id>
+  // La revisión abierta: `{ search }` con que se abre, o null.
+  const [checksModal, setChecksModal] = useState(null);
+  // Las alertas rojas sin revisar al apretar Guardar, o null.
+  const [alarm, setAlarm] = useState(null);
   const [cycleFilter, setCycleFilter] = useState("all");
 
   const bankTotal = bankItems.reduce((s, p) => s + (Number(p.amount) || 0), 0);
@@ -55,11 +65,32 @@ export function PreviewTable({
       if (filter === "missing" && !p._missing) return false;
       if (filter === "suspicious" && !p._accountIssue) return false;
       if (filter.startsWith("leader:") && normalizeLeader(p.groupLeader) !== filter.slice(7)) return false;
+      if (filter === "checks" && !rowFlag(checks.alertsByRut.get(p.rut))) return false;
+      if (filter.startsWith("check:") && !(checks.alertsByRut.get(p.rut) || []).some((a) => a.checkId === filter.slice(6))) return false;
       if (cycleFilter !== "all" && !((p.byCycle?.[cycleFilter] || 0) > 0)) return false;
       if (q && !matchesSearchQuery(p.name, q) && !p.rut.toLowerCase().includes(q.toLowerCase())) return false;
       return true;
     });
-  }, [items, search, filter, cycleFilter]);
+  }, [items, search, filter, cycleFilter, checks.alertsByRut]);
+
+  // Con alertas rojas sin revisar, Guardar avisa antes: Revisar abre la
+  // revisión y Generar igual sigue.
+  const generate = () => {
+    const reds = checks.alerts.filter((a) => !a.review && a.severity === "red");
+    if (reds.length) setAlarm(reds);
+    else onGenerate();
+  };
+
+  // Asigna el grupo en las fichas y en las filas de la vista previa.
+  const assignGroups = async (assignments) => {
+    const saved = await checks.assignGroups(assignments);
+    if (saved) for (const a of assignments) updatePreview(a.rut, { groupLeader: a.leader });
+  };
+
+  const showCheckInTable = (checkId) => {
+    setFilter(`check:${checkId}`);
+    setChecksModal(null);
+  };
 
   const toggleCash = (p) => {
     const newCode = isCashBank(p.bankCode) ? (p._origBank || "") : CASH_BANK_CODE;
@@ -141,7 +172,7 @@ export function PreviewTable({
           </div>
         </div>
         <button
-          onClick={onGenerate}
+          onClick={generate}
           disabled={busy || countSelected === 0}
           className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
         >
@@ -166,6 +197,8 @@ export function PreviewTable({
           <option value="cash">💵 Efectivo</option>
           <option value="missing">⚠ Datos faltantes</option>
           <option value="suspicious">⚠ Cuenta sospechosa</option>
+          {checks.alerts.length > 0 && <option value="checks">🔎 Con alertas</option>}
+          {filter.startsWith("check:") && <option value={filter}>🔎 {checkOf(filter.slice(6))?.title}</option>}
           {leaders.map((l) => (
             <option key={l} value={`leader:${l}`}>👥 {l}</option>
           ))}
@@ -183,6 +216,7 @@ export function PreviewTable({
             ))}
           </select>
         )}
+        {checks.alerts.length > 0 && <ChecksButton summary={checks.summary} onClick={() => setChecksModal({ search: "" })} />}
         <div className="ml-auto flex flex-wrap gap-1 text-xs">
           <span className="text-[var(--color-muted)]">{filteredItems.length} visibles:</span>
           <button
@@ -248,7 +282,10 @@ export function PreviewTable({
                     />
                   </td>
                   <td className="px-3 py-2 font-mono text-xs">{formatRutForDisplay(rutOf(p.rut, p.workerId))}</td>
-                  <td className="px-3 py-2">{p.name}</td>
+                  <td className="px-3 py-2">
+                    {p.name}
+                    <RowFlag alerts={checks.alertsByRut.get(p.rut)} onClick={() => setChecksModal({ search: rutOf(p.rut, p.workerId) })} />
+                  </td>
                   <td className="px-3 py-2 text-xs text-[var(--color-muted)]">
                     {p.groupLeader || "—"}
                   </td>
@@ -348,6 +385,37 @@ export function PreviewTable({
         </table>
       </div>
 
+      <ConfirmDialog
+        open={!!alarm}
+        title="🔴 Alertas sin revisar"
+        message={alarm ? alarmText(alarm) : ""}
+        cancelLabel="Revisar"
+        confirmLabel="Generar igual"
+        danger
+        onCancel={() => {
+          setAlarm(null);
+          setChecksModal({ search: "" });
+        }}
+        onConfirm={() => {
+          setAlarm(null);
+          onGenerate();
+        }}
+      />
+
+      {checksModal && (
+        <PayrollChecksModal
+          alerts={checks.alerts}
+          summary={checks.summary}
+          initialSearch={checksModal.search}
+          onReview={checks.setReviewed}
+          onShowInTable={showCheckInTable}
+          leaderOptions={checks.leaderOptions}
+          onAssignGroups={assignGroups}
+          assigning={checks.assigning}
+          onClose={() => setChecksModal(null)}
+        />
+      )}
+
       {cashGroups.length > 0 && (
         <div className="max-h-[32vh] shrink-0 overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
           <div className="mb-2 text-sm font-semibold">💵 Efectivo agrupado por líder ({cashGroups.length})</div>
@@ -368,4 +436,12 @@ export function PreviewTable({
       )}
     </div>
   );
+}
+
+// El texto del aviso de Guardar: cuántas rojas quedan y las primeras.
+function alarmText(reds) {
+  const sample = reds.slice(0, 5).map((a) => `• ${a.name || a.rut}: ${checkOf(a.checkId)?.title}`);
+  const more = reds.length > 5 ? [`… y ${reds.length - 5} más`] : [];
+  const count = reds.length === 1 ? "1 alerta roja sin revisar" : `${reds.length} alertas rojas sin revisar`;
+  return [`${count}: puede ser plata mal pagada.`, "", ...sample, ...more].join("\n");
 }

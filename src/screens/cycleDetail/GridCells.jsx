@@ -1,4 +1,4 @@
-import { formatRutForDisplay } from "../../utils/rutUtils";
+import { CopyRut } from "../../components/CopyRut";
 import { fmtCurrency } from "../../utils/format";
 import { useGridCells } from "./GridCellsContext";
 
@@ -28,14 +28,9 @@ export function RutCell(p) {
       </button>
     );
   }
-  return (
-    <span
-      className="cursor-pointer hover:underline"
-      title="Doble click para editar el trabajador"
-    >
-      {formatRutForDisplay(p.data?._displayRut || p.value)}
-    </span>
-  );
+  // El doble clic, que abre la ficha, lo maneja la columna
+  // (`onCellDoubleClicked`, cycleDetail/columns.jsx).
+  return <CopyRut rut={p.data?._displayRut || p.value} editHint />;
 }
 
 export function NameCell(p) {

@@ -4,7 +4,7 @@ import { ProgressBar } from "./ProgressBar";
 
 // `progress` ({ label, done, total }) muestra la barra de avance mientras
 // `busy`, para una confirmación que dispara algo largo.
-export default function ConfirmDialog({ open, title = "Confirmar", message, onConfirm, onCancel, confirmLabel = "Confirmar", danger = false, busy = false, progress = null }) {
+export default function ConfirmDialog({ open, title = "Confirmar", message, onConfirm, onCancel, confirmLabel = "Confirmar", cancelLabel = "Cancelar", danger = false, busy = false, progress = null }) {
   // Enter confirma, salvo con el foco en uno de los botones del diálogo: ahí
   // Enter hace el clic de ese botón (en "Cancelar", cancela).
   useEffect(() => {
@@ -33,7 +33,7 @@ export default function ConfirmDialog({ open, title = "Confirmar", message, onCo
             disabled={busy}
             className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-1.5 text-sm hover:bg-[var(--color-accent-soft)] disabled:opacity-60"
           >
-            Cancelar
+            {cancelLabel}
           </button>
           <button
             data-confirm-button

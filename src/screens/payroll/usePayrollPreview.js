@@ -11,6 +11,8 @@ import { isCashBank } from "../../utils/banks";
 import { attempt } from "../../utils/attempt";
 import { errorText } from "../../utils/errorText";
 
+const EMPTY_SOURCES = { workdays: [], cycles: [] };
+
 // La vista previa de una nómina nueva: se arma con lo elegido, se edita fila
 // por fila o en bloque, y da los totales de lo incluido.
 export function usePayrollPreview({ chosenCycles, cycles, jobs, people, subjobs, toast, workers }) {
@@ -24,6 +26,9 @@ export function usePayrollPreview({ chosenCycles, cycles, jobs, people, subjobs,
   const previewWorkdaysRef = useRef([]);
   const previewAdvancesRef = useRef([]);
   const previewCycleDocsRef = useRef([]);
+  // Las mismas jornadas y ciclos, para la revisión de la nómina, que los lee
+  // al dibujar.
+  const [previewSources, setPreviewSources] = useState(EMPTY_SOURCES);
   const [busy, setBusy] = useState(false);
 
   const [payrollName, setPayrollName] = useState("");
@@ -77,6 +82,7 @@ export function usePayrollPreview({ chosenCycles, cycles, jobs, people, subjobs,
       previewWorkdaysRef.current = allWorkdays;
       previewAdvancesRef.current = pendingAdvances;
       previewCycleDocsRef.current = liveCycles;
+      setPreviewSources({ workdays: allWorkdays, cycles: liveCycles });
       const items = previewItemsOf({ aggregates, workers, payrollCycles, pendingAdvances });
 
       setPreviewItems(items);
@@ -117,6 +123,7 @@ export function usePayrollPreview({ chosenCycles, cycles, jobs, people, subjobs,
   const resetPreview = () => {
     setPreviewItems([]);
     setPreviewCycles([]);
+    setPreviewSources(EMPTY_SOURCES);
     setPayrollName("");
     setStep(1);
   };
@@ -133,6 +140,7 @@ export function usePayrollPreview({ chosenCycles, cycles, jobs, people, subjobs,
     previewCycleDocsRef,
     previewCycles,
     previewItems,
+    previewSources,
     previewWorkdaysRef,
     resetPreview,
     setBusy,

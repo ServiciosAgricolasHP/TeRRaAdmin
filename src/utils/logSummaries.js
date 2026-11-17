@@ -29,9 +29,11 @@ export function itemFigures(it) {
 
 const sameFigures = (a, b) => Object.keys(a).every((k) => a[k] === b[k]);
 const person = (it) => ({ key: itemKeyOf(it), rut: it?.rut || "", name: it?.name || "", ...itemFigures(it) });
+const leaderOf = (it) => String(it?.groupLeader || "");
 
 // Quién entró a la nómina, quién salió y a quién le cambió algo, con sus
-// cifras antes y después.
+// cifras antes y después. Cambiar solo el grupo también cuenta: las cifras
+// llevan además el grupo (`leader`).
 export function payrollItemsChange(from = [], to = []) {
   const before = new Map((from || []).map((it) => [itemKeyOf(it), it]));
   const after = new Map((to || []).map((it) => [itemKeyOf(it), it]));
@@ -44,7 +46,9 @@ export function payrollItemsChange(from = [], to = []) {
     else {
       const a = itemFigures(prev);
       const b = itemFigures(it);
-      if (!sameFigures(a, b)) changed.push({ key, rut: it.rut || "", name: it.name || prev.name || "", from: a, to: b });
+      if (!sameFigures(a, b) || leaderOf(prev) !== leaderOf(it)) {
+        changed.push({ key, rut: it.rut || "", name: it.name || prev.name || "", from: { ...a, leader: leaderOf(prev) }, to: { ...b, leader: leaderOf(it) } });
+      }
     }
   }
   for (const [key, it] of before) if (!after.has(key)) removed.push(person(it));

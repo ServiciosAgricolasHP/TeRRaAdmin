@@ -27,6 +27,7 @@ const ACTION_STYLE = {
   laborClear: { color: "#b91c1c", bg: "#fee2e2", label: "limpiar labor" },
   cascadeDelete: { color: "#b91c1c", bg: "#fee2e2", label: "eliminar en cascada" },
   workerMerge: { color: "#92400e", bg: "#fef3c7", label: "unir fichas" },
+  groupLeaderAssign: { color: "#92400e", bg: "#fef3c7", label: "asignar grupo" },
   workdaysMove: { color: "#92400e", bg: "#fef3c7", label: "mover jornadas" },
   floorApplyAll: { color: "#166534", bg: "#dcfce7", label: "piso a todos" },
   floorRemove: { color: "#b91c1c", bg: "#fee2e2", label: "quitar piso" },

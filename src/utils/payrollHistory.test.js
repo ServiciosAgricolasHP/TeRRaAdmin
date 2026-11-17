@@ -97,3 +97,26 @@ describe("las entregas de anticipos en el historial", () => {
     expect(mixed.title).toBe("Recalculó");
   });
 });
+
+describe("el grupo y las alertas revisadas en el historial", () => {
+  const log = (id, changes) => ({ id, action: "update", timestamp: ts("2026-11-17T10:00:00Z"), userName: "María", changes });
+
+  it("asignar grupos lo nombra, con el grupo de cada persona", () => {
+    const changes = summarizeChanges("payroll", { items: { from: [ana, beto], to: [{ ...ana, groupLeader: "NORTE" }, beto] } });
+    const [entry] = payrollHistoryOf([log("g1", changes)], []);
+    expect(entry.title).toBe("Asignó grupos");
+    expect(entry.lines.map((l) => l.text)).toEqual(["Ana Rojas: mismo líquido (grupo sin grupo → NORTE)"]);
+  });
+
+  it("un recálculo que además cambia el grupo sigue siendo Recalculó", () => {
+    const changes = summarizeChanges("payroll", { items: { from: [ana], to: [{ ...ana, groupLeader: "NORTE", amount: 90000, advance: 10000 }] } });
+    const [entry] = payrollHistoryOf([log("g2", changes)], []);
+    expect(entry.title).toBe("Recalculó");
+    expect(entry.lines[0].text).toContain("grupo sin grupo → NORTE");
+  });
+
+  it("marcar alertas revisadas lo nombra", () => {
+    const [entry] = payrollHistoryOf([log("r1", { reviewedChecks: { from: [], to: [{ keys: ["missingGroup|W1"] }] } })], []);
+    expect(entry).toMatchObject({ title: "Marcó alertas revisadas", lines: [] });
+  });
+});

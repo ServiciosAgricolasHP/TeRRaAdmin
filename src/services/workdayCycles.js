@@ -5,7 +5,8 @@ import { getCountFromServer, getDocs, recordCacheHit } from "./readMeter";
 import { idbDelete, idbGet, idbSet } from "./idbStore";
 import { localIsoDate } from "../utils/dates";
 import { advanceMarks, deltaSince, markOf, millisOf, syncMode } from "../utils/syncedList";
-import { applyCycleChanges, cyclesToDrop, groupByCycle } from "../utils/workdayCycles";
+import { applyCycleChanges, cyclesToDrop, deletedIdsOf, groupByCycle, removeDeleted } from "../utils/workdayCycles";
+import { deletedWorkdaysSince } from "./workdayDeletions";
 
 // Las jornadas de los ciclos que usa Nómina (lo pendiente de los ciclos
 // activos, armar una nómina y el detalle de una), guardadas en el navegador
@@ -17,9 +18,11 @@ import { applyCycleChanges, cyclesToDrop, groupByCycle } from "../utils/workdayC
 //   como mucho una vez por minuto). Lo escrito en los minutos antes de la
 //   marca se vuelve a traer hasta que pasan esos minutos (`advanceMarks`,
 //   utils/syncedList.js);
-// - un conteo de los ciclos pedidos, de a 30, encuentra lo eliminado: si no
-//   calza con las copias, se cuenta cada ciclo y se relee entero el que no
-//   calza.
+// - otra consulta trae las marcas de las jornadas eliminadas desde la marca
+//   (services/workdayDeletions.js) y las saca de las copias;
+// - un conteo de los ciclos pedidos, de a 30, es la red de seguridad para lo
+//   eliminado sin marca: si no calza con las copias, se cuenta cada ciclo y
+//   se relee entero el que no calza.
 // Una escritura de jornadas en este equipo (`workdaysService.invalidate()`)
 // no suelta las copias: la próxima vez se ponen al día sin esperar el minuto.
 //
@@ -132,20 +135,25 @@ async function runDelta() {
     return 1;
   }
   const since = Timestamp.fromMillis(Math.max(0, deltaSince(meta, MARGIN_MS)));
-  const changed = docsOf(await getDocs(query(collection(db, WORKDAYS), where("updatedAt", ">", since))));
-  if (changed.length) {
+  const [changedSnap, deleted] = await Promise.all([
+    getDocs(query(collection(db, WORKDAYS), where("updatedAt", ">", since))),
+    deletedWorkdaysSince(since),
+  ]);
+  const changed = docsOf(changedSnap);
+  const deletedIds = deletedIdsOf(deleted, changed);
+  if (changed.length || deletedIds.size) {
     for (const cycleId of Object.keys(meta.cycles)) {
       const list = await cycleData(cycleId);
       if (!list) continue;
-      const next = applyCycleChanges(list, changed, cycleId);
+      const next = removeDeleted(applyCycleChanges(list, changed, cycleId), deletedIds);
       if (next !== list) saveCycle(cycleId, next);
     }
   }
-  const newMark = markOf(changed, "updatedAt", meta.mark);
+  const newMark = markOf(deleted, "deletedAt", markOf(changed, "updatedAt", meta.mark));
   Object.assign(meta, advanceMarks(meta, { start: now, end: Date.now(), newMark, marginMs: MARGIN_MS }), { syncedAt: now });
   lastDeltaAt = now;
   saveMeta();
-  return Math.max(1, changed.length);
+  return Math.max(1, changed.length) + Math.max(1, deleted.length);
 }
 
 function delta(fresh) {

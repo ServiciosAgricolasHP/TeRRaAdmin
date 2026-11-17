@@ -3,6 +3,7 @@ import { deleteDoc, doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "../../src/firebase";
 import { workdaysService } from "../../src/services";
 import { tagWorkdaysWithPayroll } from "../../src/services/payrollsService";
+import { writeWorkdays } from "../../src/services/workdayBatches";
 import { syncWorkdayCycles } from "../../src/services/workdayCycles";
 
 // Las jornadas de los ciclos que usa Nómina: cada ciclo se lee entero la
@@ -48,20 +49,45 @@ describe("las jornadas de los ciclos de Nómina", () => {
     expect(next.data.find((d) => d.id === "w2").qty).toBe(7);
     expect(ids(next.data)).toEqual(["w1", "w2", "w3", "w5"]);
     // Lo escrito desde cinco minutos antes de la marca (acá, las cinco
-    // jornadas) y el conteo de los dos ciclos.
-    expect(next.reads).toBe(5 + 1);
+    // jornadas), las marcas de lo eliminado (ninguna) y el conteo de los dos
+    // ciclos.
+    expect(next.reads).toBe(5 + 1 + 1);
   });
 
-  it("lo eliminado entra porque el conteo no calza, y se relee solo ese ciclo", async () => {
+  it("lo eliminado sin marca entra porque el conteo no calza, y se relee solo ese ciclo", async () => {
     await seed();
     await syncWorkdayCycles(["C1", "C2"]);
     await deleteDoc(doc(db, "workdays", "w3"));
 
     const next = await syncWorkdayCycles(["C1", "C2"], { fresh: true });
     expect(ids(next.data)).toEqual(["w1", "w2"]);
-    // Lo escrito en los últimos minutos que sigue en pie, el conteo de los
-    // dos, el de cada uno y la relectura del ciclo que no calzó (vacío).
-    expect(next.reads).toBe(3 + 1 + 2 + 1);
+    // Lo escrito en los últimos minutos que sigue en pie, las marcas
+    // (ninguna), el conteo de los dos, el de cada uno y la relectura del
+    // ciclo que no calzó (vacío).
+    expect(next.reads).toBe(3 + 1 + 1 + 2 + 1);
+  });
+
+  it("lo eliminado con su marca sale de la copia sin releer el ciclo", async () => {
+    await seed();
+    await syncWorkdayCycles(["C1", "C2"]);
+    await workdaysService.remove("w1");
+    await writeWorkdays({ deletes: ["w3"] });
+
+    const next = await syncWorkdayCycles(["C1", "C2"], { fresh: true });
+    expect(ids(next.data)).toEqual(["w2"]);
+    // Lo escrito en los últimos minutos que sigue en pie (w2 y w4), las dos
+    // marcas y el conteo de los dos ciclos, que ya calza.
+    expect(next.reads).toBe(2 + 2 + 1);
+  });
+
+  it("una jornada eliminada y vuelta a escribir sigue en la copia", async () => {
+    await seed();
+    await syncWorkdayCycles(["C1"]);
+    await workdaysService.remove("w1");
+    await write("w1", "C1", { qty: 3 });
+
+    const { data } = await syncWorkdayCycles(["C1"], { fresh: true });
+    expect(data.find((d) => d.id === "w1").qty).toBe(3);
   });
 
   it("una nómina generada en otro equipo llega con la puesta al día", async () => {

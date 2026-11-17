@@ -123,6 +123,15 @@ Una fila por (cycleId × laborId × workerRut × date). Es la tabla "transaccion
 | `createdAt`, `createdBy` | ts, string? | |
 | `updatedAt`, `updatedBy` | ts, string? | la última escritura de `workdaysService` (la grilla, un pesaje editado en Pesajes QR) o de una escritura en lote (Importar cosecha, Limpiar labor, Unir fichas y lo que pasa por `writeWorkdays`, en `services/workdayBatches.js`: la cascada, mover jornadas de ciclo, el piso a todos y sincronizar Pesajes QR), que lo escribe en cada jornada, o de la nómina al etiquetarla, soltarla o marcarla pagada (`batchUpdateWorkdays`, `services/payrollsService.js`). Las copias por mes del Calendario se ponen al día con él (`syncWorkdayMonth`) |
 
+### `workdayDeletions`
+La marca de una jornada eliminada, para que las copias de jornadas del navegador (Nómina por ciclo y el Calendario por mes) la saquen sin releer el ciclo o el mes (`services/workdayDeletions.js`). Toda eliminación de jornadas de TeRRa la deja: `workdaysService.remove` y los lotes (`deleteWorkdayInBatch`: la grilla, Limpiar labor, Importar cosecha, Unir fichas, mover jornadas a otro ciclo y la eliminación en cascada de Faenas).
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | el id de la jornada eliminada. Si se vuelve a eliminar, la marca se reescribe |
+| `deletedAt` | ts | `serverTimestamp()`. Las copias traen las marcas desde su marca de tiempo, como `updatedAt` en `workdays` |
+| `deletedBy` | string? | uid |
+| `expiresAt` | ts | 30 días después. Para una política TTL de Firestore sobre este campo: las copias se releen enteras una vez por semana, así que una marca más vieja ya no sirve |
+
 ### `payrolls`
 Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
 | Campo | Tipo | Notas |
@@ -144,6 +153,7 @@ Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
 | `advanceIds` | ref→`advances`[] | |
 | `advanceTotal` | number | |
 | `payoutCycleDetails` | `{ id, label, faenaId, faenaName, subfaenaId, subfaenaName }[]`? | los ciclos a los que se asocian las entregas de anticipos (`items[].payoutApplications[].cycleId`), con sus nombres al entregar. Pueden no estar en `cycleIds`. El resumen los usa para la fila de cada uno |
+| `reviewedChecks` | `{ keys: string[], by, byName, at }[]`? | las alertas de la revisión de la nómina marcadas revisadas: una entrada por cada vez que alguien marcó, con las claves (`checkId|workerId`), su uid, su nombre (`signerName`) y la hora ISO. La última marca de una clave manda. Lo escribe Generar con lo marcado en la vista previa, y el detalle de una nómina pendiente al marcar (`setReviewedChecks`); sin nada marcado, la nómina no lo trae. Ver "Revisión de la nómina" en `docs/screens/payroll.md` |
 | `payoutTotal` | number? | lo que la nómina entrega en anticipos (Σ `items[].payoutTotal`). Lo escriben las ediciones de la nómina (`recalcPayrollAggregates`) |
 | `createdAt`, `createdBy` | ts, string? | |
 | `updatedAt`, `updatedBy` | ts, string? | toda escritura de `payrollsService` los pone. La copia que comparten Nómina y el Dashboard se pone al día con él (`listPayrolls`) |
@@ -332,6 +342,7 @@ Transportistas (propios o contratados).
 | `vehicles` | `[{alias, plate?, capacity?, notes?}]` | |
 | `notes` | string? | |
 | `active` | bool | soft delete |
+| `createdAt/By`, `updatedAt/By` | ts, string | toda escritura de TeRRa pone `updatedAt`, también desactivar y reactivar. La copia que comparten las pantallas se pone al día con él (`carriersService.listAll`) |
 
 ### `transports` (vueltas / viajes)
 | Campo | Tipo | Notas |
@@ -758,7 +769,7 @@ Auditoría — una fila por mutación.
 | `entity`, `entityId` | string | qué |
 | `before` | objeto? | solo en `delete` (snapshot completo). Borrar un documento que no existe no deja log |
 | `after` | objeto? | solo en `create` (snapshot completo) |
-| `changes` | `{ [campo]: { from, to } }`? | solo en `update` — **es el diff, no el doc entero**. En `payroll` y `payrollSnapshot` las listas grandes van resumidas, no enteras (`summarizeChanges`, `utils/logSummaries.js`): las personas (`items` de la nómina, `workers` del JSON) como `{ summary: "items", count: { from, to }, added, removed, changed }`, con cada persona como `{ key, rut, name, gross, advance, bonus, amount, days }` y las cambiadas con sus cifras en `from` y `to`; las listas de ids o de elementos con `id` (`workdayIds`, `advanceIds`, y `workdays`, `advances` y `cycles` del JSON) como `{ summary: "list", from, to, added, removed }`, las cantidades. Los registros anteriores traen la lista entera, antes y después |
+| `changes` | `{ [campo]: { from, to } }`? | solo en `update` — **es el diff, no el doc entero**. En `payroll` y `payrollSnapshot` las listas grandes van resumidas, no enteras (`summarizeChanges`, `utils/logSummaries.js`): las personas (`items` de la nómina, `workers` del JSON) como `{ summary: "items", count: { from, to }, added, removed, changed }`, con cada persona como `{ key, rut, name, gross, advance, bonus, amount, days }` y las cambiadas (también si cambió solo el grupo) con sus cifras y su grupo (`leader`) en `from` y `to`; las listas de ids o de elementos con `id` (`workdayIds`, `advanceIds`, y `workdays`, `advances` y `cycles` del JSON) como `{ summary: "list", from, to, added, removed }`, las cantidades. Los registros anteriores traen la lista entera, antes y después |
 | `truncated`, `changedFields` | bool?, string[]? | un registro que no cabía en el límite de Firestore (más de 900 KB, `fitLog`) queda sin `changes`, `before` ni `after`, con `truncated: true` y los nombres de los campos que cambiaron |
 | `meta` | objeto? | referencias cruzadas denormalizadas + contexto extra (ver abajo) |
 | `timestamp` | ts | |
@@ -777,6 +788,7 @@ Auditoría — una fila por mutación.
 | `laborId`, `file`, `written`, `deleted`, `blocked`, `floors`, `created`, `aliases`, `daysAdded`, `workersAdded`, `floorDays` | `importHarvest` (`services/harvestImportService.js`) | una importación de cosecha (`action: "harvestImport"`): `created`, los RUT de las fichas nuevas; `aliases`, `[{ workerId, added }]` con los pares RUT y nombre que se guardaron en cada ficha |
 | `laborId`, `laborName`, `deleted`, `kept`, `workersRemoved`, `daysRemoved`, `tripDays`, `pendingTrips` | `clearLabor` (`services/laborClearService.js`) | limpiar una labor (`action: "laborClear"`): cuántas jornadas borró y cuántas quedaron por estar en una nómina, cuántas personas sacó, qué días quitó, cuáles quedaron por tener vueltas y cuántas vueltas sin pagar había esos días |
 | `cloneId`, `cloneRut`, `moved`, `conflicts`, `paidLeft`, `cycles` | `mergeWorkers` (`services/workerMergeService.js`) | unir una ficha duplicada (`action: "workerMerge"`): cuántas jornadas pasaron sin choque, cada choque con lo que se eligió (`[{ id, choice }]`, `kept`/`clone`/`sum`), cuántas quedaron en el clon por estar en una nómina y los ciclos cuyas labores cambiaron |
+| `count`, `workers` | `assignGroupLeaders` (`services/workersService.js`) | asignar el grupo a varias fichas desde la revisión de la nómina (`action: "groupLeaderAssign"`, `entity: "worker"`, sin `entityId`): cuántas fichas y, de cada una, `{ id, leader, before }` |
 | `workdays`, `byCycle` | `deleteCascade` (`services/workdayBatches.js`) | eliminar una faena o un ciclo en cascada (`action: "cascadeDelete"`, `entity: "faena"`, `"subfaena"` o `"cycle"`): cuántas jornadas borró y cuántas de cada ciclo. Los ciclos y las subfaenas dejan su propio `delete` |
 | `fromCycleId`, `moved`, `skippedPaid` | `moveWorkdaysToCycle` (`services/workdayBatches.js`) | mover jornadas al crear un ciclo desde otro (`action: "workdaysMove"`, a nombre del ciclo nuevo): cuántas pasaron y cuántas quedaron en el origen por estar en una nómina |
 | `laborId`, `date`, `floorKey`, `amount`, `workers` / `deleted` | `addFloorBonuses`, `removeFloorBonuses` (`services/workdayBatches.js`) | asignar un piso del día a todos (`action: "floorApplyAll"`) o quitarlo con sus bonos (`action: "floorRemove"`), en el ciclo: el piso (`_piso` o `_piso_<envase>`), el monto y cuántos bonos escribió o borró |

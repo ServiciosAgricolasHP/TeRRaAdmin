@@ -6,6 +6,8 @@ import { idbDelete, idbGet, idbSet } from "./idbStore";
 import { localIsoDate } from "../utils/dates";
 import { advanceMarks, deltaSince, markOf, millisOf, syncMode } from "../utils/syncedList";
 import { applyMonthChanges, monthOfDate, monthsToDrop } from "../utils/workdayMonths";
+import { deletedIdsOf, removeDeleted } from "../utils/workdayCycles";
+import { deletedWorkdaysSince } from "./workdayDeletions";
 
 // Las jornadas de un mes para el Calendario, guardadas en el navegador. Cada
 // mes abierto se lee entero la primera vez y una vez por semana; entre medio,
@@ -15,9 +17,11 @@ import { applyMonthChanges, monthOfDate, monthsToDrop } from "../utils/workdayMo
 //   mucho una vez por minuto). Lo escrito en los minutos antes de la marca se
 //   vuelve a traer hasta que pasan esos minutos (`advanceMarks`,
 //   utils/syncedList.js);
-// - un conteo del mes (una lectura por cada 1.000 jornadas) encuentra lo
-//   eliminado y lo escrito sin `updatedAt`: si no calza con la copia, el mes
-//   se lee entero.
+// - otra consulta trae las marcas de las jornadas eliminadas desde la marca
+//   (services/workdayDeletions.js) y las saca de las copias;
+// - un conteo del mes (una lectura por cada 1.000 jornadas) es la red de
+//   seguridad para lo eliminado sin marca y lo escrito sin `updatedAt`: si no
+//   calza con la copia, el mes se lee entero.
 // El id de una jornada lleva su fecha, así que una jornada nunca cambia de mes.
 //
 // Se guardan los `KEEP_MONTHS` meses abiertos más recientemente, cada uno en
@@ -119,19 +123,26 @@ async function runDelta() {
     return 1;
   }
   const since = Timestamp.fromMillis(Math.max(0, deltaSince(meta, MARGIN_MS)));
-  const changed = docsOf(await getDocs(query(collection(db, WORKDAYS), where("updatedAt", ">", since))));
+  const [changedSnap, deleted] = await Promise.all([
+    getDocs(query(collection(db, WORKDAYS), where("updatedAt", ">", since))),
+    deletedWorkdaysSince(since),
+  ]);
+  const changed = docsOf(changedSnap);
+  const deletedIds = deletedIdsOf(deleted, changed);
   const touched = new Set(changed.map((d) => monthOfDate(d.date)));
   for (const month of Object.keys(meta.months)) {
-    if (!touched.has(month)) continue;
+    if (!touched.has(month) && !deletedIds.size) continue;
     const list = await monthData(month);
-    if (list) saveMonth(month, applyMonthChanges(list, changed, month));
+    if (!list) continue;
+    const next = removeDeleted(touched.has(month) ? applyMonthChanges(list, changed, month) : list, deletedIds);
+    if (next !== list) saveMonth(month, next);
   }
-  const newMark = markOf(changed, "updatedAt", meta.mark);
+  const newMark = markOf(deleted, "deletedAt", markOf(changed, "updatedAt", meta.mark));
   Object.assign(meta, advanceMarks(meta, { start: now, end: Date.now(), newMark, marginMs: MARGIN_MS }));
   meta.syncedAt = now;
   lastDeltaAt = now;
   saveMeta();
-  return Math.max(1, changed.length);
+  return Math.max(1, changed.length) + Math.max(1, deleted.length);
 }
 
 function delta(fresh) {
