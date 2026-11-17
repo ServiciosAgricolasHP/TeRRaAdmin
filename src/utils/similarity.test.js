@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nameSimilarity, findSimilarWorkers, nameTokens, tokenNameSimilarity, tokenSimilarity, tokensSimilarity } from "./similarity";
+import { nameSimilarity, findSimilarWorkers, similarNamePairs, nameTokens, tokenNameSimilarity, tokenSimilarity, tokensSimilarity } from "./similarity";
 
 describe("tokenNameSimilarity", () => {
   it("no le importa el orden de las palabras", () => {
@@ -138,5 +138,28 @@ describe("findSimilarWorkers", () => {
   it("un trabajador sin nombre no matchea", () => {
     const hits = findSimilarWorkers("Juan Perez", [{ id: "9-9", name: "" }]);
     expect(hits).toEqual([]);
+  });
+});
+
+describe("similarNamePairs", () => {
+  const names = ["ANA PÉREZ", "LUIS SOTO", "Ana Peres", "", "MARÍA JOSÉ GONZÁLEZ", "MARIA JOSE GONZALES"];
+
+  it("da los mismos pares que comparar cada par con nameSimilarity", () => {
+    const expected = [];
+    for (let i = 0; i < names.length; i += 1) {
+      for (let j = i + 1; j < names.length; j += 1) {
+        const score = nameSimilarity(names[i], names[j]);
+        if (score >= 0.88) expected.push([i, j, score]);
+      }
+    }
+    expect(similarNamePairs(names, 0.88)).toEqual(expected);
+    expect(expected.map(([i, j]) => [i, j])).toEqual([
+      [0, 2],
+      [4, 5],
+    ]);
+  });
+
+  it("ignora los nombres vacíos", () => {
+    expect(similarNamePairs(["", ""], 0.5)).toEqual([]);
   });
 });

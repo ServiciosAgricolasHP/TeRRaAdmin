@@ -5,7 +5,7 @@ import { fmtShortDate } from "../format";
 import { newWorkerDefaults } from "../harvestImport";
 import { normalizeLeader } from "../payroll";
 import { formatRutForDisplay } from "../rutUtils";
-import { nameSimilarity } from "../similarity";
+import { similarNamePairs } from "../similarity";
 import { SEVERITY, dateRanges, listText } from "./checkContext";
 
 // Desde cuánto parecido dos nombres se marcan como la misma persona.
@@ -62,18 +62,18 @@ export function similarNames(ctx) {
     if (sev === SEVERITY.red || !severity.has(person)) severity.set(person, sev);
   };
   const rows = ctx.rows;
-  for (let i = 0; i < rows.length; i += 1) {
-    for (let j = i + 1; j < rows.length; j += 1) {
-      const a = rows[i];
-      const b = rows[j];
-      if (a.person === b.person) {
-        add(a.person, `Está dos veces en la nómina: ${rutText(a)} y ${rutText(b)}`, SEVERITY.red);
-        continue;
-      }
-      if (nameSimilarity(a.name, b.name) < SIMILAR_NAME) continue;
-      add(a.person, `Se parece a ${b.name} (${rutText(b)})`, SEVERITY.orange);
-      add(b.person, `Se parece a ${a.name} (${rutText(a)})`, SEVERITY.orange);
-    }
+  const firstRow = new Map();
+  for (const r of rows) {
+    const first = firstRow.get(r.person);
+    if (first) add(r.person, `Está dos veces en la nómina: ${rutText(first)} y ${rutText(r)}`, SEVERITY.red);
+    else firstRow.set(r.person, r);
+  }
+  for (const [i, j] of similarNamePairs(rows.map((r) => r.name), SIMILAR_NAME)) {
+    const a = rows[i];
+    const b = rows[j];
+    if (a.person === b.person) continue;
+    add(a.person, `Se parece a ${b.name} (${rutText(b)})`, SEVERITY.orange);
+    add(b.person, `Se parece a ${a.name} (${rutText(a)})`, SEVERITY.orange);
   }
   return [...lines].map(([person, list]) => ({ person, severity: severity.get(person), lines: list }));
 }

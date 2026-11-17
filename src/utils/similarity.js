@@ -39,6 +39,48 @@ export function nameSimilarity(a, b) {
   return 1 - dist / max;
 }
 
+const HISTOGRAM_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
+
+// Cuántas veces está cada letra en un nombre ya normalizado.
+function histogramOf(s) {
+  const counts = new Array(HISTOGRAM_CHARS.length).fill(0);
+  for (const ch of s) {
+    const i = HISTOGRAM_CHARS.indexOf(ch);
+    if (i >= 0) counts[i] += 1;
+  }
+  return counts;
+}
+
+// Los pares de nombres de la lista que se parecen en `threshold` o más, como
+// `nameSimilarity`: `[[i, j, score]]`, con i < j. Normaliza cada nombre una
+// vez y descarta sin calcular la distancia los pares cuyo largo o cuyas letras
+// ya no dan para el parecido pedido: la distancia es al menos la mitad de las
+// letras que no tienen par.
+export function similarNamePairs(names, threshold) {
+  const list = names.map((n) => {
+    const s = normalize(n);
+    return { s, hist: histogramOf(s) };
+  });
+  const pairs = [];
+  for (let i = 0; i < list.length; i += 1) {
+    const a = list[i];
+    if (!a.s) continue;
+    for (let j = i + 1; j < list.length; j += 1) {
+      const b = list[j];
+      if (!b.s) continue;
+      const max = Math.max(a.s.length, b.s.length);
+      const allowed = (1 - threshold) * max;
+      if (Math.abs(a.s.length - b.s.length) > allowed) continue;
+      let unmatched = 0;
+      for (let k = 0; k < a.hist.length; k += 1) unmatched += Math.abs(a.hist[k] - b.hist[k]);
+      if (unmatched / 2 > allowed) continue;
+      const score = 1 - levenshtein(a.s, b.s) / max;
+      if (score >= threshold) pairs.push([i, j, score]);
+    }
+  }
+  return pairs;
+}
+
 // Distancia entre dos palabras en la que dos letras vecinas cambiadas de lugar
 // ("CLAUIDA") cuentan como un solo error, como cualquier otro tipeo.
 function typoDistance(a, b) {
