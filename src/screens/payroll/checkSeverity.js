@@ -9,3 +9,10 @@ export function worstOpenSeverity(alerts = []) {
   if (open.some((a) => a.severity === "orange")) return "orange";
   return open.length ? "info" : null;
 }
+
+// La alerta más grave sin revisar de una fila, roja o naranja; las que solo
+// informan no marcan la fila.
+export function rowFlag(alerts) {
+  const worst = worstOpenSeverity(alerts);
+  return worst === "red" || worst === "orange" ? worst : null;
+}
