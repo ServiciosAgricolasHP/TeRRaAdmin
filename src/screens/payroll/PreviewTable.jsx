@@ -7,6 +7,9 @@ import { matchesSearchQuery } from "../../utils/textSearch";
 import { fmtCurrency } from "../../utils/format";
 import { previewEditCaps } from "../../utils/payrollPreview";
 import { accountTypeShort } from "./helpers";
+import { checkOf } from "../../utils/payrollChecks/payrollChecks";
+import { PayrollChecksModal } from "./PayrollChecksModal";
+import { SEVERITY_ICON, worstOpenSeverity } from "./checkSeverity";
 
 export function PreviewTable({
   rutOf,
@@ -22,12 +25,15 @@ export function PreviewTable({
   totalSelected,
   countSelected,
   cycleOptions = [],
+  checks,
   onBack,
   onGenerate,
   busy,
 }) {
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all"); // all | bank | cash | missing | suspicious | leader:<name>
+  const [filter, setFilter] = useState("all"); // all | bank | cash | missing | suspicious | leader:<name> | checks | check:<id>
+  // La revisión abierta: `{ search }` con que se abre, o null.
+  const [checksModal, setChecksModal] = useState(null);
   const [cycleFilter, setCycleFilter] = useState("all");
 
   const bankTotal = bankItems.reduce((s, p) => s + (Number(p.amount) || 0), 0);
@@ -55,11 +61,18 @@ export function PreviewTable({
       if (filter === "missing" && !p._missing) return false;
       if (filter === "suspicious" && !p._accountIssue) return false;
       if (filter.startsWith("leader:") && normalizeLeader(p.groupLeader) !== filter.slice(7)) return false;
+      if (filter === "checks" && !rowFlag(checks.alertsByRut.get(p.rut))) return false;
+      if (filter.startsWith("check:") && !(checks.alertsByRut.get(p.rut) || []).some((a) => a.checkId === filter.slice(6))) return false;
       if (cycleFilter !== "all" && !((p.byCycle?.[cycleFilter] || 0) > 0)) return false;
       if (q && !matchesSearchQuery(p.name, q) && !p.rut.toLowerCase().includes(q.toLowerCase())) return false;
       return true;
     });
-  }, [items, search, filter, cycleFilter]);
+  }, [items, search, filter, cycleFilter, checks.alertsByRut]);
+
+  const showCheckInTable = (checkId) => {
+    setFilter(`check:${checkId}`);
+    setChecksModal(null);
+  };
 
   const toggleCash = (p) => {
     const newCode = isCashBank(p.bankCode) ? (p._origBank || "") : CASH_BANK_CODE;
@@ -166,6 +179,8 @@ export function PreviewTable({
           <option value="cash">💵 Efectivo</option>
           <option value="missing">⚠ Datos faltantes</option>
           <option value="suspicious">⚠ Cuenta sospechosa</option>
+          {checks.alerts.length > 0 && <option value="checks">🔎 Con alertas</option>}
+          {filter.startsWith("check:") && <option value={filter}>🔎 {checkOf(filter.slice(6))?.title}</option>}
           {leaders.map((l) => (
             <option key={l} value={`leader:${l}`}>👥 {l}</option>
           ))}
@@ -183,6 +198,7 @@ export function PreviewTable({
             ))}
           </select>
         )}
+        {checks.alerts.length > 0 && <ChecksButton summary={checks.summary} onClick={() => setChecksModal({ search: "" })} />}
         <div className="ml-auto flex flex-wrap gap-1 text-xs">
           <span className="text-[var(--color-muted)]">{filteredItems.length} visibles:</span>
           <button
@@ -248,7 +264,10 @@ export function PreviewTable({
                     />
                   </td>
                   <td className="px-3 py-2 font-mono text-xs">{formatRutForDisplay(rutOf(p.rut, p.workerId))}</td>
-                  <td className="px-3 py-2">{p.name}</td>
+                  <td className="px-3 py-2">
+                    {p.name}
+                    <RowFlag alerts={checks.alertsByRut.get(p.rut)} onClick={() => setChecksModal({ search: rutOf(p.rut, p.workerId) })} />
+                  </td>
                   <td className="px-3 py-2 text-xs text-[var(--color-muted)]">
                     {p.groupLeader || "—"}
                   </td>
@@ -348,6 +367,17 @@ export function PreviewTable({
         </table>
       </div>
 
+      {checksModal && (
+        <PayrollChecksModal
+          alerts={checks.alerts}
+          summary={checks.summary}
+          initialSearch={checksModal.search}
+          onReview={checks.setReviewed}
+          onShowInTable={showCheckInTable}
+          onClose={() => setChecksModal(null)}
+        />
+      )}
+
       {cashGroups.length > 0 && (
         <div className="max-h-[32vh] shrink-0 overflow-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
           <div className="mb-2 text-sm font-semibold">💵 Efectivo agrupado por líder ({cashGroups.length})</div>
@@ -367,5 +397,43 @@ export function PreviewTable({
         </div>
       )}
     </div>
+  );
+}
+
+// La alerta más grave sin revisar de una fila, roja o naranja; las que solo
+// informan no marcan la fila.
+function rowFlag(alerts) {
+  const worst = worstOpenSeverity(alerts);
+  return worst === "red" || worst === "orange" ? worst : null;
+}
+
+// El ícono de la fila: abre la revisión filtrada a esa persona.
+function RowFlag({ alerts, onClick }) {
+  const flag = rowFlag(alerts);
+  if (!flag) return null;
+  const title = alerts
+    .filter((a) => !a.review && a.severity !== "info")
+    .map((a) => `${checkOf(a.checkId)?.title}: ${a.lines.join("; ")}`)
+    .join("\n");
+  return (
+    <button type="button" onClick={onClick} title={title} aria-label="Ver la revisión de esta persona" className="ml-1.5 inline-flex min-h-8 min-w-8 items-center justify-center rounded align-middle text-xs hover:bg-[var(--color-surface-2)]">
+      {SEVERITY_ICON[flag]}
+    </button>
+  );
+}
+
+// El resumen de la revisión en la barra de filtros: cuántas alertas sin
+// revisar hay de cada nivel. Abre la revisión.
+function ChecksButton({ summary, onClick }) {
+  const parts = ["red", "orange", "info"].filter((s) => summary[s] > 0);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Ver la revisión de la nómina"
+      className="min-h-8 whitespace-nowrap rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)]"
+    >
+      🔎 {parts.length ? parts.map((s) => `${SEVERITY_ICON[s]} ${summary[s]}`).join(" · ") : "Revisada ✓"}
+    </button>
   );
 }

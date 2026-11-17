@@ -22,6 +22,9 @@ export function usePayrollData({ toast }) {
 
   // Totales por ciclo activo (ver `cycleStatsOf`).
   const [cycleStats, setCycleStats] = useState({});
+  // Las jornadas de los ciclos activos, con o sin nómina, para la revisión de
+  // la nómina (otras labores del mismo día, lo que queda pendiente).
+  const [openWorkdays, setOpenWorkdays] = useState([]);
   // Separado de `loading`: al refrescar, el spinner va en el botón y no tapa
   // la pantalla con "Cargando…".
   const [refreshing, setRefreshing] = useState(false);
@@ -57,6 +60,7 @@ export function usePayrollData({ toast }) {
       const wds = await listCycleWorkdays(activeIds, { fresh });
       const stats = cycleStatsOf(c, w, wds);
       setCycleStats(stats);
+      setOpenWorkdays(wds);
       return { cycles: c, stats, payrolls: p };
     });
     if (err) toast.error("No se pudo cargar la nómina: " + errorText(err));
@@ -99,6 +103,7 @@ export function usePayrollData({ toast }) {
     jobs,
     load,
     loading,
+    openWorkdays,
     payrolls,
     refresh,
     refreshing,

@@ -36,6 +36,7 @@ import { useGeneratePayroll } from "./payroll/useGeneratePayroll";
 import { useClosableCycles } from "./payroll/useClosableCycles";
 import { usePayConfirm } from "./payroll/usePayConfirm";
 import { usePayrollDeletion } from "./payroll/usePayrollDeletion";
+import { usePayrollChecks } from "./payroll/usePayrollChecks";
 import ScreenLoader from "../components/ScreenLoader";
 import { useReadSection } from "../hooks/useReadSection";
 
@@ -57,6 +58,7 @@ export default function Payroll() {
     jobs,
     load,
     loading,
+    openWorkdays,
     payrolls,
     refresh,
     refreshing,
@@ -93,6 +95,7 @@ export default function Payroll() {
     previewCycleDocsRef,
     previewCycles,
     previewItems,
+    previewSources,
     previewWorkdaysRef,
     resetPreview,
     setBusy,
@@ -110,6 +113,24 @@ export default function Payroll() {
     subjobs,
     toast,
     workers,
+  });
+  // La revisión de la vista previa: lo incluido, con los ciclos de la vista
+  // previa (recién leídos) sobre los de la pantalla.
+  const includedItems = useMemo(() => previewItems.filter((p) => p.include), [previewItems]);
+  const checkCycles = useMemo(() => {
+    const byId = new Map(cycles.map((c) => [c.id, c]));
+    for (const c of previewSources.cycles) byId.set(c.id, c);
+    return [...byId.values()];
+  }, [cycles, previewSources]);
+  const previewChecks = usePayrollChecks({
+    enabled: step === 2,
+    items: includedItems,
+    workdays: previewSources.workdays,
+    openWorkdays,
+    cycles: checkCycles,
+    workers,
+    payrolls,
+    resetKey: previewSources,
   });
   // Overlay de progreso: `step` es el mensaje principal (ej. "Etiquetando
   // jornadas"), `detail` un complemento opcional (ej. "340 / 500") y `percent`
@@ -287,6 +308,7 @@ export default function Payroll() {
             totalSelected={totalSelected}
             countSelected={countSelected}
             cycleOptions={previewCycles}
+            checks={previewChecks}
             onBack={() => setStep(1)}
             onGenerate={generateAndSave}
             busy={busy}
