@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PAYROLL_CHECKS, alertsByPerson, checkSummary, payrollChecksOf, reviewedIndex, withReviews } from "./payrollChecks";
+import { PAYROLL_CHECKS, alertsByPerson, checkSummary, payrollChecksOf, reviewedChecksFor, reviewedIndex, withReviews } from "./payrollChecks";
 
 const workers = [
   { id: "1-9", rut: "1-9", name: "ANA PÉREZ" },
@@ -52,6 +52,14 @@ describe("revisadas", () => {
     const reviewed = withReviews(alerts, reviewedChecks);
     expect(reviewed.find((a) => a.key === "missingGroup|1-9").review.byName).toBe("Ana");
     expect(checkSummary(reviewed)).toEqual({ red: 1, orange: 0, info: 1, reviewed: 2 });
+  });
+
+  it("lo que se guarda lleva solo las claves de alertas vigentes", () => {
+    const stale = [...reviewedChecks, { keys: ["sharedAccount|9-9"], by: "u3", byName: "Eva", at: "x" }];
+    expect(reviewedChecksFor(stale, alerts)).toEqual([
+      { keys: ["missingGroup|1-9", "firstPayment|2-7"], by: "u1", byName: "Ana", at: "2026-11-17T10:00:00Z" },
+      { keys: ["firstPayment|2-7"], by: "u2", byName: "Luis", at: "2026-11-17T11:00:00Z" },
+    ]);
   });
 
   it("agrupa las alertas por persona", () => {

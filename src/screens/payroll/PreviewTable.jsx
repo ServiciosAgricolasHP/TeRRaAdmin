@@ -9,6 +9,7 @@ import { previewEditCaps } from "../../utils/payrollPreview";
 import { accountTypeShort } from "./helpers";
 import { checkOf } from "../../utils/payrollChecks/payrollChecks";
 import { PayrollChecksModal } from "./PayrollChecksModal";
+import ConfirmDialog from "../../components/ConfirmDialog";
 import { SEVERITY_ICON, worstOpenSeverity } from "./checkSeverity";
 
 export function PreviewTable({
@@ -34,6 +35,8 @@ export function PreviewTable({
   const [filter, setFilter] = useState("all"); // all | bank | cash | missing | suspicious | leader:<name> | checks | check:<id>
   // La revisión abierta: `{ search }` con que se abre, o null.
   const [checksModal, setChecksModal] = useState(null);
+  // Las alertas rojas sin revisar al apretar Guardar, o null.
+  const [alarm, setAlarm] = useState(null);
   const [cycleFilter, setCycleFilter] = useState("all");
 
   const bankTotal = bankItems.reduce((s, p) => s + (Number(p.amount) || 0), 0);
@@ -68,6 +71,14 @@ export function PreviewTable({
       return true;
     });
   }, [items, search, filter, cycleFilter, checks.alertsByRut]);
+
+  // Con alertas rojas sin revisar, Guardar avisa antes: Revisar abre la
+  // revisión y Generar igual sigue.
+  const generate = () => {
+    const reds = checks.alerts.filter((a) => !a.review && a.severity === "red");
+    if (reds.length) setAlarm(reds);
+    else onGenerate();
+  };
 
   const showCheckInTable = (checkId) => {
     setFilter(`check:${checkId}`);
@@ -154,7 +165,7 @@ export function PreviewTable({
           </div>
         </div>
         <button
-          onClick={onGenerate}
+          onClick={generate}
           disabled={busy || countSelected === 0}
           className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
         >
@@ -367,6 +378,23 @@ export function PreviewTable({
         </table>
       </div>
 
+      <ConfirmDialog
+        open={!!alarm}
+        title="🔴 Alertas sin revisar"
+        message={alarm ? alarmText(alarm) : ""}
+        cancelLabel="Revisar"
+        confirmLabel="Generar igual"
+        danger
+        onCancel={() => {
+          setAlarm(null);
+          setChecksModal({ search: "" });
+        }}
+        onConfirm={() => {
+          setAlarm(null);
+          onGenerate();
+        }}
+      />
+
       {checksModal && (
         <PayrollChecksModal
           alerts={checks.alerts}
@@ -398,6 +426,14 @@ export function PreviewTable({
       )}
     </div>
   );
+}
+
+// El texto del aviso de Guardar: cuántas rojas quedan y las primeras.
+function alarmText(reds) {
+  const sample = reds.slice(0, 5).map((a) => `• ${a.name || a.rut}: ${checkOf(a.checkId)?.title}`);
+  const more = reds.length > 5 ? [`… y ${reds.length - 5} más`] : [];
+  const count = reds.length === 1 ? "1 alerta roja sin revisar" : `${reds.length} alertas rojas sin revisar`;
+  return [`${count}: puede ser plata mal pagada.`, "", ...sample, ...more].join("\n");
 }
 
 // La alerta más grave sin revisar de una fila, roja o naranja; las que solo

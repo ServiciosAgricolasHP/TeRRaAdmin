@@ -153,6 +153,7 @@ Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
 | `advanceIds` | ref→`advances`[] | |
 | `advanceTotal` | number | |
 | `payoutCycleDetails` | `{ id, label, faenaId, faenaName, subfaenaId, subfaenaName }[]`? | los ciclos a los que se asocian las entregas de anticipos (`items[].payoutApplications[].cycleId`), con sus nombres al entregar. Pueden no estar en `cycleIds`. El resumen los usa para la fila de cada uno |
+| `reviewedChecks` | `{ keys: string[], by, byName, at }[]`? | las alertas de la revisión de la nómina marcadas revisadas: una entrada por cada vez que alguien marcó, con las claves (`checkId|workerId`), su uid, su nombre (`signerName`) y la hora ISO. La última marca de una clave manda. Lo escribe Generar con lo marcado en la vista previa; sin nada marcado, la nómina no lo trae. Ver "Revisión de la nómina" en `docs/screens/payroll.md` |
 | `payoutTotal` | number? | lo que la nómina entrega en anticipos (Σ `items[].payoutTotal`). Lo escriben las ediciones de la nómina (`recalcPayrollAggregates`) |
 | `createdAt`, `createdBy` | ts, string? | |
 | `updatedAt`, `updatedBy` | ts, string? | toda escritura de `payrollsService` los pone. La copia que comparten Nómina y el Dashboard se pone al día con él (`listPayrolls`) |

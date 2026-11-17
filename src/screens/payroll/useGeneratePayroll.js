@@ -8,12 +8,15 @@ import { payrollsService, tagWorkdaysWithPayroll } from "../../services/payrolls
 import { applyAdvancesToPayroll } from "../../services/advancesService";
 import { attempt } from "../../utils/attempt";
 import { errorText } from "../../utils/errorText";
+import { reviewedChecksFor } from "../../utils/payrollChecks/payrollChecks";
 
 // Guardar la nómina de la vista previa: confirma las cuotas y las cuentas con
 // problemas, crea la nómina con su JSON, etiqueta las jornadas y aplica los
-// anticipos y bonos.
+// anticipos y bonos. `checks` es la revisión de la vista previa: lo marcado
+// revisado se guarda con la nómina.
 export function useGeneratePayroll({
   bankFormat,
+  checks,
   chosenCycles,
   jobs,
   load,
@@ -123,6 +126,7 @@ export function useGeneratePayroll({
       const allApplications = cleanItems.flatMap((p) => p.advanceApplications || []);
       const totals = payrollTotalsOf(cleanItems);
       const finalName = payrollName || payrollSuggestedName();
+      const reviewedChecks = reviewedChecksFor(checks.reviewed, checks.alerts);
 
       // Snapshot estático: todo lo necesario para volver a mostrar la nómina
       // sin más lecturas ni depender de datos que pueden cambiar (detalle de
@@ -174,6 +178,7 @@ export function useGeneratePayroll({
         advanceIds: allAdvanceIds,
         advanceTotal: totals.advanceTotal,
         hasSnapshot: true,
+        ...(reviewedChecks.length ? { reviewedChecks } : {}),
       });
       createdId = created.id;
 

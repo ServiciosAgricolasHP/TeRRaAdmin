@@ -202,6 +202,7 @@ export default function Payroll() {
     setInstallmentConfirmState,
   } = useGeneratePayroll({
     bankFormat,
+    checks: previewChecks,
     chosenCycles,
     jobs,
     load,

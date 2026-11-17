@@ -175,6 +175,15 @@ export function reviewedIndex(reviewedChecks = []) {
   return map;
 }
 
+// Lo que se guarda en la nómina de las revisadas: las marcas con solo las
+// claves de alertas que siguen en `alerts`, sin las que quedan vacías.
+export function reviewedChecksFor(reviewedChecks = [], alerts = []) {
+  const live = new Set(alerts.map((a) => a.key));
+  return (reviewedChecks || [])
+    .map((e) => ({ keys: (e?.keys || []).filter((k) => live.has(k)), by: e?.by || "", byName: e?.byName || "", at: e?.at || "" }))
+    .filter((e) => e.keys.length);
+}
+
 // Las alertas con su revisión (`review`, o `null` si no está revisada).
 export function withReviews(alerts, reviewedChecks = []) {
   const index = reviewedIndex(reviewedChecks);
