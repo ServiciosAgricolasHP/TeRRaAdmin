@@ -5,7 +5,7 @@ import { ModuleRegistry, AllCommunityModule } from "ag-grid-community";
 import {
   qrPrefixesService,
   workersService,
-  groupLeadersService,
+  listGroupLeaders,
 } from "../services";
 import { AG_GRID_LOCALE_ES } from "../utils/agGridLocale";
 import {
@@ -229,11 +229,7 @@ export default function CycleDetail() {
   };
 
   const loadEnabledLeaders = async () => {
-    const list = await groupLeadersService.list({
-      cache: true,
-      persist: true,
-      ttl: 24 * 60 * 60 * 1000,
-    });
+    const list = await listGroupLeaders();
     const names = list
       .filter((d) => d.habilitado === true)
       .map((d) => String(d.name || d.nombre || d.id || "").trim().toUpperCase())
