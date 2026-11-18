@@ -4,7 +4,7 @@ import { fmtCurrency } from "../../utils/format";
 import { accountTypeShort } from "./helpers";
 import { WorkerPaidDetailTables } from "../../components/WorkerPaidDetailTables";
 import { WorkerPaySummaryCards } from "../../components/WorkerPaySummaryCards";
-import { checkOf } from "../../utils/payrollChecks/payrollChecks";
+import { checkOf, reviewedByText } from "../../utils/payrollChecks/payrollChecks";
 import { RowFlag } from "./CheckFlag";
 import { SEVERITY_ICON } from "./checkSeverity";
 
@@ -76,7 +76,8 @@ export function WorkerDetailRow({
           {alerts.map((a) => (
             <div key={a.key} className={a.review ? "text-[var(--color-muted)]" : ""}>
               <span aria-hidden="true">{a.review ? "✓" : SEVERITY_ICON[a.severity]}</span> <b>{checkOf(a.checkId)?.title}:</b> {a.lines.join("; ")}
-              {a.review && ` (revisada${a.review.byName ? ` por ${a.review.byName}` : ""})`}
+              {a.review && ` (revisada${reviewedByText(a.review) ? ` por ${reviewedByText(a.review)}` : ""})`}
+              {a.staleReview && ` (revisada antes por ${reviewedByText(a.staleReview) || "alguien"}; cambió desde entonces)`}
             </div>
           ))}
           {onOpenChecks && (

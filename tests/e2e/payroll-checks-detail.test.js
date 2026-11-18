@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { setItemsGroupLeader, setReviewedChecks } from "../../src/services/payrollsService";
+import { saveReviewChange, setItemsGroupLeader } from "../../src/services/payrollsService";
 import { payrollHistoryOf } from "../../src/utils/payrollHistory";
 import { set, get, all } from "./helpers/seed";
 
@@ -28,15 +28,20 @@ describe("la revisión en el detalle de una nómina", () => {
     expect(entry.lines.map((l) => l.text)).toEqual(["Ana Efectivo: mismo líquido (grupo sin grupo → NORTE)"]);
   });
 
-  it("guarda las revisadas, y no con la nómina pagada", async () => {
-    await set("payrolls", "nom-2", { name: "Semana 47", status: "pending", items: [ana] });
-    const reviewedChecks = [{ keys: ["missingGroup|11111111-1"], by: "u1", byName: "Ana", at: "2026-11-17T10:00:00Z" }];
+  it("guarda el cambio sobre lo guardado, sin pisar lo que marcó otra persona, y no con la nómina pagada", async () => {
+    await set("payrolls", "nom-2", { name: "Semana 47", status: "pending", items: [ana, beto] });
+    const mark = (keys, on, byName, at) => ({ keys, on, by: byName, byName, at, place: "detail", signatures: Object.fromEntries(keys.map((k) => [k, "s"])) });
 
-    await setReviewedChecks("nom-2", reviewedChecks);
-    expect((await get("payrolls", "nom-2")).reviewedChecks).toEqual(reviewedChecks);
+    await saveReviewChange("nom-2", mark(["missingGroup|11111111-1"], true, "Ana", "2026-11-17T10:00:00Z"));
+    // Otra persona, con la nómina abierta desde antes, marca otra alerta.
+    const result = await saveReviewChange("nom-2", mark(["firstPayment|12345678-5"], true, "Luis", "2026-11-17T10:05:00Z"));
+    expect(result.flatMap((e) => e.keys)).toEqual(["missingGroup|11111111-1", "firstPayment|12345678-5"]);
+    await saveReviewChange("nom-2", mark(["missingGroup|11111111-1"], false, "Luis", "2026-11-17T10:06:00Z"));
+    const saved = (await get("payrolls", "nom-2")).reviewedChecks;
+    expect(saved).toEqual([{ keys: ["firstPayment|12345678-5"], by: "Luis", byName: "Luis", at: "2026-11-17T10:05:00Z", place: "detail", signatures: { "firstPayment|12345678-5": "s" } }]);
 
     await set("payrolls", "nom-3", { name: "Semana 48", status: "paid", items: [ana] });
-    await expect(setReviewedChecks("nom-3", reviewedChecks)).rejects.toThrow("pagada");
+    await expect(saveReviewChange("nom-3", mark(["missingGroup|11111111-1"], true, "Ana", "x"))).rejects.toThrow("pagada");
     await expect(setItemsGroupLeader("nom-3", { "11111111-1": "NORTE" })).rejects.toThrow("pagada");
   });
 });

@@ -10,7 +10,7 @@ import { errorText } from "../../utils/errorText";
 import { enabledLeaderNames } from "../../utils/groupLeaders";
 import { attempt } from "../../utils/attempt";
 import { localIsoDate } from "../../utils/dates";
-import { checkSummary, payrollChecksOf, withReviews } from "../../utils/payrollChecks/payrollChecks";
+import { alertSignature, applyReviewChange, checkSummary, payrollChecksOf, withReviews } from "../../utils/payrollChecks/payrollChecks";
 
 const NO_REVIEWS = [];
 
@@ -23,7 +23,9 @@ const NO_REVIEWS = [];
 // `items` son las filas que paga la nómina y `workdays`, las jornadas de donde
 // salen: cuentan solo las de esas filas. `reviewedChecks` son las revisadas
 // con que parte; marcar o desmarcar las cambia acá, y vuelven a ser esas
-// cuando cambian ellas o `resetKey` (una vista previa nueva). Con `enabled` en
+// cuando cambian ellas o `resetKey` (otra nómina). Una marca vale mientras la
+// alerta diga lo mismo (`withReviews`), así que rehacer la vista previa no la
+// suelta. `place` ("generate" o "detail") queda en cada marca. Con `enabled` en
 // `false` no lee nada. `onWorkersChanged` corre después de asignar grupos,
 // para que la pantalla traiga las fichas al día.
 export function usePayrollChecks({
@@ -38,6 +40,7 @@ export function usePayrollChecks({
   createdAt = null,
   reviewedChecks = NO_REVIEWS,
   resetKey = null,
+  place = "",
   onWorkersChanged = null,
   qrSync = true,
 }) {
@@ -101,14 +104,14 @@ export function usePayrollChecks({
     return map;
   }, [alerts]);
 
-  // Marca o desmarca como revisadas las alertas de `keys`. Devuelve la lista
-  // nueva, para guardarla.
+  // Marca o desmarca como revisadas las alertas de `keys`, con la huella de
+  // cada una. Devuelve el cambio (`applyReviewChange`), para guardarlo.
   const setReviewed = (keys, on) => {
-    const drop = new Set(keys);
-    const rest = reviewed.map((e) => ({ ...e, keys: (e.keys || []).filter((k) => !drop.has(k)) })).filter((e) => e.keys.length);
-    const next = on ? [...rest, { keys: [...drop], by: user?.uid || "", byName: signerName() || "", at: new Date().toISOString() }] : rest;
-    setReviewedList(next);
-    return next;
+    const byKey = new Map(alerts.map((a) => [a.key, a]));
+    const signatures = on ? Object.fromEntries(keys.filter((k) => byKey.has(k)).map((k) => [k, alertSignature(byKey.get(k))])) : {};
+    const change = { keys, on, by: user?.uid || "", byName: signerName() || "", at: new Date().toISOString(), place, signatures };
+    setReviewedList(applyReviewChange(reviewed, change));
+    return change;
   };
 
   // Vuelve a `list` o, sin ella, a las revisadas con que partió (si no se pudo

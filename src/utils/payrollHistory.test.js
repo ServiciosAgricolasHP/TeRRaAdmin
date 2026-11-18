@@ -160,8 +160,19 @@ describe("el grupo y las alertas revisadas en el historial", () => {
     expect(entry.lines[0].text).toContain("grupo sin grupo → NORTE");
   });
 
-  it("marcar alertas revisadas lo nombra", () => {
-    const [entry] = payrollHistoryOf([log("r1", { reviewedChecks: { from: [], to: [{ keys: ["missingGroup|W1"] }] } })], []);
-    expect(entry).toMatchObject({ title: "Marcó alertas revisadas", lines: [] });
+  it("marcar alertas revisadas dice cuáles y de quién", () => {
+    const to = [{ keys: ["missingGroup|W1", "sharedAccount|W1", "sharedAccount|W2"], at: "t1" }];
+    const [entry] = payrollHistoryOf([log("r1", { reviewedChecks: { from: [], to } })], [ana, beto]);
+    expect(entry.title).toBe("Marcó alertas revisadas");
+    expect(entry.lines.map((l) => l.text)).toEqual(["✓ Sin grupo: Ana Rojas", "✓ Cuenta compartida: Ana Rojas, Beto Soto"]);
+  });
+
+  it("desmarcar también lo dice, y el buscador encuentra a la persona", () => {
+    const from = [{ keys: ["missingGroup|W1", "sharedAccount|W2"], at: "t1" }];
+    const to = [{ keys: ["missingGroup|W1"], at: "t1" }, { keys: ["firstPayment|W1"], at: "t2" }];
+    const entries = payrollHistoryOf([log("r2", { reviewedChecks: { from, to } })], [ana, beto]);
+    expect(entries[0].title).toBe("Marcó y desmarcó alertas revisadas");
+    expect(entries[0].lines.map((l) => l.text)).toEqual(["✓ Primera vez: Ana Rojas", "✗ desmarcó Cuenta compartida: Beto Soto"]);
+    expect(filterPayrollHistory(entries, { query: "beto" })[0].lines.map((l) => l.text)).toEqual(["✗ desmarcó Cuenta compartida: Beto Soto"]);
   });
 });

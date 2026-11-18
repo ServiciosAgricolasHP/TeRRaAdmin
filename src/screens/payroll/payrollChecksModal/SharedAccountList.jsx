@@ -1,6 +1,7 @@
 import { formatRutForDisplay } from "../../../utils/rutUtils";
 import { sharedAccountGroups } from "../../../utils/payrollChecks/paymentChecks";
 import { SEVERITY_ICON, worstOpenSeverity } from "../checkSeverity";
+import { ReviewNote } from "./CheckGroup";
 
 const btn =
   "min-h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-50";
@@ -39,6 +40,7 @@ export function SharedAccountList({ alerts, onReview }) {
               <li key={a.key} className="flex items-center gap-3 text-sm">
                 <span className="min-w-0 flex-1">
                   {a.name || "(sin nombre)"} <span className="font-mono text-xs text-[var(--color-muted)]">{formatRutForDisplay(a.rut)}</span>
+                  <ReviewNote alert={a} />
                 </span>
                 {onReview && (
                   <label className="flex min-h-8 shrink-0 cursor-pointer items-center gap-1.5 text-xs">

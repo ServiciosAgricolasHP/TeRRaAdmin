@@ -10,6 +10,8 @@ import { attempt } from "../../utils/attempt";
 import { errorText } from "../../utils/errorText";
 import { reviewedChecksFor } from "../../utils/payrollChecks/payrollChecks";
 
+const NO_REVIEWS = [];
+
 // Guardar la nómina de la vista previa: confirma las cuotas y las cuentas con
 // problemas, crea la nómina con su JSON, etiqueta las jornadas y aplica los
 // anticipos y bonos. `checks` es la revisión de la vista previa: lo marcado
@@ -239,6 +241,7 @@ export function useGeneratePayroll({
       // Limpia el armado y pasa al historial.
       resetSelection();
       resetPreview();
+      checks.resetReviewed(NO_REVIEWS);
       setTab("history");
       await load();
       setProgress({ step: "Listo ✓", detail: "", percent: 100 });
@@ -258,6 +261,7 @@ export function useGeneratePayroll({
     // cierra para que no se cree una segunda.
     resetSelection();
     resetPreview();
+    checks.resetReviewed(NO_REVIEWS);
     setTab("history");
     await attempt(() => load());
     toast.error(

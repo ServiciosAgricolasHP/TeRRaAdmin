@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { formatRutForDisplay } from "../../../utils/rutUtils";
-import { fmtShortDate } from "../../../utils/format";
+import { reviewedByText } from "../../../utils/payrollChecks/payrollChecks";
 import { SEVERITY_ICON, worstOpenSeverity } from "../checkSeverity";
 
 const btn =
@@ -97,12 +97,7 @@ function AlertList({ alerts, onReview, dim = false }) {
                 <li key={line}>{line}</li>
               ))}
             </ul>
-            {a.review && (
-              <div className="mt-0.5 text-[11px] text-[var(--color-muted)]">
-                ✓ Revisada{a.review.byName ? ` por ${a.review.byName}` : ""}
-                {a.review.at ? `, ${fmtShortDate(a.review.at)}` : ""}
-              </div>
-            )}
+            <ReviewNote alert={a} />
           </div>
           {onReview && (
             <label className="flex min-h-8 shrink-0 cursor-pointer items-center gap-1.5 text-xs">
@@ -114,4 +109,16 @@ function AlertList({ alerts, onReview, dim = false }) {
       ))}
     </ul>
   );
+}
+
+// Quién la marcó revisada, cuándo y dónde; o, si la alerta cambió desde que se
+// marcó, quién la había revisado.
+export function ReviewNote({ alert }) {
+  if (alert.review) {
+    const by = reviewedByText(alert.review);
+    return <div className="mt-0.5 text-[11px] text-[var(--color-muted)]">✓ Revisada{by ? ` por ${by}` : ""}</div>;
+  }
+  if (!alert.staleReview) return null;
+  const by = reviewedByText(alert.staleReview);
+  return <div className="mt-0.5 text-[11px] text-[var(--color-warning)]">Revisada antes{by ? ` por ${by}` : ""}; cambió desde entonces</div>;
 }
