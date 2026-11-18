@@ -26,10 +26,12 @@ const known = (a) => a.cash || !!(a.bankCode || a.number);
 const sameAccount = (a, b) =>
   a.cash === b.cash && (a.cash || (a.bankCode === b.bankCode && a.number === b.number && a.type === b.type && a.paymentRut === b.paymentRut));
 
+// "BancoEstado · Cuenta RUT · 11111111".
+const bankText = (a) => [bankName(a.bankCode), a.type != null ? accountTypeLabel(a.type) : "", a.number || "sin número"].filter(Boolean).join(" · ");
+
 function accountText(a) {
   if (a.cash) return "efectivo";
-  const parts = [bankName(a.bankCode), a.type != null ? accountTypeLabel(a.type) : "", a.number || "sin número"];
-  const text = parts.filter(Boolean).join(" · ");
+  const text = bankText(a);
   return a.paymentRut ? `${text} (RUT ${formatRutForDisplay(a.paymentRut)})` : text;
 }
 
@@ -84,8 +86,10 @@ const holdsAccount = (r) => {
 const personText = (r) => r.name || formatRutForDisplay(r.item.rut);
 
 // Dos o más personas cobran en la misma cuenta. Se marca a quienes cobran en
-// la cuenta de otro, no al titular: "Comparte la cuenta con ANA" si el titular
-// está en la nómina y, si no, "Comparte la cuenta de ROSA con JUAN".
+// la cuenta de otro, no al titular: "Cobra en la cuenta de ANA PÉREZ". El
+// titular es el de la nómina o, si no está, el titular de la ficha o el RUT de
+// pago. Cada alerta trae su cuenta (`account`: `{ key, holder, holderName,
+// holderRut, holderInPayroll, label }`), para mostrarlas juntas por cuenta.
 export function sharedAccount(ctx) {
   const groups = new Map();
   for (const r of ctx.rows) {
@@ -96,25 +100,34 @@ export function sharedAccount(ctx) {
     if (!groups.get(k).some((x) => x.person === r.person)) groups.get(k).push(r);
   }
   const found = [];
-  for (const list of groups.values()) {
+  for (const [key, list] of groups) {
     if (list.length < 2) continue;
     const holders = list.filter(holdsAccount);
     const users = list.filter((r) => !holders.includes(r));
+    if (!users.length) continue;
+    const a = accountOf(users[0].item);
+    const named = users.map((x) => String(x.item.paymentName || "").trim()).find(Boolean);
+    const holderName = holders.length ? listText(holders.map(personText)) : named || "";
+    const holderRut = holders.length ? normalizeRut(holders[0].item.rut) : a.paymentRut;
+    const holder = holderName || `RUT ${formatRutForDisplay(holderRut)}`;
+    const account = { key, holder, holderName, holderRut, holderInPayroll: holders.length > 0, label: bankText(a) };
     for (const r of users) {
-      const others = users.filter((x) => x !== r).map(personText);
-      let line;
-      if (holders.length) {
-        const also = others.length ? ` (también la ${others.length > 1 ? "usan" : "usa"} ${listText(others)})` : "";
-        line = `Comparte la cuenta con ${listText(holders.map(personText))}${also}`;
-      } else {
-        const named = users.map((x) => String(x.item.paymentName || "").trim()).find(Boolean);
-        const holder = named || `RUT ${formatRutForDisplay(accountOf(r.item).paymentRut)}`;
-        line = `Comparte la cuenta de ${holder} con ${listText(others)}`;
-      }
-      found.push({ person: r.person, severity: SEVERITY.orange, lines: [line] });
+      found.push({ person: r.person, severity: SEVERITY.orange, lines: [`Cobra en la cuenta de ${holder}`], account });
     }
   }
   return found;
+}
+
+// Las alertas de "Cuenta compartida" juntas por cuenta, por el nombre del
+// titular: `[{ account, alerts }]`.
+export function sharedAccountGroups(alerts) {
+  const byKey = new Map();
+  for (const a of alerts || []) {
+    if (!a.account) continue;
+    if (!byKey.has(a.account.key)) byKey.set(a.account.key, { account: a.account, alerts: [] });
+    byKey.get(a.account.key).alerts.push(a);
+  }
+  return [...byKey.values()].sort((x, y) => x.account.holder.localeCompare(y.account.holder, "es", { sensitivity: "base" }));
 }
 
 // Cobra en la cuenta de otra persona y la ficha no dice de quién es. En

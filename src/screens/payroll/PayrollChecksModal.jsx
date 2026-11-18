@@ -7,6 +7,7 @@ import { matchesSearchQuery } from "../../utils/textSearch";
 import { workerSearchInput } from "../../utils/workerSearch";
 import { CheckGroup } from "./payrollChecksModal/CheckGroup";
 import { GroupAssignList } from "./payrollChecksModal/GroupAssignList";
+import { SharedAccountList } from "./payrollChecksModal/SharedAccountList";
 import { SEVERITY_ICON, SEVERITY_LABEL, worstOpenSeverity } from "./checkSeverity";
 
 const RANK = { red: 0, orange: 1, info: 2 };
@@ -19,7 +20,8 @@ const btn =
 // (`onShowInTable` filtra la tabla, `onReview` marca revisadas); en el
 // detalle, la explicación. `initialSearch` la abre ya filtrada a una persona.
 // Cada sección, y la revisión entera, se copian como texto con lo que falta
-// revisar y el nombre de la nómina (`payrollName`), para avisar.
+// revisar y el nombre de la nómina (`payrollName`), para avisar. Las cuentas
+// compartidas van juntas por cuenta.
 // Con `leaderTools` (`{ leaderOptions, onAssign, onAdd, busy }`), la sección
 // "Sin grupo" deja elegir el grupo de cada persona y asignarlo, y la de un
 // grupo fuera de la lista, agregarlo a la lista de líderes.
@@ -72,8 +74,9 @@ export function PayrollChecksModal({
 
   // Lo que reemplaza la lista de una sección, o se suma a sus botones.
   const toolsOf = (g) => {
-    if (!leaderTools) return {};
     const pending = g.alerts.filter((a) => !a.review);
+    if (g.check.id === "sharedAccount" && pending.length) return { body: <SharedAccountList alerts={pending} onReview={onReview} /> };
+    if (!leaderTools) return {};
     if (g.check.id === "missingGroup" && pending.length) {
       return { body: <GroupAssignList alerts={pending} leaderOptions={leaderTools.leaderOptions} onAssign={leaderTools.onAssign} busy={leaderTools.busy} /> };
     }
