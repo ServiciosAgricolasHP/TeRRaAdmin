@@ -205,9 +205,11 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
     if (excluded.has(rut)) return setError("El trabajador ya está en el ciclo");
     if (!newWorker.name.trim()) return setError("Ingresa el nombre");
 
-    const payRut = normalizeRut(newWorker.bd_paymentRut || rut);
+    // En efectivo no hay cuenta: el pago queda a nombre del trabajador, sin
+    // titular.
+    const payRut = isCash ? rut : normalizeRut(newWorker.bd_paymentRut || rut);
     if (!validateRut(payRut)) return setError("RUT de pago inválido");
-    const paymentName = toProperName(newWorker.paymentName);
+    const paymentName = isCash ? "" : toProperName(newWorker.paymentName);
     if (paysToOtherPerson(rut, payRut) && !paymentName) {
       return setError("El RUT de pago es de otra persona: ingresa el nombre del titular");
     }
@@ -411,6 +413,11 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
               </div>
             </div>
 
+            {isCash ? (
+              <p className="text-xs text-[var(--color-muted)]">
+                💵 Cobra en efectivo: no se envía a la nómina del banco, así que no lleva RUT de pago, titular ni cuenta. Para pagarle por banco, 🏦 Cuenta RUT.
+              </p>
+            ) : (
             <div className="grid gap-3 sm:grid-cols-2">
               <TextField
                 label="RUT de pago"
@@ -449,6 +456,7 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
                 placeholder="Selecciona"
               />
             </div>
+            )}
           </div>
 
           {error && <div className="rounded-md bg-red-500/10 px-3 py-2 text-sm text-[var(--color-danger)]">{error}</div>}

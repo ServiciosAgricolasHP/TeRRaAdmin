@@ -204,9 +204,11 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
       }
     }
 
-    const payRut = normalizeRut(form.bd_paymentRut || rut);
+    // En efectivo no hay cuenta: el pago queda a nombre del trabajador, sin
+    // titular.
+    const payRut = isCash ? rut : normalizeRut(form.bd_paymentRut || rut);
     if (!validateRut(payRut)) return setError("RUT de pago inválido");
-    const paymentName = toProperName(form.paymentName);
+    const paymentName = isCash ? "" : toProperName(form.paymentName);
     if (paysToOtherPerson(rut, payRut) && !paymentName) {
       return setError("El RUT de pago es de otra persona: ingresa el nombre del titular");
     }
@@ -460,23 +462,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
           {isCash ? (
             <div className="space-y-3">
               <div className="rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-3 py-2 text-xs text-[var(--color-accent)]">
-                💵 Este trabajador cobra en efectivo. No se envía a la nómina del banco.
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <TextField
-                  label="RUT de pago"
-                  required
-                  value={form.bd_paymentRut}
-                  onChange={onPaymentRutChange}
-                  placeholder="Puede diferir del trabajador"
-                />
-                <TextField
-                  label="Nombre de quien cobra"
-                  required={payeeIsOther}
-                  value={form.paymentName}
-                  onChange={(v) => setForm((f) => ({ ...f, paymentName: v }))}
-                  placeholder={payeeIsOther ? "El RUT de pago es de otra persona" : "Opcional: es el trabajador"}
-                />
+                💵 Este trabajador cobra en efectivo. No se envía a la nómina del banco, así que no lleva RUT de pago ni titular.
               </div>
               {(form.bd_prevBankCode || form.bd_prevAccountNumber) && (
                 <p className="text-[10px] text-[var(--color-muted)]">

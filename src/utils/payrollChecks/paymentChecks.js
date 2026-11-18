@@ -90,10 +90,12 @@ export function sharedAccount(ctx) {
   return found;
 }
 
-// Cobra en la cuenta de otra persona y la ficha no dice de quién es.
+// Cobra en la cuenta de otra persona y la ficha no dice de quién es. En
+// efectivo no hay cuenta.
 export function missingPayee(ctx) {
   const found = [];
   for (const r of ctx.rows) {
+    if (accountOf(r.item).cash) continue;
     const pay = normalizeRut(r.item.paymentRut);
     if (!pay || String(r.item.paymentName || "").trim()) continue;
     const w = r.worker;

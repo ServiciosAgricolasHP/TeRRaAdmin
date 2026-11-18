@@ -80,6 +80,10 @@ describe("missingPayee", () => {
     expect(missingPayee(ctxOf([account("44444444-4", { paymentRut: "11111111-1", paymentName: "Ana Pérez" })]))).toEqual([]);
     expect(missingPayee(ctxOf([account("22222222-2", { paymentRut: "33333333-3" })]))).toEqual([]);
   });
+
+  it("en efectivo no marca, aunque traiga el RUT de otra persona", () => {
+    expect(missingPayee(ctxOf([account("44444444-4", { paymentRut: "11111111-1", bankCode: "EFE" })]))).toEqual([]);
+  });
 });
 
 describe("firstPayment", () => {
