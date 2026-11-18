@@ -1,7 +1,8 @@
 // La revisión de la nómina como texto, para avisar lo que hay que corregir.
 // Va solo lo que falta revisar: las alertas revisadas no se copian.
 import { normalizeRut } from "../rutUtils";
-import { SEVERITY_ICON, worstSeverity } from "./checkContext";
+import { SEVERITY_ICON, listText, worstSeverity } from "./checkContext";
+import { sharedAccountGroups } from "./paymentChecks";
 
 // Una persona y lo encontrado: en la misma línea si es una sola cosa, y debajo
 // si son varias. El RUT va sin puntos.
@@ -11,12 +12,22 @@ function alertText(a) {
   return [`• ${who}:`, ...a.lines.map((line) => `   - ${line}`)].join("\n");
 }
 
-// Una revisión: su título, cuántas personas faltan y una línea por persona.
-// Vacío si están todas revisadas.
+// Una cuenta compartida: su titular y quienes cobran en ella, en una línea.
+function accountText({ account, alerts }) {
+  const rut = normalizeRut(account.holderRut);
+  const holder = account.holderName ? `${account.holderName}${rut ? ` (${rut})` : ""}` : `RUT ${rut}`;
+  return `• Cuenta de ${holder}: ${listText(alerts.map((a) => `${a.name || "(sin nombre)"} (${normalizeRut(a.rut)})`))}`;
+}
+
+// Una revisión: su título, cuántas personas faltan y una línea por persona o,
+// en las cuentas compartidas, una por cuenta. Vacío si están todas revisadas.
 export function checkGroupText(check, alerts) {
   const open = (alerts || []).filter((a) => !a.review);
   if (!open.length) return "";
-  return [`${SEVERITY_ICON[worstSeverity(open.map((a) => a.severity))]} ${check.title} (${open.length})`, ...open.map(alertText)].join("\n");
+  const byAccount = sharedAccountGroups(open);
+  const rest = open.filter((a) => !a.account);
+  const lines = [...byAccount.map(accountText), ...rest.map(alertText)];
+  return [`${SEVERITY_ICON[worstSeverity(open.map((a) => a.severity))]} ${check.title} (${open.length})`, ...lines].join("\n");
 }
 
 // Todas las revisiones (`[{ check, alerts }]`, en el orden en que se ven),

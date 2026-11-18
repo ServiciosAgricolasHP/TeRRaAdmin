@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCheckContext } from "./checkContext";
-import { accountChanged, cuentaRutMismatch, firstPayment, missingPayee, sharedAccount } from "./paymentChecks";
+import { accountChanged, cuentaRutMismatch, firstPayment, missingPayee, sharedAccount, sharedAccountGroups } from "./paymentChecks";
 
 const workers = [
   { id: "11111111-1", rut: "11111111-1", name: "ANA PÉREZ" },
@@ -65,31 +65,48 @@ describe("cuentaRutMismatch", () => {
 describe("sharedAccount", () => {
   const shared = { paymentRut: "11111111-1", accountNumber: "11111111" };
 
-  it("marca a quien cobra en la cuenta de otro, no al titular", () => {
+  it("marca a quien cobra en la cuenta de otro, no al titular, con la cuenta", () => {
     const res = sharedAccount(ctxOf([account("11111111-1"), account("44444444-4", shared), account("22222222-2")]));
-    expect(res).toEqual([{ person: "44444444-4", severity: "orange", lines: ["Comparte la cuenta con ANA PÉREZ"] }]);
+    expect(res).toHaveLength(1);
+    expect(res[0]).toMatchObject({ person: "44444444-4", severity: "orange", lines: ["Cobra en la cuenta de ANA PÉREZ"] });
+    expect(res[0].account).toMatchObject({ key: "012|11111111", holder: "ANA PÉREZ", holderName: "ANA PÉREZ", holderRut: "11111111-1", holderInPayroll: true });
+    expect(res[0].account.label).toContain("11111111");
   });
 
-  it("nombra a los demás que usan la cuenta del titular", () => {
+  it("todos los que usan la misma cuenta llevan la misma", () => {
     const res = sharedAccount(ctxOf([account("11111111-1"), account("44444444-4", shared), account("22222222-2", shared)]));
-    expect(res.map((r) => r.lines[0])).toEqual([
-      "Comparte la cuenta con ANA PÉREZ (también la usa LUIS SOTO)",
-      "Comparte la cuenta con ANA PÉREZ (también la usa EVA ROJAS)",
+    expect(res.map((r) => [r.person, r.lines[0]])).toEqual([
+      ["44444444-4", "Cobra en la cuenta de ANA PÉREZ"],
+      ["22222222-2", "Cobra en la cuenta de ANA PÉREZ"],
     ]);
+    expect(res[0].account).toBe(res[1].account);
   });
 
   it("sin el titular en la nómina, lo nombra por su nombre en la ficha o por su RUT", () => {
     const other = { paymentRut: "55555555-5", accountNumber: "55555555" };
     const byRut = sharedAccount(ctxOf([account("44444444-4", other), account("22222222-2", other)]));
-    expect(byRut.map((r) => r.lines[0])).toEqual(["Comparte la cuenta de RUT 55.555.555-5 con LUIS SOTO", "Comparte la cuenta de RUT 55.555.555-5 con EVA ROJAS"]);
+    expect(byRut.map((r) => r.lines[0])).toEqual(["Cobra en la cuenta de RUT 55.555.555-5", "Cobra en la cuenta de RUT 55.555.555-5"]);
+    expect(byRut[0].account).toMatchObject({ holderName: "", holderRut: "55555555-5", holderInPayroll: false });
     const named = sharedAccount(ctxOf([account("44444444-4", other), account("22222222-2", { ...other, paymentName: "ROSA DÍAZ" })]));
-    expect(named[0].lines[0]).toBe("Comparte la cuenta de ROSA DÍAZ con LUIS SOTO");
+    expect(named[0].lines[0]).toBe("Cobra en la cuenta de ROSA DÍAZ");
   });
 
   it("el RUT anterior del trabajador también lo hace titular", () => {
     const old = { paymentRut: "33333333-3", accountNumber: "33333333" };
     const res = sharedAccount(ctxOf([account("22222222-2", old), account("44444444-4", old)]));
-    expect(res).toEqual([{ person: "44444444-4", severity: "orange", lines: ["Comparte la cuenta con LUIS SOTO"] }]);
+    expect(res.map((r) => [r.person, r.lines[0]])).toEqual([["44444444-4", "Cobra en la cuenta de LUIS SOTO"]]);
+  });
+});
+
+describe("sharedAccountGroups", () => {
+  it("junta las alertas por cuenta, por el nombre del titular", () => {
+    const rosa = { key: "1|9", holder: "ROSA DÍAZ" };
+    const ana = { key: "1|1", holder: "ANA PÉREZ" };
+    const alerts = [{ key: "a", account: rosa }, { key: "b", account: ana }, { key: "c", account: rosa }, { key: "d" }];
+    expect(sharedAccountGroups(alerts).map((g) => [g.account.holder, g.alerts.map((a) => a.key)])).toEqual([
+      ["ANA PÉREZ", ["b"]],
+      ["ROSA DÍAZ", ["a", "c"]],
+    ]);
   });
 });
 

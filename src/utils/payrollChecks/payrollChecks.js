@@ -97,7 +97,7 @@ export const PAYROLL_CHECKS = [
     id: "sharedAccount",
     run: sharedAccount,
     title: "Cuenta compartida",
-    explanation: "Personas que cobran en la cuenta de otra que también está en la nómina, o en la misma cuenta ajena. Al titular no se lo marca. Puede ser legítimo (una familia), pero conviene verlo junto.",
+    explanation: "Personas que cobran en la cuenta de otra, juntas por cuenta. Al titular no se lo marca. Puede ser legítimo (una familia), pero conviene verlo junto.",
   },
   {
     id: "missingPayee",
@@ -145,8 +145,9 @@ export const checkKey = (checkId, person) => `${checkId}|${person}`;
 // Las alertas de la nómina: `[{ key, checkId, person, rut, name, severity, lines }]`,
 // de la más grave a la más leve, por revisión y por nombre. Las de "Sin
 // grupo" traen además el grupo sugerido (`suggestion`, ver
-// `suggestGroupLeader`), y las de un grupo que no está en la lista, ese grupo
-// (`missingLeader`). Las que no son de una persona (un prefijo QR) van con
+// `suggestGroupLeader`), las de un grupo que no está en la lista, ese grupo
+// (`missingLeader`), y las de una cuenta compartida, la cuenta (`account`,
+// ver `sharedAccount`). Las que no son de una persona (un prefijo QR) van con
 // `general: true`, `person: null` y su nombre en `name`. `input` es el de
 // `buildCheckContext`.
 export function payrollChecksOf(input) {
@@ -170,6 +171,7 @@ export function payrollChecksOf(input) {
         lines: found.lines,
         ...(check.suggest ? { suggestion: check.suggest(ctx, found.person) } : {}),
         ...(found.missingLeader ? { missingLeader: found.missingLeader } : {}),
+        ...(found.account ? { account: found.account } : {}),
       });
     }
   }
