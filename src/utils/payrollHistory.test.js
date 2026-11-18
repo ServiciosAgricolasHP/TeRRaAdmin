@@ -55,7 +55,7 @@ describe("payrollHistoryOf", () => {
 
   it("un registro sin el detalle lo dice", () => {
     const [entry] = payrollHistoryOf([{ id: "t", action: "update", timestamp: ts("2026-11-12T12:00:00Z"), truncated: true, changedFields: ["items", "total"] }]);
-    expect([entry.title, entry.truncated, entry.lines[0].text]).toEqual(["Editó la nómina", true, "El detalle no cupo en el registro. Cambió: items, total."]);
+    expect([entry.title, entry.truncated, entry.lines[0].text]).toEqual(["Editó la nómina", true, "El detalle no cupo en el registro. Cambió: personas, total."]);
   });
 });
 
@@ -95,6 +95,51 @@ describe("las entregas de anticipos en el historial", () => {
     expect(removal.title).toBe("Quitó anticipos entregados");
     const [mixed] = payrollHistoryOf([log("p3", [ana, beto], [{ ...delivered, grossAmount: 90000, amount: 130000 }, beto])], []);
     expect(mixed.title).toBe("Recalculó");
+  });
+});
+
+describe("el JSON de la nómina en el historial", () => {
+  const at = "2026-11-18T10:22:00Z";
+  const payrollLog = { id: "n1", entity: "payroll", action: "update", uid: "u1", userName: "Bruno", timestamp: ts(at),
+    changes: summarizeChanges("payroll", { items: { from: [ana], to: [{ ...ana, amount: 90000, advance: 10000 }] }, total: { from: 100000, to: 90000 } }) };
+  const snapshotLog = (id, iso, extra = {}) => ({
+    id, entity: "payrollSnapshot", action: "update", uid: "u1", userName: "Bruno", timestamp: ts(iso),
+    changes: summarizeChanges("payrollSnapshot", {
+      workers: { from: [ana], to: [{ ...ana, amount: 90000, advance: 10000 }] },
+      workdays: { from: [{ id: "d1" }, { id: "d2" }], to: [{ id: "d1" }, { id: "d2" }, { id: "d5" }] },
+      cycles: { from: [{ id: "c1" }], to: [{ id: "c1" }] },
+      payroll: { from: { total: 100000 }, to: { total: 90000 } },
+      ...extra,
+    }),
+  });
+
+  it("solo, dice qué cambió en el JSON, con los nombres en español", () => {
+    const [entry] = payrollHistoryOf([snapshotLog("s1", at, { version: { from: 1, to: 2 } })]);
+    expect(entry.title).toBe("Puso al día el JSON de la nómina");
+    expect(entry.lines.map((l) => l.text)).toEqual([
+      "Ana Rojas: $100.000 → $90.000 (anticipo $0 → $10.000)",
+      "Jornadas: 2 → 3 (+1)",
+      "Ciclos: 1, al día",
+      "Total: $100.000 → $90.000",
+      "También cambió: versión",
+    ]);
+  });
+
+  it("junto al cambio de la nómina, no va solo: suma una línea a esa entrada", () => {
+    const entries = payrollHistoryOf([payrollLog, snapshotLog("s1", "2026-11-18T10:22:01Z")]);
+    expect(entries.map((e) => e.id)).toEqual(["n1"]);
+    expect(entries[0].lines.at(-1).text).toBe("JSON de la nómina al día · Jornadas: 2 → 3 (+1) · Ciclos: 1, al día");
+  });
+
+  it("de otra persona o más de un minuto después, va aparte", () => {
+    const other = { ...snapshotLog("s2", "2026-11-18T10:22:01Z"), uid: "u2", userName: "María" };
+    const later = snapshotLog("s3", "2026-11-18T10:30:00Z");
+    expect(payrollHistoryOf([payrollLog, other, later]).map((e) => e.id)).toEqual(["s3", "s2", "n1"]);
+  });
+
+  it("los campos que no tienen su propia línea van en español", () => {
+    const [entry] = payrollHistoryOf([{ id: "f1", action: "update", timestamp: ts(at), userName: "Bruno", changes: { format: { from: "bchile", to: "pagoFacilBchile" } } }]);
+    expect(entry.lines.map((l) => l.text)).toEqual(["También cambió: formato del banco"]);
   });
 });
 

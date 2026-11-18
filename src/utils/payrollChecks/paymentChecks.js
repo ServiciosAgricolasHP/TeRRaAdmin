@@ -69,7 +69,23 @@ export function cuentaRutMismatch(ctx) {
   return found;
 }
 
-// Dos o más personas cobran en la misma cuenta.
+// Los RUT propios de una persona: el del item, el de su ficha y los anteriores.
+function ownRuts(r) {
+  const w = r.worker;
+  return [r.item.rut, r.person, w?.id, w?.rut, ...(w?.rutHistory || [])].filter(Boolean).map(normalizeRut);
+}
+
+// Es el titular de la cuenta en la que cobra: el RUT de pago es el suyo o no hay.
+const holdsAccount = (r) => {
+  const pay = accountOf(r.item).paymentRut;
+  return !pay || ownRuts(r).includes(pay);
+};
+
+const personText = (r) => r.name || formatRutForDisplay(r.item.rut);
+
+// Dos o más personas cobran en la misma cuenta. Se marca a quienes cobran en
+// la cuenta de otro, no al titular: "Comparte la cuenta con ANA" si el titular
+// está en la nómina y, si no, "Comparte la cuenta de ROSA con JUAN".
 export function sharedAccount(ctx) {
   const groups = new Map();
   for (const r of ctx.rows) {
@@ -82,9 +98,20 @@ export function sharedAccount(ctx) {
   const found = [];
   for (const list of groups.values()) {
     if (list.length < 2) continue;
-    for (const r of list) {
-      const others = list.filter((x) => x !== r).map((x) => x.name || formatRutForDisplay(x.item.rut));
-      found.push({ person: r.person, severity: SEVERITY.orange, lines: [`Comparte la cuenta con ${listText(others)}`] });
+    const holders = list.filter(holdsAccount);
+    const users = list.filter((r) => !holders.includes(r));
+    for (const r of users) {
+      const others = users.filter((x) => x !== r).map(personText);
+      let line;
+      if (holders.length) {
+        const also = others.length ? ` (también la ${others.length > 1 ? "usan" : "usa"} ${listText(others)})` : "";
+        line = `Comparte la cuenta con ${listText(holders.map(personText))}${also}`;
+      } else {
+        const named = users.map((x) => String(x.item.paymentName || "").trim()).find(Boolean);
+        const holder = named || `RUT ${formatRutForDisplay(accountOf(r.item).paymentRut)}`;
+        line = `Comparte la cuenta de ${holder} con ${listText(others)}`;
+      }
+      found.push({ person: r.person, severity: SEVERITY.orange, lines: [line] });
     }
   }
   return found;
@@ -98,9 +125,7 @@ export function missingPayee(ctx) {
     if (accountOf(r.item).cash) continue;
     const pay = normalizeRut(r.item.paymentRut);
     if (!pay || String(r.item.paymentName || "").trim()) continue;
-    const w = r.worker;
-    const own = [r.item.rut, r.person, w?.id, w?.rut, ...(w?.rutHistory || [])].filter(Boolean).map(normalizeRut);
-    if (own.includes(pay)) continue;
+    if (ownRuts(r).includes(pay)) continue;
     found.push({ person: r.person, severity: SEVERITY.orange, lines: [`Cobra en la cuenta del RUT ${formatRutForDisplay(pay)}, sin titular en la ficha`] });
   }
   return found;

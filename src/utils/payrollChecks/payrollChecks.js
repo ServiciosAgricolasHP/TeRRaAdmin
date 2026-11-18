@@ -97,7 +97,7 @@ export const PAYROLL_CHECKS = [
     id: "sharedAccount",
     run: sharedAccount,
     title: "Cuenta compartida",
-    explanation: "Dos o más personas cobran en la misma cuenta. Puede ser legítimo (una familia), pero conviene verlo junto.",
+    explanation: "Personas que cobran en la cuenta de otra que también está en la nómina, o en la misma cuenta ajena. Al titular no se lo marca. Puede ser legítimo (una familia), pero conviene verlo junto.",
   },
   {
     id: "missingPayee",

@@ -1,10 +1,11 @@
-// La línea de tiempo de una nómina, armada con sus registros de auditoría:
-// qué se hizo, quién, cuándo y a quién le cambió algo. Lee los registros con
-// las listas resumidas (`utils/logSummaries.js`) y los anteriores, que traen
-// la lista de personas entera antes y después.
+// La línea de tiempo de una nómina, armada con sus registros de auditoría y
+// los de su JSON (`payrollSnapshot`): qué se hizo, quién, cuándo y a quién le
+// cambió algo. Lee los registros con las listas resumidas
+// (`utils/logSummaries.js`) y los anteriores, que traen la lista de personas
+// entera antes y después.
 import { toDate } from "./auditLogs";
 import { fmtCurrency, fmtNumber } from "./format";
-import { itemKeyOf, payrollItemsChange } from "./logSummaries";
+import { itemKeyOf, listChange, payrollItemsChange } from "./logSummaries";
 import { workerMatchesQuery } from "./workerSearch";
 
 // Campos que se mueven solos con otros y no dicen nada por su cuenta.
@@ -12,6 +13,36 @@ const IGNORED = new Set([
   "updatedAt", "updatedBy", "updatedByName", "bankTotal", "cashTotal", "workerCount", "bankCount", "cashCount",
   "advanceTotal", "advanceIds", "payoutTotal", "payoutCycleDetails", "paidAt", "bankPaidBy", "cycleDetails", "cycleLabels", "total", "workdayIds",
 ]);
+
+// El nombre en pantalla de los campos de la nómina y de su JSON.
+const FIELD_LABELS = {
+  name: "nombre", format: "formato del banco", status: "estado", paidAt: "fecha de pago",
+  bankPaidAt: "pago de las transferencias", bankPaidBy: "quién pagó las transferencias", cashPaidRuts: "cobros en efectivo",
+  classification: "clasificación", cycleIds: "ciclos", cycleLabels: "ciclos", cycleDetails: "ciclos", cycleLabelOverrides: "encabezados",
+  items: "personas", workdayIds: "jornadas", advanceIds: "anticipos y bonos", reviewedChecks: "alertas revisadas",
+  total: "total", bankTotal: "total por banco", cashTotal: "total en efectivo", workerCount: "cantidad de personas",
+  bankCount: "personas por banco", cashCount: "personas en efectivo", advanceTotal: "total de anticipos", bonusTotal: "total de bonos",
+  payoutTotal: "anticipos entregados", payoutCycleDetails: "ciclos de los anticipos entregados", snapshot: "JSON de la nómina",
+  createdAt: "fecha de creación", createdBy: "quién la creó", updatedAt: "fecha de edición", updatedBy: "quién la editó", updatedByName: "quién la editó",
+  workers: "personas", workdays: "jornadas", cycles: "ciclos", advances: "anticipos y bonos", payroll: "totales",
+  payrollId: "nómina", version: "versión", generatedAt: "fecha de generación",
+};
+
+// Los nombres en pantalla de unos campos, sin repetir.
+const fieldsText = (keys) => [...new Set(keys.map((k) => FIELD_LABELS[k] || k))].join(", ");
+
+const isSnapshotLog = (log) => log.entity === "payrollSnapshot";
+
+// Las listas del JSON y cómo se nombran.
+const SNAPSHOT_LISTS = [["workdays", "Jornadas"], ["cycles", "Ciclos"], ["advances", "Anticipos y bonos"]];
+
+// "Jornadas: 120 → 132 (+14, −2)", o "Ciclos: 3, al día" si son los mismos.
+function listLine(label, c) {
+  const s = c?.summary === "list" ? c : listChange(c?.from, c?.to);
+  const moves = [s.added ? `+${fmtNumber(s.added)}` : "", s.removed ? `−${fmtNumber(s.removed)}` : ""].filter(Boolean);
+  if (!moves.length) return `${label}: ${fmtNumber(s.to)}, al día`;
+  return `${label}: ${fmtNumber(s.from)} → ${fmtNumber(s.to)} (${moves.join(", ")})`;
+}
 
 // Quien hizo el cambio: su nombre en el registro o, en los anteriores, el
 // nombre que dejó en la nómina o la parte de su correo antes de la @.
@@ -69,11 +100,50 @@ function leaderOnlyChange(change) {
 
 const cycleLabelsOf = (details) => new Map((details || []).map((d) => [d.id, d.label || d.id]));
 
+// Lo que cambió en el JSON de la nómina: las personas, cuántas jornadas,
+// ciclos y anticipos entraron y salieron, y el total.
+function snapshotEntry(log, base) {
+  if (log.action === "create") {
+    const after = log.after || {};
+    return {
+      ...base,
+      title: "Generó el JSON de la nómina",
+      lines: [{ text: `${fmtNumber((after.workers || []).length)} personas · ${fmtNumber((after.workdays || []).length)} jornadas` }],
+    };
+  }
+  if (log.action === "delete") return { ...base, title: "Eliminó el JSON de la nómina" };
+  const title = "Puso al día el JSON de la nómina";
+  if (log.truncated) {
+    return { ...base, title, lines: [{ text: `El detalle no cupo en el registro. Cambió: ${fieldsText(log.changedFields || []) || "—"}.` }] };
+  }
+  const changes = log.changes || {};
+  const lines = [];
+  if (changes.name) lines.push({ text: `Nombre: ${changes.name.from || "—"} → ${changes.name.to || "—"}` });
+  let people = [];
+  if (changes.workers) {
+    const own = personLines(itemsChangeOf(changes.workers));
+    lines.push(...own);
+    people = own.map((l) => l.person);
+  }
+  const lists = SNAPSHOT_LISTS.filter(([k]) => changes[k]).map(([k, label]) => listLine(label, changes[k]));
+  lines.push(...lists.map((text) => ({ text })));
+  const totalFrom = changes.payroll?.from?.total;
+  const totalTo = changes.payroll?.to?.total;
+  if (totalFrom !== totalTo) lines.push({ text: `Total: ${fmtCurrency(totalFrom)} → ${fmtCurrency(totalTo)}` });
+  const others = Object.keys(changes).filter((k) => !IGNORED.has(k) && !["name", "workers", "payroll", ...SNAPSHOT_LISTS.map(([key]) => key)].includes(k));
+  if (others.length) lines.push({ text: `También cambió: ${fieldsText(others)}` });
+  return { ...base, title, lines, people, lists };
+}
+
 // Una entrada por registro: `{ id, at, who, title, lines: [{ text, person? }],
 // people, truncated }`. `names` (clave o RUT → nombre) nombra a quienes cobraron
-// el efectivo.
+// el efectivo. Un registro del JSON de la nómina dice qué cambió en el JSON.
 export function payrollHistoryEntry(log, names = new Map()) {
   const base = { id: log.id, at: toDate(log.timestamp), who: whoOf(log), lines: [], people: [], truncated: !!log.truncated };
+  if (isSnapshotLog(log)) {
+    const { lists: _lists, ...entry } = snapshotEntry(log, base);
+    return entry;
+  }
   if (log.action === "create") {
     const after = log.after || {};
     return {
@@ -87,7 +157,7 @@ export function payrollHistoryEntry(log, names = new Map()) {
     return {
       ...base,
       title: "Editó la nómina",
-      lines: [{ text: `El detalle no cupo en el registro. Cambió: ${(log.changedFields || []).join(", ") || "—"}.` }],
+      lines: [{ text: `El detalle no cupo en el registro. Cambió: ${fieldsText(log.changedFields || []) || "—"}.` }],
     };
   }
 
@@ -143,8 +213,38 @@ export function payrollHistoryEntry(log, names = new Map()) {
   if (has("total")) lines.push({ text: `Total: ${fmtCurrency(changes.total.from)} → ${fmtCurrency(changes.total.to)}` });
   const others = Object.keys(changes).filter((k) => !IGNORED.has(k) && !["status", "bankPaidAt", "cashPaidRuts", "name", "classification", "cycleLabelOverrides", "cycleIds", "items", "reviewedChecks"].includes(k));
   if (titles.length === 0) titles.push("Editó la nómina");
-  if (others.length) lines.push({ text: `También cambió: ${others.join(", ")}` });
+  if (others.length) lines.push({ text: `También cambió: ${fieldsText(others)}` });
   return { ...base, title: titles.join(" · "), lines, people };
+}
+
+// Hasta cuánto después de un cambio de la nómina el del JSON es parte de él.
+const SNAPSHOT_PAIR_MS = 60 * 1000;
+
+// Las entradas de los registros. Un cambio de la nómina pone al día su JSON
+// en un registro aparte: si hay uno de la misma persona, con la misma acción y
+// a menos de un minuto, el del JSON no va solo, y la entrada de la nómina suma
+// una línea con lo que cambió en sus listas.
+function historyEntries(logs, names) {
+  const entries = logs.map((log) => ({ log, entry: payrollHistoryEntry(log, names) }));
+  const actorOf = (log) => log.uid || whoOf(log);
+  const mates = entries.filter(({ log }) => !isSnapshotLog(log));
+  const paired = new Set();
+  const dropped = new Set();
+  for (const item of entries) {
+    if (!isSnapshotLog(item.log)) continue;
+    let best = null;
+    for (const m of mates) {
+      if (paired.has(m) || m.log.action !== item.log.action || actorOf(m.log) !== actorOf(item.log)) continue;
+      const gap = Math.abs(m.entry.at - item.entry.at);
+      if (gap <= SNAPSHOT_PAIR_MS && (!best || gap < best.gap)) best = { m, gap };
+    }
+    if (!best) continue;
+    paired.add(best.m);
+    dropped.add(item);
+    const lists = item.log.action === "update" && !item.log.truncated ? snapshotEntry(item.log, item.entry).lists : [];
+    if (lists.length) best.m.entry.lines.push({ text: `JSON de la nómina al día · ${lists.join(" · ")}` });
+  }
+  return entries.filter((item) => !dropped.has(item)).map((item) => item.entry);
 }
 
 // Las entradas de los registros, de la más nueva a la más vieja. `items` son
@@ -160,14 +260,12 @@ export function payrollHistoryOf(logs, items = []) {
   };
   for (const it of items) remember(it);
   for (const log of logs) {
-    for (const it of log.after?.items || []) remember(it);
-    const c = log.changes?.items;
+    for (const it of log.after?.items || log.after?.workers || []) remember(it);
+    const c = log.changes?.items || log.changes?.workers;
     if (c?.summary === "items") [...c.added, ...c.removed, ...c.changed].forEach(remember);
     else if (c) [...(c.from || []), ...(c.to || [])].forEach(remember);
   }
-  return logs
-    .map((log) => payrollHistoryEntry(log, names))
-    .sort((a, b) => b.at - a.at);
+  return historyEntries(logs, names).sort((a, b) => b.at - a.at);
 }
 
 // Las entradas filtradas por quién las hizo (`who`) y por una persona de la

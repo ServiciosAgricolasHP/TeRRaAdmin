@@ -95,8 +95,9 @@ export default function LogsTable({ logs, knownLabels, omit, grouped = false }) 
   const renderRow = (l, idx) => {
     const isOpen = openIdx === idx;
     const hasDetails = l.changes || l.before || l.after || l.meta;
-    // Un registro de nómina se lee como en su 🕘 Historial: qué hizo y a quién.
-    const payrollEntry = l.entity === "payroll" ? payrollHistoryEntry(l) : null;
+    // Un registro de nómina o de su JSON se lee como en su 🕘 Historial: qué
+    // hizo y a quién.
+    const payrollEntry = l.entity === "payroll" || l.entity === "payrollSnapshot" ? payrollHistoryEntry(l) : null;
     return (
       <Fragment key={l.id || idx}>
         <tr
