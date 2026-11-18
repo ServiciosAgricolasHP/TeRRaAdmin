@@ -63,10 +63,33 @@ describe("cuentaRutMismatch", () => {
 });
 
 describe("sharedAccount", () => {
-  it("marca a quienes cobran en la misma cuenta", () => {
-    const shared = { paymentRut: "11111111-1", accountNumber: "11111111" };
+  const shared = { paymentRut: "11111111-1", accountNumber: "11111111" };
+
+  it("marca a quien cobra en la cuenta de otro, no al titular", () => {
     const res = sharedAccount(ctxOf([account("11111111-1"), account("44444444-4", shared), account("22222222-2")]));
-    expect(res.map((r) => r.lines[0])).toEqual(["Comparte la cuenta con EVA ROJAS", "Comparte la cuenta con ANA PÉREZ"]);
+    expect(res).toEqual([{ person: "44444444-4", severity: "orange", lines: ["Comparte la cuenta con ANA PÉREZ"] }]);
+  });
+
+  it("nombra a los demás que usan la cuenta del titular", () => {
+    const res = sharedAccount(ctxOf([account("11111111-1"), account("44444444-4", shared), account("22222222-2", shared)]));
+    expect(res.map((r) => r.lines[0])).toEqual([
+      "Comparte la cuenta con ANA PÉREZ (también la usa LUIS SOTO)",
+      "Comparte la cuenta con ANA PÉREZ (también la usa EVA ROJAS)",
+    ]);
+  });
+
+  it("sin el titular en la nómina, lo nombra por su nombre en la ficha o por su RUT", () => {
+    const other = { paymentRut: "55555555-5", accountNumber: "55555555" };
+    const byRut = sharedAccount(ctxOf([account("44444444-4", other), account("22222222-2", other)]));
+    expect(byRut.map((r) => r.lines[0])).toEqual(["Comparte la cuenta de RUT 55.555.555-5 con LUIS SOTO", "Comparte la cuenta de RUT 55.555.555-5 con EVA ROJAS"]);
+    const named = sharedAccount(ctxOf([account("44444444-4", other), account("22222222-2", { ...other, paymentName: "ROSA DÍAZ" })]));
+    expect(named[0].lines[0]).toBe("Comparte la cuenta de ROSA DÍAZ con LUIS SOTO");
+  });
+
+  it("el RUT anterior del trabajador también lo hace titular", () => {
+    const old = { paymentRut: "33333333-3", accountNumber: "33333333" };
+    const res = sharedAccount(ctxOf([account("22222222-2", old), account("44444444-4", old)]));
+    expect(res).toEqual([{ person: "44444444-4", severity: "orange", lines: ["Comparte la cuenta con LUIS SOTO"] }]);
   });
 });
 
