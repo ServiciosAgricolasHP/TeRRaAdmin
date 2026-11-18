@@ -73,9 +73,12 @@ Una persona con dos fichas, típicamente porque la importación de cosecha la cr
 ## Líder de grupo — estricto
 
 - `worker.groupLeader` es un array (historial); `groupLeader[0]` es el líder actual.
-- Lista curada en la colección **`groupLeader`** (`groupLeadersService`) — `{ name, habilitado }`. La idea es no dejar que la lista crezca con valores ad-hoc.
-- Edición del trabajador (`WorkerEditModal`): el **dropdown** ofrece los líderes que ya tienen asignados los trabajadores (`groupLeader[0]` de la lista cargada), no la colección `groupLeader`, más la opción "+ Crear nuevo líder", que requiere acción explícita. La colección curada la usa la agrupación por líder de la grilla del ciclo (`loadEnabledLeaders`).
-- Al guardar: si el valor no está en la lista de líderes existentes y no se eligió "crear nuevo", error.
+- **Un grupo nace en la lista de líderes**, la colección **`groupLeader`** (`services/groupLeadersService.js`) — `{ name, habilitado }`, y una ficha solo lleva un líder que está en ella. Es una lista sincronizada (`listGroupLeaders`) que comparten la ficha, la grilla del ciclo y la revisión de la nómina; los nombres habilitados salen de `enabledLeaderNames` (`utils/groupLeaders.js`).
+- Los caminos que ponen un líder en una ficha lo dejan antes en la lista si no está, habilitado (`ensureGroupLeaders`, que mira la lista puesta al día y no toca un líder deshabilitado):
+  - Edición del trabajador (`WorkerEditModal`): el **dropdown** ofrece los líderes habilitados de la lista, más "+ Crear nuevo líder", que requiere acción explícita y lo agrega a la lista al guardar. El líder que ya tiene la ficha, si no está en la lista, aparece como "(fuera de la lista)" y se puede guardar la ficha sin cambiarlo. Elegir otro que no está en la lista sin "crear nuevo", o uno deshabilitado, da error.
+  - Agregar un trabajador o un temporal desde la grilla del ciclo (`WorkerPickerModal`): los habilitados más CHILENOS y EXTRANJEROS, que quedan en la lista si no estaban; uno deshabilitado da error.
+  - Importar cosecha (`importHarvest`): CHILENOS o EXTRANJEROS según el RUT (`newWorkerDefaults`), que quedan en la lista si no estaban.
+  - La grilla del ciclo y la revisión de la nómina solo ofrecen los habilitados.
 - En la vista previa de Nómina el líder es el de la ficha. A quien no tiene, la revisión de la nómina le asigna uno de los habilitados de la colección `groupLeader` (`assignGroupLeaders`, ver "Revisión de la nómina" en `payroll.md`), que queda en su ficha.
 
 ## Bancos

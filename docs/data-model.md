@@ -523,12 +523,13 @@ Registro de los correos diarios. Lo escribe solo la función `commitmentsDaily`;
 | `createdAt`, `sentAt` | ts | |
 
 ### `groupLeader`
-Listado curado de líderes de grupo disponibles para asignación. La idea es que la lista no crezca con valores ad-hoc.
+La lista de líderes de grupo: el único lugar donde nace un grupo, y una ficha solo lleva un líder que está en ella (ver "Líder de grupo" en `docs/screens/workers.md`). Lista sincronizada (`listGroupLeaders`, `services/groupLeadersService.js`).
 | Campo | Tipo | Notas |
 |---|---|---|
-| `id` (docId) | string | autoId o nombre |
-| `name` | string | nombre del líder (defensivo: también acepta `nombre` o el docId) |
+| `id` (docId) | string | autoId o nombre; los que crea la app (`ensureGroupLeaders`), autoId |
+| `name` | string | nombre del líder, en mayúsculas (defensivo: también acepta `nombre` o el docId) |
 | `habilitado` | bool | `true` = aparece en el picker; `false` = grupo inactivo, no se sugiere |
+| `createdAt`, `createdBy`, `updatedAt`, `updatedBy` | ts / string | los que crea o edita la app; los de antes no los traen y entran con la carga completa semanal |
 
 ### `catalogs`
 Listas configurables. **DocId = nombre del catálogo** (`qualities`, `containers`, `tratoTypes`).

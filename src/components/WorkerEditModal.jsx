@@ -1,8 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Modal, { ModalCloseButton } from "./Modal";
 import TextField from "./TextField";
 import Select from "./Select";
-import { workersService } from "../services";
+import { ensureGroupLeaders, listGroupLeaders, workersService } from "../services";
+import { enabledLeaderNames } from "../utils/groupLeaders";
+import { normalizeLeader } from "../utils/payroll";
 import { createWorker, findWorkerByRut } from "../services/workersService";
 import { formatRutForDisplay, normalizeRut, validateRut, isForeignRut } from "../utils/rutUtils";
 import { toProperName } from "../utils/nameUtils";
@@ -27,6 +29,8 @@ import { useValuesChanged } from "../hooks/useValuesChanged";
 import { useReadSection } from "../hooks/useReadSection";
 import { errorText } from "../utils/errorText";
 
+const NO_LEADERS = [];
+
 export default function WorkerEditModal({ open, mode, worker, allWorkers = [], onClose, onSaved }) {
   useReadSection("Ficha del trabajador", open);
   const isCreate = mode === "create";
@@ -37,6 +41,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
   const [busy, setBusy] = useState(false);
   const [overrideSimilar, setOverrideSimilar] = useState(false);
   const [allowNewLeader, setAllowNewLeader] = useState(false);
+  const [leaderDocs, setLeaderDocs] = useState(NO_LEADERS);
 
   if (useValuesChanged([open, worker, isCreate], { onMount: true }) && open) {
     setError("");
@@ -86,19 +91,20 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
     return findSimilarWorkers(formName, allWorkers, { threshold: 0.8, limit: 4 });
   }, [isCreate, formName, allWorkers]);
 
-  // Líderes actuales de los trabajadores, en mayúsculas y sin espacios en los
-  // bordes, para que las variantes de un mismo nombre cuenten como uno.
-  const existingLeaders = useMemo(() => {
-    const set = new Set();
-    for (const w of allWorkers) {
-      const l = w.groupLeader?.[0];
-      if (l) {
-        const norm = String(l).trim().toUpperCase();
-        if (norm) set.add(norm);
-      }
-    }
-    return [...set].sort();
-  }, [allWorkers]);
+  // Los líderes habilitados de la lista (`groupLeader`), puesta al día al abrir.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    listGroupLeaders()
+      .then((list) => { if (!cancelled) setLeaderDocs(list); })
+      .catch(() => { /* sin la lista, solo se puede crear uno */ });
+    return () => { cancelled = true; };
+  }, [open]);
+  const existingLeaders = useMemo(() => enabledLeaderNames(leaderDocs), [leaderDocs]);
+  // El líder que ya tiene la ficha, aunque no esté en la lista: se puede
+  // guardar la ficha sin cambiarlo.
+  const currentLeader = normalizeLeader(form?.groupLeaderHistory?.[0]);
+  const leaderChoices = currentLeader && !existingLeaders.includes(currentLeader) ? [...existingLeaders, currentLeader] : existingLeaders;
 
   const showSimilarBlock = isCreate && similarMatches.length > 0;
   const isForeign = form ? isForeignRut(form.rut) : false;
@@ -219,15 +225,16 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
       if (!bankCode) return setError("Selecciona el banco");
     }
 
-    const newLeader = form.groupLeader.trim().toUpperCase();
-    if (newLeader && !existingLeaders.includes(newLeader) && !allowNewLeader) {
+    const newLeader = normalizeLeader(form.groupLeader);
+    const prevLeaders = form.groupLeaderHistory || [];
+    const leaderChanged = !!newLeader && newLeader !== normalizeLeader(prevLeaders[0]);
+    if (leaderChanged && !existingLeaders.includes(newLeader) && !allowNewLeader) {
       return setError(
-        `"${newLeader}" no existe como líder. Selecciona uno de la lista o marca "Crear nuevo líder".`,
+        `"${newLeader}" no está en la lista de líderes. Selecciona uno de la lista o "+ Crear nuevo líder".`,
       );
     }
-    const prevLeaders = form.groupLeaderHistory || [];
     let groupLeader = prevLeaders;
-    if (newLeader && newLeader !== prevLeaders[0]) groupLeader = [newLeader, ...prevLeaders];
+    if (leaderChanged) groupLeader = [newLeader, ...prevLeaders];
     else if (!newLeader && prevLeaders.length === 0) groupLeader = [];
 
     const bankDetails = [payRut, accNumber, accType, bankCode];
@@ -236,6 +243,11 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
 
     setBusy(true);
     const { error: err } = await attempt(async () => {
+      // Un líder nuevo entra primero a la lista de líderes.
+      if (leaderChanged && !existingLeaders.includes(newLeader)) {
+        const { disabled } = await ensureGroupLeaders([newLeader]);
+        if (disabled.length) throw new Error(`El grupo ${newLeader} está deshabilitado en la lista de líderes`);
+      }
       if (isCreate) {
         await createWorker({ rut, name: form.name });
         await workersService.update(rut, { groupLeader, idQr: [], bankDetails, paymentName, email, ...personalData });
@@ -346,7 +358,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
               Líder de grupo
             </label>
             <select
-              value={existingLeaders.includes(form.groupLeader.toUpperCase()) ? form.groupLeader.toUpperCase() : (form.groupLeader && allowNewLeader ? "__NEW__" : "")}
+              value={allowNewLeader ? "__NEW__" : leaderChoices.includes(normalizeLeader(form.groupLeader)) ? normalizeLeader(form.groupLeader) : ""}
               onChange={(e) => {
                 const v = e.target.value;
                 if (v === "__NEW__") {
@@ -360,8 +372,8 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
               className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
             >
               <option value="">— Sin líder —</option>
-              {existingLeaders.map((l) => (
-                <option key={l} value={l}>{l}</option>
+              {leaderChoices.map((l) => (
+                <option key={l} value={l}>{existingLeaders.includes(l) ? l : `${l} (fuera de la lista)`}</option>
               ))}
               <option value="__NEW__">+ Crear nuevo líder...</option>
             </select>
@@ -375,7 +387,7 @@ export default function WorkerEditModal({ open, mode, worker, allWorkers = [], o
               />
             )}
             <p className="mt-1 text-[10px] text-[var(--color-muted)]">
-              Selecciona uno existente. Solo crea uno nuevo si realmente no está en la lista.
+              Los de la lista de líderes. Uno nuevo se agrega a la lista al guardar: créalo solo si realmente no está.
             </p>
           </div>
           {!isCreate && (

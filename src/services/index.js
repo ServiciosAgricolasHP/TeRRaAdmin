@@ -42,7 +42,7 @@ export function listWorkdaysByCycle(cycleId) {
 }
 
 // Líderes de grupo: ver groupLeadersService.js.
-export { groupLeadersService, listGroupLeaders } from "./groupLeadersService";
+export { groupLeadersService, listGroupLeaders, ensureGroupLeaders } from "./groupLeadersService";
 export const payrollSnapshotsService = createService("payrollSnapshot", "payrollSnapshots");
 export const interestLinksService = createService("interestLink", "interestLinks");
 

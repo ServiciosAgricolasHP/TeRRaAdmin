@@ -3,7 +3,7 @@ import Modal from "../../components/Modal";
 import { hasChanges } from "../../utils/formChanges";
 import TextField from "../../components/TextField";
 import Select from "../../components/Select";
-import { workersService } from "../../services";
+import { ensureGroupLeaders, workersService } from "../../services";
 import { findWorkerByRut, createWorker, listWorkers } from "../../services/workersService";
 import { formatRutForDisplay, normalizeRut, validateRut, isForeignRut } from "../../utils/rutUtils";
 import { useAuth } from "../../contexts/AuthContext";
@@ -30,6 +30,13 @@ const LEADER_FOREIGN = "EXTRANJEROS";
 
 function defaultLeaderForRut(rut) {
   return isForeignRut(rut) ? LEADER_FOREIGN : LEADER_LOCAL;
+}
+
+// Deja el líder en la lista de líderes si no está, y no deja usar uno
+// deshabilitado.
+async function checkLeader(leader) {
+  const { disabled } = await ensureGroupLeaders([leader]);
+  if (disabled.length) throw new Error(`El grupo ${leader} está deshabilitado en la lista de líderes`);
 }
 
 function emptyNewWorker() {
@@ -63,7 +70,8 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
   const [busy, setBusy] = useState(false);
 
   // Líderes para los formularios de alta y de temporal: los habilitados que
-  // pasa el padre más los dos por defecto, así la lista nunca queda vacía.
+  // pasa el padre más los dos por defecto, así la lista nunca queda vacía. El
+  // elegido entra a la lista de líderes si no está (`ensureGroupLeaders`).
   const leaderOptions = useMemo(() => {
     const set = new Set([LEADER_LOCAL, LEADER_FOREIGN, ...availableLeaders.map((l) => String(l || "").toUpperCase())]);
     return [...set].filter(Boolean).sort();
@@ -217,9 +225,10 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
         onPick({ id: existing.id, rut: existing.id, name: existing.name });
         return;
       }
+      const leaderChoice = String(newWorker.leader || "").trim().toUpperCase() || defaultLeaderForRut(rut);
+      await checkLeader(leaderChoice);
       const created = await createWorker({ rut, name: newWorker.name });
       const bankDetails = [payRut, accNumber, accType, bankCode];
-      const leaderChoice = String(newWorker.leader || "").trim().toUpperCase() || defaultLeaderForRut(rut);
       const groupLeader = [leaderChoice];
       await workersService.update(created.id, { bankDetails, paymentName, groupLeader, idQr: [] });
       onPick({ id: created.id, rut: created.id, name: created.name });
@@ -228,12 +237,16 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
     setBusy(false);
   };
 
-  const submitTemp = (e) => {
+  const submitTemp = async (e) => {
     e.preventDefault();
     setError("");
     const name = tempName.trim();
     if (!name) return setError("Ingresa el nombre");
     const leader = String(tempLeader || "").trim().toUpperCase() || LEADER_LOCAL;
+    setBusy(true);
+    const { error: err } = await attempt(() => checkLeader(leader));
+    setBusy(false);
+    if (err) return setError(errorText(err));
     const tempRut = `TEMP-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
     onPick({ id: tempRut, rut: tempRut, name, isTemp: true, groupLeader: leader });
   };
@@ -279,7 +292,8 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
             </button>
             <button
               type="submit"
-              className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--color-accent-hover)]"
+              disabled={busy}
+              className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--color-accent-hover)] disabled:opacity-60"
             >
               Crear temporal
             </button>
