@@ -111,8 +111,9 @@ export function usePayrollChecks({
     return next;
   };
 
-  // Vuelve a las revisadas con que partió (si no se pudo guardar un cambio).
-  const resetReviewed = () => setReviewedList(reviewedChecks);
+  // Vuelve a `list` o, sin ella, a las revisadas con que partió (si no se pudo
+  // guardar un cambio).
+  const resetReviewed = (list) => setReviewedList(list ?? reviewedChecks);
 
   // Los grupos habilitados, para elegir uno.
   const leaderOptions = useMemo(() => enabledLeaderNames(leaders), [leaders]);
