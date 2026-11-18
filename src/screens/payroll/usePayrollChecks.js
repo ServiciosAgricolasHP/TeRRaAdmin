@@ -7,7 +7,7 @@ import { listEmployments } from "../../services/employmentsService";
 import { signerName } from "../../services/signer";
 import { assignGroupLeaders } from "../../services/workersService";
 import { errorText } from "../../utils/errorText";
-import { normalizeLeader } from "../../utils/payroll";
+import { enabledLeaderNames } from "../../utils/groupLeaders";
 import { attempt } from "../../utils/attempt";
 import { localIsoDate } from "../../utils/dates";
 import { checkSummary, payrollChecksOf, withReviews } from "../../utils/payrollChecks/payrollChecks";
@@ -115,10 +115,7 @@ export function usePayrollChecks({
   const resetReviewed = () => setReviewedList(reviewedChecks);
 
   // Los grupos habilitados, para elegir uno.
-  const leaderOptions = useMemo(
-    () => [...new Set((leaders || []).filter((d) => d.habilitado === true).map((d) => normalizeLeader(d.name || d.nombre || d.id)).filter(Boolean))].sort(),
-    [leaders],
-  );
+  const leaderOptions = useMemo(() => enabledLeaderNames(leaders), [leaders]);
 
   // Les pone el grupo en su ficha a `assignments` (`[{ person, leader }]`).
   // Devuelve si se guardó.

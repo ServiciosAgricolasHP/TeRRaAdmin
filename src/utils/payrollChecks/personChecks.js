@@ -3,6 +3,7 @@
 import { isActiveOn } from "../employment";
 import { fmtShortDate } from "../format";
 import { newWorkerDefaults } from "../harvestImport";
+import { leaderIndex as leaderCatalog } from "../groupLeaders";
 import { normalizeLeader } from "../payroll";
 import { formatRutForDisplay } from "../rutUtils";
 import { similarNamePairs } from "../similarity";
@@ -10,18 +11,6 @@ import { SEVERITY, dateRanges, listText } from "./checkContext";
 
 // Desde cuánto parecido dos nombres se marcan como la misma persona.
 export const SIMILAR_NAME = 0.88;
-
-const leaderNameOf = (d) => normalizeLeader(d?.name || d?.nombre || d?.id);
-
-// Los grupos de la lista, por nombre: `true` si está habilitado.
-function leaderCatalog(leaders) {
-  const map = new Map();
-  for (const d of leaders || []) {
-    const name = leaderNameOf(d);
-    if (name) map.set(name, map.get(name) || d.habilitado === true);
-  }
-  return map;
-}
 
 const rutText = (r) => formatRutForDisplay(r.item.rut || r.person);
 
