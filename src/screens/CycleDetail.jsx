@@ -47,6 +47,7 @@ import {
   pieceworkTierMetricsOf,
 } from "../utils/cycleMetrics";
 import { fmtCurrency } from "../utils/format";
+import { enabledLeaderNames } from "../utils/groupLeaders";
 import { AddComboModal } from "./cycleDetail/AddComboModal";
 import { BonusEditModal } from "./cycleDetail/BonusEditModal";
 import { CatalogsModal } from "./cycleDetail/CatalogsModal";
@@ -229,13 +230,7 @@ export default function CycleDetail() {
   };
 
   const loadEnabledLeaders = async () => {
-    const list = await listGroupLeaders();
-    const names = list
-      .filter((d) => d.habilitado === true)
-      .map((d) => String(d.name || d.nombre || d.id || "").trim().toUpperCase())
-      .filter(Boolean);
-    const dedup = [...new Set(names)].sort();
-    setEnabledLeaders(dedup);
+    setEnabledLeaders(enabledLeaderNames(await listGroupLeaders()));
   };
 
   const loadOnMount = useEffectEvent(() => {

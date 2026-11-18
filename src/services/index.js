@@ -41,11 +41,8 @@ export function listWorkdaysByCycle(cycleId) {
   });
 }
 
-export const groupLeadersService = createService("groupLeader", "groupLeader");
-// La lista de líderes, guardada en el navegador por un día. La comparten la
-// grilla del ciclo y la revisión de la nómina: con las mismas opciones, usan
-// la misma copia.
-export const listGroupLeaders = () => groupLeadersService.list({ cache: true, persist: true, ttl: 24 * 60 * 60 * 1000 });
+// Líderes de grupo: ver groupLeadersService.js.
+export { groupLeadersService, listGroupLeaders, ensureGroupLeaders } from "./groupLeadersService";
 export const payrollSnapshotsService = createService("payrollSnapshot", "payrollSnapshots");
 export const interestLinksService = createService("interestLink", "interestLinks");
 

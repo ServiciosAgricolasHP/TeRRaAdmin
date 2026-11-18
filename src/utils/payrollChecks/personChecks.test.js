@@ -37,6 +37,8 @@ describe("unknownGroup", () => {
   it("marca un grupo fuera de la lista y uno deshabilitado, sin distinguir mayúsculas", () => {
     const res = unknownGroup(ctxOf({ items: [item("1-9", { groupLeader: "NORT" }), item("2-7", { groupLeader: "viejo" }), item("3-5", { groupLeader: "sur" })] }));
     expect(res.map((r) => r.lines[0])).toEqual(["El grupo NORT no está en la lista de líderes", "El grupo VIEJO está deshabilitado"]);
+    // Solo el que no está se puede agregar a la lista.
+    expect(res.map((r) => r.missingLeader)).toEqual(["NORT", undefined]);
   });
 
   it("sin la lista de líderes no revisa", () => {

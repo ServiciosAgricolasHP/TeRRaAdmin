@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useToast } from "../../../contexts/ToastContext";
 import { setItemsGroupLeader, setReviewedChecks } from "../../../services/payrollsService";
 import { attempt } from "../../../utils/attempt";
@@ -34,17 +34,24 @@ export function useDetailChecks({ payroll, snapshot, snapshotLoading, cycles, wo
     qrSync: editable,
   });
 
-  const review = async (keys, on) => {
-    const next = checks.setReviewed(keys, on);
-    setSaving(true);
-    const { error } = await attempt(() => setReviewedChecks(payroll.id, reviewedChecksFor(next, checks.alerts)));
-    setSaving(false);
-    if (error) {
-      checks.resetReviewed();
+  // Marcar revisadas cambia la revisión al instante y se guarda atrás, sin
+  // releer la nómina ni su JSON: la escritura corrige la copia de la lista de
+  // nóminas, que es de donde se abre el detalle. Las marcas seguidas se
+  // guardan en orden, una después de otra, así la última es la que queda.
+  // Si una no se puede guardar, la revisión vuelve a la última guardada.
+  const saves = useRef(Promise.resolve());
+  const lastSaved = useRef(null);
+  const review = (keys, on) => {
+    const next = reviewedChecksFor(checks.setReviewed(keys, on), checks.alerts);
+    saves.current = saves.current.then(async () => {
+      const { error } = await attempt(() => setReviewedChecks(payroll.id, next));
+      if (!error) {
+        lastSaved.current = next;
+        return;
+      }
+      checks.resetReviewed(lastSaved.current);
       toast.error(`No se pudo guardar la revisión: ${errorText(error)}`);
-      return;
-    }
-    await onChanged?.();
+    });
   };
 
   // El grupo va primero a las fichas y después a la nómina.

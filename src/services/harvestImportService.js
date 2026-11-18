@@ -1,6 +1,7 @@
 import { doc, serverTimestamp } from "firebase/firestore";
 import { db, auth } from "../firebase";
 import { cyclesService, workdaysService, workersService } from "./index";
+import { ensureGroupLeaders } from "./groupLeadersService";
 import { syncWorkers } from "./workersService";
 import { commitInChunks } from "./batchWrites";
 import { deleteWorkdayInBatch } from "./workdayDeletions";
@@ -46,6 +47,8 @@ export async function importHarvest({ cycleId, laborId, plan, fileName, onProgre
   // recién), se usa esa.
   const existing = await Promise.all(plan.creates.map((c) => workersService.getById(c.rut)));
   const creates = plan.creates.filter((_, i) => !existing[i]);
+  // Sus líderes entran a la lista de líderes si no están.
+  await ensureGroupLeaders(creates.map((c) => c.groupLeader));
 
   const uid = auth.currentUser?.uid || null;
   const stamp = () => ({ updatedAt: serverTimestamp(), updatedBy: uid });

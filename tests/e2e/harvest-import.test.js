@@ -106,6 +106,8 @@ describe("importar la cosecha de la empresa", () => {
     expect(await get("worker", "15555555-6")).toMatchObject({ rut: "15555555-6", name: "Pedro Salas", groupLeader: ["CHILENOS"] });
     expect((await get("worker", "15555555-6")).bankDetails).toBeUndefined();
     expect((await get("worker", "15555555-6")).createdAt).toBeTruthy();
+    // Su líder queda también en la lista de líderes.
+    expect((await all("groupLeader")).map((d) => [d.name, d.habilitado])).toEqual([["CHILENOS", true]]);
 
     const cycle = await get("cycles", CICLO);
     expect(cycle.days).toEqual(["2026-03-02", "2026-03-03"]);

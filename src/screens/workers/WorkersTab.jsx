@@ -39,8 +39,11 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 // persona, y un aviso si ese nombre falta.
 function payeeColumnText(w) {
   if (lacksPaymentName(w)) return "⚠ Falta el titular";
-  return paysToOtherPerson(w.rut || w.id, w.bankDetails?.[0]) ? w.paymentName : "";
+  return paysToOther(w) ? w.paymentName : "";
 }
+
+// La cuenta es de otra persona. En efectivo no hay cuenta.
+const paysToOther = (w) => !isCashBank(w.bankDetails?.[3]) && paysToOtherPerson(w.rut || w.id, w.bankDetails?.[0]);
 
 // Mínimo de caracteres para que la búsqueda libre filtre la lista. El filtro
 // corre en cliente sobre la lista cacheada, y los filtros de líder y forma de
@@ -482,7 +485,7 @@ export default function WorkersTab() {
             {displayedResults.map((w) => {
               const isCash = isCashBank(w.bankDetails?.[3]);
               const leader = (w.groupLeader?.[0] || "").toUpperCase().trim() || "—";
-              const otherPayee = paysToOtherPerson(w.rut || w.id, w.bankDetails?.[0]);
+              const otherPayee = paysToOther(w);
               return (
                 <div
                   key={w.id}

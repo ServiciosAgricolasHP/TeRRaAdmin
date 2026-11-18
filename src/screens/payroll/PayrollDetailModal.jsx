@@ -864,11 +864,12 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
         <PayrollChecksModal
           alerts={checks.alerts}
           summary={checks.summary}
+          payrollName={payroll.name}
           initialSearch={checksSearch}
           onReview={checks.review}
-          leaderOptions={checks.leaderOptions}
-          onAssignGroups={checks.assign}
-          assigning={checks.assigning || checks.saving}
+          leaderTools={
+            checks.assign && { leaderOptions: checks.leaderOptions, onAssign: checks.assign, onAdd: checks.addLeaders, busy: checks.assigning || checks.saving }
+          }
           onClose={() => setChecksSearch(null)}
         />
       )}

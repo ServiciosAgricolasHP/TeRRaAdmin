@@ -28,6 +28,10 @@ describe("lacksPaymentName", () => {
     expect(lacksPaymentName({ rut: "12345678-5", bankDetails: ["12345678-5", "12345678", 3, "012"] })).toBe(false);
   });
 
+  it("en efectivo no falta, aunque traiga el RUT de otra persona", () => {
+    expect(lacksPaymentName({ ...other, bankDetails: ["11111111-1", "1", 3, "EFE"] })).toBe(false);
+  });
+
   it("sin el campo `rut`, compara con el id", () => {
     expect(lacksPaymentName({ id: "11111111-1", bankDetails: ["11111111-1"] })).toBe(false);
   });

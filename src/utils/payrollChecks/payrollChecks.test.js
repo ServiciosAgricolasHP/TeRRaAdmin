@@ -33,6 +33,12 @@ describe("payrollChecksOf", () => {
     expect(alerts.find((a) => a.checkId === "zeroAmount")).not.toHaveProperty("suggestion");
   });
 
+  it("la alerta de un grupo que no está en la lista trae ese grupo", () => {
+    const alerts = payrollChecksOf({ items, workdays, cycles, workers, leaders: [{ name: "SUR", habilitado: true }], today: "2026-11-17" });
+    expect(alerts.find((a) => a.checkId === "unknownGroup")).toMatchObject({ person: "2-7", missingLeader: "NORTE" });
+    expect(alerts.find((a) => a.checkId === "zeroAmount")).not.toHaveProperty("missingLeader");
+  });
+
   it("cada revisión tiene título y explicación, y sus ids no se repiten", () => {
     expect(new Set(PAYROLL_CHECKS.map((c) => c.id)).size).toBe(PAYROLL_CHECKS.length);
     for (const c of PAYROLL_CHECKS) expect(c.title && c.explanation && typeof c.run === "function").toBeTruthy();

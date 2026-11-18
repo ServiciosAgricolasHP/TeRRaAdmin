@@ -83,7 +83,7 @@ el id/workerId, nunca el campo `rut`.
 | `name` | string | UPPERCASE típicamente |
 | `email` | string? | |
 | `bankDetails` | `[paymentRut, accountNumber, accountType, bankCode]` | tupla. accountType: 0 cta corriente, 1 cta vista, 3 cuenta RUT. bankCode `EFE` = efectivo. |
-| `paymentName` | string? | nombre de a quién se le paga: el titular de la cuenta o, en efectivo, quien cobra. Obligatorio cuando `paymentRut` es de otra persona (`paysToOtherPerson`, `utils/banks.js`); opcional si es el mismo RUT del trabajador |
+| `paymentName` | string? | el titular de la cuenta. Obligatorio cuando `paymentRut` es de otra persona (`paysToOtherPerson`, `utils/banks.js`); opcional si es el mismo RUT del trabajador. En efectivo no hay cuenta: la ficha lo guarda vacío y `paymentRut` es el RUT del trabajador |
 | `groupLeader` | string[] | historial; `[0]` = actual (ej. `CHILENOS`, `EXTRANJEROS`) |
 | `idQr` | string[] | códigos QR asignados |
 | `fileAliases` | `{ rut, name }[]`? | cómo trae a la persona el archivo de cosecha de una empresa cuando no calza solo con la ficha: otro RUT (típico de un extranjero) o un nombre distinto (le dicen Patricio y la empresa lo trae como José). El RUT va sin puntos y el nombre, como viene en el archivo. Lo guarda **Importar cosecha** al elegir la ficha a mano, y la importación siguiente calza sola con un RUT de la ficha o de esta lista si el nombre se parece al de la ficha o a uno guardado con ese RUT: una empresa puede reasignar un RUT (`matchFilePeople`, `utils/harvestImport.js`) |
@@ -523,12 +523,13 @@ Registro de los correos diarios. Lo escribe solo la función `commitmentsDaily`;
 | `createdAt`, `sentAt` | ts | |
 
 ### `groupLeader`
-Listado curado de líderes de grupo disponibles para asignación. La idea es que la lista no crezca con valores ad-hoc.
+La lista de líderes de grupo: el único lugar donde nace un grupo, y una ficha solo lleva un líder que está en ella (ver "Líder de grupo" en `docs/screens/workers.md`). Lista sincronizada (`listGroupLeaders`, `services/groupLeadersService.js`).
 | Campo | Tipo | Notas |
 |---|---|---|
-| `id` (docId) | string | autoId o nombre |
-| `name` | string | nombre del líder (defensivo: también acepta `nombre` o el docId) |
+| `id` (docId) | string | autoId o nombre; los que crea la app (`ensureGroupLeaders`), autoId |
+| `name` | string | nombre del líder, en mayúsculas (defensivo: también acepta `nombre` o el docId) |
 | `habilitado` | bool | `true` = aparece en el picker; `false` = grupo inactivo, no se sugiere |
+| `createdAt`, `createdBy`, `updatedAt`, `updatedBy` | ts / string | los que crea o edita la app; los de antes no los traen y entran con la carga completa semanal |
 
 ### `catalogs`
 Listas configurables. **DocId = nombre del catálogo** (`qualities`, `containers`, `tratoTypes`).

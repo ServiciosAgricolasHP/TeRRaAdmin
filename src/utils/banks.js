@@ -54,8 +54,10 @@ export function paysToOtherPerson(rut, paymentRut) {
   return Boolean(pay) && pay !== normalizeRut(rut);
 }
 
-// Trabajador que cobra en la cuenta de otra persona sin el nombre de ella.
+// Trabajador que cobra en la cuenta de otra persona sin el nombre de ella. En
+// efectivo no hay cuenta, así que no falta.
 export function lacksPaymentName(worker) {
+  if (isCashBank(worker?.bankDetails?.[3])) return false;
   return paysToOtherPerson(worker?.rut || worker?.id, worker?.bankDetails?.[0]) && !String(worker?.paymentName || "").trim();
 }
 

@@ -145,7 +145,8 @@ export const checkKey = (checkId, person) => `${checkId}|${person}`;
 // Las alertas de la nómina: `[{ key, checkId, person, rut, name, severity, lines }]`,
 // de la más grave a la más leve, por revisión y por nombre. Las de "Sin
 // grupo" traen además el grupo sugerido (`suggestion`, ver
-// `suggestGroupLeader`). Las que no son de una persona (un prefijo QR) van con
+// `suggestGroupLeader`), y las de un grupo que no está en la lista, ese grupo
+// (`missingLeader`). Las que no son de una persona (un prefijo QR) van con
 // `general: true`, `person: null` y su nombre en `name`. `input` es el de
 // `buildCheckContext`.
 export function payrollChecksOf(input) {
@@ -168,6 +169,7 @@ export function payrollChecksOf(input) {
         severity: found.severity,
         lines: found.lines,
         ...(check.suggest ? { suggestion: check.suggest(ctx, found.person) } : {}),
+        ...(found.missingLeader ? { missingLeader: found.missingLeader } : {}),
       });
     }
   }
