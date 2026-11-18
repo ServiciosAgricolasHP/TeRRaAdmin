@@ -71,14 +71,29 @@ describe("sameDayLabors", () => {
   it("dos labores al día el mismo día son rojas, también contra otra nómina", () => {
     const res = sameDayLabors(ctxOf([wd("c1", "poda", "1-9", "2026-11-03")], [wd("c2", "riego", "1-9", "2026-11-03", { payrollId: "p0" })]));
     expect(res[0].severity).toBe("red");
-    expect(res[0].lines[0]).toContain("Poda · Ciclo Uno (en esta nómina)");
-    expect(res[0].lines[0]).toContain("Riego · Ciclo Dos (en Nómina Vieja)");
+    expect(res[0].lines[0]).toBe("03-nov: Poda · Ciclo Uno $1.000 (en esta nómina) y Riego · Ciclo Dos $1.000 (en Nómina Vieja)");
   });
 
   it("cosecha en dos ciclos el mismo día es naranja", () => {
     const res = sameDayLabors(ctxOf([wd("c1", "cos", "1-9", "2026-11-03", { ck: "1_1" })], [wd("c2", "cos2", "1-9", "2026-11-03", { ck: "1_1" })]));
     expect(res[0].severity).toBe("orange");
     expect(res[0].lines[0]).toContain("pendiente");
+  });
+
+  it("cada labor va con lo que paga ese día: sus envases y su piso", () => {
+    const own = [
+      wd("c1", "cos", "1-9", "2026-11-03", { ck: "1_1", amount: 12000 }),
+      wd("c1", "cos", "1-9", "2026-11-03", { ck: "2_1", amount: 3000 }),
+      wd("c1", "cos", "1-9", "2026-11-03", { ck: "_piso", qty: 0, amount: 5000 }),
+      wd("c1", "poda", "1-9", "2026-11-03", { amount: 25000 }),
+    ];
+    const [res] = sameDayLabors(ctxOf(own));
+    expect(res.lines).toEqual(["03-nov: Cosecha · Ciclo Uno $20.000 (en esta nómina) y Poda · Ciclo Uno $25.000 (en esta nómina)"]);
+  });
+
+  it("solo el piso de una labor no cuenta como trabajar en ella", () => {
+    const own = [wd("c1", "poda", "1-9", "2026-11-03"), wd("c1", "cos", "1-9", "2026-11-03", { ck: "_piso", qty: 0, amount: 5000 })];
+    expect(sameDayLabors(ctxOf(own))).toEqual([]);
   });
 
   it("varios envases y el piso de una sola cosecha no cuentan como dos labores", () => {

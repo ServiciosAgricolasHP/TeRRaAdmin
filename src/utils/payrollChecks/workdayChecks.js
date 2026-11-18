@@ -68,27 +68,28 @@ export function duplicateWorkdays(ctx) {
 
 // Más de una labor o cosecha el mismo día, en la nómina o contra otros ciclos
 // abiertos. Puede ser verdad (mañana y tarde), pero con dos labores pagadas
-// por día son dos días completos.
+// por día son dos días completos. Cada labor va con lo que paga ese día:
+// todos sus envases y su piso.
 export function sameDayLabors(ctx) {
-  const groups = groupBy(ctx.facts.filter((f) => !f.piso), (f) => `${f.person}|${f.wd.date}`);
+  const groups = groupBy(ctx.facts, (f) => `${f.person}|${f.wd.date}`);
   const found = [];
   for (const list of groups.values()) {
     const labors = new Map();
     for (const f of list) {
       const k = `${f.wd.cycleId}|${f.wd.laborId}`;
-      const prev = labors.get(k);
-      if (!prev || (f.own && !prev.own)) labors.set(k, f);
+      const prev = labors.get(k) || { fact: null, amount: 0 };
+      const keep = !f.piso && (!prev.fact || (f.own && !prev.fact.own));
+      labors.set(k, { fact: keep ? f : prev.fact, amount: prev.amount + f.pay });
     }
-    if (labors.size < 2) continue;
-    const distinct = [...labors.values()];
-    if (!distinct.some((f) => f.own)) continue;
-    const dayLabors = distinct.filter((f) => DAY_LABOR_TYPES.has(f.type)).length;
-    const f = distinct[0];
+    const distinct = [...labors.values()].filter((x) => x.fact);
+    if (distinct.length < 2 || !distinct.some((x) => x.fact.own)) continue;
+    const dayLabors = distinct.filter((x) => DAY_LABOR_TYPES.has(x.fact.type)).length;
+    const f = distinct[0].fact;
     found.push({
       person: f.person,
       severity: dayLabors >= 2 ? SEVERITY.red : SEVERITY.orange,
       sortKey: f.wd.date,
-      line: `${fmtShortDate(f.wd.date)}: ${listText(distinct.map((x) => `${laborText(x)} (${originText(x, ctx)})`))}`,
+      line: `${fmtShortDate(f.wd.date)}: ${listText(distinct.map((x) => `${laborText(x.fact)} ${fmtCurrency(x.amount)} (${originText(x.fact, ctx)})`))}`,
     });
   }
   return byPerson(found);
