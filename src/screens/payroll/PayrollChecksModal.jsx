@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import Modal from "../../components/Modal";
+import { useCaptureActions } from "../../hooks/useCaptureActions";
 import { checkOf } from "../../utils/payrollChecks/payrollChecks";
+import { checksText } from "../../utils/payrollChecks/checksText";
 import { matchesSearchQuery } from "../../utils/textSearch";
 import { workerSearchInput } from "../../utils/workerSearch";
 import { CheckGroup } from "./payrollChecksModal/CheckGroup";
@@ -9,25 +11,31 @@ import { SEVERITY_ICON, SEVERITY_LABEL, worstOpenSeverity } from "./checkSeverit
 
 const RANK = { red: 0, orange: 1, info: 2 };
 
+const btn =
+  "min-h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2.5 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-50";
+
 // La revisión de la nómina: una sección por revisión, de la más grave a la
 // más leve, con las personas y lo encontrado. En Generar es la alarma
 // (`onShowInTable` filtra la tabla, `onReview` marca revisadas); en el
 // detalle, la explicación. `initialSearch` la abre ya filtrada a una persona.
-// Con `onAssignGroups`, la sección "Sin grupo" deja elegir el grupo de cada
-// persona (`leaderOptions`) y asignarlo.
+// Cada sección, y la revisión entera, se copian como texto con lo que falta
+// revisar y el nombre de la nómina (`payrollName`), para avisar.
+// Con `leaderTools` (`{ leaderOptions, onAssign, onAdd, busy }`), la sección
+// "Sin grupo" deja elegir el grupo de cada persona y asignarlo, y la de un
+// grupo fuera de la lista, agregarlo a la lista de líderes.
 export function PayrollChecksModal({
   alerts,
   summary,
   onClose,
+  payrollName = "",
   onReview = null,
   onShowInTable = null,
   initialSearch = "",
-  leaderOptions = [],
-  onAssignGroups = null,
-  assigning = false,
+  leaderTools = null,
 }) {
   const [search, setSearch] = useState(initialSearch);
   const [openIds, setOpenIds] = useState(() => new Set());
+  const { copyText } = useCaptureActions();
 
   const q = search.trim();
   const visible = useMemo(
@@ -59,6 +67,29 @@ export function PayrollChecksModal({
     });
 
   const counts = ["red", "orange", "info"].filter((s) => summary[s] > 0);
+  const allText = checksText(payrollName, groups);
+  const copyGroup = (check, list) => copyText(checksText(payrollName, [{ check, alerts: list }]), { key: check.id });
+
+  // Lo que reemplaza la lista de una sección, o se suma a sus botones.
+  const toolsOf = (g) => {
+    if (!leaderTools) return {};
+    const pending = g.alerts.filter((a) => !a.review);
+    if (g.check.id === "missingGroup" && pending.length) {
+      return { body: <GroupAssignList alerts={pending} leaderOptions={leaderTools.leaderOptions} onAssign={leaderTools.onAssign} busy={leaderTools.busy} /> };
+    }
+    if (g.check.id === "unknownGroup") {
+      const names = [...new Set(pending.map((a) => a.missingLeader).filter(Boolean))].sort();
+      if (!names.length) return {};
+      return {
+        actions: (
+          <button type="button" className={btn} disabled={leaderTools.busy} onClick={() => leaderTools.onAdd(names)} title="Los agrega habilitados a la lista de líderes">
+            + Agregar a la lista: {names.join(", ")}
+          </button>
+        ),
+      };
+    }
+    return {};
+  };
 
   return (
     <Modal open onClose={onClose} title="🔎 Revisión de la nómina" size="xl" section="Revisión de la nómina">
@@ -70,6 +101,9 @@ export function PayrollChecksModal({
             </span>
           ))}
           {summary.reviewed > 0 && <span className="whitespace-nowrap text-[var(--color-muted)]">✓ {summary.reviewed} revisadas</span>}
+          <button type="button" className={btn} disabled={!allText} onClick={() => copyText(allText, { key: "all" })} title="Copiar todas las que faltan revisar, para avisar">
+            📋 Copiar todo
+          </button>
           <input
             value={search}
             onChange={(e) => setSearch(workerSearchInput(e.target.value))}
@@ -89,11 +123,8 @@ export function PayrollChecksModal({
               onToggle={() => toggle(g.check.id)}
               onReview={onReview}
               onShowInTable={onShowInTable}
-              body={
-                onAssignGroups && g.check.id === "missingGroup" ? (
-                  <GroupAssignList alerts={g.alerts} leaderOptions={leaderOptions} onAssign={onAssignGroups} busy={assigning} />
-                ) : null
-              }
+              onCopy={(list) => copyGroup(g.check, list)}
+              {...toolsOf(g)}
             />
           ))
         )}

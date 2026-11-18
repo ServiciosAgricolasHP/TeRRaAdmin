@@ -26,7 +26,8 @@ export function missingGroup(ctx) {
 }
 
 // Un grupo que no está en la lista de líderes (un error de tipeo arma otro
-// sobre) o que está deshabilitado. Sin la lista, no revisa.
+// sobre) o que está deshabilitado. El que no está va también en
+// `missingLeader`, para agregarlo a la lista. Sin la lista, no revisa.
 export function unknownGroup(ctx) {
   if (!ctx.leaders) return [];
   const catalog = leaderCatalog(ctx.leaders);
@@ -34,8 +35,8 @@ export function unknownGroup(ctx) {
   for (const r of ctx.rows) {
     const leader = normalizeLeader(r.item.groupLeader);
     if (!leader || catalog.get(leader) === true) continue;
-    const line = catalog.has(leader) ? `El grupo ${leader} está deshabilitado` : `El grupo ${leader} no está en la lista de líderes`;
-    found.push({ person: r.person, severity: SEVERITY.orange, lines: [line] });
+    if (catalog.has(leader)) found.push({ person: r.person, severity: SEVERITY.orange, lines: [`El grupo ${leader} está deshabilitado`] });
+    else found.push({ person: r.person, severity: SEVERITY.orange, lines: [`El grupo ${leader} no está en la lista de líderes`], missingLeader: leader });
   }
   return found;
 }

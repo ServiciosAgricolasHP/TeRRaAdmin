@@ -2,7 +2,7 @@ import { useDeferredValue, useEffect, useEffectEvent, useMemo, useState } from "
 import { useAuth } from "../../contexts/AuthContext";
 import { useToast } from "../../contexts/ToastContext";
 import { useValuesChanged } from "../../hooks/useValuesChanged";
-import { listGroupLeaders, qrPrefixesService } from "../../services";
+import { ensureGroupLeaders, listGroupLeaders, qrPrefixesService } from "../../services";
 import { listEmployments } from "../../services/employmentsService";
 import { signerName } from "../../services/signer";
 import { assignGroupLeaders } from "../../services/workersService";
@@ -118,6 +118,26 @@ export function usePayrollChecks({
   // Los grupos habilitados, para elegir uno.
   const leaderOptions = useMemo(() => enabledLeaderNames(leaders), [leaders]);
 
+  // Agrega a la lista de líderes, habilitados, los grupos de `names` que no
+  // están. Devuelve si se guardó.
+  const addLeaders = async (names) => {
+    if (!names.length) return false;
+    setAssigning(true);
+    const { value, error } = await attempt(async () => {
+      const result = await ensureGroupLeaders(names);
+      setLeaders(await listGroupLeaders());
+      return result;
+    });
+    setAssigning(false);
+    if (error) {
+      toast.error(`No se pudo agregar a la lista: ${errorText(error)}`);
+      return false;
+    }
+    const n = value.created.length;
+    toast.success(n === 1 ? "1 grupo agregado a la lista de líderes" : `${n} grupos agregados a la lista de líderes`);
+    return true;
+  };
+
   // Les pone el grupo en su ficha a `assignments` (`[{ person, leader }]`).
   // Devuelve si se guardó.
   const assignGroups = async (assignments) => {
@@ -136,5 +156,5 @@ export function usePayrollChecks({
     return true;
   };
 
-  return { alerts, summary, alertsByRut, reviewed, setReviewed, resetReviewed, leaderOptions, assignGroups, assigning };
+  return { alerts, summary, alertsByRut, reviewed, setReviewed, resetReviewed, leaderOptions, assignGroups, addLeaders, assigning };
 }

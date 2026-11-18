@@ -406,12 +406,11 @@ export function PreviewTable({
         <PayrollChecksModal
           alerts={checks.alerts}
           summary={checks.summary}
+          payrollName={payrollName}
           initialSearch={checksModal.search}
           onReview={checks.setReviewed}
           onShowInTable={showCheckInTable}
-          leaderOptions={checks.leaderOptions}
-          onAssignGroups={assignGroups}
-          assigning={checks.assigning}
+          leaderTools={{ leaderOptions: checks.leaderOptions, onAssign: assignGroups, onAdd: checks.addLeaders, busy: checks.assigning }}
           onClose={() => setChecksModal(null)}
         />
       )}

@@ -13,6 +13,8 @@ import { workerIdResolver } from "../workerRut";
 
 export const SEVERITY = { red: "red", orange: "orange", info: "info" };
 export const SEVERITY_ORDER = [SEVERITY.red, SEVERITY.orange, SEVERITY.info];
+// Cómo se ve cada nivel, en pantalla y en el texto que se copia.
+export const SEVERITY_ICON = { red: "🔴", orange: "🟠", info: "⚪" };
 
 // Las labores que se pagan por día: dos el mismo día son dos días completos.
 export const DAY_LABOR_TYPES = new Set(["main", "supervision", "extra", "tratoHE"]);
