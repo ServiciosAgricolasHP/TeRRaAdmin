@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { PAYROLL_CHECKS, alertsByPerson, checkSummary, payrollChecksOf, reviewedChecksFor, reviewedIndex, withReviews } from "./payrollChecks";
+import {
+  PAYROLL_CHECKS,
+  alertSignature,
+  alertsByPerson,
+  applyReviewChange,
+  checkSummary,
+  payrollChecksOf,
+  reviewDiff,
+  reviewedByText,
+  reviewedChecksFor,
+  reviewedIndex,
+  withReviews,
+} from "./payrollChecks";
 
 const workers = [
   { id: "1-9", rut: "1-9", name: "ANA PÉREZ" },
@@ -66,7 +78,7 @@ describe("revisadas", () => {
   ];
 
   it("la última marca de una clave manda", () => {
-    expect(reviewedIndex(reviewedChecks).get("firstPayment|2-7")).toEqual({ by: "u2", byName: "Luis", at: "2026-11-17T11:00:00Z" });
+    expect(reviewedIndex(reviewedChecks).get("firstPayment|2-7")).toEqual({ by: "u2", byName: "Luis", at: "2026-11-17T11:00:00Z", place: "", signature: "" });
   });
 
   it("el resumen cuenta solo lo que falta revisar de cada nivel", () => {
@@ -81,6 +93,40 @@ describe("revisadas", () => {
       { keys: ["missingGroup|1-9", "firstPayment|2-7"], by: "u1", byName: "Ana", at: "2026-11-17T10:00:00Z" },
       { keys: ["firstPayment|2-7"], by: "u2", byName: "Luis", at: "2026-11-17T11:00:00Z" },
     ]);
+  });
+
+  it("una marca con huella vale mientras la alerta diga lo mismo", () => {
+    const alert = alerts.find((a) => a.key === "missingGroup|1-9");
+    const marked = [{ keys: [alert.key], by: "u1", byName: "Ana", at: "2026-11-17T10:00:00Z", place: "detail", signatures: { [alert.key]: alertSignature(alert) } }];
+    expect(withReviews([alert], marked)[0].review).toMatchObject({ byName: "Ana", place: "detail" });
+    const changed = withReviews([{ ...alert, lines: ["Otra cosa"] }], marked)[0];
+    expect(changed.review).toBeNull();
+    expect(changed.staleReview).toMatchObject({ byName: "Ana" });
+  });
+
+  it("la huella cambia con lo que dice la alerta", () => {
+    expect(alertSignature({ lines: ["a", "b"] })).toBe(alertSignature({ lines: ["a", "b"] }));
+    expect(alertSignature({ lines: ["a", "b"] })).not.toBe(alertSignature({ lines: ["a", "c"] }));
+  });
+
+  it("aplicar un cambio conserva lo que marcaron los demás", () => {
+    const saved = [{ keys: ["a|1", "b|1"], by: "u1", byName: "Ana", at: "t1", place: "detail", signatures: { "a|1": "x", "b|1": "y" } }];
+    const mark = { keys: ["c|2"], on: true, by: "u2", byName: "Luis", at: "t2", place: "detail", signatures: { "c|2": "z" } };
+    expect(applyReviewChange(saved, mark)).toEqual([...saved, { keys: ["c|2"], by: "u2", byName: "Luis", at: "t2", place: "detail", signatures: { "c|2": "z" } }]);
+    const unmark = { keys: ["a|1"], on: false, by: "u2", byName: "Luis", at: "t3", place: "detail", signatures: {} };
+    expect(applyReviewChange(saved, unmark)).toEqual([{ keys: ["b|1"], by: "u1", byName: "Ana", at: "t1", place: "detail", signatures: { "b|1": "y" } }]);
+  });
+
+  it("dice qué se marcó y qué se desmarcó entre dos listas", () => {
+    const from = [{ keys: ["a|1", "b|1"], at: "t1" }];
+    const to = [{ keys: ["b|1"], at: "t1" }, { keys: ["c|2"], at: "t2" }];
+    expect(reviewDiff(from, to)).toEqual({ marked: ["c|2"], unmarked: ["a|1"] });
+  });
+
+  it("nombra quién marcó, cuándo y dónde", () => {
+    const at = new Date(2026, 10, 18, 7, 22).toISOString();
+    expect(reviewedByText({ byName: "Bruno", at, place: "detail" })).toBe("Bruno, 18-nov 07:22, en el detalle");
+    expect(reviewedByText({ byName: "Ana", place: "generate" })).toBe("Ana, en Generar");
   });
 
   it("agrupa las alertas por persona", () => {

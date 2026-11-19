@@ -6,6 +6,7 @@
 import { toDate } from "./auditLogs";
 import { fmtCurrency, fmtNumber } from "./format";
 import { itemKeyOf, listChange, payrollItemsChange } from "./logSummaries";
+import { checkOf, reviewDiff } from "./payrollChecks/payrollChecks";
 import { workerMatchesQuery } from "./workerSearch";
 
 // Campos que se mueven solos con otros y no dicen nada por su cuenta.
@@ -98,6 +99,23 @@ function leaderOnlyChange(change) {
   return change.changed.every((p) => p.from.leader !== p.to.leader && FIGURE_LABELS.every(([k]) => p.from[k] === p.to[k]) && p.from.amount === p.to.amount);
 }
 
+// Una línea por revisión con las personas de `keys` (`checkId|persona`):
+// "✓ Cuenta compartida: Juan Soto, María Rojas".
+function reviewLines(mark, keys, names) {
+  const byCheck = new Map();
+  for (const key of keys) {
+    const cut = key.indexOf("|");
+    const checkId = key.slice(0, cut);
+    const person = key.slice(cut + 1);
+    if (!byCheck.has(checkId)) byCheck.set(checkId, []);
+    byCheck.get(checkId).push(person);
+  }
+  return [...byCheck].map(([checkId, persons]) => ({
+    persons,
+    text: `${mark} ${checkOf(checkId)?.title || checkId}: ${persons.map((p) => names.get(p) || p).join(", ")}`,
+  }));
+}
+
 const cycleLabelsOf = (details) => new Map((details || []).map((d) => [d.id, d.label || d.id]));
 
 // Lo que cambió en el JSON de la nómina: las personas, cuántas jornadas,
@@ -186,7 +204,13 @@ export function payrollHistoryEntry(log, names = new Map()) {
     titles.push(changes.classification.to === "diferencias" ? "Movió a Diferencias" : "Cambió la clasificación");
   }
   if (has("cycleLabelOverrides")) titles.push("Editó los encabezados");
-  if (has("reviewedChecks")) titles.push("Marcó alertas revisadas");
+  if (has("reviewedChecks")) {
+    const { marked, unmarked } = reviewDiff(changes.reviewedChecks.from || [], changes.reviewedChecks.to || []);
+    if (marked.length && unmarked.length) titles.push("Marcó y desmarcó alertas revisadas");
+    else if (unmarked.length) titles.push("Desmarcó alertas revisadas");
+    else titles.push("Marcó alertas revisadas");
+    lines.push(...reviewLines("✓", marked, names), ...reviewLines("✗ desmarcó", unmarked, names));
+  }
   if (has("cycleIds")) {
     titles.push("Editó los ciclos");
     const labels = new Map([...cycleLabelsOf(changes.cycleDetails?.from), ...cycleLabelsOf(changes.cycleDetails?.to)]);
@@ -277,7 +301,10 @@ export function filterPayrollHistory(entries, { who = "", query = "" } = {}) {
     .filter((e) => !who || e.who === who)
     .map((e) => {
       if (!q) return e;
-      const lines = e.lines.filter((l) => l.person && workerMatchesQuery({ id: l.person, rut: l.rut || l.person, name: l.text }, q));
+      const lines = e.lines.filter((l) => {
+        const ids = l.persons || (l.person ? [l.person] : []);
+        return ids.some((id) => workerMatchesQuery({ id, rut: l.rut || id, name: l.text }, q));
+      });
       return lines.length ? { ...e, lines } : null;
     })
     .filter(Boolean);

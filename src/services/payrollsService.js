@@ -16,6 +16,7 @@ import {
 import { mergeCycleDetails, inChosenCycles, stillFreeWorkdays, withPaidPeriods } from "../utils/payrollItem";
 import { pruneSnapshot, syncSnapshotAmounts } from "./payrollSnapshots";
 import { payoutTotalOf } from "../utils/advancePayouts";
+import { applyReviewChange } from "../utils/payrollChecks/payrollChecks";
 
 export const PAYROLL_STATUSES = [
   { value: "pending", label: "Pendiente" },
@@ -264,14 +265,19 @@ export async function setCashPaidRuts(payrollId, ruts) {
   return payrollsService.update(payrollId, { cashPaidRuts: [...new Set(ruts || [])] });
 }
 
-// Las alertas de la revisión de la nómina marcadas revisadas
-// (`reviewedChecks`, ver "Revisión de la nómina" en docs/screens/payroll.md).
-// Solo con la nómina pendiente: una pagada queda como se pagó.
-export async function setReviewedChecks(payrollId, reviewedChecks) {
+// Marca o desmarca alertas de la revisión de la nómina (`reviewedChecks`, ver
+// "Revisión de la nómina" en docs/screens/payroll.md). `change` es lo que hizo
+// quien marcó (`applyReviewChange`), y se aplica sobre lo guardado en ese
+// momento: lo que marcó otra persona mientras tanto se conserva. Devuelve las
+// revisadas como quedaron. Solo con la nómina pendiente: una pagada queda como
+// se pagó.
+export async function saveReviewChange(payrollId, change) {
   const p = await payrollsService.getById(payrollId);
   if (!p) throw new Error("La nómina ya no existe.");
   if (p.status === "paid") throw new Error("La nómina está pagada — revierte el pago antes de marcar alertas.");
-  return payrollsService.update(payrollId, { reviewedChecks });
+  const reviewedChecks = applyReviewChange(p.reviewedChecks || [], change);
+  await payrollsService.update(payrollId, { reviewedChecks });
+  return reviewedChecks;
 }
 
 // El grupo de varias personas de una nómina pendiente (`leaderByRut`: RUT del

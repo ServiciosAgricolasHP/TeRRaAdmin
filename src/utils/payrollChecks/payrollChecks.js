@@ -183,30 +183,84 @@ export function payrollChecksOf(input) {
   );
 }
 
+// La huella de lo que dice una alerta: con ella, una marca vale mientras la
+// alerta diga lo mismo que cuando se marcó.
+export function alertSignature(alert) {
+  const text = (alert?.lines || []).join("\n");
+  let h = 5381;
+  for (let i = 0; i < text.length; i += 1) h = ((h * 33) ^ text.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+
 // Las alertas revisadas guardadas en la nómina (`reviewedChecks`): una entrada
-// por cada vez que alguien marcó, con las claves que marcó.
-// Devuelve Map(clave → { by, byName, at }); la última marca manda.
+// por cada vez que alguien marcó, con las claves que marcó, dónde (`place`:
+// "generate" o "detail") y la huella de cada alerta (`signatures`).
+// Devuelve Map(clave → { by, byName, at, place, signature }); la última marca
+// manda. Las marcas guardadas sin huella valen siempre.
 export function reviewedIndex(reviewedChecks = []) {
   const map = new Map();
   for (const entry of reviewedChecks || []) {
-    for (const key of entry?.keys || []) map.set(key, { by: entry.by || "", byName: entry.byName || "", at: entry.at || "" });
+    for (const key of entry?.keys || []) {
+      map.set(key, {
+        by: entry.by || "",
+        byName: entry.byName || "",
+        at: entry.at || "",
+        place: entry.place || "",
+        signature: entry.signatures?.[key] || "",
+      });
+    }
   }
   return map;
+}
+
+// Una entrada de `reviewedChecks` con solo las claves que pasan `keep`, y sus
+// huellas.
+function entryWith(entry, keep) {
+  const keys = (entry?.keys || []).filter(keep);
+  const out = { keys, by: entry?.by || "", byName: entry?.byName || "", at: entry?.at || "" };
+  if (entry?.place) out.place = entry.place;
+  const signatures = Object.fromEntries(Object.entries(entry?.signatures || {}).filter(([k]) => keys.includes(k)));
+  if (Object.keys(signatures).length) out.signatures = signatures;
+  return out;
 }
 
 // Lo que se guarda en la nómina de las revisadas: las marcas con solo las
 // claves de alertas que siguen en `alerts`, sin las que quedan vacías.
 export function reviewedChecksFor(reviewedChecks = [], alerts = []) {
   const live = new Set(alerts.map((a) => a.key));
-  return (reviewedChecks || [])
-    .map((e) => ({ keys: (e?.keys || []).filter((k) => live.has(k)), by: e?.by || "", byName: e?.byName || "", at: e?.at || "" }))
-    .filter((e) => e.keys.length);
+  return (reviewedChecks || []).map((e) => entryWith(e, (k) => live.has(k))).filter((e) => e.keys.length);
 }
 
-// Las alertas con su revisión (`review`, o `null` si no está revisada).
+// Aplica un cambio a las revisadas: `{ keys, on, by, byName, at, place,
+// signatures }` marca (`on`) o desmarca esas claves, sobre lo que ya está.
+// Las demás claves quedan como estaban, las haya marcado quien sea.
+export function applyReviewChange(reviewedChecks = [], change) {
+  const drop = new Set(change?.keys || []);
+  const rest = (reviewedChecks || []).map((e) => entryWith(e, (k) => !drop.has(k))).filter((e) => e.keys.length);
+  if (!change?.on || !drop.size) return rest;
+  return [...rest, entryWith({ ...change, keys: [...drop] }, () => true)];
+}
+
+// Las alertas con su revisión (`review`, o `null` si no está revisada). Si la
+// alerta cambió desde que se marcó, queda sin revisar y con la marca anterior
+// en `staleReview`.
 export function withReviews(alerts, reviewedChecks = []) {
   const index = reviewedIndex(reviewedChecks);
-  return alerts.map((a) => ({ ...a, review: index.get(a.key) || null }));
+  return alerts.map((a) => {
+    const review = index.get(a.key) || null;
+    if (review?.signature && review.signature !== alertSignature(a)) return { ...a, review: null, staleReview: review };
+    return { ...a, review };
+  });
+}
+
+// Lo que cambió entre dos listas de revisadas: las claves que se marcaron
+// (nuevas o marcadas de nuevo) y las que se desmarcaron.
+export function reviewDiff(from = [], to = []) {
+  const before = reviewedIndex(from);
+  const after = reviewedIndex(to);
+  const marked = [...after].filter(([k, r]) => !before.has(k) || before.get(k).at !== r.at).map(([k]) => k);
+  const unmarked = [...before.keys()].filter((k) => !after.has(k));
+  return { marked, unmarked };
 }
 
 // Cuántas alertas sin revisar hay de cada nivel, y cuántas revisadas.
@@ -228,4 +282,16 @@ export function alertsByPerson(alerts) {
     map.get(a.person).push(a);
   }
   return map;
+}
+
+const MONTHS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const PLACE_TEXT = { generate: "en Generar", detail: "en el detalle" };
+
+// Quién marcó, cuándo (en la hora local) y dónde: "Bruno, 18-nov 07:22, en el
+// detalle". Lo que falta no se nombra.
+export function reviewedByText(review) {
+  const when = review?.at ? new Date(review.at) : null;
+  const pad = (n) => String(n).padStart(2, "0");
+  const date = when && !Number.isNaN(when.getTime()) ? `${pad(when.getDate())}-${MONTHS[when.getMonth()]} ${pad(when.getHours())}:${pad(when.getMinutes())}` : "";
+  return [review?.byName, date, PLACE_TEXT[review?.place]].filter(Boolean).join(", ");
 }

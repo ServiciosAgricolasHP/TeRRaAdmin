@@ -131,7 +131,7 @@ export default function Payroll() {
     cycles: checkCycles,
     workers,
     payrolls,
-    resetKey: previewSources,
+    place: "generate",
     onWorkersChanged: reloadWorkers,
   });
   // Overlay de progreso: `step` es el mensaje principal (ej. "Etiquetando

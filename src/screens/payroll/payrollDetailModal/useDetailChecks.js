@@ -1,9 +1,8 @@
 import { useRef, useState } from "react";
 import { useToast } from "../../../contexts/ToastContext";
-import { setItemsGroupLeader, setReviewedChecks } from "../../../services/payrollsService";
+import { saveReviewChange, setItemsGroupLeader } from "../../../services/payrollsService";
 import { attempt } from "../../../utils/attempt";
 import { errorText } from "../../../utils/errorText";
-import { reviewedChecksFor } from "../../../utils/payrollChecks/payrollChecks";
 import { usePayrollChecks } from "../usePayrollChecks";
 
 const NONE = [];
@@ -31,26 +30,33 @@ export function useDetailChecks({ payroll, snapshot, snapshotLoading, cycles, wo
     createdAt: payroll.createdAt || null,
     reviewedChecks: payroll.reviewedChecks || NONE,
     resetKey: payroll.id,
+    place: "detail",
     qrSync: editable,
   });
 
   // Marcar revisadas cambia la revisión al instante y se guarda atrás, sin
   // releer la nómina ni su JSON: la escritura corrige la copia de la lista de
-  // nóminas, que es de donde se abre el detalle. Las marcas seguidas se
-  // guardan en orden, una después de otra, así la última es la que queda.
-  // Si una no se puede guardar, la revisión vuelve a la última guardada.
+  // nóminas, que es de donde se abre el detalle. Se guarda solo el cambio, sobre
+  // lo guardado en ese momento (`saveReviewChange`), así no se pierde lo que
+  // marcó otra persona con la nómina abierta. Los cambios seguidos se guardan
+  // en orden y, al terminar el último, la revisión toma lo guardado, con lo de
+  // los demás. Si uno no se puede guardar, vuelve a lo último guardado.
   const saves = useRef(Promise.resolve());
+  const pending = useRef(0);
   const lastSaved = useRef(null);
   const review = (keys, on) => {
-    const next = reviewedChecksFor(checks.setReviewed(keys, on), checks.alerts);
+    const change = checks.setReviewed(keys, on);
+    pending.current += 1;
     saves.current = saves.current.then(async () => {
-      const { error } = await attempt(() => setReviewedChecks(payroll.id, next));
-      if (!error) {
-        lastSaved.current = next;
+      const { value, error } = await attempt(() => saveReviewChange(payroll.id, change));
+      pending.current -= 1;
+      if (error) {
+        checks.resetReviewed(lastSaved.current);
+        toast.error(`No se pudo guardar la revisión: ${errorText(error)}`);
         return;
       }
-      checks.resetReviewed(lastSaved.current);
-      toast.error(`No se pudo guardar la revisión: ${errorText(error)}`);
+      lastSaved.current = value;
+      if (pending.current === 0) checks.resetReviewed(value);
     });
   };
 
