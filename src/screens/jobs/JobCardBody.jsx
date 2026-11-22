@@ -5,11 +5,12 @@ import { ColorPickerButton } from "./ColorPickerButton";
 // El contenido de la tarjeta de una faena: la franja de su color, el nombre,
 // la ubicación, el dueño y sus contrapartes (en el detalle, cada una con su
 // razón social y su RUT), hace cuánto (`since`: { icon, label, title }, en la
-// vista por estado), sus notas, cuántas subfaenas y ciclos tiene, y el color, Editar y Eliminar. Lo usan la tarjeta de la grilla y, con la faena abierta, el
+// vista por estado), la subfaena por la que calzó la búsqueda (`matchVia`),
+// sus notas, cuántas subfaenas y ciclos tiene, y el color, Editar y Eliminar. Lo usan la tarjeta de la grilla y, con la faena abierta, el
 // encabezado de su detalle. Va dentro de un contenedor `relative` y `group`.
 // `dragHint` muestra el ⠿ de arrastrar; `asTitle`, el nombre como título del
 // detalle, más grande y en el color del tema.
-export function JobCardBody({ job, cardColor, colorValue, onColorChange, subjobCount, cyclesCount, dragHint, since, onEdit, onDelete, asTitle = false }) {
+export function JobCardBody({ job, cardColor, colorValue, onColorChange, subjobCount, cyclesCount, dragHint, since, matchVia = null, onEdit, onDelete, asTitle = false }) {
   const counterparties = counterpartiesOf(job);
   return (
     <>
@@ -37,6 +38,7 @@ export function JobCardBody({ job, cardColor, colorValue, onColorChange, subjobC
             </div>
             {job.location && <div className="mt-0.5 truncate text-[11px] text-[var(--color-muted)]">{job.location}</div>}
             <OwnerLine owner={job.owner} counterparties={counterparties} full={asTitle} />
+            {matchVia && <div className="mt-0.5 truncate text-[11px] text-[var(--color-accent)]">Subfaena: {matchVia.name}</div>}
             {since && (
               <div className="mt-0.5 text-[11px] text-[var(--color-muted)]" title={since.title}>
                 {since.icon} {since.label}

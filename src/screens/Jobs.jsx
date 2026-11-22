@@ -25,6 +25,7 @@ import { FirstCycleOfferModal } from "./jobs/FirstCycleOfferModal";
 import { CloseCycleModal } from "./jobs/CloseCycleModal";
 import ScreenLoader from "../components/ScreenLoader";
 import { useJobStates } from "./jobs/useJobStates";
+import { useJobSearch } from "./jobs/useJobSearch";
 import { counterpartiesOf } from "../utils/jobCounterparties";
 import { JOB_STATE_GROUPS, JOB_STATE_SORTS, sinceLabel } from "../utils/jobStatus";
 import { localIsoDate } from "../utils/dates";
@@ -106,9 +107,14 @@ export default function Jobs() {
   const viewGroups = byState ? JOB_STATE_GROUPS : layout.groups;
   // El archivo de las cerradas parte plegado: en él, estar en la lista de
   // plegados significa estar abierto.
-  const isGroupCollapsed = (g) => (g.collapsedByDefault ? !collapsedGroups.has(g.id) : collapsedGroups.has(g.id));
+  // Al buscar, los grupos se abren, muestran solo las faenas que calzan y no
+  // se arrastra.
+  const search = useJobSearch({ jobs, refreshKey: subjobsByJob });
+  const isGroupCollapsed = (g) => !search.active && (g.collapsedByDefault ? !collapsedGroups.has(g.id) : collapsedGroups.has(g.id));
   const viewJobsByGroup = byState ? stateJobs : jobsByGroup;
-  const organizing = editLayout && !byState;
+  const shownJobsOf = (g) => (viewJobsByGroup[g.id] || []).filter(search.shows);
+  const organizing = editLayout && !byState && !search.active;
+  const canDrag = !byState && !search.active;
 
   const {
     collapsedSubjobs,
@@ -214,7 +220,7 @@ export default function Jobs() {
   const selectedCycles = panelId ? cyclesByJob[panelId] : null;
   // Si la tarjeta del panel no está a la vista (su grupo está plegado), el
   // detalle va suelto al final.
-  const panelPlaced = !!panelId && viewGroups.some((g) => !isGroupCollapsed(g) && (viewJobsByGroup[g.id] || []).some((f) => f.id === panelId));
+  const panelPlaced = !!panelId && viewGroups.some((g) => !isGroupCollapsed(g) && shownJobsOf(g).some((f) => f.id === panelId));
 
   // Lo que muestra la tarjeta de una faena, en la grilla y en el encabezado de
   // su detalle.
@@ -227,7 +233,8 @@ export default function Jobs() {
       onColorChange: (c) => setJobCardColor(f.id, c),
       subjobCount: subjobsByJob[f.id]?.length,
       cyclesCount: cyclesByJob[f.id]?.length,
-      dragHint: !byState,
+      dragHint: canDrag,
+      matchVia: search.viaOf(f),
       since: date
         ? { icon: stateSort === "edited" ? "✎" : "🕒", label: sinceLabel(date, today), title: `${sortMeta?.label}: ${date.split("-").reverse().join("-")}` }
         : null,
@@ -349,26 +356,51 @@ export default function Jobs() {
         </div>
       </div>
 
+      {!loading && jobs.length > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <div className="relative w-full sm:w-80">
+            <input
+              type="search"
+              value={search.query}
+              onChange={(e) => search.setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Escape" && search.setQuery("")}
+              placeholder="Buscar faena, subfaena, dueño o RUT..."
+              aria-label="Buscar faenas"
+              className="min-h-9 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
+            />
+          </div>
+          {search.active && (
+            <span className="text-xs text-[var(--color-muted)]">
+              {search.matches.size} de {jobs.length} faenas
+            </span>
+          )}
+        </div>
+      )}
+
       {loading ? (
         <ScreenLoader />
       ) : jobs.length === 0 ? (
         <div className="rounded-lg border border-dashed border-[var(--color-border)] p-10 text-center text-[var(--color-muted)]">
           No hay faenas. Crea la primera.
         </div>
+      ) : search.active && search.matches.size === 0 ? (
+        <div className="rounded-lg border border-dashed border-[var(--color-border)] p-10 text-center text-sm text-[var(--color-muted)]">
+          Ninguna faena calza con "{search.query.trim()}".
+        </div>
       ) : (
         <div className="space-y-6">
           {viewGroups.map((g) => {
-            const groupJobs = viewJobsByGroup[g.id] || [];
+            const groupJobs = shownJobsOf(g);
             // La sección "sin grupo" vacía solo se muestra al organizar, y un
             // estado sin faenas no se muestra.
             if (g.id === UNGROUPED_ID && groupJobs.length === 0 && !editLayout) return null;
-            if (byState && groupJobs.length === 0) return null;
+            if ((byState || search.active) && groupJobs.length === 0) return null;
             const isDropTarget = dropOverGroupId === g.id;
             return (
               <section
                 key={g.id}
-                onDragOver={byState ? undefined : onGroupDragOver(g.id)}
-                onDrop={byState ? undefined : onGroupDrop(g.id)}
+                onDragOver={canDrag ? onGroupDragOver(g.id) : undefined}
+                onDrop={canDrag ? onGroupDrop(g.id) : undefined}
                 title={byState ? g.hint : undefined}
                 onDragLeave={() => setDropOverGroupId(null)}
                 className={`rounded-lg border-2 ${
@@ -402,7 +434,7 @@ export default function Jobs() {
                       return (
                         <Fragment key={f.id}><div
                           data-job-card={f.id}
-                          draggable={!byState}
+                          draggable={canDrag}
                           onDragStart={onDragStart(f.id)}
                           onDragOver={onDragOver(f.id)}
                           onDragLeave={onDragLeave}
