@@ -252,9 +252,9 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 ### Formularios
 
 - **Mayúsculas de lo que se escribe a mano** (`utils/textCase.js`, con tests). Se corrigen al guardar, no mientras se escribe:
-  - **Nombres de registros como título** (`toTitleName`): faena, ubicación, subfaena, labor y su agrupación, quincena, transportista (nombre y alias), centro de costo, alias de empresa, ficha de Agenda y Cuentas, faena, labor y lugar del Libro de Precios, y la nota de anticipos y bonos. Los conectores van en minúscula ("Poda y Amarre de Parrones") y los artículos solo después de "de"/"del" ("Fundo Los Robles", "Quincena de la Cosecha"). Las siglas van en mayúsculas: una palabra sin vocales siempre ("kws" → "KWS"; "Kg" y "Km" no cuentan) y, si el nombre tiene alguna minúscula, una palabra escrita entera en mayúsculas entre palabras con minúsculas ("Ensayo INIA"). Dos o más palabras seguidas en mayúsculas son texto gritado y pasan a título ("SANTA ANGELA (Juan)" → "Santa Angela (Juan)"). Lugar y destino de las vueltas pasan por `titleCase` en `transportsService`.
+  - **Nombres de registros como título** (`toTitleName`): faena, ubicación, dueño de la faena, subfaena, labor y su agrupación, quincena, transportista (nombre y alias), centro de costo, alias de empresa, ficha de Agenda y Cuentas, faena, labor y lugar del Libro de Precios, y la nota de anticipos y bonos. Los conectores van en minúscula ("Poda y Amarre de Parrones") y los artículos solo después de "de"/"del" ("Fundo Los Robles", "Quincena de la Cosecha"). Las siglas van en mayúsculas: una palabra sin vocales siempre ("kws" → "KWS"; "Kg" y "Km" no cuentan) y, si el nombre tiene alguna minúscula, una palabra escrita entera en mayúsculas entre palabras con minúsculas ("Ensayo INIA"). Dos o más palabras seguidas en mayúsculas son texto gritado y pasan a título ("SANTA ANGELA (Juan)" → "Santa Angela (Juan)"). Lugar y destino de las vueltas pasan por `titleCase` en `transportsService`.
   - **Notas libres**: `unshout` solo las corrige si vienen **enteras en mayúsculas** (pasan a oración). Si tienen alguna minúscula, se respetan. Cubre las notas de faena, subfaena, ciclo, día del ciclo, transportista, vuelta, abono, resumen, quincena, factura y pago de factura, ficha y Libro de Precios.
-  - **Quedan fuera a propósito**: la razón social (es el nombre legal del SII), el titular y el giro de las fichas (se copian al banco y al SII), el alias de los vehículos (las vueltas lo guardan como texto y dejarían de calzar), los líderes de grupo (se comparan como texto: `CHILENOS`, `EXTRANJEROS`) y los nombres de trabajadores (`toProperName`, con su propio flujo).
+  - **Quedan fuera a propósito**: la razón social (es el nombre legal del SII; también la de las contrapartes de una faena), el titular y el giro de las fichas (se copian al banco y al SII), el alias de los vehículos (las vueltas lo guardan como texto y dejarían de calzar), los líderes de grupo (se comparan como texto: `CHILENOS`, `EXTRANJEROS`) y los nombres de trabajadores (`toProperName`, con su propio flujo).
   - Al editar un ciclo, el prefijo "Faena/Subfaena/" de su etiqueta se reconoce sin distinguir mayúsculas, porque un ciclo antiguo puede traerlo en mayúsculas.
 - **Un formulario en un modal avisa antes de perder cambios.** `Modal` recibe `dirty`: con cambios sin guardar, cerrar por el ✕, Escape o el clic afuera muestra "Cambios sin guardar" (Seguir editando / Descartar cambios), y cerrar o recargar la pestaña muestra el aviso del navegador. El "Cancelar" del formulario es un `ModalCloseButton`, que pasa por el mismo aviso; un `onClick={onClose}` directo se lo salta.
   - `dirty` sale de `hasChanges(cómoSeAbrió, valoresActuales)` (`utils/formChanges.js`, con tests), que compara lo que se ve: vacío, `null`, `false` y una fila en blanco valen lo mismo, y `150000` es igual a `"150000"`. Lo que no es dato del formulario va en `ignore` (el tipo elegido en un alta, respaldos internos como los `bd_prev*` de la ficha del trabajador).
@@ -394,6 +394,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | En pantalla | En el código | Colección |
 |---|---|---|
 | Faena / Subfaena | `job` / `subjob` | `faenas` / `subfaenas` |
+| Dueño de una faena (del negocio al que se le presta el servicio) | `owner` | dentro de `faenas` |
 | Ciclo | `cycle` | `cycles` |
 | Estado de una faena (activa, pausada o cerrada) | `jobState` (`active`, `paused`, `closed`) | se calcula desde `cycles`, no se guarda |
 | Labor | `labor` | dentro de `cycles.labors` |
@@ -432,7 +433,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Retención de IVA | `withholding` | |
 | Pendiente de cobro | `receivable` | |
 | Otro impuesto | `otherTax` | |
-| Contraparte | `counterparty` | |
+| Contraparte (RUT y razón social) | `counterparty` | en una faena, dentro de `faenas` (`counterparties`) y `subfaenas` (`counterpartyRut`) |
 | Centro de costo | `costCenter` | `costCenters` |
 | Gasto informal | `informalExpense` | `informalExpenses` |
 | Resumen anual / Proyección (Facturación) | `annualSummary` / `projection` | |

@@ -1,13 +1,17 @@
+import { CopyRut } from "../../components/CopyRut";
+import { counterpartiesOf } from "../../utils/jobCounterparties";
 import { ColorPickerButton } from "./ColorPickerButton";
 
 // El contenido de la tarjeta de una faena: la franja de su color, el nombre,
-// la ubicación, hace cuánto (`since`: { icon, label, title }, en la vista por
-// estado), sus notas, cuántas subfaenas y ciclos tiene, y el color, Editar y
-// Eliminar. Lo usan la tarjeta de la grilla y, con la faena abierta, el
+// la ubicación, el dueño y sus contrapartes (en el detalle, cada una con su
+// razón social y su RUT), hace cuánto (`since`: { icon, label, title }, en la
+// vista por estado), la subfaena por la que calzó la búsqueda (`matchVia`),
+// sus notas, cuántas subfaenas y ciclos tiene, y el color, Editar y Eliminar. Lo usan la tarjeta de la grilla y, con la faena abierta, el
 // encabezado de su detalle. Va dentro de un contenedor `relative` y `group`.
 // `dragHint` muestra el ⠿ de arrastrar; `asTitle`, el nombre como título del
 // detalle, más grande y en el color del tema.
-export function JobCardBody({ job, cardColor, colorValue, onColorChange, subjobCount, cyclesCount, dragHint, since, onEdit, onDelete, asTitle = false }) {
+export function JobCardBody({ job, cardColor, colorValue, onColorChange, subjobCount, cyclesCount, dragHint, since, matchVia = null, onEdit, onDelete, asTitle = false }) {
+  const counterparties = counterpartiesOf(job);
   return (
     <>
       <span
@@ -33,6 +37,8 @@ export function JobCardBody({ job, cardColor, colorValue, onColorChange, subjobC
               )}
             </div>
             {job.location && <div className="mt-0.5 truncate text-[11px] text-[var(--color-muted)]">{job.location}</div>}
+            <OwnerLine owner={job.owner} counterparties={counterparties} full={asTitle} />
+            {matchVia && <div className="mt-0.5 truncate text-[11px] text-[var(--color-accent)]">Subfaena: {matchVia.name}</div>}
             {since && (
               <div className="mt-0.5 text-[11px] text-[var(--color-muted)]" title={since.title}>
                 {since.icon} {since.label}
@@ -79,5 +85,39 @@ export function JobCardBody({ job, cardColor, colorValue, onColorChange, subjobC
         </div>
       </div>
     </>
+  );
+}
+
+// El dueño y las contrapartes. En la tarjeta, una sola va con su razón social
+// y su RUT, y varias, contadas; en el detalle (`full`), cada una en su línea.
+function OwnerLine({ owner, counterparties, full }) {
+  if (!owner && !counterparties.length) return null;
+  const one = counterparties.length === 1 ? counterparties[0] : null;
+  return (
+    <div className="mt-0.5 text-[11px] text-[var(--color-muted)]">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-1.5">
+        {owner && <span className="truncate">👤 {owner}</span>}
+        {one && (
+          <>
+            {owner && <span aria-hidden="true">·</span>}
+            {one.name && <span className="truncate">{one.name}</span>}
+            <CopyRut rut={one.rut} label="RUT de la contraparte" className="font-mono" />
+          </>
+        )}
+        {!one && counterparties.length > 1 && !full && (
+          <>
+            {owner && <span aria-hidden="true">·</span>}
+            <span title={counterparties.map((c) => c.name).join(", ")}>{counterparties.length} razones sociales</span>
+          </>
+        )}
+      </div>
+      {!one && full &&
+        counterparties.map((c) => (
+          <div key={c.rut} className="flex min-w-0 flex-wrap items-center gap-x-1.5">
+            <span className="truncate">{c.name}</span>
+            <CopyRut rut={c.rut} label="RUT de la contraparte" className="font-mono" />
+          </div>
+        ))}
+    </div>
   );
 }

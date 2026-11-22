@@ -129,6 +129,7 @@ export function SelectedDetail({
         </div>
       ) : (
         <SubjobListBody
+          job={selected}
           subjobs={subjobs}
           cyclesBySubjob={cyclesBySubjob}
           collapsedSubjobs={collapsedSubjobs}

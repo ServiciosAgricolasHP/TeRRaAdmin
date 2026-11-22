@@ -16,6 +16,8 @@ Lugar de trabajo (campo, predio).
 |---|---|---|
 | `id` (docId) | string | autoId |
 | `name` | string | |
+| `owner` | string? | el dueño del negocio al que se le presta el servicio, como título (`toTitleName`) |
+| `counterparties` | `{ rut, name }[]`? | las contrapartes: el RUT (sin puntos, `"76123456-0"`, con el dígito verificador revisado) y la razón social (tal cual, es el nombre legal del SII) de cada empresa a la que se le presta el servicio. Casi siempre una, y ahí la razón social es opcional; con más de una, cada una la lleva (`counterpartiesError`, `utils/jobCounterparties.js`) |
 | `notes` | string? | |
 | `createdAt/By`, `updatedAt/By` | ts, string | toda escritura de TeRRa pone `updatedAt`. La copia que comparten las pantallas se pone al día con él (`listJobs`) |
 
@@ -26,6 +28,7 @@ Subdivisión dentro de una faena (cuartel, sector). Los ciclos siempre cuelgan d
 | `id` (docId) | string | autoId |
 | `faenaId` | ref→`faenas` | |
 | `name` | string | |
+| `counterpartyRut` | string? | la contraparte de la subfaena: el RUT de una de las `counterparties` de su faena, que trae la razón social. Vacío: sin elegir. Se elige cuando la faena tiene más de una |
 | `notes` | string? | |
 | `createdAt/By`, `updatedAt/By` | ts, string | toda escritura de TeRRa pone `updatedAt`. La copia que comparten las pantallas se pone al día con él (`listSubjobs`) |
 

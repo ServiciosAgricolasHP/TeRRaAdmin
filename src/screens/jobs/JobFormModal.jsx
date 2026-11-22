@@ -1,8 +1,10 @@
 import Modal, { ModalCloseButton } from "../../components/Modal";
 import TextField from "../../components/TextField";
 import { hasChanges } from "../../utils/formChanges";
+import { CounterpartiesField } from "./CounterpartiesField";
 
-// Alta y edición de una faena: nombre, ubicación y notas.
+// Alta y edición de una faena: nombre, ubicación, dueño, contrapartes (RUT y
+// razón social) y notas.
 export function JobFormModal({ busy, jobForm, setJobForm, submitJob }) {
   return (
     <Modal
@@ -24,6 +26,16 @@ export function JobFormModal({ busy, jobForm, setJobForm, submitJob }) {
             label="Ubicación"
             value={jobForm.data.location}
             onChange={(v) => setJobForm((f) => ({ ...f, data: { ...f.data, location: v } }))}
+          />
+          <TextField
+            label="Dueño"
+            placeholder="Dueño del negocio al que se le presta el servicio"
+            value={jobForm.data.owner}
+            onChange={(v) => setJobForm((f) => ({ ...f, data: { ...f.data, owner: v } }))}
+          />
+          <CounterpartiesField
+            rows={jobForm.data.counterparties}
+            onChange={(rows) => setJobForm((f) => ({ ...f, data: { ...f.data, counterparties: rows } }))}
           />
           <TextField
             label="Notas"
