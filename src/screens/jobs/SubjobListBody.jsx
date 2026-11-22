@@ -1,10 +1,14 @@
 import { useState } from "react";
 import RowMenu from "../../components/RowMenu";
+import { CopyRut } from "../../components/CopyRut";
+import { subjobCounterparty } from "../../utils/jobCounterparties";
 import { CycleRow } from "./CycleRow";
 
 // Lista de subfaenas: las visibles primero y las ocultas (`hidden`) en un
-// grupo plegable al final.
+// grupo plegable al final. Cada una muestra la contraparte que eligió de las
+// de su faena (`job`).
 export function SubjobListBody({
+  job,
   subjobs,
   cyclesBySubjob,
   collapsedSubjobs,
@@ -33,6 +37,7 @@ export function SubjobListBody({
     const openCycles = subjobCycles.filter((c) => c.status !== "closed");
     const closedCycles = subjobCycles.filter((c) => c.status === "closed");
     const isCollapsed = !!collapsedSubjobs?.has(s.id);
+    const counterparty = subjobCounterparty(s, job);
     const closedHiddenByDefault = openCycles.length > 0;
     const showClosed = !closedHiddenByDefault || !!showClosedInSubjob?.has(s.id);
     // + Ciclo a la vista; lo demás, en el menú ⋯. Ocultar aparece solo si la
@@ -83,6 +88,12 @@ export function SubjobListBody({
                 {subjobCycles.length === 0 && "sin ciclos"}
               </span>
             </div>
+            {counterparty && (
+              <div className="flex min-w-0 flex-wrap items-center gap-x-1.5 text-xs text-[var(--color-muted)]">
+                {counterparty.name && <span className="truncate">{counterparty.name}</span>}
+                <CopyRut rut={counterparty.rut} label="RUT de la contraparte" className="font-mono" />
+              </div>
+            )}
             {s.notes && !isCollapsed && (
               <div className="truncate text-xs text-[var(--color-muted)]">{s.notes}</div>
             )}

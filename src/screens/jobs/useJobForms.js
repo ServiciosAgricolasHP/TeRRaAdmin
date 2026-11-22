@@ -3,6 +3,8 @@ import { toTitleName, unshout } from "../../utils/textCase";
 import { jobsService, subjobsService } from "../../services";
 import { attempt } from "../../utils/attempt";
 import { errorText } from "../../utils/errorText";
+import { cleanCounterparties, counterpartiesError } from "../../utils/jobCounterparties";
+import { normalizeRut } from "../../utils/rutUtils";
 
 // Alta y edición de faenas y subfaenas. Crear una subfaena ofrece abrir su
 // primer ciclo.
@@ -14,12 +16,20 @@ export function useJobForms({ loadJobs, loadSubjobs, order, persistOrder, setBus
 
   const submitJob = async (e) => {
     e.preventDefault();
+    const invalid = counterpartiesError(jobForm.data.counterparties);
+    if (invalid) {
+      toast.error(invalid);
+      return;
+    }
     setBusy(true);
     const { error: err } = await attempt(async () => {
       const payload = {
-        // Nombre y ubicación como título; notas sin gritar (utils/textCase.js).
+        // Nombre, ubicación y dueño como título; notas sin gritar; la razón
+        // social tal cual (utils/textCase.js).
         name: toTitleName(jobForm.data.name),
         location: toTitleName(jobForm.data.location || ""),
+        owner: toTitleName(jobForm.data.owner || ""),
+        counterparties: cleanCounterparties(jobForm.data.counterparties),
         notes: unshout(jobForm.data.notes || ""),
       };
       if (jobForm.mode === "create") {
@@ -42,7 +52,7 @@ export function useJobForms({ loadJobs, loadSubjobs, order, persistOrder, setBus
     setBusy(true);
     const { error: err } = await attempt(async () => {
       let createdSubjob = null;
-      const fields = { name: toTitleName(data.name || ""), notes: unshout(data.notes || "") };
+      const fields = { name: toTitleName(data.name || ""), notes: unshout(data.notes || ""), counterpartyRut: normalizeRut(data.counterpartyRut) };
       if (mode === "create") createdSubjob = await subjobsService.create({ ...data, ...fields, faenaId: jobId });
       else await subjobsService.update(data.id, fields);
       setSubjobForm(null);

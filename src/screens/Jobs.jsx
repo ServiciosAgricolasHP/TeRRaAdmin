@@ -25,13 +25,14 @@ import { FirstCycleOfferModal } from "./jobs/FirstCycleOfferModal";
 import { CloseCycleModal } from "./jobs/CloseCycleModal";
 import ScreenLoader from "../components/ScreenLoader";
 import { useJobStates } from "./jobs/useJobStates";
+import { counterpartiesOf } from "../utils/jobCounterparties";
 import { JOB_STATE_GROUPS, JOB_STATE_SORTS, sinceLabel } from "../utils/jobStatus";
 import { localIsoDate } from "../utils/dates";
 import { useValuesChanged } from "../hooks/useValuesChanged";
 
-const emptyJob = { name: "", location: "", notes: "" };
+const emptyJob = { name: "", location: "", owner: "", counterparties: [], notes: "" };
 
-const emptySubjob = { name: "", notes: "" };
+const emptySubjob = { name: "", notes: "", counterpartyRut: "" };
 
 export default function Jobs() {
   const toast = useToast();
@@ -468,6 +469,7 @@ export default function Jobs() {
 
       <SubjobFormModal
         busy={busy}
+        counterparties={counterpartiesOf(jobs.find((f) => f.id === subjobForm?.jobId))}
         setSubjobForm={setSubjobForm}
         subjobForm={subjobForm}
         submitSubjob={submitSubjob}
