@@ -5,8 +5,10 @@ import { fmtDayShortEs } from "../helpers";
 // Los ciclos de la nómina, con sus labores y lo que paga cada una. Se cambian
 // con "✎ Editar ciclos" (`EditCyclesModal`).
 // "💸 Pagos del ciclo" abre lo que le pagó cada nómina a cada persona en ese
-// ciclo (`onShowPayments`).
-export function PayrollCyclesSection({ cycleBreakdown, cycleDetails, editMode, isCollapsed, onShowPayments, toggleSection }) {
+// ciclo (`onShowPayments`). Una labor que está solo por días agregados a mano
+// lleva "⬇ Traer toda la labor" (`onBringLabor`, solo en una pendiente), que
+// abre el recálculo con el resto de la labor.
+export function PayrollCyclesSection({ cycleBreakdown, cycleDetails, editMode, isCollapsed, onShowPayments, toggleSection, onBringLabor = null, busy = false }) {
   return (
     <section>
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -73,10 +75,10 @@ export function PayrollCyclesSection({ cycleBreakdown, cycleDetails, editMode, i
                     </Link>
                   </div>
                 </div>
-                {c.labors.length > 0 && (editMode || c.labors.length > 1 || Array.isArray(c.laborIds)) && (
+                {c.labors.length > 0 && (editMode || c.labors.length > 1 || Array.isArray(c.laborIds) || c.labors.some((l) => !l.inScope)) && (
                   <ul className="divide-y divide-[var(--color-border)] border-t border-[var(--color-border)] bg-[var(--color-surface-2)] px-3">
                     {c.labors.map((l) => (
-                      <li key={l.id} className="flex min-h-8 items-center gap-2 text-xs">
+                      <li key={l.id} className="flex min-h-8 flex-wrap items-center gap-x-2 gap-y-1 py-0.5 text-xs">
                         <span className="min-w-0 flex-1 truncate">
                           {l.name}
                           {!l.inScope && (
@@ -94,6 +96,17 @@ export function PayrollCyclesSection({ cycleBreakdown, cycleDetails, editMode, i
                         <span className="w-24 shrink-0 text-right tabular-nums">
                           {l.amount == null ? "—" : fmtCurrency(l.amount)}
                         </span>
+                        {!l.inScope && onBringLabor && (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => onBringLabor(c, l)}
+                            title="Trae lo pendiente del resto de la labor, con el recálculo para revisarlo antes de guardar"
+                            className="min-h-8 shrink-0 rounded-md border border-[var(--color-accent)] bg-[var(--color-surface)] px-2 text-[11px] font-medium text-[var(--color-accent)] hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+                          >
+                            ⬇ Traer toda la labor
+                          </button>
+                        )}
                       </li>
                     ))}
                   </ul>

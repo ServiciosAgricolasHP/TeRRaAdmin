@@ -2,13 +2,14 @@ import { FilterChips, FilterToken } from "../FilterChips";
 import { fmtCurrency } from "../../../utils/format";
 import { workerSearchInput } from "../../../utils/workerSearch";
 
-// Barra de filtros fija, fuera del scroll, de borde a borde entre el
-// encabezado y el cuerpo. Grupo y Ciclo van en un panel; lo que esté activo se
-// ve igual, como etiquetas que se quitan con ✕.
+// Los filtros de los trabajadores, sobre las listas de banco y efectivo: la
+// búsqueda por RUT, nombre o líder, el medio de pago y, en un panel, Grupo y
+// Ciclo; lo que esté activo se ve igual, como etiquetas que se quitan con ✕.
+// Queda pegada arriba mientras se recorren las listas.
 export function DetailFilterBar({ cycleDetails, displayCycleLabel, filters, items }) {
   const { activeCycleFilter, activeLeaderFilter, allLeaders, clearFilters, filteredItems, hasActiveFilter, moreFilterCount, paymentMethod, search, setCycleFilter, setLeaderFilter, setPaymentMethod, setSearch, setShowFilters, showFilters, toggleSetItem } = filters;
   return (
-    <div className="shrink-0 border-b border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 sm:px-5 sm:py-2.5">
+    <div className="sticky top-0 z-10 -mx-3 border-y border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 sm:-mx-5 sm:px-5 sm:py-2.5">
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative w-full sm:w-auto sm:min-w-[220px] sm:flex-1">
           <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-[var(--color-muted)]">🔍</span>

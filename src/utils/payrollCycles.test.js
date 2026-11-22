@@ -137,6 +137,10 @@ describe("editableCyclesOf", () => {
   ];
   const r = editableCyclesOf({ jobs, cycles: all, cycleStats, payroll, cycleBreakdown });
 
+  it("anota las labores que están solo por días agregados a mano", () => {
+    expect([...r.handPicked].map(([id, set]) => [id, [...set]])).toEqual([["C", ["L6"]]]);
+  });
+
   it("muestra los abiertos y los de la nómina aunque estén cerrados, sin los de faenas que no están", () => {
     expect(r.groups.map((g) => [g.faena.id, g.cycles.map((c) => c.id)])).toEqual([["F1", ["A", "B", "H", "K"]], ["F2", ["C", "D"]]]);
     expect(r.groups[0].cycles[0]).toBe(all[0]);
@@ -198,6 +202,16 @@ describe("cycleEditDiff", () => {
     });
   });
 
+  it("una labor que estaba solo por días a mano entra entera si se pide, mientras siga marcada", () => {
+    const withHand = new Map([...initial, ["C", new Set(["L6"])]]);
+    const whole = new Map([["C", new Set(["L6"])]]);
+    expect(plain(cycleEditDiff(withHand, sel([["A", ["L1", "L2"]], ["B", ["L4"]], ["C", ["L6"]]]), whole))).toEqual({ removed: [], added: [["C", ["L6"]]] });
+    expect(plain(cycleEditDiff(withHand, sel([["A", ["L1", "L2"]], ["B", ["L4"]], ["C", ["L5"]]]), whole))).toEqual({
+      removed: [["C", ["L6"]]],
+      added: [["C", ["L5"]]],
+    });
+  });
+
   it("cambiar todas las labores de un ciclo por otras no lo saca entero", () => {
     expect(plain(cycleEditDiff(initial, sel([["A", ["L3"]], ["B", ["L4"]], ["C", []]])))).toEqual({
       removed: [["A", ["L1", "L2"]]],
@@ -228,6 +242,12 @@ describe("additionSummaryOf", () => {
 
   it("sin nada que entre queda en cero", () => {
     expect(additionSummaryOf(new Map(), { cycles, stats, initial })).toEqual({ cyclesIn: 0, laborsIn: 0, amount: 0, lines: [] });
+  });
+
+  it("nombra la labor que entra entera después de estar solo por días a mano", () => {
+    const added = new Map([["A", new Set(["L2"])]]);
+    const whole = new Map([["A", new Set(["L2"])]]);
+    expect(additionSummaryOf(added, { cycles, stats, initial: new Map([["A", new Set(["L1", "L2"])]]), whole }).lines).toEqual(["Ciclo A: Riego (toda la labor)"]);
   });
 });
 

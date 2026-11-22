@@ -1,6 +1,6 @@
 import { useState, useEffect, useEffectEvent, useMemo, useRef } from "react";
 import { adjustedSummaryTotals, buildWorkdaysByGroup } from "../printCommon";
-import { computeLaborSummary, summaryDisplayRowsOf, summaryLabelColumnsOf, summaryTitleOf } from "../../../utils/payrollDetail";
+import { computeLaborSummary, filterSummary, summaryDisplayRowsOf, summaryLabelColumnsOf, summaryTitleOf } from "../../../utils/payrollDetail";
 import { printSummaryTable } from "../printSummaryTable";
 import { useCaptureActions } from "../../../hooks/useCaptureActions";
 import { writePayrollSummaryXlsx } from "./writePayrollSummaryXlsx";
@@ -14,21 +14,35 @@ import { errorText } from "../../../utils/errorText";
 // pendiente de otras nóminas, sus totales y sus acciones de imprimir, copiar y
 // descargar. Los anticipos que la nómina entrega van siempre en su fila al
 // pie.
+//
+// El buscador (`summarySearch`) deja las filas cuya faena, subfaena, ciclo o
+// labor tiene lo escrito (`filterSummary`), y mientras busca el resumen va por
+// labor. Los totales son los de esas filas, sin las filas de bonos y
+// anticipos ni el efectivo pendiente de otras nóminas, que son de la nómina
+// entera; lo que se copia, descarga o imprime sale igual.
+const NO_AMOUNTS = { bank: 0, cash: 0, total: 0 };
+const NO_ADJUSTMENTS = { bonus: NO_AMOUNTS, advance: NO_AMOUNTS, payout: NO_AMOUNTS };
+
 export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycleNameOf, cyclesApart, cyclesPeriod, getPayrollData, otherPendingCash, payroll, setCyclesApart, setShowGross, showGross, subfaenaSummary, toast }) {
-  const adjustedTotals = (base) => adjustedSummaryTotals(base, bonusAdvanceSummary);
+  const [summarySearch, setSummarySearch] = useState("");
+  const searching = summarySearch.trim().length > 0;
+  const adjustments = searching ? NO_ADJUSTMENTS : bonusAdvanceSummary;
+  const adjustedTotals = (base) => adjustedSummaryTotals(base, adjustments);
 
   // Resumen en pantalla: las mismas tablas de "Detalle de pago" (por subfaena
   // o por labor), con sus propias acciones de imprimir, copiar y descargar. La
   // vista "con labores" usa la misma lectura cara de ciclos y jornadas: se
   // carga al activar el toggle y queda en caché mientras el modal esté abierto.
   const [summaryShowLabor, setSummaryShowLabor] = useState(false);
+  // Al buscar, el resumen va por labor: es donde están las labores.
+  const showLabor = summaryShowLabor || searching;
   // Las jornadas por grupo, atadas a la nómina para la que se leyeron, igual
   // que `getPayrollData`: toda edición llega como un `payroll` nuevo y se
   // vuelven a leer. El resumen sale de ellas en cada render, así sigue a
   // `cyclesApart` y a los nombres de los ciclos sin releer.
   const [laborWorkdays, setLaborWorkdays] = useState({ payroll: null, data: null });
   const workdaysByGroup = laborWorkdays.payroll === payroll ? laborWorkdays.data : null;
-  const laborSummaryData = summaryShowLabor && workdaysByGroup
+  const laborSummaryData = showLabor && workdaysByGroup
     ? computeLaborSummary(payroll, allGroups, workdaysByGroup, { byCycle: cyclesApart, net: !showGross, cycleNameOf })
     : null;
   const [laborSummaryLoading, setLaborSummaryLoading] = useState(false);
@@ -36,7 +50,7 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
   // el cleanup cancela la anterior (que ya no apaga el loading) y esta arranca
   // igual.
   const loadLaborWorkdays = useEffectEvent((isCancelled) => {
-    if (!summaryShowLabor || workdaysByGroup) return;
+    if (!showLabor || workdaysByGroup) return;
     setLaborSummaryLoading(true);
     (async () => {
       const { error: err } = await attempt(async () => {
@@ -52,8 +66,9 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
     let cancelled = false;
     loadLaborWorkdays(() => cancelled);
     return () => { cancelled = true; };
-  }, [summaryShowLabor, payroll]);
-  const activeSummary = summaryShowLabor ? laborSummaryData : subfaenaSummary;
+  }, [showLabor, payroll]);
+  const fullSummary = showLabor ? laborSummaryData : subfaenaSummary;
+  const activeSummary = filterSummary(fullSummary, summarySearch);
   // El efectivo adeudado de nóminas anteriores se puede sumar a esta tabla,
   // como fila aparte por nómina (es plata de otro período, con su propio
   // sobre) y con el monto neto adeudado.
@@ -84,8 +99,9 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
     ),
     [pendingSummaryRows],
   );
-  // Sin nada pendiente, el selector no se muestra y el modo vale "none".
-  const pendingMode = pendingSummaryRows.length > 0 ? summaryPending : "none";
+  // Sin nada pendiente, o al buscar, el selector no se muestra y el modo vale
+  // "none".
+  const pendingMode = pendingSummaryRows.length > 0 && !searching ? summaryPending : "none";
   const ownAdjusted = activeSummary
     ? adjustedTotals(activeSummary.totals)
     : { bank: 0, cash: 0, total: 0 };
@@ -98,12 +114,17 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
     total: ownAdjusted.total - deferredCash + addedPending,
   };
 
-  const labelColumns = summaryLabelColumnsOf({ showLabor: summaryShowLabor, byCycle: cyclesApart });
-  const summaryTitle = summaryTitleOf({ showLabor: summaryShowLabor, byCycle: cyclesApart, gross: showGross });
+  const labelColumns = summaryLabelColumnsOf({ showLabor, byCycle: cyclesApart });
+  const baseTitle = summaryTitleOf({ showLabor, byCycle: cyclesApart, gross: showGross });
+  const summaryTitle = searching ? `${baseTitle} · filtrado por "${summarySearch.trim()}"` : baseTitle;
   const summaryDisplayRows = useMemo(
-    () => summaryDisplayRowsOf(activeSummary, { showLabor: summaryShowLabor, byCycle: cyclesApart, periodOf: cyclesPeriod }),
-    [activeSummary, summaryShowLabor, cyclesApart, cyclesPeriod],
+    () => summaryDisplayRowsOf(activeSummary, { showLabor, byCycle: cyclesApart, periodOf: cyclesPeriod }),
+    [activeSummary, showLabor, cyclesApart, cyclesPeriod],
   );
+  // En el bruto, los bonos y anticipos son de la nómina entera: al buscar no
+  // van, y el resumen lo dice.
+  const hiddenAdjustments = searching && showGross
+    && (bonusAdvanceSummary.bonus.total > 0 || bonusAdvanceSummary.advance.total > 0 || bonusAdvanceSummary.payout?.total > 0);
   // El selector de juntos o separados se ofrece cuando alguna subfaena tiene
   // más de un ciclo con monto.
   const hasSeveralCycles = subfaenaSummary.rows.some((r) => r.cycleCount > 1);
@@ -116,7 +137,7 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
       title: summaryTitle,
       labelColumns,
       displayRows: summaryDisplayRows,
-      bonusAdvanceSummary,
+      bonusAdvanceSummary: adjustments,
       pendingRows: pendingSummaryRows,
       pendingMode,
       grandTotals,
@@ -128,12 +149,18 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
     if (!activeSummary) return;
     run(
       "xlsx",
-      () => writePayrollSummaryXlsx({ bonusAdvanceSummary, deferredCash, grandTotals, labelColumns, payroll, pendingMode, pendingSummaryRows, summaryDisplayRows, summaryTitle }),
+      () => writePayrollSummaryXlsx({ bonusAdvanceSummary: adjustments, deferredCash, grandTotals, labelColumns, payroll, pendingMode, pendingSummaryRows, summaryDisplayRows, summaryTitle }),
       { error: "No se pudo generar el Excel" },
     );
   };
   return {
     activeSummary,
+    adjustments,
+    allRowCount: fullSummary?.rows.length || 0,
+    hiddenAdjustments,
+    searching,
+    setSummarySearch,
+    summarySearch,
     cyclesApart,
     deferredCash,
     grandTotals,
@@ -154,7 +181,7 @@ export function useSummaryTable({ allGroups, bonusAdvanceSummary, catalogs, cycl
     setSummaryShowLabor,
     summaryDisplayRows,
     summaryPending,
-    summaryShowLabor,
+    summaryShowLabor: showLabor,
     summaryTitle,
   };
 }

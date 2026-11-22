@@ -311,6 +311,22 @@ export function computeLaborSummary(payroll, allGroups, workdaysByGroup, { byCyc
   return { rows, totals };
 }
 
+// Las filas de un resumen (`subfaenaSummaryOf` o `computeLaborSummary`) que
+// calzan con lo escrito, con sus totales: por la faena, la subfaena, el ciclo
+// (o los ciclos que junta la fila) o la labor, con cada palabra en cualquier
+// orden y sin importar tildes ni mayúsculas. Sin nada escrito, el resumen tal
+// cual.
+export function filterSummary(summary, query) {
+  if (!summary || !String(query || "").trim()) return summary;
+  const textOf = (r) => [r.faenaName, r.subfaenaName, r.cycleName, r.laborName, ...(r.cycleNames || [])].filter(Boolean).join(" ");
+  const rows = summary.rows.filter((r) => matchesSearchQuery(textOf(r), query));
+  const totals = rows.reduce(
+    (acc, r) => ({ bank: acc.bank + r.bank, cash: acc.cash + r.cash, total: acc.total + r.total }),
+    { bank: 0, cash: 0, total: 0 },
+  );
+  return { rows, totals };
+}
+
 // Período de un grupo de ciclos de la nómina, del primer día al último
 // ("01/10 → 03/10"), o "—" si ninguno lo tiene.
 export function cyclesPeriodOf(cycleDetails, cycleIdsIn) {

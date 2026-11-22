@@ -52,6 +52,7 @@ import { usePayrollRecalc } from "./payrollDetailModal/usePayrollRecalc";
 import { usePayrollPrints } from "./payrollDetailModal/usePayrollPrints";
 import { useSummaryTable } from "./payrollDetailModal/useSummaryTable";
 import { DetailFilterBar } from "./payrollDetailModal/DetailFilterBar";
+import { SummarySearchBar } from "./payrollDetailModal/SummarySearchBar";
 import { CycleTitlesEditor } from "./payrollDetailModal/CycleTitlesEditor";
 import { PayrollTotalsCards } from "./payrollDetailModal/PayrollTotalsCards";
 import { SummaryTable } from "./payrollDetailModal/SummaryTable";
@@ -509,12 +510,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
             </div>
           )}
         </div>
-        <DetailFilterBar
-          cycleDetails={cycleDetails}
-          displayCycleLabel={displayCycleLabel}
-          filters={filters}
-          items={items}
-        />
+        <SummarySearchBar table={table} onStart={() => isCollapsed("summary") && toggleSection("summary")} />
 
         <div className="flex-1 space-y-4 overflow-y-auto px-3 py-3 sm:space-y-5 sm:px-5 sm:py-4">
           {showTitleEditor && cycleDetails.length > 0 && (
@@ -560,7 +556,6 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
 
                 {subfaenaSummary.rows.length > 0 && (
                   <SummaryTable
-                    bonusAdvanceSummary={bonusAdvanceSummary}
                     payroll={payroll}
                     table={table}
                   />
@@ -577,8 +572,21 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
               editMode={editMode}
               isCollapsed={isCollapsed}
               toggleSection={toggleSection}
+              busy={recalcBusy}
+              onBringLabor={
+                isPending
+                  ? (c, l) => startCycleEdit({ added: new Map([[c.id, new Set([l.id])]]), additionLines: [`${c.label}: ${l.name} (toda la labor)`] })
+                  : null
+              }
             />
           )}
+
+          <DetailFilterBar
+            cycleDetails={cycleDetails}
+            displayCycleLabel={displayCycleLabel}
+            filters={filters}
+            items={items}
+          />
 
           {filteredBankGroups.length > 0 && (
             <section>

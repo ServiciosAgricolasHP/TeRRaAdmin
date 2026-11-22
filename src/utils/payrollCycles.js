@@ -180,6 +180,9 @@ export function cycleChecklistOf({ groups, cycleStats, selected, selectedLaborsB
 //     `cycleDetails` está entero.
 //   - `part`: lo que la nómina paga de cada ciclo y de cada labor, de
 //     `payrollCycleBreakdown`, para mostrarlo junto a lo pendiente.
+//   - `handPicked`: Map(cycleId → Set de labores) con las que están solo por
+//     días agregados a mano: pagan días pero no son de su alcance, así que
+//     Recalcular no trae el resto. Se pueden traer enteras (`cycleEditDiff`).
 export function editableCyclesOf({ jobs, cycles, cycleStats = {}, payroll, cycleBreakdown = [] }) {
   const details = new Map((payroll.cycleDetails || []).map((cd) => [cd.id, cd]));
   const inPayroll = new Set([...(payroll.cycleIds || []), ...details.keys()]);
@@ -187,6 +190,7 @@ export function editableCyclesOf({ jobs, cycles, cycleStats = {}, payroll, cycle
   const byJob = new Map(jobs.map((f) => [f.id, { faena: f, cycles: [] }]));
   const initial = new Map();
   const part = new Map();
+  const handPicked = new Map();
   for (const c of cycles) {
     const isIn = inPayroll.has(c.id);
     if (c.status === "closed" && !isIn) continue;
@@ -200,9 +204,11 @@ export function editableCyclesOf({ jobs, cycles, cycleStats = {}, payroll, cycle
     const scoped = cd && Array.isArray(cd.laborIds) ? cd.laborIds : allLaborIds;
     const withDays = (b?.labors || []).filter((l) => l.jornadas > 0).map((l) => l.id);
     initial.set(c.id, new Set([...scoped, ...withDays].filter((id) => allLaborIds.includes(id))));
+    const onlyByHand = withDays.filter((id) => allLaborIds.includes(id) && !scoped.includes(id));
+    if (onlyByHand.length) handPicked.set(c.id, new Set(onlyByHand));
     part.set(c.id, { amount: b?.amount || 0, labors: new Map((b?.labors || []).map((l) => [l.id, l])) });
   }
-  return { groups: [...byJob.values()].filter((g) => g.cycles.length > 0), stats: cycleStats, initial, part };
+  return { groups: [...byJob.values()].filter((g) => g.cycles.length > 0), stats: cycleStats, initial, part, handPicked };
 }
 
 // Lo que cambia entre los ciclos que la nómina paga (`initial`, de
@@ -213,8 +219,10 @@ export function editableCyclesOf({ jobs, cycles, cycleStats = {}, payroll, cycle
 //     labores que salen), la forma que recibe `planPayrollRecalc`. Un ciclo de
 //     la nómina desmarcado, o que queda sin ninguna labor, sale entero.
 //   - `added`: Map(cycleId → Set con las labores que entran), de ciclos nuevos
-//     o de uno que ya estaba.
-export function cycleEditDiff(initial = new Map(), selected = new Map()) {
+//     o de uno que ya estaba. También entran enteras las labores de `whole`
+//     (Map(cycleId → Set)), que estaban solo por días agregados a mano, si
+//     siguen marcadas.
+export function cycleEditDiff(initial = new Map(), selected = new Map(), whole = new Map()) {
   const removed = new Map();
   const added = new Map();
   for (const [cid, before] of initial) {
@@ -229,7 +237,7 @@ export function cycleEditDiff(initial = new Map(), selected = new Map()) {
   }
   for (const [cid, now] of selected) {
     const before = initial.get(cid) || new Set();
-    const entering = [...now].filter((id) => !before.has(id));
+    const entering = [...now].filter((id) => !before.has(id) || whole.get(cid)?.has(id));
     if (entering.length) added.set(cid, new Set(entering));
   }
   return { removed, added };
@@ -238,8 +246,9 @@ export function cycleEditDiff(initial = new Map(), selected = new Map()) {
 // Lo que entra al editar los ciclos de una nómina, para el pie del modal y la
 // vista previa: los ciclos nuevos, las labores que se suman a uno que ya
 // estaba, lo pendiente de lo que entra (un estimado: el monto real sale del
-// recálculo) y una línea por ciclo.
-export function additionSummaryOf(added = new Map(), { cycles = [], stats = {}, initial = new Map() } = {}) {
+// recálculo) y una línea por ciclo. Una labor que estaba solo por días
+// agregados a mano y entra entera (`whole`) se nombra así.
+export function additionSummaryOf(added = new Map(), { cycles = [], stats = {}, initial = new Map(), whole = new Map() } = {}) {
   let cyclesIn = 0;
   let laborsIn = 0;
   let amount = 0;
@@ -251,7 +260,7 @@ export function additionSummaryOf(added = new Map(), { cycles = [], stats = {}, 
     const labors = all.filter((l) => chosen.has(l.id));
     for (const l of labors) amount += stats[cid]?.unpaidByLabor?.[l.id]?.unpaid || 0;
     const label = c.label || c.id;
-    const names = labors.map((l) => l.name).join(", ");
+    const names = labors.map((l) => (whole.get(cid)?.has(l.id) ? `${l.name} (toda la labor)` : l.name)).join(", ");
     if (initial.has(cid)) {
       laborsIn += labors.length;
       lines.push(`${label}: ${names}`);
