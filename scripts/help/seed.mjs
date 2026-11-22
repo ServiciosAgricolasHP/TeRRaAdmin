@@ -280,6 +280,28 @@ export async function seedTransports() {
   });
 }
 
+// Para la guía "Pagar a los transportistas": vueltas anotadas después de armar
+// la quincena. Una de Furgón Norte, que ya tiene su resumen en la quincena, y
+// otra de un transportista que no tiene ninguno. Llevan la hora de verdad en
+// `updatedAt`, así la puesta al día de la app las trae.
+export const LATE_CARRIER = {
+  id: "K4", alias: "Buses del Sur", name: "Buses del Sur SpA", type: "contracted", defaultRate: 30000,
+  vehicles: [{ alias: "Bus Sur", plate: "PRTS78", capacity: "44" }],
+};
+
+export async function seedLateTrips() {
+  const db = getFirestore("hpdatabase");
+  const now = new Date();
+  const { id, ...carrier } = LATE_CARRIER;
+  await db.collection("carriers").doc(id).set({ ...carrier, notes: "", active: true, createdAt: now, updatedAt: now });
+  const base = {
+    cycleId: DEMO_CYCLE, faenaId: "F1", subfaenaId: "S1", kind: "regular", lugar: "Rengo", destino: "Fundo Los Aromos",
+    notes: "", status: "pending", paymentId: null, createdAt: now, updatedAt: now, date: DEMO_DAYS[3],
+  };
+  await db.collection("transports").doc("T9").set({ ...base, carrierId: "K2", vehicleAlias: "Van", qty: 1, rate: 18000, amount: 18000, personCount: 12 });
+  await db.collection("transports").doc("T10").set({ ...base, carrierId: "K4", vehicleAlias: "Bus Sur", qty: 1, rate: 30000, amount: 30000, personCount: 41 });
+}
+
 // Para la guía del resumen del ciclo: una nota en un día del ciclo de demo,
 // que el resumen para pagar muestra en las observaciones.
 export async function seedDayNote() {

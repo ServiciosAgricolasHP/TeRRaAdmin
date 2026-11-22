@@ -69,6 +69,31 @@ Arriba se ven lo **Abonado** y lo **Pendiente**, y lo que se copia o imprime cie
 
 ![Una quincena nueva](help/pagar-transportes/06-nueva-quincena.webp)
 
+## Agregar vueltas que llegaron después del resumen o la quincena
+<!-- preguntas: agregar vueltas a un resumen ya creado; se me olvidó una vuelta en la quincena; vueltas sueltas después de armar la quincena; agregar una vuelta a la quincena; agregar un resumen a la quincena; vuelta nueva de un transportista que ya está en la quincena; quedaron vueltas sueltas -->
+
+Las vueltas que se anotan después de armar un resumen o una quincena quedan **sueltas**: no entran solas. Se suman al resumen del transportista y, si no tiene uno, se arma uno y se agrega a la quincena.
+
+**Si el transportista ya tiene un resumen pendiente**, suelto o en la quincena:
+
+1. Abre su resumen: en **Resúmenes**, tócalo, o en la quincena, toca **👁** en su fila.
+2. Toca **+ Vuelta suelta**: salen sus vueltas pendientes que no están en ningún resumen.
+3. Marca las que van y toca **Agregar (N)**.
+
+![Sumar una vuelta suelta al resumen](help/pagar-transportes/12-agregar-vuelta.webp)
+
+TeRRa recalcula el total del resumen y, si está en una quincena, el de la quincena. No hay que hacer nada más.
+
+**Si no tiene un resumen pendiente**, porque no estaba en la quincena o porque el suyo ya se pagó:
+
+1. En **Resúmenes**, toca **+ Generar resumen**. Elige al **Transportista**, pon las fechas de esas vueltas en **Desde** y **Hasta**, y toca **Generar resumen**.
+2. En **Quincenas**, toca la quincena y después **▸ + Agregar resumen**: salen los resúmenes que no están en ninguna quincena.
+3. Marca el nuevo y toca **Agregar 1 a la quincena**.
+
+![Agregar el resumen nuevo a la quincena](help/pagar-transportes/13-agregar-resumen.webp)
+
+Un resumen pagado ya no suma vueltas, y una quincena pagada ya no suma resúmenes. Lo que llegó después va en un resumen nuevo, que se paga suelto (ver [Pagar un resumen suelto](/ayuda/pagar-transportes#pagar-un-resumen-suelto)) o en la próxima quincena.
+
 ## Pagar la quincena
 <!-- preguntas: marcar la quincena pagada; pagar a un solo transportista; revertir un pago de transporte; me equivoqué al marcar pagado; cuánto se le debe a cada transportista en la quincena; cuánto se le abonó a un transportista -->
 
@@ -115,6 +140,7 @@ El resumen y sus vueltas quedan pagados, y lo abonado queda como está, ya sin e
 <!-- preguntas: no aparece el transportista en la quincena; no puedo eliminar un resumen; el resumen no cuadra; el resumen quedó en cero pero sigue pendiente; no puedo pagar un resumen; no aparece el botón para pagar el resumen -->
 
 - **Un transportista no aparece al armar la quincena**: no tiene vueltas sueltas en esas fechas o en esas faenas. Si ya tiene un resumen, impórtalo.
+- **Una vuelta nueva no aparece en el resumen ni en la quincena**: las vueltas anotadas después no entran solas. Súmala con **+ Vuelta suelta** (ver [Agregar vueltas que llegaron después](/ayuda/pagar-transportes#agregar-vueltas-que-llegaron-despues-del-resumen-o-la-quincena)).
 - **No se puede eliminar un resumen**: está en una quincena. Sácalo con **✕** en la quincena.
 - **El pendiente de un resumen está en $0, pero sigue Pendiente**: los abonos no lo cierran solos. Márcalo pagado (ver [Liquidar un resumen](/ayuda/pagar-transportes#liquidar-un-resumen)).
 - **El detalle del resumen no tiene 💰 Marcar pagado**: está en una quincena, y se paga desde ella, con **💰 Pagar** en su fila.
