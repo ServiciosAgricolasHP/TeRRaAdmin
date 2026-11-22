@@ -577,6 +577,12 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
               editMode={editMode}
               isCollapsed={isCollapsed}
               toggleSection={toggleSection}
+              busy={recalcBusy}
+              onBringLabor={
+                isPending
+                  ? (c, l) => startCycleEdit({ added: new Map([[c.id, new Set([l.id])]]), additionLines: [`${c.label}: ${l.name} (toda la labor)`] })
+                  : null
+              }
             />
           )}
 

@@ -11,7 +11,8 @@ import { CycleGroupList } from "./CycleGroupList";
 // cada uno y, al marcar uno, sus labores. Los de la nómina vienen marcados,
 // con sus labores y lo que paga cada una. Se marca lo que entra y se desmarca
 // lo que sale, y "Revisar cambios" muestra el recálculo (`startCycleEdit` de
-// `usePayrollRecalc`) antes de guardar.
+// `usePayrollRecalc`) antes de guardar. Una labor que está solo por días
+// agregados a mano se puede traer entera ("⬇ traer toda").
 //
 // Se monta solo mientras está abierto, así cada apertura arranca de lo que la
 // nómina paga.
@@ -22,6 +23,8 @@ export function EditCyclesModal({ onClose, payroll, cycles, faenas, subfaenas, c
   );
   // cycleId → labores marcadas. Arranca con lo que la nómina paga hoy.
   const [selected, setSelected] = useState(() => new Map([...editable.initial].map(([id, set]) => [id, new Set(set)])));
+  // cycleId → labores que estaban solo por días a mano y entran enteras.
+  const [whole, setWhole] = useState(() => new Map());
   const [search, setSearch] = useState("");
   const [showEmpty, setShowEmpty] = useState(false);
 
@@ -41,9 +44,9 @@ export function EditCyclesModal({ onClose, payroll, cycles, faenas, subfaenas, c
     keep: editable.part,
   });
 
-  const { removed, added } = cycleEditDiff(editable.initial, selected);
+  const { removed, added } = cycleEditDiff(editable.initial, selected, whole);
   const removal = removalSummaryOf(cycleBreakdown, removed);
-  const addition = additionSummaryOf(added, { cycles, stats: editable.stats, initial: editable.initial });
+  const addition = additionSummaryOf(added, { cycles, stats: editable.stats, initial: editable.initial, whole });
   const changeCount = removed.size + added.size;
   const leavesEmpty = removal.allOut && added.size === 0;
 
@@ -64,7 +67,18 @@ export function EditCyclesModal({ onClose, payroll, cycles, faenas, subfaenas, c
     next.set(cycleId, set);
     return next;
   });
-  const undo = () => setSelected(new Map([...editable.initial].map(([id, set]) => [id, new Set(set)])));
+  const toggleWhole = (cycleId, laborId) => setWhole((prev) => {
+    const next = new Map(prev);
+    const set = new Set(next.get(cycleId) || []);
+    if (set.has(laborId)) set.delete(laborId);
+    else set.add(laborId);
+    next.set(cycleId, set);
+    return next;
+  });
+  const undo = () => {
+    setSelected(new Map([...editable.initial].map(([id, set]) => [id, new Set(set)])));
+    setWhole(new Map());
+  };
 
   const cycleNote = (c) => {
     if (!editable.part.has(c.id)) return null;
@@ -184,6 +198,9 @@ export function EditCyclesModal({ onClose, payroll, cycles, faenas, subfaenas, c
           payrollNameOf={payrollNameOf}
           cycleNote={cycleNote}
           payrollPart={editable.part}
+          handPicked={editable.handPicked}
+          wholeLabors={whole}
+          onToggleWhole={toggleWhole}
         />
       </div>
     </Modal>

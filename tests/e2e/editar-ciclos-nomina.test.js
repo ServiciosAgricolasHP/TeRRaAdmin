@@ -159,6 +159,30 @@ describe("editar los ciclos de una nómina en un solo paso", () => {
     expect(snap.advances.map((a) => a.id)).toEqual(["adv-caro"]);
   });
 
+  it("trae toda una labor que estaba solo por días agregados a mano: entra el resto y quien estaba sigue", async () => {
+    await seedCycle({ id: CICLO_A });
+    await seedWorker(ANA);
+    await seedWorker(BETO);
+    await seedWorkday({ cycleId: CICLO_A, rut: ANA.id, date: "2026-03-02", amount: 100000 });
+    const id = await armarNomina([CICLO_A]);
+    // El ciclo está solo por el día de Ana, agregado a mano; Beto trabajó la
+    // misma labor y quedó pendiente.
+    await payrollsService.update(id, { cycleDetails: [{ id: CICLO_A, label: CICLO_A, laborIds: [] }] });
+    await seedWorkday({ cycleId: CICLO_A, rut: BETO.id, date: "2026-03-02", amount: 90000 });
+
+    // Recalcular solo no trae a Beto: la labor no es del alcance de la nómina.
+    await editar(id, {});
+    expect(itemDe(await get("payrolls", id), BETO.id)).toBeUndefined();
+
+    const plan = await editar(id, { added: new Map([[CICLO_A, new Set([LABOR])]]) });
+    expect(plan.newWorkers.map((w) => [w.rut, w.gross])).toEqual([[BETO.id, 90000]]);
+    const nomina = await get("payrolls", id);
+    expect(nomina.cycleDetails.map((c) => [c.id, c.laborIds])).toEqual([[CICLO_A, [LABOR]]]);
+    expect(itemDe(nomina, ANA.id)).toMatchObject({ grossAmount: 100000 });
+    expect(itemDe(nomina, BETO.id)).toMatchObject({ grossAmount: 90000 });
+    expect(await etiquetaDe(CICLO_A, BETO.id, "2026-03-02")).toBe(id);
+  });
+
   it("cambia una labor por otra del mismo ciclo: quien está en las dos sigue, con su anticipo re-encajado", async () => {
     await seedCycle({ id: CICLO_A, labors: DOS_LABORES });
     await seedWorker(ANA);

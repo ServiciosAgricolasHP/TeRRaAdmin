@@ -8,7 +8,9 @@ import { PAY_SPLIT_HINT } from "./helpers";
 // una nómina; `cycleNote` agrega una línea bajo un ciclo. `payrollPart`
 // (Map(cycleId → { amount, labors }), de `editableCyclesOf`) es lo que la
 // nómina que se edita ya paga de cada ciclo y labor: esos ciclos se pueden
-// desmarcar y volver a marcar aunque no tengan pendiente.
+// desmarcar y volver a marcar aunque no tengan pendiente. `handPicked` son las
+// labores que están solo por días agregados a mano: cada una lleva "⬇ traer
+// toda" (`onToggleWhole`), y las elegidas van en `wholeLabors`.
 export function CycleGroupList({
   visibleGroups,
   emptyCount,
@@ -21,6 +23,9 @@ export function CycleGroupList({
   payrollNameOf = () => "",
   cycleNote = () => null,
   payrollPart = null,
+  handPicked = null,
+  wholeLabors = null,
+  onToggleWhole = null,
 }) {
   // "Todos / ninguno" por faena: solo opera sobre los ciclos que están a la
   // vista, así el botón nunca marca algo que el usuario no ve.
@@ -193,7 +198,7 @@ export function CycleGroupList({
                           )}
                         </div>
                       </label>
-                      {isSelected && labors.length > 1 && (
+                      {isSelected && (labors.length > 1 || handPicked?.has(c.id)) && (
                         <div className="border-t border-[var(--color-border)] bg-[var(--color-surface-2)]/40 px-3 py-1.5 sm:px-4">
                           <div className="mb-0.5 text-[10px] uppercase tracking-wide text-[var(--color-muted)]">
                             Labores a pagar
@@ -205,6 +210,9 @@ export function CycleGroupList({
                               // Lo que la nómina que se edita ya paga de esta labor.
                               const lp = part?.labors.get(l.id);
                               const paidHere = lp && lp.jornadas > 0;
+                              // Solo por días agregados a mano: se puede traer entera.
+                              const byHand = !!handPicked?.get(c.id)?.has(l.id);
+                              const bringWhole = byHand && !!wholeLabors?.get(c.id)?.has(l.id);
                               return (
                                 <li key={l.id}>
                                   <label className="flex min-h-8 cursor-pointer items-center gap-2 rounded px-1 text-xs hover:bg-[var(--color-accent-soft)]">
@@ -221,10 +229,28 @@ export function CycleGroupList({
                                           className="ml-1 text-[10px] text-[var(--color-accent)]"
                                           title={lp.inScope ? undefined : "Solo están los días que se agregaron a mano."}
                                         >
-                                          · {lp.inScope ? "en nómina" : "días a mano"}
+                                          · {lp.inScope ? "en nómina" : bringWhole ? "entra toda" : "días a mano"}
                                         </span>
                                       )}
                                     </span>
+                                    {byHand && on && onToggleWhole && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          onToggleWhole(c.id, l.id);
+                                        }}
+                                        title={bringWhole ? "Dejar solo los días agregados a mano" : "Traer también lo pendiente del resto de la labor"}
+                                        className={`min-h-8 shrink-0 rounded-md border px-2 text-[11px] ${
+                                          bringWhole
+                                            ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                                            : "border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-accent-soft)]"
+                                        }`}
+                                      >
+                                        {bringWhole ? "✓ toda la labor" : "⬇ traer toda"}
+                                      </button>
+                                    )}
                                     {(paidHere || pl?.unpaid > 0) && (
                                       <span className="shrink-0 tabular-nums text-[var(--color-muted)]">
                                         {paidHere ? lp.people : pl.ruts.size} pers.
