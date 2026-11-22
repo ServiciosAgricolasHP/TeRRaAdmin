@@ -6,23 +6,32 @@ import { SummaryViewMenu } from "./SummaryViewMenu";
 // anticipos y bonos al pie), por subfaena o por labor y con los ciclos de una
 // subfaena juntos o separados (el menú "👁 Vista"), con el selector de
 // efectivo pendiente de otras nóminas y sus acciones de copiar, descargar e
-// imprimir.
-export function SummaryTable({ bonusAdvanceSummary, payroll, table }) {
-  const { activeSummary, cyclesApart, deferredCash, grandTotals, handleCopySummaryImage, handleDownloadSummaryXlsx, handlePrintSummary, hasSeveralCycles, labelColumns, laborSummaryLoading, pendingMode, pendingSummaryRows, summaryBusy, summaryCaptureRef, setCyclesApart, setShowGross, setSummaryPending, setSummaryShowLabor, showGross, summaryDisplayRows, summaryPending, summaryShowLabor, summaryTitle } = table;
+// imprimir. Con el buscador del detalle (`searching`), solo las filas que
+// calzan, por labor y sin las filas de la nómina entera (bonos, anticipos y
+// efectivo pendiente).
+export function SummaryTable({ payroll, table }) {
+  const { activeSummary, adjustments: bonusAdvanceSummary, hiddenAdjustments, searching, summarySearch, cyclesApart, deferredCash, grandTotals, handleCopySummaryImage, handleDownloadSummaryXlsx, handlePrintSummary, hasSeveralCycles, labelColumns, laborSummaryLoading, pendingMode, pendingSummaryRows, summaryBusy, summaryCaptureRef, setCyclesApart, setShowGross, setSummaryPending, setSummaryShowLabor, showGross, summaryDisplayRows, summaryPending, summaryShowLabor, summaryTitle } = table;
   const labelSpan = labelColumns.length;
   return (
     <div className="mt-4">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <SummaryViewMenu
           options={[
-            { key: "labor", label: "Separar por labor", hint: "Una fila por labor de cada subfaena.", checked: summaryShowLabor, onChange: setSummaryShowLabor },
+            {
+              key: "labor",
+              label: "Separar por labor",
+              hint: searching ? "Al buscar, el resumen va por labor." : "Una fila por labor de cada subfaena.",
+              checked: summaryShowLabor,
+              onChange: setSummaryShowLabor,
+              disabled: searching,
+            },
             ...(hasSeveralCycles || cyclesApart
               ? [{ key: "cycles", label: "Separar por ciclo", hint: "Una fila por ciclo, en vez de juntar los de una subfaena.", checked: cyclesApart, onChange: setCyclesApart }]
               : []),
             { key: "gross", label: "Ver bruto, con anticipos y bonos aparte", hint: "Cada fila con lo ganado; los anticipos y bonos van al pie.", checked: showGross, onChange: setShowGross },
           ]}
         />
-        {pendingSummaryRows.length > 0 && (
+        {pendingSummaryRows.length > 0 && !searching && (
           <div
             className="inline-flex overflow-hidden rounded-md border border-[var(--color-warning)] text-xs"
             title="Efectivo que quedó debiendo de nóminas anteriores. Se entrega aparte, con su propio sobre."
@@ -89,6 +98,11 @@ export function SummaryTable({ bonusAdvanceSummary, payroll, table }) {
             {pendingMode === "with" && " · incluye efectivo pendiente de nóminas anteriores"}
             {pendingMode === "onlyPending" && " · transferencias + solo el efectivo pendiente de antes"}
           </div>
+          {hiddenAdjustments && (
+            <div className="text-[11px]" style={{ color: "#7A5A00" }}>
+              Los bonos y anticipos son de la nómina entera: no van en el filtrado.
+            </div>
+          )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs" style={{ color: "#222", borderCollapse: "collapse" }}>
@@ -103,6 +117,13 @@ export function SummaryTable({ bonusAdvanceSummary, payroll, table }) {
               </tr>
             </thead>
             <tbody>
+              {searching && summaryDisplayRows.length === 0 && (
+                <tr>
+                  <td colSpan={labelSpan + 3} className="px-2 py-3 text-center" style={{ border: "1px solid #999", color: "#666" }}>
+                    Ninguna faena, subfaena, ciclo o labor tiene "{summarySearch.trim()}".
+                  </td>
+                </tr>
+              )}
               {summaryDisplayRows.map((entry, i) => {
                 if (entry.subtotal) {
                   return (

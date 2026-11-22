@@ -15,6 +15,7 @@ import {
   netPartsOf,
   netByCycleOf,
   removalSummaryOf,
+  filterSummary,
 } from "./payrollDetail";
 import { groupCashByLeader } from "./payroll";
 
@@ -483,5 +484,38 @@ describe("los anticipos entregados en el resumen", () => {
     ]);
     expect(totals.total).toBe(200000);
     expect(computeLaborSummary(payroll, groups, workdaysByGroup).totals.total).toBe(100000);
+  });
+});
+
+describe("filterSummary", () => {
+  const row = (faenaName, subfaenaName, laborName, bank, cash, extra = {}) => ({ faenaName, subfaenaName, laborName, bank, cash, total: bank + cash, cycleIds: new Set(["c"]), ...extra });
+  const summary = {
+    rows: [
+      row("Fundo Los Robles", "Cuartel Norte", "Cosecha", 100, 50),
+      row("Fundo Los Robles", "Cuartel Sur", "Poda Grupo Ana", 40, 0),
+      row("Parcela Cosecha Fina", "Lote 1", "Riego", 0, 30, { cycleNames: ["Ciclo 3"] }),
+    ],
+    totals: { bank: 140, cash: 80, total: 220 },
+  };
+
+  it("sin nada escrito deja el resumen tal cual", () => {
+    expect(filterSummary(summary, "  ")).toBe(summary);
+    expect(filterSummary(null, "x")).toBeNull();
+  });
+
+  it("deja las filas cuya faena, subfaena o labor tiene el texto, con sus totales", () => {
+    const r = filterSummary(summary, "cosecha");
+    expect(r.rows.map((x) => x.laborName)).toEqual(["Cosecha", "Riego"]);
+    expect(r.totals).toEqual({ bank: 100, cash: 80, total: 180 });
+  });
+
+  it("encuentra el nombre de la labor por una parte, sin tildes, y el ciclo que junta una fila", () => {
+    expect(filterSummary(summary, "ana").rows.map((x) => x.laborName)).toEqual(["Poda Grupo Ana"]);
+    expect(filterSummary(summary, "ciclo 3").rows.map((x) => x.laborName)).toEqual(["Riego"]);
+    expect(filterSummary(summary, "robles sur").rows.map((x) => x.laborName)).toEqual(["Poda Grupo Ana"]);
+  });
+
+  it("sin coincidencias queda vacío y en cero", () => {
+    expect(filterSummary(summary, "olivo")).toEqual({ rows: [], totals: { bank: 0, cash: 0, total: 0 } });
   });
 });
