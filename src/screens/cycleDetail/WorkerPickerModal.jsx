@@ -22,6 +22,7 @@ import { greeting, GREETING_SLOTS } from "../../utils/greetings";
 import { attempt } from "../../utils/attempt";
 import { useValuesChanged } from "../../hooks/useValuesChanged";
 import { activeWorkers } from "../../utils/workerMerge";
+import { nameSearchOf } from "../../utils/similarity";
 import { errorText } from "../../utils/errorText";
 
 const MIN_SEARCH = 3;
@@ -37,6 +38,20 @@ function defaultLeaderForRut(rut) {
 async function checkLeader(leader) {
   const { disabled } = await ensureGroupLeaders([leader]);
   if (disabled.length) throw new Error(`El grupo ${leader} está deshabilitado en la lista de líderes`);
+}
+
+// Las otras fichas con un nombre parecido: elegir la equivocada deja los días
+// en la ficha de otra persona.
+function LookalikeNote({ others, prefix }) {
+  if (!others.length) return null;
+  const names = others.slice(0, 2).map((o) => `${o.name} (${formatRutForDisplay(o.rut || o.id)})`);
+  const rest = others.length - names.length;
+  return (
+    <span className="block text-[11px] leading-snug text-[var(--color-warning)]">
+      ⚠ {prefix}: {names.join(" y ")}
+      {rest > 0 ? ` y ${rest} más` : ""}
+    </span>
+  );
 }
 
 function emptyNewWorker() {
@@ -128,6 +143,16 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
     }
     return out;
   }, [queryReady, queryRaw, allWorkers]);
+
+  // Las fichas con nombre parecido a cada resultado y al nombre de una ficha
+  // nueva, palabra por palabra (`nameSearchOf`).
+  const searchName = useMemo(() => nameSearchOf(allWorkers), [allWorkers]);
+  const lookalikes = useMemo(
+    () => new Map(filtered.map((w) => [w.id, searchName(w.name).map((m) => m.worker).filter((o) => o.id !== w.id)])),
+    [filtered, searchName],
+  );
+  const newName = newWorker.name;
+  const newLookalikes = useMemo(() => (creating ? searchName(newName).map((m) => m.worker) : []), [creating, newName, searchName]);
 
   const accType = Number(newWorker.bd_accountType);
   const isCash = String(newWorker.bd_bankCode).toUpperCase() === CASH_BANK_CODE;
@@ -329,13 +354,16 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
                             : "hover:bg-[var(--color-accent-soft)]"
                         }`}
                       >
-                        <span className="flex min-w-0 items-center gap-2">
-                          <span className="text-sm font-medium">{w.name}</span>
-                          {isExcluded && (
-                            <span className="rounded-full bg-[var(--color-success-soft)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-success)]">
-                              ✓ {resolvedExcludedLabel}
-                            </span>
-                          )}
+                        <span className="min-w-0">
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span className="text-sm font-medium">{w.name}</span>
+                            {isExcluded && (
+                              <span className="rounded-full bg-[var(--color-success-soft)] px-2 py-0.5 text-[10px] font-medium text-[var(--color-success)]">
+                                ✓ {resolvedExcludedLabel}
+                              </span>
+                            )}
+                          </span>
+                          <LookalikeNote others={lookalikes.get(w.id) || []} prefix="Nombre parecido" />
                         </span>
                         <span className="text-xs text-[var(--color-muted)] whitespace-nowrap">{formatRutForDisplay(w.rut || w.id)}</span>
                       </button>
@@ -376,12 +404,15 @@ export default function WorkerPickerModal({ open, onClose, onPick, excludeRuts =
                 onChange={onRutChange}
               />
             </div>
-            <TextField
-              label="Nombre"
-              required
-              value={newWorker.name}
-              onChange={(v) => setNewWorker((w) => ({ ...w, name: v }))}
-            />
+            <div>
+              <TextField
+                label="Nombre"
+                required
+                value={newWorker.name}
+                onChange={(v) => setNewWorker((w) => ({ ...w, name: v }))}
+              />
+              <LookalikeNote others={newLookalikes} prefix="Ya hay una ficha con nombre parecido" />
+            </div>
             <Select
               label="Líder del grupo"
               required
