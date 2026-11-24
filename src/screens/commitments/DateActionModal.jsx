@@ -5,6 +5,7 @@ import { fmtCurrency } from "../../utils/format";
 import { fmtDate } from "./helpers";
 import { btnCls, primaryCls, labelCls, inputCls } from "./styles";
 import { attempt } from "../../utils/attempt";
+import AmountInput from "../../components/AmountInput";
 
 // Marcar pagado (con la fecha y lo que se pagó de verdad) o reprogramar algo
 // aplazado o protestado (con la fecha nueva).
@@ -59,12 +60,9 @@ export function DateActionModal({ action, onChange, onCancel, onConfirm }) {
         {pay && (
           <div>
             <label className={labelCls}>Monto {cheque ? "cobrado" : "pagado"}{partial > 0 ? " ahora" : ""}</label>
-            <input
-              type="number"
-              min="0"
-              inputMode="numeric"
+            <AmountInput
               value={action.paid}
-              onChange={(e) => onChange({ paid: e.target.value })}
+              onChange={(v) => onChange({ paid: v })}
               className={inputCls}
             />
             {extra > 0 && (

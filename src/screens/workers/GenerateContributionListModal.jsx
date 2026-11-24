@@ -18,6 +18,7 @@ import {
 import ContributionItemsTable, { PayTotals } from "./ContributionItemsTable";
 import FaenaPicker from "./FaenaPicker";
 import { errorText } from "../../utils/errorText";
+import AmountInput from "../../components/AmountInput";
 
 const inputCls =
   "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]";
@@ -185,7 +186,7 @@ export default function GenerateContributionListModal({ employers, principals, o
         </div>
         <label className="block sm:w-80">
           <span className="mb-1 block text-sm text-[var(--color-muted)]">Mínimo por día (sueldo base de cada día)</span>
-          <input type="number" min="0" value={dailyBaseInput} onChange={(e) => changeDailyBase(e.target.value)} className={inputCls} />
+          <AmountInput value={dailyBaseInput} onChange={changeDailyBase} className={inputCls} />
           <span className="mt-1 block text-xs text-[var(--color-muted)]">Viene del indicador «Día». Lo ganado por sobre el mínimo va como bono.</span>
         </label>
 

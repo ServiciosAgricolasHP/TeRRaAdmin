@@ -1,5 +1,6 @@
 import { carrierColumns, cellText } from "../../../utils/summaryTables";
 import { cellH, cell, chargeDateInputStyle, inputVal, chargeInputStyle, NOT_CHARGED_ROW, NOT_CHARGED_TITLE } from "./tableStyles";
+import AmountInput from "../../../components/AmountInput";
 
 // Lo que se usa cuando no se pasa la prop: siempre el mismo objeto.
 const NO_HIDDEN_COLUMNS = new Set();
@@ -35,10 +36,9 @@ export function TransportTable({
     const edit = editable && col.edit ? col.edit(r) : null;
     if (edit) {
       return (
-        <input
-          type="number"
+        <AmountInput
           value={inputVal(edit.raw)}
-          onChange={(e) => handleField(r, edit.field, e.target.value)}
+          onChange={(v) => handleField(r, edit.field, v)}
           style={edit.bold ? { ...chargeInputStyle, fontWeight: 600 } : chargeInputStyle}
           title={edit.title}
         />

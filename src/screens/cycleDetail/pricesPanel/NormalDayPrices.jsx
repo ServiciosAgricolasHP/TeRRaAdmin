@@ -3,6 +3,7 @@ import { DEFAULT_BASE_DAY } from "../../../utils/tratoHE";
 import { parseAmount } from "../../../utils/formula";
 import { fmtCurrency } from "../../../utils/format";
 import { useCycleDetail } from "../CycleDetailContext";
+import AmountInput from "../../../components/AmountInput";
 
 // Barra de precios de labores normales (main/supervision/extra): un
 // precio sugerido por día, que las celdas vacías de la grilla
@@ -64,11 +65,11 @@ export function NormalDayPrices() {
                     <div className="font-medium text-[var(--color-text)]">{d}</div>
                     <div className="flex items-center gap-1">
                       <span className="text-[var(--color-muted)]">$</span>
-                      <input
-                        type="number" min="0" disabled={readOnly}
+                      <AmountInput
+                        disabled={readOnly}
                         value={displayVal}
-                        onChange={(e) =>
-                          setLocalPriceInputs((prev) => ({ ...prev, [k]: e.target.value }))
+                        onChange={(v) =>
+                          setLocalPriceInputs((prev) => ({ ...prev, [k]: v }))
                         }
                         onBlur={async () => {
                           if (localVal === undefined) return;

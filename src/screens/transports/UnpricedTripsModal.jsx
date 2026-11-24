@@ -3,6 +3,7 @@ import { titleCase } from "../../services/transportsService";
 import { fmtCurrency } from "../../utils/format";
 import { tripDateLabel, tripLaborLabel } from "./tripCells";
 import { useTripRates } from "./unpricedTripsModal/useTripRates";
+import AmountInput from "../../components/AmountInput";
 
 const inputClass = "w-24 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-right text-sm tabular-nums outline-none focus:border-[var(--color-accent)]";
 
@@ -79,14 +80,11 @@ export function UnpricedTripsModal({ groups, onClose, onSaved }) {
                       </div>
                       <label className="flex items-center gap-1">
                         <span className="text-[var(--color-muted)]">$</span>
-                        <input
-                          type="number"
-                          min="0"
-                          inputMode="numeric"
+                        <AmountInput
                           aria-label={`Tarifa de la vuelta del ${tripDateLabel(t.date)}`}
                           value={rates[t.id] ?? ""}
                           placeholder={defaultRate ? String(defaultRate) : "Tarifa"}
-                          onChange={(e) => setRate(t.id, e.target.value)}
+                          onChange={(v) => setRate(t.id, v)}
                           disabled={saving}
                           className={inputClass}
                         />

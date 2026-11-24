@@ -158,3 +158,63 @@ export function findSimilarWorkers(name, workers, { threshold = 0.82, limit = 5 
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
 }
+
+// Busca fichas por nombre sin comparar cada nombre con todas: indexa las
+// palabras de los nombres de las fichas y compara a fondo solo las fichas con
+// dos o más palabras parecidas a las del nombre buscado. Calzan las que
+// comparten dos tercios del nombre más corto y al menos dos palabras.
+// Las palabras del índice van por largo, con cuántas veces está cada letra:
+// una palabra se compara letra por letra solo con las de un largo y unas
+// letras que dan para el parecido (cada error cambia a lo más dos letras).
+export function nameSearchOf(workers) {
+  const tokens = workers.map((w) => nameTokens(w.name));
+  const byToken = new Map();
+  tokens.forEach((ts, i) => {
+    for (const t of new Set(ts)) {
+      if (!byToken.has(t)) byToken.set(t, []);
+      byToken.get(t).push(i);
+    }
+  });
+  const byLength = new Map();
+  for (const v of byToken.keys()) {
+    if (!byLength.has(v.length)) byLength.set(v.length, []);
+    byLength.get(v.length).push({ v, hist: histogramOf(v) });
+  }
+  const similar = new Map();
+  const similarTo = (t) => {
+    if (similar.has(t)) return similar.get(t);
+    const hist = histogramOf(t);
+    const found = [];
+    for (const [length, words] of byLength) {
+      const allowed = Math.max(length, t.length) * (1 - TOKEN_MATCH);
+      if (Math.abs(length - t.length) > allowed) continue;
+      for (const { v, hist: h } of words) {
+        let unmatched = 0;
+        for (let k = 0; k < h.length; k += 1) unmatched += Math.abs(h[k] - hist[k]);
+        // El margen deja pasar el borde: 1 error en 5 letras es justo 80%.
+        if (unmatched / 2 <= allowed + 1e-9 && tokenSimilarity(t, v) >= TOKEN_MATCH) found.push(v);
+      }
+    }
+    similar.set(t, found);
+    return found;
+  };
+  return (name) => {
+    const own = nameTokens(name);
+    const hits = new Map();
+    own.forEach((t, k) => {
+      for (const v of similarTo(t)) {
+        for (const i of byToken.get(v)) {
+          if (!hits.has(i)) hits.set(i, new Set());
+          hits.get(i).add(k);
+        }
+      }
+    });
+    const out = [];
+    for (const [i, words] of hits) {
+      if (words.size < 2) continue;
+      const { score, matched } = tokensSimilarity(own, tokens[i]);
+      if (matched >= 2 && score >= 0.66) out.push({ worker: workers[i], score });
+    }
+    return out.sort((a, b) => b.score - a.score);
+  };
+}

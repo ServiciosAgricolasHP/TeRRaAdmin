@@ -7,6 +7,7 @@ import { useToast } from "../../contexts/ToastContext";
 import { todayIso } from "./docs";
 import { attempt } from "../../utils/attempt";
 import { errorText } from "../../utils/errorText";
+import AmountInput from "../../components/AmountInput";
 
 // Crear/editar/eliminar un gasto informal (sin factura/boleta formal) de un
 // centro de costo. Vive solo en `informalExpenses`: nunca toca `dteDocuments`
@@ -109,11 +110,9 @@ export function InformalExpenseFormModal({ expense, costCenterId, companiesList,
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">Monto</label>
-            <input
-              type="number"
-              min="0"
+            <AmountInput
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={setAmount}
               placeholder="0"
               className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
             />

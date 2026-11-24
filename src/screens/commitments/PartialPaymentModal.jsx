@@ -9,6 +9,7 @@ import { fmtDate } from "./helpers";
 import { btnCls, primaryCls, labelCls, inputCls } from "./styles";
 import { attempt } from "../../utils/attempt";
 import { errorText } from "../../utils/errorText";
+import AmountInput from "../../components/AmountInput";
 
 // Orden de una serie: por fecha y, a igual fecha, por número de cuota.
 const bySeriesOrder = (a, b) =>
@@ -137,12 +138,9 @@ export function PartialPaymentModal({ item, items, today, onClose, onSaved }) {
             </div>
             <div>
               <label className={labelCls}>Monto (falta {fmtCurrency(available)})</label>
-              <input
-                type="number"
-                min="0"
-                inputMode="numeric"
+              <AmountInput
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={setAmount}
                 className={inputCls}
               />
               {error && <div className="mt-1 text-xs text-[var(--color-danger)]">{error}</div>}

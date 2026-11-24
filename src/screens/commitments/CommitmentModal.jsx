@@ -18,6 +18,7 @@ import { fmtDate } from "./helpers";
 import { btnCls, primaryCls, labelCls, inputCls } from "./styles";
 import { attempt } from "../../utils/attempt";
 import { errorText } from "../../utils/errorText";
+import AmountInput from "../../components/AmountInput";
 
 const CHEQUE_BANKS = BANKS.filter((b) => b.code !== "EFE");
 
@@ -218,12 +219,9 @@ export function CommitmentModal({ initial, today, companies, counterparties, onC
           {form.status === "paid" && (
             <div>
               <label className={labelCls}>Interés / extra pagado</label>
-              <input
-                type="number"
-                min="0"
-                inputMode="numeric"
+              <AmountInput
                 value={form.extra}
-                onChange={(e) => set({ extra: e.target.value })}
+                onChange={(v) => set({ extra: v })}
                 className={inputCls}
               />
               <div className="mt-1 text-xs text-[var(--color-muted)]">

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nameSimilarity, findSimilarWorkers, similarNamePairs, nameTokens, tokenNameSimilarity, tokenSimilarity, tokensSimilarity } from "./similarity";
+import { nameSimilarity, findSimilarWorkers, nameSearchOf, similarNamePairs, nameTokens, tokenNameSimilarity, tokenSimilarity, tokensSimilarity } from "./similarity";
 
 describe("tokenNameSimilarity", () => {
   it("no le importa el orden de las palabras", () => {
@@ -161,5 +161,31 @@ describe("similarNamePairs", () => {
 
   it("ignora los nombres vacíos", () => {
     expect(similarNamePairs(["", ""], 0.5)).toEqual([]);
+  });
+});
+
+describe("nameSearchOf", () => {
+  const people = [
+    { id: "a", name: "ANA PÉREZ GONZÁLEZ" },
+    { id: "b", name: "Pérez Ana" },
+    { id: "c", name: "ANA SOTO" },
+    { id: "d", name: "PEDRA SOTO" },
+    { id: "e", name: "MARIA JOSE ROJAS" },
+  ];
+  const search = nameSearchOf(people);
+  const ids = (name) => search(name).map((m) => m.worker.id).sort();
+
+  it("palabra por palabra, en cualquier orden: dos tercios del nombre más corto y al menos dos palabras", () => {
+    expect(ids("ANA PEREZ")).toEqual(["a", "b"]);
+    expect(ids("MARIA ROJAS SOTO")).toEqual(["e"]);
+  });
+
+  it("acepta un error de tipeo por palabra, también justo en el 80% de una palabra de 5 letras", () => {
+    expect(ids("PEDRO SOTO")).toEqual(["d"]);
+    expect(ids("ANA GONZALES")).toEqual(["a"]);
+  });
+
+  it("con una sola palabra no busca", () => {
+    expect(ids("ANA")).toEqual([]);
   });
 });

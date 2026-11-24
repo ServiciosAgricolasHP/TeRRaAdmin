@@ -1,6 +1,7 @@
 import { mergeFamilyOf } from "../../../utils/chargeMerge";
 import { fmtNumber } from "../../../utils/cycleSummary";
 import { fmtCurrency } from "../../../utils/format";
+import AmountInput from "../../../components/AmountInput";
 
 export function ChargeEditor({ labors, carriers, carrierById, onLaborChange, onCarrierChange, onRemoveImported }) {
   // Destinos posibles para "Juntar con": otra labor incluida, de la misma
@@ -119,11 +120,10 @@ export function ChargeEditor({ labors, carriers, carrierById, onLaborChange, onC
                   )}
                 </td>
                 <td className="px-2 py-1.5 text-right">
-                  <input
-                    type="number"
+                  <AmountInput
                     value={l.rate || ""}
                     placeholder="0"
-                    onChange={(e) => onLaborChange(l.labor.id, { chargeRate: Number(e.target.value) || 0 })}
+                    onChange={(v) => onLaborChange(l.labor.id, { chargeRate: Number(v) || 0 })}
                     className="w-24 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-0.5 text-right tabular-nums outline-none focus:border-[var(--color-accent)]"
                   />
                 </td>
@@ -153,11 +153,10 @@ export function ChargeEditor({ labors, carriers, carrierById, onLaborChange, onC
                   <td className="px-2 py-1.5 text-right tabular-nums">{c.chargedTotalCount}</td>
                   <td className="px-2 py-1.5 text-right text-[var(--color-muted)] tabular-nums">{fmtCurrency(c.defaultRate)}</td>
                   <td className="px-2 py-1.5 text-right">
-                    <input
-                      type="number"
+                    <AmountInput
                       value={c.rate || ""}
                       placeholder="0"
-                      onChange={(e) => onCarrierChange(c.carrierId, { chargeRate: Number(e.target.value) || 0 })}
+                      onChange={(v) => onCarrierChange(c.carrierId, { chargeRate: Number(v) || 0 })}
                       className="w-24 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-0.5 text-right tabular-nums outline-none focus:border-[var(--color-accent)]"
                     />
                   </td>

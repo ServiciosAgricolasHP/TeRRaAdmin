@@ -166,6 +166,7 @@ export function buildCheckContext({
     personOfItem,
     targetOf,
     historyOf: (person) => historyByPerson.get(person) || [],
+    previousPayrolls: previous,
     payrollNameOf: (id) => payrollNameById.get(id) || "otra nómina",
     leaders,
     employments,

@@ -12,6 +12,7 @@ import { PayrollChecksModal } from "./PayrollChecksModal";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { rowFlag } from "./checkSeverity";
 import { ChecksButton, RowFlag } from "./CheckFlag";
+import AmountInput from "../../components/AmountInput";
 
 export function PreviewTable({
   rutOf,
@@ -313,13 +314,11 @@ export function PreviewTable({
                     {fmtCurrency(p.grossAmount || 0)}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <input
-                      type="number"
+                    <AmountInput
                       value={p.advance || ""}
                       placeholder="0"
-                      max={caps.advanceMax}
                       title={`Anticipo a descontar: hasta ${fmtCurrency(caps.advanceMax)}. Se puede bajar y el anticipo queda parcial.`}
-                      onChange={(e) => updatePreview(p.rut, { advance: Number(e.target.value) || 0 })}
+                      onChange={(v) => updatePreview(p.rut, { advance: Number(v) || 0 })}
                       className="w-24 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-right text-sm tabular-nums outline-none focus:border-[var(--color-accent)]"
                     />
                     {Number(p.advance) > 0 && (
@@ -332,22 +331,19 @@ export function PreviewTable({
                     )}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <input
-                      type="number"
+                    <AmountInput
                       value={p.bonus || ""}
                       placeholder="0"
-                      max={caps.bonusMax}
                       title={`Bono a sumar: hasta ${fmtCurrency(caps.bonusMax)}. Se puede bajar y el resto queda pendiente.`}
-                      onChange={(e) => updatePreview(p.rut, { bonus: Number(e.target.value) || 0 })}
+                      onChange={(v) => updatePreview(p.rut, { bonus: Number(v) || 0 })}
                       className={`w-24 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-right text-sm tabular-nums outline-none focus:border-[var(--color-accent)] ${Number(p.bonus) > 0 ? "text-[var(--color-success)]" : ""}`}
                     />
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <input
-                      type="number"
+                    <AmountInput
                       value={p.amount || ""}
                       placeholder="0"
-                      onChange={(e) => updatePreview(p.rut, { amount: Number(e.target.value) || 0 })}
+                      onChange={(v) => updatePreview(p.rut, { amount: Number(v) || 0 })}
                       className="w-28 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-right text-sm font-medium tabular-nums outline-none focus:border-[var(--color-accent)]"
                     />
                     {Number(p.amount) === 0 && Number(p.advance) > 0 && (

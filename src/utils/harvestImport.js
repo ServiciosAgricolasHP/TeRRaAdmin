@@ -6,7 +6,7 @@
 // comparte pesajes ni prefijos, solo la forma de las jornadas.
 import { normalizeRut } from "./rutUtils";
 import { rutWithoutDv } from "./banks";
-import { nameTokens, tokenNameSimilarity, tokenSimilarity, tokensSimilarity, TOKEN_MATCH } from "./similarity";
+import { nameSearchOf, tokenNameSimilarity } from "./similarity";
 import { comboKey, floorKeyOf, getDayCombos, getDayFloorByContainer, getDayPiso, workdayDocId, workdayMapKey, PISO_COMBO_KEY } from "./cosechaCombos";
 
 const num = (v) => Number(v) || 0;
@@ -146,46 +146,6 @@ function sameName(a, b) {
 // nombre, el de la ficha o uno que un archivo trajo con ese RUT.
 const autoMatches = (person, w) =>
   workerRutKeys(w).includes(person.rut) && namesFor(w, person.rut).some((n) => sameName(person.name, n));
-
-// Busca fichas por nombre sin comparar cada nombre con todas: indexa las
-// palabras de los nombres de las fichas y compara a fondo solo las fichas con
-// dos o más palabras parecidas a las del nombre buscado. Calzan las que
-// comparten dos tercios del nombre más corto y al menos dos palabras.
-function nameSearchOf(workers) {
-  const tokens = workers.map((w) => nameTokens(w.name));
-  const byToken = new Map();
-  tokens.forEach((ts, i) => {
-    for (const t of new Set(ts)) {
-      if (!byToken.has(t)) byToken.set(t, []);
-      byToken.get(t).push(i);
-    }
-  });
-  const vocabulary = [...byToken.keys()];
-  const similar = new Map();
-  const similarTo = (t) => {
-    if (!similar.has(t)) similar.set(t, vocabulary.filter((v) => tokenSimilarity(t, v) >= TOKEN_MATCH));
-    return similar.get(t);
-  };
-  return (name) => {
-    const own = nameTokens(name);
-    const hits = new Map();
-    own.forEach((t, k) => {
-      for (const v of similarTo(t)) {
-        for (const i of byToken.get(v)) {
-          if (!hits.has(i)) hits.set(i, new Set());
-          hits.get(i).add(k);
-        }
-      }
-    });
-    const out = [];
-    for (const [i, words] of hits) {
-      if (words.size < 2) continue;
-      const { score, matched } = tokensSimilarity(own, tokens[i]);
-      if (matched >= 2 && score >= 0.66) out.push({ worker: workers[i], score });
-    }
-    return out.sort((a, b) => b.score - a.score);
-  };
-}
 
 // Empareja a cada persona del archivo con una ficha:
 // - `matched`: el RUT calza (uno de la ficha o uno que trajo un archivo) y el

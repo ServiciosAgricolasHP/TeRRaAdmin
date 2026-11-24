@@ -3,6 +3,7 @@ import { useValuesChanged } from "../../hooks/useValuesChanged";
 import { DEFAULT_BONUS_MANEJO, DEFAULT_BONUS_SUPERVISION } from "../../utils/tratoHE";
 import Modal, { ModalCloseButton } from "../../components/Modal";
 import { hasChanges } from "../../utils/formChanges";
+import AmountInput from "../../components/AmountInput";
 
 // ============================================================
 // Modales de tratoHE
@@ -61,8 +62,8 @@ export function BonusEditModal({ open, onClose, labor, wd, workerName, date, rea
           <p className="mb-1 text-xs text-[var(--color-muted)]">
             Monto positivo (bono adicional) o negativo (descuento, ej: media jornada).
           </p>
-          <input type="number" disabled={readOnly}
-            value={extras} onChange={(e) => setExtras(e.target.value)} placeholder="0"
+          <AmountInput disabled={readOnly}
+            value={extras} onChange={setExtras} placeholder="0"
             className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)] disabled:opacity-50" />
         </div>
         <div className="flex justify-end gap-2 pt-2">

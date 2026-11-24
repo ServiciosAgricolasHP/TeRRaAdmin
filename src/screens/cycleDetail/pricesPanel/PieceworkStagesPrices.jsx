@@ -1,5 +1,6 @@
 import { getStageDayPrice } from "../../../utils/tratoEtapas";
 import { useCycleDetail } from "../CycleDetailContext";
+import AmountInput from "../../../components/AmountInput";
 
 // Barra de precios de tratoEtapas: precio por día de cada etapa (fijas de la labor)
 export function PieceworkStagesPrices() {
@@ -71,9 +72,9 @@ export function PieceworkStagesPrices() {
                         </div>
                         <div className="flex min-w-0 flex-1 items-center gap-0.5">
                           <span className="text-[var(--color-muted)]">$</span>
-                          <input
+                          <AmountInput
                             key={`${d}_${st.id}_${price}_${mode}`}
-                            type="number" min="0" disabled={readOnly}
+                            disabled={readOnly}
                             defaultValue={price > 0 ? price : ""}
                             onBlur={(e) => {
                               const v = Number(e.target.value) || 0;
