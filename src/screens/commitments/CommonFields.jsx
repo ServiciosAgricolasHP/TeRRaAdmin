@@ -1,5 +1,6 @@
 import { similarCounterparty } from "../../utils/commitments";
 import { labelCls, inputCls } from "./styles";
+import AmountInput from "../../components/AmountInput";
 
 // Campos comunes de contraparte, concepto, monto, empresa y notas. La
 // contraparte se autocompleta con las ya usadas y, si lo escrito se parece a
@@ -39,12 +40,9 @@ export function CommonFields({ form, set, companies, counterparties = [], counte
       </div>
       <div>
         <label className={labelCls}>{amountLabel}</label>
-        <input
-          type="number"
-          min="0"
-          inputMode="numeric"
+        <AmountInput
           value={form.amount ?? ""}
-          onChange={(e) => set({ amount: e.target.value })}
+          onChange={(v) => set({ amount: v })}
           className={inputCls}
         />
       </div>

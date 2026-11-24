@@ -13,6 +13,9 @@ import { prefixOfCode, suggestFreeCodes, ownerOfCode } from "../../utils/qrCodes
 import { todayKey, TAP } from "./helpers";
 import { attempt } from "../../utils/attempt";
 import { errorText } from "../../utils/errorText";
+import AmountInput from "../../components/AmountInput";
+import { parseAmount } from "../../utils/formula";
+import { decimalShown } from "../../utils/numberInput";
 
 // Alta y edición manual de pesajes. `harvestWeights` la escribe la app de
 // scan; esto es la vía de excepción para corregir una lectura mala o cargar
@@ -45,7 +48,7 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
   // mismo día, mismo QR, y lo que cambia es el combo y los kilos. Por eso el
   // quién/cuándo/dónde va arriba una sola vez y cada envase es una fila.
   const [rows, setRows] = useState(() => [
-    { uid: 1, x: initial?.x ?? 0, y: initial?.y ?? 0, amount: initial?.amount != null ? String(initial.amount) : "" },
+    { uid: 1, x: initial?.x ?? 0, y: initial?.y ?? 0, amount: initial?.amount != null ? decimalShown(initial.amount) : "" },
   ]);
   const nextUid = useRef(2);
   // `uid` solo identifica la fila en la pantalla.
@@ -100,7 +103,7 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
       rows.map((r) => {
         const rawCodes = invertHarvestCodes(prefix, { x: r.x, y: r.y });
         const roundTrip = mapHarvestCodes(prefix, rawCodes);
-        return { ...r, rawCodes, ok: roundTrip.x === r.x && roundTrip.y === r.y, qty: Number(r.amount) };
+        return { ...r, rawCodes, ok: roundTrip.x === r.x && roundTrip.y === r.y, qty: parseAmount(r.amount) };
       }),
     [rows, prefix],
   );
@@ -424,13 +427,10 @@ export function WeightFormModal({ mode, initial, prefixes, workers, catalogs, kn
                   <span className="mb-1 block text-xs text-[var(--color-muted)]">
                     Cantidad <span className="text-[var(--color-danger)]">*</span>
                   </span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    step="any"
+                  <AmountInput
+                    decimals
                     value={r.amount}
-                    onChange={(e) => patchRow(r.uid, { amount: e.target.value })}
+                    onChange={(v) => patchRow(r.uid, { amount: v })}
                     className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-2 text-sm"
                   />
                 </label>

@@ -5,6 +5,7 @@ import { DayNotesTable } from "./DayNotesTable";
 import { LaborTable } from "./LaborTable";
 import { cell, chargeDateInputStyle, chargeInputStyle } from "./tableStyles";
 import { TransportTable } from "./TransportTable";
+import AmountInput from "../../../components/AmountInput";
 
 const LOGO_URL = `${import.meta.env.BASE_URL}logo.png`;
 
@@ -124,11 +125,10 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
               </td>
               <td style={{ ...cell, textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums", color: "#b00" }}>
                 {editMode ? (
-                  <input
-                    type="number"
+                  <AmountInput
                     value={discount > 0 ? discount : ""}
                     placeholder="0"
-                    onChange={(e) => onChangeDiscount && onChangeDiscount({ amount: e.target.value })}
+                    onChange={(v) => onChangeDiscount && onChangeDiscount({ amount: v })}
                     style={{ ...chargeInputStyle, width: 120 }}
                   />
                 ) : (
@@ -189,11 +189,10 @@ export const PrintableSummary = forwardRef(function PrintableSummary(
                   </td>
                   <td style={{ ...cell, textAlign: "right", fontWeight: 600, fontVariantNumeric: "tabular-nums", color: "#0a7d3b" }}>
                     {editMode ? (
-                      <input
-                        type="number"
+                      <AmountInput
                         value={pendingBalance > 0 ? pendingBalance : ""}
                         placeholder="0"
-                        onChange={(e) => onChangePendingBalance && onChangePendingBalance({ amount: e.target.value })}
+                        onChange={(v) => onChangePendingBalance && onChangePendingBalance({ amount: v })}
                         style={{ ...chargeInputStyle, width: 120 }}
                       />
                     ) : (

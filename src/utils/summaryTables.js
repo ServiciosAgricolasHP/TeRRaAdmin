@@ -176,7 +176,7 @@ function overtimeColumn(rows, editIf, { rowRateEdit = true } = {}) {
     total: (t) => (t.overtimeHours > 0 ? overtimeText(t.heTotal || 0, t.overtimeHours) : null),
     edits: (r) => {
       const hoursEdit = editIf("overtimeHours", r.chargedOvertimeHours, {
-        step: "0.25",
+        decimals: true,
         suffix: "HE ×",
         width: 56,
         title: `Horas extras que se cobran ese día${r.workedOvertimeHours != null ? `; se trabajaron ${fmtNumber(r.workedOvertimeHours)}` : ""}. 0 si el día no se cobra.`,
@@ -190,8 +190,9 @@ function overtimeColumn(rows, editIf, { rowRateEdit = true } = {}) {
 }
 
 // Columnas de la tabla de una labor (o de una tabla juntada). `edit` marca la
-// celda que se edita en cobrar: el campo que guarda y su valor actual; `edits`,
-// una celda con varios campos.
+// celda que se edita en cobrar: el campo que guarda y su valor actual, y
+// `decimals` si lleva decimales (kilos, horas); `edits`, una celda con varios
+// campos.
 export function laborColumns(section, { mode, hiddenColumns = new Set(), catalogs }) {
   const { laborId, laborType, unit, overtimeRate, rows, totals, displayName } = section;
   const isCharge = mode === "charge";
@@ -279,7 +280,7 @@ export function laborColumns(section, { mode, hiddenColumns = new Set(), catalog
         if (laborType === "tratoEtapas") return `${fmtNumber(t.countedQty ?? t.qty ?? 0)} unid.`;
         return t.qty || 0;
       },
-      edit: (r) => editIf("qty", rowQty(r)),
+      edit: (r) => editIf("qty", rowQty(r), { decimals: true }),
     });
   }
   if (show("rate") && !(isHE && isCharge)) {

@@ -1,6 +1,8 @@
 import { HDR_GREEN, ROW_TOTAL_DARK, cell, cellH } from "./tableStyles";
 import { isSupervisionCol, isWorkdayCol } from "../../../utils/combinedSummary";
 import { fmtCurrency } from "../../../utils/format";
+import AmountInput from "../../../components/AmountInput";
+import { parseAmount } from "../../../utils/formula";
 
 // Tabla para ajustar la ganancia (los % o lo que paga el cliente en labores
 // de jornada), que alimenta GANANCIAS y TOTAL GENERAL. Va fuera de lo que se
@@ -13,11 +15,9 @@ export function ProfitSettingsPanel({ dataByColumn, grandTotal, isMobile, profit
           <span>💰 Ajustar ganancia</span>
           <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 400, color: "#444", marginLeft: 8 }}>
             % general:
-            <input
-              type="number"
-              min="0"
+            <AmountInput decimals
               value={generalPct}
-              onChange={(e) => handleGeneralPctChange(Math.max(0, Number(e.target.value) || 0))}
+              onChange={(v) => handleGeneralPctChange(parseAmount(v))}
               title="Al cambiarlo se aplica a todas las labores que no sean de jornada, pisando cualquier % propio editado abajo"
               style={{ width: 56, padding: "2px 5px", border: "1px solid #999", borderRadius: 4, textAlign: "right" }}
             />
@@ -65,11 +65,9 @@ export function ProfitSettingsPanel({ dataByColumn, grandTotal, isMobile, profit
                         <span style={{ color: "#666" }}>Nos pagan</span>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
                           $
-                          <input
-                            type="number"
-                            min="0"
+                          <AmountInput
                             value={paidToUs[d.col.key] ?? ""}
-                            onChange={(e) => setPaidToUs((p) => ({ ...p, [d.col.key]: e.target.value }))}
+                            onChange={(v) => setPaidToUs((p) => ({ ...p, [d.col.key]: v }))}
                             placeholder="0"
                             title="Lo que nos van a pagar por esta labor"
                             style={{ width: 90, padding: "3px 5px", border: "1px solid #999", borderRadius: 4, textAlign: "right" }}
@@ -89,11 +87,9 @@ export function ProfitSettingsPanel({ dataByColumn, grandTotal, isMobile, profit
                     <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
                       <span style={{ color: "#666" }}>% ganancia</span>
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
-                        <input
-                          type="number"
-                          min="0"
+                        <AmountInput decimals
                           value={effectivePct(d.col.key)}
-                          onChange={(e) => setPctOverrides((p) => ({ ...p, [d.col.key]: Math.max(0, Number(e.target.value) || 0) }))}
+                          onChange={(v) => setPctOverrides((p) => ({ ...p, [d.col.key]: parseAmount(v) }))}
                           title="% propio de esta labor — edítalo para separarlo del % general"
                           style={{ width: 60, padding: "3px 5px", border: "1px solid #999", borderRadius: 4, textAlign: "right" }}
                         />
@@ -153,11 +149,9 @@ export function ProfitSettingsPanel({ dataByColumn, grandTotal, isMobile, profit
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
                           $
-                          <input
-                            type="number"
-                            min="0"
+                          <AmountInput
                             value={paidToUs[d.col.key] ?? ""}
-                            onChange={(e) => setPaidToUs((p) => ({ ...p, [d.col.key]: e.target.value }))}
+                            onChange={(v) => setPaidToUs((p) => ({ ...p, [d.col.key]: v }))}
                             placeholder="0"
                             title="Lo que nos van a pagar por esta labor"
                             style={{ width: 80, padding: "2px 4px", border: "1px solid #999", borderRadius: 4, textAlign: "right" }}
@@ -174,11 +168,9 @@ export function ProfitSettingsPanel({ dataByColumn, grandTotal, isMobile, profit
                       </div>
                     ) : (
                       <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
-                        <input
-                          type="number"
-                          min="0"
+                        <AmountInput decimals
                           value={effectivePct(d.col.key)}
-                          onChange={(e) => setPctOverrides((p) => ({ ...p, [d.col.key]: Math.max(0, Number(e.target.value) || 0) }))}
+                          onChange={(v) => setPctOverrides((p) => ({ ...p, [d.col.key]: parseAmount(v) }))}
                           title="% propio de esta labor — edítalo para separarlo del % general"
                           style={{ width: 50, padding: "2px 4px", border: "1px solid #999", borderRadius: 4, textAlign: "right" }}
                         />

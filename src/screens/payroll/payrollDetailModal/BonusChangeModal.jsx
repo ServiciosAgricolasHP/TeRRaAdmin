@@ -6,6 +6,7 @@ import { hasChanges } from "../../../utils/formChanges";
 import { formatRutForDisplay } from "../../../utils/rutUtils";
 import { toTitleName } from "../../../utils/textCase";
 import { bonusChangeError, bonusPaidElsewhere, planBonusChange } from "../../../utils/payrollBonusChange";
+import AmountInput from "../../../components/AmountInput";
 
 const dayText = (iso) => String(iso || "").split("-").reverse().join("-");
 const signed = (n) => `${n > 0 ? "+" : "−"} ${fmtCurrency(Math.abs(n))}`;
@@ -82,11 +83,10 @@ export function BonusChangeModal({ target, payrollId, cashPaid, busy, onClose, o
             </p>
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-[var(--color-muted)]">Monto del bono</span>
-              <input
+              <AmountInput
                 autoFocus
-                inputMode="numeric"
                 value={value}
-                onChange={(e) => setValue(e.target.value.replace(/\D/g, ""))}
+                onChange={setValue}
                 onKeyDown={(e) => e.key === "Enter" && submit()}
                 className="min-h-8 w-40 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-right tabular-nums outline-none focus:border-[var(--color-accent)]"
               />

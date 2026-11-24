@@ -5,6 +5,7 @@ import { useToast } from "../../contexts/ToastContext";
 import { fmtCurrency } from "../../utils/format";
 import { todayIso } from "./docs";
 import { attempt } from "../../utils/attempt";
+import AmountInput from "../../components/AmountInput";
 
 // Tipos de pago que se pueden registrar en una factura. Cada entrada del array
 // `payments` tiene un `kind` que sirve para categorizar (auditoría) y para
@@ -181,12 +182,9 @@ export function PaymentsSection({ dteDoc, payments, amountPaid, balance, onSaveP
               <label className="mb-0.5 block text-[10px] text-[var(--color-muted)]">
                 Monto <span className="text-[var(--color-muted)]">(máx {fmtCurrency(balance)})</span>
               </label>
-              <input
-                type="number"
-                min="0"
-                step="1"
+              <AmountInput
                 value={newPay.amount}
-                onChange={(e) => setNewPay({ ...newPay, amount: e.target.value })}
+                onChange={(v) => setNewPay({ ...newPay, amount: v })}
                 placeholder="0"
                 className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs tabular-nums"
               />

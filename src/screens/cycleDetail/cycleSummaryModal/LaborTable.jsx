@@ -1,4 +1,6 @@
 import { Fragment } from "react";
+import AmountInput from "../../../components/AmountInput";
+import { parseAmount } from "../../../utils/formula";
 import { cellText, laborColumns } from "../../../utils/summaryTables";
 import { cellH, cell, chargeDateInputStyle, inputVal, chargeInputStyle, NOT_CHARGED_ROW, NOT_CHARGED_TITLE } from "./tableStyles";
 
@@ -33,10 +35,9 @@ function OvertimeSwitch({ toggle, showName, onChange }) {
       {needsRate && (
         <label style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#444" }}>
           Valor hora $
-          <input
-            type="number"
+          <AmountInput
             value={inputVal(rate)}
-            onChange={(e) => onChange(laborId, { overtimeRate: e.target.value === "" ? "" : Number(e.target.value) })}
+            onChange={(v) => onChange(laborId, { overtimeRate: v === "" ? "" : Number(v) })}
             placeholder="0"
             title="Lo que se cobra por cada hora extra de esta labor. Las horas de cada día se escriben en la tabla."
             style={{ ...chargeInputStyle, width: 84, borderColor: rate > 0 ? undefined : "#dc2626" }}
@@ -79,7 +80,7 @@ export function LaborTable({
   const laborOf = (r) => r._laborId || laborId;
   const handleField = (r, field, raw, text = false) => {
     if (!onEditRow) return;
-    const value = text || raw === "" ? raw : Number(raw);
+    const value = text || raw === "" ? raw : parseAmount(raw);
     onEditRow(laborOf(r), r, { [field]: value });
   };
   const handleDateChange = (r, raw) => {
@@ -108,11 +109,10 @@ export function LaborTable({
         <span style={{ display: "inline-flex", alignItems: "center", gap: 3 }}>
           {edits.map((e) => (
             <Fragment key={e.field}>
-              <input
-                type="number"
-                step={e.step}
+              <AmountInput
+                decimals={e.decimals}
                 value={inputVal(e.raw)}
-                onChange={(ev) => handleField(r, e.field, ev.target.value)}
+                onChange={(v) => handleField(r, e.field, v)}
                 style={{ ...chargeInputStyle, width: e.width }}
                 title={e.title}
               />
@@ -136,11 +136,10 @@ export function LaborTable({
         );
       }
       return (
-        <input
-          type="number"
-          step={edit.step}
+        <AmountInput
+          decimals={edit.decimals}
           value={inputVal(edit.raw)}
-          onChange={(e) => handleField(r, edit.field, e.target.value)}
+          onChange={(v) => handleField(r, edit.field, v)}
           style={edit.bold ? { ...chargeInputStyle, fontWeight: 600 } : chargeInputStyle}
           title={edit.title}
         />

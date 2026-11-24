@@ -2,6 +2,7 @@ import { tratoTypeLabel, workdayMapKey } from "../../../utils/cosechaCombos";
 import { fmtCurrency } from "../../../utils/format";
 import { FloorDayRow } from "../FloorDayRow";
 import { useCycleDetail } from "../CycleDetailContext";
+import AmountInput from "../../../components/AmountInput";
 
 // Barra de precios de trato
 export function PieceworkPrices() {
@@ -102,12 +103,12 @@ export function PieceworkPrices() {
                     <div key={t.key} className="flex items-center gap-1 rounded-md bg-[var(--color-surface)] px-2 py-1">
                       <span className="text-[var(--color-muted)] text-[10px] w-12">P{i + 1}</span>
                       <span className="text-[var(--color-muted)]">$</span>
-                      <input
-                        type="number" min="0" disabled={readOnly}
+                      <AmountInput
+                        disabled={readOnly}
                         value={getPriceInputValue(activeLabor.id, d, t.key, true)}
-                        onChange={(e) => {
+                        onChange={(v) => {
                           const key = inputKey(activeLabor.id, d, t.key);
-                          setLocalPriceInputs((prev) => ({ ...prev, [key]: e.target.value }));
+                          setLocalPriceInputs((prev) => ({ ...prev, [key]: v }));
                         }}
                         onBlur={() => handlePriceBlur(activeLabor.id, d, t.key, true)}
                         placeholder="precio"

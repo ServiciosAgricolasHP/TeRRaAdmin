@@ -7,6 +7,8 @@ import { SummaryCard } from "./SummaryCard";
 import { fmtCurrency } from "../../utils/format";
 import { attempt } from "../../utils/attempt";
 import { errorText } from "../../utils/errorText";
+import AmountInput from "../../components/AmountInput";
+import { parseAmount } from "../../utils/formula";
 
 // Pestaña "Proyección" (solo admin): la temporada que viene, mes a mes, desde
 // las ventas de los 12 meses anteriores por un porcentaje, con los meses ya
@@ -21,7 +23,7 @@ export function ProjectionTab({ docs, projectionPercent, projectionStart, select
     () => projectCashFlow(docs, {
       companyId: selectedCompanyId,
       startPeriod: projectionStart,
-      percent: Number(projectionPercent) || 0,
+      percent: parseAmount(projectionPercent),
     }),
     [docs, selectedCompanyId, projectionStart, projectionPercent],
   );
@@ -69,12 +71,9 @@ export function ProjectionTab({ docs, projectionPercent, projectionStart, select
           ))}
         </select>
         <label className="ml-2 text-xs text-[var(--color-muted)]">% sobre el período anterior</label>
-        <input
-          type="number"
-          min="0"
-          step="1"
+        <AmountInput decimals
           value={projectionPercent}
-          onChange={(e) => setProjectionPercent(e.target.value)}
+          onChange={setProjectionPercent}
           className="min-h-[32px] w-20 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-right text-sm tabular-nums"
         />
         <div className="ml-auto">

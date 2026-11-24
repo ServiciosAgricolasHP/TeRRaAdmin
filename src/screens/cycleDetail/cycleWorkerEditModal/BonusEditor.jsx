@@ -2,6 +2,7 @@ import { DEFAULT_BONUS_MANEJO, DEFAULT_BONUS_SUPERVISION } from "../../../utils/
 import { fmtCurrency } from "../../../utils/format";
 import { useCycleDetail } from "../CycleDetailContext";
 import { useWorkerEdit } from "./WorkerEditContext";
+import AmountInput from "../../../components/AmountInput";
 
 // Editor de bonos (manejo/supervisión/extras) de tratoHE. Como las demás
 // sub-vistas, reemplaza el contenido de este Modal en vez de abrir otro
@@ -61,11 +62,10 @@ export function BonusEditor() {
         <p className="mb-1 text-xs text-[var(--color-muted)]">
           Monto positivo (bono adicional) o negativo (descuento, ej: media jornada).
         </p>
-        <input
-          type="number"
+        <AmountInput
           disabled={readOnly}
           value={bonusExtras}
-          onChange={(e) => setBonusExtras(e.target.value)}
+          onChange={setBonusExtras}
           placeholder="0"
           className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)] disabled:opacity-50"
         />

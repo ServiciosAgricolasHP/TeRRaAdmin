@@ -2,6 +2,7 @@ import { workdayMapKey, comboLabel, containerLabel, floorContainersOf, floorKeyO
 import { fmtCurrency } from "../../../utils/format";
 import { FloorDayRow } from "../FloorDayRow";
 import { useCycleDetail } from "../CycleDetailContext";
+import AmountInput from "../../../components/AmountInput";
 
 // Barra de precios de cosecha
 export function HarvestPrices() {
@@ -115,12 +116,12 @@ export function HarvestPrices() {
                         </div>
                         <div className="flex items-center gap-1">
                           <span className="text-[var(--color-muted)]">$</span>
-                          <input
-                            type="number" min="0" disabled={readOnly}
+                          <AmountInput
+                            disabled={readOnly}
                             value={getPriceInputValue(activeLabor.id, d, c.key)}
-                            onChange={(e) => {
+                            onChange={(v) => {
                               const key = inputKey(activeLabor.id, d, c.key);
-                              setLocalPriceInputs((prev) => ({ ...prev, [key]: e.target.value }));
+                              setLocalPriceInputs((prev) => ({ ...prev, [key]: v }));
                             }}
                             onBlur={() => handlePriceBlur(activeLabor.id, d, c.key)}
                             placeholder={c.mode === "flat" ? "tarifa/trab." : `precio/${containerLabel(catalogs, c.y)}`}

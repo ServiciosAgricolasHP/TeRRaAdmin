@@ -3,6 +3,7 @@ import { useValuesChanged } from "../../hooks/useValuesChanged";
 import { DEFAULT_BASE_DAY, isWeekendDate, TRATO_HE_MODES } from "../../utils/tratoHE";
 import Modal, { ModalCloseButton } from "../../components/Modal";
 import { hasChanges } from "../../utils/formChanges";
+import AmountInput from "../../components/AmountInput";
 
 export function DayModeModal({ open, onClose, date, labor, cfg, readOnly, onSave }) {
   const [price, setPrice] = useState("");
@@ -38,8 +39,8 @@ export function DayModeModal({ open, onClose, date, labor, cfg, readOnly, onSave
         )}
         <div>
           <label className="block text-sm font-medium">Base diaria ($)</label>
-          <input type="number" min="0" disabled={readOnly}
-            value={price} onChange={(e) => setPrice(e.target.value)}
+          <AmountInput disabled={readOnly}
+            value={price} onChange={setPrice}
             className="mt-1 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]" />
         </div>
         <div>

@@ -9,6 +9,7 @@ import { StatusChip } from "./StatusChip";
 import { btnCls, primaryCls } from "./styles";
 import { attempt } from "../../utils/attempt";
 import { errorText } from "../../utils/errorText";
+import AmountInput from "../../components/AmountInput";
 
 // Ajuste de una serie (crédito, deuda personal en cuotas o pago recurrente):
 // fecha y monto de cada vencimiento abierto, a mano o con herramientas que se
@@ -144,13 +145,10 @@ export function SeriesEditModal({ item, items, today, onCancel, onSaved }) {
               <button type="button" className={btnCls} onClick={() => apply("day")}>Cambiar día</button>
             </div>
             <div className="flex items-center gap-2">
-              <input
-                type="number"
-                min="0"
-                inputMode="numeric"
+              <AmountInput
                 placeholder="Monto"
                 value={tool.amount}
-                onChange={(e) => setTool((t) => ({ ...t, amount: e.target.value }))}
+                onChange={(v) => setTool((t) => ({ ...t, amount: v }))}
                 className={`${toolInputCls} w-32`}
               />
               <button type="button" className={btnCls} onClick={() => apply("amount")}>Poner monto</button>
@@ -184,12 +182,9 @@ export function SeriesEditModal({ item, items, today, onCancel, onSaved }) {
                     onChange={(e) => setRow(i, { dueDate: e.target.value })}
                     className="min-w-0 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm"
                   />
-                  <input
-                    type="number"
-                    min="0"
-                    inputMode="numeric"
+                  <AmountInput
                     value={r.amount}
-                    onChange={(e) => setRow(i, { amount: e.target.value })}
+                    onChange={(v) => setRow(i, { amount: v })}
                     className="min-w-0 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-right text-sm tabular-nums"
                   />
                 </>

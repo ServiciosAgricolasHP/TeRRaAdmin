@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useValuesChanged } from "../../hooks/useValuesChanged";
 import { dayFloorAmount, PISO_COMBO_KEY } from "../../utils/cosechaCombos";
 import { fmtCurrency } from "../../utils/format";
+import AmountInput from "../../components/AmountInput";
 
 // Piso opcional de un día: el del día (`floorKey` = `_piso`) o el de un envase
 // (`_piso_<envase>`), con su nombre en `label`. Sin monto muestra solo el
@@ -36,10 +37,10 @@ export function FloorDayRow({ labor, dayPrices, date, readOnly, onPersist, pendi
     return (
       <div className="mt-1 flex items-center gap-1 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-[10px]">
         <span className="font-medium text-[var(--color-muted)]">🪙 {label} $</span>
-        <input
-          type="number" min="0" autoFocus disabled={readOnly}
+        <AmountInput
+          autoFocus disabled={readOnly}
           value={local}
-          onChange={(e) => setLocal(e.target.value)}
+          onChange={setLocal}
           onBlur={commit}
           onKeyDown={(e) => { if (e.key === "Enter") commit(); if (e.key === "Escape") setEditing(false); }}
           className="w-20 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-1 py-0.5 text-right tabular-nums outline-none focus:border-[var(--color-accent)] disabled:opacity-50"

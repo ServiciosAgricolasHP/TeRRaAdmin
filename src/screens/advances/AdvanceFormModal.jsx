@@ -24,6 +24,7 @@ import { localIsoDate } from "../../utils/dates";
 import { attempt } from "../../utils/attempt";
 import { errorText } from "../../utils/errorText";
 import { useValuesChanged } from "../../hooks/useValuesChanged";
+import AmountInput from "../../components/AmountInput";
 
 const todayStr = () => localIsoDate();
 
@@ -284,11 +285,10 @@ export default function AdvanceFormModal({ open, item, items = [], onClose, onSa
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">Monto</label>
-            <input
-              type="number"
+            <AmountInput
               value={form.amount || ""}
               placeholder="0"
-              onChange={(e) => setForm((f) => ({ ...f, amount: Number(e.target.value) || 0 }))}
+              onChange={(v) => setForm((f) => ({ ...f, amount: Number(v) || 0 }))}
               disabled={isPaidOut}
               className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)] disabled:opacity-60"
             />

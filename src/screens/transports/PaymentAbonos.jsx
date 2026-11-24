@@ -7,6 +7,7 @@ import { fmtCurrency } from "../../utils/format";
 import { payoffOf } from "../../utils/transportPayoff";
 import { attempt } from "../../utils/attempt";
 import { errorText } from "../../utils/errorText";
+import AmountInput from "../../components/AmountInput";
 
 // Los abonos de un resumen de transporte: lo abonado y el saldo, y agregar,
 // editar o quitar uno. `abonos` es la copia local del modal, que también usa
@@ -138,11 +139,9 @@ export function PaymentAbonos({ payment, abonos, setAbonos, isPaid, onChanged })
                 >
                   <label className="flex flex-col gap-0.5 text-[10px] text-[var(--color-muted)]">
                     Monto
-                    <input
-                      type="number"
-                      min="0"
+                    <AmountInput
                       value={editingAbono.amount}
-                      onChange={(e) => setEditingAbono((ed) => ({ ...ed, amount: e.target.value }))}
+                      onChange={(v) => setEditingAbono((ed) => ({ ...ed, amount: v }))}
                       className="w-28 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-right text-sm tabular-nums outline-none focus:border-[var(--color-accent)]"
                     />
                   </label>
@@ -227,13 +226,10 @@ export function PaymentAbonos({ payment, abonos, setAbonos, isPaid, onChanged })
             <div className="flex flex-wrap items-end gap-2">
               <label className="flex flex-col gap-0.5 text-[10px] text-[var(--color-muted)]">
                 Monto
-                <input
-                  type="number"
-                  min="0"
-                  step="100"
+                <AmountInput
                   placeholder="0"
                   value={newAbono.amount}
-                  onChange={(e) => setNewAbono((p) => ({ ...p, amount: e.target.value }))}
+                  onChange={(v) => setNewAbono((p) => ({ ...p, amount: v }))}
                   className="w-28 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-right text-sm tabular-nums outline-none focus:border-[var(--color-accent)]"
                 />
               </label>

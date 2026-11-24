@@ -11,6 +11,7 @@ import { fmtCurrency } from "../../utils/format";
 import FaenaPicker from "./FaenaPicker";
 import FeeItemsTable from "./FeeItemsTable";
 import { errorText } from "../../utils/errorText";
+import AmountInput from "../../components/AmountInput";
 
 const inputCls =
   "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]";
@@ -189,7 +190,7 @@ export default function GenerateFeeListModal({ employers, principals, onClose, o
         <div className="grid grid-cols-2 gap-3 sm:w-96">
           <label className="block">
             <span className="mb-1 block text-sm text-[var(--color-muted)]">Líquido por día</span>
-            <input type="number" min="0" value={dailyNet} onChange={(e) => changeNet(e.target.value)} className={inputCls} />
+            <AmountInput value={dailyNet} onChange={changeNet} className={inputCls} />
           </label>
           <label className="block">
             <span className="mb-1 block text-sm text-[var(--color-muted)]">Retención (%)</span>
