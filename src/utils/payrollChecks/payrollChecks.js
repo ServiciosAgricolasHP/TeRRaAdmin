@@ -78,8 +78,8 @@ export const PAYROLL_CHECKS = [
   {
     id: "similarName",
     run: similarNames,
-    title: "Puede ser la misma persona",
-    explanation: "Dos personas de la nómina tienen nombres muy parecidos y RUT distintos: puede ser una ficha duplicada. Se unen en Trabajadores con Unir fichas.",
+    title: "Nombre parecido",
+    explanation: "Otra persona tiene un nombre parecido: en esta nómina, con días en los ciclos abiertos o que cobró en las últimas nóminas. Si la asistencia no trae RUT, un día de una puede quedar en la ficha de la otra. Es rojo si en una labor se reparten los días sin coincidir nunca, o si la otra cobraba y esta vez no tiene días; naranja si trabajan en la misma labor. Dos filas de la misma ficha también van aquí.",
   },
   {
     id: "unknownGroup",

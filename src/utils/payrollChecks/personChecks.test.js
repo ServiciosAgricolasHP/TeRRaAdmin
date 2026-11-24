@@ -47,10 +47,60 @@ describe("unknownGroup", () => {
 });
 
 describe("similarNames", () => {
-  it("marca a los dos de un par de nombres muy parecidos", () => {
+  // ANA PÉREZ y ANA PÉREZ GONZÁLEZ: dos personas distintas con un nombre
+  // parecido palabra por palabra, que letra por letra se parecen la mitad.
+  const named = [...workers, { id: "5-1", rut: "5-1", name: "ANA PÉREZ GONZÁLEZ", groupLeader: [] }];
+  const ctxNamed = (input) => ctxOf({ workers: named, ...input });
+  const ana = (date, laborId) => wd("1-9", date, laborId);
+  const anaGonzalez = (date, laborId) => wd("5-1", date, laborId);
+
+  it("un par de nombres muy parecidos en la nómina, sin labor en común, es blanco", () => {
     const res = similarNames(ctxOf({ items: [item("1-9"), item("4-3"), item("2-7")] }));
     expect(res.map((r) => r.person)).toEqual(["1-9", "4-3"]);
-    expect(res[0]).toMatchObject({ severity: "orange", lines: ["Se parece a ANA PERES (4-3)"] });
+    expect(res[0]).toMatchObject({ severity: "info", lines: ["Nombre parecido a ANA PERES (4-3), que también está en esta nómina"] });
+  });
+
+  it("en la misma labor, coincidiendo algún día, es naranja", () => {
+    const res = similarNames(ctxNamed({
+      items: [item("1-9"), item("5-1")],
+      workdays: [ana("2026-11-10"), ana("2026-11-11"), anaGonzalez("2026-11-10")],
+    }));
+    expect(res.map((r) => [r.person, r.severity])).toEqual([["1-9", "orange"], ["5-1", "orange"]]);
+    expect(res[0].lines).toEqual(["Trabaja en Poda · Ciclo Uno con ANA PÉREZ GONZÁLEZ (5-1): revisa que cada día esté en la ficha que corresponde"]);
+  });
+
+  it("en una labor se reparten los días sin coincidir nunca: rojo, con los días de cada una", () => {
+    const res = similarNames(ctxNamed({
+      items: [item("1-9")],
+      workdays: [ana("2026-11-10"), ana("2026-11-11"), ana("2026-11-13")],
+      openWorkdays: [anaGonzalez("2026-11-12")],
+    }));
+    expect(res).toEqual([{
+      person: "1-9",
+      severity: "red",
+      lines: ["En Poda · Ciclo Uno no coinciden nunca: ANA PÉREZ GONZÁLEZ (5-1) tiene 12-nov y esta persona 10-nov a 11-nov y 13-nov. Un día puede haber quedado en la ficha equivocada"],
+    }]);
+  });
+
+  it("la otra cobraba y esta vez no tiene días: rojo si esta persona no estaba, blanco si cobraban las dos", () => {
+    const previous = (items) => [{ id: "p1", name: "Semana 46", createdAt: "2026-11-15T12:00:00Z", items }];
+    const alone = similarNames(ctxNamed({ items: [item("1-9")], workdays: [ana("2026-11-20")], payrolls: previous([item("5-1")]) }));
+    expect(alone[0]).toMatchObject({
+      severity: "red",
+      lines: ["ANA PÉREZ GONZÁLEZ (5-1) cobró en Semana 46 y esta vez no tiene días, y esta persona no estaba en esas nóminas: sus días pueden haber quedado en esta ficha"],
+    });
+    const both = similarNames(ctxNamed({ items: [item("1-9")], workdays: [ana("2026-11-20")], payrolls: previous([item("5-1"), item("1-9")]) }));
+    expect(both[0]).toMatchObject({ severity: "info", lines: ["Nombre parecido a ANA PÉREZ GONZÁLEZ (5-1), que cobró en Semana 46 y esta vez no tiene días"] });
+  });
+
+  it("con días en otra labor de un ciclo abierto es blanco", () => {
+    const res = similarNames(ctxNamed({ items: [item("1-9")], workdays: [ana("2026-11-10")], openWorkdays: [anaGonzalez("2026-11-10", "cos")] }));
+    expect(res[0]).toMatchObject({ severity: "info", lines: ["Nombre parecido a ANA PÉREZ GONZÁLEZ (5-1), que tiene días en Ciclo Uno"] });
+  });
+
+  it("no marca una ficha parecida sin días ni nóminas recientes, nombres distintos ni una ficha unida a la que quedó", () => {
+    expect(similarNames(ctxNamed({ items: [item("1-9"), item("2-7"), item("3-5")], workdays: [ana("2026-11-10")] }))).toEqual([]);
+    expect(similarNames(ctxNamed({ items: [item("1-9")], workdays: [ana("2026-11-10")], openWorkdays: [wd("9-9", "2026-11-12")] }))).toEqual([]);
   });
 
   it("dos filas de la misma ficha son rojas", () => {
