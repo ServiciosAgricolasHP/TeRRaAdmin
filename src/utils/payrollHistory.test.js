@@ -113,6 +113,13 @@ describe("el JSON de la nómina en el historial", () => {
     }),
   });
 
+  it("al generarlo cuenta las jornadas de `meta`, porque la cabecera no las trae", () => {
+    const created = { id: "s0", entity: "payrollSnapshot", action: "create", uid: "u1", userName: "Bruno", timestamp: ts(at), after: { workers: [ana, beto] }, meta: { workdays: 3000, workdayParts: 3 } };
+    const old = { ...created, id: "s00", after: { workers: [ana], workdays: [{ id: "d1" }, { id: "d2" }] }, meta: null };
+    expect(payrollHistoryOf([created])[0].lines[0].text).toBe("2 personas · 3.000 jornadas");
+    expect(payrollHistoryOf([old])[0].lines[0].text).toBe("1 personas · 2 jornadas");
+  });
+
   it("solo, dice qué cambió en el JSON, con los nombres en español", () => {
     const [entry] = payrollHistoryOf([snapshotLog("s1", at, { version: { from: 1, to: 2 } })]);
     expect(entry.title).toBe("Puso al día el JSON de la nómina");

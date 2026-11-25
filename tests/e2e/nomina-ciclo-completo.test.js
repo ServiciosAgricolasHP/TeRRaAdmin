@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { payrollWorkdayIdsOf } from "../../src/utils/payroll";
 import {
   payrollsService,
   tagWorkdaysWithPayroll,
@@ -82,7 +83,7 @@ async function generarNomina({ nombre = "Nómina de prueba" } = {}) {
     ...it.anticipoApplications,
     ...it.bonoApplications,
   ]);
-  await tagWorkdaysWithPayroll(agg.workdayIds, nomina.id);
+  await tagWorkdaysWithPayroll(payrollWorkdayIdsOf(agg), nomina.id);
   await applyAdvancesToPayroll(aplicaciones, nomina.id);
   // La pantalla escribe además el snapshot inmutable, que es el contrato que
   // consume el portal público de trabajadores.
@@ -98,7 +99,7 @@ async function generarNomina({ nombre = "Nómina de prueba" } = {}) {
 
 async function borrarNomina(id) {
   const p = await get("payrolls", id);
-  await untagWorkdaysFromPayroll(p.workdayIds || []);
+  await untagWorkdaysFromPayroll(payrollWorkdayIdsOf(p));
   await restoreAdvancesFromPayroll(p.advanceIds || [], id);
   await deleteSnapshot(id);
   await payrollsService.remove(id);
@@ -126,7 +127,7 @@ describe("ciclo completo de nómina", () => {
     const workdays = await all("workdays");
     expect(workdays).toHaveLength(4);
     for (const wd of workdays) expect(wd.payrollId).toBe(nomina.id);
-    expect(nomina.workdayIds.sort()).toEqual(workdays.map((w) => w.id).sort());
+    expect(payrollWorkdayIdsOf(nomina).sort()).toEqual(workdays.map((w) => w.id).sort());
   });
 
   it("descuenta el anticipo y lo deja aplicado", async () => {
@@ -233,11 +234,12 @@ describe("ciclo completo de nómina", () => {
     expect(nomina.items).toHaveLength(3);
   });
 
-  it("la suma de workdayIds de los items es la de la nómina", async () => {
+  it("la nómina no guarda sus jornadas aparte: son las de sus personas", async () => {
     await seedEscenarioNomina();
     const { nomina } = await generarNomina();
     const deItems = nomina.items.flatMap((i) => i.workdayIds).sort();
-    expect([...nomina.workdayIds].sort()).toEqual(deItems);
+    expect(nomina).not.toHaveProperty("workdayIds");
+    expect([...payrollWorkdayIdsOf(nomina)].sort()).toEqual(deItems);
   });
 });
 

@@ -37,6 +37,7 @@ import { useClosableCycles } from "./payroll/useClosableCycles";
 import { usePayConfirm } from "./payroll/usePayConfirm";
 import { usePayrollDeletion } from "./payroll/usePayrollDeletion";
 import { usePayrollChecks } from "./payroll/usePayrollChecks";
+import { usePayrollWeight } from "./payroll/usePayrollWeight";
 import ScreenLoader from "../components/ScreenLoader";
 import { useReadSection } from "../hooks/useReadSection";
 
@@ -133,6 +134,16 @@ export default function Payroll() {
     payrolls,
     place: "generate",
     onWorkersChanged: reloadWorkers,
+  });
+  const previewWeight = usePayrollWeight({
+    enabled: step === 2,
+    items: includedItems,
+    sources: previewSources,
+    chosenCycles,
+    jobs,
+    subjobs,
+    bankFormatId: bankFormat.id,
+    classification: payrollClassification,
   });
   // Overlay de progreso: `step` es el mensaje principal (ej. "Etiquetando
   // jornadas"), `detail` un complemento opcional (ej. "340 / 500") y `percent`
@@ -312,6 +323,7 @@ export default function Payroll() {
             countSelected={countSelected}
             cycleOptions={previewCycles}
             checks={previewChecks}
+            weight={previewWeight}
             onBack={() => setStep(1)}
             onGenerate={generateAndSave}
             busy={busy}

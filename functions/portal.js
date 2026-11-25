@@ -8,6 +8,8 @@
 //
 // Cada ficha tiene la forma del JSON de la nómina (`payrollSnapshots`),
 // recortada a un trabajador, para que el portal la dibuje igual que antes.
+// El JSON guarda sus jornadas en partes (`payrollSnapshotWorkdays`), o enteras
+// en la cabecera si se guardó así.
 import { FieldValue } from "firebase-admin/firestore";
 
 export const PAYSLIPS = "portalPayslips";
@@ -19,6 +21,7 @@ export const META = "portalMeta";
 export const INDEX = "portalIndex";
 const PAYROLLS = "payrolls";
 const SNAPSHOTS = "payrollSnapshots";
+const SNAPSHOT_WORKDAYS = "payrollSnapshotWorkdays";
 const LOGS = "logs";
 const BATCH_SIZE = 400;
 
@@ -127,6 +130,22 @@ async function inBatches(db, items, apply) {
   }
 }
 
+// El JSON de una nómina armado: la cabecera y, si la cabecera dice cuántas
+// partes tiene (`workdayParts`), las jornadas de
+// `payrollSnapshotWorkdays/{id}__{n}`, en su orden. Una cabecera sin partes
+// trae sus jornadas. `null` si la nómina no tiene JSON.
+export async function readSnapshot(db, payrollId) {
+  const snap = await db.collection(SNAPSHOTS).doc(payrollId).get();
+  if (!snap.exists) return null;
+  const { workdayParts, ...header } = snap.data();
+  if (!Number.isInteger(workdayParts)) return snap.data();
+  if (!workdayParts) return { ...header, workdays: [] };
+  const refs = Array.from({ length: workdayParts }, (_, i) => db.collection(SNAPSHOT_WORKDAYS).doc(`${payrollId}__${i}`));
+  const parts = await db.getAll(...refs);
+  if (parts.some((p) => !p.exists)) throw codeError("incomplete-snapshot", "Al JSON de la nómina le falta una parte de sus jornadas.");
+  return { ...header, workdays: parts.flatMap((p) => p.data().workdays || []) };
+}
+
 const slipRef = (db, rut, payrollId) => db.collection(PAYSLIPS).doc(rut).collection(SLIPS).doc(payrollId);
 
 // La entrada de una nómina en la lista de publicadas.
@@ -202,8 +221,7 @@ export async function publishPortal(db, { payrollId, requestedBy = null, request
   if (!payrollSnap.exists) throw codeError("not-found", "La nómina no existe.");
   const payroll = { id: payrollId, ...payrollSnap.data() };
 
-  const snapshotSnap = await db.collection(SNAPSHOTS).doc(payrollId).get();
-  const snapshot = snapshotSnap.exists ? snapshotSnap.data() : payroll.snapshot || null;
+  const snapshot = (await readSnapshot(db, payrollId)) || payroll.snapshot || null;
   if (!snapshot?.workers?.length) throw codeError("no-snapshot", "La nómina no tiene el JSON para publicar.");
 
   const { header, payslips } = buildPortalPayslips(snapshot, payroll);

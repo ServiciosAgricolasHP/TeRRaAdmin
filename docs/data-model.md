@@ -136,7 +136,7 @@ La marca de una jornada eliminada, para que las copias de jornadas del navegador
 | `expiresAt` | ts | 30 días después. Para una política TTL de Firestore sobre este campo: las copias se releen enteras una vez por semana, así que una marca más vieja ya no sirve |
 
 ### `payrolls`
-Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
+Nómina = lote de pago. Agrupa las jornadas de sus personas (`items[].workdayIds`) y `advanceIds`.
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | string | autoId |
@@ -152,7 +152,7 @@ Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
 | `items` | `PayrollItem[]` | snapshot por trabajador |
 | `total`, `bankTotal`, `cashTotal` | number | |
 | `workerCount`, `bankCount`, `cashCount` | number | |
-| `workdayIds` | ref→`workdays`[] | |
+| `workdayIds` | ref→`workdays`[]? | solo en las nóminas guardadas antes: la unión de `items[].workdayIds`. No se escribe ni se lee: las jornadas de la nómina son las de sus personas (`payrollWorkdayIdsOf`, `utils/payroll.js`), y solo una nómina cuyas personas no traen `workdayIds` usa esta lista. Sin ella, una nómina de 250 personas y 3.000 jornadas pesa ~460 KB en vez de ~680 |
 | `advanceIds` | ref→`advances`[] | |
 | `advanceTotal` | number | |
 | `payoutCycleDetails` | `{ id, label, faenaId, faenaName, subfaenaId, subfaenaName }[]`? | los ciclos a los que se asocian las entregas de anticipos (`items[].payoutApplications[].cycleId`), con sus nombres al entregar. Pueden no estar en `cycleIds`. El resumen los usa para la fila de cada uno |
@@ -178,7 +178,9 @@ Configuración compartida de la nómina. **Un único doc `payrollConfig/main`**;
 | `bankFormat` | string | id del formato del archivo del banco (`utils/bankFormats.js`); por defecto `"pagoFacilBchile"`. Lo usan "🏦 Sólo Nómina" y la primera hoja del XLSX completo, también al volver a descargar una nómina anterior |
 
 ### `payrollSnapshots`
-Snapshot JSON de cada nómina, separado del documento de `payrolls` para no engordar la lista. Lo escribe la app al generar la nómina, lo pone al día al editarla mientras está pendiente (sacar o agregar a una persona, Recalcular, "✎ Editar ciclos") y lo consume el **portal de trabajadores** (read-only) para construir su resumen. Las formas de cada parte salen de `services/payrollSnapshots.js` (`snapshotCycleOf`, `snapshotWorkdayOf`, `snapshotAdvanceOf`).
+Snapshot JSON de cada nómina, separado del documento de `payrolls` para no engordar la lista. Lo escribe la app al generar la nómina, lo pone al día al editarla mientras está pendiente (sacar o agregar a una persona, Recalcular, "✎ Editar ciclos") y lo consume el **portal de trabajadores** (read-only) para construir su resumen. Las formas de cada parte salen de `utils/snapshotShapes.js` (`snapshotCycleOf`, `snapshotWorkdayOf`, `snapshotAdvanceOf`).
+
+Este documento es la **cabecera**: todo menos las jornadas, que van en partes en `payrollSnapshotWorkdays`, así una nómina de temporada alta (3.000 jornadas, ~1,8 MB) no choca con el límite de 1 MiB de un documento. Cada escritura va en un lote, con la cabecera, sus partes y el borrado de las que sobran (`services/payrollSnapshotStore.js`); un cambio que no toca las jornadas escribe solo la cabecera. El cálculo de las partes, en `utils/snapshotParts.js`, con tests. Lo que se descarga, lo que muestra el detalle y lo que publica el portal es el JSON armado: la cabecera con `workdays` y sin `workdayParts`.
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | string | mismo id de la `payroll` (1:1) |
@@ -188,10 +190,21 @@ Snapshot JSON de cada nómina, separado del documento de `payrolls` para no engo
 | `payroll` | object | la cabecera: `name`, `format`, `classification`, `status` y los totales (`total`, `bankTotal`, `cashTotal`, `workerCount`, `bankCount`, `cashCount`, `advanceTotal`, `bonusTotal`, `payoutTotal`) |
 | `cycles` | array | cada ciclo de la nómina: su `id`, etiqueta, faena, subfaena y período (como `cycleDetails`, sin `laborIds`), más `labors` (id, nombre, tipo y su configuración de precios) y `dayPrices`. Al generar, las labores son las del ciclo; Recalcular y agregar a una persona las ponen al día y suman las que falten. Una labor que el ciclo ya no tiene queda |
 | `workers` | `PayrollItem[]` | mismo shape que `payrolls.items` |
-| `workdays` | array | las jornadas que paga, con su labor, fecha, cantidad y monto |
+| `workdayParts` | number | cuántas partes de jornadas tiene en `payrollSnapshotWorkdays` (`0` sin jornadas). Un JSON guardado antes del campo no lo trae y lleva sus jornadas en `workdays`; pasa a partes la primera vez que se escribe |
+| `workdays` | array | solo en un JSON sin `workdayParts`: las jornadas que paga, con su labor, fecha, cantidad y monto. En el JSON armado están siempre |
 | `advances` | array | los anticipos y bonos que aplica |
+| `createdAt`, `createdBy`, `updatedAt`, `updatedBy` | ts, string | |
 
 > Se baja como `.json` desde el detalle de la nómina (📥 Descargar → JSON).
+
+### `payrollSnapshotWorkdays`
+Las jornadas del JSON de una nómina (`payrollSnapshots`), en partes de hasta ~600 KB (`PART_BYTES`, unas 1.000 jornadas). Se escriben y se borran en el mismo lote que la cabecera; nunca se leen sin ella, que dice cuántas son.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | `{payrollId}__{index}` |
+| `payrollId` | ref→`payrolls` | |
+| `index` | number | el orden de la parte, desde `0` |
+| `workdays` | array | las jornadas de esta parte, con la forma de `snapshotWorkdayOf` y en su orden |
 
 ### `portalPayslips`
 Fichas de los trabajadores en el portal de trabajadores: **una por persona y por nómina publicada**, en `portalPayslips/{rut}/payslips/{payrollId}`. El documento `portalPayslips/{rut}` no existe: es solo el camino. Las escriben y borran solo los jobs `publishPortal` y `unpublishPortal` (`functions/portal.js`); sin sesión se leen las fichas de un RUT, y listarlas entre RUT queda para un admin (`firestore.rules`). La Consola las cuenta como grupo (`payslips`).
@@ -931,7 +944,7 @@ erDiagram
         string id PK
         string status
         array  cycleIds
-        array  workdayIds
+        array  items
         array  advanceIds
         number total
     }
@@ -1058,7 +1071,7 @@ erDiagram
 
 - **faena → subfaena → cycle**: jerarquía estricta. Un ciclo siempre tiene `subfaenaId`.
 - **cycle.labors[].workers[]**: array de RUTs (no es FK formal, pero apunta a `worker.id`).
-- **workday.payrollId**: tag inverso. Una nómina "reclama" sus workdays vía `workdayIds[]` y a la vez cada workday queda apuntando a la nómina.
+- **workday.payrollId**: tag inverso. Una nómina "reclama" sus workdays vía `items[].workdayIds` y a la vez cada workday queda apuntando a la nómina.
 - **advance.status / appliedPayrollId**: paralelo al de workdays — se "aplican" a una nómina y se "restauran" a `pending` si la nómina se borra.
 - **transport.paymentId ↔ transportPayment.tripIds**: misma idea de tag bidireccional para transportistas. Lo mismo un nivel más arriba con **transportPayment.payrollId ↔ transportPayroll.paymentIds**.
 - **Totales denormalizados (transporte)**: `transportPayments.total` y `transportPayrolls.total` son sumas guardadas, no calculadas al leer. El detalle imprimible suma las vueltas **en vivo**, mientras que el Balance de quincenas y la tarjeta de la quincena leen el campo — si divergen, es que algo escribió una vuelta sin propagar hacia arriba. La propagación vive en `transportsService.js` (`recalcPaymentTotal` → `recalcFortnightTotal`), disparada desde `tripsService.create/update/remove`, **no en las pantallas**. Los docs con `status: "paid"` quedan congelados y no se recalculan.

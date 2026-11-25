@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { payrollWorkdayIdsOf } from "../../src/utils/payroll";
 import { payrollsService, tagWorkdaysWithPayroll, recalcPayrollAggregates } from "../../src/services/payrollsService";
 import { planPayrollRecalc, applyPayrollRecalc } from "../../src/services/payrollRecalc";
 import { advancesService, listPendingForWorkers, applyAdvancesToPayroll } from "../../src/services/advancesService";
@@ -88,7 +89,7 @@ async function armarNomina(cycleIds, { labores = null } = {}) {
     cycleDetails: cycleIds.map((id) => (labores ? { id, label: id, laborIds: [...labores] } : { id, label: id })),
     ...agg,
   });
-  await tagWorkdaysWithPayroll(agg.workdayIds, nomina.id);
+  await tagWorkdaysWithPayroll(payrollWorkdayIdsOf(agg), nomina.id);
   await applyAdvancesToPayroll(items.flatMap((it) => it.advanceApplications), nomina.id);
   return nomina.id;
 }

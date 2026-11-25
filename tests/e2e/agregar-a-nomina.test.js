@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { payrollWorkdayIdsOf } from "../../src/utils/payroll";
 import {
   payrollsService,
   tagWorkdaysWithPayroll,
@@ -8,13 +9,8 @@ import {
 } from "../../src/services/payrollsService";
 import { listPendingForWorkers } from "../../src/services/advancesService";
 import { workdaysService } from "../../src/services";
-import {
-  saveSnapshot,
-  extendSnapshot,
-  snapshotCycleOf,
-  snapshotWorkdayOf,
-  snapshotAdvanceOf,
-} from "../../src/services/payrollSnapshots";
+import { saveSnapshot, extendSnapshot, readSnapshot } from "../../src/services/payrollSnapshots";
+import { snapshotCycleOf, snapshotWorkdayOf, snapshotAdvanceOf } from "../../src/utils/snapshotShapes";
 import {
   planAddWorkdays,
   asPayrollWorker,
@@ -65,7 +61,7 @@ async function nominaCon({ items, cycleDetails }) {
     items,
     ...agg,
   });
-  await tagWorkdaysWithPayroll(agg.workdayIds, nomina.id);
+  await tagWorkdaysWithPayroll(payrollWorkdayIdsOf(agg), nomina.id);
   return nomina.id;
 }
 
@@ -340,7 +336,7 @@ describe("agregar a una nómina pendiente", () => {
       advances: pendientes.map(snapshotAdvanceOf),
     });
 
-    const snap = await get("payrollSnapshots", id);
+    const snap = await readSnapshot({ id });
     expect(snap.cycles.map((c) => c.id)).toEqual([CICLO_A, CICLO_B]);
     expect(snap.cycles[0]).toEqual({ id: CICLO_A });
     expect(snap.cycles[1]).not.toHaveProperty("laborIds");

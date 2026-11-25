@@ -314,7 +314,7 @@ export function assertEditable(p, verb = "editar") {
 //   - Suelta los workdays del trabajador (libera `payrollId`) y todos sus
 //     anticipos.
 //   - Recalcula `items`, `total`, `bankTotal`, `cashTotal`, `workerCount`,
-//     `bankCount`, `cashCount`, `workdayIds`, `advanceIds`, `advanceTotal`.
+//     `bankCount`, `cashCount`, `advanceIds`, `advanceTotal`.
 
 export function recalcPayrollAggregates(items) {
   const bank = items.filter((it) => !isCashBank(it.bankCode));
@@ -329,7 +329,6 @@ export function recalcPayrollAggregates(items) {
     workerCount: items.length,
     bankCount: bank.length,
     cashCount: cash.length,
-    workdayIds: items.flatMap((x) => x.workdayIds || []),
     advanceIds: items.flatMap((x) => x.advanceIds || []),
   };
 }

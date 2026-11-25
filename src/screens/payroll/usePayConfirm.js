@@ -3,6 +3,7 @@ import { markPaid as markPayrollPaid, markPending as markPayrollPending, markBan
 import { settledOpenCycles } from "../../utils/cycleClosing";
 import { attempt } from "../../utils/attempt";
 import { errorText } from "../../utils/errorText";
+import { payrollWorkdayIdsOf } from "../../utils/payroll";
 
 // Marcar una nómina pagada o pendiente, o solo sus transferencias, después de
 // confirmarlo escribiendo una palabra. Al pagarla entera ofrece cerrar los
@@ -37,9 +38,9 @@ export function usePayConfirm({ load, setCloseCycles, setProgress, toast }) {
     show({ step: "Sellando jornadas...", detail: "", percent: 2 });
     const { error: err } = await attempt(async () => {
       if (mode === "pay") {
-        await markPayrollPaid(p.id, p.workdayIds || [], progressStep("Sellando jornadas pagadas..."));
+        await markPayrollPaid(p.id, payrollWorkdayIdsOf(p), progressStep("Sellando jornadas pagadas..."));
       } else if (mode === "revert") {
-        await markPayrollPending(p.id, p.workdayIds || [], progressStep("Quitando el sello de pago..."));
+        await markPayrollPending(p.id, payrollWorkdayIdsOf(p), progressStep("Quitando el sello de pago..."));
       } else if (mode === "bank") {
         await markBankPaid(p.id, progressStep("Sellando las jornadas de banco..."));
       } else if (mode === "revertBank") {

@@ -1,17 +1,11 @@
 import { describe, it, expect } from "vitest";
+import { payrollWorkdayIdsOf } from "../../src/utils/payroll";
 import { payrollsService, tagWorkdaysWithPayroll, recalcPayrollAggregates } from "../../src/services/payrollsService";
 import { planPayrollRecalc, applyPayrollRecalc } from "../../src/services/payrollRecalc";
 import { workdaysService } from "../../src/services";
 import { withFreshCycles } from "../../src/services/jobLists";
-import {
-  saveSnapshot,
-  extendSnapshot,
-  refreshSnapshotLabors,
-  completeSnapshotLabors,
-  snapshotCycleOf,
-  snapshotLaborsOf,
-  snapshotWorkdayOf,
-} from "../../src/services/payrollSnapshots";
+import { saveSnapshot, extendSnapshot, refreshSnapshotLabors, completeSnapshotLabors, readSnapshot } from "../../src/services/payrollSnapshots";
+import { snapshotCycleOf, snapshotLaborsOf, snapshotWorkdayOf } from "../../src/utils/snapshotShapes";
 import { ANA, CICLO, LABOR, set, get, all, seedCycle, seedWorker, seedWorkday } from "./helpers/seed";
 
 // Las labores que guarda el JSON de una nómina. La pantalla arma la nómina con
@@ -62,7 +56,7 @@ async function armarNomina() {
     cycleDetails: [{ id: CICLO, label: CICLO }],
     ...agg,
   });
-  await tagWorkdaysWithPayroll(agg.workdayIds, nomina.id);
+  await tagWorkdaysWithPayroll(payrollWorkdayIdsOf(agg), nomina.id);
   const [vieja] = await copiaVieja();
   await saveSnapshot(nomina.id, {
     version: 1,
@@ -146,7 +140,7 @@ describe("las labores del JSON de una nómina", () => {
     const ciclo = await get("cycles", CICLO);
     await set("cycles", CICLO, { ...ciclo, labors: ciclo.labors.map((l) => (l.id === LABOR ? { ...l, name: "Cosecha Nueva" } : l)) });
 
-    const snap = await get("payrollSnapshots", id);
+    const snap = await readSnapshot({ id });
     const mostrado = await completeSnapshotLabors(snap);
     expect(mostrado.cycles[0].labors.map((l) => l.name)).toEqual(["Cosecha", "Poda"]);
     // No escribe: el JSON guardado sigue igual.

@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { payrollWorkdayIdsOf } from "../../src/utils/payroll";
 import {
   payrollsService,
   tagWorkdaysWithPayroll,
@@ -57,7 +58,7 @@ async function seedPayroll() {
     cycleDetails: [{ id: CICLO_A, label: CICLO_A }],
     ...aggregates,
   });
-  await tagWorkdaysWithPayroll(aggregates.workdayIds, payroll.id);
+  await tagWorkdaysWithPayroll(payrollWorkdayIdsOf(aggregates), payroll.id);
   await saveSnapshot(payroll.id, { payroll: { id: payroll.id, total: aggregates.total }, workers: items, workdays: [], advances: [], cycles: [] });
 
   // Los anticipos se crean después de armar la nómina: ninguna los descuenta.

@@ -40,12 +40,13 @@ describe("recalcPayrollAggregates", () => {
     expect(agg).toMatchObject({ workerCount: 3, bankCount: 2, cashCount: 1 });
   });
 
-  it("aplana los ids de workdays y anticipos", () => {
+  it("aplana los ids de los anticipos; las jornadas quedan en cada persona", () => {
     const agg = recalcPayrollAggregates([
       banco("1-9", 1, { workdayIds: ["w1", "w2"], advanceIds: ["a1"] }),
       efectivo("2-7", 1, { workdayIds: ["w3"], advanceIds: [] }),
     ]);
-    expect(agg.workdayIds).toEqual(["w1", "w2", "w3"]);
+    expect(agg).not.toHaveProperty("workdayIds");
+    expect(agg.items.flatMap((it) => it.workdayIds)).toEqual(["w1", "w2", "w3"]);
     expect(agg.advanceIds).toEqual(["a1"]);
   });
 

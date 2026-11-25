@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { payrollSnapshotsService } from "../../services";
 import { countRecordLogs } from "../../services/countsService";
+import { readStoredDocs } from "../../services/payrollSnapshotStore";
 import { listPayrolls } from "../../services/payrollsList";
 import { attempt } from "../../utils/attempt";
 import { MAX_DOC_BYTES, auditLogSizes, docSize, payrollSizeRows, sizeStatus } from "../../utils/docSizes";
 import { errorText } from "../../utils/errorText";
 import { fmtNumber } from "../../utils/format";
+import { SNAPSHOT_WORKDAYS, joinSnapshot, partIdOf } from "../../utils/snapshotParts";
 import { ConsoleCard } from "./ConsoleCard";
 
 const kb = (bytes) => `${fmtNumber(Math.round(bytes / 1024))} KB`;
@@ -14,6 +15,12 @@ const STATUS = {
   ok: { label: "✓ cabe", cls: "text-[var(--color-success)]" },
   near: { label: "⚠ cerca", cls: "text-[var(--color-warning)]" },
   over: { label: "✗ se pierde", cls: "text-[var(--color-danger)] font-semibold" },
+};
+// Si la lista de jornadas que guarda la nómina calza con las de sus personas.
+const listText = (check) => {
+  if (!check) return "";
+  if (check.matches) return "calza";
+  return `${fmtNumber(check.onlyInList)} solo en la nómina, ${fmtNumber(check.onlyInPeople)} solo en sus personas`;
 };
 const BTN = "min-h-8 rounded-md border border-[var(--color-border)] px-3 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-50";
 
@@ -25,8 +32,8 @@ function Status({ bytes, status }) {
 // Cuánto pesa cada nómina y cuánto pesaría el registro de auditoría de una
 // edición: Firestore no guarda un documento de más de 1 MiB, y un registro
 // que no cabe se pierde sin aviso (`services/logger.js`). La lista sale de la
-// copia de las nóminas; "🔍" lee el JSON de esa nómina y cuenta sus registros
-// (3 lecturas).
+// copia de las nóminas; "🔍" lee el JSON de esa nómina, con su cabecera y sus
+// partes, y cuenta sus registros (3 lecturas, más una por parte).
 export function PayrollSizesSection() {
   const [rows, setRows] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -46,14 +53,23 @@ export function PayrollSizesSection() {
   const inspect = async (row) => {
     setDetails((d) => ({ ...d, [row.id]: { busy: true } }));
     const { value, error: err } = await attempt(async () => {
-      const snap = await payrollSnapshotsService.getById(row.id);
+      const stored = await readStoredDocs(row.id);
       const [payrollLogs, snapshotLogs] = await Promise.all([countRecordLogs("payroll", row.id), countRecordLogs("payrollSnapshot", row.id)]);
       let snapshot = null;
-      if (snap) {
-        const { id, ...data } = snap;
-        const bytes = docSize(`payrollSnapshots/${id}`, data);
-        const logs = auditLogSizes("payrollSnapshot", id, data);
-        snapshot = { bytes, create: logs.create, edit: logs.edit, workdays: (data.workdays || []).length };
+      if (stored) {
+        const { header, parts } = stored;
+        const data = joinSnapshot(header, parts || []);
+        const partBytes = (parts || []).map((workdays, index) =>
+          docSize(`${SNAPSHOT_WORKDAYS}/${partIdOf(row.id, index)}`, { payrollId: row.id, index, workdays }),
+        );
+        const logs = auditLogSizes("payrollSnapshot", row.id, data);
+        snapshot = {
+          bytes: docSize(`payrollSnapshots/${row.id}`, header),
+          parts: parts ? partBytes.length : null,
+          heaviestPart: Math.max(0, ...partBytes),
+          edit: logs.edit,
+          workdays: (data.workdays || []).length,
+        };
       }
       return { snapshot, logs: { payroll: payrollLogs, snapshot: snapshotLogs } };
     });
@@ -62,19 +78,26 @@ export function PayrollSizesSection() {
 
   const over = rows ? rows.filter((r) => r.editStatus === "over").length : 0;
   const near = rows ? rows.filter((r) => r.editStatus === "near").length : 0;
+  const withList = rows ? rows.filter((r) => r.workdayList) : [];
+  const mismatched = withList.filter((r) => !r.workdayList.matches).length;
 
   const copy = async () => {
     if (!rows) return;
     const lines = [
-      ["Nómina", "Estado", "Personas", "Jornadas", "Documento KB", "Registro al editar KB", "% de 1 MiB", "JSON KB", "JSON al editar KB", "Registros nómina", "Registros JSON"].join("\t"),
+      [
+        "Nómina", "Estado", "Personas", "Jornadas", "Documento KB", "Registro al editar KB", "% de 1 MiB",
+        "JSON KB", "Partes del JSON", "Parte más pesada KB", "JSON al editar KB", "Registros nómina", "Registros JSON", "Lista de jornadas",
+      ].join("\t"),
       ...rows.map((r) => {
         const d = details[r.id];
         const s = d?.snapshot;
         return [
           r.name, r.status === "paid" ? "pagada" : "pendiente", r.people, r.workdays,
           Math.round(r.bytes / 1024), Math.round(r.editLog / 1024), pct(r.editLog),
-          s ? Math.round(s.bytes / 1024) : "", s ? Math.round(s.edit / 1024) : "",
+          s ? Math.round(s.bytes / 1024) : "", s?.parts ?? "", s?.parts ? Math.round(s.heaviestPart / 1024) : "",
+          s ? Math.round(s.edit / 1024) : "",
           d?.logs ? d.logs.payroll : "", d?.logs ? d.logs.snapshot : "",
+          listText(r.workdayList),
         ].join("\t");
       }),
     ].join("\n");
@@ -112,6 +135,13 @@ export function PayrollSizesSection() {
               {near > 0 && <> · {near} cerca del límite</>}. "Al editar" es recalcular, editar ciclos o sacar o agregar a
               alguien: el registro guarda la lista de personas y las jornadas dos veces, antes y después.
             </p>
+            {withList.length > 0 && (
+              <p className={`text-xs ${mismatched ? "text-[var(--color-warning)]" : "text-[var(--color-muted)]"}`}>
+                {mismatched
+                  ? `⚠ ${fmtNumber(mismatched)} de ${fmtNumber(withList.length)} nóminas guardan una lista de jornadas que no calza con las de sus personas. Pagar, revertir y eliminar usan las de sus personas.`
+                  : `✓ Las ${fmtNumber(withList.length)} nóminas que guardan su lista de jornadas calzan con las de sus personas.`}
+              </p>
+            )}
             <ul className="divide-y divide-[var(--color-border)] rounded-md border border-[var(--color-border)] text-xs">
               {rows.map((r) => {
                 const d = details[r.id];
@@ -122,6 +152,9 @@ export function PayrollSizesSection() {
                       <div className="text-[var(--color-muted)]">
                         {r.status === "paid" ? "pagada" : "pendiente"} · {fmtNumber(r.people)} personas · {fmtNumber(r.workdays)} jornadas
                       </div>
+                      {r.workdayList && !r.workdayList.matches && (
+                        <div className="text-[var(--color-warning)]">⚠ Lista de jornadas: {listText(r.workdayList)}</div>
+                      )}
                     </div>
                     <div className="tabular-nums">
                       <div>Documento: <Status bytes={r.bytes} status={r.docStatus} /></div>
@@ -129,7 +162,7 @@ export function PayrollSizesSection() {
                     </div>
                     <div className="basis-full sm:basis-auto">
                       {!d && (
-                        <button type="button" className={BTN} onClick={() => inspect(r)} title="Lee el JSON de la nómina y cuenta sus registros (3 lecturas)">
+                        <button type="button" className={BTN} onClick={() => inspect(r)} title="Lee el JSON de la nómina y cuenta sus registros (3 lecturas, más una por parte del JSON)">
                           🔍 JSON y registros
                         </button>
                       )}
@@ -139,7 +172,16 @@ export function PayrollSizesSection() {
                         <div className="tabular-nums">
                           {d.snapshot ? (
                             <>
-                              <div>JSON: <Status bytes={d.snapshot.bytes} status={sizeStatus(d.snapshot.bytes)} /></div>
+                              <div>
+                                {d.snapshot.parts === null ? "JSON en un documento" : "JSON, cabecera"}:{" "}
+                                <Status bytes={d.snapshot.bytes} status={sizeStatus(d.snapshot.bytes)} />
+                              </div>
+                              {d.snapshot.parts > 0 && (
+                                <div>
+                                  {fmtNumber(d.snapshot.parts)} {d.snapshot.parts === 1 ? "parte" : "partes"} de jornadas, la más pesada:{" "}
+                                  <Status bytes={d.snapshot.heaviestPart} status={sizeStatus(d.snapshot.heaviestPart)} />
+                                </div>
+                              )}
                               <div>JSON al editar: <Status bytes={d.snapshot.edit} status={sizeStatus(d.snapshot.edit)} /></div>
                             </>
                           ) : (
