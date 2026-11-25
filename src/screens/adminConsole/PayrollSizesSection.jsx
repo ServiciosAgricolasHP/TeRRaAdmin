@@ -76,7 +76,10 @@ export function PayrollSizesSection() {
   const copy = async () => {
     if (!rows) return;
     const lines = [
-      ["Nómina", "Estado", "Personas", "Jornadas", "Documento KB", "Registro al editar KB", "% de 1 MiB", "JSON KB", "JSON al editar KB", "Registros nómina", "Registros JSON"].join("\t"),
+      [
+        "Nómina", "Estado", "Personas", "Jornadas", "Documento KB", "Registro al editar KB", "% de 1 MiB",
+        "JSON KB", "Partes del JSON", "Parte más pesada KB", "JSON al editar KB", "Registros nómina", "Registros JSON",
+      ].join("\t"),
       ...rows.map((r) => {
         const d = details[r.id];
         const s = d?.snapshot;
