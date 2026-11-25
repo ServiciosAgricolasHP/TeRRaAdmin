@@ -24,7 +24,8 @@ import {
   advanceRemaining,
   advanceSign,
 } from "./advancesService";
-import { syncSnapshotAfterRecalc, snapshotCycleOf, snapshotLaborsOf, snapshotWorkdayOf, snapshotAdvanceOf } from "./payrollSnapshots";
+import { syncSnapshotAfterRecalc } from "./payrollSnapshots";
+import { snapshotCycleOf, snapshotLaborsOf, snapshotWorkdayOf, snapshotAdvanceOf } from "../utils/snapshotShapes";
 import { withFreshCycles } from "./jobLists";
 import { aggregateWorkerAmounts, normalizeLeader } from "../utils/payroll";
 import {

@@ -1,6 +1,7 @@
 import { advancesService, isBono, readPayrollApplications, setPayrollAdvanceAmounts } from "./advancesService";
 import { payrollsService, recalcPayrollAggregates } from "./payrollsService";
-import { snapshotAdvanceOf, syncSnapshotAmounts } from "./payrollSnapshots";
+import { syncSnapshotAmounts } from "./payrollSnapshots";
+import { snapshotAdvanceOf } from "../utils/snapshotShapes";
 import { bonusChangeError, bonusLockReason, bonusPaidElsewhere, planBonusChange } from "../utils/payrollBonusChange";
 import { toTitleName } from "../utils/textCase";
 

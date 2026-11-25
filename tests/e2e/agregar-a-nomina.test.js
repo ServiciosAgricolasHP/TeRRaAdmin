@@ -9,14 +9,8 @@ import {
 } from "../../src/services/payrollsService";
 import { listPendingForWorkers } from "../../src/services/advancesService";
 import { workdaysService } from "../../src/services";
-import {
-  saveSnapshot,
-  extendSnapshot,
-  snapshotCycleOf,
-  snapshotWorkdayOf,
-  snapshotAdvanceOf,
-  readSnapshot,
-} from "../../src/services/payrollSnapshots";
+import { saveSnapshot, extendSnapshot, readSnapshot } from "../../src/services/payrollSnapshots";
+import { snapshotCycleOf, snapshotWorkdayOf, snapshotAdvanceOf } from "../../src/utils/snapshotShapes";
 import {
   planAddWorkdays,
   asPayrollWorker,

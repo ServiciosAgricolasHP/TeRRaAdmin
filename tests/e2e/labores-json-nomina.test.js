@@ -4,16 +4,8 @@ import { payrollsService, tagWorkdaysWithPayroll, recalcPayrollAggregates } from
 import { planPayrollRecalc, applyPayrollRecalc } from "../../src/services/payrollRecalc";
 import { workdaysService } from "../../src/services";
 import { withFreshCycles } from "../../src/services/jobLists";
-import {
-  saveSnapshot,
-  extendSnapshot,
-  refreshSnapshotLabors,
-  completeSnapshotLabors,
-  snapshotCycleOf,
-  snapshotLaborsOf,
-  snapshotWorkdayOf,
-  readSnapshot,
-} from "../../src/services/payrollSnapshots";
+import { saveSnapshot, extendSnapshot, refreshSnapshotLabors, completeSnapshotLabors, readSnapshot } from "../../src/services/payrollSnapshots";
+import { snapshotCycleOf, snapshotLaborsOf, snapshotWorkdayOf } from "../../src/utils/snapshotShapes";
 import { ANA, CICLO, LABOR, set, get, all, seedCycle, seedWorker, seedWorkday } from "./helpers/seed";
 
 // Las labores que guarda el JSON de una nómina. La pantalla arma la nómina con

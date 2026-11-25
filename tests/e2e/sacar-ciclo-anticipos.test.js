@@ -14,7 +14,8 @@ import {
 } from "../../src/services/advancesService";
 import { workdaysService } from "../../src/services";
 import { aggregateWorkerAmounts } from "../../src/utils/payroll";
-import { readSnapshot, saveSnapshot, snapshotLaborsOf } from "../../src/services/payrollSnapshots";
+import { readSnapshot, saveSnapshot } from "../../src/services/payrollSnapshots";
+import { snapshotLaborsOf } from "../../src/utils/snapshotShapes";
 import { allocateAdvances } from "../../src/utils/payrollItem";
 import { ANA, BETO, LABOR, FAENA, SUBFAENA, seedCycle, seedWorker, seedWorkday, seedAdvance, set, get, all } from "./helpers/seed";
 

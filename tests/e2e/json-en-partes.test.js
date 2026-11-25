@@ -5,9 +5,9 @@ import {
   pruneSnapshot,
   readSnapshot,
   saveSnapshot,
-  snapshotWorkdayOf,
   syncSnapshotAmounts,
 } from "../../src/services/payrollSnapshots";
+import { snapshotWorkdayOf } from "../../src/utils/snapshotShapes";
 import { recalcPayrollAggregates } from "../../src/services/payrollsService";
 import { all, get, set } from "./helpers/seed";
 

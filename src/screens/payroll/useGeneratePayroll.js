@@ -3,7 +3,8 @@ import { installmentCandidatesOf, withoutInstallments, payrollItemOf, payrollTot
 import { isCashBank } from "../../utils/banks";
 import { validateAccountNumber, payrollSuggestedName } from "../../utils/payroll";
 import { newPayrollCycleDetails } from "../../utils/payrollItem";
-import { snapshotCycleOf, snapshotWorkdayOf, snapshotAdvanceOf, saveSnapshot } from "../../services/payrollSnapshots";
+import { saveSnapshot } from "../../services/payrollSnapshots";
+import { snapshotCycleOf, snapshotWorkdayOf, snapshotAdvanceOf } from "../../utils/snapshotShapes";
 import { payrollsService, tagWorkdaysWithPayroll } from "../../services/payrollsService";
 import { applyAdvancesToPayroll } from "../../services/advancesService";
 import { attempt } from "../../utils/attempt";
