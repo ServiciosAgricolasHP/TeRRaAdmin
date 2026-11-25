@@ -80,6 +80,22 @@ export function sizeStatus(bytes) {
   return "ok";
 }
 
+// Si la lista de jornadas que guarda una nómina (`workdayIds`, la de las
+// nóminas anteriores) calza con las de sus personas, que son las que valen
+// (`payrollWorkdayIdsOf`): cuántas están solo en la lista y cuántas solo en
+// las personas. `null` si la nómina no guarda la lista, o si ninguna persona
+// trae la suya y la lista es la que vale.
+export function workdayListCheck(payroll) {
+  if (!Array.isArray(payroll?.workdayIds)) return null;
+  const items = payroll.items || [];
+  if (!items.some((it) => Array.isArray(it?.workdayIds))) return null;
+  const list = new Set(payroll.workdayIds);
+  const people = new Set(payrollWorkdayIdsOf(payroll));
+  const onlyInList = [...list].filter((id) => !people.has(id)).length;
+  const onlyInPeople = [...people].filter((id) => !list.has(id)).length;
+  return { onlyInList, onlyInPeople, matches: onlyInList === 0 && onlyInPeople === 0 };
+}
+
 // El peso de cada nómina y de sus registros, de la más pesada a la más liviana.
 export function payrollSizeRows(payrolls) {
   return payrolls
@@ -94,6 +110,7 @@ export function payrollSizeRows(payrolls) {
         status: data.status,
         people: items.length,
         workdays: payrollWorkdayIdsOf(data).length,
+        workdayList: workdayListCheck(data),
         bytes,
         editLog: logs.edit,
         editStatus: sizeStatus(logs.edit),

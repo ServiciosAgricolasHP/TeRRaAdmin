@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { MAX_DOC_BYTES, auditLogSizes, docSize, heavyFields, payrollSizeRows, sizeStatus, valueSize } from "./docSizes";
+import { MAX_DOC_BYTES, auditLogSizes, docSize, heavyFields, payrollSizeRows, sizeStatus, valueSize, workdayListCheck } from "./docSizes";
 
 describe("valueSize", () => {
   it("mide como Firestore: texto + 1, número 8, booleano y null 1, fecha 8", () => {
@@ -57,5 +57,24 @@ describe("sizeStatus y payrollSizeRows", () => {
     expect(rows.map((r) => [r.id, r.people, r.workdays])).toEqual([["grande", 2, 30], ["chica", 1, 2]]);
     expect(rows[0].editLog).toBeGreaterThan(rows[0].bytes);
     expect(rows[0].editStatus).toBe("ok");
+  });
+});
+
+describe("workdayListCheck", () => {
+  const items = [{ workdayIds: ["a", "b"] }, { workdayIds: ["c"] }];
+
+  it("compara la lista de la nómina con las jornadas de sus personas", () => {
+    expect(workdayListCheck({ items, workdayIds: ["c", "b", "a"] })).toEqual({ onlyInList: 0, onlyInPeople: 0, matches: true });
+    expect(workdayListCheck({ items, workdayIds: ["a", "b", "x", "y"] })).toEqual({ onlyInList: 2, onlyInPeople: 1, matches: false });
+  });
+
+  it("sin lista, o si ninguna persona trae la suya, no hay nada que comparar", () => {
+    expect(workdayListCheck({ items })).toBe(null);
+    expect(workdayListCheck({ items: [{ rut: "1-9" }], workdayIds: ["a"] })).toBe(null);
+  });
+
+  it("va en cada fila del peso", () => {
+    const [row] = payrollSizeRows([{ id: "p1", items, workdayIds: ["a", "b"] }]);
+    expect(row.workdayList).toEqual({ onlyInList: 0, onlyInPeople: 1, matches: false });
   });
 });

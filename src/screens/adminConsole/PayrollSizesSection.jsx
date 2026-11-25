@@ -16,6 +16,12 @@ const STATUS = {
   near: { label: "⚠ cerca", cls: "text-[var(--color-warning)]" },
   over: { label: "✗ se pierde", cls: "text-[var(--color-danger)] font-semibold" },
 };
+// Si la lista de jornadas que guarda la nómina calza con las de sus personas.
+const listText = (check) => {
+  if (!check) return "";
+  if (check.matches) return "calza";
+  return `${fmtNumber(check.onlyInList)} solo en la nómina, ${fmtNumber(check.onlyInPeople)} solo en sus personas`;
+};
 const BTN = "min-h-8 rounded-md border border-[var(--color-border)] px-3 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-50";
 
 function Status({ bytes, status }) {
@@ -72,13 +78,15 @@ export function PayrollSizesSection() {
 
   const over = rows ? rows.filter((r) => r.editStatus === "over").length : 0;
   const near = rows ? rows.filter((r) => r.editStatus === "near").length : 0;
+  const withList = rows ? rows.filter((r) => r.workdayList) : [];
+  const mismatched = withList.filter((r) => !r.workdayList.matches).length;
 
   const copy = async () => {
     if (!rows) return;
     const lines = [
       [
         "Nómina", "Estado", "Personas", "Jornadas", "Documento KB", "Registro al editar KB", "% de 1 MiB",
-        "JSON KB", "Partes del JSON", "Parte más pesada KB", "JSON al editar KB", "Registros nómina", "Registros JSON",
+        "JSON KB", "Partes del JSON", "Parte más pesada KB", "JSON al editar KB", "Registros nómina", "Registros JSON", "Lista de jornadas",
       ].join("\t"),
       ...rows.map((r) => {
         const d = details[r.id];
@@ -89,6 +97,7 @@ export function PayrollSizesSection() {
           s ? Math.round(s.bytes / 1024) : "", s?.parts ?? "", s?.parts ? Math.round(s.heaviestPart / 1024) : "",
           s ? Math.round(s.edit / 1024) : "",
           d?.logs ? d.logs.payroll : "", d?.logs ? d.logs.snapshot : "",
+          listText(r.workdayList),
         ].join("\t");
       }),
     ].join("\n");
@@ -126,6 +135,13 @@ export function PayrollSizesSection() {
               {near > 0 && <> · {near} cerca del límite</>}. "Al editar" es recalcular, editar ciclos o sacar o agregar a
               alguien: el registro guarda la lista de personas y las jornadas dos veces, antes y después.
             </p>
+            {withList.length > 0 && (
+              <p className={`text-xs ${mismatched ? "text-[var(--color-warning)]" : "text-[var(--color-muted)]"}`}>
+                {mismatched
+                  ? `⚠ ${fmtNumber(mismatched)} de ${fmtNumber(withList.length)} nóminas guardan una lista de jornadas que no calza con las de sus personas. Pagar, revertir y eliminar usan las de sus personas.`
+                  : `✓ Las ${fmtNumber(withList.length)} nóminas que guardan su lista de jornadas calzan con las de sus personas.`}
+              </p>
+            )}
             <ul className="divide-y divide-[var(--color-border)] rounded-md border border-[var(--color-border)] text-xs">
               {rows.map((r) => {
                 const d = details[r.id];
@@ -136,6 +152,9 @@ export function PayrollSizesSection() {
                       <div className="text-[var(--color-muted)]">
                         {r.status === "paid" ? "pagada" : "pendiente"} · {fmtNumber(r.people)} personas · {fmtNumber(r.workdays)} jornadas
                       </div>
+                      {r.workdayList && !r.workdayList.matches && (
+                        <div className="text-[var(--color-warning)]">⚠ Lista de jornadas: {listText(r.workdayList)}</div>
+                      )}
                     </div>
                     <div className="tabular-nums">
                       <div>Documento: <Status bytes={r.bytes} status={r.docStatus} /></div>
