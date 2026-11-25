@@ -11,6 +11,7 @@ import {
   snapshotCycleOf,
   snapshotLaborsOf,
   snapshotWorkdayOf,
+  readSnapshot,
 } from "../../src/services/payrollSnapshots";
 import { ANA, CICLO, LABOR, set, get, all, seedCycle, seedWorker, seedWorkday } from "./helpers/seed";
 
@@ -146,7 +147,7 @@ describe("las labores del JSON de una nómina", () => {
     const ciclo = await get("cycles", CICLO);
     await set("cycles", CICLO, { ...ciclo, labors: ciclo.labors.map((l) => (l.id === LABOR ? { ...l, name: "Cosecha Nueva" } : l)) });
 
-    const snap = await get("payrollSnapshots", id);
+    const snap = await readSnapshot({ id });
     const mostrado = await completeSnapshotLabors(snap);
     expect(mostrado.cycles[0].labors.map((l) => l.name)).toEqual(["Cosecha", "Poda"]);
     // No escribe: el JSON guardado sigue igual.

@@ -4,15 +4,18 @@
 // Los `catch` silenciosos son deliberados y hay que conservarlos: el
 // snapshot es un derivado, y que falle no puede tumbar la generación ni el
 // borrado de la nómina, que son las operaciones que mueven la plata.
-import { payrollSnapshotsService, cyclesService } from "./index";
+import { cyclesService } from "./index";
+import { readStored, removeStored, writeStored } from "./payrollSnapshotStore";
 import { withPaidPeriods } from "../utils/payrollItem";
 import { cyclesMissingLabors, withLiveLabors, withMissingLabors, sameData } from "../utils/snapshotLabors";
 
 // Devuelve `true` si quedó guardado. La nómina ya existe cuando esto corre,
-// así que un fallo acá deja una nómina sin snapshot, no una nómina rota.
+// así que un fallo acá deja una nómina sin snapshot, no una nómina rota. Si ya
+// había uno, lo que traiga `snapshot` reemplaza lo suyo y lo demás queda.
 export async function saveSnapshot(payrollId, snapshot) {
   try {
-    await payrollSnapshotsService.upsert(payrollId, snapshot);
+    const previous = await readStored(payrollId);
+    await writeStored(payrollId, previous ? { ...previous.snapshot, ...snapshot } : snapshot, previous);
     return true;
   } catch (err) {
     console.warn("No se pudo guardar el snapshot en payrollSnapshots:", err);
@@ -24,25 +27,20 @@ export async function saveSnapshot(payrollId, snapshot) {
 // igual, así que esto nunca tira.
 export async function deleteSnapshot(payrollId) {
   try {
-    await payrollSnapshotsService.remove(payrollId);
-    return true;
+    return await removeStored(payrollId);
   } catch {
     return false;
   }
 }
 
-// Lee el snapshot para volver a bajarlo. Si no está en `payrollSnapshots`, usa
-// el campo `snapshot` embebido en la nómina. Devuelve `null` cuando no hay
-// ninguno de los dos.
+// Lee el snapshot, armado con sus partes, para volver a bajarlo. Si no está
+// en `payrollSnapshots`, usa el campo `snapshot` embebido en la nómina.
+// Devuelve `null` cuando no hay ninguno de los dos.
 export async function readSnapshot(payroll) {
   if (!payroll?.id) return null;
   try {
-    const doc = await payrollSnapshotsService.getById(payroll.id);
-    if (doc) {
-      // Sacar el `id` que inyecta Firestore: no es parte del contrato.
-      const { id: _omit, ...rest } = doc;
-      return rest;
-    }
+    const stored = await readStored(payroll.id);
+    if (stored) return stored.snapshot;
   } catch {
     /* se intenta con el campo embebido */
   }
@@ -138,7 +136,8 @@ function headerTotals(header, aggregates, items) {
 // Igual que el resto del módulo, nunca tira.
 export async function pruneSnapshot(payrollId, { items, aggregates, cycleIds = null, releasedWorkdayIds = [] }) {
   try {
-    const snap = await payrollSnapshotsService.getById(payrollId);
+    const stored = await readStored(payrollId);
+    const snap = stored?.snapshot;
     if (!snap) return false;
     const soltadas = new Set(releasedWorkdayIds);
     const anticipos = new Set((items || []).flatMap((it) => it.advanceIds || []));
@@ -150,7 +149,7 @@ export async function pruneSnapshot(payrollId, { items, aggregates, cycleIds = n
       patch.cycles = snap.cycles.filter((c) => siguen.has(c.id));
     }
     if (snap.payroll && aggregates) patch.payroll = headerTotals(snap.payroll, aggregates, items);
-    await payrollSnapshotsService.update(payrollId, patch);
+    await writeStored(payrollId, { ...snap, ...patch }, stored);
     return true;
   } catch (err) {
     console.warn("No se pudo alinear el snapshot con la nómina:", err);
@@ -164,13 +163,14 @@ export async function pruneSnapshot(payrollId, { items, aggregates, cycleIds = n
 // reemplazan a los del mismo id. Nunca tira.
 export async function syncSnapshotAmounts(payrollId, { items, aggregates, advances = [] }) {
   try {
-    const snap = await payrollSnapshotsService.getById(payrollId);
+    const stored = await readStored(payrollId);
+    const snap = stored?.snapshot;
     if (!snap) return false;
     const byId = new Map(advances.map((a) => [a.id, a]));
     const patch = { workers: items };
     if (Array.isArray(snap.advances)) patch.advances = snap.advances.map((a) => byId.get(a.id) || a);
     if (snap.payroll && aggregates) patch.payroll = headerTotals(snap.payroll, aggregates, items);
-    await payrollSnapshotsService.update(payrollId, patch);
+    await writeStored(payrollId, { ...snap, ...patch }, stored);
     return true;
   } catch (err) {
     console.warn("No se pudo poner al día el snapshot:", err);
@@ -192,7 +192,8 @@ export async function syncSnapshotAfterRecalc(
   { items, aggregates, workdays = [], newAdvances = [], cycleIds = null, cycleDetails = null, addedCycles = [], cycleLabors = [] },
 ) {
   try {
-    const snap = await payrollSnapshotsService.getById(payrollId);
+    const stored = await readStored(payrollId);
+    const snap = stored?.snapshot;
     if (!snap) return false;
     const referenciados = new Set((items || []).flatMap((it) => it.advanceIds || []));
     const siguen = (snap.advances || []).filter((a) => referenciados.has(a.id));
@@ -216,7 +217,7 @@ export async function syncSnapshotAfterRecalc(
       patch.cycles = withPaidPeriods([...keptCycles, ...addedCycles.filter((c) => !ya.has(c.id))], workdays);
     }
     if (snap.payroll && aggregates) patch.payroll = headerTotals(snap.payroll, aggregates, items);
-    await payrollSnapshotsService.update(payrollId, patch);
+    await writeStored(payrollId, { ...snap, ...patch }, stored);
     return true;
   } catch (err) {
     console.warn("No se pudo actualizar el snapshot al recalcular:", err);
@@ -232,7 +233,8 @@ export async function syncSnapshotAfterRecalc(
 // tira.
 export async function extendSnapshot(payrollId, { items, aggregates, cycles = [], workdays = [], advances = [], cycleLabors = [] }) {
   try {
-    const snap = await payrollSnapshotsService.getById(payrollId);
+    const stored = await readStored(payrollId);
+    const snap = stored?.snapshot;
     if (!snap) return false;
     const sumar = (antes, nuevos) => {
       const ya = new Set((antes || []).map((x) => x.id));
@@ -247,7 +249,7 @@ export async function extendSnapshot(payrollId, { items, aggregates, cycles = []
     if (workdays.length) patch.workdays = sumar(snap.workdays, workdays);
     if (advances.length) patch.advances = sumar(snap.advances, advances);
     if (snap.payroll && aggregates) patch.payroll = headerTotals(snap.payroll, aggregates, items);
-    await payrollSnapshotsService.update(payrollId, patch);
+    await writeStored(payrollId, { ...snap, ...patch }, stored);
     return true;
   } catch (err) {
     console.warn("No se pudo extender el snapshot de la nómina:", err);
@@ -262,12 +264,13 @@ export async function extendSnapshot(payrollId, { items, aggregates, cycles = []
 export async function refreshSnapshotLabors(payrollId, cycleLabors = []) {
   if (!cycleLabors.length) return false;
   try {
-    const snap = await payrollSnapshotsService.getById(payrollId);
+    const stored = await readStored(payrollId);
+    const snap = stored?.snapshot;
     if (!Array.isArray(snap?.cycles)) return false;
     const liveById = new Map(cycleLabors.map((c) => [c.id, c]));
     const cycles = snap.cycles.map((c) => withLiveLabors(c, liveById.get(c.id)));
     if (sameData(cycles, snap.cycles)) return false;
-    await payrollSnapshotsService.update(payrollId, { cycles });
+    await writeStored(payrollId, { ...snap, cycles }, stored);
     return true;
   } catch (err) {
     console.warn("No se pudieron poner al día las labores del snapshot:", err);

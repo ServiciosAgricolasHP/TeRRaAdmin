@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { payrollSnapshotsService } from "../../services";
 import { countRecordLogs } from "../../services/countsService";
+import { readStoredDocs } from "../../services/payrollSnapshotStore";
 import { listPayrolls } from "../../services/payrollsList";
 import { attempt } from "../../utils/attempt";
 import { MAX_DOC_BYTES, auditLogSizes, docSize, payrollSizeRows, sizeStatus } from "../../utils/docSizes";
 import { errorText } from "../../utils/errorText";
 import { fmtNumber } from "../../utils/format";
+import { SNAPSHOT_WORKDAYS, joinSnapshot, partIdOf } from "../../utils/snapshotParts";
 import { ConsoleCard } from "./ConsoleCard";
 
 const kb = (bytes) => `${fmtNumber(Math.round(bytes / 1024))} KB`;
@@ -25,8 +26,8 @@ function Status({ bytes, status }) {
 // Cuánto pesa cada nómina y cuánto pesaría el registro de auditoría de una
 // edición: Firestore no guarda un documento de más de 1 MiB, y un registro
 // que no cabe se pierde sin aviso (`services/logger.js`). La lista sale de la
-// copia de las nóminas; "🔍" lee el JSON de esa nómina y cuenta sus registros
-// (3 lecturas).
+// copia de las nóminas; "🔍" lee el JSON de esa nómina, con su cabecera y sus
+// partes, y cuenta sus registros (3 lecturas, más una por parte).
 export function PayrollSizesSection() {
   const [rows, setRows] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -46,14 +47,23 @@ export function PayrollSizesSection() {
   const inspect = async (row) => {
     setDetails((d) => ({ ...d, [row.id]: { busy: true } }));
     const { value, error: err } = await attempt(async () => {
-      const snap = await payrollSnapshotsService.getById(row.id);
+      const stored = await readStoredDocs(row.id);
       const [payrollLogs, snapshotLogs] = await Promise.all([countRecordLogs("payroll", row.id), countRecordLogs("payrollSnapshot", row.id)]);
       let snapshot = null;
-      if (snap) {
-        const { id, ...data } = snap;
-        const bytes = docSize(`payrollSnapshots/${id}`, data);
-        const logs = auditLogSizes("payrollSnapshot", id, data);
-        snapshot = { bytes, create: logs.create, edit: logs.edit, workdays: (data.workdays || []).length };
+      if (stored) {
+        const { header, parts } = stored;
+        const data = joinSnapshot(header, parts || []);
+        const partBytes = (parts || []).map((workdays, index) =>
+          docSize(`${SNAPSHOT_WORKDAYS}/${partIdOf(row.id, index)}`, { payrollId: row.id, index, workdays }),
+        );
+        const logs = auditLogSizes("payrollSnapshot", row.id, data);
+        snapshot = {
+          bytes: docSize(`payrollSnapshots/${row.id}`, header),
+          parts: parts ? partBytes.length : null,
+          heaviestPart: Math.max(0, ...partBytes),
+          edit: logs.edit,
+          workdays: (data.workdays || []).length,
+        };
       }
       return { snapshot, logs: { payroll: payrollLogs, snapshot: snapshotLogs } };
     });
@@ -73,7 +83,8 @@ export function PayrollSizesSection() {
         return [
           r.name, r.status === "paid" ? "pagada" : "pendiente", r.people, r.workdays,
           Math.round(r.bytes / 1024), Math.round(r.editLog / 1024), pct(r.editLog),
-          s ? Math.round(s.bytes / 1024) : "", s ? Math.round(s.edit / 1024) : "",
+          s ? Math.round(s.bytes / 1024) : "", s?.parts ?? "", s?.parts ? Math.round(s.heaviestPart / 1024) : "",
+          s ? Math.round(s.edit / 1024) : "",
           d?.logs ? d.logs.payroll : "", d?.logs ? d.logs.snapshot : "",
         ].join("\t");
       }),
@@ -129,7 +140,7 @@ export function PayrollSizesSection() {
                     </div>
                     <div className="basis-full sm:basis-auto">
                       {!d && (
-                        <button type="button" className={BTN} onClick={() => inspect(r)} title="Lee el JSON de la nómina y cuenta sus registros (3 lecturas)">
+                        <button type="button" className={BTN} onClick={() => inspect(r)} title="Lee el JSON de la nómina y cuenta sus registros (3 lecturas, más una por parte del JSON)">
                           🔍 JSON y registros
                         </button>
                       )}
@@ -139,7 +150,16 @@ export function PayrollSizesSection() {
                         <div className="tabular-nums">
                           {d.snapshot ? (
                             <>
-                              <div>JSON: <Status bytes={d.snapshot.bytes} status={sizeStatus(d.snapshot.bytes)} /></div>
+                              <div>
+                                {d.snapshot.parts === null ? "JSON en un documento" : "JSON, cabecera"}:{" "}
+                                <Status bytes={d.snapshot.bytes} status={sizeStatus(d.snapshot.bytes)} />
+                              </div>
+                              {d.snapshot.parts > 0 && (
+                                <div>
+                                  {fmtNumber(d.snapshot.parts)} {d.snapshot.parts === 1 ? "parte" : "partes"} de jornadas, la más pesada:{" "}
+                                  <Status bytes={d.snapshot.heaviestPart} status={sizeStatus(d.snapshot.heaviestPart)} />
+                                </div>
+                              )}
                               <div>JSON al editar: <Status bytes={d.snapshot.edit} status={sizeStatus(d.snapshot.edit)} /></div>
                             </>
                           ) : (

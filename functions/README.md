@@ -16,7 +16,8 @@ Hay siete tipos de job:
   actualiza si ya estaba: una ficha por RUT y por nómina en
   `portalPayslips/{rut}/payslips/{payrollId}`, sus RUT en `portalIndex` y la
   lista de publicadas en `portalMeta/current` (`portal.js`; Nómina → detalle →
-  🌐 Publicar en portal).
+  🌐 Publicar en portal). Lee el JSON de la nómina armado con sus partes de
+  jornadas (`payrollSnapshotWorkdays`), o entero si se guardó en un documento.
 - `unpublishPortal` retira una nómina del portal, con sus fichas; las demás
   publicadas siguen (Nómina → detalle → 🚫 Retirar del portal).
 - `backup` genera ahora un respaldo en JSON de la base, sin la auditoría

@@ -14,6 +14,7 @@ import {
   snapshotCycleOf,
   snapshotWorkdayOf,
   snapshotAdvanceOf,
+  readSnapshot,
 } from "../../src/services/payrollSnapshots";
 import {
   planAddWorkdays,
@@ -340,7 +341,7 @@ describe("agregar a una nómina pendiente", () => {
       advances: pendientes.map(snapshotAdvanceOf),
     });
 
-    const snap = await get("payrollSnapshots", id);
+    const snap = await readSnapshot({ id });
     expect(snap.cycles.map((c) => c.id)).toEqual([CICLO_A, CICLO_B]);
     expect(snap.cycles[0]).toEqual({ id: CICLO_A });
     expect(snap.cycles[1]).not.toHaveProperty("laborIds");

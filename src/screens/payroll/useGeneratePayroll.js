@@ -102,6 +102,7 @@ export function useGeneratePayroll({
     // La nómina ya creada, si se alcanzó a crear: una falla después de eso no
     // deja volver a apretar Guardar, que crearía otra.
     let createdId = null;
+    let snapshotSaved = true;
     const { error: err } = await attempt(async () => {
       // Los ciclos de la nómina y qué labores abarca cada uno, para que
       // Recalcular no traiga después lo que quedó afuera: los elegidos con
@@ -189,7 +190,7 @@ export function useGeneratePayroll({
       const fullSnapshot = { ...snapshot, payrollId: created.id };
 
       // Los tres pasos siguientes solo necesitan `created.id` y corren en paralelo:
-      //   • subir el snapshot (1 escritura, hasta 1 MB)       ~15% del progreso
+      //   • subir el JSON (cabecera y partes, en un lote)     ~15% del progreso
       //   • etiquetar jornadas (N updates, avance por chunk)  ~65%
       //   • aplicar anticipos (get M + batch update)          ~10%
       // El avance de las jornadas viene del callback; los otros dos solo
@@ -216,7 +217,7 @@ export function useGeneratePayroll({
       recompute();
 
       const pSnapshot = (async () => {
-        await saveSnapshot(created.id, fullSnapshot);
+        snapshotSaved = await saveSnapshot(created.id, fullSnapshot);
         snapshotDone = true;
         recompute();
       })();
@@ -249,6 +250,12 @@ export function useGeneratePayroll({
     setBusy(false);
     // Pequeño delay para que el "Listo ✓" sea visible un instante.
     setTimeout(() => setProgress(null), err ? 0 : 400);
+    if (!err && !snapshotSaved) {
+      toast.error("La nómina se generó, pero no se guardó su JSON: el detalle, la descarga y el portal no tendrán sus jornadas. Elimínala desde el historial y vuelve a generarla.", {
+        title: "Nómina sin JSON",
+        duration: 0,
+      });
+    }
     if (!err) return;
     console.error("[nómina] no se pudo generar:", err);
     if (!createdId) {

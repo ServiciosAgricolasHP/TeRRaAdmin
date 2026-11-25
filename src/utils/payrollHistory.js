@@ -119,14 +119,16 @@ function reviewLines(mark, keys, names) {
 const cycleLabelsOf = (details) => new Map((details || []).map((d) => [d.id, d.label || d.id]));
 
 // Lo que cambió en el JSON de la nómina: las personas, cuántas jornadas,
-// ciclos y anticipos entraron y salieron, y el total.
+// ciclos y anticipos entraron y salieron, y el total. Al crearlo, el registro
+// guarda la cabecera, sin las jornadas, y cuántas son en `meta`.
 function snapshotEntry(log, base) {
   if (log.action === "create") {
     const after = log.after || {};
+    const workdays = log.meta?.workdays ?? (after.workdays || []).length;
     return {
       ...base,
       title: "Generó el JSON de la nómina",
-      lines: [{ text: `${fmtNumber((after.workers || []).length)} personas · ${fmtNumber((after.workdays || []).length)} jornadas` }],
+      lines: [{ text: `${fmtNumber((after.workers || []).length)} personas · ${fmtNumber(workdays)} jornadas` }],
     };
   }
   if (log.action === "delete") return { ...base, title: "Eliminó el JSON de la nómina" };

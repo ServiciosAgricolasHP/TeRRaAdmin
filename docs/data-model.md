@@ -179,6 +179,8 @@ Configuración compartida de la nómina. **Un único doc `payrollConfig/main`**;
 
 ### `payrollSnapshots`
 Snapshot JSON de cada nómina, separado del documento de `payrolls` para no engordar la lista. Lo escribe la app al generar la nómina, lo pone al día al editarla mientras está pendiente (sacar o agregar a una persona, Recalcular, "✎ Editar ciclos") y lo consume el **portal de trabajadores** (read-only) para construir su resumen. Las formas de cada parte salen de `services/payrollSnapshots.js` (`snapshotCycleOf`, `snapshotWorkdayOf`, `snapshotAdvanceOf`).
+
+Este documento es la **cabecera**: todo menos las jornadas, que van en partes en `payrollSnapshotWorkdays`, así una nómina de temporada alta (3.000 jornadas, ~1,8 MB) no choca con el límite de 1 MiB de un documento. Cada escritura va en un lote, con la cabecera, sus partes y el borrado de las que sobran (`services/payrollSnapshotStore.js`); un cambio que no toca las jornadas escribe solo la cabecera. El cálculo de las partes, en `utils/snapshotParts.js`, con tests. Lo que se descarga, lo que muestra el detalle y lo que publica el portal es el JSON armado: la cabecera con `workdays` y sin `workdayParts`.
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | string | mismo id de la `payroll` (1:1) |
@@ -188,10 +190,21 @@ Snapshot JSON de cada nómina, separado del documento de `payrolls` para no engo
 | `payroll` | object | la cabecera: `name`, `format`, `classification`, `status` y los totales (`total`, `bankTotal`, `cashTotal`, `workerCount`, `bankCount`, `cashCount`, `advanceTotal`, `bonusTotal`, `payoutTotal`) |
 | `cycles` | array | cada ciclo de la nómina: su `id`, etiqueta, faena, subfaena y período (como `cycleDetails`, sin `laborIds`), más `labors` (id, nombre, tipo y su configuración de precios) y `dayPrices`. Al generar, las labores son las del ciclo; Recalcular y agregar a una persona las ponen al día y suman las que falten. Una labor que el ciclo ya no tiene queda |
 | `workers` | `PayrollItem[]` | mismo shape que `payrolls.items` |
-| `workdays` | array | las jornadas que paga, con su labor, fecha, cantidad y monto |
+| `workdayParts` | number | cuántas partes de jornadas tiene en `payrollSnapshotWorkdays` (`0` sin jornadas). Un JSON guardado antes del campo no lo trae y lleva sus jornadas en `workdays`; pasa a partes la primera vez que se escribe |
+| `workdays` | array | solo en un JSON sin `workdayParts`: las jornadas que paga, con su labor, fecha, cantidad y monto. En el JSON armado están siempre |
 | `advances` | array | los anticipos y bonos que aplica |
+| `createdAt`, `createdBy`, `updatedAt`, `updatedBy` | ts, string | |
 
 > Se baja como `.json` desde el detalle de la nómina (📥 Descargar → JSON).
+
+### `payrollSnapshotWorkdays`
+Las jornadas del JSON de una nómina (`payrollSnapshots`), en partes de hasta ~600 KB (`PART_BYTES`, unas 1.000 jornadas). Se escriben y se borran en el mismo lote que la cabecera; nunca se leen sin ella, que dice cuántas son.
+| Campo | Tipo | Notas |
+|---|---|---|
+| `id` (docId) | string | `{payrollId}__{index}` |
+| `payrollId` | ref→`payrolls` | |
+| `index` | number | el orden de la parte, desde `0` |
+| `workdays` | array | las jornadas de esta parte, con la forma de `snapshotWorkdayOf` y en su orden |
 
 ### `portalPayslips`
 Fichas de los trabajadores en el portal de trabajadores: **una por persona y por nómina publicada**, en `portalPayslips/{rut}/payslips/{payrollId}`. El documento `portalPayslips/{rut}` no existe: es solo el camino. Las escriben y borran solo los jobs `publishPortal` y `unpublishPortal` (`functions/portal.js`); sin sesión se leen las fichas de un RUT, y listarlas entre RUT queda para un admin (`firestore.rules`). La Consola las cuenta como grupo (`payslips`).

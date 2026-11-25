@@ -451,6 +451,25 @@ console.log("portal de trabajadores");
       logs.docs.some((d) => d.data().meta?.op === "unpublishPortal" && d.data().meta?.payrollId === "pay-old"),
   );
 
+  // El JSON con sus jornadas en partes: la cabecera dice cuántas son.
+  await db.collection("payrolls").doc("pay-44").set({ name: "Semana 44", status: "pending" });
+  const { workdays: _inline, ...pay42Header } = pay42;
+  await db.collection("payrollSnapshots").doc("pay-44").set({ ...pay42Header, payrollId: "pay-44", workdayParts: 2 });
+  await db.collection("payrollSnapshotWorkdays").doc("pay-44__0").set({ payrollId: "pay-44", index: 0, workdays: pay42.workdays.slice(0, 2) });
+  await db.collection("payrollSnapshotWorkdays").doc("pay-44__1").set({ payrollId: "pay-44", index: 1, workdays: pay42.workdays.slice(2) });
+  const parted = await publish("pay-44");
+  const anaParted = (await slip("11111111-1", "pay-44").get()).data();
+  const betoParted = (await slip("3333333-3", "pay-44").get()).data();
+  check(
+    "arma el JSON con sus partes de jornadas",
+    parted?.status === "done" && anaParted?.workdays?.map((w) => w.id).join(",") === "w1,w2" && betoParted?.workdays?.map((w) => w.id).join(",") === "w3",
+    parted,
+  );
+  await db.collection("payrollSnapshotWorkdays").doc("pay-44__1").delete();
+  const incomplete = await publish("pay-44");
+  check("un JSON al que le falta una parte no se publica", incomplete?.errorCode === "incomplete-snapshot", incomplete);
+  await unpublish("pay-44");
+
   const denied = await publish("pay-42", "verify-user");
   check("solo un admin publica", denied?.errorCode === "not-admin", denied);
   const deniedOut = await unpublish("pay-42", "verify-user");

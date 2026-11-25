@@ -1,13 +1,13 @@
 import { useState, useEffect, useEffectEvent } from "react";
-import { payrollSnapshotsService } from "../services";
 import { completeSnapshotLabors } from "../services/payrollSnapshots";
+import { readStored } from "../services/payrollSnapshotStore";
 
 // El snapshot JSON de una nómina, leído al abrirla, para el detalle por
-// trabajador (días pagados por ciclo, como en Trabajadores). Sin snapshot, el
-// detalle muestra solo las 4 métricas básicas. Si no hay doc aparte o falla la
-// lectura, usa el embebido en la nómina. Si a un ciclo le falta la labor de
-// alguna jornada, la toma del ciclo (`completeSnapshotLabors`), sin escribir.
-// Con `payroll` null no lee nada. `reload` lo vuelve a leer después de editar
+// trabajador (días pagados por ciclo, como en Trabajadores), armado con sus
+// partes. Sin snapshot, el detalle muestra solo las 4 métricas básicas. Si no
+// hay doc aparte o falla la lectura, usa el embebido en la nómina. Si a un
+// ciclo le falta la labor de alguna jornada, la toma del ciclo
+// (`completeSnapshotLabors`), sin escribir. Con `payroll` null no lee nada. `reload` lo vuelve a leer después de editar
 // la nómina; mientras tanto se sigue viendo el anterior.
 export function usePayrollSnapshot({ payroll }) {
   // `loaded.id` es la nómina para la que se leyó: mientras no sea la de ahora,
@@ -19,12 +19,8 @@ export function usePayrollSnapshot({ payroll }) {
   useEffect(() => {
     if (!payrollId) return;
     let cancelled = false;
-    payrollSnapshotsService.getById(payrollId)
-      .then((doc) => {
-        if (!doc) return embedded();
-        const { id: _omit, ...rest } = doc;
-        return rest;
-      })
+    readStored(payrollId)
+      .then((stored) => stored?.snapshot || embedded())
       .catch((err) => {
         console.warn("No se pudo cargar snapshot:", err);
         return embedded();

@@ -13,7 +13,7 @@ import {
 } from "../../src/services/advancesService";
 import { workdaysService } from "../../src/services";
 import { aggregateWorkerAmounts } from "../../src/utils/payroll";
-import { saveSnapshot, snapshotLaborsOf } from "../../src/services/payrollSnapshots";
+import { readSnapshot, saveSnapshot, snapshotLaborsOf } from "../../src/services/payrollSnapshots";
 import { allocateAdvances } from "../../src/utils/payrollItem";
 import { ANA, BETO, LABOR, FAENA, SUBFAENA, seedCycle, seedWorker, seedWorkday, seedAdvance, set, get, all } from "./helpers/seed";
 
@@ -506,7 +506,7 @@ describe("el snapshot de la nómina acompaña lo que se saca", () => {
 
     await sacar(id, new Map([[CICLO_A, true]]));
 
-    const snap = await get("payrollSnapshots", id);
+    const snap = await readSnapshot({ id });
     expect(snap.workers.map((w) => w.rut)).toEqual([BETO.id]);
     expect(snap.workdays.map((w) => w.id)).toEqual([diaBeto]);
     expect(snap.advances).toEqual([]);
