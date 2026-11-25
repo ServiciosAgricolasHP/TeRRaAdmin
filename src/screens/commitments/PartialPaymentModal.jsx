@@ -3,7 +3,7 @@ import Modal, { ModalCloseButton } from "../../components/Modal";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { useToast } from "../../contexts/ToastContext";
 import { addDebtPartialPayment, addPartialPayment, removePartialPayment } from "../../services/commitmentsService";
-import { isOpen, remainingOf, allocatePartialPayment } from "../../utils/commitments";
+import { allowsPartialPayments, isOpen, remainingOf, allocatePartialPayment, partialPaymentItems } from "../../utils/commitments";
 import { fmtCurrency } from "../../utils/format";
 import { fmtDate } from "./helpers";
 import { btnCls, primaryCls, labelCls, inputCls } from "./styles";
@@ -11,21 +11,19 @@ import { attempt } from "../../utils/attempt";
 import { errorText } from "../../utils/errorText";
 import AmountInput from "../../components/AmountInput";
 
-// Orden de una serie: por fecha y, a igual fecha, por número de cuota.
-const bySeriesOrder = (a, b) =>
-  a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : (a.installment?.n || 0) - (b.installment?.n || 0);
-
 const installmentLabel = (c) => (c.installment?.of ? `Cuota ${c.installment.n}/${c.installment.of}` : fmtDate(c.dueDate));
 
-// Abonos de una deuda personal: a una cuota o a toda la deuda (se reparte de
-// la cuota más antigua a la más nueva). Muestra lo abonado hasta ahora y deja
-// quitar un abono; uno a toda la deuda se quita entero.
+// Abonos de una deuda personal, a una cuota o a toda la deuda (se reparte de
+// la cuota más antigua a la más nueva), o de un pago comprometido, a ese
+// vencimiento. Muestra lo abonado hasta ahora y deja quitar un abono; uno a
+// toda la deuda se quita entero. Un tipo sin abonos que ya tiene alguno (se
+// cambió el tipo al editarlo) solo los muestra y los deja quitar.
 export function PartialPaymentModal({ item, items, today, onClose, onSaved }) {
   const toast = useToast();
-  const debt = (item.seriesId ? items.filter((c) => c.seriesId === item.seriesId) : items.filter((c) => c.id === item.id)).sort(
-    bySeriesOrder,
-  );
+  const debt = partialPaymentItems(item, items);
+  const isDebt = item.kind === "personalDebt";
   const open = debt.filter(isOpen);
+  const canAdd = allowsPartialPayments(item) && open.length > 0;
   const inSeries = debt.length > 1;
   const [target, setTarget] = useState(inSeries ? "debt" : item.id);
   const [date, setDate] = useState(today);
@@ -41,7 +39,7 @@ export function PartialPaymentModal({ item, items, today, onClose, onSaved }) {
   const available = targetItem ? remainingOf(targetItem) : totalRemaining;
   const allocation = target === "debt" && value > 0 ? allocatePartialPayment(debt, value).parts : [];
   const error = value > available ? `Es más que lo que falta (${fmtCurrency(available)})` : "";
-  const canSave = open.length > 0 && value > 0 && !!date && !error && (target === "debt" || isOpen(targetItem || {}));
+  const canSave = canAdd && value > 0 && !!date && !error && (target === "debt" || isOpen(targetItem || {}));
   // Un abono escrito y sin registrar.
   const dirty = !busy && (String(amount).trim() !== "" || notes.trim() !== "");
 
@@ -93,7 +91,7 @@ export function PartialPaymentModal({ item, items, today, onClose, onSaved }) {
       footer={
         <>
           <ModalCloseButton className={btnCls}>Cerrar</ModalCloseButton>
-          {open.length > 0 && (
+          {canAdd && (
             <button type="button" className={primaryCls} disabled={!canSave || busy} onClick={save}>
               {busy ? "Guardando…" : "Registrar abono"}
             </button>
@@ -103,7 +101,7 @@ export function PartialPaymentModal({ item, items, today, onClose, onSaved }) {
     >
       <div className="mb-4 grid grid-cols-3 gap-2 text-sm">
         {[
-          { label: "Deuda", value: totalOriginal },
+          { label: isDebt ? "Deuda" : "Monto", value: totalOriginal },
           { label: "Pagado", value: totalOriginal - totalRemaining },
           { label: "Falta", value: totalRemaining, strong: true },
         ].map((x) => (
@@ -114,8 +112,10 @@ export function PartialPaymentModal({ item, items, today, onClose, onSaved }) {
         ))}
       </div>
 
-      {open.length === 0 ? (
-        <p className="mb-4 text-sm text-[var(--color-muted)]">La deuda está pagada completa.</p>
+      {!canAdd ? (
+        <p className="mb-4 text-sm text-[var(--color-muted)]">
+          {!allowsPartialPayments(item) ? "Este tipo de documento no lleva abonos." : isDebt ? "La deuda está pagada completa." : "El pago está completo."}
+        </p>
       ) : (
         <div className="space-y-3">
           {inSeries && (
@@ -182,9 +182,11 @@ export function PartialPaymentModal({ item, items, today, onClose, onSaved }) {
               <div className="min-w-0 flex-1">
                 <div>
                   <span className="tabular-nums">{fmtDate(h.date)}</span> · <b className="tabular-nums">{fmtCurrency(h.amount)}</b>
-                  <span className="text-[var(--color-muted)]">
-                    {" "}· {h.payment.groupId ? `a toda la deuda (${h.parts.join(", ")})` : h.parts[0]}
-                  </span>
+                  {inSeries && (
+                    <span className="text-[var(--color-muted)]">
+                      {" "}· {h.payment.groupId ? `a toda la deuda (${h.parts.join(", ")})` : h.parts[0]}
+                    </span>
+                  )}
                 </div>
                 {h.notes && <div className="text-xs text-[var(--color-muted)]">{h.notes}</div>}
               </div>

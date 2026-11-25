@@ -27,6 +27,8 @@ import {
   partialPaidOf,
   remainingOf,
   allocatePartialPayment,
+  allowsPartialPayments,
+  partialPaymentItems,
   shiftMonths,
   withDayOfMonth,
   seriesRows,
@@ -434,6 +436,32 @@ describe("abonos", () => {
     ]);
     expect(leftover).toBe(0);
     expect(allocatePartialPayment(debt, 300).leftover).toBe(30);
+  });
+
+  it("se abona a una deuda personal o a un pago comprometido", () => {
+    expect(allowsPartialPayments({ kind: "personalDebt" })).toBe(true);
+    expect(allowsPartialPayments({ kind: "payment" })).toBe(true);
+    expect(allowsPartialPayments({ kind: "installment" })).toBe(false);
+    expect(allowsPartialPayments({ kind: "chequeIssued" })).toBe(false);
+    expect(allowsPartialPayments({ kind: "chequeReceived" })).toBe(false);
+  });
+
+  it("los abonos de una deuda personal en cuotas abarcan toda la deuda, en orden", () => {
+    const all = [
+      ...debt.map((c) => ({ ...c, kind: "personalDebt", seriesId: "s1" })),
+      { id: "otro", kind: "personalDebt", seriesId: "s2", status: "pending", dueDate: "2026-10-01", amount: 50 },
+    ];
+    expect(partialPaymentItems(all[0], all).map((c) => c.id)).toEqual(["q0", "q1", "q2", "q3"]);
+  });
+
+  it("los de un pago comprometido, también recurrente, solo ese vencimiento", () => {
+    const monthly = [
+      { id: "m1", kind: "payment", seriesId: "r1", status: "pending", dueDate: "2026-10-05", amount: 300 },
+      { id: "m2", kind: "payment", seriesId: "r1", status: "pending", dueDate: "2026-11-05", amount: 300 },
+    ];
+    expect(partialPaymentItems(monthly[1], monthly).map((c) => c.id)).toEqual(["m2"]);
+    const single = { id: "p1", kind: "payment", status: "pending", dueDate: "2026-10-05", amount: 300 };
+    expect(partialPaymentItems(single, [single, ...monthly]).map((c) => c.id)).toEqual(["p1"]);
   });
 
   it("los totales cuentan lo que falta, no el monto original", () => {
