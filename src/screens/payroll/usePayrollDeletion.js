@@ -3,6 +3,7 @@ import { untagWorkdaysFromPayroll, payrollsService } from "../../services/payrol
 import { clearAdvancePayouts, restoreAdvancesFromPayroll } from "../../services/advancesService";
 import { deleteSnapshot } from "../../services/payrollSnapshots";
 import { errorText } from "../../utils/errorText";
+import { payrollWorkdayIdsOf } from "../../utils/payroll";
 
 // Eliminar una nómina pendiente: suelta sus jornadas, devuelve sus anticipos y
 // bonos y borra su JSON antes de borrar el documento. Una nómina publicada en
@@ -35,7 +36,7 @@ export function usePayrollDeletion({ load, setProgress, toast, isPublished }) {
       return;
     }
     const id = confirmDelete.id;
-    const workdayIds = confirmDelete.workdayIds || [];
+    const workdayIds = payrollWorkdayIdsOf(confirmDelete);
     const advanceIds = confirmDelete.advanceIds || [];
     const payoutIds = (confirmDelete.items || []).flatMap((it) => (it.payoutApplications || []).map((p) => p.advanceId));
     setConfirmDelete(null);

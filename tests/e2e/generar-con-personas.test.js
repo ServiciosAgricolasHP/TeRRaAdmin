@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { payrollWorkdayIdsOf } from "../../src/utils/payroll";
 import { doc, updateDoc } from "firebase/firestore";
 import { db } from "../../src/firebase";
 import {
@@ -87,7 +88,7 @@ async function generar({ chosen = new Map(), people = [] }) {
     items,
     ...agg,
   });
-  await tagWorkdaysWithPayroll(agg.workdayIds, nomina.id);
+  await tagWorkdaysWithPayroll(payrollWorkdayIdsOf(agg), nomina.id);
   return { id: nomina.id, taken };
 }
 

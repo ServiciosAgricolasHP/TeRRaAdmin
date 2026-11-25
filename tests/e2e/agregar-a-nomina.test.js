@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { payrollWorkdayIdsOf } from "../../src/utils/payroll";
 import {
   payrollsService,
   tagWorkdaysWithPayroll,
@@ -66,7 +67,7 @@ async function nominaCon({ items, cycleDetails }) {
     items,
     ...agg,
   });
-  await tagWorkdaysWithPayroll(agg.workdayIds, nomina.id);
+  await tagWorkdaysWithPayroll(payrollWorkdayIdsOf(agg), nomina.id);
   return nomina.id;
 }
 

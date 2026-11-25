@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { payrollWorkdayIdsOf } from "../../src/utils/payroll";
 import {
   payrollsService,
   tagWorkdaysWithPayroll,
@@ -50,7 +51,7 @@ async function nominaConDosBolsas() {
     cycleIds: [CICLO],
     ...agg,
   });
-  await tagWorkdaysWithPayroll(agg.workdayIds, p.id);
+  await tagWorkdaysWithPayroll(payrollWorkdayIdsOf(agg), p.id);
   return p.id;
 }
 
@@ -104,7 +105,7 @@ describe("pago en dos tiempos", () => {
     const fechaBanco = await paidDe(ANA.id, "2026-03-02");
 
     const p = await get("payrolls", id);
-    await markPaid(id, p.workdayIds);
+    await markPaid(id, payrollWorkdayIdsOf(p));
 
     const final = await get("payrolls", id);
     expect(final.status).toBe("paid");
@@ -134,8 +135,8 @@ describe("pago en dos tiempos", () => {
     await markBankPaid(id);
     await setCashPaidRuts(id, [BETO.id]);
     const p = await get("payrolls", id);
-    await markPaid(id, p.workdayIds);
-    await markPending(id, p.workdayIds);
+    await markPaid(id, payrollWorkdayIdsOf(p));
+    await markPending(id, payrollWorkdayIdsOf(p));
 
     const final = await get("payrolls", id);
     expect(final.status).toBe("pending");
@@ -143,7 +144,7 @@ describe("pago en dos tiempos", () => {
     expect(final.cashPaidRuts).toEqual([]);
     // Solo los workdays de esta nómina: el escenario siembra uno más, de un
     // trabajador que nunca entró, y ese no tiene el campo.
-    for (const wdKey of final.workdayIds) {
+    for (const wdKey of payrollWorkdayIdsOf(final)) {
       expect((await get("workdays", wdKey)).paidAt).toBe(null);
     }
   });
@@ -151,7 +152,7 @@ describe("pago en dos tiempos", () => {
   it("no se puede marcar solo transferencias si ya está pagada entera", async () => {
     const id = await nominaConDosBolsas();
     const p = await get("payrolls", id);
-    await markPaid(id, p.workdayIds);
+    await markPaid(id, payrollWorkdayIdsOf(p));
     await expect(markBankPaid(id)).rejects.toThrow(/pagada/i);
   });
 });
@@ -244,7 +245,7 @@ describe("guards de edición con la nómina pagada entera", () => {
   it("pagada tampoco se agrega, ni se recalcula, ni se saca a nadie", async () => {
     const id = await nominaConDosBolsas();
     const p = await get("payrolls", id);
-    await markPaid(id, p.workdayIds);
+    await markPaid(id, payrollWorkdayIdsOf(p));
 
     await expect(
       addCyclesToPayroll(id, { items: p.items, cycleDetailsToAdd: [{ id: "ciclo-2", label: "x" }] }),

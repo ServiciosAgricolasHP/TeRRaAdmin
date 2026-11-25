@@ -3,6 +3,7 @@
 // fecha, 8; un mapa, la suma de sus claves (como texto) y sus valores; una
 // lista, la suma de sus valores. El documento suma además su nombre (cada id
 // de su ruta como texto, más 16) y 32. Firestore rechaza uno de más de 1 MiB.
+import { payrollWorkdayIdsOf } from "./payroll";
 
 export const MAX_DOC_BYTES = 1024 * 1024;
 
@@ -92,8 +93,7 @@ export function payrollSizeRows(payrolls) {
         name: data.name || id,
         status: data.status,
         people: items.length,
-        workdays: (data.workdayIds || []).length,
-        itemWorkdays: items.reduce((s, it) => s + (it.workdayIds || []).length, 0),
+        workdays: payrollWorkdayIdsOf(data).length,
         bytes,
         editLog: logs.edit,
         editStatus: sizeStatus(logs.edit),

@@ -5,6 +5,7 @@ import {
   splitBankAndCash,
   normalizeLeader,
   groupCashByLeader,
+  payrollWorkdayIdsOf,
 } from "./payroll";
 import { buildBchileRows } from "./bankFormats/pagoFacilBchile";
 
@@ -202,5 +203,19 @@ describe("normalizeLeader / groupCashByLeader", () => {
       { groupLeader: "A", amount: 500 },
     ]);
     expect(g.total).toBe(500);
+  });
+});
+
+describe("payrollWorkdayIdsOf", () => {
+  it("junta las jornadas de las personas, también la que no tiene ninguna", () => {
+    const payroll = { items: [{ workdayIds: ["a", "b"] }, { workdayIds: [] }, { workdayIds: ["c"] }], workdayIds: ["viejo"] };
+    expect(payrollWorkdayIdsOf(payroll)).toEqual(["a", "b", "c"]);
+    expect(payrollWorkdayIdsOf({ items: [{ workdayIds: [] }], workdayIds: ["viejo"] })).toEqual([]);
+  });
+
+  it("si ninguna persona trae la lista, usa la de la nómina", () => {
+    expect(payrollWorkdayIdsOf({ items: [{ rut: "1-9" }], workdayIds: ["a"] })).toEqual(["a"]);
+    expect(payrollWorkdayIdsOf({})).toEqual([]);
+    expect(payrollWorkdayIdsOf(null)).toEqual([]);
   });
 });

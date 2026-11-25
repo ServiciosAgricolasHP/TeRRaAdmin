@@ -51,10 +51,10 @@ describe("sizeStatus y payrollSizeRows", () => {
   it("ordena de la más pesada a la más liviana, con sus personas y jornadas", () => {
     const ids = (n) => Array.from({ length: n }, (_, i) => `ciclo__labor__11111111-1__2026-10-${String(i + 1).padStart(2, "0")}`);
     const rows = payrollSizeRows([
-      { id: "chica", name: "Chica", items: [{ workdayIds: ids(2) }], workdayIds: ids(2) },
-      { id: "grande", name: "Grande", items: [{ workdayIds: ids(20) }, { workdayIds: ids(10) }], workdayIds: ids(30) },
+      { id: "chica", name: "Chica", items: [{ workdayIds: ids(2) }] },
+      { id: "grande", name: "Grande", items: [{ workdayIds: ids(20) }, { workdayIds: ids(10) }] },
     ]);
-    expect(rows.map((r) => [r.id, r.people, r.workdays, r.itemWorkdays])).toEqual([["grande", 2, 30, 30], ["chica", 1, 2, 2]]);
+    expect(rows.map((r) => [r.id, r.people, r.workdays])).toEqual([["grande", 2, 30], ["chica", 1, 2]]);
     expect(rows[0].editLog).toBeGreaterThan(rows[0].bytes);
     expect(rows[0].editStatus).toBe("ok");
   });

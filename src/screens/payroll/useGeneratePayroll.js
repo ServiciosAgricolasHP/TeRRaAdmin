@@ -177,7 +177,6 @@ export function useGeneratePayroll({
         workerCount: totals.workerCount,
         bankCount: totals.bankCount,
         cashCount: totals.cashCount,
-        workdayIds: allWorkdayIds,
         advanceIds: allAdvanceIds,
         advanceTotal: totals.advanceTotal,
         hasSnapshot: true,

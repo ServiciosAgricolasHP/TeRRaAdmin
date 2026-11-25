@@ -136,7 +136,7 @@ La marca de una jornada eliminada, para que las copias de jornadas del navegador
 | `expiresAt` | ts | 30 días después. Para una política TTL de Firestore sobre este campo: las copias se releen enteras una vez por semana, así que una marca más vieja ya no sirve |
 
 ### `payrolls`
-Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
+Nómina = lote de pago. Agrupa las jornadas de sus personas (`items[].workdayIds`) y `advanceIds`.
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | string | autoId |
@@ -152,7 +152,7 @@ Nómina = lote de pago. Agrupa `workdayIds` y `advanceIds`.
 | `items` | `PayrollItem[]` | snapshot por trabajador |
 | `total`, `bankTotal`, `cashTotal` | number | |
 | `workerCount`, `bankCount`, `cashCount` | number | |
-| `workdayIds` | ref→`workdays`[] | |
+| `workdayIds` | ref→`workdays`[]? | solo en las nóminas guardadas antes: la unión de `items[].workdayIds`. No se escribe ni se lee: las jornadas de la nómina son las de sus personas (`payrollWorkdayIdsOf`, `utils/payroll.js`), y solo una nómina cuyas personas no traen `workdayIds` usa esta lista. Sin ella, una nómina de 250 personas y 3.000 jornadas pesa ~460 KB en vez de ~680 |
 | `advanceIds` | ref→`advances`[] | |
 | `advanceTotal` | number | |
 | `payoutCycleDetails` | `{ id, label, faenaId, faenaName, subfaenaId, subfaenaName }[]`? | los ciclos a los que se asocian las entregas de anticipos (`items[].payoutApplications[].cycleId`), con sus nombres al entregar. Pueden no estar en `cycleIds`. El resumen los usa para la fila de cada uno |
@@ -944,7 +944,7 @@ erDiagram
         string id PK
         string status
         array  cycleIds
-        array  workdayIds
+        array  items
         array  advanceIds
         number total
     }
@@ -1071,7 +1071,7 @@ erDiagram
 
 - **faena → subfaena → cycle**: jerarquía estricta. Un ciclo siempre tiene `subfaenaId`.
 - **cycle.labors[].workers[]**: array de RUTs (no es FK formal, pero apunta a `worker.id`).
-- **workday.payrollId**: tag inverso. Una nómina "reclama" sus workdays vía `workdayIds[]` y a la vez cada workday queda apuntando a la nómina.
+- **workday.payrollId**: tag inverso. Una nómina "reclama" sus workdays vía `items[].workdayIds` y a la vez cada workday queda apuntando a la nómina.
 - **advance.status / appliedPayrollId**: paralelo al de workdays — se "aplican" a una nómina y se "restauran" a `pending` si la nómina se borra.
 - **transport.paymentId ↔ transportPayment.tripIds**: misma idea de tag bidireccional para transportistas. Lo mismo un nivel más arriba con **transportPayment.payrollId ↔ transportPayroll.paymentIds**.
 - **Totales denormalizados (transporte)**: `transportPayments.total` y `transportPayrolls.total` son sumas guardadas, no calculadas al leer. El detalle imprimible suma las vueltas **en vivo**, mientras que el Balance de quincenas y la tarjeta de la quincena leen el campo — si divergen, es que algo escribió una vuelta sin propagar hacia arriba. La propagación vive en `transportsService.js` (`recalcPaymentTotal` → `recalcFortnightTotal`), disparada desde `tripsService.create/update/remove`, **no en las pantallas**. Los docs con `status: "paid"` quedan congelados y no se recalculan.

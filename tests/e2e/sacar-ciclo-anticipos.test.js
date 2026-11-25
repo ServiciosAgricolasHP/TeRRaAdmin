@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { payrollWorkdayIdsOf } from "../../src/utils/payroll";
 import {
   payrollsService,
   tagWorkdaysWithPayroll,
@@ -95,7 +96,7 @@ async function armarNomina(cycleIds, { nombre = "Nómina" } = {}) {
     cycleDetails: cycleIds.map((id) => ({ id, label: id })),
     ...agg,
   });
-  await tagWorkdaysWithPayroll(agg.workdayIds, nomina.id);
+  await tagWorkdaysWithPayroll(payrollWorkdayIdsOf(agg), nomina.id);
   await applyAdvancesToPayroll(
     items.flatMap((it) => it.advanceApplications),
     nomina.id,

@@ -49,6 +49,14 @@ export function validateAccountNumber(accountNumber, bankCode) {
   return null;
 }
 
+// Las jornadas que paga una nómina: las de sus personas (`items[].workdayIds`).
+// Si ninguna persona trae la lista, las de la nómina (`workdayIds`).
+export function payrollWorkdayIdsOf(payroll) {
+  const items = payroll?.items || [];
+  if (items.some((it) => Array.isArray(it?.workdayIds))) return items.flatMap((it) => it.workdayIds || []);
+  return payroll?.workdayIds || [];
+}
+
 export function splitBankAndCash(items) {
   const bank = [];
   const cash = [];

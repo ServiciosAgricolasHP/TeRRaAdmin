@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { payrollWorkdayIdsOf } from "../../src/utils/payroll";
 import { payrollsService, tagWorkdaysWithPayroll, recalcPayrollAggregates } from "../../src/services/payrollsService";
 import { planPayrollRecalc, applyPayrollRecalc } from "../../src/services/payrollRecalc";
 import { workdaysService } from "../../src/services";
@@ -63,7 +64,7 @@ async function armarNomina() {
     cycleDetails: [{ id: CICLO, label: CICLO }],
     ...agg,
   });
-  await tagWorkdaysWithPayroll(agg.workdayIds, nomina.id);
+  await tagWorkdaysWithPayroll(payrollWorkdayIdsOf(agg), nomina.id);
   const [vieja] = await copiaVieja();
   await saveSnapshot(nomina.id, {
     version: 1,
