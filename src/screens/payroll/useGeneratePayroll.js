@@ -1,10 +1,9 @@
 import { useState } from "react";
-import { installmentCandidatesOf, withoutInstallments, payrollItemOf, payrollTotalsOf } from "../../utils/payrollPreview";
+import { installmentCandidatesOf, withoutInstallments } from "../../utils/payrollPreview";
 import { isCashBank } from "../../utils/banks";
 import { validateAccountNumber, payrollSuggestedName } from "../../utils/payroll";
-import { newPayrollCycleDetails } from "../../utils/payrollItem";
+import { newPayrollDocs } from "../../utils/newPayroll";
 import { saveSnapshot } from "../../services/payrollSnapshots";
-import { snapshotCycleOf, snapshotWorkdayOf, snapshotAdvanceOf } from "../../utils/snapshotShapes";
 import { payrollsService, tagWorkdaysWithPayroll } from "../../services/payrollsService";
 import { applyAdvancesToPayroll } from "../../services/advancesService";
 import { attempt } from "../../utils/attempt";
@@ -105,84 +104,24 @@ export function useGeneratePayroll({
     let createdId = null;
     let snapshotSaved = true;
     const { error: err } = await attempt(async () => {
-      // Los ciclos de la nómina y qué labores abarca cada uno, para que
-      // Recalcular no traiga después lo que quedó afuera: los elegidos con
-      // alguna labor, y con `laborIds: []` los que traen las personas sueltas.
-      // El ciclo de una persona entra solo si ella quedó incluida. Los ciclos
-      // son los de la vista previa, ya con las labores de sus jornadas.
-      const cycles = previewCycleDocsRef.current || [];
-      const includedWorkdayIds = new Set(items.flatMap((p) => p.workdayIds || []));
-      const cycleDetails = newPayrollCycleDetails({
-        cycles,
-        chosen: chosenCycles,
-        workdays: (previewWorkdaysRef.current || []).filter((wd) => includedWorkdayIds.has(wd.id)),
-        faenas: jobs,
-        subfaenas: subjobs,
-      });
-      const cycleIds = cycleDetails.map((c) => c.id);
-      const cycleLabels = cycleDetails.map((c) => c.label);
-      const payrollCycleIds = new Set(cycleIds);
-
-      const cleanItems = items.map((p) => payrollItemOf(p, payrollCycleIds));
-
-      const allWorkdayIds = cleanItems.flatMap((p) => p.workdayIds);
-      const allAdvanceIds = cleanItems.flatMap((p) => p.advanceIds || []);
-      const allApplications = cleanItems.flatMap((p) => p.advanceApplications || []);
-      const totals = payrollTotalsOf(cleanItems);
       const finalName = payrollName || payrollSuggestedName();
-      const reviewedChecks = reviewedChecksFor(checks.reviewed, checks.alerts);
-
-      // Snapshot estático: todo lo necesario para volver a mostrar la nómina
-      // sin más lecturas ni depender de datos que pueden cambiar (detalle de
-      // jornadas, origen de los anticipos y configuración de las labores).
-      const wdIdSet = new Set(allWorkdayIds);
-      const advIdSet = new Set(allAdvanceIds);
-      const snapshot = {
-        version: 1,
+      const { payroll, snapshot, workdayIds: allWorkdayIds, applications: allApplications } = newPayrollDocs({
+        items,
+        cycles: previewCycleDocsRef.current || [],
+        chosenCycles,
+        workdays: previewWorkdaysRef.current || [],
+        advances: previewAdvancesRef.current || [],
+        jobs,
+        subjobs,
+        name: finalName,
+        bankFormatId: bankFormat.id,
+        classification: payrollClassification,
+        reviewedChecks: reviewedChecksFor(checks.reviewed, checks.alerts),
         generatedAt: new Date().toISOString(),
-        payroll: {
-          name: finalName,
-          format: bankFormat.id,
-          classification: payrollClassification || "nomina",
-          status: "pending",
-          total: totals.total, bankTotal: totals.bankTotal, cashTotal: totals.cashTotal,
-          workerCount: totals.workerCount,
-          bankCount: totals.bankCount,
-          cashCount: totals.cashCount,
-          advanceTotal: totals.advanceTotal,
-          bonusTotal: totals.bonusTotal,
-        },
-        cycles: cycleDetails.map((cd) => snapshotCycleOf(cd, cycles.find((c) => c.id === cd.id))),
-        workers: cleanItems,
-        workdays: (previewWorkdaysRef.current || [])
-          .filter((wd) => wdIdSet.has(wd.id))
-          .map(snapshotWorkdayOf),
-        advances: (previewAdvancesRef.current || [])
-          .filter((adv) => advIdSet.has(adv.id))
-          .map(snapshotAdvanceOf),
-      };
+      });
 
       setProgress({ step: "Creando registro de la nómina...", detail: "", percent: 5 });
-      const created = await payrollsService.create({
-        name: finalName,
-        format: bankFormat.id,
-        classification: payrollClassification || "nomina",
-        status: "pending",
-        cycleIds,
-        cycleLabels,
-        cycleDetails,
-        items: cleanItems,
-        total: totals.total,
-        bankTotal: totals.bankTotal,
-        cashTotal: totals.cashTotal,
-        workerCount: totals.workerCount,
-        bankCount: totals.bankCount,
-        cashCount: totals.cashCount,
-        advanceIds: allAdvanceIds,
-        advanceTotal: totals.advanceTotal,
-        hasSnapshot: true,
-        ...(reviewedChecks.length ? { reviewedChecks } : {}),
-      });
+      const created = await payrollsService.create(payroll);
       createdId = created.id;
 
       // Snapshot completo para guardar en `payrollSnapshots` (1:1 con payroll).
