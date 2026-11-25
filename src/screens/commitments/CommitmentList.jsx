@@ -1,5 +1,6 @@
 import RowMenu from "../../components/RowMenu";
 import {
+  allowsPartialPayments,
   kindMeta,
   partialPaidOf,
   isOpen,
@@ -69,13 +70,16 @@ export function CommitmentList({
     ].filter(Boolean);
     const recurring = c.seriesId && !c.installment?.of;
     const extras = [
-      c.kind === "personalDebt" &&
-        (open || partialPaidOf(c) > 0) && {
-          icon: "💵",
-          label: "Abonos",
-          hint: open ? "Pagar una parte, de esta cuota o de toda la deuda" : "Ver los abonos",
-          onClick: () => onPartialPayment(c),
-        },
+      ((allowsPartialPayments(c) && open) || partialPaidOf(c) > 0) && {
+        icon: "💵",
+        label: "Abonos",
+        hint: !allowsPartialPayments(c) || !open
+          ? "Ver los abonos"
+          : c.kind === "personalDebt"
+            ? "Pagar una parte, de esta cuota o de toda la deuda"
+            : "Pagar una parte de este vencimiento",
+        onClick: () => onPartialPayment(c),
+      },
       c.seriesId && {
         icon: "🗂",
         label: recurring ? "Ajustar todos los vencimientos" : "Ajustar todas las cuotas",

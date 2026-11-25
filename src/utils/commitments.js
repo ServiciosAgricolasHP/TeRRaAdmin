@@ -10,9 +10,9 @@ import { nameSimilarity } from "./similarity";
 export const COMMITMENT_KINDS = {
   chequeIssued: { label: "Cheque emitido", icon: "📤", direction: "out" },
   chequeReceived: { label: "Cheque recibido", icon: "📥", direction: "in" },
-  payment: { label: "Pago comprometido", icon: "📌", direction: "out" },
+  payment: { label: "Pago comprometido", icon: "📌", direction: "out", partialPayments: true },
   installment: { label: "Cuota de crédito", icon: "🏦", direction: "out" },
-  personalDebt: { label: "Deuda personal", icon: "🤝", direction: "out" },
+  personalDebt: { label: "Deuda personal", icon: "🤝", direction: "out", partialPayments: true },
 };
 
 export const kindMeta = (kind) => COMMITMENT_KINDS[kind] || COMMITMENT_KINDS.payment;
@@ -34,9 +34,10 @@ export const STATUS_LABELS = {
 const OPEN_STATUSES = new Set(["pending", "postponed", "protested"]);
 export const isOpen = (c) => OPEN_STATUSES.has(c?.status || "pending");
 
-// Abonos: pagos parciales de un vencimiento (hoy, de una deuda personal).
-// `amount` sigue siendo el monto original; lo que falta pagar de algo abierto
-// es ese monto menos lo abonado.
+// Abonos: pagos parciales de un vencimiento, en una deuda personal o un pago
+// comprometido. `amount` sigue siendo el monto original; lo que falta pagar de
+// algo abierto es ese monto menos lo abonado.
+export const allowsPartialPayments = (c) => !!kindMeta(c?.kind).partialPayments;
 export const partialPaidOf = (c) => (c?.partialPayments || []).reduce((s, a) => s + (Number(a.amount) || 0), 0);
 export const remainingOf = (c) => (isOpen(c) ? Math.max(0, (Number(c.amount) || 0) - partialPaidOf(c)) : 0);
 
@@ -491,6 +492,14 @@ export function buildPaymentReport(items, { today, includePaid = false, paidFrom
 
 const byDueThenN = (a, b) =>
   a.dueDate < b.dueDate ? -1 : a.dueDate > b.dueDate ? 1 : (a.installment?.n || 0) - (b.installment?.n || 0);
+
+// Los vencimientos que entran en los abonos de `item`, en orden: toda la deuda
+// personal en cuotas o, en lo demás, solo ese vencimiento. Un pago recurrente
+// no tiene término, así que un abono no se reparte entre sus vencimientos.
+export function partialPaymentItems(item, items) {
+  const series = item.kind === "personalDebt" && item.seriesId;
+  return (series ? items.filter((c) => c.seriesId === item.seriesId) : items.filter((c) => c.id === item.id)).sort(byDueThenN);
+}
 
 // Reparte un abono a toda la deuda entre sus vencimientos abiertos, del más
 // antiguo al más nuevo: cada uno recibe hasta lo que le falta. `closes` marca
