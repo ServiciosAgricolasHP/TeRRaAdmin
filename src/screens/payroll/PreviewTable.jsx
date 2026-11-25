@@ -13,6 +13,7 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import { rowFlag } from "./checkSeverity";
 import { ChecksButton, RowFlag } from "./CheckFlag";
 import AmountInput from "../../components/AmountInput";
+import { PayrollWeightBadge, PayrollWeightNotice } from "./PayrollWeightBadge";
 
 export function PreviewTable({
   rutOf,
@@ -29,6 +30,7 @@ export function PreviewTable({
   countSelected,
   cycleOptions = [],
   checks,
+  weight,
   onBack,
   onGenerate,
   busy,
@@ -151,6 +153,12 @@ export function PreviewTable({
               {totalAdvance > 0 && (
                 <span title="Anticipos descontados en esta nómina"> · ↩ {fmtCurrency(totalAdvance)}</span>
               )}
+              {weight && (
+                <>
+                  {" · "}
+                  <PayrollWeightBadge weight={weight} />
+                </>
+              )}
             </div>
           </div>
           <div
@@ -174,12 +182,14 @@ export function PreviewTable({
         </div>
         <button
           onClick={generate}
-          disabled={busy || countSelected === 0}
+          disabled={busy || countSelected === 0 || weight?.status === "over"}
           className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-fg)] disabled:opacity-50"
         >
           {busy ? "Generando..." : "Guardar nómina"}
         </button>
       </div>
+
+      {weight && <PayrollWeightNotice weight={weight} />}
 
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2">
         <input

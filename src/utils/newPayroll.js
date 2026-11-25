@@ -1,6 +1,7 @@
 // La nómina nueva y su JSON, como los guarda "Guardar nómina", armados desde
 // la vista previa: las filas incluidas (`items`), los ciclos, las jornadas y
 // los anticipos que leyó, y lo elegido.
+import { MAX_DOC_BYTES, docSize, sizeStatus } from "./docSizes";
 import { payrollItemOf, payrollTotalsOf } from "./payrollPreview";
 import { newPayrollCycleDetails } from "./payrollItem";
 import { snapshotAdvanceOf, snapshotCycleOf, snapshotWorkdayOf } from "./snapshotShapes";
@@ -96,3 +97,25 @@ export function newPayrollDocs({
   return { payroll, snapshot, workdayIds: allWorkdayIds, applications: allApplications };
 }
 
+// Lo que agrega cada escritura: quién y cuándo (`firestoreBase`,
+// `payrollsService`). Un id de Firestore tiene 20 caracteres y uno de cuenta, 28.
+const SAMPLE_ID = "x".repeat(20);
+const STAMPS = {
+  createdAt: new Date(0),
+  createdBy: "x".repeat(28),
+  updatedAt: new Date(0),
+  updatedBy: "x".repeat(28),
+  updatedByName: "x".repeat(40),
+};
+
+// Lo que pesarían la nómina y la cabecera de su JSON (`newPayrollDocs`)
+// contra el límite de un documento de Firestore. Las jornadas del JSON van en
+// partes aparte (`utils/snapshotParts.js`) y no cuentan. `bytes` es el más
+// pesado de los dos, `share` su parte del límite y `status`, su `sizeStatus`.
+export function newPayrollWeight({ payroll, snapshot }) {
+  const payrollBytes = docSize(`payrolls/${SAMPLE_ID}`, { ...payroll, ...STAMPS });
+  const { workdays: _parted, ...header } = snapshot;
+  const jsonBytes = docSize(`payrollSnapshots/${SAMPLE_ID}`, { ...header, payrollId: SAMPLE_ID, workdayParts: 0, ...STAMPS });
+  const bytes = Math.max(payrollBytes, jsonBytes);
+  return { payroll: payrollBytes, json: jsonBytes, bytes, share: bytes / MAX_DOC_BYTES, status: sizeStatus(bytes) };
+}
