@@ -21,6 +21,8 @@ Una nómina guarda los montos que tenía cada día al generarla. Si después se 
 
 Toca **Aplicar cambios** para guardarlo. Mientras compara y mientras guarda, una barra muestra en qué va. Recalcular también trae los días que se anotaron después en las labores de la nómina, y los nombres al día de los ciclos y de sus labores.
 
+Si hay anticipos o bonos pendientes que la nómina todavía no aplica, aparecen con una casilla y se aplican solo los marcados: ver [Elegir los anticipos y bonos al recalcular](/ayuda/anticipos-y-bonos#elegir-los-anticipos-y-bonos-al-recalcular).
+
 ## Agregar los días de una persona
 <!-- preguntas: se me olvidó una persona en la nómina; agregar a alguien a una nómina ya creada; sumar un trabajador a la nómina; agregar días a la nómina -->
 
@@ -33,7 +35,7 @@ Toca **Aplicar cambios** para guardarlo. Mientras compara y mientras guarda, una
 
 ![Los días de una persona](help/corregir-nomina/04-agregar-persona.webp)
 
-Si tiene anticipos o bonos pendientes, se descuentan o se suman al agregarla. Mientras guarda, una barra muestra en qué va.
+Si tiene anticipos o bonos pendientes, se descuentan o se suman al agregarla, salvo los que se dejaron fuera de esta nómina y los que tienen una fecha de inicio que no llega. Mientras guarda, una barra muestra en qué va.
 
 ## Agregar o sacar ciclos y labores
 <!-- preguntas: agregar un ciclo a la nómina; sumar otro ciclo a una nómina hecha; agregar una labor a la nómina; faltó un ciclo en la nómina; sacar un ciclo de la nómina; quitar una labor de la nómina; un ciclo no debía ir en la nómina; sacar días de la nómina; cambiar los ciclos de la nómina; cambiar una labor por otra -->
@@ -43,7 +45,7 @@ Si tiene anticipos o bonos pendientes, se descuentan o se suman al agregarla. Mi
 
 ![Un ciclo que sale y otro que entra sin una de sus labores](help/corregir-nomina/05-editar-ciclos.webp)
 
-3. Toca **Revisar cambios**. TeRRa muestra lo que entra y lo que sale, quién sale de la nómina, a quién le cambia el monto y quién entra. Toca **Aplicar cambios**.
+3. Toca **Revisar cambios**. TeRRa muestra lo que entra y lo que sale, quién sale de la nómina, a quién le cambia el monto y quién entra, y los anticipos y bonos pendientes para marcar los que se aplican. Toca **Aplicar cambios**.
 
 ![Cómo queda la nómina con los cambios](help/corregir-nomina/06-revisar-cambios.webp)
 
@@ -64,8 +66,9 @@ Tócala y confirma con **Sacar**. Mientras la saca, una barra muestra en qué va
 <!-- preguntas: qué pasa con los anticipos si corrijo la nómina; el anticipo no se descontó entero; anticipo vuelve a quedar pendiente -->
 
 - Si a alguien le baja lo que cobra y su anticipo ya no cabe entero, la parte que no cabe vuelve al mismo anticipo, con sus cuotas, para descontarse en la próxima nómina.
-- Al agregarle días a alguien, se le descuentan los anticipos pendientes que esta nómina todavía no le tocaba. Lo que ya descuenta de un anticipo no crece.
-- Quien entra a la nómina con un ciclo o una labor trae sus anticipos y bonos pendientes, como al generarla.
+- Al agregarle días a alguien, se le descuentan los anticipos pendientes que esta nómina todavía no le tocaba, salvo los que se dejaron fuera y los que esperan su fecha. Lo que ya descuenta de un anticipo no crece.
+- Al recalcular o cambiar los ciclos, los anticipos y bonos pendientes se marcan o desmarcan uno por uno, también los de quien entra a la nómina: ver [Elegir los anticipos y bonos al recalcular](/ayuda/anticipos-y-bonos#elegir-los-anticipos-y-bonos-al-recalcular).
+- Un anticipo o bono que la nómina no debía aplicar se quita sin sacar a la persona: ver [Quitar un anticipo o un bono de una nómina](/ayuda/anticipos-y-bonos#quitar-un-anticipo-o-un-bono-de-una-nomina).
 - Quien sale de la nómina recupera todos sus anticipos y bonos de esta nómina.
 - Un bono que ya aplicó la nómina se edita (monto y nota) sin sacar a la persona: ver [Editar un bono que ya aplicó la nómina](/ayuda/anticipos-y-bonos#editar-un-bono-que-ya-aplico-la-nomina).
 

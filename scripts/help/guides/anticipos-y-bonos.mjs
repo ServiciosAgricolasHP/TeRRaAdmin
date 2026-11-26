@@ -1,8 +1,9 @@
 // Capturas de la guía "Anticipos y bonos"
 // (src/screens/help/guides/anticipos-y-bonos.md): la lista con un anticipo en
-// cuotas, uno sin cuotas y un bono, el formulario, cómo los descuenta la
-// nómina, su lista en el detalle de la nómina y cómo se edita un bono ya
-// aplicado.
+// cuotas, uno sin cuotas y un bono, el formulario (con un anticipo que se
+// descuenta desde noviembre), cómo los descuenta la nómina, su lista en el
+// detalle de la nómina, cómo se edita un bono ya aplicado, cómo se quita un
+// anticipo de la nómina y cómo se eligen al recalcular.
 import { seedAdvances, seedCashWorkers } from "../seed.mjs";
 
 // El modal abierto con ese título.
@@ -33,10 +34,17 @@ export async function run({ page, base, login, shot }) {
   await form.getByPlaceholder(/Motivo, referencia/).fill("Compra de botas");
   await form.getByPlaceholder(/Motivo, referencia/).blur();
   await shot(page, "02-nuevo-anticipo", form, { pad: 0 });
-  await form.getByRole("button", { name: "Cancelar", exact: true }).click();
-  const discard = page.getByRole("button", { name: "Descartar cambios", exact: true });
-  if (await discard.isVisible().catch(() => false)) await discard.click();
+
+  // Que se descuente desde noviembre: se guarda, y la nómina de octubre no lo toca.
+  const fromLabel = form.getByText("Descontar desde (opcional)");
+  const fromInput = fromLabel.locator("xpath=..").locator("input[type=date]");
+  await fromInput.fill("2026-11-01");
+  await fromInput.blur();
+  await page.waitForTimeout(300);
+  await shot(page, "08-desde-una-fecha", fromLabel.locator("xpath=.."), { pad: 8, marks: [fromInput] });
+  await form.getByRole("button", { name: "Guardar", exact: true }).click();
   await form.waitFor({ state: "detached" });
+  await page.getByText("Compra de botas").first().waitFor();
 
   // La nómina los descuenta: la vista previa.
   await page.goto(`${base}/payroll`);
@@ -89,4 +97,28 @@ export async function run({ page, base, login, shot }) {
   await bonusModal.getByRole("button", { name: "Cancelar", exact: true }).click();
   const discardBonus = page.getByRole("button", { name: "Descartar cambios", exact: true });
   if (await discardBonus.isVisible().catch(() => false)) await discardBonus.click();
+  await bonusModal.waitFor({ state: "detached" });
+
+  // Quitar de la nómina el anticipo de Bruno.
+  const quitBox = list.locator("tr", { hasText: "Bruno Díaz Mella" }).getByRole("checkbox");
+  await quitBox.check();
+  const quitButton = list.getByRole("button", { name: /Quitar de la nómina/ });
+  await shot(page, "09-quitar-de-la-nomina", list, { pad: 0, marks: [quitBox, quitButton] });
+  await quitButton.click();
+  await page.getByRole("button", { name: "Quitar", exact: true }).click();
+  const done = page.getByText(/vuelve a quedar pendiente/).first();
+  await done.waitFor({ timeout: 60000 });
+  await list.getByRole("button", { name: "Cerrar", exact: true }).click();
+  await list.waitFor({ state: "detached" });
+  await done.waitFor({ state: "detached", timeout: 20000 }).catch(() => {});
+
+  // Recalcular: el anticipo quitado y el de noviembre vienen sin marcar.
+  await page.getByRole("button", { name: /Recalcular/ }).first().click();
+  const recalcModal = modal(page, "Recalcular nómina");
+  await recalcModal.waitFor({ timeout: 60000 });
+  const firstChoice = recalcModal.getByRole("checkbox").first();
+  await firstChoice.check();
+  await page.waitForTimeout(500);
+  await shot(page, "10-elegir-al-recalcular", recalcModal, { pad: 0, marks: [firstChoice] });
+  await recalcModal.getByRole("button", { name: "Cancelar", exact: true }).click();
 }
