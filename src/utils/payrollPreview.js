@@ -184,6 +184,22 @@ export function withoutInstallments(items, excludedIds) {
   });
 }
 
+// Los anticipos y bonos que la vista previa le sugería a alguien incluido y que
+// la nómina no aplica: la cuota desmarcada al guardar o lo bajado a $0. La
+// nómina los guarda en `skippedAdvanceIds`, y lo que la cambia después
+// (Recalcular, "✎ Editar ciclos", "+ Agregar persona") no los vuelve a aplicar
+// solo. Lo que el bruto no alcanzó a cubrir no está en lo sugerido y no cuenta.
+export function skippedAdvancesOf(items) {
+  const skipped = [];
+  for (const p of items || []) {
+    const kept = new Set([...(p.anticipoApplications || []), ...(p.bonoApplications || [])].map((x) => x.advanceId));
+    for (const x of [...(p.allocatedAdvances || []), ...(p.allocatedBonuses || [])]) {
+      if (x.amount > 0 && !kept.has(x.advanceId)) skipped.push(x.advanceId);
+    }
+  }
+  return [...new Set(skipped)];
+}
+
 // El item que se guarda en la nómina, con los montos enteros. `enLaNomina`:
 // los ids de los ciclos de la nómina; el de una persona suelta que se excluyó
 // en la vista previa no tiene columna.

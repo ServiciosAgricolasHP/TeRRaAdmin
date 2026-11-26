@@ -77,6 +77,25 @@ describe("newPayrollDocs", () => {
     expect(snapshot.generatedAt).toBe("2026-12-14T12:00:00.000Z");
   });
 
+  it("guarda los anticipos y bonos sugeridos que la nómina deja fuera, solo si hay", () => {
+    const data = preview(2, 1);
+    expect(docsOf(data).payroll).not.toHaveProperty("skippedAdvanceIds");
+    const [ana, beto] = data.items;
+    const items = [
+      // Su cuota se desmarcó al guardar: estaba sugerida y no quedó.
+      { ...ana, allocatedAdvances: [{ advanceId: "cuota", amount: 5000 }], anticipoApplications: [] },
+      // El bono se aplica y el anticipo se bajó a $0 en la vista previa.
+      {
+        ...beto,
+        allocatedAdvances: [{ advanceId: "ant", amount: 3000 }],
+        allocatedBonuses: [{ advanceId: "bono", amount: 2000 }],
+        anticipoApplications: [],
+        bonoApplications: [{ advanceId: "bono", amount: 2000 }],
+      },
+    ];
+    expect(docsOf({ ...data, items }).payroll.skippedAdvanceIds).toEqual(["cuota", "ant"]);
+  });
+
   it("guarda las revisadas solo si hay", () => {
     const reviewedChecks = [{ keys: ["firstPayment|1-9"], by: "u1" }];
     expect(docsOf(preview(1, 1), { reviewedChecks }).payroll.reviewedChecks).toEqual(reviewedChecks);

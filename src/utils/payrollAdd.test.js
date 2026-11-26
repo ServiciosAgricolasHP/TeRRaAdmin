@@ -570,6 +570,49 @@ describe("planAddWorkdays", () => {
     expect(plan.items).toHaveLength(1);
     expect(plan.items[0]).toMatchObject({ workerId: "W1", grossAmount: 25000, workdayIds: ["v1", "n1"] });
   });
+
+  it("un anticipo o bono con fecha de inicio después de hoy no se aplica, ni a quien está ni a quien entra", () => {
+    const items = [item({ gross: 100000, workdayIds: ["a1"] })];
+    const plan = planAddWorkdays({
+      items,
+      workdays: [wd("a2", { amount: 50000 }), wd("b1", { rut: "BEA", amount: 80000 })],
+      laborTypeById: tipos,
+      pendingAdvances: [
+        anticipo("dic", "ANA", 60000, { applyFrom: "2026-12-01" }),
+        anticipo("ya", "ANA", 20000, { applyFrom: "2026-11-01" }),
+        { ...bono("bonoDic", "BEA", 15000), applyFrom: "2026-12-01" },
+      ],
+      today: "2026-11-26",
+    });
+    expect(plan.newAdvanceApplications).toEqual([{ advanceId: "ya", amount: 20000 }]);
+    expect(plan.items.find((it) => it.rut === "ANA")).toMatchObject({ advance: 20000, amount: 130000 });
+    expect(plan.items.find((it) => it.rut === "BEA")).toMatchObject({ bonus: 0, amount: 80000, advanceIds: [] });
+  });
+
+  it("un anticipo que la nómina dejó fuera no se vuelve a aplicar", () => {
+    const items = [item({ gross: 100000, workdayIds: ["a1"] })];
+    const plan = planAddWorkdays({
+      items,
+      workdays: [wd("a2", { amount: 50000 })],
+      laborTypeById: tipos,
+      pendingAdvances: [anticipo("cuota", "ANA", 30000), anticipo("otro", "ANA", 10000)],
+      today: "2026-11-26",
+      skippedAdvanceIds: ["cuota"],
+    });
+    expect(plan.newAdvanceApplications).toEqual([{ advanceId: "otro", amount: 10000 }]);
+    expect(plan.items[0].advanceIds).toEqual(["otro"]);
+  });
+
+  it("desde la fecha de inicio el anticipo se aplica", () => {
+    const plan = planAddWorkdays({
+      items: [],
+      workdays: [wd("a1", { amount: 100000 })],
+      laborTypeById: tipos,
+      pendingAdvances: [anticipo("dic", "ANA", 60000, { applyFrom: "2026-12-01" })],
+      today: "2026-12-01",
+    });
+    expect(plan.newAdvanceApplications).toEqual([{ advanceId: "dic", amount: 60000 }]);
+  });
 });
 
 describe("workerDayRows", () => {

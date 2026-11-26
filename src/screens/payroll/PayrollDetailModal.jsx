@@ -47,6 +47,7 @@ import { useContentEdit } from "./payrollDetailModal/useContentEdit";
 import { useBonusChange } from "./payrollDetailModal/useBonusChange";
 import { BonusChangeModal } from "./payrollDetailModal/BonusChangeModal";
 import { useAdvancePayouts } from "./payrollDetailModal/useAdvancePayouts";
+import { useAdvanceRemoval } from "./payrollDetailModal/useAdvanceRemoval";
 import { AdvancePayoutModal } from "./payrollDetailModal/AdvancePayoutModal";
 import { usePayrollRecalc } from "./payrollDetailModal/usePayrollRecalc";
 import { usePayrollPrints } from "./payrollDetailModal/usePayrollPrints";
@@ -68,6 +69,24 @@ import { ChecksButton } from "./CheckFlag";
 const NO_LABORS = [];
 const NO_IDS = new Set();
 const NO_WORKDAYS = [];
+
+// El aviso antes de quitar de la nómina anticipos o bonos (`useAdvanceRemoval`).
+function removeAdvancesMessage(rows) {
+  const sum = (kind) => rows.filter((r) => r.kind === kind).reduce((s, r) => s + r.amount, 0);
+  const what =
+    rows.length === 1
+      ? `${rows[0].kind === "bono" ? "el bono" : "el anticipo"} de ${rows[0].name} (${fmtCurrency(rows[0].amount)})`
+      : [
+          sum("anticipo") > 0 ? `${fmtCurrency(sum("anticipo"))} en anticipos` : "",
+          sum("bono") > 0 ? `${fmtCurrency(sum("bono"))} en bonos` : "",
+        ]
+          .filter(Boolean)
+          .join(" y ");
+  return (
+    `La nómina deja de aplicar ${what}. ${rows.length === 1 ? "Vuelve a quedar pendiente" : "Vuelven a quedar pendientes"}, y al recalcular esta nómina ` +
+    `${rows.length === 1 ? "aparece" : "aparecen"} sin marcar. Quitar un anticipo sube el líquido de la persona; quitar un bono lo baja.`
+  );
+}
 
 export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, subfaenas, workers, allPayrolls = [], openWorkdays = NO_WORKDAYS, onClose, onRedownload, onDownloadBankFile, onDownloadSnapshot, bankFormatLabel = null, onPublishPortal = null, onUnpublishPortal = null, publishedPayrollIds = NO_IDS, onChanged }) {
   useReadSection("Detalle de nómina");
@@ -212,6 +231,11 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
     setPayoutOpen,
     setPayoutsToRemove,
   } = useAdvancePayouts({ payroll, onChanged: contentChanged, toast });
+  const { advancesToRemove, confirmRemoveAdvances, removalBusy, removalProgress, setAdvancesToRemove } = useAdvanceRemoval({
+    payroll,
+    onChanged: contentChanged,
+    toast,
+  });
 
   const { cycleTitleOverrides, displayCycleLabel, setCycleTitle } = useCycleTitles({ payroll });
 
@@ -290,7 +314,8 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
     recalcPreview,
     recalcProgress,
     setCyclesEditOpen,
-    setRecalcPreview,
+    closeRecalc,
+    toggleAdvanceChoice,
     startCycleEdit,
     startRecalc,
   } = usePayrollRecalc({
@@ -554,6 +579,7 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
                   onChangeBonus={openBonusChange}
                   canChangeBonus={canChangeBonus}
                   onRemovePayouts={isPending && !payroll.bankPaidAt ? setPayoutsToRemove : null}
+                  onRemoveAdvances={isPending && !payroll.bankPaidAt && !removalBusy ? setAdvancesToRemove : null}
                 />
 
                 {subfaenaSummary.rows.length > 0 && (
@@ -931,8 +957,9 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
       <RecalcModal
         preview={recalcPreview}
         busy={recalcBusy}
-        onClose={() => setRecalcPreview(null)}
+        onClose={closeRecalc}
         onConfirm={applyRecalc}
+        onToggleAdvance={toggleAdvanceChoice}
       />
       {bonusTarget && (
         <BonusChangeModal
@@ -968,7 +995,16 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
         onCancel={() => setPayoutsToRemove(null)}
         onConfirm={confirmRemovePayout}
       />
-      <ProgressOverlay info={recalcProgress || editProgress || bonusProgress || payoutProgress} />
+      <ConfirmDialog
+        open={!!advancesToRemove}
+        title="Quitar de la nómina"
+        message={advancesToRemove ? removeAdvancesMessage(advancesToRemove) : ""}
+        confirmLabel="Quitar"
+        danger
+        onCancel={() => setAdvancesToRemove(null)}
+        onConfirm={confirmRemoveAdvances}
+      />
+      <ProgressOverlay info={recalcProgress || editProgress || bonusProgress || payoutProgress || removalProgress} />
       <ConfirmDialog
         open={!!confirmRemove}
         title="Sacar trabajador de la nómina"

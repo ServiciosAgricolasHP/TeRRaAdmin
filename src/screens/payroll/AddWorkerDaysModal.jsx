@@ -14,6 +14,7 @@ import { formatWorkerDetailProd, workerDetailDateLabel } from "../../utils/worke
 import { attempt } from "../../utils/attempt";
 import { activeWorkers } from "../../utils/workerMerge";
 import { errorText } from "../../utils/errorText";
+import { localIsoDate } from "../../utils/dates";
 
 // Dígitos (y la K) de un RUT, para buscar sin puntos ni guion.
 function rutDigits(s) {
@@ -188,9 +189,11 @@ export function AddWorkerDaysModal({
       laborTypeById,
       pendingAdvances: persona.advances,
       profileFor: () => profileFor(worker),
+      today: localIsoDate(),
+      skippedAdvanceIds: payroll?.skippedAdvanceIds,
     });
     return plan.added.find((x) => x.key === persona.key) || null;
-  }, [generando, worker, data, secciones, selected, items, laborTypeById, profileFor, payrollId]);
+  }, [generando, worker, data, secciones, selected, items, laborTypeById, profileFor, payrollId, payroll]);
   const puedeConfirmar = generando ? elegidas.length > 0 : !!preview;
 
   const toggle = (key) => setSelected((prev) => {

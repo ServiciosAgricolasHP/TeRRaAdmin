@@ -23,6 +23,7 @@ import {
   applyAdvancesToPayroll,
   advanceRemaining,
   advanceSign,
+  advanceDueNow,
 } from "./advancesService";
 import { syncSnapshotAfterRecalc } from "./payrollSnapshots";
 import { snapshotCycleOf, snapshotLaborsOf, snapshotWorkdayOf, snapshotAdvanceOf } from "../utils/snapshotShapes";
@@ -46,6 +47,8 @@ import {
   cycleDetailChanges,
 } from "../utils/payrollItem";
 import { currentRutResolver } from "../utils/workerRut";
+import { holdReasonOf, nextSkippedIds, skippedIdsOf } from "../utils/advanceSchedule";
+import { localIsoDate } from "../utils/dates";
 
 // Los datos de cuenta y de grupo de la ficha de un trabajador, con la forma de
 // un item de nómina. Con estos entra quien se agrega a una nómina, y contra
@@ -75,28 +78,43 @@ const PROFILE_FIELDS = [
   { key: "groupLeader", label: "Grupo" },
 ];
 
-// Vista previa del recálculo. Trae las jornadas vigentes de los ciclos de la
-// nómina y de los que se agregan, de las labores que abarca después del cambio
-// (`inRecalcScope`), menos lo que se saca, y las compara con lo guardado:
-// ediciones o días nuevos, trabajadores nuevos con jornadas (entran con el
-// reparto completo, como al generar), anticipos o bonos cargados después,
-// datos de cuenta o grupo que cambiaron en la ficha, y el nombre, la faena, la
-// subfaena y el período de cada ciclo (`cycleChanges`, ver `withLiveNames` y
+// Vista previa del recálculo, en dos pasos: `readPayrollRecalc` lee lo que
+// hace falta y `buildPayrollRecalc` arma la vista previa sin leer nada, así
+// elegir qué anticipos y bonos se aplican no vuelve a leer. `planPayrollRecalc`
+// hace los dos, con la elección por defecto.
+//
+// Trae las jornadas vigentes de los ciclos de la nómina y de los que se
+// agregan, de las labores que abarca después del cambio (`inRecalcScope`),
+// menos lo que se saca, y las compara con lo guardado: ediciones o días
+// nuevos, trabajadores nuevos con jornadas (entran con el reparto completo,
+// como al generar), anticipos o bonos cargados después, datos de cuenta o
+// grupo que cambiaron en la ficha, y el nombre, la faena, la subfaena y el
+// período de cada ciclo (`cycleChanges`, ver `withLiveNames` y
 // `withPaidPeriods`). Si el bruto de alguien baja, lo ya descontado se
 // re-encaja y lo que no cabe vuelve al mismo anticipo; quien se queda sin
 // jornadas sale.
 //
 // `cycles`, `faenas`, `subfaenas` y `workers` son las listas ya cargadas en
 // pantalla; `removed` y `added`, lo que cambia en los ciclos (ver
-// `cycleEditDiff`, src/utils/payrollCycles.js). Devuelve `empty: true` si no
-// hay nada que cambiar. Tira si el cambio deja la nómina sin ciclos o sin
-// nadie: para eso se elimina la nómina.
+// `cycleEditDiff`, src/utils/payrollCycles.js). Tira si el cambio deja la
+// nómina sin ciclos o sin nadie: para eso se elimina la nómina.
 //
 // `onProgress(paso, hechos, total)` avisa el paso en curso: "workdays" (los
-// ciclos leídos de cuántos) y "advances".
-export async function planPayrollRecalc(
+// ciclos leídos de cuántos) y "advances". `today` ("YYYY-MM-DD") es el día en
+// que se recalcula, contra el que se mira la fecha de inicio de cada anticipo
+// o bono.
+export async function readPayrollRecalc(
   payroll,
-  { cycles = [], faenas = [], subfaenas = [], workers = [], removed = new Map(), added = new Map(), onProgress } = {},
+  {
+    cycles = [],
+    faenas = [],
+    subfaenas = [],
+    workers = [],
+    removed = new Map(),
+    added = new Map(),
+    onProgress,
+    today = localIsoDate(),
+  } = {},
 ) {
   const items = payroll.items || [];
   const cycleDetails = payroll.cycleDetails || [];
@@ -152,7 +170,6 @@ export async function planPayrollRecalc(
   const aggregates = aggregateWorkerAmounts(current, laborTypeById);
   const freshByKey = new Map(aggregates.map((a) => [a.workerId || a.rut, a]));
   const existingByKey = new Map(items.map((it) => [it.workerId || it.rut, it]));
-  const workerByKey = (key) => workers.find((w) => w.id === key) || workers.find((w) => w.rut === key);
   const rutOf = currentRutResolver(workers);
   const claveDe = (x) => rutOf(x.rut, x.workerId);
 
@@ -161,10 +178,73 @@ export async function planPayrollRecalc(
   const newWorkerAggs = aggregates.filter((a) => !existingByKey.has(a.workerId || a.rut));
 
   // Anticipos y bonos pendientes de todos los involucrados: uno creado
-  // después de generar la nómina se aplica acá, igual que al armarla.
+  // después de generar la nómina se ofrece acá, igual que al armarla.
   const allIds = [...items.map(claveDe), ...newWorkerAggs.map(claveDe)];
   onProgress?.("advances");
   const pendingAdvances = allIds.length ? await listPendingForWorkers(allIds) : [];
+
+  // Lo que la nómina ya descuenta, de quienes hay que re-encajar: los
+  // anticipos se leen solo de quienes cambian.
+  const appliedByAdvance = await readPayrollApplications(
+    payroll.id,
+    items
+      .filter((it) => recalcNeedsRefit(it, freshByKey.get(it.workerId || it.rut)))
+      .flatMap((it) => it.advanceIds || []),
+  );
+
+  return {
+    payroll,
+    faenas,
+    subfaenas,
+    workers,
+    today,
+    scope,
+    addedIds,
+    recalcCycleIds,
+    current,
+    released,
+    liveCycles,
+    freshByKey,
+    newWorkerAggs,
+    pendingAdvances,
+    appliedByAdvance,
+  };
+}
+
+const byNameAndDate = (a, b) => a.name.localeCompare(b.name, "es") || String(a.date).localeCompare(String(b.date));
+
+// La vista previa del recálculo, desde lo que leyó `readPayrollRecalc`, sin
+// leer nada. Devuelve `empty: true` si no hay nada que cambiar.
+//
+// Cada anticipo o bono pendiente que la nómina todavía no aplica a alguien que
+// queda en ella es una opción (`advanceChoices`), y se aplica salvo que su id
+// esté en `declined`. Sin `declined`, quedan sin aplicar los que la nómina
+// dejó fuera antes y los que no llegan a su fecha de inicio (`holdReasonOf`).
+// Lo que se decide queda en `skippedAdvanceIds`: lo que no se aplica se
+// suma, salvo lo que solo espera su fecha, y lo que se aplica sale.
+export function buildPayrollRecalc(inputs, { declined = null } = {}) {
+  const {
+    payroll,
+    faenas,
+    subfaenas,
+    workers,
+    today,
+    scope,
+    addedIds,
+    recalcCycleIds,
+    current,
+    released,
+    liveCycles,
+    freshByKey,
+    newWorkerAggs,
+    pendingAdvances,
+    appliedByAdvance,
+  } = inputs;
+  const items = payroll.items || [];
+  const cycleDetails = payroll.cycleDetails || [];
+  const skipped = skippedIdsOf(payroll);
+  const workerByKey = (key) => workers.find((w) => w.id === key) || workers.find((w) => w.rut === key);
+
   const advancesByKey = new Map();
   for (const adv of pendingAdvances) {
     // Un anticipo que esta nómina entrega no se descuenta en ella.
@@ -175,20 +255,9 @@ export async function planPayrollRecalc(
     else e.anticipos.push(adv);
     advancesByKey.set(key, e);
   }
-  const newAdvanceApplications = [];
-  const profileChanges = [];
-  const advanceChanges = [];
-  const updatedByKey = new Map();
 
   // Primero se achica: quien se quedó sin jornadas sale, y a quien sigue se
-  // le re-encaja lo ya descontado en su bruto nuevo. Los anticipos se leen
-  // solo de quienes cambian.
-  const appliedByAdvance = await readPayrollApplications(
-    payroll.id,
-    items
-      .filter((it) => recalcNeedsRefit(it, freshByKey.get(it.workerId || it.rut)))
-      .flatMap((it) => it.advanceIds || []),
-  );
+  // le re-encaja lo ya descontado en su bruto nuevo.
   const {
     patches,
     leaving: leavingWorkers,
@@ -196,6 +265,47 @@ export async function planPayrollRecalc(
     advanceTargets: refitTargets,
     amountChanges,
   } = planRecalcExisting({ items, freshByKey, appliedByAdvance });
+
+  // Las opciones: lo pendiente que la nómina todavía no le aplica a cada uno
+  // de los que quedan y de los que entran.
+  const advanceChoices = [];
+  const offer = (adv, { key, name }) => {
+    if (advanceRemaining(adv) <= 0) return;
+    const bono = advanceSign(adv) > 0;
+    advanceChoices.push({
+      advanceId: adv.id,
+      key,
+      name,
+      kind: bono ? "bono" : "anticipo",
+      date: adv.date || "",
+      note: adv.note || "",
+      amount: Math.round(bono ? advanceRemaining(adv) : advanceDueNow(adv)),
+      applyFrom: adv.applyFrom || "",
+      reason: holdReasonOf(adv, { skipped, today }),
+    });
+  };
+  for (const it of items) {
+    const key = it.workerId || it.rut;
+    if (leavingKeys.has(key)) continue;
+    const already = new Set(it.advanceIds || []);
+    const adv = advancesByKey.get(key) || { anticipos: [], bonos: [] };
+    for (const a of [...adv.bonos, ...adv.anticipos]) {
+      if (!already.has(a.id)) offer(a, { key, name: it.name || it.rut });
+    }
+  }
+  for (const a of newWorkerAggs) {
+    const key = a.workerId || a.rut;
+    const name = (workerByKey(key) || workers.find((x) => x.id === a.rut))?.name || "(sin nombre)";
+    const adv = advancesByKey.get(key) || { anticipos: [], bonos: [] };
+    for (const x of [...adv.bonos, ...adv.anticipos]) offer(x, { key, name });
+  }
+  const declinedIds = new Set(declined ?? advanceChoices.filter((c) => c.reason).map((c) => c.advanceId));
+  const applies = (a) => !declinedIds.has(a.id);
+
+  const newAdvanceApplications = [];
+  const profileChanges = [];
+  const advanceChanges = [];
+  const updatedByKey = new Map();
   const grownTargets = [];
 
   for (const it of items) {
@@ -206,14 +316,15 @@ export async function planPayrollRecalc(
     let patch = patches.get(key) || null;
 
     // Anticipos y bonos de alguien que YA está en la nómina, sobre lo que
-    // quedó después del re-encaje: los nuevos, y lo que crecen los que ya le
-    // descuenta si el bruto los había limitado (`advanceTopUps`). La base
-    // arranca de lo que ya se le descontó y acreditó (caso incremental de
-    // `allocateAdvances`).
+    // quedó después del re-encaje: los nuevos que se aplican, y lo que crecen
+    // los que ya le descuenta si el bruto los había limitado
+    // (`advanceTopUps`). La base arranca de lo que ya se le descontó y
+    // acreditó (caso incremental de `allocateAdvances`).
     const advForWorker = advancesByKey.get(key) || { anticipos: [], bonos: [] };
     const existingAdvIds = new Set(it.advanceIds || []);
-    const newAnticipos = advForWorker.anticipos.filter((a) => !existingAdvIds.has(a.id) && advanceRemaining(a) > 0);
-    const newBonos = advForWorker.bonos.filter((a) => !existingAdvIds.has(a.id) && advanceRemaining(a) > 0);
+    const isNew = (a) => !existingAdvIds.has(a.id) && advanceRemaining(a) > 0 && applies(a);
+    const newAnticipos = advForWorker.anticipos.filter(isNew);
+    const newBonos = advForWorker.bonos.filter(isNew);
     const base = patch || it;
     const topUps = advanceTopUps({
       item: it,
@@ -287,7 +398,7 @@ export async function planPayrollRecalc(
     const adv = advancesByKey.get(key) || { anticipos: [], bonos: [] };
     // Mismo reparto que al armar la nómina: bonos primero, anticipos después
     // topeados por bruto + bonos.
-    const reparto = allocateAdvances({ gross: grossInt, anticipos: adv.anticipos, bonos: adv.bonos });
+    const reparto = allocateAdvances({ gross: grossInt, anticipos: adv.anticipos.filter(applies), bonos: adv.bonos.filter(applies) });
     const { anticipoApplications, bonoApplications, anticiposTotal, bonosTotal } = reparto;
     const advanceApplications = [...anticipoApplications, ...bonoApplications];
     newAdvanceApplications.push(...advanceApplications);
@@ -330,6 +441,18 @@ export async function planPayrollRecalc(
     throw new Error("Eso deja la nómina sin nadie: para sacar todo, elimina la nómina.");
   }
 
+  // Cada opción, con lo que se le aplica: un anticipo elegido puede quedar
+  // en $0 si el bruto no alcanza.
+  const appliedById = new Map();
+  for (const x of newAdvanceApplications) appliedById.set(x.advanceId, (appliedById.get(x.advanceId) || 0) + x.amount);
+  const choices = advanceChoices
+    .map((c) => ({ ...c, chosen: !declinedIds.has(c.advanceId), applied: appliedById.get(c.advanceId) || 0 }))
+    .sort(byNameAndDate);
+  const skippedAdvanceIds = nextSkippedIds(payroll.skippedAdvanceIds, {
+    add: choices.filter((c) => !c.chosen && c.reason !== "deferred").map((c) => c.advanceId),
+    remove: choices.filter((c) => c.chosen).map((c) => c.advanceId),
+  });
+
   // Los ciclos quedan con sus nombres vigentes (ciclo, faena y subfaena) y con
   // el período de los días que la nómina paga después del recálculo: crece con
   // un día nuevo y se achica si sale uno.
@@ -353,6 +476,7 @@ export async function planPayrollRecalc(
     !profileChanges.length &&
     !newWorkers.length &&
     !advanceChanges.length &&
+    !choices.length &&
     !leavingWorkers.length &&
     !cycleChanges.length;
 
@@ -361,6 +485,8 @@ export async function planPayrollRecalc(
     amountChanges,
     profileChanges,
     advanceChanges,
+    advanceChoices: choices,
+    skippedAdvanceIds,
     newWorkers,
     leavingWorkers,
     mergedItems,
@@ -387,6 +513,12 @@ export async function planPayrollRecalc(
   };
 }
 
+// La vista previa del recálculo en un paso (`readPayrollRecalc` y
+// `buildPayrollRecalc`), con `declined` si se pasa.
+export async function planPayrollRecalc(payroll, { declined = null, ...opts } = {}) {
+  return buildPayrollRecalc(await readPayrollRecalc(payroll, opts), { declined });
+}
+
 // Guarda una vista previa de `planPayrollRecalc`. Mismo orden que "Generar":
 // primero el documento de la nómina (con sus ciclos después del cambio, con
 // sus nombres y su período al día), después las jornadas, los anticipos y el
@@ -410,14 +542,19 @@ export async function applyPayrollRecalc(payrollId, plan, onProgress) {
     cycleChanges = [],
     addedSnapshotCycles = [],
     cycleLabors = [],
+    skippedAdvanceIds = null,
   } = plan;
 
   const aggregates = recalcPayrollAggregates(items);
   const cyclesChanged = !!scope || cycleChanges.length > 0;
   const nextDetails = cyclesChanged ? cycleDetails || scope?.cycleDetails || null : null;
   const nextLabels = cyclesChanged ? cycleLabels || scope?.cycleLabels || null : null;
+  // Lo que la nómina deja fuera, si la elección lo cambió.
+  const skippedChanged =
+    skippedAdvanceIds && [...skippedAdvanceIds].sort().join(",") !== [...(p.skippedAdvanceIds || [])].sort().join(",");
   await payrollsService.update(payrollId, {
     ...aggregates,
+    ...(skippedChanged ? { skippedAdvanceIds } : {}),
     ...(scope ? { cycleIds: scope.cycleIds } : {}),
     ...(nextLabels ? { cycleLabels: nextLabels } : {}),
     ...(nextDetails ? { cycleDetails: nextDetails } : {}),

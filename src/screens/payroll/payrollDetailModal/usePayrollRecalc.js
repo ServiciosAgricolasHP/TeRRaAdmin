@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { planPayrollRecalc, applyPayrollRecalc } from "../../../services/payrollRecalc";
+import { readPayrollRecalc, buildPayrollRecalc, applyPayrollRecalc } from "../../../services/payrollRecalc";
 import { refreshSnapshotLabors } from "../../../services/payrollSnapshots";
 import { attempt } from "../../../utils/attempt";
 import { progressOf } from "./progressSteps";
@@ -7,6 +7,7 @@ import { errorText } from "../../../utils/errorText";
 
 const NO_CHANGES = new Map();
 const NO_LINES = [];
+const NO_IDS = [];
 
 // Los pasos de comparar y de aplicar, con el tramo de la barra de cada uno
 // (`progressOf`).
@@ -26,12 +27,22 @@ const APPLY_STEPS = {
 // "✎ Editar ciclos": la vista previa y su aplicación.
 export function usePayrollRecalc({ cycles, faenas, onChanged, payroll, subfaenas, toast, workers }) {
   // Recalcular: compara la nómina contra la producción vigente de sus ciclos
-  // y muestra los cambios antes de escribir (`planPayrollRecalc` en
-  // services/payrollRecalc.js). Con `removed` y `added` (lo elegido en
-  // "✎ Editar ciclos"), la nómina queda como si se hubiera armado con esos
-  // ciclos. `removalLines` y `additionLines` describen el cambio en la vista
-  // previa.
-  const [recalcPreview, setRecalcPreview] = useState(null);
+  // y muestra los cambios antes de escribir (`readPayrollRecalc` y
+  // `buildPayrollRecalc` en services/payrollRecalc.js). Con `removed` y
+  // `added` (lo elegido en "✎ Editar ciclos"), la nómina queda como si se
+  // hubiera armado con esos ciclos. `removalLines` y `additionLines` describen
+  // el cambio en la vista previa. Lo leído queda en `recalcRead`, y la vista
+  // previa se rearma sin leer cada vez que se marca o desmarca un anticipo o
+  // bono (`declined`: los ids que no se aplican).
+  const [recalcRead, setRecalcRead] = useState(null);
+  const [declined, setDeclined] = useState(NO_IDS);
+  const recalcPreview = recalcRead
+    ? {
+        ...buildPayrollRecalc(recalcRead.inputs, { declined }),
+        removalLines: recalcRead.removalLines,
+        additionLines: recalcRead.additionLines,
+      }
+    : null;
   const [recalcBusy, setRecalcBusy] = useState(false);
   // El gato con la barra (`ProgressOverlay`) mientras compara y mientras aplica.
   const [recalcProgress, setRecalcProgress] = useState(null);
@@ -46,7 +57,8 @@ export function usePayrollRecalc({ cycles, faenas, onChanged, payroll, subfaenas
     setRecalcProgress({ step: COMPARE_STEPS.workdays.step, detail: "", percent: 2 });
     const onProgress = (key, done, total) => setRecalcProgress((prev) => progressOf(COMPARE_STEPS, key, done, total) || prev);
     const { error: err } = await attempt(async () => {
-      const plan = await planPayrollRecalc(payroll, { cycles, faenas, subfaenas, workers, removed, added, onProgress });
+      const inputs = await readPayrollRecalc(payroll, { cycles, faenas, subfaenas, workers, removed, added, onProgress });
+      const plan = buildPayrollRecalc(inputs);
       if (plan.empty) {
         // Sin otros cambios, igual pone al día las labores del JSON: a una
         // nómina armada antes de crear una labor le puede faltar su nombre.
@@ -59,8 +71,9 @@ export function usePayrollRecalc({ cycles, faenas, onChanged, payroll, subfaenas
         );
         return;
       }
-      setRecalcPreview({
-        ...plan,
+      setDeclined(plan.advanceChoices.filter((c) => !c.chosen).map((c) => c.advanceId));
+      setRecalcRead({
+        inputs,
         removalLines: change?.removalLines || NO_LINES,
         additionLines: change?.additionLines || NO_LINES,
       });
@@ -70,6 +83,10 @@ export function usePayrollRecalc({ cycles, faenas, onChanged, payroll, subfaenas
     setRecalcBusy(false);
   };
   const startRecalc = () => computeRecalc(null);
+  const closeRecalc = () => setRecalcRead(null);
+  // Marca o desmarca un anticipo o bono de la vista previa.
+  const toggleAdvanceChoice = (advanceId) =>
+    setDeclined((prev) => (prev.includes(advanceId) ? prev.filter((id) => id !== advanceId) : [...prev, advanceId]));
   const startCycleEdit = (change) => computeRecalc(change);
 
   const applyRecalc = async () => {
@@ -83,7 +100,7 @@ export function usePayrollRecalc({ cycles, faenas, onChanged, payroll, subfaenas
       setRecalcProgress({ step: "Actualizando...", detail: "", percent: 95 });
       await onChanged?.();
       setRecalcProgress({ step: "Listo ✓", detail: "", percent: 100 });
-      setRecalcPreview(null);
+      setRecalcRead(null);
       setCyclesEditOpen(false);
       toast.success(cyclesChanged ? "Listo: los ciclos quedaron como los elegiste y la nómina quedó recalculada." : "Nómina recalculada.");
     });
@@ -98,9 +115,10 @@ export function usePayrollRecalc({ cycles, faenas, onChanged, payroll, subfaenas
     recalcBusy,
     recalcPreview,
     recalcProgress,
+    closeRecalc,
     setCyclesEditOpen,
-    setRecalcPreview,
     startCycleEdit,
     startRecalc,
+    toggleAdvanceChoice,
   };
 }

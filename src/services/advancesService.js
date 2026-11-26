@@ -12,6 +12,8 @@
 //   appliedPayrollId: string | null  (última nómina que lo tocó)
 //   appliedAt, appliedBy
 //   installments: { count, amount, cadence } | null  (solo anticipos; ver abajo)
+//   applyFrom: "YYYY-MM-DD" | null  (antes de esa fecha ninguna nómina lo
+//     aplica sola; ver utils/advanceSchedule.js)
 //   payoutPayrollId, payoutCycleId, payoutAt: la nómina que entrega el
 //     anticipo, el ciclo al que se asocia y cuándo (ver utils/advancePayouts.js)
 //

@@ -10,8 +10,9 @@ import { payoutRowsOf } from "../../../utils/advancePayouts";
 // van sin fecha ni nota. Con `onChangeBonus(item, bonusId)`, cada bono que se
 // puede cambiar (`canChangeBonus(item)`) lleva "✎ Editar"; con
 // `onRemovePayouts(rows)`, los anticipos entregados se marcan y se quitan
-// todos juntos con "✕ Quitar".
-export function AdvancesAndBonusesModal({ open, onClose, items, advances, grossTotal, total, onChangeBonus = null, canChangeBonus, onRemovePayouts = null }) {
+// todos juntos con "✕ Quitar"; con `onRemoveAdvances(rows)`, lo mismo con los
+// anticipos y bonos que la nómina aplica ("✕ Quitar de la nómina").
+export function AdvancesAndBonusesModal({ open, onClose, items, advances, grossTotal, total, onChangeBonus = null, canChangeBonus, onRemovePayouts = null, onRemoveAdvances = null }) {
   const itemOf = (rut) => items.find((it) => it.rut === rut);
   const payouts = payoutRowsOf(items);
   const payoutTotal = payouts.reduce((s, r) => s + r.amount, 0);
@@ -57,24 +58,69 @@ export function AdvancesAndBonusesModal({ open, onClose, items, advances, grossT
       </button>
     </div>
   );
-  const actionColumn = !!onChangeBonus || !!onRemovePayouts;
-  const bonusAction = onChangeBonus
-    ? (r) => {
-        const item = itemOf(r.rut);
-        if (!item || !canChangeBonus(item)) return null;
-        return (
-          <button
-            type="button"
-            onClick={() => onChangeBonus(item, r.advanceId)}
-            title="Editar el monto o la nota de este bono en la nómina"
-            className="min-h-8 whitespace-nowrap rounded-md border border-[var(--color-border)] px-2 text-xs hover:bg-[var(--color-accent-soft)]"
-          >
-            ✎ Editar
-          </button>
-        );
-      }
-    : null;
   const { advances: advanceRows, bonuses, advanceTotal, bonusTotal } = advancesAndBonusesOf(items, advances);
+  // Los anticipos y bonos marcados para quitar de la nómina, por persona y anticipo.
+  const [pickedAdvances, setPickedAdvances] = useState(NO_PICKS);
+  const keyOf = (r) => `${r.rut}|${r.advanceId}`;
+  const chosenAdvances = [
+    ...advanceRows.filter((r) => pickedAdvances.has(keyOf(r))).map((r) => ({ ...r, kind: "anticipo" })),
+    ...bonuses.filter((r) => pickedAdvances.has(keyOf(r))).map((r) => ({ ...r, kind: "bono" })),
+  ];
+  const toggleAdvance = (r) =>
+    setPickedAdvances((prev) => {
+      const k = keyOf(r);
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+  const removeBox = (r) => (
+    <label className="flex min-h-8 cursor-pointer items-center justify-end gap-1.5 text-xs" title="Marcar para quitarlo de la nómina">
+      <span className="text-[var(--color-muted)]">Quitar</span>
+      <input type="checkbox" checked={pickedAdvances.has(keyOf(r))} onChange={() => toggleAdvance(r)} className="h-4 w-4" />
+    </label>
+  );
+  const actionColumn = !!onChangeBonus || !!onRemovePayouts || !!onRemoveAdvances;
+  const wideAction = !!onChangeBonus && !!onRemoveAdvances;
+  const editButton = (r) => {
+    const item = itemOf(r.rut);
+    if (!onChangeBonus || !item || !canChangeBonus(item)) return null;
+    return (
+      <button
+        type="button"
+        onClick={() => onChangeBonus(item, r.advanceId)}
+        title="Editar el monto o la nota de este bono en la nómina"
+        className="min-h-8 whitespace-nowrap rounded-md border border-[var(--color-border)] px-2 text-xs hover:bg-[var(--color-accent-soft)]"
+      >
+        ✎ Editar
+      </button>
+    );
+  };
+  const bonusAction = onChangeBonus || onRemoveAdvances
+    ? (r) => (
+        <div className="flex items-center justify-end gap-1.5">
+          {editButton(r)}
+          {onRemoveAdvances && removeBox(r)}
+        </div>
+      )
+    : null;
+  const advanceAction = onRemoveAdvances ? removeBox : null;
+  const removeAdvancesBar = onRemoveAdvances && advanceRows.length + bonuses.length > 0 && (
+    <div className="flex flex-wrap items-center justify-end gap-2 text-xs">
+      <button
+        type="button"
+        disabled={chosenAdvances.length === 0}
+        onClick={() => {
+          onRemoveAdvances(chosenAdvances);
+          setPickedAdvances(NO_PICKS);
+        }}
+        title="Quitar de la nómina los anticipos y bonos marcados: vuelven a quedar pendientes y no se aplican solos al recalcularla"
+        className="min-h-8 rounded-md border border-[var(--color-danger)] px-2 text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:opacity-40"
+      >
+        ✕ Quitar de la nómina{chosenAdvances.length ? ` ${chosenAdvances.length}` : " los marcados"}
+      </button>
+    </div>
+  );
   return (
     <Modal
       open={open}
@@ -98,9 +144,10 @@ export function AdvancesAndBonusesModal({ open, onClose, items, advances, grossT
         <Figure label="Total a pagar" value={fmtCurrency(total)} tone="text-[var(--color-accent)]" />
       </div>
       <div className="space-y-4">
-        <AdjustmentList title="↩ Anticipos" rows={advanceRows} total={`− ${fmtCurrency(advanceTotal)}`} tone="text-[var(--color-warning)]" actionColumn={actionColumn} />
-        <AdjustmentList title="🎁 Bonos" rows={bonuses} total={`+ ${fmtCurrency(bonusTotal)}`} tone="text-[var(--color-success)]" action={bonusAction} actionColumn={actionColumn} />
-        <AdjustmentList title="💸 Anticipos entregados" rows={payouts} total={`+ ${fmtCurrency(payoutTotal)}`} tone="text-[var(--color-accent)]" action={payoutAction} actionColumn={actionColumn} />
+        <AdjustmentList title="↩ Anticipos" rows={advanceRows} total={`− ${fmtCurrency(advanceTotal)}`} tone="text-[var(--color-warning)]" action={advanceAction} actionColumn={actionColumn} wideAction={wideAction} />
+        <AdjustmentList title="🎁 Bonos" rows={bonuses} total={`+ ${fmtCurrency(bonusTotal)}`} tone="text-[var(--color-success)]" action={bonusAction} actionColumn={actionColumn} wideAction={wideAction} />
+        {removeAdvancesBar}
+        <AdjustmentList title="💸 Anticipos entregados" rows={payouts} total={`+ ${fmtCurrency(payoutTotal)}`} tone="text-[var(--color-accent)]" action={payoutAction} actionColumn={actionColumn} wideAction={wideAction} />
         {payoutHeader}
       </div>
     </Modal>
@@ -119,9 +166,10 @@ function Figure({ label, value, tone = "" }) {
 }
 
 // `actionColumn` deja la columna de la acción también en la lista que no la
-// usa, así las tablas quedan alineadas. En el teléfono, la fecha y la nota van
+// usa, así las tablas quedan alineadas; `wideAction`, más ancha, para el
+// "✎ Editar" de un bono con su casilla. En el teléfono, la fecha y la nota van
 // bajo el nombre.
-function AdjustmentList({ title, rows, total, tone, action = null, actionColumn = false }) {
+function AdjustmentList({ title, rows, total, tone, action = null, actionColumn = false, wideAction = false }) {
   if (rows.length === 0) return null;
   return (
     <section>
@@ -139,7 +187,7 @@ function AdjustmentList({ title, rows, total, tone, action = null, actionColumn 
               <th className="hidden w-28 px-2 py-1.5 text-left sm:table-cell">Fecha</th>
               <th className="hidden px-2 py-1.5 text-left sm:table-cell">Nota</th>
               <th className="w-24 px-2 py-1.5 text-right sm:w-28">Monto</th>
-              {actionColumn && <th className="w-[84px] px-2 py-1.5 sm:w-24" />}
+              {actionColumn && <th className={wideAction ? "w-[136px] px-2 py-1.5 sm:w-40" : "w-[84px] px-2 py-1.5 sm:w-24"} />}
             </tr>
           </thead>
           <tbody>

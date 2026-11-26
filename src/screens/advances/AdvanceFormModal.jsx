@@ -43,6 +43,7 @@ function advanceForm(item) {
     workerName: item?.workerName || "",
     amount: item?.amount || 0,
     date: item?.date || todayStr(),
+    applyFrom: item?.applyFrom || "",
     note: item?.note || "",
     useInstallments: !!item?.installments?.count,
     installmentCount: Number(item?.installments?.count) || 2,
@@ -69,6 +70,7 @@ export default function AdvanceFormModal({ open, item, items = [], onClose, onSa
     workerName: "",
     amount: 0,
     date: todayStr(),
+    applyFrom: "",
     note: "",
     useInstallments: false,
     installmentCount: 2,
@@ -101,6 +103,8 @@ export default function AdvanceFormModal({ open, item, items = [], onClose, onSa
         workerName: form.workerName,
         amount: newAmount,
         date: form.date,
+        // Antes de esta fecha ninguna nómina lo aplica sola (utils/advanceSchedule.js).
+        applyFrom: form.applyFrom || null,
         // La nota de un anticipo o bono va como título ("Bono Producción Octubre").
         note: toTitleName(form.note || ""),
         status,
@@ -302,6 +306,23 @@ export default function AdvanceFormModal({ open, item, items = [], onClose, onSa
               className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
             />
           </div>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-[var(--color-muted)]">
+            {form.type === "bono" ? "Pagar desde" : "Descontar desde"} (opcional)
+          </label>
+          <input
+            type="date"
+            value={form.applyFrom}
+            onChange={(e) => setForm((f) => ({ ...f, applyFrom: e.target.value }))}
+            className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm outline-none focus:border-[var(--color-accent)]"
+          />
+          <p className="mt-1 text-[11px] text-[var(--color-muted)]">
+            {form.applyFrom
+              ? `Las nóminas que se armen antes de esa fecha no lo ${form.type === "bono" ? "pagan" : "descuentan"} solas.`
+              : `Sin fecha, lo ${form.type === "bono" ? "paga" : "descuenta"} la próxima nómina.`}
+          </p>
         </div>
 
         {form.type === "anticipo" && !isEdit && (

@@ -12,6 +12,7 @@ const {
   previewItemsOf,
   withPreviewEdit,
   withoutInstallments,
+  skippedAdvancesOf,
 } = await import("./payrollPreview");
 
 const workers = [
@@ -161,6 +162,23 @@ describe("cuotas", () => {
     expect(ana.anticipoApplications).toEqual([{ advanceId: "N1", amount: 3000 }]);
     expect([ana.advance, ana.anticiposTotal, ana.amount]).toEqual([3000, 3000, 48000]);
     expect(beto).toBe(items[1]);
+  });
+
+  it("la cuota excluida queda entre las que la nómina deja fuera", () => {
+    const rows = items.map((p) => ({ ...p, allocatedAdvances: p.anticipoApplications }));
+    expect(skippedAdvancesOf(withoutInstallments(rows, ["Q1"]))).toEqual(["Q1"]);
+    expect(skippedAdvancesOf(rows)).toEqual([]);
+  });
+
+  it("un anticipo bajado a parte no cuenta como dejado fuera; bajado a $0, sí", () => {
+    const [ana] = previewItemsOf({
+      aggregates: [agg("A", 100000)],
+      workers,
+      payrollCycles: [],
+      pendingAdvances: [{ id: "X", workerRut: "A", workerId: "A", type: "anticipo", amount: 40000, amountPaid: 0, date: "2026-01-01" }],
+    });
+    expect(skippedAdvancesOf([withPreviewEdit(ana, { advance: 10000 })])).toEqual([]);
+    expect(skippedAdvancesOf([withPreviewEdit(ana, { advance: 0 })])).toEqual(["X"]);
   });
 });
 
