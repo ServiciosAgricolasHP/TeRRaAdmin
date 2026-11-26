@@ -25,6 +25,7 @@ import ScreenLoader from "../components/ScreenLoader";
 import { fmtCurrency } from "../utils/format";
 import AdvanceFormModal from "./advances/AdvanceFormModal";
 import { PayoutBadge } from "./advances/PayoutBadge";
+import { ApplyFromBadge } from "./advances/ApplyFromBadge";
 import { attempt } from "../utils/attempt";
 import { errorText } from "../utils/errorText";
 import { ADVANCE_SORTS, DEFAULT_ADVANCE_SORT, isAdvanceSort, sortAdvances } from "../utils/advanceSort";
@@ -318,6 +319,7 @@ export default function Advances() {
                         {ADVANCE_STATUS_LABEL[status]}
                       </span>
                       {a.payoutPayrollId && <PayoutBadge advance={a} />}
+                      <ApplyFromBadge advance={a} />
                     </div>
                   </div>
                   {a.note && (
@@ -413,6 +415,7 @@ export default function Advances() {
                       {ADVANCE_STATUS_LABEL[a.status || "pending"]}
                     </span>
                     {a.payoutPayrollId && <PayoutBadge advance={a} />}
+                    <ApplyFromBadge advance={a} />
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex justify-end gap-1">

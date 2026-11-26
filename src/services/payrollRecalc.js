@@ -46,6 +46,8 @@ import {
   cycleDetailChanges,
 } from "../utils/payrollItem";
 import { currentRutResolver } from "../utils/workerRut";
+import { isDeferred } from "../utils/advanceSchedule";
+import { localIsoDate } from "../utils/dates";
 
 // Los datos de cuenta y de grupo de la ficha de un trabajador, con la forma de
 // un item de nómina. Con estos entra quien se agrega a una nómina, y contra
@@ -93,10 +95,21 @@ const PROFILE_FIELDS = [
 // nadie: para eso se elimina la nómina.
 //
 // `onProgress(paso, hechos, total)` avisa el paso en curso: "workdays" (los
-// ciclos leídos de cuántos) y "advances".
+// ciclos leídos de cuántos) y "advances". `today` ("YYYY-MM-DD") es el día en
+// que se recalcula: un anticipo o bono con fecha de inicio después no se
+// aplica (`isDeferred`).
 export async function planPayrollRecalc(
   payroll,
-  { cycles = [], faenas = [], subfaenas = [], workers = [], removed = new Map(), added = new Map(), onProgress } = {},
+  {
+    cycles = [],
+    faenas = [],
+    subfaenas = [],
+    workers = [],
+    removed = new Map(),
+    added = new Map(),
+    onProgress,
+    today = localIsoDate(),
+  } = {},
 ) {
   const items = payroll.items || [];
   const cycleDetails = payroll.cycleDetails || [];
@@ -212,8 +225,9 @@ export async function planPayrollRecalc(
     // `allocateAdvances`).
     const advForWorker = advancesByKey.get(key) || { anticipos: [], bonos: [] };
     const existingAdvIds = new Set(it.advanceIds || []);
-    const newAnticipos = advForWorker.anticipos.filter((a) => !existingAdvIds.has(a.id) && advanceRemaining(a) > 0);
-    const newBonos = advForWorker.bonos.filter((a) => !existingAdvIds.has(a.id) && advanceRemaining(a) > 0);
+    const isNew = (a) => !existingAdvIds.has(a.id) && advanceRemaining(a) > 0 && !isDeferred(a, today);
+    const newAnticipos = advForWorker.anticipos.filter(isNew);
+    const newBonos = advForWorker.bonos.filter(isNew);
     const base = patch || it;
     const topUps = advanceTopUps({
       item: it,
@@ -287,7 +301,8 @@ export async function planPayrollRecalc(
     const adv = advancesByKey.get(key) || { anticipos: [], bonos: [] };
     // Mismo reparto que al armar la nómina: bonos primero, anticipos después
     // topeados por bruto + bonos.
-    const reparto = allocateAdvances({ gross: grossInt, anticipos: adv.anticipos, bonos: adv.bonos });
+    const due = (a) => !isDeferred(a, today);
+    const reparto = allocateAdvances({ gross: grossInt, anticipos: adv.anticipos.filter(due), bonos: adv.bonos.filter(due) });
     const { anticipoApplications, bonoApplications, anticiposTotal, bonosTotal } = reparto;
     const advanceApplications = [...anticipoApplications, ...bonoApplications];
     newAdvanceApplications.push(...advanceApplications);

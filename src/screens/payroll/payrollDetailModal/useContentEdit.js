@@ -12,6 +12,7 @@ import { workerKeys } from "../../../services/workersService";
 import { attempt } from "../../../utils/attempt";
 import { progressOf } from "./progressSteps";
 import { errorText } from "../../../utils/errorText";
+import { localIsoDate } from "../../../utils/dates";
 
 // Lo que pasó con la plata al agregar algo a una nómina, para el aviso.
 function additionSummary(lead, added = []) {
@@ -125,6 +126,7 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
         laborTypeById,
         pendingAdvances: person.advances,
         profileFor: () => liveProfileOf(worker),
+        today: localIsoDate(),
       });
 
       const alreadyInIds = new Set([...cycleDetails.map((c) => c.id), ...(payroll.cycleIds || [])]);

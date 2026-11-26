@@ -23,6 +23,7 @@
 // la base ni los alcanza ningún descuento.
 import { advanceRemaining, advanceDueNow, advanceSign } from "../services/advancesService";
 import { aggregateWorkerAmounts, workdayPayAmount } from "./payroll";
+import { isDeferred } from "./advanceSchedule";
 
 const porFechaAsc = (a, b) => {
   const da = a?.date || "";
@@ -656,7 +657,9 @@ export function mergeCycleDetails(existing = [], toAdd = []) {
 // `advanceTargets` trae el monto final de los anticipos que crecen
 // (`topUpTargets`); `newAdvanceApplications`, los que se aplican por primera
 // vez. `profileFor(agg)` devuelve los datos de cuenta y de grupo de la ficha
-// del trabajador, o `null` si no está en el catálogo.
+// del trabajador, o `null` si no está en el catálogo. `today` ("YYYY-MM-DD")
+// es el día en que se agrega: un anticipo o bono con fecha de inicio después
+// no se aplica (`isDeferred`).
 export function planAddWorkdays({
   payrollId,
   items = [],
@@ -664,6 +667,7 @@ export function planAddWorkdays({
   laborTypeById = new Map(),
   pendingAdvances = [],
   profileFor = () => null,
+  today,
 }) {
   // Una persona puede venir partida en varios agregados: sus jornadas viejas
   // guardan el rut que tenía entonces. Se juntan con la misma clave que usan
@@ -692,6 +696,9 @@ export function planAddWorkdays({
     pendientesPorClave.set(key, e);
   }
 
+  // Lo que se aplica nuevo: no un anticipo o bono con fecha de inicio después
+  // de `today`. Los que ya descuenta la nómina pueden crecer igual.
+  const aplicable = (x) => !isDeferred(x, today);
   const limpio = (x) => ({ advanceId: x.advanceId, amount: Math.round(Number(x.amount) || 0) });
   const out = [...items];
   const posicion = new Map(out.map((it, i) => [it.workerId || it.rut, i]));
@@ -708,7 +715,7 @@ export function planAddWorkdays({
     if (i != null) {
       const it = out[i];
       const yaTocados = new Set(it.advanceIds || []);
-      const nuevos = (xs) => xs.filter((x) => !yaTocados.has(x.id) && advanceRemaining(x) > 0);
+      const nuevos = (xs) => xs.filter((x) => !yaTocados.has(x.id) && advanceRemaining(x) > 0 && aplicable(x));
       const gross = brutoDe(it) + suma;
       const byCycle = { ...(it.byCycle || {}) };
       for (const [cid, monto] of Object.entries(a.byCycle)) {
@@ -755,7 +762,11 @@ export function planAddWorkdays({
     }
 
     const perfil = profileFor(a) || {};
-    const reparto = allocateAdvances({ gross: suma, anticipos: pendientes.anticipos, bonos: pendientes.bonos });
+    const reparto = allocateAdvances({
+      gross: suma,
+      anticipos: pendientes.anticipos.filter(aplicable),
+      bonos: pendientes.bonos.filter(aplicable),
+    });
     const ant = reparto.anticipoApplications.map(limpio);
     const bon = reparto.bonoApplications.map(limpio);
     const ahora = [...ant, ...bon];
