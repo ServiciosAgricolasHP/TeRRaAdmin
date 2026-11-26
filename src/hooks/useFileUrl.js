@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fileUrl } from "../../services/storageFiles";
+import { fileUrl } from "../services/storageFiles";
 
 // El enlace de un adjunto, pedido a Storage al mostrarse (`fileUrl` guarda los
 // ya pedidos). Mientras llega, `url` va vacío; `failed` si Storage no lo

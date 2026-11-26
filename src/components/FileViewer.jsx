@@ -1,10 +1,10 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import Modal, { ModalCloseButton } from "../../components/Modal";
-import { useIsMobile } from "../../hooks/useIsMobile";
-import { fileSizeLabel, viewerKind } from "../../utils/attachments";
-import { fmtDate } from "./helpers";
-import { btnCls } from "./styles";
-import { useFileUrl } from "./useFileUrl";
+import Modal, { ModalCloseButton } from "./Modal";
+import { useIsMobile } from "../hooks/useIsMobile";
+import { fileSizeLabel, viewerKind } from "../utils/attachments";
+import { fmtDate } from "../screens/commitments/helpers";
+import { btnCls } from "../screens/commitments/styles";
+import { useFileUrl } from "../hooks/useFileUrl";
 
 // Lo que hay que deslizar en el teléfono para pasar de archivo.
 const SWIPE_PX = 50;

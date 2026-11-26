@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { useToast } from "../../contexts/ToastContext";
-import { addAttachments, removeAttachment } from "../../services/commitmentsService";
-import { attempt } from "../../utils/attempt";
-import { errorText } from "../../utils/errorText";
-import { prepareAttachments, readClipboardImages } from "../../utils/prepareAttachments";
+import { useToast } from "../contexts/ToastContext";
+import { addAttachments, removeAttachment } from "../services/commitmentsService";
+import { attempt } from "../utils/attempt";
+import { errorText } from "../utils/errorText";
+import { prepareAttachments, readClipboardImages } from "../utils/prepareAttachments";
 
 // Subir y quitar los adjuntos de un vencimiento. Los archivos se suben apenas
 // se eligen, se pegan o se arrastran: no hay nada que guardar después.

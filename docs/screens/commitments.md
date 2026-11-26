@@ -4,7 +4,7 @@
 - Sus piezas, en `src/screens/commitments/`:
   - **Lista:** `CommitmentList`, `StatusChip`, `CounterpartyGroups` (Próximos por contraparte) y `writeCommitmentsXlsx.js` (la lista en Excel).
   - **Formularios:** `CommitmentModal` (con `CommonFields`), `DateActionModal` (marcar pagado o reprogramar), `PartialPaymentModal` (abonos) y `SeriesEditModal`.
-  - **Adjuntos:** `AttachmentsModal`, con `useAttachments` (subir y quitar); `FileViewer` (el visor) y `useFileUrl` (el enlace de un archivo, para la miniatura y el visor).
+  - **Adjuntos:** `AttachmentsModal` (`components/`), con `useAttachments` (`hooks/`; subir y quitar); `FileViewer` (`components/`; el visor) y `useFileUrl` (`hooks/`; el enlace de un archivo, para la miniatura y el visor).
   - **Configuración e importación:** `ConfigModal` (avisos por correo) e `ImportModal` (la planilla de cheques, que lee `readChequesFile.js`).
   - **Informe de deudas:** `PaymentReportModal`, con sus partes en `paymentReportModal/`: `reportDocument.js` (el documento y sus formatos), `ReportPreview`, `printReport.js` (imprime la vista previa), `writeReportPdf.js` y `writeReportXlsx.js`.
   - **Comunes:** `helpers.js` (formato de fecha y colores de los chips) y `styles.js` (clases de campos y botones).

@@ -1,14 +1,14 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import Modal, { ModalCloseButton } from "../../components/Modal";
-import ConfirmDialog from "../../components/ConfirmDialog";
-import { ProgressBar } from "../../components/ProgressBar";
-import { useIsMobile } from "../../hooks/useIsMobile";
-import { fileSizeLabel, transferFiles } from "../../utils/attachments";
+import Modal, { ModalCloseButton } from "./Modal";
+import ConfirmDialog from "./ConfirmDialog";
+import { ProgressBar } from "./ProgressBar";
+import { useIsMobile } from "../hooks/useIsMobile";
+import { fileSizeLabel, transferFiles } from "../utils/attachments";
 import { FileViewer } from "./FileViewer";
-import { fmtDate } from "./helpers";
-import { btnCls } from "./styles";
-import { useAttachments } from "./useAttachments";
-import { useFileUrl } from "./useFileUrl";
+import { fmtDate } from "../screens/commitments/helpers";
+import { btnCls } from "../screens/commitments/styles";
+import { useAttachments } from "../hooks/useAttachments";
+import { useFileUrl } from "../hooks/useFileUrl";
 
 const ACCEPT = "image/*,application/pdf";
 
