@@ -290,7 +290,8 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
     recalcPreview,
     recalcProgress,
     setCyclesEditOpen,
-    setRecalcPreview,
+    closeRecalc,
+    toggleAdvanceChoice,
     startCycleEdit,
     startRecalc,
   } = usePayrollRecalc({
@@ -931,8 +932,9 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
       <RecalcModal
         preview={recalcPreview}
         busy={recalcBusy}
-        onClose={() => setRecalcPreview(null)}
+        onClose={closeRecalc}
         onConfirm={applyRecalc}
+        onToggleAdvance={toggleAdvanceChoice}
       />
       {bonusTarget && (
         <BonusChangeModal

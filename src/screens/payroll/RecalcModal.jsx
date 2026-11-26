@@ -2,6 +2,7 @@ import { bankName, accountTypeLabel } from "../../utils/banks";
 import Modal from "../../components/Modal";
 import { fmtCurrency } from "../../utils/format";
 import { fmtDayShortEs } from "./helpers";
+import { applyFromLabel } from "../../utils/advanceSchedule";
 
 const formatProfileValue = (field, value) => {
   if (field === "bankCode") return bankName(value);
@@ -12,10 +13,12 @@ const formatProfileValue = (field, value) => {
 
 // Modal de revisión del recálculo — muestra montos/trabajadores/datos que
 // cambiaron desde que se generó la nómina, y lo que entra o sale si se
-// editaron sus ciclos, antes de escribir nada.
-export function RecalcModal({ preview, busy, onClose, onConfirm }) {
+// editaron sus ciclos, antes de escribir nada. Los anticipos y bonos
+// pendientes van con una casilla: `onToggleAdvance(advanceId)` marca o
+// desmarca uno.
+export function RecalcModal({ preview, busy, onClose, onConfirm, onToggleAdvance }) {
   if (!preview) return null;
-  const { amountChanges, profileChanges, advanceChanges, newWorkers, leavingWorkers = [], removalLines = [], additionLines = [], releasedCount = 0, cycleChanges = [] } = preview;
+  const { amountChanges, profileChanges, advanceChanges, advanceChoices = [], newWorkers, leavingWorkers = [], removalLines = [], additionLines = [], releasedCount = 0, cycleChanges = [] } = preview;
   const title = additionLines.length && removalLines.length
     ? "Cambiar los ciclos y recalcular"
     : additionLines.length
@@ -179,6 +182,10 @@ export function RecalcModal({ preview, busy, onClose, onConfirm }) {
           </div>
         )}
 
+        {advanceChoices.length > 0 && (
+          <AdvanceChoiceList choices={advanceChoices} busy={busy} onToggle={onToggleAdvance} />
+        )}
+
         {advanceChanges.length > 0 && (
           <div>
             <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
@@ -263,5 +270,65 @@ export function RecalcModal({ preview, busy, onClose, onConfirm }) {
         )}
       </div>
     </Modal>
+  );
+}
+
+const HOLD_TEXT = {
+  skipped: "Se dejó fuera de esta nómina",
+};
+
+// Los anticipos y bonos pendientes que la nómina todavía no aplica, cada uno
+// con su casilla y lo que se le aplicaría.
+function AdvanceChoiceList({ choices, busy, onToggle }) {
+  return (
+    <div>
+      <h4 className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--color-muted)]">
+        Anticipos y bonos pendientes ({choices.length})
+      </h4>
+      <p className="mb-1.5 text-xs text-[var(--color-muted)]">
+        Marca los que se aplican en esta nómina. Los que dejas sin marcar no se aplican solos después.
+      </p>
+      <ul className="divide-y divide-[var(--color-border)] rounded-md border border-[var(--color-border)] text-xs">
+        {choices.map((c) => {
+          const bono = c.kind === "bono";
+          const hold = c.reason === "deferred" ? `📅 ${applyFromLabel(c)}` : HOLD_TEXT[c.reason];
+          const shown = c.chosen ? c.applied : c.amount;
+          return (
+            <li key={c.advanceId}>
+              <label className="flex min-h-8 cursor-pointer items-start gap-2 px-2.5 py-1.5">
+                <input
+                  type="checkbox"
+                  checked={c.chosen}
+                  disabled={busy}
+                  onChange={() => onToggle?.(c.advanceId)}
+                  className="mt-0.5 h-4 w-4 shrink-0"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="font-medium break-words">{c.name}</span>
+                    <span className={bono ? "text-[var(--color-success)]" : "text-[var(--color-warning)]"}>
+                      {bono ? "🎁 Bono" : "🪙 Anticipo"}
+                    </span>
+                    {c.date && <span className="whitespace-nowrap text-[var(--color-muted)]">{fmtDayShortEs(c.date)}</span>}
+                  </div>
+                  {c.note && <div className="truncate text-[var(--color-muted)]" title={c.note}>{c.note}</div>}
+                  {hold && <div className="text-[var(--color-accent)]">{hold}</div>}
+                </div>
+                <div className={`shrink-0 text-right tabular-nums ${c.chosen ? "font-medium" : "text-[var(--color-muted)]"}`}>
+                  <div className="whitespace-nowrap">
+                    {bono ? "+" : "−"} {fmtCurrency(shown)}
+                  </div>
+                  {c.chosen && c.applied < c.amount && (
+                    <div className="whitespace-nowrap text-[10px] font-normal text-[var(--color-muted)]">
+                      {c.applied === 0 ? "El bruto no alcanza" : `de ${fmtCurrency(c.amount)}`}
+                    </div>
+                  )}
+                </div>
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
