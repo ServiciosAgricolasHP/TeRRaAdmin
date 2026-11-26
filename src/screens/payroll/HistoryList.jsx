@@ -8,7 +8,7 @@ import { fmtCurrency } from "../../utils/format";
 import { fmtDate } from "./helpers";
 import { millisOf } from "../../utils/syncedList";
 import { payStateOf } from "../../utils/payState";
-import { PortalBadge, PayStatePill, PaymentDatesLine } from "./PayStatePill";
+import { AttachmentsBadge, PortalBadge, PayStatePill, PaymentDatesLine } from "./PayStatePill";
 
 const NO_IDS = new Set();
 
@@ -239,6 +239,7 @@ export function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPai
                     <div className="flex flex-wrap items-center gap-1.5">
                       <span className="font-semibold text-[var(--color-accent)] [overflow-wrap:anywhere]">{p.name}</span>
                       {publishedPayrollIds.has(p.id) && <PortalBadge />}
+                      <AttachmentsBadge count={p.attachments?.length} />
                     </div>
                     <div className="mt-0.5 text-xs text-[var(--color-muted)]">
                       {fmtDate(p.createdAt)} · {p.workerCount || (p.items?.length ?? 0)} trab.
@@ -323,6 +324,7 @@ export function HistoryList({ payrolls, onMarkPaid, onMarkPending, onMarkBankPai
                       {p.name}
                     </button>
                     {publishedPayrollIds.has(p.id) && <PortalBadge />}
+                    <AttachmentsBadge count={p.attachments?.length} />
                   </div>
                   <div className="text-xs text-[var(--color-muted)]">{fmtDate(p.createdAt)}</div>
                 </td>

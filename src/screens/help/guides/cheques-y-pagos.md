@@ -50,6 +50,24 @@ El formulario muestra los vencimientos que va a crear. Toca **Crear N vencimient
 
 Si fue un error, **⋯** y **↶ Volver a pendiente** lo deshace.
 
+## Adjuntar la foto de un cheque, un comprobante o una factura
+<!-- preguntas: adjuntar un comprobante; subir la foto del cheque; adjuntar una factura; adjuntar la factura de un pago; adjuntar un archivo a un vencimiento; guardar el comprobante de pago; adjuntar un pdf; sacar una foto al cheque; pegar una imagen de whatsapp; ver los archivos de un pago; quitar un adjunto -->
+
+1. En la fila, toca **⋯** y **📎 Adjuntos**.
+2. Toca **📎 Elegir archivos**, arrastra los archivos al recuadro o pega una imagen con **Ctrl+V**, como una copiada de WhatsApp Web. En el teléfono, **📷 Sacar foto** abre la cámara y **📋 Pegar imagen** pega la que copiaste.
+
+Cada archivo se sube apenas lo eliges: no hay que guardar.
+
+![Los adjuntos de un cheque recibido](help/cheques-y-pagos/08-adjuntos.webp)
+
+- Se adjuntan fotos, imágenes y PDF, de hasta 10 MB. Las fotos se achican antes de subirlas. Un Word o un Excel se guarda primero como PDF.
+- La fila muestra **📎** con la cantidad de adjuntos, y tocarlo también los abre.
+- **✕** quita un adjunto y borra el archivo. Eliminar el vencimiento borra también sus adjuntos.
+
+Al tocar un adjunto se abre el visor, con la imagen ajustada a la pantalla (un clic la muestra en tamaño real) o el PDF. **‹** y **›**, las flechas del teclado o deslizar en el teléfono pasan al siguiente, y **↗ Abrir** lo abre en otra pestaña. En el teléfono, un PDF se ve con **↗ Abrir el PDF**.
+
+![El visor de adjuntos](help/cheques-y-pagos/09-visor.webp)
+
 ## Aplazar, protestar, reprogramar o anular
 <!-- preguntas: aplazar un pago; cheque protestado; cheque rechazado; cambiar la fecha de un pago; anular un cheque; reprogramar un pago -->
 
@@ -59,6 +77,7 @@ En el menú **⋯** de cada fila:
 - **⚠️ Protestado**: el banco rechazó el cheque. Se sigue debiendo, o cobrando.
 - **📅 Reprogramar**: le pone una fecha nueva a uno aplazado o protestado, y lo vuelve a pendiente.
 - **🚫 Anular**: ya no se va a pagar.
+- **💵 Abonos** y **📎 Adjuntos**: ver [Abonar a una deuda personal](/ayuda/cheques-y-pagos#abonar-a-una-deuda-personal) y [Adjuntar la foto de un cheque, un comprobante o una factura](/ayuda/cheques-y-pagos#adjuntar-la-foto-de-un-cheque-un-comprobante-o-una-factura).
 - **✏️ Editar** y **🗑️ Eliminar**. Para cambiar la fecha de uno pendiente, edítalo.
 
 ![El menú de un pago](help/cheques-y-pagos/05-menu.webp)
@@ -101,10 +120,12 @@ Nada se guarda hasta **Guardar**, y lo pagado no se toca.
 Cada mañana, a las 8:00, TeRRa manda un correo con lo que vence en los próximos días (por defecto, en 3 días, en 1 y el mismo día), lo vencido sin marcar y los próximos 7 días. Si no hay nada que avisar, no manda nada. A quién le llega y con cuántos días de anticipación lo decide un administrador.
 
 ## Si algo no funciona
-<!-- preguntas: me sigue avisando un pago que ya pagué; el vencido aparece todos los días; la misma contraparte sale dos veces; no puedo quitar un abono -->
+<!-- preguntas: me sigue avisando un pago que ya pagué; el vencido aparece todos los días; la misma contraparte sale dos veces; no puedo quitar un abono; no puedo adjuntar un word; no tengo permiso para subir el archivo -->
 
 - **Sigue avisando algo que ya se pagó**: márcalo pagado. Todo lo pendiente con la fecha pasada cuenta como vencido.
 - **Un vencido que no se va a pagar todavía aparece todos los días**: aplázalo.
 - **La misma contraparte sale dos veces en el informe**: está escrita distinto. Edita una y usa el mismo nombre.
 - **No deja quitar un abono**: la deuda se marcó pagada a mano. Vuélvela a pendiente primero.
 - **Un vencimiento eliminado de un pago recurrente no vuelve**: así es, para que no reaparezca. Si hacía falta, agrégalo a mano.
+- **No deja adjuntar un Word o un Excel**: guárdalo como PDF y adjunta el PDF.
+- **Al adjuntar dice "No tienes permiso…"**: recarga la página y vuelve a intentarlo. Si sigue, pídele a un administrador que revise tu cuenta en Usuarios.

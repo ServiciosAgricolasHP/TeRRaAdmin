@@ -1,8 +1,11 @@
 // Capturas de la guía "Cheques y pagos" (src/screens/help/guides/cheques-y-pagos.md):
 // los próximos vencimientos, un cheque emitido, un crédito en cuotas, el menú
 // de un pago vencido, marcarlo pagado con interés, un abono a una deuda
-// personal y el informe de deudas.
+// personal, los adjuntos de un cheque recibido con su visor y el informe de
+// deudas.
 import { seedCommitments } from "../seed.mjs";
+import { attachFiles } from "../lib.mjs";
+import { chequePhoto, demoPdf } from "../demoFiles.mjs";
 
 const modal = (page, title) =>
   page.getByRole("heading", { name: title }).locator("xpath=ancestor::div[contains(@class,'rounded-xl')][1]");
@@ -91,6 +94,37 @@ export async function run({ page, base, login, shot }) {
   await partial.getByText("Transferencia").first().waitFor({ timeout: 60000 });
   await partial.getByRole("button", { name: "Cerrar", exact: true }).last().click();
   await partial.waitFor({ state: "detached" });
+
+  // La foto del cheque recibido y su factura, y el visor.
+  const received = row(page, "Frutícola Cerro Verde");
+  await received.scrollIntoViewIfNeeded();
+  await received.getByRole("button", { name: "Más acciones" }).click();
+  await page.getByRole("menuitem", { name: /Adjuntos/ }).click();
+  const files = modal(page, /^Adjuntos · Frutícola Cerro Verde/);
+  await attachFiles(page, files, [
+    await chequePhoto("cheque-118733.jpg", {
+      number: "118733",
+      amount: "$2.856.000",
+      payee: "Agrícola Demo",
+      words: "Dos millones ochocientos cincuenta y seis mil pesos",
+      place: "Rancagua, 20 de octubre de 2026",
+      drawer: "Frutícola Cerro Verde S.A.",
+    }),
+    demoPdf("factura-1190.pdf", {
+      title: "Factura electrónica Nº 1190",
+      lines: ["Cliente: Frutícola Cerro Verde S.A.", "Servicio de cosecha, septiembre de 2026", "Total: $2.856.000"],
+    }),
+  ]);
+  await shot(page, "08-adjuntos", files, { pad: 0, marks: [files.getByRole("button", { name: "📎 Elegir archivos" })] });
+  await files.getByRole("button", { name: "Ver cheque-118733.jpg" }).click();
+  const viewer = modal(page, "cheque-118733.jpg");
+  await viewer.locator("img").waitFor({ timeout: 60000 });
+  await page.waitForFunction((el) => el.complete && el.naturalWidth > 0, await viewer.locator("img").elementHandle());
+  await shot(page, "09-visor", viewer, { pad: 0 });
+  await page.keyboard.press("Escape");
+  await viewer.waitFor({ state: "detached" });
+  await page.keyboard.press("Escape");
+  await files.waitFor({ state: "detached" });
 
   // El informe de deudas.
   await page.getByRole("button", { name: "📄 Informe de deudas" }).click();

@@ -16,6 +16,7 @@ import {
 import { db, auth } from "../firebase";
 import { logAction } from "./logger";
 import { removeListItem } from "./cache";
+import { deleteAttachmentFiles } from "./attachments";
 import { FORTNIGHTS, PAYMENTS, TRIPS, listFortnights, listTransportPayments, listTrips } from "./transportLists";
 import { localIsoDate } from "../utils/dates";
 import { millisOf } from "../utils/syncedList";
@@ -130,8 +131,9 @@ async function recalcPaymentTotal(paymentId, { pruneMissingTrips = false } = {})
   const prunes = pruneMissingTrips && alive.length !== tripIds.length;
   // Un resumen pendiente que se quedó sin vueltas no tiene nada que cobrar: se
   // elimina y sale de su quincena (que también se elimina si queda vacía). Si
-  // tiene abonos se conserva, porque esos pagos ya se hicieron.
-  if (prunes && alive.length === 0 && !(data.abonos || []).length) {
+  // tiene abonos se conserva, porque esos pagos ya se hicieron, y si tiene
+  // adjuntos también, porque respaldan algo.
+  if (prunes && alive.length === 0 && !(data.abonos || []).length && !(data.attachments || []).length) {
     await deleteDoc(doc(db, PAYMENTS, paymentId));
     removeListItem(PAYMENTS, paymentId);
     await logAction({
@@ -469,16 +471,40 @@ export const paymentsService = {
     if (abonos.length === (before.abonos || []).length) {
       throw new Error("Abono no encontrado");
     }
-    await updateDoc(doc(db, PAYMENTS, paymentId), { abonos, ...stamp() });
+    // Los adjuntos del abono quedan en el resumen, sin abono.
+    const linked = (before.attachments || []).some((a) => a.abonoId === abonoId);
+    const attachments = linked
+      ? before.attachments.map((a) => (a.abonoId === abonoId ? { ...a, abonoId: null } : a))
+      : before.attachments;
+    const patch = linked ? { abonos, attachments } : { abonos };
+    await updateDoc(doc(db, PAYMENTS, paymentId), { ...patch, ...stamp() });
     await logAction({
       action: "update",
       entity: "transportPayment",
       entityId: paymentId,
       before,
-      after: { ...before, abonos },
+      after: { ...before, ...patch },
       meta: carrierMeta(before.carrierId, { removedAbonoId: abonoId }),
     });
-    return { ...before, abonos };
+    return { ...before, ...patch };
+  },
+
+  // La lista de adjuntos del resumen (`services/attachments.js`). Es lo único
+  // que se escribe también en un resumen pagado: el comprobante llega justo
+  // cuando se paga.
+  async setAttachments(paymentId, attachments) {
+    const before = await this.getById(paymentId);
+    if (!before) throw new Error("Resumen no encontrado");
+    await updateDoc(doc(db, PAYMENTS, paymentId), { attachments, ...stamp() });
+    await logAction({
+      action: "update",
+      entity: "transportPayment",
+      entityId: paymentId,
+      before,
+      after: { ...before, attachments },
+      meta: carrierMeta(before.carrierId),
+    });
+    return { ...before, attachments };
   },
 
   // Fija el `total` del resumen con el monto recibido y lo propaga a la
@@ -511,6 +537,8 @@ export const paymentsService = {
     if (!before) return;
     if (before.status !== "pending") throw new Error("Solo se pueden eliminar resúmenes pendientes");
     if (before.payrollId) throw new Error("El resumen está en una quincena: sácalo de ella con ✕ antes de eliminarlo.");
+    // Los adjuntos primero: si Storage falla, el resumen queda como estaba.
+    await deleteAttachmentFiles(before);
     const tripIds = before.tripIds || [];
     const existingTripIds = await filterExistingTripIds(tripIds);
     const batch = writeBatch(db);
@@ -578,6 +606,13 @@ export const paymentsService = {
       meta: carrierMeta(before.carrierId),
     });
   },
+};
+
+// Dónde van los adjuntos de un resumen (`services/attachments.js`): el
+// comprobante de un pago o de un abono, la factura del transportista.
+export const transportPaymentAttachments = {
+  folder: "transportPayments",
+  save: (id, attachments) => paymentsService.setAttachments(id, attachments),
 };
 
 // ============================================================

@@ -1,7 +1,9 @@
 // Capturas de la guía "Generar y pagar una nómina"
 // (src/screens/help/guides/nomina.md): arma una nómina con el ciclo de demo,
-// la guarda, la revisa y la paga.
+// la guarda, la revisa, la paga y le adjunta los comprobantes.
 import { pinPayrollDates, seedCashWorkers } from "../seed.mjs";
+import { attachFiles } from "../lib.mjs";
+import { demoPdf } from "../demoFiles.mjs";
 
 // El modal abierto con ese título.
 const modal = (page, title) =>
@@ -86,4 +88,24 @@ export async function run({ page, base, login, shot }) {
   await closeModal.waitFor({ timeout: 60000 });
   await shot(page, "10-cerrar-ciclos", closeModal, { pad: 0 });
   await closeModal.getByRole("button", { name: "Ahora no", exact: true }).click();
+  await closeModal.waitFor({ state: "detached" });
+
+  // Los comprobantes del pago, en el detalle.
+  await page.getByText("2026OctubreSemana41").first().click();
+  const paidDetail = modal(page, "2026OctubreSemana41");
+  await paidDetail.waitFor();
+  await page.waitForTimeout(1500);
+  await paidDetail.getByRole("button", { name: /📎 Adjuntos/ }).click();
+  const files = modal(page, "Adjuntos · 2026OctubreSemana41");
+  await attachFiles(page, files, [
+    demoPdf("transferencias-semana-41.pdf", {
+      title: "Comprobante de pago de nómina",
+      lines: ["Nómina 2026OctubreSemana41", "Transferencias realizadas el 09-10-2026"],
+    }),
+    demoPdf("comprobantes-efectivo-firmados.pdf", {
+      title: "Comprobantes de efectivo",
+      lines: ["Nómina 2026OctubreSemana41", "Hojas firmadas por cada grupo"],
+    }),
+  ]);
+  await shot(page, "11-adjuntos", files, { pad: 0, marks: [files.getByRole("button", { name: "📎 Elegir archivos" })] });
 }

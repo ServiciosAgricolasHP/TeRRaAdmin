@@ -1,15 +1,49 @@
 rules_version = '2';
 
-// Cloud Storage guarda solo los respaldos en JSON (`backups/`), que tienen la
-// base entera: RUT, cuentas y montos. Nadie los lee ni los escribe desde el
-// navegador. Los escriben las funciones con el admin SDK, que no pasa por estas
-// reglas, y se bajan con un enlace firmado que vence en 15 minutos o desde la
-// consola de Google Cloud.
+// Cloud Storage guarda los respaldos en JSON (`backups/`) y los adjuntos: los
+// de Cheques y pagos (`commitments/{id}/…`), los de Nómina (`payrolls/{id}/…`)
+// y los de los resúmenes de Transportes (`transportPayments/{id}/…`).
+//
+// Los respaldos tienen la base entera (RUT, cuentas y montos) y nadie los lee
+// ni los escribe desde el navegador: los escriben las funciones con el admin
+// SDK, que no pasa por estas reglas, y se bajan con un enlace firmado que vence
+// en 15 minutos o desde la consola de Google Cloud.
+//
+// Los adjuntos los sube, ve y borra una cuenta con acceso: perfil en `users` y
+// sin suspender, igual que en `firestore.rules`. Estas reglas no leen
+// Firestore: revisan la marca `appAccess` de la sesión, que la función
+// `syncAccessClaim` (`functions/access.js`) pone al día con cada cambio del
+// perfil. Solo imágenes y PDF de hasta 10 MB, y un archivo no se pisa: cada
+// adjunto tiene su propio nombre.
 //
 // Se publican a mano, como `firestore.rules`: el archivo entero en la consola
 // de Firebase → Storage → Reglas.
 service firebase.storage {
   match /b/{bucket}/o {
+    function hasAccess() {
+      return request.auth != null
+        && request.auth.token.get("appAccess", false) == true;
+    }
+
+    // Las carpetas de adjuntos, una por colección (`services/attachments.js`).
+    function isAttachmentFolder(folder) {
+      return folder in ["commitments", "payrolls", "transportPayments"];
+    }
+
+    function isAttachmentType() {
+      return request.resource.contentType.matches("image/.*")
+        || request.resource.contentType == "application/pdf";
+    }
+
+    match /{folder}/{ownerId}/{fileName} {
+      allow read, delete: if isAttachmentFolder(folder) && hasAccess();
+      allow create: if isAttachmentFolder(folder)
+        && hasAccess()
+        && resource == null
+        && request.resource.size <= 10 * 1024 * 1024
+        && isAttachmentType();
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

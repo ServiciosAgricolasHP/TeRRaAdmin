@@ -18,7 +18,7 @@
 // handler que necesita más (createUser) vuelve a comprobarlo.
 
 import { randomBytes } from "node:crypto";
-import { onDocumentCreated } from "firebase-functions/v2/firestore";
+import { onDocumentCreated, onDocumentWritten } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { defineSecret } from "firebase-functions/params";
 import { logger } from "firebase-functions/v2";
@@ -29,6 +29,7 @@ import { getStorage } from "firebase-admin/storage";
 import { runCommitmentDigest, TIME_ZONE } from "./commitments.js";
 import { publishPortal, unpublishPortal } from "./portal.js";
 import { backupDownloadLink, runBackup } from "./backup.js";
+import { applyAccessClaim } from "./access.js";
 
 // La base NO se llama `(default)`: es `hpdatabase`. Un trigger que no la
 // declara queda suscrito a una base que no existe y nunca dispara, sin dar
@@ -278,6 +279,25 @@ export const runFunctionJob = onDocumentCreated(
         finishedAt: FieldValue.serverTimestamp(),
       });
     }
+  },
+);
+
+// La marca de acceso de la cuenta (`./access.js`), que revisan las reglas de
+// Storage, al día con su perfil: cada escritura de `users/{uid}` la vuelve a
+// calcular desde el documento vivo, así una entrega repetida o fuera de orden
+// deja el valor correcto. La app escribe el perfil al abrirse (`lastSeenAt`),
+// así que cada cuenta recibe su marca al entrar.
+export const syncAccessClaim = onDocumentWritten(
+  {
+    document: USERS + "/{uid}",
+    database: DATABASE,
+    region: REGION,
+    memory: "256MiB",
+    timeoutSeconds: 60,
+  },
+  async (event) => {
+    const result = await applyAccessClaim(db, getAuth(), event.params.uid);
+    if (result.changed) logger.info("syncAccessClaim", result);
   },
 );
 

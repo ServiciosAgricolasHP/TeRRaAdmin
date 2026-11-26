@@ -9,6 +9,7 @@ import { PRINT_SHEET_CSS } from "../../utils/printWindow";
 import { fmtCurrency } from "../../utils/format";
 import { PrintableSummary } from "./PrintableSummary";
 import { PaymentAbonos } from "./PaymentAbonos";
+import { PaymentAttachments } from "./PaymentAttachments";
 import { attempt } from "../../utils/attempt";
 import { useValuesChanged } from "../../hooks/useValuesChanged";
 import { errorText } from "../../utils/errorText";
@@ -197,6 +198,7 @@ export function PaymentDetailModal({ open, onClose, payment, carrier, carriers =
           >
             🖨 Imprimir
           </button>
+          <PaymentAttachments payment={payment} carrierName={carrier?.alias || carrier?.name || ""} onChanged={onChanged} />
           {!isPaid && (
             <button
               onClick={() => setEditMode((v) => !v)}

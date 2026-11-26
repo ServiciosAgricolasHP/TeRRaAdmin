@@ -184,6 +184,36 @@ describe("resúmenes y quincenas que se quedan vacíos", () => {
     expect(await get("transportPayrolls", fortnight.id)).not.toBe(null);
   });
 
+  it("un resumen con adjuntos tampoco se elimina: respaldan algo", async () => {
+    const { v, resumen } = await tripInFortnight();
+    await paymentsService.setAttachments(resumen.id, [{ id: "f1", name: "factura.pdf", path: `transportPayments/${resumen.id}/f1-factura.pdf` }]);
+
+    await tripsService.remove(v.id);
+
+    const r = await get("transportPayments", resumen.id);
+    expect(r).not.toBe(null);
+    expect(r.attachments.map((a) => a.id)).toEqual(["f1"]);
+  });
+
+  it("quitar un abono deja sus adjuntos en el resumen, sin abono", async () => {
+    const { resumen } = await tripInFortnight();
+    const conAbono = await paymentsService.addAbono(resumen.id, { amount: 10000, date: "2026-03-05" });
+    const abonoId = conAbono.abonos[0].id;
+    await paymentsService.setAttachments(resumen.id, [
+      { id: "f1", name: "transferencia.jpg", abonoId },
+      { id: "f2", name: "factura.pdf" },
+    ]);
+
+    await paymentsService.removeAbono(resumen.id, abonoId);
+
+    const r = await get("transportPayments", resumen.id);
+    expect(r.abonos).toEqual([]);
+    expect(r.attachments).toEqual([
+      { id: "f1", name: "transferencia.jpg", abonoId: null },
+      { id: "f2", name: "factura.pdf" },
+    ]);
+  });
+
   it("un abono se corrige sin perder su identidad", async () => {
     const { resumen } = await tripInFortnight();
     const conAbono = await paymentsService.addAbono(resumen.id, { amount: 10000, date: "2026-03-05", notes: "efectivo" });
@@ -252,6 +282,20 @@ describe("congelado al pagar", () => {
 
     expect((await get("transportPayments", resumen.id)).status).toBe("paid");
     expect((await get("transports", a.id)).status).toBe("paid");
+  });
+
+  it("un resumen pagado sigue aceptando adjuntos: el comprobante llega al pagar", async () => {
+    await seedCarrier();
+    const a = await nuevaVuelta({ qty: 1, rate: 30000 });
+    const resumen = await paymentsService.createSummary({ carrierId: CARRIER, tripIds: [a.id], total: 30000 });
+    await tripsService.update(a.id, { paymentId: resumen.id });
+    await paymentsService.markPaid(resumen.id);
+
+    await paymentsService.setAttachments(resumen.id, [{ id: "f1", name: "comprobante.jpg" }]);
+
+    const r = await get("transportPayments", resumen.id);
+    expect(r.status).toBe("paid");
+    expect(r.attachments.map((x) => x.name)).toEqual(["comprobante.jpg"]);
   });
 
   it("un resumen pagado ya no recalcula su total", async () => {

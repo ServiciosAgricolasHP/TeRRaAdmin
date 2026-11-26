@@ -160,6 +160,14 @@ Ver [Facturación](/ayuda/facturacion).
 
 Ver [Cheques y pagos](/ayuda/cheques-y-pagos).
 
+## Adjunto y visor
+<!-- preguntas: qué es un adjunto; qué es el visor; qué archivos se pueden adjuntar; dónde quedan los comprobantes -->
+
+- **Adjunto**: una foto o un PDF guardado con un vencimiento de Cheques y pagos, una nómina o un resumen de transporte, como un comprobante, una factura o la foto de un cheque.
+- **Visor**: la ventana que muestra un adjunto en grande, sin salir de TeRRa.
+
+Ver [Adjuntar la foto de un cheque, un comprobante o una factura](/ayuda/cheques-y-pagos#adjuntar-la-foto-de-un-cheque-un-comprobante-o-una-factura), [Adjuntar los comprobantes del pago](/ayuda/nomina#adjuntar-los-comprobantes-del-pago) y [Adjuntar los comprobantes](/ayuda/pagar-transportes#adjuntar-los-comprobantes).
+
 ## Agenda, cuentas y Libro de Precios
 <!-- preguntas: qué es el libro de precios; qué es la agenda; qué son las cuentas; para qué sirve agenda y cuentas -->
 

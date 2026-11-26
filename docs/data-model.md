@@ -160,6 +160,7 @@ Nómina = lote de pago. Agrupa las jornadas de sus personas (`items[].workdayIds
 | `payoutTotal` | number? | lo que la nómina entrega en anticipos (Σ `items[].payoutTotal`). Lo escriben las ediciones de la nómina (`recalcPayrollAggregates`) |
 | `createdAt`, `createdBy` | ts, string? | |
 | `updatedAt`, `updatedBy` | ts, string? | toda escritura de `payrollsService` los pone. La copia que comparten Nómina y el Dashboard se pone al día con él (`listPayrolls`) |
+| `attachments` | `[{ id, name, path, contentType, size, uploadedAt, uploadedBy, uploadedByName }]`? | adjuntos de la nómina (el comprobante de las transferencias, la cartola), igual que en `commitments`: el archivo en Cloud Storage, en `path` (`payrolls/{payrollId}/{id}-{name}`), y acá su ficha. Eliminar la nómina borra sus archivos |
 | `updatedByName` | string? | quién hizo la última escritura: su alias o, sin alias, su correo (`signerName`, `services/signer.js`). Toda escritura de `payrollsService` lo pone, y el detalle lo muestra con `updatedAt`. Las nóminas escritas antes no lo tienen |
 
 `PayrollItem` (embebido):
@@ -390,9 +391,10 @@ Resumen de pago a un transportista (lote de `transports`).
 | `groupBy` | `"day"` \| ... | |
 | `tripIds` | ref→`transports`[] | |
 | `total` | number | **denormalizado** = Σ `amount` de las vueltas vivas. Lo mantiene el servicio (`recalcPaymentTotal`), no las pantallas — ver "Totales denormalizados" abajo |
+| `attachments` | `[{ id, name, path, contentType, size, uploadedAt, uploadedBy, uploadedByName, abonoId? }]`? | adjuntos del resumen, igual que en `commitments`: el archivo en Cloud Storage, en `path` (`transportPayments/{paymentId}/{id}-{name}`), y acá su ficha. `abonoId` = el abono que respalda; `null` o ausente = del resumen (quitar un abono deja sus archivos con `abonoId: null`). Se escribe también con el resumen pagado. Eliminar el resumen borra sus archivos |
 | `abonos` | `[{ id, amount, date, notes, createdAt, createdBy, updatedAt?, updatedBy? }]` | pagos parciales antes de marcar el resumen 100% pagado. El pendiente se calcula en cliente (`total − Σ abonos`); **no** descuenta de `total`. `updatedAt`/`updatedBy` aparecen cuando un abono se corrige (`updateAbono`), que conserva su `id` y su `createdAt` |
 | `payrollId` | ref→`transportPayrolls` \| null | null = resumen "suelto", disponible para entrar a una quincena |
-| `status` | `"pending"` \| `"paid"` | `paid` congela el doc: no se recalcula ni se edita |
+| `status` | `"pending"` \| `"paid"` | `paid` congela el doc: no se recalcula ni se edita, salvo sus `attachments` |
 | `paidAt`, `paidBy` | ts?, string? | |
 | `notes` | string? | |
 | `createdAt`, `createdBy` | ts, string? | |
@@ -499,6 +501,7 @@ Un vencimiento de la pantalla **Cheques y pagos**: un cheque emitido o recibido,
 | `paidAt` | string (YYYY-MM-DD) | fecha en que se cobró o pagó; `""` si no |
 | `partialPayments` | `[{ id, date, amount, notes, groupId?, groupTotal?, createdAt, createdBy }]`? | abonos (pagos parciales) de una deuda personal o un pago comprometido. Lo que falta pagar de algo abierto es `amount` menos su suma (`remainingOf`), y es lo que cuentan los totales, el informe y el correo. Un abono a toda la deuda se reparte entre sus cuotas abiertas, de la más antigua a la más nueva, y cada parte lleva el mismo `groupId` (y en `groupTotal` el abono completo); se quita entero |
 | `closedByPartials` | bool? | `true` si quedó `paid` porque los abonos cubrieron el monto (con `paidAt` = fecha del último abono): quitar un abono lo devuelve a `pending`. Si se marcó pagado a mano es `false`, y sus abonos no se quitan sin volverlo antes a pendiente |
+| `attachments` | `[{ id, name, path, contentType, size, uploadedAt, uploadedBy, uploadedByName }]`? | adjuntos: fotos, imágenes y PDF, de hasta 10 MB. El archivo está en Cloud Storage, en `path` (`commitments/{commitmentId}/{id}-{name}`); acá va solo su ficha, así que la lista no cuesta lecturas extra. `uploadedAt` es un ISO, `uploadedBy` el uid y `uploadedByName` el nombre con que firma (`signerName`). Una foto se guarda ya achicada (JPEG, 1.600 px el lado más largo). Eliminar el vencimiento borra sus archivos. Los respaldos en JSON no traen los archivos |
 | `seriesId` | ref→`commitmentSeries`? | si lo generó un crédito o un pago recurrente |
 | `installment` | `{ n, of }` | null | número de cuota; `null` en un pago recurrente |
 | `source` | `"excel_import"`? | solo lo importado de la planilla |
@@ -691,7 +694,7 @@ Colección aparte y no un campo en `cycles` porque los docs de `cycles` se traen
 > Sin `logs` de auditoría: el guardado es debounced mientras se tipea, así que registrar cada escritura llenaría el log de diffs anidados. La trazabilidad acá es `updatedBy`/`updatedAt`. Por eso el servicio (`src/services/cycleSummariesService.js`) está escrito a mano y no con `createService()`.
 
 ### `users`
-Perfil de cada cuenta: acceso, rol y preferencias. **DocId = uid de Auth.** Se crea desde la consola de Firebase. **Sin este doc la cuenta no tiene acceso** (ver `firestore.rules` y `docs/screens/users.md`).
+Perfil de cada cuenta: acceso, rol y preferencias. **DocId = uid de Auth.** Se crea desde la consola de Firebase. **Sin este doc la cuenta no tiene acceso** (ver `firestore.rules` y `docs/screens/users.md`). Cada escritura del doc pone al día la marca `appAccess` de la cuenta en Authentication (la función `syncAccessClaim`), que revisan las reglas de Storage.
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | string | uid |

@@ -2,9 +2,11 @@
 // (src/screens/help/guides/pagar-transportes.md): el pago por faena, los
 // resúmenes, pagar uno suelto, un abono, una quincena nueva, su detalle, la confirmación del
 // pago, la de liquidar el resumen con el abono, el resumen liquidado, el balance de quincenas
-// y sumar las vueltas anotadas después: a un resumen de la quincena y, en un resumen nuevo, a
-// la quincena.
+// sumar las vueltas anotadas después: a un resumen de la quincena y, en un resumen nuevo, a
+// la quincena; y los adjuntos del abono y del resumen, y los archivos del transportista.
 import { seedLaborTypes, seedLateTrips, seedTransports } from "../seed.mjs";
+import { attachFiles } from "../lib.mjs";
+import { demoPdf, receiptPhoto } from "../demoFiles.mjs";
 
 // El modal abierto con ese título.
 const modal = (page, title) =>
@@ -51,14 +53,58 @@ export async function run({ page, base, login, shot }) {
   await detail.waitFor({ timeout: 60000 });
   await shot(page, "04-pagar-suelto", detail, { pad: 0, marks: [detail.getByRole("button", { name: /Marcar pagado/ })] });
   const abonos = detail.getByText(/💰 Abonos/).locator("xpath=ancestor::div[contains(@class,'rounded-md')][1]");
-  await abonos.locator("input[type=number]").last().fill("50000");
+  await abonos.getByPlaceholder("0").last().fill("50000");
   await abonos.getByPlaceholder("ej. transferencia, efectivo, cheque...").fill("Transferencia");
   await abonos.getByRole("button", { name: "+ Abono" }).click();
   await abonos.getByText("Transferencia").first().waitFor({ timeout: 60000 });
   await page.waitForTimeout(800);
   await shot(page, "05-abono", detail, { pad: 0 });
+
+  // El comprobante del abono y la factura del resumen.
+  await abonos.getByRole("button", { name: /^Adjuntos del abono/ }).click();
+  const abonoFiles = modal(page, /^Adjuntos · Abono/);
+  await attachFiles(page, abonoFiles, [
+    await receiptPhoto("transferencia-rios.jpg", {
+      amount: "$50.000",
+      rows: [["Destinatario", "Transportes Ríos Ltda."], ["Fecha", "09-10-2026 · 10:24"], ["Nº de operación", "000483912"]],
+    }),
+  ]);
+  await page.keyboard.press("Escape");
+  await abonoFiles.waitFor({ state: "detached" });
+  const abonoFilesButton = abonos.getByRole("button", { name: "Adjuntos del abono (1)" });
+  await abonoFilesButton.waitFor({ timeout: 60000 });
+  await shot(page, "14-adjunto-abono", abonos, { pad: 6, marks: [abonoFilesButton] });
+  const paymentFilesButton = detail.getByRole("button", { name: /📎 Adjuntos/ });
+  await paymentFilesButton.filter({ hasText: "(1)" }).waitFor({ timeout: 60000 });
+  await paymentFilesButton.click();
+  const paymentFiles = modal(page, /^Adjuntos · Ríos/);
+  await attachFiles(page, paymentFiles, [
+    demoPdf("factura-transportes-rios.pdf", {
+      title: "Factura electrónica Nº 3307",
+      lines: ["Transportes Ríos Ltda.", "Traslado de personal, octubre de 2026", "Total: $150.000"],
+    }),
+  ]);
+  await shot(page, "15-adjuntos-resumen", paymentFiles, { pad: 0, marks: [paymentFiles.getByRole("button", { name: "📎 Elegir archivos" })] });
+  await page.keyboard.press("Escape");
+  await paymentFiles.waitFor({ state: "detached" });
   await detail.getByRole("button", { name: "Cerrar", exact: true }).click();
   await detail.waitFor({ state: "detached" });
+
+  // Los archivos de Ríos, desde su resumen de transportista.
+  await tab(page, "Transportistas");
+  await page.getByText("Transportes Ríos Ltda.").first().click();
+  const carrierSummary = modal(page, "📊 Resumen — Ríos");
+  await carrierSummary.getByText(/Vueltas sin resumen|Sin quincena/).first().waitFor({ timeout: 60000 });
+  const carrierFilesButton = carrierSummary.getByRole("button", { name: "📎 Archivos (2)" });
+  await carrierFilesButton.click();
+  const carrierFiles = modal(page, /^📎 Archivos — Ríos/);
+  await carrierFiles.getByText("transferencia-rios.jpg").waitFor({ timeout: 60000 });
+  await page.waitForFunction((el) => [...el.querySelectorAll("img")].every((img) => img.complete && img.naturalWidth > 0), await carrierFiles.elementHandle());
+  await shot(page, "16-archivos-transportista", carrierFiles, { pad: 0 });
+  await page.keyboard.press("Escape");
+  await carrierFiles.waitFor({ state: "detached" });
+  await page.keyboard.press("Escape");
+  await carrierSummary.waitFor({ state: "detached" });
 
   // Una quincena nueva: Ríos en Santa Elena y los resúmenes ya armados.
   await tab(page, "Quincenas");

@@ -17,8 +17,15 @@ import {
   RECURRING_HORIZON_DAYS,
 } from "../utils/commitments";
 import { toTitleName, unshout } from "../utils/textCase";
+import { deleteAttachmentFiles } from "./attachments";
 
 export const commitmentsService = createAdditiveService("commitment", "commitments");
+
+// Dónde van los adjuntos de un vencimiento (`services/attachments.js`).
+export const commitmentAttachments = {
+  folder: "commitments",
+  save: (id, attachments) => commitmentsService.update(id, { attachments }),
+};
 export const commitmentSeriesService = createService("commitmentSeries", "commitmentSeries");
 export const commitmentConfigService = createService("commitmentConfig", "commitmentConfig");
 
@@ -171,8 +178,14 @@ export async function createRecurringPlan(draft, { firstDate, today }) {
 export async function stopSeries(seriesId, today, commitments) {
   await commitmentSeriesService.update(seriesId, { active: false });
   const upcoming = commitments.filter((c) => c.seriesId === seriesId && c.status === "pending" && c.dueDate > today);
-  await Promise.all(upcoming.map((c) => commitmentsService.remove(c.id)));
+  await Promise.all(upcoming.map((c) => removeCommitment(c)));
   return upcoming.length;
+}
+
+// Elimina un vencimiento y sus adjuntos (los archivos primero).
+export async function removeCommitment(c) {
+  await deleteAttachmentFiles(c);
+  return commitmentsService.remove(c.id);
 }
 
 // ── Abonos ──────────────────────────────────────────────────────────────────

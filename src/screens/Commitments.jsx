@@ -10,13 +10,14 @@ import {
   markPending,
   markPostponed,
   markProtested,
-  commitmentsService,
   stopSeries,
   createInstallmentPlan,
   createRecurringPlan,
   saveCommitment,
   markPaid,
   reschedule,
+  commitmentAttachments,
+  removeCommitment,
 } from "../services/commitmentsService";
 import {
   nextYearEnd,
@@ -37,6 +38,7 @@ import {
 import { bankName } from "../utils/banks";
 import { localIsoDate } from "../utils/dates";
 import { fmtCurrency } from "../utils/format";
+import { AttachmentsModal } from "../components/AttachmentsModal";
 import { CommitmentList } from "./commitments/CommitmentList";
 import { CommitmentModal } from "./commitments/CommitmentModal";
 import { ConfigModal } from "./commitments/ConfigModal";
@@ -125,6 +127,8 @@ export default function Commitments() {
   const [reportOpen, setReportOpen] = useState(false);
   const [partialFor, setPartialFor] = useState(null);
   const [seriesFor, setSeriesFor] = useState(null);
+  // El id, no la fila: después de subir o quitar, el modal muestra la fila recargada.
+  const [attachmentsForId, setAttachmentsForId] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -261,11 +265,13 @@ export default function Commitments() {
   const askDelete = (c) =>
     setConfirm({
       title: "Eliminar",
-      message: `¿Eliminar ${kindMeta(c.kind).label.toLowerCase()} de ${c.counterparty} por ${fmtCurrency(c.amount)}? Para dejar registro de un cheque que no se usó, conviene anularlo.`,
+      message: `¿Eliminar ${kindMeta(c.kind).label.toLowerCase()} de ${c.counterparty} por ${fmtCurrency(c.amount)}?${
+        c.attachments?.length ? ` También se borran sus ${c.attachments.length === 1 ? "adjunto" : `${c.attachments.length} adjuntos`}.` : ""
+      } Para dejar registro de un cheque que no se usó, conviene anularlo.`,
       confirmLabel: "Eliminar",
       danger: true,
       run: async () => {
-        await commitmentsService.remove(c.id);
+        await removeCommitment(c);
         toast.success("Eliminado");
       },
     });
@@ -303,7 +309,9 @@ export default function Commitments() {
     onDelete: askDelete,
     onPartialPayment: (c) => setPartialFor(c),
     onEditSeries: (c) => setSeriesFor(c),
+    onAttachments: (c) => setAttachmentsForId(c.id),
   };
+  const attachmentsItem = attachmentsForId ? items.find((c) => c.id === attachmentsForId) : null;
 
   return (
     <div className="space-y-5">
@@ -524,6 +532,19 @@ export default function Commitments() {
           items={items}
           today={today}
           onClose={() => setPartialFor(null)}
+          onSaved={async (msg) => {
+            toast.success(msg);
+            await load();
+          }}
+        />
+      )}
+
+      {attachmentsItem && (
+        <AttachmentsModal
+          title={`Adjuntos · ${attachmentsItem.counterparty}`}
+          owner={attachmentsItem}
+          target={commitmentAttachments}
+          onClose={() => setAttachmentsForId(null)}
           onSaved={async (msg) => {
             toast.success(msg);
             await load();

@@ -3,8 +3,9 @@ import { listCycles, listJobs, listSubjobs } from "./jobLists";
 import { carrierSummaryPayments } from "../utils/carrierSummary";
 
 // Lee lo que muestra el resumen de un transportista (`utils/carrierSummary.js`)
-// y devuelve `{ payments, fortnightsById, trips, faenaById, subfaenaById,
-// cycleById }`. Todo sale de copias: las vueltas, los resúmenes y las
+// y devuelve `{ payments, allPayments, fortnightsById, trips, faenaById,
+// subfaenaById, cycleById }`; `allPayments` son todos sus resúmenes, de donde
+// salen sus archivos. Todo sale de copias: las vueltas, los resúmenes y las
 // quincenas (services/transportLists.js), puestas al día con unas pocas
 // lecturas, y las faenas, subfaenas y ciclos, que comparten las pantallas (los
 // ciclos, solo si alguna vuelta no trae su faena ni su subfaena).
@@ -39,6 +40,7 @@ export async function loadCarrierSummaryData(carrierId, { includePaid = false, f
   const cycles = trips.some((t) => !t.faenaId && !t.subfaenaId) ? await listCycles() : [];
   return {
     payments,
+    allPayments,
     fortnightsById,
     trips,
     faenaById: new Map(faenas.map((f) => [f.id, f])),
