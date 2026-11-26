@@ -46,7 +46,7 @@ import {
   cycleDetailChanges,
 } from "../utils/payrollItem";
 import { currentRutResolver } from "../utils/workerRut";
-import { isDeferred } from "../utils/advanceSchedule";
+import { holdReasonOf, skippedIdsOf } from "../utils/advanceSchedule";
 import { localIsoDate } from "../utils/dates";
 
 // Los datos de cuenta y de grupo de la ficha de un trabajador, con la forma de
@@ -97,7 +97,8 @@ const PROFILE_FIELDS = [
 // `onProgress(paso, hechos, total)` avisa el paso en curso: "workdays" (los
 // ciclos leídos de cuántos) y "advances". `today` ("YYYY-MM-DD") es el día en
 // que se recalcula: un anticipo o bono con fecha de inicio después no se
-// aplica (`isDeferred`).
+// aplica, ni uno que la nómina dejó fuera (`skippedAdvanceIds`; ver
+// `holdReasonOf`).
 export async function planPayrollRecalc(
   payroll,
   {
@@ -113,6 +114,8 @@ export async function planPayrollRecalc(
 ) {
   const items = payroll.items || [];
   const cycleDetails = payroll.cycleDetails || [];
+  const skipped = skippedIdsOf(payroll);
+  const applies = (a) => !holdReasonOf(a, { skipped, today });
 
   const scope = removed.size || added.size
     ? cycleScopeAfterEdit({
@@ -225,7 +228,7 @@ export async function planPayrollRecalc(
     // `allocateAdvances`).
     const advForWorker = advancesByKey.get(key) || { anticipos: [], bonos: [] };
     const existingAdvIds = new Set(it.advanceIds || []);
-    const isNew = (a) => !existingAdvIds.has(a.id) && advanceRemaining(a) > 0 && !isDeferred(a, today);
+    const isNew = (a) => !existingAdvIds.has(a.id) && advanceRemaining(a) > 0 && applies(a);
     const newAnticipos = advForWorker.anticipos.filter(isNew);
     const newBonos = advForWorker.bonos.filter(isNew);
     const base = patch || it;
@@ -301,8 +304,7 @@ export async function planPayrollRecalc(
     const adv = advancesByKey.get(key) || { anticipos: [], bonos: [] };
     // Mismo reparto que al armar la nómina: bonos primero, anticipos después
     // topeados por bruto + bonos.
-    const due = (a) => !isDeferred(a, today);
-    const reparto = allocateAdvances({ gross: grossInt, anticipos: adv.anticipos.filter(due), bonos: adv.bonos.filter(due) });
+    const reparto = allocateAdvances({ gross: grossInt, anticipos: adv.anticipos.filter(applies), bonos: adv.bonos.filter(applies) });
     const { anticipoApplications, bonoApplications, anticiposTotal, bonosTotal } = reparto;
     const advanceApplications = [...anticipoApplications, ...bonoApplications];
     newAdvanceApplications.push(...advanceApplications);

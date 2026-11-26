@@ -127,6 +127,7 @@ export function useContentEdit({ cycleDetails, cycles, faenas, items, onChanged,
         pendingAdvances: person.advances,
         profileFor: () => liveProfileOf(worker),
         today: localIsoDate(),
+        skippedAdvanceIds: payroll.skippedAdvanceIds,
       });
 
       const alreadyInIds = new Set([...cycleDetails.map((c) => c.id), ...(payroll.cycleIds || [])]);

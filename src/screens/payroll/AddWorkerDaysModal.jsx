@@ -190,9 +190,10 @@ export function AddWorkerDaysModal({
       pendingAdvances: persona.advances,
       profileFor: () => profileFor(worker),
       today: localIsoDate(),
+      skippedAdvanceIds: payroll?.skippedAdvanceIds,
     });
     return plan.added.find((x) => x.key === persona.key) || null;
-  }, [generando, worker, data, secciones, selected, items, laborTypeById, profileFor, payrollId]);
+  }, [generando, worker, data, secciones, selected, items, laborTypeById, profileFor, payrollId, payroll]);
   const puedeConfirmar = generando ? elegidas.length > 0 : !!preview;
 
   const toggle = (key) => setSelected((prev) => {

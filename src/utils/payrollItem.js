@@ -23,7 +23,7 @@
 // la base ni los alcanza ningún descuento.
 import { advanceRemaining, advanceDueNow, advanceSign } from "../services/advancesService";
 import { aggregateWorkerAmounts, workdayPayAmount } from "./payroll";
-import { isDeferred } from "./advanceSchedule";
+import { holdReasonOf } from "./advanceSchedule";
 
 const porFechaAsc = (a, b) => {
   const da = a?.date || "";
@@ -659,7 +659,8 @@ export function mergeCycleDetails(existing = [], toAdd = []) {
 // vez. `profileFor(agg)` devuelve los datos de cuenta y de grupo de la ficha
 // del trabajador, o `null` si no está en el catálogo. `today` ("YYYY-MM-DD")
 // es el día en que se agrega: un anticipo o bono con fecha de inicio después
-// no se aplica (`isDeferred`).
+// no se aplica, ni uno que la nómina dejó fuera (`skippedAdvanceIds`; ver
+// `holdReasonOf`).
 export function planAddWorkdays({
   payrollId,
   items = [],
@@ -668,6 +669,7 @@ export function planAddWorkdays({
   pendingAdvances = [],
   profileFor = () => null,
   today,
+  skippedAdvanceIds = [],
 }) {
   // Una persona puede venir partida en varios agregados: sus jornadas viejas
   // guardan el rut que tenía entonces. Se juntan con la misma clave que usan
@@ -697,8 +699,10 @@ export function planAddWorkdays({
   }
 
   // Lo que se aplica nuevo: no un anticipo o bono con fecha de inicio después
-  // de `today`. Los que ya descuenta la nómina pueden crecer igual.
-  const aplicable = (x) => !isDeferred(x, today);
+  // de `today` ni uno que la nómina dejó fuera. Los que ya descuenta pueden
+  // crecer igual.
+  const skipped = new Set(skippedAdvanceIds);
+  const aplicable = (x) => !holdReasonOf(x, { skipped, today });
   const limpio = (x) => ({ advanceId: x.advanceId, amount: Math.round(Number(x.amount) || 0) });
   const out = [...items];
   const posicion = new Map(out.map((it, i) => [it.workerId || it.rut, i]));

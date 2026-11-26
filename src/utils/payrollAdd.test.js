@@ -589,6 +589,20 @@ describe("planAddWorkdays", () => {
     expect(plan.items.find((it) => it.rut === "BEA")).toMatchObject({ bonus: 0, amount: 80000, advanceIds: [] });
   });
 
+  it("un anticipo que la nómina dejó fuera no se vuelve a aplicar", () => {
+    const items = [item({ gross: 100000, workdayIds: ["a1"] })];
+    const plan = planAddWorkdays({
+      items,
+      workdays: [wd("a2", { amount: 50000 })],
+      laborTypeById: tipos,
+      pendingAdvances: [anticipo("cuota", "ANA", 30000), anticipo("otro", "ANA", 10000)],
+      today: "2026-11-26",
+      skippedAdvanceIds: ["cuota"],
+    });
+    expect(plan.newAdvanceApplications).toEqual([{ advanceId: "otro", amount: 10000 }]);
+    expect(plan.items[0].advanceIds).toEqual(["otro"]);
+  });
+
   it("desde la fecha de inicio el anticipo se aplica", () => {
     const plan = planAddWorkdays({
       items: [],
