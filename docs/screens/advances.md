@@ -37,5 +37,6 @@
   aplicaciones recortadas y las escribe en el log (`meta.sobrantes`): al
   trabajador se le retuvo lo pedido pero la deuda solo bajó lo aplicado, y esa
   diferencia hay que devolvérsela a mano.
+- **Una nómina pendiente puede dejar de aplicar un anticipo o un bono**: "✕ Quitar de la nómina" en "📋 Ver anticipos y bonos". Vuelve a quedar pendiente, y esa nómina no lo vuelve a aplicar sola. Ver "Quitar un anticipo o un bono de la nómina" en `docs/screens/payroll.md`.
 - **Una nómina también puede entregar un anticipo** (pagárselo a la persona): el anticipo sigue pendiente, esa nómina no lo descuenta y otra sí. Ver "Entregar anticipos en la nómina" en `docs/screens/payroll.md`.
 - Al eliminar nómina: `restoreAdvancesFromPayroll(advanceIds)` recalcula el status hacia atrás (`pending`/`partial`) — también recalcula sola la fecha base del hint "última cuota hace N días", que se deriva de `payments[]` en vez de guardarse aparte.

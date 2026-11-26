@@ -169,7 +169,7 @@ export default function Advances() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Anticipos y Bonos</h1>
           <p className="text-sm text-[var(--color-muted)]">
-            Se aplican automáticamente al generar la próxima nómina · 🪙 anticipo descuenta · 🎁 bono suma
+            Se aplican en la próxima nómina, o desde su fecha de inicio · 🪙 anticipo descuenta · 🎁 bono suma
           </p>
         </div>
         <div className="flex gap-2">
