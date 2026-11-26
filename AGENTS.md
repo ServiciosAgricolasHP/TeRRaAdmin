@@ -23,16 +23,17 @@ Las reglas de este repo, para personas y agentes. Lo de una sola pantalla está 
   - **La carpeta se arma una vez:** `git worktree add --detach ../TeRRaAdmin-hotfix origin/main`, `npm ci` en la raíz y en `functions/`, y una copia del `.env`, que no está en git.
 - **Los conflictos se resuelven en `develop`, antes de abrir el PR a `main`**, nunca en el PR. Si `develop` no tiene algo de `main` (un hotfix sin volver), se mergea `origin/main` primero y se corren lint y tests sobre el resultado.
 - **`docs/data-model.md` acompaña a cada cambio de modelo.** Una colección nueva, un campo nuevo, uno que cambia de tipo o de significado, o uno que se deja de escribir se documenta en el mismo commit; una colección nueva también va en `MAIN_COLLECTIONS` (`screens/adminConsole/collections.js`). Antes de un push se revisa que los commits que tocaron entidades lo hayan actualizado.
-- `.github/workflows/ci.yml` — corre en push/PR dos jobs, los dos bloqueantes:
+- `.github/workflows/ci.yml` — corre en push/PR tres jobs, los tres bloqueantes:
   - `build`: `npm run lint`, que falla con cualquier error o aviso (`--max-warnings=0`), y `npm run build`. Este build en Linux es lo que caza los imports con casing incorrecto que Windows esconde.
   - `test`: los tests de unidad, **sin `.env`** (un test que arrastra `src/firebase.js` falla con `auth/invalid-api-key`: se mockea `../firebase`; para reproducirlo, `VITE_FIREBASE_API_KEY= npx vitest run`), los e2e y las reglas, contra el emulador.
+  - `smoke`: la prueba de humo (`npm run test:smoke`, ver Tests), con el Chrome que trae la imagen de GitHub.
 - `.github/workflows/deploy.yml` — push a `main` → build → publica `dist/` en la rama `gh-pages`.
 - **Cloud Functions quedan fuera del pipeline** y se deployan a mano. La app no las invoca por HTTP: escribe un job en `functionJobs` y un trigger de Firestore v2 lo ejecuta. Van en `us-central1` y declaran `database: "hpdatabase"`; el porqué, la autorización y `npm run functions:verify` antes de cada deploy están en `functions/README.md`.
 
 ### Commits
 
 - **Un commit por criterio**, con un mensaje corto en camelCase (`noWritesOnOpeningSummaries`), sin prefijos (`feat:`) ni líneas `Co-Authored-By`. Separar un archivo va en un commit aparte (ver "Componentes y archivos"). `.claude/settings.local.json` es la configuración local de cada quien y no se commitea.
-- **Antes de commitear:** `npm run lint` en cero; `VITE_FIREBASE_API_KEY= npx vitest run`, que corre los tests como el CI, sin `.env`; y `npm run build` si cambiaron imports o nombres de archivo. Un cambio de interfaz se prueba en la app contra el emulador (ver Tests), en escritorio y a 412 px.
+- **Antes de commitear:** `npm run lint` en cero; `VITE_FIREBASE_API_KEY= npx vitest run`, que corre los tests como el CI, sin `.env`; y `npm run build` si cambiaron imports o nombres de archivo. Un cambio de interfaz se prueba en la app contra el emulador (ver Tests), en escritorio y a 412 px, y antes de su PR pasa `npm run test:smoke`.
 - **Los datos reales no entran al repo, que es público.** Ni planillas, ni JSON de nóminas, ni contactos, ni el nombre, RUT, cuenta o correo de una persona real en el código, los tests, la documentación o las capturas. Las pruebas usan datos inventados, y los archivos reales que se usan en local van en `.git/info/exclude`.
 
 ### Documentación por pantalla
@@ -153,6 +154,7 @@ Un componente se ubica según quién lo usa:
   - **Un `for…of` que desestructura un objeto dentro de otro** (`for (const [i, { node }] of list.entries())`): se recorre por índice.
   - **`||=`**, y un `++` sobre una variable que usa una función de adentro.
 - **Las columnas de ag-grid dependen solo de la forma de la grilla** (días, combos, vista), con todas sus dependencias declaradas. Las celdas son componentes que llaman a las acciones vigentes desde un ref que se actualiza en un efecto (`actionsRef`, en `WorkersTab` y en `GridCellsContext` de la grilla del ciclo), así cambiar una función no rehace las columnas. Ese ref lo leen las celdas en sus handlers: pasárselo a una función durante el render (`buildColumnDefs({ actionsRef })`) no compila.
+- **Una lista que puede faltar tiene por defecto una lista vacía guardada en una constante del módulo** (`const NONE = []`, `function Pieza({ items = NONE })`), nunca `null`: un `.filter` o un `.map` sobre `null` tira la pantalla entera. Va en una constante y no como `[]` en la firma, porque un `[]` nuevo en cada render rehace todo lo que depende de la lista.
 - **Un callback que lee una propiedad de algo que puede ser `null` revisa primero que exista**: `onConfirm={() => toDelete && remove(toDelete.id)}`, o `if (!editing) return;` al principio de la función. React Compiler compara `toDelete.id` en cada render para saber si rehace el callback y, con `toDelete` en `null` (un diálogo cerrado), la pantalla se cae.
 
 ### Contextos
@@ -313,6 +315,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 | `npm run test:watch` | Vitest en modo watch |
 | `npm run test:e2e` | Ciclos end-to-end contra el emulador de Firestore |
 | `npm run test:rules` | `firestore.rules` y `storage.rules` contra los emuladores |
+| `npm run test:smoke` | La prueba de humo: cada pantalla y sus modales clave en el navegador, contra los emuladores |
 | `npm run test:all` | Los tres anteriores |
 | `npm run functions:verify` | Cloud Functions contra los emuladores de functions, firestore, auth y storage, sin deployar |
 | `npm run help:shots` | Regenera las capturas de la ayuda contra los emuladores, con datos inventados (`HELP_GUIDES=<id>` para algunas guías) |
@@ -320,7 +323,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 
 ### Tests
 
-Tres capas, ninguna toca datos reales.
+Cuatro capas, ninguna toca datos reales.
 
 - **Unidad** (`vitest.config.js`): `src/**/*.test.js`, entorno `node`, sin globals
   (cada archivo importa `describe`/`it`/`expect` de `vitest`, así `eslint.config.js`
@@ -337,6 +340,14 @@ Tres capas, ninguna toca datos reales.
   `storage.rules`, contra el emulador de Storage: los adjuntos, con la marca de
   acceso (`appAccess`) en la sesión de cada cuenta de prueba. Usa
   `@firebase/rules-unit-testing` y su propio project id (`demo-terra-rules`).
+- **Humo** (`tests/smoke/smoke.mjs`): abre cada pantalla y sus modales clave (la
+  grilla, el resumen del ciclo, la ficha del trabajador, generar una nómina y su
+  detalle, el resumen de un transportista, los adjuntos) en el navegador, en
+  escritorio y a 412 px. Usa la maquinaria de las capturas de la ayuda: Vite
+  contra los emuladores, los datos de demo de `scripts/help/seed.mjs` y el Edge
+  o el Chrome instalados. Falla si la página lanza un error o escribe uno en la
+  consola, o si una pantalla no llega a mostrar sus datos. Una pantalla nueva
+  suma su ruta en `SCREENS`, y un modal clave, su flujo en `FLOWS`.
 
 **Cuatro barreras impiden que un test toque `arandanos-hp`**, y cualquiera alcanza:
 
