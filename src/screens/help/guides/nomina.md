@@ -62,7 +62,7 @@ Cada fila muestra el estado, cuántas personas, lo de banco, lo de efectivo y el
 
 - **Solo transferencias**: ver "Pagar en dos tiempos".
 - **Mover a Diferencias** (o a Nóminas) y **Renombrar**.
-- **Eliminar**: borra la nómina, libera sus días (vuelven a quedar pendientes) y devuelve los anticipos. Si no se puede, dice qué hacer antes.
+- **Eliminar**: borra la nómina y sus adjuntos, libera sus días (vuelven a quedar pendientes) y devuelve los anticipos. Si no se puede, dice qué hacer antes.
 
 ## El detalle de una nómina
 <!-- preguntas: ver el detalle de la nómina; cuánto efectivo tengo que sacar; billetes y monedas; resumen por subfaena; copiar el resumen de la nómina; total bruto de la nómina; cuánto se produjo antes de anticipos; quién editó la nómina; cuándo se modificó la nómina -->
@@ -74,7 +74,7 @@ Cada fila muestra el estado, cuántas personas, lo de banco, lo de efectivo y el
 - La tabla del resumen, por subfaena (**Sin labores**) o por subfaena y labor (**Con labores**), con **Copiar**, **Descargar** e **Imprimir**.
 - Más abajo, los ciclos de la nómina y las personas por líder, de banco y de efectivo.
 - Arriba, bajo el nombre, cuándo se editó por última vez y quién.
-- Arriba, **Editar contenido** y **Recalcular** sirven para corregirla (ver la guía [Corregir una nómina](/ayuda/corregir-nomina)).
+- Arriba, **Editar contenido** y **Recalcular** sirven para corregirla (ver la guía [Corregir una nómina](/ayuda/corregir-nomina)), y **📎 Adjuntos** guarda los comprobantes del pago (ver [Adjuntar los comprobantes del pago](/ayuda/nomina#adjuntar-los-comprobantes-del-pago)).
 
 ## Descargar el archivo del banco
 <!-- preguntas: cómo descargo el archivo del banco; subir la nómina al banco; descargar el excel de la nómina; archivo para transferencias -->
@@ -121,6 +121,22 @@ Cuando salen las transferencias pero el efectivo se entrega después:
 3. Cuando se entrega el efectivo, toca **💵 Pagar efectivo** en el historial.
 
 Mientras se debe, el efectivo aparece en **Generar** (**💵 Efectivo pendiente de antes**) y se puede sumar en **Estimar efectivo**, para llevar todo junto. Con las transferencias selladas la nómina no se puede editar ni eliminar; **⋯ → Revertir transferencias** lo deshace.
+
+## Adjuntar los comprobantes del pago
+<!-- preguntas: adjuntar el comprobante de la nómina; subir el comprobante del banco; adjuntar la cartola; adjuntar los comprobantes firmados; dónde guardo el archivo de la nómina pagada; ver los comprobantes de una nómina -->
+
+Una nómina guarda los archivos que respaldan su pago: el comprobante de las transferencias que entrega el banco, la cartola o la foto de los comprobantes de efectivo firmados.
+
+1. Abre el detalle de la nómina y toca **📎 Adjuntos**, a la derecha de la fila de botones de arriba.
+2. Toca **📎 Elegir archivos**, arrastra los archivos al recuadro o pega una imagen con **Ctrl+V**. En el teléfono, **📷 Sacar foto** abre la cámara.
+
+Cada archivo se sube apenas lo eliges, también con la nómina ya pagada. Se adjuntan fotos, imágenes y PDF, de hasta 10 MB.
+
+![Los comprobantes de una nómina pagada](help/nomina/11-adjuntos.webp)
+
+- En el historial, la nómina muestra **📎** con la cantidad de adjuntos.
+- Al tocar un adjunto se abre el visor, y **✕** lo quita. El visor y los archivos que se aceptan funcionan igual que en Cheques y pagos (ver [Adjuntar la foto de un cheque, un comprobante o una factura](/ayuda/cheques-y-pagos#adjuntar-la-foto-de-un-cheque-un-comprobante-o-una-factura)).
+- **🕘 Historial**, arriba en el detalle, anota lo que se adjuntó y lo que se quitó. Eliminar la nómina borra también sus adjuntos.
 
 ## La nómina en el portal de trabajadores
 <!-- preguntas: portal de trabajadores; publicar la nómina en el portal; los trabajadores ven su pago; cuál nómina está en el portal; qué es el ícono del portal -->

@@ -29,6 +29,7 @@ Al tocar un resumen se abre su detalle, con sus vueltas:
 
 - **📋 Copiar imagen**, **📥 Descargar PNG** e **🖨 Imprimir** lo dejan listo para mandárselo al transportista.
 - **✏️ Editar resumen** permite corregir una vuelta (vueltas y tarifa) o quitarla. **+ Vuelta suelta** suma una pendiente que quedó afuera.
+- **📎 Adjuntos** guarda la factura y los comprobantes (ver [Adjuntar los comprobantes](/ayuda/pagar-transportes#adjuntar-los-comprobantes)).
 - **💰 Marcar pagado** paga un resumen que no está en ninguna quincena (ver [Pagar un resumen suelto](/ayuda/pagar-transportes#pagar-un-resumen-suelto)).
 - **Eliminar** borra el resumen; sus vueltas vuelven a quedar sueltas. Uno que está en una quincena primero se saca de ella.
 - **🖨 Imprimir varios**, en **Resúmenes**, imprime o descarga varios de una vez.
@@ -56,7 +57,30 @@ En el detalle de un resumen pendiente, **💰 Abonos** anota lo que ya se le pag
 
 ![Un abono en el resumen](help/pagar-transportes/05-abono.webp)
 
-Arriba se ven lo **Abonado** y lo **Pendiente**, y lo que se copia o imprime cierra con el **PENDIENTE**. Cada abono se corrige con ✏️ o se quita con ✕ mientras el resumen no esté pagado.
+Arriba se ven lo **Abonado** y lo **Pendiente**, y lo que se copia o imprime cierra con el **PENDIENTE**. Cada abono se corrige con ✏️ o se quita con ✕ mientras el resumen no esté pagado, y su **📎** guarda el comprobante (ver [Adjuntar los comprobantes](/ayuda/pagar-transportes#adjuntar-los-comprobantes)).
+
+## Adjuntar los comprobantes
+<!-- preguntas: adjuntar el comprobante de un abono; adjuntar la factura del transportista; subir la transferencia al transportista; guardar el comprobante de pago del transporte; ver los archivos de un transportista; dónde están las facturas del transportista -->
+
+Un resumen guarda sus comprobantes y archivos, como la factura del transportista o la transferencia de cada abono.
+
+- **El comprobante de un abono**: en **💰 Abonos**, toca el **📎** de ese abono. Lo que se sube ahí queda con ese abono.
+
+![El 📎 de un abono](help/pagar-transportes/14-adjunto-abono.webp)
+
+- **Lo demás, como la factura**: toca **📎 Adjuntos**, al pie del detalle del resumen. Ahí están todos los archivos del resumen, cada uno con el abono que respalda.
+
+En los dos, toca **📎 Elegir archivos**, arrastra los archivos al recuadro o pega una imagen con **Ctrl+V**, como una copiada de WhatsApp Web. En el teléfono, **📷 Sacar foto** abre la cámara. Cada archivo se sube apenas lo eliges.
+
+![Los adjuntos de un resumen](help/pagar-transportes/15-adjuntos-resumen.webp)
+
+- Se adjunta también con el resumen pagado.
+- Al quitar un abono, sus archivos quedan en el resumen.
+- Al tocar un adjunto se abre el visor, y **✕** lo quita. El visor y los archivos que se aceptan funcionan igual que en Cheques y pagos (ver [Adjuntar la foto de un cheque, un comprobante o una factura](/ayuda/cheques-y-pagos#adjuntar-la-foto-de-un-cheque-un-comprobante-o-una-factura)).
+
+**Todos los archivos de un transportista**: en **Transportistas**, toca su tarjeta y, en su resumen, **📎 Archivos**. Los junta por resumen, del más nuevo al más viejo, y el visor los recorre seguidos.
+
+![Los archivos de un transportista](help/pagar-transportes/16-archivos-transportista.webp)
 
 ## Armar la quincena
 <!-- preguntas: crear una quincena; nueva quincena de transporte; juntar los resúmenes para pagar; quincena de los buses -->

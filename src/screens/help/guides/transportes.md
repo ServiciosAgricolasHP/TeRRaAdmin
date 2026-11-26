@@ -74,6 +74,7 @@ Al tocar la tarjeta de un transportista se abre su resumen: una fila por quincen
 
 - **Incluir pagados** suma lo ya pagado en un rango de fechas; **🚚 Detalle de quincenas** muestra también las vueltas de cada quincena.
 - **📋 Copiar imagen**, **📥 Descargar PNG** e **🖨 Imprimir** lo comparten tal como se ve.
+- **📎 Archivos** junta las facturas y los comprobantes de todos sus resúmenes y abonos (ver [Adjuntar los comprobantes](/ayuda/pagar-transportes#adjuntar-los-comprobantes)).
 
 ## Si algo no funciona
 <!-- preguntas: no aparece el transportista; no puedo editar una vuelta; no aparece el vehículo -->

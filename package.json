@@ -18,7 +18,7 @@
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist -t",
     "functions:verify": "firebase emulators:exec --only functions,firestore,auth,storage --project demo-terra-test \"node functions/verify.mjs\"",
-    "help:shots": "firebase emulators:exec --only firestore,auth --project demo-terra-test \"node scripts/help/shots.mjs\""
+    "help:shots": "firebase emulators:exec --only firestore,auth,storage --project demo-terra-test \"node scripts/help/shots.mjs\""
   },
   "dependencies": {
     "ag-grid-community": "^35.2.1",

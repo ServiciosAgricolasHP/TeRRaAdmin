@@ -57,7 +57,7 @@ const SIZES_FILE = path.join(ROOT, "src", "screens", "help", "imageSizes.json");
 const PORT = 5196;
 const BASE = `http://localhost:${PORT}/TeRRaAdmin`;
 
-if (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_HOST) {
+if (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_HOST || !process.env.FIREBASE_STORAGE_EMULATOR_HOST) {
   console.error("Falta el emulador: corre `npm run help:shots`, que lo levanta.");
   process.exit(1);
 }
@@ -87,6 +87,7 @@ if (unknown.length) {
 Object.assign(process.env, {
   VITE_FIRESTORE_EMULATOR: process.env.FIRESTORE_EMULATOR_HOST,
   VITE_AUTH_EMULATOR: process.env.FIREBASE_AUTH_EMULATOR_HOST,
+  VITE_STORAGE_EMULATOR: process.env.FIREBASE_STORAGE_EMULATOR_HOST,
   VITE_FIREBASE_PROJECT_ID: DEMO_PROJECT,
   VITE_FIREBASE_API_KEY: "demo-api-key",
   VITE_FIREBASE_AUTH_DOMAIN: `${DEMO_PROJECT}.firebaseapp.com`,

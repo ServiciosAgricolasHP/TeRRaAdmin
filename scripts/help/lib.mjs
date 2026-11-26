@@ -28,6 +28,21 @@ export async function login(page, base) {
   await page.waitForURL(/faenas/, { timeout: 120000 });
 }
 
+// Sube `files` (los de `demoFiles.mjs`) en el modal de adjuntos abierto y
+// espera a verlos en la lista, con sus miniaturas cargadas y sin el aviso de
+// guardado.
+export async function attachFiles(page, modal, files) {
+  const thumbs = modal.getByRole("button", { name: /^Ver / });
+  const before = await thumbs.count();
+  await modal.locator("input[type=file][multiple]").setInputFiles(files);
+  await thumbs.nth(before + files.length - 1).waitFor({ timeout: 60000 });
+  const handle = await modal.elementHandle();
+  await page.waitForFunction((el) => [...el.querySelectorAll("img")].every((img) => img.complete && img.naturalWidth > 0), handle, { timeout: 60000 });
+  const toast = page.getByText(/^(Adjunto guardado|\d+ adjuntos guardados)$/).first();
+  await toast.waitFor({ timeout: 60000 }).catch(() => {});
+  await toast.waitFor({ state: "hidden", timeout: 30000 }).catch(() => {});
+}
+
 // La versión del encabezado cambia con cada commit: en las capturas va sin número.
 async function hideVersion(page) {
   await page.evaluate(() => {

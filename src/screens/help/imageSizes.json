@@ -85,7 +85,7 @@
   ],
   "help/cheques-y-pagos/05-menu.webp": [
     1162,
-    254
+    399
   ],
   "help/cheques-y-pagos/06-abono.webp": [
     672,
@@ -94,6 +94,14 @@
   "help/cheques-y-pagos/07-informe.webp": [
     1152,
     810
+  ],
+  "help/cheques-y-pagos/08-adjuntos.webp": [
+    672,
+    468
+  ],
+  "help/cheques-y-pagos/09-visor.webp": [
+    1152,
+    680
   ],
   "help/contratos/01-empleadores.webp": [
     448,
@@ -161,7 +169,7 @@
   ],
   "help/corregir-nomina/01-botones.webp": [
     1126,
-    42
+    48
   ],
   "help/corregir-nomina/02-recalcular.webp": [
     672,
@@ -181,11 +189,11 @@
   ],
   "help/corregir-nomina/06-revisar-cambios.webp": [
     672,
-    578
+    606
   ],
   "help/corregir-nomina/07-sacar-persona.webp": [
     1116,
-    39
+    50
   ],
   "help/corregir-nomina/08-confirmar-sacar.webp": [
     384,
@@ -383,6 +391,10 @@
     672,
     298
   ],
+  "help/nomina/11-adjuntos.webp": [
+    672,
+    468
+  ],
   "help/pagar-transportes/01-pago-por-faena.webp": [
     1200,
     844
@@ -425,7 +437,7 @@
   ],
   "help/pagar-transportes/11-liquidacion.webp": [
     866,
-    127
+    139
   ],
   "help/pagar-transportes/12-agregar-vuelta.webp": [
     672,
@@ -434,6 +446,18 @@
   "help/pagar-transportes/13-agregar-resumen.webp": [
     1152,
     540
+  ],
+  "help/pagar-transportes/14-adjunto-abono.webp": [
+    866,
+    155
+  ],
+  "help/pagar-transportes/15-adjuntos-resumen.webp": [
+    672,
+    468
+  ],
+  "help/pagar-transportes/16-archivos-transportista.webp": [
+    672,
+    318
   ],
   "help/precios-del-dia/01-nueva-labor.webp": [
     448,

@@ -60,6 +60,9 @@ export async function seedDemo() {
     user = await auth.createUser({ email: DEMO_USER.email, password: DEMO_USER.password });
   }
   await db.collection("users").doc(user.uid).set({ role: "admin", email: DEMO_USER.email, alias: DEMO_USER.alias });
+  // La marca de acceso que en producción pone `syncAccessClaim`: sin ella,
+  // storage.rules rechaza los adjuntos.
+  await auth.setCustomUserClaims(user.uid, { appAccess: true });
   await db.collection("indicators").doc("main").set({ sueldoBase: 539000, dia: 17967, hora: 4790 });
 
   for (const leader of ["GRUPO NORTE", "GRUPO SUR"]) {
