@@ -199,7 +199,7 @@ export async function addAttachments(c, files, { onProgress } = {}) {
       const id = newAttachmentId();
       const name = attachmentFileName(f.name, f.contentType);
       const path = attachmentPath(c.id, id, name);
-      await uploadFile(path, f.blob, f.contentType);
+      await uploadFile(path, f.blob, f.contentType, name);
       uploaded.push({
         id,
         name,

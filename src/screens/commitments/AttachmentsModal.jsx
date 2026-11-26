@@ -3,52 +3,38 @@ import Modal, { ModalCloseButton } from "../../components/Modal";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import { ProgressBar } from "../../components/ProgressBar";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import { fileUrl } from "../../services/storageFiles";
 import { fileSizeLabel, transferFiles } from "../../utils/attachments";
+import { FileViewer } from "./FileViewer";
 import { fmtDate } from "./helpers";
 import { btnCls } from "./styles";
 import { useAttachments } from "./useAttachments";
+import { useFileUrl } from "./useFileUrl";
 
 const ACCEPT = "image/*,application/pdf";
 
-// Una fila de la lista: la miniatura de una imagen o el ícono de un PDF, que
-// abren el archivo en otra pestaña. El enlace se pide al mostrarse.
-function AttachmentRow({ attachment, disabled, onRemove }) {
-  const [url, setUrl] = useState("");
-  const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    let live = true;
-    fileUrl(attachment.path)
-      .then((u) => live && setUrl(u))
-      .catch(() => live && setFailed(true));
-    return () => {
-      live = false;
-    };
-  }, [attachment.path]);
-
+// Una fila de la lista: la miniatura de una imagen o el ícono de un PDF y el
+// nombre, que abren el visor. El enlace de la miniatura se pide al mostrarse.
+function AttachmentRow({ attachment, disabled, onOpen, onRemove }) {
   const image = attachment.contentType?.startsWith("image/");
+  const { url, failed } = useFileUrl(image ? attachment.path : null);
   const who = attachment.uploadedByName ? ` · ${attachment.uploadedByName}` : "";
   return (
     <div className="flex items-center gap-3 px-3 py-2 text-sm">
-      <a
-        href={url || undefined}
-        target="_blank"
-        rel="noreferrer"
-        title="Abrir"
+      <button
+        type="button"
+        title="Ver"
+        aria-label={`Ver ${attachment.name}`}
+        onClick={onOpen}
         className={`flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] text-2xl ${
           image && !url && !failed ? "animate-pulse" : ""
         }`}
       >
         {image && url ? <img src={url} alt="" className="h-full w-full object-cover" /> : image ? null : "📄"}
-      </a>
+      </button>
       <div className="min-w-0 flex-1">
-        {url ? (
-          <a href={url} target="_blank" rel="noreferrer" className="block truncate font-medium hover:underline" title={attachment.name}>
-            {attachment.name}
-          </a>
-        ) : (
-          <div className="truncate font-medium" title={attachment.name}>{attachment.name}</div>
-        )}
+        <button type="button" onClick={onOpen} className="block max-w-full truncate text-left font-medium hover:underline" title={attachment.name}>
+          {attachment.name}
+        </button>
         <div className="text-xs text-[var(--color-muted)]">
           {fileSizeLabel(attachment.size)} · {fmtDate(String(attachment.uploadedAt || "").slice(0, 10))}{who}
         </div>
@@ -75,14 +61,16 @@ export function AttachmentsModal({ item, onClose, onSaved }) {
   const isMobile = useIsMobile();
   const { busy, stage, rejected, add, pasteFromClipboard, remove } = useAttachments({ item, onSaved });
   const [removing, setRemoving] = useState(null);
+  const [viewing, setViewing] = useState(null); // índice del adjunto abierto en el visor
   const [dragging, setDragging] = useState(false);
   const pickRef = useRef(null);
   const cameraRef = useRef(null);
   const attachments = item.attachments || [];
   const canReadClipboard = typeof navigator !== "undefined" && !!navigator.clipboard?.read;
 
-  // Ctrl+V en cualquier parte del modal abierto.
+  // Ctrl+V en cualquier parte del modal abierto, salvo con el visor encima.
   const onPaste = useEffectEvent((e) => {
+    if (viewing !== null) return;
     const files = transferFiles(e.clipboardData);
     if (files.length === 0) return;
     e.preventDefault();
@@ -175,10 +163,14 @@ export function AttachmentsModal({ item, onClose, onSaved }) {
         <p className="text-sm text-[var(--color-muted)]">Todavía no hay adjuntos.</p>
       ) : (
         <div className="divide-y divide-[var(--color-border)] rounded-md border border-[var(--color-border)]">
-          {attachments.map((a) => (
-            <AttachmentRow key={a.id} attachment={a} disabled={busy} onRemove={setRemoving} />
+          {attachments.map((a, i) => (
+            <AttachmentRow key={a.id} attachment={a} disabled={busy} onOpen={() => setViewing(i)} onRemove={setRemoving} />
           ))}
         </div>
+      )}
+
+      {viewing !== null && attachments.length > 0 && (
+        <FileViewer files={attachments} startIndex={viewing} onClose={() => setViewing(null)} />
       )}
 
       <ConfirmDialog

@@ -76,6 +76,27 @@ export function attachmentFileName(name, contentType) {
 // delante del nombre para que dos archivos con el mismo nombre no choquen.
 export const attachmentPath = (commitmentId, attachmentId, fileName) => `commitments/${commitmentId}/${attachmentId}-${fileName}`;
 
+// La cabecera `Content-Disposition` de un adjunto: el navegador lo muestra en
+// la página (una imagen o un PDF en el visor) y, al guardarlo, lo nombra como
+// se ve en la lista, sin el id de la ruta. El nombre va codificado como pide
+// RFC 5987, así pasan las tildes y los espacios.
+export function inlineDisposition(fileName) {
+  const encoded = encodeURIComponent(String(fileName || "archivo")).replace(
+    /['()*]/g,
+    (ch) => `%${ch.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `inline; filename*=utf-8''${encoded}`;
+}
+
+// Cómo muestra el visor un adjunto guardado, según su tipo: "image", "pdf" u
+// "other".
+export function viewerKind(contentType) {
+  const type = String(contentType || "").toLowerCase();
+  if (type.startsWith("image/")) return "image";
+  if (type === "application/pdf") return "pdf";
+  return "other";
+}
+
 // "850 KB" o "1,2 MB".
 export function fileSizeLabel(bytes) {
   const n = Number(bytes) || 0;

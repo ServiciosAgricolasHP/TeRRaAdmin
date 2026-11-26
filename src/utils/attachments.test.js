@@ -7,7 +7,9 @@ import {
   attachmentFileName,
   attachmentPath,
   fileSizeLabel,
+  inlineDisposition,
   transferFiles,
+  viewerKind,
 } from "./attachments";
 
 const file = (name, type, size = 1000) => ({ name, type, size });
@@ -76,6 +78,22 @@ describe("nombre y ruta", () => {
     expect(fileSizeLabel(300)).toBe("1 KB");
     expect(fileSizeLabel(250 * 1024)).toBe("250 KB");
     expect(fileSizeLabel(1.25 * 1024 * 1024)).toBe("1,3 MB");
+  });
+});
+
+describe("el visor", () => {
+  it("muestra en la página con el nombre de la lista, codificado", () => {
+    expect(inlineDisposition("Factura 1190.pdf")).toBe("inline; filename*=utf-8''Factura%201190.pdf");
+    expect(inlineDisposition("Cheque Nº 4512 (copia)'s.jpg")).toBe("inline; filename*=utf-8''Cheque%20N%C2%BA%204512%20%28copia%29%27s.jpg");
+    expect(inlineDisposition("")).toBe("inline; filename*=utf-8''archivo");
+  });
+
+  it("decide la vista por el tipo guardado", () => {
+    expect(viewerKind("image/jpeg")).toBe("image");
+    expect(viewerKind("IMAGE/PNG")).toBe("image");
+    expect(viewerKind("application/pdf")).toBe("pdf");
+    expect(viewerKind("text/plain")).toBe("other");
+    expect(viewerKind(undefined)).toBe("other");
   });
 });
 
