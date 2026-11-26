@@ -691,7 +691,7 @@ Colección aparte y no un campo en `cycles` porque los docs de `cycles` se traen
 > Sin `logs` de auditoría: el guardado es debounced mientras se tipea, así que registrar cada escritura llenaría el log de diffs anidados. La trazabilidad acá es `updatedBy`/`updatedAt`. Por eso el servicio (`src/services/cycleSummariesService.js`) está escrito a mano y no con `createService()`.
 
 ### `users`
-Perfil de cada cuenta: acceso, rol y preferencias. **DocId = uid de Auth.** Se crea desde la consola de Firebase. **Sin este doc la cuenta no tiene acceso** (ver `firestore.rules` y `docs/screens/users.md`).
+Perfil de cada cuenta: acceso, rol y preferencias. **DocId = uid de Auth.** Se crea desde la consola de Firebase. **Sin este doc la cuenta no tiene acceso** (ver `firestore.rules` y `docs/screens/users.md`). Cada escritura del doc pone al día la marca `appAccess` de la cuenta en Authentication (la función `syncAccessClaim`), que revisan las reglas de Storage.
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` (docId) | string | uid |

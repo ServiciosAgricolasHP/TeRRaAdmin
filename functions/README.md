@@ -35,6 +35,14 @@ servicio, así que tampoco necesitan invoker público:
 - `weeklyBackup` (`backup.js`): los domingos a las 3:00 de Chile genera el
   respaldo en JSON.
 
+Y un trigger sobre los perfiles:
+
+- `syncAccessClaim` (`access.js`): con cada escritura de `users/{uid}` le pone a
+  la cuenta de Authentication la marca `appAccess` (una *custom claim*), `true`
+  con perfil y sin `disabled`, que revisan las reglas de Storage. La calcula
+  desde el perfil vivo y la escribe solo si cambió, conservando las demás
+  marcas. Un perfil sin cuenta en Authentication no hace nada.
+
 Los siguientes están como TODO al final de `index.js`: restaurar una colección
 desde un respaldo y más jobs para Usuarios.
 

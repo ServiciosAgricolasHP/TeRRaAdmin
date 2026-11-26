@@ -42,6 +42,9 @@
 //      los últimos 12, que lo pida solo un admin, y que el enlace de descarga
 //      rechace un id inválido o un respaldo que no existe. Firmar el enlace no
 //      se prueba: el emulador no tiene credenciales para firmar.
+//   8. Que `syncAccessClaim` le ponga a la cuenta la marca `appAccess` con
+//      perfil, la pase a `false` al suspenderla o borrar el perfil y la
+//      devuelva al reactivarla, sin tocar sus otras marcas.
 //
 // **Lo que este archivo NO puede probar**: que el trigger esté suscrito a la
 // base correcta. El emulador de Firestore no soporta bases múltiples —lo dice
@@ -557,6 +560,36 @@ console.log("respaldo");
   check("avisa si el respaldo ya no está", (await link({ backupId: backupIdOf(new Date(Date.UTC(2024, 0, 1))) }))?.errorCode === "not-found");
   const signed = await link({ backupId: latest.id });
   console.log(`  (el enlace de un respaldo que existe, en el emulador: ${signed?.status}${signed?.errorCode ? " " + signed.errorCode : ""})`);
+}
+
+console.log("");
+console.log("marca de acceso (syncAccessClaim)");
+{
+  const auth = getAuth();
+  const account = await auth.createUser({ email: `acceso-${Date.now()}@terra.test`, password: "clave-de-prueba" });
+  const claimOf = async () => (await auth.getUser(account.uid)).customClaims?.appAccess;
+  // La marca la pone el trigger, así que se espera por sondeo.
+  const waitForClaim = async (expected) => {
+    const deadline = Date.now() + TIMEOUT_MS;
+    for (;;) {
+      const value = await claimOf();
+      if (value === expected || Date.now() > deadline) return value;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+  };
+  const profile = db.collection("users").doc(account.uid);
+
+  check("sin perfil, la cuenta no tiene la marca", (await claimOf()) === undefined);
+  await profile.set({ role: "user" });
+  check("con perfil, la marca queda en true", (await waitForClaim(true)) === true);
+  await auth.setCustomUserClaims(account.uid, { appAccess: true, otra: "x" });
+  await profile.update({ disabled: true });
+  check("al suspenderla, queda en false", (await waitForClaim(false)) === false);
+  check("conserva las otras marcas", (await auth.getUser(account.uid)).customClaims?.otra === "x");
+  await profile.update({ disabled: false });
+  check("al reactivarla, vuelve a true", (await waitForClaim(true)) === true);
+  await profile.delete();
+  check("al borrar el perfil, queda en false", (await waitForClaim(false)) === false);
 }
 
 console.log("");
