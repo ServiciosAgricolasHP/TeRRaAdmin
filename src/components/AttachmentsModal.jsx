@@ -12,9 +12,11 @@ const ACCEPT = "image/*,application/pdf";
 const BTN =
   "min-h-9 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-surface-2)] disabled:opacity-50";
 
-// Una fila de la lista: la miniatura de una imagen o el ícono de un PDF y el
-// nombre, que abren el visor. El enlace de la miniatura se pide al mostrarse.
-function AttachmentRow({ attachment, disabled, onOpen, onRemove }) {
+// Una fila de una lista de adjuntos: la miniatura de una imagen o el ícono de
+// un PDF y el nombre, que abren el visor, y debajo de dónde viene (`context`),
+// el tamaño, el día y quién lo subió. El enlace de la miniatura se pide al
+// mostrarse. Sin `onRemove`, la fila es solo para ver.
+export function AttachmentRow({ attachment, disabled, onOpen, onRemove }) {
   const image = attachment.contentType?.startsWith("image/");
   const { url, failed } = useFileUrl(image ? attachment.path : null);
   return (
@@ -34,38 +36,48 @@ function AttachmentRow({ attachment, disabled, onOpen, onRemove }) {
         <button type="button" onClick={onOpen} className="block max-w-full truncate text-left font-medium hover:underline" title={attachment.name}>
           {attachment.name}
         </button>
-        <div className="text-xs text-[var(--color-muted)]">{attachmentSummary(attachment)}</div>
+        <div className="text-xs text-[var(--color-muted)]">
+          {[attachment.context, attachmentSummary(attachment)].filter(Boolean).join(" · ")}
+        </div>
         {failed && <div className="text-xs text-[var(--color-danger)]">No se pudo abrir el archivo.</div>}
       </div>
-      <button
-        type="button"
-        title="Quitar adjunto"
-        aria-label={`Quitar ${attachment.name}`}
-        disabled={disabled}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--color-danger)] hover:bg-[var(--color-surface-2)] disabled:opacity-50"
-        onClick={() => onRemove(attachment)}
-      >
-        ✕
-      </button>
+      {onRemove && (
+        <button
+          type="button"
+          title="Quitar adjunto"
+          aria-label={`Quitar ${attachment.name}`}
+          disabled={disabled}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--color-danger)] hover:bg-[var(--color-surface-2)] disabled:opacity-50"
+          onClick={() => onRemove(attachment)}
+        >
+          ✕
+        </button>
+      )}
     </div>
   );
 }
 
-// Fotos y PDF de un documento (`owner`: un vencimiento, una nómina), como un
-// comprobante de pago, una factura o la foto de un cheque, con el `target` de
-// su colección (`services/attachments.js`). Se suben apenas se eligen, se
-// arrastran o se pegan (Ctrl+V, por ejemplo una imagen copiada de WhatsApp
-// Web, o 📋 Pegar imagen en el teléfono). `renderProgress(stage)` dibuja el
-// avance a la manera de la pantalla; sin él, una barra en el modal.
-export function AttachmentsModal({ title, owner, target, onClose, onSaved, renderProgress }) {
+// Fotos y PDF de un documento (`owner`: un vencimiento, una nómina, un resumen
+// de transporte), como un comprobante de pago, una factura o la foto de un
+// cheque, con el `target` de su colección (`services/attachments.js`). Se suben
+// apenas se eligen, se arrastran o se pegan (Ctrl+V, por ejemplo una imagen
+// copiada de WhatsApp Web, o 📋 Pegar imagen en el teléfono).
+// `renderProgress(stage)` dibuja el avance a la manera de la pantalla; sin él,
+// una barra en el modal. `scope` acota lo que se ve y lo que se sube a una
+// parte del documento (un abono de un resumen): `filter` elige los adjuntos
+// que se listan, `extra` va en la ficha de cada archivo nuevo y `contextOf(a)`
+// dice de dónde viene cada uno.
+export function AttachmentsModal({ title, owner, target, scope, onClose, onSaved, renderProgress }) {
   const isMobile = useIsMobile();
-  const { busy, stage, rejected, add, pasteFromClipboard, remove } = useAttachments({ target, owner, onSaved });
+  const { busy, stage, rejected, add, pasteFromClipboard, remove } = useAttachments({ target, owner, extra: scope?.extra, onSaved });
   const [removing, setRemoving] = useState(null);
   const [viewing, setViewing] = useState(null); // índice del adjunto abierto en el visor
   const [dragging, setDragging] = useState(false);
   const pickRef = useRef(null);
   const cameraRef = useRef(null);
-  const attachments = owner.attachments || [];
+  const all = owner.attachments || [];
+  const shown = scope?.filter ? all.filter(scope.filter) : all;
+  const attachments = scope?.contextOf ? shown.map((a) => ({ ...a, context: scope.contextOf(a) })) : shown;
   const canReadClipboard = typeof navigator !== "undefined" && !!navigator.clipboard?.read;
 
   // Ctrl+V en cualquier parte del modal abierto, salvo con el visor encima.

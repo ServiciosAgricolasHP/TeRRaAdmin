@@ -4,6 +4,8 @@ import { useCaptureActions } from "../../hooks/useCaptureActions";
 import { localIsoDate } from "../../utils/dates";
 import { fmtCurrency } from "../../utils/format";
 import { carrierSummaryGroups, carrierSummaryTotals } from "../../utils/carrierSummary";
+import { carrierFiles } from "../../utils/transportAttachments";
+import { CarrierFilesModal } from "./carrierSummaryModal/CarrierFilesModal";
 import { useCarrierSummaryData } from "./carrierSummaryModal/useCarrierSummaryData";
 import { PrintableCarrierSummary } from "./carrierSummaryModal/PrintableCarrierSummary";
 
@@ -62,12 +64,14 @@ export function CarrierSummaryModal({ carrier, onClose }) {
   const [to, setTo] = useState(() => localIsoDate());
   const [titles, setTitles] = useState(() => loadTitles(carrier.id));
   const [showTitleEditor, setShowTitleEditor] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(false);
   const printRef = useRef(null);
 
   const scope = includePaid ? { includePaid, from, to } : { includePaid: false, from: "", to: "" };
   const { data, loading } = useCarrierSummaryData(carrier.id, scope);
   const groups = useMemo(() => (data ? carrierSummaryGroups(data) : []), [data]);
   const totals = useMemo(() => carrierSummaryTotals(groups), [groups]);
+  const files = useMemo(() => carrierFiles(data?.allPayments), [data]);
   const refs = data ? { faenaById: data.faenaById, subfaenaById: data.subfaenaById, cycleById: data.cycleById } : {};
 
   const title = titles.main || DEFAULT_TITLE;
@@ -134,6 +138,15 @@ export function CarrierSummaryModal({ carrier, onClose }) {
         <button onClick={() => setShowTitleEditor((v) => !v)} className={toggleClass(false)}>
           {showTitleEditor ? "▾" : "▸"} Personalizar títulos
         </button>
+        {data && (
+          <button
+            onClick={() => setFilesOpen(true)}
+            className={toggleClass(false)}
+            title="Los comprobantes y archivos de todos sus resúmenes y abonos"
+          >
+            📎 Archivos{files.length > 0 ? ` (${files.length})` : ""}
+          </button>
+        )}
         {loading && data && <span className="text-[var(--color-muted)]">Actualizando…</span>}
         {canExport && (
           <span className="ml-auto text-sm">
@@ -185,6 +198,9 @@ export function CarrierSummaryModal({ carrier, onClose }) {
           showFortnightTrips={showFortnightTrips}
           refs={refs}
         />
+      )}
+      {filesOpen && (
+        <CarrierFilesModal carrierName={carrier.alias || carrier.name || ""} files={files} onClose={() => setFilesOpen(false)} />
       )}
     </Modal>
   );

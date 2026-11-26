@@ -184,6 +184,9 @@ function paymentCardContent(p, c, period, fortnightById) {
           {p.groupBy && (
             <span className="text-[var(--color-muted)]">· agrupado por {p.groupBy === "day" ? "día" : "faena"}</span>
           )}
+          {(p.attachments || []).length > 0 && (
+            <span className="text-[var(--color-muted)]" title="Archivos adjuntos del resumen y sus abonos">· 📎 {p.attachments.length}</span>
+          )}
         </div>
       </div>
       <div className="text-right">

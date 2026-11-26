@@ -37,7 +37,10 @@ export const payrollsService = {
 
 // Dónde van los adjuntos de una nómina (`services/attachments.js`): el
 // comprobante de las transferencias, la cartola del banco.
-export const payrollAttachments = { service: payrollsService, folder: "payrolls" };
+export const payrollAttachments = {
+  folder: "payrolls",
+  save: (id, attachments) => payrollsService.update(id, { attachments }),
+};
 
 // Configuración compartida de la nómina, en un único doc `payrollConfig/main`.
 export const payrollConfigService = createService("payrollConfig", "payrollConfig");

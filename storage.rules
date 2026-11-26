@@ -1,7 +1,8 @@
 rules_version = '2';
 
 // Cloud Storage guarda los respaldos en JSON (`backups/`) y los adjuntos: los
-// de Cheques y pagos (`commitments/{id}/…`) y los de Nómina (`payrolls/{id}/…`).
+// de Cheques y pagos (`commitments/{id}/…`), los de Nómina (`payrolls/{id}/…`)
+// y los de los resúmenes de Transportes (`transportPayments/{id}/…`).
 //
 // Los respaldos tienen la base entera (RUT, cuentas y montos) y nadie los lee
 // ni los escribe desde el navegador: los escriben las funciones con el admin
@@ -26,7 +27,7 @@ service firebase.storage {
 
     // Las carpetas de adjuntos, una por colección (`services/attachments.js`).
     function isAttachmentFolder(folder) {
-      return folder in ["commitments", "payrolls"];
+      return folder in ["commitments", "payrolls", "transportPayments"];
     }
 
     function isAttachmentType() {

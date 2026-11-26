@@ -5,10 +5,11 @@ import { attempt } from "../utils/attempt";
 import { errorText } from "../utils/errorText";
 import { prepareAttachments, readClipboardImages } from "../utils/prepareAttachments";
 
-// Subir y quitar los adjuntos de `owner` (un vencimiento, una nómina), con el
-// `target` de su colección (`services/attachments.js`). Los archivos se suben
-// apenas se eligen, se pegan o se arrastran: no hay nada que guardar después.
-export function useAttachments({ target, owner, onSaved }) {
+// Subir y quitar los adjuntos de `owner` (un vencimiento, una nómina, un
+// resumen), con el `target` de su colección (`services/attachments.js`); `extra`
+// va en la ficha de cada archivo nuevo. Los archivos se suben apenas se eligen,
+// se pegan o se arrastran: no hay nada que guardar después.
+export function useAttachments({ target, owner, extra, onSaved }) {
   const toast = useToast();
   // null | { label, done, total, undo }; sin total, el avance queda indeterminado.
   const [stage, setStage] = useState(null);
@@ -25,7 +26,7 @@ export function useAttachments({ target, owner, onSaved }) {
     if (ready.length > 0) {
       setStage({ label: "Subiendo", done: 0, total: ready.length });
       const onProgress = (done) => setStage({ label: "Subiendo", done, total: ready.length });
-      const { error: err } = await attempt(() => addAttachments(target, owner, ready, { onProgress }));
+      const { error: err } = await attempt(() => addAttachments(target, owner, ready, { onProgress, extra }));
       if (err) toast.error(errorText(err));
       else await onSaved(ready.length === 1 ? "Adjunto guardado" : `${ready.length} adjuntos guardados`);
     }

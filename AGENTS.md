@@ -356,8 +356,8 @@ Requisito local: **JDK 21 o superior** (`winget install EclipseAdoptium.Temurin.
 de Firebase, en la base `hpdatabase`. `firebase.json` no las referencia a
 propósito: el emulador de los e2e las cargaría, y esos tests hablan con la base
 sin sesión. **`storage.rules`** se publica igual, en Storage → Reglas: los
-respaldos quedan cerrados desde el navegador, y los adjuntos de Cheques y pagos
-y de Nómina los usa una cuenta con acceso. Esas reglas no leen Firestore: revisan la marca
+respaldos quedan cerrados desde el navegador, y los adjuntos de Cheques y pagos,
+Nómina y Transportes los usa una cuenta con acceso. Esas reglas no leen Firestore: revisan la marca
 `appAccess` de la sesión (ver Auth).
 
 - **Una sesión sola no da acceso.** Lo que da acceso es tener perfil en
@@ -467,7 +467,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Finiquito | `settlement` | dentro de `employments` (`settlementStatus`) |
 | Imposiciones | `contributions` | |
 | AFP / Salud (previsión) | `pensionFund` / `healthInsurance` | dentro de `worker` |
-| Adjunto (foto o PDF de un vencimiento o de una nómina) | `attachment` | dentro de `commitments` y `payrolls` (`attachments`); el archivo, en Cloud Storage |
+| Adjunto (foto o PDF de un vencimiento, de una nómina o de un resumen de transporte) | `attachment` | dentro de `commitments`, `payrolls` y `transportPayments` (`attachments`); el archivo, en Cloud Storage |
 
 Los nombres guardados en Firestore se conservan aunque no calcen con la tabla (las colecciones `faenas` y `transportPayrolls`, el campo `faenaId`, el campo `payrollId` de un resumen, los campos en español de `dteDocuments`): el código los lee y escribe con su nombre guardado. La lista con el nombre propuesto para cada uno está en `docs/data-model.md` ("Nombres en español pendientes de migración"); un campo nuevo nace en inglés.
 

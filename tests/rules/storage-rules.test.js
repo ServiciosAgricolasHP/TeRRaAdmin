@@ -1,7 +1,7 @@
-// Tests de `storage.rules`: los adjuntos de Cheques y pagos y de Nómina los
-// sube, ve y borra una sesión con la marca de acceso (`appAccess`, que pone la
-// función `syncAccessClaim`); los respaldos y lo demás quedan cerrados desde
-// el navegador.
+// Tests de `storage.rules`: los adjuntos de Cheques y pagos, de Nómina y de
+// Transportes los sube, ve y borra una sesión con la marca de acceso
+// (`appAccess`, que pone la función `syncAccessClaim`); los respaldos y lo
+// demás quedan cerrados desde el navegador.
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 import { assertFails, assertSucceeds, initializeTestEnvironment } from "@firebase/rules-unit-testing";
@@ -50,6 +50,12 @@ describe("adjuntos", () => {
     await assertSucceeds(upload("sup1", "commitments/c1/a2-cartola.pdf", { contentType: "application/pdf" }));
     await assertSucceeds(getMetadata(ref(storageOf("sup1"), "commitments/c1/a0-factura.pdf")));
     await assertSucceeds(deleteObject(ref(storageOf("sup1"), "commitments/c1/a0-factura.pdf")));
+  });
+
+  it("los de un resumen de Transportes, en su carpeta, igual", async () => {
+    await assertSucceeds(upload("sup1", "transportPayments/t1/a1-comprobante.jpg"));
+    await assertSucceeds(deleteObject(ref(storageOf("sup1"), "transportPayments/t1/a1-comprobante.jpg")));
+    await assertFails(upload(null, "transportPayments/t1/a2-comprobante.jpg"));
   });
 
   it("los de Nómina, en su carpeta, igual", async () => {

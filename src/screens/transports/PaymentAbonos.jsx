@@ -8,6 +8,13 @@ import { payoffOf } from "../../utils/transportPayoff";
 import { attempt } from "../../utils/attempt";
 import { errorText } from "../../utils/errorText";
 import AmountInput from "../../components/AmountInput";
+import { PaymentAttachments } from "./PaymentAttachments";
+import { abonoAttachmentCount } from "../../utils/transportAttachments";
+
+// Lo que dice el aviso de eliminar un abono que tiene adjuntos: quedan en el
+// resumen.
+const removedFilesNote = (n) =>
+  !n ? "" : n === 1 ? " Su adjunto queda en el resumen." : ` Sus ${n} adjuntos quedan en el resumen.`;
 
 // Los abonos de un resumen de transporte: lo abonado y el saldo, y agregar,
 // editar o quitar uno. `abonos` es la copia local del modal, que también usa
@@ -190,26 +197,29 @@ export function PaymentAbonos({ payment, abonos, setAbonos, isPaid, onChanged })
                   {a.notes && (
                     <span className="text-[var(--color-muted)] truncate">— {a.notes}</span>
                   )}
-                  {!isPaid && (
-                    <span className="ml-auto flex gap-1">
-                      <button
-                        onClick={() => startEditAbono(a)}
-                        disabled={abonoBusy || !!editingAbono}
-                        title="Editar monto, fecha o nota de este abono"
-                        className="min-h-7 rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        onClick={() => handleRemoveAbono(a.id)}
-                        disabled={abonoBusy}
-                        title="Eliminar este abono"
-                        className="min-h-7 rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:opacity-50"
-                      >
-                        ✕
-                      </button>
-                    </span>
-                  )}
+                  <span className="ml-auto flex gap-1">
+                    <PaymentAttachments payment={payment} abono={a} compact onChanged={onChanged} />
+                    {!isPaid && (
+                      <>
+                        <button
+                          onClick={() => startEditAbono(a)}
+                          disabled={abonoBusy || !!editingAbono}
+                          title="Editar monto, fecha o nota de este abono"
+                          className="min-h-7 rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          onClick={() => handleRemoveAbono(a.id)}
+                          disabled={abonoBusy}
+                          title="Eliminar este abono"
+                          className="min-h-7 rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[10px] text-[var(--color-danger)] hover:bg-[var(--color-danger-soft)] disabled:opacity-50"
+                        >
+                          ✕
+                        </button>
+                      </>
+                    )}
+                  </span>
                 </li>
               )))}
               {payoff && (
@@ -267,7 +277,7 @@ export function PaymentAbonos({ payment, abonos, setAbonos, isPaid, onChanged })
       <ConfirmDialog
         open={!!confirmRemoveAbono}
         title="Eliminar abono"
-        message="¿Eliminar este abono?"
+        message={`¿Eliminar este abono?${removedFilesNote(abonoAttachmentCount(payment, confirmRemoveAbono))}`}
         confirmLabel="Eliminar"
         danger
         onCancel={() => setConfirmRemoveAbono(null)}

@@ -391,9 +391,10 @@ Resumen de pago a un transportista (lote de `transports`).
 | `groupBy` | `"day"` \| ... | |
 | `tripIds` | ref→`transports`[] | |
 | `total` | number | **denormalizado** = Σ `amount` de las vueltas vivas. Lo mantiene el servicio (`recalcPaymentTotal`), no las pantallas — ver "Totales denormalizados" abajo |
+| `attachments` | `[{ id, name, path, contentType, size, uploadedAt, uploadedBy, uploadedByName, abonoId? }]`? | adjuntos del resumen, igual que en `commitments`: el archivo en Cloud Storage, en `path` (`transportPayments/{paymentId}/{id}-{name}`), y acá su ficha. `abonoId` = el abono que respalda; `null` o ausente = del resumen (quitar un abono deja sus archivos con `abonoId: null`). Se escribe también con el resumen pagado. Eliminar el resumen borra sus archivos |
 | `abonos` | `[{ id, amount, date, notes, createdAt, createdBy, updatedAt?, updatedBy? }]` | pagos parciales antes de marcar el resumen 100% pagado. El pendiente se calcula en cliente (`total − Σ abonos`); **no** descuenta de `total`. `updatedAt`/`updatedBy` aparecen cuando un abono se corrige (`updateAbono`), que conserva su `id` y su `createdAt` |
 | `payrollId` | ref→`transportPayrolls` \| null | null = resumen "suelto", disponible para entrar a una quincena |
-| `status` | `"pending"` \| `"paid"` | `paid` congela el doc: no se recalcula ni se edita |
+| `status` | `"pending"` \| `"paid"` | `paid` congela el doc: no se recalcula ni se edita, salvo sus `attachments` |
 | `paidAt`, `paidBy` | ts?, string? | |
 | `notes` | string? | |
 | `createdAt`, `createdBy` | ts, string? | |

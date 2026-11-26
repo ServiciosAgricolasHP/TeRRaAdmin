@@ -22,7 +22,10 @@ import { deleteAttachmentFiles } from "./attachments";
 export const commitmentsService = createAdditiveService("commitment", "commitments");
 
 // Dónde van los adjuntos de un vencimiento (`services/attachments.js`).
-export const commitmentAttachments = { service: commitmentsService, folder: "commitments" };
+export const commitmentAttachments = {
+  folder: "commitments",
+  save: (id, attachments) => commitmentsService.update(id, { attachments }),
+};
 export const commitmentSeriesService = createService("commitmentSeries", "commitmentSeries");
 export const commitmentConfigService = createService("commitmentConfig", "commitmentConfig");
 
