@@ -2,12 +2,54 @@
 import fs from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
-import { DEMO_USER } from "./seed.mjs";
+import { createServer } from "vite";
+import { DEMO_PROJECT, DEMO_USER } from "./seed.mjs";
 
 export const DESKTOP = { width: 1440, height: 900 };
 export const PHONE = { width: 412, height: 900 };
 // Fecha fija: las capturas no cambian con el día en que se generan.
 export const FIXED_NOW = new Date("2026-10-09T10:30:00-03:00");
+
+// Sale si no están los emuladores de Firestore, Authentication y Storage:
+// `command` es el que los levanta.
+export function requireEmulators(command) {
+  if (process.env.FIRESTORE_EMULATOR_HOST && process.env.FIREBASE_AUTH_EMULATOR_HOST && process.env.FIREBASE_STORAGE_EMULATOR_HOST) return;
+  console.error(`Faltan los emuladores: corre \`${command}\`, que los levanta.`);
+  process.exit(1);
+}
+
+// El navegador instalado: HELP_BROWSER, o Edge o Chrome en sus rutas de siempre.
+export function findBrowser() {
+  const found = [
+    process.env.HELP_BROWSER,
+    "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+    "C:/Program Files/Google/Chrome/Application/chrome.exe",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium",
+  ].find((p) => p && fs.existsSync(p));
+  if (found) return found;
+  console.error("No encontré Edge ni Chrome: pon la ruta del navegador en HELP_BROWSER.");
+  process.exit(1);
+}
+
+// La app de siempre en Vite, en `port`, apuntada a los emuladores y a un
+// proyecto `demo-`. Devuelve su dirección y cómo apagarla.
+export async function startApp({ root, port }) {
+  Object.assign(process.env, {
+    VITE_FIRESTORE_EMULATOR: process.env.FIRESTORE_EMULATOR_HOST,
+    VITE_AUTH_EMULATOR: process.env.FIREBASE_AUTH_EMULATOR_HOST,
+    VITE_STORAGE_EMULATOR: process.env.FIREBASE_STORAGE_EMULATOR_HOST,
+    VITE_FIREBASE_PROJECT_ID: DEMO_PROJECT,
+    VITE_FIREBASE_API_KEY: "demo-api-key",
+    VITE_FIREBASE_AUTH_DOMAIN: `${DEMO_PROJECT}.firebaseapp.com`,
+    VITE_FIREBASE_STORAGE_BUCKET: `${DEMO_PROJECT}.appspot.com`,
+    VITE_FIREBASE_MESSAGING_SENDER_ID: "0",
+    VITE_FIREBASE_APP_ID: "1:0:web:demo",
+  });
+  const server = await createServer({ root, server: { port, strictPort: true }, logLevel: "warn" });
+  await server.listen();
+  return { base: `http://localhost:${port}/TeRRaAdmin`, close: () => server.close() };
+}
 
 // Tema claro, fecha fija y esperas largas: la primera carga de Vite compila
 // los módulos en frío.
