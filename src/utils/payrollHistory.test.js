@@ -183,3 +183,21 @@ describe("el grupo y las alertas revisadas en el historial", () => {
     expect(filterPayrollHistory(entries, { query: "beto" })[0].lines.map((l) => l.text)).toEqual(["✗ desmarcó Cuenta compartida: Beto Soto"]);
   });
 });
+
+describe("los adjuntos en el historial", () => {
+  const log = (id, changes) => ({ id, action: "update", timestamp: ts("2026-11-18T10:00:00Z"), userName: "María", changes });
+  const cartola = { id: "a1", name: "cartola.pdf" };
+  const comprobante = { id: "a2", name: "comprobante.jpg" };
+
+  it("adjuntar nombra los archivos", () => {
+    const [entry] = payrollHistoryOf([log("f1", { attachments: { from: [], to: [cartola, comprobante] } })], []);
+    expect(entry.title).toBe("Adjuntó 2 archivos");
+    expect(entry.lines.map((l) => l.text)).toEqual(["+ cartola.pdf", "+ comprobante.jpg"]);
+  });
+
+  it("quitar uno también, sin decir que cambió algo más", () => {
+    const [entry] = payrollHistoryOf([log("f2", { attachments: { from: [cartola, comprobante], to: [comprobante] } })], []);
+    expect(entry.title).toBe("Quitó un adjunto");
+    expect(entry.lines.map((l) => l.text)).toEqual(["− cartola.pdf"]);
+  });
+});

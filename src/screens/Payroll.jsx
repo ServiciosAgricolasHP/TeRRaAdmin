@@ -44,6 +44,13 @@ import { useReadSection } from "../hooks/useReadSection";
 // El nombre de cada pestaña en el registro de lecturas.
 const TAB_READ_SECTIONS = { create: "Generar", history: "Historial", workers: "Pagos anteriores" };
 
+// Lo que el aviso de eliminar suma cuando la nómina tiene adjuntos.
+function attachmentsNote(payroll) {
+  const n = (payroll.attachments || []).length;
+  if (!n) return "";
+  return n === 1 ? " También se borra su adjunto." : ` También se borran sus ${n} adjuntos.`;
+}
+
 export default function Payroll() {
   const toast = useToast();
   const { user, isAdmin } = useAuth();
@@ -373,7 +380,7 @@ export default function Payroll() {
       <ConfirmDialog
         open={!!confirmDelete}
         title="Eliminar nómina"
-        message={confirmDelete ? `¿Eliminar la nómina "${confirmDelete.name}"? Esta acción no se puede deshacer.` : ""}
+        message={confirmDelete ? `¿Eliminar la nómina "${confirmDelete.name}"? Esta acción no se puede deshacer.${attachmentsNote(confirmDelete)}` : ""}
         confirmLabel="Eliminar"
         danger
         onCancel={() => setConfirmDelete(null)}

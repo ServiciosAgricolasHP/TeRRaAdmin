@@ -160,6 +160,7 @@ Nómina = lote de pago. Agrupa las jornadas de sus personas (`items[].workdayIds
 | `payoutTotal` | number? | lo que la nómina entrega en anticipos (Σ `items[].payoutTotal`). Lo escriben las ediciones de la nómina (`recalcPayrollAggregates`) |
 | `createdAt`, `createdBy` | ts, string? | |
 | `updatedAt`, `updatedBy` | ts, string? | toda escritura de `payrollsService` los pone. La copia que comparten Nómina y el Dashboard se pone al día con él (`listPayrolls`) |
+| `attachments` | `[{ id, name, path, contentType, size, uploadedAt, uploadedBy, uploadedByName }]`? | adjuntos de la nómina (el comprobante de las transferencias, la cartola), igual que en `commitments`: el archivo en Cloud Storage, en `path` (`payrolls/{payrollId}/{id}-{name}`), y acá su ficha. Eliminar la nómina borra sus archivos |
 | `updatedByName` | string? | quién hizo la última escritura: su alias o, sin alias, su correo (`signerName`, `services/signer.js`). Toda escritura de `payrollsService` lo pone, y el detalle lo muestra con `updatedAt`. Las nóminas escritas antes no lo tienen |
 
 `PayrollItem` (embebido):

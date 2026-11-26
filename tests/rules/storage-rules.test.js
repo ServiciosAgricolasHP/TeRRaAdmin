@@ -1,7 +1,7 @@
-// Tests de `storage.rules`: los adjuntos de Cheques y pagos los sube, ve y
-// borra una sesión con la marca de acceso (`appAccess`, que pone la función
-// `syncAccessClaim`); los respaldos y lo demás quedan cerrados desde el
-// navegador.
+// Tests de `storage.rules`: los adjuntos de Cheques y pagos y de Nómina los
+// sube, ve y borra una sesión con la marca de acceso (`appAccess`, que pone la
+// función `syncAccessClaim`); los respaldos y lo demás quedan cerrados desde
+// el navegador.
 import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 import { assertFails, assertSucceeds, initializeTestEnvironment } from "@firebase/rules-unit-testing";
@@ -44,12 +44,19 @@ beforeEach(async () => {
   });
 });
 
-describe("adjuntos de Cheques y pagos", () => {
+describe("adjuntos", () => {
   it("una sesión con acceso sube una imagen o un PDF, los ve y los borra", async () => {
     await assertSucceeds(upload("sup1", PATH));
     await assertSucceeds(upload("sup1", "commitments/c1/a2-cartola.pdf", { contentType: "application/pdf" }));
     await assertSucceeds(getMetadata(ref(storageOf("sup1"), "commitments/c1/a0-factura.pdf")));
     await assertSucceeds(deleteObject(ref(storageOf("sup1"), "commitments/c1/a0-factura.pdf")));
+  });
+
+  it("los de Nómina, en su carpeta, igual", async () => {
+    await assertSucceeds(upload("sup1", "payrolls/p1/a1-cartola.pdf", { contentType: "application/pdf" }));
+    await assertSucceeds(getMetadata(ref(storageOf("sup1"), "payrolls/p1/a1-cartola.pdf")));
+    await assertFails(upload("stranger", "payrolls/p1/a2-cartola.pdf", { contentType: "application/pdf" }));
+    await assertFails(upload("sup1", "payrolls/p1/a3-planilla.xlsx", { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
   });
 
   it("no acepta Word, Excel ni otros tipos", async () => {
@@ -85,5 +92,8 @@ describe("lo demás del bucket", () => {
   it("una ruta fuera de los adjuntos queda cerrada", async () => {
     await assertFails(upload("sup1", "otros/foto.jpg"));
     await assertFails(upload("sup1", "commitments/foto.jpg"));
+    await assertFails(upload("sup1", "otros/c1/foto.jpg"));
+    await assertFails(upload("sup1", "backups/b9/foto.jpg"));
+    await assertFails(upload("sup1", "commitments/c1/x/foto.jpg"));
   });
 });

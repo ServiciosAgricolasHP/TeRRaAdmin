@@ -40,6 +40,19 @@ export function PayStatePill({ p, showDates = true }) {
 }
 
 // Marca una nómina publicada en el portal de trabajadores.
+// Cuántos adjuntos tiene la nómina (el comprobante de pago, la cartola).
+export function AttachmentsBadge({ count }) {
+  if (!count) return null;
+  return (
+    <span
+      title={count === 1 ? "Tiene un adjunto" : `Tiene ${count} adjuntos`}
+      className="shrink-0 whitespace-nowrap rounded-full bg-[var(--color-surface-2)] px-2 py-0.5 text-[11px] font-medium text-[var(--color-muted)]"
+    >
+      📎 {count}
+    </span>
+  );
+}
+
 export function PortalBadge() {
   return (
     <span

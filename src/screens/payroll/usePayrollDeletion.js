@@ -2,11 +2,12 @@ import { useState } from "react";
 import { untagWorkdaysFromPayroll, payrollsService } from "../../services/payrollsService";
 import { clearAdvancePayouts, restoreAdvancesFromPayroll } from "../../services/advancesService";
 import { deleteSnapshot } from "../../services/payrollSnapshots";
+import { deleteAttachmentFiles } from "../../services/attachments";
 import { errorText } from "../../utils/errorText";
 import { payrollWorkdayIdsOf } from "../../utils/payroll";
 
 // Eliminar una nómina pendiente: suelta sus jornadas, devuelve sus anticipos y
-// bonos y borra su JSON antes de borrar el documento. Una nómina publicada en
+// bonos y borra su JSON y sus adjuntos antes de borrar el documento. Una nómina publicada en
 // el portal de trabajadores (`isPublished(id)`) no se elimina: primero se
 // retira del portal.
 export function usePayrollDeletion({ load, setProgress, toast, isPublished }) {
@@ -39,15 +40,17 @@ export function usePayrollDeletion({ load, setProgress, toast, isPublished }) {
     const workdayIds = payrollWorkdayIdsOf(confirmDelete);
     const advanceIds = confirmDelete.advanceIds || [];
     const payoutIds = (confirmDelete.items || []).flatMap((it) => (it.payoutApplications || []).map((p) => p.advanceId));
+    const deleting = confirmDelete;
+    const hasAttachments = (deleting.attachments || []).length > 0;
     setConfirmDelete(null);
     showProgress({ step: "Iniciando eliminación...", detail: "", percent: 2 });
     try {
-      // Soltar las jornadas, restaurar los anticipos y borrar el snapshot
-      // corren en paralelo; el doc de la nómina se borra después de las tres,
-      // para no dejar referencias colgando.
+      // Soltar las jornadas, restaurar los anticipos y borrar el snapshot y
+      // los adjuntos corren en paralelo; el doc de la nómina se borra después,
+      // para no dejar referencias ni archivos colgando.
       const W_UNTAG = 70, W_ADV = 15, W_SNAP = 10;
       let untagDone = 0, untagTotal = Math.max(1, workdayIds.length);
-      let advancesDone = false, snapDone = false;
+      let advancesDone = false, snapDone = false, filesDone = false;
       const recompute = () => {
         const pct =
           W_UNTAG * (untagDone / untagTotal) +
@@ -57,6 +60,7 @@ export function usePayrollDeletion({ load, setProgress, toast, isPublished }) {
         if (workdayIds.length > 0) detailParts.push(`Jornadas ${untagDone}/${untagTotal}`);
         if (advanceIds.length > 0 || payoutIds.length > 0) detailParts.push(`Anticipos ${advancesDone ? "✓" : "…"}`);
         detailParts.push(`JSON ${snapDone ? "✓" : "…"}`);
+        if (hasAttachments) detailParts.push(`Adjuntos ${filesDone ? "✓" : "…"}`);
         showProgress({
           step: "Liberando jornadas y anticipos...",
           detail: detailParts.join(" · "),
@@ -83,7 +87,13 @@ export function usePayrollDeletion({ load, setProgress, toast, isPublished }) {
         recompute();
       })();
 
-      await Promise.all([pUntag, pAdv, pSnap]);
+      const pFiles = (async () => {
+        await deleteAttachmentFiles(deleting);
+        filesDone = true;
+        recompute();
+      })();
+
+      await Promise.all([pUntag, pAdv, pSnap, pFiles]);
 
       showProgress({ step: "Eliminando nómina...", detail: "", percent: 95 });
       await payrollsService.remove(id);

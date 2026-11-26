@@ -20,7 +20,7 @@ const FIELD_LABELS = {
   name: "nombre", format: "formato del banco", status: "estado", paidAt: "fecha de pago",
   bankPaidAt: "pago de las transferencias", bankPaidBy: "quién pagó las transferencias", cashPaidRuts: "cobros en efectivo",
   classification: "clasificación", cycleIds: "ciclos", cycleLabels: "ciclos", cycleDetails: "ciclos", cycleLabelOverrides: "encabezados",
-  items: "personas", workdayIds: "jornadas", advanceIds: "anticipos y bonos", reviewedChecks: "alertas revisadas",
+  items: "personas", workdayIds: "jornadas", advanceIds: "anticipos y bonos", reviewedChecks: "alertas revisadas", attachments: "adjuntos",
   total: "total", bankTotal: "total por banco", cashTotal: "total en efectivo", workerCount: "cantidad de personas",
   bankCount: "personas por banco", cashCount: "personas en efectivo", advanceTotal: "total de anticipos", bonusTotal: "total de bonos",
   payoutTotal: "anticipos entregados", payoutCycleDetails: "ciclos de los anticipos entregados", snapshot: "JSON de la nómina",
@@ -213,6 +213,15 @@ export function payrollHistoryEntry(log, names = new Map()) {
     else titles.push("Marcó alertas revisadas");
     lines.push(...reviewLines("✓", marked, names), ...reviewLines("✗ desmarcó", unmarked, names));
   }
+  if (has("attachments")) {
+    const before = new Set((changes.attachments.from || []).map((a) => a.id));
+    const after = new Set((changes.attachments.to || []).map((a) => a.id));
+    const added = (changes.attachments.to || []).filter((a) => !before.has(a.id));
+    const removed = (changes.attachments.from || []).filter((a) => !after.has(a.id));
+    if (added.length) titles.push(added.length === 1 ? "Adjuntó un archivo" : `Adjuntó ${added.length} archivos`);
+    if (removed.length) titles.push(removed.length === 1 ? "Quitó un adjunto" : `Quitó ${removed.length} adjuntos`);
+    lines.push(...added.map((a) => ({ text: `+ ${a.name}` })), ...removed.map((a) => ({ text: `− ${a.name}` })));
+  }
   if (has("cycleIds")) {
     titles.push("Editó los ciclos");
     const labels = new Map([...cycleLabelsOf(changes.cycleDetails?.from), ...cycleLabelsOf(changes.cycleDetails?.to)]);
@@ -237,7 +246,7 @@ export function payrollHistoryEntry(log, names = new Map()) {
     people = own.map((l) => l.person);
   }
   if (has("total")) lines.push({ text: `Total: ${fmtCurrency(changes.total.from)} → ${fmtCurrency(changes.total.to)}` });
-  const others = Object.keys(changes).filter((k) => !IGNORED.has(k) && !["status", "bankPaidAt", "cashPaidRuts", "name", "classification", "cycleLabelOverrides", "cycleIds", "items", "reviewedChecks"].includes(k));
+  const others = Object.keys(changes).filter((k) => !IGNORED.has(k) && !["status", "bankPaidAt", "cashPaidRuts", "name", "classification", "cycleLabelOverrides", "cycleIds", "items", "reviewedChecks", "attachments"].includes(k));
   if (titles.length === 0) titles.push("Editó la nómina");
   if (others.length) lines.push({ text: `También cambió: ${fieldsText(others)}` });
   return { ...base, title: titles.join(" · "), lines, people };

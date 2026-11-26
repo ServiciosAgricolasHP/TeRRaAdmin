@@ -55,6 +55,7 @@ import { DetailFilterBar } from "./payrollDetailModal/DetailFilterBar";
 import { SummarySearchBar } from "./payrollDetailModal/SummarySearchBar";
 import { CycleTitlesEditor } from "./payrollDetailModal/CycleTitlesEditor";
 import { PayrollTotalsCards } from "./payrollDetailModal/PayrollTotalsCards";
+import { PayrollAttachments } from "./payrollDetailModal/PayrollAttachments";
 import { SummaryTable } from "./payrollDetailModal/SummaryTable";
 import { PayrollCyclesSection } from "./payrollDetailModal/PayrollCyclesSection";
 import { PayrollHistoryModal } from "./payrollDetailModal/PayrollHistoryModal";
@@ -430,85 +431,86 @@ export function PayrollDetailModal({ payroll, cycles, cycleStats = {}, faenas, s
               </button>
             </div>
           </div>
-          {(cycleDetails.length > 0 || isPending) && (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {cycleDetails.length > 0 && (
-                <button
-                  onClick={() => setShowTitleEditor((v) => !v)}
-                  className={`rounded-md border px-2 py-1 text-xs ${
-                    showTitleEditor
-                      ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
-                      : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
-                  }`}
-                  title="Cambiar el nombre con el que cada ciclo aparece en XLSX, comprobantes y PDF"
-                >
-                  📝 Editar encabezados
-                </button>
-              )}
-              {isPending && (
-                <button
-                  onClick={() => {
-                    if (!editMode) setCollapsedSections((prev) => new Set([...prev].filter((k) => k !== "cycles")));
-                    setEditMode(!editMode);
-                  }}
-                  className={`rounded-md border px-2 py-1 text-xs ${
-                    editMode
-                      ? "border-[var(--color-danger)] bg-[var(--color-danger-soft)] text-[var(--color-danger)]"
-                      : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
-                  }`}
-                  title="Agregar o sacar ciclos, labores o personas de esta nómina"
-                >
-                  {editMode ? "✕ Cerrar edición" : "✂ Editar contenido"}
-                </button>
-              )}
-              {isPending && editMode && (
-                <>
-                  <button
-                    type="button"
-                    disabled={editBusy || recalcBusy}
-                    onClick={() => setCyclesEditOpen(true)}
-                    className="min-h-8 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-xs text-[var(--color-accent)] hover:opacity-80 disabled:opacity-50"
-                    title="Agregar o sacar ciclos y labores en un solo paso, y recalcular la nómina"
-                  >
-                    ✎ Editar ciclos
-                  </button>
-                  <button
-                    type="button"
-                    disabled={editBusy}
-                    onClick={() => setAddWorkerOpen(true)}
-                    className="min-h-8 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-xs text-[var(--color-accent)] hover:opacity-80 disabled:opacity-50"
-                    title="Sumar días puntuales de una persona, de cualquier ciclo abierto"
-                  >
-                    + Agregar persona
-                  </button>
-                  <button
-                    type="button"
-                    disabled={editBusy || payoutBusy || !!payroll.bankPaidAt}
-                    onClick={() => setPayoutOpen(true)}
-                    className="min-h-8 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-xs text-[var(--color-accent)] hover:opacity-80 disabled:opacity-50"
-                    title={
-                      payroll.bankPaidAt
-                        ? "Las transferencias de esta nómina ya se pagaron"
-                        : "Pagar en esta nómina anticipos que ya existen, de quienes trabajaron en un ciclo. Los descuenta otra nómina"
-                    }
-                  >
-                    💸 Entregar anticipos
-                  </button>
-                </>
-              )}
-              {isPending && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {cycleDetails.length > 0 && (
+              <button
+                onClick={() => setShowTitleEditor((v) => !v)}
+                className={`rounded-md border px-2 py-1 text-xs ${
+                  showTitleEditor
+                    ? "border-[var(--color-accent)] bg-[var(--color-accent-soft)] text-[var(--color-accent)]"
+                    : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
+                }`}
+                title="Cambiar el nombre con el que cada ciclo aparece en XLSX, comprobantes y PDF"
+              >
+                📝 Editar encabezados
+              </button>
+            )}
+            {isPending && (
+              <button
+                onClick={() => {
+                  if (!editMode) setCollapsedSections((prev) => new Set([...prev].filter((k) => k !== "cycles")));
+                  setEditMode(!editMode);
+                }}
+                className={`rounded-md border px-2 py-1 text-xs ${
+                  editMode
+                    ? "border-[var(--color-danger)] bg-[var(--color-danger-soft)] text-[var(--color-danger)]"
+                    : "border-[var(--color-border)] bg-[var(--color-surface-2)] hover:bg-[var(--color-accent-soft)]"
+                }`}
+                title="Agregar o sacar ciclos, labores o personas de esta nómina"
+              >
+                {editMode ? "✕ Cerrar edición" : "✂ Editar contenido"}
+              </button>
+            )}
+            {isPending && editMode && (
+              <>
                 <button
                   type="button"
-                  disabled={recalcBusy}
-                  onClick={startRecalc}
-                  className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
-                  title="Volver a comparar contra la producción y los datos actuales de los trabajadores"
+                  disabled={editBusy || recalcBusy}
+                  onClick={() => setCyclesEditOpen(true)}
+                  className="min-h-8 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-xs text-[var(--color-accent)] hover:opacity-80 disabled:opacity-50"
+                  title="Agregar o sacar ciclos y labores en un solo paso, y recalcular la nómina"
                 >
-                  {recalcBusy ? "Comparando..." : "🔄 Recalcular"}
+                  ✎ Editar ciclos
                 </button>
-              )}
+                <button
+                  type="button"
+                  disabled={editBusy}
+                  onClick={() => setAddWorkerOpen(true)}
+                  className="min-h-8 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-xs text-[var(--color-accent)] hover:opacity-80 disabled:opacity-50"
+                  title="Sumar días puntuales de una persona, de cualquier ciclo abierto"
+                >
+                  + Agregar persona
+                </button>
+                <button
+                  type="button"
+                  disabled={editBusy || payoutBusy || !!payroll.bankPaidAt}
+                  onClick={() => setPayoutOpen(true)}
+                  className="min-h-8 rounded-md border border-[var(--color-accent)] bg-[var(--color-accent-soft)] px-2 py-1 text-xs text-[var(--color-accent)] hover:opacity-80 disabled:opacity-50"
+                  title={
+                    payroll.bankPaidAt
+                      ? "Las transferencias de esta nómina ya se pagaron"
+                      : "Pagar en esta nómina anticipos que ya existen, de quienes trabajaron en un ciclo. Los descuenta otra nómina"
+                  }
+                >
+                  💸 Entregar anticipos
+                </button>
+              </>
+            )}
+            {isPending && (
+              <button
+                type="button"
+                disabled={recalcBusy}
+                onClick={startRecalc}
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1 text-xs hover:bg-[var(--color-accent-soft)] disabled:opacity-50"
+                title="Volver a comparar contra la producción y los datos actuales de los trabajadores"
+              >
+                {recalcBusy ? "Comparando..." : "🔄 Recalcular"}
+              </button>
+            )}
+            <div className="sm:ml-auto">
+              <PayrollAttachments payroll={payroll} onChanged={onChanged} />
             </div>
-          )}
+          </div>
         </div>
         <SummarySearchBar table={table} onStart={() => isCollapsed("summary") && toggleSection("summary")} />
 
