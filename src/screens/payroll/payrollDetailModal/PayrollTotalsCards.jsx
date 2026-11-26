@@ -7,9 +7,9 @@ import { payoutTotalOf } from "../../../utils/advancePayouts";
 // entregar y el estimador), anticipos, bonos, anticipos entregados y el total
 // a pagar. Con alguno de esos, la primera de sus tarjetas lleva el bruto y
 // abre su detalle. `advances` son los del snapshot de la nómina;
-// `onChangeBonus`, `canChangeBonus` y `onRemovePayouts` pasan al detalle de
-// anticipos y bonos.
-export function PayrollTotalsCards({ advances, bank, cash, cashGroups, cashPaidMode, items, owedCash, payroll, setShowCashEstimation, onChangeBonus = null, canChangeBonus, onRemovePayouts = null }) {
+// `onChangeBonus`, `canChangeBonus`, `onRemovePayouts` y `onRemoveAdvances`
+// pasan al detalle de anticipos y bonos.
+export function PayrollTotalsCards({ advances, bank, cash, cashGroups, cashPaidMode, items, owedCash, payroll, setShowCashEstimation, onChangeBonus = null, canChangeBonus, onRemovePayouts = null, onRemoveAdvances = null }) {
   const [showAdjustments, setShowAdjustments] = useState(false);
   // Totales para el encabezado del resumen.
   const bankTotal = bank.reduce((s, x) => s + (Number(x.amount) || 0), 0);
@@ -103,6 +103,7 @@ export function PayrollTotalsCards({ advances, bank, cash, cashGroups, cashPaidM
         onChangeBonus={onChangeBonus}
         canChangeBonus={canChangeBonus}
         onRemovePayouts={onRemovePayouts}
+        onRemoveAdvances={onRemoveAdvances}
       />
     </>
   );

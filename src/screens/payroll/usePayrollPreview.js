@@ -10,6 +10,8 @@ import { previewItemsOf, withPreviewEdit } from "../../utils/payrollPreview";
 import { isCashBank } from "../../utils/banks";
 import { attempt } from "../../utils/attempt";
 import { errorText } from "../../utils/errorText";
+import { autoAppliedOf } from "../../utils/advanceSchedule";
+import { localIsoDate } from "../../utils/dates";
 
 const EMPTY_SOURCES = { workdays: [], cycles: [], advances: [] };
 
@@ -75,10 +77,11 @@ export function usePayrollPreview({ chosenCycles, cycles, jobs, people, subjobs,
       const aggregates = aggregateWorkerAmounts(allWorkdays, laborTypeById);
 
       // Anticipos vigentes de todos los de la vista previa; el servidor
-      // devuelve solo pending/partial.
+      // devuelve solo pending/partial. Los que tienen fecha de inicio después
+      // de hoy no entran.
       const keyOf = resolveCurrentRut(workers);
       const candidateIds = aggregates.map(keyOf);
-      const pendingAdvances = await listPendingForWorkers(candidateIds);
+      const pendingAdvances = autoAppliedOf(await listPendingForWorkers(candidateIds), { today: localIsoDate() });
       previewWorkdaysRef.current = allWorkdays;
       previewAdvancesRef.current = pendingAdvances;
       previewCycleDocsRef.current = liveCycles;

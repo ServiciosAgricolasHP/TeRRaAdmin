@@ -2,7 +2,7 @@
 // la vista previa: las filas incluidas (`items`), los ciclos, las jornadas y
 // los anticipos que leyó, y lo elegido.
 import { MAX_DOC_BYTES, docSize, sizeStatus } from "./docSizes";
-import { payrollItemOf, payrollTotalsOf } from "./payrollPreview";
+import { payrollItemOf, payrollTotalsOf, skippedAdvancesOf } from "./payrollPreview";
 import { newPayrollCycleDetails } from "./payrollItem";
 import { snapshotAdvanceOf, snapshotCycleOf, snapshotWorkdayOf } from "./snapshotShapes";
 
@@ -41,6 +41,7 @@ export function newPayrollDocs({
   const payrollCycleIds = new Set(cycleIds);
 
   const cleanItems = items.map((p) => payrollItemOf(p, payrollCycleIds));
+  const skippedAdvanceIds = skippedAdvancesOf(items);
 
   const allWorkdayIds = cleanItems.flatMap((p) => p.workdayIds);
   const allAdvanceIds = cleanItems.flatMap((p) => p.advanceIds || []);
@@ -92,6 +93,7 @@ export function newPayrollDocs({
     advanceTotal: totals.advanceTotal,
     hasSnapshot: true,
     ...(reviewedChecks.length ? { reviewedChecks } : {}),
+    ...(skippedAdvanceIds.length ? { skippedAdvanceIds } : {}),
   };
 
   return { payroll, snapshot, workdayIds: allWorkdayIds, applications: allApplications };
