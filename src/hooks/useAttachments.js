@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { useToast } from "../contexts/ToastContext";
-import { addAttachments, removeAttachment } from "../services/commitmentsService";
+import { addAttachments, removeAttachment } from "../services/attachments";
 import { attempt } from "../utils/attempt";
 import { errorText } from "../utils/errorText";
 import { prepareAttachments, readClipboardImages } from "../utils/prepareAttachments";
 
-// Subir y quitar los adjuntos de un vencimiento. Los archivos se suben apenas
-// se eligen, se pegan o se arrastran: no hay nada que guardar después.
-export function useAttachments({ item, onSaved }) {
+// Subir y quitar los adjuntos de `owner` (un vencimiento, una nómina), con el
+// `target` de su colección (`services/attachments.js`). Los archivos se suben
+// apenas se eligen, se pegan o se arrastran: no hay nada que guardar después.
+export function useAttachments({ target, owner, onSaved }) {
   const toast = useToast();
-  const [stage, setStage] = useState(null); // null | { label, done, total }; sin total, la barra queda indeterminada
+  // null | { label, done, total, undo }; sin total, el avance queda indeterminado.
+  const [stage, setStage] = useState(null);
   const [rejected, setRejected] = useState([]);
 
   const busy = !!stage;
@@ -23,7 +25,7 @@ export function useAttachments({ item, onSaved }) {
     if (ready.length > 0) {
       setStage({ label: "Subiendo", done: 0, total: ready.length });
       const onProgress = (done) => setStage({ label: "Subiendo", done, total: ready.length });
-      const { error: err } = await attempt(() => addAttachments(item, ready, { onProgress }));
+      const { error: err } = await attempt(() => addAttachments(target, owner, ready, { onProgress }));
       if (err) toast.error(errorText(err));
       else await onSaved(ready.length === 1 ? "Adjunto guardado" : `${ready.length} adjuntos guardados`);
     }
@@ -38,8 +40,8 @@ export function useAttachments({ item, onSaved }) {
   };
 
   const remove = async (attachment) => {
-    setStage({ label: "Quitando", done: 0, total: 0 });
-    const { error: err } = await attempt(() => removeAttachment(item, attachment));
+    setStage({ label: "Quitando", done: 0, total: 0, undo: true });
+    const { error: err } = await attempt(() => removeAttachment(target, owner, attachment));
     if (err) toast.error(errorText(err));
     else await onSaved("Adjunto quitado");
     setStage(null);

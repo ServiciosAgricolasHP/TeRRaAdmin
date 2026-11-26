@@ -3,21 +3,20 @@ import Modal, { ModalCloseButton } from "./Modal";
 import ConfirmDialog from "./ConfirmDialog";
 import { ProgressBar } from "./ProgressBar";
 import { useIsMobile } from "../hooks/useIsMobile";
-import { fileSizeLabel, transferFiles } from "../utils/attachments";
+import { attachmentSummary, transferFiles } from "../utils/attachments";
 import { FileViewer } from "./FileViewer";
-import { fmtDate } from "../screens/commitments/helpers";
-import { btnCls } from "../screens/commitments/styles";
 import { useAttachments } from "../hooks/useAttachments";
 import { useFileUrl } from "../hooks/useFileUrl";
 
 const ACCEPT = "image/*,application/pdf";
+const BTN =
+  "min-h-9 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-surface-2)] disabled:opacity-50";
 
 // Una fila de la lista: la miniatura de una imagen o el ícono de un PDF y el
 // nombre, que abren el visor. El enlace de la miniatura se pide al mostrarse.
 function AttachmentRow({ attachment, disabled, onOpen, onRemove }) {
   const image = attachment.contentType?.startsWith("image/");
   const { url, failed } = useFileUrl(image ? attachment.path : null);
-  const who = attachment.uploadedByName ? ` · ${attachment.uploadedByName}` : "";
   return (
     <div className="flex items-center gap-3 px-3 py-2 text-sm">
       <button
@@ -35,9 +34,7 @@ function AttachmentRow({ attachment, disabled, onOpen, onRemove }) {
         <button type="button" onClick={onOpen} className="block max-w-full truncate text-left font-medium hover:underline" title={attachment.name}>
           {attachment.name}
         </button>
-        <div className="text-xs text-[var(--color-muted)]">
-          {fileSizeLabel(attachment.size)} · {fmtDate(String(attachment.uploadedAt || "").slice(0, 10))}{who}
-        </div>
+        <div className="text-xs text-[var(--color-muted)]">{attachmentSummary(attachment)}</div>
         {failed && <div className="text-xs text-[var(--color-danger)]">No se pudo abrir el archivo.</div>}
       </div>
       <button
@@ -54,18 +51,21 @@ function AttachmentRow({ attachment, disabled, onOpen, onRemove }) {
   );
 }
 
-// Fotos y PDF de un vencimiento: comprobantes de pago, facturas, fotos de un
-// cheque. Se suben apenas se eligen, se arrastran o se pegan (Ctrl+V, por
-// ejemplo una imagen copiada de WhatsApp Web, o 📋 Pegar imagen en el teléfono).
-export function AttachmentsModal({ item, onClose, onSaved }) {
+// Fotos y PDF de un documento (`owner`: un vencimiento, una nómina), como un
+// comprobante de pago, una factura o la foto de un cheque, con el `target` de
+// su colección (`services/attachments.js`). Se suben apenas se eligen, se
+// arrastran o se pegan (Ctrl+V, por ejemplo una imagen copiada de WhatsApp
+// Web, o 📋 Pegar imagen en el teléfono). `renderProgress(stage)` dibuja el
+// avance a la manera de la pantalla; sin él, una barra en el modal.
+export function AttachmentsModal({ title, owner, target, onClose, onSaved, renderProgress }) {
   const isMobile = useIsMobile();
-  const { busy, stage, rejected, add, pasteFromClipboard, remove } = useAttachments({ item, onSaved });
+  const { busy, stage, rejected, add, pasteFromClipboard, remove } = useAttachments({ target, owner, onSaved });
   const [removing, setRemoving] = useState(null);
   const [viewing, setViewing] = useState(null); // índice del adjunto abierto en el visor
   const [dragging, setDragging] = useState(false);
   const pickRef = useRef(null);
   const cameraRef = useRef(null);
-  const attachments = item.attachments || [];
+  const attachments = owner.attachments || [];
   const canReadClipboard = typeof navigator !== "undefined" && !!navigator.clipboard?.read;
 
   // Ctrl+V en cualquier parte del modal abierto, salvo con el visor encima.
@@ -96,9 +96,9 @@ export function AttachmentsModal({ item, onClose, onSaved }) {
 
   const confirmRemove = async () => {
     if (!removing) return;
-    const target = removing;
+    const attachment = removing;
     setRemoving(null);
-    await remove(target);
+    await remove(attachment);
   };
 
   return (
@@ -106,8 +106,8 @@ export function AttachmentsModal({ item, onClose, onSaved }) {
       open
       size="lg"
       onClose={onClose}
-      title={`Adjuntos · ${item.counterparty}`}
-      footer={<ModalCloseButton className={btnCls}>Cerrar</ModalCloseButton>}
+      title={title}
+      footer={<ModalCloseButton className={BTN}>Cerrar</ModalCloseButton>}
     >
       <div
         onDragOver={(e) => {
@@ -122,15 +122,15 @@ export function AttachmentsModal({ item, onClose, onSaved }) {
       >
         <div className="flex flex-wrap justify-center gap-2">
           {isMobile && (
-            <button type="button" className={`${btnCls} min-h-9`} disabled={busy} onClick={() => cameraRef.current?.click()}>
+            <button type="button" className={BTN} disabled={busy} onClick={() => cameraRef.current?.click()}>
               📷 Sacar foto
             </button>
           )}
-          <button type="button" className={`${btnCls} min-h-9`} disabled={busy} onClick={() => pickRef.current?.click()}>
+          <button type="button" className={BTN} disabled={busy} onClick={() => pickRef.current?.click()}>
             📎 Elegir archivos
           </button>
           {canReadClipboard && (
-            <button type="button" className={`${btnCls} min-h-9`} disabled={busy} onClick={pasteFromClipboard}>
+            <button type="button" className={BTN} disabled={busy} onClick={pasteFromClipboard}>
               📋 Pegar imagen
             </button>
           )}
@@ -145,11 +145,14 @@ export function AttachmentsModal({ item, onClose, onSaved }) {
         <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={fromInput} />
       </div>
 
-      {stage && (
-        <div className="mt-3">
-          <ProgressBar label={stage.label} done={stage.done} total={stage.total} />
-        </div>
-      )}
+      {stage &&
+        (renderProgress ? (
+          renderProgress(stage)
+        ) : (
+          <div className="mt-3">
+            <ProgressBar label={stage.label} done={stage.done} total={stage.total} />
+          </div>
+        ))}
       {rejected.length > 0 && (
         <ul className="mt-3 space-y-1 text-xs text-[var(--color-warning)]">
           {rejected.map((r, i) => (

@@ -6,6 +6,7 @@ import {
   shrinkSize,
   attachmentFileName,
   attachmentPath,
+  attachmentSummary,
   fileSizeLabel,
   inlineDisposition,
   transferFiles,
@@ -70,8 +71,15 @@ describe("nombre y ruta", () => {
     expect(attachmentFileName("", "image/jpeg")).toBe("imagen-pegada.jpg");
   });
 
-  it("una carpeta por vencimiento, con el id delante del nombre", () => {
-    expect(attachmentPath("chq_012_4512", "k3x9", "comprobante.jpg")).toBe("commitments/chq_012_4512/k3x9-comprobante.jpg");
+  it("la carpeta de la colección y una por documento, con el id delante del nombre", () => {
+    expect(attachmentPath("commitments", "chq_012_4512", "k3x9", "comprobante.jpg")).toBe("commitments/chq_012_4512/k3x9-comprobante.jpg");
+    expect(attachmentPath("payrolls", "p1", "k3y0", "cartola.pdf")).toBe("payrolls/p1/k3y0-cartola.pdf");
+  });
+
+  it("el resumen: tamaño, día y quién lo subió, sin lo que falta", () => {
+    expect(attachmentSummary({ size: 250 * 1024, uploadedAt: "2026-10-21T15:00:00.000Z", uploadedByName: "Demo" })).toBe("250 KB · 21-10-2026 · Demo");
+    expect(attachmentSummary({ size: 250 * 1024 })).toBe("250 KB");
+    expect(attachmentSummary({ uploadedAt: "no es fecha" })).toBe("");
   });
 
   it("el tamaño en KB o MB, con coma", () => {

@@ -1,7 +1,9 @@
-// Adjuntos de Cheques y pagos: qué archivos se aceptan, cómo se achica una
-// foto, el nombre y la ruta en Cloud Storage, y los archivos de un pegado o
-// de un arrastre. Solo cálculo: la subida está en `services/storageFiles.js`
-// y el achicado en el navegador, en `utils/imageShrink.js`.
+// Adjuntos (de un vencimiento, de una nómina): qué archivos se aceptan, cómo
+// se achica una foto, el nombre y la ruta en Cloud Storage, cómo se resume y
+// se muestra cada uno, y los archivos de un pegado o de un arrastre. Solo
+// cálculo: la subida está en `services/attachments.js` y el achicado en el
+// navegador, en `utils/imageShrink.js`.
+import { localIsoDate } from "./dates";
 
 export const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
 // El lado más largo de una foto achicada: se lee bien un comprobante o una
@@ -72,9 +74,10 @@ export function attachmentFileName(name, contentType) {
   return ext ? `${base || "archivo"}.${ext}` : base || "archivo";
 }
 
-// La ruta en Cloud Storage: una carpeta por vencimiento, y el id del adjunto
-// delante del nombre para que dos archivos con el mismo nombre no choquen.
-export const attachmentPath = (commitmentId, attachmentId, fileName) => `commitments/${commitmentId}/${attachmentId}-${fileName}`;
+// La ruta en Cloud Storage: la carpeta de la colección (`commitments`,
+// `payrolls`), una carpeta por documento, y el id del adjunto delante del
+// nombre para que dos archivos con el mismo nombre no choquen.
+export const attachmentPath = (folder, ownerId, attachmentId, fileName) => `${folder}/${ownerId}/${attachmentId}-${fileName}`;
 
 // La cabecera `Content-Disposition` de un adjunto: el navegador lo muestra en
 // la página (una imagen o un PDF en el visor) y, al guardarlo, lo nombra como
@@ -95,6 +98,16 @@ export function viewerKind(contentType) {
   if (type.startsWith("image/")) return "image";
   if (type === "application/pdf") return "pdf";
   return "other";
+}
+
+// "250 KB · 21-10-2026 · Demo": el tamaño, el día en que se subió, en la hora
+// de Chile, y quién lo subió.
+export function attachmentSummary(attachment) {
+  const at = attachment?.uploadedAt ? new Date(attachment.uploadedAt) : null;
+  const iso = at && !Number.isNaN(at.getTime()) ? localIsoDate(at) : "";
+  const day = iso ? iso.split("-").reverse().join("-") : "";
+  const size = attachment?.size ? fileSizeLabel(attachment.size) : "";
+  return [size, day, attachment?.uploadedByName || ""].filter(Boolean).join(" · ");
 }
 
 // "850 KB" o "1,2 MB".

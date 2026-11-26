@@ -1,10 +1,11 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import Modal, { ModalCloseButton } from "./Modal";
 import { useIsMobile } from "../hooks/useIsMobile";
-import { fileSizeLabel, viewerKind } from "../utils/attachments";
-import { fmtDate } from "../screens/commitments/helpers";
-import { btnCls } from "../screens/commitments/styles";
+import { attachmentSummary, viewerKind } from "../utils/attachments";
 import { useFileUrl } from "../hooks/useFileUrl";
+
+const BTN =
+  "min-h-9 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm hover:bg-[var(--color-surface-2)] disabled:opacity-50";
 
 // Lo que hay que deslizar en el teléfono para pasar de archivo.
 const SWIPE_PX = 50;
@@ -18,7 +19,7 @@ function OpenOutside({ url, kind }) {
       <p className="text-sm text-[var(--color-muted)]">
         {kind === "pdf" ? "En el teléfono, el PDF se abre en su propio visor." : "Este archivo se abre en otra pestaña."}
       </p>
-      <a href={url} target="_blank" rel="noreferrer" className={`${btnCls} inline-flex min-h-9 items-center`}>
+      <a href={url} target="_blank" rel="noreferrer" className={`${BTN} inline-flex items-center`}>
         ↗ Abrir {kind === "pdf" ? "el PDF" : "el archivo"}
       </a>
     </div>
@@ -70,12 +71,7 @@ export function FileViewer({ files, startIndex = 0, onClose }) {
   };
 
   if (!file) return null;
-  const details = [
-    file.context,
-    file.size ? fileSizeLabel(file.size) : "",
-    fmtDate(String(file.uploadedAt || "").slice(0, 10)),
-    file.uploadedByName,
-  ].filter(Boolean);
+  const details = [file.context, attachmentSummary(file)].filter(Boolean);
 
   const outside = !(kind === "image" || (kind === "pdf" && !isMobile));
   let media;
@@ -109,23 +105,23 @@ export function FileViewer({ files, startIndex = 0, onClose }) {
         <>
           {files.length > 1 && (
             <div className="mr-auto flex items-center gap-2">
-              <button type="button" aria-label="Anterior" className={`${btnCls} min-h-9 min-w-9`} disabled={at === 0} onClick={() => go(-1)}>
+              <button type="button" aria-label="Anterior" className={`${BTN} min-w-9`} disabled={at === 0} onClick={() => go(-1)}>
                 ‹
               </button>
               <span className="whitespace-nowrap text-sm tabular-nums text-[var(--color-muted)]">
                 {at + 1} de {files.length}
               </span>
-              <button type="button" aria-label="Siguiente" className={`${btnCls} min-h-9 min-w-9`} disabled={at === last} onClick={() => go(1)}>
+              <button type="button" aria-label="Siguiente" className={`${BTN} min-w-9`} disabled={at === last} onClick={() => go(1)}>
                 ›
               </button>
             </div>
           )}
           {url && !outside && (
-            <a href={url} target="_blank" rel="noreferrer" title="Abrir en otra pestaña" className={`${btnCls} inline-flex min-h-9 items-center`}>
+            <a href={url} target="_blank" rel="noreferrer" title="Abrir en otra pestaña" className={`${BTN} inline-flex items-center`}>
               ↗ Abrir
             </a>
           )}
-          <ModalCloseButton className={`${btnCls} min-h-9`}>Cerrar</ModalCloseButton>
+          <ModalCloseButton className={BTN}>Cerrar</ModalCloseButton>
         </>
       }
     >

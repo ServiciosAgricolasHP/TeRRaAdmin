@@ -16,6 +16,7 @@ import {
   saveCommitment,
   markPaid,
   reschedule,
+  commitmentAttachments,
   removeCommitment,
 } from "../services/commitmentsService";
 import {
@@ -540,7 +541,9 @@ export default function Commitments() {
 
       {attachmentsItem && (
         <AttachmentsModal
-          item={attachmentsItem}
+          title={`Adjuntos · ${attachmentsItem.counterparty}`}
+          owner={attachmentsItem}
+          target={commitmentAttachments}
           onClose={() => setAttachmentsForId(null)}
           onSaved={async (msg) => {
             toast.success(msg);
