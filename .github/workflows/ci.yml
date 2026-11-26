@@ -58,3 +58,33 @@ jobs:
 
       # `firestore.rules` contra el emulador.
       - run: npm run test:rules
+
+  # La prueba de humo: abre cada pantalla y sus modales clave en Chrome (el
+  # que trae la imagen de GitHub), contra los emuladores con los datos de demo
+  # de la ayuda, en escritorio y a 412 px. Falla si una pantalla se cae o
+  # escribe un error en la consola. La semilla usa `firebase-admin`, de
+  # `functions/`.
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            functions/package-lock.json
+
+      - run: npm ci
+      - run: npm ci
+        working-directory: functions
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - run: npm i -g firebase-tools@15
+      - run: npm run test:smoke
