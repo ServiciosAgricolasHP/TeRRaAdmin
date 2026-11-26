@@ -16,6 +16,13 @@ describe("errorText", () => {
     expect(errorText({ code: "auth/too-many-requests" })).toMatch(/^Demasiados intentos/);
   });
 
+  it("traduce los de Cloud Storage", () => {
+    expect(errorText({ code: "storage/unauthorized", message: "Firebase Storage: User does not have permission" })).toBe(
+      "No tienes permiso para subir, ver o borrar este archivo.",
+    );
+    expect(errorText({ code: "storage/retry-limit-exceeded" })).toMatch(/^El archivo tardó demasiado/);
+  });
+
   it("deja tal cual un mensaje en español", () => {
     expect(errorText(new Error("El ciclo está cerrado. Reábrelo para poder importar."))).toBe("El ciclo está cerrado. Reábrelo para poder importar.");
   });

@@ -64,8 +64,10 @@ del proyecto:
    `us-central1`, junto a la base y las funciones. Las funciones usan el bucket
    por defecto; sin él, el respaldo termina con `no-bucket`.
 2. **Publicar `storage.rules`** (en la raíz del repo) en Storage → Reglas, igual
-   que `firestore.rules`: nadie lee ni escribe el bucket desde el navegador. Las
-   funciones usan el admin SDK, que no pasa por reglas.
+   que `firestore.rules`: nadie lee ni escribe los respaldos desde el
+   navegador, y los adjuntos de Cheques y pagos solo una sesión con la marca
+   `appAccess`, que pone `syncAccessClaim`. Las funciones usan el admin SDK, que
+   no pasa por reglas.
 3. **Dejar que las funciones firmen el enlace de descarga.** Lo firma su cuenta
    de servicio, `NUMERO_DEL_PROYECTO-compute@developer.gserviceaccount.com`, que
    tiene que poder firmar en su propio nombre:

@@ -79,6 +79,7 @@ React 19 · Vite 7 · Tailwind CSS 4 · Firebase (Firestore + Auth) · ag-grid �
 - `recharts` idem, vía `React.lazy` sobre `screens/dashboard/DashboardCharts.jsx` y la dona `CommitmentsDonut`, en un chunk separado de ~340 KB. El chunk principal ya está sobre el límite de Vite, así que toda librería pesada nueva va lazy.
 - `jspdf` + `jspdf-autotable` también se importan lazy, solo al descargar el PDF del Informe de deudas.
 - `marked` y `minisearch` van solo en el chunk de la ayuda (`screens/Help.jsx`, cargada con `React.lazy`).
+- `firebase/storage` se carga lazy en `services/storageFiles.js`, recién al subir o ver un adjunto.
 
 ### Arquitectura
 
@@ -311,7 +312,7 @@ Se consulta con `firebase firestore:databases:get hpdatabase`.
 | `npm test` | Vitest sobre la lógica pura (~2 s, sin red) |
 | `npm run test:watch` | Vitest en modo watch |
 | `npm run test:e2e` | Ciclos end-to-end contra el emulador de Firestore |
-| `npm run test:rules` | `firestore.rules` contra el emulador |
+| `npm run test:rules` | `firestore.rules` y `storage.rules` contra los emuladores |
 | `npm run test:all` | Los tres anteriores |
 | `npm run functions:verify` | Cloud Functions contra los emuladores de functions, firestore, auth y storage, sin deployar |
 | `npm run help:shots` | Regenera las capturas de la ayuda contra los emuladores, con datos inventados (`HELP_GUIDES=<id>` para algunas guías) |
@@ -332,7 +333,9 @@ Tres capas, ninguna toca datos reales.
   el emulador se vacía antes de cada test.
 - **Reglas** (`vitest.config.rules.js` + `tests/rules/`): `firestore.rules` contra
   el emulador, desde el lado de cada cliente real: TeRRa con perfil, una cuenta
-  sin perfil o suspendida, el escáner sin sesión y la cola del backend. Usa
+  sin perfil o suspendida, el escáner sin sesión y la cola del backend. Y
+  `storage.rules`, contra el emulador de Storage: los adjuntos, con la marca de
+  acceso (`appAccess`) en la sesión de cada cuenta de prueba. Usa
   `@firebase/rules-unit-testing` y su propio project id (`demo-terra-rules`).
 
 **Cuatro barreras impiden que un test toque `arandanos-hp`**, y cualquiera alcanza:
@@ -352,7 +355,10 @@ Requisito local: **JDK 21 o superior** (`winget install EclipseAdoptium.Temurin.
 `npm run test:rules`. Se publican a mano: el archivo entero se pega en la consola
 de Firebase, en la base `hpdatabase`. `firebase.json` no las referencia a
 propósito: el emulador de los e2e las cargaría, y esos tests hablan con la base
-sin sesión.
+sin sesión. **`storage.rules`** se publica igual, en Storage → Reglas: los
+respaldos quedan cerrados desde el navegador, y los adjuntos de Cheques y pagos
+los usa una cuenta con acceso. Esas reglas no leen Firestore: revisan la marca
+`appAccess` de la sesión (ver Auth).
 
 - **Una sesión sola no da acceso.** Lo que da acceso es tener perfil en
   `users/{uid}` (el id del documento es el UID de la cuenta) sin `disabled: true`.
@@ -461,6 +467,7 @@ Cada término del negocio tiene un solo nombre en el código. Lo nuevo usa el de
 | Finiquito | `settlement` | dentro de `employments` (`settlementStatus`) |
 | Imposiciones | `contributions` | |
 | AFP / Salud (previsión) | `pensionFund` / `healthInsurance` | dentro de `worker` |
+| Adjunto (foto o PDF de un vencimiento) | `attachment` | dentro de `commitments` (`attachments`); el archivo, en Cloud Storage |
 
 Los nombres guardados en Firestore se conservan aunque no calcen con la tabla (las colecciones `faenas` y `transportPayrolls`, el campo `faenaId`, el campo `payrollId` de un resumen, los campos en español de `dteDocuments`): el código los lee y escribe con su nombre guardado. La lista con el nombre propuesto para cada uno está en `docs/data-model.md` ("Nombres en español pendientes de migración"); un campo nuevo nace en inglés.
 

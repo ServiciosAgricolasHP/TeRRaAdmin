@@ -17,6 +17,9 @@ import {
   RECURRING_HORIZON_DAYS,
 } from "../utils/commitments";
 import { toTitleName, unshout } from "../utils/textCase";
+import { attachmentFileName, attachmentPath } from "../utils/attachments";
+import { signerName } from "./signer";
+import { deleteFile, uploadFile } from "./storageFiles";
 
 export const commitmentsService = createAdditiveService("commitment", "commitments");
 export const commitmentSeriesService = createService("commitmentSeries", "commitmentSeries");
@@ -171,8 +174,55 @@ export async function createRecurringPlan(draft, { firstDate, today }) {
 export async function stopSeries(seriesId, today, commitments) {
   await commitmentSeriesService.update(seriesId, { active: false });
   const upcoming = commitments.filter((c) => c.seriesId === seriesId && c.status === "pending" && c.dueDate > today);
-  await Promise.all(upcoming.map((c) => commitmentsService.remove(c.id)));
+  await Promise.all(upcoming.map((c) => removeCommitment(c)));
   return upcoming.length;
+}
+
+// Elimina un vencimiento y sus adjuntos. Los archivos se borran primero: si
+// Storage falla, el vencimiento queda como estaba y no deja archivos sueltos.
+export async function removeCommitment(c) {
+  await Promise.all((c.attachments || []).map((a) => deleteFile(a.path)));
+  return commitmentsService.remove(c.id);
+}
+
+// ── Adjuntos ────────────────────────────────────────────────────────────────
+
+const newAttachmentId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+
+// Sube los archivos ya preparados (`{ blob, name, contentType }`: una foto ya
+// achicada) y los suma a `attachments` en una sola escritura. Si algo falla, se
+// borran los que alcanzaron a subir.
+export async function addAttachments(c, files, { onProgress } = {}) {
+  const uploaded = [];
+  try {
+    for (const f of files) {
+      const id = newAttachmentId();
+      const name = attachmentFileName(f.name, f.contentType);
+      const path = attachmentPath(c.id, id, name);
+      await uploadFile(path, f.blob, f.contentType);
+      uploaded.push({
+        id,
+        name,
+        path,
+        contentType: f.contentType,
+        size: f.blob.size,
+        uploadedAt: new Date().toISOString(),
+        uploadedBy: auth.currentUser?.uid || null,
+        uploadedByName: signerName(),
+      });
+      onProgress?.(uploaded.length);
+    }
+    await commitmentsService.update(c.id, { attachments: [...(c.attachments || []), ...uploaded] });
+  } catch (err) {
+    await Promise.all(uploaded.map((a) => deleteFile(a.path).catch(() => {})));
+    throw err;
+  }
+  return uploaded;
+}
+
+export async function removeAttachment(c, attachment) {
+  await deleteFile(attachment.path);
+  return commitmentsService.update(c.id, { attachments: (c.attachments || []).filter((a) => a.id !== attachment.id) });
 }
 
 // ── Abonos ──────────────────────────────────────────────────────────────────

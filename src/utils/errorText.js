@@ -26,6 +26,12 @@ const FIREBASE = {
   "email-already-exists": "Ya existe una cuenta con ese correo.",
   "weak-password": "La contraseña es muy corta: usa al menos 6 caracteres.",
   "requires-recent-login": "Por seguridad, vuelve a iniciar sesión y repite el cambio.",
+  // Cloud Storage (los adjuntos).
+  unauthorized: "No tienes permiso para subir, ver o borrar este archivo.",
+  "object-not-found": "El archivo ya no existe: puede que otra persona lo haya borrado.",
+  "quota-exceeded": "Se alcanzó el límite de espacio para archivos. Avísale al administrador.",
+  "retry-limit-exceeded": "El archivo tardó demasiado en subir. Revisa internet y vuelve a intentar.",
+  canceled: "Se canceló la subida.",
 };
 
 const BROWSER = {

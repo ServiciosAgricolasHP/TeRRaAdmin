@@ -54,6 +54,7 @@ export function CommitmentList({
   onDelete,
   onPartialPayment,
   onEditSeries,
+  onAttachments,
 }) {
   // Una sola acción a la vista (marcarlo pagado o cobrado, si está abierto) y
   // el resto en el menú.
@@ -79,6 +80,12 @@ export function CommitmentList({
             ? "Pagar una parte, de esta cuota o de toda la deuda"
             : "Pagar una parte de este vencimiento",
         onClick: () => onPartialPayment(c),
+      },
+      {
+        icon: "📎",
+        label: "Adjuntos",
+        hint: "Fotos y PDF: comprobantes, facturas",
+        onClick: () => onAttachments(c),
       },
       c.seriesId && {
         icon: "🗂",
@@ -107,6 +114,22 @@ export function CommitmentList({
         )}
         <RowMenu items={menu} />
       </div>
+    );
+  };
+
+  // 📎 con la cantidad de adjuntos, que los abre.
+  const attachmentsChip = (c) => {
+    const n = (c.attachments || []).length;
+    if (!n) return null;
+    return (
+      <button
+        type="button"
+        onClick={() => onAttachments(c)}
+        title={n === 1 ? "1 adjunto" : `${n} adjuntos`}
+        className="inline-flex min-h-8 items-center gap-0.5 rounded-md px-1.5 text-xs text-[var(--color-muted)] hover:bg-[var(--color-surface-2)] hover:text-[var(--color-text)]"
+      >
+        📎 {n}
+      </button>
     );
   };
 
@@ -147,7 +170,10 @@ export function CommitmentList({
                 <td className="whitespace-nowrap px-3 py-2 tabular-nums">{fmtDate(c.dueDate)}</td>
                 <td className="whitespace-nowrap px-3 py-2">{kindMeta(c.kind).icon} {kindMeta(c.kind).label}</td>
                 <td className="px-3 py-2">
-                  <div className="font-medium">{c.counterparty}</div>
+                  <div className="flex items-center gap-1 font-medium">
+                    {c.counterparty}
+                    {attachmentsChip(c)}
+                  </div>
                   {(c.concept || c.notes) && (
                     <div className="text-xs text-[var(--color-muted)]">{[c.concept, c.notes].filter(Boolean).join(" — ")}</div>
                   )}
@@ -182,6 +208,7 @@ export function CommitmentList({
             <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-[var(--color-muted)]">
               <StatusChip c={c} today={today} />
               <span>{detail(c)}</span>
+              {attachmentsChip(c)}
             </div>
             {paidNote(c) && <div className="mt-1 text-xs text-[var(--color-muted)]">{paidNote(c)}</div>}
             {(c.concept || c.notes) && (

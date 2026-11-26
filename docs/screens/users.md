@@ -11,6 +11,7 @@
   - Un admin no se suspende: primero se le quita el rol.
   - Una cuenta suspendida no pasa a admin: primero se reactiva.
 - El rol y la suspensión pasan por `usersService.update`, así que quedan en la auditoría.
+- Suspender o reactivar cambia también la marca de acceso de la cuenta (`appAccess`, ver Auth en AGENTS.md), que revisan los adjuntos de Cheques y pagos. Una sesión abierta la recibe al renovar su token: una cuenta suspendida deja de ver los adjuntos como mucho en una hora, aunque la app ya no la deja entrar.
 - **+ Nueva cuenta** usa el job `createUser` (Cloud Functions): crea la cuenta en Authentication con una contraseña al azar que no se guarda, y el perfil con el mismo UID, y lo registra en la auditoría. Después la app envía el correo para elegir contraseña (opción marcada por defecto).
   - Si el correo ya tiene cuenta (por ejemplo, de la app Calendario), la función responde `errorCode: "account-exists"` y la pantalla pide confirmación antes de darle acceso a esa cuenta (`params.useExisting`): quien conozca su contraseña va a poder entrar.
   - La función vuelve a comprobar que quien pide sea admin, leyendo su perfil, además de la regla de `functionJobs`.
