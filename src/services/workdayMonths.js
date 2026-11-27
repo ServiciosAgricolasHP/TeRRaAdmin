@@ -14,14 +14,15 @@ import { deletedWorkdaysSince } from "./workdayDeletions";
 // abrirlo cuesta unas pocas lecturas:
 // - una consulta trae las jornadas con `updatedAt` desde la marca, de
 //   cualquier mes, y las reparte en los meses guardados (una para todos, como
-//   mucho una vez por minuto). Lo escrito en los minutos antes de la marca se
-//   vuelve a traer hasta que pasan esos minutos (`advanceMarks`,
+//   mucho una vez por minuto). Lo escrito en el minuto antes de la marca se
+//   vuelve a traer hasta que pasa ese minuto (`advanceMarks`,
 //   utils/syncedList.js);
 // - otra consulta trae las marcas de las jornadas eliminadas desde la marca
 //   (services/workdayDeletions.js) y las saca de las copias;
 // - un conteo del mes (una lectura por cada 1.000 jornadas) es la red de
 //   seguridad para lo eliminado sin marca y lo escrito sin `updatedAt`: si no
-//   calza con la copia, el mes se lee entero.
+//   calza con la copia, el mes se lee entero. El mes se cuenta siempre
+//   después de ponerlo al día, aunque no haya pasado el minuto.
 // El id de una jornada lleva su fecha, así que una jornada nunca cambia de mes.
 //
 // Se guardan los `KEEP_MONTHS` meses abiertos más recientemente, cada uno en
@@ -34,9 +35,11 @@ const META_KEY = "workdayMonths.meta";
 const monthKey = (month) => `workdayMonths.${month}`;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MIN_GAP_MS = 60 * 1000;
-// La marca se toma unos minutos antes de lo último visto, por si llegan dos
-// escrituras con la misma hora.
-const MARGIN_MS = 5 * 60 * 1000;
+// La marca se toma un minuto antes de lo último visto, por si llegan dos
+// escrituras con la misma hora. Las jornadas llevan la hora del servidor
+// (`serverTimestamp`), así que lo confirmado antes de una consulta ya sale en
+// ella y no hace falta más margen.
+const MARGIN_MS = 60 * 1000;
 const COUNT_BATCH = 1000;
 const FULL_EVERY_DAYS = 7;
 const KEEP_MONTHS = 6;
@@ -174,6 +177,12 @@ async function run(month, fresh) {
     recordCacheHit({ collection: WORKDAYS, wheres: monthWheres(month) }, list.length);
   } else {
     let full = mode === "full";
+    if (!full && !reads) {
+      // El mes se cuenta contra su copia puesta al día: si la puesta al día
+      // se saltó por el minuto, corre ahora.
+      reads += await delta(true);
+      list = await monthData(month);
+    }
     if (!full) {
       const count = (await getCountFromServer(monthQuery(month))).data().count;
       reads += Math.max(1, Math.ceil(count / COUNT_BATCH));

@@ -40,26 +40,46 @@ describe("las jornadas de un mes en el Calendario", () => {
 
     const oct = await syncWorkdayMonth("2026-10", { fresh: true });
     expect(oct.data.find((d) => d.id === "w2").qty).toBe(7);
-    // Lo escrito desde cinco minutos antes de la marca (acá, las cuatro
+    // Lo escrito desde un minuto antes de la marca (acá, las cuatro
     // jornadas), las marcas de lo eliminado (ninguna) y el conteo del mes.
     expect(oct.reads).toBe(4 + 1 + 1);
     const sep = await syncWorkdayMonth("2026-09", { fresh: true });
     expect(ids(sep.data)).toEqual(["w3", "w4"]);
   });
 
-  it("pasados unos minutos sin escrituras, no vuelve a traer lo último escrito", async () => {
+  it("pasado un minuto sin escrituras, no vuelve a traer lo último escrito", async () => {
     await seed();
     await syncWorkdayMonth("2026-10");
-    // Recién escritas, las tres jornadas caen en los minutos antes de la
-    // marca; más la consulta de las marcas de lo eliminado y el conteo.
+    // Recién escritas, las tres jornadas caen en el minuto antes de la marca;
+    // más la consulta de las marcas de lo eliminado y el conteo.
     expect((await syncWorkdayMonth("2026-10", { fresh: true })).reads).toBe(3 + 1 + 1);
     vi.useFakeTimers({ toFake: ["Date"] });
     try {
-      vi.setSystemTime(Date.now() + 5 * 60 * 1000 + 1000);
+      vi.setSystemTime(Date.now() + 60 * 1000 + 1000);
       // Esta las ve todas por última vez y asienta la marca.
       expect((await syncWorkdayMonth("2026-10", { fresh: true })).reads).toBe(3 + 1 + 1);
       // Las dos consultas vacías y el conteo del mes.
       expect((await syncWorkdayMonth("2026-10", { fresh: true })).reads).toBe(1 + 1 + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("un mes que toca contar se pone al día antes, aunque no haya pasado el minuto", async () => {
+    await seed();
+    await syncWorkdayMonth("2026-10");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      // Pasado el minuto, otro mes pone al día las copias y octubre queda sin
+      // revisar desde su lectura.
+      vi.setSystemTime(Date.now() + 2 * 60 * 1000);
+      await syncWorkdayMonth("2026-09");
+      await write("w1", "2026-10-01", { qty: 7 });
+      vi.setSystemTime(Date.now() + 10 * 1000);
+
+      // El conteo de octubre calza igual: lo cambiado llega por la puesta al día.
+      const { data } = await syncWorkdayMonth("2026-10");
+      expect(data.find((d) => d.id === "w1").qty).toBe(7);
     } finally {
       vi.useRealTimers();
     }

@@ -8,7 +8,7 @@
 // `applyPayrollRecalc` la guarda. La regla de cada parte vive en
 // src/utils/payrollItem.js (`planRecalcExisting`, `allocateAdvances`,
 // `inRecalcScope`, `cycleScopeAfterEdit`).
-import { workdaysService } from "./index";
+import { listCycleWorkdays } from "./workdayCycles";
 import {
   payrollsService,
   assertEditable,
@@ -145,17 +145,15 @@ export async function readPayrollRecalc(
   const current = [];
   const released = [];
   onProgress?.("workdays", 0, recalcCycleIds.length);
-  for (let i = 0; i < recalcCycleIds.length; i += 10) {
-    const chunk = recalcCycleIds.slice(i, i + 10);
-    // Directo de Firestore, sin caché: de acá sale lo que se etiqueta.
-    const wds = await workdaysService.list({ wheres: [["cycleId", "in", chunk]] });
-    onProgress?.("workdays", i + chunk.length, recalcCycleIds.length);
-    for (const wd of wds) {
-      if (isRemovedFromPayroll(wd, removed)) {
-        if (wd.payrollId === payroll.id) released.push(wd);
-      } else if (inRecalcScope(wd, payroll.id, alcance)) {
-        current.push(wd);
-      }
+  // De las copias por ciclo puestas al día al tiro (`fresh`), como al generar:
+  // lo que cambió, lo eliminado y el conteo de los ciclos, sin releerlos.
+  const wds = await listCycleWorkdays(recalcCycleIds, { fresh: true });
+  onProgress?.("workdays", recalcCycleIds.length, recalcCycleIds.length);
+  for (const wd of wds) {
+    if (isRemovedFromPayroll(wd, removed)) {
+      if (wd.payrollId === payroll.id) released.push(wd);
+    } else if (inRecalcScope(wd, payroll.id, alcance)) {
+      current.push(wd);
     }
   }
 
@@ -561,14 +559,16 @@ export async function applyPayrollRecalc(payrollId, plan, onProgress) {
   });
   // Se etiqueta exactamente lo que contiene la nómina y se suelta lo que le
   // quedó etiquetado sin estar en ningún item: lo sacado, las jornadas de
-  // quien salió y las de $0 de quien nunca entró.
+  // quien salió y las de $0 de quien nunca entró. Solo se escriben las
+  // jornadas que cambian: lo que ya tiene la etiqueta de la nómina no se
+  // toca, así las copias de jornadas de cada navegador no lo vuelven a bajar.
   const enNomina = new Set(items.flatMap((it) => it.workdayIds || []));
   await untagWorkdaysFromPayroll(
     workdays.filter((wd) => !enNomina.has(wd.id) && wd.payrollId === payrollId).map((wd) => wd.id),
     (done, total) => onProgress?.("untag", done, total),
   );
   await tagWorkdaysWithPayroll(
-    workdays.filter((wd) => enNomina.has(wd.id)).map((wd) => wd.id),
+    workdays.filter((wd) => enNomina.has(wd.id) && wd.payrollId !== payrollId).map((wd) => wd.id),
     payrollId,
     (done, total) => onProgress?.("tag", done, total),
   );
