@@ -48,7 +48,7 @@ describe("las jornadas de los ciclos de Nómina", () => {
     const next = await syncWorkdayCycles(["C1", "C2"], { fresh: true });
     expect(next.data.find((d) => d.id === "w2").qty).toBe(7);
     expect(ids(next.data)).toEqual(["w1", "w2", "w3", "w5"]);
-    // Lo escrito desde cinco minutos antes de la marca (acá, las cinco
+    // Lo escrito desde un minuto antes de la marca (acá, las cinco
     // jornadas), las marcas de lo eliminado (ninguna) y el conteo de los dos
     // ciclos.
     expect(next.reads).toBe(5 + 1 + 1);

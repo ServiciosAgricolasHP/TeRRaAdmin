@@ -15,8 +15,8 @@ import { deletedWorkdaysSince } from "./workdayDeletions";
 // sus jornadas cuesta unas pocas lecturas:
 // - una consulta trae las jornadas con `updatedAt` desde la marca, de
 //   cualquier ciclo, y las reparte en los ciclos guardados (una para todos,
-//   como mucho una vez por minuto). Lo escrito en los minutos antes de la
-//   marca se vuelve a traer hasta que pasan esos minutos (`advanceMarks`,
+//   como mucho una vez por minuto). Lo escrito en el minuto antes de la
+//   marca se vuelve a traer hasta que pasa ese minuto (`advanceMarks`,
 //   utils/syncedList.js);
 // - otra consulta trae las marcas de las jornadas eliminadas desde la marca
 //   (services/workdayDeletions.js) y las saca de las copias;
@@ -35,9 +35,11 @@ const META_KEY = "workdayCycles.meta";
 const cycleKey = (cycleId) => `workdayCycles.${cycleId}`;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MIN_GAP_MS = 60 * 1000;
-// La marca se toma unos minutos antes de lo último visto, por si llegan dos
-// escrituras con la misma hora.
-const MARGIN_MS = 5 * 60 * 1000;
+// La marca se toma un minuto antes de lo último visto, por si llegan dos
+// escrituras con la misma hora. Las jornadas llevan la hora del servidor
+// (`serverTimestamp`), así que lo confirmado antes de una consulta ya sale en
+// ella y no hace falta más margen.
+const MARGIN_MS = 60 * 1000;
 const COUNT_BATCH = 1000;
 // Los valores que acepta Firestore en un `in`.
 const IN_LIMIT = 30;

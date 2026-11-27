@@ -14,8 +14,8 @@ import { deletedWorkdaysSince } from "./workdayDeletions";
 // abrirlo cuesta unas pocas lecturas:
 // - una consulta trae las jornadas con `updatedAt` desde la marca, de
 //   cualquier mes, y las reparte en los meses guardados (una para todos, como
-//   mucho una vez por minuto). Lo escrito en los minutos antes de la marca se
-//   vuelve a traer hasta que pasan esos minutos (`advanceMarks`,
+//   mucho una vez por minuto). Lo escrito en el minuto antes de la marca se
+//   vuelve a traer hasta que pasa ese minuto (`advanceMarks`,
 //   utils/syncedList.js);
 // - otra consulta trae las marcas de las jornadas eliminadas desde la marca
 //   (services/workdayDeletions.js) y las saca de las copias;
@@ -34,9 +34,11 @@ const META_KEY = "workdayMonths.meta";
 const monthKey = (month) => `workdayMonths.${month}`;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MIN_GAP_MS = 60 * 1000;
-// La marca se toma unos minutos antes de lo último visto, por si llegan dos
-// escrituras con la misma hora.
-const MARGIN_MS = 5 * 60 * 1000;
+// La marca se toma un minuto antes de lo último visto, por si llegan dos
+// escrituras con la misma hora. Las jornadas llevan la hora del servidor
+// (`serverTimestamp`), así que lo confirmado antes de una consulta ya sale en
+// ella y no hace falta más margen.
+const MARGIN_MS = 60 * 1000;
 const COUNT_BATCH = 1000;
 const FULL_EVERY_DAYS = 7;
 const KEEP_MONTHS = 6;
