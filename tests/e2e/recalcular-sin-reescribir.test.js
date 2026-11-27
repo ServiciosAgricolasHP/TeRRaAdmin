@@ -5,10 +5,12 @@ import { planPayrollRecalc, applyPayrollRecalc } from "../../src/services/payrol
 import { workdaysService } from "../../src/services";
 import { saveSnapshot } from "../../src/services/payrollSnapshots";
 import { millisOf } from "../../src/utils/syncedList";
+import { syncWorkdayCycles } from "../../src/services/workdayCycles";
 import { ANA, CICLO, laborTypes, seedCycle, seedWorker, seedWorkday, get, all } from "./helpers/seed";
 
 // Recalcular escribe solo las jornadas que cambian de nómina: las que ya
-// tienen su etiqueta quedan como estaban.
+// tienen su etiqueta quedan como estaban. Y las lee de las copias por ciclo
+// de Nómina, como al generar.
 
 async function seedPayroll() {
   await seedCycle({ id: CICLO });
@@ -55,7 +57,7 @@ async function recalc(payrollId) {
   await applyPayrollRecalc(payrollId, plan);
 }
 
-describe("recalcular sin reescribir lo que ya está en la nómina", () => {
+describe("recalcular sin reescribir ni releer las jornadas", () => {
   it("etiqueta la jornada nueva y deja intacta la que ya tenía la etiqueta", async () => {
     const { id, first } = await seedPayroll();
     const before = await get("workdays", first);
@@ -68,5 +70,19 @@ describe("recalcular sin reescribir lo que ya está en la nómina", () => {
     expect(millisOf(kept.updatedAt)).toBe(millisOf(before.updatedAt));
     expect((await get("workdays", added)).payrollId).toBe(id);
     expect((await get("payrolls", id)).total).toBe(500000);
+  });
+
+  it("lee las jornadas de las copias por ciclo, que quedan al día para lo siguiente", async () => {
+    const { id } = await seedPayroll();
+    await planPayrollRecalc(await get("payrolls", id), {
+      cycles: await all("cycles"),
+      faenas: await all("faenas"),
+      subfaenas: await all("subfaenas"),
+      workers: await all("worker"),
+    });
+    // Dentro del minuto, la copia que dejó el recálculo sale sin lecturas.
+    const next = await syncWorkdayCycles([CICLO]);
+    expect(next.reads).toBe(0);
+    expect(next.data).toHaveLength(1);
   });
 });

@@ -9,7 +9,7 @@ import { applyCycleChanges, cyclesToDrop, deletedIdsOf, groupByCycle, removeDele
 import { deletedWorkdaysSince } from "./workdayDeletions";
 
 // Las jornadas de los ciclos que usa Nómina (lo pendiente de los ciclos
-// activos, armar una nómina y el detalle de una), guardadas en el navegador
+// activos, armar una nómina, el detalle de una y recalcularla), guardadas en el navegador
 // por ciclo, como los meses del Calendario (services/workdayMonths.js). Cada
 // ciclo se lee entero la primera vez y una vez por semana; entre medio, pedir
 // sus jornadas cuesta unas pocas lecturas:
