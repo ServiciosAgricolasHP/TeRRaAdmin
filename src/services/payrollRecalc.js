@@ -561,14 +561,16 @@ export async function applyPayrollRecalc(payrollId, plan, onProgress) {
   });
   // Se etiqueta exactamente lo que contiene la nómina y se suelta lo que le
   // quedó etiquetado sin estar en ningún item: lo sacado, las jornadas de
-  // quien salió y las de $0 de quien nunca entró.
+  // quien salió y las de $0 de quien nunca entró. Solo se escriben las
+  // jornadas que cambian: lo que ya tiene la etiqueta de la nómina no se
+  // toca, así las copias de jornadas de cada navegador no lo vuelven a bajar.
   const enNomina = new Set(items.flatMap((it) => it.workdayIds || []));
   await untagWorkdaysFromPayroll(
     workdays.filter((wd) => !enNomina.has(wd.id) && wd.payrollId === payrollId).map((wd) => wd.id),
     (done, total) => onProgress?.("untag", done, total),
   );
   await tagWorkdaysWithPayroll(
-    workdays.filter((wd) => enNomina.has(wd.id)).map((wd) => wd.id),
+    workdays.filter((wd) => enNomina.has(wd.id) && wd.payrollId !== payrollId).map((wd) => wd.id),
     payrollId,
     (done, total) => onProgress?.("tag", done, total),
   );
