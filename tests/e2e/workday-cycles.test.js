@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { deleteDoc, doc, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "../../src/firebase";
 import { workdaysService } from "../../src/services";
@@ -99,6 +99,26 @@ describe("las jornadas de los ciclos de Nómina", () => {
     const { data } = await syncWorkdayCycles(["C1"], { fresh: true });
     expect(data.find((d) => d.id === "w1").payrollId).toBe("nomina-1");
     expect(data.find((d) => d.id === "w2").payrollId).toBeUndefined();
+  });
+
+  it("un ciclo que toca contar se pone al día antes, aunque no haya pasado el minuto", async () => {
+    await seed();
+    await syncWorkdayCycles(["C1"]);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      // Pasado el minuto, otro ciclo pone al día las copias y C1 queda sin
+      // revisar desde su lectura.
+      vi.setSystemTime(Date.now() + 2 * 60 * 1000);
+      await syncWorkdayCycles(["C2"]);
+      await write("w1", "C1", { qty: 7 });
+      vi.setSystemTime(Date.now() + 10 * 1000);
+
+      // El conteo de C1 calza igual: lo cambiado llega por la puesta al día.
+      const { data } = await syncWorkdayCycles(["C1"]);
+      expect(data.find((d) => d.id === "w1").qty).toBe(7);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("después de una escritura de este equipo se pone al día sin esperar el minuto", async () => {

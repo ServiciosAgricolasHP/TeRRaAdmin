@@ -22,7 +22,8 @@ import { deletedWorkdaysSince } from "./workdayDeletions";
 //   (services/workdayDeletions.js) y las saca de las copias;
 // - un conteo de los ciclos pedidos, de a 30, es la red de seguridad para lo
 //   eliminado sin marca: si no calza con las copias, se cuenta cada ciclo y
-//   se relee entero el que no calza.
+//   se relee entero el que no calza. Un ciclo que se cuenta siempre se pone
+//   al día antes, aunque no haya pasado el minuto.
 // Una escritura de jornadas en este equipo (`workdaysService.invalidate()`)
 // no suelta las copias: la próxima vez se ponen al día sin esperar el minuto.
 //
@@ -207,6 +208,14 @@ async function run(cycleIds, fresh) {
     else cachedDocs += list.length;
   }
   if (lists.size > toCount.length) recordCacheHit({ collection: WORKDAYS, wheres: [["cycleId", "in"]] }, cachedDocs);
+
+  // Un ciclo se cuenta contra su copia puesta al día: si la puesta al día se
+  // saltó por el minuto, corre ahora. Lo escrito entre medio descuadraría el
+  // conteo y el ciclo se releería entero.
+  if (toCount.length && !reads) {
+    reads += await runDelta();
+    for (const cycleId of toCount) lists.set(cycleId, await cycleData(cycleId));
+  }
 
   const counted = await Promise.all(chunksOf(toCount, IN_LIMIT).map((ids) => countBatch(ids, lists)));
   const stale = new Set(counted.flatMap((c) => c.stale));

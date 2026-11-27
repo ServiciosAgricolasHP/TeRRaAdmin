@@ -65,6 +65,26 @@ describe("las jornadas de un mes en el Calendario", () => {
     }
   });
 
+  it("un mes que toca contar se pone al día antes, aunque no haya pasado el minuto", async () => {
+    await seed();
+    await syncWorkdayMonth("2026-10");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      // Pasado el minuto, otro mes pone al día las copias y octubre queda sin
+      // revisar desde su lectura.
+      vi.setSystemTime(Date.now() + 2 * 60 * 1000);
+      await syncWorkdayMonth("2026-09");
+      await write("w1", "2026-10-01", { qty: 7 });
+      vi.setSystemTime(Date.now() + 10 * 1000);
+
+      // El conteo de octubre calza igual: lo cambiado llega por la puesta al día.
+      const { data } = await syncWorkdayMonth("2026-10");
+      expect(data.find((d) => d.id === "w1").qty).toBe(7);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("lo eliminado con su marca sale de la copia sin releer el mes", async () => {
     await seed();
     await syncWorkdayMonth("2026-10");

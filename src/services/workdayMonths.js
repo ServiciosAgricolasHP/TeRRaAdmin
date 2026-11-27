@@ -21,7 +21,8 @@ import { deletedWorkdaysSince } from "./workdayDeletions";
 //   (services/workdayDeletions.js) y las saca de las copias;
 // - un conteo del mes (una lectura por cada 1.000 jornadas) es la red de
 //   seguridad para lo eliminado sin marca y lo escrito sin `updatedAt`: si no
-//   calza con la copia, el mes se lee entero.
+//   calza con la copia, el mes se lee entero. El mes se cuenta siempre
+//   después de ponerlo al día, aunque no haya pasado el minuto.
 // El id de una jornada lleva su fecha, así que una jornada nunca cambia de mes.
 //
 // Se guardan los `KEEP_MONTHS` meses abiertos más recientemente, cada uno en
@@ -176,6 +177,12 @@ async function run(month, fresh) {
     recordCacheHit({ collection: WORKDAYS, wheres: monthWheres(month) }, list.length);
   } else {
     let full = mode === "full";
+    if (!full && !reads) {
+      // El mes se cuenta contra su copia puesta al día: si la puesta al día
+      // se saltó por el minuto, corre ahora.
+      reads += await delta(true);
+      list = await monthData(month);
+    }
     if (!full) {
       const count = (await getCountFromServer(monthQuery(month))).data().count;
       reads += Math.max(1, Math.ceil(count / COUNT_BATCH));
